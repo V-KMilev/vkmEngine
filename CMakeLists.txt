@@ -18,12 +18,12 @@ include(cmake/git_metadata.cmake)
 project(${PROJECT_NAME} VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH} LANGUAGES CXX)
 
 set(SOURCES
-  utils/logger.cpp
+  modules/vkmLog/logger.cpp
 
 )
 
 set(HEADERS
-  utils/logger.h
+  modules/vkmLog/logger.h
   utils/build_info.h
 )
 
