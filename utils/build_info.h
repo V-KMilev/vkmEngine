@@ -1,6 +1,6 @@
 #pragma once
 
-#include "logger.h"
+#include "modules/vkmLogger/logger.h"
 
 void printBuildInfo() {
     LOG_INFO("------- Build Information -------");
