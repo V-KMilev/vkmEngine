@@ -17,13 +17,19 @@ include(cmake/git_metadata.cmake)
 # Define project
 project(${PROJECT_NAME} VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH} LANGUAGES CXX)
 
-set(SOURCES
-  modules/vkmLog/logger.cpp
 
+if (TARGET vkmLog)
+  message(STATUS "Target vkmLog exists, will link to it.")
+else()
+  add_subdirectory(modules/vkmLog)
+endif()
+
+add_subdirectory(modules/vkmGL)
+
+set(SOURCES
 )
 
 set(HEADERS
-  modules/vkmLog/logger.h
   utils/build_info.h
 )
 
@@ -32,6 +38,11 @@ add_executable(${PROJECT_NAME}
   ${HEADERS}
 
   main.cpp
+)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE
+  vkmLog
+  vkmGL
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE APP_VERSION=\"${PROJECT_VERSION}\")
@@ -43,9 +54,3 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE APP_BRANCH=\"${PROJECT_BRANCH
 target_compile_definitions(${PROJECT_NAME} PRIVATE APP_COMMIT_HASH=\"${PROJECT_COMMIT_HASH}\")
 target_compile_definitions(${PROJECT_NAME} PRIVATE APP_BUILD_DATE=\"${PROJECT_BUILD_DATE}\")
 target_compile_definitions(${PROJECT_NAME} PRIVATE APP_ROOT_DIR=\"${PROJECT_ROOT_DIR}\")
-
-if (MSVC)
-  target_compile_options(${PROJECT_NAME} PRIVATE /W4 /permissive-)
-else()
-  target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
-endif()
