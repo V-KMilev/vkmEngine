@@ -1,7 +1,7 @@
 #include <iostream>
 #include <cstdio>
 
-#include "modules/vkmLogger/logger.h"
+#include "logger.h"
 #include "utils/build_info.h"
 
 int main() {
