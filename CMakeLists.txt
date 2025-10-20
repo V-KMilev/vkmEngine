@@ -27,17 +27,24 @@ endif()
 add_subdirectory(modules/vkmGL)
 
 set(SOURCES
+  src/component/component.cpp
+  src/entity/entity.cpp
 )
 
 set(HEADERS
-  utils/build_info.h
+  src/component/
+  src/entity/
+  utils/
 )
 
 add_executable(${PROJECT_NAME}
   ${SOURCES}
-  ${HEADERS}
 
   main.cpp
+)
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+  ${HEADERS}
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
