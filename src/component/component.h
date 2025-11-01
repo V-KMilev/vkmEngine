@@ -61,7 +61,7 @@ class Component {
          */
         ComponentType getType() const;
 
-    private:
+    protected:
         uint32_t m_id;
         ComponentType m_type;
 };

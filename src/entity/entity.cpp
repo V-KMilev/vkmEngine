@@ -32,19 +32,11 @@ Entity::~Entity() {
     LOG_DEBUG("Destructed Entity #%d type: '%s'", m_id, enumToString(m_type));
 }
 
-uint32_t Entity::getID() const {
-    return m_id;
-}
-EntityType Entity::getType() const {
-    return m_type;
-}
+uint32_t Entity::getID() const { return m_id; }
+EntityType Entity::getType() const { return m_type; }
 
-std::vector<std::shared_ptr<Component>>& Entity::getComponents() {
-    return m_components;
-}
-const std::vector<std::shared_ptr<Component>>& Entity::getComponents() const {
-    return m_components;
-}
+std::vector<std::shared_ptr<Component>>& Entity::getComponents() { return m_components; }
+const std::vector<std::shared_ptr<Component>>& Entity::getComponents() const { return m_components; }
 
 void Entity::addComponent(std::shared_ptr<Component> && component) {
     m_components.push_back(std::move(component));
