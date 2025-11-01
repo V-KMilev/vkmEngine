@@ -16,9 +16,5 @@ Component::~Component() {
     LOG_DEBUG("Destructed Component #%d type: '%s'", m_id, enumToString(m_type));
 }
 
-uint32_t Component::getID() const {
-    return m_id;
-}
-ComponentType Component::getType() const {
-    return m_type;
-}
+uint32_t Component::getID() const { return m_id; }
+ComponentType Component::getType() const { return m_type; }

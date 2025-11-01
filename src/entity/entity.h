@@ -98,7 +98,7 @@ class Entity {
          */
         void addComponent(std::shared_ptr<Component> && component);
 
-    private:
+    protected:
         uint32_t m_id;
         EntityType m_type;
         std::vector<std::shared_ptr<Component>> m_components;
