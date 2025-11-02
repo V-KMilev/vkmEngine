@@ -29,17 +29,33 @@ add_subdirectory(modules/vkmGL)
 set(SOURCES
   src/component/component.cpp
   src/entity/entity.cpp
+
+  src/thread/thread_pool.cpp
+
+  src/event/event.cpp
+  src/event/event_manager.cpp
+
+  src/window/window.cpp
+  src/window/input_handle.cpp
+  src/window/window_manager.cpp
 )
 
 set(HEADERS
   src/component/
   src/entity/
+
+  src/thread/
+
+  src/event/
+  src/window/
+
   utils/
 )
 
 add_executable(${PROJECT_NAME}
   ${SOURCES}
 
+  #test/ecs_test.cpp
   main.cpp
 )
 
