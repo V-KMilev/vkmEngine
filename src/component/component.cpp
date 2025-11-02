@@ -9,11 +9,11 @@ Component::Component(
 ) : m_id(id),
     m_type(type)
 {
-    LOG_DEBUG("Constructed Component #%d type: '%s'", m_id, enumToString(m_type));
+    LOG_TRACE("Constructed Component #%d type: '%s'", m_id, enumToString(m_type));
 }
 
 Component::~Component() {
-    LOG_DEBUG("Destructed Component #%d type: '%s'", m_id, enumToString(m_type));
+    LOG_TRACE("Destructed Component #%d type: '%s'", m_id, enumToString(m_type));
 }
 
 uint32_t Component::getID() const { return m_id; }

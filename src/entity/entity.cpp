@@ -14,7 +14,7 @@ Entity::Entity(
     m_components.reserve(1);
     m_components.push_back(std::move(component));
 
-    LOG_DEBUG("Constructed Entity #%d tpye: '%s'", m_id, enumToString(m_type));
+    LOG_TRACE("Constructed Entity #%d tpye: '%s'", m_id, enumToString(m_type));
 }
 
 Entity::Entity(
@@ -24,12 +24,12 @@ Entity::Entity(
 ) : m_id(id),
     m_type(type),
     m_components(std::move(components)) {
-    LOG_DEBUG("Constructed Entity #%d type: '%s'", m_id, enumToString(m_type));
+    LOG_TRACE("Constructed Entity #%d type: '%s'", m_id, enumToString(m_type));
 }
 
 Entity::~Entity() {
     m_components.clear();
-    LOG_DEBUG("Destructed Entity #%d type: '%s'", m_id, enumToString(m_type));
+    LOG_TRACE("Destructed Entity #%d type: '%s'", m_id, enumToString(m_type));
 }
 
 uint32_t Entity::getID() const { return m_id; }
