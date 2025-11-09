@@ -25,4 +25,3 @@ void EventListener::execute() const {
 uint32_t EventListener::getID() const {
     return m_id;
 }
-
