@@ -8,7 +8,7 @@ struct GLFWmonitor;
 class Window;
 class InputHandle;
 
-enum WindowMode {
+enum class WindowMode {
     NONE       = 0,
     FULLSCREEN = 1,
     WINDOWED   = 2
@@ -20,7 +20,7 @@ enum WindowMode {
  * @param type The EntityType to convert.
  * @return const char* String representation of the EntityType.
  */
-inline const char* toString(WindowMode type) {
+constexpr const char* toString(WindowMode type) {
     switch (type) {
         case WindowMode::NONE:       return "NONE";
         case WindowMode::FULLSCREEN: return "FULLSCREEN";
