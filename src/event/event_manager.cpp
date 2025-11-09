@@ -1,5 +1,7 @@
 #include "event_manager.h"
 
+#include <algorithm>
+
 #include "logger.h"
 #include "print_helper.h"
 #include "event_listener.h"
@@ -14,7 +16,7 @@ EventManager& EventManager::get() {
 }
 
 void EventManager::push(Event && event) {
-    std::lock_guard<std::mutex> lock(m_eventQueueMutex);
+    std::lock_guard<std::mutex> lock(m_eventMutex);
 
     if (event.getPriority() == EventPriority::IMMEDIATE) {
         m_threadPool.push([this, event = std::move(event)] {
@@ -23,51 +25,47 @@ void EventManager::push(Event && event) {
         return;
     }
 
-    m_queue.emplace(std::move(event));
+    m_events.emplace(std::move(event));
 }
 
 void EventManager::execute() {
-    static std::priority_queue<Event> localQueue;
+    std::priority_queue<Event> localEvents;
 
     // Swap queues to avoid long locks
     {
-        std::lock_guard<std::mutex> lock(m_eventQueueMutex);
-        std::swap(localQueue, m_queue);
+        std::lock_guard<std::mutex> lock(m_eventMutex);
+        std::swap(localEvents, m_events);
     }
 
-    if (localQueue.empty()) {
+    if (localEvents.empty()) {
         return;
     }
 
-    while (!localQueue.empty()) {
-        localQueue.top().execute();
-        localQueue.pop();
+    while (!localEvents.empty()) {
+        localEvents.top().execute();
+        localEvents.pop();
     }
 }
 
 void EventManager::executeAsync() {
-    static std::priority_queue<Event> localQueue;
+    std::priority_queue<Event> localEvents;
 
     // Swap queues to avoid long locks
     {
-        std::lock_guard<std::mutex> lock(m_eventQueueMutex);
-        std::swap(localQueue, m_queue);
+        std::lock_guard<std::mutex> lock(m_eventMutex);
+        std::swap(localEvents, m_events);
     }
 
-    if (localQueue.empty()) {
+    if (localEvents.empty()) {
         return;
     }
 
-    while (!localQueue.empty()) {
-        // priority_queue::top() returns const_reference, so we can't move directly.
-        // const_cast to allow move (safe because we pop immediately)
-        Event event = std::move(const_cast<Event&>(localQueue.top()));
-        localQueue.pop();
-
-        // Capture event by value (it's been moved) so it lives independently in the thread
-        m_threadPool.push([event = std::move(event)]() {
+    while (!localEvents.empty()) {
+        // Must move event out for async execution (lives in thread)
+        m_threadPool.push([event = std::move(const_cast<Event&>(localEvents.top()))]() {
             event.execute();
         });
+        localEvents.pop();
     }
 }
 
@@ -82,9 +80,8 @@ uint32_t EventManager::subscribe(Event&& event) {
         return 0;
     }
 
-    // Generate unique listener ID
-    static uint32_t id = 0;
-    id++;
+    // Generate unique listener ID (thread-safe with lock held)
+    uint32_t id = m_nextListenerId++;
 
     // Store ID -> name mapping for fast unsubscribe
     m_listenerIdToName[id] = eventName;
@@ -166,16 +163,19 @@ void EventManager::emit(const std::string& eventName) {
         return;
     }
 
-    LOG_VERBOSE("[EVENT MANAGER] Emitting event '%s' to %zu listener(s)", eventName.c_str(), it->second.size());
-
-    // Sort listeners by priority (highest first)
-    // Uses EventListener::operator< (reverse for descending order)
     std::vector<EventListener>& listeners = it->second;
-    std::sort(listeners.begin(), listeners.end(), 
-        [](const EventListener& a, const EventListener& b) {
-            return b < a;  // Reverse comparison for descending priority
-        });
 
+    LOG_VERBOSE("[EVENT MANAGER] Emitting event '%s' to %zu listener(s)", 
+                eventName.c_str(), listeners.size());
+
+    if (listeners.size() > 1) {
+        std::sort(listeners.begin(), listeners.end(), 
+            [](const EventListener& a, const EventListener& b) {
+                return b < a;  // Descending priority (uses operator<)
+            });
+    }
+
+    // Execute all listeners sequentially in priority order
     for (const EventListener& listener : listeners) {
         listener.execute();
     }
@@ -194,17 +194,19 @@ void EventManager::emitAsync(const std::string& eventName) {
             return;
         }
 
-        LOG_VERBOSE("[EVENT MANAGER] Emitting async event '%s' to %zu listener(s)", eventName.c_str(), it->second.size());
-
-        // Sort by priority (highest first)
-        // Uses EventListener::operator< (reverse for descending order)
         std::vector<EventListener>& listeners = it->second;
-        std::sort(listeners.begin(), listeners.end(), 
-            [](const EventListener& a, const EventListener& b) {
-                return b < a;  // Reverse comparison for descending priority
-            });
 
-        // Collect pointers
+        LOG_VERBOSE("[EVENT MANAGER] Emitting async event '%s' to %zu listener(s)", 
+                    eventName.c_str(), listeners.size());
+
+        if (listeners.size() > 1) {
+            std::sort(listeners.begin(), listeners.end(), 
+                [](const EventListener& a, const EventListener& b) {
+                    return b < a;  // Descending priority (uses operator<)
+                });
+        }
+
+        // Collect pointers for async execution
         listenersToCall.reserve(listeners.size());
         for (const EventListener& listener : listeners) {
             listenersToCall.push_back(&listener);
