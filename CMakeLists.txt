@@ -34,6 +34,7 @@ set(SOURCES
 
   src/event/event.cpp
   src/event/event_manager.cpp
+  src/event/event_listener.cpp
 
   src/window/window.cpp
   src/window/input_handle.cpp

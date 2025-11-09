@@ -12,7 +12,7 @@ enum class EventPriority : int {
     IMMEDIATE = 4
 };
 
-inline const char* toString(EventPriority priority) {
+constexpr const char* toString(EventPriority priority) {
     switch (priority) {
         case EventPriority::LOW:       return "LOW";
         case EventPriority::MEDIUM:    return "MEDIUM";
@@ -34,22 +34,24 @@ class Event {
         Event& operator=(Event && other) noexcept = default;
 
         Event(
-            EventPriority priority,
             EventCallback callback,
+            EventPriority priority,
             const std::string& name
         );
-
+        
         bool operator<(const Event& other) const {
             return static_cast<int>(m_priority) < static_cast<int>(other.m_priority);
         }
 
     public:
-        EventPriority getPriority() const;
+        void execute() const;
+
         const EventCallback& getCallback() const;
+        EventPriority getPriority() const;
         const std::string& getName() const;
 
     private:
-        EventPriority m_priority;
         EventCallback m_callback;
+        EventPriority m_priority;
         std::string m_name;
 };
