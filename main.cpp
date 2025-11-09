@@ -11,6 +11,7 @@
 
 #include "event_manager.h"
 #include "window_manager.h"
+// #include "input_handle.h"
 
 #include "glfw_include.h"
 
@@ -27,12 +28,18 @@ int main() {
     windowManager.createWindow("VKM Engine");
     windowManager.updateMode(WindowMode::WINDOWED);
 
-    while (!windowManager.shouldClose()) {
+    try {
+        while (!windowManager.shouldClose()) {
 
-        eventManager.execute();
+            eventManager.executeAsync();
 
-        if (!windowManager.updateInput()) break;
-        if (!windowManager.swapBuffers()) break;
+            if (!windowManager.updateInput()) break;
+            if (!windowManager.swapBuffers()) break;
+        }
+    } catch (const std::exception& e) {
+        LOG_FATAL("Exception: %s", e.what());
+    } catch (...) {
+        LOG_FATAL("Unknown exception");
     }
 
     return 0;

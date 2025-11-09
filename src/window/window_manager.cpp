@@ -93,7 +93,7 @@ bool WindowManager::updateMode(WindowMode windowMode) {
             monitor = nullptr;
             break;
         default:
-            LOG_ERROR("Invalid window mode: %d", enumToString(windowMode));
+            LOG_ERROR("Invalid window mode: %s", enumToString(windowMode));
             return false;
     }
 

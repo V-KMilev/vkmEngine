@@ -22,7 +22,7 @@ enum class EntityType {
  * @param type The EntityType to convert.
  * @return const char* String representation of the EntityType.
  */
-inline const char* toString(EntityType type) {
+constexpr const char* toString(EntityType type) {
     switch (type) {
         case EntityType::NONE: return "NONE";
         default: return "UNKNOWN";

@@ -15,7 +15,7 @@ enum class ComponentType {
  * @param type The ComponentType value to convert.
  * @return const char* String representation of the ComponentType.
  */
-inline const char* toString(ComponentType type) {
+constexpr const char* toString(ComponentType type) {
     switch (type) {
         case ComponentType::NONE: return "NONE";
         default: return "UNKNOWN";
