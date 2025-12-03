@@ -25,7 +25,8 @@ class Window {
         Window& operator=(Window && other) = delete;
 
         Window(
-            const std::string& title
+            const std::string& title,
+            int swapInterval = 0
         );
 
     public:
@@ -35,11 +36,14 @@ class Window {
 
         GLFWwindow* getWindowContext() const;
 
+        void setSwapInterval(int interval);
+
     private:
         void cleanup();
 
     private:
         std::string m_title;
+        int m_swapInterval;
 
         GLFWwindow* m_window;
 };

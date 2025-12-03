@@ -11,70 +11,80 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Define Git metadata
+# Git metadata
 include(cmake/git_metadata.cmake)
 
-# Define project
-project(${PROJECT_NAME} VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH} LANGUAGES CXX)
+project(
+  ${PROJECT_NAME}
+  VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}
+  LANGUAGES CXX
+)
 
-
-if (TARGET vkmLog)
-  message(STATUS "Target vkmLog exists, will link to it.")
-else()
-  add_subdirectory(modules/vkmLog)
+# Dependencies
+if(NOT TARGET vkmLog)
+    add_subdirectory(modules/vkmLog)
 endif()
 
-add_subdirectory(modules/vkmGL)
+if(NOT TARGET vkmGL)
+    add_subdirectory(modules/vkmGL)
+endif()
 
-set(SOURCES
-  src/component/component.cpp
-  src/entity/entity.cpp
-
-  src/thread/thread_pool.cpp
-
-  src/event/event.cpp
-  src/event/event_manager.cpp
-  src/event/event_listener.cpp
-
-  src/window/window.cpp
-  src/window/input_handle.cpp
-  src/window/window_manager.cpp
-)
-
-set(HEADERS
-  src/component/
-  src/entity/
-
-  src/thread/
-
-  src/event/
-  src/window/
-
-  utils/
-)
-
+# Main executable
 add_executable(${PROJECT_NAME}
-  ${SOURCES}
+    main.cpp
 
-  #test/ecs_test.cpp
-  main.cpp
+    src/component/component.cpp
+    src/entity/entity.cpp
+
+    src/thread/thread_pool.cpp
+
+    src/event/event.cpp
+    src/event/event_manager.cpp
+    src/event/event_listener.cpp
+
+    src/statistics/statistics.cpp
+    src/statistics/trackers/frame_tracker.cpp
+    src/statistics/trackers/call_tracker.cpp
+
+    src/window/window.cpp
+    src/window/frame_limiter.cpp
+    src/window/input_handle.cpp
+    src/window/window_manager.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-  ${HEADERS}
+    src/component
+    src/entity
+    src/thread
+    src/statistics
+    src/statistics/trackers
+    src/event
+    src/window
+    utils
 )
+
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
-  vkmLog
-  vkmGL
+    vkmLog
+    vkmGL
 )
 
-target_compile_definitions(${PROJECT_NAME} PRIVATE APP_VERSION=\"${PROJECT_VERSION}\")
-target_compile_definitions(${PROJECT_NAME} PRIVATE APP_NAME=\"${PROJECT_NAME}\")
-target_compile_definitions(${PROJECT_NAME} PRIVATE APP_VERSION_MAJOR=\"${PROJECT_VERSION_MAJOR}\")
-target_compile_definitions(${PROJECT_NAME} PRIVATE APP_VERSION_MINOR=\"${PROJECT_VERSION_MINOR}\")
-target_compile_definitions(${PROJECT_NAME} PRIVATE APP_VERSION_PATCH=\"${PROJECT_VERSION_PATCH}\")
-target_compile_definitions(${PROJECT_NAME} PRIVATE APP_BRANCH=\"${PROJECT_BRANCH}\")
-target_compile_definitions(${PROJECT_NAME} PRIVATE APP_COMMIT_HASH=\"${PROJECT_COMMIT_HASH}\")
-target_compile_definitions(${PROJECT_NAME} PRIVATE APP_BUILD_DATE=\"${PROJECT_BUILD_DATE}\")
-target_compile_definitions(${PROJECT_NAME} PRIVATE APP_ROOT_DIR=\"${PROJECT_ROOT_DIR}\")
+# Compiler warnings
+target_compile_options(${PROJECT_NAME} PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4>
+)
+
+# Build info definitions
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    APP_VERSION="${PROJECT_VERSION}"
+    APP_NAME="${PROJECT_NAME}"
+    APP_VERSION_MAJOR="${PROJECT_VERSION_MAJOR}"
+    APP_VERSION_MINOR="${PROJECT_VERSION_MINOR}"
+    APP_VERSION_PATCH="${PROJECT_VERSION_PATCH}"
+    APP_BRANCH="${PROJECT_BRANCH}"
+    APP_COMMIT_HASH="${PROJECT_COMMIT_HASH}"
+    APP_BUILD_DATE="${PROJECT_BUILD_DATE}"
+    APP_ROOT_DIR="${PROJECT_ROOT_DIR}"
+)

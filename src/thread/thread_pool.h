@@ -23,11 +23,9 @@ class ThreadPool {
         ThreadPool() = delete;
         ~ThreadPool();
 
-        // Disable copy operations
         ThreadPool(const ThreadPool& other) = delete;
         ThreadPool& operator=(const ThreadPool& other) = delete;
 
-        // Disable move operations
         ThreadPool(ThreadPool&& other) = delete;
         ThreadPool& operator=(ThreadPool&& other) = delete;
 
