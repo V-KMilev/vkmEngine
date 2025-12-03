@@ -15,9 +15,11 @@ Window::~Window() {
 }
 
 Window::Window(
-    const std::string& title
+    const std::string& title,
+    int swapInterval
 ) : m_title(title),
-    m_window(nullptr)
+    m_window(nullptr),
+    m_swapInterval(swapInterval)
 {
     if (!glfwInit()) {
         LOG_ERROR("Failed to initialize GLFW");
@@ -43,6 +45,14 @@ Window::Window(
         LOG_ERROR("Failed to create window");
         throw std::runtime_error("Failed to create window");
     }
+
+    // Make the context current (required for glfwSwapInterval)
+    glfwMakeContextCurrent(m_window);
+
+    // 0 = Uncapped framerate
+    // 1 = VSync enabled
+    glfwSwapInterval(m_swapInterval);
+
     LOG_TRACE("Constructed Window '%s'", m_title.c_str());
 }
 
@@ -79,6 +89,19 @@ int Window::getRefreshRate() const {
 
 GLFWwindow* Window::getWindowContext() const {
     return m_window;
+}
+
+void Window::setSwapInterval(int interval) {
+    if (!m_window) {
+        LOG_ERROR("Cannot set swap interval: window is not initialized");
+        return;
+    }
+
+    glfwMakeContextCurrent(m_window);
+    // 0 = Uncapped framerate
+    // 1 = VSync enabled
+    glfwSwapInterval(interval);
+    m_swapInterval = interval;
 }
 
 void Window::cleanup() {
