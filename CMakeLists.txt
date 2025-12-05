@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.25.0)
 
 # Define project version
 set(PROJECT_NAME engine)
@@ -17,7 +17,7 @@ include(cmake/git_metadata.cmake)
 project(
   ${PROJECT_NAME}
   VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}
-  LANGUAGES CXX
+  LANGUAGES C CXX
 )
 
 # Dependencies
@@ -33,8 +33,13 @@ endif()
 add_executable(${PROJECT_NAME}
     main.cpp
 
-    src/component/component.cpp
-    src/entity/entity.cpp
+    src/ecs/component.cpp
+    src/ecs/entity.cpp
+
+    src/ecs/components/mesh.cpp
+
+    src/render/cpu/cpu_mesh.cpp
+    src/render/gpu/gpu_mesh.cpp
 
     src/thread/thread_pool.cpp
 
@@ -53,13 +58,21 @@ add_executable(${PROJECT_NAME}
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-    src/component
-    src/entity
-    src/thread
+    src/ecs
+    src/ecs/components
+    src/ecs/entities
+
+    src/render
+    src/render/cpu
+    src/render/gpu
+
     src/statistics
     src/statistics/trackers
+
+    src/thread
     src/event
     src/window
+
     utils
 )
 
@@ -70,11 +83,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     vkmGL
 )
 
-# Compiler warnings
-target_compile_options(${PROJECT_NAME} PRIVATE
-    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
-)
+# target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
 
 # Build info definitions
 target_compile_definitions(${PROJECT_NAME} PRIVATE
