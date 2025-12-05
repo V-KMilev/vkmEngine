@@ -7,6 +7,8 @@
  */
 enum class ComponentType {
     NONE = 0,
+    Mesh = 1,
+    Material = 2,
 };
 
 /**
@@ -18,6 +20,8 @@ enum class ComponentType {
 constexpr const char* toString(ComponentType type) {
     switch (type) {
         case ComponentType::NONE: return "NONE";
+        case ComponentType::Mesh: return "Mesh";
+        case ComponentType::Material: return "Material";
         default: return "UNKNOWN";
     }
 }
