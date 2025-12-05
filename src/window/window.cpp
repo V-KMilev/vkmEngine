@@ -49,6 +49,14 @@ Window::Window(
     // Make the context current (required for glfwSwapInterval)
     glfwMakeContextCurrent(m_window);
 
+    // Initialize GLAD - must be done after making context current
+    if (!gladLoadGL(glfwGetProcAddress)) {
+        LOG_ERROR("Failed to initialize GLAD");
+        throw std::runtime_error("Failed to initialize GLAD");
+    }
+
+    LOG_TRACE("OpenGL %s initialized", glGetString(GL_VERSION));
+
     // 0 = Uncapped framerate
     // 1 = VSync enabled
     glfwSwapInterval(m_swapInterval);
