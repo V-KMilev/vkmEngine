@@ -37,9 +37,15 @@ add_executable(${PROJECT_NAME}
     src/ecs/entity.cpp
 
     src/ecs/components/mesh.cpp
+    src/ecs/components/camera.cpp
+    src/ecs/components/transform.cpp
 
     src/render/cpu/cpu_mesh.cpp
+    src/render/cpu/cpu_transform.cpp
+    src/render/cpu/cpu_camera.cpp
     src/render/gpu/gpu_mesh.cpp
+    src/render/gpu/gpu_transform.cpp
+    src/render/gpu/gpu_camera.cpp
 
     src/thread/thread_pool.cpp
 
@@ -75,8 +81,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
     utils
 )
-
-target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     vkmLog

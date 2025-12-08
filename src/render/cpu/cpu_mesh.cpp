@@ -28,10 +28,10 @@ bool CPUMesh::loadFromFile(const std::string& filePath) {
         {glm::vec3(-0.5f,  0.5f,  0.5f), glm::vec3(0.0f,  0.0f,  1.0f), glm::vec2(0.0f, 1.0f)}, // 3
 
         // Back face
-        {glm::vec3(-0.5f, -0.5f, -0.5f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec2(1.0f, 0.0f)}, // 4
-        {glm::vec3( 0.5f, -0.5f, -0.5f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec2(0.0f, 0.0f)}, // 5
-        {glm::vec3( 0.5f,  0.5f, -0.5f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec2(0.0f, 1.0f)}, // 6
-        {glm::vec3(-0.5f,  0.5f, -0.5f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec2(1.0f, 1.0f)}, // 7
+        {glm::vec3( 0.5f, -0.5f, -0.5f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec2(0.0f, 0.0f)}, // 4
+        {glm::vec3(-0.5f, -0.5f, -0.5f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec2(1.0f, 0.0f)}, // 5
+        {glm::vec3(-0.5f,  0.5f, -0.5f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec2(1.0f, 1.0f)}, // 6
+        {glm::vec3( 0.5f,  0.5f, -0.5f), glm::vec3(0.0f,  0.0f, -1.0f), glm::vec2(0.0f, 1.0f)}, // 7
 
         // Left face
         {glm::vec3(-0.5f, -0.5f, -0.5f), glm::vec3(-1.0f,  0.0f, 0.0f), glm::vec2(0.0f, 0.0f)}, // 8
@@ -77,9 +77,15 @@ bool CPUMesh::loadFromFile(const std::string& filePath) {
     return true;
 }
 
-void CPUMesh::setVertices(const std::vector<Vertex>& vertices) { m_vertices = vertices; }
-void CPUMesh::setIndices(const std::vector<uint32_t>& indices) { m_indices = indices; }
-
-const std::vector<Vertex>& CPUMesh::getVertices() const { return m_vertices; }
-const std::vector<uint32_t>& CPUMesh::getIndices() const { return m_indices; }
+void CPUMesh::setData(
+    const std::vector<Vertex>& vertices,
+    const std::vector<uint32_t>& indices
+) {
+    if (!vertices.empty()) {
+        m_vertices = vertices;
+    }
+    if (!indices.empty()) {
+        m_indices = indices;
+    }
+}
 } // namespace Engine
