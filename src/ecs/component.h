@@ -7,8 +7,10 @@
  */
 enum class ComponentType {
     NONE = 0,
-    Mesh = 1,
-    Material = 2,
+    Camera = 1,
+    Mesh = 2,
+    Material = 3,
+    Transform = 4,
 };
 
 /**

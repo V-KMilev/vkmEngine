@@ -18,8 +18,8 @@ Window::Window(
     const std::string& title,
     int swapInterval
 ) : m_title(title),
-    m_window(nullptr),
-    m_swapInterval(swapInterval)
+    m_swapInterval(swapInterval),
+    m_window(nullptr)
 {
     if (!glfwInit()) {
         LOG_ERROR("Failed to initialize GLFW");
