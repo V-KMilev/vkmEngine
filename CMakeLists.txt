@@ -44,9 +44,14 @@ add_executable(${PROJECT_NAME}
 
     src/render/backend/gl/gl_mesh.cpp
     src/render/backend/gl/gl_view.cpp
-    src/render/backend/gl/gl_render.cpp
+    src/render/backend/gl/gl_backend.cpp
 
     src/render/view/render_view_builder.cpp
+
+    src/render/pipeline/pass/gl_forward_pass.cpp
+    src/render/pipeline/render_pipeline.cpp
+
+    src/render/render_manager.cpp
     src/render/scene.cpp
 
     src/thread/thread_pool.cpp
@@ -78,6 +83,9 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     src/render/backend/gl/passes
     src/render/backend/cpu
     src/render/backend/optix
+
+    src/render/pipeline
+    src/render/pipeline/pass
 
     src/statistics
     src/statistics/trackers

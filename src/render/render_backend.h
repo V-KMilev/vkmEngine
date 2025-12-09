@@ -20,6 +20,22 @@ enum class RenderBackendType {
 };
 
 /**
+ * @brief Convert a ComponentType enum value to its string representation.
+ *
+ * @param type The RenderBackendType value to convert.
+ * @return const char* String representation of the RenderBackendType.
+ */
+ constexpr const char* toString(RenderBackendType type) {
+    switch (type) {
+        case RenderBackendType::NONE:    return "NONE";
+        case RenderBackendType::OpenGL:  return "OpenGL";
+        case RenderBackendType::Optix:   return "Optix";
+        case RenderBackendType::CPU:     return "CPU";
+        default: return "UNKNOWN";
+    }
+}
+
+/**
  * @brief Abstract base class for all rendering backends.
  *
  * Provides the interface all concrete rendering backends (OpenGL, Optix, CPU, etc.)
@@ -43,21 +59,10 @@ class RenderBackend {
 
     public:
         /**
-         * @brief Initialize rendering resources and backend state.
+         * @brief Get the type of the backend.
+         * @return The RenderBackendType of the backend.
          */
-        virtual void start() = 0;
-
-        /**
-         * @brief Clean up and release rendering resources.
-         */
-        virtual void stop() = 0;
-
-        // TODO: Implement these methods
-        // virtual void start() = 0;
-        // virtual void stop() = 0;
-
-        // virtual void pause() = 0;
-        // virtual void resume() = 0;
+        RenderBackendType getType() const { return m_type; }
 
         /**
          * @brief Resize the backend's render targets or framebuffers.
@@ -65,20 +70,6 @@ class RenderBackend {
          * @param height New height in pixels.
          */
         virtual void resize(uint32_t width, uint32_t height) = 0;
-
-        /**
-         * @brief Render a frame using the provided scene view and resources.
-         * @param renderView Structured data describing camera and instances in the scene.
-         * @param resourceManager Access to asset resources (meshes, materials, etc.).
-         * @param width Current viewport width.
-         * @param height Current viewport height.
-         */
-        virtual void render(
-            const RenderView& renderView,
-            const ResourceManager& resourceManager,
-            uint32_t width,
-            uint32_t height
-        ) = 0;
 
     protected:
         RenderBackendType m_type;
