@@ -29,15 +29,9 @@ class RenderViewBuilder {
         /**
          * @brief Build a RenderView from a given Scene, along with view space dimensions for perspective projection calculations.
          * @param scene The Scene to build the RenderView from.
-         * @param width The width of the viewport.
-         * @param height The height of the viewport.
          * @return The constructed RenderView.
          */
-        static RenderView build(
-            const Scene& scene,
-            uint32_t width,
-            uint32_t height
-        );
+        static RenderView build(const Scene& scene);
 };
 
 } // namespace Engine

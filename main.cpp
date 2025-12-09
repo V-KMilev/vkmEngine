@@ -26,12 +26,14 @@
 #include "camera.h"
 #include "mesh.h"
 
-#include "render_view_builder.h"
+#include "render_manager.h"
+
+#include "gl_backend.h"
+#include "gl_forward_pass.h"
+
 #include "resource_manager.h"
 #include "transform.h"
 #include "scene.h"
-
-#include "gl_render.h"
 
 struct SceneHandles {
     std::shared_ptr<Engine::Transform> cube1Transform;
@@ -103,7 +105,7 @@ static SceneHandles generateBasicScene(Engine::ResourceManager& resources, Engin
     const Engine::MeshHandle cubeMesh = resources.addMesh(generateCubeMeshAsset());
     const Engine::MaterialHandle dummyMaterial = resources.addMaterial(Engine::MaterialAsset{});
 
-    auto cameraEntity = scene.createEntity(EntityType::NONE);
+    auto& cameraEntity = scene.createEntity(EntityType::NONE);
     std::shared_ptr<Engine::Transform> cameraTransform;
     std::shared_ptr<Engine::Transform> cube1Transform;
     {
@@ -111,28 +113,28 @@ static SceneHandles generateBasicScene(Engine::ResourceManager& resources, Engin
         auto transformComponent = scene.createComponent<Engine::Transform>(glm::vec3(0.0f, 4.0f, -7.0f));
         cameraTransform = transformComponent;
 
-        cameraEntity->addComponent(cameraComponent);
-        cameraEntity->addComponent(cameraTransform);
+        cameraEntity.addComponent(cameraComponent);
+        cameraEntity.addComponent(cameraTransform);
     }
 
-    auto cube1 = scene.createEntity(EntityType::NONE);
+    auto& cube1 = scene.createEntity(EntityType::NONE);
     {
         auto meshComponent      = scene.createComponent<Engine::Mesh>(cubeMesh, dummyMaterial, true, true);
         auto transformComponent = scene.createComponent<Engine::Transform>(glm::vec3(0.0f, 2.0f, 0.0f));
         cube1Transform = transformComponent;
 
-        cube1->addComponent(meshComponent);
-        cube1->addComponent(transformComponent);
+        cube1.addComponent(meshComponent);
+        cube1.addComponent(transformComponent);
     }
 
-    auto cube2 = scene.createEntity(EntityType::NONE);
+    auto& cube2 = scene.createEntity(EntityType::NONE);
     {
         auto meshComponent      = scene.createComponent<Engine::Mesh>(cubeMesh, dummyMaterial, true, true);
         auto transformComponent = scene.createComponent<Engine::Transform>(glm::vec3(0.0f, -1.0f, 0.0f));
         transformComponent->setScale(glm::vec3(5.0f, 0.5f, 5.0f));
 
-        cube2->addComponent(meshComponent);
-        cube2->addComponent(transformComponent);
+        cube2.addComponent(meshComponent);
+        cube2.addComponent(transformComponent);
     }
 
     return SceneHandles{
@@ -164,10 +166,14 @@ int main() {
         glContext.setDefaultState();
         glContext.setFaceCulling(false);
 
-        Core::Shader shader("../shaders/basic");
-        Engine::GLRender glRenderer(glContext, shader);
-
+        Engine::RenderManager renderer;
         Engine::ResourceManager resources;
+
+        Core::Shader shader("../shaders/basic");
+
+        renderer.setBackend(std::make_unique<Engine::GLBackend>(glContext));
+        renderer.addPass(std::make_unique<Engine::GLForwardPass>(shader));
+
         Engine::Scene scene;
 
         auto handles = generateBasicScene(resources, scene);
@@ -198,12 +204,7 @@ int main() {
                 handles.cameraTransform->setRotation(glm::quatLookAt(handles.cameraTransform->getPosition(), {0.0f, 1.0f, 0.0f}));
             }
 
-            glRenderer.render(
-                Engine::RenderViewBuilder::build(scene, viewportWidth, viewportHeight),
-                resources,
-                viewportWidth,
-                viewportHeight
-            );
+            renderer.renderFrame(scene, resources, viewportWidth, viewportHeight);
 
             if (!windowManager.swapBuffers()) break;
 

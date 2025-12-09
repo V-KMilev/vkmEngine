@@ -21,25 +21,20 @@ static glm::mat4 makeOrthographic(float halfHeight, float aspect, float zNear, f
     return glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, zNear, zFar);
 }
 
-RenderView RenderViewBuilder::build(const Scene& scene, uint32_t width, uint32_t height) {
+RenderView RenderViewBuilder::build(const Scene& scene) {
     RenderView renderView;
 
-    const float viewportAspect = (height > 0) ? (static_cast<float>(width) / static_cast<float>(height)) : 1.0f;
 
     bool foundCamera = false;
 
     // Find the active camera
     for (const auto& entity : scene.getEntities()) {
-        if (!entity) {
-            continue;
-        }
-
-        auto camera = Scene::findComponentAs<Camera>(*entity, ComponentType::Camera);
+        auto camera = Scene::findComponentAs<Camera>(entity, ComponentType::Camera);
         if (!camera || !camera->isActive()) {
             continue;
         }
 
-        auto transform = Scene::findComponentAs<Transform>(*entity, ComponentType::Transform);
+        auto transform = Scene::findComponentAs<Transform>(entity, ComponentType::Transform);
         if (!transform) {
             continue;
         }
@@ -50,20 +45,18 @@ RenderView RenderViewBuilder::build(const Scene& scene, uint32_t width, uint32_t
 
         renderView.camera.view = glm::lookAt(renderView.camera.position, renderView.camera.position + forward, up);
 
-        // Use camera aspect if set (>0), otherwise use viewport aspect
-        const float aspect = (camera->getAspect() > 0.0f) ? camera->getAspect() : viewportAspect;
-
         if (camera->getProjectionType() == ProjectionType::Perspective) {
             renderView.camera.projection = makePerspective(
                 camera->getFovY(),
-                aspect, camera->getNearPlane(),
+                camera->getAspect(),
+                camera->getNearPlane(),
                 camera->getFarPlane()
             );
         } else {
             // Treat OrthoHeight as HALF-height (matches common usage)
             renderView.camera.projection = makeOrthographic(
                 camera->getOrthoHeight(),
-                aspect,
+                camera->getAspect(),
                 camera->getNearPlane(),
                 camera->getFarPlane()
             );
@@ -84,16 +77,12 @@ RenderView RenderViewBuilder::build(const Scene& scene, uint32_t width, uint32_t
     renderView.instances.reserve(scene.getEntities().size());
 
     for (const auto& entity : scene.getEntities()) {
-        if (!entity) {
-            continue;
-        }
-
-        auto mesh = Scene::findComponentAs<Mesh>(*entity, ComponentType::Mesh);
+        auto mesh = Scene::findComponentAs<Mesh>(entity, ComponentType::Mesh);
         if (!mesh) {
             continue;
         }
 
-        auto transform = Scene::findComponentAs<Transform>(*entity, ComponentType::Transform);
+        auto transform = Scene::findComponentAs<Transform>(entity, ComponentType::Transform);
         if (!transform) {
             continue;
         }

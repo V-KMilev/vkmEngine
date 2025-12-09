@@ -21,7 +21,7 @@ namespace Engine {
  * GLMesh maintains the GPU-side resources for rendering a mesh.
  * It prohibits copy/move semantics to ensure unique OpenGL state ownership.
  */
-class GLMesh final {
+class GLMesh {
     public:
         GLMesh() = delete;
         ~GLMesh();
