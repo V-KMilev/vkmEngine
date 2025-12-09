@@ -7,6 +7,15 @@
 
 Entity::Entity(
     uint32_t id,
+    EntityType type
+) : m_id(id),
+    m_type(type),
+    m_components() {
+    LOG_TRACE("Constructed Entity #%d type: '%s'", m_id, enumToString(m_type));
+}
+
+Entity::Entity(
+    uint32_t id,
     EntityType type,
     std::shared_ptr<Component> && component
 ) : m_id(id),

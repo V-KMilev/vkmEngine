@@ -1,43 +1,82 @@
 #pragma once
 
-#include <memory>
 #include <cstdint>
 
 #include "component.h"
 
-namespace Engine {
-    class CPUMesh;
-    class CPUMaterial;
-}
+#include "resource_handle.h"
 
 namespace Engine {
 
-class Mesh : public Component {
+/**
+ * @brief Component representing a renderable mesh (geometry + material) in the world.
+ *
+ * Holds references to mesh and material data, as well as flags for visibility and shadow casting.
+ */
+class Mesh final : public Component {
     public:
         Mesh() = delete;
         ~Mesh() override = default;
 
-        Mesh(const Mesh& other) = delete;
-        Mesh& operator=(const Mesh& other) = delete;
-
-        Mesh(Mesh&& other) = delete;
-        Mesh& operator=(Mesh&& other) = delete;
-
-        Mesh(uint32_t id);
+        /**
+         * @brief Construct a Mesh component.
+         * @param id           Unique component identifier.
+         * @param mesh         Handle to mesh geometry.
+         * @param material     Handle to material.
+         * @param visible      Is mesh visible? (default: true)
+         * @param castsShadow  Does mesh cast shadows? (default: true)
+         */
+        Mesh(
+            uint32_t id,
+            MeshHandle mesh,
+            MaterialHandle material,
+            bool visible = true,
+            bool castsShadow = true
+        );
 
     public:
-        void setMesh(std::shared_ptr<CPUMesh> && mesh);
-        void setMaterial(std::shared_ptr<CPUMaterial> && material);
+        /**
+         * @brief Get the handle to the mesh geometry.
+         * @return Reference to MeshHandle.
+         */
+        const MeshHandle& getMesh() const { return m_mesh; }
 
-        std::shared_ptr<CPUMesh>& getMesh() { return m_mesh; }
-        const std::shared_ptr<CPUMesh>& getMesh() const { return m_mesh; }
+        /**
+         * @brief Get the handle to the material.
+         * @return Reference to MaterialHandle.
+         */
+        const MaterialHandle& getMaterial() const { return m_material; }
 
-        std::shared_ptr<CPUMaterial>& getMaterial() { return m_material; }
-        const std::shared_ptr<CPUMaterial>& getMaterial() const { return m_material; }
+        /**
+         * @brief Query if this mesh is visible.
+         * @return True if visible, false if hidden.
+         */
+        bool isVisible() const { return m_visible; }
+
+        /**
+         * @brief Query if this mesh casts shadows.
+         * @return True if casts shadows.
+         */
+        bool castsShadow() const { return m_castsShadow; }
+
+        /**
+         * @brief Set the visibility of the mesh.
+         * @param visible True to show, false to hide.
+         */
+        void setVisible(bool visible);
+
+        /**
+         * @brief Set whether the mesh casts shadows.
+         * @param castsShadow True if should cast shadows.
+         */
+        void setCastsShadow(bool castsShadow);
 
     private:
-        std::shared_ptr<CPUMesh> m_mesh;
-        std::shared_ptr<CPUMaterial> m_material;
+        MeshHandle m_mesh;
+        MaterialHandle m_material;
+
+        bool m_visible;
+        bool m_castsShadow;
 };
 
 } // namespace Engine

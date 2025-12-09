@@ -46,25 +46,36 @@ class Entity {
         /**
          * @brief Constructor for a single component.
          * @param id The unique identifier of the entity.
-         * @param type The type of the entity. Defaults to EntityType::NONE.
+         * @param type The type of the entity.
+         * @param component A component to add to the entity.
+         */
+         Entity(
+            uint32_t id,
+            EntityType type = EntityType::NONE
+        );
+
+        /**
+         * @brief Constructor for a single component.
+         * @param id The unique identifier of the entity.
+         * @param type The type of the entity.
          * @param component A component to add to the entity.
          */
         Entity(
             uint32_t id,
-            EntityType type = EntityType::NONE,
-            std::shared_ptr<Component> && component = nullptr
+            EntityType type,
+            std::shared_ptr<Component> && component
         );
 
         /**
          * @brief Constructor for multiple components.
          * @param id The unique identifier of the entity.
-         * @param type The type of the entity. Defaults to EntityType::NONE.
+         * @param type The type of the entity.
          * @param components List of components to add to the entity.
          */
         Entity(
             uint32_t id,
-            EntityType type = EntityType::NONE,
-            std::vector<std::shared_ptr<Component>> && components = {}
+            EntityType type,
+            std::vector<std::shared_ptr<Component>> && components
         );
 
     public:
