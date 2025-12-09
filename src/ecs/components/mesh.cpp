@@ -1,21 +1,20 @@
 #include "mesh.h"
 
-#include "gpu_mesh.h"
-
 namespace Engine {
 
 Mesh::Mesh(
-    uint32_t id
+    uint32_t id,
+    MeshHandle mesh,
+    MaterialHandle material,
+    bool visible,
+    bool castsShadow
 ) : Component(id, ComponentType::Mesh),
-    m_mesh(nullptr),
-    m_material(nullptr) {}
+    m_mesh(mesh),
+    m_material(material),
+    m_visible(visible),
+    m_castsShadow(castsShadow) {}
 
-void Mesh::setMesh(std::shared_ptr<CPUMesh> && mesh) {
-    m_mesh = std::move(mesh);
-}
-
-void Mesh::setMaterial(std::shared_ptr<CPUMaterial> && material) {
-    m_material = std::move(material);
-}
+void Mesh::setVisible(bool visible) { m_visible = visible; }
+void Mesh::setCastsShadow(bool castsShadow) { m_castsShadow = castsShadow; }
 
 } // namespace Engine

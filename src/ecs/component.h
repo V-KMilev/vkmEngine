@@ -6,10 +6,10 @@
  * @brief Enumeration representing possible types of component.
  */
 enum class ComponentType {
-    NONE = 0,
-    Camera = 1,
-    Mesh = 2,
-    Material = 3,
+    NONE      = 0,
+    Camera    = 1,
+    Mesh      = 2,
+    Material  = 3,
     Transform = 4,
 };
 
@@ -21,9 +21,11 @@ enum class ComponentType {
  */
 constexpr const char* toString(ComponentType type) {
     switch (type) {
-        case ComponentType::NONE: return "NONE";
-        case ComponentType::Mesh: return "Mesh";
-        case ComponentType::Material: return "Material";
+        case ComponentType::NONE:      return "NONE";
+        case ComponentType::Camera:    return "Camera";
+        case ComponentType::Mesh:      return "Mesh";
+        case ComponentType::Material:  return "Material";
+        case ComponentType::Transform: return "Transform";
         default: return "UNKNOWN";
     }
 }

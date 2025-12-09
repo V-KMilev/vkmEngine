@@ -40,12 +40,14 @@ add_executable(${PROJECT_NAME}
     src/ecs/components/camera.cpp
     src/ecs/components/transform.cpp
 
-    src/render/cpu/cpu_mesh.cpp
-    src/render/cpu/cpu_transform.cpp
-    src/render/cpu/cpu_camera.cpp
-    src/render/gpu/gpu_mesh.cpp
-    src/render/gpu/gpu_transform.cpp
-    src/render/gpu/gpu_camera.cpp
+    src/render/resource/resource_manager.cpp
+
+    src/render/backend/gl/gl_mesh.cpp
+    src/render/backend/gl/gl_view.cpp
+    src/render/backend/gl/gl_render.cpp
+
+    src/render/view/render_view_builder.cpp
+    src/render/scene.cpp
 
     src/thread/thread_pool.cpp
 
@@ -69,8 +71,13 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     src/ecs/entities
 
     src/render
-    src/render/cpu
-    src/render/gpu
+    src/render/view
+    src/render/resource
+    src/render/backend
+    src/render/backend/gl
+    src/render/backend/gl/passes
+    src/render/backend/cpu
+    src/render/backend/optix
 
     src/statistics
     src/statistics/trackers
