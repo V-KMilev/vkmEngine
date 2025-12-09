@@ -54,8 +54,7 @@ Window::Window(
         LOG_ERROR("Failed to initialize GLAD");
         throw std::runtime_error("Failed to initialize GLAD");
     }
-
-    LOG_TRACE("OpenGL %s initialized", glGetString(GL_VERSION));
+    LOG_VERBOSE("OpenGL %s initialized", glGetString(GL_VERSION));
 
     // 0 = Uncapped framerate
     // 1 = VSync enabled
