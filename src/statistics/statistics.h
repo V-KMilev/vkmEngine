@@ -18,8 +18,6 @@ class CallTracker;
  */
 class StatisticTracker {
     public:
-        ~StatisticTracker();
-
         StatisticTracker(const StatisticTracker& other) = delete;
         StatisticTracker& operator=(const StatisticTracker& other) = delete;
 
@@ -96,10 +94,8 @@ class StatisticTracker {
         void recordEventUnsubscribe();
 
     private:
-        /**
-         * @brief Private constructor for singleton pattern.
-         */
         StatisticTracker();
+        ~StatisticTracker();
 
     private:
         FrameInfo m_frameInfo;

@@ -23,8 +23,6 @@
  */
 class EventManager {
     public:
-        ~EventManager() = default;
-
         EventManager(const EventManager& other) = delete;
         EventManager& operator=(const EventManager& other) = delete;
 
@@ -87,6 +85,9 @@ class EventManager {
         void emitAsync(const std::string& eventName);
 
     private:
+        EventManager() = delete;
+        ~EventManager();
+
         /**
          * @brief Private constructor, may specify number of thread pool threads.
          * @param numThreads Number of async worker threads. Default is DEFAULT_EVENT_THREADS.
