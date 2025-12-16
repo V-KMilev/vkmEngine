@@ -34,11 +34,8 @@
 #include "resource_manager.h"
 #include "transform.h"
 #include "scene.h"
-
-struct SceneHandles {
-    std::shared_ptr<Engine::Transform> cube1Transform;
-    std::shared_ptr<Engine::Transform> cameraTransform;
-};
+#include "animation.h"
+#include "animation_manager.h"
 
 static Engine::MeshAsset generateCubeMeshAsset() {
     using namespace Engine;
@@ -100,7 +97,7 @@ static Engine::MeshAsset generateCubeMeshAsset() {
     return mesh;
 }
 
-static SceneHandles generateBasicScene(Engine::ResourceManager& resources, Engine::Scene& scene) {
+static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene& scene) {
 
     const Engine::MeshHandle cubeMesh = resources.addMesh(generateCubeMeshAsset());
     const Engine::MaterialHandle dummyMaterial = resources.addMaterial(Engine::MaterialAsset{});
@@ -136,11 +133,6 @@ static SceneHandles generateBasicScene(Engine::ResourceManager& resources, Engin
         cube2.addComponent(meshComponent);
         cube2.addComponent(transformComponent);
     }
-
-    return SceneHandles{
-        .cube1Transform  = cube1Transform,
-        .cameraTransform = cameraTransform,
-    };
 }
 
 int main() {
@@ -153,36 +145,84 @@ int main() {
         printBuildInfo();
         Core::enableGLDebugLogging(true);
 
-        auto& windowManager = WindowManager::get();
-        auto& eventManager = EventManager::get();
+        auto& windowManager    = WindowManager::get();
+        auto& eventManager     = EventManager::get();
         auto& statisticTracker = StatisticTracker::get();
+        auto& animationManager = Engine::AnimationManager::get();
 
         windowManager.createWindow("VKM Engine");
         windowManager.updateMode(WindowMode::WINDOWED);
-        windowManager.setFramerate(10000);
+        windowManager.setFramerate(0);
 
         Core::Context glContext;
         glContext.setClearColor({0.1f, 0.1f, 0.1f, 1.0f});
         glContext.setDefaultState();
         glContext.setFaceCulling(false);
 
-        Engine::RenderManager renderer;
+        Engine::RenderManager renderManager;
         Engine::ResourceManager resources;
 
         Core::Shader shader("../shaders/basic");
 
-        renderer.setBackend(std::make_unique<Engine::GLBackend>(glContext));
-        renderer.addPass(std::make_unique<Engine::GLForwardPass>(shader));
+        renderManager.setBackend(std::make_unique<Engine::GLBackend>(glContext));
+        renderManager.addPass(std::make_unique<Engine::GLForwardPass>(shader));
 
         Engine::Scene scene;
 
-        auto handles = generateBasicScene(resources, scene);
+        generateBasicScene(resources, scene);
+
+        for (auto& entity : scene.getEntities()) {
+            if (entity.getID() == 2) {
+                // Animate cube1: rotating around Y axis
+                auto cube1Animation = scene.createComponent<Engine::Animation>();
+
+                // Create a rotation animation that loops
+                auto& rotationTrack = cube1Animation->getRotationTrack();
+                rotationTrack.setEasing(Easing::linear);
+
+                const float duration = 10.0f;
+                rotationTrack.addKeyframe(0.0f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+                rotationTrack.addKeyframe(duration / 2.0f, glm::angleAxis(glm::two_pi<float>() / 2, glm::vec3(1.0f, 1.0f, 0.0f)));
+                rotationTrack.addKeyframe(duration, glm::angleAxis(glm::two_pi<float>(), glm::vec3(1.0f, 1.0f, 0.0f)));
+
+                cube1Animation->setLooping(true);
+                cube1Animation->play();
+                entity.addComponent(cube1Animation);
+            } else if (entity.getID() == 1) {
+                 auto cameraAnimation = scene.createComponent<Engine::Animation>();
+
+                 auto& positionTrack = cameraAnimation->getPositionTrack();
+                 positionTrack.setEasing(Easing::linear);
+
+                 auto& rotationTrack = cameraAnimation->getRotationTrack();
+                 rotationTrack.setEasing(Easing::easeInOutSine);
+ 
+                 const float orbitDuration = 30.0f;
+                 const float radius = 10.0f;
+                 const float height = 2.0f;
+ 
+                 for (int i = 0; i <= int(orbitDuration); ++i) {
+                    float t = static_cast<float>(i) / int(orbitDuration);
+                    float angle = t * glm::two_pi<float>();
+
+                    glm::vec3 position = {
+                        radius * std::cos(angle),
+                        height * std::sin(angle),
+                        radius * std::sin(angle)
+                    };
+                    positionTrack.addKeyframe(t * orbitDuration, position);
+                    rotationTrack.addKeyframe(t * orbitDuration, glm::quatLookAt(position, glm::vec3(0.0f, 1.0f, 0.0f)));
+                 }
+
+                 cameraAnimation->setLooping(true);
+                 cameraAnimation->play();
+                 entity.addComponent(cameraAnimation);
+            }
+
+        }
 
         using clock = std::chrono::steady_clock;
         auto lastStatsPrint = clock::now();
-
-        float cubeAngle = 0.0f;
-        float cameraAngle = 0.0f;
 
         constexpr int viewportWidth  = 1920;
         constexpr int viewportHeight = 1080;
@@ -192,19 +232,10 @@ int main() {
 
             eventManager.executeAsync();
 
-            // Animate: spin the first cube around Y
-            cubeAngle += 0.0005f;
-            if (handles.cube1Transform) {
-                handles.cube1Transform->setRotation(glm::angleAxis(cubeAngle, glm::vec3(1.0f, 1.0f, 0.0f)));
-            }
+            // Update animations (convert frameTime from milliseconds to seconds)
+            animationManager.update(scene, statisticTracker.getFrameInfo().frameRateInfo.frameTime / 1000.0f);
 
-            cameraAngle += 0.00005f;
-            if (handles.cameraTransform) {
-                handles.cameraTransform->setPosition({10.0f * std::cos(cameraAngle), 2.0f * std::sin(cameraAngle), 10.0f * std::sin(cameraAngle)});
-                handles.cameraTransform->setRotation(glm::quatLookAt(handles.cameraTransform->getPosition(), {0.0f, 1.0f, 0.0f}));
-            }
-
-            renderer.renderFrame(scene, resources, viewportWidth, viewportHeight);
+            renderManager.renderFrame(scene, resources, viewportWidth, viewportHeight);
 
             if (!windowManager.swapBuffers()) break;
 

@@ -10,8 +10,14 @@ EventManager::EventManager(size_t numThreads) : m_threadPool(numThreads) {
     LOG_TRACE("Created event manager with %d threads", numThreads);
 }
 
+EventManager::~EventManager() {
+    m_threadPool.waitAll();
+
+    LOG_TRACE("Destroyed event manager");
+}
+
 EventManager& EventManager::get() {
-    static EventManager instance;
+    static EventManager instance(DEFAULT_EVENT_THREADS);
     return instance;
 }
 

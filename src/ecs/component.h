@@ -11,6 +11,7 @@ enum class ComponentType {
     Mesh      = 2,
     Material  = 3,
     Transform = 4,
+    Animation = 5,
 };
 
 /**
@@ -26,6 +27,7 @@ constexpr const char* toString(ComponentType type) {
         case ComponentType::Mesh:      return "Mesh";
         case ComponentType::Material:  return "Material";
         case ComponentType::Transform: return "Transform";
+        case ComponentType::Animation: return "Animation";
         default: return "UNKNOWN";
     }
 }
