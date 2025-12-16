@@ -43,10 +43,10 @@ class Component {
         virtual ~Component();
 
         Component(const Component& other) = delete;
-        Component& operator = (const Component& other) = delete;
+        Component& operator=(const Component& other) = delete;
 
         Component(Component && other) noexcept = default;
-        Component& operator = (Component && other) noexcept = default;
+        Component& operator=(Component && other) noexcept = default;
 
         /**
          * @brief Construct a Component with the given ID and type.

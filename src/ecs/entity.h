@@ -38,10 +38,10 @@ class Entity {
         virtual ~Entity();
 
         Entity(const Entity& other) = delete;
-        Entity& operator = (const Entity& other) = delete;
+        Entity& operator=(const Entity& other) = delete;
 
         Entity(Entity && other) noexcept = default;
-        Entity& operator = (Entity && other) noexcept = default;
+        Entity& operator=(Entity && other) noexcept = default;
 
         /**
          * @brief Constructor for a single component.
