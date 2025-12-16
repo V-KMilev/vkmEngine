@@ -35,6 +35,7 @@ add_executable(${PROJECT_NAME}
 
     src/ecs/component.cpp
     src/ecs/entity.cpp
+    src/ecs/scene.cpp
 
     src/ecs/components/mesh.cpp
     src/ecs/components/camera.cpp
@@ -49,13 +50,10 @@ add_executable(${PROJECT_NAME}
     src/render/backend/gl/gl_view.cpp
     src/render/backend/gl/gl_backend.cpp
 
+    src/render/render_manager.cpp
     src/render/view/render_view_builder.cpp
-
     src/render/pipeline/pass/gl_forward_pass.cpp
     src/render/pipeline/render_pipeline.cpp
-
-    src/render/render_manager.cpp
-    src/render/scene.cpp
 
     src/thread/thread_pool.cpp
 

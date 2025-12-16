@@ -53,4 +53,3 @@ class AnimationManager {
 };
 
 } // namespace Engine
-

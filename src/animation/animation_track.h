@@ -1,6 +1,10 @@
 #pragma once
 
 #include <vector>
+#include <algorithm>
+#include <type_traits>
+
+#include <glm/gtc/quaternion.hpp>
 
 #include "keyframe.h"
 #include "easing.h"
@@ -66,7 +70,7 @@ class AnimationTrack {
 
             // Clamp time to track duration
             float duration = getDuration();
-            if (time <= 0.0f) {
+            if (time < 0.0f) {
                 return m_keyframes[0].value;
             }
 
@@ -98,8 +102,8 @@ class AnimationTrack {
             // Apply easing to the interpolation factor
             float eased = m_easing(t);
 
-            // Interpolate using GLM's built-in functions
-            return glm::mix(prev.value, next.value, eased);
+            // Interpolate using appropriate method (slerp for quaternions, mix for others)
+            return interpolate(prev.value, next.value, eased);
         }
 
         /**
@@ -145,6 +149,20 @@ class AnimationTrack {
         }
 
     private:
+        /**
+         * @brief Interpolates between two values using the appropriate method.
+         * Uses spherical linear interpolation (slerp) for quaternions,
+         * and linear interpolation (mix) for all other types.
+         */
+        template<typename U = T>
+        static U interpolate(const U& a, const U& b, float t) {
+            if constexpr (std::is_same_v<U, glm::quat>) {
+                return glm::slerp(a, b, t);
+            } else {
+                return glm::mix(a, b, t);
+            }
+        }
+
         std::vector<Keyframe<T>> m_keyframes;
         EasingFunction m_easing;
 };
