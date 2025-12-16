@@ -27,11 +27,11 @@ class Scene {
         Scene() = default;
         ~Scene() = default;
 
-        Scene(const Scene&) = delete;
-        Scene& operator=(const Scene&) = delete;
+        Scene(const Scene& other) = delete;
+        Scene& operator=(const Scene& other) = delete;
 
-        Scene(Scene&&) = delete;
-        Scene& operator=(Scene&&) = delete;
+        Scene(Scene && other) = delete;
+        Scene& operator=(Scene && other) = delete;
 
     public:
         /**

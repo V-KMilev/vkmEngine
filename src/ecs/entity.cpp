@@ -23,7 +23,7 @@ Entity::Entity(
     m_components.reserve(1);
     m_components.push_back(std::move(component));
 
-    LOG_TRACE("Constructed Entity #%d tpye: '%s'", m_id, enumToString(m_type));
+    LOG_TRACE("Constructed Entity #%d type: '%s'", m_id, enumToString(m_type));
 }
 
 Entity::Entity(

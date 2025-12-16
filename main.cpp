@@ -133,6 +133,31 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
         cube2.addComponent(meshComponent);
         cube2.addComponent(transformComponent);
     }
+
+    for (int i = 1; i < 10000; i++) {
+        auto& cube = scene.createEntity(EntityType::NONE);
+        {
+            auto meshComponent = scene.createComponent<Engine::Mesh>(cubeMesh, dummyMaterial, true, true);
+
+            // Arrange the cubes in a grid for a checkers pattern
+            int gridSize = 100;
+            int x = i % gridSize;
+            float y = 2.0f;
+            int z = i / gridSize;
+
+            float spacing = 2.5f;
+
+            // Only place cubes for checker pattern (i.e., only on "black" squares)
+            if (((x + z) % 2) == 0) {
+                auto transformComponent = scene.createComponent<Engine::Transform>(
+                    glm::vec3(x * spacing, y, z * spacing)
+                );
+                cube.addComponent(transformComponent);
+            }
+
+            cube.addComponent(meshComponent);
+        }
+    }
 }
 
 int main() {
@@ -172,7 +197,7 @@ int main() {
         generateBasicScene(resources, scene);
 
         for (auto& entity : scene.getEntities()) {
-            if (entity.getID() == 2) {
+            if (entity.getID() == 2 || entity.getID() > 3 ) {
                 // Animate cube1: rotating around Y axis
                 auto cube1Animation = scene.createComponent<Engine::Animation>();
 

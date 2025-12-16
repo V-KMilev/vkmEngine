@@ -35,11 +35,11 @@ class RenderManager {
         RenderManager();
         ~RenderManager() = default;
 
-        RenderManager(const RenderManager&) = delete;
-        RenderManager& operator=(const RenderManager&) = delete;
+        RenderManager(const RenderManager& other) = delete;
+        RenderManager& operator=(const RenderManager& other) = delete;
 
-        RenderManager(RenderManager&&) noexcept = default;
-        RenderManager& operator=(RenderManager&&) noexcept = default;
+        RenderManager(RenderManager && other) = delete;
+        RenderManager& operator=(RenderManager && other) = delete;
 
         /**
          * @brief Switch the active rendering backend.
