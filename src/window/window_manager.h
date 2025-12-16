@@ -42,8 +42,6 @@ constexpr const char* toString(WindowMode type) {
  */
 class WindowManager {
     public:
-        ~WindowManager();
-
         WindowManager(const WindowManager& other) = delete;
         WindowManager& operator=(const WindowManager& other) = delete;
 
@@ -114,10 +112,8 @@ class WindowManager {
         void setFramerate(int framerate);
 
     private:
-        /**
-         * @brief Private constructor to enforce singleton pattern.
-         */
         WindowManager() = default;
+        ~WindowManager();
 
     private:
         std::unique_ptr<Window> m_window;

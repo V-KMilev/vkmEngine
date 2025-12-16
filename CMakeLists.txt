@@ -39,6 +39,9 @@ add_executable(${PROJECT_NAME}
     src/ecs/components/mesh.cpp
     src/ecs/components/camera.cpp
     src/ecs/components/transform.cpp
+    src/ecs/components/animation.cpp
+
+    src/animation/animation_manager.cpp
 
     src/render/resource/resource_manager.cpp
 
@@ -74,6 +77,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     src/ecs
     src/ecs/components
     src/ecs/entities
+
+    src/animation
 
     src/render
     src/render/view
