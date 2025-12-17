@@ -24,14 +24,12 @@ class Mesh final : public Component {
          * @param mesh         Handle to mesh geometry.
          * @param material     Handle to material.
          * @param visible      Is mesh visible? (default: true)
-         * @param castsShadow  Does mesh cast shadows? (default: true)
          */
         Mesh(
             uint32_t id,
             MeshHandle mesh,
             MaterialHandle material,
-            bool visible = true,
-            bool castsShadow = true
+            bool visible = true
         );
 
     public:
@@ -53,30 +51,11 @@ class Mesh final : public Component {
          */
         bool isVisible() const { return m_visible; }
 
-        /**
-         * @brief Query if this mesh casts shadows.
-         * @return True if casts shadows.
-         */
-        bool castsShadow() const { return m_castsShadow; }
-
-        /**
-         * @brief Set the visibility of the mesh.
-         * @param visible True to show, false to hide.
-         */
-        void setVisible(bool visible);
-
-        /**
-         * @brief Set whether the mesh casts shadows.
-         * @param castsShadow True if should cast shadows.
-         */
-        void setCastsShadow(bool castsShadow);
-
     private:
         MeshHandle m_mesh;
         MaterialHandle m_material;
 
         bool m_visible;
-        bool m_castsShadow;
 };
 
 } // namespace Engine
