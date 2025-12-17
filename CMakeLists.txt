@@ -47,6 +47,7 @@ add_executable(${PROJECT_NAME}
     src/render/resource/resource_manager.cpp
 
     src/render/backend/gl/gl_mesh.cpp
+    src/render/backend/gl/gl_material.cpp
     src/render/backend/gl/gl_view.cpp
     src/render/backend/gl/gl_backend.cpp
 
