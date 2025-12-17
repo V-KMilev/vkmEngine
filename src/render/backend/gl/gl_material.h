@@ -129,7 +129,6 @@ class GLMaterial {
         void bind(uint32_t bindingPoint = 0) const;
 
     private:
-        // Uniform buffer object for GPU access
         std::unique_ptr<Core::UniformBuffer> m_ubo;
 };
 

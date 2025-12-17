@@ -17,35 +17,47 @@ GLMesh::GLMesh(const MeshAsset& mesh) {
 }
 
 GLMesh::~GLMesh() {
-    LOG_TRACE("Destroying GLMesh");
-
     m_vao.reset();
     m_vbo.reset();
     m_ibo.reset();
+
+    LOG_TRACE("Destroying GLMesh");
 }
 
 void GLMesh::update(const MeshAsset& mesh) {
     m_vertexCount = mesh.vertices.size();
     m_indexCount  = mesh.indices.size();
 
-    // Create buffers
-    m_vao = std::make_unique<Core::VertexArray>();
-    m_vbo = std::make_unique<Core::VertexBuffer>(
-        reinterpret_cast<const void*>(mesh.vertices.data()),
-        static_cast<uint32_t>(m_vertexCount * sizeof(Vertex))
-    );
-    m_ibo = std::make_unique<Core::IndexBuffer>(
-        reinterpret_cast<const void*>(mesh.indices.data()),
-        static_cast<uint32_t>(m_indexCount * sizeof(uint32_t))
-    );
+    const uint32_t vertexDataSize = static_cast<uint32_t>(m_vertexCount * sizeof(Vertex));
+    const uint32_t indexDataSize  = static_cast<uint32_t>(m_indexCount * sizeof(uint32_t));
 
-    Core::VertexBufferLayout layout;
-    layout.push<float>(3);    // position
-    layout.push<float>(3);    // normal
-    layout.push<float>(2);    // uv
-    layout.push<float>(4);    // tangent
+    if (m_vbo && m_vbo->getSize() == vertexDataSize) {
+        m_vbo->update(mesh.vertices.data(), vertexDataSize);
+    } else {
+        m_vbo = std::make_unique<Core::VertexBuffer>(reinterpret_cast<const void*>(mesh.vertices.data()), vertexDataSize);
 
-    m_vao->addBuffer(*m_vbo, layout);
+        // Recreate VAO to reflect new VBO
+        m_vao.reset();
+    }
+
+    if (m_ibo && m_ibo->getSize() == indexDataSize) {
+        m_ibo->update(mesh.indices.data(), indexDataSize);
+    } else {
+        m_ibo = std::make_unique<Core::IndexBuffer>(reinterpret_cast<const void*>(mesh.indices.data()), indexDataSize);
+    }
+
+    // Create or recreate VAO if needed (when VBO is created/recreated)
+    if (!m_vao) {
+        m_vao = std::make_unique<Core::VertexArray>();
+
+        Core::VertexBufferLayout layout;
+        layout.push<float>(3);    // position
+        layout.push<float>(3);    // normal
+        layout.push<float>(2);    // uv
+        layout.push<float>(4);    // tangent
+
+        m_vao->addBuffer(*m_vbo, layout);
+    }
 }
 
 void GLMesh::bind() const {

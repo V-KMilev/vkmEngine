@@ -181,7 +181,7 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
 
     auto& cube1 = scene.createEntity(EntityType::NONE);
     {
-        auto meshComponent      = scene.createComponent<Engine::Mesh>(cubeMesh, dummyMaterial, true, true);
+        auto meshComponent      = scene.createComponent<Engine::Mesh>(cubeMesh, dummyMaterial);
         auto transformComponent = scene.createComponent<Engine::Transform>(glm::vec3(0.0f, 2.0f, 0.0f));
         cube1Transform = transformComponent;
 
@@ -191,7 +191,7 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
 
     auto& cube2 = scene.createEntity(EntityType::NONE);
     {
-        auto meshComponent      = scene.createComponent<Engine::Mesh>(cubeMesh, dummyMaterial, true, true);
+        auto meshComponent      = scene.createComponent<Engine::Mesh>(cubeMesh, dummyMaterial);
         auto transformComponent = scene.createComponent<Engine::Transform>(glm::vec3(0.0f, -1.0f, 0.0f));
         transformComponent->setScale(glm::vec3(5.0f, 0.5f, 5.0f));
 
@@ -202,7 +202,7 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
     for (int i = 1; i < 10000; i++) {
         auto& cube = scene.createEntity(EntityType::NONE);
         {
-            auto meshComponent = scene.createComponent<Engine::Mesh>(i % 2 == 0 ? sphereMesh : cubeMesh, dummyMaterial, true, true);
+            auto meshComponent = scene.createComponent<Engine::Mesh>(i % 2 == 0 ? sphereMesh : cubeMesh, dummyMaterial);
 
             // Arrange the cubes in a grid for a checkers pattern
             int gridSize = 100;

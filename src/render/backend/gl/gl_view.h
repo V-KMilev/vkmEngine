@@ -82,7 +82,7 @@ class GLView {
     private:
         std::unordered_map<uint32_t, std::unique_ptr<GLMesh>> m_meshes;
         std::unordered_map<uint32_t, uint64_t> m_meshVersions;
-        
+
         std::unordered_map<uint32_t, std::unique_ptr<GLMaterial>> m_materials;
         std::unordered_map<uint32_t, uint64_t> m_materialVersions;
 };

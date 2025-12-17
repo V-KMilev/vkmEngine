@@ -37,14 +37,15 @@ GLMaterial::~GLMaterial() {
 }
 
 void GLMaterial::update(const MaterialAsset& material) {
-    // Base PBR properties
+    // Build UBO data from material asset
     MaterialUBOData uboData;
 
+    // Base PBR properties
     uboData.albedo = material.albedo;
     uboData.emission = material.emission;
     uboData.metallic = material.metallic;
     uboData.roughness = material.roughness;
-    
+
     // Essential for raytracing and advanced PBR
     uboData.ior = material.ior;
     uboData.transmission = material.transmission;
@@ -98,11 +99,12 @@ void GLMaterial::update(const MaterialAsset& material) {
     uboData.hasTransmissionTexture = (material.transmissionTexture.value != 0) ? 1 : 0;
     uboData.transmissionTextureSlot = MaterialTextureSlots::Transmission;
 
-    m_ubo = std::make_unique<Core::UniformBuffer>(
-        &uboData,
-        sizeof(MaterialUBOData),
-        GL_DYNAMIC_DRAW
-    );
+    // Update or create UBO
+    if (m_ubo) {
+        m_ubo->update(&uboData, sizeof(MaterialUBOData));
+    } else {
+        m_ubo = std::make_unique<Core::UniformBuffer>(&uboData, sizeof(MaterialUBOData));
+    }
 }
 
 void GLMaterial::bind(uint32_t bindingPoint) const {
