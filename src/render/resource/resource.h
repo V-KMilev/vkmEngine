@@ -26,14 +26,14 @@ struct Vertex {
 /**
  * @brief Enum of supported texture formats.
  */
-enum class TextureFormat {
+enum class TextureFormat : uint32_t {
     RGBA8,    ///< 8-bit unsigned per channel, 4 channels (standard color)
 };
 
 /**
  * @brief Enum of supported texture wrap modes.
  */
-enum class TextureWrap {
+enum class TextureWrap : uint32_t {
     Repeat,            ///< Texture repeats (tiles)
     MirroredRepeat,    ///< Texture mirrors and repeats
     ClampToEdge        ///< Texture clamps to edge pixel color
@@ -42,7 +42,7 @@ enum class TextureWrap {
 /**
  * @brief Enum of supported texture minification filters.
  */
-enum class TextureMinFilter {
+enum class TextureMinFilter : uint32_t {
     Nearest,                 ///< Nearest neighbor sampling (no interpolation)
     Linear,                  ///< Linear interpolation
     NearestMipmapNearest,    ///< Nearest mipmap, nearest texel
@@ -54,7 +54,7 @@ enum class TextureMinFilter {
 /**
  * @brief Enum of supported texture magnification filters.
  */
-enum class TextureMagFilter {
+enum class TextureMagFilter : uint32_t {
     Nearest,    ///< Nearest neighbor sampling (no interpolation)
     Linear      ///< Linear interpolation
 };

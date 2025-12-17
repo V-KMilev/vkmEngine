@@ -7,28 +7,16 @@
 #include "render_view.h"
 #include "resource_manager.h"
 
-#include "gl_mesh.h"
-#include "gl_material.h"
-
 namespace Engine {
 
 void GLView::syncMeshes(
     const RenderView& renderView,
     const ResourceManager& resourceManager
 ) {
-    for (const auto& instance : renderView.instances) {
-        // Skip non-visible instances
-        if (!instance.visible) {
-            continue;
-        }
-        // Skip instances which have no mesh handle set
-        if (!instance.mesh) {
-            continue;
-        }
-
+    for (const auto& drawable : renderView.drawables) {
         // Fetch the mesh asset from the resource manager
-        const uint32_t key     = instance.mesh.value;
-        const auto& asset      = resourceManager.getMesh(instance.mesh);
+        const uint32_t key     = drawable.mesh.value;
+        const auto& asset      = resourceManager.getMesh(drawable.mesh);
         const uint64_t version = asset.version;
 
         // Try to find an existing GLMesh mapped to this handle
@@ -52,19 +40,11 @@ void GLView::syncMaterials(
     const RenderView& renderView,
     const ResourceManager& resourceManager
 ) {
-    for (const auto& instance : renderView.instances) {
+    for (const auto& drawable : renderView.drawables) {
         // Skip non-visible instances
-        if (!instance.visible) {
-            continue;
-        }
-        // Skip instances which have no material handle set
-        if (!instance.material) {
-            continue;
-        }
-
         // Fetch the material asset from the resource manager
-        const uint32_t key     = instance.material.value;
-        const auto& asset      = resourceManager.getMaterial(instance.material);
+        const uint32_t key     = drawable.material.value;
+        const auto& asset      = resourceManager.getMaterial(drawable.material);
         const uint64_t version = asset.version;
 
         // Try to find an existing GLMaterial mapped to this handle

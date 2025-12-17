@@ -14,36 +14,34 @@ namespace Engine {
  * as well as the world-space position of the camera.
  */
 struct CameraData {
-    glm::mat4 view{1.0f};
-    glm::mat4 projection{1.0f};
-    glm::mat4 viewProjection{1.0f};
+    glm::mat4 view           = {1.0f};
+    glm::mat4 projection     = {1.0f};
+    glm::mat4 viewProjection = {1.0f};
 
-    glm::vec3 position{0.0f, 0.0f, 0.0f};
+    glm::vec3 position = {0.0f, 0.0f, 0.0f};
 };
 
 /**
- * @brief Representation of a single drawable instance within the render world.
+ * @brief Representation of a single drawable object within the render world.
  *
- * Associates mesh and material resources with transformation and rendering flags.
+ * Associates mesh and material resources with a model matrix.
  */
-struct InstanceData {
+struct DrawableData {
     MeshHandle mesh;
     MaterialHandle material;
 
-    glm::mat4 model{1.0f};
-
-    bool visible = true;
-    bool castsShadow = true;
+    glm::mat4 model = {1.0f};
 };
 
 /**
  * @brief Collection of scene data needed for a rendering pass.
  *
- * Encapsulates camera info and all visible instances required for rendering.
+ * Encapsulates camera info, all visible drawables, and active lights (soon) required for rendering.
  */
 struct RenderView {
     CameraData camera;
-    std::vector<InstanceData> instances;
+
+    std::vector<DrawableData> drawables;
 };
 
 } // namespace Engine

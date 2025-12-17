@@ -43,23 +43,16 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
     m_shader.setUniformMatrix4fv("u_projection", view.camera.projection);
     m_shader.setUniformMatrix4fv("u_viewProjection", view.camera.viewProjection);
 
-    for (const auto& instance : view.instances) {
-        if (!instance.visible) {
-            continue;
-        }
-        if (!instance.mesh) {
-            continue;
-        }
-
-        m_shader.setUniformMatrix4fv("u_model", instance.model);
+    for (const auto& drawable : view.drawables) {
+        m_shader.setUniformMatrix4fv("u_model", drawable.model);
 
         // Bind material if present (binding point 0 for material UBO)
-        if (instance.material) {
-            const GLMaterial& material = glView.getMaterial(instance.material);
+        if (drawable.material) {
+            const GLMaterial& material = glView.getMaterial(drawable.material);
             material.bind(0);
         }
 
-        const GLMesh& mesh = glView.getMesh(instance.mesh);
+        const GLMesh& mesh = glView.getMesh(drawable.mesh);
         mesh.draw();
     }
 }

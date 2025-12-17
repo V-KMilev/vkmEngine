@@ -6,15 +6,11 @@ Mesh::Mesh(
     uint32_t id,
     MeshHandle mesh,
     MaterialHandle material,
-    bool visible,
-    bool castsShadow
+    bool visible
 ) : Component(id, ComponentType::Mesh),
     m_mesh(mesh),
     m_material(material),
-    m_visible(visible),
-    m_castsShadow(castsShadow) {}
+    m_visible(visible) {}
 
-void Mesh::setVisible(bool visible) { m_visible = visible; }
-void Mesh::setCastsShadow(bool castsShadow) { m_castsShadow = castsShadow; }
 
 } // namespace Engine

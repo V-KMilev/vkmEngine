@@ -24,7 +24,6 @@ static glm::mat4 makeOrthographic(float halfHeight, float aspect, float zNear, f
 RenderView RenderViewBuilder::build(const Scene& scene) {
     RenderView renderView;
 
-
     bool foundCamera = false;
 
     // Find the active camera
@@ -73,12 +72,12 @@ RenderView RenderViewBuilder::build(const Scene& scene) {
         LOG_ERROR("No active camera found");
     }
 
-    // Gather renderable instances
-    renderView.instances.reserve(scene.getEntities().size());
+    // Gather drawables
+    renderView.drawables.reserve(scene.getEntities().size());
 
     for (const auto& entity : scene.getEntities()) {
         auto mesh = Scene::findComponentAs<Mesh>(entity, ComponentType::Mesh);
-        if (!mesh) {
+        if (!mesh || !mesh->isVisible()) {
             continue;
         }
 
@@ -87,14 +86,12 @@ RenderView RenderViewBuilder::build(const Scene& scene) {
             continue;
         }
 
-        InstanceData instance;
-        instance.model       = transform->getModelMatrix();
-        instance.mesh        = mesh->getMesh();
-        instance.material    = mesh->getMaterial();
-        instance.visible     = mesh->isVisible();
-        instance.castsShadow = mesh->castsShadow();
+        DrawableData drawable;
+        drawable.mesh     = mesh->getMesh();
+        drawable.material = mesh->getMaterial();
+        drawable.model    = transform->getModelMatrix();
 
-        renderView.instances.emplace_back(instance);
+        renderView.drawables.emplace_back(drawable);
     }
 
     return renderView;
