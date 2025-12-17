@@ -31,6 +31,7 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
     auto& glView = gl.getView();
 
     glView.syncMeshes(view, resources);
+    glView.syncMaterials(view, resources);
 
     glContext.clearColor();
     glContext.clear();
@@ -51,6 +52,12 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
         }
 
         m_shader.setUniformMatrix4fv("u_model", instance.model);
+
+        // Bind material if present (binding point 0 for material UBO)
+        if (instance.material) {
+            const GLMaterial& material = glView.getMaterial(instance.material);
+            material.bind(0);
+        }
 
         const GLMesh& mesh = glView.getMesh(instance.mesh);
         mesh.draw();
