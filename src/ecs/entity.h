@@ -1,13 +1,13 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
 #include <memory>
 
-/**
- * @brief Forward declaration of Component class.
- */
+#include <vector>
+#include <unordered_map>
+
 class Component;
+enum class ComponentType;
 
 /**
  * @brief Enumeration representing possible types of entities.
@@ -70,7 +70,7 @@ class Entity {
          * @brief Constructor for multiple components.
          * @param id The unique identifier of the entity.
          * @param type The type of the entity.
-         * @param components List of components to add to the entity.
+         * @param components Vector of components to add to the entity.
          */
         Entity(
             uint32_t id,
@@ -92,16 +92,33 @@ class Entity {
         EntityType getType() const;
 
         /**
-         * @brief Get the list of components (modifiable).
-         * @return Reference to the vector of component pointers.
+         * @brief Get a component by type (O(1) lookup).
+         * @param type The ComponentType to look for.
+         * @return std::shared_ptr<Component> The component of the given type, or nullptr if not found.
          */
-        std::vector<std::shared_ptr<Component>>& getComponents();
+        std::shared_ptr<Component> getComponent(ComponentType type) const;
 
         /**
-         * @brief Get the list of components (read-only).
-         * @return Const reference to the vector of component pointers.
+         * @brief Get a component by type, cast to T (O(1) lookup).
+         * @tparam T The component class to cast to.
+         * @param type The ComponentType to look for.
+         * @return std::shared_ptr<T> The component instance cast to T, or nullptr if not found or cast fails.
          */
-        const std::vector<std::shared_ptr<Component>>& getComponents() const;
+        template <typename T>
+        std::shared_ptr<T> getComponentAs(ComponentType type) const {
+            auto base = getComponent(type);
+            if (!base) {
+                return nullptr;
+            }
+            return std::static_pointer_cast<T>(base);
+        }
+
+        /**
+         * @brief Check if the entity has a component of the given type.
+         * @param type The ComponentType to check for.
+         * @return bool True if the component exists, false otherwise.
+         */
+        bool hasComponent(ComponentType type) const;
 
         /**
          * @brief Add a component to the entity.
@@ -113,5 +130,5 @@ class Entity {
         uint32_t m_id;
         EntityType m_type;
 
-        std::vector<std::shared_ptr<Component>> m_components;
+        std::unordered_map<ComponentType, std::shared_ptr<Component>> m_components;
 };

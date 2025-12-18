@@ -98,44 +98,6 @@ class Scene {
          */
         const std::deque<Entity>& getEntities() const { return m_entities; }
 
-    public:
-        /**
-         * @brief Find the first component of the specified type for the given entity.
-         * 
-         * Iterates through the entity's components and returns the first matching the specified ComponentType.
-         *
-         * @param entity The entity to search for the component.
-         * @param type The ComponentType to look for.
-         * @return std::shared_ptr<Component> The first component of the given type, or nullptr if not found.
-         */
-        static std::shared_ptr<Component> findComponent(const Entity& entity, ComponentType type) {
-            for (const auto& component : entity.getComponents()) {
-                if (component && component->getType() == type) return component;
-            }
-            return nullptr;
-        }
-
-        /**
-         * @brief Find the first component of a specified type, cast to T, for the given entity.
-         * 
-         * If a component of the desired type is found, returns a std::shared_ptr<T>, otherwise returns nullptr.
-         * Uses dynamic_pointer_cast for safety.
-         *
-         * @tparam T The component class to cast to.
-         * @param entity The entity to search for the component.
-         * @param type The ComponentType to look for.
-         * @return std::shared_ptr<T> The component instance cast to T, or nullptr if not found or cast fails.
-         */
-        template <typename T>
-        static std::shared_ptr<T> findComponentAs(const Entity& entity, ComponentType type) {
-            auto base = findComponent(entity, type);
-            if (!base) {
-                return nullptr;
-            }
-
-            return std::static_pointer_cast<T>(base);
-        }
-
     private:
         uint32_t m_entityId = 1;
         uint32_t m_componentId = 1;

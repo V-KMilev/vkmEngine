@@ -12,7 +12,7 @@ AnimationManager& AnimationManager::get() {
 void AnimationManager::update(Scene& scene, float deltaTime) {
     for (auto& entity : scene.getEntities()) {
         // Find Animation component
-        auto animation = Scene::findComponentAs<Animation>(entity, ComponentType::Animation);
+        auto animation = entity.getComponentAs<Animation>(ComponentType::Animation);
         if (!animation) {
             continue;
         }
@@ -21,7 +21,7 @@ void AnimationManager::update(Scene& scene, float deltaTime) {
         animation->update(deltaTime);
 
         // Find Transform component to apply animation to
-        auto transform = Scene::findComponentAs<Transform>(entity, ComponentType::Transform);
+        auto transform = entity.getComponentAs<Transform>(ComponentType::Transform);
         if (!transform) {
             continue;
         }
