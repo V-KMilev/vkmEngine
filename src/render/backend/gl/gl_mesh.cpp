@@ -8,7 +8,7 @@
 #include "gl_vertex_buffer_layout.h"
 #include "gl_error_handle.h"
 
-#include "resource.h"
+#include "mesh_asset.h"
 
 namespace Engine {
 

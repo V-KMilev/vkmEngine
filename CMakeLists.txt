@@ -44,8 +44,6 @@ add_executable(${PROJECT_NAME}
 
     src/animation/animation_manager.cpp
 
-    src/render/resource/resource_manager.cpp
-
     src/render/backend/gl/gl_mesh.cpp
     src/render/backend/gl/gl_material.cpp
     src/render/backend/gl/gl_view.cpp
@@ -79,9 +77,11 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
     src/animation
 
+    src/resource
+    src/resource/assets
+
     src/render
     src/render/view
-    src/render/resource
     src/render/backend
     src/render/backend/gl
     src/render/backend/gl/passes

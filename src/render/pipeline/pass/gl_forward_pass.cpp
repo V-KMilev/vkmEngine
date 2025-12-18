@@ -7,6 +7,8 @@
 #include "gl_shader.h"
 
 #include "gl_backend.h"
+#include "gl_mesh.h"
+#include "gl_material.h"
 
 #include "render_view.h"
 #include "resource_manager.h"

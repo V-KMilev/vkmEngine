@@ -4,8 +4,7 @@
 
 #include "gl_uniform_buffer.h"
 
-#include "resource.h"
-#include "resource_manager.h"
+#include "material_asset.h"
 
 namespace Engine {
 
