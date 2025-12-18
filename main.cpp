@@ -29,6 +29,9 @@
 #include "render_manager.h"
 
 #include "gl_backend.h"
+#include "gl_mesh.h"
+#include "gl_material.h"
+#include "gl_view.h"
 #include "gl_forward_pass.h"
 
 #include "resource_manager.h"
@@ -163,9 +166,9 @@ static Engine::MeshAsset generateCubeMeshAsset() {
 
 static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene& scene) {
 
-    const Engine::MeshHandle cubeMesh          = resources.addMesh(generateCubeMeshAsset());
-    const Engine::MeshHandle sphereMesh        = resources.addMesh(generateSphereMeshAsset());
-    const Engine::MaterialHandle dummyMaterial = resources.addMaterial(Engine::MaterialAsset{});
+    const Engine::MeshHandle cubeMesh          = resources.add(generateCubeMeshAsset());
+    const Engine::MeshHandle sphereMesh        = resources.add(generateSphereMeshAsset());
+    const Engine::MaterialHandle dummyMaterial = resources.add(Engine::MaterialAsset{});
 
     auto& cameraEntity = scene.createEntity(EntityType::NONE);
     std::shared_ptr<Engine::Transform> cameraTransform;
@@ -249,17 +252,12 @@ int main() {
         windowManager.updateMode(WindowMode::WINDOWED);
         windowManager.setFramerate(0);
 
-        Core::Context glContext;
-        glContext.setClearColor({0.1f, 0.1f, 0.1f, 1.0f});
-        glContext.setDefaultState();
-        glContext.setFaceCulling(false);
-
         Engine::RenderManager renderManager;
         Engine::ResourceManager resources;
 
         Core::Shader shader("../shaders/pbr");
 
-        renderManager.setBackend(std::make_unique<Engine::GLBackend>(glContext));
+        renderManager.setBackend(std::make_unique<Engine::GLBackend>());
         renderManager.addPass(std::make_unique<Engine::GLForwardPass>(shader));
 
         Engine::Scene scene;

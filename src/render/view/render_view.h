@@ -3,7 +3,8 @@
 #include <vector>
 #include <glm/glm.hpp>
 
-#include "resource_handle.h"
+#include "mesh_asset.h"
+#include "material_asset.h"
 
 namespace Engine {
 

@@ -5,15 +5,12 @@
 
 #include <glm/glm.hpp>
 
-#include "resource.h"
-
 namespace Core {
-    class Shader;
     class UniformBuffer;
 }
 
 namespace Engine {
-    class ResourceManager;
+    struct MaterialAsset;
 }
 
 namespace Engine {

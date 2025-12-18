@@ -4,13 +4,19 @@
 #include <memory>
 #include <unordered_map>
 
-#include "resource_handle.h"
+#include "mesh_asset.h"
+#include "material_asset.h"
+
+// TODO: Forward this
 #include "gl_mesh.h"
 #include "gl_material.h"
 
 namespace Engine {
     class RenderView;
     class ResourceManager;
+
+    // class GLMesh;
+    // class GLMaterial;
 }
 
 namespace Engine {
@@ -26,7 +32,7 @@ namespace Engine {
 class GLView {
     public:
         GLView() = default;
-        ~GLView() = default;
+        ~GLView();
 
         GLView(const GLView& other) = delete;
         GLView& operator=(const GLView& other) = delete;

@@ -4,7 +4,8 @@
 
 #include "component.h"
 
-#include "resource_handle.h"
+#include "mesh_asset.h"
+#include "material_asset.h"
 
 namespace Engine {
 

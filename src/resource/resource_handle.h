@@ -5,14 +5,14 @@
 namespace Engine {
 
 /**
- * @brief Opaque, type-safe handle for resources, distinguished by Tag.
+ * @brief Opaque, type-safe handle for resources, distinguished by ResourceType.
  * 
  * The handle holds a simple uint32_t ID. Value 0 always means "invalid".
  * Handles can be compared and validated but do not expose resource internals.
  * 
- * @tparam Tag Empty tag type to create a unique handle type per resource (e.g., MeshTag).
+ * @tparam ResourceType The resource type (e.g., MeshAsset, TextureAsset, MaterialAsset).
  */
-template <typename Tag>
+template <typename ResourceType>
 struct Handle {
     public:
         /**
@@ -36,15 +36,9 @@ struct Handle {
         constexpr bool operator!=(const Handle& other) const noexcept { return value != other.value; }
 
     public:
+        using resource_t = ResourceType;
         uint32_t value = 0; ///< 0 = invalid handle, >0 = valid handle
 };
 
-struct MeshTag {};
-struct MaterialTag {};
-struct TextureTag {};
-
-using MeshHandle     = Handle<MeshTag>;
-using MaterialHandle = Handle<MaterialTag>;
-using TextureHandle  = Handle<TextureTag>;
-
 } // namespace Engine
+
