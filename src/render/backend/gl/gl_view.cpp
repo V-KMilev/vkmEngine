@@ -1,13 +1,21 @@
 #include "gl_view.h"
 
-#include <stdexcept>
-
 #include "logger.h"
 
 #include "render_view.h"
 #include "resource_manager.h"
 
+#include "gl_mesh.h"
+#include "gl_material.h"
+
 namespace Engine {
+
+GLView::~GLView() {
+    m_meshes.clear();
+    m_materials.clear();
+
+    LOG_TRACE("Destroying GLView");
+}
 
 void GLView::syncMeshes(
     const RenderView& renderView,
@@ -16,7 +24,7 @@ void GLView::syncMeshes(
     for (const auto& drawable : renderView.drawables) {
         // Fetch the mesh asset from the resource manager
         const uint32_t key     = drawable.mesh.value;
-        const auto& asset      = resourceManager.getMesh(drawable.mesh);
+        const auto& asset      = resourceManager.get(drawable.mesh);
         const uint64_t version = asset.version;
 
         // Try to find an existing GLMesh mapped to this handle
@@ -44,7 +52,7 @@ void GLView::syncMaterials(
         // Skip non-visible instances
         // Fetch the material asset from the resource manager
         const uint32_t key     = drawable.material.value;
-        const auto& asset      = resourceManager.getMaterial(drawable.material);
+        const auto& asset      = resourceManager.get(drawable.material);
         const uint64_t version = asset.version;
 
         // Try to find an existing GLMaterial mapped to this handle

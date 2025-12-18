@@ -8,10 +8,12 @@
 
 namespace Engine {
 
-GLBackend::GLBackend(
-    Core::Context& context
-) : RenderBackend(RenderBackendType::OpenGL),
-    m_context(context) {}
+// TODO: Give access to the context to the user
+GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL), m_context() {
+    m_context.setClearColor({0.1f, 0.1f, 0.1f, 1.0f});
+    m_context.setDefaultState();
+    m_context.setFaceCulling(false);
+}
 
 void GLBackend::resize(uint32_t width, uint32_t height) {
     m_context.setViewport(0, 0, width, height);

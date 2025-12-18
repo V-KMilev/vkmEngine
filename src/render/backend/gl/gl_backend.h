@@ -4,11 +4,7 @@
 
 #include "render_backend.h"
 #include "gl_view.h"
-
-namespace Core {
-    class Context;
-    class Shader;
-}
+#include "gl_context.h"
 
 namespace Engine {
     class RenderView;
@@ -30,7 +26,7 @@ namespace Engine {
  */
 class GLBackend : public RenderBackend {
     public:
-        GLBackend() = delete;
+        GLBackend();
         ~GLBackend() = default;
 
         GLBackend(const GLBackend& other) = delete;
@@ -38,12 +34,6 @@ class GLBackend : public RenderBackend {
 
         GLBackend(GLBackend && other) = delete;
         GLBackend& operator=(GLBackend && other) = delete;
-
-        /**
-         * @brief Construct a GLBackend with an associated OpenGL context.
-         * @param context Reference to the OpenGL context; must remain valid for the backend's lifetime.
-         */
-        GLBackend(Core::Context& context);
 
     public:
         /**
@@ -95,7 +85,7 @@ class GLBackend : public RenderBackend {
         const GLView& getView() const { return m_view; }
 
     private:
-        Core::Context& m_context;
+        Core::Context m_context;
         GLView m_view;
 };
 
