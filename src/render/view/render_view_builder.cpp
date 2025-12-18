@@ -28,12 +28,12 @@ RenderView RenderViewBuilder::build(const Scene& scene) {
 
     // Find the active camera
     for (const auto& entity : scene.getEntities()) {
-        auto camera = Scene::findComponentAs<Camera>(entity, ComponentType::Camera);
+        auto camera = entity.getComponentAs<Camera>(ComponentType::Camera);
         if (!camera || !camera->isActive()) {
             continue;
         }
 
-        auto transform = Scene::findComponentAs<Transform>(entity, ComponentType::Transform);
+        auto transform = entity.getComponentAs<Transform>(ComponentType::Transform);
         if (!transform) {
             continue;
         }
@@ -76,12 +76,12 @@ RenderView RenderViewBuilder::build(const Scene& scene) {
     renderView.drawables.reserve(scene.getEntities().size());
 
     for (const auto& entity : scene.getEntities()) {
-        auto mesh = Scene::findComponentAs<Mesh>(entity, ComponentType::Mesh);
+        auto mesh = entity.getComponentAs<Mesh>(ComponentType::Mesh);
         if (!mesh || !mesh->isVisible()) {
             continue;
         }
 
-        auto transform = Scene::findComponentAs<Transform>(entity, ComponentType::Transform);
+        auto transform = entity.getComponentAs<Transform>(ComponentType::Transform);
         if (!transform) {
             continue;
         }
