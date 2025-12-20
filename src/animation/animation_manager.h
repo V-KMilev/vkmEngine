@@ -1,9 +1,11 @@
 #pragma once
 
-#include <chrono>
-#include "scene.h"
-#include "animation.h"
-#include "transform.h"
+
+namespace Engine {
+    class Scene;
+    struct Animation;
+    struct Transform;
+}
 
 namespace Engine {
 

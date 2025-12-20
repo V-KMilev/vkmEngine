@@ -29,8 +29,8 @@ class AnimationTrack {
         AnimationTrack(const AnimationTrack& other) = delete;
         AnimationTrack& operator=(const AnimationTrack& other) = delete;
 
-        AnimationTrack(AnimationTrack && other) = delete;
-        AnimationTrack& operator=(AnimationTrack && other) = delete;
+        AnimationTrack(AnimationTrack && other) noexcept = default;
+        AnimationTrack& operator=(AnimationTrack && other) noexcept = default;
 
     public:
         /**

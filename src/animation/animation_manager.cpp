@@ -1,6 +1,13 @@
 #include "animation_manager.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include "logger.h"
+
+#include "scene.h"
+#include "animation.h"
+#include "transform.h"
 
 namespace Engine {
 
@@ -10,46 +17,66 @@ AnimationManager& AnimationManager::get() {
 }
 
 void AnimationManager::update(Scene& scene, float deltaTime) {
-    for (auto& entity : scene.getEntities()) {
-        // Find Animation component
-        auto animation = entity.getComponentAs<Animation>(ComponentType::Animation);
-        if (!animation) {
+    auto& animationStorage = scene.storage<Animation>();
+    auto& transformStorage = scene.storage<Transform>();
+
+    // Iterate over all animation components
+    for (EntityId id = 0; id < animationStorage.size(); ++id) {
+        if (!animationStorage.has(id)) {
             continue;
         }
 
-        // Update animation timeline
-        animation->update(deltaTime);
+        auto& animation = animationStorage.get(id);
 
-        // Find Transform component to apply animation to
-        auto transform = entity.getComponentAs<Transform>(ComponentType::Transform);
-        if (!transform) {
+        // Skip if not playing
+        if (!animation.playing) {
             continue;
         }
 
-        // Apply animation to the transform
-        applyAnimation(*animation, *transform);
+        // Update animation time
+        animation.time += deltaTime * animation.speed;
+
+        // Calculate duration (longest track)
+        float duration = std::max({
+            animation.positionTrack.getDuration(),
+            animation.rotationTrack.getDuration(),
+            animation.scaleTrack.getDuration()
+        });
+
+        // Handle looping and end of animation
+        if (duration > 0.0f && animation.time >= duration) {
+            if (animation.looping) {
+                animation.time = std::fmod(animation.time, duration);
+            } else {
+                animation.time = duration;
+                animation.playing = false;
+            }
+        }
+
+        // Apply animation to transform if it exists
+        if (transformStorage.has(id)) {
+            auto& transform = transformStorage.get(id);
+            applyAnimation(animation, transform);
+        }
     }
 }
 
 void AnimationManager::applyAnimation(const Animation& animation, Transform& transform) const {
-    float time = animation.getTime();
+    float time = animation.time;
 
     // Apply position animation
-    if (!animation.getPositionTrack().isEmpty()) {
-        glm::vec3 position = animation.getPositionTrack().getValue(time);
-        transform.setPosition(position);
+    if (!animation.positionTrack.isEmpty()) {
+        transform.position = animation.positionTrack.getValue(time);
     }
 
     // Apply rotation animation
-    if (!animation.getRotationTrack().isEmpty()) {
-        glm::quat rotation = animation.getRotationTrack().getValue(time);
-        transform.setRotation(rotation);
+    if (!animation.rotationTrack.isEmpty()) {
+        transform.rotation = animation.rotationTrack.getValue(time);
     }
 
     // Apply scale animation
-    if (!animation.getScaleTrack().isEmpty()) {
-        glm::vec3 scale = animation.getScaleTrack().getValue(time);
-        transform.setScale(scale);
+    if (!animation.scaleTrack.isEmpty()) {
+        transform.scale = animation.scaleTrack.getValue(time);
     }
 }
 

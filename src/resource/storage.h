@@ -5,6 +5,10 @@
 #include <type_traits>
 #include <stdexcept>
 
+#include "l_assert.h"
+
+#include "resource.h"
+
 namespace Engine {
 
 /**
@@ -37,7 +41,7 @@ class Storage {
          * @return HandleType A handle representing the index/location of the resource.
          */
         HandleType add(T && resource) {
-            m_resources.push_back(std::move(resource));
+            m_resources.emplace_back(std::move(resource));
             // Handles are 1-based: index 0 -> handle.value 1, etc.
             return HandleType{ uint32_t(m_resources.size()) };
         }
@@ -75,9 +79,10 @@ class Storage {
          * @brief Commit any changes made to a resource after editing.
          * Increments the resource's version number.
          * @param handle The handle referencing the resource.
-         * @note Triggers a debug assertion (VKM_ASSERT) if handle.value == 0 (invalid handle).
+         * @note Triggers a debug assertion (VKM_ASSERT) if the resource does not inherit from Resource. or handle.value == 0 (invalid handle)
          */
         void commit(const HandleType& handle) {
+            VKM_ASSERT((std::is_base_of_v<Resource, T>), "Resource type T must inherit from Resource to use commit().");
             ++m_resources[idx(handle)].version;
         }
 

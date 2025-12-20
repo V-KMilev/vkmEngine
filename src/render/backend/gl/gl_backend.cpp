@@ -4,7 +4,6 @@
 #include "gl_shader.h"
 
 #include "render_view.h"
-#include "resource_manager.h"
 
 namespace Engine {
 

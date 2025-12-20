@@ -25,6 +25,10 @@
 
 #include "camera.h"
 #include "mesh.h"
+#include "entity.h"
+
+#include "mesh_asset.h"
+#include "material_asset.h"
 
 #include "render_manager.h"
 
@@ -165,69 +169,128 @@ static Engine::MeshAsset generateCubeMeshAsset() {
 }
 
 static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene& scene) {
+    Engine::MeshHandle cubeMesh          = resources.add(generateCubeMeshAsset());
+    Engine::MeshHandle sphereMesh        = resources.add(generateSphereMeshAsset());
+    Engine::MaterialHandle dummyMaterial = resources.add(Engine::MaterialAsset{});
 
-    const Engine::MeshHandle cubeMesh          = resources.add(generateCubeMeshAsset());
-    const Engine::MeshHandle sphereMesh        = resources.add(generateSphereMeshAsset());
-    const Engine::MaterialHandle dummyMaterial = resources.add(Engine::MaterialAsset{});
-
-    auto& cameraEntity = scene.createEntity(EntityType::NONE);
-    std::shared_ptr<Engine::Transform> cameraTransform;
-    std::shared_ptr<Engine::Transform> cube1Transform;
+    auto cameraEntity = scene.createEntity();
     {
-        auto cameraComponent    = scene.createComponent<Engine::Camera>(Engine::ProjectionType::Perspective);
-        auto transformComponent = scene.createComponent<Engine::Transform>(glm::vec3(0.0f, 4.0f, -7.0f));
-        cameraTransform = transformComponent;
-
-        cameraEntity.addComponent(cameraComponent);
-        cameraEntity.addComponent(cameraTransform);
+        scene.add(cameraEntity, Engine::Camera{Engine::ProjectionType::Perspective});
+        scene.add(cameraEntity, Engine::Transform{});
+        scene.add(cameraEntity, Engine::Animation{});
     }
 
-    auto& cube1 = scene.createEntity(EntityType::NONE);
+    auto cube1 = scene.createEntity();
     {
-        auto meshComponent      = scene.createComponent<Engine::Mesh>(cubeMesh, dummyMaterial);
-        auto transformComponent = scene.createComponent<Engine::Transform>(glm::vec3(0.0f, 2.0f, 0.0f));
-        cube1Transform = transformComponent;
-
-        cube1.addComponent(meshComponent);
-        cube1.addComponent(transformComponent);
+        scene.add(cube1, Engine::Mesh{cubeMesh, dummyMaterial});
+        scene.add(cube1, Engine::Transform{glm::vec3(0.0f, 5.0f, 0.0f)});
+        scene.add(cube1, Engine::Animation{});
     }
 
-    auto& cube2 = scene.createEntity(EntityType::NONE);
+    auto cube2 = scene.createEntity();
     {
-        auto meshComponent      = scene.createComponent<Engine::Mesh>(cubeMesh, dummyMaterial);
-        auto transformComponent = scene.createComponent<Engine::Transform>(glm::vec3(0.0f, -1.0f, 0.0f));
-        transformComponent->setScale(glm::vec3(5.0f, 0.5f, 5.0f));
-
-        cube2.addComponent(meshComponent);
-        cube2.addComponent(transformComponent);
+        scene.add(cube2, Engine::Mesh{cubeMesh, dummyMaterial});
+        scene.add(cube2, Engine::Transform{glm::vec3(0.0f, 2.5f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(5.0f, 0.5f, 5.0f)});
+        scene.add(cube2, Engine::Animation{});
     }
 
     for (int i = 1; i < 10000; i++) {
-        auto& cube = scene.createEntity(EntityType::NONE);
+        auto gridObject = scene.createEntity();
         {
-            auto meshComponent = scene.createComponent<Engine::Mesh>(i % 2 == 0 ? sphereMesh : cubeMesh, dummyMaterial);
-
-            // Arrange the cubes in a grid for a checkers pattern
             int gridSize = 100;
             int x = i % gridSize;
             float y = -3.0f;
             int z = i / gridSize;
 
             float spacing = 2.5f;
-
-            // Center the grid around the origin
             float gridCenterOffset = (gridSize - 1) * spacing * 0.5f;
 
-            // Only place cubes for checker pattern (i.e., only on "black" squares)
             if (((x + z) % 2) == 0) {
-                auto transformComponent = scene.createComponent<Engine::Transform>(
+                scene.add(gridObject, Engine::Mesh{i % 2 == 0 ? sphereMesh : cubeMesh, dummyMaterial});
+                scene.add(gridObject, Engine::Animation{});
+                scene.add(gridObject, Engine::Transform{
                     glm::vec3(x * spacing - gridCenterOffset, y, z * spacing - gridCenterOffset)
-                );
-                cube.addComponent(transformComponent);
+                });
             }
-
-            cube.addComponent(meshComponent);
         }
+    }
+}
+
+static void generateAnimations(Engine::Scene& scene) {
+    auto& animationStorage = scene.storage<Engine::Animation>();
+    for (Engine::EntityId id = 0; id < animationStorage.size(); ++id) {
+        if (!animationStorage.has(id)) {
+            continue;
+        }
+
+        auto& anim = scene.get<Engine::Animation>(Engine::Entity{id});
+
+        if (id == 1) {
+            auto& positionTrack = anim.positionTrack;
+            auto& rotationTrack = anim.rotationTrack;
+            positionTrack.setEasing(Easing::linear);
+            rotationTrack.setEasing(Easing::easeInOutSine);
+
+            constexpr float duration = 20.0f;
+            constexpr float radius = 25.0f;
+            constexpr float height = 10.0f;
+
+            for (int i = 0; i <= static_cast<int>(duration); ++i) {
+                float t = float(i) / duration;
+                float angle = t * glm::two_pi<float>();
+
+                glm::vec3 pos = {
+                    radius * std::cos(angle),
+                    glm::abs(height * std::sin(angle)),
+                    radius * std::sin(angle)
+                };
+                glm::vec3 forward = glm::normalize(pos - glm::vec3(0));
+                positionTrack.addKeyframe(t * duration, pos);
+                rotationTrack.addKeyframe(t * duration, glm::quatLookAt(forward, glm::vec3(0,1,0)));
+            }
+        }
+        else if (id == 3) {
+            auto& rotationTrack = anim.rotationTrack;
+            rotationTrack.setEasing(Easing::linear);
+            constexpr float duration = 10.0f;
+            glm::vec3 axis = glm::normalize(glm::vec3(0, 1, 0));
+            rotationTrack.addKeyframe(0.0f, glm::quat(1, 0, 0, 0));
+            rotationTrack.addKeyframe(duration/2, glm::angleAxis(glm::pi<float>(), axis));
+            rotationTrack.addKeyframe(duration, glm::angleAxis(glm::two_pi<float>(), axis));
+        }
+        else if (id >= 2) {
+            if (id % 2 == 0) {
+                auto& rotationTrack = anim.rotationTrack;
+                rotationTrack.setEasing(Easing::linear);
+                constexpr float duration = 10.0f;
+                glm::vec3 axis = glm::normalize(glm::vec3(1, 1, 0));
+                rotationTrack.addKeyframe(0.0f, glm::quat(1, 0, 0, 0));
+                rotationTrack.addKeyframe(duration/2, glm::angleAxis(glm::pi<float>(), axis));
+                rotationTrack.addKeyframe(duration, glm::angleAxis(glm::two_pi<float>(), axis));
+            } else {
+                auto& positionTrack = anim.positionTrack;
+                positionTrack.setEasing(Easing::easeInOutSine);
+
+                // Grid layout
+                constexpr int gridSize = 100;
+                constexpr float spacing = 2.5f;
+                constexpr float offset = (gridSize - 1) * spacing * 0.5f;
+                int x = id % gridSize;
+                int z = id / gridSize;
+
+                constexpr float duration = 3.0f;
+                float px = x * spacing - offset;
+                float pz = z * spacing - offset;
+
+                positionTrack.addKeyframe(0.0f, glm::vec3(px, -3.0f, pz));
+                positionTrack.addKeyframe(duration/3, glm::vec3(px, 0.0f, pz));
+                positionTrack.addKeyframe(2*duration/3, glm::vec3(px, 1.0f, pz));
+                positionTrack.addKeyframe(duration, glm::vec3(px, -3.0f, pz));
+            }
+        }
+
+        anim.looping = true;
+        anim.playing = true;
     }
 }
 
@@ -263,78 +326,7 @@ int main() {
         Engine::Scene scene;
 
         generateBasicScene(resources, scene);
-
-        for (auto& entity : scene.getEntities()) {
-            auto id = entity.getID();
-            if (id == 2 || id > 3 ) {
-                // Animate cube1: rotating around Y axis
-                auto cube1Animation = scene.createComponent<Engine::Animation>();
-
-                if (id % 2 == 0) {
-                    // Create a rotation animation that loops
-                    auto& rotationTrack = cube1Animation->getRotationTrack();
-                    rotationTrack.setEasing(Easing::linear);
-
-                    const float duration = 10.0f;
-                    rotationTrack.addKeyframe(0.0f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
-                    rotationTrack.addKeyframe(duration / 2.0f, glm::angleAxis(glm::two_pi<float>() / 2, glm::vec3(1.0f, 1.0f, 0.0f)));
-                    rotationTrack.addKeyframe(duration, glm::angleAxis(glm::two_pi<float>(), glm::vec3(1.0f, 1.0f, 0.0f)));
-                } else {
-                    auto& positionTrack = cube1Animation->getPositionTrack();
-                    positionTrack.setEasing(Easing::easeInOutSine);
-
-                    // Arrange the cubes in a grid for a checkers pattern
-                    int gridSize = 100;
-                    int x = id % gridSize;
-                    int z = id / gridSize;
-
-                    float spacing = 2.5f;
-
-                    // Center the grid around the origin
-                    float gridCenterOffset = (gridSize - 1) * spacing * 0.5f;
-
-                    const float duration = 3.0f;
-                    positionTrack.addKeyframe(0.0f, glm::vec3(x * spacing - gridCenterOffset, -3.0f, z * spacing - gridCenterOffset));
-                    positionTrack.addKeyframe(duration / 3.0f, glm::vec3(x * spacing - gridCenterOffset, 0.0f, z * spacing - gridCenterOffset));
-                    positionTrack.addKeyframe(duration * 2.0f / 3.0f, glm::vec3(x * spacing - gridCenterOffset, 1.0f, z * spacing - gridCenterOffset));
-                    positionTrack.addKeyframe(duration, glm::vec3(x * spacing - gridCenterOffset, -3.0f, z * spacing - gridCenterOffset));
-                }
-
-                cube1Animation->setLooping(true);
-                cube1Animation->play();
-                entity.addComponent(cube1Animation);
-            } else if (id == 1) {
-                 auto cameraAnimation = scene.createComponent<Engine::Animation>();
-
-                 auto& positionTrack = cameraAnimation->getPositionTrack();
-                 positionTrack.setEasing(Easing::linear);
-
-                 auto& rotationTrack = cameraAnimation->getRotationTrack();
-                 rotationTrack.setEasing(Easing::easeInOutSine);
-
-                 const float orbitDuration = 20.0f;
-                 const float radius = 25.0f;
-                 const float height = 10.0f;
-
-                 for (int i = 0; i <= int(orbitDuration); ++i) {
-                    float t = static_cast<float>(i) / int(orbitDuration);
-                    float angle = t * glm::two_pi<float>();
-
-                    glm::vec3 position = {
-                        radius * std::cos(angle),
-                        glm::abs(height * std::sin(angle)),
-                        radius * std::sin(angle)
-                    };
-                    positionTrack.addKeyframe(t * orbitDuration, position);
-                    rotationTrack.addKeyframe(t * orbitDuration, glm::quatLookAt(position, glm::vec3(0.0f, 1.0f, 0.0f)));
-                 }
-
-                 cameraAnimation->setLooping(true);
-                 cameraAnimation->play();
-                 entity.addComponent(cameraAnimation);
-            }
-
-        }
+        generateAnimations(scene);
 
         using clock = std::chrono::steady_clock;
         auto lastStatsPrint = clock::now();

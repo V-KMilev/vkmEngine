@@ -43,7 +43,7 @@ class ResourceManager {
          * @param resource The resource instance to add (will be moved).
          * @return The handle for the newly added resource.
          */
-        template<class ResourceType>
+        template<typename ResourceType>
         decltype(auto) add(ResourceType && resource) {
             using StorageType = std::remove_cv_t<std::remove_reference_t<ResourceType>>;
             return getStorage<StorageType>().add(std::forward<ResourceType>(resource));
@@ -55,7 +55,7 @@ class ResourceManager {
          * @tparam handleType The handle type associated with the resource.
          * @param handle Handle referencing the resource to remove.
          */
-         template<class handleType>
+         template<typename handleType>
          decltype(auto) remove(const handleType& handle) {
              using StorageType = typename handleType::resource_t;
              return getStorage<StorageType>().remove(handle);
@@ -68,7 +68,7 @@ class ResourceManager {
          * @param handle Handle used to look up the resource.
          * @return const reference to the resource.
          */
-        template<class handleType>
+        template<typename handleType>
         decltype(auto) get(const handleType& handle) const {
             using StorageType = typename handleType::resource_t;
             return getStorage<StorageType>().get(handle);
@@ -81,7 +81,7 @@ class ResourceManager {
          * @param handle Handle used to look up the resource.
          * @return mutable reference to the resource.
          */
-        template<class handleType>
+        template<typename handleType>
         decltype(auto) edit(const handleType& handle) {
             using StorageType = typename handleType::resource_t;
             return getStorage<StorageType>().edit(handle);
@@ -93,7 +93,7 @@ class ResourceManager {
          * @tparam handleType The handle type associated with the resource.
          * @param handle Handle referencing the resource to commit.
          */
-        template<class handleType>
+        template<typename handleType>
         void commit(const handleType& handle) {
             using StorageType = typename handleType::resource_t;
             getStorage<StorageType>().commit(handle);
