@@ -2,26 +2,22 @@
 
 #include "logger.h"
 
-#include "render_backend.h"
-
 #include "render_view_builder.h"
 #include "resource_manager.h"
-
 #include "scene.h"
+
+#include "render_backend.h"
+#include "render_pass.h"
 
 namespace Engine {
 
 RenderManager::RenderManager() : m_width(0), m_height(0) {}
 
-void RenderManager::setBackend(std::unique_ptr<RenderBackend> backend) {
-    m_backend = std::move(backend);
-
-    // If we already know size, propagate it
-    if (m_backend && m_width > 0 && m_height > 0) {
-        m_backend->resize(m_width, m_height);
-        m_pipeline.onResize(*m_backend, m_width, m_height);
-    }
+RenderManager::~RenderManager() {
+    m_backend.reset();
 }
+
+void RenderManager::setBackend(std::unique_ptr<RenderBackend> backend) { m_backend = std::move(backend); }
 
 void RenderManager::resize(uint32_t width, uint32_t height) {
     m_width = width;

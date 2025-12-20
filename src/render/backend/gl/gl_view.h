@@ -1,8 +1,8 @@
 #pragma once
 
+#include <unordered_map>
 #include <cstdint>
 #include <memory>
-#include <unordered_map>
 
 #include "mesh_asset.h"
 #include "material_asset.h"

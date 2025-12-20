@@ -54,8 +54,8 @@ class RenderBackend {
         RenderBackend(const RenderBackend& other) = delete;
         RenderBackend& operator=(const RenderBackend& other) = delete;
 
-        RenderBackend(RenderBackend&& other) = delete;
-        RenderBackend& operator=(RenderBackend&& other) = delete;
+        RenderBackend(RenderBackend && other) = delete;
+        RenderBackend& operator=(RenderBackend && other) = delete;
 
     public:
         /**

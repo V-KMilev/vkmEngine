@@ -2,7 +2,6 @@
 
 #include <vector>
 #include <optional>
-#include <type_traits>
 
 #include "l_assert.h"
 #include "entity.h"

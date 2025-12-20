@@ -1,9 +1,8 @@
 #include "event_manager.h"
 
-#include <algorithm>
-
 #include "logger.h"
 #include "print_helper.h"
+
 #include "event_listener.h"
 
 EventManager::EventManager(size_t numThreads) : m_threadPool(numThreads) {
