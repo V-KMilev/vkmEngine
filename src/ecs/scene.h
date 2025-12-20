@@ -1,9 +1,7 @@
 #pragma once
 
-#include <type_traits>
-
-#include "entity.h"
 #include "component_storage.h"
+#include "entity.h"
 
 #include "transform.h"
 #include "mesh.h"
@@ -160,7 +158,7 @@ class Scene {
             else if constexpr (std::is_same_v<T, Mesh>)      return m_meshes;
             else if constexpr (std::is_same_v<T, Camera>)    return m_cameras;
             else if constexpr (std::is_same_v<T, Animation>) return m_animations;
-            else                                              VKM_ASSERT(false, "Component type T is not supported. Supported types: Transform, Mesh, Camera, Animation");
+            else                                             VKM_ASSERT(false, "Component type T is not supported. Supported types: Transform, Mesh, Camera, Animation");
         }
 
     private:

@@ -2,12 +2,12 @@
 
 #include <cstdint>
 #include <vector>
-#include <type_traits>
-#include <stdexcept>
 
 #include "l_assert.h"
 
-#include "resource.h"
+namespace Engine {
+    struct Resource;
+}
 
 namespace Engine {
 

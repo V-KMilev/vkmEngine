@@ -6,10 +6,12 @@
 #include "render_pipeline.h"
 
 namespace Engine {
-    class Scene;
     class ResourceManager;
-    class RenderBackend;
     struct RenderView;
+    class Scene;
+
+    class RenderBackend;
+    class RenderPass;
 }
 
 namespace Engine {
@@ -33,7 +35,7 @@ namespace Engine {
 class RenderManager {
     public:
         RenderManager();
-        ~RenderManager() = default;
+        ~RenderManager();
 
         RenderManager(const RenderManager& other) = delete;
         RenderManager& operator=(const RenderManager& other) = delete;
@@ -41,6 +43,7 @@ class RenderManager {
         RenderManager(RenderManager && other) = delete;
         RenderManager& operator=(RenderManager && other) = delete;
 
+    public:
         /**
          * @brief Switch the active rendering backend.
          *

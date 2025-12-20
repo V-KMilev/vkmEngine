@@ -31,8 +31,8 @@ class RenderPass {
         RenderPass(const RenderPass& other) = delete;
         RenderPass& operator=(const RenderPass& other) = delete;
 
-        RenderPass(RenderPass&& other) = delete;
-        RenderPass& operator=(RenderPass&& other) = delete;
+        RenderPass(RenderPass && other) = delete;
+        RenderPass& operator=(RenderPass && other) = delete;
 
         /**
          * @brief Construct a named render pass.

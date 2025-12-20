@@ -18,31 +18,20 @@
 #include "gl_context.h"
 #include "gl_shader.h"
 
-#include "statistics.h"
-#include "event_manager.h"
+#include "animation_manager.h"
+#include "resource_manager.h"
 #include "window_manager.h"
-// #include "input_handle.h"
-
-#include "camera.h"
-#include "mesh.h"
-#include "entity.h"
-
-#include "mesh_asset.h"
-#include "material_asset.h"
-
 #include "render_manager.h"
+#include "event_manager.h"
+
+#include "input_handle.h"
+#include "statistics.h"
+
+#include "scene.h"
 
 #include "gl_backend.h"
-#include "gl_mesh.h"
-#include "gl_material.h"
-#include "gl_view.h"
 #include "gl_forward_pass.h"
 
-#include "resource_manager.h"
-#include "transform.h"
-#include "scene.h"
-#include "animation.h"
-#include "animation_manager.h"
 
 static Engine::MeshAsset generateSphereMeshAsset() {
     using namespace Engine;
@@ -244,17 +233,17 @@ static void generateAnimations(Engine::Scene& scene) {
                     glm::abs(height * std::sin(angle)),
                     radius * std::sin(angle)
                 };
-                glm::vec3 forward = glm::normalize(pos - glm::vec3(0));
+                glm::vec3 forward = glm::normalize(pos - glm::vec3(0.0f));
                 positionTrack.addKeyframe(t * duration, pos);
-                rotationTrack.addKeyframe(t * duration, glm::quatLookAt(forward, glm::vec3(0,1,0)));
+                rotationTrack.addKeyframe(t * duration, glm::quatLookAt(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
             }
         }
         else if (id == 3) {
             auto& rotationTrack = anim.rotationTrack;
             rotationTrack.setEasing(Easing::linear);
             constexpr float duration = 10.0f;
-            glm::vec3 axis = glm::normalize(glm::vec3(0, 1, 0));
-            rotationTrack.addKeyframe(0.0f, glm::quat(1, 0, 0, 0));
+            glm::vec3 axis = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f));
+            rotationTrack.addKeyframe(0.0f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
             rotationTrack.addKeyframe(duration/2, glm::angleAxis(glm::pi<float>(), axis));
             rotationTrack.addKeyframe(duration, glm::angleAxis(glm::two_pi<float>(), axis));
         }
@@ -263,8 +252,8 @@ static void generateAnimations(Engine::Scene& scene) {
                 auto& rotationTrack = anim.rotationTrack;
                 rotationTrack.setEasing(Easing::linear);
                 constexpr float duration = 10.0f;
-                glm::vec3 axis = glm::normalize(glm::vec3(1, 1, 0));
-                rotationTrack.addKeyframe(0.0f, glm::quat(1, 0, 0, 0));
+                glm::vec3 axis = glm::normalize(glm::vec3(1.0f, 1.0f, 0.0f));
+                rotationTrack.addKeyframe(0.0f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
                 rotationTrack.addKeyframe(duration/2, glm::angleAxis(glm::pi<float>(), axis));
                 rotationTrack.addKeyframe(duration, glm::angleAxis(glm::two_pi<float>(), axis));
             } else {
@@ -351,7 +340,7 @@ int main() {
 
             if (now - lastStatsPrint >= std::chrono::milliseconds(500)) {
                 const auto& info = statisticTracker.getFrameInfo();
-                std::printf("[%lu] FPS: %.2f (%.4fms) | Draws: %u | Entities: %u\n",
+                std::printf("[%llu] FPS: %.2f (%.4fms) | Draws: %u | Entities: %u\n",
                     info.frameIndex,
                     info.frameRateInfo.frameRate,
                     info.frameRateInfo.frameTime,
