@@ -21,6 +21,12 @@ struct Keyframe {
         Keyframe() = delete;
         ~Keyframe() = default;
 
+        Keyframe(const Keyframe& other) = delete;
+        Keyframe& operator=(const Keyframe& other) = delete;
+
+        Keyframe(Keyframe && other) noexcept = default;
+        Keyframe& operator=(Keyframe && other) noexcept = default;
+
         /**
         * @brief Parameterized constructor.
         * @param t The keyframe time.

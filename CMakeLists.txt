@@ -33,15 +33,6 @@ endif()
 add_executable(${PROJECT_NAME}
     main.cpp
 
-    src/ecs/component.cpp
-    src/ecs/entity.cpp
-    src/ecs/scene.cpp
-
-    src/ecs/components/mesh.cpp
-    src/ecs/components/camera.cpp
-    src/ecs/components/transform.cpp
-    src/ecs/components/animation.cpp
-
     src/animation/animation_manager.cpp
 
     src/render/backend/gl/gl_mesh.cpp
