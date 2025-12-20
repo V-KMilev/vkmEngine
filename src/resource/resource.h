@@ -1,12 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
-#include <string>
-
-#include <glm/glm.hpp>
-
-#include "resource_handle.h"
 
 namespace Engine {
 
@@ -36,4 +30,3 @@ struct Resource {
 };
 
 } // namespace Engine
-

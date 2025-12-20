@@ -3,8 +3,9 @@
 #include <memory>
 
 #include "render_backend.h"
-#include "gl_view.h"
+
 #include "gl_context.h"
+#include "gl_view.h"
 
 namespace Engine {
     class RenderView;

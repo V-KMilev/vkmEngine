@@ -1,14 +1,12 @@
 #pragma once
 
-#include <queue>
-#include <mutex>
-#include <string>
 #include <unordered_map>
-#include <vector>
-#include "event_listener.h"
-#include "event.h"
+#include <string>
 
 #include "thread_pool.h"
+
+#include "event_listener.h"
+#include "event.h"
 
 #define DEFAULT_EVENT_THREADS std::thread::hardware_concurrency()
 

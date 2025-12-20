@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "resource.h"
 #include "resource_handle.h"
 

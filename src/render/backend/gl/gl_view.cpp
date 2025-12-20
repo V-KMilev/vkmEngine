@@ -2,8 +2,8 @@
 
 #include "logger.h"
 
-#include "render_view.h"
 #include "resource_manager.h"
+#include "render_view.h"
 
 #include "gl_mesh.h"
 #include "gl_material.h"

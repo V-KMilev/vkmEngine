@@ -3,9 +3,8 @@
 #include <memory>
 
 #include "frame_info.h"
-
-class FrameTracker;
-class CallTracker;
+#include "frame_tracker.h"
+#include "call_tracker.h"
 
 /**
  * @class StatisticTracker
@@ -100,8 +99,8 @@ class StatisticTracker {
     private:
         FrameInfo m_frameInfo;
 
-        std::unique_ptr<FrameTracker> m_frameTracker;
-        std::unique_ptr<CallTracker> m_callTracker;
+        FrameTracker m_frameTracker;
+        CallTracker m_callTracker;
 };
 
 /**

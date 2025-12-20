@@ -1,5 +1,7 @@
 #pragma once
 
+#include <glm/glm.hpp>
+
 #include "resource.h"
 #include "resource_handle.h"
 

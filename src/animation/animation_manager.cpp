@@ -1,8 +1,5 @@
 #include "animation_manager.h"
 
-#include <algorithm>
-#include <cmath>
-
 #include "logger.h"
 
 #include "scene.h"
