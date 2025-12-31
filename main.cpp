@@ -20,6 +20,7 @@
 
 #include "animation_manager.h"
 #include "resource_manager.h"
+#include "basic_meshes.h"
 #include "window_manager.h"
 #include "render_manager.h"
 #include "event_manager.h"
@@ -31,135 +32,13 @@
 
 #include "gl_backend.h"
 #include "gl_forward_pass.h"
+#include "gl_aabb_debug_pass.h"
 
 
-static Engine::MeshAsset generateSphereMeshAsset() {
-    using namespace Engine;
-    MeshAsset mesh;
-
-    const unsigned int X_SEGMENTS = 32;
-    const unsigned int Y_SEGMENTS = 16;
-    const float PI = glm::pi<float>();
-
-    // Generate vertices
-    for (unsigned int y = 0; y <= Y_SEGMENTS; ++y) {
-        for (unsigned int x = 0; x <= X_SEGMENTS; ++x) {
-            float xSegment = (float)x / (float)X_SEGMENTS;
-            float ySegment = (float)y / (float)Y_SEGMENTS;
-            float xPos = std::cos(xSegment * 2.0f * PI) * std::sin(ySegment * PI);
-            float yPos = std::cos(ySegment * PI);
-            float zPos = std::sin(xSegment * 2.0f * PI) * std::sin(ySegment * PI);
-
-            glm::vec3 position = glm::vec3(xPos, yPos, zPos);
-            glm::vec3 normal = glm::normalize(position);
-            glm::vec2 texCoords = glm::vec2(xSegment, ySegment);
-
-            // Tangent calculation
-            // For a sphere, use derivation along the s/x axis for the tangent
-            glm::vec4 tangent;
-            float theta = xSegment * 2.0f * PI;
-            float phi = ySegment * PI;
-            tangent.x = -std::sin(theta) * std::sin(phi);
-            tangent.y = 0.0f;
-            tangent.z = std::cos(theta) * std::sin(phi);
-            tangent.w = 1.0f;
-            tangent = glm::normalize(tangent);
-
-            mesh.vertices.push_back(Vertex{
-                position,
-                normal,
-                texCoords,
-                tangent
-            });
-        }
-    }
-
-    // Generate indices
-    bool oddRow = false;
-    for (unsigned int y = 0; y < Y_SEGMENTS; ++y) {
-        for (unsigned int x = 0; x < X_SEGMENTS; ++x) {
-            unsigned int i0 = y * (X_SEGMENTS + 1) + x;
-            unsigned int i1 = (y + 1) * (X_SEGMENTS + 1) + x;
-            unsigned int i2 = (y + 1) * (X_SEGMENTS + 1) + (x + 1);
-            unsigned int i3 = y * (X_SEGMENTS + 1) + (x + 1);
-
-            // Two triangles per quad
-            mesh.indices.push_back(i0);
-            mesh.indices.push_back(i1);
-            mesh.indices.push_back(i2);
-
-            mesh.indices.push_back(i2);
-            mesh.indices.push_back(i3);
-            mesh.indices.push_back(i0);
-        }
-    }
-
-    return mesh;
-}
-
-static Engine::MeshAsset generateCubeMeshAsset() {
-    using namespace Engine;
-    MeshAsset mesh;
-
-    mesh.vertices = {
-        // -Z (Front)
-        Vertex{ glm::vec3(-1.0f, -1.0f, -1.0f),  glm::vec3(0.0f,  0.0f, -1.0f), glm::vec2(0.0f, 0.0f),  glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }, // 0
-        Vertex{ glm::vec3( 1.0f, -1.0f, -1.0f),  glm::vec3(0.0f,  0.0f, -1.0f), glm::vec2(1.0f, 0.0f),  glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }, // 1
-        Vertex{ glm::vec3( 1.0f,  1.0f, -1.0f),  glm::vec3(0.0f,  0.0f, -1.0f), glm::vec2(1.0f, 1.0f),  glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }, // 2
-        Vertex{ glm::vec3(-1.0f,  1.0f, -1.0f),  glm::vec3(0.0f,  0.0f, -1.0f), glm::vec2(0.0f, 1.0f),  glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }, // 3
-
-        // +Z (Back)
-        Vertex{ glm::vec3(-1.0f, -1.0f,  1.0f),  glm::vec3(0.0f, 0.0f,  1.0f), glm::vec2(0.0f, 0.0f), glm::vec4(-1.0f, 0.0f, 0.0f, 1.0f) }, // 4
-        Vertex{ glm::vec3( 1.0f, -1.0f,  1.0f),  glm::vec3(0.0f, 0.0f,  1.0f), glm::vec2(1.0f, 0.0f), glm::vec4(-1.0f, 0.0f, 0.0f, 1.0f) }, // 5
-        Vertex{ glm::vec3( 1.0f,  1.0f,  1.0f),  glm::vec3(0.0f, 0.0f,  1.0f), glm::vec2(1.0f, 1.0f), glm::vec4(-1.0f, 0.0f, 0.0f, 1.0f) }, // 6
-        Vertex{ glm::vec3(-1.0f,  1.0f,  1.0f),  glm::vec3(0.0f, 0.0f,  1.0f), glm::vec2(0.0f, 1.0f), glm::vec4(-1.0f, 0.0f, 0.0f, 1.0f) }, // 7
-
-        // -X (Left)
-        Vertex{ glm::vec3(-1.0f, -1.0f,  1.0f),  glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec2(0.0f, 0.0f),  glm::vec4(0.0f, 0.0f, -1.0f, 1.0f) }, // 8
-        Vertex{ glm::vec3(-1.0f, -1.0f, -1.0f),  glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec2(1.0f, 0.0f),  glm::vec4(0.0f, 0.0f, -1.0f, 1.0f) }, // 9
-        Vertex{ glm::vec3(-1.0f,  1.0f, -1.0f),  glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec2(1.0f, 1.0f),  glm::vec4(0.0f, 0.0f, -1.0f, 1.0f) }, // 10
-        Vertex{ glm::vec3(-1.0f,  1.0f,  1.0f),  glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec2(0.0f, 1.0f),  glm::vec4(0.0f, 0.0f, -1.0f, 1.0f) }, // 11
-
-        // +X (Right)
-        Vertex{ glm::vec3( 1.0f, -1.0f, -1.0f),  glm::vec3(1.0f,  0.0f,  0.0f), glm::vec2(0.0f, 0.0f),  glm::vec4(0.0f, 0.0f, 1.0f, 1.0f) }, // 12
-        Vertex{ glm::vec3( 1.0f, -1.0f,  1.0f),  glm::vec3(1.0f,  0.0f,  0.0f), glm::vec2(1.0f, 0.0f),  glm::vec4(0.0f, 0.0f, 1.0f, 1.0f) }, // 13
-        Vertex{ glm::vec3( 1.0f,  1.0f,  1.0f),  glm::vec3(1.0f,  0.0f,  0.0f), glm::vec2(1.0f, 1.0f),  glm::vec4(0.0f, 0.0f, 1.0f, 1.0f) }, // 14
-        Vertex{ glm::vec3( 1.0f,  1.0f, -1.0f),  glm::vec3(1.0f,  0.0f,  0.0f), glm::vec2(0.0f, 1.0f),  glm::vec4(0.0f, 0.0f, 1.0f, 1.0f) }, // 15
-
-        // +Y (Top)
-        Vertex{ glm::vec3(-1.0f,  1.0f, -1.0f),  glm::vec3(0.0f,  1.0f,  0.0f), glm::vec2(0.0f, 0.0f),  glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }, // 16
-        Vertex{ glm::vec3( 1.0f,  1.0f, -1.0f),  glm::vec3(0.0f,  1.0f,  0.0f), glm::vec2(1.0f, 0.0f),  glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }, // 17
-        Vertex{ glm::vec3( 1.0f,  1.0f,  1.0f),  glm::vec3(0.0f,  1.0f,  0.0f), glm::vec2(1.0f, 1.0f),  glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }, // 18
-        Vertex{ glm::vec3(-1.0f,  1.0f,  1.0f),  glm::vec3(0.0f,  1.0f,  0.0f), glm::vec2(0.0f, 1.0f),  glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }, // 19
-
-        // -Y (Bottom)
-        Vertex{ glm::vec3(-1.0f, -1.0f,  1.0f),  glm::vec3(0.0f, -1.0f,  0.0f), glm::vec2(0.0f, 0.0f),  glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }, // 20
-        Vertex{ glm::vec3( 1.0f, -1.0f,  1.0f),  glm::vec3(0.0f, -1.0f,  0.0f), glm::vec2(1.0f, 0.0f),  glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }, // 21
-        Vertex{ glm::vec3( 1.0f, -1.0f, -1.0f),  glm::vec3(0.0f, -1.0f,  0.0f), glm::vec2(1.0f, 1.0f),  glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }, // 22
-        Vertex{ glm::vec3(-1.0f, -1.0f, -1.0f),  glm::vec3(0.0f, -1.0f,  0.0f), glm::vec2(0.0f, 1.0f),  glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) }, // 23
-    };
-
-    mesh.indices = {
-        // Front face
-        0, 1, 2,  2, 3, 0,
-        // Back face
-        4, 5, 6, 6, 7, 4,
-        // Left face
-        8, 9,10, 10,11, 8,
-        // Right face
-        12,13,14, 14,15,12,
-        // Top face
-        16,17,18, 18,19,16,
-        // Bottom face
-        20,21,22, 22,23,20
-    };
-
-    return mesh;
-}
 
 static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene& scene) {
-    Engine::MeshHandle cubeMesh          = resources.add(generateCubeMeshAsset());
-    Engine::MeshHandle sphereMesh        = resources.add(generateSphereMeshAsset());
+    Engine::MeshHandle cubeMesh          = resources.add(Engine::generateCube());
+    Engine::MeshHandle sphereMesh        = resources.add(Engine::generateSphere());
     Engine::MaterialHandle dummyMaterial = resources.add(Engine::MaterialAsset{});
 
     auto cameraEntity = scene.createEntity();
@@ -183,10 +62,10 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
         scene.add(cube2, Engine::Animation{});
     }
 
-    for (int i = 1; i < 10000; i++) {
+    for (int i = 1; i < 100000; i++) {
         auto gridObject = scene.createEntity();
         {
-            int gridSize = 100;
+            int gridSize = 316;
             int x = i % gridSize;
             float y = -3.0f;
             int z = i / gridSize;
@@ -261,7 +140,7 @@ static void generateAnimations(Engine::Scene& scene) {
                 positionTrack.setEasing(Easing::easeInOutSine);
 
                 // Grid layout
-                constexpr int gridSize = 100;
+                constexpr int gridSize = 316;
                 constexpr float spacing = 2.5f;
                 constexpr float offset = (gridSize - 1) * spacing * 0.5f;
                 int x = id % gridSize;
@@ -307,10 +186,12 @@ int main() {
         Engine::RenderManager renderManager;
         Engine::ResourceManager resources;
 
-        Core::Shader shader("../shaders/pbr");
+        Core::Shader pbr("../shaders/pbr");
+        Core::Shader aabbDebug("../shaders/aabb_debug");
 
         renderManager.setBackend(std::make_unique<Engine::GLBackend>());
-        renderManager.addPass(std::make_unique<Engine::GLForwardPass>(shader));
+        renderManager.addPass(std::make_unique<Engine::GLForwardPass>(pbr));
+        renderManager.addPass(std::make_unique<Engine::GLAABBDebugPass>(aabbDebug));
 
         Engine::Scene scene;
 

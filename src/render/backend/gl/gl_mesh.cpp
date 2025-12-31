@@ -67,10 +67,9 @@ void GLMesh::bind() const {
 }
 
 // TODO: Think of how to make it correct
-void GLMesh::draw() const {
+void GLMesh::draw(int drawType) const {
     bind();
 
-    constexpr const uint32_t drawType = GL_TRIANGLES;
     constexpr const uint32_t indicesOffset = 0;
 
     VKM_GL_CHECK(glDrawElements(

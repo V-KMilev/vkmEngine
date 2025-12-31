@@ -55,7 +55,7 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
         }
 
         const GLMesh& mesh = glView.getMesh(drawable.mesh);
-        mesh.draw();
+        mesh.draw(GL_TRIANGLES);
     }
 }
 

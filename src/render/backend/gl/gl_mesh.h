@@ -64,8 +64,9 @@ class GLMesh {
 
         /**
          * @brief Issues an OpenGL draw call using current mesh data.
+         * @param drawType The type of draw call to issue.
          */
-        void draw() const;
+        void draw(int drawType) const;
 
     private:
         size_t m_indexCount;
