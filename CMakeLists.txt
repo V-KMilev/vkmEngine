@@ -33,6 +33,8 @@ endif()
 add_executable(${PROJECT_NAME}
     main.cpp
 
+    utils/basic_meshes.cpp
+
     src/animation/animation_manager.cpp
 
     src/render/backend/gl/gl_mesh.cpp
@@ -42,8 +44,12 @@ add_executable(${PROJECT_NAME}
 
     src/render/render_manager.cpp
     src/render/view/render_view_builder.cpp
+    src/render/culling/frustum_culler.cpp
     src/render/pipeline/pass/gl_forward_pass.cpp
+    src/render/pipeline/pass/gl_aabb_debug_pass.cpp
     src/render/pipeline/render_pipeline.cpp
+
+    src/resource/assets/mesh_asset.cpp
 
     src/thread/thread_pool.cpp
 
@@ -73,6 +79,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
     src/render
     src/render/view
+    src/render/culling
     src/render/backend
     src/render/backend/gl
     src/render/backend/gl/passes
