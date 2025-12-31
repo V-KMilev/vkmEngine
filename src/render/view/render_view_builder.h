@@ -4,6 +4,7 @@
 
 namespace Engine {
     class Scene;
+    class ResourceManager;
 }
 
 namespace Engine {
@@ -29,9 +30,10 @@ class RenderViewBuilder {
         /**
          * @brief Build a RenderView from a given Scene, along with view space dimensions for perspective projection calculations.
          * @param scene The Scene to build the RenderView from.
+         * @param resources Reference to ResourceManager for accessing mesh bounds for frustum culling.
          * @return The constructed RenderView.
          */
-        static RenderView build(const Scene& scene);
+        static RenderView build(const Scene& scene, const ResourceManager& resources);
 };
 
 } // namespace Engine

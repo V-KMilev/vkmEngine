@@ -46,7 +46,7 @@ void RenderManager::renderFrame(
     }
 
     // Build snapshot for this frame
-    RenderView view = RenderViewBuilder::build(scene);
+    RenderView view = RenderViewBuilder::build(scene, resources);
 
     // Execute passes
     m_pipeline.execute(*m_backend, view, resources);
