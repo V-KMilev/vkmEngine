@@ -42,6 +42,7 @@
 #include "mesh_generators.h"
 #include "texture_generators.h"
 #include "material_generators.h"
+#include "light_generators.h"
 
 static Engine::MaterialHandle createPavingStoneMaterial(Engine::ResourceManager& resources) {
     // Load PBR textures from assets folder
@@ -140,6 +141,37 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
                 });
             }
         }
+    }
+
+    // Point light (white glow)
+    auto pointLight1 = scene.createEntity();
+    {
+        scene.add(pointLight1, Engine::generatePointLight(
+            glm::vec3(1.0f, 0.0f, 0.0f),
+            10.0f,
+            20.0f
+        ));
+        scene.add(pointLight1, Engine::Transform{glm::vec3(0.0f, 10.0f, 0.0f)});
+    }
+
+    auto pointLight2 = scene.createEntity();
+    {
+        scene.add(pointLight2, Engine::generatePointLight(
+            glm::vec3(0.0f, 1.0f, 0.0f),
+            5.0f,
+            100.0f
+        ));
+        scene.add(pointLight2, Engine::Transform{glm::vec3(10.0f, 2.0f, 10.0f)});
+    }
+
+    auto pointLight3 = scene.createEntity();
+    {
+        scene.add(pointLight3, Engine::generatePointLight(
+            glm::vec3(0.0f, 0.0f, 1.0f),
+            5.0f,
+            100.0f
+        ));
+        scene.add(pointLight3, Engine::Transform{glm::vec3(10.0f, 2.0f, -10.0f)});
     }
 }
 
@@ -250,7 +282,7 @@ int main() {
 
         renderManager.setBackend(std::make_unique<Engine::GLBackend>());
         renderManager.addPass(std::make_unique<Engine::GLForwardPass>(pbr));
-        renderManager.addPass(std::make_unique<Engine::GLAABBDebugPass>(aabbDebug));
+        // renderManager.addPass(std::make_unique<Engine::GLAABBDebugPass>(aabbDebug));
 
         Engine::Scene scene;
 

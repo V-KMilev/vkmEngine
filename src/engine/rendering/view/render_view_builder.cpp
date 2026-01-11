@@ -9,6 +9,7 @@
 #include "transform.h"
 #include "camera.h"
 #include "mesh.h"
+#include "light.h"
 #include "resource_manager.h"
 #include "frustum_culler.h"
 
@@ -141,6 +142,44 @@ RenderView RenderViewBuilder::build(const Scene& scene, const ResourceManager& r
         drawable.model    = modelMatrix;
 
         renderView.drawables.emplace_back(drawable);
+    }
+
+    // Gather lights
+    const auto& lightStorage = scene.storage<Light>();
+    renderView.lights.reserve(lightStorage.size());
+
+    for (EntityId id = 0; id < lightStorage.size(); ++id) {
+        // Skip if entity doesn't have light component
+        if (!lightStorage.has(id)) {
+            continue;
+        }
+
+        const auto& light = lightStorage.get(id);
+
+        if (!light.enabled) {
+            continue;
+        }
+
+        // Skip if entity doesn't have transform component
+        if (!transformStorage.has(id)) {
+            continue;
+        }
+
+        const auto& transform = transformStorage.get(id);
+
+        // Add light to render view (copy component data + transform)
+        LightData lightData;
+        lightData.type = light.type;
+        lightData.color = light.color;
+        lightData.intensity = light.intensity;
+        lightData.radius = light.radius;
+        lightData.innerConeAngle = light.innerConeAngle;
+        lightData.outerConeAngle = light.outerConeAngle;
+        lightData.castShadows = light.castShadows;
+        lightData.position = transform.position;
+        lightData.rotation = transform.rotation;
+
+        renderView.lights.emplace_back(lightData);
     }
 
     return renderView;
