@@ -10,7 +10,25 @@ out vec4 FragColor;
 
 uniform vec3 u_cameraPosition;
 
-// Material uniform block (std140 layout)
+// Texture flag bit positions (must match MaterialTextureFlags in C++)
+const int TEXTURE_FLAG_ALBEDO                = 1 << 0;   // bit 0
+const int TEXTURE_FLAG_NORMAL                = 1 << 1;   // bit 1
+const int TEXTURE_FLAG_METALLIC_ROUGHNESS    = 1 << 2;   // bit 2
+const int TEXTURE_FLAG_METALLIC              = 1 << 3;   // bit 3
+const int TEXTURE_FLAG_ROUGHNESS             = 1 << 4;   // bit 4
+const int TEXTURE_FLAG_AO                    = 1 << 5;   // bit 5
+const int TEXTURE_FLAG_AO_METALLIC_ROUGHNESS = 1 << 6;   // bit 6
+const int TEXTURE_FLAG_EMISSION              = 1 << 7;   // bit 7
+const int TEXTURE_FLAG_HEIGHT                = 1 << 8;   // bit 8
+const int TEXTURE_FLAG_CLEARCOAT             = 1 << 9;   // bit 9
+const int TEXTURE_FLAG_TRANSMISSION          = 1 << 10;  // bit 10
+
+// Helper function to check if a texture flag is set
+bool hasTexture(int flags, int flag) {
+    return (flags & flag) != 0;
+}
+
+// Material uniform block (std140 layout) - optimized size
 // Note: Samplers cannot be in uniform blocks, so they remain as separate uniforms
 layout(std140, binding = 0) uniform MaterialBlock {
     vec4 albedo;
@@ -33,31 +51,9 @@ layout(std140, binding = 0) uniform MaterialBlock {
 
     float heightScale;
 
-    // Texture presence flags
-    int hasAlbedoTexture;
-    int hasNormalTexture;
-    int hasMetallicRoughnessTexture;
-    int hasMetallicTexture;
-    int hasRoughnessTexture;
-    int hasAOTexture;
-    int hasAOMetallicRoughnessTexture;
-    int hasEmissionTexture;
-    int hasHeightTexture;
-    int hasClearcoatTexture;
-    int hasTransmissionTexture;
-
-    // Texture sampler slots (indices into texture units)
-    int albedoTextureSlot;
-    int normalTextureSlot;
-    int metallicRoughnessTextureSlot;
-    int metallicTextureSlot;
-    int roughnessTextureSlot;
-    int aoTextureSlot;
-    int aoMetallicRoughnessTextureSlot;
-    int emissionTextureSlot;
-    int heightTextureSlot;
-    int clearcoatTextureSlot;
-    int transmissionTextureSlot;
+    // Texture presence flags (bitfield - all texture flags packed into one int)
+    int textureFlags;
+    // Note: Texture slots are hardcoded below (0-10), no need to send them from CPU
 } u_material;
 
 // Texture samplers (must be separate uniforms, cannot be in UBO)
@@ -127,7 +123,7 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
 
 // Sample normal from normal map
 vec3 getNormalFromMap() {
-    if (u_material.hasNormalTexture == 0) {
+    if (!hasTexture(u_material.textureFlags, TEXTURE_FLAG_NORMAL)) {
         return normalize(Normal);
     }
 
@@ -140,7 +136,7 @@ vec3 getNormalFromMap() {
 void main() {
     // Sample textures
     vec4 albedo = u_material.albedo;
-    if (u_material.hasAlbedoTexture != 0) {
+    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_ALBEDO)) {
         albedo *= texture(u_albedoTexture, TexCoords);
     }
 
@@ -149,34 +145,35 @@ void main() {
     float ao = u_material.ao;
 
     // Sample AO-Metallic-Roughness combined texture (highest priority)
-    if (u_material.hasAOMetallicRoughnessTexture != 0) {
+    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_AO_METALLIC_ROUGHNESS)) {
         vec3 aoMr = texture(u_aoMetallicRoughnessTexture, TexCoords).rgb;
         ao *= aoMr.r;      // Red channel = AO
         metallic = aoMr.g; // Green channel = metallic
         roughness = aoMr.b; // Blue channel = roughness
     }
     // Sample metallic-roughness texture (if not using AO-MR texture)
-    else if (u_material.hasMetallicRoughnessTexture != 0) {
+    else if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_METALLIC_ROUGHNESS)) {
         vec3 mr = texture(u_metallicRoughnessTexture, TexCoords).rgb;
         metallic = mr.b; // Blue channel = metallic
         roughness = mr.g; // Green channel = roughness
     } else {
         // Use separate textures
-        if (u_material.hasMetallicTexture != 0) {
+        if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_METALLIC)) {
             metallic *= texture(u_metallicTexture, TexCoords).r;
         }
-        if (u_material.hasRoughnessTexture != 0) {
+        if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_ROUGHNESS)) {
             roughness *= texture(u_roughnessTexture, TexCoords).r;
         }
     }
 
     // Sample AO texture if not using AO-MR texture
-    if (u_material.hasAOTexture != 0 && u_material.hasAOMetallicRoughnessTexture == 0) {
+    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_AO) && 
+        !hasTexture(u_material.textureFlags, TEXTURE_FLAG_AO_METALLIC_ROUGHNESS)) {
         ao *= texture(u_aoTexture, TexCoords).r;
     }
 
     vec3 emission = u_material.emission;
-    if (u_material.hasEmissionTexture != 0) {
+    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_EMISSION)) {
         emission *= texture(u_emissionTexture, TexCoords).rgb;
     }
 
@@ -191,9 +188,9 @@ void main() {
 
     // Fallback to default light if uniform not set (direction would be vec3(0))
     if (length(lightDir) < 0.001) {
-        lightDir = vec3(0.5, -1.0, 0.3);
+        lightDir = vec3(1.0, 1.0, -1.0);
         lightColor = vec3(1.0, 1.0, 1.0);
-        lightIntensity = 1.0;
+        lightIntensity = 3.0;
     }
 
     vec3 L = normalize(-lightDir);

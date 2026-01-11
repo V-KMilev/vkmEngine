@@ -18,28 +18,85 @@
 #include "gl_context.h"
 #include "gl_shader.h"
 
+// Engine Core
 #include "animation_manager.h"
 #include "resource_manager.h"
-#include "basic_meshes.h"
 #include "window_manager.h"
-#include "render_manager.h"
 #include "event_manager.h"
-
 #include "input_handle.h"
 #include "statistics.h"
-
 #include "scene.h"
 
+// Engine Rendering
+#include "render_manager.h"
+
+// Backend
 #include "gl_backend.h"
 #include "gl_forward_pass.h"
 #include "gl_aabb_debug_pass.h"
 
+// Tools - Loaders
+#include "texture_loaders.h"
 
+// Tools - Generators
+#include "mesh_generators.h"
+#include "texture_generators.h"
+#include "material_generators.h"
+
+static Engine::MaterialHandle createPavingStoneMaterial(Engine::ResourceManager& resources) {
+    // Load PBR textures from assets folder
+    auto albedoTex = Engine::loadTexture(
+        "assets/PavingStones118_2K-JPG/PavingStones118_2K-JPG_Color.jpg",
+        resources,
+        true,  // sRGB for color
+        true   // Generate mipmaps
+    );
+
+    auto normalTex = Engine::loadTexture(
+        "assets/PavingStones118_2K-JPG/PavingStones118_2K-JPG_NormalGL.jpg",
+        resources,
+        false,  // Linear for normal maps
+        true
+    );
+
+    auto roughnessTex = Engine::loadTexture(
+        "assets/PavingStones118_2K-JPG/PavingStones118_2K-JPG_Roughness.jpg",
+        resources,
+        false,  // Linear for data
+        true
+    );
+
+    auto aoTex = Engine::loadTexture(
+        "assets/PavingStones118_2K-JPG/PavingStones118_2K-JPG_AmbientOcclusion.jpg",
+        resources,
+        false,  // Linear for data
+        true
+    );
+
+    // Create material with loaded textures
+    Engine::MaterialAsset material;
+    material.albedo = glm::vec4(1.0f);  // No tint
+    material.roughness = 1.0f;           // Full roughness (texture controls it)
+    material.metallic = 0.0f;            // Non-metallic stone
+    material.ao = 1.0f;                  // Full AO (texture controls it)
+    
+    // Assign textures
+    material.albedoTexture = albedoTex;
+    material.normalTexture = normalTex;
+    material.roughnessTexture = roughnessTex;
+    material.aoTexture = aoTex;
+    material.metallicTexture = Engine::generateBlackTexture(resources);  // No metallic
+    material.emissionTexture = Engine::generateBlackTexture(resources);  // No emission
+    
+    return resources.add(std::move(material));
+}
 
 static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene& scene) {
     Engine::MeshHandle cubeMesh          = resources.add(Engine::generateCube());
     Engine::MeshHandle sphereMesh        = resources.add(Engine::generateSphere());
-    Engine::MaterialHandle dummyMaterial = resources.add(Engine::MaterialAsset{});
+
+    // PBR material with loaded textures
+    Engine::MaterialHandle pavingMaterial = createPavingStoneMaterial(resources);
 
     auto cameraEntity = scene.createEntity();
     {
@@ -48,16 +105,18 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
         scene.add(cameraEntity, Engine::Animation{});
     }
 
+    // Cube with default material
     auto cube1 = scene.createEntity();
     {
-        scene.add(cube1, Engine::Mesh{cubeMesh, dummyMaterial});
+        scene.add(cube1, Engine::Mesh{cubeMesh, pavingMaterial});
         scene.add(cube1, Engine::Transform{glm::vec3(0.0f, 5.0f, 0.0f)});
         scene.add(cube1, Engine::Animation{});
     }
 
+    // Cube with PBR paving stone material
     auto cube2 = scene.createEntity();
     {
-        scene.add(cube2, Engine::Mesh{cubeMesh, dummyMaterial});
+        scene.add(cube2, Engine::Mesh{cubeMesh, pavingMaterial});  // Using real textures!
         scene.add(cube2, Engine::Transform{glm::vec3(0.0f, 2.5f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(5.0f, 0.5f, 5.0f)});
         scene.add(cube2, Engine::Animation{});
     }
@@ -74,7 +133,7 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
             float gridCenterOffset = (gridSize - 1) * spacing * 0.5f;
 
             if (((x + z) % 2) == 0) {
-                scene.add(gridObject, Engine::Mesh{i % 2 == 0 ? sphereMesh : cubeMesh, dummyMaterial});
+                scene.add(gridObject, Engine::Mesh{i % 2 == 0 ? sphereMesh : cubeMesh, pavingMaterial});
                 scene.add(gridObject, Engine::Animation{});
                 scene.add(gridObject, Engine::Transform{
                     glm::vec3(x * spacing - gridCenterOffset, y, z * spacing - gridCenterOffset)
@@ -177,17 +236,17 @@ int main() {
         auto& windowManager    = WindowManager::get();
         auto& eventManager     = EventManager::get();
         auto& statisticTracker = StatisticTracker::get();
-        auto& animationManager = Engine::AnimationManager::get();
 
         windowManager.createWindow("VKM Engine");
         windowManager.updateMode(WindowMode::WINDOWED);
         windowManager.setFramerate(0);
 
-        Engine::RenderManager renderManager;
         Engine::ResourceManager resources;
+        Engine::AnimationManager animationManager;
+        Engine::RenderManager renderManager;
 
-        Core::Shader pbr("../shaders/pbr");
-        Core::Shader aabbDebug("../shaders/aabb_debug");
+        Core::Shader pbr("shaders/pbr");
+        Core::Shader aabbDebug("shaders/aabb_debug");
 
         renderManager.setBackend(std::make_unique<Engine::GLBackend>());
         renderManager.addPass(std::make_unique<Engine::GLForwardPass>(pbr));
