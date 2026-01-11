@@ -35,11 +35,29 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
     glView.syncMeshes(view, resources);
     glView.syncMaterials(view, resources);
     glView.syncTextures(view, resources);
+    glView.syncLights(view, resources);
 
     glContext.clearColor();
     glContext.clear();
 
     m_shader.bind();
+
+    // TODO: Move this to the material
+    // Set sampler units to match MaterialTextureSlots in gl_material.cpp
+    m_shader.setUniform1i("u_albedoTexture", 0);
+    m_shader.setUniform1i("u_normalTexture", 1);
+    m_shader.setUniform1i("u_metallicRoughnessTexture", 2);
+    m_shader.setUniform1i("u_aoMetallicRoughnessTexture", 2); // shared with metallicRoughness
+    m_shader.setUniform1i("u_aoTexture", 3);
+    m_shader.setUniform1i("u_emissionTexture", 4);
+    m_shader.setUniform1i("u_heightTexture", 5);
+    m_shader.setUniform1i("u_clearcoatTexture", 6);
+    m_shader.setUniform1i("u_transmissionTexture", 7);
+    m_shader.setUniform1i("u_metallicTexture", 8);
+    m_shader.setUniform1i("u_roughnessTexture", 9);
+
+    // Bind lights (binding point 1 for lights UBO)
+    glView.getLights().bind(1);
 
     m_shader.setUniform3fv("u_cameraPosition", view.camera.position);
     m_shader.setUniformMatrix4fv("u_view", view.camera.view);

@@ -104,7 +104,7 @@ namespace {
     struct TextureMappingForSync {
         TextureHandle MaterialAsset::*handlePtr;
     };
-    
+
     // Simplified table for texture syncing (only need handle pointers)
     constexpr TextureMappingForSync g_textureSyncMappings[] = {
         {&MaterialAsset::albedoTexture},
@@ -164,6 +164,14 @@ void GLView::syncTextures(
         }
         // If texture exists and version matches, nothing needs to be done
     }
+}
+
+void GLView::syncLights(
+    const RenderView& renderView,
+    const ResourceManager& resourceManager
+) {
+    // Update lights UBO from render view
+    m_lights.update(renderView.lights);
 }
 
 const GLTexture& GLView::getTexture(const TextureHandle& handle) const {

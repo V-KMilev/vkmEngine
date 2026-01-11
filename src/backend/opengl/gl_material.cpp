@@ -1,6 +1,7 @@
 #include "gl_material.h"
 
 #include <iterator>
+#include <cstring>
 
 #include "logger.h"
 
@@ -62,6 +63,15 @@ namespace {
 
 // Check if MaterialUBOData is 16-byte aligned for std140
 static_assert(sizeof(MaterialUBOData) % 16 == 0, "MaterialUBOData must be 16-byte aligned for std140");
+static_assert(sizeof(MaterialUBOData) == 144, "MaterialUBOData must be 144 bytes");
+static_assert(offsetof(MaterialUBOData, albedo) == 0, "albedo offset");
+static_assert(offsetof(MaterialUBOData, emission) == 16, "emission offset");
+static_assert(offsetof(MaterialUBOData, metallic) == 32, "metallic offset");
+static_assert(offsetof(MaterialUBOData, roughness) == 36, "roughness offset");
+static_assert(offsetof(MaterialUBOData, anisotropyDirection) == 80, "anisotropyDirection offset");
+static_assert(offsetof(MaterialUBOData, subsurfaceColor) == 112, "subsurfaceColor offset");
+static_assert(offsetof(MaterialUBOData, heightScale) == 128, "heightScale offset");
+static_assert(offsetof(MaterialUBOData, textureFlags) == 132, "textureFlags offset");
 
 
 GLMaterial::GLMaterial(const MaterialAsset& material) {
@@ -77,6 +87,7 @@ GLMaterial::~GLMaterial() {
 void GLMaterial::update(const MaterialAsset& material) {
     // Build UBO data from material asset
     MaterialUBOData uboData;
+    std::memset(&uboData, 0, sizeof(MaterialUBOData));  // Zero out all fields including padding
 
     // Base PBR properties
     uboData.albedo = material.albedo;
@@ -133,7 +144,9 @@ void GLMaterial::update(const MaterialAsset& material) {
 
 void GLMaterial::bind(uint32_t bindingPoint) const {
     // Bind the uniform buffer to the specified binding point
-    m_ubo->bindBase(bindingPoint);
+    if (m_ubo) {
+        m_ubo->bindBase(bindingPoint);
+    }
 }
 
 void GLMaterial::bindTextures(const GLView& view) const {

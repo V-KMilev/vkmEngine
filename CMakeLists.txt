@@ -145,6 +145,8 @@ add_library(BackendOpenGL STATIC
     src/backend/opengl/gl_material.cpp
     src/backend/opengl/gl_texture.h
     src/backend/opengl/gl_texture.cpp
+    src/backend/opengl/gl_lights.h
+    src/backend/opengl/gl_lights.cpp
     src/backend/opengl/gl_view.h
     src/backend/opengl/gl_view.cpp
     src/backend/opengl/passes/gl_forward_pass.h
@@ -175,6 +177,8 @@ add_library(EngineTools STATIC
     src/tools/generators/texture_generators.cpp
     src/tools/generators/material_generators.h
     src/tools/generators/material_generators.cpp
+    src/tools/generators/light_generators.h
+    src/tools/generators/light_generators.cpp
 )
 
 target_include_directories(EngineTools PUBLIC

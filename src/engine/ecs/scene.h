@@ -7,6 +7,7 @@
 #include "mesh.h"
 #include "camera.h"
 #include "animation.h"
+#include "light.h"
 
 namespace Engine {
 
@@ -25,6 +26,7 @@ namespace Engine {
  *   - Mesh
  *   - Camera
  *   - Animation
+ *   - Light
  */
 class Scene {
     public:
@@ -55,6 +57,7 @@ class Scene {
             m_meshes.remove(entity.getID());
             m_cameras.remove(entity.getID());
             m_animations.remove(entity.getID());
+            m_lights.remove(entity.getID());
         }
 
         /**
@@ -143,7 +146,8 @@ class Scene {
             else if constexpr (std::is_same_v<T, Mesh>)      return m_meshes;
             else if constexpr (std::is_same_v<T, Camera>)    return m_cameras;
             else if constexpr (std::is_same_v<T, Animation>) return m_animations;
-            else                                             VKM_ASSERT(false, "Component type T is not supported. Supported types: Transform, Mesh, Camera, Animation");
+            else if constexpr (std::is_same_v<T, Light>)     return m_lights;
+            else                                             VKM_ASSERT(false, "Component type T is not supported. Supported types: Transform, Mesh, Camera, Animation, Light");
         }
 
         /**
@@ -158,7 +162,8 @@ class Scene {
             else if constexpr (std::is_same_v<T, Mesh>)      return m_meshes;
             else if constexpr (std::is_same_v<T, Camera>)    return m_cameras;
             else if constexpr (std::is_same_v<T, Animation>) return m_animations;
-            else                                             VKM_ASSERT(false, "Component type T is not supported. Supported types: Transform, Mesh, Camera, Animation");
+            else if constexpr (std::is_same_v<T, Light>)     return m_lights;
+            else                                             VKM_ASSERT(false, "Component type T is not supported. Supported types: Transform, Mesh, Camera, Animation, Light");
         }
 
     private:
@@ -168,6 +173,7 @@ class Scene {
         ComponentStorage<Mesh>      m_meshes;
         ComponentStorage<Camera>    m_cameras;
         ComponentStorage<Animation> m_animations;
+        ComponentStorage<Light>     m_lights;
 };
 
 } // namespace Engine
