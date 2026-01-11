@@ -53,7 +53,7 @@ TextureHandle loadTexture(
 ) {
     // Load image using stb_image
     stbi_set_flip_vertically_on_load(true);
-    
+
     int width = 0;
     int height = 0;
     int channels = 0;
@@ -84,7 +84,7 @@ TextureHandle loadTexture(
     stbi_image_free(data);
 
     LOG_INFO("Loaded texture '%s' (%dx%d, %d channels, sRGB: %s)", 
-             filePath.c_str(), width, height, channels, srgb ? "yes" : "no");
+        filePath.c_str(), width, height, channels, srgb ? "yes" : "no");
 
     return resourceManager.add(std::move(texture));
 }

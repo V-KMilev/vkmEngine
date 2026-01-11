@@ -2,9 +2,11 @@
 
 #include <vector>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "mesh_asset.h"
 #include "material_asset.h"
+#include "light.h"
 
 namespace Engine {
 
@@ -35,14 +37,34 @@ struct DrawableData {
 };
 
 /**
+ * @brief Representation of a light in the render world.
+ *
+ * Contains light properties and its transform (position and direction).
+ * This is a snapshot of the Light component + Transform at render time.
+ */
+struct LightData {
+    LightType type;
+    glm::vec3 color;
+    float intensity;
+    float radius;
+    float innerConeAngle;
+    float outerConeAngle;
+    bool castShadows;
+
+    glm::vec3 position;
+    glm::quat rotation;
+};
+
+/**
  * @brief Collection of scene data needed for a rendering pass.
  *
- * Encapsulates camera info, all visible drawables, and active lights (soon) required for rendering.
+ * Encapsulates camera info, all visible drawables, and active lights required for rendering.
  */
 struct RenderView {
     CameraData camera;
 
     std::vector<DrawableData> drawables;
+    std::vector<LightData> lights;
 };
 
 } // namespace Engine

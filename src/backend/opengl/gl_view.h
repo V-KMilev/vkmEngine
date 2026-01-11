@@ -12,6 +12,7 @@
 #include "gl_mesh.h"
 #include "gl_material.h"
 #include "gl_texture.h"
+#include "gl_lights.h"
 
 namespace Engine {
     class RenderView;
@@ -100,6 +101,16 @@ class GLView {
         const GLMaterial& getMaterial(const MaterialHandle& handle) const;
 
         /**
+         * @brief Synchronize lights with those in the current RenderView.
+         *
+         * Updates the lights uniform buffer with all lights from the RenderView and uploads to GPU.
+         *
+         * @param renderView The view description for the current render pass.
+         * @param resourceManager The resource manager (unused for lights, kept for consistency).
+         */
+         void syncLights(const RenderView& renderView, const ResourceManager& resourceManager);
+
+        /**
          * @brief Obtain the OpenGL texture (GLTexture) for the given engine texture handle.
          *
          * Throws or asserts if the texture is not found (should be called after a successful syncTextures).
@@ -108,6 +119,11 @@ class GLView {
          * @return The corresponding GLTexture object.
          */
         const GLTexture& getTexture(const TextureHandle& handle) const;
+
+        /**
+         * @brief Get the GLLights object for binding.
+         */
+        const GLLights& getLights() const { return m_lights; }
 
     private:
         std::unordered_map<uint32_t, std::unique_ptr<GLMesh>> m_meshes;
@@ -118,6 +134,8 @@ class GLView {
 
         std::unordered_map<uint32_t, std::unique_ptr<GLTexture>> m_textures;
         std::unordered_map<uint32_t, uint64_t> m_textureVersions;
+
+        GLLights m_lights;
 };
 
 } // namespace Engine

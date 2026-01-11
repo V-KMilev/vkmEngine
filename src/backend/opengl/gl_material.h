@@ -54,31 +54,51 @@ enum class MaterialTextureFlags : uint32_t {
  * - float: 4 bytes, but 16-byte aligned in struct
  * - int: 4 bytes, but 16-byte aligned in struct
  */
+/**
+ * @brief Std140-friendly material UBO with explicit padding (dev-friendly fields).
+ *
+ * Layout (std140):
+ * 0   : vec4  albedo
+ * 16  : vec3  emission + pad0
+ * 32  : float metallic, roughness, ior, transmission
+ * 48  : float alpha, ao, clearcoat, clearcoatRoughness
+ * 64  : float anisotropy, pad1[3] (pad to next vec3)
+ * 80  : vec3  anisotropyDirection + pad2
+ * 96  : float subsurface, pad3[3] (pad to next vec3)
+ * 112 : vec3  subsurfaceColor + pad4
+ * 128 : float heightScale, int textureFlags, pad5[2]
+ * Total: 144 bytes
+ */
 struct alignas(16) MaterialUBOData {
-    // Base PBR properties
-    glm::vec4 albedo;                    // 16 bytes, offset 0
-    glm::vec3 emission;                  // 12 bytes + 4 padding = 16 bytes, offset 16
-    float metallic;                      // 4 bytes + 12 padding = 16 bytes, offset 32
-    float roughness;                     // 4 bytes + 12 padding = 16 bytes, offset 48
-    // Essential for raytracing and advanced PBR
-    float ior;                           // 4 bytes + 12 padding = 16 bytes, offset 64
-    float transmission;                  // 4 bytes + 12 padding = 16 bytes, offset 80
-    float alpha;                         // 4 bytes + 12 padding = 16 bytes, offset 96
-    float ao;                            // 4 bytes + 12 padding = 16 bytes, offset 112
-    // Advanced PBR properties
-    float clearcoat;                     // 4 bytes + 12 padding = 16 bytes, offset 128
-    float clearcoatRoughness;            // 4 bytes + 12 padding = 16 bytes, offset 144
-    float anisotropy;                    // 4 bytes + 12 padding = 16 bytes, offset 160
-    glm::vec3 anisotropyDirection;       // 12 bytes + 4 padding = 16 bytes, offset 176
-    // Subsurface scattering
-    float subsurface;                    // 4 bytes + 12 padding = 16 bytes, offset 192
-    glm::vec3 subsurfaceColor;           // 12 bytes + 4 padding = 16 bytes, offset 208
-    // Height/Displacement
-    float heightScale;                   // 4 bytes + 12 padding = 16 bytes, offset 224
-    // Texture presence flags (bitfield - all texture flags packed into one int)
-    // Use MaterialTextureFlags enum to check bits
-    int textureFlags;                    // 4 bytes + 12 padding = 16 bytes, offset 240
-    // Note: Texture slots are hardcoded in shader as constants (0-10), no need to send them
+    glm::vec4 albedo;                    // offset 0
+    alignas(16) glm::vec3 emission;      // offset 16
+    float pad0;                          // offset 28
+
+    float metallic;                      // offset 32
+    float roughness;                     // offset 36
+    float ior;                           // offset 40
+    float transmission;                  // offset 44
+
+    float alpha;                         // offset 48
+    float ao;                            // offset 52
+    float clearcoat;                     // offset 56
+    float clearcoatRoughness;            // offset 60
+
+    float anisotropy;                    // offset 64
+    float pad1[3];                       // offset 68 (pad to 80)
+
+    alignas(16) glm::vec3 anisotropyDirection; // offset 80
+    float pad2;                          // offset 92
+
+    float subsurface;                    // offset 96
+    float pad3[3];                       // offset 100 (pad to 112)
+
+    alignas(16) glm::vec3 subsurfaceColor; // offset 112
+    float pad4;                          // offset 124
+
+    float heightScale;                   // offset 128
+    int textureFlags;                    // offset 132
+    float pad5[2];                       // offset 136 (pad to 144)
 };
 
 /**
