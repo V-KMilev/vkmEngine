@@ -79,9 +79,9 @@ layout(std140, binding = 0) uniform MaterialBlock {
     float pad4;                           // offset 124
 
     float heightScale;                    // offset 128
-    int   textureFlags;                   // offset 132
-    float pad5_0;                         // offset 136
-    float pad5_1;                         // offset 140
+    float normalScale;                    // offset 132
+    int   textureFlags;                   // offset 136
+    float pad5;                           // offset 140
 } u_material;
 
 layout(std140, binding = 1) uniform LightsBlock {
