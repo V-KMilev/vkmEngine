@@ -97,8 +97,9 @@ struct alignas(16) MaterialUBOData {
     float pad4;                          // offset 124
 
     float heightScale;                   // offset 128
-    int textureFlags;                    // offset 132
-    float pad5[2];                       // offset 136 (pad to 144)
+    float normalScale;                   // offset 132
+    int textureFlags;                    // offset 136
+    float pad5;                          // offset 140 (pad to 144)
 };
 
 /**

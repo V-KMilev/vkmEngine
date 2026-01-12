@@ -38,8 +38,9 @@ struct MaterialAsset : public Resource {
     float subsurface          = 0.0f;            ///< Subsurface scattering strength
     glm::vec3 subsurfaceColor = {1,1,1};         ///< Subsurface color tint
 
-    // Height/Displacement
-    float heightScale = 0.0f;                    ///< Height map scale for parallax/displacement mapping
+    // Height/Displacement and Normal mapping
+    float heightScale = 0.0f;                   ///< Height map scale for parallax/displacement mapping (0.02-0.1 typical)
+    float normalScale = 1.0f;                   ///< Normal map intensity (0: flat, 1: normal, >1: exaggerated)
 
     // Texture handles
     TextureHandle albedoTexture;                 ///< Albedo (base color) texture (RGBA)

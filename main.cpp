@@ -37,6 +37,7 @@
 
 // Tools - Loaders
 #include "texture_loaders.h"
+#include "material_loaders.h"
 
 // Tools - Generators
 #include "mesh_generators.h"
@@ -44,60 +45,15 @@
 #include "material_generators.h"
 #include "light_generators.h"
 
-static Engine::MaterialHandle createPavingStoneMaterial(Engine::ResourceManager& resources) {
-    // Load PBR textures from assets folder
-    auto albedoTex = Engine::loadTexture(
-        "assets/PavingStones118_2K-JPG/PavingStones118_2K-JPG_Color.jpg",
-        resources,
-        true,  // sRGB for color
-        true   // Generate mipmaps
-    );
-
-    auto normalTex = Engine::loadTexture(
-        "assets/PavingStones118_2K-JPG/PavingStones118_2K-JPG_NormalGL.jpg",
-        resources,
-        false,  // Linear for normal maps
-        true
-    );
-
-    auto roughnessTex = Engine::loadTexture(
-        "assets/PavingStones118_2K-JPG/PavingStones118_2K-JPG_Roughness.jpg",
-        resources,
-        false,  // Linear for data
-        true
-    );
-
-    auto aoTex = Engine::loadTexture(
-        "assets/PavingStones118_2K-JPG/PavingStones118_2K-JPG_AmbientOcclusion.jpg",
-        resources,
-        false,  // Linear for data
-        true
-    );
-
-    // Create material with loaded textures
-    Engine::MaterialAsset material;
-    material.albedo = glm::vec4(1.0f);  // No tint
-    material.roughness = 1.0f;           // Full roughness (texture controls it)
-    material.metallic = 0.0f;            // Non-metallic stone
-    material.ao = 1.0f;                  // Full AO (texture controls it)
-    
-    // Assign textures
-    material.albedoTexture = albedoTex;
-    material.normalTexture = normalTex;
-    material.roughnessTexture = roughnessTex;
-    material.aoTexture = aoTex;
-    material.metallicTexture = Engine::generateBlackTexture(resources);  // No metallic
-    material.emissionTexture = Engine::generateBlackTexture(resources);  // No emission
-    
-    return resources.add(std::move(material));
-}
-
 static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene& scene) {
     Engine::MeshHandle cubeMesh          = resources.add(Engine::generateCube());
     Engine::MeshHandle sphereMesh        = resources.add(Engine::generateSphere());
 
-    // PBR material with loaded textures
-    Engine::MaterialHandle pavingMaterial = createPavingStoneMaterial(resources);
+    // Load PBR material from folder (automatic texture detection)
+    Engine::MaterialHandle pavingMaterial = Engine::loadMaterialFromFolder(
+        "assets/PavingStones118_2K-JPG",
+        resources
+    );
 
     auto cameraEntity = scene.createEntity();
     {
