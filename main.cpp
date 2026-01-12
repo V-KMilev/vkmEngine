@@ -147,7 +147,7 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
     auto pointLight1 = scene.createEntity();
     {
         scene.add(pointLight1, Engine::generatePointLight(
-            glm::vec3(1.0f, 0.0f, 0.0f),
+            glm::vec3(1.0f, 1.0f, 1.0f),
             10.0f,
             20.0f
         ));
@@ -157,7 +157,7 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
     auto pointLight2 = scene.createEntity();
     {
         scene.add(pointLight2, Engine::generatePointLight(
-            glm::vec3(0.0f, 1.0f, 0.0f),
+            glm::vec3(1.0f, 1.0f, 1.0f),
             5.0f,
             100.0f
         ));
@@ -167,7 +167,7 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
     auto pointLight3 = scene.createEntity();
     {
         scene.add(pointLight3, Engine::generatePointLight(
-            glm::vec3(0.0f, 0.0f, 1.0f),
+            glm::vec3(1.0f, 1.0f, 1.0f),
             5.0f,
             100.0f
         ));

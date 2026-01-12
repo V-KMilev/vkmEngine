@@ -56,6 +56,13 @@ class RenderManager {
         void setBackend(std::unique_ptr<RenderBackend> backend);
 
         /**
+         * @brief Get the current rendering backend.
+         *
+         * @return A reference to the current RenderBackend.
+         */
+        RenderBackend& getBackend() const { return *m_backend; }
+
+        /**
          * @brief Add a new render pass to the pipeline.
          *
          * Render passes define the stages of the rendering process (e.g., G-buffer, lighting, postprocess).

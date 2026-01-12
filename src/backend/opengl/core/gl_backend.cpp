@@ -7,10 +7,14 @@
 
 namespace Engine {
 
-// TODO: Give access to the context to the user
 GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL), m_context() {
+    // Set default clear color (dark gray)
     m_context.setClearColor({0.1f, 0.1f, 0.1f, 1.0f});
+    
+    // Initialize default OpenGL state
     m_context.setDefaultState();
+    
+    // Disable face culling by default (can be overridden by render passes)
     m_context.setFaceCulling(false);
 }
 
