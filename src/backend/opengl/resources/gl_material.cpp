@@ -25,7 +25,8 @@ static_assert(offsetof(MaterialUBOData, roughness) == 36, "roughness offset");
 static_assert(offsetof(MaterialUBOData, anisotropyDirection) == 80, "anisotropyDirection offset");
 static_assert(offsetof(MaterialUBOData, subsurfaceColor) == 112, "subsurfaceColor offset");
 static_assert(offsetof(MaterialUBOData, heightScale) == 128, "heightScale offset");
-static_assert(offsetof(MaterialUBOData, textureFlags) == 132, "textureFlags offset");
+static_assert(offsetof(MaterialUBOData, normalScale) == 132, "normalScale offset");
+static_assert(offsetof(MaterialUBOData, textureFlags) == 136, "textureFlags offset");
 
 
 GLMaterial::GLMaterial(const MaterialAsset& material) {
@@ -65,8 +66,9 @@ void GLMaterial::update(const MaterialAsset& material) {
     uboData.subsurface = material.subsurface;
     uboData.subsurfaceColor = material.subsurfaceColor;
 
-    // Height/Displacement
+    // Height/Displacement and normal mapping
     uboData.heightScale = material.heightScale;
+    uboData.normalScale = material.normalScale;
 
     // Process all texture mappings in a single loop
     // Build texture flags bitfield and bindings list

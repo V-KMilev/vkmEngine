@@ -182,6 +182,9 @@ target_link_libraries(BackendOpenGL PUBLIC
 add_library(EngineTools STATIC
     src/tools/loaders/texture_loaders.h
     src/tools/loaders/texture_loaders.cpp
+    src/tools/loaders/material_loaders.h
+    src/tools/loaders/material_loaders.cpp
+
     src/tools/generators/mesh_generators.h
     src/tools/generators/mesh_generators.cpp
     src/tools/generators/texture_generators.h
