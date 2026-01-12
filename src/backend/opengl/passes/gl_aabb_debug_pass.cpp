@@ -5,6 +5,7 @@
 
 #include "gl_context.h"
 #include "gl_shader.h"
+#include "gl_config.h"
 
 #include "gl_backend.h"
 #include "gl_mesh.h"
@@ -25,7 +26,9 @@ GLAABBDebugPass::GLAABBDebugPass(
     initializeWireframeCube();
 }
 
-void GLAABBDebugPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) { /* Nothing to do */ }
+void GLAABBDebugPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) { 
+    // Nothing to do for AABB debug pass
+}
 
 void GLAABBDebugPass::initializeWireframeCube() {
     // Create a wireframe cube mesh (8 corners, 12 edges)
@@ -69,28 +72,34 @@ void GLAABBDebugPass::initializeWireframeCube() {
 }
 
 void GLAABBDebugPass::execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) {
+    // Validate backend type
     if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_WARNING("%s can only be used with OpenGL backend, got %s, skipping pass", getName().c_str(), toString(backend.getType()));
+        LOG_ERROR("GLAABBDebugPass requires OpenGL backend, got {} - skipping pass", 
+                 toString(backend.getType()));
         return;
     }
 
     auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
 
-    glContext.setFaceCulling(false);                       // Disable face culling for lines
-    glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_LINE);  // Ensure polygon mode is set to lines (though GL_LINES primitive shouldn't need this)
+    // Configure rendering state for wireframe drawing
+    glContext.setFaceCulling(false);
+    glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
     m_shader.bind();
 
-    m_shader.setUniformMatrix4fv("u_viewProjection", view.camera.viewProjection);
-    m_shader.setUniform3fv("u_color", glm::vec3(1.0f, 0.0f, 0.0f));  // Red color for AABBs
+    // Set global uniforms
+    using namespace GLConfig::UniformNames;
+    m_shader.setUniformMatrix4fv(ViewProjection, view.camera.viewProjection);
+    m_shader.setUniform3fv(Color, m_color);
 
-    // Draw AABBs for all drawables
+    // Draw AABBs for all visible drawables
+    uint32_t aabbCount = 0;
     for (const auto& drawable : view.drawables) {
         // Get mesh asset to access bounds
         const auto& meshAsset = resources.get(drawable.mesh);
 
-        // Skip meshes without valid bounds
+        // Skip meshes without valid bounds (degenerate AABBs)
         if ((meshAsset.boundsMin.x == meshAsset.boundsMax.x) &&
             (meshAsset.boundsMin.y == meshAsset.boundsMax.y) &&
             (meshAsset.boundsMin.z == meshAsset.boundsMax.z)) {
@@ -116,13 +125,16 @@ void GLAABBDebugPass::execute(RenderBackend& backend, const RenderView& view, co
         aabbModel = glm::translate(aabbModel, center);
         aabbModel = glm::scale(aabbModel, size);
 
-        // Set model matrix and draw aabb cube
-        m_shader.setUniformMatrix4fv("u_model", aabbModel);
-
+        // Set model matrix and draw AABB wireframe
+        m_shader.setUniformMatrix4fv(Model, aabbModel);
         m_aabb->draw(GL_LINES);
+        ++aabbCount;
     }
 
+    // Restore rendering state
     glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+    LOG_TRACE("GLAABBDebugPass: {} AABBs drawn", aabbCount);
 }
 
 } // namespace Engine

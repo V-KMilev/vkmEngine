@@ -4,7 +4,7 @@
 
 #include "texture_asset.h"
 
-#include "texture/gl_texture.h"  // Core::Texture2D
+#include "gl_texture.h"  // Core::Texture2D
 
 namespace Engine {
 

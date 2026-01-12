@@ -8,18 +8,14 @@
 #include "material_asset.h"
 #include "texture_asset.h"
 
-// TODO: Forward this
-#include "gl_mesh.h"
-#include "gl_material.h"
-#include "gl_texture.h"
-#include "gl_lights.h"
+#include "resources/gl_mesh.h"
+#include "resources/gl_material.h"
+#include "resources/gl_texture.h"
+#include "resources/gl_lights.h"
 
 namespace Engine {
     class RenderView;
     class ResourceManager;
-
-    // class GLMesh;
-    // class GLMaterial;
 }
 
 namespace Engine {
@@ -83,22 +79,22 @@ class GLView {
         /**
         * @brief Obtain the OpenGL mesh (GLMesh) for the given engine mesh handle.
         *
-        * Throws or asserts if the mesh is not found (should be called after a successful syncMeshes).
+        * Returns nullptr if the mesh is not found (should be called after syncMeshes).
         *
         * @param handle The mesh handle to look up.
-        * @return The corresponding GLMesh object.
+        * @return Pointer to the corresponding GLMesh object, or nullptr if not found.
         */
-        const GLMesh& getMesh(const MeshHandle& handle) const;
+        const GLMesh* getMesh(const MeshHandle& handle) const;
 
         /**
          * @brief Obtain the OpenGL material (GLMaterial) for the given engine material handle.
          *
-         * Throws or asserts if the material is not found (should be called after a successful syncMaterials).
+         * Returns nullptr if the material is not found (should be called after syncMaterials).
          *
          * @param handle The material handle to look up.
-         * @return The corresponding GLMaterial object.
+         * @return Pointer to the corresponding GLMaterial object, or nullptr if not found.
          */
-        const GLMaterial& getMaterial(const MaterialHandle& handle) const;
+        const GLMaterial* getMaterial(const MaterialHandle& handle) const;
 
         /**
          * @brief Synchronize lights with those in the current RenderView.
@@ -113,12 +109,12 @@ class GLView {
         /**
          * @brief Obtain the OpenGL texture (GLTexture) for the given engine texture handle.
          *
-         * Throws or asserts if the texture is not found (should be called after a successful syncTextures).
+         * Returns nullptr if the texture is not found (should be called after syncTextures).
          *
          * @param handle The texture handle to look up.
-         * @return The corresponding GLTexture object.
+         * @return Pointer to the corresponding GLTexture object, or nullptr if not found.
          */
-        const GLTexture& getTexture(const TextureHandle& handle) const;
+        const GLTexture* getTexture(const TextureHandle& handle) const;
 
         /**
          * @brief Get the GLLights object for binding.

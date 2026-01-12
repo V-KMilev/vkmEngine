@@ -66,7 +66,6 @@ void GLMesh::bind() const {
     m_ibo->bind();
 }
 
-// TODO: Think of how to make it correct
 void GLMesh::draw(int drawType) const {
     bind();
 
