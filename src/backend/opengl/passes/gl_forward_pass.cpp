@@ -5,6 +5,7 @@
 
 #include "gl_context.h"
 #include "gl_shader.h"
+#include "gl_config.h"
 
 #include "gl_backend.h"
 #include "gl_mesh.h"
@@ -15,67 +16,87 @@
 
 namespace Engine {
 
-GLForwardPass::GLForwardPass(Core::Shader& shader) : RenderPass("GLForwardPass"), m_shader(shader) {}
+GLForwardPass::GLForwardPass(Core::Shader& shader) : RenderPass("GLForwardPass"), m_shader(shader) {
+    // Set up texture samplers once during initialization
+    m_shader.bind();
+    
+    // Set sampler units to match TextureSlots in gl_config.h
+    m_shader.setUniform1i(GLConfig::UniformNames::AlbedoTexture, GLConfig::TextureSlots::Albedo);
+    m_shader.setUniform1i(GLConfig::UniformNames::NormalTexture, GLConfig::TextureSlots::Normal);
+    m_shader.setUniform1i(GLConfig::UniformNames::MetallicRoughnessTexture, GLConfig::TextureSlots::MetallicRoughness);
+    m_shader.setUniform1i(GLConfig::UniformNames::AOMetallicRoughnessTexture, GLConfig::TextureSlots::MetallicRoughness);
+    m_shader.setUniform1i(GLConfig::UniformNames::AOTexture, GLConfig::TextureSlots::AO);
+    m_shader.setUniform1i(GLConfig::UniformNames::EmissionTexture, GLConfig::TextureSlots::Emission);
+    m_shader.setUniform1i(GLConfig::UniformNames::HeightTexture, GLConfig::TextureSlots::Height);
+    m_shader.setUniform1i(GLConfig::UniformNames::ClearcoatTexture, GLConfig::TextureSlots::Clearcoat);
+    m_shader.setUniform1i(GLConfig::UniformNames::TransmissionTexture, GLConfig::TextureSlots::Transmission);
+    m_shader.setUniform1i(GLConfig::UniformNames::MetallicTexture, GLConfig::TextureSlots::Metallic);
+    m_shader.setUniform1i(GLConfig::UniformNames::RoughnessTexture, GLConfig::TextureSlots::Roughness);
+}
 
 void GLForwardPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
-    // Nothing to do
+    // Nothing to do for forward pass
 }
 
 void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) {
+    // Validate backend type
     if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_WARNING("%s can only be used with OpenGL backend, got %s, skipping pass", getName().c_str(), toString(backend.getType()));
+        LOG_ERROR("GLForwardPass requires OpenGL backend, got {} - skipping pass", 
+                 toString(backend.getType()));
         return;
     }
 
     auto& gl = static_cast<GLBackend&>(backend);
-
     auto& glContext = gl.getContext();
     auto& glView = gl.getView();
 
+    // Sync all resources with GPU
     glView.syncMeshes(view, resources);
     glView.syncMaterials(view, resources);
     glView.syncTextures(view, resources);
     glView.syncLights(view, resources);
 
+    // Clear framebuffer
     glContext.clearColor();
     glContext.clear();
 
+    // Bind shader and set global uniforms
     m_shader.bind();
 
-    // TODO: Move this to the material
-    // Set sampler units to match MaterialTextureSlots in gl_material.cpp
-    m_shader.setUniform1i("u_albedoTexture", 0);
-    m_shader.setUniform1i("u_normalTexture", 1);
-    m_shader.setUniform1i("u_metallicRoughnessTexture", 2);
-    m_shader.setUniform1i("u_aoMetallicRoughnessTexture", 2); // shared with metallicRoughness
-    m_shader.setUniform1i("u_aoTexture", 3);
-    m_shader.setUniform1i("u_emissionTexture", 4);
-    m_shader.setUniform1i("u_heightTexture", 5);
-    m_shader.setUniform1i("u_clearcoatTexture", 6);
-    m_shader.setUniform1i("u_transmissionTexture", 7);
-    m_shader.setUniform1i("u_metallicTexture", 8);
-    m_shader.setUniform1i("u_roughnessTexture", 9);
+    // Bind lights UBO
+    glView.getLights().bind(GLConfig::UBOBindingPoints::Lights);
 
-    // Bind lights (binding point 1 for lights UBO)
-    glView.getLights().bind(1);
+    // Set camera uniforms
+    m_shader.setUniform3fv(GLConfig::UniformNames::CameraPosition, view.camera.position);
+    m_shader.setUniformMatrix4fv(GLConfig::UniformNames::View, view.camera.view);
+    m_shader.setUniformMatrix4fv(GLConfig::UniformNames::Projection, view.camera.projection);
+    m_shader.setUniformMatrix4fv(GLConfig::UniformNames::ViewProjection, view.camera.viewProjection);
 
-    m_shader.setUniform3fv("u_cameraPosition", view.camera.position);
-    m_shader.setUniformMatrix4fv("u_view", view.camera.view);
-    m_shader.setUniformMatrix4fv("u_projection", view.camera.projection);
-    m_shader.setUniformMatrix4fv("u_viewProjection", view.camera.viewProjection);
-
+    // Draw all visible meshes
+    uint32_t drawCallCount = 0;
     for (const auto& drawable : view.drawables) {
-        m_shader.setUniformMatrix4fv("u_model", drawable.model);
+        // Set per-object model matrix
+        m_shader.setUniformMatrix4fv(GLConfig::UniformNames::Model, drawable.model);
 
-        // Bind material if present (binding point 0 for material UBO)
+        // Bind material if present
         if (drawable.material) {
-            const GLMaterial& material = glView.getMaterial(drawable.material);
-            material.bind(0);
-            material.bindTextures(glView);
+            const GLMaterial* material = glView.getMaterial(drawable.material);
+            if (material) {
+                material->bind(GLConfig::UBOBindingPoints::Material);
+                material->bindTextures(glView);
+            } else {
+                LOG_WARNING("Failed to get material for drawable (skipping material bind)");
+            }
         }
 
-        const GLMesh& mesh = glView.getMesh(drawable.mesh);
-        mesh.draw(GL_TRIANGLES);
+        // Get and draw mesh
+        const GLMesh* mesh = glView.getMesh(drawable.mesh);
+        if (mesh) {
+            mesh->draw(GL_TRIANGLES);
+            ++drawCallCount;
+        } else {
+            LOG_WARNING("Failed to get mesh for drawable (skipping draw call)");
+        }
     }
 }
 

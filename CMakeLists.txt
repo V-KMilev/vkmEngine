@@ -137,26 +137,37 @@ target_link_libraries(EngineRendering PUBLIC
 # OpenGL Backend Library
 # ============================================================================
 add_library(BackendOpenGL STATIC
-    src/backend/opengl/gl_backend.h
-    src/backend/opengl/gl_backend.cpp
-    src/backend/opengl/gl_mesh.h
-    src/backend/opengl/gl_mesh.cpp
-    src/backend/opengl/gl_material.h
-    src/backend/opengl/gl_material.cpp
-    src/backend/opengl/gl_texture.h
-    src/backend/opengl/gl_texture.cpp
-    src/backend/opengl/gl_lights.h
-    src/backend/opengl/gl_lights.cpp
-    src/backend/opengl/gl_view.h
-    src/backend/opengl/gl_view.cpp
+    # Core backend components
+    src/backend/opengl/core/gl_backend.h
+    src/backend/opengl/core/gl_backend.cpp
+    src/backend/opengl/core/gl_view.h
+    src/backend/opengl/core/gl_view.cpp
+    # Resource wrappers
+    src/backend/opengl/resources/gl_mesh.h
+    src/backend/opengl/resources/gl_mesh.cpp
+    src/backend/opengl/resources/gl_material.h
+    src/backend/opengl/resources/gl_material.cpp
+    src/backend/opengl/resources/gl_texture.h
+    src/backend/opengl/resources/gl_texture.cpp
+    src/backend/opengl/resources/gl_lights.h
+    src/backend/opengl/resources/gl_lights.cpp
+    # Configuration
+    src/backend/opengl/config/gl_config.h
+    src/backend/opengl/config/gl_texture_mapping.h
+    # Render passes
     src/backend/opengl/passes/gl_forward_pass.h
     src/backend/opengl/passes/gl_forward_pass.cpp
     src/backend/opengl/passes/gl_aabb_debug_pass.h
     src/backend/opengl/passes/gl_aabb_debug_pass.cpp
+    # Convenience header
+    src/backend/opengl/gl_common.h
 )
 
 target_include_directories(BackendOpenGL PUBLIC
     src/backend/opengl
+    src/backend/opengl/core
+    src/backend/opengl/resources
+    src/backend/opengl/config
     src/backend/opengl/passes
 )
 

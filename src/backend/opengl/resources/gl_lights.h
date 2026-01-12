@@ -5,6 +5,8 @@
 
 #include <glm/glm.hpp>
 
+#include "gl_config.h"
+
 namespace Core {
     class UniformBuffer;
 }
@@ -16,7 +18,7 @@ namespace Engine {
 namespace Engine {
 
 // Maximum number of lights supported in a single draw call
-constexpr uint32_t MAX_LIGHTS = 16;
+constexpr uint32_t MAX_LIGHTS = GLConfig::Limits::MaxLights;
 
 /**
  * @brief Light data structure matching GLSL std140 layout for uniform buffer.
@@ -55,14 +57,14 @@ struct alignas(16) LightGPUData {
  * 
  * Layout:
  * - lightCount: offset 0, 4 bytes (12 bytes padding to next array element)
- * - lights:     offset 16, 64 * MAX_LIGHTS bytes
+ * - lights:     offset 16, 64 * GLConfig::Limits::MaxLights bytes
  * 
- * Total size: 16 + (64 * MAX_LIGHTS) = 16 + 1024 = 1040 bytes
+ * Total size: 16 + (64 * GLConfig::Limits::MaxLights) = 16 + (64 * 32) = 16 + 2048 = 2064 bytes
  */
 struct alignas(16) LightsUBOData {
-    int lightCount;                   // offset 0, 4 bytes
-    char _padding[12];                // offset 4, 12 bytes (explicit padding to offset 16)
-    LightGPUData lights[MAX_LIGHTS];  // offset 16, 64 bytes per light
+    int lightCount;                                    // offset 0, 4 bytes
+    char _padding[12];                                 // offset 4, 12 bytes (explicit padding to offset 16)
+    LightGPUData lights[GLConfig::Limits::MaxLights];  // offset 16, 64 bytes per light
 };
 
 /**

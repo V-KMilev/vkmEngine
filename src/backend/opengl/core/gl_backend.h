@@ -51,7 +51,8 @@ class GLBackend : public RenderBackend {
         /**
          * @brief Get the OpenGL rendering context.
          * 
-         * Provides access to the low-level OpenGL context for advanced operations or integration.
+         * Provides access to the low-level OpenGL context for state management and rendering operations.
+         * Use this for advanced OpenGL operations not exposed by the high-level API.
          * 
          * @return Reference to the OpenGL context.
          */
@@ -60,17 +61,22 @@ class GLBackend : public RenderBackend {
         /**
          * @brief Get the OpenGL rendering context (const version).
          * 
-         * Provides read-only access to the OpenGL context.
+         * Provides read-only access to the OpenGL context for querying state.
          * 
          * @return Const reference to the OpenGL context.
          */
         const Core::Context& getContext() const { return m_context; }
 
         /**
-         * @brief Get the OpenGL view, which manages all GPU mesh resources and synchronization.
+         * @brief Get the OpenGL view for resource management.
          * 
-         * The GLView provides GPU-side access to mesh data and manages updates in response
-         * to scene changes and resource manager events.
+         * The GLView manages all GPU-side resources (meshes, materials, textures, lights)
+         * and handles synchronization with the CPU-side resource manager.
+         * 
+         * This is the main interface for:
+         * - Syncing resources to GPU
+         * - Accessing GPU resources during rendering
+         * - Managing resource lifecycle and cleanup
          * 
          * @return Reference to the internal GLView.
          */
@@ -79,7 +85,7 @@ class GLBackend : public RenderBackend {
         /**
          * @brief Get the OpenGL view (const version).
          * 
-         * Provides read-only access to the GLView for mesh querying and state inspection.
+         * Provides read-only access to the GLView for querying GPU resources.
          * 
          * @return Const reference to the internal GLView.
          */
