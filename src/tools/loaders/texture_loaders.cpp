@@ -1,6 +1,7 @@
 #include "texture_loaders.h"
 
 #include <cstdint>
+#include <cstring>
 
 #include "logger.h"
 #include "resource_manager.h"
