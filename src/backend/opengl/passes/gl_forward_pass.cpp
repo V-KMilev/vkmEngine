@@ -3,11 +3,8 @@
 #include "logger.h"
 #include "print_helper.h"
 
-#include "gl_context.h"
-#include "gl_shader.h"
-#include "gl_config.h"
-
 #include "gl_backend.h"
+#include "gl_shader.h"
 #include "gl_mesh.h"
 #include "gl_material.h"
 
@@ -19,7 +16,7 @@ namespace Engine {
 GLForwardPass::GLForwardPass(Core::Shader& shader) : RenderPass("GLForwardPass"), m_shader(shader) {
     // Set up texture samplers once during initialization
     m_shader.bind();
-    
+
     // Set sampler units to match TextureSlots in gl_config.h
     m_shader.setUniform1i(GLConfig::UniformNames::AlbedoTexture, GLConfig::TextureSlots::Albedo);
     m_shader.setUniform1i(GLConfig::UniformNames::NormalTexture, GLConfig::TextureSlots::Normal);
@@ -41,13 +38,13 @@ void GLForwardPass::onResize(RenderBackend& backend, uint32_t width, uint32_t he
 void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) {
     // Validate backend type
     if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLForwardPass requires OpenGL backend, got {} - skipping pass", 
-                 toString(backend.getType()));
+        LOG_ERROR("GLForwardPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
         return;
     }
 
     auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
+
     auto& glView = gl.getView();
 
     // Sync all resources with GPU
@@ -73,7 +70,6 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
     m_shader.setUniformMatrix4fv(GLConfig::UniformNames::ViewProjection, view.camera.viewProjection);
 
     // Draw all visible meshes
-    uint32_t drawCallCount = 0;
     for (const auto& drawable : view.drawables) {
         // Set per-object model matrix
         m_shader.setUniformMatrix4fv(GLConfig::UniformNames::Model, drawable.model);
@@ -93,7 +89,6 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
         const GLMesh* mesh = glView.getMesh(drawable.mesh);
         if (mesh) {
             mesh->draw(GL_TRIANGLES);
-            ++drawCallCount;
         } else {
             LOG_WARNING("Failed to get mesh for drawable (skipping draw call)");
         }

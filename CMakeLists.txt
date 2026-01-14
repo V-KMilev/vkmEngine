@@ -83,6 +83,9 @@ add_library(EngineCore STATIC
     src/engine/debug/trackers/frame_tracker.cpp
     src/engine/debug/trackers/call_tracker.h
     src/engine/debug/trackers/call_tracker.cpp
+    # Editor
+    src/engine/editor/camera_controller.h
+    src/engine/editor/camera_controller.cpp
 )
 
 target_include_directories(EngineCore PUBLIC
@@ -97,6 +100,7 @@ target_include_directories(EngineCore PUBLIC
     src/engine/platform/threading
     src/engine/debug
     src/engine/debug/trackers
+    src/engine/editor
 )
 
 target_link_libraries(EngineCore PUBLIC
@@ -159,6 +163,10 @@ add_library(BackendOpenGL STATIC
     src/backend/opengl/passes/gl_forward_pass.cpp
     src/backend/opengl/passes/gl_aabb_debug_pass.h
     src/backend/opengl/passes/gl_aabb_debug_pass.cpp
+    src/backend/opengl/passes/gl_grid_pass.h
+    src/backend/opengl/passes/gl_grid_pass.cpp
+    src/backend/opengl/passes/gl_navigation_gizmo_pass.h
+    src/backend/opengl/passes/gl_navigation_gizmo_pass.cpp
     # Convenience header
     src/backend/opengl/gl_common.h
 )
@@ -174,6 +182,7 @@ target_include_directories(BackendOpenGL PUBLIC
 target_link_libraries(BackendOpenGL PUBLIC
     vkmGL
     EngineRendering
+    EngineTools
 )
 
 # ============================================================================

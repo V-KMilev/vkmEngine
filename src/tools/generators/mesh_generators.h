@@ -48,4 +48,13 @@ MeshAsset generateSphere(uint32_t xSegments = 32, uint32_t ySegments = 16);
  */
 MeshAsset generatePyramid(float baseSize = 2.0f, float height = 2.0f);
 
+/**
+ * @brief Generate a cone mesh.
+ * @param radius Radius of the cone base (default: 0.5).
+ * @param height Height of the cone (default: 1.0).
+ * @param segments Number of segments for the base circle (default: 16).
+ * @return MeshAsset containing cone geometry.
+ */
+MeshAsset generateCone(float radius = 0.5f, float height = 1.0f, uint32_t segments = 16);
+
 } // namespace Engine

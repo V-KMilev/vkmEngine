@@ -34,6 +34,8 @@
 #include "gl_backend.h"
 #include "gl_forward_pass.h"
 #include "gl_aabb_debug_pass.h"
+#include "gl_grid_pass.h"
+#include "gl_navigation_gizmo_pass.h"
 
 // Tools - Loaders
 #include "texture_loaders.h"
@@ -45,7 +47,10 @@
 #include "material_generators.h"
 #include "light_generators.h"
 
-static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene& scene) {
+// Editor
+#include "camera_controller.h"
+
+static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene& scene, Engine::CameraController& cameraController) {
     Engine::MeshHandle cubeMesh          = resources.add(Engine::generateCube());
     Engine::MeshHandle sphereMesh        = resources.add(Engine::generateSphere());
 
@@ -59,14 +64,15 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
     {
         scene.add(cameraEntity, Engine::Camera{Engine::ProjectionType::Perspective});
         scene.add(cameraEntity, Engine::Transform{});
-        scene.add(cameraEntity, Engine::Animation{});
+        // scene.add(cameraEntity, Engine::Animation{});
     }
+    cameraController.setCameraEntity(cameraEntity);
 
     // Cube with default material
     auto cube1 = scene.createEntity();
     {
         scene.add(cube1, Engine::Mesh{cubeMesh, pavingMaterial});
-        scene.add(cube1, Engine::Transform{glm::vec3(0.0f, 5.0f, 0.0f)});
+        scene.add(cube1, Engine::Transform{glm::vec3(0.0f, 7.0f, 0.0f)});
         scene.add(cube1, Engine::Animation{});
     }
 
@@ -74,7 +80,7 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
     auto cube2 = scene.createEntity();
     {
         scene.add(cube2, Engine::Mesh{cubeMesh, pavingMaterial});  // Using real textures!
-        scene.add(cube2, Engine::Transform{glm::vec3(0.0f, 2.5f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(5.0f, 0.5f, 5.0f)});
+        scene.add(cube2, Engine::Transform{glm::vec3(0.0f, 4.5f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(5.0f, 0.5f, 5.0f)});
         scene.add(cube2, Engine::Animation{});
     }
 
@@ -83,7 +89,7 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
         {
             int gridSize = 316;
             int x = i % gridSize;
-            float y = -3.0f;
+            float y = 0.0f;
             int z = i / gridSize;
 
             float spacing = 2.5f;
@@ -235,14 +241,19 @@ int main() {
 
         Core::Shader pbr("shaders/pbr");
         Core::Shader aabbDebug("shaders/aabb_debug");
+        Core::Shader gridShader("shaders/grid");
+        Core::Shader gizmoShader("shaders/gizmo");
 
         renderManager.setBackend(std::make_unique<Engine::GLBackend>());
         renderManager.addPass(std::make_unique<Engine::GLForwardPass>(pbr));
         // renderManager.addPass(std::make_unique<Engine::GLAABBDebugPass>(aabbDebug));
+        renderManager.addPass(std::make_unique<Engine::GLGridPass>(gridShader));
+        renderManager.addPass(std::make_unique<Engine::GLNavigationGizmoPass>(gizmoShader));
 
         Engine::Scene scene;
+        Engine::CameraController cameraController;
 
-        generateBasicScene(resources, scene);
+        generateBasicScene(resources, scene, cameraController);
         generateAnimations(scene);
 
         using clock = std::chrono::steady_clock;
@@ -252,13 +263,15 @@ int main() {
         constexpr int viewportHeight = 1080;
 
         while (windowManager.beginFrame()) {
+            // Frame delta time in seconds
+            float deltaTime = statisticTracker.getFrameInfo().frameRateInfo.frameTime / 1000.0f;
+
             if (!windowManager.updateInput()) break;
 
+            cameraController.update(scene, deltaTime);
+
             eventManager.executeAsync();
-
-            // Update animations (convert frameTime from milliseconds to seconds)
-            animationManager.update(scene, statisticTracker.getFrameInfo().frameRateInfo.frameTime / 1000.0f);
-
+            animationManager.update(scene, deltaTime);
             renderManager.renderFrame(scene, resources, viewportWidth, viewportHeight);
 
             if (!windowManager.swapBuffers()) break;
