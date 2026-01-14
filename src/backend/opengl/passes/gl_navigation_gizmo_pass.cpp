@@ -112,7 +112,7 @@ void GLNavigationGizmoPass::execute(RenderBackend& backend, const RenderView& vi
 
     drawAxis(worldX, {0.95f, 0.25f, 0.25f});
     drawAxis(worldY, {0.25f, 0.9f, 0.35f});
-    drawAxis(worldZ, {0.3f, 0.5f, 0.95f});
+    drawAxis(worldZ, {0.25f, 0.5f, 0.95f});
 
     // Restore previous state
     glContext.setDepthTest(true);

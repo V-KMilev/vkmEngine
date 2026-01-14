@@ -21,10 +21,10 @@ namespace Engine {
  * - fadeEnd: Distance at which the grid is fully faded out/invisible.
  */
 struct GridConfig {
-    float size      = 10000.0f;    ///< World-space size of the grid area
+    float size      = 1000.0f;    ///< World-space size of the grid area
     float scale     = 1.0f;        ///< Grid cell size (distance between major lines)
-    float fadeStart = 10.0f;       ///< Distance where grid lines start to fade out
-    float fadeEnd   = 150.0f;      ///< Distance where grid lines are fully invisible
+    float fadeStart = 50.0f;       ///< Distance where grid lines start to fade out
+    float fadeEnd   = 550.0f;      ///< Distance where grid lines are fully invisible
 };
 
 /**
