@@ -44,6 +44,7 @@ class MouseInputHandle {
 
     public:
         void update(GLFWwindow* window);
+        void setupScrollCallback(GLFWwindow* window, class InputHandle* inputHandle);
 
         bool isButtonPressed(int button) const;
         bool isButtonReleased(int button) const;
@@ -53,6 +54,22 @@ class MouseInputHandle {
         double getDeltaX() const { return m_deltaX; }
         double getDeltaY() const { return m_deltaY; }
 
+        double getScrollX() const { return m_scrollX; }
+        double getScrollY() const { return m_scrollY; }
+
+        /**
+         * @brief Reset scroll delta at end of frame.
+         * Must be called after processing input to prevent accumulation.
+         */
+        void resetScrollDelta();
+
+    private:
+        /**
+         * @brief Set scroll values from GLFW callback.
+         * @internal Called automatically by the scroll callback.
+         */
+        void setScrollDelta(double xOffset, double yOffset);
+
     private:
         bool m_buttonState[GLFW_MOUSE_BUTTON_LAST + 1] = {};
         bool m_prevButtonState[GLFW_MOUSE_BUTTON_LAST + 1] = {};
@@ -61,6 +78,9 @@ class MouseInputHandle {
         double m_y = 0.0;
         double m_deltaX = 0.0;
         double m_deltaY = 0.0;
+
+        double m_scrollX = 0.0;
+        double m_scrollY = 0.0;
 };
 
 class InputHandle {
@@ -79,6 +99,9 @@ class InputHandle {
 
         bool isPressed(int key) const;
         bool isReleased(int key) const;
+
+        const KeyboardInputHandle& keyboard() const { return m_keyboardHandle; }
+        const MouseInputHandle& mouse() const { return m_mouseHandle; }
 
         KeyboardInputHandle& keyboard() { return m_keyboardHandle; }
         MouseInputHandle& mouse() { return m_mouseHandle; }

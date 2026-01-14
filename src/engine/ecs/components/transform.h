@@ -6,16 +6,17 @@
 
 namespace Engine {
 
+// TODO: Move this to a config file or something
 /**
  * @brief Standard 3D basis direction vectors in world space.
  * 
- * forward (+Z): Points in the positive Z direction (out of the screen in right-handed systems).
- * right   (+X): Points in the positive X direction (to the right).
- * up      (+Y): Points in the positive Y direction (upwards).
+ * WORLD_AXIS_X_RIGHT   (+X): Points in the positive X direction (to the right).
+ * WORLD_AXIS_Y_UP      (+Y): Points in the positive Y direction (upwards).
+ * WORLD_AXIS_Z_FORWARD (+Z): Points in the positive Z direction (out of the screen in right-handed systems).
  */
-constexpr glm::vec3 forward = {0.0f, 0.0f, 1.0f};
-constexpr glm::vec3 right   = {1.0f, 0.0f, 0.0f};
-constexpr glm::vec3 up      = {0.0f, 1.0f, 0.0f};
+constexpr glm::vec3 WORLD_AXIS_X_RIGHT   = {1.0f, 0.0f, 0.0f};
+constexpr glm::vec3 WORLD_AXIS_Y_UP      = {0.0f, 1.0f, 0.0f};
+constexpr glm::vec3 WORLD_AXIS_Z_FORWARD = {0.0f, 0.0f, 1.0f};
 
 /**
  * @brief Component representing spatial transformation (position, rotation, scale) in 3D space.
@@ -49,7 +50,7 @@ struct Transform {
      * @return Normalized forward vector (Z+ direction).
      */
     static glm::vec3 computeForward(const glm::quat& rotation) {
-        return glm::normalize(rotation * forward);
+        return glm::normalize(rotation * WORLD_AXIS_Z_FORWARD);
     }
 
     /**
@@ -58,7 +59,7 @@ struct Transform {
      * @return Normalized up vector (Y+ direction).
      */
     static glm::vec3 computeUp(const glm::quat& rotation) {
-        return glm::normalize(rotation * up);
+        return glm::normalize(rotation * WORLD_AXIS_Y_UP);
     }
 
     /**
@@ -67,7 +68,7 @@ struct Transform {
      * @return Normalized right vector (X+ direction).
      */
     static glm::vec3 computeRight(const glm::quat& rotation) {
-        return glm::normalize(rotation * right);
+        return glm::normalize(rotation * WORLD_AXIS_X_RIGHT);
     }
 };
 

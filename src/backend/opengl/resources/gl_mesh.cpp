@@ -69,13 +69,13 @@ void GLMesh::bind() const {
 void GLMesh::draw(int drawType) const {
     bind();
 
-    constexpr const uint32_t indicesOffset = 0;
+    constexpr uintptr_t indicesOffset = 0;
 
     VKM_GL_CHECK(glDrawElements(
         drawType,
-        static_cast<GLsizei>(m_ibo->getCount()),
+        static_cast<GLsizei>(m_indexCount),
         m_ibo->getType(),
-        reinterpret_cast<const void*>(static_cast<uintptr_t>(indicesOffset))
+        reinterpret_cast<const void*>(indicesOffset)
     ));
 }
 

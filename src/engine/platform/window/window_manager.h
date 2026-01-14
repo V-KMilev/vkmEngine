@@ -10,12 +10,35 @@ class InputHandle;
 class FrameLimiter;
 
 /**
- * @brief Enumerates supported window modes.
+ * @brief Enumerates supported window modes for the application window.
+ *
+ * WindowMode is used to specify how the application window should be displayed on the user's monitor.
+ * 
+ * - NONE:       No active window mode or undefined state; the window may not be visible or active.
+ * - FULLSCREEN: The window occupies the entire screen, with no window borders or decorations; 
+ *               typically used for immersive applications and games.
+ * - WINDOWED:   The window operates within a resizable and movable container, allowing it to share the
+ *               desktop with other applications; contains standard OS borders and controls.
  */
 enum class WindowMode {
-    NONE       = 0, ///< No active window mode or undefined.
-    FULLSCREEN = 1, ///< Window occupies the entire screen.
-    WINDOWED   = 2  ///< Window is in windowed mode.
+    NONE       = 0,    ///< No active window mode or undefined.
+    FULLSCREEN = 1,    ///< Window occupies the entire screen.
+    WINDOWED   = 2     ///< Window is in windowed mode.
+};
+
+/**
+ * @brief Enumerates supported cursor modes for the application window.
+ *
+ * - NORMAL:   Standard visible cursor, can move outside the window.
+ * - HIDDEN:   Cursor is invisible but movement is unrestricted.
+ * - DISABLED: Cursor is hidden and movement is confined to the window (useful for FPS cameras).
+ * - CAPTURED: Cursor is captured and not visible, often for raw input scenarios.
+ */
+enum class CursorMode {
+    NORMAL   = 0,    ///< Cursor visible, standard mode.
+    HIDDEN   = 1,    ///< Cursor hidden.
+    DISABLED = 2,    ///< Cursor disabled and locked to window.
+    CAPTURED = 3     ///< Cursor captured for raw input.
 };
 
 /**
@@ -110,6 +133,19 @@ class WindowManager {
          * @param framerate The desired frames per second limit.
          */
         void setFramerate(int framerate);
+
+        /**
+         * @brief Sets the cursor mode.
+         * @param mode The desired cursor mode.
+         */
+        void setCursorMode(CursorMode mode);
+
+        /**
+         * @brief Get the current input handle for querying input state.
+         * @return Reference to the InputHandle.
+         */
+        InputHandle& getInputHandle() { return *m_inputHandle; }
+        const InputHandle& getInputHandle() const { return *m_inputHandle; }
 
     private:
         WindowManager() = default;

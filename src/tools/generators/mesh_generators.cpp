@@ -54,57 +54,57 @@ MeshAsset generateCube() {
     const glm::vec3 nTop   ( 0.0f,  1.0f,  0.0f);
     const glm::vec3 nBottom( 0.0f, -1.0f,  0.0f);
 
-    const glm::vec4 tRight ( 1.0f,  0.0f,  0.0f, 1.0f);
-    const glm::vec4 tLeft  (-1.0f,  0.0f,  0.0f, 1.0f);
-    const glm::vec4 tForward(0.0f,  0.0f,  1.0f, 1.0f);
-    const glm::vec4 tBack   (0.0f,  0.0f, -1.0f, 1.0f);
+    const glm::vec4 tRight   ( 1.0f,  0.0f,  0.0f, 1.0f);
+    const glm::vec4 tLeft    (-1.0f,  0.0f,  0.0f, 1.0f);
+    const glm::vec4 tForward ( 0.0f,  0.0f,  1.0f, 1.0f);
+    const glm::vec4 tBack    ( 0.0f,  0.0f, -1.0f, 1.0f);
 
-    // Unit cube (-0.5 to 0.5)
     mesh.vertices = {
-        // Front face (-Z)
-        Vertex{ glm::vec3(-0.5f, -0.5f, -0.5f), nFront, glm::vec2(0.0f, 0.0f), tRight },
-        Vertex{ glm::vec3( 0.5f, -0.5f, -0.5f), nFront, glm::vec2(1.0f, 0.0f), tRight },
-        Vertex{ glm::vec3( 0.5f,  0.5f, -0.5f), nFront, glm::vec2(1.0f, 1.0f), tRight },
-        Vertex{ glm::vec3(-0.5f,  0.5f, -0.5f), nFront, glm::vec2(0.0f, 1.0f), tRight },
+        // Front (-Z)
+        { {-0.5f, -0.5f, -0.5f}, nFront,  {0, 0}, tRight },
+        { { 0.5f, -0.5f, -0.5f}, nFront,  {1, 0}, tRight },
+        { { 0.5f,  0.5f, -0.5f}, nFront,  {1, 1}, tRight },
+        { {-0.5f,  0.5f, -0.5f}, nFront,  {0, 1}, tRight },
 
-        // Back face (+Z)
-        Vertex{ glm::vec3( 0.5f, -0.5f,  0.5f), nBack, glm::vec2(0.0f, 0.0f), tLeft },
-        Vertex{ glm::vec3(-0.5f, -0.5f,  0.5f), nBack, glm::vec2(1.0f, 0.0f), tLeft },
-        Vertex{ glm::vec3(-0.5f,  0.5f,  0.5f), nBack, glm::vec2(1.0f, 1.0f), tLeft },
-        Vertex{ glm::vec3( 0.5f,  0.5f,  0.5f), nBack, glm::vec2(0.0f, 1.0f), tLeft },
+        // Back (+Z)
+        { { 0.5f, -0.5f,  0.5f}, nBack,   {0, 0}, tLeft },
+        { {-0.5f, -0.5f,  0.5f}, nBack,   {1, 0}, tLeft },
+        { {-0.5f,  0.5f,  0.5f}, nBack,   {1, 1}, tLeft },
+        { { 0.5f,  0.5f,  0.5f}, nBack,   {0, 1}, tLeft },
 
-        // Left face (-X)
-        Vertex{ glm::vec3(-0.5f, -0.5f,  0.5f), nLeft, glm::vec2(0.0f, 0.0f), tBack },
-        Vertex{ glm::vec3(-0.5f, -0.5f, -0.5f), nLeft, glm::vec2(1.0f, 0.0f), tBack },
-        Vertex{ glm::vec3(-0.5f,  0.5f, -0.5f), nLeft, glm::vec2(1.0f, 1.0f), tBack },
-        Vertex{ glm::vec3(-0.5f,  0.5f,  0.5f), nLeft, glm::vec2(0.0f, 1.0f), tBack },
+        // Left (-X)
+        { {-0.5f, -0.5f,  0.5f}, nLeft,   {0, 0}, tBack },
+        { {-0.5f, -0.5f, -0.5f}, nLeft,   {1, 0}, tBack },
+        { {-0.5f,  0.5f, -0.5f}, nLeft,   {1, 1}, tBack },
+        { {-0.5f,  0.5f,  0.5f}, nLeft,   {0, 1}, tBack },
 
-        // Right face (+X)
-        Vertex{ glm::vec3( 0.5f, -0.5f, -0.5f), nRight, glm::vec2(0.0f, 0.0f), tForward },
-        Vertex{ glm::vec3( 0.5f, -0.5f,  0.5f), nRight, glm::vec2(1.0f, 0.0f), tForward },
-        Vertex{ glm::vec3( 0.5f,  0.5f,  0.5f), nRight, glm::vec2(1.0f, 1.0f), tForward },
-        Vertex{ glm::vec3( 0.5f,  0.5f, -0.5f), nRight, glm::vec2(0.0f, 1.0f), tForward },
+        // Right (+X)
+        { { 0.5f, -0.5f, -0.5f}, nRight,  {0, 0}, tForward },
+        { { 0.5f, -0.5f,  0.5f}, nRight,  {1, 0}, tForward },
+        { { 0.5f,  0.5f,  0.5f}, nRight,  {1, 1}, tForward },
+        { { 0.5f,  0.5f, -0.5f}, nRight,  {0, 1}, tForward },
 
-        // Top face (+Y)
-        Vertex{ glm::vec3(-0.5f,  0.5f, -0.5f), nTop, glm::vec2(0.0f, 0.0f), tRight },
-        Vertex{ glm::vec3( 0.5f,  0.5f, -0.5f), nTop, glm::vec2(1.0f, 0.0f), tRight },
-        Vertex{ glm::vec3( 0.5f,  0.5f,  0.5f), nTop, glm::vec2(1.0f, 1.0f), tRight },
-        Vertex{ glm::vec3(-0.5f,  0.5f,  0.5f), nTop, glm::vec2(0.0f, 1.0f), tRight },
+        // Top (+Y)
+        { {-0.5f,  0.5f, -0.5f}, nTop,    {0, 0}, tRight },
+        { { 0.5f,  0.5f, -0.5f}, nTop,    {1, 0}, tRight },
+        { { 0.5f,  0.5f,  0.5f}, nTop,    {1, 1}, tRight },
+        { {-0.5f,  0.5f,  0.5f}, nTop,    {0, 1}, tRight },
 
-        // Bottom face (-Y)
-        Vertex{ glm::vec3(-0.5f, -0.5f,  0.5f), nBottom, glm::vec2(0.0f, 0.0f), tRight },
-        Vertex{ glm::vec3( 0.5f, -0.5f,  0.5f), nBottom, glm::vec2(1.0f, 0.0f), tRight },
-        Vertex{ glm::vec3( 0.5f, -0.5f, -0.5f), nBottom, glm::vec2(1.0f, 1.0f), tRight },
-        Vertex{ glm::vec3(-0.5f, -0.5f, -0.5f), nBottom, glm::vec2(0.0f, 1.0f), tRight }
+        // Bottom (-Y)
+        { {-0.5f, -0.5f,  0.5f}, nBottom, {0, 0}, tRight },
+        { { 0.5f, -0.5f,  0.5f}, nBottom, {1, 0}, tRight },
+        { { 0.5f, -0.5f, -0.5f}, nBottom, {1, 1}, tRight },
+        { {-0.5f, -0.5f, -0.5f}, nBottom, {0, 1}, tRight }
     };
 
+    // CCW winding for all faces (outside view)
     mesh.indices = {
-        0, 1, 2,  2, 3, 0,      // Front
-        4, 5, 6,  6, 7, 4,      // Back
-        8, 9, 10, 10, 11, 8,    // Left
-        12, 13, 14, 14, 15, 12, // Right
-        16, 17, 18, 18, 19, 16, // Top
-        20, 21, 22, 22, 23, 20  // Bottom
+        0, 2, 1,  0, 3, 2,      // Front
+        4, 6, 5,  4, 7, 6,      // Back
+        8,10, 9,  8,11,10,      // Left
+        12,14,13, 12,15,14,    // Right
+        16,18,17, 16,19,18,    // Top
+        20,22,21, 20,23,22     // Bottom
     };
 
     mesh.computeAndSetBounds();
@@ -209,6 +209,63 @@ MeshAsset generatePyramid(float baseSize, float height) {
         10, 11, 12,             // Front
         13, 14, 15              // Left
     };
+
+    mesh.computeAndSetBounds();
+    return mesh;
+}
+
+MeshAsset generateCone(
+    float radius, float height, uint32_t segments
+) {
+    MeshAsset mesh;
+
+    const float halfHeight = height * 0.5f;
+    const glm::vec3 tip(0.0f, halfHeight, 0.0f);
+    const glm::vec3 baseCenter(0.0f, -halfHeight, 0.0f);
+    const glm::vec3 nDown(0.0f, -1.0f, 0.0f);
+    const glm::vec4 tangent(1.0f, 0.0f, 0.0f, 1.0f);
+
+    // Add tip vertex
+    glm::vec3 tipNormal = glm::normalize(glm::vec3(0.0f, radius, height));
+    mesh.vertices.push_back(Vertex{ tip, tipNormal, glm::vec2(0.5f, 1.0f), tangent });
+    uint32_t tipIndex = 0;
+
+    // Add base circle vertices
+    uint32_t baseStartIndex = static_cast<uint32_t>(mesh.vertices.size());
+    for (uint32_t i = 0; i < segments; ++i) {
+        float angle = static_cast<float>(i) / static_cast<float>(segments) * glm::two_pi<float>();
+        float x = std::cos(angle) * radius;
+        float z = std::sin(angle) * radius;
+        glm::vec3 position(x, -halfHeight, z);
+        
+        // Normal for cone side (pointing outward from center)
+        glm::vec3 toTip = tip - position;
+        glm::vec3 sideNormal = glm::normalize(glm::vec3(x, 0.0f, z));
+        glm::vec3 coneNormal = glm::normalize(glm::vec3(sideNormal.x, radius / height, sideNormal.z));
+        
+        float u = static_cast<float>(i) / static_cast<float>(segments);
+        mesh.vertices.push_back(Vertex{ position, coneNormal, glm::vec2(u, 0.0f), tangent });
+    }
+
+    // Add base center vertex
+    mesh.vertices.push_back(Vertex{ baseCenter, nDown, glm::vec2(0.5f, 0.5f), tangent });
+    uint32_t baseCenterIndex = static_cast<uint32_t>(mesh.vertices.size()) - 1;
+
+    // Create cone side triangles (tip to base circle)
+    for (uint32_t i = 0; i < segments; ++i) {
+        uint32_t nextI = (i + 1) % segments;
+        mesh.indices.push_back(tipIndex);
+        mesh.indices.push_back(baseStartIndex + i);
+        mesh.indices.push_back(baseStartIndex + nextI);
+    }
+
+    // Create base cap triangles
+    for (uint32_t i = 0; i < segments; ++i) {
+        uint32_t nextI = (i + 1) % segments;
+        mesh.indices.push_back(baseCenterIndex);
+        mesh.indices.push_back(baseStartIndex + nextI);
+        mesh.indices.push_back(baseStartIndex + i);
+    }
 
     mesh.computeAndSetBounds();
     return mesh;

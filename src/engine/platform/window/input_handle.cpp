@@ -49,6 +49,29 @@ bool MouseInputHandle::isButtonReleased(int button) const {
     return m_prevButtonState[button] && !m_buttonState[button];
 }
 
+void MouseInputHandle::setScrollDelta(double xOffset, double yOffset) {
+    m_scrollX += xOffset;
+    m_scrollY += yOffset;
+}
+
+void MouseInputHandle::resetScrollDelta() {
+    m_scrollX = 0.0;
+    m_scrollY = 0.0;
+}
+
+void MouseInputHandle::setupScrollCallback(GLFWwindow* window, InputHandle* inputHandle) {
+    if (!window || !inputHandle) return;
+
+    glfwSetWindowUserPointer(window, this);
+
+    glfwSetScrollCallback(window, [](GLFWwindow* w, double xOffset, double yOffset) {
+        auto* mouse = static_cast<MouseInputHandle*>(glfwGetWindowUserPointer(w));
+        if (mouse) {
+            mouse->setScrollDelta(xOffset, yOffset);
+        }
+    });
+}
+
 void InputHandle::update(GLFWwindow* window) {
     m_keyboardHandle.update(window);
     m_mouseHandle.update(window);

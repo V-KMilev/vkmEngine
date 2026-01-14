@@ -1,0 +1,93 @@
+#include "camera_controller.h"
+
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <algorithm>
+#include <cmath>
+
+#include "window_manager.h"
+#include "input_handle.h"
+#include "glfw_include.h"
+
+#include "transform.h"
+
+namespace Engine {
+
+CameraController::CameraController() : m_cameraEntity(Entity{0}) {}
+
+void CameraController::update(Scene& scene, float deltaTime) {
+    auto& transformStorage = scene.storage<Transform>();
+
+    if (!transformStorage.has(m_cameraEntity.getID())) {
+        return;
+    }
+
+    auto& transform = transformStorage.get(m_cameraEntity.getID());
+
+    updateFlyMode(transform.position, transform.rotation, deltaTime);
+}
+
+void CameraController::updateFlyMode(glm::vec3& position, glm::quat& rotation, float deltaTime) {
+    auto& windowManager = WindowManager::get();
+    auto& inputHandle   = windowManager.getInputHandle();
+    auto& mouse    = inputHandle.mouse();
+    auto& keyboard = inputHandle.keyboard();
+
+    // Right mouse: Look around
+    bool isRightMousePressed = mouse.isButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
+
+    // Only update cursor mode when state changes
+    if (isRightMousePressed != m_isRightMousePressed) {
+        windowManager.setCursorMode(isRightMousePressed ? CursorMode::DISABLED : CursorMode::NORMAL);
+        m_isRightMousePressed = isRightMousePressed;
+    }
+
+    if (!isRightMousePressed) {
+        return;
+    }
+
+    // Update yaw and pitch
+    m_yaw   -= static_cast<float>(mouse.getDeltaX()) * m_settings.lookSensitivity;
+    m_pitch -= static_cast<float>(mouse.getDeltaY()) * m_settings.lookSensitivity;
+    m_pitch = std::clamp(m_pitch, glm::radians(m_settings.minPitch), glm::radians(m_settings.maxPitch));
+
+    updateRotationFromAngles(rotation, m_yaw, m_pitch);
+
+    // Calculate movement direction vectors using Transform helper methods
+    glm::vec3 forward = Transform::computeForward(rotation);
+    glm::vec3 right   = Transform::computeRight(rotation);
+
+    float scrollDelta = static_cast<float>(mouse.getScrollY());
+
+    // Scroll wheel modifies forward/back
+    if (std::abs(scrollDelta) > 0.001f) {
+        // Combine zoomSensitivity and scrollMultiplier into one calculation
+        position += forward * scrollDelta * m_settings.zoomSensitivity * m_settings.scrollMultiplier;
+    }
+
+    // Movement speed with optional boost
+    float speed = m_settings.moveSpeed * deltaTime;
+    if (keyboard.isKeyPressed(GLFW_KEY_LEFT_SHIFT)) {
+        speed *= m_settings.speedBoost;
+    }
+
+    // WASD + QE movement
+    if (keyboard.isKeyPressed(GLFW_KEY_W)) position += forward * speed;
+    if (keyboard.isKeyPressed(GLFW_KEY_S)) position -= forward * speed;
+    if (keyboard.isKeyPressed(GLFW_KEY_A)) position += right * speed;
+    if (keyboard.isKeyPressed(GLFW_KEY_D)) position -= right * speed;
+    if (keyboard.isKeyPressed(GLFW_KEY_Q)) position += Engine::WORLD_AXIS_Y_UP * speed;
+    if (keyboard.isKeyPressed(GLFW_KEY_E)) position -= Engine::WORLD_AXIS_Y_UP * speed;
+}
+
+void CameraController::updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch) {
+    // Yaw rotates around world up axis
+    glm::quat yawQuat = glm::angleAxis(yaw, Engine::WORLD_AXIS_Y_UP);
+    // Pitch rotates around local right axis (negative because mouse Y is inverted)
+    glm::quat pitchQuat = glm::angleAxis(pitch, -Engine::WORLD_AXIS_X_RIGHT);
+    // Apply yaw first, then pitch (order matters for correct behavior)
+    rotation = yawQuat * pitchQuat;
+}
+
+} // namespace Engine
+
