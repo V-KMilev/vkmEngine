@@ -23,7 +23,7 @@ struct NavigationGizmoConfig {
     float scale = 1.0f;     ///< Scale of the gizmo
     float size = 140.0f;    ///< Size of the gizmo in pixels
     float x = 0.96f;        ///< Normalized X screen position (1 = right edge)
-    float y = 0.08f;        ///< Normalized Y screen position (0 = bottom, 1 = top)
+    float y = 0.12f;        ///< Normalized Y screen position (0 = bottom, 1 = top)
 };
 
 /**
