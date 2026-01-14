@@ -72,7 +72,7 @@ class GLAABBDebugPass : public RenderPass {
          * 
          * Creates a unit cube (from -0.5 to +0.5) with wireframe edges.
          */
-        void initializeWireframeCube();
+        void initialize();
 
     private:
         Core::Shader& m_shader;

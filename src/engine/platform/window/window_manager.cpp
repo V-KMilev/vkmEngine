@@ -55,6 +55,8 @@ void WindowManager::createWindow(const std::string& title) {
     m_window = std::make_unique<Window>(title);
     m_inputHandle = std::make_unique<InputHandle>();
     m_frameLimiter = std::make_unique<FrameLimiter>();
+
+    m_inputHandle->mouse().setupScrollCallback(m_window->getWindowContext(), m_inputHandle.get());
 }
 
 bool WindowManager::shouldClose() const {
@@ -140,7 +142,11 @@ bool WindowManager::updateInput() {
         return false;
     }
 
+    // Reset scroll delta before polling new events
+    m_inputHandle->mouse().resetScrollDelta();
+
     glfwPollEvents();
+
     m_inputHandle->update(windowContext);
 
     return true;
@@ -162,4 +168,32 @@ void WindowManager::setFramerate(int framerate) {
     // Disable VSync when using software limiting
     m_window->setSwapInterval(0);
     m_frameLimiter->setTargetFramerate(framerate);
+}
+
+void WindowManager::setCursorMode(CursorMode mode) {
+    GLFWwindow* windowContext = m_window->getWindowContext();
+    if (!windowContext) {
+        LOG_ERROR("Cannot set cursor mode: window is not initialized");
+        return;
+    }
+
+    auto glfwmode = GLFW_CURSOR_NORMAL;
+    switch (mode) {
+        case CursorMode::NORMAL:
+            glfwmode = GLFW_CURSOR_NORMAL;
+            break;
+        case CursorMode::HIDDEN:
+            glfwmode = GLFW_CURSOR_HIDDEN;
+            break;
+        case CursorMode::DISABLED:
+            glfwmode = GLFW_CURSOR_DISABLED;
+            break;
+        case CursorMode::CAPTURED:
+            glfwmode = GLFW_CURSOR_CAPTURED;
+            break;
+        default:
+            LOG_ERROR("Invalid cursor mode: %d", mode);
+            return;
+    }
+    glfwSetInputMode(windowContext, GLFW_CURSOR, glfwmode);
 }

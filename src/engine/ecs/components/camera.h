@@ -25,8 +25,8 @@ struct Camera {
     float fovY                = glm::radians(70.0f);            ///< Vertical field of view in radians (default: ~70 degrees)
     float orthoHeight         = 10.0f;                          ///< Orthographic half-height in world units
     float aspect              = 16.0f / 9.0f;                   ///< Aspect ratio (width / height)
-    float near                = 0.1f;                           ///< Near clip plane distance
-    float far                 = 1000.0f;                        ///< Far clip plane distance
+    float zNear               = 0.1f;                           ///< Near clip plane distance
+    float zFar                = 1000.0f;                        ///< Far clip plane distance
     float exposure            = 1.0f;                           ///< Camera exposure (linear multiplier for final output)
     bool active               = true;                           ///< Is this camera active?
 
@@ -62,9 +62,9 @@ struct Camera {
      */
     static glm::mat4 computeProjection(const Camera& camera) {
         if (camera.projection == ProjectionType::Perspective) {
-            return makePerspective(camera.fovY, camera.aspect, camera.near, camera.far);
+            return makePerspective(camera.fovY, camera.aspect, camera.zNear, camera.zFar);
         } else {
-            return makeOrthographic(camera.orthoHeight, camera.aspect, camera.near, camera.far);
+            return makeOrthographic(camera.orthoHeight, camera.aspect, camera.zNear, camera.zFar);
         }
     }
 };
