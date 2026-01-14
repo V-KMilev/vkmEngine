@@ -7,11 +7,13 @@ uniform float u_gridScale;
 uniform float u_gridFadeStart;
 uniform float u_gridFadeEnd;
 
+uniform vec3 u_cameraPos;
+
 // Colors
 const vec3 gridColorThin  = vec3(0.35);
 const vec3 gridColorThick = vec3(0.45);
-const vec3 axisColorX     = vec3(0.95, 0.3, 0.3);
-const vec3 axisColorZ     = vec3(0.3, 0.5, 0.95);
+const vec3 axisColorX     = vec3(0.95, 0.25, 0.25);
+const vec3 axisColorZ     = vec3(0.25, 0.5, 0.95);
 
 vec4 grid(vec3 pos, float scale) {
     vec2 coord = pos.xz * scale;
@@ -44,7 +46,8 @@ vec4 grid(vec3 pos, float scale) {
 void main() {
     vec4 color = grid(v_worldPos, 1.0 / u_gridScale);
 
-    float dist = length(v_worldPos);
+    // Fade based on distance from camera (XZ only so looking up/down doesn't kill grid)
+    float dist = length(v_worldPos.xz - u_cameraPos.xz);
     float fade = 1.0 - smoothstep(u_gridFadeStart, u_gridFadeEnd, dist);
     color.a *= fade;
 
