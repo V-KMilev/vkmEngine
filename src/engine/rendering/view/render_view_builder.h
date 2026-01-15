@@ -1,6 +1,9 @@
 #pragma once
 
 #include "render_view.h"
+#include "entity.h"
+
+class ThreadPool;
 
 namespace Engine {
     class Scene;
@@ -10,10 +13,15 @@ namespace Engine {
 namespace Engine {
 
 /**
+ * @brief Screen-size culling: skip objects smaller than ~2 pixels at 1080p
+ */
+constexpr float MIN_SCREEN_SIZE_SQ = 0.002f * 0.002f;
+
+/**
  * @brief Builder class for creating RenderView instances from a Scene.
  *
- * Provides a static method to construct a RenderView from a given Scene,
- * along with viewport dimensions for perspective projection calculations.
+ * Provides static methods to construct a RenderView from a given Scene,
+ * using pre-computed visible entity IDs from SceneView.
  */
 class RenderViewBuilder {
     public:
@@ -27,13 +35,12 @@ class RenderViewBuilder {
         RenderViewBuilder& operator=(RenderViewBuilder && other) = delete;
 
     public:
-        /**
-         * @brief Build a RenderView from a given Scene, along with view space dimensions for perspective projection calculations.
-         * @param scene The Scene to build the RenderView from.
-         * @param resources Reference to ResourceManager for accessing mesh bounds for frustum culling.
-         * @return The constructed RenderView.
-         */
-        static RenderView build(const Scene& scene, const ResourceManager& resources);
+        static RenderView build(
+            const Scene& scene,
+            const ResourceManager& resources,
+            const std::vector<EntityId>& visibleIds
+        );
+
 };
 
 } // namespace Engine

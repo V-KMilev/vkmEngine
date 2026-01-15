@@ -29,11 +29,13 @@
 
 // Engine Rendering
 #include "render_manager.h"
+#include "scene_view.h"
 
 // Backend
 #include "gl_backend.h"
 #include "gl_forward_pass.h"
 #include "gl_aabb_debug_pass.h"
+#include "gl_bvh_debug_pass.h"
 #include "gl_grid_pass.h"
 #include "gl_navigation_gizmo_pass.h"
 
@@ -203,10 +205,10 @@ static void generateAnimations(Engine::Scene& scene) {
                 float px = x * spacing - offset;
                 float pz = z * spacing - offset;
 
-                positionTrack.addKeyframe(0.0f, glm::vec3(px, -3.0f, pz));
-                positionTrack.addKeyframe(duration/3, glm::vec3(px, 0.0f, pz));
-                positionTrack.addKeyframe(2*duration/3, glm::vec3(px, 1.0f, pz));
-                positionTrack.addKeyframe(duration, glm::vec3(px, -3.0f, pz));
+                positionTrack.addKeyframe(0.0f, glm::vec3(px, 1.0f, pz));
+                positionTrack.addKeyframe(duration/3, glm::vec3(px, 3.0f, pz));
+                positionTrack.addKeyframe(2*duration/3, glm::vec3(px, 4.0f, pz));
+                positionTrack.addKeyframe(duration, glm::vec3(px, 1.0f, pz));
             }
         }
 
@@ -238,6 +240,7 @@ int main() {
         Engine::ResourceManager resources;
         Engine::AnimationManager animationManager;
         Engine::RenderManager renderManager;
+        Engine::SceneView sceneView;
 
         Core::Shader pbr("shaders/pbr");
         Core::Shader aabbDebug("shaders/aabb_debug");
@@ -247,6 +250,7 @@ int main() {
         renderManager.setBackend(std::make_unique<Engine::GLBackend>());
         renderManager.addPass(std::make_unique<Engine::GLForwardPass>(pbr));
         // renderManager.addPass(std::make_unique<Engine::GLAABBDebugPass>(aabbDebug));
+        // renderManager.addPass(std::make_unique<Engine::GLBVHDebugPass>(aabbDebug, sceneView.getSpatialIndex()));
         renderManager.addPass(std::make_unique<Engine::GLGridPass>(gridShader));
         renderManager.addPass(std::make_unique<Engine::GLNavigationGizmoPass>(gizmoShader));
 
@@ -271,8 +275,15 @@ int main() {
             cameraController.update(scene, deltaTime);
 
             eventManager.executeAsync();
-            animationManager.update(scene, deltaTime);
-            renderManager.renderFrame(scene, resources, viewportWidth, viewportHeight);
+
+            // Compute visible entities once using BVH frustum culling
+            std::vector<Engine::EntityId> visibleEntities = sceneView.getVisibleEntities(scene, resources);
+
+            // Render frame with pre-computed visible entities
+            renderManager.renderFrame(scene, resources, visibleEntities, viewportWidth, viewportHeight);
+
+            // Animate only visible entities
+            animationManager.update(deltaTime, scene, visibleEntities);
 
             if (!windowManager.swapBuffers()) break;
 
@@ -281,12 +292,21 @@ int main() {
 
             if (now - lastStatsPrint >= std::chrono::milliseconds(500)) {
                 const auto& info = statisticTracker.getFrameInfo();
-                std::printf("[%llu] FPS: %.2f (%.4fms) | Draws: %u | Entities: %u\n",
+                const auto& render = info.renderSystemInfo;
+                const size_t visibleCount = visibleEntities.size();
+                const size_t totalPrimitives = sceneView.getSpatialIndex().getBVH().getPrimitiveCount();
+                const float cullRatio = totalPrimitives > 0
+                    ? 100.0f * (1.0f - static_cast<float>(visibleCount) / static_cast<float>(totalPrimitives))
+                    : 0.0f;
+
+                std::printf("[%zu] FPS: %.2f (%.3fms) | Draws: %u | Visible: %zu/%zu (%.1f%% culled)\n",
                     info.frameIndex,
                     info.frameRateInfo.frameRate,
                     info.frameRateInfo.frameTime,
-                    info.renderSystemInfo.drawCalls,
-                    info.entitySystemInfo.entityUpdates
+                    render.drawCalls,
+                    visibleCount,
+                    totalPrimitives,
+                    cullRatio
                 );
                 std::fflush(stdout);
                 lastStatsPrint = now;

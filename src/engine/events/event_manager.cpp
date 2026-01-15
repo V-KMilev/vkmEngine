@@ -4,19 +4,20 @@
 #include "print_helper.h"
 
 #include "event_listener.h"
+#include "thread_pool.h"
 
-EventManager::EventManager(size_t numThreads) : m_threadPool(numThreads) {
-    LOG_TRACE("Created event manager with %d threads", numThreads);
+EventManager::EventManager() {
+    LOG_TRACE("Created event manager");
 }
 
 EventManager::~EventManager() {
-    m_threadPool.waitAll();
+    ThreadPool::get().waitAll();
 
     LOG_TRACE("Destroyed event manager");
 }
 
 EventManager& EventManager::get() {
-    static EventManager instance(DEFAULT_EVENT_THREADS);
+    static EventManager instance;
     return instance;
 }
 
@@ -24,7 +25,7 @@ void EventManager::push(Event && event) {
     std::lock_guard<std::mutex> lock(m_eventMutex);
 
     if (event.getPriority() == EventPriority::IMMEDIATE) {
-        m_threadPool.push([this, event = std::move(event)] {
+        ThreadPool::get().push([this, event = std::move(event)] {
             event.execute();
         });
         return;
@@ -67,7 +68,7 @@ void EventManager::executeAsync() {
 
     while (!localEvents.empty()) {
         // Must move event out for async execution (lives in thread)
-        m_threadPool.push([event = std::move(const_cast<Event&>(localEvents.top()))]() {
+        ThreadPool::get().push([event = std::move(const_cast<Event&>(localEvents.top()))]() {
             event.execute();
         });
         localEvents.pop();
@@ -219,7 +220,7 @@ void EventManager::emitAsync(const std::string& eventName) {
     }
 
     for (const EventListener* listener : listenersToCall) {
-        m_threadPool.push([listener]() {
+        ThreadPool::get().push([listener]() {
             listener->execute();
         });
     }

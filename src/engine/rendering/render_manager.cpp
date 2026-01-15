@@ -5,13 +5,19 @@
 #include "render_view_builder.h"
 #include "resource_manager.h"
 #include "scene.h"
+#include "scene_view.h"
 
 #include "render_backend.h"
 #include "render_pass.h"
+#include "entity.h"
 
 namespace Engine {
 
-RenderManager::RenderManager() : m_width(0), m_height(0) {}
+RenderManager::RenderManager()
+    : m_width(0)
+    , m_height(0)
+{
+}
 
 RenderManager::~RenderManager() {
     m_backend.reset();
@@ -32,6 +38,7 @@ void RenderManager::resize(uint32_t width, uint32_t height) {
 void RenderManager::renderFrame(
     const Scene& scene,
     const ResourceManager& resources,
+    const std::vector<EntityId>& visibleIds,
     uint32_t viewportWidth,
     uint32_t viewportHeight
 ) {
@@ -45,8 +52,8 @@ void RenderManager::renderFrame(
         resize(viewportWidth, viewportHeight);
     }
 
-    // Build snapshot for this frame
-    RenderView view = RenderViewBuilder::build(scene, resources);
+    // Build snapshot for this frame using provided visible IDs
+    RenderView view = RenderViewBuilder::build(scene, resources, visibleIds);
 
     // Execute passes
     m_pipeline.execute(*m_backend, view, resources);

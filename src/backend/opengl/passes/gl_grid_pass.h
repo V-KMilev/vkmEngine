@@ -24,7 +24,7 @@ struct GridConfig {
     float size      = 1000.0f;    ///< World-space size of the grid area
     float scale     = 1.0f;        ///< Grid cell size (distance between major lines)
     float fadeStart = 50.0f;       ///< Distance where grid lines start to fade out
-    float fadeEnd   = 550.0f;      ///< Distance where grid lines are fully invisible
+    float fadeEnd   = 450.0f;      ///< Distance where grid lines are fully invisible
 };
 
 /**
