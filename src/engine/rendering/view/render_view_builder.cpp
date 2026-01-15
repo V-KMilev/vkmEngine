@@ -1,9 +1,12 @@
 #include "render_view_builder.h"
 
+#include <algorithm>
+#include <future>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include "logger.h"
+#include "thread_pool.h"
 
 #include "scene.h"
 #include "transform.h"
@@ -11,46 +14,11 @@
 #include "mesh.h"
 #include "light.h"
 #include "resource_manager.h"
-#include "frustum_culler.h"
+#include "spatial_index.h"
 
 namespace Engine {
 
 namespace {
-    /**
-     * @brief Helper function to check if an AABB has valid (non-zero) volume.
-     */
-    bool hasValidBounds(const glm::vec3& min, const glm::vec3& max) {
-        return (min.x != max.x) || (min.y != max.y) || (min.z != max.z);
-    }
-
-    /**
-     * @brief Helper function to perform frustum culling test for a mesh.
-     * @return true if the mesh should be culled (not visible), false if visible.
-     */
-    bool shouldCullMesh(
-        const MeshAsset& meshAsset,
-        const glm::mat4& modelMatrix,
-        const Frustum& frustum
-    ) {
-        // Skip culling if mesh has no valid bounds
-        if (!hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) {
-            return false;  // Can't cull without bounds, so keep it
-        }
-
-        // Transform AABB from model space to world space
-        glm::vec3 worldMin, worldMax;
-        FrustumCuller::transformAABB(
-            modelMatrix,
-            meshAsset.boundsMin,
-            meshAsset.boundsMax,
-            worldMin,
-            worldMax
-        );
-
-        // Cull if AABB is not visible
-        return !FrustumCuller::isAABBVisible(frustum, worldMin, worldMax);
-    }
-
     /**
      * @brief Helper function to setup camera data in the render view.
      * @return true if camera was found and setup, false otherwise.
@@ -59,17 +27,12 @@ namespace {
         const auto& cameraStorage = scene.storage<Camera>();
         const auto& transformStorage = scene.storage<Transform>();
 
-        // Find the active camera
-        for (EntityId id = 0; id < cameraStorage.size(); ++id) {
-            if (!cameraStorage.has(id) || !cameraStorage.get(id).active) {
-                continue;
-            }
-
-            if (!transformStorage.has(id)) {
-                continue;
-            }
-
+        // Find the active camera using dense iteration
+        for (EntityId id : cameraStorage.entities()) {
             const auto& camera = cameraStorage.get(id);
+            if (!camera.active) continue;
+            if (!transformStorage.has(id)) continue;
+
             const auto& transform = transformStorage.get(id);
 
             // Compute camera matrices
@@ -92,94 +55,109 @@ namespace {
     }
 }
 
-RenderView RenderViewBuilder::build(const Scene& scene, const ResourceManager& resources) {
+RenderView RenderViewBuilder::build(
+    const Scene& scene,
+    const ResourceManager& resources,
+    const std::vector<uint32_t>& visibleIds
+) {
     RenderView renderView;
 
-    // Setup camera
     if (!setupCamera(renderView.camera, scene)) {
         LOG_ERROR("No active camera found");
         return renderView;
     }
 
-    // Extract frustum for culling
-    const Frustum frustum = FrustumCuller::extractFrustum(renderView.camera.viewProjection);
-
-    // Gather drawables
     const auto& meshStorage = scene.storage<Mesh>();
     const auto& transformStorage = scene.storage<Transform>();
+    const glm::vec3 cameraPos = renderView.camera.position;
 
-    renderView.drawables.reserve(meshStorage.size());
+    // Screen-size culling: skip objects smaller than ~2 pixels at 1080p
+    constexpr float MIN_SCREEN_SIZE_SQ = 0.002f * 0.002f;
 
-    for (EntityId id = 0; id < meshStorage.size(); ++id) {
-        // Skip if entity doesn't have mesh component
-        if (!meshStorage.has(id)) {
-            continue;
-        }
+    auto buildDrawable = [&](uint32_t id, std::vector<DrawableData>& out) {
+        if (!meshStorage.has(id) || !transformStorage.has(id)) return;
 
         const auto& mesh = meshStorage.get(id);
-        if (!mesh.visible) {
-            continue;
-        }
-
-        // Skip if entity doesn't have transform component
-        if (!transformStorage.has(id)) {
-            continue;
-        }
+        if (!mesh.visible) return;
 
         const auto& transform = transformStorage.get(id);
-        const glm::mat4 modelMatrix = Transform::computeModelMatrix(transform);
-
-        // Perform frustum culling
         const auto& meshAsset = resources.get(mesh.mesh);
-        if (shouldCullMesh(meshAsset, modelMatrix, frustum)) {
-            continue;
+
+        const glm::vec3 diff = transform.position - cameraPos;
+        const float distSq = glm::dot(diff, diff);
+
+        // Estimate screen size from mesh bounds
+        const glm::vec3 extents = (meshAsset.boundsMax - meshAsset.boundsMin) * 0.5f;
+        const float maxScale = std::max({transform.scale.x, transform.scale.y, transform.scale.z});
+        const float radius = std::max({extents.x, extents.y, extents.z}) * maxScale;
+
+        if (distSq > 1.0f && (radius * radius) / distSq < MIN_SCREEN_SIZE_SQ) {
+            return;
         }
 
-        // Add drawable to render view
-        DrawableData drawable;
-        drawable.mesh     = mesh.mesh;
-        drawable.material = mesh.material;
-        drawable.model    = modelMatrix;
+        out.push_back(DrawableData{
+            mesh.hasLOD() ? mesh.getMeshForDistance(distSq) : mesh.mesh,
+            mesh.material,
+            Transform::computeModelMatrix(transform)
+        });
+    };
 
-        renderView.drawables.emplace_back(drawable);
+    // Parallel processing for large visible counts
+    constexpr size_t PARALLEL_THRESHOLD = 1000;
+    constexpr size_t MAX_CHUNKS = 8;
+    const size_t visibleCount = visibleIds.size();
+
+    if (visibleCount > PARALLEL_THRESHOLD) {
+        const size_t chunkSize = (visibleCount + MAX_CHUNKS - 1) / MAX_CHUNKS;
+        std::vector<std::future<std::vector<DrawableData>>> futures;
+
+        for (size_t start = 0; start < visibleCount; start += chunkSize) {
+            const size_t end = std::min(start + chunkSize, visibleCount);
+            futures.push_back(ThreadPool::get().push([&, start, end]() {
+                std::vector<DrawableData> local;
+                local.reserve(end - start);
+                for (size_t i = start; i < end; ++i) {
+                    buildDrawable(visibleIds[i], local);
+                }
+                return local;
+            }));
+        }
+
+        for (auto& f : futures) {
+            auto chunk = f.get();
+            renderView.drawables.insert(
+                renderView.drawables.end(),
+                std::make_move_iterator(chunk.begin()),
+                std::make_move_iterator(chunk.end())
+            );
+        }
+    } else {
+        renderView.drawables.reserve(visibleCount);
+        for (uint32_t id : visibleIds) {
+            buildDrawable(id, renderView.drawables);
+        }
     }
+
+    // Sort by material to minimize state changes
+    std::sort(renderView.drawables.begin(), renderView.drawables.end(),
+        [](const DrawableData& a, const DrawableData& b) {
+            return a.material.value < b.material.value;
+        });
 
     // Gather lights
     const auto& lightStorage = scene.storage<Light>();
-    renderView.lights.reserve(lightStorage.size());
+    renderView.lights.reserve(lightStorage.count());
 
-    for (EntityId id = 0; id < lightStorage.size(); ++id) {
-        // Skip if entity doesn't have light component
-        if (!lightStorage.has(id)) {
-            continue;
-        }
-
+    for (EntityId id : lightStorage.entities()) {
         const auto& light = lightStorage.get(id);
-
-        if (!light.enabled) {
-            continue;
-        }
-
-        // Skip if entity doesn't have transform component
-        if (!transformStorage.has(id)) {
-            continue;
-        }
+        if (!light.enabled || !transformStorage.has(id)) continue;
 
         const auto& transform = transformStorage.get(id);
-
-        // Add light to render view (copy component data + transform)
-        LightData lightData;
-        lightData.type = light.type;
-        lightData.color = light.color;
-        lightData.intensity = light.intensity;
-        lightData.radius = light.radius;
-        lightData.innerConeAngle = light.innerConeAngle;
-        lightData.outerConeAngle = light.outerConeAngle;
-        lightData.castShadows = light.castShadows;
-        lightData.position = transform.position;
-        lightData.rotation = transform.rotation;
-
-        renderView.lights.emplace_back(lightData);
+        renderView.lights.push_back({
+            light.type, light.color, light.intensity, light.radius,
+            light.innerConeAngle, light.outerConeAngle, light.castShadows,
+            transform.position, transform.rotation
+        });
     }
 
     return renderView;

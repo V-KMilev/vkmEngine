@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <cstdint>
+#include <vector>
 
 #include "render_pipeline.h"
 
@@ -9,6 +10,7 @@ namespace Engine {
     class ResourceManager;
     struct RenderView;
     class Scene;
+    class SceneView;
 
     class RenderBackend;
     class RenderPass;
@@ -27,12 +29,13 @@ namespace Engine {
  * - Serving as the main entry point to render a frame.
  *
  * RenderManager is purely about rendering - it consumes resources but doesn't manage them.
+ * Visibility culling is handled externally by SceneView.
  *
  * Usage flow:
  *  1. Set the backend with setBackend().
  *  2. Add render passes (such as forward, deferred, postprocess) via addPass().
  *  3. On window resize, call resize().
- *  4. For each frame, call renderFrame().
+ *  4. For each frame, call renderFrame() with pre-computed visible entity IDs.
  */
 class RenderManager {
     public:
@@ -95,12 +98,15 @@ class RenderManager {
          *
          * @param scene The current scene (entities, cameras, etc.).
          * @param resources Reference to the ResourceManager for this frame.
+         * @param sceneView The scene view for spatial indexing.
          * @param viewportWidth The width of the rendering viewport in pixels.
          * @param viewportHeight The height of the rendering viewport in pixels.
+         * @param visibleIds Pre-computed visible entity IDs from SceneView.
          */
         void renderFrame(
             const Scene& scene,
             const ResourceManager& resources,
+            const std::vector<uint32_t>& visibleIds,
             uint32_t viewportWidth,
             uint32_t viewportHeight
         );

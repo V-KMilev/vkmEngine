@@ -50,6 +50,11 @@ class CameraController {
         void setCameraEntity(Entity cameraEntity) { m_cameraEntity = cameraEntity; }
 
         /**
+         * @brief Get the camera entity.
+         */
+        Entity getCameraEntity() const { return m_cameraEntity; }
+
+        /**
          * @brief Update and apply camera motions (call once per-frame).
          * @param scene The ECS scene.
          * @param deltaTime Time elapsed since last update.
