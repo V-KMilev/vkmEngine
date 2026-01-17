@@ -21,7 +21,6 @@
 class ThreadPool {
     public:
         ThreadPool() = delete;
-        ~ThreadPool();
 
         ThreadPool(const ThreadPool& other) = delete;
         ThreadPool& operator=(const ThreadPool& other) = delete;
@@ -29,14 +28,22 @@ class ThreadPool {
         ThreadPool(ThreadPool&& other) = delete;
         ThreadPool& operator=(ThreadPool&& other) = delete;
 
+    private:
         /**
          * @brief Constructs a thread pool with the specified number of threads
          * 
          * @param numThreads Number of worker threads to create
          */
          explicit ThreadPool(size_t numThreads);
+         ~ThreadPool();
 
     public:
+        /**
+         * @brief Get the singleton instance of the ThreadPool.
+         * @return Reference to the ThreadPool singleton.
+         */
+        static ThreadPool& get();
+
         /**
         * @brief Push a task to be executed by one of the worker threads
         * 

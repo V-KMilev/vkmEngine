@@ -45,6 +45,15 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
     auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
 
+    // Clear framebuffer (always needed)
+    glContext.clearColor();
+    glContext.clear();
+
+    // Early out if nothing to draw - skip all resource syncing and setup
+    if (view.drawables.empty()) {
+        return;
+    }
+
     auto& glView = gl.getView();
 
     // Sync all resources with GPU
@@ -52,10 +61,6 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
     glView.syncMaterials(view, resources);
     glView.syncTextures(view, resources);
     glView.syncLights(view, resources);
-
-    // Clear framebuffer
-    glContext.clearColor();
-    glContext.clear();
 
     // Bind shader and set global uniforms
     m_shader.bind();

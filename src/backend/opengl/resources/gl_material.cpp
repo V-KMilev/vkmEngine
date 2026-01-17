@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "logger.h"
+#include "statistics.h"
 
 #include "gl_uniform_buffer.h"
 #include "gl_config.h"
@@ -109,6 +110,7 @@ void GLMaterial::bindTextures(const GLView& view) const {
         const GLTexture* texture = view.getTexture(binding.handle);
         if (texture) {
             texture->bind(binding.slot);
+            STATS_RECORD_TEXTURE_BIND();
         }
     }
 }
