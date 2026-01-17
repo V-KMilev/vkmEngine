@@ -115,6 +115,10 @@ target_link_libraries(EngineCore PUBLIC
     vkmLog
 )
 
+target_compile_definitions(EngineCore PUBLIC
+    ENABLE_STATISTICS_TRACKING=1
+)
+
 # ============================================================================
 # Engine Rendering Library
 # ============================================================================

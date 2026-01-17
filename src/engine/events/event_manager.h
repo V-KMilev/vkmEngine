@@ -2,13 +2,11 @@
 
 #include <unordered_map>
 #include <string>
-
-#include "thread_pool.h"
+#include <queue>
+#include <mutex>
 
 #include "event_listener.h"
 #include "event.h"
-
-#define DEFAULT_EVENT_THREADS std::thread::hardware_concurrency()
 
 /**
  * @class EventManager
@@ -83,14 +81,8 @@ class EventManager {
         void emitAsync(const std::string& eventName);
 
     private:
-        EventManager() = delete;
+        EventManager();
         ~EventManager();
-
-        /**
-         * @brief Private constructor, may specify number of thread pool threads.
-         * @param numThreads Number of async worker threads. Default is DEFAULT_EVENT_THREADS.
-         */
-        EventManager(size_t numThreads = DEFAULT_EVENT_THREADS);
 
     private:
         std::priority_queue<Event> m_events;
@@ -101,7 +93,4 @@ class EventManager {
 
         std::unordered_map<uint32_t, std::string> m_listenerIdToName;
         uint32_t m_nextListenerId = 1;
-
-        // TODO: Think if its better to use global thread pool or local.
-        ThreadPool m_threadPool;
 };
