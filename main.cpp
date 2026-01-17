@@ -51,7 +51,7 @@
 // Editor
 #include "camera_controller.h"
 
-#define GRID_SIZE 1000
+#define GRID_SIZE 316
 #define SPACING 3 + 1
 #define HALF_GRID_SIZE GRID_SIZE / 2
 

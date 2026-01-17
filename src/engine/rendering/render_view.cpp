@@ -78,7 +78,7 @@ RenderView RenderView::build(
         if (!meshStorage.has(id)) continue;
 
         const auto& mesh = meshStorage.get(id);
-        
+
         // Use cached model matrix from visibility (computed during culling)
         // Matrices are stored in same order as entities for cache-friendly access
         // Add drawable with cached matrix

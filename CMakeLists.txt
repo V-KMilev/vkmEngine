@@ -29,6 +29,9 @@ if(NOT TARGET vkmGL)
     add_subdirectory(modules/vkmGL)
 endif()
 
+# Enable statistics tracking in all builds
+add_compile_definitions(ENABLE_STATISTICS_TRACKING=1)
+
 # ============================================================================
 # Engine Core Library
 # ============================================================================
@@ -113,10 +116,6 @@ target_link_libraries(EngineCore PUBLIC
     # TODO: Remove vkmGL as it only has to be linked to the backend
     vkmGL
     vkmLog
-)
-
-target_compile_definitions(EngineCore PUBLIC
-    ENABLE_STATISTICS_TRACKING=1
 )
 
 # ============================================================================
