@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <glm/glm.hpp>
 #include "entity.h"
 
 namespace Engine {
@@ -14,7 +15,8 @@ namespace Engine {
  * @brief Holds the set of visible entity IDs after visibility determination.
  */
 struct Visibility {
-    std::vector<EntityId> entities;    ///< List of visible entity IDs
+    std::vector<EntityId> entities;          ///< List of visible entity IDs
+    std::vector<glm::mat4> modelMatrices;    ///< Cached model matrices for visible entities (same order as entities)
 };
 
 /**

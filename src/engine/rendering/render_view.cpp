@@ -72,20 +72,20 @@ RenderView RenderView::build(
     // Gather drawables
     renderView.drawables.reserve(visibility.entities.size());
 
-    for (const auto& id : visibility.entities) {
+    // Iterate through entities and matrices in parallel (same order, cache-friendly)
+    for (size_t i = 0; i < visibility.entities.size(); ++i) {
+        EntityId id = visibility.entities[i];
         if (!meshStorage.has(id)) continue;
-        if (!transformStorage.has(id)) continue;
 
         const auto& mesh = meshStorage.get(id);
-        const auto& transform = transformStorage.get(id);
-        const glm::mat4 modelMatrix = Transform::computeModelMatrix(transform);
-
-        // Add drawable to render view
+        
+        // Use cached model matrix from visibility (computed during culling)
+        // Matrices are stored in same order as entities for cache-friendly access
+        // Add drawable with cached matrix
         DrawableData drawable;
         drawable.mesh     = mesh.mesh;
         drawable.material = mesh.material;
-        drawable.model    = modelMatrix;
-
+        drawable.model    = visibility.modelMatrices[i];
         renderView.drawables.emplace_back(drawable);
     }
 
