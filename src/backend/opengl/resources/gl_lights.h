@@ -31,7 +31,7 @@ constexpr uint32_t MAX_LIGHTS = GLConfig::Limits::MaxLights;
  * - float/int: 4-byte alignment, 4-byte size
  * - Scalars can pack after vec3 within the same 16-byte block
  * 
- * Note: Disabled lights are filtered out in RenderViewBuilder, so no 'enabled' field needed.
+ * Note: Disabled lights are filtered out when building RenderView, so no 'enabled' field needed.
  */
 struct alignas(16) LightGPUData {
     glm::vec3 position;          // offset 0,  12 bytes

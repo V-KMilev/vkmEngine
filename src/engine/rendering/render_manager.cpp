@@ -2,9 +2,10 @@
 
 #include "logger.h"
 
-#include "render_view_builder.h"
+#include "render_view.h"
 #include "resource_manager.h"
 #include "scene.h"
+#include "visibility.h"
 
 #include "render_backend.h"
 #include "render_pass.h"
@@ -32,6 +33,7 @@ void RenderManager::resize(uint32_t width, uint32_t height) {
 void RenderManager::renderFrame(
     const Scene& scene,
     const ResourceManager& resources,
+    const Visibility& visibility,
     uint32_t viewportWidth,
     uint32_t viewportHeight
 ) {
@@ -46,7 +48,7 @@ void RenderManager::renderFrame(
     }
 
     // Build snapshot for this frame
-    RenderView view = RenderViewBuilder::build(scene, resources);
+    RenderView view = RenderView::build(scene, resources, visibility);
 
     // Execute passes
     m_pipeline.execute(*m_backend, view, resources);

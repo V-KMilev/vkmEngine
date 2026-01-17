@@ -1,29 +1,31 @@
 #include "animation_manager.h"
 
+#include <algorithm>
+
 #include "logger.h"
 
 #include "scene.h"
 #include "animation.h"
 #include "transform.h"
+#include "visibility.h"
 
 namespace Engine {
 
-void AnimationManager::update(Scene& scene, float deltaTime) {
+void AnimationManager::update(
+    Scene& scene,
+    const Visibility& visibility,
+    float deltaTime
+) {
     auto& animationStorage = scene.storage<Animation>();
     auto& transformStorage = scene.storage<Transform>();
 
-    // Iterate over all animation components
+    // Update all animations (time progresses even for culled entities)
     for (EntityId id = 0; id < animationStorage.size(); ++id) {
-        if (!animationStorage.has(id)) {
-            continue;
-        }
+        if (!animationStorage.has(id)) continue;
 
         auto& animation = animationStorage.get(id);
 
-        // Skip if not playing
-        if (!animation.playing) {
-            continue;
-        }
+        if (!animation.playing) continue;
 
         // Update animation time
         animation.time += deltaTime * animation.speed;
@@ -45,8 +47,11 @@ void AnimationManager::update(Scene& scene, float deltaTime) {
             }
         }
 
-        // Apply animation to transform if it exists
-        if (transformStorage.has(id)) {
+        // Only apply animation to transforms for visible entities
+        // visibility.entities is sorted, so use binary_search for O(log n) lookup
+        if (std::binary_search(visibility.entities.begin(), visibility.entities.end(), id)) {
+            if (!transformStorage.has(id)) continue;
+
             auto& transform = transformStorage.get(id);
             applyAnimation(animation, transform);
         }
@@ -56,17 +61,12 @@ void AnimationManager::update(Scene& scene, float deltaTime) {
 void AnimationManager::applyAnimation(const Animation& animation, Transform& transform) const {
     float time = animation.time;
 
-    // Apply position animation
     if (!animation.positionTrack.isEmpty()) {
         transform.position = animation.positionTrack.getValue(time);
     }
-
-    // Apply rotation animation
     if (!animation.rotationTrack.isEmpty()) {
         transform.rotation = animation.rotationTrack.getValue(time);
     }
-
-    // Apply scale animation
     if (!animation.scaleTrack.isEmpty()) {
         transform.scale = animation.scaleTrack.getValue(time);
     }
