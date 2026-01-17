@@ -9,6 +9,13 @@
 #include "light.h"
 
 namespace Engine {
+    class Scene;
+    class ResourceManager;
+
+    struct Visibility;
+}
+
+namespace Engine {
 
 /**
  * @brief Camera data used for rendering calculations.
@@ -65,6 +72,26 @@ struct RenderView {
 
     std::vector<DrawableData> drawables;
     std::vector<LightData> lights;
+
+    /**
+    * @brief Builds a RenderView for the current frame from the scene.
+    *
+    * Gathers all necessary data for rendering by extracting camera properties,
+    * collecting all visible drawables according to the Visibility information,
+    * and assembling active light data. This function transforms entity/component data
+    * into a condensed structure ready for efficient use by the rendering backend.
+    *
+    * @param scene The scene containing all entities and their components.
+    * @param resources The resource manager for meshes and materials.
+    * @param visibility The visibility listing entities that should be rendered.
+    * @return A RenderView snapshot of the current frame's visible render data.
+    */
+    static RenderView build(
+        const Scene& scene,
+        const ResourceManager& resources,
+        const Visibility& visibility
+    );
+
 };
 
 } // namespace Engine

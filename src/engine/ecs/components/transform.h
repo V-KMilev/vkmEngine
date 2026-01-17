@@ -70,6 +70,19 @@ struct Transform {
     static glm::vec3 computeRight(const glm::quat& rotation) {
         return glm::normalize(rotation * WORLD_AXIS_X_RIGHT);
     }
+
+    /**
+     * @brief Compute the view matrix from a transform.
+     * @param transform The transform.
+     * @return The computed view matrix.
+     */
+    static glm::mat4 computeView(const Transform& transform) {
+        return glm::lookAt(
+            transform.position,
+            transform.position + computeForward(transform.rotation),
+            computeUp(transform.rotation)
+        );
+    }
 };
 
 } // namespace Engine

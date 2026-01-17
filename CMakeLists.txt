@@ -56,6 +56,11 @@ add_library(EngineCore STATIC
     src/engine/animation/animation_track.h
     src/engine/animation/keyframe.h
     src/engine/animation/easing.h
+    # Culling
+    src/engine/culling/frustum_culler.h
+    src/engine/culling/frustum_culler.cpp
+    src/engine/culling/visibility.h
+    src/engine/culling/visibility.cpp
     # Events
     src/engine/events/event_manager.h
     src/engine/events/event_manager.cpp
@@ -95,6 +100,7 @@ target_include_directories(EngineCore PUBLIC
     src/engine/resources
     src/engine/resources/assets
     src/engine/animation
+    src/engine/culling
     src/engine/events
     src/engine/platform/window
     src/engine/platform/threading
@@ -113,17 +119,14 @@ target_link_libraries(EngineCore PUBLIC
 # Engine Rendering Library
 # ============================================================================
 add_library(EngineRendering STATIC
+    src/engine/rendering/render_backend.h
     src/engine/rendering/render_manager.h
     src/engine/rendering/render_manager.cpp
-    src/engine/rendering/render_backend.h
+    src/engine/rendering/render_view.h
+    src/engine/rendering/render_view.cpp
     src/engine/rendering/pipeline/render_pipeline.h
     src/engine/rendering/pipeline/render_pipeline.cpp
     src/engine/rendering/pipeline/render_pass.h
-    src/engine/rendering/view/render_view.h
-    src/engine/rendering/view/render_view_builder.h
-    src/engine/rendering/view/render_view_builder.cpp
-    src/engine/rendering/culling/frustum_culler.h
-    src/engine/rendering/culling/frustum_culler.cpp
 )
 
 target_include_directories(EngineRendering PUBLIC
