@@ -2,6 +2,11 @@
 
 #include "logger.h"
 
+ThreadPool& ThreadPool::get() {
+    static ThreadPool instance(std::thread::hardware_concurrency());
+    return instance;
+}
+
 ThreadPool::ThreadPool(size_t numThreads) {
     // Create worker threads and assign them to execute the workerThread function.
     for (size_t i = 0; i < numThreads; ++i) {

@@ -1,6 +1,7 @@
 #include "gl_mesh.h"
 
 #include "logger.h"
+#include "statistics.h"
 
 #include "gl_vertex_array.h"
 #include "gl_vertex_buffer.h"
@@ -84,6 +85,8 @@ void GLMesh::draw(int drawType) const {
         m_ibo->getType(),
         reinterpret_cast<const void*>(indicesOffset)
     ));
+
+    STATS_RECORD_DRAW_CALL();
 }
 
 } // namespace Engine
