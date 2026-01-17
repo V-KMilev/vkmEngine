@@ -4,6 +4,8 @@ namespace Engine {
     class Scene;
     struct Animation;
     struct Transform;
+
+    struct Visibility;
 }
 
 namespace Engine {
@@ -36,10 +38,15 @@ class AnimationManager {
     public:
         /**
          * @brief Update all animations in the scene.
-         * @param scene The scene containing entities with Animation components.
+         * @param scene The scene containing entities to update.
+         * @param visibility The visibility result containing visible entities.
          * @param deltaTime Time elapsed since last frame in seconds.
          */
-         void update(Scene& scene, float deltaTime);
+         void update(
+            Scene& scene,
+            const Visibility& visibility,
+            float deltaTime
+        );
 
     private:
 

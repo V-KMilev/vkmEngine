@@ -6,12 +6,15 @@
 #include "render_pipeline.h"
 
 namespace Engine {
-    class ResourceManager;
-    struct RenderView;
-    class Scene;
-
     class RenderBackend;
     class RenderPass;
+
+    struct RenderView;
+
+    class Scene;
+    class ResourceManager;
+
+    struct Visibility;
 }
 
 namespace Engine {
@@ -89,18 +92,21 @@ class RenderManager {
         void resize(uint32_t width, uint32_t height);
 
         /**
-         * @brief Render a frame using the current backend and pipeline.
+         * @brief Render a frame using the current rendering backend and all passes in the pipeline.
          *
-         * Builds a RenderView from the scene, then executes the pipeline.
+         * Uses the provided scene, resource manager, visibility list, and viewport dimensions
+         * to build a RenderView and execute the render passes in order.
          *
-         * @param scene The current scene (entities, cameras, etc.).
-         * @param resources Reference to the ResourceManager for this frame.
+         * @param scene The Scene containing all entities and components.
+         * @param resources Reference to the ResourceManager for asset access.
+         * @param visibility The Visibility result containing the visible entities for this frame.
          * @param viewportWidth The width of the rendering viewport in pixels.
          * @param viewportHeight The height of the rendering viewport in pixels.
          */
         void renderFrame(
             const Scene& scene,
             const ResourceManager& resources,
+            const Visibility& visibility,
             uint32_t viewportWidth,
             uint32_t viewportHeight
         );

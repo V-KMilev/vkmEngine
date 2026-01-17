@@ -26,6 +26,7 @@
 #include "input_handle.h"
 #include "statistics.h"
 #include "scene.h"
+#include "visibility.h"
 
 // Engine Rendering
 #include "render_manager.h"
@@ -50,6 +51,10 @@
 // Editor
 #include "camera_controller.h"
 
+#define GRID_SIZE 1000
+#define SPACING 3 + 1
+#define HALF_GRID_SIZE GRID_SIZE / 2
+
 static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene& scene, Engine::CameraController& cameraController) {
     Engine::MeshHandle cubeMesh          = resources.add(Engine::generateCube());
     Engine::MeshHandle sphereMesh        = resources.add(Engine::generateSphere());
@@ -64,11 +69,9 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
     {
         scene.add(cameraEntity, Engine::Camera{Engine::ProjectionType::Perspective});
         scene.add(cameraEntity, Engine::Transform{});
-        // scene.add(cameraEntity, Engine::Animation{});
     }
     cameraController.setCameraEntity(cameraEntity);
 
-    // Cube with default material
     auto cube1 = scene.createEntity();
     {
         scene.add(cube1, Engine::Mesh{cubeMesh, pavingMaterial});
@@ -76,32 +79,25 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
         scene.add(cube1, Engine::Animation{});
     }
 
-    // Cube with PBR paving stone material
     auto cube2 = scene.createEntity();
     {
-        scene.add(cube2, Engine::Mesh{cubeMesh, pavingMaterial});  // Using real textures!
+        scene.add(cube2, Engine::Mesh{cubeMesh, pavingMaterial});
         scene.add(cube2, Engine::Transform{glm::vec3(0.0f, 4.5f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(5.0f, 0.5f, 5.0f)});
         scene.add(cube2, Engine::Animation{});
     }
 
-    for (int i = 1; i < 100000; i++) {
-        auto gridObject = scene.createEntity();
-        {
-            int gridSize = 316;
-            int x = i % gridSize;
-            float y = 0.0f;
-            int z = i / gridSize;
+    for (int x = -HALF_GRID_SIZE; x < HALF_GRID_SIZE; ++x) {
+        for (int z = -HALF_GRID_SIZE; z < HALF_GRID_SIZE; ++z) {
+            glm::vec3 position = glm::vec3(
+                static_cast<float>(x * SPACING),
+                0.0f,
+                static_cast<float>(z * SPACING)
+            );
 
-            float spacing = 2.5f;
-            float gridCenterOffset = (gridSize - 1) * spacing * 0.5f;
-
-            if (((x + z) % 2) == 0) {
-                scene.add(gridObject, Engine::Mesh{i % 2 == 0 ? sphereMesh : cubeMesh, pavingMaterial});
-                scene.add(gridObject, Engine::Animation{});
-                scene.add(gridObject, Engine::Transform{
-                    glm::vec3(x * spacing - gridCenterOffset, y, z * spacing - gridCenterOffset)
-                });
-            }
+            auto object = scene.createEntity();
+            scene.add(object, Engine::Mesh{(x + z) % 2 == 0 ? sphereMesh : cubeMesh, pavingMaterial});
+            scene.add(object, Engine::Animation{});
+            scene.add(object, Engine::Transform{position});
         }
     }
 
@@ -146,31 +142,7 @@ static void generateAnimations(Engine::Scene& scene) {
 
         auto& anim = scene.get<Engine::Animation>(Engine::Entity{id});
 
-        if (id == 1) {
-            auto& positionTrack = anim.positionTrack;
-            auto& rotationTrack = anim.rotationTrack;
-            positionTrack.setEasing(Easing::linear);
-            rotationTrack.setEasing(Easing::easeInOutSine);
-
-            constexpr float duration = 20.0f;
-            constexpr float radius = 25.0f;
-            constexpr float height = 10.0f;
-
-            for (int i = 0; i <= static_cast<int>(duration); ++i) {
-                float t = float(i) / duration;
-                float angle = t * glm::two_pi<float>();
-
-                glm::vec3 pos = {
-                    radius * std::cos(angle),
-                    glm::abs(height * std::sin(angle)),
-                    radius * std::sin(angle)
-                };
-                glm::vec3 forward = glm::normalize(pos - glm::vec3(0.0f));
-                positionTrack.addKeyframe(t * duration, pos);
-                rotationTrack.addKeyframe(t * duration, glm::quatLookAt(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
-            }
-        }
-        else if (id == 3) {
+        if (id == 3) {
             auto& rotationTrack = anim.rotationTrack;
             rotationTrack.setEasing(Easing::linear);
             constexpr float duration = 10.0f;
@@ -179,11 +151,27 @@ static void generateAnimations(Engine::Scene& scene) {
             rotationTrack.addKeyframe(duration/2, glm::angleAxis(glm::pi<float>(), axis));
             rotationTrack.addKeyframe(duration, glm::angleAxis(glm::two_pi<float>(), axis));
         }
-        else if (id >= 2) {
+        else if (id > 3) {
+            constexpr float duration = 5.0f;
+            // Grid entities start at id 3 (after camera, cube1, cube2)
+            // id == 3 has special handling above, so grid logic starts at id > 3
+            // The grid is created with z as inner loop, so z changes faster
+            int gridIndex = id - 3;
+            int zIndex = gridIndex % GRID_SIZE;
+            int xIndex = gridIndex / GRID_SIZE;
+            int px = (xIndex - HALF_GRID_SIZE) * SPACING;
+            int pz = (zIndex - HALF_GRID_SIZE) * SPACING;
+
             if (id % 2 == 0) {
+                auto& positionTrack = anim.positionTrack;
+                positionTrack.setEasing(Easing::easeInOutSine);
+
                 auto& rotationTrack = anim.rotationTrack;
                 rotationTrack.setEasing(Easing::linear);
-                constexpr float duration = 10.0f;
+
+                positionTrack.addKeyframe(0.0f, glm::vec3(px, 0.0f, pz));
+                positionTrack.addKeyframe(duration, glm::vec3(px, 0.0f, pz));
+
                 glm::vec3 axis = glm::normalize(glm::vec3(1.0f, 1.0f, 0.0f));
                 rotationTrack.addKeyframe(0.0f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
                 rotationTrack.addKeyframe(duration/2, glm::angleAxis(glm::pi<float>(), axis));
@@ -192,21 +180,10 @@ static void generateAnimations(Engine::Scene& scene) {
                 auto& positionTrack = anim.positionTrack;
                 positionTrack.setEasing(Easing::easeInOutSine);
 
-                // Grid layout
-                constexpr int gridSize = 316;
-                constexpr float spacing = 2.5f;
-                constexpr float offset = (gridSize - 1) * spacing * 0.5f;
-                int x = id % gridSize;
-                int z = id / gridSize;
-
-                constexpr float duration = 3.0f;
-                float px = x * spacing - offset;
-                float pz = z * spacing - offset;
-
-                positionTrack.addKeyframe(0.0f, glm::vec3(px, -3.0f, pz));
-                positionTrack.addKeyframe(duration/3, glm::vec3(px, 0.0f, pz));
-                positionTrack.addKeyframe(2*duration/3, glm::vec3(px, 1.0f, pz));
-                positionTrack.addKeyframe(duration, glm::vec3(px, -3.0f, pz));
+                positionTrack.addKeyframe(0.0f, glm::vec3(px, 0.0f, pz));
+                positionTrack.addKeyframe(duration/3, glm::vec3(px, 1.0f, pz));
+                positionTrack.addKeyframe(2*duration/3, glm::vec3(px, -1.0f, pz));
+                positionTrack.addKeyframe(duration, glm::vec3(px, 0.0f, pz));
             }
         }
 
@@ -271,8 +248,11 @@ int main() {
             cameraController.update(scene, deltaTime);
 
             eventManager.executeAsync();
-            animationManager.update(scene, deltaTime);
-            renderManager.renderFrame(scene, resources, viewportWidth, viewportHeight);
+
+            auto visibility = Engine::buildVisibility(scene, resources);
+
+            animationManager.update(scene, visibility, deltaTime);
+            renderManager.renderFrame(scene, resources, visibility, viewportWidth, viewportHeight);
 
             if (!windowManager.swapBuffers()) break;
 
@@ -281,11 +261,12 @@ int main() {
 
             if (now - lastStatsPrint >= std::chrono::milliseconds(500)) {
                 const auto& info = statisticTracker.getFrameInfo();
-                std::printf("[%llu] FPS: %.2f (%.4fms) | Draws: %u | Entities: %u\n",
+                std::printf("[%llu] FPS: %.2f (%.4fms) | Draws: %u | Entities: %zu/%u\n",
                     info.frameIndex,
                     info.frameRateInfo.frameRate,
                     info.frameRateInfo.frameTime,
                     info.renderSystemInfo.drawCalls,
+                    visibility.entities.size(),
                     info.entitySystemInfo.entityUpdates
                 );
                 std::fflush(stdout);
