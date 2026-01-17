@@ -108,12 +108,13 @@ Visibility buildVisibility(
             continue;
         }
 
+        // Cache the model matrix to avoid recomputation in render_view
+        // Store in same order as entities for cache-friendly sequential access
         result.entities.push_back(id);
+        result.modelMatrices.push_back(modelMatrix);
     }
 
-    // Sort visible entities by id for faster access in the scene storages
-    std::sort(result.entities.begin(), result.entities.end());
-
+    // No need to sort - ComponentStorage is a vector indexed by EntityId (O(1) access)
     return result;
 }
 
