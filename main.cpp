@@ -189,6 +189,9 @@ static void generateAnimations(Engine::Scene& scene) {
 
         anim.looping = true;
         anim.playing = true;
+
+        // Update cached duration after setting up tracks
+        anim.updateDuration();
     }
 }
 

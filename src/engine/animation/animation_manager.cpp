@@ -19,7 +19,8 @@ void AnimationManager::update(
     auto& animationStorage = scene.storage<Animation>();
     auto& transformStorage = scene.storage<Transform>();
 
-    // Update all animations (time progresses even for culled entities)
+    // Update animation time for ALL animations (even culled ones)
+    // This keeps animations synchronized even when entities go off-screen
     for (EntityId id = 0; id < animationStorage.size(); ++id) {
         if (!animationStorage.has(id)) continue;
 
@@ -30,31 +31,28 @@ void AnimationManager::update(
         // Update animation time
         animation.time += deltaTime * animation.speed;
 
-        // Calculate duration (longest track)
-        float duration = std::max({
-            animation.positionTrack.getDuration(),
-            animation.rotationTrack.getDuration(),
-            animation.scaleTrack.getDuration()
-        });
-
         // Handle looping and end of animation
-        if (duration > 0.0f && animation.time >= duration) {
+        if (animation.duration > 0.0f && animation.time >= animation.duration) {
             if (animation.looping) {
-                animation.time = std::fmod(animation.time, duration);
+                animation.time = std::fmod(animation.time, animation.duration);
             } else {
-                animation.time = duration;
+                animation.time = animation.duration;
                 animation.playing = false;
             }
         }
+    }
 
-        // Only apply animation to transforms for visible entities
-        // visibility.entities is sorted, so use binary_search for O(log n) lookup
-        if (std::binary_search(visibility.entities.begin(), visibility.entities.end(), id)) {
-            if (!transformStorage.has(id)) continue;
+    // Apply animations only to visible entities
+    // Iterate visibility list instead of all animations (much faster when few visible)
+    for (EntityId id : visibility.entities) {
+        if (!animationStorage.has(id)) continue;
+        if (!transformStorage.has(id)) continue;
 
-            auto& transform = transformStorage.get(id);
-            applyAnimation(animation, transform);
-        }
+        auto& animation = animationStorage.get(id);
+        if (!animation.playing) continue;
+
+        auto& transform = transformStorage.get(id);
+        applyAnimation(animation, transform);
     }
 }
 
