@@ -1,5 +1,11 @@
 #include "visibility.h"
 
+#include <algorithm>
+#include <cmath>
+#include <glm/glm.hpp>
+
+#include "logger.h"
+
 #include "scene.h"
 #include "camera.h"
 #include "transform.h"
@@ -13,59 +19,53 @@ static SpatialIndex m_spatialIndex;
 
 // TODO: Think of way to cache the view, projection and view projection matrices so
 //  we don't recompute them every time we need them
-static glm::mat4 computeViewProjection(const Scene& scene) {
+bool computeProjectionViewMatrix(glm::mat4& projectionViewMatrix, const Scene& scene) {
     const auto& cameraStorage = scene.storage<Camera>();
     const auto& transformStorage = scene.storage<Transform>();
 
-    // Find the active camera using dense iteration
+    // Find the active camera
     for (EntityId id = 0; id < cameraStorage.size(); ++id) {
         if (!cameraStorage.has(id)) continue;
+
         const auto& camera = cameraStorage.get(id);
 
         if (!camera.active) continue;
+
         if (!transformStorage.has(id)) continue;
 
         const auto& transform = transformStorage.get(id);
 
-        // Compute camera matrices
-        const glm::vec3 forward = Transform::computeForward(transform.rotation);
-        const glm::vec3 up = Transform::computeUp(transform.rotation);
+        projectionViewMatrix = Camera::computeProjection(camera) * Transform::computeView(transform);
 
-        glm::mat4 view = glm::lookAt(
-            transform.position,
-            transform.position + forward,
-            up
-        );
-
-        glm::mat4 projection = Camera::computeProjection(camera);
-        glm::mat4 viewProjection = projection * view;
-
-        return viewProjection;
+        return true;
     }
 
-    return glm::mat4(1.0f);
+    return false;
 }
 
 Visibility buildVisibility(
     const Scene& scene,
     const ResourceManager& resources
 ) {
-    Visibility visibility;
+    Visibility result;
 
-    const glm::mat4 viewProjection = computeViewProjection(scene);
+    glm::mat4 projectionViewMatrix;
+
+    if (!computeProjectionViewMatrix(projectionViewMatrix, scene)) {
+        LOG_WARNING("No active camera found, skipping visibility filtering");
+        return result;
+    }
 
     // Update spatial index (rebuilds BVH if needed)
     m_spatialIndex.update(scene, resources);
 
     // Extract frustum for culling
-    const Frustum frustum = FrustumCuller::extractFrustum(viewProjection);
+    const Frustum frustum = FrustumCuller::extractFrustum(projectionViewMatrix);
 
     // Query visible entities from octree
-    visibility.entities = m_spatialIndex.queryVisible(frustum);
+    result.entities = m_spatialIndex.queryVisible(frustum);
 
-    // std::sort(visibleIds.begin(), visibleIds.end());
-
-    return visibility;
+    return result;
 }
 
 } // namespace Engine
