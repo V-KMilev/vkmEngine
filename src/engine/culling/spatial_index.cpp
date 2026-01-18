@@ -27,7 +27,7 @@ void SpatialIndex::update(const Scene& scene, const ResourceManager& resources) 
     const auto& meshStorage = scene.storage<Mesh>();
 
     // Check if entity count changed (use count() for active components)
-    size_t currentCount = meshStorage.count();
+    size_t currentCount = meshStorage.size();
     if (currentCount != m_lastEntityCount) {
         m_needsRebuild = true;
         m_lastEntityCount = currentCount;
@@ -49,15 +49,16 @@ void SpatialIndex::computeWorldBounds(const Scene& scene, const ResourceManager&
     const auto& transformStorage = scene.storage<Transform>();
 
     // Use dense entity list - only iterate entities that have Mesh component
-    const auto& meshEntities = meshStorage.entities();
-    const size_t entityCount = meshEntities.size();
+    const size_t entityCount = meshStorage.size();
 
     m_primitives.clear();
     m_primitives.reserve(entityCount);
 
     if (entityCount < PARALLEL_THRESHOLD) {
         for (size_t i = 0; i < entityCount; ++i) {
-            EntityId id = meshEntities[i];
+            EntityId id = i;
+
+            if (!meshStorage.has(id)) continue;
 
             const auto& mesh = meshStorage.get(id);
             if (!mesh.visible) continue;
@@ -97,9 +98,12 @@ void SpatialIndex::computeWorldBounds(const Scene& scene, const ResourceManager&
             localResults.reserve(endIdx - startIdx);
 
             for (size_t i = startIdx; i < endIdx; ++i) {
-                EntityId id = meshEntities[i];
+                EntityId id = i;
+
+                if (!meshStorage.has(id)) continue;
 
                 const auto& mesh = meshStorage.get(id);
+
                 if (!mesh.visible) continue;
                 if (!transformStorage.has(id)) continue;
 

@@ -26,16 +26,15 @@
 #include "input_handle.h"
 #include "statistics.h"
 #include "scene.h"
+#include "visibility.h"
 
 // Engine Rendering
 #include "render_manager.h"
-#include "scene_view.h"
 
 // Backend
 #include "gl_backend.h"
 #include "gl_forward_pass.h"
 #include "gl_aabb_debug_pass.h"
-#include "gl_bvh_debug_pass.h"
 #include "gl_grid_pass.h"
 #include "gl_navigation_gizmo_pass.h"
 
@@ -218,7 +217,6 @@ int main() {
         Engine::ResourceManager resources;
         Engine::AnimationManager animationManager;
         Engine::RenderManager renderManager;
-        Engine::SceneView sceneView;
 
         Core::Shader pbr("shaders/pbr");
         Core::Shader aabbDebug("shaders/aabb_debug");
@@ -228,7 +226,6 @@ int main() {
         renderManager.setBackend(std::make_unique<Engine::GLBackend>());
         renderManager.addPass(std::make_unique<Engine::GLForwardPass>(pbr));
         // renderManager.addPass(std::make_unique<Engine::GLAABBDebugPass>(aabbDebug));
-        // renderManager.addPass(std::make_unique<Engine::GLBVHDebugPass>(aabbDebug, renderManager.getSpatialIndex()));
         renderManager.addPass(std::make_unique<Engine::GLGridPass>(gridShader));
         renderManager.addPass(std::make_unique<Engine::GLNavigationGizmoPass>(gizmoShader));
 
@@ -237,8 +234,6 @@ int main() {
 
         generateBasicScene(resources, scene, cameraController);
         generateAnimations(scene);
-
-        std::vector<uint32_t> visibleEntities;
 
         using clock = std::chrono::steady_clock;
         auto lastStatsPrint = clock::now();
@@ -256,14 +251,10 @@ int main() {
 
             eventManager.executeAsync();
 
-            // Compute visible entities once using BVH frustum culling
-            visibleEntities = sceneView.getVisibleEntities(scene, resources);
+            auto visibility = Engine::buildVisibility(scene, resources);
 
-            // Render frame with pre-computed visible entities
-            renderManager.renderFrame(scene, resources, visibleEntities, viewportWidth, viewportHeight);
-
-            // Animate only visible entities
-            animationManager.update(deltaTime, scene, visibleEntities);
+            animationManager.update(scene, visibility, deltaTime);
+            renderManager.renderFrame(scene, resources, visibility, viewportWidth, viewportHeight);
 
             if (!windowManager.swapBuffers()) break;
 
@@ -272,21 +263,13 @@ int main() {
 
             if (now - lastStatsPrint >= std::chrono::milliseconds(500)) {
                 const auto& info = statisticTracker.getFrameInfo();
-                const auto& render = info.renderSystemInfo;
-                const auto& spatialStats = sceneView.getSpatialIndex().getStats();
-                const size_t visibleCount = visibleEntities.size();
-                const float cullRatio = spatialStats.entityCount > 0
-                    ? 100.0f * (1.0f - static_cast<float>(visibleCount) / spatialStats.entityCount)
-                    : 0.0f;
-
-                std::printf("[%zu] FPS: %.2f (%.3fms) | Draws: %u | Visible: %zu/%zu (%.1f%% culled)\n",
+                std::printf("[%llu] FPS: %.2f (%.4fms) | Draws: %u | Entities: %zu/%u\n",
                     info.frameIndex,
                     info.frameRateInfo.frameRate,
                     info.frameRateInfo.frameTime,
-                    render.drawCalls,
-                    visibleCount,
-                    spatialStats.entityCount,
-                    cullRatio
+                    info.renderSystemInfo.drawCalls,
+                    visibility.entities.size(),
+                    info.entitySystemInfo.entityUpdates
                 );
                 std::fflush(stdout);
                 lastStatsPrint = now;

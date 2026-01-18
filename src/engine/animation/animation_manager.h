@@ -1,12 +1,11 @@
 #pragma once
 
-#include <vector>
-#include <cstdint>
-
 namespace Engine {
     class Scene;
     struct Animation;
     struct Transform;
+
+    struct Visibility;
 }
 
 namespace Engine {
@@ -44,9 +43,9 @@ class AnimationManager {
          * @param deltaTime Time elapsed since last frame in seconds.
          */
          void update(
-            float deltaTime,
             Scene& scene,
-            const std::vector<uint32_t>& visibleIds
+            const Visibility& visibility,
+            float deltaTime
         );
 
     private:

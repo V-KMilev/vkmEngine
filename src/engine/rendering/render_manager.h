@@ -2,18 +2,19 @@
 
 #include <memory>
 #include <cstdint>
-#include <vector>
 
 #include "render_pipeline.h"
 
 namespace Engine {
-    class ResourceManager;
-    struct RenderView;
-    class Scene;
-    class SceneView;
-
     class RenderBackend;
     class RenderPass;
+
+    struct RenderView;
+
+    class Scene;
+    class ResourceManager;
+
+    struct Visibility;
 }
 
 namespace Engine {
@@ -29,13 +30,12 @@ namespace Engine {
  * - Serving as the main entry point to render a frame.
  *
  * RenderManager is purely about rendering - it consumes resources but doesn't manage them.
- * Visibility culling is handled externally by SceneView.
  *
  * Usage flow:
  *  1. Set the backend with setBackend().
  *  2. Add render passes (such as forward, deferred, postprocess) via addPass().
  *  3. On window resize, call resize().
- *  4. For each frame, call renderFrame() with pre-computed visible entity IDs.
+ *  4. For each frame, call renderFrame().
  */
 class RenderManager {
     public:
@@ -92,21 +92,21 @@ class RenderManager {
         void resize(uint32_t width, uint32_t height);
 
         /**
-         * @brief Render a frame using the current backend and pipeline.
+         * @brief Render a frame using the current rendering backend and all passes in the pipeline.
          *
-         * Builds a RenderView from the scene, then executes the pipeline.
+         * Uses the provided scene, resource manager, visibility list, and viewport dimensions
+         * to build a RenderView and execute the render passes in order.
          *
-         * @param scene The current scene (entities, cameras, etc.).
-         * @param resources Reference to the ResourceManager for this frame.
-         * @param sceneView The scene view for spatial indexing.
+         * @param scene The Scene containing all entities and components.
+         * @param resources Reference to the ResourceManager for asset access.
+         * @param visibility The Visibility result containing the visible entities for this frame.
          * @param viewportWidth The width of the rendering viewport in pixels.
          * @param viewportHeight The height of the rendering viewport in pixels.
-         * @param visibleIds Pre-computed visible entity IDs from SceneView.
          */
         void renderFrame(
             const Scene& scene,
             const ResourceManager& resources,
-            const std::vector<uint32_t>& visibleIds,
+            const Visibility& visibility,
             uint32_t viewportWidth,
             uint32_t viewportHeight
         );

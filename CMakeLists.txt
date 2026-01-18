@@ -11,9 +11,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Enable statistics tracking in all builds
-add_compile_definitions(ENABLE_STATISTICS_TRACKING=1)
-
 # Git metadata
 include(cmake/git_metadata.cmake)
 
@@ -31,6 +28,9 @@ endif()
 if(NOT TARGET vkmGL)
     add_subdirectory(modules/vkmGL)
 endif()
+
+# Enable statistics tracking in all builds
+add_compile_definitions(ENABLE_STATISTICS_TRACKING=1)
 
 # ============================================================================
 # Engine Core Library
@@ -59,6 +59,15 @@ add_library(EngineCore STATIC
     src/engine/animation/animation_track.h
     src/engine/animation/keyframe.h
     src/engine/animation/easing.h
+    # Culling
+    src/engine/culling/frustum_culler.h
+    src/engine/culling/frustum_culler.cpp
+    src/engine/culling/bvh.h
+    src/engine/culling/bvh.cpp
+    src/engine/culling/spatial_index.h
+    src/engine/culling/spatial_index.cpp
+    src/engine/culling/visibility.h
+    src/engine/culling/visibility.cpp
     # Events
     src/engine/events/event_manager.h
     src/engine/events/event_manager.cpp
@@ -78,16 +87,6 @@ add_library(EngineCore STATIC
     src/engine/platform/window/glfw_include.h
     src/engine/platform/threading/thread_pool.h
     src/engine/platform/threading/thread_pool.cpp
-    # Culling
-    src/engine/culling/frustum_culler.h
-    src/engine/culling/frustum_culler.cpp
-    src/engine/culling/bvh.h
-    src/engine/culling/bvh.cpp
-    src/engine/culling/spatial_index.h
-    src/engine/culling/spatial_index.cpp
-    src/engine/culling/scene_view.h
-    src/engine/culling/scene_view.cpp
-    src/engine/culling/lod_system.h
     # Debug
     src/engine/debug/statistics.h
     src/engine/debug/statistics.cpp
@@ -108,10 +107,10 @@ target_include_directories(EngineCore PUBLIC
     src/engine/resources
     src/engine/resources/assets
     src/engine/animation
+    src/engine/culling
     src/engine/events
     src/engine/platform/window
     src/engine/platform/threading
-    src/engine/culling
     src/engine/debug
     src/engine/debug/trackers
     src/engine/editor
@@ -127,15 +126,14 @@ target_link_libraries(EngineCore PUBLIC
 # Engine Rendering Library
 # ============================================================================
 add_library(EngineRendering STATIC
+    src/engine/rendering/render_backend.h
     src/engine/rendering/render_manager.h
     src/engine/rendering/render_manager.cpp
-    src/engine/rendering/render_backend.h
+    src/engine/rendering/render_view.h
+    src/engine/rendering/render_view.cpp
     src/engine/rendering/pipeline/render_pipeline.h
     src/engine/rendering/pipeline/render_pipeline.cpp
     src/engine/rendering/pipeline/render_pass.h
-    src/engine/rendering/view/render_view.h
-    src/engine/rendering/view/render_view_builder.h
-    src/engine/rendering/view/render_view_builder.cpp
 )
 
 target_include_directories(EngineRendering PUBLIC
@@ -143,7 +141,6 @@ target_include_directories(EngineRendering PUBLIC
     src/engine/rendering/pipeline
     src/engine/rendering/view
     src/engine/rendering/culling
-    src/engine/rendering/lod
 )
 
 target_link_libraries(EngineRendering PUBLIC
@@ -180,8 +177,6 @@ add_library(BackendOpenGL STATIC
     src/backend/opengl/passes/gl_grid_pass.cpp
     src/backend/opengl/passes/gl_navigation_gizmo_pass.h
     src/backend/opengl/passes/gl_navigation_gizmo_pass.cpp
-    src/backend/opengl/passes/gl_bvh_debug_pass.h
-    src/backend/opengl/passes/gl_bvh_debug_pass.cpp
     # Convenience header
     src/backend/opengl/gl_common.h
 )

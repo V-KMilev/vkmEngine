@@ -7,14 +7,14 @@
 #include "scene.h"
 #include "animation.h"
 #include "transform.h"
-#include "scene_view.h"
+#include "visibility.h"
 
 namespace Engine {
 
 void AnimationManager::update(
-    float deltaTime,
     Scene& scene,
-    const std::vector<uint32_t>& visibleIds
+    const Visibility& visibility,
+    float deltaTime
 ) {
     auto& animationStorage = scene.storage<Animation>();
     auto& transformStorage = scene.storage<Transform>();
@@ -44,7 +44,7 @@ void AnimationManager::update(
 
     // Apply animations only to visible entities
     // Iterate visibility list instead of all animations (much faster when few visible)
-    for (EntityId id : visibleIds) {
+    for (EntityId id : visibility.entities) {
         if (!animationStorage.has(id)) continue;
         if (!transformStorage.has(id)) continue;
 

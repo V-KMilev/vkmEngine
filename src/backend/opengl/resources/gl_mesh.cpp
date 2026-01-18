@@ -1,6 +1,7 @@
 #include "gl_mesh.h"
 
 #include "logger.h"
+#include "statistics.h"
 
 #include "gl_vertex_array.h"
 #include "gl_vertex_buffer.h"
@@ -41,13 +42,6 @@ void GLMesh::update(const MeshAsset& mesh) {
         m_vao.reset();
     }
 
-    if (m_ibo && m_ibo->getSize() == indexDataSize) {
-        m_ibo->update(mesh.indices.data(), indexDataSize);
-    } else {
-        m_ibo = std::make_unique<Core::IndexBuffer>(reinterpret_cast<const void*>(mesh.indices.data()), indexDataSize);
-    }
-
-    // Create or recreate VAO if needed (when VBO is created/recreated)
     if (!m_vao) {
         m_vao = std::make_unique<Core::VertexArray>();
 
@@ -59,9 +53,23 @@ void GLMesh::update(const MeshAsset& mesh) {
 
         m_vao->addBuffer(*m_vbo, layout);
     }
+
+    // We need to bind the VAO first to ensure the IBO is associated with it
+    m_vao->bind();
+
+    if (m_ibo && m_ibo->getSize() == indexDataSize) {
+        m_ibo->update(mesh.indices.data(), indexDataSize);
+    } else {
+        m_ibo = std::make_unique<Core::IndexBuffer>(reinterpret_cast<const void*>(mesh.indices.data()), m_indexCount);
+    }
 }
 
 void GLMesh::bind() const {
+    if (!m_vao || !m_ibo) {
+        LOG_ERROR("Cannot bind mesh: VAO or IBO is null");
+        return;
+    }
+
     m_vao->bind();
     m_ibo->bind();
 }
@@ -77,6 +85,8 @@ void GLMesh::draw(int drawType) const {
         m_ibo->getType(),
         reinterpret_cast<const void*>(indicesOffset)
     ));
+
+    STATS_RECORD_DRAW_CALL();
 }
 
 } // namespace Engine

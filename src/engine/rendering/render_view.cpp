@@ -1,4 +1,4 @@
-#include "render_view_builder.h"
+#include "render_view.h"
 
 #include <algorithm>
 #include <future>
@@ -14,7 +14,7 @@
 #include "mesh.h"
 #include "light.h"
 #include "resource_manager.h"
-#include "spatial_index.h"
+#include "visibility.h"
 
 namespace Engine {
 
@@ -28,7 +28,8 @@ namespace {
         const auto& transformStorage = scene.storage<Transform>();
 
         // Find the active camera using dense iteration
-        for (EntityId id : cameraStorage.entities()) {
+        for (EntityId id = 0; id < cameraStorage.size(); ++id) {
+            if (!cameraStorage.has(id)) continue;
             const auto& camera = cameraStorage.get(id);
             if (!camera.active) continue;
             if (!transformStorage.has(id)) continue;
@@ -55,10 +56,10 @@ namespace {
     }
 }
 
-RenderView RenderViewBuilder::build(
+RenderView RenderView::build(
     const Scene& scene,
     const ResourceManager& resources,
-    const std::vector<uint32_t>& visibleIds
+    const Visibility& visibility
 ) {
     RenderView renderView;
 
@@ -96,46 +97,15 @@ RenderView RenderViewBuilder::build(
         }
 
         out.push_back(DrawableData{
-            mesh.hasLOD() ? mesh.getMeshForDistance(distSq) : mesh.mesh,
+            mesh.mesh,
             mesh.material,
             Transform::computeModelMatrix(transform)
         });
     };
 
-    // Parallel processing for large visible counts
-    constexpr size_t PARALLEL_THRESHOLD = 1000;
-    constexpr size_t MAX_CHUNKS = 8;
-    const size_t visibleCount = visibleIds.size();
-
-    if (visibleCount > PARALLEL_THRESHOLD) {
-        const size_t chunkSize = (visibleCount + MAX_CHUNKS - 1) / MAX_CHUNKS;
-        std::vector<std::future<std::vector<DrawableData>>> futures;
-
-        for (size_t start = 0; start < visibleCount; start += chunkSize) {
-            const size_t end = std::min(start + chunkSize, visibleCount);
-            futures.push_back(ThreadPool::get().push([&, start, end]() {
-                std::vector<DrawableData> local;
-                local.reserve(end - start);
-                for (size_t i = start; i < end; ++i) {
-                    buildDrawable(visibleIds[i], local);
-                }
-                return local;
-            }));
-        }
-
-        for (auto& f : futures) {
-            auto chunk = f.get();
-            renderView.drawables.insert(
-                renderView.drawables.end(),
-                std::make_move_iterator(chunk.begin()),
-                std::make_move_iterator(chunk.end())
-            );
-        }
-    } else {
-        renderView.drawables.reserve(visibleCount);
-        for (uint32_t id : visibleIds) {
-            buildDrawable(id, renderView.drawables);
-        }
+    renderView.drawables.reserve(visibility.entities.size());
+    for (EntityId id : visibility.entities) {
+        buildDrawable(id, renderView.drawables);
     }
 
     // Sort by material to minimize state changes
@@ -146,9 +116,11 @@ RenderView RenderViewBuilder::build(
 
     // Gather lights
     const auto& lightStorage = scene.storage<Light>();
-    renderView.lights.reserve(lightStorage.count());
+    renderView.lights.reserve(lightStorage.size());
 
-    for (EntityId id : lightStorage.entities()) {
+    for (EntityId id = 0; id < lightStorage.size(); ++id) {
+        if (!lightStorage.has(id)) continue;
+
         const auto& light = lightStorage.get(id);
         if (!light.enabled || !transformStorage.has(id)) continue;
 

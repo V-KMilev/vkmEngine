@@ -2,7 +2,6 @@
 
 #include <vector>
 #include <optional>
-#include <algorithm>
 
 #include "l_assert.h"
 #include "entity.h"
@@ -21,7 +20,6 @@ namespace Engine {
  * - Removing a component resets the corresponding optional.
  * - Getting or checking a component is safe with assertion if out-of-range or missing.
  * - Access to the raw storage vector is provided for advanced use cases such as low-level iteration.
- * - A dense list of entity IDs is maintained for O(n) iteration where n = active components.
  * 
  * All special member functions are disabled except default construction/destruction.
  */
@@ -50,7 +48,6 @@ class ComponentStorage {
             ensureSize(entity);
             VKM_ASSERT(!m_data[entity], "Component already exists on entity");
             m_data[entity] = std::move(component);
-            m_activeEntities.push_back(entity);
             return *m_data[entity];
         }
 
@@ -60,14 +57,8 @@ class ComponentStorage {
          * @param entity The entity's ID.
          */
         void remove(EntityId entity) {
-            if (entity < m_data.size() && m_data[entity].has_value()) {
+            if (entity < m_data.size()) {
                 m_data[entity].reset();
-                // Remove from active list (swap and pop for O(1))
-                auto it = std::find(m_activeEntities.begin(), m_activeEntities.end(), entity);
-                if (it != m_activeEntities.end()) {
-                    *it = m_activeEntities.back();
-                    m_activeEntities.pop_back();
-                }
             }
         }
 
@@ -127,20 +118,6 @@ class ComponentStorage {
          */
         size_t size() const { return m_data.size(); }
 
-        /**
-         * @brief Get the number of active components.
-         * @return The count of entities with this component.
-         */
-        size_t count() const { return m_activeEntities.size(); }
-
-        /**
-         * @brief Get the list of entity IDs that have this component.
-         * 
-         * Use this for efficient iteration over only entities with this component.
-         * @return Const reference to the dense entity ID list.
-         */
-        const std::vector<EntityId>& entities() const { return m_activeEntities; }
-
     private:
         /**
          * @brief Expand the storage to fit the given entity index, if needed.
@@ -155,7 +132,6 @@ class ComponentStorage {
     private:
         using value_type = T;
         std::vector<std::optional<T>> m_data;
-        std::vector<EntityId> m_activeEntities;  ///< Dense list of entities with this component
 };
 
 } // namespace Engine

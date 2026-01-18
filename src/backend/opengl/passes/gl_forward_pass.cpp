@@ -2,7 +2,6 @@
 
 #include "logger.h"
 #include "print_helper.h"
-#include "statistics.h"
 
 #include "gl_backend.h"
 #include "gl_shader.h"
@@ -57,7 +56,7 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
 
     auto& glView = gl.getView();
 
-    // Sync all resources with GPU (only when we have drawables)
+    // Sync all resources with GPU
     glView.syncMeshes(view, resources);
     glView.syncMaterials(view, resources);
     glView.syncTextures(view, resources);
@@ -75,36 +74,29 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
     m_shader.setUniformMatrix4fv(GLConfig::UniformNames::Projection, view.camera.projection);
     m_shader.setUniformMatrix4fv(GLConfig::UniformNames::ViewProjection, view.camera.viewProjection);
 
-    // Draw all visible meshes with material batching (drawables are pre-sorted by material)
-    MaterialHandle lastMaterial{0};
-    MeshHandle lastMesh{0};
-    const GLMesh* currentMesh = nullptr;
-
+    // Draw all visible meshes
     for (const auto& drawable : view.drawables) {
-        // Bind material only if changed (drawables sorted by material)
-        if (drawable.material.value != lastMaterial.value) {
-            if (drawable.material) {
-                const GLMaterial* material = glView.getMaterial(drawable.material);
-                if (material) {
-                    material->bind(GLConfig::UBOBindingPoints::Material);
-                    material->bindTextures(glView);
-                }
-            }
-            lastMaterial = drawable.material;
-        }
-
-        // Cache mesh lookup
-        if (drawable.mesh.value != lastMesh.value) {
-            currentMesh = glView.getMesh(drawable.mesh);
-            lastMesh = drawable.mesh;
-        }
-
-        if (!currentMesh) continue;
-
-        // Set per-object model matrix and draw
+        // Set per-object model matrix
         m_shader.setUniformMatrix4fv(GLConfig::UniformNames::Model, drawable.model);
-        currentMesh->draw(GL_TRIANGLES);
-        STATS_RECORD_DRAW_CALL();
+
+        // Bind material if present
+        if (drawable.material) {
+            const GLMaterial* material = glView.getMaterial(drawable.material);
+            if (material) {
+                material->bind(GLConfig::UBOBindingPoints::Material);
+                material->bindTextures(glView);
+            } else {
+                LOG_WARNING("Failed to get material for drawable (skipping material bind)");
+            }
+        }
+
+        // Get and draw mesh
+        const GLMesh* mesh = glView.getMesh(drawable.mesh);
+        if (mesh) {
+            mesh->draw(GL_TRIANGLES);
+        } else {
+            LOG_WARNING("Failed to get mesh for drawable (skipping draw call)");
+        }
     }
 }
 
