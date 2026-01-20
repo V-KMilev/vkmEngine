@@ -147,6 +147,17 @@ class WindowManager {
         InputHandle& getInputHandle() { return *m_inputHandle; }
         const InputHandle& getInputHandle() const { return *m_inputHandle; }
 
+        /**
+         * @brief Get the width of the window.
+         * @return The width of the window.
+         */
+        size_t getWidth() const;
+        /**
+         * @brief Get the height of the window.
+         * @return The height of the window.
+         */
+        size_t getHeight() const;
+
     private:
         WindowManager() = default;
         ~WindowManager();

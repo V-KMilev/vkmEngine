@@ -10,7 +10,7 @@
 #include "render_view.h"
 #include "resource_manager.h"
 
-#include "frustum_culler.h"
+#include "bounds_utils.h"
 
 namespace Engine {
 
@@ -95,7 +95,7 @@ void GLAABBDebugPass::execute(RenderBackend& backend, const RenderView& view, co
 
         // Transform AABB from model space to world space
         glm::vec3 worldMin, worldMax;
-        FrustumCuller::transformAABB(
+        localToWorldAABB(
             drawable.model,
             meshAsset.boundsMin,
             meshAsset.boundsMax,
