@@ -23,7 +23,7 @@ GLNavigationGizmoPass::GLNavigationGizmoPass(Core::Shader& shader)
 }
 
 void GLNavigationGizmoPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
-    // Nothing to do for navigation gizmo pass
+    // TODO: Fix the positioning of the gizmo
 }
 
 void GLNavigationGizmoPass::execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) {

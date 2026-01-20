@@ -9,6 +9,8 @@
 #include "logger.h"
 #include "print_helper.h"
 
+namespace Engine {
+
 namespace {
     GLFWmonitor* getCurrentMonitor(GLFWwindow* window) {
         int windowX, windowY, windowWidth, windowHeight;
@@ -214,3 +216,5 @@ size_t WindowManager::getHeight() const {
 
     return m_window->getHeight();
 }
+
+} // namespace Engine

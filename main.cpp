@@ -236,12 +236,12 @@ int main() {
         printBuildInfo();
         Core::enableGLDebugLogging(true);
 
-        auto& windowManager    = WindowManager::get();
+        auto& windowManager    = Engine::WindowManager::get();
         auto& eventManager     = EventManager::get();
         auto& statisticTracker = StatisticTracker::get();
 
         windowManager.createWindow("VKM Engine");
-        windowManager.updateMode(WindowMode::WINDOWED);
+        windowManager.updateMode(Engine::WindowMode::WINDOWED);
         windowManager.setFramerate(0);
 
         Engine::ResourceManager resources;
