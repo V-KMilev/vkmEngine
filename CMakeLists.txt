@@ -56,11 +56,15 @@ add_library(EngineCore STATIC
     src/engine/animation/animation_track.h
     src/engine/animation/keyframe.h
     src/engine/animation/easing.h
-    # Culling
-    src/engine/culling/frustum_culler.h
-    src/engine/culling/frustum_culler.cpp
-    src/engine/culling/visibility.h
-    src/engine/culling/visibility.cpp
+    # Visibility (culling, tests)
+    src/engine/visibility/visibility.h
+    src/engine/visibility/visibility.cpp
+    src/engine/visibility/visibility_context.h
+    src/engine/visibility/bounds_utils.h
+    src/engine/visibility/culling/frustum_culler.h
+    src/engine/visibility/culling/screen_size_culling.h
+    src/engine/visibility/culling/distance_culling.h
+    src/engine/visibility/culling/occlusion_culler.h
     # Events
     src/engine/events/event_manager.h
     src/engine/events/event_manager.cpp
@@ -100,7 +104,8 @@ target_include_directories(EngineCore PUBLIC
     src/engine/resources
     src/engine/resources/assets
     src/engine/animation
-    src/engine/culling
+    src/engine/visibility
+    src/engine/visibility/culling
     src/engine/events
     src/engine/platform/window
     src/engine/platform/threading

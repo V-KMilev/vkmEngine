@@ -197,3 +197,20 @@ void WindowManager::setCursorMode(CursorMode mode) {
     }
     glfwSetInputMode(windowContext, GLFW_CURSOR, glfwmode);
 }
+
+size_t WindowManager::getWidth() const {
+    if (!m_window) {
+        LOG_ERROR("Window is not initialized");
+        return 0;
+    }
+
+    return m_window->getWidth();
+}
+size_t WindowManager::getHeight() const {
+    if (!m_window) {
+        LOG_ERROR("Window is not initialized");
+        return 0;
+    }
+
+    return m_window->getHeight();
+}
