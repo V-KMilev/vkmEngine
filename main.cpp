@@ -203,6 +203,27 @@ static void generateAnimations(Engine::Scene& scene) {
     }
 }
 
+static void printStats(const Engine::Visibility& visibility) {
+    const auto& statisticTracker = StatisticTracker::get();
+
+    static auto lastStatsPrint = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+
+    if (now - lastStatsPrint >= std::chrono::milliseconds(500)) {
+        const auto& info = statisticTracker.getFrameInfo();
+        std::printf("[%llu] FPS: %.2f (%.4fms) | Draws: %u | Entities: %zu/%u\n",
+            info.frameIndex,
+            info.frameRateInfo.frameRate,
+            info.frameRateInfo.frameTime,
+            info.renderSystemInfo.drawCalls,
+            visibility.entities.size(),
+            info.entitySystemInfo.entityUpdates
+        );
+        std::fflush(stdout);
+        lastStatsPrint = now;
+    }
+}
+
 int main() {
     try {
         const std::string rootDir = APP_ROOT_DIR;
@@ -244,15 +265,10 @@ int main() {
         generateBasicScene(resources, scene, cameraController);
         generateAnimations(scene);
 
-        using clock = std::chrono::steady_clock;
-        auto lastStatsPrint = clock::now();
-
         while (windowManager.beginFrame()) {
             size_t viewportWidth  = windowManager.getWidth();
             size_t viewportHeight = windowManager.getHeight();
-
-            // Frame delta time in seconds
-            float deltaTime = statisticTracker.getFrameInfo().frameRateInfo.frameTime / 1000.0f;
+            float deltaTime       = statisticTracker.getFrameInfo().frameRateInfo.frameTime / 1000.0f;
 
             if (!windowManager.updateInput()) break;
 
@@ -263,26 +279,13 @@ int main() {
             auto visibility = Engine::buildVisibility(scene, resources, viewportWidth, viewportHeight);
 
             animationManager.update(scene, visibility, deltaTime);
+
             renderManager.renderFrame(scene, resources, visibility, viewportWidth, viewportHeight);
 
             if (!windowManager.swapBuffers()) break;
 
             statisticTracker.update();
-            const auto now = clock::now();
-
-            if (now - lastStatsPrint >= std::chrono::milliseconds(500)) {
-                const auto& info = statisticTracker.getFrameInfo();
-                std::printf("[%llu] FPS: %.2f (%.4fms) | Draws: %u | Entities: %zu/%u\n",
-                    info.frameIndex,
-                    info.frameRateInfo.frameRate,
-                    info.frameRateInfo.frameTime,
-                    info.renderSystemInfo.drawCalls,
-                    visibility.entities.size(),
-                    info.entitySystemInfo.entityUpdates
-                );
-                std::fflush(stdout);
-                lastStatsPrint = now;
-            }
+            printStats(visibility);
         }
     } catch (const std::exception& e) {
         LOG_FATAL("Exception: %s", e.what());
