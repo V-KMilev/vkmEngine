@@ -7,6 +7,8 @@
 
 #include "glfw_include.h"
 
+namespace Engine {
+
 Window::~Window() {
     cleanup();
     glfwTerminate();
@@ -117,3 +119,5 @@ void Window::cleanup() {
         m_window = nullptr;
     }
 }
+
+} // namespace Engine

@@ -2,6 +2,8 @@
 
 #include <chrono>
 
+namespace Engine {
+
 /**
  * @brief Utility class for limiting frame rate in a render loop.
  *
@@ -66,3 +68,5 @@ class FrameLimiter {
         int m_targetFramerate = 0;
         std::chrono::high_resolution_clock::time_point m_frameStart;
 };
+
+} // namespace Engine

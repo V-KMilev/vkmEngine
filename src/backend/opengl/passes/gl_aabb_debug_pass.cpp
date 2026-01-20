@@ -93,6 +93,7 @@ void GLAABBDebugPass::execute(RenderBackend& backend, const RenderView& view, co
             continue;
         }
 
+        // TODO: Check why when we rotate spheres the AABB is wrong
         // Transform AABB from model space to world space
         glm::vec3 worldMin, worldMax;
         localToWorldAABB(
