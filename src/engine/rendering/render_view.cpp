@@ -72,7 +72,7 @@ RenderView RenderView::build(
         if (!meshStorage.has(id)) continue;
 
         const auto& mesh = meshStorage.get(id);
-        
+
         // Use cached model matrix from visibility (computed during culling)
         // Matrices are stored in same order as entities for cache-friendly access
         // Add drawable with cached matrix
@@ -82,6 +82,15 @@ RenderView RenderView::build(
         drawable.model    = visibility.modelMatrices[i];
         renderView.drawables.emplace_back(drawable);
     }
+
+    // Sort drawables by material and mesh for better binding performance
+    std::sort(renderView.drawables.begin(), renderView.drawables.end(),
+        [](const DrawableData& a, const DrawableData& b) {
+            if (a.material.value != b.material.value) {
+                return a.material.value < b.material.value;
+            }
+            return a.mesh.value < b.mesh.value;
+        });
 
     // Gather lights
     const auto& lightStorage = scene.storage<Light>();
