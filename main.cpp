@@ -52,7 +52,7 @@
 #include "camera_controller.h"
 
 #define GRID_SIZE 1000
-#define SPACING 3 + 1
+#define SPACING 2 + 1
 #define HALF_GRID_SIZE GRID_SIZE / 2
 
 static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene& scene, Engine::CameraController& cameraController) {
@@ -60,8 +60,13 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
     Engine::MeshHandle sphereMesh        = resources.add(Engine::generateSphere());
 
     // Load PBR material from folder (automatic texture detection)
-    Engine::MaterialHandle pavingMaterial = Engine::loadMaterialFromFolder(
+    Engine::MaterialHandle pavingMaterial1 = Engine::loadMaterialFromFolder(
         "assets/PavingStones118_2K-JPG",
+        resources
+    );
+
+    Engine::MaterialHandle pavingMaterial2 = Engine::loadMaterialFromFolder(
+        "assets/PavingStones115A_2K-JPG",
         resources
     );
 
@@ -74,14 +79,14 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
 
     auto cube1 = scene.createEntity();
     {
-        scene.add(cube1, Engine::Mesh{cubeMesh, pavingMaterial});
+        scene.add(cube1, Engine::Mesh{cubeMesh, pavingMaterial1});
         scene.add(cube1, Engine::Transform{glm::vec3(0.0f, 7.0f, 0.0f)});
         scene.add(cube1, Engine::Animation{});
     }
 
     auto cube2 = scene.createEntity();
     {
-        scene.add(cube2, Engine::Mesh{cubeMesh, pavingMaterial});
+        scene.add(cube2, Engine::Mesh{cubeMesh, pavingMaterial2});
         scene.add(cube2, Engine::Transform{glm::vec3(0.0f, 4.5f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(5.0f, 0.5f, 5.0f)});
         scene.add(cube2, Engine::Animation{});
     }
@@ -95,7 +100,10 @@ static void generateBasicScene(Engine::ResourceManager& resources, Engine::Scene
             );
 
             auto object = scene.createEntity();
-            scene.add(object, Engine::Mesh{(x + z) % 2 == 0 ? sphereMesh : cubeMesh, pavingMaterial});
+            scene.add(object, Engine::Mesh{
+                (x + z) % 2 == 0 ? sphereMesh : cubeMesh,
+                (x + z) % 3 == 0 ? pavingMaterial1 : pavingMaterial2
+            });
             scene.add(object, Engine::Animation{});
             scene.add(object, Engine::Transform{position});
         }
@@ -239,10 +247,10 @@ int main() {
         using clock = std::chrono::steady_clock;
         auto lastStatsPrint = clock::now();
 
-        constexpr int viewportWidth  = 1920;
-        constexpr int viewportHeight = 1080;
-
         while (windowManager.beginFrame()) {
+            size_t viewportWidth  = windowManager.getWidth();
+            size_t viewportHeight = windowManager.getHeight();
+
             // Frame delta time in seconds
             float deltaTime = statisticTracker.getFrameInfo().frameRateInfo.frameTime / 1000.0f;
 
@@ -252,7 +260,7 @@ int main() {
 
             eventManager.executeAsync();
 
-            auto visibility = Engine::buildVisibility(scene, resources);
+            auto visibility = Engine::buildVisibility(scene, resources, viewportWidth, viewportHeight);
 
             animationManager.update(scene, visibility, deltaTime);
             renderManager.renderFrame(scene, resources, visibility, viewportWidth, viewportHeight);

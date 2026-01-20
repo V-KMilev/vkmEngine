@@ -24,20 +24,15 @@ namespace {
         const auto& cameraStorage = scene.storage<Camera>();
         const auto& transformStorage = scene.storage<Transform>();
 
-        // Find the active camera
         for (EntityId id = 0; id < cameraStorage.size(); ++id) {
-            if (!cameraStorage.has(id) || !cameraStorage.get(id).active) {
-                continue;
-            }
-
-            if (!transformStorage.has(id)) {
-                continue;
-            }
+            if (!cameraStorage.has(id)) continue;
 
             const auto& camera = cameraStorage.get(id);
+            if (!camera.active) continue;
+            if (!transformStorage.has(id)) continue;
+
             const auto& transform = transformStorage.get(id);
 
-            // Compute camera matrices
             cameraData.position = transform.position;
             const glm::vec3 forward = Transform::computeForward(transform.rotation);
             const glm::vec3 up = Transform::computeUp(transform.rotation);
@@ -60,7 +55,6 @@ RenderView RenderView::build(
 ) {
     RenderView renderView;
 
-    // Setup camera
     if (!setupCamera(renderView.camera, scene)) {
         LOG_ERROR("No active camera found");
         return renderView;

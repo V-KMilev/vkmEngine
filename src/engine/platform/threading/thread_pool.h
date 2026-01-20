@@ -45,12 +45,12 @@ class ThreadPool {
         static ThreadPool& get();
 
         /**
-        * @brief Push a task to be executed by one of the worker threads
-        * 
-        * @param func Function to execute
-        * @param args Arguments to pass to the function
-        * @return A future that can be used to get the result of the task once it's completed
-        */
+         * @brief Push a task to be executed by one of the worker threads
+         * 
+         * @param func Function to execute
+         * @param args Arguments to pass to the function
+         * @return A future that can be used to get the result of the task once it's completed
+         */
         template <typename Func, typename... Args>
         auto push(Func&& func, Args&&... args) -> std::future<decltype(func(args...))>;
 
@@ -58,6 +58,12 @@ class ThreadPool {
          * @brief Waits for all currently queued tasks to complete
          */
         void waitAll();
+
+        /**
+         * @brief Get the number of threads in the thread pool
+         * @return The number of threads in the thread pool
+         */
+        size_t size() const { return m_workers.size(); }
 
     private:
         /**
