@@ -140,7 +140,8 @@ Visibility buildVisibility(
     auto& threadPool = ThreadPool::get();
 
     const size_t numThreads = threadPool.size();
-    const size_t chunkSize = (meshStorage.size() + numThreads - 1) / numThreads;
+    // After testing, this is the best dynamic chunking for the number of threads.
+    const size_t chunkSize = meshStorage.size() / (numThreads * numThreads);
 
     // TODO: Move this to a config
     VisibilityContext context{
