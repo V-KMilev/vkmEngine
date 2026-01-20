@@ -4,6 +4,8 @@
 
 using namespace std::chrono;
 
+namespace Engine {
+
 void FrameLimiter::beginFrame() {
     m_frameStart = high_resolution_clock::now();
 }
@@ -39,3 +41,4 @@ void FrameLimiter::endFrame() {
     }
 }
 
+} // namespace Engine

@@ -2,6 +2,8 @@
 
 #include "glfw_include.h"
 
+namespace Engine {
+
 void KeyboardInputHandle::update(GLFWwindow* window) {
     m_prevKeyState = m_keyState;
 
@@ -89,3 +91,5 @@ bool InputHandle::isReleased(int key) const {
     }
     return m_mouseHandle.isButtonReleased(key);
 }
+
+} // namespace Engine

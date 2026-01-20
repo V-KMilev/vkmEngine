@@ -5,9 +5,13 @@
 struct GLFWwindow;
 struct GLFWmonitor;
 
-class Window;
-class InputHandle;
-class FrameLimiter;
+namespace Engine {
+    class Window;
+    class InputHandle;
+    class FrameLimiter;
+}
+
+namespace Engine {
 
 /**
  * @brief Enumerates supported window modes for the application window.
@@ -167,3 +171,5 @@ class WindowManager {
         std::unique_ptr<InputHandle> m_inputHandle;
         std::unique_ptr<FrameLimiter> m_frameLimiter;
 };
+
+} // namespace Engine
