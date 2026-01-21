@@ -1,90 +1,194 @@
 #include "thread_pool.h"
 
-#include "logger.h"
+#include <algorithm>
 
-ThreadPool& ThreadPool::get() {
-    static ThreadPool instance(std::thread::hardware_concurrency());
-    return instance;
-}
+// Thread-local storage to track which worker thread is executing
+static thread_local int g_workerIndex = -1;
 
-ThreadPool::ThreadPool(size_t numThreads) {
-    // Create worker threads and assign them to execute the workerThread function.
-    for (size_t i = 0; i < numThreads; ++i) {
-        // Each thread runs workerThread.
-        m_workers.emplace_back([this]() { this->workerThread(); });
+ThreadPool::ThreadPool(size_t threadCount) {
+    // Ensure at least one thread
+    if (threadCount == 0) {
+        threadCount = 1;
     }
-    LOG_TRACE("Created thread pool with %zu threads", m_workers.size());
+
+    // Create local queues for each worker thread
+    m_localQueues.reserve(threadCount);
+    for (size_t index = 0; index < threadCount; ++index) {
+        m_localQueues.emplace_back(std::make_unique<WorkerQueue>());
+    }
+
+    // Create and start worker threads
+    m_workers.reserve(threadCount);
+    for (size_t index = 0; index < threadCount; ++index) {
+        m_workers.emplace_back([this, index] {
+            workerLoop(index);
+        });
+    }
 }
 
 ThreadPool::~ThreadPool() {
-    {
-        // Lock the queueMutex to safely modify the stop flag.
-        std::unique_lock<std::mutex> lock(m_queueMutex);
-         // Set the stop flag to true, signaling workers to stop.
-        m_stop = true;
-    }
+    // Signal all workers to stop
+    m_stop.store(true, std::memory_order_release);
+    m_conditionVariable.notify_all();
 
-    // Notify all worker threads that they should stop processing tasks.
-    m_condition.notify_all();
-
-    // Join all threads to ensure they finish execution before the destructor completes.
-    for (std::thread& thread : m_workers) {
-        // Wait for each thread to finish.
-        if (thread.joinable()) thread.join();
+    // Wait for all worker threads to finish
+    for (auto& worker : m_workers) {
+        if (worker.joinable()) {
+            worker.join();
+        }
     }
-    LOG_TRACE("Destroyed thread pool with %zu threads", m_workers.size());
 }
 
-// Worker thread function that continuously fetches and processes tasks from the task queue.
-void ThreadPool::workerThread() {
+ThreadPool& ThreadPool::get() {
+    static ThreadPool pool(std::thread::hardware_concurrency());
+    return pool;
+}
+
+int ThreadPool::workerIndex() noexcept {
+    return g_workerIndex;
+}
+
+void ThreadPool::pushGlobal(std::function<void()> task) {
+    std::lock_guard<std::mutex> lock(m_globalQueueMutex);
+    m_globalQueue.emplace_back(std::move(task));
+}
+
+void ThreadPool::enqueue(std::function<void()> task) {
+    // Increment in-flight task count
+    m_inFlightTaskCount.fetch_add(1, std::memory_order_relaxed);
+
+    // If called from a worker thread, add to its local queue (LIFO for cache efficiency)
+    const int currentWorkerIndex = workerIndex();
+    if (currentWorkerIndex >= 0) {
+        WorkerQueue& workerQueue = localQueue(static_cast<size_t>(currentWorkerIndex));
+        {
+            std::lock_guard<std::mutex> lock(workerQueue.mutex);
+            workerQueue.queue.emplace_front(std::move(task)); // LIFO
+        }
+    } else {
+        // External thread: add to global queue
+        pushGlobal(std::move(task));
+    }
+
+    // Wake up a waiting worker if any
+    if (m_waitingThreadCount.load(std::memory_order_relaxed) > 0) {
+        m_conditionVariable.notify_one();
+    }
+}
+
+bool ThreadPool::popLocal(size_t workerIndex, std::function<void()>& task) {
+    WorkerQueue& workerQueue = localQueue(workerIndex);
+    std::lock_guard<std::mutex> lock(workerQueue.mutex);
+
+    if (workerQueue.queue.empty()) {
+        return false;
+    }
+
+    // Pop from front (LIFO order)
+    task = std::move(workerQueue.queue.front());
+    workerQueue.queue.pop_front();
+    return true;
+}
+
+bool ThreadPool::popGlobal(std::function<void()>& task) {
+    std::lock_guard<std::mutex> lock(m_globalQueueMutex);
+
+    if (m_globalQueue.empty()) {
+        return false;
+    }
+
+    // Pop from front (FIFO order)
+    task = std::move(m_globalQueue.front());
+    m_globalQueue.pop_front();
+    return true;
+}
+
+bool ThreadPool::steal(size_t thiefIndex, std::function<void()>& task) {
+    const size_t workerCount = m_localQueues.size();
+    
+    // Need at least 2 workers to steal
+    if (workerCount <= 1) {
+        return false;
+    }
+
+    // Try to steal from other workers in round-robin fashion
+    for (size_t offset = 1; offset < workerCount; ++offset) {
+        size_t victimIndex = (thiefIndex + offset) % workerCount;
+        WorkerQueue& victimQueue = localQueue(victimIndex);
+
+        std::lock_guard<std::mutex> lock(victimQueue.mutex);
+        if (!victimQueue.queue.empty()) {
+            // Steal from back (opposite end from owner's LIFO access)
+            task = std::move(victimQueue.queue.back());
+            victimQueue.queue.pop_back();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void ThreadPool::workerLoop(size_t workerIndex) {
+    // Set thread-local worker index for this thread
+    g_workerIndex = static_cast<int>(workerIndex);
+
+    std::function<void()> task;
+
     while (true) {
-        std::function<void()> task;
+        // Try to get work: local queue -> global queue -> steal from others
+        if (popLocal(workerIndex, task) ||
+            popGlobal(task) ||
+            steal(workerIndex, task)) {
 
-        {
-            // Lock the queueMutex to safely access the task queue.
-            std::unique_lock<std::mutex> lock(m_queueMutex);
+            // Execute the task
+            task();
+            task = {};
 
-            // Wait for tasks to be available or for the stop flag to be set.
-            m_condition.wait(lock, [this]() { return m_stop || !m_tasks.empty(); });
-
-            // If the stop flag is set and there are no tasks, exit the worker thread.
-            if (m_stop && m_tasks.empty()) return;
-
-            // Get the task from the front of the queue and remove it.
-            task = std::move(m_tasks.front());
-            m_tasks.pop();
-
-            // Increment active tasks count.
-            ++m_activeTasks;
-        }
-
-        // Execute the task.
-        task();
-
-        {
-            // Lock the queueMutex to update the active tasks count.
-            std::unique_lock<std::mutex> lock(m_queueMutex);
-
-            // Decrement the active tasks count after completing the task.
-            --m_activeTasks;
-
-            // If all tasks are finished and no tasks are remaining, notify the main thread.
-            if (m_tasks.empty() && m_activeTasks == 0) {
-                m_completionCondition.notify_all();
+            // Decrement in-flight count and notify waiters if this was the last task
+            if (m_inFlightTaskCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                // Wake threads waiting in waitIdle()
+                m_conditionVariable.notify_all();
             }
+            continue;
         }
+
+        // No work available - check if we should stop
+        if (m_stop.load(std::memory_order_acquire)) {
+            // Best-effort drain: try to process remaining global queue tasks
+            if (popGlobal(task)) {
+                task();
+                task = {};
+                if (m_inFlightTaskCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                    m_conditionVariable.notify_all();
+                }
+                continue;
+            }
+            // No more work, exit
+            return;
+        }
+
+        // No work and not stopping - wait for work to arrive
+        m_waitingThreadCount.fetch_add(1, std::memory_order_relaxed);
+        {
+            std::unique_lock<std::mutex> lock(m_conditionMutex);
+            m_conditionVariable.wait(lock, [&] {
+                return m_stop.load(std::memory_order_acquire) ||
+                       m_inFlightTaskCount.load(std::memory_order_acquire) > 0;
+            });
+        }
+        m_waitingThreadCount.fetch_sub(1, std::memory_order_relaxed);
     }
 }
 
-// Waits for all tasks to be completed before continuing.
-void ThreadPool::waitAll() {
-    // Lock the queueMutex to safely check the state of tasks and active tasks.
-    std::unique_lock<std::mutex> lock(m_queueMutex);
+void ThreadPool::waitIdle() {
+    // Fast path: if no tasks in flight, return immediately
+    if (m_inFlightTaskCount.load(std::memory_order_acquire) == 0) {
+        return;
+    }
 
-    // Wait for all tasks to be processed and the active tasks counter to reach zero.
-    m_completionCondition.wait(lock, [this]() {
-        // Wait until no tasks are pending and no tasks are active.
-        return m_tasks.empty() && m_activeTasks == 0;
+    // Wait until all tasks complete
+    std::unique_lock<std::mutex> lock(m_conditionMutex);
+    m_conditionVariable.wait(lock, [&] {
+        return m_inFlightTaskCount.load(std::memory_order_acquire) == 0;
     });
-    LOG_TRACE("Thread pool successfully stopped!");
 }
