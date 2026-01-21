@@ -11,7 +11,7 @@ EventManager::EventManager() {
 }
 
 EventManager::~EventManager() {
-    ThreadPool::get().waitAll();
+    ThreadPool::get().waitIdle();
 
     LOG_TRACE("Destroyed event manager");
 }
@@ -25,9 +25,9 @@ void EventManager::push(Event && event) {
     std::lock_guard<std::mutex> lock(m_eventMutex);
 
     if (event.getPriority() == EventPriority::IMMEDIATE) {
-        ThreadPool::get().push([this, event = std::move(event)] {
-            event.execute();
-        });
+        // ThreadPool::get().pushTask([this, event = std::move(event)] {
+        //     event.execute();
+        // });
         return;
     }
 
@@ -68,9 +68,9 @@ void EventManager::executeAsync() {
 
     while (!localEvents.empty()) {
         // Must move event out for async execution (lives in thread)
-        ThreadPool::get().push([event = std::move(const_cast<Event&>(localEvents.top()))]() {
-            event.execute();
-        });
+        // ThreadPool::get().pushTask([event = std::move(const_cast<Event&>(localEvents.top()))]() {
+        //     event.execute();
+        // });
         localEvents.pop();
     }
 }
@@ -220,8 +220,8 @@ void EventManager::emitAsync(const std::string& eventName) {
     }
 
     for (const EventListener* listener : listenersToCall) {
-        ThreadPool::get().push([listener]() {
-            listener->execute();
-        });
+        // ThreadPool::get().pushTask([listener]() {
+        //     listener->execute();
+        // });
     }
 }
