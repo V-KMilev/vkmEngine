@@ -26,18 +26,14 @@ namespace {
  */
 using VisiblePair = std::pair<EntityId, glm::mat4>;
 
-/**
- * @brief Find the first active camera and fill view, projection, and camera position.
- * @return true if an active camera was found, false otherwise.
- */
 bool computeViewContext(
     glm::mat4& view,
     glm::mat4& projection,
     glm::vec3& cameraPosition,
     const Scene& scene
 ) {
-    const auto& cameraStorage = scene.storage<Camera>();
-    const auto& transformStorage = scene.storage<Transform>();
+    const auto& cameraStorage     = scene.storage<Camera>();
+    const auto& transformStorage  = scene.storage<Transform>();
 
     for (EntityId id = 0; id < cameraStorage.size(); ++id) {
         if (!cameraStorage.has(id)) continue;
@@ -49,68 +45,13 @@ bool computeViewContext(
 
         const auto& transform = transformStorage.get(id);
 
-        projection = Camera::computeProjection(camera);
-        view = Transform::computeView(transform);
+        projection     = Camera::computeProjection(camera);
+        view           = Transform::computeView(transform);
         cameraPosition = transform.position;
         return true;
     }
 
     return false;
-}
-
-/**
- * @brief Process a range of entities and return the visible pairs.
- * @param scene The scene to process.
- * @param resources The resource manager to use.
- * @param context The visibility context to use.
- * @param start The start index.
- * @param end The end index.
- * @return The visible pairs.
- */
-std::vector<VisiblePair> processRange(
-    Scene& scene,
-    const ResourceManager& resources,
-    const VisibilityContext& context,
-    size_t start,
-    size_t end
-) {
-    auto& meshStorage = scene.storage<Mesh>();
-    const auto& transformStorage = scene.storage<Transform>();
-
-    std::vector<VisiblePair> result;
-    result.reserve(end - start);
-
-    for (EntityId id = start; id < end; ++id) {
-        if (!meshStorage.has(id)) continue;
-        if (!transformStorage.has(id)) continue;
-
-        Mesh& mesh = meshStorage.get(id);
-
-        if (!mesh.visible) continue;
-
-        const auto& transform = transformStorage.get(id);
-        const auto& meshAsset = resources.get(mesh.mesh);
-
-        if (!hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) continue;
-
-        const glm::mat4 modelMatrix = Transform::computeModelMatrix(transform);
-
-        localToWorldAABB(
-            modelMatrix,
-            meshAsset.boundsMin,
-            meshAsset.boundsMax,
-            mesh.boundsMin,
-            mesh.boundsMax
-        );
-
-        if (!FrustumCuller::isVisible(mesh, context)) continue;
-        if (!DistanceCuller::isVisible(mesh, context)) continue;
-        if (!ScreenSizeCuller::isVisible(mesh, context)) continue;
-
-        result.push_back(VisiblePair{id, modelMatrix});
-    }
-
-    return result;
 }
 
 } // anonymous
@@ -138,12 +79,8 @@ Visibility buildVisibility(
     const auto& transformStorage = scene.storage<Transform>();
 
     auto& threadPool = ThreadPool::get();
-
     const size_t numThreads = threadPool.size();
-    // After testing, this is the best dynamic chunking for the number of threads.
-    const size_t chunkSize = meshStorage.size() / (numThreads * numThreads);
 
-    // TODO: Move this to a config
     VisibilityContext context{
         .frustum        = extractFrustum(viewProjection),
         .cameraPosition = cameraPosition,
@@ -156,25 +93,69 @@ Visibility buildVisibility(
         .maxDistance    = 500.0f
     };
 
-    std::vector<std::future<std::vector<VisiblePair>>> futures;
-    futures.reserve(numThreads);
+    std::vector<std::vector<VisiblePair>> perThread(numThreads);
 
-    for (size_t start = 0; start < meshStorage.size(); start += chunkSize) {
-        const size_t end = std::min(start + chunkSize, meshStorage.size());
-
-        futures.push_back(
-            threadPool.push([&scene, &resources, &context, start, end]() {
-                return processRange(scene, resources, context, start, end);
-            })
-        );
+    // Clear once per frame (NOT per chunk)
+    for (auto& v : perThread) {
+        v.clear();
+        // optional: keep capacity to avoid reallocations
     }
+    
+    const size_t total = meshStorage.size();
 
-    result.entities.reserve(meshStorage.size());
-    result.modelMatrices.reserve(meshStorage.size());
+    const size_t grain = total / (numThreads * numThreads);
 
-    for (auto& f : futures) {
-        const auto& chunk = f.get();
-        for (const auto& p : chunk) {
+    threadPool.parallelFor(
+        0,
+        total,
+        grain,
+        [&](size_t start, size_t end, size_t tid) {
+
+            auto& out = perThread[tid];
+
+            for (EntityId id = static_cast<EntityId>(start);
+                 id < static_cast<EntityId>(end);
+                 ++id) {
+
+                if (!meshStorage.has(id)) continue;
+                if (!transformStorage.has(id)) continue;
+
+                Mesh& mesh = meshStorage.get(id);
+                if (!mesh.visible) continue;
+
+                const auto& transform = transformStorage.get(id);
+                const auto& meshAsset = resources.get(mesh.mesh);
+
+                if (!hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) continue;
+
+                const glm::mat4 modelMatrix = Transform::computeModelMatrix(transform);
+
+                localToWorldAABB(
+                    modelMatrix,
+                    meshAsset.boundsMin,
+                    meshAsset.boundsMax,
+                    mesh.boundsMin,
+                    mesh.boundsMax
+                );
+
+                if (!FrustumCuller::isVisible(mesh, context)) continue;
+                if (!DistanceCuller::isVisible(mesh, context)) continue;
+                if (!ScreenSizeCuller::isVisible(mesh, context)) continue;
+
+                out.emplace_back(id, modelMatrix);
+            }
+        }
+    );
+
+    // Merge results once.
+    size_t totalVisible = 0;
+    for (auto& v : perThread) totalVisible += v.size();
+
+    result.entities.reserve(totalVisible);
+    result.modelMatrices.reserve(totalVisible);
+
+    for (auto& v : perThread) {
+        for (auto& p : v) {
             result.entities.push_back(p.first);
             result.modelMatrices.push_back(p.second);
         }
