@@ -161,4 +161,18 @@ const GLTexture* GLView::getTexture(const TextureHandle& handle) const {
     return it->second.get();
 }
 
+void GLView::buildInstanceBatches(const RenderView& renderView) {
+    m_instanceBatcher.build(renderView.drawables);
+}
+
+GLMesh* GLView::getMutableMesh(const MeshHandle& handle) {
+    auto it = m_meshes.find(handle.value);
+
+    if (it == m_meshes.end() || !it->second) {
+        return nullptr;
+    }
+
+    return it->second.get();
+}
+
 } // namespace Engine

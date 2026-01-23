@@ -7,6 +7,8 @@
 #include "gl_shader.h"
 #include "gl_mesh.h"
 #include "gl_material.h"
+#include "gl_instance_buffer.h"
+#include "gl_instance_batcher.h"
 
 #include "render_view.h"
 #include "resource_manager.h"
@@ -70,32 +72,39 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
 
     // Set camera uniforms
     m_shader.setUniform3fv(GLConfig::UniformNames::CameraPosition, view.camera.position);
-    m_shader.setUniformMatrix4fv(GLConfig::UniformNames::View, view.camera.view);
-    m_shader.setUniformMatrix4fv(GLConfig::UniformNames::Projection, view.camera.projection);
     m_shader.setUniformMatrix4fv(GLConfig::UniformNames::ViewProjection, view.camera.viewProjection);
 
-    // Draw all visible meshes
-    for (const auto& drawable : view.drawables) {
-        // Set per-object model matrix
-        m_shader.setUniformMatrix4fv(GLConfig::UniformNames::Model, drawable.model);
+    // Build instance batches from sorted drawables
+    glView.buildInstanceBatches(view);
+
+    // Get batches and render with instancing
+    auto& batcher = glView.getInstanceBatcher();
+    const auto& batches = batcher.getBatches();
+
+    for (size_t i = 0; i < batches.size(); ++i) {
+        const auto& batch = batches[i];
 
         // Bind material if present
-        if (drawable.material) {
-            const GLMaterial* material = glView.getMaterial(drawable.material);
+        if (batch.material) {
+            const GLMaterial* material = glView.getMaterial(batch.material);
             if (material) {
                 material->bind(GLConfig::UBOBindingPoints::Material);
                 material->bindTextures(glView);
             } else {
-                LOG_WARNING("Failed to get material for drawable (skipping material bind)");
+                LOG_WARNING("Failed to get material for batch (skipping material bind)");
             }
         }
 
-        // Get and draw mesh
-        const GLMesh* mesh = glView.getMesh(drawable.mesh);
-        if (mesh) {
-            mesh->draw(GL_TRIANGLES);
+        // Get mesh and instance buffer
+        GLMesh* mesh = glView.getMutableMesh(batch.mesh);
+        GLInstanceBuffer* instanceBuffer = batcher.getInstanceBuffer(i);
+
+        if (mesh && instanceBuffer) {
+            // Attach instance buffer to mesh VAO and draw instanced
+            instanceBuffer->attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
+            mesh->drawInstanced(GL_TRIANGLES, batch.instanceCount);
         } else {
-            LOG_WARNING("Failed to get mesh for drawable (skipping draw call)");
+            LOG_WARNING("Failed to get mesh or instance buffer for batch (skipping draw call)");
         }
     }
 }
