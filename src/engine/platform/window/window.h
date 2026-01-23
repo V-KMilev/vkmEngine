@@ -8,7 +8,7 @@ struct GLFWwindow;
 namespace Engine {
 
 // TOOD: Move this into conifg
-#define OPENGL_MAJOR_VERSION 3 ///< Default OpenGL major version.
+#define OPENGL_MAJOR_VERSION 4 ///< Default OpenGL major version.
 #define OPENGL_MINOR_VERSION 3 ///< Default OpenGL minor version.
 
 #define DEFAULT_WINDOW_WIDTH 1920  ///< Default window width in pixels.

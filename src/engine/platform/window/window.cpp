@@ -51,10 +51,10 @@ Window::Window(
     // Make the context current (required for glfwSwapInterval)
     glfwMakeContextCurrent(m_window);
 
-    // Initialize GLAD - must be done after making context current
-    if (!gladLoadGL(glfwGetProcAddress)) {
-        LOG_ERROR("Failed to initialize GLAD");
-        throw std::runtime_error("Failed to initialize GLAD");
+    // Initialize GLEW - must be done after making context current
+    if (glewInit() != GLEW_OK) {
+        LOG_ERROR("Failed to initialize GLEW");
+        throw std::runtime_error("Failed to initialize GLEW");
     }
     LOG_VERBOSE("OpenGL %s initialized", glGetString(GL_VERSION));
 
