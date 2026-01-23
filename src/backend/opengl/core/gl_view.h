@@ -12,6 +12,7 @@
 #include "resources/gl_material.h"
 #include "resources/gl_texture.h"
 #include "resources/gl_lights.h"
+#include "gl_instance_batcher.h"
 
 namespace Engine {
     class RenderView;
@@ -121,6 +122,30 @@ class GLView {
          */
         const GLLights& getLights() const { return m_lights; }
 
+        /**
+         * @brief Builds instance batches from the current render view.
+         *
+         * Groups drawables by (mesh, material) and updates instance buffers.
+         * Must be called after syncMeshes/syncMaterials.
+         *
+         * @param renderView The render view with sorted drawables.
+         */
+        void buildInstanceBatches(const RenderView& renderView);
+
+        /**
+         * @brief Returns the instance batcher for accessing batches.
+         */
+        GLInstanceBatcher& getInstanceBatcher() { return m_instanceBatcher; }
+        const GLInstanceBatcher& getInstanceBatcher() const { return m_instanceBatcher; }
+
+        /**
+         * @brief Gets a mutable mesh for attaching instance buffers.
+         *
+         * @param handle The mesh handle to look up.
+         * @return Pointer to the GLMesh, or nullptr if not found.
+         */
+        GLMesh* getMutableMesh(const MeshHandle& handle);
+
     private:
         std::unordered_map<uint32_t, std::unique_ptr<GLMesh>> m_meshes;
         std::unordered_map<uint32_t, uint64_t> m_meshVersions;
@@ -132,6 +157,8 @@ class GLView {
         std::unordered_map<uint32_t, uint64_t> m_textureVersions;
 
         GLLights m_lights;
+
+        GLInstanceBatcher m_instanceBatcher;
 };
 
 } // namespace Engine

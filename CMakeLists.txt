@@ -158,9 +158,13 @@ add_library(BackendOpenGL STATIC
     src/backend/opengl/core/gl_backend.cpp
     src/backend/opengl/core/gl_view.h
     src/backend/opengl/core/gl_view.cpp
+    src/backend/opengl/core/gl_instance_batcher.h
+    src/backend/opengl/core/gl_instance_batcher.cpp
     # Resource wrappers
     src/backend/opengl/resources/gl_mesh.h
     src/backend/opengl/resources/gl_mesh.cpp
+    src/backend/opengl/resources/gl_instance_buffer.h
+    src/backend/opengl/resources/gl_instance_buffer.cpp
     src/backend/opengl/resources/gl_material.h
     src/backend/opengl/resources/gl_material.cpp
     src/backend/opengl/resources/gl_texture.h

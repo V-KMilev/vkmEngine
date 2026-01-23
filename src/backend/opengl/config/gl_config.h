@@ -90,6 +90,17 @@ namespace GLConfig {
         constexpr uint32_t MaxLights = 32;  ///< Maximum number of lights supported per frame
     }
 
+    /**
+     * @brief Vertex attribute locations for instanced rendering.
+     *
+     * Per-vertex attributes use locations 0-3 (position, normal, uv, tangent).
+     * Instance attributes start at location 4 for the model matrix columns.
+     */
+    namespace InstanceAttributes {
+        constexpr uint32_t ModelMatrixStart = 4;  ///< First location for model matrix (uses 4-7)
+        constexpr uint32_t ModelMatrixEnd = 7;    ///< Last location for model matrix
+    }
+
 } // namespace GLConfig
 
 } // namespace Engine
