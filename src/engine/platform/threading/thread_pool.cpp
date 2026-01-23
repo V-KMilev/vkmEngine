@@ -54,8 +54,9 @@ void ThreadPool::pushGlobal(std::function<void()> task) {
 }
 
 void ThreadPool::enqueue(std::function<void()> task) {
-    // Increment in-flight task count
-    m_inFlightTaskCount.fetch_add(1, std::memory_order_relaxed);
+    // Increment in-flight task count BEFORE adding to queue
+    // Use seq_cst to ensure visibility across threads
+    m_inFlightTaskCount.fetch_add(1, std::memory_order_seq_cst);
 
     // If called from a worker thread, add to its local queue (LIFO for cache efficiency)
     const int currentWorkerIndex = workerIndex();
@@ -70,10 +71,11 @@ void ThreadPool::enqueue(std::function<void()> task) {
         pushGlobal(std::move(task));
     }
 
-    // Wake up a waiting worker if any
-    if (m_waitingThreadCount.load(std::memory_order_relaxed) > 0) {
-        m_conditionVariable.notify_one();
+    // Always notify under lock to ensure proper synchronization
+    {
+        std::lock_guard<std::mutex> lock(m_conditionMutex);
     }
+    m_conditionVariable.notify_one();
 }
 
 bool ThreadPool::popLocal(size_t workerIndex, std::function<void()>& task) {
@@ -145,8 +147,10 @@ void ThreadPool::workerLoop(size_t workerIndex) {
             task = {};
 
             // Decrement in-flight count and notify waiters if this was the last task
-            if (m_inFlightTaskCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            // Use seq_cst for strongest memory ordering guarantee
+            if (m_inFlightTaskCount.fetch_sub(1, std::memory_order_seq_cst) == 1) {
                 // Wake threads waiting in waitIdle()
+                std::lock_guard<std::mutex> lock(m_conditionMutex);
                 m_conditionVariable.notify_all();
             }
             continue;
@@ -158,7 +162,8 @@ void ThreadPool::workerLoop(size_t workerIndex) {
             if (popGlobal(task)) {
                 task();
                 task = {};
-                if (m_inFlightTaskCount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                if (m_inFlightTaskCount.fetch_sub(1, std::memory_order_seq_cst) == 1) {
+                    std::lock_guard<std::mutex> lock(m_conditionMutex);
                     m_conditionVariable.notify_all();
                 }
                 continue;
@@ -168,27 +173,29 @@ void ThreadPool::workerLoop(size_t workerIndex) {
         }
 
         // No work and not stopping - wait for work to arrive
-        m_waitingThreadCount.fetch_add(1, std::memory_order_relaxed);
         {
             std::unique_lock<std::mutex> lock(m_conditionMutex);
+            // Increment waiting count INSIDE the lock to avoid race with enqueue
+            m_waitingThreadCount.fetch_add(1, std::memory_order_relaxed);
             m_conditionVariable.wait(lock, [&] {
                 return m_stop.load(std::memory_order_acquire) ||
                        m_inFlightTaskCount.load(std::memory_order_acquire) > 0;
             });
+            m_waitingThreadCount.fetch_sub(1, std::memory_order_relaxed);
         }
-        m_waitingThreadCount.fetch_sub(1, std::memory_order_relaxed);
     }
 }
 
 void ThreadPool::waitIdle() {
     // Fast path: if no tasks in flight, return immediately
-    if (m_inFlightTaskCount.load(std::memory_order_acquire) == 0) {
+    // Use seq_cst for strongest memory ordering guarantee
+    if (m_inFlightTaskCount.load(std::memory_order_seq_cst) == 0) {
         return;
     }
 
     // Wait until all tasks complete
     std::unique_lock<std::mutex> lock(m_conditionMutex);
     m_conditionVariable.wait(lock, [&] {
-        return m_inFlightTaskCount.load(std::memory_order_acquire) == 0;
+        return m_inFlightTaskCount.load(std::memory_order_seq_cst) == 0;
     });
 }
