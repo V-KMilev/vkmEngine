@@ -8,13 +8,13 @@
 
 namespace Engine {
 
-GLInstanceBuffer::GLInstanceBuffer() = default;
+GLInstanceBuffer::GLInstanceBuffer() : m_buffer(nullptr), m_capacity(0), m_instanceCount(0) {}
 
 GLInstanceBuffer::~GLInstanceBuffer() {
     m_buffer.reset();
 }
 
-void GLInstanceBuffer::update(const glm::mat4* matrices, uint32_t count) {
+void GLInstanceBuffer::update(const std::vector<glm::mat4>& matrices, uint32_t count) {
     m_instanceCount = count;
 
     if (count == 0) {
@@ -34,11 +34,11 @@ void GLInstanceBuffer::update(const glm::mat4* matrices, uint32_t count) {
         const uint32_t bufferSize = newCapacity * sizeof(glm::mat4);
         // Allocate buffer with capacity size, but only upload actual data
         m_buffer = std::make_unique<Core::VertexBuffer>(nullptr, bufferSize, GL_DYNAMIC_DRAW);
-        m_buffer->update(matrices, dataSize, 0);
+        m_buffer->update(matrices.data(), dataSize, 0);
         m_capacity = newCapacity;
     } else {
         // Update existing buffer with new data
-        m_buffer->update(matrices, dataSize, 0);
+        m_buffer->update(matrices.data(), dataSize, 0);
     }
 }
 

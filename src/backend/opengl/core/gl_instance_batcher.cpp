@@ -38,7 +38,7 @@ void GLInstanceBatcher::build(const std::vector<DrawableData>& drawables) {
             if (batchIndex >= m_instanceBuffers.size()) {
                 m_instanceBuffers.push_back(std::make_unique<GLInstanceBuffer>());
             }
-            m_instanceBuffers[batchIndex]->update(m_matrixScratch.data(), instanceCount);
+            m_instanceBuffers[batchIndex]->update(m_matrixScratch, instanceCount);
 
             // Create batch descriptor
             InstanceBatch batch;
