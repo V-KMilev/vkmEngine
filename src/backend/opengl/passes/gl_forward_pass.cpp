@@ -74,17 +74,19 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
     m_shader.setUniform3fv(GLConfig::UniformNames::CameraPosition, view.camera.position);
     m_shader.setUniformMatrix4fv(GLConfig::UniformNames::ViewProjection, view.camera.viewProjection);
 
-    // Build instance batches from sorted drawables
+    // Drawables are pre-sorted by (material, mesh). The batcher groups them
+    // into batches where each batch shares the same mesh+material combo.
+    // This reduces draw calls from O(entities) to O(unique mesh-material pairs).
+
     glView.buildInstanceBatches(view);
 
-    // Get batches and render with instancing
     auto& batcher = glView.getInstanceBatcher();
     const auto& batches = batcher.getBatches();
 
     for (size_t i = 0; i < batches.size(); ++i) {
         const auto& batch = batches[i];
 
-        // Bind material if present
+        // Bind material (UBO + textures) once per batch
         if (batch.material) {
             const GLMaterial* material = glView.getMaterial(batch.material);
             if (material) {
@@ -95,13 +97,15 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
             }
         }
 
-        // Get mesh and instance buffer
+        // Get mesh and its instance buffer
         GLMesh* mesh = glView.getMutableMesh(batch.mesh);
         GLInstanceBuffer* instanceBuffer = batcher.getInstanceBuffer(i);
 
         if (mesh && instanceBuffer) {
-            // Attach instance buffer to mesh VAO and draw instanced
+            // Attach instance buffer (model matrices) to VAO at locations 4-7
             instanceBuffer->attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
+
+            // Issue single instanced draw call for all instances in this batch
             mesh->drawInstanced(GL_TRIANGLES, batch.instanceCount);
         } else {
             LOG_WARNING("Failed to get mesh or instance buffer for batch (skipping draw call)");
