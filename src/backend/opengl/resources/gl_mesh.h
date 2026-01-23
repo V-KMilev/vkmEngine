@@ -68,6 +68,19 @@ class GLMesh {
          */
         void draw(int drawType) const;
 
+        /**
+         * @brief Issues an instanced OpenGL draw call.
+         * @param drawType The type of draw call to issue.
+         * @param instanceCount Number of instances to draw.
+         */
+        void drawInstanced(int drawType, uint32_t instanceCount) const;
+
+        /**
+         * @brief Returns the VAO for external instance buffer attachment.
+         * @return Pointer to the VAO, or nullptr if not initialized.
+         */
+        Core::VertexArray* getVAO() { return m_vao.get(); }
+
     private:
         size_t m_indexCount;
         size_t m_vertexCount;
