@@ -33,7 +33,7 @@ void GLLights::update(const std::vector<LightData>& lights) {
     uint32_t lightCount = std::min(static_cast<uint32_t>(lights.size()), static_cast<uint32_t>(MAX_LIGHTS));
 
     if (lights.size() > MAX_LIGHTS) {
-        LOG_WARNING("Scene has {} lights, but only {} are supported. Excess lights will be ignored.", 
+        LOG_WARNING("Scene has %d lights, but only %d are supported. Excess lights will be ignored.", 
                  lights.size(), MAX_LIGHTS);
     }
 
