@@ -16,6 +16,26 @@
 namespace Engine {
 
 namespace {
+
+    /**
+     * @brief Sort drawables by (material, mesh) for optimal batching.
+     *
+     * Uses std::sort with composite key - faster than radix sort when
+     * handle values are sparse (large gaps between values).
+     */
+    void sortDrawables(std::vector<DrawableData>& drawables) {
+        if (drawables.size() <= 1) return;
+
+        std::sort(drawables.begin(), drawables.end(),
+            [](const DrawableData& a, const DrawableData& b) {
+                // Primary: material, Secondary: mesh
+                if (a.material.value != b.material.value) {
+                    return a.material.value < b.material.value;
+                }
+                return a.mesh.value < b.mesh.value;
+            });
+    }
+
     /**
      * @brief Helper function to setup camera data in the render view.
      * @return true if camera was found and setup, false otherwise.
@@ -83,14 +103,8 @@ RenderView RenderView::build(
         renderView.drawables.emplace_back(drawable);
     }
 
-    // Sort drawables by material and mesh for better binding performance
-    std::sort(renderView.drawables.begin(), renderView.drawables.end(),
-        [](const DrawableData& a, const DrawableData& b) {
-            if (a.material.value != b.material.value) {
-                return a.material.value < b.material.value;
-            }
-            return a.mesh.value < b.mesh.value;
-        });
+    // Sort drawables by for optimal batching
+    sortDrawables(renderView.drawables);
 
     // Gather lights
     const auto& lightStorage = scene.storage<Light>();
