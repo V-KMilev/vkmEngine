@@ -1,6 +1,7 @@
 #include "animation_manager.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "logger.h"
 
@@ -19,13 +20,14 @@ void AnimationManager::update(
     auto& animationStorage = scene.storage<Animation>();
     auto& transformStorage = scene.storage<Transform>();
 
+    const size_t totalAnimations = animationStorage.size();
+
     // Update animation time for ALL animations (even culled ones)
     // This keeps animations synchronized even when entities go off-screen
-    for (EntityId id = 0; id < animationStorage.size(); ++id) {
+    for (EntityId id = 0; id < static_cast<EntityId>(totalAnimations); ++id) {
         if (!animationStorage.has(id)) continue;
 
         auto& animation = animationStorage.get(id);
-
         if (!animation.playing) continue;
 
         // Update animation time
@@ -43,7 +45,6 @@ void AnimationManager::update(
     }
 
     // Apply animations only to visible entities
-    // Iterate visibility list instead of all animations (much faster when few visible)
     for (EntityId id : visibility.entities) {
         if (!animationStorage.has(id)) continue;
         if (!transformStorage.has(id)) continue;

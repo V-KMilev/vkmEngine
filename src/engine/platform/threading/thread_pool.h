@@ -16,7 +16,7 @@
 
 /**
  * @brief Per-worker queue structure for work-stealing thread pool.
- * 
+ *
  * @details Each worker thread has its own local queue to minimize contention.
  * The queue uses LIFO (Last-In-First-Out) order for local access to improve
  * cache locality, while work-stealing uses FIFO from the back.
@@ -24,6 +24,7 @@
 struct WorkerQueue {
     std::mutex mutex;                           ///< Mutex protecting the queue
     std::deque<std::function<void()>> queue;    ///< Deque of pending tasks
+    std::atomic<size_t> sizeHint{0};            ///< Approximate size for fast empty check
 };
 
 /**
@@ -177,6 +178,7 @@ class ThreadPool {
 
         std::mutex m_globalQueueMutex;
         std::deque<std::function<void()>> m_globalQueue;
+        std::atomic<size_t> m_globalQueueSize{0};  ///< Fast empty check for global queue
 
         std::condition_variable m_conditionVariable;
         std::mutex m_conditionMutex;
@@ -208,7 +210,8 @@ auto ThreadPool::submit(Function&& function, Arguments&&... arguments) -> std::f
 
 /**
  * @brief Template implementation of parallelFor().
- * @details Divides the range into chunks and distributes them across worker threads using work-stealing.
+ * @details Pushes tasks directly to worker local queues (round-robin) to avoid
+ * global queue contention. Workers grab chunks via atomic counter.
  */
 template <class Function>
 void ThreadPool::parallelFor(size_t begin, size_t end, size_t grain, Function&& function) {
@@ -218,17 +221,30 @@ void ThreadPool::parallelFor(size_t begin, size_t end, size_t grain, Function&& 
     std::atomic<size_t> nextIndex{begin};
     const size_t workerCount = size();
 
-    for (size_t workerIndex = 0; workerIndex < workerCount; ++workerIndex) {
-        enqueue([&, workerIndex] {
+    // Push tasks directly to worker local queues (avoids global queue bottleneck)
+    for (size_t i = 0; i < workerCount; ++i) {
+        std::function<void()> task = [&, i] {
             while (true) {
                 size_t startIndex = nextIndex.fetch_add(grain, std::memory_order_relaxed);
-
                 if (startIndex >= end) break;
 
                 size_t endIndex = std::min(startIndex + grain, end);
-                function(startIndex, endIndex, workerIndex);
+                function(startIndex, endIndex, i);
             }
-        });
+        };
+
+        m_inFlightTaskCount.fetch_add(1, std::memory_order_seq_cst);
+
+        // Push directly to worker i's local queue
+        WorkerQueue& workerQueue = localQueue(i);
+        {
+            std::lock_guard<std::mutex> lock(workerQueue.mutex);
+            workerQueue.queue.emplace_back(std::move(task));
+            workerQueue.sizeHint.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        // Wake one worker per task (more efficient than notify_all at end)
+        m_conditionVariable.notify_one();
     }
 
     waitIdle();

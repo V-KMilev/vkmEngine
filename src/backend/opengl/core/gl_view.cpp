@@ -1,6 +1,7 @@
 #include "gl_view.h"
 
-#include <unordered_set>
+#include <algorithm>
+#include <vector>
 
 #include "logger.h"
 
@@ -28,22 +29,33 @@ void GLView::syncMeshes(
     const RenderView& renderView,
     const ResourceManager& resourceManager
 ) {
-    for (const auto& drawable : renderView.drawables) {
-        if (!drawable.mesh) continue;
+    // Collect unique mesh handles
+    thread_local std::vector<uint32_t> meshHandles;
+    meshHandles.clear();
+    meshHandles.reserve(renderView.drawables.size());
 
-        const uint32_t key = drawable.mesh.value;
-        const auto& asset = resourceManager.get(drawable.mesh);
+    for (const auto& drawable : renderView.drawables) {
+        if (drawable.mesh) {
+            meshHandles.push_back(drawable.mesh.value);
+        }
+    }
+
+    std::sort(meshHandles.begin(), meshHandles.end());
+    meshHandles.erase(std::unique(meshHandles.begin(), meshHandles.end()), meshHandles.end());
+
+    for (uint32_t key : meshHandles) {
+        MeshHandle handle;
+        handle.value = key;
+
+        const auto& asset = resourceManager.get(handle);
         const uint64_t version = asset.version;
 
         auto it = m_meshes.find(key);
 
         if (it == m_meshes.end()) {
-            // Create new mesh
             m_meshes[key] = std::make_unique<GLMesh>(asset);
             m_meshVersions[key] = version;
-
         } else if (m_meshVersions[key] != version) {
-            // Update existing mesh if version changed
             it->second->update(asset);
             m_meshVersions[key] = version;
         }
@@ -54,22 +66,25 @@ void GLView::syncMaterials(
     const RenderView& renderView,
     const ResourceManager& resourceManager
 ) {
+    // Drawables are sorted by material, so we can skip consecutive duplicates
+    uint32_t lastMaterial = UINT32_MAX;
+
     for (const auto& drawable : renderView.drawables) {
         if (!drawable.material) continue;
 
         const uint32_t key = drawable.material.value;
+        if (key == lastMaterial) continue;
+        lastMaterial = key;
+
         const auto& asset = resourceManager.get(drawable.material);
         const uint64_t version = asset.version;
 
         auto it = m_materials.find(key);
 
         if (it == m_materials.end()) {
-            // Create new material
             m_materials[key] = std::make_unique<GLMaterial>(asset);
             m_materialVersions[key] = version;
-
         } else if (m_materialVersions[key] != version) {
-            // Update existing material if version changed
             it->second->update(asset);
             m_materialVersions[key] = version;
         }
@@ -80,23 +95,32 @@ void GLView::syncTextures(
     const RenderView& renderView,
     const ResourceManager& resourceManager
 ) {
-    // Collect all unique texture handles referenced by materials
-    std::unordered_set<uint32_t> textureHandles;
-    textureHandles.reserve(renderView.drawables.size() * 3);  // Estimate: ~3 textures per material
+    // Track processed materials to avoid redundant work (many drawables share materials)
+    thread_local std::vector<uint32_t> textureHandles;
+    textureHandles.clear();
+
+    uint32_t lastMaterial = UINT32_MAX;  // Fast path for sorted drawables
 
     for (const auto& drawable : renderView.drawables) {
         if (!drawable.material) continue;
 
+        // Drawables are sorted by material - skip if same as last
+        if (drawable.material.value == lastMaterial) continue;
+        lastMaterial = drawable.material.value;
+
         const auto& material = resourceManager.get(drawable.material);
 
-        // Use centralized texture mapping table
         for (const auto& mapping : g_textureMappings) {
             const TextureHandle& handle = material.*mapping.handlePtr;
             if (handle.value != 0) {
-                textureHandles.insert(handle.value);
+                textureHandles.push_back(handle.value);
             }
         }
     }
+
+    // Sort and remove duplicates
+    std::sort(textureHandles.begin(), textureHandles.end());
+    textureHandles.erase(std::unique(textureHandles.begin(), textureHandles.end()), textureHandles.end());
 
     // Sync each referenced texture
     for (uint32_t textureKey : textureHandles) {
@@ -109,12 +133,10 @@ void GLView::syncTextures(
         auto it = m_textures.find(textureKey);
 
         if (it == m_textures.end()) {
-            // Create new texture
             m_textures[textureKey] = std::make_unique<GLTexture>(asset);
             m_textureVersions[textureKey] = version;
 
         } else if (m_textureVersions[textureKey] != version) {
-            // Update existing texture if version changed
             it->second->update(asset);
             m_textureVersions[textureKey] = version;
         }

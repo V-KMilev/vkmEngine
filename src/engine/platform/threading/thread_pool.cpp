@@ -51,6 +51,7 @@ int ThreadPool::workerIndex() noexcept {
 void ThreadPool::pushGlobal(std::function<void()> task) {
     std::lock_guard<std::mutex> lock(m_globalQueueMutex);
     m_globalQueue.emplace_back(std::move(task));
+    m_globalQueueSize.fetch_add(1, std::memory_order_relaxed);
 }
 
 void ThreadPool::enqueue(std::function<void()> task) {
@@ -65,6 +66,7 @@ void ThreadPool::enqueue(std::function<void()> task) {
         {
             std::lock_guard<std::mutex> lock(workerQueue.mutex);
             workerQueue.queue.emplace_front(std::move(task)); // LIFO
+            workerQueue.sizeHint.fetch_add(1, std::memory_order_relaxed);
         }
     } else {
         // External thread: add to global queue
@@ -80,6 +82,12 @@ void ThreadPool::enqueue(std::function<void()> task) {
 
 bool ThreadPool::popLocal(size_t workerIndex, std::function<void()>& task) {
     WorkerQueue& workerQueue = localQueue(workerIndex);
+
+    // Fast path: check size hint before locking
+    if (workerQueue.sizeHint.load(std::memory_order_relaxed) == 0) {
+        return false;
+    }
+
     std::lock_guard<std::mutex> lock(workerQueue.mutex);
 
     if (workerQueue.queue.empty()) {
@@ -89,10 +97,16 @@ bool ThreadPool::popLocal(size_t workerIndex, std::function<void()>& task) {
     // Pop from front (LIFO order)
     task = std::move(workerQueue.queue.front());
     workerQueue.queue.pop_front();
+    workerQueue.sizeHint.fetch_sub(1, std::memory_order_relaxed);
     return true;
 }
 
 bool ThreadPool::popGlobal(std::function<void()>& task) {
+    // Fast path: skip locking if global queue is empty
+    if (m_globalQueueSize.load(std::memory_order_relaxed) == 0) {
+        return false;
+    }
+
     std::lock_guard<std::mutex> lock(m_globalQueueMutex);
 
     if (m_globalQueue.empty()) {
@@ -102,27 +116,39 @@ bool ThreadPool::popGlobal(std::function<void()>& task) {
     // Pop from front (FIFO order)
     task = std::move(m_globalQueue.front());
     m_globalQueue.pop_front();
+    m_globalQueueSize.fetch_sub(1, std::memory_order_relaxed);
     return true;
 }
 
 bool ThreadPool::steal(size_t thiefIndex, std::function<void()>& task) {
     const size_t workerCount = m_localQueues.size();
-    
+
     // Need at least 2 workers to steal
     if (workerCount <= 1) {
         return false;
     }
 
-    // Try to steal from other workers in round-robin fashion
+    // Try to steal from other workers using try_lock to avoid blocking
     for (size_t offset = 1; offset < workerCount; ++offset) {
         size_t victimIndex = (thiefIndex + offset) % workerCount;
         WorkerQueue& victimQueue = localQueue(victimIndex);
 
-        std::lock_guard<std::mutex> lock(victimQueue.mutex);
+        // Fast path: skip empty queues without locking
+        if (victimQueue.sizeHint.load(std::memory_order_relaxed) == 0) {
+            continue;
+        }
+
+        // Use try_lock: skip if queue is contested instead of blocking
+        std::unique_lock<std::mutex> lock(victimQueue.mutex, std::try_to_lock);
+        if (!lock.owns_lock()) {
+            continue;  // Queue is being used, try next victim
+        }
+
         if (!victimQueue.queue.empty()) {
             // Steal from back (opposite end from owner's LIFO access)
             task = std::move(victimQueue.queue.back());
             victimQueue.queue.pop_back();
+            victimQueue.sizeHint.fetch_sub(1, std::memory_order_relaxed);
             return true;
         }
     }
@@ -170,6 +196,20 @@ void ThreadPool::workerLoop(size_t workerIndex) {
             }
             // No more work, exit
             return;
+        }
+
+        // One yield before sleeping - gives other workers time to finish
+        std::this_thread::yield();
+
+        // Try once more after yield
+        if (popLocal(workerIndex, task) || steal(workerIndex, task)) {
+            task();
+            task = {};
+            if (m_inFlightTaskCount.fetch_sub(1, std::memory_order_seq_cst) == 1) {
+                std::lock_guard<std::mutex> lock(m_conditionMutex);
+                m_conditionVariable.notify_all();
+            }
+            continue;
         }
 
         // No work and not stopping - wait for work to arrive
