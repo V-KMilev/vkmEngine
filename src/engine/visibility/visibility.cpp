@@ -1,7 +1,6 @@
 #include "visibility.h"
 
 #include "logger.h"
-#include "thread_pool.h"
 
 #include "resource_manager.h"
 #include "scene.h"
@@ -78,9 +77,6 @@ Visibility buildVisibility(
     auto& meshStorage            = scene.storage<Mesh>();
     const auto& transformStorage = scene.storage<Transform>();
 
-    auto& threadPool = ThreadPool::get();
-    const size_t numThreads = threadPool.size();
-
     VisibilityContext context{
         .frustum        = extractFrustum(viewProjection),
         .cameraPosition = cameraPosition,
@@ -93,72 +89,36 @@ Visibility buildVisibility(
         .maxDistance    = 500.0f
     };
 
-    std::vector<std::vector<VisiblePair>> perThread(numThreads);
-
-    // Clear once per frame (NOT per chunk)
-    for (auto& v : perThread) {
-        v.clear();
-        // optional: keep capacity to avoid reallocations
-    }
-    
     const size_t total = meshStorage.size();
 
-    const size_t grain = total / (numThreads * numThreads);
+    for (EntityId id = 0; id < total; ++id) {
+        if (!meshStorage.has(id)) continue;
+        if (!transformStorage.has(id)) continue;
 
-    threadPool.parallelFor(
-        0,
-        total,
-        grain,
-        [&](size_t start, size_t end, size_t tid) {
+        Mesh& mesh = meshStorage.get(id);
+        if (!mesh.visible) continue;
 
-            auto& out = perThread[tid];
+        const auto& transform = transformStorage.get(id);
+        const auto& meshAsset = resources.get(mesh.mesh);
 
-            for (EntityId id = static_cast<EntityId>(start);
-                 id < static_cast<EntityId>(end);
-                 ++id) {
+        if (!hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) continue;
 
-                if (!meshStorage.has(id)) continue;
-                if (!transformStorage.has(id)) continue;
+        const glm::mat4 modelMatrix = Transform::computeModelMatrix(transform);
 
-                Mesh& mesh = meshStorage.get(id);
-                if (!mesh.visible) continue;
+        localToWorldAABB(
+            modelMatrix,
+            meshAsset.boundsMin,
+            meshAsset.boundsMax,
+            mesh.boundsMin,
+            mesh.boundsMax
+        );
 
-                const auto& transform = transformStorage.get(id);
-                const auto& meshAsset = resources.get(mesh.mesh);
+        if (!FrustumCuller::isVisible(mesh, context)) continue;
+        if (!DistanceCuller::isVisible(mesh, context)) continue;
+        if (!ScreenSizeCuller::isVisible(mesh, context)) continue;
 
-                if (!hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) continue;
-
-                const glm::mat4 modelMatrix = Transform::computeModelMatrix(transform);
-
-                localToWorldAABB(
-                    modelMatrix,
-                    meshAsset.boundsMin,
-                    meshAsset.boundsMax,
-                    mesh.boundsMin,
-                    mesh.boundsMax
-                );
-
-                if (!FrustumCuller::isVisible(mesh, context)) continue;
-                if (!DistanceCuller::isVisible(mesh, context)) continue;
-                if (!ScreenSizeCuller::isVisible(mesh, context)) continue;
-
-                out.emplace_back(id, modelMatrix);
-            }
-        }
-    );
-
-    // Merge results once.
-    size_t totalVisible = 0;
-    for (auto& v : perThread) totalVisible += v.size();
-
-    result.entities.reserve(totalVisible);
-    result.modelMatrices.reserve(totalVisible);
-
-    for (auto& v : perThread) {
-        for (auto& p : v) {
-            result.entities.push_back(p.first);
-            result.modelMatrices.push_back(p.second);
-        }
+        result.entities.push_back(id);
+        result.modelMatrices.push_back(modelMatrix);
     }
 
     return result;

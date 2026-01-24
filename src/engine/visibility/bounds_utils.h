@@ -15,36 +15,35 @@ inline bool hasValidBounds(const glm::vec3& min, const glm::vec3& max) noexcept 
 }
 
 /**
- * @brief Transform an AABB from model space to world space.
+ * @brief Transform an AABB from model space to world space using Arvo's method.
  *
- * Transforms all eight corners by the model matrix and computes the encompassing AABB.
+ * Uses algebraic AABB transformation instead of transforming 8 corners.
+ * ~7x faster: 18 scalar muls vs 128 for corner-based approach.
  *
- * @param modelMatrix Model-to-world matrix.
+ * @param matrix Model-to-world matrix.
  * @param localMin Minimum corner in model space.
  * @param localMax Maximum corner in model space.
  * @param[out] worldMin Output minimum in world space.
  * @param[out] worldMax Output maximum in world space.
  */
 inline void localToWorldAABB(
-    const glm::mat4& modelMatrix,
+    const glm::mat4& matrix,
     const glm::vec3& localMin,
     const glm::vec3& localMax,
     glm::vec3& worldMin,
     glm::vec3& worldMax
 ) {
-    const glm::vec3 corners[8] = {
-        {localMin.x, localMin.y, localMin.z}, {localMax.x, localMin.y, localMin.z},
-        {localMin.x, localMax.y, localMin.z}, {localMax.x, localMax.y, localMin.z},
-        {localMin.x, localMin.y, localMax.z}, {localMax.x, localMin.y, localMax.z},
-        {localMin.x, localMax.y, localMax.z}, {localMax.x, localMax.y, localMax.z}
-    };
-    glm::vec3 t = glm::vec3(modelMatrix * glm::vec4(corners[0], 1.0f));
-    worldMin = t;
-    worldMax = t;
-    for (int i = 1; i < 8; ++i) {
-        t = glm::vec3(modelMatrix * glm::vec4(corners[i], 1.0f));
-        worldMin = glm::min(worldMin, t);
-        worldMax = glm::max(worldMax, t);
+    // Start with translation component
+    worldMin = glm::vec3(matrix[3]);
+    worldMax = glm::vec3(matrix[3]);
+
+    // For each matrix column (x, y, z basis vectors)
+    for (int j = 0; j < 3; ++j) {
+        const glm::vec3 col(matrix[j]);
+        const glm::vec3 a = col * localMin[j];
+        const glm::vec3 b = col * localMax[j];
+        worldMin += glm::min(a, b);
+        worldMax += glm::max(a, b);
     }
 }
 

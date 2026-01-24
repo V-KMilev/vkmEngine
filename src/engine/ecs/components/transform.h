@@ -31,15 +31,23 @@ struct Transform {
 
     /**
      * @brief Compute the model matrix from transform data.
+     *
+     * Uses fused TRS construction: builds translation, rotation, scale
+     * directly without intermediate matrix multiplications.
+     *
      * @param transform The transform component.
      * @return The computed model matrix.
      */
     static glm::mat4 computeModelMatrix(const Transform& transform) {
-        glm::mat4 model = glm::mat4(1.0f);
+        // Convert quaternion to rotation matrix
+        const glm::mat4 rot = glm::mat4_cast(transform.rotation);
 
-        model  = glm::translate(model, transform.position);
-        model *= glm::mat4_cast(transform.rotation);
-        model  = glm::scale(model, transform.scale);
+        // Build TRS matrix directly: scale rotation columns, set translation
+        glm::mat4 model;
+        model[0] = rot[0] * transform.scale.x;
+        model[1] = rot[1] * transform.scale.y;
+        model[2] = rot[2] * transform.scale.z;
+        model[3] = glm::vec4(transform.position, 1.0f);
 
         return model;
     }
