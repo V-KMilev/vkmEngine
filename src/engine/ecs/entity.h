@@ -2,23 +2,28 @@
 
 #include <cstdint>
 
+#include "my_storage.h"
+
 namespace Engine {
 
 /**
- * @brief Strong type for uniquely identifying entities in the ECS.
+ * @brief Entity identifier backed by a generational StorageIndex.
+ *
+ * Pairs a sparse-array slot index with a generation counter, giving entities
+ * the same use-after-free protection and ID recycling that resource handles enjoy.
  */
-using EntityId = uint32_t;
+using EntityId = StorageIndex;
 
 /**
  * @brief An Entity represents a unique object within the ECS architecture.
  *
- * Entities are identified solely by their EntityId. They do not directly own data or logic—
- * instead, they are associated with components in storage. Entities are lightweight handles,
- * copyable and movable, and can be compared and checked for validity.
+ * Entities are identified solely by their EntityId (StorageIndex). They do not directly
+ * own data or logic - instead, they are associated with components in storage. Entities
+ * are lightweight handles, copyable and movable, and can be compared and checked for validity.
  */
 class Entity {
     public:
-        Entity() = delete;
+        Entity() = default;
         ~Entity() = default;
 
         Entity(const Entity& other) noexcept = default;
@@ -35,17 +40,17 @@ class Entity {
 
     public:
         /**
-         * @brief Check if the entity is valid (has a nonzero id).
-         * @return True if this entity was assigned a nonzero id; false if default constructed.
+         * @brief Check if the entity is valid (has a nonzero index).
+         * @return True if this entity references a valid slot; false if null.
          */
         constexpr explicit operator bool() const noexcept {
-            return m_id != 0;
+            return bool(m_id);
         }
 
         /**
-         * @brief Equality comparison based on EntityId.
+         * @brief Equality comparison based on EntityId (index + generation).
          * @param other Entity to compare with.
-         * @return True if the two entities have the same id.
+         * @return True if both index and generation match.
          */
         constexpr bool operator==(const Entity& other) const noexcept {
             return m_id == other.m_id;
@@ -53,12 +58,12 @@ class Entity {
 
         /**
          * @brief Get the underlying EntityId.
-         * @return The raw EntityId.
+         * @return The EntityId (StorageIndex) for this entity.
          */
         EntityId getID() const { return m_id; }
 
     private:
-        EntityId m_id;
+        EntityId m_id{};
 };
 
 } // namespace Engine

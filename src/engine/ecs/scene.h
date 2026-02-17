@@ -1,7 +1,7 @@
 #pragma once
 
-#include "component_storage.h"
 #include "entity.h"
+#include "my_storage.h"
 
 #include "transform.h"
 #include "mesh.h"
@@ -16,10 +16,7 @@ namespace Engine {
  *
  * Scene acts as a central registry for all entities and a fixed set of component types,
  * providing efficient creation, component assignment, lookup, and removal for entities.
- * Component storage is specialized and type-safe for supported component types.
- * 
- * Typical usage involves creating entities and adding/removing/querying components
- * using the template API for each component type.
+ * Component data is stored directly in Storage<T> slot maps, keyed by entity sparse index.
  *
  * Currently, supported component types are:
  *   - Transform
@@ -30,7 +27,7 @@ namespace Engine {
  */
 class Scene {
     public:
-        Scene() : m_nextEntityId(0) {}
+        Scene() = default;
         ~Scene() = default;
 
         Scene(const Scene& other) = delete;
@@ -45,19 +42,22 @@ class Scene {
          * @return The created Entity.
          */
         Entity createEntity() {
-            return Entity{ ++m_nextEntityId };
+            StorageIndex id = m_entityAllocator.add(uint8_t{1});
+            return Entity{id};
         }
 
         /**
-         * @brief Destroy an entity by removing all of its components.
+         * @brief Destroy an entity by removing all of its components and recycling its slot.
          * @param entity The entity to destroy.
          */
-         void destroyEntity(Entity entity) {
-            m_transforms.remove(entity.getID());
-            m_meshes.remove(entity.getID());
-            m_cameras.remove(entity.getID());
-            m_animations.remove(entity.getID());
-            m_lights.remove(entity.getID());
+        void destroyEntity(Entity entity) {
+            EntityId id = entity.getID();
+            removeAt<Transform>(id.index);
+            removeAt<Mesh>(id.index);
+            removeAt<Camera>(id.index);
+            removeAt<Animation>(id.index);
+            removeAt<Light>(id.index);
+            m_entityAllocator.remove(id);
         }
 
         /**
@@ -69,42 +69,49 @@ class Scene {
          */
         template<typename T>
         T& add(Entity entity, T && component) {
-            return getStorage<T>().add(entity.getID(), std::move(component));
+            return getStorage<T>().addAt(entity.getID().index, std::move(component));
         }
 
         /**
          * @brief Check if an entity has a component of type T.
          * @tparam T Component type.
-         * @param entity The entity to query.
+         * @param entity Entity or EntityId to query.
          * @return true if the component exists for the entity, false otherwise.
          */
         template<typename T>
-        bool has(Entity entity) const {
-            return getStorage<T>().has(entity.getID());
+        bool has(Entity entity) const { return has<T>(entity.getID()); }
+
+        template<typename T>
+        bool has(EntityId entity) const {
+            return getStorage<T>().hasAt(entity.index);
         }
 
         /**
          * @brief Get a mutable reference to an entity's component of type T.
          * @tparam T Component type.
-         * @param entity The entity from which to get the component.
+         * @param entity Entity or EntityId from which to get the component.
          * @return Reference to the component.
-         * @throws (implementation-defined) if the component does not exist.
          */
         template<typename T>
-        T& get(Entity entity) {
-            return getStorage<T>().get(entity.getID());
+        T& get(Entity entity) { return get<T>(entity.getID()); }
+
+        template<typename T>
+        T& get(EntityId entity) {
+            return getStorage<T>().getAt(entity.index);
         }
 
         /**
          * @brief Get a const reference to an entity's component of type T.
          * @tparam T Component type.
-         * @param entity The entity from which to get the component.
+         * @param entity Entity or EntityId from which to get the component.
          * @return Const reference to the component.
-         * @throws (implementation-defined) if the component does not exist.
          */
         template<typename T>
-        const T& get(Entity entity) const {
-            return getStorage<T>().get(entity.getID());
+        const T& get(Entity entity) const { return get<T>(entity.getID()); }
+
+        template<typename T>
+        const T& get(EntityId entity) const {
+            return getStorage<T>().getAt(entity.index);
         }
 
         /**
@@ -114,34 +121,57 @@ class Scene {
          */
         template<typename T>
         void remove(Entity entity) {
-            getStorage<T>().remove(entity.getID());
+            removeAt<T>(entity.getID().index);
         }
 
         /**
-         * @brief Get direct access to the storage for a component type.
+         * @brief Number of live components of type T.
          * @tparam T Component type.
-         * @return Reference to the component storage.
          */
         template<typename T>
-        ComponentStorage<T>& storage() { return getStorage<T>(); }
+        size_t count() const { return getStorage<T>().size(); }
 
         /**
-         * @brief Get const access to the storage for a component type.
+         * @brief Iterate all live components of type T densely (no holes).
+         *
+         * Calls fn(EntityId, T&) for each live component in packed order.
+         * EntityIds are reconstructed with the correct entity generation.
+         *
          * @tparam T Component type.
-         * @return Const reference to the component storage.
+         * @param fn Callable with signature void(EntityId, T&).
          */
-        template<typename T>
-        const ComponentStorage<T>& storage() const { return getStorage<T>(); }
+        template<typename T, typename Fn>
+        void forEach(Fn&& fn) {
+            auto& store = getStorage<T>();
+            T* dense = store.data();
+            for (uint32_t i = 0; i < store.size(); ++i) {
+                uint32_t sparseIdx = store.sparseKeyAt(i);
+                EntityId eid{sparseIdx, m_entityAllocator.generationOf(sparseIdx)};
+                fn(eid, dense[i]);
+            }
+        }
+
+        template<typename T, typename Fn>
+        void forEach(Fn&& fn) const {
+            const auto& store = getStorage<T>();
+            const T* dense = store.data();
+            for (uint32_t i = 0; i < store.size(); ++i) {
+                uint32_t sparseIdx = store.sparseKeyAt(i);
+                EntityId eid{sparseIdx, m_entityAllocator.generationOf(sparseIdx)};
+                fn(eid, dense[i]);
+            }
+        }
 
     private:
-        /**
-         * @brief Get mutable storage for a specific supported component type.
-         * @tparam T Component type.
-         * @return Reference to the component storage for T.
-         * @note Only enabled for supported types; causes a static assertion otherwise.
-         */
         template<typename T>
-        ComponentStorage<T>& getStorage() {
+        void removeAt(uint32_t index) {
+            auto& store = getStorage<T>();
+            if (store.hasAt(index))
+                store.removeAt(index);
+        }
+
+        template<typename T>
+        Storage<T>& getStorage() {
             if      constexpr (std::is_same_v<T, Transform>) return m_transforms;
             else if constexpr (std::is_same_v<T, Mesh>)      return m_meshes;
             else if constexpr (std::is_same_v<T, Camera>)    return m_cameras;
@@ -150,14 +180,8 @@ class Scene {
             else                                             VKM_ASSERT(false, "Component type T is not supported. Supported types: Transform, Mesh, Camera, Animation, Light");
         }
 
-        /**
-         * @brief Get const storage for a specific supported component type.
-         * @tparam T Component type.
-         * @return Const reference to the component storage for T.
-         * @note Only enabled for supported types; causes a static assertion otherwise.
-         */
         template<typename T>
-        const ComponentStorage<T>& getStorage() const {
+        const Storage<T>& getStorage() const {
             if      constexpr (std::is_same_v<T, Transform>) return m_transforms;
             else if constexpr (std::is_same_v<T, Mesh>)      return m_meshes;
             else if constexpr (std::is_same_v<T, Camera>)    return m_cameras;
@@ -167,13 +191,13 @@ class Scene {
         }
 
     private:
-        EntityId m_nextEntityId;
+        Storage<uint8_t> m_entityAllocator;
 
-        ComponentStorage<Transform> m_transforms;
-        ComponentStorage<Mesh>      m_meshes;
-        ComponentStorage<Camera>    m_cameras;
-        ComponentStorage<Animation> m_animations;
-        ComponentStorage<Light>     m_lights;
+        Storage<Transform> m_transforms;
+        Storage<Mesh>      m_meshes;
+        Storage<Camera>    m_cameras;
+        Storage<Animation> m_animations;
+        Storage<Light>     m_lights;
 };
 
 } // namespace Engine

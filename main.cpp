@@ -289,28 +289,23 @@ static void generateBenchmarkScene(
 }
 
 static void generateBenchmarkAnimations(Engine::Scene& scene) {
-    auto& animationStorage = scene.storage<Engine::Animation>();
-    const auto& transformStorage = scene.storage<Engine::Transform>();
+    scene.forEach<Engine::Animation>([&](Engine::EntityId id, Engine::Animation& anim) {
+        if (!scene.has<Engine::Transform>(id)) return;
+        const auto& transform = scene.get<Engine::Transform>(id);
 
-    for (Engine::EntityId id = 0; id < animationStorage.size(); ++id) {
-        if (!animationStorage.has(id)) continue;
-        if (!transformStorage.has(id)) continue;
-
-        auto& anim = animationStorage.get(id);
-        const auto& transform = transformStorage.get(id);
-
-        // Varied animation types based on entity id
-        int animType = id % 4;
-        float duration = 3.0f + (id % 5) * 0.5f;
+        // Varied animation types based on entity sparse index
+        uint32_t idx = id.index;
+        int animType = idx % 4;
+        float duration = 3.0f + (idx % 5) * 0.5f;
 
         if (animType == 0) {
             // Rotation animation
             auto& rotationTrack = anim.rotationTrack;
             rotationTrack.setEasing(Easing::linear);
             glm::vec3 axis = glm::normalize(glm::vec3(
-                (id % 3 == 0) ? 1.0f : 0.0f,
-                (id % 3 == 1) ? 1.0f : 0.0f,
-                (id % 3 == 2) ? 1.0f : 0.0f
+                (idx % 3 == 0) ? 1.0f : 0.0f,
+                (idx % 3 == 1) ? 1.0f : 0.0f,
+                (idx % 3 == 2) ? 1.0f : 0.0f
             ));
             if (glm::length(axis) < 0.1f) axis = glm::vec3(0.0f, 1.0f, 0.0f);
             rotationTrack.addKeyframe(0.0f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
@@ -355,7 +350,7 @@ static void generateBenchmarkAnimations(Engine::Scene& scene) {
         anim.looping = true;
         anim.playing = true;
         anim.updateDuration();
-    }
+    });
 }
 
 static void printStats(const Engine::Visibility& visibility) {

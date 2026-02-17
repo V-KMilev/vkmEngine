@@ -41,16 +41,13 @@ namespace {
      * @return true if camera was found and setup, false otherwise.
      */
     bool setupCamera(CameraData& cameraData, const Scene& scene) {
-        const auto& cameraStorage = scene.storage<Camera>();
-        const auto& transformStorage = scene.storage<Transform>();
-
         bool found = false;
-        cameraStorage.forEach([&](EntityId id, const Camera& camera) {
+        scene.forEach<Camera>([&](EntityId id, const Camera& camera) {
             if (found) return;
             if (!camera.active) return;
-            if (!transformStorage.has(id)) return;
+            if (!scene.has<Transform>(id)) return;
 
-            const auto& transform = transformStorage.get(id);
+            const auto& transform = scene.get<Transform>(id);
 
             cameraData.position = transform.position;
 
@@ -77,18 +74,15 @@ RenderView RenderView::build(
         return renderView;
     }
 
-    const auto& meshStorage = scene.storage<Mesh>();
-    const auto& transformStorage = scene.storage<Transform>();
-
     // Gather drawables
     renderView.drawables.reserve(visibility.entities.size());
 
     // Iterate through entities and matrices in parallel (same order, cache-friendly)
     for (size_t i = 0; i < visibility.entities.size(); ++i) {
         EntityId id = visibility.entities[i];
-        if (!meshStorage.has(id)) continue;
+        if (!scene.has<Mesh>(id)) continue;
 
-        const auto& mesh = meshStorage.get(id);
+        const auto& mesh = scene.get<Mesh>(id);
 
         // Use cached model matrix from visibility (computed during culling)
         // Matrices are stored in same order as entities for cache-friendly access
@@ -104,14 +98,13 @@ RenderView RenderView::build(
     sortDrawables(renderView.drawables);
 
     // Gather lights (dense iteration, no holes)
-    const auto& lightStorage = scene.storage<Light>();
-    renderView.lights.reserve(lightStorage.count());
+    renderView.lights.reserve(scene.count<Light>());
 
-    lightStorage.forEach([&](EntityId id, const Light& light) {
+    scene.forEach<Light>([&](EntityId id, const Light& light) {
         if (!light.enabled) return;
-        if (!transformStorage.has(id)) return;
+        if (!scene.has<Transform>(id)) return;
 
-        const auto& transform = transformStorage.get(id);
+        const auto& transform = scene.get<Transform>(id);
 
         LightData lightData;
         lightData.type = light.type;

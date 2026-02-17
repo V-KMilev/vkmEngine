@@ -17,18 +17,10 @@ void AnimationManager::update(
     const Visibility& visibility,
     float deltaTime
 ) {
-    auto& animationStorage = scene.storage<Animation>();
-    auto& transformStorage = scene.storage<Transform>();
-
-    const size_t totalAnimations = animationStorage.size();
-
     // Update animation time for ALL animations (even culled ones)
     // This keeps animations synchronized even when entities go off-screen
-    for (EntityId id = 0; id < static_cast<EntityId>(totalAnimations); ++id) {
-        if (!animationStorage.has(id)) continue;
-
-        auto& animation = animationStorage.get(id);
-        if (!animation.playing) continue;
+    scene.forEach<Animation>([&](EntityId id, Animation& animation) {
+        if (!animation.playing) return;
 
         // Update animation time
         animation.time += deltaTime * animation.speed;
@@ -42,17 +34,17 @@ void AnimationManager::update(
                 animation.playing = false;
             }
         }
-    }
+    });
 
     // Apply animations only to visible entities
-    for (EntityId id : visibility.entities) {
-        if (!animationStorage.has(id)) continue;
-        if (!transformStorage.has(id)) continue;
+    for (const EntityId& id : visibility.entities) {
+        if (!scene.has<Animation>(id)) continue;
+        if (!scene.has<Transform>(id)) continue;
 
-        auto& animation = animationStorage.get(id);
+        auto& animation = scene.get<Animation>(id);
         if (!animation.playing) continue;
 
-        auto& transform = transformStorage.get(id);
+        auto& transform = scene.get<Transform>(id);
         applyAnimation(animation, transform);
     }
 }
@@ -72,4 +64,3 @@ void AnimationManager::applyAnimation(const Animation& animation, Transform& tra
 }
 
 } // namespace Engine
-

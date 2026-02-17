@@ -159,6 +159,91 @@ class Storage {
         }
 
     public:
+        /// @name External-key API (for entity-keyed component storage)
+        ///
+        /// These methods place elements at caller-chosen sparse slots rather than
+        /// using the internal free list. The sparse slot is owned externally (e.g.,
+        /// by an entity allocator). Do not mix with handle-based add()/remove().
+        /// @{
+
+        /**
+        * @brief Insert an element at a specific sparse slot.
+        * @param key Sparse slot index (must not be 0 or already alive).
+        * @param value Element to insert (moved or copied).
+        * @return Reference to the stored element.
+        */
+        T& addAt(uint32_t key, T && value)     { return addAtInternal(key, std::move(value)); }
+        T& addAt(uint32_t key, const T& value) { return addAtInternal(key, value); }
+
+        /**
+        * @brief Remove the element at a specific sparse slot.
+        * @param key Sparse slot index. Must be alive (asserts).
+        */
+        void removeAt(uint32_t key) {
+            VKM_ASSERT(hasAt(key), "Storage::removeAt called with invalid key");
+
+            uint32_t dataIdx = m_dataIndex[key];
+            uint32_t lastIdx = static_cast<uint32_t>(m_data.size() - 1);
+
+            if (dataIdx != lastIdx) {
+                if constexpr (std::is_trivially_copyable_v<T>) {
+                    std::memcpy(&m_data[dataIdx], &m_data[lastIdx], sizeof(T));
+                } else {
+                    m_data[dataIdx] = std::move(m_data[lastIdx]);
+                }
+
+                m_dataId[dataIdx]              = m_dataId[lastIdx];
+                m_dataIndex[m_dataId[dataIdx]] = dataIdx;
+            }
+
+            m_data.pop_back();
+            m_dataId.pop_back();
+
+            m_generation[key].setAlive(false);
+        }
+
+        /**
+        * @brief Test whether a sparse slot is alive (no generation check).
+        * @param key Sparse slot index.
+        * @return True if the slot exists and is alive.
+        */
+        bool hasAt(uint32_t key) const {
+            return key != 0
+                && key < m_generation.size()
+                && m_generation[key].alive();
+        }
+
+        /**
+        * @brief Access the element at a specific sparse slot (no generation check).
+        * @param key Sparse slot index. Must be alive (asserts).
+        * @return Reference to the stored element.
+        */
+        T&       getAt(uint32_t key)       { VKM_ASSERT(hasAt(key), "Storage::getAt called with invalid key"); return m_data[m_dataIndex[key]]; }
+        const T& getAt(uint32_t key) const { VKM_ASSERT(hasAt(key), "Storage::getAt called with invalid key"); return m_data[m_dataIndex[key]]; }
+
+        /**
+        * @brief Get the current generation counter for a sparse slot.
+        * @param sparseIdx Sparse slot index. Must be in bounds.
+        * @return The generation counter (bits 0-30 of the slot metadata).
+        */
+        uint32_t generationOf(uint32_t sparseIdx) const {
+            VKM_ASSERT(sparseIdx < m_generation.size(), "Storage::generationOf index out of bounds");
+            return m_generation[sparseIdx].generation();
+        }
+
+        /**
+        * @brief Get the sparse key for the element at a given dense array position.
+        * @param denseIndex Position in the packed data array (must be < size()).
+        * @return The sparse slot index.
+        */
+        uint32_t sparseKeyAt(uint32_t denseIndex) const {
+            VKM_ASSERT(denseIndex < m_data.size(), "Storage::sparseKeyAt index out of bounds");
+            return m_dataId[denseIndex];
+        }
+
+        /// @}
+
+    public:
         /**
         * @brief Pre-allocate memory for all internal arrays.
         * @param capacity Expected number of elements. Avoids reallocations during repeated add().
@@ -235,6 +320,32 @@ class Storage {
             m_dataIndex.push_back(0);
             m_generation.push_back({});
             return idx;
+        }
+
+        /// @brief Grow sparse arrays so that @p key is a valid index.
+        void ensureSparseCapacity(uint32_t key) {
+            while (key >= m_generation.size()) {
+                m_dataIndex.push_back(0);
+                m_generation.push_back({});
+            }
+        }
+
+        /// @brief Place an element at a specific sparse slot (external-key variant).
+        template<typename... Args>
+        T& addAtInternal(uint32_t key, Args&&... args) {
+            VKM_ASSERT(key != 0, "Storage::addAt slot 0 is reserved as null");
+            ensureSparseCapacity(key + 1);
+            VKM_ASSERT(!m_generation[key].alive(), "Storage::addAt slot already alive");
+
+            uint32_t dataIdx = static_cast<uint32_t>(m_data.size());
+
+            m_data.emplace_back(std::forward<Args>(args)...);
+            m_dataId.push_back(key);
+
+            m_dataIndex[key] = dataIdx;
+            m_generation[key].setAlive(true);
+
+            return m_data[dataIdx];
         }
 
     private:

@@ -36,7 +36,6 @@ add_library(EngineCore STATIC
     # ECS
     src/engine/ecs/scene.h
     src/engine/ecs/entity.h
-    src/engine/ecs/component_storage.h
     src/engine/ecs/components/transform.h
     src/engine/ecs/components/camera.h
     src/engine/ecs/components/mesh.h

@@ -13,16 +13,14 @@
 
 namespace Engine {
 
-CameraController::CameraController() : m_cameraEntity(Entity{0}) {}
+CameraController::CameraController() = default;
 
 void CameraController::update(Scene& scene, float deltaTime) {
-    auto& transformStorage = scene.storage<Transform>();
-
-    if (!transformStorage.has(m_cameraEntity.getID())) {
+    if (!scene.has<Transform>(m_cameraEntity.getID())) {
         return;
     }
 
-    auto& transform = transformStorage.get(m_cameraEntity.getID());
+    auto& transform = scene.get<Transform>(m_cameraEntity.getID());
 
     updateFlyMode(transform.position, transform.rotation, deltaTime);
 }

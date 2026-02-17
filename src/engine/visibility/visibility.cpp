@@ -26,16 +26,13 @@ bool computeViewContext(
     glm::vec3& cameraPosition,
     const Scene& scene
 ) {
-    const auto& cameraStorage     = scene.storage<Camera>();
-    const auto& transformStorage  = scene.storage<Transform>();
-
     bool found = false;
-    cameraStorage.forEach([&](EntityId id, const Camera& camera) {
+    scene.forEach<Camera>([&](EntityId id, const Camera& camera) {
         if (found) return;
         if (!camera.active) return;
-        if (!transformStorage.has(id)) return;
+        if (!scene.has<Transform>(id)) return;
 
-        const auto& transform = transformStorage.get(id);
+        const auto& transform = scene.get<Transform>(id);
 
         projection     = Camera::computeProjection(camera);
         view           = Transform::computeView(transform);
@@ -67,9 +64,6 @@ Visibility buildVisibility(
 
     const glm::mat4 viewProjection = projection * view;
 
-    auto& meshStorage            = scene.storage<Mesh>();
-    const auto& transformStorage = scene.storage<Transform>();
-
     VisibilityContext context{
         .frustum        = extractFrustum(viewProjection),
         .cameraPosition = cameraPosition,
@@ -82,15 +76,15 @@ Visibility buildVisibility(
         .maxDistance    = 500.0f
     };
 
-    result.entities.reserve(meshStorage.count());
-    result.modelMatrices.reserve(meshStorage.count());
+    result.entities.reserve(scene.count<Mesh>());
+    result.modelMatrices.reserve(scene.count<Mesh>());
 
     // Dense iteration: visits only entities with Mesh components (no holes)
-    meshStorage.forEach([&](EntityId id, Mesh& mesh) {
+    scene.forEach<Mesh>([&](EntityId id, Mesh& mesh) {
         if (!mesh.visible) return;
-        if (!transformStorage.has(id)) return;
+        if (!scene.has<Transform>(id)) return;
 
-        const auto& transform = transformStorage.get(id);
+        const auto& transform = scene.get<Transform>(id);
         const auto& meshAsset = resources.get(mesh.mesh);
 
         if (!hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) return;
