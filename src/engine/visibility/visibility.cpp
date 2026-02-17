@@ -20,11 +20,6 @@ namespace Engine {
 
 namespace {
 
-/**
- * @brief Type alias for a pair of an entity ID and a model matrix.
- */
-using VisiblePair = std::pair<EntityId, glm::mat4>;
-
 bool computeViewContext(
     glm::mat4& view,
     glm::mat4& projection,
@@ -34,23 +29,21 @@ bool computeViewContext(
     const auto& cameraStorage     = scene.storage<Camera>();
     const auto& transformStorage  = scene.storage<Transform>();
 
-    for (EntityId id = 0; id < cameraStorage.size(); ++id) {
-        if (!cameraStorage.has(id)) continue;
-
-        const auto& camera = cameraStorage.get(id);
-        if (!camera.active) continue;
-
-        if (!transformStorage.has(id)) continue;
+    bool found = false;
+    cameraStorage.forEach([&](EntityId id, const Camera& camera) {
+        if (found) return;
+        if (!camera.active) return;
+        if (!transformStorage.has(id)) return;
 
         const auto& transform = transformStorage.get(id);
 
         projection     = Camera::computeProjection(camera);
         view           = Transform::computeView(transform);
         cameraPosition = transform.position;
-        return true;
-    }
+        found = true;
+    });
 
-    return false;
+    return found;
 }
 
 } // anonymous
@@ -89,19 +82,18 @@ Visibility buildVisibility(
         .maxDistance    = 500.0f
     };
 
-    const size_t total = meshStorage.size();
+    result.entities.reserve(meshStorage.count());
+    result.modelMatrices.reserve(meshStorage.count());
 
-    for (EntityId id = 0; id < total; ++id) {
-        if (!meshStorage.has(id)) continue;
-        if (!transformStorage.has(id)) continue;
-
-        Mesh& mesh = meshStorage.get(id);
-        if (!mesh.visible) continue;
+    // Dense iteration: visits only entities with Mesh components (no holes)
+    meshStorage.forEach([&](EntityId id, Mesh& mesh) {
+        if (!mesh.visible) return;
+        if (!transformStorage.has(id)) return;
 
         const auto& transform = transformStorage.get(id);
         const auto& meshAsset = resources.get(mesh.mesh);
 
-        if (!hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) continue;
+        if (!hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) return;
 
         const glm::mat4 modelMatrix = Transform::computeModelMatrix(transform);
 
@@ -113,13 +105,13 @@ Visibility buildVisibility(
             mesh.boundsMax
         );
 
-        if (!FrustumCuller::isVisible(mesh, context)) continue;
-        if (!DistanceCuller::isVisible(mesh, context)) continue;
-        if (!ScreenSizeCuller::isVisible(mesh, context)) continue;
+        if (!FrustumCuller::isVisible(mesh, context)) return;
+        if (!DistanceCuller::isVisible(mesh, context)) return;
+        if (!ScreenSizeCuller::isVisible(mesh, context)) return;
 
         result.entities.push_back(id);
         result.modelMatrices.push_back(modelMatrix);
-    }
+    });
 
     return result;
 }

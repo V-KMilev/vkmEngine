@@ -80,7 +80,7 @@ void GLMaterial::update(const MaterialAsset& material) {
 
     for (const auto& mapping : g_textureMappings) {
         const TextureHandle& handle = material.*mapping.handlePtr;
-        const bool hasTexture = (handle.value != 0);
+        const bool hasTexture = bool(handle);
 
         // Set bit flag if texture is present
         if (hasTexture) {

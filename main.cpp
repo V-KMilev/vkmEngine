@@ -94,8 +94,8 @@ static void generateBenchmarkScene(
     }
 
     // Load materials
-    Engine::MaterialHandle material1 = Engine::loadMaterialFromFolder("assets/PavingStones118_2K-JPG", resources);
-    Engine::MaterialHandle material2 = Engine::loadMaterialFromFolder("assets/PavingStones115A_2K-JPG", resources);
+    Engine::MaterialHandle material1 = Engine::loadMaterialFromFolder("../assets/PavingStones118_2K-JPG", resources);
+    Engine::MaterialHandle material2 = Engine::loadMaterialFromFolder("../assets/PavingStones115A_2K-JPG", resources);
     std::vector<Engine::MaterialHandle> materials = {material1, material2};
 
     // Camera
@@ -403,10 +403,10 @@ int main() {
         Engine::AnimationManager animationManager;
         Engine::RenderManager renderManager;
 
-        Core::Shader pbr("shaders/pbr");
-        Core::Shader aabbDebug("shaders/aabb_debug");
-        Core::Shader gridShader("shaders/grid");
-        Core::Shader gizmoShader("shaders/gizmo");
+        Core::Shader pbr("../shaders/pbr");
+        Core::Shader aabbDebug("../shaders/aabb_debug");
+        Core::Shader gridShader("../shaders/grid");
+        Core::Shader gizmoShader("../shaders/gizmo");
 
         renderManager.setBackend(std::make_unique<Engine::GLBackend>());
         renderManager.addPass(std::make_unique<Engine::GLForwardPass>(pbr));

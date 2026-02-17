@@ -81,8 +81,8 @@ class Storage {
         Storage() :
             m_generation({GenerationIndex{}}),
             m_dataIndex({0}),
-            m_dataId({}),
-            m_data({}),
+            m_dataId(),
+            m_data(),
             m_freeHead(0) {}
 
         ~Storage() = default;
@@ -187,6 +187,17 @@ class Storage {
 
         T*       data()       { return m_data.data(); } ///< Raw pointer to the packed dense array.
         const T* data() const { return m_data.data(); } ///< @copydoc data()
+
+        /**
+        * @brief Return the StorageIndex (handle) for the element at a given dense array position.
+        * @param denseIndex Position in the packed data array (must be < size()).
+        * @return The StorageIndex that maps to this element.
+        */
+        StorageIndex keyAt(uint32_t denseIndex) const {
+            VKM_ASSERT(denseIndex < m_data.size(), "Storage::keyAt index out of bounds");
+            uint32_t sparseIdx = m_dataId[denseIndex];
+            return StorageIndex{sparseIdx, m_generation[sparseIdx].generation()};
+        }
 
         /// @name Range-based for loop support (iterates the packed dense array, no holes).
         /// @{

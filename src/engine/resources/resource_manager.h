@@ -5,7 +5,8 @@
 
 #include "l_assert.h"
 
-#include "storage.h"
+#include "my_storage.h"
+#include "resource.h"
 
 #include "mesh_asset.h"
 #include "texture_asset.h"
@@ -15,13 +16,13 @@ namespace Engine {
 
 /**
  * @brief Manages all resource assets (meshes, textures, materials) using typed handles and type-safe storage.
- * 
+ *
  * The ResourceManager provides a unified interface to add, fetch, edit, commit (version bump), and
- * remove resources of different types. Internally, it dispatches these operations to type-specific storage
- * classes, using typed ResourceHandle types to ensure correctness and safety.
- * 
+ * remove resources of different types. Internally, it dispatches these operations to type-specific
+ * Engine::Storage instances, using typed Handle types to ensure correctness and safety.
+ *
  * Supported resource types are MeshAsset, TextureAsset, and MaterialAsset, with their corresponding handle types.
- * 
+ *
  * This class is non-copyable and non-movable.
  */
 class ResourceManager {
@@ -38,81 +39,81 @@ class ResourceManager {
     public:
         /**
          * @brief Add a new resource (mesh, texture, or material) to the manager.
-         * 
+         *
          * @tparam ResourceType The resource type (MeshAsset, TextureAsset, MaterialAsset).
          * @param resource The resource instance to add (will be moved).
          * @return The handle for the newly added resource.
          */
         template<typename ResourceType>
-        decltype(auto) add(ResourceType && resource) {
-            using StorageType = std::remove_cv_t<std::remove_reference_t<ResourceType>>;
-            return getStorage<StorageType>().add(std::forward<ResourceType>(resource));
+        auto add(ResourceType && resource) {
+            using T = std::remove_cv_t<std::remove_reference_t<ResourceType>>;
+
+            StorageIndex key = getStorage<T>().add(std::forward<ResourceType>(resource));
+            return Handle<T>{key};
         }
 
         /**
          * @brief Remove a resource by handle.
-         * 
-         * @tparam handleType The handle type associated with the resource.
+         *
+         * @tparam HandleType The handle type associated with the resource.
          * @param handle Handle referencing the resource to remove.
          */
-         template<typename handleType>
-         decltype(auto) remove(const handleType& handle) {
-             using StorageType = typename handleType::resource_t;
-             return getStorage<StorageType>().remove(handle);
+         template<typename HandleType>
+         void remove(const HandleType& handle) {
+             using T = typename HandleType::resource_t;
+             getStorage<T>().remove(handle.key);
          }
 
         /**
          * @brief Get const access to a resource by handle.
-         * 
-         * @tparam handleType The handle type associated with the resource.
+         *
+         * @tparam HandleType The handle type associated with the resource.
          * @param handle Handle used to look up the resource.
          * @return const reference to the resource.
          */
-        template<typename handleType>
-        decltype(auto) get(const handleType& handle) const {
-            using StorageType = typename handleType::resource_t;
-            return getStorage<StorageType>().get(handle);
+        template<typename HandleType>
+        const auto& get(const HandleType& handle) const {
+            using T = typename HandleType::resource_t;
+            return getStorage<T>().get(handle.key);
         }
 
         /**
          * @brief Get mutable access to a resource for editing by handle.
-         * 
-         * @tparam handleType The handle type associated with the resource.
+         *
+         * @tparam HandleType The handle type associated with the resource.
          * @param handle Handle used to look up the resource.
          * @return mutable reference to the resource.
          */
-        template<typename handleType>
-        decltype(auto) edit(const handleType& handle) {
-            using StorageType = typename handleType::resource_t;
-            return getStorage<StorageType>().edit(handle);
+        template<typename HandleType>
+        auto& edit(const HandleType& handle) {
+            using T = typename HandleType::resource_t;
+            return getStorage<T>().get(handle.key);
         }
 
         /**
          * @brief Commit changes to a resource (increments the version).
-         * 
-         * @tparam handleType The handle type associated with the resource.
+         *
+         * @tparam HandleType The handle type associated with the resource.
          * @param handle Handle referencing the resource to commit.
          */
-        template<typename handleType>
-        void commit(const handleType& handle) {
-            using StorageType = typename handleType::resource_t;
-            getStorage<StorageType>().commit(handle);
+        template<typename HandleType>
+        void commit(const HandleType& handle) {
+            using T = typename HandleType::resource_t;
+            static_assert(std::is_base_of_v<Resource, T>, "Resource type must inherit from Resource to use commit().");
+            ++getStorage<T>().get(handle.key).version;
         }
 
     private:
         /**
          * @brief Get mutable access to the appropriate storage for a resource type.
-         * 
-         * @tparam ResourceType The resource type.
-         * @return Reference to the underlying Storage for the resource type.
          */
-        template<typename ResourceType>
+        template<typename T>
         auto& getStorage() {
-            if constexpr (std::is_same_v<ResourceType, MeshAsset>) {
+            if constexpr (std::is_same_v<T, MeshAsset>) {
                 return m_meshStorage;
-            } else if constexpr (std::is_same_v<ResourceType, TextureAsset>) {
+            } else if constexpr (std::is_same_v<T, TextureAsset>) {
                 return m_textureStorage;
-            } else if constexpr (std::is_same_v<ResourceType, MaterialAsset>) {
+            } else if constexpr (std::is_same_v<T, MaterialAsset>) {
                 return m_materialStorage;
             } else {
                 VKM_ASSERT(false, "Unsupported asset type");
@@ -121,17 +122,14 @@ class ResourceManager {
 
         /**
          * @brief Get const access to the appropriate storage for a resource type.
-         * 
-         * @tparam ResourceType The resource type.
-         * @return Const reference to the underlying Storage for the resource type.
          */
-        template<typename ResourceType>
+        template<typename T>
         const auto& getStorage() const {
-            if constexpr (std::is_same_v<ResourceType, MeshAsset>) {
+            if constexpr (std::is_same_v<T, MeshAsset>) {
                 return m_meshStorage;
-            } else if constexpr (std::is_same_v<ResourceType, TextureAsset>) {
+            } else if constexpr (std::is_same_v<T, TextureAsset>) {
                 return m_textureStorage;
-            } else if constexpr (std::is_same_v<ResourceType, MaterialAsset>) {
+            } else if constexpr (std::is_same_v<T, MaterialAsset>) {
                 return m_materialStorage;
             } else {
                 VKM_ASSERT(false, "Unsupported asset type");
@@ -139,9 +137,9 @@ class ResourceManager {
         }
 
     private:
-        Storage<MeshAsset,     MeshHandle> m_meshStorage;
-        Storage<TextureAsset,  TextureHandle> m_textureStorage;
-        Storage<MaterialAsset, MaterialHandle> m_materialStorage;
+        Storage<MeshAsset>     m_meshStorage;
+        Storage<TextureAsset>  m_textureStorage;
+        Storage<MaterialAsset> m_materialStorage;
 };
 
 } // namespace Engine

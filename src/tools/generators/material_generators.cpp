@@ -25,7 +25,7 @@ MaterialHandle generateDefaultMaterial(ResourceManager& resourceManager) {
     material.emissionTexture = generateBlackTexture(resourceManager);
 
     auto handle = resourceManager.add(std::move(material));
-    LOG_TRACE("Generated default material (handle: %u)", handle.value);
+    LOG_TRACE("Generated default material (handle: %u)", handle.id());
 
     return handle;
 }

@@ -29,10 +29,10 @@ namespace {
         std::sort(drawables.begin(), drawables.end(),
             [](const DrawableData& a, const DrawableData& b) {
                 // Primary: material, Secondary: mesh
-                if (a.material.value != b.material.value) {
-                    return a.material.value < b.material.value;
+                if (a.material.id() != b.material.id()) {
+                    return a.material.id() < b.material.id();
                 }
-                return a.mesh.value < b.mesh.value;
+                return a.mesh.id() < b.mesh.id();
             });
     }
 
@@ -44,27 +44,24 @@ namespace {
         const auto& cameraStorage = scene.storage<Camera>();
         const auto& transformStorage = scene.storage<Transform>();
 
-        for (EntityId id = 0; id < cameraStorage.size(); ++id) {
-            if (!cameraStorage.has(id)) continue;
-
-            const auto& camera = cameraStorage.get(id);
-            if (!camera.active) continue;
-            if (!transformStorage.has(id)) continue;
+        bool found = false;
+        cameraStorage.forEach([&](EntityId id, const Camera& camera) {
+            if (found) return;
+            if (!camera.active) return;
+            if (!transformStorage.has(id)) return;
 
             const auto& transform = transformStorage.get(id);
 
             cameraData.position = transform.position;
-            const glm::vec3 forward = Transform::computeForward(transform.rotation);
-            const glm::vec3 up = Transform::computeUp(transform.rotation);
 
             cameraData.view = Transform::computeView(transform);
             cameraData.projection = Camera::computeProjection(camera);
             cameraData.viewProjection = cameraData.projection * cameraData.view;
 
-            return true;
-        }
+            found = true;
+        });
 
-        return false;
+        return found;
     }
 }
 
@@ -106,22 +103,16 @@ RenderView RenderView::build(
     // Sort drawables by for optimal batching
     sortDrawables(renderView.drawables);
 
-    // Gather lights
+    // Gather lights (dense iteration, no holes)
     const auto& lightStorage = scene.storage<Light>();
-    renderView.lights.reserve(lightStorage.size());
+    renderView.lights.reserve(lightStorage.count());
 
-    for (EntityId id = 0; id < lightStorage.size(); ++id) {
-        if (!lightStorage.has(id)) continue;
-
-        const auto& light = lightStorage.get(id);
-
-        if (!light.enabled) continue;
-
-        if (!transformStorage.has(id)) continue;
+    lightStorage.forEach([&](EntityId id, const Light& light) {
+        if (!light.enabled) return;
+        if (!transformStorage.has(id)) return;
 
         const auto& transform = transformStorage.get(id);
 
-        // Add light to render view (copy component data + transform)
         LightData lightData;
         lightData.type = light.type;
         lightData.color = light.color;
@@ -134,7 +125,7 @@ RenderView RenderView::build(
         lightData.rotation = transform.rotation;
 
         renderView.lights.emplace_back(lightData);
-    }
+    });
 
     return renderView;
 }

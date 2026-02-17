@@ -1,15 +1,15 @@
 #pragma once
 
-#include <cstdint>
+#include "my_storage.h"
 
 namespace Engine {
 
 /**
  * @brief Opaque, type-safe handle for resources, distinguished by ResourceType.
- * 
- * The handle holds a simple uint32_t ID. Value 0 always means "invalid".
- * Handles can be compared and validated but do not expose resource internals.
- * 
+ *
+ * Wraps a StorageIndex (sparse slot index + generation counter). A default-constructed
+ * handle is invalid (null sentinel). Handles detect stale access via generation matching.
+ *
  * @tparam ResourceType The resource type (e.g., MeshAsset, TextureAsset, MaterialAsset).
  */
 template <typename ResourceType>
@@ -17,27 +17,33 @@ struct Handle {
     public:
         /**
         * @brief Check if the handle is valid.
-        * @return True if the handle is valid (nonzero), false otherwise.
+        * @return True if the handle references a non-null slot.
         */
-        constexpr explicit operator bool() const noexcept { return value != 0; }
+        constexpr explicit operator bool() const noexcept { return bool(key); }
 
         /**
         * @brief Check if the handle is equal to another handle.
         * @param other The other handle to compare.
-        * @return True if the handles have the same value, otherwise false.
+        * @return True if both index and generation match.
         */
-        constexpr bool operator==(const Handle& other) const noexcept { return value == other.value; }
+        constexpr bool operator==(const Handle& other) const noexcept { return key == other.key; }
 
         /**
         * @brief Check if the handle is not equal to another handle.
         * @param other The other handle to compare.
-        * @return True if the handle values are different, otherwise false.
+        * @return True if index or generation differ.
         */
-        constexpr bool operator!=(const Handle& other) const noexcept { return value != other.value; }
+        constexpr bool operator!=(const Handle& other) const noexcept { return key != other.key; }
+
+        /**
+        * @brief Get the sparse slot index for use as map key, sorting, or logging.
+        * @return The uint32_t slot index (0 = invalid).
+        */
+        constexpr uint32_t id() const noexcept { return key.index; }
 
     public:
         using resource_t = ResourceType;
-        uint32_t value = 0; ///< 0 = invalid handle, >0 = valid handle
+        StorageIndex key = {};
 };
 
 } // namespace Engine

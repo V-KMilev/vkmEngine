@@ -43,7 +43,6 @@ add_library(EngineCore STATIC
     src/engine/ecs/components/animation.h
     # Resources
     src/engine/resources/resource_manager.h
-    src/engine/resources/storage.h
     src/engine/resources/resource.h
     src/engine/resources/resource_handle.h
     src/engine/resources/assets/mesh_asset.h
