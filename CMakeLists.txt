@@ -97,6 +97,7 @@ add_library(EngineCore STATIC
 
 target_include_directories(EngineCore PUBLIC
     src/engine/core
+    src/engine/core/memory
     src/engine/ecs
     src/engine/ecs/components
     src/engine/resources

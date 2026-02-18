@@ -5,7 +5,7 @@
 
 #include "l_assert.h"
 
-#include "my_storage.h"
+#include "storage.h"
 #include "resource.h"
 
 #include "mesh_asset.h"

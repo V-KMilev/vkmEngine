@@ -1,7 +1,8 @@
 #pragma once
 
 #include "entity.h"
-#include "my_storage.h"
+#include "slot_allocator.h"
+#include "sparse_set.h"
 
 #include "transform.h"
 #include "mesh.h"
@@ -16,7 +17,8 @@ namespace Engine {
  *
  * Scene acts as a central registry for all entities and a fixed set of component types,
  * providing efficient creation, component assignment, lookup, and removal for entities.
- * Component data is stored directly in Storage<T> slot maps, keyed by entity sparse index.
+ * Entity lifetime is managed by a SlotAllocator (generation-safe handles with recycling).
+ * Component data is stored in SparseSet<T> containers, keyed by entity sparse index.
  *
  * Currently, supported component types are:
  *   - Transform
@@ -42,7 +44,7 @@ class Scene {
          * @return The created Entity.
          */
         Entity createEntity() {
-            StorageIndex id = m_entityAllocator.add(uint8_t{1});
+            StorageIndex id = m_entityAllocator.allocate();
             return Entity{id};
         }
 
@@ -57,7 +59,7 @@ class Scene {
             removeAt<Camera>(id.index);
             removeAt<Animation>(id.index);
             removeAt<Light>(id.index);
-            m_entityAllocator.remove(id);
+            m_entityAllocator.free(id);
         }
 
         /**
@@ -69,7 +71,7 @@ class Scene {
          */
         template<typename T>
         T& add(Entity entity, T && component) {
-            return getStorage<T>().addAt(entity.getID().index, std::move(component));
+            return getStorage<T>().add(entity.getID().index, std::move(component));
         }
 
         /**
@@ -83,7 +85,7 @@ class Scene {
 
         template<typename T>
         bool has(EntityId entity) const {
-            return getStorage<T>().hasAt(entity.index);
+            return getStorage<T>().has(entity.index);
         }
 
         /**
@@ -97,7 +99,7 @@ class Scene {
 
         template<typename T>
         T& get(EntityId entity) {
-            return getStorage<T>().getAt(entity.index);
+            return getStorage<T>().get(entity.index);
         }
 
         /**
@@ -111,7 +113,7 @@ class Scene {
 
         template<typename T>
         const T& get(EntityId entity) const {
-            return getStorage<T>().getAt(entity.index);
+            return getStorage<T>().get(entity.index);
         }
 
         /**
@@ -142,36 +144,30 @@ class Scene {
          */
         template<typename T, typename Fn>
         void forEach(Fn&& fn) {
-            auto& store = getStorage<T>();
-            T* dense = store.data();
-            for (uint32_t i = 0; i < store.size(); ++i) {
-                uint32_t sparseIdx = store.sparseKeyAt(i);
-                EntityId eid{sparseIdx, m_entityAllocator.generationOf(sparseIdx)};
-                fn(eid, dense[i]);
-            }
+            getStorage<T>().forEach([&](uint32_t entityIdx, T& component) {
+                EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
+                fn(eid, component);
+            });
         }
 
         template<typename T, typename Fn>
         void forEach(Fn&& fn) const {
-            const auto& store = getStorage<T>();
-            const T* dense = store.data();
-            for (uint32_t i = 0; i < store.size(); ++i) {
-                uint32_t sparseIdx = store.sparseKeyAt(i);
-                EntityId eid{sparseIdx, m_entityAllocator.generationOf(sparseIdx)};
-                fn(eid, dense[i]);
-            }
+            getStorage<T>().forEach([&](uint32_t entityIdx, const T& component) {
+                EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
+                fn(eid, component);
+            });
         }
 
     private:
         template<typename T>
         void removeAt(uint32_t index) {
             auto& store = getStorage<T>();
-            if (store.hasAt(index))
-                store.removeAt(index);
+            if (store.has(index))
+                store.remove(index);
         }
 
         template<typename T>
-        Storage<T>& getStorage() {
+        SparseSet<T>& getStorage() {
             if      constexpr (std::is_same_v<T, Transform>) return m_transforms;
             else if constexpr (std::is_same_v<T, Mesh>)      return m_meshes;
             else if constexpr (std::is_same_v<T, Camera>)    return m_cameras;
@@ -181,7 +177,7 @@ class Scene {
         }
 
         template<typename T>
-        const Storage<T>& getStorage() const {
+        const SparseSet<T>& getStorage() const {
             if      constexpr (std::is_same_v<T, Transform>) return m_transforms;
             else if constexpr (std::is_same_v<T, Mesh>)      return m_meshes;
             else if constexpr (std::is_same_v<T, Camera>)    return m_cameras;
@@ -191,13 +187,13 @@ class Scene {
         }
 
     private:
-        Storage<uint8_t> m_entityAllocator;
+        SlotAllocator m_entityAllocator;
 
-        Storage<Transform> m_transforms;
-        Storage<Mesh>      m_meshes;
-        Storage<Camera>    m_cameras;
-        Storage<Animation> m_animations;
-        Storage<Light>     m_lights;
+        SparseSet<Transform> m_transforms;
+        SparseSet<Mesh>      m_meshes;
+        SparseSet<Camera>    m_cameras;
+        SparseSet<Animation> m_animations;
+        SparseSet<Light>     m_lights;
 };
 
 } // namespace Engine
