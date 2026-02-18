@@ -26,6 +26,7 @@
 #include "input_handle.h"
 #include "statistics.h"
 #include "scene.h"
+#include "components.h"
 #include "visibility.h"
 
 // Engine Rendering

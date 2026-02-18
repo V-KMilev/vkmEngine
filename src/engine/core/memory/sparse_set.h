@@ -10,6 +10,18 @@
 namespace Engine {
 
 /**
+* @class ISparseSet
+* @brief Type-erased interface for SparseSet, enabling heterogeneous storage in registries.
+*/
+class ISparseSet {
+    public:
+        virtual ~ISparseSet() = default;
+        virtual void remove(uint32_t key) = 0;
+        virtual bool has(uint32_t key) const = 0;
+        virtual size_t size() const = 0;
+};
+
+/**
 * @class SparseSet
 * @brief Dense-packed storage indexed by external uint32_t keys.
 *
@@ -25,10 +37,10 @@ namespace Engine {
 * @tparam T Element type to store.
 */
 template<typename T>
-class SparseSet {
+class SparseSet : public ISparseSet {
     public:
         SparseSet() = default;
-        ~SparseSet() = default;
+        ~SparseSet() override = default;
 
         SparseSet(const SparseSet& other) = delete;
         SparseSet& operator=(const SparseSet& other) = delete;
@@ -50,7 +62,7 @@ class SparseSet {
         * @brief Remove the element at the given key via swap-and-pop.
         * @param key External sparse key. Must be present (asserts).
         */
-        void remove(uint32_t key) {
+        void remove(uint32_t key) override {
             VKM_ASSERT(has(key), "SparseSet::remove called with invalid key");
 
             uint32_t dataIdx = m_dataIndex[key];
@@ -78,7 +90,7 @@ class SparseSet {
         * @param key External sparse key.
         * @return True if the key maps to a live element.
         */
-        bool has(uint32_t key) const {
+        bool has(uint32_t key) const override {
             return key < m_dataIndex.size() && m_dataIndex[key] != EMPTY;
         }
 
@@ -122,8 +134,8 @@ class SparseSet {
             m_data.reserve(capacity);
         }
 
-        size_t size() const { return m_data.size(); }  ///< Number of live elements.
-        bool empty()  const { return m_data.empty(); } ///< True if size() == 0.
+        size_t size() const override { return m_data.size(); }  ///< Number of live elements.
+        bool empty()  const          { return m_data.empty(); } ///< True if size() == 0.
 
         T*       data()       { return m_data.data(); } ///< Raw pointer to the packed dense array.
         const T* data() const { return m_data.data(); } ///< @copydoc data()

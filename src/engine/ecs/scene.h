@@ -1,31 +1,24 @@
 #pragma once
 
+#include <memory>
+#include <tuple>
+#include <vector>
+
 #include "entity.h"
 #include "slot_allocator.h"
 #include "sparse_set.h"
-
-#include "transform.h"
-#include "mesh.h"
-#include "camera.h"
-#include "animation.h"
-#include "light.h"
+#include "types.h"
 
 namespace Engine {
 
 /**
- * @brief The Scene class provides management of entities and their components within the ECS architecture.
+ * @brief Central registry managing entities and an open set of component types.
  *
- * Scene acts as a central registry for all entities and a fixed set of component types,
- * providing efficient creation, component assignment, lookup, and removal for entities.
- * Entity lifetime is managed by a SlotAllocator (generation-safe handles with recycling).
- * Component data is stored in SparseSet<T> containers, keyed by entity sparse index.
- *
- * Currently, supported component types are:
- *   - Transform
- *   - Mesh
- *   - Camera
- *   - Animation
- *   - Light
+ * Scene provides efficient creation, component assignment, lookup, and removal
+ * for entities. Entity lifetime is managed by a SlotAllocator (generation-safe
+ * handles with recycling). Component data is stored in type-erased SparseSet<T>
+ * containers that are created on first use — any type can be a component without
+ * modifying Scene.
  */
 class Scene {
     public:
@@ -54,24 +47,24 @@ class Scene {
          */
         void destroyEntity(Entity entity) {
             EntityId id = entity.getID();
-            removeAt<Transform>(id.index);
-            removeAt<Mesh>(id.index);
-            removeAt<Camera>(id.index);
-            removeAt<Animation>(id.index);
-            removeAt<Light>(id.index);
+            for (auto& set : m_components) {
+                if (set && set->has(id.index))
+                    set->remove(id.index);
+            }
             m_entityAllocator.free(id);
         }
 
         /**
          * @brief Add a component to an entity.
-         * @tparam T Component type (must be a supported type).
+         * @tparam T Component type (any type; storage is created on first use).
          * @param entity The entity to add the component to.
-         * @param component The component instance to add (moves in).
+         * @param component The component instance to add.
          * @return Reference to the added component in storage.
          */
         template<typename T>
-        T& add(Entity entity, T && component) {
-            return getStorage<T>().add(entity.getID().index, std::move(component));
+        auto& add(Entity entity, T && component) {
+            using U = std::remove_cv_t<std::remove_reference_t<T>>;
+            return getStorage<U>().add(entity.getID().index, std::forward<T>(component));
         }
 
         /**
@@ -85,7 +78,8 @@ class Scene {
 
         template<typename T>
         bool has(EntityId entity) const {
-            return getStorage<T>().has(entity.index);
+            auto* store = findStorage<T>();
+            return store && store->has(entity.index);
         }
 
         /**
@@ -113,7 +107,9 @@ class Scene {
 
         template<typename T>
         const T& get(EntityId entity) const {
-            return getStorage<T>().get(entity.index);
+            auto* store = findStorage<T>();
+            VKM_ASSERT(store, "Scene::get called for unregistered component type");
+            return store->get(entity.index);
         }
 
         /**
@@ -123,7 +119,9 @@ class Scene {
          */
         template<typename T>
         void remove(Entity entity) {
-            removeAt<T>(entity.getID().index);
+            auto* store = findStorage<T>();
+            if (store && store->has(entity.getID().index))
+                store->remove(entity.getID().index);
         }
 
         /**
@@ -131,69 +129,97 @@ class Scene {
          * @tparam T Component type.
          */
         template<typename T>
-        size_t count() const { return getStorage<T>().size(); }
-
-        /**
-         * @brief Iterate all live components of type T densely (no holes).
-         *
-         * Calls fn(EntityId, T&) for each live component in packed order.
-         * EntityIds are reconstructed with the correct entity generation.
-         *
-         * @tparam T Component type.
-         * @param fn Callable with signature void(EntityId, T&).
-         */
-        template<typename T, typename Fn>
-        void forEach(Fn&& fn) {
-            getStorage<T>().forEach([&](uint32_t entityIdx, T& component) {
-                EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
-                fn(eid, component);
-            });
+        size_t count() const {
+            auto* store = findStorage<T>();
+            return store ? store->size() : 0;
         }
 
-        template<typename T, typename Fn>
+        /**
+         * @brief Iterate all live components densely (no holes).
+         *
+         * With a single type, calls fn(EntityId, First&) for each live component.
+         * With multiple types, iterates First and yields only entities that also
+         * have all Rest types. Put the rarest component type first.
+         *
+         * @tparam First Primary component type (iterated).
+         * @tparam Rest  Additional required component types (checked per entity).
+         * @param fn Callable with signature void(EntityId, First&, Rest&...).
+         */
+        template<typename First, typename... Rest, typename Fn>
+        void forEach(Fn&& fn) {
+            auto& firstStorage = getStorage<First>();
+
+            if constexpr (sizeof...(Rest) == 0) {
+                firstStorage.forEach([&](uint32_t entityIdx, First& first) {
+                    EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
+                    fn(eid, first);
+                });
+            } else {
+                auto restStorages = std::make_tuple(&getStorage<Rest>()...);
+
+                firstStorage.forEach([&](uint32_t entityIdx, First& first) {
+                    if (!(std::get<SparseSet<Rest>*>(restStorages)->has(entityIdx) && ...)) return;
+
+                    EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
+                    fn(eid, first, std::get<SparseSet<Rest>*>(restStorages)->get(entityIdx)...);
+                });
+            }
+        }
+
+        template<typename First, typename... Rest, typename Fn>
         void forEach(Fn&& fn) const {
-            getStorage<T>().forEach([&](uint32_t entityIdx, const T& component) {
-                EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
-                fn(eid, component);
-            });
+            auto* firstStorage = findStorage<First>();
+            if (!firstStorage) return;
+
+            if constexpr (sizeof...(Rest) == 0) {
+                firstStorage->forEach([&](uint32_t entityIdx, const First& first) {
+                    EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
+                    fn(eid, first);
+                });
+            } else {
+                auto restStorages = std::make_tuple(findStorage<Rest>()...);
+                if (!(std::get<const SparseSet<Rest>*>(restStorages) && ...)) return;
+
+                firstStorage->forEach([&](uint32_t entityIdx, const First& first) {
+                    if (!(std::get<const SparseSet<Rest>*>(restStorages)->has(entityIdx) && ...)) return;
+
+                    EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
+                    fn(eid, first, std::get<const SparseSet<Rest>*>(restStorages)->get(entityIdx)...);
+                });
+            }
         }
 
     private:
-        template<typename T>
-        void removeAt(uint32_t index) {
-            auto& store = getStorage<T>();
-            if (store.has(index))
-                store.remove(index);
-        }
-
+        /// @brief Get or create the typed SparseSet for component type T.
         template<typename T>
         SparseSet<T>& getStorage() {
-            if      constexpr (std::is_same_v<T, Transform>) return m_transforms;
-            else if constexpr (std::is_same_v<T, Mesh>)      return m_meshes;
-            else if constexpr (std::is_same_v<T, Camera>)    return m_cameras;
-            else if constexpr (std::is_same_v<T, Animation>) return m_animations;
-            else if constexpr (std::is_same_v<T, Light>)     return m_lights;
-            else                                             VKM_ASSERT(false, "Component type T is not supported. Supported types: Transform, Mesh, Camera, Animation, Light");
+            TypeId id = typeId<T>();
+            if (id >= m_components.size())
+                m_components.resize(id + 1);
+            auto& ptr = m_components[id];
+            if (!ptr) ptr = std::make_unique<SparseSet<T>>();
+            return static_cast<SparseSet<T>&>(*ptr);
         }
 
+        /// @brief Find the typed SparseSet for component type T, or nullptr if unregistered.
         template<typename T>
-        const SparseSet<T>& getStorage() const {
-            if      constexpr (std::is_same_v<T, Transform>) return m_transforms;
-            else if constexpr (std::is_same_v<T, Mesh>)      return m_meshes;
-            else if constexpr (std::is_same_v<T, Camera>)    return m_cameras;
-            else if constexpr (std::is_same_v<T, Animation>) return m_animations;
-            else if constexpr (std::is_same_v<T, Light>)     return m_lights;
-            else                                             VKM_ASSERT(false, "Component type T is not supported. Supported types: Transform, Mesh, Camera, Animation, Light");
+        const SparseSet<T>* findStorage() const {
+            TypeId id = typeId<T>();
+            if (id >= m_components.size() || !m_components[id]) return nullptr;
+            return static_cast<const SparseSet<T>*>(m_components[id].get());
+        }
+
+        /// @brief Non-const findStorage for mutable access without lazy creation.
+        template<typename T>
+        SparseSet<T>* findStorage() {
+            TypeId id = typeId<T>();
+            if (id >= m_components.size() || !m_components[id]) return nullptr;
+            return static_cast<SparseSet<T>*>(m_components[id].get());
         }
 
     private:
         SlotAllocator m_entityAllocator;
-
-        SparseSet<Transform> m_transforms;
-        SparseSet<Mesh>      m_meshes;
-        SparseSet<Camera>    m_cameras;
-        SparseSet<Animation> m_animations;
-        SparseSet<Light>     m_lights;
+        std::vector<std::unique_ptr<ISparseSet>> m_components;
 };
 
 } // namespace Engine

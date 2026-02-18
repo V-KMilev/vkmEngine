@@ -53,4 +53,25 @@ struct GenerationIndex {
 
 static_assert(sizeof(GenerationIndex) == 4, "GenerationIndex must be 4 bytes");
 
+/**
+* @brief Compile-time type-to-integer mapping for type-erased registries.
+*
+* Each unique type T gets a unique TypeId on first call to typeId<T>().
+* IDs are stable within a single program execution but not across runs.
+*/
+using TypeId = uint32_t;
+
+namespace detail {
+    inline TypeId nextTypeId() {
+        static TypeId counter = 0;
+        return counter++;
+    }
+}
+
+template<typename T>
+TypeId typeId() {
+    static const TypeId id = detail::nextTypeId();
+    return id;
+}
+
 } // namespace Engine
