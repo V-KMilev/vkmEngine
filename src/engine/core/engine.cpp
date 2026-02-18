@@ -10,10 +10,6 @@ Engine& Engine::get() {
     return instance;
 }
 
-StatisticTracker& getStatistics() {
-    return Engine::get().getStatistics();
-}
-
 void Engine::run() {
     while (m_window.beginFrame()) {
         float deltaTime = m_statistics.getFrameInfo().frameRateInfo.frameTime / 1000.0f;

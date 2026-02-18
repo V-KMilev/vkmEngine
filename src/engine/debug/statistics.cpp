@@ -2,8 +2,13 @@
 
 #include "debug/frame_tracker.h"
 #include "debug/call_tracker.h"
+#include "core/engine.h"
 
 namespace Engine {
+
+StatisticTracker& getStatistics() {
+    return Engine::get().getStatistics();
+}
 
 // Lifecycle
 

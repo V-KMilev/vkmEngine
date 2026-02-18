@@ -39,15 +39,17 @@ class Engine {
         Engine& operator=(Engine && other) = delete;
 
     public:
-        Scene& getScene()                          { return m_scene; }
-        const Scene& getScene() const              { return m_scene; }
+        Scene& getScene()             { return m_scene; }
+        const Scene& getScene() const { return m_scene; }
 
         ResourceManager& getResources()             { return m_resources; }
         const ResourceManager& getResources() const { return m_resources; }
 
-        WindowManager& getWindow()                  { return m_window; }
+        WindowManager& getWindow()             { return m_window; }
+        const WindowManager& getWindow() const { return m_window; }
 
-        StatisticTracker& getStatistics()            { return m_statistics; }
+        StatisticTracker& getStatistics()             { return m_statistics; }
+        const StatisticTracker& getStatistics() const { return m_statistics; }
 
         /**
          * @brief Create and register a system for per-frame execution.

@@ -2,7 +2,9 @@
 
 #include "logger.h"
 
-void printBuildInfo() {
+namespace Engine {
+
+inline void printBuildInfo() {
     LOG_INFO("------- Build Information -------");
     LOG_INFO("Running '%s' Version %s", APP_NAME, APP_VERSION);
     LOG_INFO("Major version: %s", APP_VERSION_MAJOR);
@@ -13,3 +15,5 @@ void printBuildInfo() {
     LOG_INFO("Build Date: %s", APP_BUILD_DATE);
     LOG_INFO("---------------------------------");
 }
+
+} // namespace Engine
