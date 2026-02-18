@@ -1,4 +1,5 @@
 #include "render/render_pipeline.h"
+#include "debug/statistics.h"
 
 namespace Engine {
 
@@ -23,6 +24,7 @@ void RenderPipeline::execute(
 ) {
     for (auto& pass : m_passes) {
         pass->execute(backend, view, resources);
+        STATS_RECORD_RENDER_PASS();
     }
 }
 

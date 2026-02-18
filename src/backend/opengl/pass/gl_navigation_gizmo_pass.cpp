@@ -2,6 +2,7 @@
 
 #include "logger.h"
 #include "debug/print_helper.h"
+#include "debug/statistics.h"
 
 #include "gl_backend.h"
 #include "gl_shader.h"
@@ -70,6 +71,7 @@ void GLNavigationGizmoPass::execute(RenderBackend& backend, const RenderView& vi
     glContext.setViewport(x, y, w, h);
 
     m_shader.bind();
+    STATS_RECORD_SHADER_SWITCH();
 
     glm::mat4 gizmoProj = glm::ortho(-m_config.scale, m_config.scale, -m_config.scale, m_config.scale, 0.1f, 10.0f);
     glm::mat4 gizmoView = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -2.0f));

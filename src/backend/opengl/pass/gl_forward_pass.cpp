@@ -2,6 +2,7 @@
 
 #include "logger.h"
 #include "debug/print_helper.h"
+#include "debug/statistics.h"
 
 #include "gl_backend.h"
 #include "gl_shader.h"
@@ -66,6 +67,7 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
 
     // Bind shader and set global uniforms
     m_shader.bind();
+    STATS_RECORD_SHADER_SWITCH();
 
     // Bind lights UBO
     glView.getLights().bind(GLConfig::UBOBindingPoints::Lights);

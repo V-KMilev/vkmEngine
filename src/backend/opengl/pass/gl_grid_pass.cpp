@@ -2,6 +2,7 @@
 
 #include "logger.h"
 #include "debug/print_helper.h"
+#include "debug/statistics.h"
 
 #include "gl_backend.h"
 #include "gl_shader.h"
@@ -45,6 +46,7 @@ void GLGridPass::execute(RenderBackend& backend, const RenderView& view, const R
     glContext.setFaceCulling(false);
 
     m_shader.bind();
+    STATS_RECORD_SHADER_SWITCH();
 
     // Center grid under camera in XZ, keep it on ground plane.
     glm::vec3 gridPos(view.camera.position.x, 0.0f, view.camera.position.z);

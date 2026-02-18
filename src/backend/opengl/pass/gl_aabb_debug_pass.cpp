@@ -2,6 +2,7 @@
 
 #include "logger.h"
 #include "debug/print_helper.h"
+#include "debug/statistics.h"
 
 #include "gl_backend.h"
 #include "gl_shader.h"
@@ -75,6 +76,7 @@ void GLAABBDebugPass::execute(RenderBackend& backend, const RenderView& view, co
     }
 
     m_shader.bind();
+    STATS_RECORD_SHADER_SWITCH();
 
     // Set global uniforms
     using namespace GLConfig::UniformNames;

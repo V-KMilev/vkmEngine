@@ -8,6 +8,7 @@
 #include "core/memory/slot_allocator.h"
 #include "core/memory/sparse_set.h"
 #include "core/memory/types.h"
+#include "debug/statistics.h"
 
 namespace Engine {
 
@@ -38,6 +39,7 @@ class Scene {
          */
         Entity createEntity() {
             StorageIndex id = m_entityAllocator.allocate();
+            STATS_RECORD_ENTITY_CREATE();
             return Entity{id};
         }
 
@@ -50,6 +52,11 @@ class Scene {
         bool isAlive(EntityId id) const { return m_entityAllocator.has(id); }
 
         /**
+         * @brief Number of live entities.
+         */
+        size_t entityCount() const { return m_entityAllocator.size(); }
+
+        /**
          * @brief Destroy an entity by removing all of its components and recycling its slot.
          * @param entity The entity to destroy.
          */
@@ -60,6 +67,7 @@ class Scene {
                     set->remove(id.index);
             }
             m_entityAllocator.free(id);
+            STATS_RECORD_ENTITY_DESTROY();
         }
 
         /**

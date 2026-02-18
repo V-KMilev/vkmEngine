@@ -2,6 +2,7 @@
 
 #include "logger.h"
 #include "debug/print_helper.h"
+#include "debug/statistics.h"
 
 #include "event/event_listener.h"
 #include "platform/threading/thread_pool.h"
@@ -96,6 +97,7 @@ uint32_t EventSystem::subscribe(Event&& event) {
     // Create EventListener with ID and store it (move)
     m_listeners[eventName].emplace_back(std::move(event), id);
 
+    STATS_RECORD_EVENT_SUBSCRIBE();
     LOG_VERBOSE("[EVENT MANAGER] Subscribed listener #%u to event '%s'", id, eventName.c_str());
     return id;
 }
@@ -131,6 +133,7 @@ bool EventSystem::unsubscribe(uint32_t id) {
                 m_listeners.erase(listenersIt);
             }
 
+            STATS_RECORD_EVENT_UNSUBSCRIBE();
             LOG_VERBOSE("[EVENT MANAGER] Unsubscribed listener #%u from event '%s'", id, eventName.c_str());
         }
     }
@@ -186,6 +189,7 @@ void EventSystem::emit(const std::string& eventName) {
     for (const EventListener& listener : listeners) {
         listener.execute();
     }
+    STATS_RECORD_EVENT_DISPATCH();
 }
 
 void EventSystem::emitAsync(const std::string& eventName) {
