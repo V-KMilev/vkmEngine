@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "types.h"
+#include "core/memory/types.h"
 
 namespace Engine {
 

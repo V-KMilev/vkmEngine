@@ -1,6 +1,6 @@
-#include "input_handle.h"
+#include "platform/window/input_handle.h"
 
-#include "glfw_include.h"
+#include "platform/window/glfw_include.h"
 
 namespace Engine {
 

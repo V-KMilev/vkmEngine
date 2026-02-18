@@ -33,30 +33,35 @@ endif()
 # Engine Core Library
 # ============================================================================
 add_library(EngineCore STATIC
+    # Core
+    src/engine/core/engine.h
+    src/engine/core/engine.cpp
+    src/engine/core/system.h
     # ECS
     src/engine/ecs/scene.h
     src/engine/ecs/entity.h
-    src/engine/ecs/components/transform.h
-    src/engine/ecs/components/camera.h
-    src/engine/ecs/components/mesh.h
-    src/engine/ecs/components/animation.h
+    src/engine/ecs/component/transform.h
+    src/engine/ecs/component/camera.h
+    src/engine/ecs/component/mesh.h
+    src/engine/ecs/component/animation.h
     # Resources
-    src/engine/resources/resource_manager.h
-    src/engine/resources/resource.h
-    src/engine/resources/resource_handle.h
-    src/engine/resources/assets/mesh_asset.h
-    src/engine/resources/assets/mesh_asset.cpp
-    src/engine/resources/assets/material_asset.h
-    src/engine/resources/assets/texture_asset.h
+    src/engine/resource/resource_manager.h
+    src/engine/resource/resource.h
+    src/engine/resource/resource_handle.h
+    src/engine/resource/mesh_asset.h
+    src/engine/resource/mesh_asset.cpp
+    src/engine/resource/material_asset.h
+    src/engine/resource/texture_asset.h
     # Animation
-    src/engine/animation/animation_manager.h
-    src/engine/animation/animation_manager.cpp
+    src/engine/animation/animation_system.h
+    src/engine/animation/animation_system.cpp
     src/engine/animation/animation_track.h
     src/engine/animation/keyframe.h
     src/engine/animation/easing.h
     # Visibility (culling, tests)
+    src/engine/visibility/visibility_system.h
+    src/engine/visibility/visibility_system.cpp
     src/engine/visibility/visibility.h
-    src/engine/visibility/visibility.cpp
     src/engine/visibility/visibility_context.h
     src/engine/visibility/bounds_utils.h
     src/engine/visibility/culling/frustum_culler.h
@@ -64,12 +69,12 @@ add_library(EngineCore STATIC
     src/engine/visibility/culling/distance_culling.h
     src/engine/visibility/culling/occlusion_culler.h
     # Events
-    src/engine/events/event_manager.h
-    src/engine/events/event_manager.cpp
-    src/engine/events/event.h
-    src/engine/events/event.cpp
-    src/engine/events/event_listener.h
-    src/engine/events/event_listener.cpp
+    src/engine/event/event_system.h
+    src/engine/event/event_system.cpp
+    src/engine/event/event.h
+    src/engine/event/event.cpp
+    src/engine/event/event_listener.h
+    src/engine/event/event_listener.cpp
     # Platform
     src/engine/platform/window/window_manager.h
     src/engine/platform/window/window_manager.cpp
@@ -86,31 +91,18 @@ add_library(EngineCore STATIC
     src/engine/debug/statistics.h
     src/engine/debug/statistics.cpp
     src/engine/debug/frame_info.h
-    src/engine/debug/trackers/frame_tracker.h
-    src/engine/debug/trackers/frame_tracker.cpp
-    src/engine/debug/trackers/call_tracker.h
-    src/engine/debug/trackers/call_tracker.cpp
+    src/engine/debug/print_helper.h
+    src/engine/debug/frame_tracker.h
+    src/engine/debug/frame_tracker.cpp
+    src/engine/debug/call_tracker.h
+    src/engine/debug/call_tracker.cpp
     # Editor
     src/engine/editor/camera_controller.h
     src/engine/editor/camera_controller.cpp
 )
 
 target_include_directories(EngineCore PUBLIC
-    src/engine/core
-    src/engine/core/memory
-    src/engine/ecs
-    src/engine/ecs/components
-    src/engine/resources
-    src/engine/resources/assets
-    src/engine/animation
-    src/engine/visibility
-    src/engine/visibility/culling
-    src/engine/events
-    src/engine/platform/window
-    src/engine/platform/threading
-    src/engine/debug
-    src/engine/debug/trackers
-    src/engine/editor
+    src/engine
 )
 
 target_link_libraries(EngineCore PUBLIC
@@ -127,21 +119,14 @@ target_compile_definitions(EngineCore PUBLIC
 # Engine Rendering Library
 # ============================================================================
 add_library(EngineRendering STATIC
-    src/engine/rendering/render_backend.h
-    src/engine/rendering/render_manager.h
-    src/engine/rendering/render_manager.cpp
-    src/engine/rendering/render_view.h
-    src/engine/rendering/render_view.cpp
-    src/engine/rendering/pipeline/render_pipeline.h
-    src/engine/rendering/pipeline/render_pipeline.cpp
-    src/engine/rendering/pipeline/render_pass.h
-)
-
-target_include_directories(EngineRendering PUBLIC
-    src/engine/rendering
-    src/engine/rendering/pipeline
-    src/engine/rendering/view
-    src/engine/rendering/culling
+    src/engine/render/render_backend.h
+    src/engine/render/render_system.h
+    src/engine/render/render_system.cpp
+    src/engine/render/render_view.h
+    src/engine/render/render_view.cpp
+    src/engine/render/render_pipeline.h
+    src/engine/render/render_pipeline.cpp
+    src/engine/render/render_pass.h
 )
 
 target_link_libraries(EngineRendering PUBLIC
@@ -160,28 +145,28 @@ add_library(BackendOpenGL STATIC
     src/backend/opengl/core/gl_instance_batcher.h
     src/backend/opengl/core/gl_instance_batcher.cpp
     # Resource wrappers
-    src/backend/opengl/resources/gl_mesh.h
-    src/backend/opengl/resources/gl_mesh.cpp
-    src/backend/opengl/resources/gl_instance_buffer.h
-    src/backend/opengl/resources/gl_instance_buffer.cpp
-    src/backend/opengl/resources/gl_material.h
-    src/backend/opengl/resources/gl_material.cpp
-    src/backend/opengl/resources/gl_texture.h
-    src/backend/opengl/resources/gl_texture.cpp
-    src/backend/opengl/resources/gl_lights.h
-    src/backend/opengl/resources/gl_lights.cpp
+    src/backend/opengl/resource/gl_mesh.h
+    src/backend/opengl/resource/gl_mesh.cpp
+    src/backend/opengl/resource/gl_instance_buffer.h
+    src/backend/opengl/resource/gl_instance_buffer.cpp
+    src/backend/opengl/resource/gl_material.h
+    src/backend/opengl/resource/gl_material.cpp
+    src/backend/opengl/resource/gl_texture.h
+    src/backend/opengl/resource/gl_texture.cpp
+    src/backend/opengl/resource/gl_lights.h
+    src/backend/opengl/resource/gl_lights.cpp
     # Configuration
     src/backend/opengl/config/gl_config.h
     src/backend/opengl/config/gl_texture_mapping.h
     # Render passes
-    src/backend/opengl/passes/gl_forward_pass.h
-    src/backend/opengl/passes/gl_forward_pass.cpp
-    src/backend/opengl/passes/gl_aabb_debug_pass.h
-    src/backend/opengl/passes/gl_aabb_debug_pass.cpp
-    src/backend/opengl/passes/gl_grid_pass.h
-    src/backend/opengl/passes/gl_grid_pass.cpp
-    src/backend/opengl/passes/gl_navigation_gizmo_pass.h
-    src/backend/opengl/passes/gl_navigation_gizmo_pass.cpp
+    src/backend/opengl/pass/gl_forward_pass.h
+    src/backend/opengl/pass/gl_forward_pass.cpp
+    src/backend/opengl/pass/gl_aabb_debug_pass.h
+    src/backend/opengl/pass/gl_aabb_debug_pass.cpp
+    src/backend/opengl/pass/gl_grid_pass.h
+    src/backend/opengl/pass/gl_grid_pass.cpp
+    src/backend/opengl/pass/gl_navigation_gizmo_pass.h
+    src/backend/opengl/pass/gl_navigation_gizmo_pass.cpp
     # Convenience header
     src/backend/opengl/gl_common.h
 )
@@ -189,9 +174,9 @@ add_library(BackendOpenGL STATIC
 target_include_directories(BackendOpenGL PUBLIC
     src/backend/opengl
     src/backend/opengl/core
-    src/backend/opengl/resources
+    src/backend/opengl/resource
     src/backend/opengl/config
-    src/backend/opengl/passes
+    src/backend/opengl/pass
 )
 
 target_link_libraries(BackendOpenGL PUBLIC
@@ -204,24 +189,23 @@ target_link_libraries(BackendOpenGL PUBLIC
 # Engine Tools Library (Optional utilities)
 # ============================================================================
 add_library(EngineTools STATIC
-    src/tools/loaders/texture_loaders.h
-    src/tools/loaders/texture_loaders.cpp
-    src/tools/loaders/material_loaders.h
-    src/tools/loaders/material_loaders.cpp
+    src/tools/loader/texture_loaders.h
+    src/tools/loader/texture_loaders.cpp
+    src/tools/loader/material_loaders.h
+    src/tools/loader/material_loaders.cpp
 
-    src/tools/generators/mesh_generators.h
-    src/tools/generators/mesh_generators.cpp
-    src/tools/generators/texture_generators.h
-    src/tools/generators/texture_generators.cpp
-    src/tools/generators/material_generators.h
-    src/tools/generators/material_generators.cpp
-    src/tools/generators/light_generators.h
-    src/tools/generators/light_generators.cpp
+    src/tools/generator/mesh_generators.h
+    src/tools/generator/mesh_generators.cpp
+    src/tools/generator/texture_generators.h
+    src/tools/generator/texture_generators.cpp
+    src/tools/generator/material_generators.h
+    src/tools/generator/material_generators.cpp
+    src/tools/generator/light_generators.h
+    src/tools/generator/light_generators.cpp
 )
 
 target_include_directories(EngineTools PUBLIC
-    src/tools/loaders
-    src/tools/generators
+    src/tools
 )
 
 target_link_libraries(EngineTools PUBLIC

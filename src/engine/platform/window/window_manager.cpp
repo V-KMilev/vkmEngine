@@ -1,15 +1,17 @@
-#include "window_manager.h"
+#include "platform/window/window_manager.h"
 
-#include "glfw_include.h"
+#include "platform/window/glfw_include.h"
 
-#include "window.h"
-#include "input_handle.h"
-#include "frame_limiter.h"
+#include "platform/window/window.h"
+#include "platform/window/input_handle.h"
+#include "platform/window/frame_limiter.h"
 
 #include "logger.h"
-#include "print_helper.h"
+#include "debug/print_helper.h"
 
 namespace Engine {
+
+WindowManager::WindowManager() = default;
 
 namespace {
     GLFWmonitor* getCurrentMonitor(GLFWwindow* window) {
@@ -46,11 +48,6 @@ WindowManager::~WindowManager() {
     if (m_window) {
         m_window.reset();
     }
-}
-
-WindowManager& WindowManager::get() {
-    static WindowManager instance;
-    return instance;
 }
 
 void WindowManager::createWindow(const std::string& title) {

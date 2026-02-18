@@ -1,6 +1,4 @@
-#include <cstdio>
 #include <cstdint>
-#include <chrono>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -11,26 +9,23 @@
 #include <glm/gtx/quaternion.hpp>
 
 #include "logger.h"
-#include "build_info.h"
-#include "print_helper.h"
+#include "debug/build_info.h"
+#include "debug/print_helper.h"
 
 #include "gl_debug.h"
 #include "gl_context.h"
 #include "gl_shader.h"
 
 // Engine Core
-#include "animation_manager.h"
-#include "resource_manager.h"
-#include "window_manager.h"
-#include "event_manager.h"
-#include "input_handle.h"
-#include "statistics.h"
-#include "scene.h"
-#include "components.h"
-#include "visibility.h"
+#include "core/engine.h"
+#include "animation/animation_system.h"
+#include "event/event_system.h"
+#include "platform/window/input_handle.h"
+#include "ecs/components.h"
+#include "visibility/visibility_system.h"
 
 // Engine Rendering
-#include "render_manager.h"
+#include "render/render_system.h"
 
 // Backend
 #include "gl_backend.h"
@@ -40,17 +35,17 @@
 #include "gl_navigation_gizmo_pass.h"
 
 // Tools - Loaders
-#include "texture_loaders.h"
-#include "material_loaders.h"
+#include "loader/texture_loaders.h"
+#include "loader/material_loaders.h"
 
 // Tools - Generators
-#include "mesh_generators.h"
-#include "texture_generators.h"
-#include "material_generators.h"
-#include "light_generators.h"
+#include "generator/mesh_generators.h"
+#include "generator/texture_generators.h"
+#include "generator/material_generators.h"
+#include "generator/light_generators.h"
 
 // Editor
-#include "camera_controller.h"
+#include "editor/camera_controller.h"
 
 struct BenchmarkConfig {
     int gridSize = 200;           // Objects per axis (total = gridSize^2)
@@ -73,12 +68,13 @@ struct BenchmarkConfig {
     bool useSphereDetail = true;  // Use high-detail spheres
 };
 
-static void generateBenchmarkScene(
-    Engine::ResourceManager& resources,
-    Engine::Scene& scene,
-    Engine::CameraController& cameraController,
+static Engine::Entity generateBenchmarkScene(
+    Engine::Engine& engine,
     const BenchmarkConfig& config = BenchmarkConfig{}
 ) {
+    auto& scene     = engine.getScene();
+    auto& resources = engine.getResources();
+
     // Create mesh variety
     Engine::MeshHandle cubeMesh = resources.add(Engine::generateCube());
     Engine::MeshHandle sphereMesh = config.useSphereDetail
@@ -105,7 +101,6 @@ static void generateBenchmarkScene(
         scene.add(cameraEntity, Engine::Camera{Engine::ProjectionType::Perspective});
         scene.add(cameraEntity, Engine::Transform{glm::vec3(0.0f, 10.0f, 30.0f)});
     }
-    cameraController.setCameraEntity(cameraEntity);
 
     int entityIndex = 0;
     auto shouldAnimate = [&]() {
@@ -287,6 +282,8 @@ static void generateBenchmarkScene(
     int total = config.gridSize * config.gridSize + config.nearLayerCount +
                 config.midLayerCount + config.farLayerCount + 240;
     LOG_INFO("  Total mesh entities: %d", total);
+
+    return cameraEntity;
 }
 
 static void generateBenchmarkAnimations(Engine::Scene& scene) {
@@ -354,27 +351,6 @@ static void generateBenchmarkAnimations(Engine::Scene& scene) {
     });
 }
 
-static void printStats(const Engine::Visibility& visibility) {
-    const auto& statisticTracker = StatisticTracker::get();
-
-    static auto lastStatsPrint = std::chrono::steady_clock::now();
-    const auto now = std::chrono::steady_clock::now();
-
-    if (now - lastStatsPrint >= std::chrono::milliseconds(500)) {
-        const auto& info = statisticTracker.getFrameInfo();
-        std::printf("[%lu] FPS: %.2f (%.4fms) | Draws: %u | Entities: %zu/%u\n",
-            info.frameIndex,
-            info.frameRateInfo.frameRate,
-            info.frameRateInfo.frameTime,
-            info.renderSystemInfo.drawCalls,
-            visibility.entities.size(),
-            info.entitySystemInfo.entityUpdates
-        );
-        std::fflush(stdout);
-        lastStatsPrint = now;
-    }
-}
-
 int main() {
     try {
         const std::string rootDir = APP_ROOT_DIR;
@@ -387,32 +363,34 @@ int main() {
         printBuildInfo();
         Core::enableGLDebugLogging(true);
 
-        auto& windowManager    = Engine::WindowManager::get();
-        auto& eventManager     = EventManager::get();
-        auto& statisticTracker = StatisticTracker::get();
+        auto& engine = Engine::Engine::get();
+        auto& window = engine.getWindow();
 
-        windowManager.createWindow("VKM Engine");
-        windowManager.updateMode(Engine::WindowMode::WINDOWED);
-        windowManager.setFramerate(0);
+        window.createWindow("VKM Engine");
+        window.updateMode(Engine::WindowMode::WINDOWED);
+        window.setFramerate(0);
 
-        Engine::ResourceManager resources;
-        Engine::AnimationManager animationManager;
-        Engine::RenderManager renderManager;
+        // Systems
+        auto& cameraController = engine.addSystem<Engine::CameraController>();
+        auto& eventSystem      = engine.addSystem<Engine::EventSystem>();
+        auto& visibilitySystem = engine.addSystem<Engine::VisibilitySystem>();
+        auto& animationSystem  = engine.addSystem<Engine::AnimationSystem>();
+        auto& renderSystem     = engine.addSystem<Engine::RenderSystem>();
 
+        // Shaders
         Core::Shader pbr("../shaders/pbr");
         Core::Shader aabbDebug("../shaders/aabb_debug");
         Core::Shader gridShader("../shaders/grid");
         Core::Shader gizmoShader("../shaders/gizmo");
 
-        renderManager.setBackend(std::make_unique<Engine::GLBackend>());
-        renderManager.addPass(std::make_unique<Engine::GLForwardPass>(pbr));
-        // renderManager.addPass(std::make_unique<Engine::GLAABBDebugPass>(aabbDebug));
-        renderManager.addPass(std::make_unique<Engine::GLGridPass>(gridShader));
-        renderManager.addPass(std::make_unique<Engine::GLNavigationGizmoPass>(gizmoShader));
+        // Render passes
+        renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
+        renderSystem.addPass(std::make_unique<Engine::GLForwardPass>(pbr));
+        // renderSystem.addPass(std::make_unique<Engine::GLAABBDebugPass>(aabbDebug));
+        renderSystem.addPass(std::make_unique<Engine::GLGridPass>(gridShader));
+        renderSystem.addPass(std::make_unique<Engine::GLNavigationGizmoPass>(gizmoShader));
 
-        Engine::Scene scene;
-        Engine::CameraController cameraController;
-
+        // Scene setup
         BenchmarkConfig config;
         config.gridSize = 100;
         config.nearLayerCount = 500;
@@ -424,31 +402,13 @@ int main() {
         config.useMeshVariety = true;
         config.useSphereDetail = true;
 
-        generateBenchmarkScene(resources, scene, cameraController, config);
-        generateBenchmarkAnimations(scene);
+        auto cameraEntity = generateBenchmarkScene(engine, config);
 
-        while (windowManager.beginFrame()) {
-            size_t viewportWidth  = windowManager.getWidth();
-            size_t viewportHeight = windowManager.getHeight();
-            float deltaTime       = statisticTracker.getFrameInfo().frameRateInfo.frameTime / 1000.0f;
+        cameraController.setCameraEntity(cameraEntity);
+        generateBenchmarkAnimations(engine.getScene());
 
-            if (!windowManager.updateInput()) break;
+        engine.run();
 
-            cameraController.update(scene, deltaTime);
-
-            eventManager.executeAsync();
-
-            auto visibility = Engine::buildVisibility(scene, resources, viewportWidth, viewportHeight);
-
-            animationManager.update(scene, visibility, deltaTime);
-
-            renderManager.renderFrame(scene, resources, visibility, viewportWidth, viewportHeight);
-
-            if (!windowManager.swapBuffers()) break;
-
-            statisticTracker.update();
-            printStats(visibility);
-        }
     } catch (const std::exception& e) {
         LOG_FATAL("Exception: %s", e.what());
     } catch (...) {

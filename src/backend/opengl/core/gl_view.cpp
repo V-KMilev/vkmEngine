@@ -7,13 +7,13 @@
 
 #include "gl_config.h"
 #include "gl_texture_mapping.h"
-#include "resource_manager.h"
-#include "render_view.h"
+#include "resource/resource_manager.h"
+#include "render/render_view.h"
 
 #include "gl_mesh.h"
 #include "gl_material.h"
 #include "gl_texture.h"
-#include "texture_asset.h"
+#include "resource/texture_asset.h"
 
 namespace Engine {
 

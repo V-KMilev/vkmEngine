@@ -1,7 +1,7 @@
 #pragma once
 
-#include "transform.h"
-#include "camera.h"
-#include "mesh.h"
-#include "animation.h"
-#include "light.h"
+#include "ecs/component/transform.h"
+#include "ecs/component/camera.h"
+#include "ecs/component/mesh.h"
+#include "ecs/component/animation.h"
+#include "ecs/component/light.h"

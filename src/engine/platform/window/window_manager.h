@@ -77,12 +77,6 @@ class WindowManager {
 
     public:
         /**
-         * @brief Gets the singleton instance of WindowManager.
-         * @return Reference to the singleton WindowManager.
-         */
-        static WindowManager& get();
-
-        /**
          * @brief Creates the main application window with the specified title.
          * @param title The window title.
          */
@@ -162,8 +156,8 @@ class WindowManager {
          */
         size_t getHeight() const;
 
-    private:
-        WindowManager() = default;
+    public:
+        WindowManager();
         ~WindowManager();
 
     private:

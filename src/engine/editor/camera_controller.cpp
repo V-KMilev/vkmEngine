@@ -1,32 +1,32 @@
-#include "camera_controller.h"
+#include "editor/camera_controller.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <algorithm>
 #include <cmath>
 
-#include "window_manager.h"
-#include "input_handle.h"
-#include "glfw_include.h"
+#include "core/engine.h"
+#include "platform/window/input_handle.h"
+#include "platform/window/glfw_include.h"
 
-#include "transform.h"
+#include "ecs/component/transform.h"
 
 namespace Engine {
 
 CameraController::CameraController() = default;
 
-void CameraController::update(Scene& scene, float deltaTime) {
-    if (!scene.has<Transform>(m_cameraEntity.getID())) {
+void CameraController::update(FrameContext& ctx) {
+    if (!ctx.scene.has<Transform>(m_cameraEntity.getID())) {
         return;
     }
 
-    auto& transform = scene.get<Transform>(m_cameraEntity.getID());
+    auto& transform = ctx.scene.get<Transform>(m_cameraEntity.getID());
 
-    updateFlyMode(transform.position, transform.rotation, deltaTime);
+    updateFlyMode(transform.position, transform.rotation, ctx.deltaTime);
 }
 
 void CameraController::updateFlyMode(glm::vec3& position, glm::quat& rotation, float deltaTime) {
-    auto& windowManager = WindowManager::get();
+    auto& windowManager = Engine::get().getWindow();
     auto& inputHandle   = windowManager.getInputHandle();
     auto& mouse    = inputHandle.mouse();
     auto& keyboard = inputHandle.keyboard();
@@ -74,15 +74,15 @@ void CameraController::updateFlyMode(glm::vec3& position, glm::quat& rotation, f
     if (keyboard.isKeyPressed(GLFW_KEY_S)) position -= forward * speed;
     if (keyboard.isKeyPressed(GLFW_KEY_A)) position += right * speed;
     if (keyboard.isKeyPressed(GLFW_KEY_D)) position -= right * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_Q)) position += Engine::WORLD_AXIS_Y_UP * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_E)) position -= Engine::WORLD_AXIS_Y_UP * speed;
+    if (keyboard.isKeyPressed(GLFW_KEY_Q)) position += WORLD_AXIS_Y_UP * speed;
+    if (keyboard.isKeyPressed(GLFW_KEY_E)) position -= WORLD_AXIS_Y_UP * speed;
 }
 
 void CameraController::updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch) {
     // Yaw rotates around world up axis
-    glm::quat yawQuat = glm::angleAxis(yaw, Engine::WORLD_AXIS_Y_UP);
+    glm::quat yawQuat = glm::angleAxis(yaw, WORLD_AXIS_Y_UP);
     // Pitch rotates around local right axis (negative because mouse Y is inverted)
-    glm::quat pitchQuat = glm::angleAxis(pitch, -Engine::WORLD_AXIS_X_RIGHT);
+    glm::quat pitchQuat = glm::angleAxis(pitch, -WORLD_AXIS_X_RIGHT);
     // Apply yaw first, then pitch (order matters for correct behavior)
     rotation = yawQuat * pitchQuat;
 }

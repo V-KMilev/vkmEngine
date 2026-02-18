@@ -1,7 +1,7 @@
 #include "gl_instance_batcher.h"
 
 #include "gl_instance_buffer.h"
-#include "render_view.h"
+#include "render/render_view.h"
 
 namespace Engine {
 

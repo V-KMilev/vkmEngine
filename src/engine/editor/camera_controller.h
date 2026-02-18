@@ -6,8 +6,9 @@
 #include <cstdint>
 #include <algorithm>
 
-#include "entity.h"
-#include "scene.h"
+#include "ecs/entity.h"
+#include "ecs/scene.h"
+#include "core/system.h"
 
 namespace Engine {
 
@@ -31,10 +32,10 @@ struct CameraControllerSettings {
  * Handles camera movement (WASD, etc.), speed boosting, mouse look, scroll zoom, and pitch/yaw.
  * Designed for use with the Editor camera Entity. Not thread-safe.
  */
-class CameraController {
+class CameraController : public System {
     public:
         CameraController();
-        ~CameraController() = default;
+        ~CameraController() override = default;
 
         CameraController(const CameraController& other) = delete;
         CameraController& operator=(const CameraController& other) = delete;
@@ -51,10 +52,9 @@ class CameraController {
 
         /**
          * @brief Update and apply camera motions (call once per-frame).
-         * @param scene The ECS scene.
-         * @param deltaTime Time elapsed since last update.
+         * @param ctx The shared FrameContext for this frame.
          */
-        void update(Scene& scene, float deltaTime);
+        void update(FrameContext& ctx) override;
 
     private:
         /**

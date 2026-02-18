@@ -2,8 +2,8 @@
 
 #include <glm/glm.hpp>
 
-#include "mesh.h"
-#include "visibility_context.h"
+#include "ecs/component/mesh.h"
+#include "visibility/visibility_context.h"
 
 namespace Engine {
 

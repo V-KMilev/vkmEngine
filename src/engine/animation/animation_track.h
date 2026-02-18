@@ -4,8 +4,8 @@
 
 #include <glm/gtc/quaternion.hpp>
 
-#include "keyframe.h"
-#include "easing.h"
+#include "animation/keyframe.h"
+#include "animation/easing.h"
 
 namespace Engine {
 

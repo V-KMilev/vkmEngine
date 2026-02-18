@@ -4,10 +4,10 @@
 #include <tuple>
 #include <vector>
 
-#include "entity.h"
-#include "slot_allocator.h"
-#include "sparse_set.h"
-#include "types.h"
+#include "ecs/entity.h"
+#include "core/memory/slot_allocator.h"
+#include "core/memory/sparse_set.h"
+#include "core/memory/types.h"
 
 namespace Engine {
 
@@ -42,6 +42,14 @@ class Scene {
         }
 
         /**
+         * @brief Check if an entity is still alive (valid index + matching generation).
+         * @param entity The entity to check.
+         * @return true if the entity is alive.
+         */
+        bool isAlive(Entity entity) const { return isAlive(entity.getID()); }
+        bool isAlive(EntityId id) const { return m_entityAllocator.has(id); }
+
+        /**
          * @brief Destroy an entity by removing all of its components and recycling its slot.
          * @param entity The entity to destroy.
          */
@@ -63,6 +71,7 @@ class Scene {
          */
         template<typename T>
         auto& add(Entity entity, T && component) {
+            VKM_ASSERT(isAlive(entity), "Scene::add called with dead/stale entity");
             using U = std::remove_cv_t<std::remove_reference_t<T>>;
             return getStorage<U>().add(entity.getID().index, std::forward<T>(component));
         }
@@ -78,8 +87,9 @@ class Scene {
 
         template<typename T>
         bool has(EntityId entity) const {
+            VKM_ASSERT(isAlive(entity), "Scene::has called with dead/stale entity");
             auto* store = findStorage<T>();
-            return store && store->has(entity.index);
+            return store && store->contains(entity.index);
         }
 
         /**
@@ -93,6 +103,7 @@ class Scene {
 
         template<typename T>
         T& get(EntityId entity) {
+            VKM_ASSERT(isAlive(entity), "Scene::get called with dead/stale entity");
             return getStorage<T>().get(entity.index);
         }
 
@@ -107,6 +118,7 @@ class Scene {
 
         template<typename T>
         const T& get(EntityId entity) const {
+            VKM_ASSERT(isAlive(entity), "Scene::get called with dead/stale entity");
             auto* store = findStorage<T>();
             VKM_ASSERT(store, "Scene::get called for unregistered component type");
             return store->get(entity.index);
@@ -119,6 +131,7 @@ class Scene {
          */
         template<typename T>
         void remove(Entity entity) {
+            VKM_ASSERT(isAlive(entity), "Scene::remove called with dead/stale entity");
             auto* store = findStorage<T>();
             if (store && store->has(entity.getID().index))
                 store->remove(entity.getID().index);
@@ -158,7 +171,7 @@ class Scene {
                 auto restStorages = std::make_tuple(&getStorage<Rest>()...);
 
                 firstStorage.forEach([&](uint32_t entityIdx, First& first) {
-                    if (!(std::get<SparseSet<Rest>*>(restStorages)->has(entityIdx) && ...)) return;
+                    if (!(std::get<SparseSet<Rest>*>(restStorages)->contains(entityIdx) && ...)) return;
 
                     EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
                     fn(eid, first, std::get<SparseSet<Rest>*>(restStorages)->get(entityIdx)...);
@@ -181,7 +194,7 @@ class Scene {
                 if (!(std::get<const SparseSet<Rest>*>(restStorages) && ...)) return;
 
                 firstStorage->forEach([&](uint32_t entityIdx, const First& first) {
-                    if (!(std::get<const SparseSet<Rest>*>(restStorages)->has(entityIdx) && ...)) return;
+                    if (!(std::get<const SparseSet<Rest>*>(restStorages)->contains(entityIdx) && ...)) return;
 
                     EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
                     fn(eid, first, std::get<const SparseSet<Rest>*>(restStorages)->get(entityIdx)...);

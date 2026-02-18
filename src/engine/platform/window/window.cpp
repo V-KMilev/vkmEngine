@@ -1,11 +1,11 @@
-#include "window.h"
+#include "platform/window/window.h"
 
 #include <algorithm>
 
 #include "logger.h"
-#include "print_helper.h"
+#include "debug/print_helper.h"
 
-#include "glfw_include.h"
+#include "platform/window/glfw_include.h"
 
 namespace Engine {
 

@@ -4,14 +4,14 @@
 #include <cstdint>
 #include <memory>
 
-#include "mesh_asset.h"
-#include "material_asset.h"
-#include "texture_asset.h"
+#include "resource/mesh_asset.h"
+#include "resource/material_asset.h"
+#include "resource/texture_asset.h"
 
-#include "resources/gl_mesh.h"
-#include "resources/gl_material.h"
-#include "resources/gl_texture.h"
-#include "resources/gl_lights.h"
+#include "resource/gl_mesh.h"
+#include "resource/gl_material.h"
+#include "resource/gl_texture.h"
+#include "resource/gl_lights.h"
 #include "gl_instance_batcher.h"
 
 namespace Engine {

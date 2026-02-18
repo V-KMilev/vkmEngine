@@ -86,13 +86,16 @@ class SparseSet : public ISparseSet {
         }
 
         /**
-        * @brief Test whether a key is present.
+        * @brief Test whether a key is present (non-virtual, for hot paths).
         * @param key External sparse key.
         * @return True if the key maps to a live element.
         */
-        bool has(uint32_t key) const override {
+        bool contains(uint32_t key) const {
             return key < m_dataIndex.size() && m_dataIndex[key] != EMPTY;
         }
+
+        /// @brief Virtual override forwarding to contains() for type-erased callers.
+        bool has(uint32_t key) const override { return contains(key); }
 
         /**
         * @brief Access the element at the given key.
