@@ -16,7 +16,7 @@ AnimationSystem::AnimationSystem() = default;
 
 void AnimationSystem::update(FrameContext& ctx) {
     auto& scene = ctx.scene;
-    const auto& visibility = ctx.visibility;
+    const auto& visibility = *ctx.visibility;
     float deltaTime = ctx.deltaTime;
 
     // Update animation time for ALL animations (even culled ones)

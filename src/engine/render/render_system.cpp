@@ -2,7 +2,6 @@
 
 #include "logger.h"
 
-#include "render/render_view.h"
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
 #include "visibility/visibility.h"
@@ -41,11 +40,11 @@ void RenderSystem::update(FrameContext& ctx) {
         resize(ctx.viewportWidth, ctx.viewportHeight);
     }
 
-    // Build snapshot for this frame
-    RenderView view = RenderView::build(ctx.scene, ctx.resources, ctx.visibility);
+    // Build snapshot for this frame (reuses vector capacity from previous frame)
+    m_renderView.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight);
 
     // Execute passes
-    m_pipeline.execute(*m_backend, view, ctx.resources);
+    m_pipeline.execute(*m_backend, m_renderView, ctx.resources);
 }
 
 void RenderSystem::addPass(std::unique_ptr<RenderPass> pass) {

@@ -13,7 +13,8 @@ class ResourceManager;
  * @brief Per-frame state bundle passed to all systems.
  *
  * Provides a uniform interface for systems to access shared per-frame data.
- * visibility is populated by the visibility system and consumed by later systems.
+ * visibility is a non-owning pointer to persistent storage (owned by VisibilitySystem)
+ * to avoid per-frame vector allocation/deallocation.
  */
 struct FrameContext {
     Scene& scene;
@@ -21,7 +22,7 @@ struct FrameContext {
     float deltaTime;
     uint32_t viewportWidth;
     uint32_t viewportHeight;
-    Visibility visibility;
+    const Visibility* visibility = nullptr;
 };
 
 /**

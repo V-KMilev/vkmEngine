@@ -20,7 +20,7 @@ void Engine::run() {
             m_scene, m_resources, deltaTime,
             static_cast<uint32_t>(m_window.getWidth()),
             static_cast<uint32_t>(m_window.getHeight()),
-            {}
+            nullptr
         };
 
         for (auto& system : m_systems) {
@@ -46,7 +46,7 @@ void Engine::printStats(const FrameContext& ctx) {
         info.frameRateInfo.frameRate,
         info.renderSystemInfo.drawCalls,
         info.renderSystemInfo.renderPasses,
-        ctx.visibility.entities.size(),
+        ctx.visibility ? ctx.visibility->entities.size() : 0,
         m_scene.entityCount()
     );
     std::fflush(stdout);

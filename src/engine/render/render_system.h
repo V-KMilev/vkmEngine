@@ -4,13 +4,12 @@
 #include <cstdint>
 
 #include "render/render_pipeline.h"
+#include "render/render_view.h"
 #include "core/system.h"
 
 namespace Engine {
     class RenderBackend;
     class RenderPass;
-
-    struct RenderView;
 }
 
 namespace Engine {
@@ -96,6 +95,7 @@ class RenderSystem : public System {
     private:
         std::unique_ptr<RenderBackend> m_backend;
         RenderPipeline m_pipeline;
+        RenderView m_renderView;  ///< Persistent — vectors reuse capacity across frames.
 
         uint32_t m_width;
         uint32_t m_height;
