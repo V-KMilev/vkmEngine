@@ -1,6 +1,7 @@
 #include "gl_view.h"
 
 #include <algorithm>
+#include <unordered_set>
 #include <vector>
 
 #include "logger.h"
@@ -29,7 +30,15 @@ void GLView::syncMeshes(
     const RenderView& renderView,
     const ResourceManager& resourceManager
 ) {
-    // Collect unique mesh handles (full handles, not just IDs)
+    // Skip sync entirely when no resources changed and drawable count is stable
+    const uint64_t currentVersion = resourceManager.globalVersion();
+    const size_t currentCount = renderView.drawables.size();
+    if (currentVersion == m_lastSyncVersion && currentCount == m_lastDrawableCount) {
+        return;
+    }
+
+    // Collect unique mesh handles via sort+unique (cache-friendly on small arrays,
+    // outperforms hash-based dedup for typical scene sizes due to sequential access)
     thread_local std::vector<MeshHandle> meshHandles;
     meshHandles.clear();
     meshHandles.reserve(renderView.drawables.size());
@@ -40,7 +49,6 @@ void GLView::syncMeshes(
         }
     }
 
-    // Sort by id and remove duplicates
     std::sort(meshHandles.begin(), meshHandles.end(),
         [](const MeshHandle& a, const MeshHandle& b) { return a.id() < b.id(); });
     meshHandles.erase(std::unique(meshHandles.begin(), meshHandles.end(),
@@ -61,6 +69,9 @@ void GLView::syncMeshes(
             m_meshVersions[key] = version;
         }
     }
+
+    m_lastSyncVersion = currentVersion;
+    m_lastDrawableCount = currentCount;
 }
 
 void GLView::syncMaterials(
@@ -196,6 +207,58 @@ GLMesh* GLView::getMutableMesh(const MeshHandle& handle) {
     }
 
     return it->second.get();
+}
+
+void GLView::purgeStaleResources(const RenderView& renderView) {
+    // Collect active mesh and material IDs from this frame's drawables
+    std::unordered_set<uint32_t> activeMeshes;
+    std::unordered_set<uint32_t> activeMaterials;
+    std::unordered_set<uint32_t> activeTextures;
+
+    for (const auto& drawable : renderView.drawables) {
+        if (drawable.mesh) activeMeshes.insert(drawable.mesh.id());
+        if (drawable.material) activeMaterials.insert(drawable.material.id());
+    }
+
+    // Collect active texture IDs from active materials
+    // (textures referenced by materials currently in use)
+    for (const auto& [key, mat] : m_materials) {
+        if (activeMaterials.count(key)) {
+            for (const auto& binding : mat->getTextureBindings()) {
+                if (binding.handle) activeTextures.insert(binding.handle.id());
+            }
+        }
+    }
+
+    // Erase meshes not in current frame
+    for (auto it = m_meshes.begin(); it != m_meshes.end(); ) {
+        if (!activeMeshes.count(it->first)) {
+            m_meshVersions.erase(it->first);
+            it = m_meshes.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // Erase materials not in current frame
+    for (auto it = m_materials.begin(); it != m_materials.end(); ) {
+        if (!activeMaterials.count(it->first)) {
+            m_materialVersions.erase(it->first);
+            it = m_materials.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // Erase textures not referenced by any active material
+    for (auto it = m_textures.begin(); it != m_textures.end(); ) {
+        if (!activeTextures.count(it->first)) {
+            m_textureVersions.erase(it->first);
+            it = m_textures.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 } // namespace Engine

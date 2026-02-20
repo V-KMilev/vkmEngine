@@ -1,16 +1,16 @@
 #include "render/render_view.h"
 
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/quaternion.hpp>
+#include <algorithm>
+#include <cstdint>
+#include <utility>
 
 #include "logger.h"
 
 #include "ecs/scene.h"
 #include "visibility/visibility.h"
-#include "ecs/component/transform.h"
-#include "ecs/component/camera.h"
 #include "ecs/component/mesh.h"
 #include "ecs/component/light.h"
+#include "ecs/component/transform.h"
 #include "resource/resource_manager.h"
 
 namespace Engine {
@@ -20,82 +20,102 @@ namespace {
     /**
      * @brief Sort drawables by (material, mesh) for optimal batching.
      *
-     * Uses std::sort with composite key - faster than radix sort when
-     * handle values are sparse (large gaps between values).
+     * Indirect sort: sorts lightweight (uint64 key, uint32 index) pairs
+     * with a custom comparator on key only (avoids std::pair's lexicographic
+     * operator<). Swaps 12 bytes instead of ~80 per DrawableData, then
+     * gathers into sorted order in one pass.
      */
     void sortDrawables(std::vector<DrawableData>& drawables) {
         if (drawables.size() <= 1) return;
 
-        std::sort(drawables.begin(), drawables.end(),
-            [](const DrawableData& a, const DrawableData& b) {
-                // Primary: material, Secondary: mesh
-                if (a.material.id() != b.material.id()) {
-                    return a.material.id() < b.material.id();
-                }
-                return a.mesh.id() < b.mesh.id();
+        const uint32_t n = static_cast<uint32_t>(drawables.size());
+
+        // Quick O(N) check: skip sort if already in order (common when
+        // visibility order is stable frame-to-frame)
+        {
+            bool alreadySorted = true;
+            uint64_t prev = (static_cast<uint64_t>(drawables[0].material.id()) << 32) | drawables[0].mesh.id();
+            for (uint32_t i = 1; i < n; ++i) {
+                uint64_t curr = (static_cast<uint64_t>(drawables[i].material.id()) << 32) | drawables[i].mesh.id();
+                if (curr < prev) { alreadySorted = false; break; }
+                prev = curr;
+            }
+            if (alreadySorted) return;
+        }
+
+        // Phase 1: Sort lightweight keys (12-byte swaps vs 80-byte DrawableData)
+        static thread_local std::vector<std::pair<uint64_t, uint32_t>> sortKeys;
+        sortKeys.resize(n);
+
+        for (uint32_t i = 0; i < n; ++i) {
+            sortKeys[i] = {
+                (static_cast<uint64_t>(drawables[i].material.id()) << 32) | drawables[i].mesh.id(),
+                i
+            };
+        }
+
+        // Custom comparator: compare key only (NOT default pair lexicographic)
+        std::sort(sortKeys.begin(), sortKeys.end(),
+            [](const std::pair<uint64_t, uint32_t>& a, const std::pair<uint64_t, uint32_t>& b) {
+                return a.first < b.first;
             });
-    }
 
-    /**
-     * @brief Helper function to setup camera data in the render view.
-     * @return true if camera was found and setup, false otherwise.
-     */
-    bool setupCamera(CameraData& cameraData, const Scene& scene) {
-        bool found = false;
-        scene.forEach<Camera, Transform>([&](EntityId id, const Camera& camera, const Transform& transform) {
-            if (found) return;
-            if (!camera.active) return;
+        // Phase 2: Gather into sorted order (sequential write, random read)
+        static thread_local std::vector<DrawableData> sorted;
+        sorted.resize(n);
+        for (uint32_t i = 0; i < n; ++i) {
+            sorted[i] = drawables[sortKeys[i].second];
+        }
 
-            cameraData.position = transform.position;
-
-            cameraData.view = Transform::computeView(transform);
-            cameraData.projection = Camera::computeProjection(camera);
-            cameraData.viewProjection = cameraData.projection * cameraData.view;
-
-            found = true;
-        });
-
-        return found;
+        drawables.swap(sorted);
     }
 }
 
-RenderView RenderView::build(
+void RenderView::build(
     const Scene& scene,
     const ResourceManager& resources,
-    const Visibility& visibility
+    const Visibility& visibility,
+    uint32_t viewportWidth,
+    uint32_t viewportHeight
 ) {
-    RenderView renderView;
+    // Clear vectors but keep capacity from previous frame
+    drawables.clear();
+    lights.clear();
 
-    if (!setupCamera(renderView.camera, scene)) {
+    this->viewportWidth  = viewportWidth;
+    this->viewportHeight = viewportHeight;
+
+    // Use camera data already computed by VisibilitySystem (avoids redundant scene search)
+    if (!visibility.hasCamera) {
         LOG_ERROR("No active camera found");
-        return renderView;
+        return;
     }
 
-    // Gather drawables
-    renderView.drawables.reserve(visibility.entities.size());
+    camera.view           = visibility.view;
+    camera.projection     = visibility.projection;
+    camera.viewProjection = visibility.projection * visibility.view;
+    camera.position       = visibility.cameraPosition;
 
-    // Iterate through entities and matrices in parallel (same order, cache-friendly)
+    // Gather drawables — reserve only grows, never shrinks
+    drawables.reserve(visibility.entities.size());
+
+    // Iterate through entities and matrices in lockstep (same order, cache-friendly).
+    // Visibility guarantees all entities have Mesh+Transform — no has<Mesh>() check needed.
     for (size_t i = 0; i < visibility.entities.size(); ++i) {
-        EntityId id = visibility.entities[i];
-        if (!scene.has<Mesh>(id)) continue;
+        const auto& mesh = scene.get<Mesh>(visibility.entities[i]);
 
-        const auto& mesh = scene.get<Mesh>(id);
-
-        // Use cached model matrix from visibility (computed during culling)
-        // Matrices are stored in same order as entities for cache-friendly access
-        // Add drawable with cached matrix
         DrawableData drawable;
         drawable.mesh     = mesh.mesh;
         drawable.material = mesh.material;
         drawable.model    = visibility.modelMatrices[i];
-        renderView.drawables.emplace_back(drawable);
+        drawables.emplace_back(drawable);
     }
 
-    // Sort drawables by for optimal batching
-    sortDrawables(renderView.drawables);
+    // Sort drawables for optimal batching
+    sortDrawables(drawables);
 
     // Gather lights (dense iteration, no holes)
-    renderView.lights.reserve(scene.count<Light>());
+    lights.reserve(scene.count<Light>());
 
     scene.forEach<Light, Transform>([&](EntityId id, const Light& light, const Transform& transform) {
         if (!light.enabled) return;
@@ -111,10 +131,8 @@ RenderView RenderView::build(
         lightData.position = transform.position;
         lightData.rotation = transform.rotation;
 
-        renderView.lights.emplace_back(lightData);
+        lights.emplace_back(lightData);
     });
-
-    return renderView;
 }
 
 } // namespace Engine

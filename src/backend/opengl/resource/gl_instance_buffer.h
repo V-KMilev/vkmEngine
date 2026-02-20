@@ -37,10 +37,10 @@ class GLInstanceBuffer {
         * Uses orphan pattern: if capacity is sufficient, orphans and refills.
         * If capacity is insufficient, reallocates with growth factor.
         *
-        * @param matrices Reference to a single model matrix
-        * @param count Number of instances
+        * @param data Pointer to contiguous model matrices.
+        * @param count Number of instances.
         */
-        void update(const std::vector<glm::mat4>& matrices, uint32_t count);
+        void update(const glm::mat4* data, uint32_t count);
 
         /**
         * @brief Attaches the instance buffer to a VAO at the specified attribute locations.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <cstdint>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -73,23 +74,25 @@ struct RenderView {
     std::vector<DrawableData> drawables;
     std::vector<LightData> lights;
 
+    uint32_t viewportWidth  = 0;
+    uint32_t viewportHeight = 0;
+
     /**
-    * @brief Builds a RenderView for the current frame from the scene.
+    * @brief Populate this RenderView for the current frame from the scene.
     *
-    * Gathers all necessary data for rendering by extracting camera properties,
-    * collecting all visible drawables according to the Visibility information,
-    * and assembling active light data. This function transforms entity/component data
-    * into a condensed structure ready for efficient use by the rendering backend.
+    * Clears and refills internal vectors, reusing existing capacity to avoid
+    * per-frame heap allocations. Gathers camera, visible drawables, and lights.
     *
     * @param scene The scene containing all entities and their components.
     * @param resources The resource manager for meshes and materials.
     * @param visibility The visibility listing entities that should be rendered.
-    * @return A RenderView snapshot of the current frame's visible render data.
     */
-    static RenderView build(
+    void build(
         const Scene& scene,
         const ResourceManager& resources,
-        const Visibility& visibility
+        const Visibility& visibility,
+        uint32_t viewportWidth,
+        uint32_t viewportHeight
     );
 
 };

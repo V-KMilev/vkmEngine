@@ -37,9 +37,10 @@ void GLNavigationGizmoPass::execute(RenderBackend& backend, const RenderView& vi
     auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
 
-    // TODO: Get the width and height from the frame context
-    int width = 1920;
-    int height = 1080;
+    int width = static_cast<int>(view.viewportWidth);
+    int height = static_cast<int>(view.viewportHeight);
+
+    if (width <= 0 || height <= 0) return;
 
     // Calculate gizmo viewport position
     const float centerX = m_config.x * static_cast<float>(width);

@@ -101,7 +101,13 @@ class ResourceManager {
             using T = typename HandleType::resource_t;
             static_assert(std::is_base_of_v<Resource, T>, "Resource type must inherit from Resource to use commit().");
             ++getStorage<T>().get(handle.key).version;
+            ++m_globalVersion;
         }
+
+        /**
+         * @brief Global version counter, incremented on every commit(). Used for sync skip.
+         */
+        uint64_t globalVersion() const { return m_globalVersion; }
 
     private:
         /**
@@ -140,6 +146,8 @@ class ResourceManager {
         Storage<MeshAsset>     m_meshStorage;
         Storage<TextureAsset>  m_textureStorage;
         Storage<MaterialAsset> m_materialStorage;
+
+        uint64_t m_globalVersion = 0;
 };
 
 } // namespace Engine

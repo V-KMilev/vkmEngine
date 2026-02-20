@@ -65,6 +65,13 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
     glView.syncTextures(view, resources);
     glView.syncLights(view, resources);
 
+    // Periodically purge GPU resources no longer referenced in the scene
+    static uint32_t frameCounter = 0;
+    if (++frameCounter >= 300) {
+        glView.purgeStaleResources(view);
+        frameCounter = 0;
+    }
+
     // Bind shader and set global uniforms
     m_shader.bind();
     STATS_RECORD_SHADER_SWITCH();

@@ -146,6 +146,15 @@ class GLView {
          */
         GLMesh* getMutableMesh(const MeshHandle& handle);
 
+        /**
+         * @brief Remove GPU resources not referenced in the current RenderView.
+         *
+         * Call periodically to free GPU memory from removed entities.
+         *
+         * @param renderView The current frame's render view with all active references.
+         */
+        void purgeStaleResources(const RenderView& renderView);
+
     private:
         std::unordered_map<uint32_t, std::unique_ptr<GLMesh>> m_meshes;
         std::unordered_map<uint32_t, uint64_t> m_meshVersions;
@@ -159,6 +168,9 @@ class GLView {
         GLLights m_lights;
 
         GLInstanceBatcher m_instanceBatcher;
+
+        uint64_t m_lastSyncVersion  = 0;      ///< Last ResourceManager globalVersion seen
+        size_t   m_lastDrawableCount = 0;      ///< Last drawable count (detects new entities)
 };
 
 } // namespace Engine
