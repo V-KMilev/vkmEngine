@@ -46,7 +46,7 @@ void Engine::printStats(const FrameContext& ctx) {
         info.frameRateInfo.frameRate,
         info.renderSystemInfo.drawCalls,
         info.renderSystemInfo.renderPasses,
-        ctx.visibility ? ctx.visibility->entities.size() : 0,
+        ctx.visibility ? ctx.visibility->entries.size() : 0,
         m_scene.entityCount()
     );
     std::fflush(stdout);

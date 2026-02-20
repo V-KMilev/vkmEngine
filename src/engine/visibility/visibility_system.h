@@ -37,8 +37,7 @@ class VisibilitySystem : public System {
         Visibility m_result;  ///< Persistent buffer - vectors reuse capacity across frames.
 
         /// Per-worker scratch buffers for parallel culling (reused across frames).
-        std::vector<std::vector<EntityId>>  m_workerEntities;
-        std::vector<std::vector<glm::mat4>> m_workerMatrices;
+        std::vector<std::vector<VisibleEntity>> m_workerResults;
 };
 
 } // namespace Engine

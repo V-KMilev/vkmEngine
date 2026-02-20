@@ -27,8 +27,7 @@ namespace Engine {
 
 void VisibilitySystem::update(FrameContext& ctx) {
     // Reuse persistent buffer - clear keeps capacity, avoiding per-frame allocation
-    m_result.entities.clear();
-    m_result.modelMatrices.clear();
+    m_result.entries.clear();
     m_result.hasCamera = false;
 
     glm::mat4 view;
@@ -114,34 +113,29 @@ void VisibilitySystem::update(FrameContext& ctx) {
     }
 
     const uint32_t meshCount = static_cast<uint32_t>(meshStorage->size());
-    m_result.entities.reserve(meshCount);
-    m_result.modelMatrices.reserve(meshCount);
+    m_result.entries.reserve(meshCount);
 
     auto& pool = ThreadPool::get();
     const size_t workerCount = pool.size();
     const size_t grain = std::max<size_t>(64, meshCount / (workerCount * 4));
 
     // Resize per-worker scratch buffers (reuses capacity across frames)
-    if (m_workerEntities.size() != workerCount) {
-        m_workerEntities.resize(workerCount);
-        m_workerMatrices.resize(workerCount);
+    if (m_workerResults.size() != workerCount) {
+        m_workerResults.resize(workerCount);
     }
 
     // Pre-reserve per-worker buffers based on estimated share (avoids reallocation during push_back)
     const size_t estimatePerWorker = (meshCount / workerCount) + 1;
     for (size_t i = 0; i < workerCount; ++i) {
-        m_workerEntities[i].clear();
-        m_workerMatrices[i].clear();
-        m_workerEntities[i].reserve(estimatePerWorker);
-        m_workerMatrices[i].reserve(estimatePerWorker);
+        m_workerResults[i].clear();
+        m_workerResults[i].reserve(estimatePerWorker);
     }
 
     const auto& resources = ctx.resources;
 
     pool.parallelFor(0, meshCount, grain,
         [&](size_t startIdx, size_t endIdx, size_t workerIdx) {
-            auto& localEntities = m_workerEntities[workerIdx];
-            auto& localMatrices = m_workerMatrices[workerIdx];
+            auto& localResults = m_workerResults[workerIdx];
 
             for (size_t i = startIdx; i < endIdx; ++i) {
                 const uint32_t denseIdx = static_cast<uint32_t>(i);
@@ -179,8 +173,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
                 if (!DistanceCuller::isVisible(worldMin, worldMax, context)) continue;
                 if (!ScreenSizeCuller::isVisible(worldMin, worldMax, context)) continue;
 
-                localEntities.push_back(eid);
-                localMatrices.push_back(modelMatrix);
+                localResults.push_back({eid, modelMatrix});
             }
         }
     );
@@ -188,19 +181,16 @@ void VisibilitySystem::update(FrameContext& ctx) {
     // Merge per-worker results: pre-size and memcpy via offset writes
     size_t totalVisible = 0;
     for (size_t i = 0; i < workerCount; ++i) {
-        totalVisible += m_workerEntities[i].size();
+        totalVisible += m_workerResults[i].size();
     }
-    m_result.entities.resize(totalVisible);
-    m_result.modelMatrices.resize(totalVisible);
+    m_result.entries.resize(totalVisible);
 
     size_t offset = 0;
     for (size_t i = 0; i < workerCount; ++i) {
-        const size_t count = m_workerEntities[i].size();
+        const size_t count = m_workerResults[i].size();
         if (count > 0) {
-            std::memcpy(m_result.entities.data() + offset,
-                        m_workerEntities[i].data(), count * sizeof(EntityId));
-            std::memcpy(m_result.modelMatrices.data() + offset,
-                        m_workerMatrices[i].data(), count * sizeof(glm::mat4));
+            std::memcpy(m_result.entries.data() + offset,
+                        m_workerResults[i].data(), count * sizeof(VisibleEntity));
             offset += count;
         }
     }

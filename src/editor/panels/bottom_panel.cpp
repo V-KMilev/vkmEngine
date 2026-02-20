@@ -56,7 +56,7 @@ void EditorSystem::drawSettingsTab(FrameContext& ctx) {
                     m_visibilitySystem->setMaxDistance(maxDist);
 
                 if (ctx.visibility) {
-                    size_t vis = ctx.visibility->entities.size();
+                    size_t vis = ctx.visibility->entries.size();
                     size_t tot = ctx.scene.entityCount();
                     ImGui::TextDisabled("Culled: %zu / %zu", tot > vis ? tot - vis : 0, tot);
                 }

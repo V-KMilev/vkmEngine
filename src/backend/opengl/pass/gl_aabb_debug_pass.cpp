@@ -95,7 +95,8 @@ void GLAABBDebugPass::execute(RenderBackend& backend, const RenderView& view, co
             continue;
         }
 
-        // TODO: Check why when we rotate spheres the AABB is wrong
+        // Note: AABBs grow under rotation (the AABB of a rotated box is larger
+        // than the original). This is correct and expected -- not a bug.
         // Transform AABB from model space to world space
         glm::vec3 worldMin, worldMax;
         localToWorldAABB(

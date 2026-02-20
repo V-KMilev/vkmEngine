@@ -91,10 +91,10 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 | # | Status | Issue | Location | Description |
 |---|--------|-------|----------|-------------|
 | 34 | | Single shader per forward pass | `gl_forward_pass.h:60` | All materials use the same shader. Can't support transparent, unlit, or emissive materials without shader variants. Move shader selection to material or add variant dispatch in forward pass. |
-| 35 | | No hierarchy world matrix caching | `hierarchy_utils.cpp:63` | `computeWorldMatrix()` walks up to 32 hierarchy levels every frame for every parented entity. No dirty-flag equivalent for hierarchy like Transform has. Add dirty propagation: mark descendants dirty when a transform moves. |
+| 35 | Deferred | No hierarchy world matrix caching | `hierarchy_utils.cpp:63` | Only ~48 parented entities in benchmark (~0.3%). Visibility system already caches computed world matrices per frame. Adding dirty-flag infrastructure to plain-data Transform would require change detection at every write site. Revisit when hierarchy count grows. |
 | 36 | | Animation tracks AoS layout | `animation_track.h:166` | Keyframes stored as `vector<Keyframe<T>>` (time + value interleaved). For ~2,750 animated entities, SoA layout (separate `times[]` and `values[]`) would improve cache locality and enable SIMD. |
-| 37 | | Visibility results AoS | `visibility.h:20-21` | Parallel `vector<EntityId>` and `vector<mat4>`. Accessing `entities[i]` then `modelMatrices[i]` crosses cache lines. Combined `DrawableRef { EntityId, mat4 }` struct would improve locality. |
-| 38 | | AABB rotation bug | `gl_aabb_debug_pass.cpp` | TODO in code: "Check why when we rotate spheres the AABB is wrong". Likely Arvo's AABB transform doesn't handle scaled rotations correctly. Compute world bounds from all 8 corners of local AABB. |
+| 37 | Done | Visibility results AoS | `visibility.h:20-21` | Replaced parallel vectors with combined `VisibleEntity { EntityId, mat4 }` struct. Single contiguous vector improves cache locality and simplifies worker merge logic. |
+| 38 | Done | AABB rotation "bug" | `gl_aabb_debug_pass.cpp` | Not a bug. AABBs grow under rotation because Arvo's method computes the AABB of the rotated bounding box, not the geometry. The 8-corner method produces identical results. Expected and correct for conservative culling. |
 | 39 | Done | Bounds validation epsilon too small | `bounds_utils.h:12` | Replaced `glm::epsilon<float>()` with `BOUNDS_EPSILON_SQ = 1e-8f`. |
 
 ---
@@ -118,6 +118,6 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 | Code Style | 5 | 5 |
 | API Consistency | 4 | 4 |
 | Comments | 4 | 4 |
-| Architecture | 6 | 1 |
+| Architecture | 6 | 3 (1 deferred) |
 | Dead Code | 1 | 1 |
-| **Total** | **40** | **27** |
+| **Total** | **40** | **30** |

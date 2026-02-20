@@ -99,18 +99,17 @@ void RenderView::build(
     camera.position       = visibility.cameraPosition;
 
     // Gather drawables - reserve only grows, never shrinks
-    drawables.reserve(visibility.entities.size());
+    drawables.reserve(visibility.entries.size());
 
-    // Iterate through entities and matrices in lockstep (same order, cache-friendly).
     // Guard against stale EntityIds (entity deleted between visibility and render).
-    for (size_t i = 0; i < visibility.entities.size(); ++i) {
-        if (!scene.isAlive(visibility.entities[i])) continue;
-        const auto& mesh = scene.get<Mesh>(visibility.entities[i]);
+    for (const auto& entry : visibility.entries) {
+        if (!scene.isAlive(entry.id)) continue;
+        const auto& mesh = scene.get<Mesh>(entry.id);
 
         DrawableData drawable;
         drawable.mesh     = mesh.mesh;
         drawable.material = mesh.material;
-        drawable.model    = visibility.modelMatrices[i];
+        drawable.model    = entry.model;
         drawables.emplace_back(drawable);
     }
 

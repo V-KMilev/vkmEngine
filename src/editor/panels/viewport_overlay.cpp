@@ -36,7 +36,7 @@ void EditorSystem::drawViewportOverlay(const FrameContext& ctx) {
         ImGui::Spacing();
 
         size_t total = ctx.scene.entityCount();
-        size_t vis = ctx.visibility ? ctx.visibility->entities.size() : 0;
+        size_t vis = ctx.visibility ? ctx.visibility->entries.size() : 0;
         float pct = total > 0 ? (static_cast<float>(vis) / static_cast<float>(total)) * 100.0f : 0.0f;
         ImGui::Text("Entities: %zu  Visible: %zu (%.1f%%)", total, vis, pct);
         ImGui::Text("Draws: %u  Passes: %u", info.renderSystemInfo.drawCalls, info.renderSystemInfo.renderPasses);

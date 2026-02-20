@@ -39,15 +39,15 @@ void AnimationSystem::update(FrameContext& ctx) {
     });
 
     // Apply animations only to visible entities
-    for (const EntityId& id : visibility.entities) {
-        if (!scene.isAlive(id)) continue;
-        if (!scene.has<Animation>(id)) continue;
-        if (!scene.has<Transform>(id)) continue;
+    for (const auto& entry : visibility.entries) {
+        if (!scene.isAlive(entry.id)) continue;
+        if (!scene.has<Animation>(entry.id)) continue;
+        if (!scene.has<Transform>(entry.id)) continue;
 
-        auto& animation = scene.get<Animation>(id);
+        auto& animation = scene.get<Animation>(entry.id);
         if (!animation.playing) continue;
 
-        auto& transform = scene.get<Transform>(id);
+        auto& transform = scene.get<Transform>(entry.id);
         applyAnimation(animation, transform);
     }
 }
