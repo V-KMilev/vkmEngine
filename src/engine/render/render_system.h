@@ -92,6 +92,9 @@ class RenderSystem : public System {
          */
         void update(FrameContext& ctx) override;
 
+        RenderPipeline& getPipeline() { return m_pipeline; }
+        const RenderPipeline& getPipeline() const { return m_pipeline; }
+
     private:
         std::unique_ptr<RenderBackend> m_backend;
         RenderPipeline m_pipeline;

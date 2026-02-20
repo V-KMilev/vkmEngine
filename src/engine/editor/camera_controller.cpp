@@ -31,8 +31,8 @@ void CameraController::updateFlyMode(glm::vec3& position, glm::quat& rotation, f
     auto& mouse    = inputHandle.mouse();
     auto& keyboard = inputHandle.keyboard();
 
-    // Right mouse: Look around
-    bool isRightMousePressed = mouse.isButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
+    // Right mouse: Look around (skip if editor UI wants mouse)
+    bool isRightMousePressed = !m_editorWantsMouse && mouse.isButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
 
     // Only update cursor mode when state changes
     if (isRightMousePressed != m_isRightMousePressed) {
@@ -55,13 +55,14 @@ void CameraController::updateFlyMode(glm::vec3& position, glm::quat& rotation, f
     glm::vec3 forward = Transform::computeForward(rotation);
     glm::vec3 right   = Transform::computeRight(rotation);
 
-    float scrollDelta = static_cast<float>(mouse.getScrollY());
-
     // Scroll wheel modifies forward/back
+    float scrollDelta = static_cast<float>(mouse.getScrollY());
     if (std::abs(scrollDelta) > 0.001f) {
-        // Combine zoomSensitivity and scrollMultiplier into one calculation
         position += forward * scrollDelta * m_settings.zoomSensitivity * m_settings.scrollMultiplier;
     }
+
+    // Skip keyboard movement if editor UI wants keyboard
+    if (m_editorWantsKeyboard) return;
 
     // Movement speed with optional boost
     float speed = m_settings.moveSpeed * deltaTime;

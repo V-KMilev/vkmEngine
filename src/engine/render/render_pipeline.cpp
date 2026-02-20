@@ -23,6 +23,7 @@ void RenderPipeline::execute(
     const ResourceManager& resources
 ) {
     for (auto& pass : m_passes) {
+        if (!pass->isEnabled()) continue;
         pass->execute(backend, view, resources);
         STATS_RECORD_RENDER_PASS();
     }

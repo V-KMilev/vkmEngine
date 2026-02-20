@@ -14,13 +14,13 @@
 #include "visibility/visibility_system.h"
 #include "render/render_system.h"
 #include "editor/camera_controller.h"
+#include "editor_system.h"
 
 // Backend
 #include "gl_backend.h"
 #include "gl_forward_pass.h"
 #include "gl_aabb_debug_pass.h"
 #include "gl_grid_pass.h"
-#include "gl_navigation_gizmo_pass.h"
 
 // Demo scene
 #include "example/benchmark_scene.h"
@@ -49,19 +49,20 @@ int main() {
         auto& visibilitySystem = engine.addSystem<Engine::VisibilitySystem>();
         auto& animationSystem  = engine.addSystem<Engine::AnimationSystem>();
         auto& renderSystem     = engine.addSystem<Engine::RenderSystem>();
+        engine.addSystem<Engine::EditorSystem>(
+            window.getWindowContext(), &cameraController, &visibilitySystem, &renderSystem);
 
         // Shaders
         Core::Shader pbr("../shaders/pbr");
         Core::Shader aabbDebug("../shaders/aabb_debug");
         Core::Shader gridShader("../shaders/grid");
-        Core::Shader gizmoShader("../shaders/gizmo");
-
         // Render passes
         renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
         renderSystem.addPass(std::make_unique<Engine::GLForwardPass>(pbr));
-        // renderSystem.addPass(std::make_unique<Engine::GLAABBDebugPass>(aabbDebug));
+        auto aabbPass = std::make_unique<Engine::GLAABBDebugPass>(aabbDebug);
+        aabbPass->setEnabled(false);
+        renderSystem.addPass(std::move(aabbPass));
         renderSystem.addPass(std::make_unique<Engine::GLGridPass>(gridShader));
-        renderSystem.addPass(std::make_unique<Engine::GLNavigationGizmoPass>(gizmoShader));
 
         // Scene setup
         BenchmarkConfig config;

@@ -221,4 +221,8 @@ size_t WindowManager::getHeight() const {
     return m_window->getHeight();
 }
 
+GLFWwindow* WindowManager::getWindowContext() const {
+    return m_window ? m_window->getWindowContext() : nullptr;
+}
+
 } // namespace Engine

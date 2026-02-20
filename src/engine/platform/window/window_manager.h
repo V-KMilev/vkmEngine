@@ -157,6 +157,12 @@ class WindowManager {
          */
         size_t getHeight() const;
 
+        /**
+         * @brief Get the underlying GLFW window pointer.
+         * @return Pointer to the GLFWwindow, or nullptr if not initialized.
+         */
+        GLFWwindow* getWindowContext() const;
+
     public:
         WindowManager();
         ~WindowManager();

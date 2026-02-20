@@ -51,10 +51,26 @@ class CameraController : public System {
         void setCameraEntity(Entity cameraEntity) { m_cameraEntity = cameraEntity; }
 
         /**
+         * @brief Notify the controller that the editor UI is capturing input.
+         *
+         * When mouse capture is active, camera look/scroll is suppressed.
+         * When keyboard capture is active, WASD movement is suppressed.
+         * Called by EditorSystem each frame.
+         */
+        void setEditorInputCapture(bool mouse, bool keyboard) {
+            m_editorWantsMouse    = mouse;
+            m_editorWantsKeyboard = keyboard;
+        }
+
+        /**
          * @brief Update and apply camera motions (call once per-frame).
          * @param ctx The shared FrameContext for this frame.
          */
         void update(FrameContext& ctx) override;
+
+        CameraControllerSettings& getSettings() { return m_settings; }
+        const CameraControllerSettings& getSettings() const { return m_settings; }
+        bool isLooking() const { return m_isRightMousePressed; }
 
     private:
         /**
@@ -81,6 +97,9 @@ class CameraController : public System {
         float m_yaw   = 0.0f;
         float m_pitch = 0.0f;
         bool m_isRightMousePressed = false;
+
+        bool m_editorWantsMouse    = false;
+        bool m_editorWantsKeyboard = false;
 };
 
 } // namespace Engine

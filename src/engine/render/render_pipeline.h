@@ -62,6 +62,11 @@ class RenderPipeline {
             const ResourceManager& resources
         );
 
+    public:
+        size_t passCount() const { return m_passes.size(); }
+        RenderPass& getPass(size_t index) { return *m_passes[index]; }
+        const RenderPass& getPass(size_t index) const { return *m_passes[index]; }
+
     private:
         std::vector<std::unique_ptr<RenderPass>> m_passes;
 };

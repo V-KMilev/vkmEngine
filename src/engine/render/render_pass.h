@@ -47,6 +47,9 @@ class RenderPass {
          */
         const std::string& getName() const { return m_name; }
 
+        bool isEnabled() const { return m_enabled; }
+        void setEnabled(bool enabled) { m_enabled = enabled; }
+
         /**
          * @brief Respond to framebuffer or window resizing by adapting the pass.
          *
@@ -73,6 +76,7 @@ class RenderPass {
 
     protected:
         std::string m_name;
+        bool m_enabled = true;
 };
 
 } // namespace Engine

@@ -30,6 +30,31 @@ if(NOT TARGET vkmGL)
 endif()
 
 # ============================================================================
+# ImGui Library
+# ============================================================================
+add_library(imgui STATIC
+    modules/imgui/imgui.cpp
+    modules/imgui/imgui_draw.cpp
+    modules/imgui/imgui_tables.cpp
+    modules/imgui/imgui_widgets.cpp
+    modules/imgui/imgui_demo.cpp
+    modules/imgui/backends/imgui_impl_glfw.cpp
+    modules/imgui/backends/imgui_impl_opengl3.cpp
+)
+
+target_include_directories(imgui PUBLIC
+    modules/imgui
+    modules/imgui/backends
+)
+
+target_link_libraries(imgui PUBLIC
+    glfw
+)
+
+# imgui uses its own built-in GL loader (imgui_impl_opengl3_loader.h)
+# — no GLEW dependency, no loader defines needed
+
+# ============================================================================
 # Engine Core Library
 # ============================================================================
 add_library(EngineCore STATIC
@@ -216,6 +241,33 @@ target_link_libraries(EngineTools PUBLIC
 )
 
 # ============================================================================
+# Engine Editor Library
+# ============================================================================
+add_library(EngineEditor STATIC
+    src/editor/editor_system.h
+    src/editor/editor_system.cpp
+)
+
+target_include_directories(EngineEditor PUBLIC
+    src/editor
+)
+
+target_link_libraries(EngineEditor PUBLIC
+    EngineCore
+    EngineTools
+    imgui
+    vkmGL
+)
+
+target_compile_definitions(EngineEditor PRIVATE
+    APP_VERSION="${PROJECT_VERSION}"
+    APP_NAME="${PROJECT_NAME}"
+    APP_BRANCH="${PROJECT_BRANCH}"
+    APP_COMMIT_HASH="${PROJECT_COMMIT_HASH}"
+    APP_BUILD_DATE="${PROJECT_BUILD_DATE}"
+)
+
+# ============================================================================
 # Main Executable
 # ============================================================================
 add_executable(${PROJECT_NAME}
@@ -227,6 +279,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     EngineRendering
     BackendOpenGL
     EngineTools
+    EngineEditor
 )
 
 # target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
