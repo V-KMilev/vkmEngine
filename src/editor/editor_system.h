@@ -54,12 +54,12 @@ class EditorSystem : public System {
         void drawLightSection(Scene& scene, EntityId id);
         void drawCameraSection(Scene& scene, EntityId id);
         void drawAnimationSection(Scene& scene, EntityId id);
-        void drawHierarchySection(const Scene& scene, EntityId id);
+        void drawHierarchySection(Scene& scene, EntityId id);
         void drawAddComponentMenu(Scene& scene, EntityId id);
 
         // Settings/Resources (bottom tabs)
         void drawSettingsTab(FrameContext& ctx);
-        void drawResourcesTab(const FrameContext& ctx);
+        void drawResourcesTab(FrameContext& ctx);
 
         // Navigation gizmo (ImGui DrawList, replaces GL render pass)
         void drawNavigationGizmo(const FrameContext& ctx, ImVec2 regionMin, ImVec2 regionMax);
@@ -73,9 +73,11 @@ class EditorSystem : public System {
         static bool drawVec3Control(const char* label, float* values,
                                      float resetValue = 0.0f, float speed = 0.1f);
         static void drawPropertyLabel(const char* label);
+        static bool drawRemoveButton(const char* compLabel, uint32_t entityIdx);
+        static bool matchesFilter(const char* text, const char* filter);
 
-        const char* getEntityDisplayName(const Scene& scene, EntityId id) const;
-        const char* getEntityIcon(const Scene& scene, EntityId id) const;
+        void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t bufSize) const;
+        void getEntityIcon(const Scene& scene, EntityId id, char* buf, size_t bufSize) const;
 
     private:
         GLFWwindow*       m_window           = nullptr;

@@ -8,12 +8,10 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
 #include <cstring>
 #include <cstdio>
-#include <cmath>
 
 #include "core/engine.h"
 #include "ecs/scene.h"
@@ -26,32 +24,15 @@
 #include "ecs/component/name.h"
 #include "ecs/hierarchy_utils.h"
 #include "editor/camera_controller.h"
-#include "visibility/visibility_system.h"
 #include "render/render_system.h"
-#include "render/render_pipeline.h"
 #include "resource/resource_manager.h"
-#include "resource/mesh_asset.h"
-#include "resource/texture_asset.h"
-#include "resource/material_asset.h"
 #include "debug/statistics.h"
-#include "visibility/visibility.h"
-#include "platform/threading/thread_pool.h"
 
 #include "generator/light_generators.h"
 #include "generator/mesh_generators.h"
 #include "generator/material_generators.h"
 
 namespace Engine {
-
-// Axis colors
-static const ImVec4 kAxisRed    = ImVec4(0.80f, 0.18f, 0.18f, 1.00f);
-static const ImVec4 kAxisGreen  = ImVec4(0.30f, 0.70f, 0.20f, 1.00f);
-static const ImVec4 kAxisBlue   = ImVec4(0.20f, 0.35f, 0.85f, 1.00f);
-static const ImVec4 kAxisRedHov   = ImVec4(0.90f, 0.28f, 0.28f, 1.00f);
-static const ImVec4 kAxisGreenHov = ImVec4(0.40f, 0.80f, 0.30f, 1.00f);
-static const ImVec4 kAxisBlueHov  = ImVec4(0.30f, 0.45f, 0.95f, 1.00f);
-
-static constexpr float kLabelWidth = 100.0f;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Lifecycle
@@ -147,97 +128,6 @@ EditorSystem::~EditorSystem() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Widget Helpers
-// ────────────────────────────────────────────────────────────────────────────
-
-bool EditorSystem::drawVec3Control(const char* label, float* values,
-                                    float resetValue, float speed) {
-    bool changed = false;
-    ImGui::PushID(label);
-
-    float lineHeight = ImGui::GetFrameHeight();
-    ImVec2 buttonSize(lineHeight + 2.0f, lineHeight);
-    float inputWidth = (ImGui::GetContentRegionAvail().x - kLabelWidth
-                        - buttonSize.x * 3 - ImGui::GetStyle().ItemSpacing.x * 5) / 3.0f;
-
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
-    ImGui::SameLine(kLabelWidth);
-
-    ImGui::PushStyleColor(ImGuiCol_Button, kAxisRed);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kAxisRedHov);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, kAxisRed);
-    if (ImGui::Button("X", buttonSize)) { values[0] = resetValue; changed = true; }
-    ImGui::PopStyleColor(3);
-    ImGui::SameLine(0, 2);
-    ImGui::SetNextItemWidth(inputWidth);
-    changed |= ImGui::DragFloat("##X", &values[0], speed, 0.0f, 0.0f, "%.2f");
-    ImGui::SameLine(0, 6);
-
-    ImGui::PushStyleColor(ImGuiCol_Button, kAxisGreen);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kAxisGreenHov);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, kAxisGreen);
-    if (ImGui::Button("Y", buttonSize)) { values[1] = resetValue; changed = true; }
-    ImGui::PopStyleColor(3);
-    ImGui::SameLine(0, 2);
-    ImGui::SetNextItemWidth(inputWidth);
-    changed |= ImGui::DragFloat("##Y", &values[1], speed, 0.0f, 0.0f, "%.2f");
-    ImGui::SameLine(0, 6);
-
-    ImGui::PushStyleColor(ImGuiCol_Button, kAxisBlue);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kAxisBlueHov);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, kAxisBlue);
-    if (ImGui::Button("Z", buttonSize)) { values[2] = resetValue; changed = true; }
-    ImGui::PopStyleColor(3);
-    ImGui::SameLine(0, 2);
-    ImGui::SetNextItemWidth(inputWidth);
-    changed |= ImGui::DragFloat("##Z", &values[2], speed, 0.0f, 0.0f, "%.2f");
-
-    ImGui::PopID();
-    return changed;
-}
-
-void EditorSystem::drawPropertyLabel(const char* label) {
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
-    ImGui::SameLine(kLabelWidth);
-    ImGui::SetNextItemWidth(-1);
-}
-
-const char* EditorSystem::getEntityDisplayName(const Scene& scene, EntityId id) const {
-    if (scene.has<Name>(id)) {
-        const auto& name = scene.get<Name>(id);
-        if (name.value[0] != '\0') return name.value;
-    }
-    // Fallback to type-based name
-    static thread_local char buf[64];
-    const char* typeName = "Entity";
-    if (scene.has<Camera>(id))    typeName = "Camera";
-    else if (scene.has<Light>(id)) {
-        auto& l = scene.get<Light>(id);
-        typeName = l.type == LightType::Directional ? "Dir Light" :
-                   l.type == LightType::Point ? "Point Light" : "Spot Light";
-    }
-    else if (scene.has<Mesh>(id)) typeName = scene.has<Animation>(id) ? "Animated Mesh" : "Mesh";
-    else if (scene.has<Animation>(id)) typeName = "Animation";
-    snprintf(buf, sizeof(buf), "%s %u", typeName, id.index);
-    return buf;
-}
-
-const char* EditorSystem::getEntityIcon(const Scene& scene, EntityId id) const {
-    if (scene.has<Camera>(id))    return "[C]";
-    if (scene.has<Light>(id)) {
-        auto& l = scene.get<Light>(id);
-        if (l.type == LightType::Directional) return "[D]";
-        if (l.type == LightType::Point)       return "[P]";
-        return "[S]";
-    }
-    if (scene.has<Mesh>(id))      return "[M]";
-    if (scene.has<Animation>(id)) return "[A]";
-    return "[ ]";
-}
-
-// ────────────────────────────────────────────────────────────────────────────
 // Entity Operations
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -297,7 +187,6 @@ void EditorSystem::duplicateEntity(Scene& scene, EntityId source) {
         scene.add(entity, cam);
     }
     if (scene.has<Animation>(source)) {
-        // Animation tracks are move-only; duplicate without tracks
         Animation anim;
         anim.duration = scene.get<Animation>(source).duration;
         anim.speed = scene.get<Animation>(source).speed;
@@ -330,7 +219,6 @@ void EditorSystem::deleteEntity(Scene& scene, EntityId entity) {
 
 void EditorSystem::update(FrameContext& ctx) {
     if (!m_editorVisible) {
-        // Zero overhead path: raw GLFW key check, no ImGui frame at all
         int f5 = glfwGetKey(m_window, GLFW_KEY_F5);
         if (f5 == GLFW_PRESS && !m_f5WasDown) m_editorVisible = true;
         m_f5WasDown = (f5 == GLFW_PRESS);
@@ -339,13 +227,10 @@ void EditorSystem::update(FrameContext& ctx) {
     }
 
     if (m_cameraController) {
-        // Don't block mouse if camera is already in right-click look mode (prevents
-        // cursor escape when mouse leaves viewport bounds during drag).
         bool blockMouse = !m_viewportHovered && !m_cameraController->isLooking();
         m_cameraController->setEditorInputCapture(blockMouse, ImGui::GetIO().WantTextInput);
     }
 
-    // Always reset to fill mode for ImGui rendering (wireframe is re-applied at end for next 3D frame)
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
     ImGui_ImplOpenGL3_NewFrame();
@@ -356,7 +241,6 @@ void EditorSystem::update(FrameContext& ctx) {
     m_frameTimeOffset = (m_frameTimeOffset + 1) % FRAME_HISTORY_SIZE;
     m_metrics.update(ctx.deltaTime);
 
-    // Keyboard shortcuts (allow when no text input is active)
     if (!ImGui::GetIO().WantTextInput) {
         if (ImGui::IsKeyPressed(ImGuiKey_F1)) m_showStats     = !m_showStats;
         if (ImGui::IsKeyPressed(ImGuiKey_F2)) m_showHierarchy = !m_showHierarchy;
@@ -375,7 +259,6 @@ void EditorSystem::update(FrameContext& ctx) {
         }
     }
 
-    // ── Fullscreen editor window ──
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -397,7 +280,6 @@ void EditorSystem::update(FrameContext& ctx) {
 
         drawMenuBar(ctx);
 
-        // Zero spacing between ALL layout regions to prevent scene bleeding through gaps
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
 
         float toolbarH = ImGui::GetCursorPosY();
@@ -405,11 +287,9 @@ void EditorSystem::update(FrameContext& ctx) {
         float bottomH = m_showBottom ? m_bottomPanelHeight : 0.0f;
         float mainH = viewport->WorkSize.y - toolbarH - statusBarH - bottomH;
 
-        // ── Main region (Hierarchy | Viewport | Inspector) ──
         float leftW  = m_showHierarchy ? m_leftPanelWidth : 0.0f;
         float rightW = m_showInspector ? m_rightPanelWidth : 0.0f;
 
-        // Left: Hierarchy
         if (m_showHierarchy) {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
             if (ImGui::BeginChild("##Hierarchy", ImVec2(leftW, mainH), ImGuiChildFlags_Borders)) {
@@ -420,7 +300,6 @@ void EditorSystem::update(FrameContext& ctx) {
             ImGui::SameLine(0, 0);
         }
 
-        // Center: Viewport (transparent — scene renders behind)
         {
             ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
             float centerW = viewport->WorkSize.x - leftW - rightW;
@@ -438,7 +317,6 @@ void EditorSystem::update(FrameContext& ctx) {
             ImGui::SameLine(0, 0);
         }
 
-        // Right: Inspector
         if (m_showInspector) {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
             if (ImGui::BeginChild("##Inspector", ImVec2(rightW, mainH), ImGuiChildFlags_Borders)) {
@@ -448,7 +326,6 @@ void EditorSystem::update(FrameContext& ctx) {
             ImGui::PopStyleVar();
         }
 
-        // ── Bottom panel (tabbed) ──
         if (m_showBottom) {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
             if (ImGui::BeginChild("##Bottom", ImVec2(0, bottomH), ImGuiChildFlags_Borders)) {
@@ -460,7 +337,6 @@ void EditorSystem::update(FrameContext& ctx) {
 
         ImGui::PopStyleVar(); // ItemSpacing
 
-        // ── Status bar ──
         drawStatusBar(ctx);
 
     } else {
@@ -472,7 +348,6 @@ void EditorSystem::update(FrameContext& ctx) {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-    // Set wireframe for next frame's 3D rendering (RenderSystem runs before EditorSystem)
     if (m_wireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 }
 
@@ -512,7 +387,6 @@ void EditorSystem::drawMenuBar(FrameContext& ctx) {
         ImGui::EndMenu();
     }
 
-    // About popup (must be at menu bar level to stay open after menu closes)
     if (ImGui::BeginPopup("##About")) {
         ImGui::Text("%s  v%s", APP_NAME, APP_VERSION);
         ImGui::Separator();
@@ -525,7 +399,6 @@ void EditorSystem::drawMenuBar(FrameContext& ctx) {
         ImGui::EndPopup();
     }
 
-    // FPS (right-aligned, color-coded)
     const auto& info = Engine::get().getStatistics().getFrameInfo();
     char fps[32];
     snprintf(fps, sizeof(fps), "%.0f FPS", info.frameRateInfo.frameRate);
@@ -565,699 +438,6 @@ void EditorSystem::drawCreateEntityMenu(Scene& scene, ResourceManager& resources
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Viewport Overlay (Stats)
-// ────────────────────────────────────────────────────────────────────────────
-
-void EditorSystem::drawViewportOverlay(const FrameContext& ctx) {
-    ImVec2 regionSize = ImGui::GetContentRegionAvail();
-    ImVec2 overlayPos(regionSize.x - 276, 4);
-
-    ImGui::SetCursorPos(overlayPos);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.11f, 0.11f, 0.12f, 0.72f));
-    if (ImGui::BeginChild("##StatsOverlay", ImVec2(272, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders)) {
-        const auto& info = Engine::get().getStatistics().getFrameInfo();
-
-        float avgMs = 0.0f, maxMs = 0.0f, minMs = 1000.0f;
-        for (int i = 0; i < FRAME_HISTORY_SIZE; ++i) {
-            avgMs += m_frameTimeHistory[i];
-            if (m_frameTimeHistory[i] > maxMs) maxMs = m_frameTimeHistory[i];
-            if (m_frameTimeHistory[i] > 0.0f && m_frameTimeHistory[i] < minMs)
-                minMs = m_frameTimeHistory[i];
-        }
-        avgMs /= FRAME_HISTORY_SIZE;
-        m_frameTimeMax = m_frameTimeMax * 0.95f + maxMs * 0.05f;
-
-        char overlay[64];
-        snprintf(overlay, sizeof(overlay), "%.1f FPS | %.2f ms", info.frameRateInfo.frameRate, avgMs);
-        ImGui::PlotLines("##FT", m_frameTimeHistory, FRAME_HISTORY_SIZE,
-                         m_frameTimeOffset, overlay, 0.0f,
-                         std::max(m_frameTimeMax * 1.2f, 1.0f), ImVec2(256, 36));
-
-        ImGui::TextDisabled("Min %.2f  Avg %.2f  Max %.2f", minMs, avgMs, maxMs);
-
-        ImGui::Spacing();
-
-        size_t total = ctx.scene.entityCount();
-        size_t vis = ctx.visibility ? ctx.visibility->entities.size() : 0;
-        float pct = total > 0 ? (static_cast<float>(vis) / static_cast<float>(total)) * 100.0f : 0.0f;
-        ImGui::Text("Entities: %zu  Visible: %zu (%.1f%%)", total, vis, pct);
-        ImGui::Text("Draws: %u  Passes: %u", info.renderSystemInfo.drawCalls, info.renderSystemInfo.renderPasses);
-
-        ImGui::Spacing();
-        ImGui::TextDisabled("System");
-        ImGui::Separator();
-        {
-            float ramPct = (m_metrics.ramTotalMB() > 0.0f)
-                ? (m_metrics.ramUsedMB() / m_metrics.ramTotalMB() * 100.0f) : 0.0f;
-            ImGui::Text("CPU  %.0f%% | %.0f%% RAM (%.0f/%.0f GB)",
-                         m_metrics.cpuPercent(), ramPct,
-                         m_metrics.ramUsedMB() / 1024.0f, m_metrics.ramTotalMB() / 1024.0f);
-        }
-        if (m_metrics.hasGpuUtil() || m_metrics.hasVram()) {
-            float vramPct = m_metrics.hasVram()
-                ? (m_metrics.vramUsedMB() / m_metrics.vramTotalMB() * 100.0f) : 0.0f;
-            ImGui::Text("GPU  %.0f%% | %.0f%% VRAM (%.0f/%.0f MB)",
-                         m_metrics.gpuPercent(), vramPct,
-                         m_metrics.vramUsedMB(), m_metrics.vramTotalMB());
-        } else {
-            ImGui::TextDisabled("GPU  N/A");
-        }
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Navigation Gizmo (ImGui DrawList)
-// ────────────────────────────────────────────────────────────────────────────
-
-void EditorSystem::drawNavigationGizmo(const FrameContext& ctx, ImVec2 regionMin, ImVec2 regionMax) {
-    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
-
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-
-    float gizmoSize = 60.0f;
-    float padding = 16.0f;
-    ImVec2 center(regionMax.x - gizmoSize - padding, regionMax.y - gizmoSize - padding);
-
-    // Transform world axes by camera view rotation
-    glm::mat3 viewRot = glm::mat3(ctx.visibility->view);
-    glm::vec3 axisX = viewRot * WORLD_AXIS_X_RIGHT;
-    glm::vec3 axisY = viewRot * WORLD_AXIS_Y_UP;
-    glm::vec3 axisZ = viewRot * WORLD_AXIS_Z_FORWARD;
-
-    float axisLen = gizmoSize * 0.8f;
-
-    struct AxisDraw { glm::vec3 dir; ImU32 col; const char* label; };
-    AxisDraw axes[] = {
-        { axisX, IM_COL32(220, 60, 60, 255),  "X" },
-        { axisY, IM_COL32(80, 190, 60, 255),   "Y" },
-        { axisZ, IM_COL32(60, 100, 220, 255),  "Z" },
-    };
-
-    // Sort by depth (draw back-to-front)
-    std::sort(std::begin(axes), std::end(axes),
-        [](const AxisDraw& a, const AxisDraw& b) { return a.dir.z < b.dir.z; });
-
-    // Background circle
-    drawList->AddCircleFilled(center, gizmoSize * 0.5f, IM_COL32(20, 20, 22, 160), 32);
-    drawList->AddCircle(center, gizmoSize * 0.5f, IM_COL32(50, 50, 55, 200), 32, 1.0f);
-
-    for (const auto& axis : axes) {
-        ImVec2 endPt(center.x + axis.dir.x * axisLen,
-                     center.y - axis.dir.y * axisLen);  // Y flipped for screen coords
-
-        drawList->AddLine(center, endPt, axis.col, 2.0f);
-
-        // Arrow tip circle
-        drawList->AddCircleFilled(endPt, 5.0f, axis.col, 8);
-
-        // Label
-        ImVec2 labelPos(endPt.x - 3.0f, endPt.y - 6.0f);
-        drawList->AddText(labelPos, IM_COL32(255, 255, 255, 220), axis.label);
-    }
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Hierarchy Panel
-// ────────────────────────────────────────────────────────────────────────────
-
-void EditorSystem::drawHierarchyPanel(FrameContext& ctx) {
-    auto& scene = ctx.scene;
-
-    ImGui::Text("Hierarchy");
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 20);
-    if (ImGui::SmallButton("+")) {
-        ImGui::OpenPopup("##CreatePopup");
-    }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Create Entity");
-    if (ImGui::BeginPopup("##CreatePopup")) {
-        drawCreateEntityMenu(scene, ctx.resources);
-        ImGui::EndPopup();
-    }
-
-    ImGui::Separator();
-
-    ImGui::SetNextItemWidth(-1);
-    ImGui::InputTextWithHint("##Filter", "Search...", m_hierarchyFilter, sizeof(m_hierarchyFilter));
-    ImGui::Spacing();
-
-    bool hasFilter = m_hierarchyFilter[0] != '\0';
-
-    if (ImGui::BeginChild("##Tree", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()))) {
-        // Rebuild root list only when entities change (not every frame).
-        // Skips 13k+ sparse lookups + push_backs on stable frames.
-        size_t currentCount = scene.entityCount();
-        if (m_hierarchyDirty || currentCount != m_lastEntityCount) {
-            m_cachedRoots.clear();
-            m_cachedRoots.reserve(currentCount);
-            scene.forEach<Transform>([&](EntityId id, const Transform&) {
-                bool isRoot = !scene.has<Hierarchy>(id) || !scene.get<Hierarchy>(id).parent;
-                if (isRoot) m_cachedRoots.push_back(id);
-            });
-            m_lastEntityCount = currentCount;
-            m_hierarchyDirty = false;
-        }
-
-        const auto& displayList = hasFilter ? m_cachedFiltered : m_cachedRoots;
-
-        if (hasFilter) {
-            m_cachedFiltered.clear();
-            for (EntityId id : m_cachedRoots) {
-                const char* name = getEntityDisplayName(scene, id);
-                // Case-insensitive substring match
-                bool match = false;
-                for (const char* p = name; *p; ++p) {
-                    const char* s = m_hierarchyFilter;
-                    const char* t = p;
-                    while (*s && *t && tolower(static_cast<unsigned char>(*s)) ==
-                                        tolower(static_cast<unsigned char>(*t))) { ++s; ++t; }
-                    if (!*s) { match = true; break; }
-                }
-                if (match) m_cachedFiltered.push_back(id);
-            }
-        }
-
-        // ImGuiListClipper: only draws ~20-30 visible rows instead of all 13,000+.
-        // This eliminates snprintf, text sizing, tree node, and popup overhead for off-screen items.
-        ImGuiListClipper clipper;
-        clipper.Begin(static_cast<int>(displayList.size()));
-        while (clipper.Step()) {
-            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
-                EntityId id = displayList[i];
-                if (hasFilter) {
-                    ImGuiTreeNodeFlags f = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen
-                                         | ImGuiTreeNodeFlags_SpanAvailWidth;
-                    if (m_selectedEntity == id) f |= ImGuiTreeNodeFlags_Selected;
-                    ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<uintptr_t>(id.index)),
-                                     f, "%s  %s", getEntityIcon(scene, id),
-                                     getEntityDisplayName(scene, id));
-                    if (ImGui::IsItemClicked()) m_selectedEntity = id;
-                    drawEntityContextMenu(scene, id);
-                } else {
-                    drawEntityNode(scene, id);
-                }
-            }
-        }
-
-        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
-            && !ImGui::IsAnyItemHovered()) {
-            m_selectedEntity = {};
-        }
-
-        // Right-click on empty space
-        if (ImGui::BeginPopupContextWindow("##HierarchyCtx", ImGuiPopupFlags_NoOpenOverItems | ImGuiPopupFlags_MouseButtonRight)) {
-            drawCreateEntityMenu(scene, ctx.resources);
-            ImGui::EndPopup();
-        }
-    }
-    ImGui::EndChild();
-
-    ImGui::TextDisabled("%zu entities", scene.entityCount());
-}
-
-void EditorSystem::drawEntityNode(Scene& scene, EntityId entity) {
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow
-                             | ImGuiTreeNodeFlags_SpanAvailWidth
-                             | ImGuiTreeNodeFlags_FramePadding;
-
-    bool hasChildren = scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).firstChild;
-    if (!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-    if (m_selectedEntity == entity) flags |= ImGuiTreeNodeFlags_Selected;
-
-    const char* name = getEntityDisplayName(scene, entity);
-    bool nodeOpen = ImGui::TreeNodeEx(
-        reinterpret_cast<void*>(static_cast<uintptr_t>(entity.index)),
-        flags, "%s  %s", getEntityIcon(scene, entity), name);
-
-    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) m_selectedEntity = entity;
-
-    drawEntityContextMenu(scene, entity);
-
-    if (nodeOpen && hasChildren) {
-        HierarchyUtils::forEachChild(scene, entity, [&](EntityId child) {
-            drawEntityNode(scene, child);
-        });
-        ImGui::TreePop();
-    }
-}
-
-void EditorSystem::drawEntityContextMenu(Scene& scene, EntityId entity) {
-    if (!ImGui::BeginPopupContextItem()) return;
-
-    ImGui::TextDisabled("%s", getEntityDisplayName(scene, entity));
-    ImGui::Separator();
-
-    if (ImGui::MenuItem("Select")) m_selectedEntity = entity;
-    if (ImGui::MenuItem("Duplicate", "Ctrl+D")) duplicateEntity(scene, entity);
-    if (ImGui::MenuItem("Delete", "Del")) deleteEntity(scene, entity);
-
-    if (scene.has<Transform>(entity)) {
-        ImGui::Separator();
-        if (ImGui::MenuItem("Reset Transform")) {
-            auto& t = scene.get<Transform>(entity);
-            t.position = glm::vec3(0.0f);
-            t.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-            t.scale    = glm::vec3(1.0f);
-        }
-    }
-
-    if (scene.has<Light>(entity)) {
-        auto& light = scene.get<Light>(entity);
-        if (ImGui::MenuItem(light.enabled ? "Disable Light" : "Enable Light")) {
-            light.enabled = !light.enabled;
-        }
-    }
-
-    if (scene.has<Mesh>(entity)) {
-        auto& mesh = scene.get<Mesh>(entity);
-        if (ImGui::MenuItem(mesh.visible ? "Hide" : "Show")) {
-            mesh.visible = !mesh.visible;
-        }
-    }
-
-    ImGui::EndPopup();
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Inspector Panel
-// ────────────────────────────────────────────────────────────────────────────
-
-void EditorSystem::drawInspectorPanel(FrameContext& ctx) {
-    ImGui::Text("Inspector");
-    ImGui::Separator();
-
-    if (!m_selectedEntity || !ctx.scene.isAlive(m_selectedEntity)) {
-        ImGui::TextDisabled("No entity selected");
-        return;
-    }
-
-    auto& scene = ctx.scene;
-    EntityId id = m_selectedEntity;
-
-    // Name editing
-    {
-        if (!scene.has<Name>(id)) {
-            scene.add(Entity{id}, Name(getEntityDisplayName(scene, id)));
-        }
-        auto& name = scene.get<Name>(id);
-        ImGui::SetNextItemWidth(-60);
-        ImGui::InputText("##Name", name.value, sizeof(name.value));
-        ImGui::SameLine();
-        ImGui::TextDisabled("#%u", id.index);
-    }
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    if (scene.has<Transform>(id))  drawTransformSection(scene, id);
-    if (scene.has<Mesh>(id))       drawMeshSection(scene, id);
-    if (scene.has<Light>(id))      drawLightSection(scene, id);
-    if (scene.has<Camera>(id))     drawCameraSection(scene, id);
-    if (scene.has<Animation>(id))  drawAnimationSection(scene, id);
-    if (scene.has<Hierarchy>(id))  drawHierarchySection(scene, id);
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    drawAddComponentMenu(scene, id);
-}
-
-void EditorSystem::drawAddComponentMenu(Scene& scene, EntityId id) {
-    if (ImGui::Button("Add Component", ImVec2(-1, 0))) {
-        ImGui::OpenPopup("##AddComp");
-    }
-
-    if (ImGui::BeginPopup("##AddComp")) {
-        if (!scene.has<Mesh>(id) && ImGui::MenuItem("Mesh")) {
-            scene.add(Entity{id}, Mesh{});
-        }
-        if (!scene.has<Light>(id) && ImGui::MenuItem("Light")) {
-            scene.add(Entity{id}, generatePointLight());
-        }
-        if (!scene.has<Camera>(id) && ImGui::MenuItem("Camera")) {
-            Camera cam;
-            cam.active = false;
-            scene.add(Entity{id}, cam);
-        }
-        if (!scene.has<Animation>(id) && ImGui::MenuItem("Animation")) {
-            scene.add(Entity{id}, Animation{});
-        }
-        ImGui::EndPopup();
-    }
-}
-
-// ── Component Sections ──
-
-void EditorSystem::drawTransformSection(Scene& scene, EntityId id) {
-    bool open = ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen);
-    if (!open) return;
-
-    auto& t = scene.get<Transform>(id);
-    drawVec3Control("Position", glm::value_ptr(t.position), 0.0f, 0.1f);
-
-    glm::vec3 euler = glm::degrees(glm::eulerAngles(t.rotation));
-    if (drawVec3Control("Rotation", glm::value_ptr(euler), 0.0f, 0.5f)) {
-        t.rotation = glm::quat(glm::radians(euler));
-    }
-
-    drawVec3Control("Scale", glm::value_ptr(t.scale), 1.0f, 0.01f);
-
-    if (scene.has<Hierarchy>(id) && scene.get<Hierarchy>(id).parent) {
-        glm::mat4 worldMat = HierarchyUtils::computeWorldMatrix(scene, id);
-        glm::vec3 worldPos(worldMat[3]);
-        ImGui::TextDisabled("  World: (%.1f, %.1f, %.1f)", worldPos.x, worldPos.y, worldPos.z);
-    }
-    ImGui::Spacing();
-}
-
-void EditorSystem::drawMeshSection(Scene& scene, EntityId id) {
-    bool open = ImGui::CollapsingHeader("Mesh##Sec", ImGuiTreeNodeFlags_DefaultOpen);
-    // Remove button
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 20);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-    char removeId[32]; snprintf(removeId, sizeof(removeId), "x##RemMesh%u", id.index);
-    if (ImGui::SmallButton(removeId)) { scene.remove<Mesh>(Entity{id}); ImGui::PopStyleColor(); return; }
-    ImGui::PopStyleColor();
-
-    if (!open) return;
-    auto& mesh = scene.get<Mesh>(id);
-    drawPropertyLabel("Mesh ID");    ImGui::Text("#%u", mesh.mesh.id());
-    drawPropertyLabel("Material ID"); ImGui::Text("#%u", mesh.material.id());
-    drawPropertyLabel("Visible");    ImGui::Checkbox("##MeshVis", &mesh.visible);
-    ImGui::Spacing();
-}
-
-void EditorSystem::drawLightSection(Scene& scene, EntityId id) {
-    bool open = ImGui::CollapsingHeader("Light##Sec", ImGuiTreeNodeFlags_DefaultOpen);
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 20);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-    char removeId[32]; snprintf(removeId, sizeof(removeId), "x##RemLight%u", id.index);
-    if (ImGui::SmallButton(removeId)) { scene.remove<Light>(Entity{id}); ImGui::PopStyleColor(); return; }
-    ImGui::PopStyleColor();
-
-    if (!open) return;
-    auto& light = scene.get<Light>(id);
-
-    drawPropertyLabel("Type");
-    const char* typeNames[] = {"Directional", "Point", "Spot"};
-    int typeIdx = static_cast<int>(light.type);
-    if (ImGui::Combo("##LType", &typeIdx, typeNames, IM_ARRAYSIZE(typeNames))) {
-        light.type = static_cast<LightType>(typeIdx);
-    }
-
-    drawPropertyLabel("Color");
-    ImGui::ColorEdit3("##LColor", glm::value_ptr(light.color), ImGuiColorEditFlags_Float);
-
-    drawPropertyLabel("Intensity");
-    ImGui::DragFloat("##LIntensity", &light.intensity, 0.1f, 0.0f, 100.0f, "%.1f");
-
-    if (light.type != LightType::Directional) {
-        drawPropertyLabel("Radius");
-        ImGui::DragFloat("##LRadius", &light.radius, 0.5f, 0.1f, 1000.0f, "%.1f");
-    }
-
-    if (light.type == LightType::Spot) {
-        float innerDeg = glm::degrees(light.innerConeAngle);
-        float outerDeg = glm::degrees(light.outerConeAngle);
-        drawPropertyLabel("Inner Cone");
-        if (ImGui::DragFloat("##InnerC", &innerDeg, 0.5f, 0.0f, 90.0f, "%.1f deg"))
-            light.innerConeAngle = glm::radians(innerDeg);
-        drawPropertyLabel("Outer Cone");
-        if (ImGui::DragFloat("##OuterC", &outerDeg, 0.5f, 0.0f, 90.0f, "%.1f deg"))
-            light.outerConeAngle = glm::radians(outerDeg);
-    }
-
-    drawPropertyLabel("Shadows");  ImGui::Checkbox("##Shad", &light.castShadows);
-    drawPropertyLabel("Enabled");  ImGui::Checkbox("##LEn", &light.enabled);
-    ImGui::Spacing();
-}
-
-void EditorSystem::drawCameraSection(Scene& scene, EntityId id) {
-    bool open = ImGui::CollapsingHeader("Camera##Sec", ImGuiTreeNodeFlags_DefaultOpen);
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 20);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-    char removeId[32]; snprintf(removeId, sizeof(removeId), "x##RemCam%u", id.index);
-    if (ImGui::SmallButton(removeId)) { scene.remove<Camera>(Entity{id}); ImGui::PopStyleColor(); return; }
-    ImGui::PopStyleColor();
-
-    if (!open) return;
-    auto& cam = scene.get<Camera>(id);
-
-    drawPropertyLabel("Projection");
-    const char* projNames[] = {"Perspective", "Orthographic"};
-    int projIdx = static_cast<int>(cam.projection);
-    if (ImGui::Combo("##CProj", &projIdx, projNames, IM_ARRAYSIZE(projNames)))
-        cam.projection = static_cast<ProjectionType>(projIdx);
-
-    if (cam.projection == ProjectionType::Perspective) {
-        float fovDeg = glm::degrees(cam.fovY);
-        drawPropertyLabel("FOV");
-        if (ImGui::SliderFloat("##CFOV", &fovDeg, 10.0f, 170.0f, "%.0f deg"))
-            cam.fovY = glm::radians(fovDeg);
-    } else {
-        drawPropertyLabel("Ortho Height");
-        ImGui::DragFloat("##COrthoH", &cam.orthoHeight, 0.1f, 0.1f, 1000.0f);
-    }
-
-    drawPropertyLabel("Near Clip"); ImGui::DragFloat("##CNear", &cam.zNear, 0.01f, 0.001f, cam.zFar, "%.3f");
-    drawPropertyLabel("Far Clip");  ImGui::DragFloat("##CFar", &cam.zFar, 1.0f, cam.zNear, 100000.0f, "%.0f");
-    drawPropertyLabel("Exposure");  ImGui::DragFloat("##CExp", &cam.exposure, 0.01f, 0.0f, 10.0f, "%.2f");
-    drawPropertyLabel("Active");    ImGui::Checkbox("##CAct", &cam.active);
-    ImGui::Spacing();
-}
-
-void EditorSystem::drawAnimationSection(Scene& scene, EntityId id) {
-    bool open = ImGui::CollapsingHeader("Animation##Sec", ImGuiTreeNodeFlags_DefaultOpen);
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 20);
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-    char removeId[32]; snprintf(removeId, sizeof(removeId), "x##RemAnim%u", id.index);
-    if (ImGui::SmallButton(removeId)) { scene.remove<Animation>(Entity{id}); ImGui::PopStyleColor(); return; }
-    ImGui::PopStyleColor();
-
-    if (!open) return;
-    auto& anim = scene.get<Animation>(id);
-
-    float btnW = ImGui::GetFrameHeight();
-    bool playing = anim.playing;
-    if (playing) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.28f, 0.48f, 0.76f, 1.0f));
-    if (ImGui::Button(playing ? "||" : ">", ImVec2(btnW * 1.5f, 0))) anim.playing = !anim.playing;
-    if (playing) ImGui::PopStyleColor();
-    ImGui::SameLine();
-    if (ImGui::Button("|<", ImVec2(btnW * 1.5f, 0))) anim.time = 0.0f;
-    ImGui::SameLine();
-    ImGui::Checkbox("Loop", &anim.looping);
-
-    if (anim.duration > 0.0f) {
-        ImGui::SetNextItemWidth(-1);
-        ImGui::SliderFloat("##ATime", &anim.time, 0.0f, anim.duration, "%.2f / %.2f s");
-        ImVec4 barCol = anim.playing ? ImVec4(0.33f, 0.56f, 0.88f, 1.0f) : ImVec4(0.40f, 0.40f, 0.44f, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, barCol);
-        ImGui::ProgressBar(anim.time / anim.duration, ImVec2(-1, 3), "");
-        ImGui::PopStyleColor();
-    }
-
-    drawPropertyLabel("Speed"); ImGui::DragFloat("##ASpeed", &anim.speed, 0.01f, 0.0f, 10.0f, "%.2fx");
-    ImGui::TextDisabled("Tracks: %s%s%s  Dur: %.2fs",
-        anim.positionTrack.isEmpty() ? "" : "P ",
-        anim.rotationTrack.isEmpty() ? "" : "R ",
-        anim.scaleTrack.isEmpty() ? "" : "S ",
-        anim.duration);
-    ImGui::Spacing();
-}
-
-void EditorSystem::drawHierarchySection(const Scene& scene, EntityId id) {
-    if (!ImGui::CollapsingHeader("Hierarchy##Sec")) return;
-    const auto& h = scene.get<Hierarchy>(id);
-
-    if (h.parent) {
-        ImGui::TextDisabled("Parent:");
-        ImGui::SameLine();
-        if (ImGui::SmallButton(getEntityDisplayName(scene, h.parent))) {
-            const_cast<EditorSystem*>(this)->m_selectedEntity = h.parent;
-        }
-    } else {
-        ImGui::TextDisabled("Root (no parent)");
-    }
-
-    if (h.firstChild) {
-        ImGui::TextDisabled("Children:");
-        HierarchyUtils::forEachChild(scene, id, [&](EntityId child) {
-            char lbl[96];
-            snprintf(lbl, sizeof(lbl), "  %s %s", getEntityIcon(scene, child),
-                     getEntityDisplayName(scene, child));
-            if (ImGui::Selectable(lbl, m_selectedEntity == child)) {
-                const_cast<EditorSystem*>(this)->m_selectedEntity = child;
-            }
-        });
-    }
-    ImGui::Spacing();
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Bottom Panel (Tabbed: Settings | Resources)
-// ────────────────────────────────────────────────────────────────────────────
-
-void EditorSystem::drawBottomPanel(FrameContext& ctx) {
-    if (ImGui::BeginTabBar("##BottomTabs")) {
-        if (ImGui::BeginTabItem("Settings")) {
-            drawSettingsTab(ctx);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Resources")) {
-            drawResourcesTab(ctx);
-            ImGui::EndTabItem();
-        }
-        ImGui::EndTabBar();
-    }
-}
-
-void EditorSystem::drawSettingsTab(FrameContext& ctx) {
-    auto& window = Engine::get().getWindow();
-    float colW = ImGui::GetContentRegionAvail().x / 3.0f;
-
-    ImGui::Columns(3, "##SettCols", true);
-    ImGui::SetColumnWidth(0, colW);
-    ImGui::SetColumnWidth(1, colW);
-
-    // Column 1: Visibility
-    ImGui::TextDisabled("Visibility");
-    ImGui::Separator();
-    if (m_visibilitySystem) {
-        float minPx = m_visibilitySystem->getMinPixels();
-        drawPropertyLabel("Min Pixels");
-        if (ImGui::DragFloat("##MinPx", &minPx, 0.1f, 0.0f, 100.0f, "%.1f"))
-            m_visibilitySystem->setMinPixels(minPx);
-
-        float maxDist = m_visibilitySystem->getMaxDistance();
-        drawPropertyLabel("Max Distance");
-        if (ImGui::DragFloat("##MaxD", &maxDist, 1.0f, 10.0f, 10000.0f, "%.0f"))
-            m_visibilitySystem->setMaxDistance(maxDist);
-
-        if (ctx.visibility) {
-            size_t vis = ctx.visibility->entities.size();
-            size_t tot = ctx.scene.entityCount();
-            ImGui::TextDisabled("Culled: %zu / %zu", tot > vis ? tot - vis : 0, tot);
-        }
-    }
-
-    ImGui::NextColumn();
-
-    // Column 2: Camera
-    ImGui::TextDisabled("Camera Controls");
-    ImGui::Separator();
-    if (m_cameraController) {
-        auto& s = m_cameraController->getSettings();
-        drawPropertyLabel("Move Speed");   ImGui::DragFloat("##MS", &s.moveSpeed, 0.5f, 0.1f, 200.0f);
-        drawPropertyLabel("Speed Boost");  ImGui::DragFloat("##SB", &s.speedBoost, 0.1f, 1.0f, 20.0f, "%.1fx");
-        drawPropertyLabel("Look Sens.");   ImGui::DragFloat("##LS", &s.lookSensitivity, 0.0001f, 0.0001f, 0.01f, "%.4f");
-        if (ImGui::SmallButton("Reset##Cam")) s = CameraControllerSettings{};
-    }
-
-    ImGui::NextColumn();
-
-    // Column 3: Display
-    ImGui::TextDisabled("Display");
-    ImGui::Separator();
-    ImGui::Text("Res: %zux%zu", window.getWidth(), window.getHeight());
-
-    drawPropertyLabel("VSync");
-    if (ImGui::Button("On##VS", ImVec2(40, 0))) window.setVSync(true);
-    ImGui::SameLine();
-    if (ImGui::Button("Off##VS", ImVec2(40, 0))) window.setVSync(false);
-
-    static int fpsLimit = 0;
-    drawPropertyLabel("FPS Limit");
-    ImGui::SetNextItemWidth(60);
-    ImGui::InputInt("##FPSLim", &fpsLimit, 30);
-    fpsLimit = std::max(0, fpsLimit);
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Set##fps")) window.setFramerate(fpsLimit);
-
-    ImGui::Text("Threads: %zu", ThreadPool::get().size());
-
-    ImGui::Spacing();
-    ImGui::TextDisabled("Rendering");
-    ImGui::Separator();
-    ImGui::Checkbox("Wireframe", &m_wireframe);
-
-    ImGui::Spacing();
-    ImGui::TextDisabled("Render Passes");
-    ImGui::Separator();
-    if (m_renderSystem) {
-        auto& pipeline = m_renderSystem->getPipeline();
-        for (size_t i = 0; i < pipeline.passCount(); ++i) {
-            auto& pass = pipeline.getPass(i);
-            bool enabled = pass.isEnabled();
-            if (ImGui::Checkbox(pass.getName().c_str(), &enabled))
-                pass.setEnabled(enabled);
-        }
-    }
-
-    ImGui::Columns(1);
-}
-
-void EditorSystem::drawResourcesTab(const FrameContext& ctx) {
-    const auto& scene = ctx.scene;
-    float colW = ImGui::GetContentRegionAvail().x / 3.0f;
-
-    ImGui::Columns(3, "##ResCols", true);
-    ImGui::SetColumnWidth(0, colW);
-    ImGui::SetColumnWidth(1, colW);
-
-    // Column 1: Components
-    ImGui::TextDisabled("Component Counts");
-    ImGui::Separator();
-    struct CI { const char* n; size_t c; };
-    CI comps[] = {
-        {"Transform", scene.count<Transform>()}, {"Mesh", scene.count<Mesh>()},
-        {"Light", scene.count<Light>()}, {"Camera", scene.count<Camera>()},
-        {"Animation", scene.count<Animation>()}, {"Hierarchy", scene.count<Hierarchy>()},
-        {"Name", scene.count<Name>()},
-    };
-    for (const auto& co : comps) ImGui::Text("%-12s %zu", co.n, co.c);
-
-    ImGui::NextColumn();
-
-    // Column 2: Animations
-    ImGui::TextDisabled("Animations");
-    ImGui::Separator();
-    uint32_t playing = 0, paused = 0;
-    scene.forEach<Animation>([&](EntityId, const Animation& a) {
-        if (a.playing) ++playing; else ++paused;
-    });
-    ImGui::Text("Playing: %u  Paused: %u", playing, paused);
-    if (ImGui::SmallButton("Pause All")) {
-        const_cast<Scene&>(scene).forEach<Animation>([](EntityId, Animation& a) { a.playing = false; });
-    }
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Resume All")) {
-        const_cast<Scene&>(scene).forEach<Animation>([](EntityId, Animation& a) { a.playing = true; });
-    }
-
-    ImGui::NextColumn();
-
-    // Column 3: Lights
-    ImGui::TextDisabled("Lights");
-    ImGui::Separator();
-    uint32_t dir = 0, pt = 0, sp = 0, dis = 0;
-    scene.forEach<Light>([&](EntityId, const Light& l) {
-        if (!l.enabled) { ++dis; return; }
-        switch (l.type) {
-            case LightType::Directional: ++dir; break;
-            case LightType::Point: ++pt; break;
-            case LightType::Spot: ++sp; break;
-        }
-    });
-    ImGui::Text("Dir: %u  Point: %u  Spot: %u", dir, pt, sp);
-    if (dis > 0) ImGui::Text("Disabled: %u", dis);
-
-    ImGui::Columns(1);
-}
-
-// ────────────────────────────────────────────────────────────────────────────
 // Status Bar
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -1272,7 +452,9 @@ void EditorSystem::drawStatusBar(const FrameContext& ctx) {
         if (m_selectedEntity && ctx.scene.isAlive(m_selectedEntity)) {
             ImGui::TextDisabled("Selected:");
             ImGui::SameLine(0, 4);
-            ImGui::Text("%s", getEntityDisplayName(ctx.scene, m_selectedEntity));
+            char selName[64];
+            getEntityDisplayName(ctx.scene, m_selectedEntity, selName, sizeof(selName));
+            ImGui::Text("%s", selName);
 
             if (ctx.scene.has<Transform>(m_selectedEntity)) {
                 const auto& pos = ctx.scene.get<Transform>(m_selectedEntity).position;

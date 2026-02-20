@@ -248,6 +248,12 @@ target_link_libraries(EngineTools PUBLIC
 add_library(EngineEditor STATIC
     src/editor/editor_system.h
     src/editor/editor_system.cpp
+    src/editor/editor_common.h
+    src/editor/editor_widgets.cpp
+    src/editor/panels/hierarchy_panel.cpp
+    src/editor/panels/inspector_panel.cpp
+    src/editor/panels/viewport_overlay.cpp
+    src/editor/panels/bottom_panel.cpp
 )
 
 target_include_directories(EngineEditor PUBLIC
