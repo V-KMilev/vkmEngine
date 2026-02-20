@@ -14,9 +14,9 @@ namespace Engine {
  * WORLD_AXIS_Y_UP      (+Y): Points in the positive Y direction (upwards).
  * WORLD_AXIS_Z_FORWARD (+Z): Points in the positive Z direction (out of the screen in right-handed systems).
  */
-constexpr glm::vec3 WORLD_AXIS_X_RIGHT   = {1.0f, 0.0f, 0.0f};
-constexpr glm::vec3 WORLD_AXIS_Y_UP      = {0.0f, 1.0f, 0.0f};
-constexpr glm::vec3 WORLD_AXIS_Z_FORWARD = {0.0f, 0.0f, 1.0f};
+inline const glm::vec3 WORLD_AXIS_X_RIGHT   = {1.0f, 0.0f, 0.0f};
+inline const glm::vec3 WORLD_AXIS_Y_UP      = {0.0f, 1.0f, 0.0f};
+inline const glm::vec3 WORLD_AXIS_Z_FORWARD = {0.0f, 0.0f, 1.0f};
 
 /**
  * @brief Component representing spatial transformation (position, rotation, scale) in 3D space.
@@ -28,6 +28,9 @@ struct Transform {
     glm::vec3 position = {0.0f, 0.0f, 0.0f};        ///< Local position in world space
     glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};  ///< Local rotation as quaternion (identity = no rotation)
     glm::vec3 scale    = {1.0f, 1.0f, 1.0f};        ///< Local scale
+
+    mutable glm::mat4 cachedModelMatrix = glm::mat4(1.0f); ///< Cached model matrix (recomputed when dirty)
+    mutable bool dirty = true;                               ///< True when position/rotation/scale changed
 
     /**
      * @brief Compute the model matrix from transform data.
@@ -50,6 +53,19 @@ struct Transform {
         model[3] = glm::vec4(transform.position, 1.0f);
 
         return model;
+    }
+
+    /**
+     * @brief Get the cached model matrix, recomputing only if dirty.
+     * @param transform The transform component.
+     * @return Const reference to the cached model matrix.
+     */
+    static const glm::mat4& getModelMatrix(const Transform& transform) {
+        if (transform.dirty) {
+            transform.cachedModelMatrix = computeModelMatrix(transform);
+            transform.dirty = false;
+        }
+        return transform.cachedModelMatrix;
     }
 
     /**

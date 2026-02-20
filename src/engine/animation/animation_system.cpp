@@ -48,6 +48,7 @@ void AnimationSystem::update(FrameContext& ctx) {
 
         auto& transform = scene.get<Transform>(id);
         applyAnimation(animation, transform);
+        transform.dirty = true;
     }
 }
 
