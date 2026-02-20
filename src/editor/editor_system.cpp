@@ -34,10 +34,6 @@
 
 namespace Engine {
 
-// ────────────────────────────────────────────────────────────────────────────
-// Lifecycle
-// ────────────────────────────────────────────────────────────────────────────
-
 EditorSystem::EditorSystem(
     GLFWwindow* window,
     CameraController* cameraController,
@@ -127,10 +123,6 @@ EditorSystem::~EditorSystem() {
     ImGui::DestroyContext();
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Entity Operations
-// ────────────────────────────────────────────────────────────────────────────
-
 EntityId EditorSystem::createEntity(Scene& scene, ResourceManager& resources, const char* type) {
     auto entity = scene.createEntity();
     EntityId id = entity.getID();
@@ -212,10 +204,6 @@ void EditorSystem::deleteEntity(Scene& scene, EntityId entity) {
     }
     m_hierarchyDirty = true;
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Main Update — Static Layout
-// ────────────────────────────────────────────────────────────────────────────
 
 void EditorSystem::update(FrameContext& ctx) {
     if (!m_editorVisible) {
@@ -351,10 +339,6 @@ void EditorSystem::update(FrameContext& ctx) {
     if (m_wireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Menu Bar
-// ────────────────────────────────────────────────────────────────────────────
-
 void EditorSystem::drawMenuBar(FrameContext& ctx) {
     if (!ImGui::BeginMenuBar()) return;
 
@@ -415,10 +399,6 @@ void EditorSystem::drawMenuBar(FrameContext& ctx) {
     ImGui::EndMenuBar();
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Create Entity Menu
-// ────────────────────────────────────────────────────────────────────────────
-
 void EditorSystem::drawCreateEntityMenu(Scene& scene, ResourceManager& resources) {
     if (ImGui::BeginMenu("Create")) {
         if (ImGui::MenuItem("Empty Entity")) {
@@ -436,10 +416,6 @@ void EditorSystem::drawCreateEntityMenu(Scene& scene, ResourceManager& resources
         ImGui::EndMenu();
     }
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Status Bar
-// ────────────────────────────────────────────────────────────────────────────
 
 void EditorSystem::drawStatusBar(const FrameContext& ctx) {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 0));

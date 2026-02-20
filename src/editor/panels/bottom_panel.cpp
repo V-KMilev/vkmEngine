@@ -8,11 +8,6 @@
 #include "platform/threading/thread_pool.h"
 
 namespace Engine {
-
-// ────────────────────────────────────────────────────────────────────────────
-// Bottom Panel (Tabbed: Settings | Resources)
-// ────────────────────────────────────────────────────────────────────────────
-
 void EditorSystem::drawBottomPanel(FrameContext& ctx) {
     if (ImGui::BeginTabBar("##BottomTabs")) {
         if (ImGui::BeginTabItem("Settings")) {
@@ -29,7 +24,7 @@ void EditorSystem::drawBottomPanel(FrameContext& ctx) {
 
 void EditorSystem::drawSettingsTab(FrameContext& ctx) {
     if (ImGui::BeginTabBar("##SettingsTabs")) {
-        // ── Rendering ──
+        // Rendering
         if (ImGui::BeginTabItem("Rendering")) {
             ImGui::Spacing();
 
@@ -69,7 +64,7 @@ void EditorSystem::drawSettingsTab(FrameContext& ctx) {
             ImGui::EndTabItem();
         }
 
-        // ── Camera ──
+        // Camera
         if (ImGui::BeginTabItem("Camera")) {
             ImGui::Spacing();
             if (m_cameraController) {
@@ -85,7 +80,7 @@ void EditorSystem::drawSettingsTab(FrameContext& ctx) {
             ImGui::EndTabItem();
         }
 
-        // ── Display ──
+        // Display
         if (ImGui::BeginTabItem("Display")) {
             auto& window = Engine::get().getWindow();
             ImGui::Spacing();

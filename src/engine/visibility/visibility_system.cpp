@@ -26,7 +26,7 @@
 namespace Engine {
 
 void VisibilitySystem::update(FrameContext& ctx) {
-    // Reuse persistent buffer — clear keeps capacity, avoiding per-frame allocation
+    // Reuse persistent buffer - clear keeps capacity, avoiding per-frame allocation
     m_result.entities.clear();
     m_result.modelMatrices.clear();
     m_result.hasCamera = false;

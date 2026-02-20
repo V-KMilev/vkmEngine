@@ -77,6 +77,11 @@ class Window {
 
         /**
          * @brief Set window dimensions. Called from GLFW window size callback.
+         *
+         * Thread safety: GLFW callbacks fire during glfwPollEvents() on the main
+         * thread for single-window apps, so setSize/getWidth/getHeight are all
+         * accessed from the same thread. No synchronization needed.
+         *
          * @param width New window width in pixels.
          * @param height New window height in pixels.
          */

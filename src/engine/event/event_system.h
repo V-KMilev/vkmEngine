@@ -33,7 +33,7 @@ class EventSystem : public System {
 
     public:
         /**
-         * @brief Per-frame system update — executes queued events.
+         * @brief Per-frame system update - executes queued events.
          * @param ctx The shared FrameContext for this frame.
          */
         void update(FrameContext& ctx) override;

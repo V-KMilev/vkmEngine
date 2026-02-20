@@ -195,8 +195,6 @@ add_library(BackendOpenGL STATIC
     src/backend/opengl/pass/gl_aabb_debug_pass.cpp
     src/backend/opengl/pass/gl_grid_pass.h
     src/backend/opengl/pass/gl_grid_pass.cpp
-    src/backend/opengl/pass/gl_navigation_gizmo_pass.h
-    src/backend/opengl/pass/gl_navigation_gizmo_pass.cpp
     # Convenience header
     src/backend/opengl/gl_common.h
 )

@@ -10,7 +10,7 @@ namespace Engine {
 /**
  * @brief Screen-size culling: reject AABBs that project to fewer than minPixels.
  *
- * Estimates 2D size from the world AABB’s bounding sphere; objects behind the
+ * Estimates 2D size from the world AABB bounding sphere; objects behind the
  * camera or with zero viewport are kept.
  */
 namespace ScreenSizeCuller {

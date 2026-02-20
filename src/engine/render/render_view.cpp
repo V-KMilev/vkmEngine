@@ -98,12 +98,13 @@ void RenderView::build(
     camera.viewProjection = visibility.projection * visibility.view;
     camera.position       = visibility.cameraPosition;
 
-    // Gather drawables — reserve only grows, never shrinks
+    // Gather drawables - reserve only grows, never shrinks
     drawables.reserve(visibility.entities.size());
 
     // Iterate through entities and matrices in lockstep (same order, cache-friendly).
-    // Visibility guarantees all entities have Mesh+Transform — no has<Mesh>() check needed.
+    // Guard against stale EntityIds (entity deleted between visibility and render).
     for (size_t i = 0; i < visibility.entities.size(); ++i) {
+        if (!scene.isAlive(visibility.entities[i])) continue;
         const auto& mesh = scene.get<Mesh>(visibility.entities[i]);
 
         DrawableData drawable;

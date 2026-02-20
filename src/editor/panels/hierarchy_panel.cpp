@@ -1,11 +1,6 @@
 #include "../editor_common.h"
 
 namespace Engine {
-
-// ────────────────────────────────────────────────────────────────────────────
-// Hierarchy Panel
-// ────────────────────────────────────────────────────────────────────────────
-
 void EditorSystem::drawHierarchyPanel(FrameContext& ctx) {
     auto& scene = ctx.scene;
 

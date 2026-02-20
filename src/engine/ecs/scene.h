@@ -19,7 +19,7 @@ namespace Engine {
  * Scene provides efficient creation, component assignment, lookup, and removal
  * for entities. Entity lifetime is managed by a SlotAllocator (generation-safe
  * handles with recycling). Component data is stored in type-erased SparseSet<T>
- * containers that are created on first use — any type can be a component without
+ * containers that are created on first use - any type can be a component without
  * modifying Scene.
  */
 class Scene {

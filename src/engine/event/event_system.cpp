@@ -24,13 +24,14 @@ void EventSystem::update(FrameContext&) {
 }
 
 void EventSystem::push(Event && event) {
-    std::lock_guard<std::mutex> lock(m_eventMutex);
-
+    // Execute IMMEDIATE events outside the lock to prevent deadlock
+    // if the callback calls push() again.
     if (event.getPriority() == EventPriority::IMMEDIATE) {
         event.execute();
         return;
     }
 
+    std::lock_guard<std::mutex> lock(m_eventMutex);
     m_events.emplace(std::move(event));
 }
 

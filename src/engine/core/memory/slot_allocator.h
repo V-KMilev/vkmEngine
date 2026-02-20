@@ -13,7 +13,7 @@ namespace Engine {
 * @brief Lightweight slot allocator that issues generation-safe handles.
 *
 * Manages a pool of indices with generation counters for stale-handle detection
-* and a free list for O(1) slot recycling. Does not store any per-slot data — only
+* and a free list for O(1) slot recycling. Does not store any per-slot data - only
 * the metadata needed for allocation, deallocation, and validation.
 */
 class SlotAllocator {

@@ -1,17 +1,20 @@
 #pragma once
 
 #include <glm/glm.hpp>
-#include <glm/ext/scalar_constants.hpp>
 
 namespace Engine {
 
+// Minimum squared extent for a valid AABB. glm::epsilon (~1.19e-7) is too small
+// for world-space coordinates in range [-1000, 1000]. 1e-4 squared = 1e-8.
+inline constexpr float BOUNDS_EPSILON_SQ = 1e-8f;
+
 /**
- * @brief True if the AABB has non-degenerate extent (squared length of extent &gt; epsilon).
+ * @brief True if the AABB has non-degenerate extent (squared length of extent > epsilon).
  * Degenerate or empty bounds return false. Uses squared extent to avoid sqrt.
  */
 inline bool hasValidBounds(const glm::vec3& min, const glm::vec3& max) noexcept {
     const glm::vec3 extent = max - min;
-    return glm::dot(extent, extent) > glm::epsilon<float>();
+    return glm::dot(extent, extent) > BOUNDS_EPSILON_SQ;
 }
 
 /**

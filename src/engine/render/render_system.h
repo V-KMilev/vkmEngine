@@ -98,7 +98,7 @@ class RenderSystem : public System {
     private:
         std::unique_ptr<RenderBackend> m_backend;
         RenderPipeline m_pipeline;
-        RenderView m_renderView;  ///< Persistent — vectors reuse capacity across frames.
+        RenderView m_renderView;  ///< Persistent - vectors reuse capacity across frames.
 
         uint32_t m_width;
         uint32_t m_height;

@@ -113,7 +113,7 @@ void SystemMetrics::update(float deltaTime) {
     if (m_timer < 0.5f) return;
     m_timer = 0.0f;
 
-    // ── CPU usage (process) ──
+    // CPU usage (process)
 #ifdef _WIN32
     {
         FILETIME creation, exit, kernel, user;
@@ -167,7 +167,7 @@ void SystemMetrics::update(float deltaTime) {
     }
 #endif
 
-    // ── RAM (process RSS + total system) ──
+    // RAM (process RSS + total system)
 #ifdef _WIN32
     {
         PROCESS_MEMORY_COUNTERS pmc;
@@ -200,7 +200,7 @@ void SystemMetrics::update(float deltaTime) {
     }
 #endif
 
-    // ── GPU VRAM (NVIDIA or AMD GL extensions) ──
+    // GPU VRAM (NVIDIA or AMD GL extensions)
     {
         GLint totalKB = 0, availKB = 0;
         glGetIntegerv(GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX, &totalKB);
@@ -219,7 +219,7 @@ void SystemMetrics::update(float deltaTime) {
         }
     }
 
-    // ── GPU Utilization (NVML) ──
+    // GPU Utilization (NVML)
     if (m_nvmlDevice && m_nvmlGetUtilRates) {
         nvmlUtilization_t util{};
         auto fn = (nvmlDeviceGetUtilizationRates_fn)m_nvmlGetUtilRates;

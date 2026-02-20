@@ -6,11 +6,6 @@
 #include "platform/threading/thread_pool.h"
 
 namespace Engine {
-
-// ────────────────────────────────────────────────────────────────────────────
-// Viewport Overlay (Stats)
-// ────────────────────────────────────────────────────────────────────────────
-
 void EditorSystem::drawViewportOverlay(const FrameContext& ctx) {
     ImVec2 regionSize = ImGui::GetContentRegionAvail();
     ImVec2 overlayPos(regionSize.x - 276, 4);
@@ -69,11 +64,6 @@ void EditorSystem::drawViewportOverlay(const FrameContext& ctx) {
     ImGui::EndChild();
     ImGui::PopStyleColor();
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Navigation Gizmo (ImGui DrawList)
-// ────────────────────────────────────────────────────────────────────────────
-
 void EditorSystem::drawNavigationGizmo(const FrameContext& ctx, ImVec2 regionMin, ImVec2 regionMax) {
     if (!ctx.visibility || !ctx.visibility->hasCamera) return;
 

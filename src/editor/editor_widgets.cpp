@@ -11,11 +11,6 @@ static const ImVec4 kAxisGreenHov = ImVec4(0.40f, 0.80f, 0.30f, 1.00f);
 static const ImVec4 kAxisBlueHov  = ImVec4(0.30f, 0.45f, 0.95f, 1.00f);
 
 static constexpr float kLabelWidth = 100.0f;
-
-// ────────────────────────────────────────────────────────────────────────────
-// Widget Helpers
-// ────────────────────────────────────────────────────────────────────────────
-
 bool EditorSystem::drawVec3Control(const char* label, float* values,
                                     float resetValue, float speed) {
     bool changed = false;

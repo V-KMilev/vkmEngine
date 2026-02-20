@@ -40,6 +40,7 @@ void AnimationSystem::update(FrameContext& ctx) {
 
     // Apply animations only to visible entities
     for (const EntityId& id : visibility.entities) {
+        if (!scene.isAlive(id)) continue;
         if (!scene.has<Animation>(id)) continue;
         if (!scene.has<Transform>(id)) continue;
 

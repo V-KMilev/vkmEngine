@@ -22,7 +22,7 @@ namespace Engine {
  * @brief Texture flag bit positions for MaterialUBOData.
  * 
  * Each texture type gets a single bit in the textureFlags field.
- * This replaces the wasteful individual int fields (352 bytes → 4 bytes).
+ * This replaces the wasteful individual int fields (352 bytes -> 4 bytes).
  */
 enum class MaterialTextureFlags : uint32_t {
     Albedo               = 1 << 0,   // bit 0

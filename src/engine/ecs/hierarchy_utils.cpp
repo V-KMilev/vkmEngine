@@ -1,11 +1,31 @@
 #include "ecs/hierarchy_utils.h"
 
+#include "logger.h"
+
 namespace Engine::HierarchyUtils {
 
 void setParent(Scene& scene, EntityId child, EntityId parent) {
     VKM_ASSERT(scene.isAlive(child), "HierarchyUtils::setParent: child is dead");
     VKM_ASSERT(scene.isAlive(parent), "HierarchyUtils::setParent: parent is dead");
     VKM_ASSERT(child != parent, "HierarchyUtils::setParent: entity cannot parent itself");
+
+    // Cycle detection: walk ancestors of new parent to ensure child is not already an ancestor
+    {
+        EntityId ancestor = parent;
+        uint32_t depth = 0;
+        while (ancestor && depth < 32) {
+            if (ancestor == child) {
+                LOG_WARNING("HierarchyUtils::setParent: cycle detected, ignoring");
+                return;
+            }
+            if (scene.has<Hierarchy>(ancestor)) {
+                ancestor = scene.get<Hierarchy>(ancestor).parent;
+            } else {
+                break;
+            }
+            ++depth;
+        }
+    }
 
     // Detach from current parent (if any)
     removeFromParent(scene, child);
@@ -42,7 +62,7 @@ void removeFromParent(Scene& scene, EntityId entity) {
     if (h.prevSibling) {
         scene.get<Hierarchy>(h.prevSibling).nextSibling = h.nextSibling;
     } else {
-        // Entity was the first child — update parent's firstChild
+        // Entity was the first child - update parent's firstChild
         scene.get<Hierarchy>(h.parent).firstChild = h.nextSibling;
     }
 

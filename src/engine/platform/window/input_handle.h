@@ -28,9 +28,13 @@ struct WindowCallbackData {
 
 /**
  * @brief Handles keyboard input state tracking and querying.
- * 
- * Provides methods to update and query the key states, 
+ *
+ * Provides methods to update and query the key states,
  * including detecting if a key is pressed or released in the current frame.
+ *
+ * Thread safety: m_keyState is written from GLFW key callbacks which fire
+ * during glfwPollEvents() on the main thread. All reads also happen on the
+ * main thread. No synchronization needed for single-window apps.
  */
 class KeyboardInputHandle {
     public:

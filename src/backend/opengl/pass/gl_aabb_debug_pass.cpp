@@ -44,7 +44,7 @@ void GLAABBDebugPass::initialize() {
         { {-0.5f,  0.5f,  0.5f}, {}, {}, {} }  // 7
     };
 
-    // 12 edges → 24 indices (GL_LINES)
+    // 12 edges -> 24 indices (GL_LINES)
     wireframeMesh.indices = {
         // Bottom square
         0, 1,

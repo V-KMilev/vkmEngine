@@ -3,11 +3,6 @@
 #include "generator/light_generators.h"
 
 namespace Engine {
-
-// ────────────────────────────────────────────────────────────────────────────
-// Inspector Panel
-// ────────────────────────────────────────────────────────────────────────────
-
 void EditorSystem::drawInspectorPanel(FrameContext& ctx) {
     if (!m_selectedEntity || !ctx.scene.isAlive(m_selectedEntity)) {
         ImGui::TextDisabled("No entity selected");
@@ -72,9 +67,6 @@ void EditorSystem::drawAddComponentMenu(Scene& scene, EntityId id) {
         ImGui::EndPopup();
     }
 }
-
-// ── Component Sections ──
-
 void EditorSystem::drawTransformSection(Scene& scene, EntityId id) {
     bool open = ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen);
     if (!open) return;

@@ -29,7 +29,7 @@ class ISparseSet {
 * Provides O(1) add, remove, has, and get.
 *
 * Unlike Storage<T>, SparseSet does not manage slot allocation or generation
-* counters — the caller owns the key lifecycle. This makes it leaner: one sparse
+* counters - the caller owns the key lifecycle. This makes it leaner: one sparse
 * array instead of two, no free list overhead.
 *
 * Uses swap-and-pop removal with memcpy optimization for trivially copyable types.

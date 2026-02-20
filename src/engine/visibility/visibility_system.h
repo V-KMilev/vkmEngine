@@ -24,7 +24,7 @@ class VisibilitySystem : public System {
         float m_maxDistance  = 500.0f;
 
         EntityId m_cachedCameraEntity{};
-        Visibility m_result;  ///< Persistent buffer — vectors reuse capacity across frames.
+        Visibility m_result;  ///< Persistent buffer - vectors reuse capacity across frames.
 
         /// Per-worker scratch buffers for parallel culling (reused across frames).
         std::vector<std::vector<EntityId>>  m_workerEntities;

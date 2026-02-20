@@ -74,7 +74,7 @@ void InputHandle::setupCallbacks(GLFWwindow* window, Window* engineWindow) {
     m_callbackData.window = engineWindow;
     glfwSetWindowUserPointer(window, &m_callbackData);
 
-    // Key callback — updates keyboard state directly, no polling needed
+    // Key callback - updates keyboard state directly, no polling needed
     glfwSetKeyCallback(window, [](GLFWwindow* w, int key, int /*scancode*/, int action, int /*mods*/) {
         auto* data = static_cast<WindowCallbackData*>(glfwGetWindowUserPointer(w));
         if (data && data->input) {
@@ -91,7 +91,7 @@ void InputHandle::setupCallbacks(GLFWwindow* window, Window* engineWindow) {
         }
     });
 
-    // Window size callback — instant updates on resize, no polling needed
+    // Window size callback - instant updates on resize, no polling needed
     glfwSetWindowSizeCallback(window, [](GLFWwindow* w, int width, int height) {
         auto* data = static_cast<WindowCallbackData*>(glfwGetWindowUserPointer(w));
         if (data && data->window) {

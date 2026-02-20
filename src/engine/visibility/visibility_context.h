@@ -8,7 +8,7 @@ namespace Engine {
 /**
  * @brief View frustum for culling: six planes from the view-projection matrix.
  *
- * Pre-extracted normals and abs-normals avoid vec4→vec3 conversions and
+ * Pre-extracted normals and abs-normals avoid vec4->vec3 conversions and
  * per-entity glm::abs() calls in the hot culling loop.
  * Order: left, right, bottom, top, near, far.
  */
@@ -24,8 +24,8 @@ struct Frustum {
 struct VisibilityContext {
     Frustum frustum;             ///< View frustum planes (from extractFrustum).
     glm::vec3 cameraPosition;    ///< Camera position in world space.
-    glm::mat4 view;              ///< View matrix (world → view space).
-    glm::mat4 projection;        ///< Projection matrix (view → clip space).
+    glm::mat4 view;              ///< View matrix (world -> view space).
+    glm::mat4 projection;        ///< Projection matrix (view -> clip space).
 
     uint32_t viewportWidth;      ///< Viewport width in pixels.
     uint32_t viewportHeight;     ///< Viewport height in pixels.

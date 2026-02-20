@@ -1,8 +1,8 @@
 #pragma once
 
-#include <unordered_map>
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
 
 #include "resource/mesh_asset.h"
 #include "resource/material_asset.h"
@@ -15,11 +15,9 @@
 #include "gl_instance_batcher.h"
 
 namespace Engine {
-    class RenderView;
-    class ResourceManager;
-}
 
-namespace Engine {
+class RenderView;
+class ResourceManager;
 
 /**
  * @brief GLView manages the OpenGL-side resources and synchronization for all
@@ -155,6 +153,16 @@ class GLView {
          */
         void purgeStaleResources(const RenderView& renderView);
 
+        /**
+         * @brief Purge stale GPU resources if the purge interval has elapsed.
+         *
+         * Increments an internal counter each call. When the counter reaches
+         * PURGE_INTERVAL, removes GPU resources not referenced in the current frame.
+         *
+         * @param renderView The current frame's render view with all active references.
+         */
+        void purgeStaleIfNeeded(const RenderView& renderView);
+
     private:
         std::unordered_map<uint32_t, std::unique_ptr<GLMesh>> m_meshes;
         std::unordered_map<uint32_t, uint64_t> m_meshVersions;
@@ -174,17 +182,6 @@ class GLView {
 
         uint32_t m_purgeCounter = 0;
         static constexpr uint32_t PURGE_INTERVAL = 300;
-
-    public:
-        /**
-         * @brief Purge stale GPU resources if the purge interval has elapsed.
-         *
-         * Increments an internal counter each call. When the counter reaches
-         * PURGE_INTERVAL, removes GPU resources not referenced in the current frame.
-         *
-         * @param renderView The current frame's render view with all active references.
-         */
-        void purgeStaleIfNeeded(const RenderView& renderView);
 };
 
 } // namespace Engine
