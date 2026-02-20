@@ -10,141 +10,35 @@ set(PROJECT_ROOT_DIR ${CMAKE_SOURCE_DIR})
 # Git metadata
 include(cmake/git_metadata.cmake)
 
-# Dependencies
-if(NOT TARGET vkmLog)
-    add_subdirectory(modules/vkmLog)
-endif()
+add_subdirectory(modules)
 
-if(NOT TARGET vkmGL)
-    add_subdirectory(modules/vkmGL)
-endif()
-
-# ============================================================================
-# ImGui Library
-# ============================================================================
-add_library(imgui STATIC
-    modules/imgui/imgui.cpp
-    modules/imgui/imgui_draw.cpp
-    modules/imgui/imgui_tables.cpp
-    modules/imgui/imgui_widgets.cpp
-    modules/imgui/imgui_demo.cpp
-    modules/imgui/backends/imgui_impl_glfw.cpp
-    modules/imgui/backends/imgui_impl_opengl3.cpp
+# Fix submodule include dirs for export compatibility (they lack generator expressions)
+set_property(TARGET vkmLog PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmLog/src>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/vkmLog>
+)
+set_property(TARGET vkmGL PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/buffer>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/buffer/memory>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/buffer/state>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/core>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/shader>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/texture>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/components>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/utils>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/vkmGL>
+)
+set_property(TARGET glew PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/modules/glew/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
-target_include_directories(imgui PUBLIC
-    modules/imgui
-    modules/imgui/backends
-)
+add_subdirectory(src/engine)
+add_subdirectory(src/tools)
+add_subdirectory(src/editor)
+add_subdirectory(src/backend/opengl)
 
-target_link_libraries(imgui PUBLIC
-    glfw
-)
-
-# imgui uses its own built-in GL loader (imgui_impl_opengl3_loader.h)
-# -- no GLEW dependency, no loader defines needed
-
-# ============================================================================
-# Engine Core Library
-# NOTE: Re-run cmake after adding/removing source files (GLOB_RECURSE limitation)
-# ============================================================================
-file(GLOB_RECURSE ENGINECORE_SOURCES
-    src/engine/core/*.cpp
-    src/engine/ecs/*.cpp
-    src/engine/resource/*.cpp
-    src/engine/animation/*.cpp
-    src/engine/visibility/*.cpp
-    src/engine/event/*.cpp
-    src/engine/platform/window/*.cpp
-    src/engine/platform/threading/*.cpp
-    src/engine/debug/*.cpp
-)
-
-add_library(EngineCore STATIC ${ENGINECORE_SOURCES})
-
-target_include_directories(EngineCore PUBLIC
-    src/engine
-)
-
-target_link_libraries(EngineCore PUBLIC
-    vkmGL
-    vkmLog
-)
-
-target_compile_definitions(EngineCore PUBLIC
-    ENABLE_STATISTICS_TRACKING=1
-    GLM_ENABLE_EXPERIMENTAL
-    GLM_FORCE_INTRINSICS
-)
-
-# ============================================================================
-# Engine Rendering Library
-# ============================================================================
-file(GLOB_RECURSE ENGINERENDERING_SOURCES src/engine/render/*.cpp)
-
-add_library(EngineRendering STATIC ${ENGINERENDERING_SOURCES})
-
-target_include_directories(EngineRendering PUBLIC
-    src/engine
-)
-
-target_link_libraries(EngineRendering PUBLIC
-    EngineCore
-)
-
-# ============================================================================
-# OpenGL Backend Library
-# ============================================================================
-file(GLOB_RECURSE BACKENDOPENGL_SOURCES src/backend/opengl/*.cpp)
-
-add_library(BackendOpenGL STATIC ${BACKENDOPENGL_SOURCES})
-
-target_include_directories(BackendOpenGL PUBLIC
-    src/backend/opengl
-)
-
-target_link_libraries(BackendOpenGL PUBLIC
-    vkmGL
-    EngineRendering
-    EngineTools
-)
-
-# ============================================================================
-# Engine Tools Library (Optional utilities)
-# ============================================================================
-file(GLOB_RECURSE ENGINETOOLS_SOURCES src/tools/*.cpp)
-
-add_library(EngineTools STATIC ${ENGINETOOLS_SOURCES})
-
-target_include_directories(EngineTools PUBLIC
-    src/tools
-)
-
-target_link_libraries(EngineTools PUBLIC
-    EngineCore
-)
-
-# ============================================================================
-# Engine Editor Library
-# ============================================================================
-file(GLOB_RECURSE ENGINEEDITOR_SOURCES src/editor/*.cpp)
-# SystemMetrics uses GL for VRAM queries - compiled here, not in EngineCore
-list(APPEND ENGINEEDITOR_SOURCES src/engine/platform/system_metrics.cpp)
-
-add_library(EngineEditor STATIC ${ENGINEEDITOR_SOURCES})
-
-target_include_directories(EngineEditor PUBLIC
-    src/editor
-)
-
-target_link_libraries(EngineEditor PUBLIC
-    EngineCore
-    EngineTools
-    imgui
-    vkmGL
-)
-
-# Shared build info definitions
 add_library(BuildInfo INTERFACE)
 target_compile_definitions(BuildInfo INTERFACE
     APP_VERSION="${PROJECT_VERSION}"
@@ -156,9 +50,6 @@ target_compile_definitions(BuildInfo INTERFACE
 
 target_link_libraries(EngineEditor PRIVATE BuildInfo)
 
-# ============================================================================
-# Main Executable
-# ============================================================================
 add_executable(${PROJECT_NAME}
     main.cpp
 )
@@ -179,7 +70,6 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     APP_ROOT_DIR="${PROJECT_ROOT_DIR}"
 )
 
-# Warning flags and C++ standard for all project targets
 foreach(_target EngineCore EngineRendering EngineTools EngineEditor BackendOpenGL ${PROJECT_NAME})
     set_target_properties(${_target} PROPERTIES
         CXX_STANDARD 17
@@ -194,3 +84,58 @@ foreach(_target EngineCore EngineRendering EngineTools EngineEditor BackendOpenG
         -Wno-stringop-truncation     # Name component strncpy is intentional
     )
 endforeach()
+
+include(GNUInstallDirs)
+
+install(TARGETS EngineCore EngineRendering BackendOpenGL EngineTools EngineEditor
+                imgui vkmLog vkmGL glm glm-header-only glfw glew BuildInfo
+    EXPORT vkmEngineTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+# Install headers
+install(DIRECTORY src/engine/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY src/backend/opengl/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine/backend/opengl
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY src/tools/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine/tools
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY src/editor/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine/editor
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY modules/vkmLog/src/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmLog
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY modules/vkmGL/src/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmGL
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY modules/vkmGL/utils/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmGL
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY modules/imgui/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imgui
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY modules/vkmGL/modules/glew/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.h")
+
+# Export config
+install(EXPORT vkmEngineTargets
+    FILE vkmEngineTargets.cmake
+    NAMESPACE vkmEngine::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/vkmEngine
+)
+
+# Package config file
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    cmake/vkmEngineConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/vkmEngineConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/vkmEngine
+)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/vkmEngineConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/vkmEngineConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/vkmEngineConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/vkmEngine
+)

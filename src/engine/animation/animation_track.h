@@ -5,7 +5,6 @@
 
 #include <glm/gtc/quaternion.hpp>
 
-#include "animation/keyframe.h"
 #include "animation/easing.h"
 
 namespace Engine {
@@ -39,10 +38,11 @@ class AnimationTrack {
          * @param value The value for the keyframe.
          */
         void addKeyframe(float time, const T& value) {
-            m_keyframes.emplace_back(time, value);
-
-            // Keep keyframes sorted by time
-            std::sort(m_keyframes.begin(), m_keyframes.end());
+            // Find insertion point to maintain sorted order
+            auto it = std::upper_bound(m_times.begin(), m_times.end(), time);
+            auto index = static_cast<size_t>(it - m_times.begin());
+            m_times.insert(it, time);
+            m_values.insert(m_values.begin() + index, value);
         }
 
         /**
@@ -58,52 +58,45 @@ class AnimationTrack {
          * @return The interpolated value at the given time.
          */
         T getValue(float time) const {
-            if (m_keyframes.empty()) {
-                // Default value
+            if (m_times.empty()) {
                 return T{};
             }
 
-            if (m_keyframes.size() == 1) {
-                return m_keyframes[0].value;
+            if (m_times.size() == 1) {
+                return m_values[0];
             }
 
             // Clamp time to track duration
-            float duration = getDuration();
             if (time < 0.0f) {
-                return m_keyframes[0].value;
+                return m_values[0];
             }
 
-            if (time >= duration) {
-                return m_keyframes.back().value;
+            if (time >= m_times.back()) {
+                return m_values.back();
             }
 
-            // Binary search for the first keyframe with time > query time
-            auto it = std::upper_bound(
-                m_keyframes.begin(), m_keyframes.end(), time,
-                [](float t, const Keyframe<T>& kf) { return t < kf.time; }
-            );
+            // Binary search on times only (cache-friendly: touches only floats)
+            auto it = std::upper_bound(m_times.begin(), m_times.end(), time);
 
-            size_t nextIndex = (it != m_keyframes.end())
-                ? static_cast<size_t>(it - m_keyframes.begin())
-                : m_keyframes.size() - 1;
+            size_t nextIndex = (it != m_times.end())
+                ? static_cast<size_t>(it - m_times.begin())
+                : m_times.size() - 1;
 
             size_t prevIndex = nextIndex - 1;
-            const auto& prev = m_keyframes[prevIndex];
-            const auto& next = m_keyframes[nextIndex];
 
             // Calculate normalized time [0, 1] between the two keyframes
-            float segmentDuration = next.time - prev.time;
+            float segmentDuration = m_times[nextIndex] - m_times[prevIndex];
             if (segmentDuration <= 0.0f) {
-                return prev.value;
+                return m_values[prevIndex];
             }
 
-            float t = (time - prev.time) / segmentDuration;
+            float t = (time - m_times[prevIndex]) / segmentDuration;
 
             // Apply easing to the interpolation factor
             float eased = m_easing(t);
 
             // Interpolate using appropriate method (slerp for quaternions, mix for others)
-            return interpolate(prev.value, next.value, eased);
+            return interpolate(m_values[prevIndex], m_values[nextIndex], eased);
         }
 
         /**
@@ -111,10 +104,10 @@ class AnimationTrack {
          * @return The duration.
          */
         float getDuration() const {
-            if (m_keyframes.empty()) {
+            if (m_times.empty()) {
                 return 0.0f;
             }
-            return m_keyframes.back().time;
+            return m_times.back();
         }
 
         /**
@@ -122,7 +115,7 @@ class AnimationTrack {
          * @return True if empty, false otherwise.
          */
         bool isEmpty() const {
-            return m_keyframes.empty();
+            return m_times.empty();
         }
 
         /**
@@ -145,7 +138,8 @@ class AnimationTrack {
          * @brief Removes all keyframes from the track.
          */
         void clear() {
-            m_keyframes.clear();
+            m_times.clear();
+            m_values.clear();
         }
 
     private:
@@ -163,7 +157,8 @@ class AnimationTrack {
             }
         }
 
-        std::vector<Keyframe<T>> m_keyframes;
+        std::vector<float> m_times;   ///< Keyframe timestamps (sorted ascending)
+        std::vector<T> m_values;       ///< Keyframe values (parallel to m_times)
         EasingFunction m_easing;
 };
 

@@ -9,6 +9,12 @@
 
 namespace Engine {
 
+enum class MaterialType : uint8_t {
+    Opaque      = 0,
+    Transparent = 1,
+    Unlit       = 2
+};
+
 /**
  * @brief Describes a material asset.
  *
@@ -16,6 +22,8 @@ namespace Engine {
  * Supports both rasterization and raytracing rendering pipelines.
  */
 struct MaterialAsset : public Resource {
+    MaterialType type = MaterialType::Opaque;
+
     // Base PBR properties
     glm::vec4 albedo   = {1,1,1,1};              ///< Base albedo color (RGBA)
     glm::vec3 emission = {0,0,0};                ///< Emissive color (RGB)

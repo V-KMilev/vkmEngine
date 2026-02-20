@@ -20,6 +20,7 @@ namespace Engine {
 struct InstanceBatch {
     MeshHandle mesh;
     MaterialHandle material;
+    MaterialType materialType = MaterialType::Opaque;
     uint32_t instanceCount = 0;
 };
 

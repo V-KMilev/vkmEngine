@@ -20,40 +20,40 @@ namespace Engine {
 namespace {
 
     /**
-     * @brief Sort drawables by (material, mesh) for optimal batching.
+     * @brief Sort drawables by (materialType, material, mesh) for optimal batching.
      *
-     * Indirect sort: sorts lightweight (uint64 key, uint32 index) pairs
-     * with a custom comparator on key only (avoids std::pair's lexicographic
-     * operator<). Swaps 12 bytes instead of ~80 per DrawableData, then
-     * gathers into sorted order in one pass.
+     * Sort key: bits 63-62 = MaterialType, 61-32 = material ID, 31-0 = mesh ID.
+     * Opaque (0) renders first, then Transparent (1), then Unlit (2).
      */
     void sortDrawables(std::vector<DrawableData>& drawables) {
         if (drawables.size() <= 1) return;
 
         const uint32_t n = static_cast<uint32_t>(drawables.size());
 
-        // Quick O(N) check: skip sort if already in order (common when
-        // visibility order is stable frame-to-frame)
+        auto makeKey = [](const DrawableData& d) -> uint64_t {
+            return (static_cast<uint64_t>(d.materialType) << 62)
+                 | (static_cast<uint64_t>(d.material.id()) << 32)
+                 | d.mesh.id();
+        };
+
+        // Quick O(N) check: skip sort if already in order
         {
             bool alreadySorted = true;
-            uint64_t prev = (static_cast<uint64_t>(drawables[0].material.id()) << 32) | drawables[0].mesh.id();
+            uint64_t prev = makeKey(drawables[0]);
             for (uint32_t i = 1; i < n; ++i) {
-                uint64_t curr = (static_cast<uint64_t>(drawables[i].material.id()) << 32) | drawables[i].mesh.id();
+                uint64_t curr = makeKey(drawables[i]);
                 if (curr < prev) { alreadySorted = false; break; }
                 prev = curr;
             }
             if (alreadySorted) return;
         }
 
-        // Phase 1: Sort lightweight keys (12-byte swaps vs 80-byte DrawableData)
+        // Phase 1: Sort lightweight keys (12-byte swaps vs ~88-byte DrawableData)
         static thread_local std::vector<std::pair<uint64_t, uint32_t>> sortKeys;
         sortKeys.resize(n);
 
         for (uint32_t i = 0; i < n; ++i) {
-            sortKeys[i] = {
-                (static_cast<uint64_t>(drawables[i].material.id()) << 32) | drawables[i].mesh.id(),
-                i
-            };
+            sortKeys[i] = { makeKey(drawables[i]), i };
         }
 
         // Custom comparator: compare key only (NOT default pair lexicographic)
@@ -107,9 +107,10 @@ void RenderView::build(
         const auto& mesh = scene.get<Mesh>(entry.id);
 
         DrawableData drawable;
-        drawable.mesh     = mesh.mesh;
-        drawable.material = mesh.material;
-        drawable.model    = entry.model;
+        drawable.mesh         = mesh.mesh;
+        drawable.material     = mesh.material;
+        drawable.materialType = resources.get(mesh.material).type;
+        drawable.model        = entry.model;
         drawables.emplace_back(drawable);
     }
 

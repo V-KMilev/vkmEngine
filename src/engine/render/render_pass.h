@@ -6,7 +6,7 @@
 namespace Engine {
     class RenderBackend;
 
-    class RenderView;
+    struct RenderView;
     class ResourceManager;
 }
 

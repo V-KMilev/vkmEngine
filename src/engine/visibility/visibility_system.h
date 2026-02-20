@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -35,6 +36,9 @@ class VisibilitySystem : public System {
 
         EntityId m_cachedCameraEntity{};
         Visibility m_result;  ///< Persistent buffer - vectors reuse capacity across frames.
+
+        /// Pre-computed world matrices for parented entities (cleared each frame).
+        std::unordered_map<uint32_t, glm::mat4> m_worldMatrixCache;
 
         /// Per-worker scratch buffers for parallel culling (reused across frames).
         std::vector<std::vector<VisibleEntity>> m_workerResults;

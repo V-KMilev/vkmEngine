@@ -13,35 +13,35 @@ namespace Engine {
 
 namespace {
     /**
-     * @brief Helper to infer OpenGL internal format from channel count and sRGB flag.
+     * @brief Helper to infer texture internal format from channel count and sRGB flag.
      */
-    GLenum inferInternalFormat(int channels, bool srgb) {
+    TextureInternalFormat inferInternalFormat(int channels, bool srgb) {
         if (srgb) {
             switch (channels) {
-                case 3: return GL_SRGB8;
-                case 4: return GL_SRGB8_ALPHA8;
-                default: return GL_SRGB8_ALPHA8;
+                case 3: return TextureInternalFormat::SRGB8;
+                case 4: return TextureInternalFormat::SRGBA8;
+                default: return TextureInternalFormat::SRGBA8;
             }
         }
         switch (channels) {
-            case 1: return GL_R8;
-            case 2: return GL_RG8;
-            case 3: return GL_RGB8;
-            case 4: return GL_RGBA8;
-            default: return GL_RGBA8;
+            case 1: return TextureInternalFormat::R8;
+            case 2: return TextureInternalFormat::RG8;
+            case 3: return TextureInternalFormat::RGB8;
+            case 4: return TextureInternalFormat::RGBA8;
+            default: return TextureInternalFormat::RGBA8;
         }
     }
 
     /**
-     * @brief Helper to infer OpenGL format from channel count.
+     * @brief Helper to infer texture pixel format from channel count.
      */
-    GLenum inferFormat(int channels) {
+    TexturePixelFormat inferFormat(int channels) {
         switch (channels) {
-            case 1: return GL_RED;
-            case 2: return GL_RG;
-            case 3: return GL_RGB;
-            case 4: return GL_RGBA;
-            default: return GL_RGBA;
+            case 1: return TexturePixelFormat::R;
+            case 2: return TexturePixelFormat::RG;
+            case 3: return TexturePixelFormat::RGB;
+            case 4: return TexturePixelFormat::RGBA;
+            default: return TexturePixelFormat::RGBA;
         }
     }
 }
@@ -67,12 +67,12 @@ TextureHandle loadTexture(
 
     // Create TextureAsset
     TextureAsset texture;
-    texture.width = static_cast<uint32_t>(width);
-    texture.height = static_cast<uint32_t>(height);
-    texture.internalFormat = inferInternalFormat(channels, srgb);
-    texture.format = inferFormat(channels);
-    texture.type = GL_UNSIGNED_BYTE;
-    texture.generateMipmaps = generateMipmaps;
+    texture.params.width = static_cast<uint32_t>(width);
+    texture.params.height = static_cast<uint32_t>(height);
+    texture.params.internalFormat = inferInternalFormat(channels, srgb);
+    texture.params.format = inferFormat(channels);
+    texture.params.type = TexturePixelType::UnsignedByte;
+    texture.params.generateMipmaps = generateMipmaps;
     texture.srgb = srgb;
     texture.filePath = filePath;
 
@@ -84,7 +84,7 @@ TextureHandle loadTexture(
     // Free stb_image data
     stbi_image_free(data);
 
-    LOG_INFO("Loaded texture '%s' (%dx%d, %d channels, sRGB: %s)", 
+    LOG_INFO("Loaded texture '%s' (%dx%d, %d channels, sRGB: %s)",
         filePath.c_str(), width, height, channels, srgb ? "yes" : "no");
 
     return resourceManager.add(std::move(texture));

@@ -14,12 +14,12 @@ TextureHandle generateSolidColorTexture(
 ) {
     // Create 1x1 texture
     TextureAsset texture;
-    texture.width = 1;
-    texture.height = 1;
-    texture.internalFormat = srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8;
-    texture.format = GL_RGBA;
-    texture.type = GL_UNSIGNED_BYTE;
-    texture.generateMipmaps = false;  // No mipmaps needed for 1x1
+    texture.params.width = 1;
+    texture.params.height = 1;
+    texture.params.internalFormat = srgb ? TextureInternalFormat::SRGBA8 : TextureInternalFormat::RGBA8;
+    texture.params.format = TexturePixelFormat::RGBA;
+    texture.params.type = TexturePixelType::UnsignedByte;
+    texture.params.generateMipmaps = false;  // No mipmaps needed for 1x1
     texture.srgb = srgb;
     texture.filePath = "procedural:solid_color";
 
@@ -45,12 +45,12 @@ TextureHandle generateNormalTexture(ResourceManager& resourceManager) {
     // Normal map pointing straight up: (0, 0, 1) in world space
     // In texture space: (0.5, 0.5, 1.0) which maps to (128, 128, 255) in [0,255]
     TextureAsset texture;
-    texture.width = 1;
-    texture.height = 1;
-    texture.internalFormat = GL_RGB8;
-    texture.format = GL_RGB;
-    texture.type = GL_UNSIGNED_BYTE;
-    texture.generateMipmaps = false;
+    texture.params.width = 1;
+    texture.params.height = 1;
+    texture.params.internalFormat = TextureInternalFormat::RGB8;
+    texture.params.format = TexturePixelFormat::RGB;
+    texture.params.type = TexturePixelType::UnsignedByte;
+    texture.params.generateMipmaps = false;
     texture.srgb = false;  // Normal maps are NOT sRGB
     texture.filePath = "procedural:default_normal";
 

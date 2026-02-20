@@ -1,5 +1,7 @@
 #include "gl_forward_pass.h"
 
+#include <GL/glew.h>
+
 #include "logger.h"
 #include "debug/print_helper.h"
 #include "debug/statistics.h"
@@ -16,22 +18,32 @@
 
 namespace Engine {
 
-GLForwardPass::GLForwardPass(Core::Shader& shader) : RenderPass("GLForwardPass"), m_shader(shader) {
-    // Set up texture samplers once during initialization
-    m_shader.bind();
+void GLForwardPass::setupSamplers(Core::Shader& shader) {
+    shader.bind();
+    shader.setUniform1i(GLConfig::UniformNames::AlbedoTexture, GLConfig::TextureSlots::Albedo);
+    shader.setUniform1i(GLConfig::UniformNames::NormalTexture, GLConfig::TextureSlots::Normal);
+    shader.setUniform1i(GLConfig::UniformNames::MetallicRoughnessTexture, GLConfig::TextureSlots::MetallicRoughness);
+    shader.setUniform1i(GLConfig::UniformNames::AOMetallicRoughnessTexture, GLConfig::TextureSlots::MetallicRoughness);
+    shader.setUniform1i(GLConfig::UniformNames::AOTexture, GLConfig::TextureSlots::AO);
+    shader.setUniform1i(GLConfig::UniformNames::EmissionTexture, GLConfig::TextureSlots::Emission);
+    shader.setUniform1i(GLConfig::UniformNames::HeightTexture, GLConfig::TextureSlots::Height);
+    shader.setUniform1i(GLConfig::UniformNames::ClearcoatTexture, GLConfig::TextureSlots::Clearcoat);
+    shader.setUniform1i(GLConfig::UniformNames::TransmissionTexture, GLConfig::TextureSlots::Transmission);
+    shader.setUniform1i(GLConfig::UniformNames::MetallicTexture, GLConfig::TextureSlots::Metallic);
+    shader.setUniform1i(GLConfig::UniformNames::RoughnessTexture, GLConfig::TextureSlots::Roughness);
+}
 
-    // Set sampler units to match TextureSlots in gl_config.h
-    m_shader.setUniform1i(GLConfig::UniformNames::AlbedoTexture, GLConfig::TextureSlots::Albedo);
-    m_shader.setUniform1i(GLConfig::UniformNames::NormalTexture, GLConfig::TextureSlots::Normal);
-    m_shader.setUniform1i(GLConfig::UniformNames::MetallicRoughnessTexture, GLConfig::TextureSlots::MetallicRoughness);
-    m_shader.setUniform1i(GLConfig::UniformNames::AOMetallicRoughnessTexture, GLConfig::TextureSlots::MetallicRoughness);
-    m_shader.setUniform1i(GLConfig::UniformNames::AOTexture, GLConfig::TextureSlots::AO);
-    m_shader.setUniform1i(GLConfig::UniformNames::EmissionTexture, GLConfig::TextureSlots::Emission);
-    m_shader.setUniform1i(GLConfig::UniformNames::HeightTexture, GLConfig::TextureSlots::Height);
-    m_shader.setUniform1i(GLConfig::UniformNames::ClearcoatTexture, GLConfig::TextureSlots::Clearcoat);
-    m_shader.setUniform1i(GLConfig::UniformNames::TransmissionTexture, GLConfig::TextureSlots::Transmission);
-    m_shader.setUniform1i(GLConfig::UniformNames::MetallicTexture, GLConfig::TextureSlots::Metallic);
-    m_shader.setUniform1i(GLConfig::UniformNames::RoughnessTexture, GLConfig::TextureSlots::Roughness);
+GLForwardPass::GLForwardPass(Core::Shader& pbrShader) : RenderPass("GLForwardPass") {
+    m_shaders[static_cast<int>(MaterialType::Opaque)]      = &pbrShader;
+    m_shaders[static_cast<int>(MaterialType::Transparent)]  = &pbrShader;
+    // Unlit stays nullptr until setShader() is called
+
+    setupSamplers(pbrShader);
+}
+
+void GLForwardPass::setShader(MaterialType type, Core::Shader& shader) {
+    m_shaders[static_cast<int>(type)] = &shader;
+    setupSamplers(shader);
 }
 
 void GLForwardPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
@@ -39,7 +51,6 @@ void GLForwardPass::onResize(RenderBackend& backend, uint32_t width, uint32_t he
 }
 
 void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) {
-    // Validate backend type
     if (backend.getType() != RenderBackendType::OpenGL) {
         LOG_ERROR("GLForwardPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
         return;
@@ -48,50 +59,66 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
     auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
 
-    // Clear framebuffer (always needed)
     glContext.clearColor();
     glContext.clear();
 
-    // Early out if nothing to draw - skip all resource syncing and setup
     if (view.drawables.empty()) {
         return;
     }
 
     auto& glView = gl.getView();
 
-    // Sync all resources with GPU
     glView.syncMeshes(view, resources);
     glView.syncMaterials(view, resources);
     glView.syncTextures(view, resources);
     glView.syncLights(view, resources);
-
-    // Periodically purge GPU resources no longer referenced in the scene
     glView.purgeStaleIfNeeded(view);
-
-    // Bind shader and set global uniforms
-    m_shader.bind();
-    STATS_RECORD_SHADER_SWITCH();
-
-    // Bind lights UBO
-    glView.getLights().bind(GLConfig::UBOBindingPoints::Lights);
-
-    // Set camera uniforms
-    m_shader.setUniform3fv(GLConfig::UniformNames::CameraPosition, view.camera.position);
-    m_shader.setUniformMatrix4fv(GLConfig::UniformNames::ViewProjection, view.camera.viewProjection);
-
-    // Drawables are pre-sorted by (material, mesh). The batcher groups them
-    // into batches where each batch shares the same mesh+material combo.
-    // This reduces draw calls from O(entities) to O(unique mesh-material pairs).
 
     glView.buildInstanceBatches(view);
 
     auto& batcher = glView.getInstanceBatcher();
     const auto& batches = batcher.getBatches();
 
+    // Bind lights UBO (shared across all shader variants)
+    glView.getLights().bind(GLConfig::UBOBindingPoints::Lights);
+
+    Core::Shader* currentShader = nullptr;
+    MaterialType currentType = MaterialType::Opaque;
+
     for (size_t i = 0; i < batches.size(); ++i) {
         const auto& batch = batches[i];
 
-        // Bind material (UBO + textures) once per batch
+        // Switch shader when material type changes
+        Core::Shader* shader = m_shaders[static_cast<int>(batch.materialType)];
+        if (!shader) {
+            // Fall back to opaque PBR shader if variant not set
+            shader = m_shaders[static_cast<int>(MaterialType::Opaque)];
+        }
+
+        if (shader != currentShader) {
+            // Transition GL state between material type groups
+            if (currentType == MaterialType::Transparent && batch.materialType != MaterialType::Transparent) {
+                glDepthMask(GL_TRUE);
+                glDisable(GL_BLEND);
+            }
+
+            if (batch.materialType == MaterialType::Transparent && currentType != MaterialType::Transparent) {
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glDepthMask(GL_FALSE);
+            }
+
+            shader->bind();
+            STATS_RECORD_SHADER_SWITCH();
+
+            shader->setUniform3fv(GLConfig::UniformNames::CameraPosition, view.camera.position);
+            shader->setUniformMatrix4fv(GLConfig::UniformNames::ViewProjection, view.camera.viewProjection);
+
+            currentShader = shader;
+            currentType = batch.materialType;
+        }
+
+        // Bind material (UBO + textures)
         if (batch.material) {
             const GLMaterial* material = glView.getMaterial(batch.material);
             if (material) {
@@ -102,19 +129,22 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
             }
         }
 
-        // Get mesh and its instance buffer
+        // Get mesh and instance buffer, issue draw call
         GLMesh* mesh = glView.getMutableMesh(batch.mesh);
         GLInstanceBuffer* instanceBuffer = batcher.getInstanceBuffer(i);
 
         if (mesh && instanceBuffer) {
-            // Attach instance buffer (model matrices) to VAO at locations 4-7
             instanceBuffer->attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
-
-            // Issue single instanced draw call for all instances in this batch
             mesh->drawInstanced(GL_TRIANGLES, batch.instanceCount);
         } else {
             LOG_WARNING("Failed to get mesh or instance buffer for batch (skipping draw call)");
         }
+    }
+
+    // Restore GL state if we ended in transparent mode
+    if (currentType == MaterialType::Transparent) {
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
     }
 }
 

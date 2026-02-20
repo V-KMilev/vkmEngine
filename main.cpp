@@ -54,11 +54,14 @@ int main() {
 
         // Shaders
         Core::Shader pbr("../shaders/pbr");
+        Core::Shader unlit("../shaders/unlit");
         Core::Shader aabbDebug("../shaders/aabb_debug");
         Core::Shader gridShader("../shaders/grid");
         // Render passes
         renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
-        renderSystem.addPass(std::make_unique<Engine::GLForwardPass>(pbr));
+        auto forwardPass = std::make_unique<Engine::GLForwardPass>(pbr);
+        forwardPass->setShader(Engine::MaterialType::Unlit, unlit);
+        renderSystem.addPass(std::move(forwardPass));
         auto aabbPass = std::make_unique<Engine::GLAABBDebugPass>(aabbDebug);
         aabbPass->setEnabled(false);
         renderSystem.addPass(std::move(aabbPass));

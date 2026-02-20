@@ -3,7 +3,8 @@
 #include <cstdint>
 
 namespace Engine {
-    class RenderView;
+    class RenderTarget;
+    struct RenderView;
     class ResourceManager;
 }
 
@@ -70,6 +71,12 @@ class RenderBackend {
          * @param height New height in pixels.
          */
         virtual void resize(uint32_t width, uint32_t height) = 0;
+
+        /**
+         * @brief Get the default render target (typically the screen framebuffer).
+         * @return Reference to the default RenderTarget.
+         */
+        virtual RenderTarget& getDefaultTarget() = 0;
 
     protected:
         RenderBackendType m_type;

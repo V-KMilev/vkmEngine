@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render/render_pass.h"
+#include "resource/material_asset.h"
 
 namespace Core {
     class Shader;
@@ -10,12 +11,10 @@ namespace Engine {
 
 /**
  * @brief Render pass for forward rendering using OpenGL.
- * 
- * The GLForwardPass executes forward rendering for visible scene geometry using a supplied
- * OpenGL shader. This pass is typically responsible for drawing meshes with basic lighting 
- * and material support, outputting directly to the main framebuffer.
  *
- * NOTE: The m_shader member is slated for removal in future refactors.
+ * Supports multiple shader variants dispatched by MaterialType:
+ * - Opaque/Transparent: PBR shader (with blending for transparent)
+ * - Unlit: simplified shader without lighting
  */
 class GLForwardPass : public RenderPass {
     public:
@@ -29,36 +28,26 @@ class GLForwardPass : public RenderPass {
         GLForwardPass& operator=(GLForwardPass && other) = delete;
 
         /**
-         * @brief Construct a GLForwardPass that renders geometry with a given shader.
-         * @param shader Reference to an OpenGL shader to be used for rendering all geometry in this pass.
+         * @brief Construct a GLForwardPass with a PBR shader (used for Opaque and Transparent).
+         * @param pbrShader Reference to the PBR shader.
          */
-         GLForwardPass(Core::Shader& shader);
+        GLForwardPass(Core::Shader& pbrShader);
 
     public:
         /**
-         * @brief Respond to a framebuffer or window resize.
-         * 
-         * Updates internal state or resources as necessary when the output framebuffer changes size.
-         * @param backend Reference to the render backend.
-         * @param width   New width in pixels.
-         * @param height  New height in pixels.
+         * @brief Set the shader for a specific material type.
+         * @param type The material type.
+         * @param shader Reference to the shader to use.
          */
-        void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
+        void setShader(MaterialType type, Core::Shader& shader);
 
-        /**
-         * @brief Execute the forward rendering pass for the current frame.
-         * 
-         * Binds the shader and draws all visible meshes using geometry and materials found  
-         * in the resource manager and render view.
-         * @param backend   Reference to the current render backend (should be OpenGL).
-         * @param view      Provides scene and camera information.
-         * @param resources Access to GPU mesh and material handles for this frame.
-         */
+        void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
         void execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) override;
 
     private:
-         // TODO(vkm): Remove the shader as a member and refactor API.
-        Core::Shader& m_shader;
+        void setupSamplers(Core::Shader& shader);
+
+        Core::Shader* m_shaders[3] = {};  ///< Indexed by MaterialType (Opaque, Transparent, Unlit)
 };
 
 } // namespace Engine

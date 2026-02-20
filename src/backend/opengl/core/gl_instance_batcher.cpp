@@ -13,13 +13,14 @@ void GLInstanceBatcher::build(const std::vector<DrawableData>& drawables) {
     }
 
     // Single pass through sorted drawables to build batches
-    // Drawables are pre-sorted by (material, mesh)
+    // Drawables are pre-sorted by (materialType, material, mesh)
     size_t batchStart = 0;
 
     for (size_t i = 1; i <= drawables.size(); ++i) {
         bool endOfBatch = (i == drawables.size());
         if (!endOfBatch) {
-            endOfBatch = (drawables[i].mesh != drawables[batchStart].mesh) ||
+            endOfBatch = (drawables[i].materialType != drawables[batchStart].materialType) ||
+                         (drawables[i].mesh != drawables[batchStart].mesh) ||
                          (drawables[i].material != drawables[batchStart].material);
         }
 
@@ -43,6 +44,7 @@ void GLInstanceBatcher::build(const std::vector<DrawableData>& drawables) {
             InstanceBatch batch;
             batch.mesh = drawables[batchStart].mesh;
             batch.material = drawables[batchStart].material;
+            batch.materialType = drawables[batchStart].materialType;
             batch.instanceCount = instanceCount;
             m_batches.push_back(batch);
 

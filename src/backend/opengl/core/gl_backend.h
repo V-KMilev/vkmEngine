@@ -6,9 +6,10 @@
 
 #include "gl_context.h"
 #include "gl_view.h"
+#include "gl_render_target.h"
 
 namespace Engine {
-    class RenderView;
+    struct RenderView;
     class ResourceManager;
     class RenderPipeline;
 }
@@ -47,6 +48,7 @@ class GLBackend : public RenderBackend {
          * @param height New height in pixels.
          */
         void resize(uint32_t width, uint32_t height) override;
+        RenderTarget& getDefaultTarget() override { return m_defaultTarget; }
 
         /**
          * @brief Get the OpenGL rendering context.
@@ -94,6 +96,7 @@ class GLBackend : public RenderBackend {
     private:
         Core::Context m_context;
         GLView m_view;
+        GLDefaultRenderTarget m_defaultTarget;
 };
 
 } // namespace Engine

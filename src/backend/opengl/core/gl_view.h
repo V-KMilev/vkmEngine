@@ -16,7 +16,7 @@
 
 namespace Engine {
 
-class RenderView;
+struct RenderView;
 class ResourceManager;
 
 /**

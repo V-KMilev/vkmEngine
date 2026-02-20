@@ -131,6 +131,20 @@ void VisibilitySystem::update(FrameContext& ctx) {
         m_workerResults[i].reserve(estimatePerWorker);
     }
 
+    // Pre-compute world matrices for parented entities (sequential, ~48 entities)
+    // so the parallel loop can read from the cache without thread-safety issues.
+    m_worldMatrixCache.clear();
+    if (hierarchyStorage) {
+        for (uint32_t i = 0; i < hierarchyStorage->size(); ++i) {
+            const uint32_t entityIdx = hierarchyStorage->keyAt(i);
+            const Hierarchy& hier = hierarchyStorage->dataAt(i);
+            if (hier.parent && transformStorage->contains(entityIdx)) {
+                const EntityId eid{entityIdx, ctx.scene.generationOf(entityIdx)};
+                m_worldMatrixCache[entityIdx] = HierarchyUtils::computeWorldMatrix(ctx.scene, eid);
+            }
+        }
+    }
+
     const auto& resources = ctx.resources;
 
     pool.parallelFor(0, meshCount, grain,
@@ -157,7 +171,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
 
                 const EntityId eid{entityIdx, ctx.scene.generationOf(entityIdx)};
                 const glm::mat4 modelMatrix = hasParent
-                    ? HierarchyUtils::computeWorldMatrix(ctx.scene, eid)
+                    ? m_worldMatrixCache.at(entityIdx)
                     : Transform::computeModelMatrix(transform);
 
                 glm::vec3 worldMin, worldMax;

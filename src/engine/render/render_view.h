@@ -40,6 +40,7 @@ struct CameraData {
 struct DrawableData {
     MeshHandle mesh;
     MaterialHandle material;
+    MaterialType materialType = MaterialType::Opaque;
 
     glm::mat4 model = {1.0f};
 };

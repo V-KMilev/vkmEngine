@@ -1,8 +1,9 @@
-#include "gl_texture.h"
+#include "resource/gl_texture.h"
 
 #include "logger.h"
 
 #include "resource/texture_asset.h"
+#include "config/gl_format_conversion.h"
 
 #include "gl_texture.h"  // Core::Texture2D
 
@@ -18,30 +19,26 @@ GLTexture::~GLTexture() {
 }
 
 void GLTexture::update(const TextureAsset& texture) {
-    // Get Texture2DParams with data pointer properly synchronized
-    const Core::Texture2DParams& params = texture.getParams();
+    const void* data = texture.pixelData.empty() ? nullptr : texture.pixelData.data();
+    const Core::Texture2DParams glParams = toGLParams(texture.params, data);
 
-    // Create or update the texture
     if (!m_texture) {
-        // Generate a name from the texture handle or use a default
-        std::string name = texture.filePath.empty() 
+        std::string name = texture.filePath.empty()
             ? ("Texture_" + std::to_string(texture.version))
             : texture.filePath;
-        m_texture = std::make_unique<Core::Texture2D>(name, params);
+        m_texture = std::make_unique<Core::Texture2D>(name, glParams);
     } else {
-        // Update existing texture data
         if (!texture.pixelData.empty()) {
             m_texture->setData(
                 texture.pixelData.data(),
-                texture.width,
-                texture.height,
-                params.format,
-                params.type
+                texture.params.width,
+                texture.params.height,
+                glParams.format,
+                glParams.type
             );
         }
-        // Update texture parameters
-        m_texture->setWrap(params.wrapS, params.wrapT);
-        m_texture->setFilter(params.minFilter, params.magFilter);
+        m_texture->setWrap(glParams.wrapS, glParams.wrapT);
+        m_texture->setFilter(glParams.minFilter, glParams.magFilter);
     }
 }
 
