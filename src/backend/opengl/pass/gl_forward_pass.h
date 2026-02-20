@@ -15,7 +15,7 @@ namespace Engine {
  * OpenGL shader. This pass is typically responsible for drawing meshes with basic lighting 
  * and material support, outputting directly to the main framebuffer.
  *
- * NOTE: The m_shader member is slated for removal in future refactors (see TODO).
+ * NOTE: The m_shader member is slated for removal in future refactors.
  */
 class GLForwardPass : public RenderPass {
     public:
@@ -57,7 +57,7 @@ class GLForwardPass : public RenderPass {
         void execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) override;
 
     private:
-         // TODO: Remove the shader as a member and refactor API.
+         // TODO(vkm): Remove the shader as a member and refactor API.
         Core::Shader& m_shader;
 };
 

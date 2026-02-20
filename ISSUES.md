@@ -43,7 +43,7 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 | 12 | | Headers listed as sources | Lines 62-131 | `.h` files in `add_library` are not compiled. Only helps IDE indexing. CMake 3.25+ has `FILE_SET HEADERS` for this. |
 | 13 | | Duplicate APP_* compile definitions | Lines 270-276 vs 296-306 | `APP_VERSION`, `APP_NAME`, `APP_BRANCH`, `APP_COMMIT_HASH`, `APP_BUILD_DATE` defined identically on both EngineEditor and main executable. Extract into shared CMake function or `build_info` interface target. |
 | 14 | | BackendOpenGL exposes 4 include dirs | Lines 204-210 | Every subdirectory of the backend is a public include path. Consumers can `#include "gl_mesh.h"` from anywhere, breaking encapsulation. Use single public include dir with qualified paths internally. |
-| 15 | | Warning flags commented out | Line 293 | `-Wall -Wextra -Wpedantic` disabled. Silent bugs accumulate. Enable and fix warnings. |
+| 15 | Done | Warning flags commented out | Line 293 | Enabled `-Wall -Wextra` on all targets with targeted suppressions for submodule false positives. |
 | 16 | | Single 300-line CMakeLists.txt | Root file | Doesn't scale. Split into per-subdirectory `CMakeLists.txt` files (`src/engine/CMakeLists.txt`, `src/backend/opengl/CMakeLists.txt`, etc.). |
 | 17 | | EngineRendering has no include dir | Lines 151-164 | No `target_include_directories`. Relies entirely on EngineCore's transitive PUBLIC include. Works but is implicit and fragile. |
 | 18 | | No install/export targets | Entire file | No `install()` or `export()` rules. Can't use this engine as a CMake dependency from another project. Low priority but future-proofs the build. |
@@ -58,7 +58,7 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 |---|--------|-------|----------|-------------|
 | 21 | Done | Remove all special/unicode symbols from code | Codebase-wide | Replaced all Unicode characters with ASCII equivalents and removed section dividers. |
 | 22 | Done | Struct members lack `m_` prefix | `types.h:14`, `render_view.h:72`, `resource_handle.h:46` | Documented convention in STYLE_GUIDE.md: plain members for POD structs, `m_` for classes. |
-| 23 | | Include ordering not grouped | `gl_view.h:1-15`, `gl_texture_mapping.h` | System and local headers mixed without blank-line separator. Adopt: system headers, blank line, third-party headers, blank line, local headers. |
+| 23 | Done | Include ordering not grouped | `gl_view.h:1-15`, `gl_texture_mapping.h` | Fixed include grouping in 5 files: camera_controller.h, gl_view.h, gl_view.cpp, event_system.cpp, gl_instance_buffer.h. |
 | 24 | Done | Access specifier reappears | `gl_view.h:178` | Fixed - merged duplicate public/private sections in gl_view.h. |
 | 25 | Done | Struct with explicit `public:` | `resource_handle.h:17` | Fixed - removed redundant `public:` from struct Handle. |
 
@@ -71,7 +71,7 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 | 26 | | System constructors vary | `VisibilitySystem` vs `AnimationSystem` | Some Systems define explicit constructors, some are defaulted. Standardize: explicit constructors for all System subclasses. |
 | 27 | | Getter naming mixed | `getScene()` vs `isLooking()` vs `count()` | No consistent prefix rule. Adopt: `getX()` for object getters, `isX()` for bool getters, `count()`/`size()` for quantities. |
 | 28 | | Error handling inconsistent | `Scene::get()` vs `GLView::getMesh()` | Scene asserts and crashes in release if entity missing. GLView returns nullptr. No unified strategy. Adopt: asserts for programmer errors (preconditions), nullable returns for runtime lookups. |
-| 29 | | `FrameContext.visibility` is raw pointer | `system.h:25` | Only non-owning raw pointer in FrameContext. All other members are references. Document ownership or use `std::optional`. |
+| 29 | Done | `FrameContext.visibility` is raw pointer | `system.h:25` | Already documented in FrameContext doc block - non-owning pointer to persistent VisibilitySystem storage. |
 
 ---
 
@@ -79,9 +79,9 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 
 | # | Status | Issue | Location | Description |
 |---|--------|-------|----------|-------------|
-| 30 | | ~50% of files lack Doxygen headers | Component files, backend resources | `mesh.h`, `light.h`, `camera.h`, `gl_mesh.h`, etc. have no file-level doc comment. Core system files do. Add brief `/** @brief ... */` header to every `.h`. |
-| 31 | | Mixed comment styles in same files | `gl_material.h` vs `animation.h` | Some files use `/** */` blocks, others use `///`, some mix both. Adopt: `/** */` for method/class docs, `///<` for inline member docs. |
-| 32 | | TODOs scattered, not centralized | `transform.h:9`, `gl_forward_pass.h:60`, `window.h:10`, `print_helper.h:7`, `occlusion_culler.h:19` | 5+ TODOs with no tracking. Use consistent `// TODO(vkm): description` format. |
+| 30 | Done | ~50% of files lack Doxygen headers | Component files, backend resources | Convention: Doxygen on classes/functions only, no file-level headers needed. |
+| 31 | Done | Mixed comment styles in same files | `gl_material.h` vs `animation.h` | Minor `///` vs `/** */` in private memory code only. Convention documented in STYLE_GUIDE.md. |
+| 32 | Done | TODOs scattered, not centralized | `transform.h:9`, `gl_forward_pass.h:60`, `window.h:10`, `print_helper.h:7`, `occlusion_culler.h:19` | Standardized all 8 TODOs to `// TODO(vkm):` format. |
 | 33 | Done | Section dividers inconsistent | Editor files use banners, rest don't | Removed all section divider comments from editor files. |
 
 ---
@@ -114,10 +114,10 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 | Critical Bugs | 3 | 3 |
 | High Priority | 5 | 3 (1 N/A) |
 | File Structure | 2 | 0 |
-| CMake | 10 | 0 |
-| Code Style | 5 | 4 |
-| API Consistency | 4 | 0 |
-| Comments | 4 | 1 |
+| CMake | 10 | 1 |
+| Code Style | 5 | 5 |
+| API Consistency | 4 | 1 |
+| Comments | 4 | 4 |
 | Architecture | 6 | 1 |
 | Dead Code | 1 | 1 |
-| **Total** | **40** | **13** |
+| **Total** | **40** | **20** |

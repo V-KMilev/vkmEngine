@@ -239,7 +239,6 @@ MeshAsset generateCone(
         glm::vec3 position(x, -halfHeight, z);
         
         // Normal for cone side (pointing outward from center)
-        glm::vec3 toTip = tip - position;
         glm::vec3 sideNormal = glm::normalize(glm::vec3(x, 0.0f, z));
         glm::vec3 coneNormal = glm::normalize(glm::vec3(sideNormal.x, radius / height, sideNormal.z));
         

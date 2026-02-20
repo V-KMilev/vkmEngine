@@ -7,7 +7,7 @@ struct GLFWwindow;
 
 namespace Engine {
 
-// TODO: Move this into config
+// TODO(vkm): Move this into config
 #define OPENGL_MAJOR_VERSION 4 ///< Default OpenGL major version.
 #define OPENGL_MINOR_VERSION 3 ///< Default OpenGL minor version.
 

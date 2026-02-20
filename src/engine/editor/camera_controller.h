@@ -1,10 +1,11 @@
 #pragma once
 
+#include <algorithm>
+#include <cstdint>
+#include <vector>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
-#include <vector>
-#include <cstdint>
-#include <algorithm>
 
 #include "ecs/entity.h"
 #include "ecs/scene.h"

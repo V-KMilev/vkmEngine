@@ -16,7 +16,7 @@ namespace Engine {
 namespace OcclusionCuller {
 
 /**
- * @brief True if the AABB is not fully occluded (currently always true; TODO).
+ * @brief True if the AABB is not fully occluded (currently always true).
  * @param boundsMin World-space AABB minimum.
  * @param boundsMax World-space AABB maximum.
  * @param context VisibilityContext.
@@ -26,7 +26,7 @@ inline bool isVisible(
     const glm::vec3& boundsMax,
     const VisibilityContext& context
 ) {
-    // TODO
+    // TODO(vkm): Implement occlusion culling (Hi-Z or software depth buffer)
     return true;
 }
 

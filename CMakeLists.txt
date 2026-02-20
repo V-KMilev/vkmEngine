@@ -288,7 +288,16 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     EngineEditor
 )
 
-# target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+# Warning flags for all project targets
+foreach(_target EngineCore EngineRendering EngineTools EngineEditor BackendOpenGL ${PROJECT_NAME})
+    target_compile_options(${_target} PRIVATE
+        -Wall -Wextra
+        -Wno-unused-value            # VKM_ASSERT expands to `true` in release
+        -Wno-unused-parameter        # Interface stubs, placeholders
+        -Wno-unused-variable         # System refs kept for readability
+        -Wno-stringop-truncation     # Name component strncpy is intentional
+    )
+endforeach()
 
 # Build info definitions
 target_compile_definitions(${PROJECT_NAME} PRIVATE

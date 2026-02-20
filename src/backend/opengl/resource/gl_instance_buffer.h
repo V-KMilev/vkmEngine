@@ -1,7 +1,8 @@
 #pragma once
 
-#include <memory>
 #include <cstdint>
+#include <memory>
+
 #include <glm/glm.hpp>
 
 namespace Core {

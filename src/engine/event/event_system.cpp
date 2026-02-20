@@ -1,9 +1,9 @@
 #include "event/event_system.h"
 
 #include "logger.h"
+
 #include "debug/print_helper.h"
 #include "debug/statistics.h"
-
 #include "event/event_listener.h"
 #include "platform/threading/thread_pool.h"
 

@@ -4,15 +4,15 @@
 #include <memory>
 #include <unordered_map>
 
-#include "resource/mesh_asset.h"
 #include "resource/material_asset.h"
+#include "resource/mesh_asset.h"
 #include "resource/texture_asset.h"
 
-#include "resource/gl_mesh.h"
-#include "resource/gl_material.h"
-#include "resource/gl_texture.h"
-#include "resource/gl_lights.h"
 #include "gl_instance_batcher.h"
+#include "resource/gl_lights.h"
+#include "resource/gl_material.h"
+#include "resource/gl_mesh.h"
+#include "resource/gl_texture.h"
 
 namespace Engine {
 

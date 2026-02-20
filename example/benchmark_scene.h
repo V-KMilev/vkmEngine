@@ -55,7 +55,6 @@ static Engine::Entity generateBenchmarkScene(
         : resources.add(Engine::generateSphere(32, 16));
     Engine::MeshHandle coneMesh = resources.add(Engine::generateCone(0.5f, 1.0f, 24));
     Engine::MeshHandle pyramidMesh = resources.add(Engine::generatePyramid(2.0f, 2.0f));
-    Engine::MeshHandle planeMesh = resources.add(Engine::generatePlane(2.0f, 2.0f, 4, 4));
 
     std::vector<Engine::MeshHandle> meshes = {cubeMesh, sphereMesh};
     if (config.useMeshVariety) {

@@ -4,7 +4,7 @@
 
 #include "logger.h"
 
-// TODO: Make this constexpr
+// TODO(vkm): Make this constexpr
 
 // Generic template for enums with toString() overloads
 template<typename EnumType>

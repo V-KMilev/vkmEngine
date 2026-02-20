@@ -6,7 +6,7 @@
 
 namespace Engine {
 
-// TODO: Move this to a config file or something
+// TODO(vkm): Move this to a config file
 /**
  * @brief Standard 3D basis direction vectors in world space.
  * 
