@@ -57,6 +57,11 @@ class Scene {
         size_t entityCount() const { return m_entityAllocator.size(); }
 
         /**
+         * @brief Get the generation counter for an entity index (for reconstructing EntityId from dense index).
+         */
+        uint32_t generationOf(uint32_t index) const { return m_entityAllocator.generationOf(index); }
+
+        /**
          * @brief Destroy an entity by removing all of its components and recycling its slot.
          * @param entity The entity to destroy.
          */
@@ -209,6 +214,17 @@ class Scene {
                 });
             }
         }
+
+        /**
+         * @brief Direct access to the SparseSet for component type T (for index-based iteration).
+         * @tparam T Component type.
+         * @return Pointer to the SparseSet, or nullptr if unregistered.
+         */
+        template<typename T>
+        SparseSet<T>* storage() { return findStorage<T>(); }
+
+        template<typename T>
+        const SparseSet<T>* storage() const { return findStorage<T>(); }
 
     private:
         /// @brief Get or create the typed SparseSet for component type T.
