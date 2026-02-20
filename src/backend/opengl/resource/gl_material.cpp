@@ -7,11 +7,11 @@
 #include "debug/statistics.h"
 
 #include "gl_uniform_buffer.h"
-#include "gl_config.h"
-#include "gl_texture_mapping.h"
+#include "config/gl_config.h"
+#include "config/gl_texture_mapping.h"
 
 #include "resource/material_asset.h"
-#include "gl_view.h"
+#include "core/gl_view.h"
 #include "gl_texture.h"
 
 namespace Engine {

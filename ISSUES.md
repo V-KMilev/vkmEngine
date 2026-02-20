@@ -20,9 +20,9 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 |---|--------|-------|----------|-------------|
 | 4 | N/A | Visibility ignores cached model matrices | `visibility_system.cpp:167` | Current Transform has no caching, only static `computeModelMatrix()`. |
 | 5 | Done | No hierarchy cycle detection | `hierarchy_utils.cpp:5` | Added ancestor-walk cycle detection with LOG_WARNING and depth-32 guard. |
-| 6 | | No RenderTarget/Framebuffer abstraction | `render_backend.h` | `RenderBackend` has no concept of render-to-texture. This blocks shadow maps, post-processing, deferred rendering, and bloom. Add abstract `RenderTarget` interface now so future features don't require architecture rework. |
+| 6 | Deferred | No RenderTarget/Framebuffer abstraction | `render_backend.h` | Current engine renders to default framebuffer. Needed for shadow maps/post-processing/deferred — none planned for current milestone. vkmGL already has `Core::FrameBuffer` ready when needed. |
 | 7 | Done | Keyboard input state race | `input_handle.h:72` | Not a bug - GLFW guarantees callbacks fire on the calling thread during `glfwPollEvents()`. Added documentation. |
-| 8 | | EngineCore links vkmGL | `CMakeLists.txt:139` | Core engine should not depend on OpenGL. TODO already noted in the file. Move vkmGL dependency to BackendOpenGL only; expose GLM separately. |
+| 8 | Deferred | EngineCore links vkmGL | `CMakeLists.txt:69` | `TextureAsset` inherits `Core::Texture2DParams` which uses `GLenum` types from vkmGL. Full decoupling requires engine-level texture format enums. Revisit when adding a second backend. |
 
 ---
 
@@ -30,8 +30,8 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 
 | # | Status | Issue | Location | Description |
 |---|--------|-------|----------|-------------|
-| 9 | | Editor split across two include roots | `src/engine/editor/` + `src/editor/` | `CameraController` lives in `src/engine/editor/` (EngineCore), `EditorSystem` and panels live in `src/editor/` (EngineEditor). Different include domains. Includes like `#include "core/engine.h"` in `src/editor/` work only by accident through transitive deps. Move all editor code into `src/engine/editor/`. |
-| 10 | | CameraController in EngineCore | `CMakeLists.txt:129-131` | Camera controller is editor-specific code living in the core engine library. Every app links it even without an editor. Move to EngineEditor. |
+| 9 | Done | Editor split across two include roots | `src/editor/` | All editor code (CameraController, EditorSystem, panels) consolidated in `src/editor/` under EngineEditor target. Separate include root by design — keeps editor boundary clear from engine core. |
+| 10 | Done | CameraController in EngineCore | `src/editor/camera_controller.h` | Moved CameraController to EngineEditor target in `src/editor/`. No longer compiled into EngineCore. |
 
 ---
 
@@ -39,14 +39,14 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 
 | # | Status | Issue | Location | Description |
 |---|--------|-------|----------|-------------|
-| 11 | | Every file listed manually (125+) | Entire `CMakeLists.txt` | Adding a new `.cpp` means editing CMake. Error-prone and doesn't scale. Use `file(GLOB_RECURSE)` per library or `target_sources`. |
-| 12 | | Headers listed as sources | Lines 62-131 | `.h` files in `add_library` are not compiled. Only helps IDE indexing. CMake 3.25+ has `FILE_SET HEADERS` for this. |
+| 11 | Done | Every file listed manually (125+) | `CMakeLists.txt` | Replaced 125+ manual file listings with `file(GLOB_RECURSE *.cpp)` per target. Added re-run note for GLOB_RECURSE limitation. |
+| 12 | Done | Headers listed as sources | `CMakeLists.txt` | Removed all `.h` files from `add_library` calls. GLOB_RECURSE only collects `.cpp` files now. |
 | 13 | Done | Duplicate APP_* compile definitions | Lines 270-276 vs 296-306 | Extracted shared definitions into `BuildInfo` INTERFACE target. EngineEditor and executable both link it. |
-| 14 | | BackendOpenGL exposes 4 include dirs | Lines 204-210 | Every subdirectory of the backend is a public include path. Consumers can `#include "gl_mesh.h"` from anywhere, breaking encapsulation. Use single public include dir with qualified paths internally. |
+| 14 | Done | BackendOpenGL exposes 4 include dirs | `CMakeLists.txt:103` | Reduced to single public include dir `src/backend/opengl`. All cross-directory includes qualified (`core/`, `config/`, `resource/`, `pass/`). ~33 includes updated across 14 files. |
 | 15 | Done | Warning flags commented out | Line 293 | Enabled `-Wall -Wextra` on all targets with targeted suppressions for submodule false positives. |
-| 16 | | Single 300-line CMakeLists.txt | Root file | Doesn't scale. Split into per-subdirectory `CMakeLists.txt` files (`src/engine/CMakeLists.txt`, `src/backend/opengl/CMakeLists.txt`, etc.). |
+| 16 | Deferred | Single 300-line CMakeLists.txt | Root file | After GLOB_RECURSE, the root CMakeLists.txt is ~200 lines. At that size, splitting adds boilerplate without benefit. |
 | 17 | Done | EngineRendering has no include dir | Lines 151-164 | Added explicit `target_include_directories(EngineRendering PUBLIC src/engine)`. |
-| 18 | | No install/export targets | Entire file | No `install()` or `export()` rules. Can't use this engine as a CMake dependency from another project. Low priority but future-proofs the build. |
+| 18 | Deferred | No install/export targets | Entire file | No external project consumes vkmEngine as a CMake dependency. Zero value today. |
 | 19 | Done | project() called after manual set() | Lines 4-21 | Replaced manual `set()` variables with `project(engine VERSION 0.0.1 ...)` directly. |
 | 20 | Done | C++17 set globally, not per-target | Lines 10-12 | Removed global `CMAKE_CXX_STANDARD`. Set `CXX_STANDARD 17` per-target via `set_target_properties` in foreach. |
 
@@ -90,9 +90,9 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 
 | # | Status | Issue | Location | Description |
 |---|--------|-------|----------|-------------|
-| 34 | | Single shader per forward pass | `gl_forward_pass.h:60` | All materials use the same shader. Can't support transparent, unlit, or emissive materials without shader variants. Move shader selection to material or add variant dispatch in forward pass. |
+| 34 | Deferred | Single shader per forward pass | `gl_forward_pass.h:60` | Current PBR uber-shader handles all existing materials. Shader variants needed only when transparent/unlit materials are added. TODO already in code. |
 | 35 | Deferred | No hierarchy world matrix caching | `hierarchy_utils.cpp:63` | Only ~48 parented entities in benchmark (~0.3%). Visibility system already caches computed world matrices per frame. Adding dirty-flag infrastructure to plain-data Transform would require change detection at every write site. Revisit when hierarchy count grows. |
-| 36 | | Animation tracks AoS layout | `animation_track.h:166` | Keyframes stored as `vector<Keyframe<T>>` (time + value interleaved). For ~2,750 animated entities, SoA layout (separate `times[]` and `values[]`) would improve cache locality and enable SIMD. |
+| 36 | Deferred | Animation tracks AoS layout | `animation_track.h:166` | Tracks have ~10-20 keyframes. Binary search is ~4-5 comparisons. Cache effects negligible at this scale. SoA would only help at 100+ keyframes per track. |
 | 37 | Done | Visibility results AoS | `visibility.h:20-21` | Replaced parallel vectors with combined `VisibleEntity { EntityId, mat4 }` struct. Single contiguous vector improves cache locality and simplifies worker merge logic. |
 | 38 | Done | AABB rotation "bug" | `gl_aabb_debug_pass.cpp` | Not a bug. AABBs grow under rotation because Arvo's method computes the AABB of the rotated bounding box, not the geometry. The 8-corner method produces identical results. Expected and correct for conservative culling. |
 | 39 | Done | Bounds validation epsilon too small | `bounds_utils.h:12` | Replaced `glm::epsilon<float>()` with `BOUNDS_EPSILON_SQ = 1e-8f`. |
@@ -109,15 +109,15 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 
 ## Summary
 
-| Category | Count | Done |
-|----------|-------|------|
-| Critical Bugs | 3 | 3 |
-| High Priority | 5 | 3 (1 N/A) |
-| File Structure | 2 | 0 |
-| CMake | 10 | 5 |
-| Code Style | 5 | 5 |
-| API Consistency | 4 | 4 |
-| Comments | 4 | 4 |
-| Architecture | 6 | 3 (1 deferred) |
-| Dead Code | 1 | 1 |
-| **Total** | **40** | **30** |
+| Category | Count | Done | Deferred |
+|----------|-------|------|----------|
+| Critical Bugs | 3 | 3 | 0 |
+| High Priority | 5 | 3 (1 N/A) | 2 |
+| File Structure | 2 | 2 | 0 |
+| CMake | 10 | 8 | 2 |
+| Code Style | 5 | 5 | 0 |
+| API Consistency | 4 | 4 | 0 |
+| Comments | 4 | 4 | 0 |
+| Architecture | 6 | 3 | 3 |
+| Dead Code | 1 | 1 | 0 |
+| **Total** | **40** | **33** | **7** |

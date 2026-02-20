@@ -6,7 +6,7 @@
 
 #include "render/render_pass.h"
 
-#include "gl_mesh.h"
+#include "resource/gl_mesh.h"
 
 namespace Core {
     class Shader;

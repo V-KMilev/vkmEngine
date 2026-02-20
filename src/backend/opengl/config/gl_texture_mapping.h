@@ -5,7 +5,7 @@
 
 #include "resource/material_asset.h"
 #include "gl_config.h"
-#include "gl_material.h"
+#include "resource/gl_material.h"
 
 namespace Engine {
 

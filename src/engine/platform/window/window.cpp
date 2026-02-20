@@ -5,6 +5,7 @@
 #include "logger.h"
 #include "debug/print_helper.h"
 
+#include <GL/glew.h>
 #include "platform/window/glfw_include.h"
 
 namespace Engine {
@@ -46,10 +47,10 @@ Window::Window(
         throw std::runtime_error("Failed to create window");
     }
 
-    // Make the context current (required for glfwSwapInterval)
+    // Make the context current (required for glewInit and glfwSwapInterval)
     glfwMakeContextCurrent(m_window);
 
-    // Initialize GLEW - must be done after making context current
+    // Initialize GLEW to load GL function pointers (must happen after context is current)
     if (glewInit() != GLEW_OK) {
         LOG_ERROR("Failed to initialize GLEW");
         throw std::runtime_error("Failed to initialize GLEW");

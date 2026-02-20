@@ -6,14 +6,14 @@
 
 #include "logger.h"
 
-#include "gl_config.h"
-#include "gl_texture_mapping.h"
+#include "config/gl_config.h"
+#include "config/gl_texture_mapping.h"
 #include "resource/resource_manager.h"
 #include "render/render_view.h"
 
-#include "gl_mesh.h"
-#include "gl_material.h"
-#include "gl_texture.h"
+#include "resource/gl_mesh.h"
+#include "resource/gl_material.h"
+#include "resource/gl_texture.h"
 #include "resource/texture_asset.h"
 
 namespace Engine {

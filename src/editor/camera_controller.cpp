@@ -1,4 +1,4 @@
-#include "editor/camera_controller.h"
+#include "camera_controller.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>

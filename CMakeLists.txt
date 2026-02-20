@@ -42,112 +42,47 @@ target_link_libraries(imgui PUBLIC
 )
 
 # imgui uses its own built-in GL loader (imgui_impl_opengl3_loader.h)
-# — no GLEW dependency, no loader defines needed
+# -- no GLEW dependency, no loader defines needed
 
 # ============================================================================
 # Engine Core Library
+# NOTE: Re-run cmake after adding/removing source files (GLOB_RECURSE limitation)
 # ============================================================================
-add_library(EngineCore STATIC
-    # Core
-    src/engine/core/engine.h
-    src/engine/core/engine.cpp
-    src/engine/core/system.h
-    # ECS
-    src/engine/ecs/scene.h
-    src/engine/ecs/entity.h
-    src/engine/ecs/component/transform.h
-    src/engine/ecs/component/camera.h
-    src/engine/ecs/component/mesh.h
-    src/engine/ecs/component/animation.h
-    src/engine/ecs/component/hierarchy.h
-    src/engine/ecs/hierarchy_utils.h
-    src/engine/ecs/hierarchy_utils.cpp
-    # Resources
-    src/engine/resource/resource_manager.h
-    src/engine/resource/resource.h
-    src/engine/resource/resource_handle.h
-    src/engine/resource/mesh_asset.h
-    src/engine/resource/mesh_asset.cpp
-    src/engine/resource/material_asset.h
-    src/engine/resource/texture_asset.h
-    # Animation
-    src/engine/animation/animation_system.h
-    src/engine/animation/animation_system.cpp
-    src/engine/animation/animation_track.h
-    src/engine/animation/keyframe.h
-    src/engine/animation/easing.h
-    # Visibility (culling, tests)
-    src/engine/visibility/visibility_system.h
-    src/engine/visibility/visibility_system.cpp
-    src/engine/visibility/visibility.h
-    src/engine/visibility/visibility_context.h
-    src/engine/visibility/bounds_utils.h
-    src/engine/visibility/culling/frustum_culler.h
-    src/engine/visibility/culling/screen_size_culling.h
-    src/engine/visibility/culling/distance_culling.h
-    src/engine/visibility/culling/occlusion_culler.h
-    # Events
-    src/engine/event/event_system.h
-    src/engine/event/event_system.cpp
-    src/engine/event/event.h
-    src/engine/event/event.cpp
-    src/engine/event/event_listener.h
-    src/engine/event/event_listener.cpp
-    # Platform
-    src/engine/platform/window/window_manager.h
-    src/engine/platform/window/window_manager.cpp
-    src/engine/platform/window/window.h
-    src/engine/platform/window/window.cpp
-    src/engine/platform/window/input_handle.h
-    src/engine/platform/window/input_handle.cpp
-    src/engine/platform/window/frame_limiter.h
-    src/engine/platform/window/frame_limiter.cpp
-    src/engine/platform/window/glfw_include.h
-    src/engine/platform/threading/thread_pool.h
-    src/engine/platform/threading/thread_pool.cpp
-    src/engine/platform/system_metrics.h
-    src/engine/platform/system_metrics.cpp
-    # Debug
-    src/engine/debug/statistics.h
-    src/engine/debug/statistics.cpp
-    src/engine/debug/frame_info.h
-    src/engine/debug/print_helper.h
-    src/engine/debug/frame_tracker.h
-    src/engine/debug/frame_tracker.cpp
-    src/engine/debug/call_tracker.h
-    src/engine/debug/call_tracker.cpp
-    # Editor
-    src/engine/editor/camera_controller.h
-    src/engine/editor/camera_controller.cpp
+file(GLOB_RECURSE ENGINECORE_SOURCES
+    src/engine/core/*.cpp
+    src/engine/ecs/*.cpp
+    src/engine/resource/*.cpp
+    src/engine/animation/*.cpp
+    src/engine/visibility/*.cpp
+    src/engine/event/*.cpp
+    src/engine/platform/window/*.cpp
+    src/engine/platform/threading/*.cpp
+    src/engine/debug/*.cpp
 )
+
+add_library(EngineCore STATIC ${ENGINECORE_SOURCES})
 
 target_include_directories(EngineCore PUBLIC
     src/engine
 )
 
 target_link_libraries(EngineCore PUBLIC
-    # TODO: Remove vkmGL as it only has to be linked to the backend
     vkmGL
     vkmLog
 )
 
 target_compile_definitions(EngineCore PUBLIC
     ENABLE_STATISTICS_TRACKING=1
+    GLM_ENABLE_EXPERIMENTAL
+    GLM_FORCE_INTRINSICS
 )
 
 # ============================================================================
 # Engine Rendering Library
 # ============================================================================
-add_library(EngineRendering STATIC
-    src/engine/render/render_backend.h
-    src/engine/render/render_system.h
-    src/engine/render/render_system.cpp
-    src/engine/render/render_view.h
-    src/engine/render/render_view.cpp
-    src/engine/render/render_pipeline.h
-    src/engine/render/render_pipeline.cpp
-    src/engine/render/render_pass.h
-)
+file(GLOB_RECURSE ENGINERENDERING_SOURCES src/engine/render/*.cpp)
+
+add_library(EngineRendering STATIC ${ENGINERENDERING_SOURCES})
 
 target_include_directories(EngineRendering PUBLIC
     src/engine
@@ -160,45 +95,12 @@ target_link_libraries(EngineRendering PUBLIC
 # ============================================================================
 # OpenGL Backend Library
 # ============================================================================
-add_library(BackendOpenGL STATIC
-    # Core backend components
-    src/backend/opengl/core/gl_backend.h
-    src/backend/opengl/core/gl_backend.cpp
-    src/backend/opengl/core/gl_view.h
-    src/backend/opengl/core/gl_view.cpp
-    src/backend/opengl/core/gl_instance_batcher.h
-    src/backend/opengl/core/gl_instance_batcher.cpp
-    # Resource wrappers
-    src/backend/opengl/resource/gl_mesh.h
-    src/backend/opengl/resource/gl_mesh.cpp
-    src/backend/opengl/resource/gl_instance_buffer.h
-    src/backend/opengl/resource/gl_instance_buffer.cpp
-    src/backend/opengl/resource/gl_material.h
-    src/backend/opengl/resource/gl_material.cpp
-    src/backend/opengl/resource/gl_texture.h
-    src/backend/opengl/resource/gl_texture.cpp
-    src/backend/opengl/resource/gl_lights.h
-    src/backend/opengl/resource/gl_lights.cpp
-    # Configuration
-    src/backend/opengl/config/gl_config.h
-    src/backend/opengl/config/gl_texture_mapping.h
-    # Render passes
-    src/backend/opengl/pass/gl_forward_pass.h
-    src/backend/opengl/pass/gl_forward_pass.cpp
-    src/backend/opengl/pass/gl_aabb_debug_pass.h
-    src/backend/opengl/pass/gl_aabb_debug_pass.cpp
-    src/backend/opengl/pass/gl_grid_pass.h
-    src/backend/opengl/pass/gl_grid_pass.cpp
-    # Convenience header
-    src/backend/opengl/gl_common.h
-)
+file(GLOB_RECURSE BACKENDOPENGL_SOURCES src/backend/opengl/*.cpp)
+
+add_library(BackendOpenGL STATIC ${BACKENDOPENGL_SOURCES})
 
 target_include_directories(BackendOpenGL PUBLIC
     src/backend/opengl
-    src/backend/opengl/core
-    src/backend/opengl/resource
-    src/backend/opengl/config
-    src/backend/opengl/pass
 )
 
 target_link_libraries(BackendOpenGL PUBLIC
@@ -210,21 +112,9 @@ target_link_libraries(BackendOpenGL PUBLIC
 # ============================================================================
 # Engine Tools Library (Optional utilities)
 # ============================================================================
-add_library(EngineTools STATIC
-    src/tools/loader/texture_loaders.h
-    src/tools/loader/texture_loaders.cpp
-    src/tools/loader/material_loaders.h
-    src/tools/loader/material_loaders.cpp
+file(GLOB_RECURSE ENGINETOOLS_SOURCES src/tools/*.cpp)
 
-    src/tools/generator/mesh_generators.h
-    src/tools/generator/mesh_generators.cpp
-    src/tools/generator/texture_generators.h
-    src/tools/generator/texture_generators.cpp
-    src/tools/generator/material_generators.h
-    src/tools/generator/material_generators.cpp
-    src/tools/generator/light_generators.h
-    src/tools/generator/light_generators.cpp
-)
+add_library(EngineTools STATIC ${ENGINETOOLS_SOURCES})
 
 target_include_directories(EngineTools PUBLIC
     src/tools
@@ -237,16 +127,11 @@ target_link_libraries(EngineTools PUBLIC
 # ============================================================================
 # Engine Editor Library
 # ============================================================================
-add_library(EngineEditor STATIC
-    src/editor/editor_system.h
-    src/editor/editor_system.cpp
-    src/editor/editor_common.h
-    src/editor/editor_widgets.cpp
-    src/editor/panels/hierarchy_panel.cpp
-    src/editor/panels/inspector_panel.cpp
-    src/editor/panels/viewport_overlay.cpp
-    src/editor/panels/bottom_panel.cpp
-)
+file(GLOB_RECURSE ENGINEEDITOR_SOURCES src/editor/*.cpp)
+# SystemMetrics uses GL for VRAM queries - compiled here, not in EngineCore
+list(APPEND ENGINEEDITOR_SOURCES src/engine/platform/system_metrics.cpp)
+
+add_library(EngineEditor STATIC ${ENGINEEDITOR_SOURCES})
 
 target_include_directories(EngineEditor PUBLIC
     src/editor

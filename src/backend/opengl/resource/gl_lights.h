@@ -5,7 +5,7 @@
 
 #include <glm/glm.hpp>
 
-#include "gl_config.h"
+#include "config/gl_config.h"
 
 namespace Core {
     class UniformBuffer;

@@ -4,9 +4,9 @@
 #include "debug/print_helper.h"
 #include "debug/statistics.h"
 
-#include "gl_backend.h"
+#include "core/gl_backend.h"
 #include "gl_shader.h"
-#include "gl_mesh.h"
+#include "resource/gl_mesh.h"
 
 #include "render/render_view.h"
 #include "resource/resource_manager.h"

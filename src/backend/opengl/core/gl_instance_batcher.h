@@ -7,7 +7,7 @@
 #include <glm/glm.hpp>
 
 #include "resource/resource_manager.h"
-#include "gl_instance_buffer.h"
+#include "resource/gl_instance_buffer.h"
 
 namespace Engine {
 

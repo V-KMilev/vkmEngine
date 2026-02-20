@@ -2,7 +2,7 @@
 
 #include "render/render_pass.h"
 #include "gl_shader.h"
-#include "gl_mesh.h"
+#include "resource/gl_mesh.h"
 
 #include <memory>
 

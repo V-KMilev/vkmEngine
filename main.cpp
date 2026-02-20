@@ -13,14 +13,14 @@
 #include "event/event_system.h"
 #include "visibility/visibility_system.h"
 #include "render/render_system.h"
-#include "editor/camera_controller.h"
+#include "camera_controller.h"
 #include "editor_system.h"
 
 // Backend
-#include "gl_backend.h"
-#include "gl_forward_pass.h"
-#include "gl_aabb_debug_pass.h"
-#include "gl_grid_pass.h"
+#include "core/gl_backend.h"
+#include "pass/gl_forward_pass.h"
+#include "pass/gl_aabb_debug_pass.h"
+#include "pass/gl_grid_pass.h"
 
 // Demo scene
 #include "example/benchmark_scene.h"

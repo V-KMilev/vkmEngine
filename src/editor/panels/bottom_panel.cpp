@@ -1,7 +1,7 @@
 #include "../editor_common.h"
 
 #include "core/engine.h"
-#include "editor/camera_controller.h"
+#include "camera_controller.h"
 #include "visibility/visibility_system.h"
 #include "render/render_system.h"
 #include "render/render_pipeline.h"

@@ -23,7 +23,7 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/name.h"
 #include "ecs/hierarchy_utils.h"
-#include "editor/camera_controller.h"
+#include "camera_controller.h"
 #include "render/render_system.h"
 #include "resource/resource_manager.h"
 #include "debug/statistics.h"

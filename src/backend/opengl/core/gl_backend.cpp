@@ -1,5 +1,7 @@
 #include "gl_backend.h"
 
+#include "logger.h"
+
 #include "gl_context.h"
 #include "gl_shader.h"
 
@@ -8,6 +10,8 @@
 namespace Engine {
 
 GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL), m_context() {
+    // GLEW is initialized during Window creation (before any GL calls)
+
     // Set default clear color (dark gray)
     m_context.setClearColor({0.1f, 0.1f, 0.1f, 1.0f});
     
