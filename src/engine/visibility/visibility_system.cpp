@@ -10,6 +10,8 @@
 #include "ecs/component/mesh.h"
 #include "ecs/component/camera.h"
 #include "ecs/component/transform.h"
+#include "ecs/component/hierarchy.h"
+#include "ecs/hierarchy_utils.h"
 
 #include "visibility/bounds_utils.h"
 #include "visibility/visibility_context.h"
@@ -101,9 +103,10 @@ void VisibilitySystem::update(FrameContext& ctx) {
         .screenSizeThresholdSq = screenThresholdSq
     };
 
-    // Get direct access to Mesh and Transform sparse sets for index-based parallel iteration
+    // Get direct access to sparse sets for index-based parallel iteration
     auto* meshStorage      = ctx.scene.storage<Mesh>();
     auto* transformStorage = ctx.scene.storage<Transform>();
+    const auto* hierarchyStorage = ctx.scene.storage<Hierarchy>();
 
     if (!meshStorage || !transformStorage) {
         ctx.visibility = &m_result;
@@ -152,7 +155,16 @@ void VisibilitySystem::update(FrameContext& ctx) {
                 if (!hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) continue;
 
                 const Transform& transform = transformStorage->get(entityIdx);
-                const glm::mat4 modelMatrix = Transform::computeModelMatrix(transform);
+
+                // Use hierarchy-aware world matrix if entity has a parent
+                const bool hasParent = hierarchyStorage
+                    && hierarchyStorage->contains(entityIdx)
+                    && hierarchyStorage->get(entityIdx).parent;
+
+                const EntityId eid{entityIdx, ctx.scene.generationOf(entityIdx)};
+                const glm::mat4 modelMatrix = hasParent
+                    ? HierarchyUtils::computeWorldMatrix(ctx.scene, eid)
+                    : Transform::computeModelMatrix(transform);
 
                 glm::vec3 worldMin, worldMax;
                 localToWorldAABB(
@@ -167,7 +179,6 @@ void VisibilitySystem::update(FrameContext& ctx) {
                 if (!DistanceCuller::isVisible(worldMin, worldMax, context)) continue;
                 if (!ScreenSizeCuller::isVisible(worldMin, worldMax, context)) continue;
 
-                EntityId eid{entityIdx, ctx.scene.generationOf(entityIdx)};
                 localEntities.push_back(eid);
                 localMatrices.push_back(modelMatrix);
             }

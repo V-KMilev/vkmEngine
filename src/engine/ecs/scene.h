@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "ecs/entity.h"
+#include "ecs/component/hierarchy.h"
 #include "core/memory/slot_allocator.h"
 #include "core/memory/sparse_set.h"
 #include "core/memory/types.h"
@@ -67,6 +68,47 @@ class Scene {
          */
         void destroyEntity(Entity entity) {
             EntityId id = entity.getID();
+
+            // Clean up hierarchy: reparent children to grandparent, unlink from parent
+            auto* hierarchySet = findStorage<Hierarchy>();
+            if (hierarchySet && hierarchySet->contains(id.index)) {
+                Hierarchy& h = hierarchySet->get(id.index);
+
+                // Reparent children to this entity's parent (detach if root)
+                EntityId child = h.firstChild;
+                while (child) {
+                    Hierarchy& childH = hierarchySet->get(child.index);
+                    EntityId nextChild = childH.nextSibling;
+
+                    childH.prevSibling = {};
+                    childH.nextSibling = {};
+                    childH.parent = h.parent;
+
+                    if (h.parent) {
+                        Hierarchy& parentH = hierarchySet->get(h.parent.index);
+                        childH.nextSibling = parentH.firstChild;
+                        if (parentH.firstChild) {
+                            hierarchySet->get(parentH.firstChild.index).prevSibling = child;
+                        }
+                        parentH.firstChild = child;
+                    }
+
+                    child = nextChild;
+                }
+
+                // Unlink from parent's child list
+                if (h.parent) {
+                    if (h.prevSibling) {
+                        hierarchySet->get(h.prevSibling.index).nextSibling = h.nextSibling;
+                    } else {
+                        hierarchySet->get(h.parent.index).firstChild = h.nextSibling;
+                    }
+                    if (h.nextSibling) {
+                        hierarchySet->get(h.nextSibling.index).prevSibling = h.prevSibling;
+                    }
+                }
+            }
+
             for (auto& set : m_components) {
                 if (set && set->has(id.index))
                     set->remove(id.index);

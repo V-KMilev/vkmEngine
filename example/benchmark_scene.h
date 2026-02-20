@@ -13,6 +13,7 @@
 
 #include "core/engine.h"
 #include "ecs/components.h"
+#include "ecs/hierarchy_utils.h"
 
 #include "loader/material_loaders.h"
 #include "generator/mesh_generators.h"
@@ -196,6 +197,74 @@ static Engine::Entity generateBenchmarkScene(
         }
     }
 
+    // Hierarchy test: orbital groups (center + satellite children)
+    // Satellites use local-space offsets; world position comes from hierarchy
+    constexpr int orbitalGroupCount = 4;
+    constexpr int satellitesPerGroup = 6;
+    constexpr float orbitalRadius = 40.0f;
+    constexpr float satelliteDistance = 4.0f;
+
+    for (int g = 0; g < orbitalGroupCount; ++g) {
+        float groupAngle = (static_cast<float>(g) / orbitalGroupCount) * glm::two_pi<float>();
+        glm::vec3 groupPos(
+            std::cos(groupAngle) * orbitalRadius,
+            5.0f,
+            std::sin(groupAngle) * orbitalRadius
+        );
+
+        // Center entity (parent)
+        auto center = scene.createEntity();
+        scene.add(center, Engine::Mesh{sphereMesh, materials[g % materials.size()]});
+        scene.add(center, Engine::Transform{groupPos, glm::quat(1, 0, 0, 0), glm::vec3(1.5f)});
+        scene.add(center, Engine::Animation{});
+
+        // Satellite entities (children) — local positions offset from center
+        for (int s = 0; s < satellitesPerGroup; ++s) {
+            float satAngle = (static_cast<float>(s) / satellitesPerGroup) * glm::two_pi<float>();
+            glm::vec3 localPos(
+                std::cos(satAngle) * satelliteDistance,
+                0.0f,
+                std::sin(satAngle) * satelliteDistance
+            );
+
+            auto satellite = scene.createEntity();
+            scene.add(satellite, Engine::Mesh{cubeMesh, materials[(g + s) % materials.size()]});
+            scene.add(satellite, Engine::Transform{localPos, glm::quat(1, 0, 0, 0), glm::vec3(0.5f)});
+            Engine::HierarchyUtils::setParent(scene, satellite.getID(), center.getID());
+        }
+    }
+
+    // Hierarchy test: stacked tower (each level is child of the one below)
+    // Tests multi-level hierarchy (depth ~10) for world matrix chain
+    for (int tower = 0; tower < 2; ++tower) {
+        float tAngle = (tower == 0) ? 0.0f : glm::pi<float>();
+        glm::vec3 towerBase(
+            std::cos(tAngle) * 25.0f,
+            0.0f,
+            std::sin(tAngle) * 25.0f
+        );
+
+        auto prevLevel = scene.createEntity();
+        scene.add(prevLevel, Engine::Mesh{cubeMesh, materials[tower % materials.size()]});
+        scene.add(prevLevel, Engine::Transform{towerBase, glm::quat(1, 0, 0, 0), glm::vec3(2.0f)});
+
+        for (int level = 1; level < 10; ++level) {
+            auto levelEntity = scene.createEntity();
+            scene.add(levelEntity, Engine::Mesh{
+                meshes[level % meshes.size()],
+                materials[level % materials.size()]
+            });
+            // Local Y offset relative to parent — world position accumulates through chain
+            scene.add(levelEntity, Engine::Transform{
+                glm::vec3(0.0f, 2.5f, 0.0f),
+                glm::quat(1, 0, 0, 0),
+                glm::vec3(0.95f)  // Slight taper
+            });
+            Engine::HierarchyUtils::setParent(scene, levelEntity.getID(), prevLevel.getID());
+            prevLevel = levelEntity;
+        }
+    }
+
     // Directional light (sun)
     auto sunLight = scene.createEntity();
     {
@@ -244,15 +313,17 @@ static Engine::Entity generateBenchmarkScene(
         });
     }
 
+    int hierarchyEntities = orbitalGroupCount * (1 + satellitesPerGroup) + 2 * 10;
     LOG_INFO("Benchmark scene created:");
     LOG_INFO("  Grid: %dx%d = %d entities", config.gridSize, config.gridSize, config.gridSize * config.gridSize);
     LOG_INFO("  Near layer: %d entities", config.nearLayerCount);
     LOG_INFO("  Mid layer: %d entities", config.midLayerCount);
     LOG_INFO("  Far layer: %d entities", config.farLayerCount);
     LOG_INFO("  Towers: 8 x 30 = 240 entities");
+    LOG_INFO("  Hierarchy: %d entities (%d orbital groups + 2 stacked towers)", hierarchyEntities, orbitalGroupCount);
     LOG_INFO("  Lights: 1 directional + %d point + %d spot", config.pointLightCount, config.spotLightCount);
     int total = config.gridSize * config.gridSize + config.nearLayerCount +
-                config.midLayerCount + config.farLayerCount + 240;
+                config.midLayerCount + config.farLayerCount + 240 + hierarchyEntities;
     LOG_INFO("  Total mesh entities: %d", total);
 
     return cameraEntity;

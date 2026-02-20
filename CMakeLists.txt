@@ -44,6 +44,9 @@ add_library(EngineCore STATIC
     src/engine/ecs/component/camera.h
     src/engine/ecs/component/mesh.h
     src/engine/ecs/component/animation.h
+    src/engine/ecs/component/hierarchy.h
+    src/engine/ecs/hierarchy_utils.h
+    src/engine/ecs/hierarchy_utils.cpp
     # Resources
     src/engine/resource/resource_manager.h
     src/engine/resource/resource.h

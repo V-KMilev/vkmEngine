@@ -5,3 +5,4 @@
 #include "ecs/component/mesh.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/light.h"
+#include "ecs/component/hierarchy.h"
