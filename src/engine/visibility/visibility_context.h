@@ -8,11 +8,14 @@ namespace Engine {
 /**
  * @brief View frustum for culling: six planes from the view-projection matrix.
  *
- * Each plane is ax + by + cz + d = 0; (a,b,c) is the normal. Order: left, right,
- * bottom, top, near, far.
+ * Pre-extracted normals and abs-normals avoid vec4→vec3 conversions and
+ * per-entity glm::abs() calls in the hot culling loop.
+ * Order: left, right, bottom, top, near, far.
  */
 struct Frustum {
-    glm::vec4 planes[6];
+    glm::vec3 normals[6];     ///< Plane normals (a,b,c), pre-extracted from vec4.
+    glm::vec3 absNormals[6];  ///< abs(normal) per plane, pre-computed once.
+    float     d[6];           ///< Plane distance (the w component of ax+by+cz+d=0).
 };
 
 /**
@@ -29,6 +32,8 @@ struct VisibilityContext {
 
     float minPixels;             ///< Min projected size in pixels; below this, screen-size culling rejects. <= 0 disables.
     float maxDistance;           ///< Max distance from camera; beyond this, distance culling rejects. <= 0 disables.
+    float maxDistanceSquared;    ///< Pre-computed maxDistance^2 for squared-distance comparisons.
+    float screenSizeThresholdSq; ///< Pre-computed (minPixels / (projScaleY * viewportHeight))^2 for sqrt-free screen-size test.
 };
 
 /**
@@ -42,15 +47,23 @@ inline Frustum extractFrustum(const glm::mat4& viewProjection) {
     const glm::vec4 row1 = glm::row(viewProjection, 1);
     const glm::vec4 row2 = glm::row(viewProjection, 2);
     const glm::vec4 row3 = glm::row(viewProjection, 3);
-    frustum.planes[0] = row3 + row0;
-    frustum.planes[1] = row3 - row0;
-    frustum.planes[2] = row3 + row1;
-    frustum.planes[3] = row3 - row1;
-    frustum.planes[4] = row3 + row2;
-    frustum.planes[5] = row3 - row2;
-    for (auto& plane : frustum.planes) {
-        const float length = glm::length(glm::vec3(plane));
-        if (length > 0.0f) plane /= length;
+    glm::vec4 planes[6] = {
+        row3 + row0, row3 - row0,
+        row3 + row1, row3 - row1,
+        row3 + row2, row3 - row2
+    };
+    for (int i = 0; i < 6; ++i) {
+        const glm::vec3 n = glm::vec3(planes[i]);
+        const float length = glm::length(n);
+        if (length > 0.0f) {
+            const float invLen = 1.0f / length;
+            frustum.normals[i]    = n * invLen;
+            frustum.d[i]          = planes[i].w * invLen;
+        } else {
+            frustum.normals[i]    = glm::vec3(0.0f);
+            frustum.d[i]          = 0.0f;
+        }
+        frustum.absNormals[i] = glm::abs(frustum.normals[i]);
     }
     return frustum;
 }

@@ -31,7 +31,7 @@ inline bool isVisible(
     const glm::vec3 delta = worldCenter - context.cameraPosition;
     const float distanceSquared = glm::dot(delta, delta);
 
-    return distanceSquared <= (context.maxDistance * context.maxDistance);
+    return distanceSquared <= context.maxDistanceSquared;
 }
 
 } // namespace DistanceCuller

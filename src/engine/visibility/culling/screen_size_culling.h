@@ -17,21 +17,27 @@ namespace Engine {
 namespace ScreenSizeCuller {
 
 /**
- * @brief True if the mesh’s projected size is >= context.minPixels (or viewport is zero / behind camera).
+ * @brief True if the mesh’s projected size is >= context.minPixels (or behind camera).
+ *
+ * Uses squared comparison to avoid per-entity sqrt:
+ *   worldRadiusSq / depthSq >= screenSizeThresholdSq
+ * where screenSizeThresholdSq = (minPixels / (projScaleY * viewportHeight))^2
+ * is pre-computed once per frame in VisibilityContext.
+ *
  * @param mesh Mesh with world boundsMin/boundsMax.
- * @param context VisibilityContext with view, projection, viewport, minPixels.
+ * @param context VisibilityContext with view, screenSizeThresholdSq.
  */
 inline bool isVisible(
     const Mesh& mesh,
     const VisibilityContext& context
 ) {
-    if (context.viewportWidth == 0 || context.viewportHeight == 0) {
+    if (context.minPixels <= 0.0f) {
         return true;
     }
 
     const glm::vec3 worldCenter = (mesh.boundsMin + mesh.boundsMax) * 0.5f;
     const glm::vec3 worldHalfExtent = (mesh.boundsMax - mesh.boundsMin) * 0.5f;
-    const float worldRadius = glm::length(worldHalfExtent);
+    const float worldRadiusSq = glm::dot(worldHalfExtent, worldHalfExtent);
 
     const glm::vec3 viewCenter = glm::vec3(context.view * glm::vec4(worldCenter, 1.0f));
     const float depth = -viewCenter.z;
@@ -40,11 +46,8 @@ inline bool isVisible(
         return true;
     }
 
-    const float projScaleY = context.projection[1][1];
-    const float projectedRadiusNdc = (worldRadius * projScaleY) / depth;
-    const float projectedPixels = projectedRadiusNdc * static_cast<float>(context.viewportHeight);
-
-    return projectedPixels >= context.minPixels;
+    // worldRadiusSq / depthSq >= thresholdSq  (both sides positive, sqrt-free)
+    return worldRadiusSq >= context.screenSizeThresholdSq * (depth * depth);
 }
 
 } // namespace ScreenSizeCuller
