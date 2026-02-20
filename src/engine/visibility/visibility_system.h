@@ -11,6 +11,16 @@ namespace Engine {
 
 class VisibilitySystem : public System {
     public:
+        VisibilitySystem() = default;
+        ~VisibilitySystem() override = default;
+
+        VisibilitySystem(const VisibilitySystem& other) = delete;
+        VisibilitySystem& operator=(const VisibilitySystem& other) = delete;
+
+        VisibilitySystem(VisibilitySystem && other) = delete;
+        VisibilitySystem& operator=(VisibilitySystem && other) = delete;
+
+    public:
         void update(FrameContext& ctx) override;
 
         void setMinPixels(float minPixels) { m_minPixels = minPixels; }

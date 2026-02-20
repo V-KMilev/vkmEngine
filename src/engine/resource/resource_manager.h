@@ -107,7 +107,7 @@ class ResourceManager {
         /**
          * @brief Global version counter, incremented on every commit(). Used for sync skip.
          */
-        uint64_t globalVersion() const { return m_globalVersion; }
+        uint64_t getGlobalVersion() const { return m_globalVersion; }
 
     private:
         /**

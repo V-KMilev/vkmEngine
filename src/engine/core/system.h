@@ -41,6 +41,7 @@ class System {
         System(System && other) = delete;
         System& operator=(System && other) = delete;
 
+    public:
         /**
          * @brief Execute this system for the current frame.
          * @param ctx The shared FrameContext for this frame.

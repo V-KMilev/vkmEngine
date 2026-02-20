@@ -1,24 +1,14 @@
 cmake_minimum_required(VERSION 3.25.0)
 
-# Define project version
-set(PROJECT_NAME engine)
-set(PROJECT_VERSION_MAJOR 0)
-set(PROJECT_VERSION_MINOR 0)
-set(PROJECT_VERSION_PATCH 1)
-set(PROJECT_ROOT_DIR ${CMAKE_SOURCE_DIR})
+project(engine
+    VERSION 0.0.1
+    LANGUAGES C CXX
+)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+set(PROJECT_ROOT_DIR ${CMAKE_SOURCE_DIR})
 
 # Git metadata
 include(cmake/git_metadata.cmake)
-
-project(
-  ${PROJECT_NAME}
-  VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}
-  LANGUAGES C CXX
-)
 
 # Dependencies
 if(NOT TARGET vkmLog)
@@ -159,6 +149,10 @@ add_library(EngineRendering STATIC
     src/engine/render/render_pass.h
 )
 
+target_include_directories(EngineRendering PUBLIC
+    src/engine
+)
+
 target_link_libraries(EngineRendering PUBLIC
     EngineCore
 )
@@ -265,13 +259,17 @@ target_link_libraries(EngineEditor PUBLIC
     vkmGL
 )
 
-target_compile_definitions(EngineEditor PRIVATE
+# Shared build info definitions
+add_library(BuildInfo INTERFACE)
+target_compile_definitions(BuildInfo INTERFACE
     APP_VERSION="${PROJECT_VERSION}"
     APP_NAME="${PROJECT_NAME}"
     APP_BRANCH="${PROJECT_BRANCH}"
     APP_COMMIT_HASH="${PROJECT_COMMIT_HASH}"
     APP_BUILD_DATE="${PROJECT_BUILD_DATE}"
 )
+
+target_link_libraries(EngineEditor PRIVATE BuildInfo)
 
 # ============================================================================
 # Main Executable
@@ -286,10 +284,23 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     BackendOpenGL
     EngineTools
     EngineEditor
+    BuildInfo
 )
 
-# Warning flags for all project targets
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    APP_VERSION_MAJOR="${PROJECT_VERSION_MAJOR}"
+    APP_VERSION_MINOR="${PROJECT_VERSION_MINOR}"
+    APP_VERSION_PATCH="${PROJECT_VERSION_PATCH}"
+    APP_ROOT_DIR="${PROJECT_ROOT_DIR}"
+)
+
+# Warning flags and C++ standard for all project targets
 foreach(_target EngineCore EngineRendering EngineTools EngineEditor BackendOpenGL ${PROJECT_NAME})
+    set_target_properties(${_target} PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
     target_compile_options(${_target} PRIVATE
         -Wall -Wextra
         -Wno-unused-value            # VKM_ASSERT expands to `true` in release
@@ -298,16 +309,3 @@ foreach(_target EngineCore EngineRendering EngineTools EngineEditor BackendOpenG
         -Wno-stringop-truncation     # Name component strncpy is intentional
     )
 endforeach()
-
-# Build info definitions
-target_compile_definitions(${PROJECT_NAME} PRIVATE
-    APP_VERSION="${PROJECT_VERSION}"
-    APP_NAME="${PROJECT_NAME}"
-    APP_VERSION_MAJOR="${PROJECT_VERSION_MAJOR}"
-    APP_VERSION_MINOR="${PROJECT_VERSION_MINOR}"
-    APP_VERSION_PATCH="${PROJECT_VERSION_PATCH}"
-    APP_BRANCH="${PROJECT_BRANCH}"
-    APP_COMMIT_HASH="${PROJECT_COMMIT_HASH}"
-    APP_BUILD_DATE="${PROJECT_BUILD_DATE}"
-    APP_ROOT_DIR="${PROJECT_ROOT_DIR}"
-)

@@ -144,10 +144,10 @@ bool WindowManager::updateInput() {
     }
 
     // Snapshot previous keyboard state before new events arrive
-    m_inputHandle->keyboard().update();
+    m_inputHandle->getKeyboard().update();
 
     // Reset scroll delta before polling new events
-    m_inputHandle->mouse().resetScrollDelta();
+    m_inputHandle->getMouse().resetScrollDelta();
 
     // Process GLFW events - key/scroll callbacks fire here
     glfwPollEvents();

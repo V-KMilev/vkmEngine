@@ -41,14 +41,14 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 |---|--------|-------|----------|-------------|
 | 11 | | Every file listed manually (125+) | Entire `CMakeLists.txt` | Adding a new `.cpp` means editing CMake. Error-prone and doesn't scale. Use `file(GLOB_RECURSE)` per library or `target_sources`. |
 | 12 | | Headers listed as sources | Lines 62-131 | `.h` files in `add_library` are not compiled. Only helps IDE indexing. CMake 3.25+ has `FILE_SET HEADERS` for this. |
-| 13 | | Duplicate APP_* compile definitions | Lines 270-276 vs 296-306 | `APP_VERSION`, `APP_NAME`, `APP_BRANCH`, `APP_COMMIT_HASH`, `APP_BUILD_DATE` defined identically on both EngineEditor and main executable. Extract into shared CMake function or `build_info` interface target. |
+| 13 | Done | Duplicate APP_* compile definitions | Lines 270-276 vs 296-306 | Extracted shared definitions into `BuildInfo` INTERFACE target. EngineEditor and executable both link it. |
 | 14 | | BackendOpenGL exposes 4 include dirs | Lines 204-210 | Every subdirectory of the backend is a public include path. Consumers can `#include "gl_mesh.h"` from anywhere, breaking encapsulation. Use single public include dir with qualified paths internally. |
 | 15 | Done | Warning flags commented out | Line 293 | Enabled `-Wall -Wextra` on all targets with targeted suppressions for submodule false positives. |
 | 16 | | Single 300-line CMakeLists.txt | Root file | Doesn't scale. Split into per-subdirectory `CMakeLists.txt` files (`src/engine/CMakeLists.txt`, `src/backend/opengl/CMakeLists.txt`, etc.). |
-| 17 | | EngineRendering has no include dir | Lines 151-164 | No `target_include_directories`. Relies entirely on EngineCore's transitive PUBLIC include. Works but is implicit and fragile. |
+| 17 | Done | EngineRendering has no include dir | Lines 151-164 | Added explicit `target_include_directories(EngineRendering PUBLIC src/engine)`. |
 | 18 | | No install/export targets | Entire file | No `install()` or `export()` rules. Can't use this engine as a CMake dependency from another project. Low priority but future-proofs the build. |
-| 19 | | project() called after manual set() | Lines 4-21 | `set(PROJECT_NAME engine)` before `project()`. The `project()` command overwrites `PROJECT_NAME`. Ordering is confusing. Use `project(engine ...)` directly. |
-| 20 | | C++17 set globally, not per-target | Lines 10-12 | Global `CMAKE_CXX_STANDARD` can be silently overridden by dependencies. Set `CXX_STANDARD` as a target property instead. |
+| 19 | Done | project() called after manual set() | Lines 4-21 | Replaced manual `set()` variables with `project(engine VERSION 0.0.1 ...)` directly. |
+| 20 | Done | C++17 set globally, not per-target | Lines 10-12 | Removed global `CMAKE_CXX_STANDARD`. Set `CXX_STANDARD 17` per-target via `set_target_properties` in foreach. |
 
 ---
 
@@ -68,9 +68,9 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 
 | # | Status | Issue | Location | Description |
 |---|--------|-------|----------|-------------|
-| 26 | | System constructors vary | `VisibilitySystem` vs `AnimationSystem` | Some Systems define explicit constructors, some are defaulted. Standardize: explicit constructors for all System subclasses. |
-| 27 | | Getter naming mixed | `getScene()` vs `isLooking()` vs `count()` | No consistent prefix rule. Adopt: `getX()` for object getters, `isX()` for bool getters, `count()`/`size()` for quantities. |
-| 28 | | Error handling inconsistent | `Scene::get()` vs `GLView::getMesh()` | Scene asserts and crashes in release if entity missing. GLView returns nullptr. No unified strategy. Adopt: asserts for programmer errors (preconditions), nullable returns for runtime lookups. |
+| 26 | Done | System constructors vary | `VisibilitySystem` vs `AnimationSystem` | Added explicit constructor, destructor, and copy/move delete to VisibilitySystem (was the only outlier). |
+| 27 | Done | Getter naming mixed | `getScene()` vs `isLooking()` vs `count()` | Renamed `keyboard()`/`mouse()` to `getKeyboard()`/`getMouse()`, `globalVersion()` to `getGlobalVersion()`. Convention documented in STYLE_GUIDE.md. |
+| 28 | Done | Error handling inconsistent | `Scene::get()` vs `GLView::getMesh()` | Convention documented in STYLE_GUIDE.md: asserts for preconditions, nullable returns for runtime lookups, exceptions for init failures, sentinels for invalid handles. |
 | 29 | Done | `FrameContext.visibility` is raw pointer | `system.h:25` | Already documented in FrameContext doc block - non-owning pointer to persistent VisibilitySystem storage. |
 
 ---
@@ -114,10 +114,10 @@ Comprehensive audit of the codebase from the `vkm/dev/performance-overall` branc
 | Critical Bugs | 3 | 3 |
 | High Priority | 5 | 3 (1 N/A) |
 | File Structure | 2 | 0 |
-| CMake | 10 | 1 |
+| CMake | 10 | 5 |
 | Code Style | 5 | 5 |
-| API Consistency | 4 | 1 |
+| API Consistency | 4 | 4 |
 | Comments | 4 | 4 |
 | Architecture | 6 | 1 |
 | Dead Code | 1 | 1 |
-| **Total** | **40** | **20** |
+| **Total** | **40** | **27** |

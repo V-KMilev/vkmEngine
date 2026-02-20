@@ -28,8 +28,8 @@ void CameraController::update(FrameContext& ctx) {
 void CameraController::updateFlyMode(glm::vec3& position, glm::quat& rotation, float deltaTime) {
     auto& windowManager = Engine::get().getWindow();
     auto& inputHandle   = windowManager.getInputHandle();
-    auto& mouse    = inputHandle.mouse();
-    auto& keyboard = inputHandle.keyboard();
+    auto& mouse    = inputHandle.getMouse();
+    auto& keyboard = inputHandle.getKeyboard();
 
     // Right mouse: Look around (skip if editor UI wants mouse)
     bool isRightMousePressed = !m_editorWantsMouse && mouse.isButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);

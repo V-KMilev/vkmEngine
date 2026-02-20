@@ -114,7 +114,7 @@ class RenderSystem : public System {
 
 ### Access Specifiers
 
-Indented by 4 spaces. Order: `public` (interface) -> `private` (implementation). Single `public:` then single `private:` section preferred. Exception: constructors/destructor can be in a separate initial `public:` block.
+Indented by 4 spaces. Order: `public` (interface) -> `private` (implementation). Constructors, destructor, and copy/move declarations go in their own initial `public:` block, followed by a second `public:` block for the class interface.
 
 ```cpp
 class Window {

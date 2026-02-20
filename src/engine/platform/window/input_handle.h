@@ -206,7 +206,7 @@ class InputHandle {
          * @brief Update input state from the GLFW window.
          *
          * Updates mouse state (cursor position, buttons). Keyboard state is
-         * managed via callbacks. Call keyboard().update() before glfwPollEvents()
+         * managed via callbacks. Call getKeyboard().update() before glfwPollEvents()
          * to snapshot the previous frame's state.
          * @param window Pointer to the GLFW window to query input from.
          */
@@ -229,22 +229,22 @@ class InputHandle {
         /**
          * @brief Returns const reference to the keyboard input handle.
          */
-        const KeyboardInputHandle& keyboard() const { return m_keyboardHandle; }
+        const KeyboardInputHandle& getKeyboard() const { return m_keyboardHandle; }
 
         /**
          * @brief Returns const reference to the mouse input handle.
          */
-        const MouseInputHandle& mouse() const { return m_mouseHandle; }
+        const MouseInputHandle& getMouse() const { return m_mouseHandle; }
 
         /**
          * @brief Returns mutable reference to the keyboard input handle.
          */
-        KeyboardInputHandle& keyboard() { return m_keyboardHandle; }
+        KeyboardInputHandle& getKeyboard() { return m_keyboardHandle; }
 
         /**
          * @brief Returns mutable reference to the mouse input handle.
          */
-        MouseInputHandle& mouse() { return m_mouseHandle; }
+        MouseInputHandle& getMouse() { return m_mouseHandle; }
 
     private:
         KeyboardInputHandle m_keyboardHandle;

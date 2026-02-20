@@ -31,7 +31,7 @@ void GLView::syncMeshes(
     const ResourceManager& resourceManager
 ) {
     // Skip sync entirely when no resources changed and drawable count is stable
-    const uint64_t currentVersion = resourceManager.globalVersion();
+    const uint64_t currentVersion = resourceManager.getGlobalVersion();
     const size_t currentCount = renderView.drawables.size();
     if (currentVersion == m_lastSyncVersion && currentCount == m_lastDrawableCount) {
         return;
