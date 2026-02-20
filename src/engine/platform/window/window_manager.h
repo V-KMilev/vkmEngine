@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 struct GLFWwindow;
@@ -164,6 +165,8 @@ class WindowManager {
         std::unique_ptr<Window> m_window;
         std::unique_ptr<InputHandle> m_inputHandle;
         std::unique_ptr<FrameLimiter> m_frameLimiter;
+
+        uint32_t m_pollSizeCounter = 0;
 };
 
 } // namespace Engine

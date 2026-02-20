@@ -1,7 +1,5 @@
 #pragma once
 
-#include <unordered_map>
-
 struct GLFWwindow;
 
 namespace Engine {
@@ -9,6 +7,10 @@ namespace Engine {
 // https://www.glfw.org/docs/latest/group__buttons.html
 #if !defined(GLFW_MOUSE_BUTTON_LAST)
     #define GLFW_MOUSE_BUTTON_LAST 7
+#endif
+
+#if !defined(GLFW_KEY_LAST)
+    #define GLFW_KEY_LAST 348
 #endif
 
 /**
@@ -30,10 +32,11 @@ class KeyboardInputHandle {
 
     public:
         /**
-         * @brief Update the key states from the provided GLFW window.
-         * @param window Pointer to the GLFW window to query key input from.
+         * @brief Snapshots the previous key state. Call before glfwPollEvents().
+         *
+         * Key state is updated via GLFW key callback, not polling.
          */
-        void update(GLFWwindow* window);
+        void update();
 
         /**
          * @brief Check if the specified key is pressed this frame (edge or hold).
@@ -50,8 +53,11 @@ class KeyboardInputHandle {
         bool isKeyReleased(int key) const;
 
     private:
-        std::unordered_map<int, bool> m_keyState;
-        std::unordered_map<int, bool> m_prevKeyState;
+        friend class InputHandle;
+        void onKeyEvent(int key, bool pressed);
+
+        bool m_keyState[GLFW_KEY_LAST + 1] = {};
+        bool m_prevKeyState[GLFW_KEY_LAST + 1] = {};
 };
 
 /**
@@ -82,6 +88,7 @@ class MouseInputHandle {
          * @brief Setup scroll callback for this mouse handle with GLFW.
          * @param window Pointer to the GLFW window.
          * @param inputHandle Pointer to the input handle that owns this mouse handle.
+         * @deprecated Use InputHandle::setupCallbacks() instead.
          */
         void setupScrollCallback(GLFWwindow* window, class InputHandle* inputHandle);
 
@@ -137,6 +144,8 @@ class MouseInputHandle {
         void resetScrollDelta();
 
     private:
+        friend class InputHandle;
+
         /**
          * @brief Set scroll values from GLFW callback.
          * @internal Called automatically by the scroll callback.
@@ -146,16 +155,16 @@ class MouseInputHandle {
         void setScrollDelta(double xOffset, double yOffset);
 
     private:
-        bool m_buttonState[GLFW_MOUSE_BUTTON_LAST + 1];
-        bool m_prevButtonState[GLFW_MOUSE_BUTTON_LAST + 1];
+        bool m_buttonState[GLFW_MOUSE_BUTTON_LAST + 1] = {};
+        bool m_prevButtonState[GLFW_MOUSE_BUTTON_LAST + 1] = {};
 
-        double m_x;
-        double m_y;
-        double m_deltaX;
-        double m_deltaY;
+        double m_x = 0.0;
+        double m_y = 0.0;
+        double m_deltaX = 0.0;
+        double m_deltaY = 0.0;
 
-        double m_scrollX;
-        double m_scrollY;
+        double m_scrollX = 0.0;
+        double m_scrollY = 0.0;
 };
 
 /**
@@ -176,7 +185,20 @@ class InputHandle {
 
     public:
         /**
-         * @brief Update input state for both keyboard and mouse from the GLFW window.
+         * @brief Sets up GLFW callbacks for keyboard and scroll input.
+         *
+         * Must be called once after window creation. Key state and scroll delta
+         * are updated via callbacks during glfwPollEvents().
+         * @param window Pointer to the GLFW window.
+         */
+        void setupCallbacks(GLFWwindow* window);
+
+        /**
+         * @brief Update input state from the GLFW window.
+         *
+         * Updates mouse state (cursor position, buttons). Keyboard state is
+         * managed via callbacks. Call keyboard().update() before glfwPollEvents()
+         * to snapshot the previous frame's state.
          * @param window Pointer to the GLFW window to query input from.
          */
         void update(GLFWwindow* window);

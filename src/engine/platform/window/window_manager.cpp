@@ -1,5 +1,7 @@
 #include "platform/window/window_manager.h"
 
+#include <algorithm>
+
 #include "platform/window/glfw_include.h"
 
 #include "platform/window/window.h"
@@ -30,14 +32,14 @@ namespace {
             int monitorX, monitorY;
             glfwGetMonitorPos(monitors[i], &monitorX, &monitorY);
 
-            // int overlapX = max(0, min(windowX + windowWidth, monitorX + mode->width) - max(windowX, monitorX));
-            // int overlapY = max(0, min(windowY + windowHeight, monitorY + mode->height) - max(windowY, monitorY));
-            // int overlap = overlapX * overlapY;
+            int overlapX = std::max(0, std::min(windowX + windowWidth, monitorX + mode->width) - std::max(windowX, monitorX));
+            int overlapY = std::max(0, std::min(windowY + windowHeight, monitorY + mode->height) - std::max(windowY, monitorY));
+            int overlap = overlapX * overlapY;
 
-            // if (overlap > bestOverlap) {
-            //     bestOverlap = overlap;
-            //     bestMonitor = monitors[i];
-            // }
+            if (overlap > bestOverlap) {
+                bestOverlap = overlap;
+                bestMonitor = monitors[i];
+            }
         }
         
         return bestMonitor ? bestMonitor : glfwGetPrimaryMonitor();
@@ -55,7 +57,7 @@ void WindowManager::createWindow(const std::string& title) {
     m_inputHandle = std::make_unique<InputHandle>();
     m_frameLimiter = std::make_unique<FrameLimiter>();
 
-    m_inputHandle->mouse().setupScrollCallback(m_window->getWindowContext(), m_inputHandle.get());
+    m_inputHandle->setupCallbacks(m_window->getWindowContext());
 }
 
 bool WindowManager::shouldClose() const {
@@ -141,11 +143,22 @@ bool WindowManager::updateInput() {
         return false;
     }
 
+    // Snapshot previous keyboard state before new events arrive
+    m_inputHandle->keyboard().update();
+
     // Reset scroll delta before polling new events
     m_inputHandle->mouse().resetScrollDelta();
 
+    // Process GLFW events - key/scroll callbacks fire here
     glfwPollEvents();
 
+    // Refresh cached window size every 30 frames (avoids per-frame X11 roundtrip)
+    if (++m_pollSizeCounter >= 30) {
+        m_window->pollSize();
+        m_pollSizeCounter = 0;
+    }
+
+    // Update mouse state (cursor position, button states)
     m_inputHandle->update(windowContext);
 
     return true;

@@ -32,14 +32,12 @@ Window::Window(
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, OPENGL_MINOR_VERSION);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    // By default, create a window on the primary and in fullscreen mode
-    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-
+    // Create a windowed mode window by default (pass NULL for monitor)
     m_window = glfwCreateWindow(
         DEFAULT_WINDOW_WIDTH,
         DEFAULT_WINDOW_HEIGHT,
         m_title.c_str(),
-        monitor,
+        NULL,
         NULL
     );
 
@@ -62,29 +60,30 @@ Window::Window(
     // 1 = VSync enabled
     glfwSwapInterval(m_swapInterval);
 
+    // Cache initial size (refreshed once per frame via pollSize)
+    glfwGetWindowSize(m_window, &m_width, &m_height);
+
     LOG_TRACE("Constructed Window '%s'", m_title.c_str());
 }
 
 int Window::getWidth() const {
-    int width, height;
-    glfwGetWindowSize(m_window, &width, &height);
-    return width;
+    return m_width;
 }
 int Window::getHeight() const {
-    int width, height;
-    glfwGetWindowSize(m_window, &width, &height);
-    return height;
+    return m_height;
 }
+
+void Window::pollSize() {
+    glfwGetWindowSize(m_window, &m_width, &m_height);
+}
+
 int Window::getRefreshRate() const {
     GLFWmonitor* monitor = glfwGetWindowMonitor(m_window);
 
     // If windowed, fall back to the primary monitor
     if (!monitor) {
-        LOG_ERROR("Failed to get window monitor");
-        return 0;
+        monitor = glfwGetPrimaryMonitor();
     }
-
-    monitor = glfwGetPrimaryMonitor();
 
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 

@@ -7,7 +7,7 @@ struct GLFWwindow;
 
 namespace Engine {
 
-// TOOD: Move this into conifg
+// TODO: Move this into config
 #define OPENGL_MAJOR_VERSION 4 ///< Default OpenGL major version.
 #define OPENGL_MINOR_VERSION 3 ///< Default OpenGL minor version.
 
@@ -75,6 +75,11 @@ class Window {
          */
         void setSwapInterval(int interval);
 
+        /**
+         * @brief Refresh cached width/height from GLFW. Call once per frame after glfwPollEvents.
+         */
+        void pollSize();
+
     private:
         /**
          * @brief Performs cleanup and resource release for the window.
@@ -86,6 +91,8 @@ class Window {
         int m_swapInterval;
 
         GLFWwindow* m_window;
+        int m_width  = 0;
+        int m_height = 0;
 };
 
 } // namespace Engine
