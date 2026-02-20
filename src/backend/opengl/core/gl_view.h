@@ -171,6 +171,20 @@ class GLView {
 
         uint64_t m_lastSyncVersion  = 0;      ///< Last ResourceManager globalVersion seen
         size_t   m_lastDrawableCount = 0;      ///< Last drawable count (detects new entities)
+
+        uint32_t m_purgeCounter = 0;
+        static constexpr uint32_t PURGE_INTERVAL = 300;
+
+    public:
+        /**
+         * @brief Purge stale GPU resources if the purge interval has elapsed.
+         *
+         * Increments an internal counter each call. When the counter reaches
+         * PURGE_INTERVAL, removes GPU resources not referenced in the current frame.
+         *
+         * @param renderView The current frame's render view with all active references.
+         */
+        void purgeStaleIfNeeded(const RenderView& renderView);
 };
 
 } // namespace Engine

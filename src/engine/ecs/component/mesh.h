@@ -1,7 +1,5 @@
 #pragma once
 
-#include <glm/glm.hpp>
-
 #include "resource/material_asset.h"
 #include "resource/mesh_asset.h"
 
@@ -10,16 +8,12 @@ namespace Engine {
 /**
  * @brief Component representing a renderable mesh (geometry + material) in the world.
  *
- * Simple data-only component. Holds references to mesh and material data, visibility flag,
- * and cached world-space AABB (filled by computeBounds).
+ * Simple data-only component. Holds references to mesh and material data and visibility flag.
  */
 struct Mesh {
     MeshHandle mesh;              ///< Handle to mesh geometry
     MaterialHandle material;      ///< Handle to material
     bool visible = true;          ///< Is mesh visible?
-
-    glm::vec3 boundsMin{0.0f};    ///< Cached world-space AABB minimum
-    glm::vec3 boundsMax{0.0f};    ///< Cached world-space AABB maximum
 };
 
 } // namespace Engine

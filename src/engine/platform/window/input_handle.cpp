@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "platform/window/glfw_include.h"
+#include "platform/window/window.h"
 
 namespace Engine {
 
@@ -65,39 +66,36 @@ void MouseInputHandle::resetScrollDelta() {
     m_scrollY = 0.0;
 }
 
-void MouseInputHandle::setupScrollCallback(GLFWwindow* window, InputHandle* inputHandle) {
-    if (!window || !inputHandle) return;
-
-    glfwSetWindowUserPointer(window, this);
-
-    glfwSetScrollCallback(window, [](GLFWwindow* w, double xOffset, double yOffset) {
-        auto* mouse = static_cast<MouseInputHandle*>(glfwGetWindowUserPointer(w));
-        if (mouse) {
-            mouse->setScrollDelta(xOffset, yOffset);
-        }
-    });
-}
-
-void InputHandle::setupCallbacks(GLFWwindow* window) {
+void InputHandle::setupCallbacks(GLFWwindow* window, Window* engineWindow) {
     if (!window) return;
 
-    // Store InputHandle* as user pointer for all GLFW callbacks
-    glfwSetWindowUserPointer(window, this);
+    // Bundle both pointers so all GLFW callbacks can access input + window
+    m_callbackData.input = this;
+    m_callbackData.window = engineWindow;
+    glfwSetWindowUserPointer(window, &m_callbackData);
 
-    // Key callback - updates keyboard state directly, no polling needed
+    // Key callback — updates keyboard state directly, no polling needed
     glfwSetKeyCallback(window, [](GLFWwindow* w, int key, int /*scancode*/, int action, int /*mods*/) {
-        auto* input = static_cast<InputHandle*>(glfwGetWindowUserPointer(w));
-        if (input) {
+        auto* data = static_cast<WindowCallbackData*>(glfwGetWindowUserPointer(w));
+        if (data && data->input) {
             bool pressed = (action == GLFW_PRESS || action == GLFW_REPEAT);
-            input->m_keyboardHandle.onKeyEvent(key, pressed);
+            data->input->m_keyboardHandle.onKeyEvent(key, pressed);
         }
     });
 
     // Scroll callback
     glfwSetScrollCallback(window, [](GLFWwindow* w, double xOffset, double yOffset) {
-        auto* input = static_cast<InputHandle*>(glfwGetWindowUserPointer(w));
-        if (input) {
-            input->m_mouseHandle.setScrollDelta(xOffset, yOffset);
+        auto* data = static_cast<WindowCallbackData*>(glfwGetWindowUserPointer(w));
+        if (data && data->input) {
+            data->input->m_mouseHandle.setScrollDelta(xOffset, yOffset);
+        }
+    });
+
+    // Window size callback — instant updates on resize, no polling needed
+    glfwSetWindowSizeCallback(window, [](GLFWwindow* w, int width, int height) {
+        auto* data = static_cast<WindowCallbackData*>(glfwGetWindowUserPointer(w));
+        if (data && data->window) {
+            data->window->setSize(width, height);
         }
     });
 }

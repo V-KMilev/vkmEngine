@@ -76,9 +76,11 @@ class Window {
         void setSwapInterval(int interval);
 
         /**
-         * @brief Refresh cached width/height from GLFW. Call once per frame after glfwPollEvents.
+         * @brief Set window dimensions. Called from GLFW window size callback.
+         * @param width New window width in pixels.
+         * @param height New window height in pixels.
          */
-        void pollSize();
+        void setSize(int width, int height);
 
     private:
         /**

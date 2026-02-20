@@ -4,6 +4,19 @@ struct GLFWwindow;
 
 namespace Engine {
 
+class Window;
+
+/**
+ * @brief Bundles pointers needed by GLFW callbacks.
+ *
+ * Stored as the GLFW user pointer so all callbacks can access both
+ * InputHandle (for input events) and Window (for resize events).
+ */
+struct WindowCallbackData {
+    class InputHandle* input = nullptr;
+    Window* window = nullptr;
+};
+
 // https://www.glfw.org/docs/latest/group__buttons.html
 #if !defined(GLFW_MOUSE_BUTTON_LAST)
     #define GLFW_MOUSE_BUTTON_LAST 7
@@ -83,14 +96,6 @@ class MouseInputHandle {
          * @param window Pointer to the GLFW window to query mouse input from.
          */
         void update(GLFWwindow* window);
-
-        /**
-         * @brief Setup scroll callback for this mouse handle with GLFW.
-         * @param window Pointer to the GLFW window.
-         * @param inputHandle Pointer to the input handle that owns this mouse handle.
-         * @deprecated Use InputHandle::setupCallbacks() instead.
-         */
-        void setupScrollCallback(GLFWwindow* window, class InputHandle* inputHandle);
 
         /**
          * @brief Check if the specified mouse button is pressed.
@@ -191,7 +196,7 @@ class InputHandle {
          * are updated via callbacks during glfwPollEvents().
          * @param window Pointer to the GLFW window.
          */
-        void setupCallbacks(GLFWwindow* window);
+        void setupCallbacks(GLFWwindow* window, Window* engineWindow);
 
         /**
          * @brief Update input state from the GLFW window.
@@ -240,6 +245,7 @@ class InputHandle {
     private:
         KeyboardInputHandle m_keyboardHandle;
         MouseInputHandle m_mouseHandle;
+        WindowCallbackData m_callbackData;
 };
 
 } // namespace Engine

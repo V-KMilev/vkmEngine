@@ -166,7 +166,6 @@ class WindowManager {
         std::unique_ptr<InputHandle> m_inputHandle;
         std::unique_ptr<FrameLimiter> m_frameLimiter;
 
-        uint32_t m_pollSizeCounter = 0;
 };
 
 } // namespace Engine

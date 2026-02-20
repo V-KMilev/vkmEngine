@@ -29,9 +29,6 @@ struct Transform {
     glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};  ///< Local rotation as quaternion (identity = no rotation)
     glm::vec3 scale    = {1.0f, 1.0f, 1.0f};        ///< Local scale
 
-    mutable glm::mat4 cachedModelMatrix = glm::mat4(1.0f); ///< Cached model matrix (recomputed when dirty)
-    mutable bool dirty = true;                               ///< True when position/rotation/scale changed
-
     /**
      * @brief Compute the model matrix from transform data.
      *
@@ -53,19 +50,6 @@ struct Transform {
         model[3] = glm::vec4(transform.position, 1.0f);
 
         return model;
-    }
-
-    /**
-     * @brief Get the cached model matrix, recomputing only if dirty.
-     * @param transform The transform component.
-     * @return Const reference to the cached model matrix.
-     */
-    static const glm::mat4& getModelMatrix(const Transform& transform) {
-        if (transform.dirty) {
-            transform.cachedModelMatrix = computeModelMatrix(transform);
-            transform.dirty = false;
-        }
-        return transform.cachedModelMatrix;
     }
 
     /**

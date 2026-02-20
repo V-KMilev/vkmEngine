@@ -23,7 +23,6 @@ void CameraController::update(FrameContext& ctx) {
     auto& transform = ctx.scene.get<Transform>(m_cameraEntity.getID());
 
     updateFlyMode(transform.position, transform.rotation, ctx.deltaTime);
-    transform.dirty = true;
 }
 
 void CameraController::updateFlyMode(glm::vec3& position, glm::quat& rotation, float deltaTime) {

@@ -261,4 +261,11 @@ void GLView::purgeStaleResources(const RenderView& renderView) {
     }
 }
 
+void GLView::purgeStaleIfNeeded(const RenderView& renderView) {
+    if (++m_purgeCounter >= PURGE_INTERVAL) {
+        purgeStaleResources(renderView);
+        m_purgeCounter = 0;
+    }
+}
+
 } // namespace Engine

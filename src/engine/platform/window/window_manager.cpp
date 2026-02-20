@@ -57,7 +57,7 @@ void WindowManager::createWindow(const std::string& title) {
     m_inputHandle = std::make_unique<InputHandle>();
     m_frameLimiter = std::make_unique<FrameLimiter>();
 
-    m_inputHandle->setupCallbacks(m_window->getWindowContext());
+    m_inputHandle->setupCallbacks(m_window->getWindowContext(), m_window.get());
 }
 
 bool WindowManager::shouldClose() const {
@@ -151,12 +151,6 @@ bool WindowManager::updateInput() {
 
     // Process GLFW events - key/scroll callbacks fire here
     glfwPollEvents();
-
-    // Refresh cached window size every 30 frames (avoids per-frame X11 roundtrip)
-    if (++m_pollSizeCounter >= 30) {
-        m_window->pollSize();
-        m_pollSizeCounter = 0;
-    }
 
     // Update mouse state (cursor position, button states)
     m_inputHandle->update(windowContext);

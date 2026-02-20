@@ -60,7 +60,7 @@ Window::Window(
     // 1 = VSync enabled
     glfwSwapInterval(m_swapInterval);
 
-    // Cache initial size (refreshed once per frame via pollSize)
+    // Cache initial size (updated via GLFW window size callback)
     glfwGetWindowSize(m_window, &m_width, &m_height);
 
     LOG_TRACE("Constructed Window '%s'", m_title.c_str());
@@ -73,8 +73,9 @@ int Window::getHeight() const {
     return m_height;
 }
 
-void Window::pollSize() {
-    glfwGetWindowSize(m_window, &m_width, &m_height);
+void Window::setSize(int width, int height) {
+    m_width = width;
+    m_height = height;
 }
 
 int Window::getRefreshRate() const {

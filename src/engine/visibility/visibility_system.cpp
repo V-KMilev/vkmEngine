@@ -143,7 +143,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
             for (size_t i = startIdx; i < endIdx; ++i) {
                 const uint32_t denseIdx = static_cast<uint32_t>(i);
                 const uint32_t entityIdx = meshStorage->keyAt(denseIdx);
-                Mesh& mesh = meshStorage->dataAt(denseIdx);
+                const Mesh& mesh = meshStorage->dataAt(denseIdx);
 
                 if (!mesh.visible) continue;
                 if (!transformStorage->contains(entityIdx)) continue;
@@ -152,19 +152,20 @@ void VisibilitySystem::update(FrameContext& ctx) {
                 if (!hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) continue;
 
                 const Transform& transform = transformStorage->get(entityIdx);
-                const glm::mat4& modelMatrix = Transform::getModelMatrix(transform);
+                const glm::mat4 modelMatrix = Transform::computeModelMatrix(transform);
 
+                glm::vec3 worldMin, worldMax;
                 localToWorldAABB(
                     modelMatrix,
                     meshAsset.boundsMin,
                     meshAsset.boundsMax,
-                    mesh.boundsMin,
-                    mesh.boundsMax
+                    worldMin,
+                    worldMax
                 );
 
-                if (!FrustumCuller::isVisible(mesh, context)) continue;
-                if (!DistanceCuller::isVisible(mesh, context)) continue;
-                if (!ScreenSizeCuller::isVisible(mesh, context)) continue;
+                if (!FrustumCuller::isVisible(worldMin, worldMax, context)) continue;
+                if (!DistanceCuller::isVisible(worldMin, worldMax, context)) continue;
+                if (!ScreenSizeCuller::isVisible(worldMin, worldMax, context)) continue;
 
                 EntityId eid{entityIdx, ctx.scene.generationOf(entityIdx)};
                 localEntities.push_back(eid);
