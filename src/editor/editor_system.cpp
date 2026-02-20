@@ -5,6 +5,7 @@
 #include <imgui_impl_opengl3.h>
 
 #include <GL/glew.h>
+#include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -62,7 +63,8 @@ EditorSystem::EditorSystem(
     VisibilitySystem* visibilitySystem,
     RenderSystem* renderSystem
 )
-    : m_cameraController(cameraController)
+    : m_window(window)
+    , m_cameraController(cameraController)
     , m_visibilitySystem(visibilitySystem)
     , m_renderSystem(renderSystem)
 {
@@ -266,6 +268,7 @@ EntityId EditorSystem::createEntity(Scene& scene, ResourceManager& resources, co
         scene.add(entity, cam);
     }
 
+    m_hierarchyDirty = true;
     return id;
 }
 
@@ -303,6 +306,7 @@ void EditorSystem::duplicateEntity(Scene& scene, EntityId source) {
         scene.add(entity, std::move(anim));
     }
 
+    m_hierarchyDirty = true;
     m_selectedEntity = newId;
 }
 
@@ -317,6 +321,7 @@ void EditorSystem::deleteEntity(Scene& scene, EntityId entity) {
         }
         scene.destroyEntity(Entity{entity});
     }
+    m_hierarchyDirty = true;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -324,6 +329,15 @@ void EditorSystem::deleteEntity(Scene& scene, EntityId entity) {
 // ────────────────────────────────────────────────────────────────────────────
 
 void EditorSystem::update(FrameContext& ctx) {
+    if (!m_editorVisible) {
+        // Zero overhead path: raw GLFW key check, no ImGui frame at all
+        int f5 = glfwGetKey(m_window, GLFW_KEY_F5);
+        if (f5 == GLFW_PRESS && !m_f5WasDown) m_editorVisible = true;
+        m_f5WasDown = (f5 == GLFW_PRESS);
+        if (m_cameraController) m_cameraController->setEditorInputCapture(false, false);
+        return;
+    }
+
     if (m_cameraController) {
         // Don't block mouse if camera is already in right-click look mode (prevents
         // cursor escape when mouse leaves viewport bounds during drag).
@@ -340,6 +354,7 @@ void EditorSystem::update(FrameContext& ctx) {
 
     m_frameTimeHistory[m_frameTimeOffset] = ctx.deltaTime * 1000.0f;
     m_frameTimeOffset = (m_frameTimeOffset + 1) % FRAME_HISTORY_SIZE;
+    m_metrics.update(ctx.deltaTime);
 
     // Keyboard shortcuts (allow when no text input is active)
     if (!ImGui::GetIO().WantTextInput) {
@@ -347,6 +362,7 @@ void EditorSystem::update(FrameContext& ctx) {
         if (ImGui::IsKeyPressed(ImGuiKey_F2)) m_showHierarchy = !m_showHierarchy;
         if (ImGui::IsKeyPressed(ImGuiKey_F3)) m_showInspector = !m_showInspector;
         if (ImGui::IsKeyPressed(ImGuiKey_F4)) m_showBottom    = !m_showBottom;
+        if (ImGui::IsKeyPressed(ImGuiKey_F5)) m_editorVisible = false;
         if (ImGui::IsKeyPressed(ImGuiKey_Delete) && m_selectedEntity && ctx.scene.isAlive(m_selectedEntity)) {
             deleteEntity(ctx.scene, m_selectedEntity);
         }
@@ -586,6 +602,26 @@ void EditorSystem::drawViewportOverlay(const FrameContext& ctx) {
         float pct = total > 0 ? (static_cast<float>(vis) / static_cast<float>(total)) * 100.0f : 0.0f;
         ImGui::Text("Entities: %zu  Visible: %zu (%.1f%%)", total, vis, pct);
         ImGui::Text("Draws: %u  Passes: %u", info.renderSystemInfo.drawCalls, info.renderSystemInfo.renderPasses);
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("System");
+        ImGui::Separator();
+        {
+            float ramPct = (m_metrics.ramTotalMB() > 0.0f)
+                ? (m_metrics.ramUsedMB() / m_metrics.ramTotalMB() * 100.0f) : 0.0f;
+            ImGui::Text("CPU  %.0f%% | %.0f%% RAM (%.0f/%.0f GB)",
+                         m_metrics.cpuPercent(), ramPct,
+                         m_metrics.ramUsedMB() / 1024.0f, m_metrics.ramTotalMB() / 1024.0f);
+        }
+        if (m_metrics.hasGpuUtil() || m_metrics.hasVram()) {
+            float vramPct = m_metrics.hasVram()
+                ? (m_metrics.vramUsedMB() / m_metrics.vramTotalMB() * 100.0f) : 0.0f;
+            ImGui::Text("GPU  %.0f%% | %.0f%% VRAM (%.0f/%.0f MB)",
+                         m_metrics.gpuPercent(), vramPct,
+                         m_metrics.vramUsedMB(), m_metrics.vramTotalMB());
+        } else {
+            ImGui::TextDisabled("GPU  N/A");
+        }
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();
@@ -669,9 +705,27 @@ void EditorSystem::drawHierarchyPanel(FrameContext& ctx) {
     bool hasFilter = m_hierarchyFilter[0] != '\0';
 
     if (ImGui::BeginChild("##Tree", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()))) {
-        if (hasFilter) {
+        // Rebuild root list only when entities change (not every frame).
+        // Skips 13k+ sparse lookups + push_backs on stable frames.
+        size_t currentCount = scene.entityCount();
+        if (m_hierarchyDirty || currentCount != m_lastEntityCount) {
+            m_cachedRoots.clear();
+            m_cachedRoots.reserve(currentCount);
             scene.forEach<Transform>([&](EntityId id, const Transform&) {
+                bool isRoot = !scene.has<Hierarchy>(id) || !scene.get<Hierarchy>(id).parent;
+                if (isRoot) m_cachedRoots.push_back(id);
+            });
+            m_lastEntityCount = currentCount;
+            m_hierarchyDirty = false;
+        }
+
+        const auto& displayList = hasFilter ? m_cachedFiltered : m_cachedRoots;
+
+        if (hasFilter) {
+            m_cachedFiltered.clear();
+            for (EntityId id : m_cachedRoots) {
                 const char* name = getEntityDisplayName(scene, id);
+                // Case-insensitive substring match
                 bool match = false;
                 for (const char* p = name; *p; ++p) {
                     const char* s = m_hierarchyFilter;
@@ -680,21 +734,30 @@ void EditorSystem::drawHierarchyPanel(FrameContext& ctx) {
                                         tolower(static_cast<unsigned char>(*t))) { ++s; ++t; }
                     if (!*s) { match = true; break; }
                 }
-                if (match) {
+                if (match) m_cachedFiltered.push_back(id);
+            }
+        }
+
+        // ImGuiListClipper: only draws ~20-30 visible rows instead of all 13,000+.
+        // This eliminates snprintf, text sizing, tree node, and popup overhead for off-screen items.
+        ImGuiListClipper clipper;
+        clipper.Begin(static_cast<int>(displayList.size()));
+        while (clipper.Step()) {
+            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                EntityId id = displayList[i];
+                if (hasFilter) {
                     ImGuiTreeNodeFlags f = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen
                                          | ImGuiTreeNodeFlags_SpanAvailWidth;
                     if (m_selectedEntity == id) f |= ImGuiTreeNodeFlags_Selected;
                     ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<uintptr_t>(id.index)),
-                                     f, "%s  %s", getEntityIcon(scene, id), name);
+                                     f, "%s  %s", getEntityIcon(scene, id),
+                                     getEntityDisplayName(scene, id));
                     if (ImGui::IsItemClicked()) m_selectedEntity = id;
                     drawEntityContextMenu(scene, id);
+                } else {
+                    drawEntityNode(scene, id);
                 }
-            });
-        } else {
-            scene.forEach<Transform>([&](EntityId id, const Transform&) {
-                bool isRoot = !scene.has<Hierarchy>(id) || !scene.get<Hierarchy>(id).parent;
-                if (isRoot) drawEntityNode(scene, id);
-            });
+            }
         }
 
         if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)

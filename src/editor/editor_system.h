@@ -1,9 +1,11 @@
 #pragma once
 
 #include <imgui.h>
+#include <vector>
 
 #include "core/system.h"
 #include "ecs/entity.h"
+#include "platform/system_metrics.h"
 
 struct GLFWwindow;
 
@@ -76,6 +78,7 @@ class EditorSystem : public System {
         const char* getEntityIcon(const Scene& scene, EntityId id) const;
 
     private:
+        GLFWwindow*       m_window           = nullptr;
         CameraController* m_cameraController = nullptr;
         VisibilitySystem* m_visibilitySystem = nullptr;
         RenderSystem*     m_renderSystem     = nullptr;
@@ -101,10 +104,18 @@ class EditorSystem : public System {
 
         // Hierarchy state
         char m_hierarchyFilter[64] = {};
+        std::vector<EntityId> m_cachedRoots;
+        std::vector<EntityId> m_cachedFiltered;
+        size_t m_lastEntityCount = 0;
+        bool m_hierarchyDirty = true;
 
         // Rendering state
         bool m_wireframe = false;
         bool m_viewportHovered = false;
+        bool m_editorVisible = true;
+        bool m_f5WasDown = false;
+
+        SystemMetrics m_metrics;
 };
 
 } // namespace Engine

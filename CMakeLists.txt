@@ -115,6 +115,8 @@ add_library(EngineCore STATIC
     src/engine/platform/window/glfw_include.h
     src/engine/platform/threading/thread_pool.h
     src/engine/platform/threading/thread_pool.cpp
+    src/engine/platform/system_metrics.h
+    src/engine/platform/system_metrics.cpp
     # Debug
     src/engine/debug/statistics.h
     src/engine/debug/statistics.cpp
