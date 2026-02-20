@@ -153,7 +153,7 @@ class GLMaterial {
          */
         void bindTextures(const class GLView& view) const;
 
-    private:
+    public:
         /**
          * @brief Helper structure for texture binding information.
          */
@@ -161,6 +161,11 @@ class GLMaterial {
             TextureHandle handle;
             uint32_t slot;
         };
+
+        /**
+         * @brief Returns the stored texture bindings for resource tracking.
+         */
+        const std::vector<TextureBinding>& getTextureBindings() const { return m_textureBindings; }
 
     private:
         std::unique_ptr<Core::UniformBuffer> m_ubo;

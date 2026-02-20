@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <vector>
 
 #include <glm/gtc/quaternion.hpp>
@@ -76,14 +77,15 @@ class AnimationTrack {
                 return m_keyframes.back().value;
             }
 
-            // Find the two keyframes to interpolate between
-            size_t nextIndex = 1;
-            for (size_t i = 0; i < m_keyframes.size() - 1; ++i) {
-                if (time <= m_keyframes[i + 1].time) {
-                    nextIndex = i + 1;
-                    break;
-                }
-            }
+            // Binary search for the first keyframe with time > query time
+            auto it = std::upper_bound(
+                m_keyframes.begin(), m_keyframes.end(), time,
+                [](float t, const Keyframe<T>& kf) { return t < kf.time; }
+            );
+
+            size_t nextIndex = (it != m_keyframes.end())
+                ? static_cast<size_t>(it - m_keyframes.begin())
+                : m_keyframes.size() - 1;
 
             size_t prevIndex = nextIndex - 1;
             const auto& prev = m_keyframes[prevIndex];

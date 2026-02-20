@@ -41,7 +41,6 @@ int main() {
         auto& window = engine.getWindow();
 
         window.createWindow("VKM Engine");
-        window.updateMode(Engine::WindowMode::WINDOWED);
         window.setFramerate(0);
 
         // Systems

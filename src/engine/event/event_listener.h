@@ -50,6 +50,12 @@ class EventListener {
          */
         uint32_t getID() const;
 
+        /**
+         * @brief Get the underlying callback function.
+         * @return Const reference to the callback.
+         */
+        const EventCallback& getCallback() const { return m_event.getCallback(); }
+
     private:
         Event m_event;
         uint32_t m_id;

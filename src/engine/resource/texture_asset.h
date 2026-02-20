@@ -38,14 +38,16 @@ struct TextureAsset : public Resource, public Core::Texture2DParams {
     }
 
     /**
-     * @brief Get const Texture2DParams with data pointer properly set.
-     * 
-     * @return Const reference to Texture2DParams with synchronized data pointer.
+     * @brief Get Texture2DParams with data pointer properly set (const version).
+     *
+     * Returns by value to avoid mutating through a const method.
+     *
+     * @return Texture2DParams with synchronized data pointer.
      */
-    const Core::Texture2DParams& getParams() const {
-        // Const cast is safe here as we're only reading the data
-        const_cast<TextureAsset*>(this)->data = pixelData.empty() ? nullptr : pixelData.data();
-        return *this;
+    Core::Texture2DParams getParams() const {
+        Core::Texture2DParams params = static_cast<const Core::Texture2DParams&>(*this);
+        params.data = pixelData.empty() ? nullptr : pixelData.data();
+        return params;
     }
 };
 

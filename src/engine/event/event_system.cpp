@@ -27,9 +27,7 @@ void EventSystem::push(Event && event) {
     std::lock_guard<std::mutex> lock(m_eventMutex);
 
     if (event.getPriority() == EventPriority::IMMEDIATE) {
-        // ThreadPool::get().pushTask([this, event = std::move(event)] {
-        //     event.execute();
-        // });
+        event.execute();
         return;
     }
 
@@ -68,11 +66,9 @@ void EventSystem::executeAsync() {
         return;
     }
 
+    // Execute events in priority order on the calling thread
     while (!localEvents.empty()) {
-        // Must move event out for async execution (lives in thread)
-        // ThreadPool::get().pushTask([event = std::move(const_cast<Event&>(localEvents.top()))]() {
-        //     event.execute();
-        // });
+        localEvents.top().execute();
         localEvents.pop();
     }
 }
@@ -165,37 +161,49 @@ void EventSystem::unsubscribeAll(const std::string& eventName) {
 }
 
 void EventSystem::emit(const std::string& eventName) {
-    std::lock_guard<std::mutex> lock(m_listenerMutex);
+    std::vector<EventCallback> callbacksToCall;
 
-    auto it = m_listeners.find(eventName);
-    if (it == m_listeners.end() || it->second.empty()) {
-        LOG_VERBOSE("[EVENT MANAGER] No listeners for event type '%s'", eventName.c_str());
-        return;
+    // Copy callbacks under lock, then release before execution.
+    // We copy std::function objects (not pointers) because a callback
+    // may subscribe/unsubscribe, which can reallocate the listener vector.
+    {
+        std::lock_guard<std::mutex> lock(m_listenerMutex);
+
+        auto it = m_listeners.find(eventName);
+        if (it == m_listeners.end() || it->second.empty()) {
+            LOG_VERBOSE("[EVENT MANAGER] No listeners for event type '%s'", eventName.c_str());
+            return;
+        }
+
+        std::vector<EventListener>& listeners = it->second;
+
+        LOG_VERBOSE("[EVENT MANAGER] Emitting event '%s' to %zu listener(s)",
+                    eventName.c_str(), listeners.size());
+
+        if (listeners.size() > 1) {
+            std::sort(listeners.begin(), listeners.end(),
+                [](const EventListener& a, const EventListener& b) {
+                    return b < a;  // Descending priority (uses operator<)
+                });
+        }
+
+        callbacksToCall.reserve(listeners.size());
+        for (const EventListener& listener : listeners) {
+            callbacksToCall.push_back(listener.getCallback());
+        }
     }
 
-    std::vector<EventListener>& listeners = it->second;
-
-    LOG_VERBOSE("[EVENT MANAGER] Emitting event '%s' to %zu listener(s)",
-                eventName.c_str(), listeners.size());
-
-    if (listeners.size() > 1) {
-        std::sort(listeners.begin(), listeners.end(),
-            [](const EventListener& a, const EventListener& b) {
-                return b < a;  // Descending priority (uses operator<)
-            });
-    }
-
-    // Execute all listeners sequentially in priority order
-    for (const EventListener& listener : listeners) {
-        listener.execute();
+    // Execute without holding the mutex - safe even if callbacks subscribe/unsubscribe
+    for (const EventCallback& callback : callbacksToCall) {
+        callback();
     }
     STATS_RECORD_EVENT_DISPATCH();
 }
 
 void EventSystem::emitAsync(const std::string& eventName) {
-    std::vector<const EventListener*> listenersToCall;
+    std::vector<EventCallback> callbacksToCall;
 
-    // Collect pointers to listeners (safe because listeners are stable in vector)
+    // Copy callbacks under lock (same safety rationale as emit)
     {
         std::lock_guard<std::mutex> lock(m_listenerMutex);
 
@@ -217,17 +225,14 @@ void EventSystem::emitAsync(const std::string& eventName) {
                 });
         }
 
-        // Collect pointers for async execution
-        listenersToCall.reserve(listeners.size());
+        callbacksToCall.reserve(listeners.size());
         for (const EventListener& listener : listeners) {
-            listenersToCall.push_back(&listener);
+            callbacksToCall.push_back(listener.getCallback());
         }
     }
 
-    for (const EventListener* listener : listenersToCall) {
-        // ThreadPool::get().pushTask([listener]() {
-        //     listener->execute();
-        // });
+    for (const EventCallback& callback : callbacksToCall) {
+        callback();
     }
 }
 
