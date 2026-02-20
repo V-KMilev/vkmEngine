@@ -6,10 +6,8 @@
 #include "resource/resource_handle.h"
 
 namespace Engine {
-    class ResourceManager;
-}
 
-namespace Engine {
+class ResourceManager;
 
 /**
  * @brief Generate a solid color texture.

@@ -3,8 +3,10 @@
 #include <functional>
 #include <string>
 
+namespace Engine {
+
 /**
- * @brief Type alias for an event callback function. 
+ * @brief Type alias for an event callback function.
  * The callback takes no arguments and returns void.
  */
 using EventCallback = std::function<void()>;
@@ -13,7 +15,7 @@ using EventCallback = std::function<void()>;
  * @enum EventPriority
  * @brief Specifies the priority of an event.
  *
- * Events may be dispatched in order of priority. 
+ * Events may be dispatched in order of priority.
  * IMMEDIATE events are processed as soon as possible.
  */
 enum class EventPriority : int {
@@ -59,7 +61,7 @@ class Event {
 
         /**
          * @brief Construct an event with a callback, priority, and name.
-         * 
+         *
          * @param callback The function to execute when the event fires.
          * @param priority The event's priority for execution/scheduling.
          * @param name The unique name of the event, for pub/sub or queueing.
@@ -108,3 +110,5 @@ class Event {
         EventPriority m_priority;
         std::string m_name;
 };
+
+} // namespace Engine

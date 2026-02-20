@@ -1,5 +1,7 @@
 #include "debug/call_tracker.h"
 
+namespace Engine {
+
 // Render system recording
 
 void CallTracker::recordDrawCall() {
@@ -89,3 +91,5 @@ EventSystemInfo CallTracker::getEventInfo() const {
         m_event.eventsUnsubscribed.load(std::memory_order_relaxed)
     };
 }
+
+} // namespace Engine

@@ -10,13 +10,10 @@
 #include "ecs/component/light.h"
 
 namespace Engine {
-    class Scene;
-    class ResourceManager;
 
-    struct Visibility;
-}
-
-namespace Engine {
+class Scene;
+class ResourceManager;
+struct Visibility;
 
 /**
  * @brief Camera data used for rendering calculations.

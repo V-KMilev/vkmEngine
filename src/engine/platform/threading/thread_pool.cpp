@@ -5,6 +5,8 @@
 // Thread-local storage to track which worker thread is executing
 static thread_local int g_workerIndex = -1;
 
+namespace Engine {
+
 ThreadPool::ThreadPool(size_t threadCount) {
     // Ensure at least one thread
     if (threadCount == 0) {
@@ -239,3 +241,5 @@ void ThreadPool::waitIdle() {
         return m_inFlightTaskCount.load(std::memory_order_seq_cst) == 0;
     });
 }
+
+} // namespace Engine

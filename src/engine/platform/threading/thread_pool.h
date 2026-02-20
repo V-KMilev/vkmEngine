@@ -14,6 +14,8 @@
 #include <utility>
 #include <vector>
 
+namespace Engine {
+
 /**
  * @brief Per-worker queue structure for work-stealing thread pool.
  *
@@ -262,3 +264,5 @@ void ThreadPool::parallelFor(size_t begin, size_t end, size_t grain, Function&& 
     std::unique_lock<std::mutex> lock(doneMutex);
     doneCv.wait(lock, [&] { return remaining.load(std::memory_order_acquire) == 0; });
 }
+
+} // namespace Engine

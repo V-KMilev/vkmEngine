@@ -6,6 +6,8 @@
 
 #include "debug/frame_info.h"
 
+namespace Engine {
+
 /**
  * @class FrameTracker
  * @brief Tracks per-frame timing statistics (frametime, framerate, min/max frametime)
@@ -43,7 +45,7 @@ class FrameTracker {
 
         /**
          * @brief Gets the most recently computed frame rate info.
-         * 
+         *
          * @return const reference to FrameRateInfo (contains average frameTime, frameRate, min/max times)
          */
         const FrameRateInfo& getFrameRateInfo() const { return m_frameRateInfo; }
@@ -60,3 +62,5 @@ class FrameTracker {
 
         std::chrono::high_resolution_clock::time_point m_lastFrameTime;
 };
+
+} // namespace Engine

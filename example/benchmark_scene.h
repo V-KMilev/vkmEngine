@@ -63,8 +63,9 @@ static Engine::Entity generateBenchmarkScene(
     }
 
     // Load materials
-    Engine::MaterialHandle material1 = Engine::loadMaterialFromFolder("../assets/PavingStones118_2K-JPG", resources);
-    Engine::MaterialHandle material2 = Engine::loadMaterialFromFolder("../assets/PavingStones115A_2K-JPG", resources);
+    const std::string assetsDir = std::string(APP_ROOT_DIR) + "/assets";
+    Engine::MaterialHandle material1 = Engine::loadMaterialFromFolder(assetsDir + "/PavingStones118_2K-JPG", resources);
+    Engine::MaterialHandle material2 = Engine::loadMaterialFromFolder(assetsDir + "/PavingStones115A_2K-JPG", resources);
     std::vector<Engine::MaterialHandle> materials = {material1, material2};
 
     // Camera
@@ -341,7 +342,7 @@ static void generateBenchmarkAnimations(Engine::Scene& scene) {
         if (animType == 0) {
             // Rotation animation
             auto& rotationTrack = anim.rotationTrack;
-            rotationTrack.setEasing(Easing::linear);
+            rotationTrack.setEasing(Engine::Easing::linear);
             glm::vec3 axis = glm::normalize(glm::vec3(
                 (idx % 3 == 0) ? 1.0f : 0.0f,
                 (idx % 3 == 1) ? 1.0f : 0.0f,
@@ -355,7 +356,7 @@ static void generateBenchmarkAnimations(Engine::Scene& scene) {
         else if (animType == 1) {
             // Vertical bobbing
             auto& positionTrack = anim.positionTrack;
-            positionTrack.setEasing(Easing::easeInOutSine);
+            positionTrack.setEasing(Engine::Easing::easeInOutSine);
             glm::vec3 basePos = transform.position;
             positionTrack.addKeyframe(0.0f, basePos);
             positionTrack.addKeyframe(duration / 2, basePos + glm::vec3(0.0f, 1.5f, 0.0f));
@@ -364,7 +365,7 @@ static void generateBenchmarkAnimations(Engine::Scene& scene) {
         else if (animType == 2) {
             // Scale pulsing
             auto& scaleTrack = anim.scaleTrack;
-            scaleTrack.setEasing(Easing::easeInOutSine);
+            scaleTrack.setEasing(Engine::Easing::easeInOutSine);
             glm::vec3 baseScale = transform.scale;
             scaleTrack.addKeyframe(0.0f, baseScale);
             scaleTrack.addKeyframe(duration / 2, baseScale * 1.3f);
@@ -373,13 +374,13 @@ static void generateBenchmarkAnimations(Engine::Scene& scene) {
         else {
             // Combined rotation + position
             auto& rotationTrack = anim.rotationTrack;
-            rotationTrack.setEasing(Easing::linear);
+            rotationTrack.setEasing(Engine::Easing::linear);
             glm::vec3 axis(0.0f, 1.0f, 0.0f);
             rotationTrack.addKeyframe(0.0f, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
             rotationTrack.addKeyframe(duration, glm::angleAxis(glm::two_pi<float>(), axis));
 
             auto& positionTrack = anim.positionTrack;
-            positionTrack.setEasing(Easing::easeInOutSine);
+            positionTrack.setEasing(Engine::Easing::easeInOutSine);
             glm::vec3 basePos = transform.position;
             positionTrack.addKeyframe(0.0f, basePos);
             positionTrack.addKeyframe(duration / 3, basePos + glm::vec3(0.5f, 0.0f, 0.0f));

@@ -53,10 +53,11 @@ int main() {
             window.getWindowContext(), &cameraController, &visibilitySystem, &renderSystem);
 
         // Shaders
-        Core::Shader pbr("../shaders/pbr");
-        Core::Shader unlit("../shaders/unlit");
-        Core::Shader aabbDebug("../shaders/aabb_debug");
-        Core::Shader gridShader("../shaders/grid");
+        const std::string shaderDir = std::string(APP_ROOT_DIR) + "/shaders";
+        Core::Shader pbr(shaderDir + "/pbr");
+        Core::Shader unlit(shaderDir + "/unlit");
+        Core::Shader aabbDebug(shaderDir + "/aabb_debug");
+        Core::Shader gridShader(shaderDir + "/grid");
         // Render passes
         renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
         auto forwardPass = std::make_unique<Engine::GLForwardPass>(pbr);

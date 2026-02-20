@@ -3,6 +3,8 @@
 #include "logger.h"
 #include "debug/print_helper.h"
 
+namespace Engine {
+
 EventListener::EventListener(Event && event, uint32_t id)
     : m_event(std::move(event)),
       m_id(id)
@@ -25,3 +27,5 @@ void EventListener::execute() const {
 uint32_t EventListener::getID() const {
     return m_id;
 }
+
+} // namespace Engine

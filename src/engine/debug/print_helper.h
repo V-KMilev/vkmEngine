@@ -4,6 +4,8 @@
 
 #include "logger.h"
 
+namespace Engine {
+
 // TODO(vkm): Make this constexpr
 
 // Generic template for enums with toString() overloads
@@ -16,3 +18,5 @@ const char* enumToString(EnumType type) {
     static thread_local std::string enumStr = std::string(toString(type)) + "::" + std::to_string(static_cast<int>(type));
     return enumStr.c_str();
 }
+
+} // namespace Engine

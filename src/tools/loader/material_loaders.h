@@ -9,10 +9,8 @@
 #include "resource/resource_handle.h"
 
 namespace Engine {
-    class ResourceManager;
-}
 
-namespace Engine {
+class ResourceManager;
 
 /**
  * @brief Descriptor for loading a PBR material from individual texture files.

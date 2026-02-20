@@ -5,6 +5,8 @@
 
 #include "debug/frame_info.h"
 
+namespace Engine {
+
 /**
  * @class CallTracker
  * @brief Tracks high-level system calls and updates within the engine, such as rendering, entity and event operations.
@@ -92,3 +94,5 @@ class CallTracker {
             std::atomic<uint32_t> eventsUnsubscribed{0};
         } m_event;
 };
+
+} // namespace Engine

@@ -3,11 +3,9 @@
 #include "core/system.h"
 
 namespace Engine {
-    struct Animation;
-    struct Transform;
-}
 
-namespace Engine {
+struct Animation;
+struct Transform;
 
 /**
  * @brief System that processes and updates all Animation components in the scene.

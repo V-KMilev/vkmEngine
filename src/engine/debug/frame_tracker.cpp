@@ -4,6 +4,8 @@
 
 using namespace std::chrono;
 
+namespace Engine {
+
 FrameTracker::FrameTracker()
     : m_lastFrameTime(high_resolution_clock::now())
 {
@@ -51,3 +53,5 @@ void FrameTracker::reset() {
     m_frameTimes.fill(0.0f);
     m_lastFrameTime = high_resolution_clock::now();
 }
+
+} // namespace Engine

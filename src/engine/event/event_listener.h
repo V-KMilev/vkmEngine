@@ -4,6 +4,8 @@
 
 #include "event/event.h"
 
+namespace Engine {
+
 /**
  * @class EventListener
  * @brief Wrapper for an event callback, associated with a unique listener ID, for named signals.
@@ -61,3 +63,4 @@ class EventListener {
         uint32_t m_id;
 };
 
+} // namespace Engine

@@ -3,6 +3,8 @@
 #include "logger.h"
 #include "debug/print_helper.h"
 
+namespace Engine {
+
 Event::Event(
     EventCallback callback,
     EventPriority priority,
@@ -38,3 +40,5 @@ void Event::execute() const {
 EventPriority Event::getPriority() const { return m_priority; }
 const EventCallback& Event::getCallback() const { return m_callback; }
 const std::string& Event::getName() const { return m_name; }
+
+} // namespace Engine

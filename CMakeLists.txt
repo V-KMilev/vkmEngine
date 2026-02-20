@@ -7,6 +7,9 @@ project(engine
 
 set(PROJECT_ROOT_DIR ${CMAKE_SOURCE_DIR})
 
+# Place all binaries (exe + dlls) in a single directory so the exe can find its DLLs
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
 # Git metadata
 include(cmake/git_metadata.cmake)
 
