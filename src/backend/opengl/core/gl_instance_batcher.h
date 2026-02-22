@@ -6,8 +6,8 @@
 
 #include <glm/glm.hpp>
 
-#include "resource_manager.h"
-#include "gl_instance_buffer.h"
+#include "resource/resource_manager.h"
+#include "resource/gl_instance_buffer.h"
 
 namespace Engine {
 
@@ -20,6 +20,7 @@ namespace Engine {
 struct InstanceBatch {
     MeshHandle mesh;
     MaterialHandle material;
+    MaterialType materialType = MaterialType::Opaque;
     uint32_t instanceCount = 0;
 };
 
