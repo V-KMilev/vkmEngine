@@ -39,8 +39,10 @@ void main() {
     // Transform position to world space
     FragPos = vec3(model * vec4(aPos, 1.0));
 
-    // Transform normal to world space (using normal matrix)
-    mat3 normalMatrix = mat3(transpose(inverse(model)));
+    // Normal matrix: mat3(model) is correct for uniform scale (no shear/non-uniform).
+    // Avoids per-vertex inverse() (~30 FLOPs). If non-uniform scale is needed later,
+    // precompute the normal matrix on CPU as an additional instance attribute.
+    mat3 normalMatrix = mat3(model);
     Normal = normalize(normalMatrix * aNorm);
 
     // Pass through texture coordinates
