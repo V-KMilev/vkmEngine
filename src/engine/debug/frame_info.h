@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+namespace Engine {
+
 // Frame timing information
 struct FrameRateInfo {
     float frameTime    = 0.0f;
@@ -41,3 +43,5 @@ struct FrameInfo {
     EntitySystemInfo entitySystemInfo;
     EventSystemInfo eventSystemInfo;
 };
+
+} // namespace Engine

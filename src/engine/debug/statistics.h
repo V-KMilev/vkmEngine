@@ -2,21 +2,28 @@
 
 #include <memory>
 
-#include "frame_info.h"
-#include "frame_tracker.h"
-#include "call_tracker.h"
+#include "debug/frame_info.h"
+#include "debug/frame_tracker.h"
+#include "debug/call_tracker.h"
+
+namespace Engine {
 
 /**
  * @class StatisticTracker
- * @brief Singleton class for gathering and managing engine run-time statistics for profiling and debugging.
+ * @brief Gathers and manages engine run-time statistics for profiling and debugging.
  *
- * The StatisticTracker provides a thread-safe interface to collect and query performance statistics
- * across rendering, entity, and event systems. Its counters are accessed via macros that allow 
- * the tracking code to be enabled/disabled at compile time. This system is intended for 
+ * Provides a thread-safe interface to collect and query performance statistics
+ * across rendering, entity, and event systems. Its counters are accessed via macros that allow
+ * the tracking code to be enabled/disabled at compile time. This system is intended for
  * use in both development and profiling builds, and is largely disabled for release builds.
+ *
+ * Owned by Engine; accessed globally via Engine::getStatistics() free function.
  */
 class StatisticTracker {
     public:
+        StatisticTracker();
+        ~StatisticTracker();
+
         StatisticTracker(const StatisticTracker& other) = delete;
         StatisticTracker& operator=(const StatisticTracker& other) = delete;
 
@@ -24,12 +31,6 @@ class StatisticTracker {
         StatisticTracker& operator=(StatisticTracker && other) = delete;
 
     public:
-        /**
-         * @brief Retrieve the singleton instance.
-         * @return Reference to the global StatisticTracker.
-         */
-        static StatisticTracker& get();
-
         /**
          * @brief Update statistics for the current frame.
          */
@@ -49,52 +50,18 @@ class StatisticTracker {
     public:
         // Recording methods (called by macros, thread-safe)
 
-        /**
-         * @brief Record a graphics draw call (e.g., draw command issued to the GPU).
-         */
         void recordDrawCall();
-        /**
-         * @brief Record the start of a render pass.
-         */
         void recordRenderPass();
-        /**
-         * @brief Record a texture bind operation.
-         */
         void recordTextureBind();
-        /**
-         * @brief Record a shader switch event.
-         */
         void recordShaderSwitch();
 
-        /**
-         * @brief Record an ECS entity update.
-         */
         void recordEntityUpdate();
-        /**
-         * @brief Record when a new entity is created.
-         */
         void recordEntityCreate();
-        /**
-         * @brief Record when an entity is destroyed.
-         */
         void recordEntityDestroy();
 
-        /**
-         * @brief Record when an event is dispatched.
-         */
         void recordEventDispatch();
-        /**
-         * @brief Record when a listener subscribes to an event.
-         */
         void recordEventSubscribe();
-        /**
-         * @brief Record when a listener unsubscribes or is removed.
-         */
         void recordEventUnsubscribe();
-
-    private:
-        StatisticTracker();
-        ~StatisticTracker();
 
     private:
         FrameInfo m_frameInfo;
@@ -104,11 +71,17 @@ class StatisticTracker {
 };
 
 /**
+ * @brief Global accessor for the Engine-owned StatisticTracker.
+ *
+ * Defined in engine.cpp. Used by STATS_* macros to avoid including engine.h.
+ */
+StatisticTracker& getStatistics();
+
+} // namespace Engine
+
+/**
  * @def ENABLE_STATISTICS_TRACKING
  * @brief Compile-time toggle that enables statistics gathering in development/debug builds.
- *
- * If not explicitly set, statistics tracking is enabled for non-release (non-NDEBUG) builds and
- * disabled otherwise (release builds).
  */
 #ifndef ENABLE_STATISTICS_TRACKING
     #ifdef NDEBUG
@@ -120,23 +93,23 @@ class StatisticTracker {
 
 #if ENABLE_STATISTICS_TRACKING
 
-#define STATS_FRAME_UPDATE() StatisticTracker::get().update()
+#define STATS_FRAME_UPDATE() Engine::getStatistics().update()
 
 // Render system
-#define STATS_RECORD_DRAW_CALL()     StatisticTracker::get().recordDrawCall()
-#define STATS_RECORD_RENDER_PASS()   StatisticTracker::get().recordRenderPass()
-#define STATS_RECORD_TEXTURE_BIND()  StatisticTracker::get().recordTextureBind()
-#define STATS_RECORD_SHADER_SWITCH() StatisticTracker::get().recordShaderSwitch()
+#define STATS_RECORD_DRAW_CALL()     Engine::getStatistics().recordDrawCall()
+#define STATS_RECORD_RENDER_PASS()   Engine::getStatistics().recordRenderPass()
+#define STATS_RECORD_TEXTURE_BIND()  Engine::getStatistics().recordTextureBind()
+#define STATS_RECORD_SHADER_SWITCH() Engine::getStatistics().recordShaderSwitch()
 
 // Entity system
-#define STATS_RECORD_ENTITY_UPDATE()  StatisticTracker::get().recordEntityUpdate()
-#define STATS_RECORD_ENTITY_CREATE()  StatisticTracker::get().recordEntityCreate()
-#define STATS_RECORD_ENTITY_DESTROY() StatisticTracker::get().recordEntityDestroy()
+#define STATS_RECORD_ENTITY_UPDATE()  Engine::getStatistics().recordEntityUpdate()
+#define STATS_RECORD_ENTITY_CREATE()  Engine::getStatistics().recordEntityCreate()
+#define STATS_RECORD_ENTITY_DESTROY() Engine::getStatistics().recordEntityDestroy()
 
 // Event system
-#define STATS_RECORD_EVENT_DISPATCH()    StatisticTracker::get().recordEventDispatch()
-#define STATS_RECORD_EVENT_SUBSCRIBE()   StatisticTracker::get().recordEventSubscribe()
-#define STATS_RECORD_EVENT_UNSUBSCRIBE() StatisticTracker::get().recordEventUnsubscribe()
+#define STATS_RECORD_EVENT_DISPATCH()    Engine::getStatistics().recordEventDispatch()
+#define STATS_RECORD_EVENT_SUBSCRIBE()   Engine::getStatistics().recordEventSubscribe()
+#define STATS_RECORD_EVENT_UNSUBSCRIBE() Engine::getStatistics().recordEventUnsubscribe()
 
 #else
 

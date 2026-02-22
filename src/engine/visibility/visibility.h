@@ -1,48 +1,39 @@
 #pragma once
 
-#include <cstdint>
 #include <vector>
 
 #include <glm/glm.hpp>
 
-#include "entity.h"
-
-namespace Engine {
-    class Scene;
-    class ResourceManager;
-}
+#include "ecs/entity.h"
 
 namespace Engine {
 
 /**
- * @brief Result of a visibility pass: entity IDs and model matrices of visible meshes.
+ * @brief A single visible entity and its precomputed world model matrix.
  *
- * entities[i] and modelMatrices[i] correspond. Cached world bounds are updated on
- * Mesh during buildVisibility; modelMatrices are stored here for the renderer.
+ * Combining ID and matrix in one struct improves cache locality when
+ * iterating visibility results (vs parallel vectors that cross cache lines).
  */
-struct Visibility {
-    std::vector<EntityId> entities;          ///< Entity IDs that passed all culling tests.
-    std::vector<glm::mat4> modelMatrices;    ///< Model matrices for each visible entity (same order as entities).
+struct VisibleEntity {
+    EntityId id;
+    glm::mat4 model;
 };
 
 /**
- * @brief Build the visibility list for the current frame.
+ * @brief Result of a visibility pass: camera data and visible entities.
  *
- * Updates Mesh::boundsMin/boundsMax from MeshAsset + Transform, then runs
- * frustum, distance, and screen-size culling. Entity IDs and model matrices
- * of visible meshes are stored in the returned Visibility.
+ * Populated by VisibilitySystem each frame and consumed by downstream
+ * systems (RenderSystem, AnimationSystem).
  *
- * @param scene Scene with Mesh, Transform, Camera. Mesh world bounds are written.
- * @param resources Resource manager for MeshAssets.
- * @param viewportWidth Viewport width in pixels.
- * @param viewportHeight Viewport height in pixels.
- * @return Visibility with entities and modelMatrices of visible meshes.
+ * Camera data is computed once during culling and forwarded to avoid redundant lookups.
  */
-Visibility buildVisibility(
-    Scene& scene,
-    const ResourceManager& resources,
-    uint32_t viewportWidth,
-    uint32_t viewportHeight
-);
+struct Visibility {
+    std::vector<VisibleEntity> entries;
+
+    glm::mat4 view           = glm::mat4(1.0f);
+    glm::mat4 projection     = glm::mat4(1.0f);
+    glm::vec3 cameraPosition = glm::vec3(0.0f);
+    bool hasCamera           = false;
+};
 
 } // namespace Engine
