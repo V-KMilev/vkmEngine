@@ -6,7 +6,7 @@
 
 namespace Engine {
 
-// TODO: Move this to a config file or something
+// TODO(vkm): Move this to a config file
 /**
  * @brief Standard 3D basis direction vectors in world space.
  * 
@@ -14,9 +14,9 @@ namespace Engine {
  * WORLD_AXIS_Y_UP      (+Y): Points in the positive Y direction (upwards).
  * WORLD_AXIS_Z_FORWARD (+Z): Points in the positive Z direction (out of the screen in right-handed systems).
  */
-constexpr glm::vec3 WORLD_AXIS_X_RIGHT   = {1.0f, 0.0f, 0.0f};
-constexpr glm::vec3 WORLD_AXIS_Y_UP      = {0.0f, 1.0f, 0.0f};
-constexpr glm::vec3 WORLD_AXIS_Z_FORWARD = {0.0f, 0.0f, 1.0f};
+inline const glm::vec3 WORLD_AXIS_X_RIGHT   = {1.0f, 0.0f, 0.0f};
+inline const glm::vec3 WORLD_AXIS_Y_UP      = {0.0f, 1.0f, 0.0f};
+inline const glm::vec3 WORLD_AXIS_Z_FORWARD = {0.0f, 0.0f, 1.0f};
 
 /**
  * @brief Component representing spatial transformation (position, rotation, scale) in 3D space.
