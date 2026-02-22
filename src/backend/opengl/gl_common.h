@@ -12,25 +12,25 @@
  *   #include "gl_common.h"
  * 
  * Instead of:
- *   #include "gl_backend.h"
- *   #include "gl_view.h"
- *   #include "gl_mesh.h"
+ *   #include "core/gl_backend.h"
+ *   #include "core/gl_view.h"
+ *   #include "resource/gl_mesh.h"
  *   // ... etc
  */
 
 // Core backend components
-#include "gl_backend.h"
-#include "gl_view.h"
+#include "core/gl_backend.h"
+#include "core/gl_view.h"
 
 // Configuration
-#include "gl_config.h"
-#include "gl_texture_mapping.h"
+#include "config/gl_config.h"
+#include "config/gl_texture_mapping.h"
 
 // Resource wrappers
-#include "gl_mesh.h"
-#include "gl_material.h"
-#include "gl_texture.h"
-#include "gl_lights.h"
+#include "resource/gl_mesh.h"
+#include "resource/gl_material.h"
+#include "resource/gl_texture.h"
+#include "resource/gl_lights.h"
 
 // OpenGL core wrappers (optional, for advanced usage)
 // Uncomment if you need direct access to low-level OpenGL wrappers:

@@ -1,7 +1,7 @@
 #include "gl_instance_batcher.h"
 
-#include "gl_instance_buffer.h"
-#include "render_view.h"
+#include "resource/gl_instance_buffer.h"
+#include "render/render_view.h"
 
 namespace Engine {
 
@@ -13,24 +13,24 @@ void GLInstanceBatcher::build(const std::vector<DrawableData>& drawables) {
     }
 
     // Single pass through sorted drawables to build batches
-    // Drawables are pre-sorted by (material, mesh)
+    // Drawables are pre-sorted by (materialType, material, mesh)
     size_t batchStart = 0;
-    uint32_t currentMesh = drawables[0].mesh.value;
-    uint32_t currentMaterial = drawables[0].material.value;
 
     for (size_t i = 1; i <= drawables.size(); ++i) {
-        bool endOfBatch = (i == drawables.size()) ||
-                          (drawables[i].mesh.value != currentMesh) ||
-                          (drawables[i].material.value != currentMaterial);
+        bool endOfBatch = (i == drawables.size());
+        if (!endOfBatch) {
+            endOfBatch = (drawables[i].materialType != drawables[batchStart].materialType) ||
+                         (drawables[i].mesh != drawables[batchStart].mesh) ||
+                         (drawables[i].material != drawables[batchStart].material);
+        }
 
         if (endOfBatch) {
             uint32_t instanceCount = static_cast<uint32_t>(i - batchStart);
 
-            // Collect matrices for this batch
-            m_matrixScratch.clear();
-            m_matrixScratch.reserve(instanceCount);
-            for (size_t j = batchStart; j < i; ++j) {
-                m_matrixScratch.push_back(drawables[j].model);
+            // Gather matrices for this batch into scratch buffer
+            m_matrixScratch.resize(instanceCount);
+            for (size_t j = 0; j < instanceCount; ++j) {
+                m_matrixScratch[j] = drawables[batchStart + j].model;
             }
 
             // Create or reuse instance buffer for this batch
@@ -38,21 +38,17 @@ void GLInstanceBatcher::build(const std::vector<DrawableData>& drawables) {
             if (batchIndex >= m_instanceBuffers.size()) {
                 m_instanceBuffers.push_back(std::make_unique<GLInstanceBuffer>());
             }
-            m_instanceBuffers[batchIndex]->update(m_matrixScratch, instanceCount);
+            m_instanceBuffers[batchIndex]->update(m_matrixScratch.data(), instanceCount);
 
             // Create batch descriptor
             InstanceBatch batch;
-            batch.mesh.value = currentMesh;
-            batch.material.value = currentMaterial;
+            batch.mesh = drawables[batchStart].mesh;
+            batch.material = drawables[batchStart].material;
+            batch.materialType = drawables[batchStart].materialType;
             batch.instanceCount = instanceCount;
             m_batches.push_back(batch);
 
-            // Start new batch if not at end
-            if (i < drawables.size()) {
-                batchStart = i;
-                currentMesh = drawables[i].mesh.value;
-                currentMaterial = drawables[i].material.value;
-            }
+            batchStart = i;
         }
     }
 }
