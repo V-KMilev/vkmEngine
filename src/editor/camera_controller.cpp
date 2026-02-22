@@ -5,36 +5,34 @@
 #include <algorithm>
 #include <cmath>
 
-#include "window_manager.h"
-#include "input_handle.h"
-#include "glfw_include.h"
+#include "core/engine.h"
+#include "platform/window/input_handle.h"
+#include "platform/window/glfw_include.h"
 
-#include "transform.h"
+#include "ecs/component/transform.h"
 
 namespace Engine {
 
-CameraController::CameraController() : m_cameraEntity(Entity{0}) {}
+CameraController::CameraController() = default;
 
-void CameraController::update(Scene& scene, float deltaTime) {
-    auto& transformStorage = scene.storage<Transform>();
-
-    if (!transformStorage.has(m_cameraEntity.getID())) {
+void CameraController::update(FrameContext& ctx) {
+    if (!ctx.scene.has<Transform>(m_cameraEntity.getID())) {
         return;
     }
 
-    auto& transform = transformStorage.get(m_cameraEntity.getID());
+    auto& transform = ctx.scene.get<Transform>(m_cameraEntity.getID());
 
-    updateFlyMode(transform.position, transform.rotation, deltaTime);
+    updateFlyMode(transform.position, transform.rotation, ctx.deltaTime);
 }
 
 void CameraController::updateFlyMode(glm::vec3& position, glm::quat& rotation, float deltaTime) {
-    auto& windowManager = WindowManager::get();
+    auto& windowManager = Engine::get().getWindow();
     auto& inputHandle   = windowManager.getInputHandle();
-    auto& mouse    = inputHandle.mouse();
-    auto& keyboard = inputHandle.keyboard();
+    auto& mouse    = inputHandle.getMouse();
+    auto& keyboard = inputHandle.getKeyboard();
 
-    // Right mouse: Look around
-    bool isRightMousePressed = mouse.isButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
+    // Right mouse: Look around (skip if editor UI wants mouse)
+    bool isRightMousePressed = !m_editorWantsMouse && mouse.isButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
 
     // Only update cursor mode when state changes
     if (isRightMousePressed != m_isRightMousePressed) {
@@ -57,13 +55,14 @@ void CameraController::updateFlyMode(glm::vec3& position, glm::quat& rotation, f
     glm::vec3 forward = Transform::computeForward(rotation);
     glm::vec3 right   = Transform::computeRight(rotation);
 
-    float scrollDelta = static_cast<float>(mouse.getScrollY());
-
     // Scroll wheel modifies forward/back
+    float scrollDelta = static_cast<float>(mouse.getScrollY());
     if (std::abs(scrollDelta) > 0.001f) {
-        // Combine zoomSensitivity and scrollMultiplier into one calculation
         position += forward * scrollDelta * m_settings.zoomSensitivity * m_settings.scrollMultiplier;
     }
+
+    // Skip keyboard movement if editor UI wants keyboard
+    if (m_editorWantsKeyboard) return;
 
     // Movement speed with optional boost
     float speed = m_settings.moveSpeed * deltaTime;
@@ -76,15 +75,15 @@ void CameraController::updateFlyMode(glm::vec3& position, glm::quat& rotation, f
     if (keyboard.isKeyPressed(GLFW_KEY_S)) position -= forward * speed;
     if (keyboard.isKeyPressed(GLFW_KEY_A)) position += right * speed;
     if (keyboard.isKeyPressed(GLFW_KEY_D)) position -= right * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_Q)) position += Engine::WORLD_AXIS_Y_UP * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_E)) position -= Engine::WORLD_AXIS_Y_UP * speed;
+    if (keyboard.isKeyPressed(GLFW_KEY_Q)) position += WORLD_AXIS_Y_UP * speed;
+    if (keyboard.isKeyPressed(GLFW_KEY_E)) position -= WORLD_AXIS_Y_UP * speed;
 }
 
 void CameraController::updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch) {
     // Yaw rotates around world up axis
-    glm::quat yawQuat = glm::angleAxis(yaw, Engine::WORLD_AXIS_Y_UP);
+    glm::quat yawQuat = glm::angleAxis(yaw, WORLD_AXIS_Y_UP);
     // Pitch rotates around local right axis (negative because mouse Y is inverted)
-    glm::quat pitchQuat = glm::angleAxis(pitch, -Engine::WORLD_AXIS_X_RIGHT);
+    glm::quat pitchQuat = glm::angleAxis(pitch, -WORLD_AXIS_X_RIGHT);
     // Apply yaw first, then pitch (order matters for correct behavior)
     rotation = yawQuat * pitchQuat;
 }
