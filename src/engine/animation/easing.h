@@ -1,4 +1,8 @@
+#pragma once
+
 #include <glm/gtx/easing.hpp>
+
+namespace Engine {
 
 /** @brief Type alias for easing function pointers.
  * An easing function takes a float from 0 to 1 and returns a float from 0 to 1.
@@ -125,4 +129,6 @@ namespace Easing {
     inline float easeInOutBounce(float t) {
         return glm::bounceEaseInOut(t);
     }
-}
+} // namespace Easing
+
+} // namespace Engine

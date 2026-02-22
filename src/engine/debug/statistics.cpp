@@ -1,14 +1,16 @@
-#include "statistics.h"
+#include "debug/statistics.h"
 
-#include "frame_tracker.h"
-#include "call_tracker.h"
+#include "debug/frame_tracker.h"
+#include "debug/call_tracker.h"
+#include "core/engine.h"
+
+namespace Engine {
+
+StatisticTracker& getStatistics() {
+    return Engine::get().getStatistics();
+}
 
 // Lifecycle
-
-StatisticTracker& StatisticTracker::get() {
-    static StatisticTracker instance;
-    return instance;
-}
 
 StatisticTracker::StatisticTracker()
     : m_frameTracker()
@@ -77,3 +79,5 @@ void StatisticTracker::recordEventSubscribe() {
 void StatisticTracker::recordEventUnsubscribe() {
     m_callTracker.recordEventUnsubscribe();
 }
+
+} // namespace Engine

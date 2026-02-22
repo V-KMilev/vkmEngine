@@ -16,7 +16,7 @@ namespace Engine {
  * @tparam T The value type (for example, glm::vec3 for position/scale, glm::quat for rotation).
  */
 template<typename T>
-struct Keyframe {
+class Keyframe {
     public:
         Keyframe() = delete;
         ~Keyframe() = default;
