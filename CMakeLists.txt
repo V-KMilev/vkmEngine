@@ -1,237 +1,58 @@
 cmake_minimum_required(VERSION 3.25.0)
 
-# Define project version
-set(PROJECT_NAME engine)
-set(PROJECT_VERSION_MAJOR 0)
-set(PROJECT_VERSION_MINOR 0)
-set(PROJECT_VERSION_PATCH 1)
+project(engine
+    VERSION 0.0.1
+    LANGUAGES C CXX
+)
+
 set(PROJECT_ROOT_DIR ${CMAKE_SOURCE_DIR})
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+# Place all binaries (exe + dlls) in a single directory so the exe can find its DLLs
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # Git metadata
 include(cmake/git_metadata.cmake)
 
-project(
-  ${PROJECT_NAME}
-  VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}
-  LANGUAGES C CXX
+add_subdirectory(modules)
+
+# Fix submodule include dirs for export compatibility (they lack generator expressions)
+set_property(TARGET vkmLog PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmLog/src>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/vkmLog>
+)
+set_property(TARGET vkmGL PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/buffer>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/buffer/memory>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/buffer/state>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/core>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/shader>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/texture>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/src/components>
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/utils>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/vkmGL>
+)
+set_property(TARGET glew PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/modules/vkmGL/modules/glew/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
-# Dependencies
-if(NOT TARGET vkmLog)
-    add_subdirectory(modules/vkmLog)
-endif()
+add_subdirectory(src/engine)
+add_subdirectory(src/tools)
+add_subdirectory(src/editor)
+add_subdirectory(src/backend/opengl)
 
-if(NOT TARGET vkmGL)
-    add_subdirectory(modules/vkmGL)
-endif()
-
-# ============================================================================
-# Engine Core Library
-# ============================================================================
-add_library(EngineCore STATIC
-    # ECS
-    src/engine/ecs/scene.h
-    src/engine/ecs/entity.h
-    src/engine/ecs/component_storage.h
-    src/engine/ecs/components/transform.h
-    src/engine/ecs/components/camera.h
-    src/engine/ecs/components/mesh.h
-    src/engine/ecs/components/animation.h
-    # Resources
-    src/engine/resources/resource_manager.h
-    src/engine/resources/storage.h
-    src/engine/resources/resource.h
-    src/engine/resources/resource_handle.h
-    src/engine/resources/assets/mesh_asset.h
-    src/engine/resources/assets/mesh_asset.cpp
-    src/engine/resources/assets/material_asset.h
-    src/engine/resources/assets/texture_asset.h
-    # Animation
-    src/engine/animation/animation_manager.h
-    src/engine/animation/animation_manager.cpp
-    src/engine/animation/animation_track.h
-    src/engine/animation/keyframe.h
-    src/engine/animation/easing.h
-    # Visibility (culling, tests)
-    src/engine/visibility/visibility.h
-    src/engine/visibility/visibility.cpp
-    src/engine/visibility/visibility_context.h
-    src/engine/visibility/bounds_utils.h
-    src/engine/visibility/culling/frustum_culler.h
-    src/engine/visibility/culling/screen_size_culling.h
-    src/engine/visibility/culling/distance_culling.h
-    src/engine/visibility/culling/occlusion_culler.h
-    # Events
-    src/engine/events/event_manager.h
-    src/engine/events/event_manager.cpp
-    src/engine/events/event.h
-    src/engine/events/event.cpp
-    src/engine/events/event_listener.h
-    src/engine/events/event_listener.cpp
-    # Platform
-    src/engine/platform/window/window_manager.h
-    src/engine/platform/window/window_manager.cpp
-    src/engine/platform/window/window.h
-    src/engine/platform/window/window.cpp
-    src/engine/platform/window/input_handle.h
-    src/engine/platform/window/input_handle.cpp
-    src/engine/platform/window/frame_limiter.h
-    src/engine/platform/window/frame_limiter.cpp
-    src/engine/platform/window/glfw_include.h
-    src/engine/platform/threading/thread_pool.h
-    src/engine/platform/threading/thread_pool.cpp
-    # Debug
-    src/engine/debug/statistics.h
-    src/engine/debug/statistics.cpp
-    src/engine/debug/frame_info.h
-    src/engine/debug/trackers/frame_tracker.h
-    src/engine/debug/trackers/frame_tracker.cpp
-    src/engine/debug/trackers/call_tracker.h
-    src/engine/debug/trackers/call_tracker.cpp
-    # Editor
-    src/engine/editor/camera_controller.h
-    src/engine/editor/camera_controller.cpp
+add_library(BuildInfo INTERFACE)
+target_compile_definitions(BuildInfo INTERFACE
+    APP_VERSION="${PROJECT_VERSION}"
+    APP_NAME="${PROJECT_NAME}"
+    APP_BRANCH="${PROJECT_BRANCH}"
+    APP_COMMIT_HASH="${PROJECT_COMMIT_HASH}"
+    APP_BUILD_DATE="${PROJECT_BUILD_DATE}"
 )
 
-target_include_directories(EngineCore PUBLIC
-    src/engine/core
-    src/engine/ecs
-    src/engine/ecs/components
-    src/engine/resources
-    src/engine/resources/assets
-    src/engine/animation
-    src/engine/visibility
-    src/engine/visibility/culling
-    src/engine/events
-    src/engine/platform/window
-    src/engine/platform/threading
-    src/engine/debug
-    src/engine/debug/trackers
-    src/engine/editor
-)
+target_link_libraries(EngineEditor PRIVATE BuildInfo)
 
-target_link_libraries(EngineCore PUBLIC
-    # TODO: Remove vkmGL as it only has to be linked to the backend
-    vkmGL
-    vkmLog
-)
-
-target_compile_definitions(EngineCore PUBLIC
-    ENABLE_STATISTICS_TRACKING=1
-)
-
-# ============================================================================
-# Engine Rendering Library
-# ============================================================================
-add_library(EngineRendering STATIC
-    src/engine/rendering/render_backend.h
-    src/engine/rendering/render_manager.h
-    src/engine/rendering/render_manager.cpp
-    src/engine/rendering/render_view.h
-    src/engine/rendering/render_view.cpp
-    src/engine/rendering/pipeline/render_pipeline.h
-    src/engine/rendering/pipeline/render_pipeline.cpp
-    src/engine/rendering/pipeline/render_pass.h
-)
-
-target_include_directories(EngineRendering PUBLIC
-    src/engine/rendering
-    src/engine/rendering/pipeline
-    src/engine/rendering/view
-    src/engine/rendering/culling
-)
-
-target_link_libraries(EngineRendering PUBLIC
-    EngineCore
-)
-
-# ============================================================================
-# OpenGL Backend Library
-# ============================================================================
-add_library(BackendOpenGL STATIC
-    # Core backend components
-    src/backend/opengl/core/gl_backend.h
-    src/backend/opengl/core/gl_backend.cpp
-    src/backend/opengl/core/gl_view.h
-    src/backend/opengl/core/gl_view.cpp
-    src/backend/opengl/core/gl_instance_batcher.h
-    src/backend/opengl/core/gl_instance_batcher.cpp
-    # Resource wrappers
-    src/backend/opengl/resources/gl_mesh.h
-    src/backend/opengl/resources/gl_mesh.cpp
-    src/backend/opengl/resources/gl_instance_buffer.h
-    src/backend/opengl/resources/gl_instance_buffer.cpp
-    src/backend/opengl/resources/gl_material.h
-    src/backend/opengl/resources/gl_material.cpp
-    src/backend/opengl/resources/gl_texture.h
-    src/backend/opengl/resources/gl_texture.cpp
-    src/backend/opengl/resources/gl_lights.h
-    src/backend/opengl/resources/gl_lights.cpp
-    # Configuration
-    src/backend/opengl/config/gl_config.h
-    src/backend/opengl/config/gl_texture_mapping.h
-    # Render passes
-    src/backend/opengl/passes/gl_forward_pass.h
-    src/backend/opengl/passes/gl_forward_pass.cpp
-    src/backend/opengl/passes/gl_aabb_debug_pass.h
-    src/backend/opengl/passes/gl_aabb_debug_pass.cpp
-    src/backend/opengl/passes/gl_grid_pass.h
-    src/backend/opengl/passes/gl_grid_pass.cpp
-    src/backend/opengl/passes/gl_navigation_gizmo_pass.h
-    src/backend/opengl/passes/gl_navigation_gizmo_pass.cpp
-    # Convenience header
-    src/backend/opengl/gl_common.h
-)
-
-target_include_directories(BackendOpenGL PUBLIC
-    src/backend/opengl
-    src/backend/opengl/core
-    src/backend/opengl/resources
-    src/backend/opengl/config
-    src/backend/opengl/passes
-)
-
-target_link_libraries(BackendOpenGL PUBLIC
-    vkmGL
-    EngineRendering
-    EngineTools
-)
-
-# ============================================================================
-# Engine Tools Library (Optional utilities)
-# ============================================================================
-add_library(EngineTools STATIC
-    src/tools/loaders/texture_loaders.h
-    src/tools/loaders/texture_loaders.cpp
-    src/tools/loaders/material_loaders.h
-    src/tools/loaders/material_loaders.cpp
-
-    src/tools/generators/mesh_generators.h
-    src/tools/generators/mesh_generators.cpp
-    src/tools/generators/texture_generators.h
-    src/tools/generators/texture_generators.cpp
-    src/tools/generators/material_generators.h
-    src/tools/generators/material_generators.cpp
-    src/tools/generators/light_generators.h
-    src/tools/generators/light_generators.cpp
-)
-
-target_include_directories(EngineTools PUBLIC
-    src/tools/loaders
-    src/tools/generators
-)
-
-target_link_libraries(EngineTools PUBLIC
-    EngineCore
-)
-
-# ============================================================================
-# Main Executable
-# ============================================================================
 add_executable(${PROJECT_NAME}
     main.cpp
 )
@@ -241,19 +62,83 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     EngineRendering
     BackendOpenGL
     EngineTools
+    EngineEditor
+    BuildInfo
 )
 
-# target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
-
-# Build info definitions
 target_compile_definitions(${PROJECT_NAME} PRIVATE
-    APP_VERSION="${PROJECT_VERSION}"
-    APP_NAME="${PROJECT_NAME}"
     APP_VERSION_MAJOR="${PROJECT_VERSION_MAJOR}"
     APP_VERSION_MINOR="${PROJECT_VERSION_MINOR}"
     APP_VERSION_PATCH="${PROJECT_VERSION_PATCH}"
-    APP_BRANCH="${PROJECT_BRANCH}"
-    APP_COMMIT_HASH="${PROJECT_COMMIT_HASH}"
-    APP_BUILD_DATE="${PROJECT_BUILD_DATE}"
     APP_ROOT_DIR="${PROJECT_ROOT_DIR}"
+)
+
+foreach(_target EngineCore EngineRendering EngineTools EngineEditor BackendOpenGL ${PROJECT_NAME})
+    set_target_properties(${_target} PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+    target_compile_options(${_target} PRIVATE
+        -Wall -Wextra
+        -Wno-unused-value            # VKM_ASSERT expands to `true` in release
+        -Wno-unused-parameter        # Interface stubs, placeholders
+        -Wno-unused-variable         # System refs kept for readability
+        -Wno-stringop-truncation     # Name component strncpy is intentional
+    )
+endforeach()
+
+include(GNUInstallDirs)
+
+install(TARGETS EngineCore EngineRendering BackendOpenGL EngineTools EngineEditor
+                imgui vkmLog vkmGL glm glm-header-only glfw glew BuildInfo
+    EXPORT vkmEngineTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+# Install headers
+install(DIRECTORY src/engine/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY src/backend/opengl/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine/backend/opengl
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY src/tools/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine/tools
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY src/editor/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine/editor
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY modules/vkmLog/src/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmLog
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY modules/vkmGL/src/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmGL
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY modules/vkmGL/utils/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmGL
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY modules/imgui/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imgui
+    FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY modules/vkmGL/modules/glew/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.h")
+
+# Export config
+install(EXPORT vkmEngineTargets
+    FILE vkmEngineTargets.cmake
+    NAMESPACE vkmEngine::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/vkmEngine
+)
+
+# Package config file
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    cmake/vkmEngineConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/vkmEngineConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/vkmEngine
+)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/vkmEngineConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/vkmEngineConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/vkmEngineConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/vkmEngine
 )
