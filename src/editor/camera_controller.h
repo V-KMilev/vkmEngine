@@ -1,13 +1,15 @@
 #pragma once
 
+#include <algorithm>
+#include <cstdint>
+#include <vector>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
-#include <vector>
-#include <cstdint>
-#include <algorithm>
 
-#include "entity.h"
-#include "scene.h"
+#include "ecs/entity.h"
+#include "ecs/scene.h"
+#include "core/system.h"
 
 namespace Engine {
 
@@ -31,10 +33,10 @@ struct CameraControllerSettings {
  * Handles camera movement (WASD, etc.), speed boosting, mouse look, scroll zoom, and pitch/yaw.
  * Designed for use with the Editor camera Entity. Not thread-safe.
  */
-class CameraController {
+class CameraController : public System {
     public:
         CameraController();
-        ~CameraController() = default;
+        ~CameraController() override = default;
 
         CameraController(const CameraController& other) = delete;
         CameraController& operator=(const CameraController& other) = delete;
@@ -50,11 +52,26 @@ class CameraController {
         void setCameraEntity(Entity cameraEntity) { m_cameraEntity = cameraEntity; }
 
         /**
-         * @brief Update and apply camera motions (call once per-frame).
-         * @param scene The ECS scene.
-         * @param deltaTime Time elapsed since last update.
+         * @brief Notify the controller that the editor UI is capturing input.
+         *
+         * When mouse capture is active, camera look/scroll is suppressed.
+         * When keyboard capture is active, WASD movement is suppressed.
+         * Called by EditorSystem each frame.
          */
-        void update(Scene& scene, float deltaTime);
+        void setEditorInputCapture(bool mouse, bool keyboard) {
+            m_editorWantsMouse    = mouse;
+            m_editorWantsKeyboard = keyboard;
+        }
+
+        /**
+         * @brief Update and apply camera motions (call once per-frame).
+         * @param ctx The shared FrameContext for this frame.
+         */
+        void update(FrameContext& ctx) override;
+
+        CameraControllerSettings& getSettings() { return m_settings; }
+        const CameraControllerSettings& getSettings() const { return m_settings; }
+        bool isLooking() const { return m_isRightMousePressed; }
 
     private:
         /**
@@ -81,6 +98,9 @@ class CameraController {
         float m_yaw   = 0.0f;
         float m_pitch = 0.0f;
         bool m_isRightMousePressed = false;
+
+        bool m_editorWantsMouse    = false;
+        bool m_editorWantsKeyboard = false;
 };
 
 } // namespace Engine
