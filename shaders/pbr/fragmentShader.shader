@@ -30,7 +30,7 @@ const int LIGHT_TYPE_DIRECTIONAL = 0;
 const int LIGHT_TYPE_POINT       = 1;
 const int LIGHT_TYPE_SPOT        = 2;
 
-const int MAX_LIGHTS = 16;
+const int MAX_LIGHTS = 32;
 
 // Light data (binding = 1, must match C++ LightGPUData exactly)
 struct Light {
