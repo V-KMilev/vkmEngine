@@ -1,11 +1,12 @@
-#include "window.h"
+#include "platform/window/window.h"
 
 #include <algorithm>
 
 #include "logger.h"
-#include "print_helper.h"
+#include "debug/print_helper.h"
 
-#include "glfw_include.h"
+#include <GL/glew.h>
+#include "platform/window/glfw_include.h"
 
 namespace Engine {
 
@@ -32,14 +33,12 @@ Window::Window(
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, OPENGL_MINOR_VERSION);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    // By default, create a window on the primary and in fullscreen mode
-    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-
+    // Create a windowed mode window by default (pass NULL for monitor)
     m_window = glfwCreateWindow(
         DEFAULT_WINDOW_WIDTH,
         DEFAULT_WINDOW_HEIGHT,
         m_title.c_str(),
-        monitor,
+        NULL,
         NULL
     );
 
@@ -48,10 +47,10 @@ Window::Window(
         throw std::runtime_error("Failed to create window");
     }
 
-    // Make the context current (required for glfwSwapInterval)
+    // Make the context current (required for glewInit and glfwSwapInterval)
     glfwMakeContextCurrent(m_window);
 
-    // Initialize GLEW - must be done after making context current
+    // Initialize GLEW to load GL function pointers (must happen after context is current)
     if (glewInit() != GLEW_OK) {
         LOG_ERROR("Failed to initialize GLEW");
         throw std::runtime_error("Failed to initialize GLEW");
@@ -62,29 +61,31 @@ Window::Window(
     // 1 = VSync enabled
     glfwSwapInterval(m_swapInterval);
 
+    // Cache initial size (updated via GLFW window size callback)
+    glfwGetWindowSize(m_window, &m_width, &m_height);
+
     LOG_TRACE("Constructed Window '%s'", m_title.c_str());
 }
 
 int Window::getWidth() const {
-    int width, height;
-    glfwGetWindowSize(m_window, &width, &height);
-    return width;
+    return m_width;
 }
 int Window::getHeight() const {
-    int width, height;
-    glfwGetWindowSize(m_window, &width, &height);
-    return height;
+    return m_height;
 }
+
+void Window::setSize(int width, int height) {
+    m_width = width;
+    m_height = height;
+}
+
 int Window::getRefreshRate() const {
     GLFWmonitor* monitor = glfwGetWindowMonitor(m_window);
 
     // If windowed, fall back to the primary monitor
     if (!monitor) {
-        LOG_ERROR("Failed to get window monitor");
-        return 0;
+        monitor = glfwGetPrimaryMonitor();
     }
-
-    monitor = glfwGetPrimaryMonitor();
 
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 
