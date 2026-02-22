@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 struct GLFWwindow;
@@ -76,12 +77,6 @@ class WindowManager {
         WindowManager& operator=(WindowManager && other) = delete;
 
     public:
-        /**
-         * @brief Gets the singleton instance of WindowManager.
-         * @return Reference to the singleton WindowManager.
-         */
-        static WindowManager& get();
-
         /**
          * @brief Creates the main application window with the specified title.
          * @param title The window title.
@@ -162,14 +157,21 @@ class WindowManager {
          */
         size_t getHeight() const;
 
-    private:
-        WindowManager() = default;
+        /**
+         * @brief Get the underlying GLFW window pointer.
+         * @return Pointer to the GLFWwindow, or nullptr if not initialized.
+         */
+        GLFWwindow* getWindowContext() const;
+
+    public:
+        WindowManager();
         ~WindowManager();
 
     private:
         std::unique_ptr<Window> m_window;
         std::unique_ptr<InputHandle> m_inputHandle;
         std::unique_ptr<FrameLimiter> m_frameLimiter;
+
 };
 
 } // namespace Engine
