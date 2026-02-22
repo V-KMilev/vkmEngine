@@ -5,7 +5,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include "animation_track.h"
+#include "animation/animation_track.h"
 
 namespace Engine {
 
