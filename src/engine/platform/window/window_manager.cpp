@@ -1,15 +1,19 @@
-#include "window_manager.h"
+#include "platform/window/window_manager.h"
 
-#include "glfw_include.h"
+#include <algorithm>
 
-#include "window.h"
-#include "input_handle.h"
-#include "frame_limiter.h"
+#include "platform/window/glfw_include.h"
+
+#include "platform/window/window.h"
+#include "platform/window/input_handle.h"
+#include "platform/window/frame_limiter.h"
 
 #include "logger.h"
-#include "print_helper.h"
+#include "debug/print_helper.h"
 
 namespace Engine {
+
+WindowManager::WindowManager() = default;
 
 namespace {
     GLFWmonitor* getCurrentMonitor(GLFWwindow* window) {
@@ -28,14 +32,14 @@ namespace {
             int monitorX, monitorY;
             glfwGetMonitorPos(monitors[i], &monitorX, &monitorY);
 
-            // int overlapX = max(0, min(windowX + windowWidth, monitorX + mode->width) - max(windowX, monitorX));
-            // int overlapY = max(0, min(windowY + windowHeight, monitorY + mode->height) - max(windowY, monitorY));
-            // int overlap = overlapX * overlapY;
+            int overlapX = std::max(0, std::min(windowX + windowWidth, monitorX + mode->width) - std::max(windowX, monitorX));
+            int overlapY = std::max(0, std::min(windowY + windowHeight, monitorY + mode->height) - std::max(windowY, monitorY));
+            int overlap = overlapX * overlapY;
 
-            // if (overlap > bestOverlap) {
-            //     bestOverlap = overlap;
-            //     bestMonitor = monitors[i];
-            // }
+            if (overlap > bestOverlap) {
+                bestOverlap = overlap;
+                bestMonitor = monitors[i];
+            }
         }
         
         return bestMonitor ? bestMonitor : glfwGetPrimaryMonitor();
@@ -48,17 +52,12 @@ WindowManager::~WindowManager() {
     }
 }
 
-WindowManager& WindowManager::get() {
-    static WindowManager instance;
-    return instance;
-}
-
 void WindowManager::createWindow(const std::string& title) {
     m_window = std::make_unique<Window>(title);
     m_inputHandle = std::make_unique<InputHandle>();
     m_frameLimiter = std::make_unique<FrameLimiter>();
 
-    m_inputHandle->mouse().setupScrollCallback(m_window->getWindowContext(), m_inputHandle.get());
+    m_inputHandle->setupCallbacks(m_window->getWindowContext(), m_window.get());
 }
 
 bool WindowManager::shouldClose() const {
@@ -144,11 +143,16 @@ bool WindowManager::updateInput() {
         return false;
     }
 
-    // Reset scroll delta before polling new events
-    m_inputHandle->mouse().resetScrollDelta();
+    // Snapshot previous keyboard state before new events arrive
+    m_inputHandle->getKeyboard().update();
 
+    // Reset scroll delta before polling new events
+    m_inputHandle->getMouse().resetScrollDelta();
+
+    // Process GLFW events - key/scroll callbacks fire here
     glfwPollEvents();
 
+    // Update mouse state (cursor position, button states)
     m_inputHandle->update(windowContext);
 
     return true;
@@ -215,6 +219,10 @@ size_t WindowManager::getHeight() const {
     }
 
     return m_window->getHeight();
+}
+
+GLFWwindow* WindowManager::getWindowContext() const {
+    return m_window ? m_window->getWindowContext() : nullptr;
 }
 
 } // namespace Engine

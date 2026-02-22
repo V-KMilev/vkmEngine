@@ -14,6 +14,8 @@
 #include <utility>
 #include <vector>
 
+namespace Engine {
+
 /**
  * @brief Per-worker queue structure for work-stealing thread pool.
  *
@@ -221,6 +223,11 @@ void ThreadPool::parallelFor(size_t begin, size_t end, size_t grain, Function&& 
     std::atomic<size_t> nextIndex{begin};
     const size_t workerCount = size();
 
+    // Batch-scoped completion tracking (avoids blocking on unrelated in-flight tasks)
+    std::atomic<size_t> remaining{workerCount};
+    std::mutex doneMutex;
+    std::condition_variable doneCv;
+
     // Push tasks directly to worker local queues (avoids global queue bottleneck)
     for (size_t i = 0; i < workerCount; ++i) {
         std::function<void()> task = [&, i] {
@@ -230,6 +237,12 @@ void ThreadPool::parallelFor(size_t begin, size_t end, size_t grain, Function&& 
 
                 size_t endIndex = std::min(startIndex + grain, end);
                 function(startIndex, endIndex, i);
+            }
+
+            // Signal this worker's task is done
+            if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                std::lock_guard<std::mutex> lock(doneMutex);
+                doneCv.notify_one();
             }
         };
 
@@ -247,5 +260,9 @@ void ThreadPool::parallelFor(size_t begin, size_t end, size_t grain, Function&& 
         m_conditionVariable.notify_one();
     }
 
-    waitIdle();
+    // Wait only for this batch to complete, not all in-flight tasks
+    std::unique_lock<std::mutex> lock(doneMutex);
+    doneCv.wait(lock, [&] { return remaining.load(std::memory_order_acquire) == 0; });
 }
+
+} // namespace Engine
