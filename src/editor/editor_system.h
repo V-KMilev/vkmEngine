@@ -1,10 +1,13 @@
 #pragma once
 
-#include <imgui.h>
 #include <vector>
+
+#include <imgui.h>
 
 #include "core/system.h"
 #include "ecs/entity.h"
+#include "editor_keybinds.h"
+#include "transform_gizmo.h"
 #include "platform/system_metrics.h"
 
 struct GLFWwindow;
@@ -27,10 +30,11 @@ class EditorSystem : public System {
         );
         ~EditorSystem() override;
 
-        EditorSystem(const EditorSystem&) = delete;
-        EditorSystem& operator=(const EditorSystem&) = delete;
-        EditorSystem(EditorSystem&&) = delete;
-        EditorSystem& operator=(EditorSystem&&) = delete;
+        EditorSystem(const EditorSystem& other) = delete;
+        EditorSystem& operator=(const EditorSystem& other) = delete;
+
+        EditorSystem(EditorSystem && other) = delete;
+        EditorSystem& operator=(EditorSystem && other) = delete;
 
         void update(FrameContext& ctx) override;
 
@@ -64,10 +68,17 @@ class EditorSystem : public System {
         // Navigation gizmo (ImGui DrawList, replaces GL render pass)
         void drawNavigationGizmo(const FrameContext& ctx, ImVec2 regionMin, ImVec2 regionMax);
 
+        // Transform gizmo (translate/rotate/scale manipulator)
+        void drawTransformGizmo(FrameContext& ctx, ImVec2 vpMin, float vpWidth, float vpHeight);
+
+        // Viewport entity picking (ray cast)
+        void handleViewportPick(FrameContext& ctx, ImVec2 vpMin, float vpWidth, float vpHeight);
+
         // Entity operations
         EntityId createEntity(Scene& scene, ResourceManager& resources, const char* type);
         void duplicateEntity(Scene& scene, EntityId source);
         void deleteEntity(Scene& scene, EntityId entity);
+        void focusOnSelected(FrameContext& ctx);
 
         // Widget helpers
         static bool drawVec3Control(const char* label, float* values,
@@ -111,11 +122,20 @@ class EditorSystem : public System {
         size_t m_lastEntityCount = 0;
         bool m_hierarchyDirty = true;
 
+        // Keybind configuration
+        EditorKeybinds m_keybinds;
+
+        // Transform gizmo state
+        GizmoOperation m_gizmoOperation = GizmoOperation::Translate;
+        GizmoMode      m_gizmoMode      = GizmoMode::Local;
+        TransformGizmo m_gizmo;
+
         // Rendering state
         bool m_wireframe = false;
         bool m_viewportHovered = false;
         bool m_editorVisible = true;
         bool m_f5WasDown = false;
+        bool m_leftMouseWasDown = false;
 
         SystemMetrics m_metrics;
 };
