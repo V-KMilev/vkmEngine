@@ -63,6 +63,31 @@ void EditorSystem::drawViewportOverlay(const FrameContext& ctx) {
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();
+
+    // Gizmo mode indicator (bottom-left)
+    {
+        char wKey[16], eKey[16], rKey[16], spKey[16];
+        getKeyBindLabel(m_keybinds.gizmoTranslate, wKey, sizeof(wKey));
+        getKeyBindLabel(m_keybinds.gizmoRotate, eKey, sizeof(eKey));
+        getKeyBindLabel(m_keybinds.gizmoScale, rKey, sizeof(rKey));
+        getKeyBindLabel(m_keybinds.gizmoToggleSpace, spKey, sizeof(spKey));
+
+        const char* opName = (m_gizmoOperation == GizmoOperation::Translate) ? "Translate" :
+                             (m_gizmoOperation == GizmoOperation::Rotate)    ? "Rotate"    :
+                                                                               "Scale";
+        const char* opKey  = (m_gizmoOperation == GizmoOperation::Translate) ? wKey :
+                             (m_gizmoOperation == GizmoOperation::Rotate)    ? eKey : rKey;
+        const char* modeName = (m_gizmoMode == GizmoMode::Local) ? "Local" : "World";
+
+        char gizmoInfo[64];
+        snprintf(gizmoInfo, sizeof(gizmoInfo), "%s [%s] | %s [%s]", opName, opKey, modeName, spKey);
+
+        ImVec2 textSize = ImGui::CalcTextSize(gizmoInfo);
+        ImGui::SetCursorPos(ImVec2(8, regionSize.y - textSize.y - 8));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.7f, 0.85f, 0.9f));
+        ImGui::TextUnformatted(gizmoInfo);
+        ImGui::PopStyleColor();
+    }
 }
 void EditorSystem::drawNavigationGizmo(const FrameContext& ctx, ImVec2 regionMin, ImVec2 regionMax) {
     if (!ctx.visibility || !ctx.visibility->hasCamera) return;

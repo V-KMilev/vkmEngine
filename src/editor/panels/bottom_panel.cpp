@@ -108,6 +108,75 @@ void EditorSystem::drawSettingsTab(FrameContext& ctx) {
             ImGui::EndTabItem();
         }
 
+        // Keybinds
+        if (ImGui::BeginTabItem("Keybinds")) {
+            ImGui::Spacing();
+
+            static const char* s_rebindTarget = nullptr;
+
+            auto drawKeybindRow = [&](const char* label, KeyBind& bind) {
+                drawPropertyLabel(label);
+                char keyLabel[48];
+                getKeyBindLabel(bind, keyLabel, sizeof(keyLabel));
+
+                char btnId[80];
+                snprintf(btnId, sizeof(btnId), "%s##%s",
+                         (s_rebindTarget == label) ? "Press key..." : keyLabel, label);
+
+                if (ImGui::Button(btnId, ImVec2(120, 0))) {
+                    s_rebindTarget = label;
+                }
+
+                if (s_rebindTarget == label) {
+                    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k) {
+                        auto candidate = static_cast<ImGuiKey>(k);
+                        if (candidate == ImGuiKey_LeftCtrl  || candidate == ImGuiKey_RightCtrl  ||
+                            candidate == ImGuiKey_LeftShift || candidate == ImGuiKey_RightShift ||
+                            candidate == ImGuiKey_LeftAlt   || candidate == ImGuiKey_RightAlt)
+                            continue;
+
+                        if (ImGui::IsKeyPressed(candidate)) {
+                            const ImGuiIO& io = ImGui::GetIO();
+                            bind.key  = candidate;
+                            bind.mods = 0;
+                            if (io.KeyCtrl)  bind.mods |= KeyMod_Ctrl;
+                            if (io.KeyShift) bind.mods |= KeyMod_Shift;
+                            if (io.KeyAlt)   bind.mods |= KeyMod_Alt;
+                            s_rebindTarget = nullptr;
+                            break;
+                        }
+                    }
+                }
+            };
+
+            ImGui::SeparatorText("Panels");
+            drawKeybindRow("Toggle Stats",     m_keybinds.toggleStats);
+            drawKeybindRow("Toggle Hierarchy", m_keybinds.toggleHierarchy);
+            drawKeybindRow("Toggle Inspector", m_keybinds.toggleInspector);
+            drawKeybindRow("Toggle Bottom",    m_keybinds.toggleBottom);
+            drawKeybindRow("Toggle Editor",    m_keybinds.toggleEditor);
+
+            ImGui::SeparatorText("Entity");
+            drawKeybindRow("Delete",         m_keybinds.deleteEntity);
+            drawKeybindRow("Deselect",       m_keybinds.deselect);
+            drawKeybindRow("Duplicate",      m_keybinds.duplicate);
+            drawKeybindRow("Focus Selected", m_keybinds.focusSelected);
+
+            ImGui::SeparatorText("Gizmo (disabled during fly-cam)");
+            drawKeybindRow("Translate",   m_keybinds.gizmoTranslate);
+            drawKeybindRow("Rotate",      m_keybinds.gizmoRotate);
+            drawKeybindRow("Scale",       m_keybinds.gizmoScale);
+            drawKeybindRow("Local/World", m_keybinds.gizmoToggleSpace);
+
+            ImGui::Spacing();
+            if (ImGui::Button("Reset to Defaults")) {
+                m_keybinds = EditorKeybinds{};
+                s_rebindTarget = nullptr;
+            }
+
+            ImGui::EndTabItem();
+        }
+
         ImGui::EndTabBar();
     }
 }

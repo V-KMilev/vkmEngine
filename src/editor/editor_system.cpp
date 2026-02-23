@@ -3,7 +3,6 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
-
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -26,6 +25,7 @@
 #include "camera_controller.h"
 #include "render/render_system.h"
 #include "resource/resource_manager.h"
+#include "visibility/bounds_utils.h"
 #include "debug/statistics.h"
 
 #include "generator/light_generators.h"
@@ -205,6 +205,49 @@ void EditorSystem::deleteEntity(Scene& scene, EntityId entity) {
     m_hierarchyDirty = true;
 }
 
+void EditorSystem::focusOnSelected(FrameContext& ctx) {
+    if (!m_selectedEntity || !ctx.scene.isAlive(m_selectedEntity)) return;
+    if (!ctx.scene.has<Transform>(m_selectedEntity)) return;
+    if (!m_cameraController) return;
+
+    bool hasParent = ctx.scene.has<Hierarchy>(m_selectedEntity)
+                  && ctx.scene.get<Hierarchy>(m_selectedEntity).parent;
+
+    glm::vec3 targetPos;
+    float focusDistance = 5.0f;
+
+    if (ctx.scene.has<Mesh>(m_selectedEntity)) {
+        const auto& mesh = ctx.scene.get<Mesh>(m_selectedEntity);
+        const auto& asset = ctx.resources.get(mesh.mesh);
+
+        glm::mat4 model = hasParent
+            ? HierarchyUtils::computeWorldMatrix(ctx.scene, m_selectedEntity)
+            : Transform::computeModelMatrix(ctx.scene.get<Transform>(m_selectedEntity));
+
+        if (hasValidBounds(asset.boundsMin, asset.boundsMax)) {
+            glm::vec3 localCenter = (asset.boundsMin + asset.boundsMax) * 0.5f;
+            targetPos = glm::vec3(model * glm::vec4(localCenter, 1.0f));
+
+            glm::vec3 extent = asset.boundsMax - asset.boundsMin;
+            float maxExtent = glm::max(extent.x, glm::max(extent.y, extent.z));
+            const auto& t = ctx.scene.get<Transform>(m_selectedEntity);
+            float maxScale = glm::max(t.scale.x, glm::max(t.scale.y, t.scale.z));
+            focusDistance = glm::max(maxExtent * maxScale * 1.5f, 2.0f);
+        } else {
+            targetPos = glm::vec3(model[3]);
+        }
+    } else {
+        if (hasParent) {
+            glm::mat4 wm = HierarchyUtils::computeWorldMatrix(ctx.scene, m_selectedEntity);
+            targetPos = glm::vec3(wm[3]);
+        } else {
+            targetPos = ctx.scene.get<Transform>(m_selectedEntity).position;
+        }
+    }
+
+    m_cameraController->focusOn(ctx.scene, targetPos, focusDistance);
+}
+
 void EditorSystem::update(FrameContext& ctx) {
     if (!m_editorVisible) {
         int f5 = glfwGetKey(m_window, GLFW_KEY_F5);
@@ -215,7 +258,8 @@ void EditorSystem::update(FrameContext& ctx) {
     }
 
     if (m_cameraController) {
-        bool blockMouse = !m_viewportHovered && !m_cameraController->isLooking();
+        bool blockMouse = (!m_viewportHovered && !m_cameraController->isLooking())
+                       || m_gizmo.isOver();
         m_cameraController->setEditorInputCapture(blockMouse, ImGui::GetIO().WantTextInput);
     }
 
@@ -230,20 +274,35 @@ void EditorSystem::update(FrameContext& ctx) {
     m_metrics.update(ctx.deltaTime);
 
     if (!ImGui::GetIO().WantTextInput) {
-        if (ImGui::IsKeyPressed(ImGuiKey_F1)) m_showStats     = !m_showStats;
-        if (ImGui::IsKeyPressed(ImGuiKey_F2)) m_showHierarchy = !m_showHierarchy;
-        if (ImGui::IsKeyPressed(ImGuiKey_F3)) m_showInspector = !m_showInspector;
-        if (ImGui::IsKeyPressed(ImGuiKey_F4)) m_showBottom    = !m_showBottom;
-        if (ImGui::IsKeyPressed(ImGuiKey_F5)) m_editorVisible = false;
-        if (ImGui::IsKeyPressed(ImGuiKey_Delete) && m_selectedEntity && ctx.scene.isAlive(m_selectedEntity)) {
+        const auto& kb = m_keybinds;
+
+        if (isPressed(kb.toggleStats))     m_showStats     = !m_showStats;
+        if (isPressed(kb.toggleHierarchy)) m_showHierarchy = !m_showHierarchy;
+        if (isPressed(kb.toggleInspector)) m_showInspector = !m_showInspector;
+        if (isPressed(kb.toggleBottom))    m_showBottom    = !m_showBottom;
+        if (isPressed(kb.toggleEditor))    m_editorVisible = false;
+
+        if (isPressed(kb.deleteEntity) && m_selectedEntity && ctx.scene.isAlive(m_selectedEntity)) {
             deleteEntity(ctx.scene, m_selectedEntity);
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        if (isPressed(kb.deselect)) {
             m_selectedEntity = {};
         }
-        if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D)
-            && m_selectedEntity && ctx.scene.isAlive(m_selectedEntity)) {
+        if (isPressed(kb.duplicate) && m_selectedEntity && ctx.scene.isAlive(m_selectedEntity)) {
             duplicateEntity(ctx.scene, m_selectedEntity);
+        }
+        if (isPressed(kb.focusSelected) && m_selectedEntity && ctx.scene.isAlive(m_selectedEntity)) {
+            focusOnSelected(ctx);
+        }
+
+        // Gizmo mode shortcuts (only when camera NOT in fly mode)
+        if (!m_cameraController->isLooking()) {
+            if (isPressed(kb.gizmoTranslate))   m_gizmoOperation = GizmoOperation::Translate;
+            if (isPressed(kb.gizmoRotate))      m_gizmoOperation = GizmoOperation::Rotate;
+            if (isPressed(kb.gizmoScale))       m_gizmoOperation = GizmoOperation::Scale;
+            if (isPressed(kb.gizmoToggleSpace)) {
+                m_gizmoMode = (m_gizmoMode == GizmoMode::Local) ? GizmoMode::World : GizmoMode::Local;
+            }
         }
     }
 
@@ -297,6 +356,8 @@ void EditorSystem::update(FrameContext& ctx) {
                 m_viewportHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
                 if (m_showStats) drawViewportOverlay(ctx);
                 drawNavigationGizmo(ctx, vpMin, vpMax);
+                drawTransformGizmo(ctx, vpMin, centerW, mainH);
+                handleViewportPick(ctx, vpMin, centerW, mainH);
             } else {
                 m_viewportHovered = false;
             }
@@ -343,10 +404,11 @@ void EditorSystem::drawMenuBar(FrameContext& ctx) {
     if (!ImGui::BeginMenuBar()) return;
 
     if (ImGui::BeginMenu("View")) {
-        ImGui::MenuItem("Stats Overlay", "F1", &m_showStats);
-        ImGui::MenuItem("Hierarchy",     "F2", &m_showHierarchy);
-        ImGui::MenuItem("Inspector",     "F3", &m_showInspector);
-        ImGui::MenuItem("Bottom Panel",  "F4", &m_showBottom);
+        char lbl[48];
+        ImGui::MenuItem("Stats Overlay", getKeyBindLabel(m_keybinds.toggleStats, lbl, sizeof(lbl)), &m_showStats);
+        ImGui::MenuItem("Hierarchy",     getKeyBindLabel(m_keybinds.toggleHierarchy, lbl, sizeof(lbl)), &m_showHierarchy);
+        ImGui::MenuItem("Inspector",     getKeyBindLabel(m_keybinds.toggleInspector, lbl, sizeof(lbl)), &m_showInspector);
+        ImGui::MenuItem("Bottom Panel",  getKeyBindLabel(m_keybinds.toggleBottom, lbl, sizeof(lbl)), &m_showBottom);
         ImGui::EndMenu();
     }
 
@@ -360,7 +422,8 @@ void EditorSystem::drawMenuBar(FrameContext& ctx) {
             ctx.scene.forEach<Animation>([](EntityId, Animation& a) { a.playing = true; });
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Deselect", "Escape")) {
+        char deselectLbl[48];
+        if (ImGui::MenuItem("Deselect", getKeyBindLabel(m_keybinds.deselect, deselectLbl, sizeof(deselectLbl)))) {
             m_selectedEntity = {};
         }
         ImGui::EndMenu();

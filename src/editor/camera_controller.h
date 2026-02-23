@@ -73,6 +73,9 @@ class CameraController : public System {
         const CameraControllerSettings& getSettings() const { return m_settings; }
         bool isLooking() const { return m_isRightMousePressed; }
 
+        /// Move camera to focus on a target position from a given distance.
+        void focusOn(Scene& scene, const glm::vec3& target, float distance);
+
     private:
         /**
          * @brief Update camera transform based on fly mode controls.

@@ -79,6 +79,31 @@ void CameraController::updateFlyMode(glm::vec3& position, glm::quat& rotation, f
     if (keyboard.isKeyPressed(GLFW_KEY_E)) position -= WORLD_AXIS_Y_UP * speed;
 }
 
+void CameraController::focusOn(Scene& scene, const glm::vec3& target, float distance) {
+    EntityId camId = m_cameraEntity.getID();
+    if (!camId || !scene.has<Transform>(camId)) return;
+
+    auto& transform = scene.get<Transform>(camId);
+
+    // Direction from target to current camera position
+    glm::vec3 dir = transform.position - target;
+    float len = glm::length(dir);
+    if (len < 0.001f) {
+        dir = -Transform::computeForward(transform.rotation);
+    } else {
+        dir /= len;
+    }
+
+    transform.position = target + dir * distance;
+
+    // Recompute yaw/pitch from new look direction (consistent with updateRotationFromAngles)
+    glm::vec3 lookDir = glm::normalize(target - transform.position);
+    m_pitch = std::asin(std::clamp(-lookDir.y, -1.0f, 1.0f));
+    m_yaw   = std::atan2(-lookDir.x, lookDir.z);
+
+    updateRotationFromAngles(transform.rotation, m_yaw, m_pitch);
+}
+
 void CameraController::updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch) {
     // Yaw rotates around world up axis
     glm::quat yawQuat = glm::angleAxis(yaw, WORLD_AXIS_Y_UP);

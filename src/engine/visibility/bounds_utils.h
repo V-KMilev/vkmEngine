@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <limits>
 
 namespace Engine {
 
@@ -48,6 +49,36 @@ inline void localToWorldAABB(
         worldMin += glm::min(a, b);
         worldMax += glm::max(a, b);
     }
+}
+
+/**
+ * @brief Ray-AABB intersection test using the slab method.
+ *
+ * @param origin    Ray origin in world space.
+ * @param invDir    Component-wise inverse of ray direction (1/dir).
+ * @param worldMin  AABB minimum corner in world space.
+ * @param worldMax  AABB maximum corner in world space.
+ * @param[out] tHit Distance along the ray to the nearest intersection point.
+ * @return True if the ray intersects the AABB (with tMax >= 0).
+ */
+inline bool rayIntersectsAABB(
+    const glm::vec3& origin,
+    const glm::vec3& invDir,
+    const glm::vec3& worldMin,
+    const glm::vec3& worldMax,
+    float& tHit
+) noexcept {
+    const glm::vec3 t0 = (worldMin - origin) * invDir;
+    const glm::vec3 t1 = (worldMax - origin) * invDir;
+
+    const glm::vec3 tMinV = glm::min(t0, t1);
+    const glm::vec3 tMaxV = glm::max(t0, t1);
+
+    float tMin = glm::max(glm::max(tMinV.x, tMinV.y), tMinV.z);
+    float tMax = glm::min(glm::min(tMaxV.x, tMaxV.y), tMaxV.z);
+
+    tHit = tMin;
+    return tMax >= tMin && tMax >= 0.0f;
 }
 
 } // namespace Engine
