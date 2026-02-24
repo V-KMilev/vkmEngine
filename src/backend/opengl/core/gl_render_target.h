@@ -2,7 +2,7 @@
 
 #include <GL/glew.h>
 
-#include "render/render_target.h"
+#include "system/render/render_target.h"
 #include "gl_frame_buffer.h"
 #include "gl_render_buffer.h"
 

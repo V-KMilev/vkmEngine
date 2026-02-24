@@ -1,4 +1,4 @@
-#include "visibility/visibility_system.h"
+#include "system/visibility/visibility_system.h"
 
 #include <algorithm>
 #include <cstring>
@@ -13,13 +13,13 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/hierarchy_utils.h"
 
-#include "visibility/bounds_utils.h"
-#include "visibility/visibility_context.h"
+#include "system/visibility/bounds_utils.h"
+#include "system/visibility/visibility_context.h"
 
-#include "visibility/culling/frustum_culler.h"
-#include "visibility/culling/screen_size_culling.h"
-#include "visibility/culling/distance_culling.h"
-#include "visibility/culling/occlusion_culler.h"
+#include "system/visibility/culling/frustum_culler.h"
+#include "system/visibility/culling/screen_size_culling.h"
+#include "system/visibility/culling/distance_culling.h"
+#include "system/visibility/culling/occlusion_culler.h"
 
 #include "platform/threading/thread_pool.h"
 

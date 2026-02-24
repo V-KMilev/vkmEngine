@@ -2,9 +2,9 @@
 
 #include "core/engine.h"
 #include "camera_controller.h"
-#include "visibility/visibility_system.h"
-#include "render/render_system.h"
-#include "render/render_pipeline.h"
+#include "system/visibility/visibility_system.h"
+#include "system/render/render_system.h"
+#include "system/render/render_pipeline.h"
 #include "platform/threading/thread_pool.h"
 
 namespace Engine {

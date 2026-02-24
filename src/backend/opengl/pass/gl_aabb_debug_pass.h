@@ -4,7 +4,7 @@
 
 #include <glm/glm.hpp>
 
-#include "render/render_pass.h"
+#include "system/render/render_pass.h"
 
 #include "resource/gl_mesh.h"
 

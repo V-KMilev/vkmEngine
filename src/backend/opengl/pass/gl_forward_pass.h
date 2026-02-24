@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/render_pass.h"
+#include "system/render/render_pass.h"
 #include "resource/material_asset.h"
 
 namespace Core {

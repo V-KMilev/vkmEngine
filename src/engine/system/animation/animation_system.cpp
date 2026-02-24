@@ -1,4 +1,4 @@
-#include "animation/animation_system.h"
+#include "system/animation/animation_system.h"
 
 #include <algorithm>
 #include <cmath>
@@ -8,7 +8,7 @@
 #include "ecs/scene.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/transform.h"
-#include "visibility/visibility.h"
+#include "system/visibility/visibility.h"
 
 namespace Engine {
 

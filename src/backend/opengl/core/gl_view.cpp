@@ -9,7 +9,7 @@
 #include "config/gl_config.h"
 #include "config/gl_texture_mapping.h"
 #include "resource/resource_manager.h"
-#include "render/render_view.h"
+#include "system/render/render_view.h"
 
 #include "resource/gl_mesh.h"
 #include "resource/gl_material.h"
