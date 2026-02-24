@@ -23,9 +23,9 @@
 #include "ecs/component/name.h"
 #include "ecs/hierarchy_utils.h"
 #include "camera_controller.h"
-#include "render/render_system.h"
+#include "system/render/render_system.h"
 #include "resource/resource_manager.h"
-#include "visibility/bounds_utils.h"
+#include "system/visibility/bounds_utils.h"
 #include "debug/statistics.h"
 
 #include "generator/light_generators.h"

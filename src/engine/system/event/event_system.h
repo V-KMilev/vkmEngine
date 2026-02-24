@@ -5,8 +5,8 @@
 #include <queue>
 #include <mutex>
 
-#include "event/event_listener.h"
-#include "event/event.h"
+#include "system/event/event_listener.h"
+#include "system/event/event.h"
 #include "core/system.h"
 
 namespace Engine {

@@ -6,9 +6,9 @@ file(GLOB_RECURSE ENGINECORE_SOURCES
     core/*.cpp
     ecs/*.cpp
     resource/*.cpp
-    animation/*.cpp
-    visibility/*.cpp
-    event/*.cpp
+    system/animation/*.cpp
+    system/visibility/*.cpp
+    system/event/*.cpp
     platform/window/*.cpp
     platform/threading/*.cpp
     debug/*.cpp
@@ -44,7 +44,7 @@ target_compile_definitions(EngineCore PUBLIC
 # ============================================================================
 # Engine Rendering Library
 # ============================================================================
-file(GLOB_RECURSE ENGINERENDERING_SOURCES render/*.cpp)
+file(GLOB_RECURSE ENGINERENDERING_SOURCES system/render/*.cpp)
 
 add_library(EngineRendering STATIC ${ENGINERENDERING_SOURCES})
 

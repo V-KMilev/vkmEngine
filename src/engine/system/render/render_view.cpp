@@ -1,4 +1,4 @@
-#include "render/render_view.h"
+#include "system/render/render_view.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -7,7 +7,7 @@
 #include "logger.h"
 
 #include "ecs/scene.h"
-#include "visibility/visibility.h"
+#include "system/visibility/visibility.h"
 #include "ecs/component/mesh.h"
 #include "ecs/component/light.h"
 #include "ecs/component/transform.h"

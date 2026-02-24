@@ -9,10 +9,10 @@
 
 // Engine
 #include "core/engine.h"
-#include "animation/animation_system.h"
-#include "event/event_system.h"
-#include "visibility/visibility_system.h"
-#include "render/render_system.h"
+#include "system/animation/animation_system.h"
+#include "system/event/event_system.h"
+#include "system/visibility/visibility_system.h"
+#include "system/render/render_system.h"
 #include "camera_controller.h"
 #include "editor_system.h"
 

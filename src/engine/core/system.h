@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "visibility/visibility.h"
+#include "system/visibility/visibility.h"
 
 namespace Engine {
 

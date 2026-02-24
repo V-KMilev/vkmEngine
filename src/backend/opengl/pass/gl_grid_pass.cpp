@@ -8,7 +8,7 @@
 #include "gl_shader.h"
 #include "resource/gl_mesh.h"
 
-#include "render/render_view.h"
+#include "system/render/render_view.h"
 #include "resource/resource_manager.h"
 
 #include "generator/mesh_generators.h"

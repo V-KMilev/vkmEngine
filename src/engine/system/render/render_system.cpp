@@ -1,13 +1,13 @@
-#include "render/render_system.h"
+#include "system/render/render_system.h"
 
 #include "logger.h"
 
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
-#include "visibility/visibility.h"
+#include "system/visibility/visibility.h"
 
-#include "render/render_backend.h"
-#include "render/render_pass.h"
+#include "system/render/render_backend.h"
+#include "system/render/render_pass.h"
 
 namespace Engine {
 

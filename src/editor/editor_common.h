@@ -26,4 +26,4 @@
 #include "ecs/hierarchy_utils.h"
 #include "resource/resource_manager.h"
 #include "debug/statistics.h"
-#include "visibility/visibility.h"
+#include "system/visibility/visibility.h"
