@@ -1,0 +1,125 @@
+# Architecture
+
+## Overview
+
+vkmEngine is structured around an ECS core with a sequential system pipeline. The `Engine` singleton owns the `Scene`, `ResourceManager`, and system list. Each frame, systems are updated in registration order via a shared `FrameContext`.
+
+```
+Engine (singleton)
+  |-- Scene (ECS registry)
+  |-- ResourceManager (meshes, textures, materials)
+  |-- WindowManager (GLFW window, input)
+  |-- StatisticTracker (frame timing, call counters)
+  |-- Systems[] (executed sequentially per frame)
+        |-- CameraController
+        |-- EditorSystem
+        |-- EventSystem
+        |-- VisibilitySystem
+        |-- AnimationSystem
+        |-- RenderSystem
+```
+
+## System Execution Order
+
+Each frame, systems run in registration order:
+
+1. **CameraController** -- Updates camera transform from user input
+2. **EditorSystem** -- Processes editor UI and interaction
+3. **EventSystem** -- Drains the event queue
+4. **VisibilitySystem** -- Frustum/distance/screen-size culling, populates `FrameContext.visibility`
+5. **AnimationSystem** -- Advances timelines (all entities), applies to transforms (visible only)
+6. **RenderSystem** -- Builds `RenderView` from visibility data, executes render passes
+
+## FrameContext
+
+The per-frame data bundle passed to every system:
+
+```cpp
+struct FrameContext {
+    Scene& scene;
+    ResourceManager& resources;
+    float deltaTime;
+    uint32_t viewportWidth;
+    uint32_t viewportHeight;
+    const Visibility* visibility;  // populated by VisibilitySystem
+};
+```
+
+## Directory Layout
+
+```
+src/
+  engine/                         <-- include root (src/engine/)
+    core/                         # Engine singleton, System base class
+      memory/                     # TypeId, Storage, SparseSet, SlotAllocator
+    ecs/                          # Scene, Entity
+      component/                  # Transform, Camera, Mesh, Animation, Light, Hierarchy, Name
+    system/                       # All engine systems
+      render/                     # RenderSystem, RenderBackend, RenderView, RenderPipeline, RenderPass, RenderTarget
+      visibility/                 # Visibility, VisibilityContext, BoundsUtils
+        culling/                  # FrustumCuller, DistanceCulling, ScreenSizeCulling, OcclusionCuller
+      animation/                  # AnimationSystem, AnimationTrack, Keyframe, Easing
+      event/                      # EventSystem, Event, EventListener
+    resource/                     # ResourceManager, Resource, ResourceHandle, MeshAsset, MaterialAsset, TextureAsset
+    platform/
+      window/                     # WindowManager, Window, InputHandle, FrameLimiter
+      threading/                  # ThreadPool
+    debug/                        # Statistics, FrameTracker, CallTracker, FrameInfo, PrintHelper
+  editor/                         # EditorSystem, CameraController, panels, gizmo
+  backend/opengl/                 # OpenGL backend (flat gl_-prefixed includes)
+    core/                         # GLBackend, GLView, GLInstanceBatcher
+    resource/                     # GLMesh, GLMaterial, GLTexture, GLLights, GLInstanceBuffer
+    config/                       # GLConfig, GLTextureMapping
+    pass/                         # GLForwardPass, GLAABBDebugPass, GLGridPass, GLNavigationGizmoPass
+  tools/                          <-- include root (src/tools/)
+    loader/                       # TextureLoaders, MaterialLoaders
+    generator/                    # MeshGenerators, TextureGenerators, MaterialGenerators, LightGenerators
+```
+
+## Include Conventions
+
+Engine includes use module-qualified paths from the `src/engine/` root:
+
+```cpp
+#include "core/engine.h"
+#include "ecs/scene.h"
+#include "ecs/component/transform.h"
+#include "system/render/render_pass.h"
+#include "system/visibility/visibility.h"
+#include "system/event/event_system.h"
+#include "resource/mesh_asset.h"
+```
+
+Backend includes are flat (all `gl_`-prefixed):
+
+```cpp
+#include "gl_backend.h"
+#include "gl_forward_pass.h"
+```
+
+Tools includes use their own root:
+
+```cpp
+#include "loader/texture_loaders.h"
+#include "generator/mesh_generators.h"
+```
+
+## Namespaces
+
+- `Engine::` -- All engine code (ECS, systems, components, resources)
+- `Core::` -- Low-level OpenGL wrappers from vkmGL (Shader, Context, VertexArray, etc.)
+
+## Key Design Patterns
+
+| Pattern | Where | Purpose |
+|---------|-------|---------|
+| Generational handles | `StorageIndex` | Prevent use-after-free for entities and resources |
+| Sparse-dense dual array | `SparseSet<T>`, `Storage<T>` | O(1) add/remove/lookup + O(n) packed iteration |
+| Type erasure + TypeId | `ISparseSet`, `typeId<T>()` | Open component registry without modifying Scene |
+| Lazy component creation | `Scene::getStorage<T>()` | SparseSet created on first `add<T>()` call |
+| Fold expressions | `forEach<A, B, ...>` | Compile-time multi-component query expansion |
+| `if constexpr` dispatch | `ResourceManager` | Type-safe routing to correct Storage |
+| Frame-local snapshots | `RenderView` | Capture scene state, avoid concurrent mutation |
+| Version-based GPU sync | `Resource.version` + `GLView` | Skip redundant GPU uploads |
+| Instanced rendering | `GLInstanceBatcher` | Group by (material, mesh) for single draw call per batch |
+| Work-stealing pool | `ThreadPool` | Local LIFO, global FIFO, steal from back |
