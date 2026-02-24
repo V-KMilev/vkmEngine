@@ -4,7 +4,7 @@
 
 #include "core/engine.h"
 #include "platform/window/input_handle.h"
-#include "visibility/bounds_utils.h"
+#include "system/visibility/bounds_utils.h"
 #include "resource/resource_manager.h"
 
 namespace Engine {

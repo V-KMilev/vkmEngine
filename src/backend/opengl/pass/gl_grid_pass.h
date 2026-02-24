@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/render_pass.h"
+#include "system/render/render_pass.h"
 #include "gl_shader.h"
 #include "resource/gl_mesh.h"
 

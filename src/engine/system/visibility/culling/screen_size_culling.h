@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <glm/glm.hpp>
 
-#include "visibility/visibility_context.h"
+#include "system/visibility/visibility_context.h"
 
 namespace Engine {
 

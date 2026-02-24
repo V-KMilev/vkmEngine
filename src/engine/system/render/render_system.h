@@ -3,8 +3,8 @@
 #include <memory>
 #include <cstdint>
 
-#include "render/render_pipeline.h"
-#include "render/render_view.h"
+#include "system/render/render_pipeline.h"
+#include "system/render/render_view.h"
 #include "core/system.h"
 
 namespace Engine {

@@ -13,7 +13,7 @@
 #include "resource/gl_instance_buffer.h"
 #include "core/gl_instance_batcher.h"
 
-#include "render/render_view.h"
+#include "system/render/render_view.h"
 #include "resource/resource_manager.h"
 
 namespace Engine {

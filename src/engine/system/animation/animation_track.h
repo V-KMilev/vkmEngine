@@ -5,7 +5,7 @@
 
 #include <glm/gtc/quaternion.hpp>
 
-#include "animation/easing.h"
+#include "system/animation/easing.h"
 
 namespace Engine {
 
