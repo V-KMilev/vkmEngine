@@ -73,37 +73,43 @@ Heap allocation churn and hash overhead in critical paths:
 
 ## Architecture
 
-### [ARCH] Singleton God Object
-`Engine::get()` owns Scene, ResourceManager, WindowManager, StatisticTracker, and system pipeline. Any code can reach global mutable state.
-- Cannot unit test individual systems
-- No dependency injection
-- Hidden dependencies
+### ~~[ARCH] Singleton God Object~~ ✓
+~~`Engine::get()` owns Scene, ResourceManager, WindowManager, StatisticTracker, and system pipeline. Any code can reach global mutable state.~~
+- ~~Cannot unit test individual systems~~
+- ~~No dependency injection~~
+- ~~Hidden dependencies~~
 
-**Fix:** Move toward explicit dependency injection via constructors/FrameContext.
+**Done:** FrameContext enriched with WindowManager& and StatisticTracker&. All editor Engine::get() call sites replaced with ctx access.
 
-### [ARCH] Sequential-Only System Pipeline
-Systems execute in flat vector with no dependency graph. Independent systems cannot run concurrently. No mechanism to declare read/write component dependencies.
+### ~~[ARCH] Sequential-Only System Pipeline~~ ✓
+~~Systems execute in flat vector with no dependency graph. Independent systems cannot run concurrently. No mechanism to declare read/write component dependencies.~~
 
-### [ARCH] Minimal System Lifecycle
-`System` only has `update()`. Missing:
-- `init()` / `shutdown()`
-- `fixedUpdate()` for physics/deterministic simulation
-- `onSceneChange()` notification
-- Runtime enable/disable/reorder
+**Done:** SystemAccess declarations (reads/writes TypeId vectors) + write-write conflict validation at init.
 
-### [ARCH] Closed ResourceManager Type Set
-Only MeshAsset, TextureAsset, MaterialAsset via `if constexpr`. Adding new types requires editing ResourceManager.
-- Should use type-erased registry like Scene does for components
+### ~~[ARCH] Minimal System Lifecycle~~ ✓
+~~`System` only has `update()`. Missing init/shutdown/enable-disable.~~
 
-### [ARCH] Single Global Version Counter
-`ResourceManager::m_globalVersion` bumped by any `commit()` on any type. False-positive "changed" signals for type-specific consumers.
-- Per-type version tracking
+**Done:** Added `init(FrameContext&)`, `shutdown()`, `isEnabled()`/`setEnabled()`. Engine calls init on first frame, shutdown in reverse order on exit.
 
-### [ARCH] No Resource Reference Counting
-`Storage<T>` has no ref count. Removing a resource while entities hold handles makes them stale (generational check prevents UB but not accidental removal).
+### ~~[ARCH] Closed ResourceManager Type Set~~ ✓
+~~Only MeshAsset, TextureAsset, MaterialAsset via `if constexpr`. Adding new types requires editing ResourceManager.~~
 
-### [ARCH] No Resource Dependencies
-Materials reference textures via handles but no dependency graph. Removing a texture doesn't invalidate dependent materials.
+**Done:** Rewritten to open type-erased registry using `vector<unique_ptr<IStorage>>` indexed by `typeId<T>()`.
+
+### ~~[ARCH] Single Global Version Counter~~ ✓
+~~`ResourceManager::m_globalVersion` bumped by any `commit()` on any type. False-positive "changed" signals for type-specific consumers.~~
+
+**Done:** Per-type version tracking via `IStorage::typeVersion()`. GLView sync uses `getTypeVersion<T>()` per resource type.
+
+### ~~[ARCH] No Resource Reference Counting~~ ✓
+~~`Storage<T>` has no ref count. Removing a resource while entities hold handles makes them stale (generational check prevents UB but not accidental removal).~~
+
+**Done:** `Storage<T>` has parallel `m_refCounts` sparse array with `acquire()`/`release()`/`refCount()`. `remove()` asserts on non-zero refCount.
+
+### ~~[ARCH] No Resource Dependencies~~ ✓
+~~Materials reference textures via handles but no dependency graph. Removing a texture doesn't invalidate dependent materials.~~
+
+**Done:** ResourceManager dependency graph via `addDependency()`/`removeDependency()`/`hasDependents()`. `remove()` warns about active dependents.
 
 ---
 

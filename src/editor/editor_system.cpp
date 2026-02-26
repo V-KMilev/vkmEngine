@@ -12,7 +12,8 @@
 #include <cstring>
 #include <cstdio>
 
-#include "core/engine.h"
+#include "debug/statistics.h"
+#include "platform/window/window_manager.h"
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/mesh.h"
@@ -446,7 +447,7 @@ void EditorSystem::drawMenuBar(FrameContext& ctx) {
         ImGui::EndPopup();
     }
 
-    const auto& info = Engine::get().getStatistics().getFrameInfo();
+    const auto& info = ctx.statistics.getFrameInfo();
     char fps[32];
     snprintf(fps, sizeof(fps), "%.0f FPS", info.frameRateInfo.frameRate);
     float fpsW = ImGui::CalcTextSize(fps).x;

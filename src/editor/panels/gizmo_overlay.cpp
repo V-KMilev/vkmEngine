@@ -2,7 +2,7 @@
 
 #include <glm/gtx/matrix_decompose.hpp>
 
-#include "core/engine.h"
+#include "platform/window/window_manager.h"
 #include "platform/window/input_handle.h"
 #include "system/visibility/bounds_utils.h"
 #include "resource/resource_manager.h"
@@ -19,9 +19,8 @@ void EditorSystem::drawTransformGizmo(FrameContext& ctx, ImVec2 vpMin, float vpW
     // viewport child region. We remap the projection so clip [-1,1] maps
     // to the viewport sub-region, letting the gizmo use the viewport rect
     // for both correct position AND correct size scaling.
-    auto& win = Engine::get().getWindow();
-    float winW = static_cast<float>(win.getWidth());
-    float winH = static_cast<float>(win.getHeight());
+    float winW = static_cast<float>(ctx.window.getWidth());
+    float winH = static_cast<float>(ctx.window.getHeight());
 
     float sx = winW / vpWidth;
     float sy = winH / vpHeight;
@@ -76,7 +75,7 @@ void EditorSystem::drawTransformGizmo(FrameContext& ctx, ImVec2 vpMin, float vpW
 void EditorSystem::handleViewportPick(FrameContext& ctx, ImVec2 vpMin, float vpWidth, float vpHeight) {
     if (!ctx.visibility || !ctx.visibility->hasCamera) return;
 
-    auto& mouse = Engine::get().getWindow().getInputHandle().getMouse();
+    auto& mouse = ctx.window.getInputHandle().getMouse();
     bool leftNow = mouse.isButtonPressed(0); // GLFW_MOUSE_BUTTON_LEFT
     bool leftJustClicked = leftNow && !m_leftMouseWasDown;
     m_leftMouseWasDown = leftNow;
@@ -88,9 +87,8 @@ void EditorSystem::handleViewportPick(FrameContext& ctx, ImVec2 vpMin, float vpW
 
     // The projection maps clip space to the full window (glViewport covers
     // the entire GLFW window), so NDC must be computed from full window coords.
-    auto& win = Engine::get().getWindow();
-    float winW = static_cast<float>(win.getWidth());
-    float winH = static_cast<float>(win.getHeight());
+    float winW = static_cast<float>(ctx.window.getWidth());
+    float winH = static_cast<float>(ctx.window.getHeight());
 
     float mouseX = static_cast<float>(mouse.getX());
     float mouseY = static_cast<float>(mouse.getY());

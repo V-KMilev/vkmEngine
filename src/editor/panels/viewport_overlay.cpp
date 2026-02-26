@@ -2,7 +2,7 @@
 
 #include <GL/glew.h>
 
-#include "core/engine.h"
+#include "debug/statistics.h"
 #include "platform/threading/thread_pool.h"
 
 namespace Engine {
@@ -13,7 +13,7 @@ void EditorSystem::drawViewportOverlay(const FrameContext& ctx) {
     ImGui::SetCursorPos(overlayPos);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.11f, 0.11f, 0.12f, 0.72f));
     if (ImGui::BeginChild("##StatsOverlay", ImVec2(272, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders)) {
-        const auto& info = Engine::get().getStatistics().getFrameInfo();
+        const auto& info = ctx.statistics.getFrameInfo();
 
         float avgMs = 0.0f, maxMs = 0.0f, minMs = 1000.0f;
         for (int i = 0; i < FRAME_HISTORY_SIZE; ++i) {

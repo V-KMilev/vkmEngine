@@ -1,7 +1,7 @@
 #include "../editor_common.h"
 
-#include "core/engine.h"
 #include "camera_controller.h"
+#include "platform/window/window_manager.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
 #include "system/render/render_pipeline.h"
@@ -82,7 +82,7 @@ void EditorSystem::drawSettingsTab(FrameContext& ctx) {
 
         // Display
         if (ImGui::BeginTabItem("Display")) {
-            auto& window = Engine::get().getWindow();
+            auto& window = ctx.window;
             ImGui::Spacing();
 
             ImGui::Text("Resolution: %zux%zu", window.getWidth(), window.getHeight());
