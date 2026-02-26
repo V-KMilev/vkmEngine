@@ -83,7 +83,7 @@ class CameraController : public System {
          * @param rotation Reference to the camera's rotation quaternion.
          * @param deltaTime Time elapsed since last update.
          */
-        void updateFlyMode(glm::vec3& position, glm::quat& rotation, float deltaTime);
+        void updateFlyMode(WindowManager& window, glm::vec3& position, glm::quat& rotation, float deltaTime);
 
         /**
          * @brief Compute a quaternion from yaw/pitch angles and apply to rotation.

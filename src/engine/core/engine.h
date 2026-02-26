@@ -78,6 +78,8 @@ class Engine {
         Engine() = default;
         ~Engine() = default;
 
+        void initSystems(FrameContext& ctx);
+        void shutdownSystems();
         void printStats(const FrameContext& ctx);
 
     private:
@@ -88,6 +90,7 @@ class Engine {
         StatisticTracker m_statistics;
 
         std::vector<std::unique_ptr<System>> m_systems;
+        bool m_initialized = false;
 };
 
 } // namespace Engine

@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "core/engine.h"
+#include "platform/window/window_manager.h"
 #include "platform/window/input_handle.h"
 #include "platform/window/glfw_include.h"
 
@@ -22,11 +22,10 @@ void CameraController::update(FrameContext& ctx) {
 
     auto& transform = ctx.scene.get<Transform>(m_cameraEntity.getID());
 
-    updateFlyMode(transform.position, transform.rotation, ctx.deltaTime);
+    updateFlyMode(ctx.window, transform.position, transform.rotation, ctx.deltaTime);
 }
 
-void CameraController::updateFlyMode(glm::vec3& position, glm::quat& rotation, float deltaTime) {
-    auto& windowManager = Engine::get().getWindow();
+void CameraController::updateFlyMode(WindowManager& windowManager, glm::vec3& position, glm::quat& rotation, float deltaTime) {
     auto& inputHandle   = windowManager.getInputHandle();
     auto& mouse    = inputHandle.getMouse();
     auto& keyboard = inputHandle.getKeyboard();

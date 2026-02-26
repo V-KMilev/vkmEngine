@@ -1,27 +1,27 @@
 #pragma once
 
+#include <algorithm>
+#include <memory>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "l_assert.h"
+#include "logger.h"
 
 #include "core/memory/storage.h"
+#include "core/memory/types.h"
 #include "resource/resource.h"
-
-#include "resource/mesh_asset.h"
-#include "resource/texture_asset.h"
-#include "resource/material_asset.h"
+#include "resource/resource_handle.h"
 
 namespace Engine {
 
 /**
- * @brief Manages all resource assets (meshes, textures, materials) using typed handles and type-safe storage.
+ * @brief Open type-erased resource registry with typed handles and per-type version tracking.
  *
- * The ResourceManager provides a unified interface to add, fetch, edit, commit (version bump), and
- * remove resources of different types. Internally, it dispatches these operations to type-specific
- * Engine::Storage instances, using typed Handle types to ensure correctness and safety.
- *
- * Supported resource types are MeshAsset, TextureAsset, and MaterialAsset, with their corresponding handle types.
+ * Any type inheriting from Resource can be stored without modifying this class.
+ * Internally dispatches operations to type-specific Storage<T> instances via typeId<T>().
  *
  * This class is non-copyable and non-movable.
  */
@@ -38,9 +38,9 @@ class ResourceManager {
 
     public:
         /**
-         * @brief Add a new resource (mesh, texture, or material) to the manager.
+         * @brief Add a new resource to the manager.
          *
-         * @tparam ResourceType The resource type (MeshAsset, TextureAsset, MaterialAsset).
+         * @tparam ResourceType The resource type (must inherit from Resource).
          * @param resource The resource instance to add (will be moved).
          * @return The handle for the newly added resource.
          */
@@ -61,6 +61,13 @@ class ResourceManager {
          template<typename HandleType>
          void remove(const HandleType& handle) {
              using T = typename HandleType::resource_t;
+             if (hasDependents(handle)) {
+                 LOG_WARNING("Removing resource %u with %zu active dependents",
+                     handle.id(), dependentCount(handle));
+             }
+             // Clean up any dependency entries where this resource is depended on
+             uint64_t key = packKey<T>(handle.key.index);
+             m_dependents.erase(key);
              getStorage<T>().remove(handle.key);
          }
 
@@ -91,7 +98,7 @@ class ResourceManager {
         }
 
         /**
-         * @brief Commit changes to a resource (increments the version).
+         * @brief Commit changes to a resource (increments both resource and type version).
          *
          * @tparam HandleType The handle type associated with the resource.
          * @param handle Handle referencing the resource to commit.
@@ -100,8 +107,37 @@ class ResourceManager {
         void commit(const HandleType& handle) {
             using T = typename HandleType::resource_t;
             static_assert(std::is_base_of_v<Resource, T>, "Resource type must inherit from Resource to use commit().");
-            ++getStorage<T>().get(handle.key).version;
+            auto& storage = getStorage<T>();
+            ++storage.get(handle.key).version;
+            storage.bumpTypeVersion();
             ++m_globalVersion;
+        }
+
+        /**
+         * @brief Increment the reference count for a resource handle.
+         */
+        template<typename HandleType>
+        void acquire(const HandleType& handle) {
+            using T = typename HandleType::resource_t;
+            getStorage<T>().acquire(handle.key);
+        }
+
+        /**
+         * @brief Decrement the reference count for a resource handle.
+         */
+        template<typename HandleType>
+        void release(const HandleType& handle) {
+            using T = typename HandleType::resource_t;
+            getStorage<T>().release(handle.key);
+        }
+
+        /**
+         * @brief Query the reference count for a resource handle.
+         */
+        template<typename HandleType>
+        uint32_t refCount(const HandleType& handle) const {
+            using T = typename HandleType::resource_t;
+            return getStorage<T>().refCount(handle.key);
         }
 
         /**
@@ -109,45 +145,103 @@ class ResourceManager {
          */
         uint64_t getGlobalVersion() const { return m_globalVersion; }
 
-    private:
         /**
-         * @brief Get mutable access to the appropriate storage for a resource type.
+         * @brief Per-type version counter. Only incremented when resources of type T are committed.
          */
         template<typename T>
-        auto& getStorage() {
-            if constexpr (std::is_same_v<T, MeshAsset>) {
-                return m_meshStorage;
-            } else if constexpr (std::is_same_v<T, TextureAsset>) {
-                return m_textureStorage;
-            } else if constexpr (std::is_same_v<T, MaterialAsset>) {
-                return m_materialStorage;
-            } else {
-                VKM_ASSERT(false, "Unsupported asset type");
+        uint64_t getTypeVersion() const {
+            TypeId id = typeId<T>();
+            if (id >= m_storages.size() || !m_storages[id]) return 0;
+            return m_storages[id]->typeVersion();
+        }
+
+        // --- Resource dependency tracking ---
+
+        /**
+         * @brief Register that @p from depends on @p to (e.g., material depends on texture).
+         */
+        template<typename FromHandle, typename ToHandle>
+        void addDependency(const FromHandle& from, const ToHandle& to) {
+            uint64_t fromKey = packKey<typename FromHandle::resource_t>(from.key.index);
+            uint64_t toKey   = packKey<typename ToHandle::resource_t>(to.key.index);
+            m_dependents[toKey].push_back(fromKey);
+        }
+
+        /**
+         * @brief Unregister a dependency from @p from to @p to.
+         */
+        template<typename FromHandle, typename ToHandle>
+        void removeDependency(const FromHandle& from, const ToHandle& to) {
+            uint64_t fromKey = packKey<typename FromHandle::resource_t>(from.key.index);
+            uint64_t toKey   = packKey<typename ToHandle::resource_t>(to.key.index);
+            auto it = m_dependents.find(toKey);
+            if (it != m_dependents.end()) {
+                auto& vec = it->second;
+                vec.erase(std::remove(vec.begin(), vec.end(), fromKey), vec.end());
+                if (vec.empty()) m_dependents.erase(it);
             }
         }
 
         /**
-         * @brief Get const access to the appropriate storage for a resource type.
+         * @brief Check if any resources depend on the given handle.
          */
-        template<typename T>
-        const auto& getStorage() const {
-            if constexpr (std::is_same_v<T, MeshAsset>) {
-                return m_meshStorage;
-            } else if constexpr (std::is_same_v<T, TextureAsset>) {
-                return m_textureStorage;
-            } else if constexpr (std::is_same_v<T, MaterialAsset>) {
-                return m_materialStorage;
-            } else {
-                VKM_ASSERT(false, "Unsupported asset type");
-            }
+        template<typename HandleType>
+        bool hasDependents(const HandleType& handle) const {
+            uint64_t key = packKey<typename HandleType::resource_t>(handle.key.index);
+            auto it = m_dependents.find(key);
+            return it != m_dependents.end() && !it->second.empty();
+        }
+
+        /**
+         * @brief Get the number of resources that depend on the given handle.
+         */
+        template<typename HandleType>
+        size_t dependentCount(const HandleType& handle) const {
+            uint64_t key = packKey<typename HandleType::resource_t>(handle.key.index);
+            auto it = m_dependents.find(key);
+            return it != m_dependents.end() ? it->second.size() : 0;
         }
 
     private:
-        Storage<MeshAsset>     m_meshStorage;
-        Storage<TextureAsset>  m_textureStorage;
-        Storage<MaterialAsset> m_materialStorage;
+        /**
+         * @brief Get or create the typed storage for resource type T.
+         */
+        template<typename T>
+        Storage<T>& getStorage() {
+            TypeId id = typeId<T>();
+            if (id >= m_storages.size()) {
+                m_storages.resize(id + 1);
+            }
+            if (!m_storages[id]) {
+                m_storages[id] = std::make_unique<Storage<T>>();
+            }
+            return static_cast<Storage<T>&>(*m_storages[id]);
+        }
 
+        /**
+         * @brief Get const access to the typed storage for resource type T.
+         */
+        template<typename T>
+        const Storage<T>& getStorage() const {
+            TypeId id = typeId<T>();
+            VKM_ASSERT(id < m_storages.size() && m_storages[id], "Storage not registered for this type");
+            return static_cast<const Storage<T>&>(*m_storages[id]);
+        }
+
+        /**
+         * @brief Pack typeId + handle index into a single 64-bit key for the dependency graph.
+         */
+        template<typename T>
+        static uint64_t packKey(uint32_t index) {
+            return (static_cast<uint64_t>(typeId<T>()) << 32) | index;
+        }
+
+    private:
+        std::vector<std::unique_ptr<IStorage>> m_storages;
         uint64_t m_globalVersion = 0;
+
+        /// Dependency graph: key = resource being depended on, value = list of resources that depend on it
+        std::unordered_map<uint64_t, std::vector<uint64_t>> m_dependents;
 };
 
 } // namespace Engine

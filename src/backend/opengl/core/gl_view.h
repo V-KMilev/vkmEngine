@@ -177,8 +177,10 @@ class GLView {
 
         GLInstanceBatcher m_instanceBatcher;
 
-        uint64_t m_lastSyncVersion  = 0;      ///< Last ResourceManager globalVersion seen
-        size_t   m_lastDrawableCount = 0;      ///< Last drawable count (detects new entities)
+        uint64_t m_lastMeshVersion     = 0;  ///< Last mesh type version seen
+        uint64_t m_lastMaterialVersion = 0;  ///< Last material type version seen
+        uint64_t m_lastTextureVersion  = 0;  ///< Last texture type version seen
+        size_t   m_lastDrawableCount   = 0;  ///< Last drawable count (detects new entities)
 
         uint32_t m_purgeCounter = 0;
         static constexpr uint32_t PURGE_INTERVAL = 300;
