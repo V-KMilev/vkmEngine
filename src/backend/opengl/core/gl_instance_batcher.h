@@ -6,7 +6,9 @@
 
 #include <glm/glm.hpp>
 
-#include "resource/resource_manager.h"
+#include "resource/resource_handle.h"
+#include "resource/mesh_asset.h"
+#include "resource/material_asset.h"
 #include "resource/gl_instance_buffer.h"
 
 namespace Engine {
