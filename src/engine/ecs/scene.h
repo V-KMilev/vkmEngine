@@ -40,6 +40,9 @@ class Scene {
          */
         Entity createEntity() {
             StorageIndex id = m_entityAllocator.allocate();
+            if (id.index >= m_componentMasks.size())
+                m_componentMasks.resize(id.index + 1, 0);
+            m_componentMasks[id.index] = 0;
             STATS_RECORD_ENTITY_CREATE();
             return Entity{id};
         }
@@ -109,10 +112,14 @@ class Scene {
                 }
             }
 
-            for (auto& set : m_components) {
-                if (set && set->has(id.index))
-                    set->remove(id.index);
+            uint64_t mask = m_componentMasks[id.index];
+            while (mask) {
+                uint32_t bit = static_cast<uint32_t>(__builtin_ctzll(mask));
+                if (bit < m_components.size() && m_components[bit])
+                    m_components[bit]->remove(id.index);
+                mask &= mask - 1;
             }
+            m_componentMasks[id.index] = 0;
             m_entityAllocator.free(id);
             STATS_RECORD_ENTITY_DESTROY();
         }
@@ -128,7 +135,11 @@ class Scene {
         auto& add(Entity entity, T && component) {
             VKM_ASSERT(isAlive(entity), "Scene::add called with dead/stale entity");
             using U = std::remove_cv_t<std::remove_reference_t<T>>;
-            return getStorage<U>().add(entity.getID().index, std::forward<T>(component));
+            auto& result = getStorage<U>().add(entity.getID().index, std::forward<T>(component));
+            TypeId tid = typeId<U>();
+            VKM_ASSERT(tid < 64, "Component type count exceeds 64-bit mask capacity");
+            m_componentMasks[entity.getID().index] |= (uint64_t(1) << tid);
+            return result;
         }
 
         /**
@@ -188,8 +199,11 @@ class Scene {
         void remove(Entity entity) {
             VKM_ASSERT(isAlive(entity), "Scene::remove called with dead/stale entity");
             auto* store = findStorage<T>();
-            if (store && store->has(entity.getID().index))
+            if (store && store->has(entity.getID().index)) {
                 store->remove(entity.getID().index);
+                TypeId tid = typeId<T>();
+                m_componentMasks[entity.getID().index] &= ~(uint64_t(1) << tid);
+            }
         }
 
         /**
@@ -262,6 +276,13 @@ class Scene {
          * @tparam T Component type.
          * @return Pointer to the SparseSet, or nullptr if unregistered.
          */
+        /// @brief Compact all component sparse arrays to reclaim wasted memory.
+        void compact() {
+            for (auto& set : m_components) {
+                if (set) set->compact();
+            }
+        }
+
         template<typename T>
         SparseSet<T>* storage() { return findStorage<T>(); }
 
@@ -299,6 +320,7 @@ class Scene {
     private:
         SlotAllocator m_entityAllocator;
         std::vector<std::unique_ptr<ISparseSet>> m_components;
+        std::vector<uint64_t> m_componentMasks; ///< Per-entity bitmask of attached component types (indexed by entity index)
 };
 
 } // namespace Engine
