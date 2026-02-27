@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 
 namespace Engine {
@@ -63,8 +64,8 @@ using TypeId = uint32_t;
 
 namespace detail {
     inline TypeId nextTypeId() {
-        static TypeId counter = 0;
-        return counter++;
+        static std::atomic<TypeId> counter{0};
+        return counter.fetch_add(1, std::memory_order_relaxed);
     }
 }
 

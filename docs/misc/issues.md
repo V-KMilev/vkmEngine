@@ -131,9 +131,6 @@ Drawables sorted by (materialType, material, mesh) for batching but not by depth
 `instanceBuffer->attachToVAO` modifies VAO state per draw call. Redundant when batches share mesh.
 - Persistent mapped buffers or multi-draw-indirect
 
-### [RENDER] No GPU Culling
-All culling CPU-side. Compute shader frustum culling + indirect draw would handle 100K+ objects.
-
 ---
 
 ## ECS
@@ -142,16 +139,20 @@ All culling CPU-side. Compute shader frustum culling + indirect draw would handl
 One SparseSet per type. Multi-component iteration does cross-set random access.
 - Archetype tables (EnTT groups / flecs archetypes) for contiguous access
 
-### [ECS] `destroyEntity` Scans All Component Types
-Loops over every registered component type per destruction: O(C).
-- Per-entity component bitmask for O(K) where K = actual component count
+### ~~[ECS] `destroyEntity` Scans All Component Types~~ ✓
+~~Loops over every registered component type per destruction: O(C).~~
 
-### [ECS] `typeId<T>()` Not Thread-Safe
-`nextTypeId()` uses non-atomic static counter. Data race if called from multiple threads for new types.
-- Use `std::atomic<uint32_t>`
+**Done:** Per-entity `uint64_t` component bitmask in Scene. `destroyEntity()` iterates only set bits via `__builtin_ctzll`, giving O(K) where K = actual component count. Bitmask updated automatically in `add<T>()` and `remove<T>()`.
 
-### [ECS] Unbounded Sparse Array Growth
-`SparseSet::ensureCapacity()` resizes to `key + 1`. After many create/destroy cycles, sparse array can grow much larger than dense. No compaction or paging.
+### ~~[ECS] `typeId<T>()` Not Thread-Safe~~ ✓
+~~`nextTypeId()` uses non-atomic static counter. Data race if called from multiple threads for new types.~~
+
+**Done:** Replaced with `std::atomic<TypeId>` using `fetch_add(1, memory_order_relaxed)`.
+
+### ~~[ECS] Unbounded Sparse Array Growth~~ ✓
+~~`SparseSet::ensureCapacity()` resizes to `key + 1`. After many create/destroy cycles, sparse array can grow much larger than dense. No compaction or paging.~~
+
+**Done:** Added `compact()` to `ISparseSet` and `SparseSet<T>` — scans for max live key and shrinks sparse array. `Scene::compact()` convenience method compacts all component storages. Also added `sparseCapacity()` for diagnostics.
 
 ---
 
