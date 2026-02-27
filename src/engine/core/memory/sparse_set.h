@@ -19,6 +19,8 @@ class ISparseSet {
         virtual void remove(uint32_t key) = 0;
         virtual bool has(uint32_t key) const = 0;
         virtual size_t size() const = 0;
+        virtual size_t sparseCapacity() const = 0;
+        virtual void compact() = 0;
 };
 
 /**
@@ -139,6 +141,26 @@ class SparseSet : public ISparseSet {
 
         size_t size() const override { return m_data.size(); }  ///< Number of live elements.
         bool empty()  const          { return m_data.empty(); } ///< True if size() == 0.
+
+        /// @brief Current capacity of the sparse-to-dense mapping array.
+        size_t sparseCapacity() const override { return m_dataIndex.size(); }
+
+        /// @brief Shrink the sparse array to fit only live keys, reclaiming wasted memory.
+        void compact() override {
+            if (m_data.empty()) {
+                m_dataIndex.clear();
+                m_dataIndex.shrink_to_fit();
+                return;
+            }
+            uint32_t maxKey = 0;
+            for (uint32_t i = 0; i < m_dataId.size(); ++i) {
+                if (m_dataId[i] > maxKey) maxKey = m_dataId[i];
+            }
+            if (maxKey + 1 < m_dataIndex.size()) {
+                m_dataIndex.resize(maxKey + 1);
+                m_dataIndex.shrink_to_fit();
+            }
+        }
 
         T*       data()       { return m_data.data(); } ///< Raw pointer to the packed dense array.
         const T* data() const { return m_data.data(); } ///< @copydoc data()
