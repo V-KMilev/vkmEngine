@@ -135,10 +135,10 @@ class RenderPipeline {
 ```
 
 Key patterns:
-- **First `public:` block** -- Constructors, destructor, copy/move (Rule of 5)
-- **Second `public:` block** -- Class interface (methods)
-- **Third `public:` block** (optional) -- Inline accessors/getters
-- **`private:` block** -- Members with `m_` prefix
+- **First `public:` block** - Constructors, destructor, copy/move (Rule of 5)
+- **Second `public:` block** - Class interface (methods)
+- **Third `public:` block** (optional) - Inline accessors/getters
+- **`private:` block** - Members with `m_` prefix
 - Copy/move: `ClassName && other` (space before `&&`), named `other` even for `= delete`
 - Non-copyable non-movable for resource-owning classes
 
@@ -404,7 +404,8 @@ No exceptions in hot paths (systems, ECS queries, rendering).
 - **Braces**: K&R (opening brace on same line)
 - **Access specifiers**: Indented 4 spaces from class
 - **Member body**: Indented 8 spaces from class (4 from access specifier)
-- **Spacing**: `if (`, `for (`, `while (` -- space after keyword. `fn()` -- no space before parens
+- **Spacing**: `if (`, `for (`, `while (` - space after keyword. `fn()` - no space before parens
 - **Alignment**: Vertically align related declarations
 - **Charset**: Strictly ASCII (no Unicode symbols in code or comments)
 - **Namespace close**: Always `} // namespace Name`
+- **No section separators**: Do not use decorative separator lines like `// -----------` or `// - Section name -----` to divide code. Use `public:`/`private:` access specifiers, blank lines, and `@brief` comments to organize sections instead

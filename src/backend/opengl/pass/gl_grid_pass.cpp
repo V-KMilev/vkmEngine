@@ -48,21 +48,24 @@ void GLGridPass::execute(RenderBackend& backend, const RenderView& view, const R
     m_shader.bind();
     STATS_RECORD_SHADER_SWITCH();
 
+    // Read grid settings from environment config
+    const auto& env = view.environment;
+
     // Center grid under camera in XZ, keep it on ground plane.
     glm::vec3 gridPos(view.camera.position.x, 0.0f, view.camera.position.z);
 
     glm::mat4 model(1.0f);
     model = glm::translate(model, gridPos);
-    model = glm::scale(model, glm::vec3(m_config.size));
+    model = glm::scale(model, glm::vec3(env.gridSize));
 
     m_shader.setUniformMatrix4fv("u_model", model);
     m_shader.setUniformMatrix4fv("u_view", view.camera.view);
     m_shader.setUniformMatrix4fv("u_projection", view.camera.projection);
 
     // Grid params
-    m_shader.setUniform1f("u_gridScale", m_config.scale);
-    m_shader.setUniform1f("u_gridFadeStart", m_config.fadeStart);
-    m_shader.setUniform1f("u_gridFadeEnd", m_config.fadeEnd);
+    m_shader.setUniform1f("u_gridScale", env.gridScale);
+    m_shader.setUniform1f("u_gridFadeStart", env.gridFadeStart);
+    m_shader.setUniform1f("u_gridFadeEnd", env.gridFadeEnd);
 
     m_shader.setUniform3fv("u_cameraPos", view.camera.position);
 

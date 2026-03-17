@@ -78,7 +78,7 @@ void Engine::printStats(const FrameContext& ctx) {
     if (now - lastStatsPrint < std::chrono::milliseconds(500)) return;
 
     const auto& info = m_statistics.getFrameInfo();
-    std::printf("[%lu] %.2fms (%.0f FPS) | Draws: %u | Passes: %u | Visible: %zu/%zu\n",
+    LOG_VERBOSE("[%lu] %.2fms (%.0f FPS) | Draws: %u | Passes: %u | Visible: %zu/%zu\n",
         info.frameIndex,
         info.frameRateInfo.frameTime,
         info.frameRateInfo.frameRate,
@@ -87,7 +87,6 @@ void Engine::printStats(const FrameContext& ctx) {
         ctx.visibility ? ctx.visibility->entries.size() : 0,
         m_scene.entityCount()
     );
-    std::fflush(stdout);
     lastStatsPrint = now;
 }
 

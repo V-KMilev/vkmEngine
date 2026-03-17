@@ -41,6 +41,7 @@ add_subdirectory(src/engine)
 add_subdirectory(src/tools)
 add_subdirectory(src/editor)
 add_subdirectory(src/backend/opengl)
+add_subdirectory(tests)
 
 add_library(BuildInfo INTERFACE)
 target_compile_definitions(BuildInfo INTERFACE

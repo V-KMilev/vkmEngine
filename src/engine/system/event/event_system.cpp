@@ -14,8 +14,6 @@ EventSystem::EventSystem() {
 }
 
 EventSystem::~EventSystem() {
-    ThreadPool::get().waitIdle();
-
     LOG_TRACE("Destroyed event manager");
 }
 

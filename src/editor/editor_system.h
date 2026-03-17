@@ -54,7 +54,7 @@ class EditorSystem : public System {
 
         // Inspector sections
         void drawTransformSection(Scene& scene, EntityId id);
-        void drawMeshSection(Scene& scene, EntityId id);
+        void drawMeshSection(Scene& scene, ResourceManager& resources, EntityId id);
         void drawLightSection(Scene& scene, EntityId id);
         void drawCameraSection(Scene& scene, EntityId id);
         void drawAnimationSection(Scene& scene, EntityId id);
@@ -117,6 +117,7 @@ class EditorSystem : public System {
 
         // Hierarchy state
         char m_hierarchyFilter[64] = {};
+        char m_lastFilter[64] = {};
         std::vector<EntityId> m_cachedRoots;
         std::vector<EntityId> m_cachedFiltered;
         size_t m_lastEntityCount = 0;
@@ -130,14 +131,38 @@ class EditorSystem : public System {
         GizmoMode      m_gizmoMode      = GizmoMode::Local;
         TransformGizmo m_gizmo;
 
+        // Gizmo drag start state (for rotation without decompose)
+        glm::quat m_gizmoDragStartRot{1.0f, 0.0f, 0.0f, 0.0f};
+        bool      m_gizmoDragActive = false;
+
+        // Snap settings (0 = disabled)
+        bool  m_snapEnabled    = false;
+        float m_snapTranslate  = 1.0f;
+        float m_snapRotate     = 15.0f;
+        float m_snapScale      = 0.1f;
+
         // Rendering state
         bool m_wireframe = false;
         bool m_viewportHovered = false;
+
+        // Panel resize drag state
+        bool m_resizingLeft   = false;
+        bool m_resizingRight  = false;
+        bool m_resizingBottom = false;
         bool m_editorVisible = true;
         bool m_f5WasDown = false;
         bool m_leftMouseWasDown = false;
 
         SystemMetrics m_metrics;
+
+        // Cached resource counts (updated periodically, not every frame)
+        struct ResourceCounts {
+            size_t transforms = 0, meshes = 0, lights = 0, cameras = 0;
+            size_t animations = 0, hierarchies = 0, names = 0;
+            uint32_t animPlaying = 0, animPaused = 0;
+            uint32_t lightsDir = 0, lightsPoint = 0, lightsSpot = 0, lightsDisabled = 0;
+            float updateTimer = 0.0f;
+        } m_resourceCounts;
 };
 
 } // namespace Engine

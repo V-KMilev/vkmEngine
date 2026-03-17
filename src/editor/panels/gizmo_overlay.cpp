@@ -1,6 +1,6 @@
 #include "../editor_common.h"
 
-#include <glm/gtx/matrix_decompose.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "platform/window/window_manager.h"
 #include "platform/window/input_handle.h"
@@ -52,23 +52,68 @@ void EditorSystem::drawTransformGizmo(FrameContext& ctx, ImVec2 vpMin, float vpW
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
 
+    // Configure gizmo snap (rotation is handled inside the gizmo to avoid gimbal lock)
+    bool snap = m_snapEnabled || ImGui::GetIO().KeyCtrl;
+    m_gizmo.setSnapAngle(snap ? glm::radians(m_snapRotate) : 0.0f);
+
+    // Capture start rotation when drag begins
+    if (m_gizmo.isUsing() && !m_gizmoDragActive) {
+        m_gizmoDragStartRot = transform.rotation;
+        m_gizmoDragActive = true;
+    }
+    if (!m_gizmo.isUsing()) {
+        m_gizmoDragActive = false;
+    }
+
     if (m_gizmo.manipulate(drawList, ctx.visibility->view, subProj,
                             m_gizmoOperation, m_gizmoMode, model,
                             vpMin, vpWidth, vpHeight)) {
 
-        // Convert back to local space if parented
-        if (hasParent) {
-            model = glm::inverse(parentWorld) * model;
+        if (m_gizmoOperation == GizmoOperation::Rotate) {
+            // For rotation: apply delta quaternion directly to start rotation
+            // This completely bypasses matrix decomposition and avoids quaternion flips
+            glm::quat deltaRot = m_gizmo.getDragRotation();
+
+            if (hasParent) {
+                // Convert world-space rotation delta to local space
+                glm::quat parentRot = glm::quat_cast(glm::mat3(parentWorld));
+                glm::quat invParentRot = glm::inverse(parentRot);
+                deltaRot = invParentRot * deltaRot * parentRot;
+            }
+
+            transform.rotation = glm::normalize(deltaRot * m_gizmoDragStartRot);
+        } else {
+            // For translate/scale: decompose is safe (no quaternion boundary issues)
+            if (hasParent) {
+                model = glm::inverse(parentWorld) * model;
+            }
+
+            glm::vec3 pos = glm::vec3(model[3]);
+            glm::vec3 scale;
+            scale.x = glm::length(glm::vec3(model[0]));
+            scale.y = glm::length(glm::vec3(model[1]));
+            scale.z = glm::length(glm::vec3(model[2]));
+
+            if (snap) {
+                auto snapValue = [](float v, float step) {
+                    return std::round(v / step) * step;
+                };
+                if (m_gizmoOperation == GizmoOperation::Translate) {
+                    float s = m_snapTranslate;
+                    pos.x = snapValue(pos.x, s);
+                    pos.y = snapValue(pos.y, s);
+                    pos.z = snapValue(pos.z, s);
+                } else if (m_gizmoOperation == GizmoOperation::Scale) {
+                    float s = m_snapScale;
+                    scale.x = snapValue(scale.x, s);
+                    scale.y = snapValue(scale.y, s);
+                    scale.z = snapValue(scale.z, s);
+                }
+            }
+
+            transform.position = pos;
+            transform.scale    = scale;
         }
-
-        glm::vec3 pos, scale, skew;
-        glm::vec4 persp;
-        glm::quat rot;
-        glm::decompose(model, scale, rot, pos, skew, persp);
-
-        transform.position = pos;
-        transform.rotation = glm::normalize(rot);
-        transform.scale    = scale;
     }
 }
 

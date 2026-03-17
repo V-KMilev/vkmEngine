@@ -27,4 +27,8 @@ void GLBackend::resize(uint32_t width, uint32_t height) {
     m_defaultTarget.resize(width, height);
 }
 
+void GLBackend::setWireframe(bool enabled) {
+    m_context.setPolygonMode(GL_FRONT_AND_BACK, enabled ? GL_LINE : GL_FILL);
+}
+
 } // namespace Engine

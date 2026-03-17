@@ -23,7 +23,7 @@
 #include "pass/gl_grid_pass.h"
 
 // Demo scene
-#include "example/benchmark_scene.h"
+#include "examples/benchmark_scene.h"
 
 int main() {
     try {

@@ -49,6 +49,7 @@ class GLBackend : public RenderBackend {
          */
         void resize(uint32_t width, uint32_t height) override;
         RenderTarget& getDefaultTarget() override { return m_defaultTarget; }
+        void setWireframe(bool enabled) override;
 
         /**
          * @brief Get the OpenGL rendering context.
