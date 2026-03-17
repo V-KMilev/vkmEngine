@@ -4,6 +4,13 @@
 
 namespace Engine {
 void EditorSystem::drawInspectorPanel(FrameContext& ctx) {
+    // Panel header
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.78f, 0.90f, 1.0f));
+    ImGui::TextUnformatted("Inspector");
+    ImGui::PopStyleColor();
+    ImGui::Separator();
+    ImGui::Spacing();
+
     if (!m_selectedEntity || !ctx.scene.isAlive(m_selectedEntity)) {
         ImGui::TextDisabled("No entity selected");
         return;
@@ -31,7 +38,7 @@ void EditorSystem::drawInspectorPanel(FrameContext& ctx) {
     ImGui::Spacing();
 
     if (scene.has<Transform>(id))  drawTransformSection(scene, id);
-    if (scene.has<Mesh>(id))       drawMeshSection(scene, id);
+    if (scene.has<Mesh>(id))       drawMeshSection(scene, ctx.resources, id);
     if (scene.has<Light>(id))      drawLightSection(scene, id);
     if (scene.has<Camera>(id))     drawCameraSection(scene, id);
     if (scene.has<Animation>(id))  drawAnimationSection(scene, id);
@@ -86,18 +93,122 @@ void EditorSystem::drawTransformSection(Scene& scene, EntityId id) {
         glm::vec3 worldPos(worldMat[3]);
         ImGui::TextDisabled("  World: (%.1f, %.1f, %.1f)", worldPos.x, worldPos.y, worldPos.z);
     }
+
     ImGui::Spacing();
 }
 
-void EditorSystem::drawMeshSection(Scene& scene, EntityId id) {
+void EditorSystem::drawMeshSection(Scene& scene, ResourceManager& resources, EntityId id) {
     bool open = ImGui::CollapsingHeader("Mesh##Sec", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
     if (drawRemoveButton("Mesh", id.index)) { scene.remove<Mesh>(Entity{id}); return; }
 
     if (!open) return;
     auto& mesh = scene.get<Mesh>(id);
-    drawPropertyLabel("Mesh ID");    ImGui::Text("#%u", mesh.mesh.id());
-    drawPropertyLabel("Material ID"); ImGui::Text("#%u", mesh.material.id());
+
     drawPropertyLabel("Visible");    ImGui::Checkbox("##MeshVis", &mesh.visible);
+
+    // Mesh info
+    if (mesh.mesh) {
+        const auto& asset = resources.get(mesh.mesh);
+        ImGui::TextDisabled("  %zu verts, %zu tris",
+            asset.vertices.size(), asset.indices.size() / 3);
+        if (hasValidBounds(asset.boundsMin, asset.boundsMax)) {
+            glm::vec3 ext = asset.boundsMax - asset.boundsMin;
+            ImGui::TextDisabled("  Bounds: %.1f x %.1f x %.1f", ext.x, ext.y, ext.z);
+        }
+    }
+
+    ImGui::Spacing();
+
+    // Material properties
+    if (mesh.material) {
+        bool matOpen = ImGui::TreeNodeEx("Material", ImGuiTreeNodeFlags_DefaultOpen);
+        if (matOpen) {
+            auto& mat = resources.edit(mesh.material);
+            bool changed = false;
+
+            // Material type
+            drawPropertyLabel("Type");
+            const char* matTypes[] = {"Opaque", "Transparent", "Unlit"};
+            int matTypeIdx = static_cast<int>(mat.type);
+            if (ImGui::Combo("##MatType", &matTypeIdx, matTypes, IM_ARRAYSIZE(matTypes))) {
+                mat.type = static_cast<MaterialType>(matTypeIdx);
+                changed = true;
+            }
+
+            // Base PBR
+            drawPropertyLabel("Albedo");
+            changed |= ImGui::ColorEdit4("##Albedo", glm::value_ptr(mat.albedo),
+                ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaPreviewHalf);
+
+            drawPropertyLabel("Metallic");
+            changed |= ImGui::SliderFloat("##Metallic", &mat.metallic, 0.0f, 1.0f, "%.2f");
+
+            drawPropertyLabel("Roughness");
+            changed |= ImGui::SliderFloat("##Roughness", &mat.roughness, 0.0f, 1.0f, "%.2f");
+
+            drawPropertyLabel("Emission");
+            changed |= ImGui::ColorEdit3("##Emission", glm::value_ptr(mat.emission),
+                ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
+
+            drawPropertyLabel("AO");
+            changed |= ImGui::SliderFloat("##AO", &mat.ao, 0.0f, 1.0f, "%.2f");
+
+            drawPropertyLabel("Alpha");
+            changed |= ImGui::SliderFloat("##Alpha", &mat.alpha, 0.0f, 1.0f, "%.2f");
+
+            // Surface
+            if (ImGui::TreeNode("Surface##Mat")) {
+                drawPropertyLabel("IOR");
+                changed |= ImGui::DragFloat("##IOR", &mat.ior, 0.01f, 1.0f, 3.0f, "%.2f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("1.0 air, 1.33 water, 1.5 glass, 2.4 diamond");
+
+                drawPropertyLabel("Transmission");
+                changed |= ImGui::SliderFloat("##Trans", &mat.transmission, 0.0f, 1.0f, "%.2f");
+
+                drawPropertyLabel("Normal Scale");
+                changed |= ImGui::DragFloat("##NScale", &mat.normalScale, 0.01f, 0.0f, 5.0f, "%.2f");
+
+                drawPropertyLabel("Height Scale");
+                changed |= ImGui::DragFloat("##HScale", &mat.heightScale, 0.001f, 0.0f, 0.5f, "%.3f");
+
+                ImGui::TreePop();
+            }
+
+            // Clearcoat
+            if (ImGui::TreeNode("Clearcoat##Mat")) {
+                drawPropertyLabel("Strength");
+                changed |= ImGui::SliderFloat("##CC", &mat.clearcoat, 0.0f, 1.0f, "%.2f");
+
+                drawPropertyLabel("Roughness");
+                changed |= ImGui::SliderFloat("##CCR", &mat.clearcoatRoughness, 0.0f, 1.0f, "%.2f");
+
+                ImGui::TreePop();
+            }
+
+            // Anisotropy
+            if (ImGui::TreeNode("Anisotropy##Mat")) {
+                drawPropertyLabel("Strength");
+                changed |= ImGui::SliderFloat("##Aniso", &mat.anisotropy, 0.0f, 1.0f, "%.2f");
+
+                ImGui::TreePop();
+            }
+
+            // Subsurface
+            if (ImGui::TreeNode("Subsurface##Mat")) {
+                drawPropertyLabel("Strength");
+                changed |= ImGui::SliderFloat("##SSS", &mat.subsurface, 0.0f, 1.0f, "%.2f");
+
+                drawPropertyLabel("Color");
+                changed |= ImGui::ColorEdit3("##SSSCol", glm::value_ptr(mat.subsurfaceColor),
+                    ImGuiColorEditFlags_Float);
+
+                ImGui::TreePop();
+            }
+
+            if (changed) resources.commit(mesh.material);
+            ImGui::TreePop();
+        }
+    }
     ImGui::Spacing();
 }
 

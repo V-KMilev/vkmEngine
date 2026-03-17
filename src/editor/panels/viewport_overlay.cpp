@@ -40,6 +40,7 @@ void EditorSystem::drawViewportOverlay(const FrameContext& ctx) {
         float pct = total > 0 ? (static_cast<float>(vis) / static_cast<float>(total)) * 100.0f : 0.0f;
         ImGui::Text("Entities: %zu  Visible: %zu (%.1f%%)", total, vis, pct);
         ImGui::Text("Draws: %u  Passes: %u", info.renderSystemInfo.drawCalls, info.renderSystemInfo.renderPasses);
+        ImGui::Text("Tex binds: %u  Shader sw: %u", info.renderSystemInfo.textureBinds, info.renderSystemInfo.shaderSwitches);
 
         ImGui::Spacing();
         ImGui::TextDisabled("System");
@@ -79,8 +80,17 @@ void EditorSystem::drawViewportOverlay(const FrameContext& ctx) {
                              (m_gizmoOperation == GizmoOperation::Rotate)    ? eKey : rKey;
         const char* modeName = (m_gizmoMode == GizmoMode::Local) ? "Local" : "World";
 
-        char gizmoInfo[64];
-        snprintf(gizmoInfo, sizeof(gizmoInfo), "%s [%s] | %s [%s]", opName, opKey, modeName, spKey);
+        char gizmoInfo[96];
+        if (m_snapEnabled) {
+            float snapVal = (m_gizmoOperation == GizmoOperation::Translate) ? m_snapTranslate :
+                            (m_gizmoOperation == GizmoOperation::Rotate)    ? m_snapRotate :
+                                                                              m_snapScale;
+            const char* snapUnit = (m_gizmoOperation == GizmoOperation::Rotate) ? "deg" : "";
+            snprintf(gizmoInfo, sizeof(gizmoInfo), "%s [%s] | %s [%s] | Snap: %.2g%s",
+                     opName, opKey, modeName, spKey, snapVal, snapUnit);
+        } else {
+            snprintf(gizmoInfo, sizeof(gizmoInfo), "%s [%s] | %s [%s]", opName, opKey, modeName, spKey);
+        }
 
         ImVec2 textSize = ImGui::CalcTextSize(gizmoInfo);
         ImGui::SetCursorPos(ImVec2(8, regionSize.y - textSize.y - 8));

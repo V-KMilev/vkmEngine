@@ -7,24 +7,14 @@
 #include "system/render/render_pipeline.h"
 #include "platform/threading/thread_pool.h"
 
+
 namespace Engine {
 void EditorSystem::drawBottomPanel(FrameContext& ctx) {
-    if (ImGui::BeginTabBar("##BottomTabs")) {
-        if (ImGui::BeginTabItem("Settings")) {
-            drawSettingsTab(ctx);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Resources")) {
-            drawResourcesTab(ctx);
-            ImGui::EndTabItem();
-        }
-        ImGui::EndTabBar();
-    }
+    drawSettingsTab(ctx);
 }
 
 void EditorSystem::drawSettingsTab(FrameContext& ctx) {
-    if (ImGui::BeginTabBar("##SettingsTabs")) {
-        // Rendering
+    if (ImGui::BeginTabBar("##BottomTabs")) {
         if (ImGui::BeginTabItem("Rendering")) {
             ImGui::Spacing();
 
@@ -40,6 +30,14 @@ void EditorSystem::drawSettingsTab(FrameContext& ctx) {
                     if (ImGui::Checkbox(pass.getName().c_str(), &enabled))
                         pass.setEnabled(enabled);
                 }
+            }
+
+            ImGui::Spacing();
+            ImGui::SeparatorText("Exposure");
+            {
+                float exp = (ctx.visibility && ctx.visibility->hasCamera)
+                    ? ctx.visibility->cameraExposure : 1.0f;
+                ImGui::TextDisabled("Camera exposure: %.2f (edit on Camera entity)", exp);
             }
 
             ImGui::Spacing();
@@ -60,6 +58,42 @@ void EditorSystem::drawSettingsTab(FrameContext& ctx) {
                     size_t tot = ctx.scene.entityCount();
                     ImGui::TextDisabled("Culled: %zu / %zu", tot > vis ? tot - vis : 0, tot);
                 }
+            }
+            ImGui::EndTabItem();
+        }
+
+        // Environment
+        if (ImGui::BeginTabItem("Environment")) {
+            ImGui::Spacing();
+            if (m_renderSystem) {
+                auto& env = m_renderSystem->getEnvironment();
+
+                ImGui::SeparatorText("Ambient Light");
+                drawPropertyLabel("Color");
+                ImGui::ColorEdit3("##AmbCol", glm::value_ptr(env.ambientColor), ImGuiColorEditFlags_Float);
+                drawPropertyLabel("Intensity");
+                ImGui::DragFloat("##AmbInt", &env.ambientIntensity, 0.005f, 0.0f, 2.0f, "%.3f");
+
+                ImGui::Spacing();
+                ImGui::SeparatorText("Background");
+                drawPropertyLabel("Clear Color");
+                ImGui::ColorEdit3("##ClearCol", glm::value_ptr(env.clearColor), ImGuiColorEditFlags_Float);
+
+                ImGui::Spacing();
+                ImGui::SeparatorText("Grid");
+                drawPropertyLabel("Cell Size");
+                ImGui::DragFloat("##GScale", &env.gridScale, 0.1f, 0.1f, 100.0f, "%.1f");
+                drawPropertyLabel("Grid Size");
+                ImGui::DragFloat("##GSize", &env.gridSize, 10.0f, 10.0f, 10000.0f, "%.0f");
+                drawPropertyLabel("Fade Start");
+                ImGui::DragFloat("##GFadeS", &env.gridFadeStart, 1.0f, 1.0f, env.gridFadeEnd, "%.0f");
+                drawPropertyLabel("Fade End");
+                ImGui::DragFloat("##GFadeE", &env.gridFadeEnd, 1.0f, env.gridFadeStart, 10000.0f, "%.0f");
+
+                ImGui::Spacing();
+                ImGui::SeparatorText("AABB Debug");
+                drawPropertyLabel("Color");
+                ImGui::ColorEdit3("##AABBCol", glm::value_ptr(env.debugColor), ImGuiColorEditFlags_Float);
             }
             ImGui::EndTabItem();
         }
@@ -86,7 +120,13 @@ void EditorSystem::drawSettingsTab(FrameContext& ctx) {
             ImGui::Spacing();
 
             ImGui::Text("Resolution: %zux%zu", window.getWidth(), window.getHeight());
-            ImGui::Text("Threads: %zu", ThreadPool::get().size());
+            ImGui::Text("Threads: %zu", ThreadPool::get().threadCount());
+
+            ImGui::Spacing();
+            ImGui::SeparatorText("Window");
+            if (ImGui::Button("Fullscreen", ImVec2(100, 0))) window.updateMode(WindowMode::FULLSCREEN);
+            ImGui::SameLine();
+            if (ImGui::Button("Windowed", ImVec2(100, 0))) window.updateMode(WindowMode::WINDOWED);
 
             ImGui::Spacing();
             ImGui::SeparatorText("VSync");
@@ -177,12 +217,83 @@ void EditorSystem::drawSettingsTab(FrameContext& ctx) {
             ImGui::EndTabItem();
         }
 
+        // Gizmo
+        if (ImGui::BeginTabItem("Gizmo")) {
+            ImGui::Spacing();
+
+            ImGui::Checkbox("Snap Enabled", &m_snapEnabled);
+            ImGui::SameLine(0, 16);
+            ImGui::TextDisabled("(Hold Ctrl while dragging to temporarily snap)");
+
+            ImGui::Spacing();
+            drawPropertyLabel("Translate");
+            ImGui::DragFloat("##SnapT", &m_snapTranslate, 0.1f, 0.01f, 100.0f, "%.2f units");
+
+            drawPropertyLabel("Rotate");
+            ImGui::DragFloat("##SnapR", &m_snapRotate, 1.0f, 1.0f, 180.0f, "%.0f deg");
+
+            drawPropertyLabel("Scale");
+            ImGui::DragFloat("##SnapS", &m_snapScale, 0.01f, 0.01f, 10.0f, "%.2f");
+
+            ImGui::Spacing();
+            ImGui::SeparatorText("Gizmo Style");
+            drawPropertyLabel("Operation");
+            const char* opNames[] = {"Translate", "Rotate", "Scale"};
+            int opIdx = static_cast<int>(m_gizmoOperation);
+            if (ImGui::Combo("##GizOp", &opIdx, opNames, IM_ARRAYSIZE(opNames)))
+                m_gizmoOperation = static_cast<GizmoOperation>(opIdx);
+
+            drawPropertyLabel("Space");
+            const char* modeNames[] = {"Local", "World"};
+            int modeIdx = static_cast<int>(m_gizmoMode);
+            if (ImGui::Combo("##GizMode", &modeIdx, modeNames, IM_ARRAYSIZE(modeNames)))
+                m_gizmoMode = static_cast<GizmoMode>(modeIdx);
+
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Resources")) {
+            drawResourcesTab(ctx);
+            ImGui::EndTabItem();
+        }
+
         ImGui::EndTabBar();
     }
 }
 
 void EditorSystem::drawResourcesTab(FrameContext& ctx) {
     auto& scene = ctx.scene;
+
+    // Update cached counts periodically (every 0.5s), not every frame
+    m_resourceCounts.updateTimer += ctx.deltaTime;
+    if (m_resourceCounts.updateTimer >= 0.5f) {
+        m_resourceCounts.updateTimer = 0.0f;
+        auto& rc = m_resourceCounts;
+        rc.transforms  = scene.count<Transform>();
+        rc.meshes      = scene.count<Mesh>();
+        rc.lights      = scene.count<Light>();
+        rc.cameras     = scene.count<Camera>();
+        rc.animations  = scene.count<Animation>();
+        rc.hierarchies = scene.count<Hierarchy>();
+        rc.names       = scene.count<Name>();
+
+        rc.animPlaying = rc.animPaused = 0;
+        scene.forEach<Animation>([&](EntityId, const Animation& a) {
+            if (a.playing) ++rc.animPlaying; else ++rc.animPaused;
+        });
+
+        rc.lightsDir = rc.lightsPoint = rc.lightsSpot = rc.lightsDisabled = 0;
+        scene.forEach<Light>([&](EntityId, const Light& l) {
+            if (!l.enabled) { ++rc.lightsDisabled; return; }
+            switch (l.type) {
+                case LightType::Directional: ++rc.lightsDir; break;
+                case LightType::Point: ++rc.lightsPoint; break;
+                case LightType::Spot: ++rc.lightsSpot; break;
+            }
+        });
+    }
+
+    const auto& rc = m_resourceCounts;
     float colW = ImGui::GetContentRegionAvail().x / 3.0f;
 
     ImGui::Columns(3, "##ResCols", true);
@@ -194,10 +305,10 @@ void EditorSystem::drawResourcesTab(FrameContext& ctx) {
     ImGui::Separator();
     struct CI { const char* n; size_t c; };
     CI comps[] = {
-        {"Transform", scene.count<Transform>()}, {"Mesh", scene.count<Mesh>()},
-        {"Light", scene.count<Light>()}, {"Camera", scene.count<Camera>()},
-        {"Animation", scene.count<Animation>()}, {"Hierarchy", scene.count<Hierarchy>()},
-        {"Name", scene.count<Name>()},
+        {"Transform", rc.transforms}, {"Mesh", rc.meshes},
+        {"Light", rc.lights}, {"Camera", rc.cameras},
+        {"Animation", rc.animations}, {"Hierarchy", rc.hierarchies},
+        {"Name", rc.names},
     };
     for (const auto& co : comps) ImGui::Text("%-12s %zu", co.n, co.c);
 
@@ -206,11 +317,7 @@ void EditorSystem::drawResourcesTab(FrameContext& ctx) {
     // Column 2: Animations
     ImGui::TextDisabled("Animations");
     ImGui::Separator();
-    uint32_t playing = 0, paused = 0;
-    scene.forEach<Animation>([&](EntityId, const Animation& a) {
-        if (a.playing) ++playing; else ++paused;
-    });
-    ImGui::Text("Playing: %u  Paused: %u", playing, paused);
+    ImGui::Text("Playing: %u  Paused: %u", rc.animPlaying, rc.animPaused);
     if (ImGui::SmallButton("Pause All")) {
         scene.forEach<Animation>([](EntityId, Animation& a) { a.playing = false; });
     }
@@ -224,17 +331,8 @@ void EditorSystem::drawResourcesTab(FrameContext& ctx) {
     // Column 3: Lights
     ImGui::TextDisabled("Lights");
     ImGui::Separator();
-    uint32_t dir = 0, pt = 0, sp = 0, dis = 0;
-    scene.forEach<Light>([&](EntityId, const Light& l) {
-        if (!l.enabled) { ++dis; return; }
-        switch (l.type) {
-            case LightType::Directional: ++dir; break;
-            case LightType::Point: ++pt; break;
-            case LightType::Spot: ++sp; break;
-        }
-    });
-    ImGui::Text("Dir: %u  Point: %u  Spot: %u", dir, pt, sp);
-    if (dis > 0) ImGui::Text("Disabled: %u", dis);
+    ImGui::Text("Dir: %u  Point: %u  Spot: %u", rc.lightsDir, rc.lightsPoint, rc.lightsSpot);
+    if (rc.lightsDisabled > 0) ImGui::Text("Disabled: %u", rc.lightsDisabled);
 
     ImGui::Columns(1);
 }

@@ -25,5 +25,7 @@
 #include "ecs/component/name.h"
 #include "ecs/hierarchy_utils.h"
 #include "resource/resource_manager.h"
+#include "resource/material_asset.h"
 #include "debug/statistics.h"
 #include "system/visibility/visibility.h"
+#include "system/visibility/bounds_utils.h"

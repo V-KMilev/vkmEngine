@@ -59,6 +59,7 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
     auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
 
+    glContext.setClearColor(view.environment.clearColor);
     glContext.clearColor();
     glContext.clear();
 
@@ -113,6 +114,9 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
 
             shader->setUniform3fv(GLConfig::UniformNames::CameraPosition, view.camera.position);
             shader->setUniformMatrix4fv(GLConfig::UniformNames::ViewProjection, view.camera.viewProjection);
+            shader->setUniform1f(GLConfig::UniformNames::Exposure, view.camera.exposure);
+            shader->setUniform3fv(GLConfig::UniformNames::AmbientColor, view.environment.ambientColor);
+            shader->setUniform1f(GLConfig::UniformNames::AmbientIntensity, view.environment.ambientIntensity);
 
             currentShader = shader;
             currentType = batch.materialType;

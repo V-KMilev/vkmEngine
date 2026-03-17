@@ -38,12 +38,8 @@ class GLAABBDebugPass : public RenderPass {
         /**
          * @brief Construct a GLAABBDebugPass that draws AABBs with a given shader.
          * @param shader Reference to an OpenGL shader to be used for rendering AABBs.
-         * @param color Color of the AABBs. Defaults to red.
          */
-        GLAABBDebugPass(
-            Core::Shader& shader,
-            const glm::vec3& color = glm::vec3(1.0f, 0.0f, 0.0f)
-        );
+        GLAABBDebugPass(Core::Shader& shader);
 
     public:
         /**
@@ -76,8 +72,6 @@ class GLAABBDebugPass : public RenderPass {
 
     private:
         Core::Shader& m_shader;
-
-        glm::vec3 m_color;
 
         std::unique_ptr<GLMesh> m_aabb;
 };

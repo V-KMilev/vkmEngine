@@ -84,8 +84,6 @@ class GLGridPass : public RenderPass {
         Core::Shader& m_shader;
 
         std::unique_ptr<GLMesh> m_mesh;
-
-        GridConfig m_config;
 };
 
 } // namespace Engine

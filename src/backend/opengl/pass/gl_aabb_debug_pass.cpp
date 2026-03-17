@@ -15,12 +15,10 @@
 
 namespace Engine {
 
-GLAABBDebugPass::GLAABBDebugPass(
-    Core::Shader& shader,
-    const glm::vec3& color
-) : RenderPass("GLAABBDebugPass"),
-    m_shader(shader),
-    m_color(color) {
+GLAABBDebugPass::GLAABBDebugPass(Core::Shader& shader)
+    : RenderPass("GLAABBDebugPass")
+    , m_shader(shader)
+{
     initialize();
 }
 
@@ -81,7 +79,7 @@ void GLAABBDebugPass::execute(RenderBackend& backend, const RenderView& view, co
     // Set global uniforms
     using namespace GLConfig::UniformNames;
     m_shader.setUniformMatrix4fv(ViewProjection, view.camera.viewProjection);
-    m_shader.setUniform3fv(Color, m_color);
+    m_shader.setUniform3fv(Color, view.environment.debugColor);
 
     // Draw AABBs for all visible drawables
     for (const auto& drawable : view.drawables) {
