@@ -95,10 +95,19 @@ class RenderSystem : public System {
         RenderPipeline& getPipeline() { return m_pipeline; }
         const RenderPipeline& getPipeline() const { return m_pipeline; }
 
+        EnvironmentConfig& getEnvironment() { return m_environment; }
+        const EnvironmentConfig& getEnvironment() const { return m_environment; }
+
+        void setWireframe(bool enabled);
+        bool getWireframe() const { return m_environment.wireframe; }
+
     private:
         std::unique_ptr<RenderBackend> m_backend;
         RenderPipeline m_pipeline;
+
         RenderView m_renderView;  ///< Persistent - vectors reuse capacity across frames.
+
+        EnvironmentConfig m_environment;
 
         uint32_t m_width;
         uint32_t m_height;

@@ -61,6 +61,9 @@ namespace GLConfig {
     namespace UniformNames {
         // Camera/View uniforms
         constexpr const char* CameraPosition   = "u_cameraPosition";
+        constexpr const char* Exposure         = "u_exposure";
+        constexpr const char* AmbientColor     = "u_ambientColor";
+        constexpr const char* AmbientIntensity = "u_ambientIntensity";
         constexpr const char* View             = "u_view";
         constexpr const char* Projection       = "u_projection";
         constexpr const char* ViewProjection   = "u_viewProjection";

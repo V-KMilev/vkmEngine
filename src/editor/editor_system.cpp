@@ -55,61 +55,61 @@ EditorSystem::EditorSystem(
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
 
-    style.WindowRounding    = 0.0f;
+    style.WindowRounding    = 4.0f;
     style.WindowBorderSize  = 1.0f;
     style.WindowPadding     = ImVec2(8, 6);
     style.WindowTitleAlign  = ImVec2(0.0f, 0.5f);
-    style.FrameRounding     = 2.0f;
-    style.FramePadding      = ImVec2(6, 3);
+    style.FrameRounding     = 3.0f;
+    style.FramePadding      = ImVec2(6, 4);
     style.FrameBorderSize   = 0.0f;
-    style.GrabRounding      = 1.0f;
-    style.GrabMinSize       = 8.0f;
-    style.ItemSpacing       = ImVec2(6, 4);
+    style.GrabRounding      = 2.0f;
+    style.GrabMinSize       = 10.0f;
+    style.ItemSpacing       = ImVec2(6, 5);
     style.ItemInnerSpacing  = ImVec2(4, 4);
     style.IndentSpacing     = 14.0f;
-    style.ScrollbarSize     = 11.0f;
-    style.ScrollbarRounding = 2.0f;
-    style.TabRounding       = 2.0f;
-    style.PopupRounding     = 3.0f;
-    style.ChildRounding     = 0.0f;
-    style.ChildBorderSize   = 1.0f;
-    style.CellPadding       = ImVec2(4, 2);
+    style.ScrollbarSize     = 12.0f;
+    style.ScrollbarRounding = 6.0f;
+    style.TabRounding       = 4.0f;
+    style.PopupRounding     = 4.0f;
+    style.ChildRounding     = 4.0f;
+    style.ChildBorderSize   = 0.5f;
+    style.CellPadding       = ImVec2(4, 3);
     style.SeparatorTextBorderSize = 2.0f;
 
     ImVec4* c = style.Colors;
-    c[ImGuiCol_Text]                  = ImVec4(0.86f, 0.87f, 0.88f, 1.00f);
-    c[ImGuiCol_TextDisabled]          = ImVec4(0.46f, 0.47f, 0.50f, 1.00f);
-    c[ImGuiCol_WindowBg]              = ImVec4(0.11f, 0.11f, 0.12f, 1.00f);
-    c[ImGuiCol_ChildBg]               = ImVec4(0.11f, 0.11f, 0.12f, 1.00f);
-    c[ImGuiCol_PopupBg]               = ImVec4(0.13f, 0.13f, 0.14f, 0.97f);
-    c[ImGuiCol_Border]                = ImVec4(0.22f, 0.22f, 0.24f, 0.80f);
-    c[ImGuiCol_FrameBg]               = ImVec4(0.16f, 0.16f, 0.18f, 1.00f);
-    c[ImGuiCol_FrameBgHovered]        = ImVec4(0.22f, 0.22f, 0.25f, 1.00f);
-    c[ImGuiCol_FrameBgActive]         = ImVec4(0.28f, 0.28f, 0.32f, 1.00f);
-    c[ImGuiCol_TitleBg]               = ImVec4(0.08f, 0.08f, 0.09f, 1.00f);
-    c[ImGuiCol_TitleBgActive]         = ImVec4(0.12f, 0.12f, 0.14f, 1.00f);
-    c[ImGuiCol_MenuBarBg]             = ImVec4(0.13f, 0.13f, 0.14f, 1.00f);
-    c[ImGuiCol_ScrollbarBg]           = ImVec4(0.10f, 0.10f, 0.11f, 1.00f);
-    c[ImGuiCol_ScrollbarGrab]         = ImVec4(0.28f, 0.28f, 0.31f, 1.00f);
-    c[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.36f, 0.36f, 0.40f, 1.00f);
-    c[ImGuiCol_ScrollbarGrabActive]   = ImVec4(0.44f, 0.44f, 0.48f, 1.00f);
-    c[ImGuiCol_CheckMark]             = ImVec4(0.40f, 0.68f, 1.00f, 1.00f);
-    c[ImGuiCol_SliderGrab]            = ImVec4(0.33f, 0.56f, 0.88f, 1.00f);
-    c[ImGuiCol_SliderGrabActive]      = ImVec4(0.42f, 0.66f, 1.00f, 1.00f);
-    c[ImGuiCol_Button]                = ImVec4(0.20f, 0.20f, 0.23f, 1.00f);
-    c[ImGuiCol_ButtonHovered]         = ImVec4(0.28f, 0.48f, 0.76f, 1.00f);
-    c[ImGuiCol_ButtonActive]          = ImVec4(0.23f, 0.42f, 0.68f, 1.00f);
-    c[ImGuiCol_Header]                = ImVec4(0.18f, 0.18f, 0.20f, 1.00f);
-    c[ImGuiCol_HeaderHovered]         = ImVec4(0.28f, 0.48f, 0.76f, 0.55f);
-    c[ImGuiCol_HeaderActive]          = ImVec4(0.28f, 0.48f, 0.76f, 0.75f);
-    c[ImGuiCol_Separator]             = ImVec4(0.22f, 0.22f, 0.24f, 0.60f);
-    c[ImGuiCol_SeparatorHovered]      = ImVec4(0.33f, 0.56f, 0.88f, 0.60f);
-    c[ImGuiCol_Tab]                   = ImVec4(0.14f, 0.14f, 0.16f, 1.00f);
-    c[ImGuiCol_TabHovered]            = ImVec4(0.28f, 0.48f, 0.76f, 0.75f);
-    c[ImGuiCol_TabSelected]           = ImVec4(0.22f, 0.38f, 0.60f, 1.00f);
-    c[ImGuiCol_PlotLines]             = ImVec4(0.40f, 0.68f, 1.00f, 1.00f);
-    c[ImGuiCol_PlotHistogram]         = ImVec4(0.40f, 0.68f, 1.00f, 0.80f);
-    c[ImGuiCol_TableHeaderBg]         = ImVec4(0.14f, 0.14f, 0.16f, 1.00f);
+    c[ImGuiCol_Text]                  = ImVec4(0.88f, 0.89f, 0.90f, 1.00f);
+    c[ImGuiCol_TextDisabled]          = ImVec4(0.50f, 0.51f, 0.54f, 1.00f);
+    c[ImGuiCol_WindowBg]              = ImVec4(0.12f, 0.12f, 0.13f, 1.00f);
+    c[ImGuiCol_ChildBg]               = ImVec4(0.13f, 0.13f, 0.14f, 1.00f);
+    c[ImGuiCol_PopupBg]               = ImVec4(0.15f, 0.15f, 0.16f, 0.98f);
+    c[ImGuiCol_Border]                = ImVec4(0.20f, 0.20f, 0.22f, 0.50f);
+    c[ImGuiCol_FrameBg]               = ImVec4(0.08f, 0.08f, 0.09f, 1.00f);
+    c[ImGuiCol_FrameBgHovered]        = ImVec4(0.18f, 0.18f, 0.21f, 1.00f);
+    c[ImGuiCol_FrameBgActive]         = ImVec4(0.24f, 0.24f, 0.28f, 1.00f);
+    c[ImGuiCol_TitleBg]               = ImVec4(0.09f, 0.09f, 0.10f, 1.00f);
+    c[ImGuiCol_TitleBgActive]         = ImVec4(0.13f, 0.13f, 0.15f, 1.00f);
+    c[ImGuiCol_MenuBarBg]             = ImVec4(0.15f, 0.15f, 0.16f, 1.00f);
+    c[ImGuiCol_ScrollbarBg]           = ImVec4(0.08f, 0.08f, 0.09f, 0.60f);
+    c[ImGuiCol_ScrollbarGrab]         = ImVec4(0.30f, 0.30f, 0.34f, 1.00f);
+    c[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.40f, 0.40f, 0.44f, 1.00f);
+    c[ImGuiCol_ScrollbarGrabActive]   = ImVec4(0.50f, 0.50f, 0.54f, 1.00f);
+    c[ImGuiCol_CheckMark]             = ImVec4(0.45f, 0.72f, 1.00f, 1.00f);
+    c[ImGuiCol_SliderGrab]            = ImVec4(0.36f, 0.60f, 0.92f, 1.00f);
+    c[ImGuiCol_SliderGrabActive]      = ImVec4(0.46f, 0.70f, 1.00f, 1.00f);
+    c[ImGuiCol_Button]                = ImVec4(0.18f, 0.18f, 0.21f, 1.00f);
+    c[ImGuiCol_ButtonHovered]         = ImVec4(0.30f, 0.50f, 0.78f, 1.00f);
+    c[ImGuiCol_ButtonActive]          = ImVec4(0.25f, 0.44f, 0.70f, 1.00f);
+    c[ImGuiCol_Header]                = ImVec4(0.16f, 0.16f, 0.18f, 1.00f);
+    c[ImGuiCol_HeaderHovered]         = ImVec4(0.26f, 0.44f, 0.70f, 0.50f);
+    c[ImGuiCol_HeaderActive]          = ImVec4(0.26f, 0.44f, 0.70f, 0.70f);
+    c[ImGuiCol_Separator]             = ImVec4(0.22f, 0.22f, 0.24f, 0.40f);
+    c[ImGuiCol_SeparatorHovered]      = ImVec4(0.36f, 0.60f, 0.92f, 0.60f);
+    c[ImGuiCol_Tab]                   = ImVec4(0.15f, 0.15f, 0.17f, 1.00f);
+    c[ImGuiCol_TabHovered]            = ImVec4(0.30f, 0.50f, 0.78f, 0.75f);
+    c[ImGuiCol_TabSelected]           = ImVec4(0.22f, 0.36f, 0.56f, 1.00f);
+    c[ImGuiCol_PlotLines]             = ImVec4(0.45f, 0.72f, 1.00f, 1.00f);
+    c[ImGuiCol_PlotHistogram]         = ImVec4(0.45f, 0.72f, 1.00f, 0.80f);
+    c[ImGuiCol_TableHeaderBg]         = ImVec4(0.15f, 0.15f, 0.17f, 1.00f);
     c[ImGuiCol_TableBorderStrong]     = ImVec4(0.22f, 0.22f, 0.24f, 1.00f);
     c[ImGuiCol_TableBorderLight]      = ImVec4(0.18f, 0.18f, 0.20f, 1.00f);
     c[ImGuiCol_TableRowBgAlt]         = ImVec4(1.00f, 1.00f, 1.00f, 0.02f);
@@ -264,7 +264,7 @@ void EditorSystem::update(FrameContext& ctx) {
         m_cameraController->setEditorInputCapture(blockMouse, ImGui::GetIO().WantTextInput);
     }
 
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    if (m_renderSystem) m_renderSystem->setWireframe(false);
 
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -338,6 +338,9 @@ void EditorSystem::update(FrameContext& ctx) {
         float leftW  = m_showHierarchy ? m_leftPanelWidth : 0.0f;
         float rightW = m_showInspector ? m_rightPanelWidth : 0.0f;
 
+        // Track panel edge positions for border-less resize detection
+        ImVec2 panelAreaStart = ImGui::GetCursorScreenPos();
+
         if (m_showHierarchy) {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
             if (ImGui::BeginChild("##Hierarchy", ImVec2(leftW, mainH), ImGuiChildFlags_Borders)) {
@@ -385,6 +388,64 @@ void EditorSystem::update(FrameContext& ctx) {
             ImGui::PopStyleVar();
         }
 
+        // Panel border resize detection (no extra layout space needed)
+        // Only allow starting a resize when nothing else is being dragged.
+        {
+            constexpr float RESIZE_ZONE = 4.0f;
+            ImVec2 mpos = ImGui::GetMousePos();
+            bool mouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+            ImVec2 delta = ImGui::GetIO().MouseDelta;
+            bool alreadyResizing = m_resizingLeft || m_resizingRight || m_resizingBottom;
+            // Block new resize if an ImGui widget or gizmo is active
+            bool canStartNew = !ImGui::IsAnyItemActive() && !m_gizmo.isUsing() && !alreadyResizing;
+
+            auto handleEdge = [&](bool show, float edgePos, bool horizontal,
+                                  bool& resizingFlag, float& panelSize, float sign,
+                                  float minSize, float maxSize) {
+                if (!show) return;
+                bool nearEdge;
+                if (horizontal) {
+                    nearEdge = std::abs(mpos.y - edgePos) <= RESIZE_ZONE
+                            && mpos.x >= panelAreaStart.x
+                            && mpos.x <= panelAreaStart.x + viewport->WorkSize.x;
+                } else {
+                    nearEdge = std::abs(mpos.x - edgePos) <= RESIZE_ZONE
+                            && mpos.y >= panelAreaStart.y
+                            && mpos.y <= panelAreaStart.y + mainH;
+                }
+
+                // Continue an existing resize drag
+                if (resizingFlag) {
+                    ImGui::SetMouseCursor(horizontal ? ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_ResizeEW);
+                    float d = horizontal ? delta.y : delta.x;
+                    panelSize += d * sign;
+                    panelSize = std::clamp(panelSize, minSize, maxSize);
+                    return;
+                }
+
+                // Show cursor hint when hovering (even if can't start)
+                if (nearEdge) {
+                    ImGui::SetMouseCursor(horizontal ? ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_ResizeEW);
+                }
+
+                // Only start a new resize on click when nothing else is active
+                if (nearEdge && canStartNew && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                    resizingFlag = true;
+                }
+            };
+
+            handleEdge(m_showHierarchy, panelAreaStart.x + leftW, false,
+                       m_resizingLeft, m_leftPanelWidth, 1.0f, 180.0f, 500.0f);
+            handleEdge(m_showInspector, panelAreaStart.x + viewport->WorkSize.x - rightW, false,
+                       m_resizingRight, m_rightPanelWidth, -1.0f, 240.0f, 600.0f);
+            handleEdge(m_showBottom, panelAreaStart.y + mainH, true,
+                       m_resizingBottom, m_bottomPanelHeight, -1.0f, 100.0f, 500.0f);
+
+            if (!mouseDown) {
+                m_resizingLeft = m_resizingRight = m_resizingBottom = false;
+            }
+        }
+
         ImGui::PopStyleVar(); // ItemSpacing
 
         drawStatusBar(ctx);
@@ -398,7 +459,7 @@ void EditorSystem::update(FrameContext& ctx) {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-    if (m_wireframe) glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    if (m_renderSystem && m_wireframe) m_renderSystem->setWireframe(true);
 }
 
 void EditorSystem::drawMenuBar(FrameContext& ctx) {

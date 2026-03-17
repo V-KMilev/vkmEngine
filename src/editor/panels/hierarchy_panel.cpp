@@ -4,6 +4,13 @@ namespace Engine {
 void EditorSystem::drawHierarchyPanel(FrameContext& ctx) {
     auto& scene = ctx.scene;
 
+    // Panel header
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.78f, 0.90f, 1.0f));
+    ImGui::TextUnformatted("Hierarchy");
+    ImGui::PopStyleColor();
+    ImGui::Separator();
+    ImGui::Spacing();
+
     float btnW = ImGui::GetFrameHeight();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - btnW - ImGui::GetStyle().ItemSpacing.x);
     ImGui::InputTextWithHint("##Filter", "Search...", m_hierarchyFilter, sizeof(m_hierarchyFilter));
@@ -23,7 +30,8 @@ void EditorSystem::drawHierarchyPanel(FrameContext& ctx) {
     if (ImGui::BeginChild("##Tree", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()))) {
         // Rebuild root list only when entities change (not every frame).
         size_t currentCount = scene.entityCount();
-        if (m_hierarchyDirty || currentCount != m_lastEntityCount) {
+        bool wasDirty = m_hierarchyDirty || currentCount != m_lastEntityCount;
+        if (wasDirty) {
             m_cachedRoots.clear();
             m_cachedRoots.reserve(currentCount);
             scene.forEach<Transform>([&](EntityId id, const Transform&) {
@@ -37,14 +45,20 @@ void EditorSystem::drawHierarchyPanel(FrameContext& ctx) {
         const auto& displayList = hasFilter ? m_cachedFiltered : m_cachedRoots;
 
         if (hasFilter) {
-            m_cachedFiltered.clear();
-            // Search all entities (not just roots) so children are discoverable
-            scene.forEach<Transform>([&](EntityId id, const Transform&) {
-                char name[64];
-                getEntityDisplayName(scene, id, name, sizeof(name));
-                if (matchesFilter(name, m_hierarchyFilter))
-                    m_cachedFiltered.push_back(id);
-            });
+            // Only rebuild filtered list when filter text or entity count changes
+            bool filterChanged = std::strcmp(m_hierarchyFilter, m_lastFilter) != 0;
+            if (filterChanged || wasDirty) {
+                std::strncpy(m_lastFilter, m_hierarchyFilter, sizeof(m_lastFilter) - 1);
+                m_lastFilter[sizeof(m_lastFilter) - 1] = '\0';
+                m_cachedFiltered.clear();
+                // Search all entities (not just roots) so children are discoverable
+                scene.forEach<Transform>([&](EntityId id, const Transform&) {
+                    char name[64];
+                    getEntityDisplayName(scene, id, name, sizeof(name));
+                    if (matchesFilter(name, m_hierarchyFilter))
+                        m_cachedFiltered.push_back(id);
+                });
+            }
         }
 
         // ImGuiListClipper: only draws visible rows instead of all 13,000+.

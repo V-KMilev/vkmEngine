@@ -27,6 +27,7 @@ struct CameraData {
     glm::mat4 viewProjection = {1.0f};
 
     glm::vec3 position = {0.0f, 0.0f, 0.0f};
+    float     exposure = 1.0f;
 };
 
 /**
@@ -62,12 +63,40 @@ struct LightData {
 };
 
 /**
+ * @brief Backend-agnostic environment/scene settings.
+ *
+ * Written by the editor, read by backend passes during rendering.
+ * Lives on RenderSystem, copied into RenderView each frame.
+ */
+struct EnvironmentConfig {
+    // Ambient light
+    glm::vec3 ambientColor     = glm::vec3(1.0f);
+    float     ambientIntensity = 0.03f;
+
+    // Background
+    glm::vec4 clearColor = glm::vec4(0.1f, 0.1f, 0.12f, 1.0f);
+
+    // Grid
+    float gridSize      = 1000.0f;
+    float gridScale     = 1.0f;
+    float gridFadeStart = 50.0f;
+    float gridFadeEnd   = 550.0f;
+
+    // Debug visualization
+    glm::vec3 debugColor = glm::vec3(1.0f, 0.0f, 0.0f);
+
+    // Rendering
+    bool wireframe = false;
+};
+
+/**
  * @brief Collection of scene data needed for a rendering pass.
  *
  * Encapsulates camera info, all visible drawables, and active lights required for rendering.
  */
 struct RenderView {
     CameraData camera;
+    EnvironmentConfig environment;
 
     std::vector<DrawableData> drawables;
     std::vector<LightData> lights;

@@ -40,6 +40,9 @@ void RenderSystem::update(FrameContext& ctx) {
         resize(ctx.viewportWidth, ctx.viewportHeight);
     }
 
+    // Copy environment config before build so it's available if build() ever reads it
+    m_renderView.environment = m_environment;
+
     // Build snapshot for this frame (reuses vector capacity from previous frame)
     m_renderView.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight);
 
@@ -54,5 +57,11 @@ void RenderSystem::addPass(std::unique_ptr<RenderPass> pass) {
 void RenderSystem::clearPasses() {
     m_pipeline.clear();
 }
+
+void RenderSystem::setWireframe(bool enabled) {
+    m_environment.wireframe = enabled;
+    if (m_backend) m_backend->setWireframe(enabled);
+}
+
 
 } // namespace Engine

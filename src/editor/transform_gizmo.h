@@ -51,6 +51,12 @@ class TransformGizmo {
         bool isOver() const  { return m_hovered != GizmoElement::None; }
         bool isUsing() const { return m_dragging; }
 
+        // Set snap angle in radians (0 = disabled). Applied during rotation drag.
+        void setSnapAngle(float radians) { m_snapAngle = radians; }
+
+        // Returns the delta quaternion from the current rotation drag (identity if not rotating).
+        glm::quat getDragRotation() const { return m_dragRotation; }
+
     private:
         // Math utilities
         ImVec2 worldToScreen(const glm::vec3& worldPos) const;
@@ -113,6 +119,12 @@ class TransformGizmo {
 
         // Scale-specific
         float m_scaleStartDist = 1.0f;
+
+        // Snap
+        float m_snapAngle = 0.0f;
+
+        // Delta rotation from current drag (set by handleRotationDrag)
+        glm::quat m_dragRotation{1.0f, 0.0f, 0.0f, 0.0f};
 
         // Style constants
         static constexpr float GIZMO_SIZE_PIXELS  = 110.0f;

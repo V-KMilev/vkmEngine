@@ -8,7 +8,10 @@ in vec3 Bitangent;
 
 out vec4 FragColor;
 
-uniform vec3 u_cameraPosition;
+uniform vec3  u_cameraPosition;
+uniform float u_exposure;
+uniform vec3  u_ambientColor;
+uniform float u_ambientIntensity;
 
 const float PI = 3.14159265359;
 
@@ -109,12 +112,22 @@ bool hasTexture(int flags, int flag) {
     return (flags & flag) != 0;
 }
 
-vec3 getNormalFromMap() {
+// Parallax offset mapping
+vec2 parallaxMapping(vec2 uv, vec3 viewDirTS) {
+    float height = texture(u_heightTexture, uv).r;
+    vec2 offset = viewDirTS.xy / max(viewDirTS.z, 0.001) * (height * u_material.heightScale);
+    return uv - offset;
+}
+
+// Normal mapping with adjustable intensity
+vec3 getNormalFromMap(vec2 uv) {
     if (!hasTexture(u_material.textureFlags, TEXTURE_FLAG_NORMAL)) {
         return normalize(Normal);
     }
 
-    vec3 tangentNormal = texture(u_normalTexture, TexCoords).rgb * 2.0 - 1.0;
+    vec3 tangentNormal = texture(u_normalTexture, uv).rgb * 2.0 - 1.0;
+    tangentNormal.xy *= u_material.normalScale;
+    tangentNormal = normalize(tangentNormal);
     mat3 TBN = mat3(normalize(Tangent), normalize(Bitangent), normalize(Normal));
     return normalize(TBN * tangentNormal);
 }
@@ -131,6 +144,20 @@ float distributionGGX(vec3 N, vec3 H, float roughness) {
     denominator = PI * denominator * denominator;
 
     return numerator / denominator;
+}
+
+// Anisotropic NDF (GGX with directional roughness)
+float distributionGGXAnisotropic(vec3 H, vec3 T, vec3 B, vec3 N, float at, float ab) {
+    float TdotH = dot(T, H);
+    float BdotH = dot(B, H);
+    float NdotH = max(dot(N, H), 0.0);
+
+    float a2 = at * ab;
+    float d = (TdotH * TdotH) / (at * at)
+            + (BdotH * BdotH) / (ab * ab)
+            + NdotH * NdotH;
+
+    return 1.0 / (PI * a2 * d * d + 0.0001);
 }
 
 // Geometry Function (Schlick-GGX)
@@ -159,6 +186,21 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+// ACES filmic tone mapping (Narkowicz fit)
+vec3 ACESFilm(vec3 x) {
+    float a = 2.51;
+    float b = 0.03;
+    float c = 2.43;
+    float d = 0.59;
+    float e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
+// Linear to sRGB gamma correction
+vec3 linearToSRGB(vec3 color) {
+    return pow(color, vec3(1.0 / 2.2));
+}
+
 // Calculate distance attenuation for point and spot lights
 float calculateAttenuation(vec3 lightPos, vec3 fragPos, float radius) {
     float distance = length(lightPos - fragPos);
@@ -169,30 +211,9 @@ float calculateAttenuation(vec3 lightPos, vec3 fragPos, float radius) {
 // Calculate cone attenuation for spot lights
 float calculateSpotAttenuation(vec3 lightDir, vec3 lightToFrag, float innerAngle, float outerAngle) {
     float theta   = dot(lightDir, normalize(-lightToFrag));
-    float epsilon = cos(innerAngle) - cos(outerAngle);
+    float epsilon = max(cos(innerAngle) - cos(outerAngle), 0.0001);
     float intensity = clamp((theta - cos(outerAngle)) / epsilon, 0.0, 1.0);
     return intensity;
-}
-
-// Calculate BRDF (Bidirectional Reflectance Distribution Function)
-vec3 calculateBRDF(vec3 N, vec3 V, vec3 L, vec3 albedo, float metallic, float roughness, vec3 F0) {
-    vec3 H = normalize(V + L);
-    // Cook-Torrance BRDF components
-    float NDF = distributionGGX(N, H, roughness);
-    float G   = geometrySmith(N, V, L, roughness);
-    vec3  F   = fresnelSchlick(max(dot(H, V), 0.0), F0);
-    // Calculate specular
-    vec3  numerator   = NDF * G * F;
-    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-    vec3  specular    = numerator / denominator;
-    // Energy conservation
-    vec3 kS = F;                    // Specular reflection
-    vec3 kD = vec3(1.0) - kS;       // Remaining energy for diffuse
-    kD *= 1.0 - metallic;           // Metals have no diffuse
-    // Lambertian diffuse
-    vec3 diffuse = kD * albedo / PI;
-
-    return diffuse + specular;
 }
 
 struct MaterialProperties {
@@ -201,96 +222,197 @@ struct MaterialProperties {
     float roughness;
     float ao;
     vec3  emission;
+    float ior;
+    float transmission;
+    float clearcoat;
+    float clearcoatRoughness;
+    float anisotropy;
+    float subsurface;
+    vec3  subsurfaceColor;
 };
 
-MaterialProperties sampleMaterial() {
+MaterialProperties sampleMaterial(vec2 uv) {
     MaterialProperties props;
     // Sample albedo
     props.albedo = u_material.albedo;
     if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_ALBEDO)) {
-        props.albedo *= texture(u_albedoTexture, TexCoords);
+        props.albedo *= texture(u_albedoTexture, uv);
     }
     // Initialize from material uniforms
-    props.metallic   = u_material.metallic;
-    props.emission   = u_material.emission;
-    props.roughness  = u_material.roughness;
-    float ior        = u_material.ior;
-    float transmission = u_material.transmission;
-    float alpha      = u_material.alpha;
-    props.ao         = u_material.ao;
-    float clearcoat  = u_material.clearcoat;
-    float clearcoatRoughness = u_material.clearcoatRoughness;
-    float anisotropy = u_material.anisotropy;
+    props.metallic           = u_material.metallic;
+    props.emission           = u_material.emission;
+    props.roughness          = u_material.roughness;
+    props.ao                 = u_material.ao;
+    props.ior                = u_material.ior;
+    props.transmission       = u_material.transmission;
+    props.clearcoat          = u_material.clearcoat;
+    props.clearcoatRoughness = u_material.clearcoatRoughness;
+    props.anisotropy         = u_material.anisotropy;
+    props.subsurface         = u_material.subsurface;
+    props.subsurfaceColor    = u_material.subsurfaceColor;
 
     // Sample packed textures (priority order)
     if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_AO_METALLIC_ROUGHNESS)) {
-        // Combined AO + Metallic + Roughness texture
-        vec3 aoMR = texture(u_aoMetallicRoughnessTexture, TexCoords).rgb;
+        vec3 aoMR = texture(u_aoMetallicRoughnessTexture, uv).rgb;
         props.ao        *= aoMR.r;
         props.metallic   = aoMR.g;
         props.roughness  = aoMR.b;
     }
     else if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_METALLIC_ROUGHNESS)) {
-        // Combined Metallic + Roughness texture
-        vec3 mr = texture(u_metallicRoughnessTexture, TexCoords).rgb;
+        vec3 mr = texture(u_metallicRoughnessTexture, uv).rgb;
         props.metallic  = mr.b;
         props.roughness = mr.g;
-    } 
+    }
     else {
-        // Separate textures
         if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_METALLIC)) {
-            props.metallic *= texture(u_metallicTexture, TexCoords).r;
+            props.metallic *= texture(u_metallicTexture, uv).r;
         }
         if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_ROUGHNESS)) {
-            props.roughness *= texture(u_roughnessTexture, TexCoords).r;
+            props.roughness *= texture(u_roughnessTexture, uv).r;
         }
     }
+    // Clamp roughness to prevent NDF singularity
+    props.roughness = clamp(props.roughness, 0.04, 1.0);
+
     // Sample AO separately if needed
-    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_AO) && 
+    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_AO) &&
         !hasTexture(u_material.textureFlags, TEXTURE_FLAG_AO_METALLIC_ROUGHNESS)) {
-        props.ao *= texture(u_aoTexture, TexCoords).r;
+        props.ao *= texture(u_aoTexture, uv).r;
     }
     // Sample emission
-    props.emission = u_material.emission;
     if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_EMISSION)) {
-        props.emission *= texture(u_emissionTexture, TexCoords).rgb;
+        props.emission *= texture(u_emissionTexture, uv).rgb;
+    }
+    // Sample clearcoat
+    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_CLEARCOAT)) {
+        props.clearcoat *= texture(u_clearcoatTexture, uv).r;
+    }
+    // Sample transmission
+    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_TRANSMISSION)) {
+        props.transmission *= texture(u_transmissionTexture, uv).r;
     }
 
     return props;
 }
 
+// Full per-light contribution including all material features
+vec3 evaluateLight(
+    vec3 N, vec3 V, vec3 L, vec3 T, vec3 B,
+    MaterialProperties mat, vec3 F0, vec3 radiance
+) {
+    vec3 H = normalize(V + L);
+    float NdotL = max(dot(N, L), 0.0);
+    float NdotV = max(dot(N, V), 0.0);
+    float HdotV = max(dot(H, V), 0.0);
+
+    // Normal Distribution Function
+    float NDF;
+    if (mat.anisotropy > 0.001) {
+        // Anisotropic GGX: stretch roughness along tangent/bitangent
+        float at = max(mat.roughness * (1.0 + mat.anisotropy), 0.04);
+        float ab = max(mat.roughness * (1.0 - mat.anisotropy), 0.04);
+        NDF = distributionGGXAnisotropic(H, T, B, N, at, ab);
+    } else {
+        NDF = distributionGGX(N, H, mat.roughness);
+    }
+
+    // Geometry & Fresnel
+    float G  = geometrySmith(N, V, L, mat.roughness);
+    vec3  F  = fresnelSchlick(HdotV, F0);
+
+    // Specular (Cook-Torrance)
+    vec3  specular = (NDF * G * F) / (4.0 * NdotV * NdotL + 0.0001);
+
+    // Diffuse with energy conservation
+    vec3 kD = (vec3(1.0) - F) * (1.0 - mat.metallic);
+
+    // Subsurface scattering: wrap lighting approximation
+    float diffuseNdotL = NdotL;
+    vec3  diffuseAlbedo = mat.albedo.rgb;
+    if (mat.subsurface > 0.001) {
+        // Wrap the N.L term so light bleeds to the back side
+        diffuseNdotL = max((dot(N, L) + mat.subsurface) / (1.0 + mat.subsurface), 0.0);
+        // Tint with subsurface color
+        diffuseAlbedo = mix(diffuseAlbedo, mat.subsurfaceColor * diffuseAlbedo, mat.subsurface);
+    }
+
+    vec3 diffuse = kD * diffuseAlbedo / PI;
+
+    // ---- Transmission (back-face illumination) ----
+    vec3 transmitted = vec3(0.0);
+    if (mat.transmission > 0.001) {
+        float backNdotL = max(dot(-N, L), 0.0);
+        transmitted = kD * mat.albedo.rgb * mat.transmission * backNdotL / PI;
+        // Reduce front diffuse proportionally
+        diffuse *= (1.0 - mat.transmission);
+    }
+
+    // ---- Clearcoat (second specular lobe) ----
+    vec3 ccContrib = vec3(0.0);
+    if (mat.clearcoat > 0.001) {
+        float ccRoughness = clamp(mat.clearcoatRoughness, 0.04, 1.0);
+        float ccNDF = distributionGGX(N, H, ccRoughness);
+        float ccG   = geometrySmith(N, V, L, ccRoughness);
+        // Clearcoat is always dielectric (F0 = 0.04)
+        vec3  ccF   = fresnelSchlick(HdotV, vec3(0.04));
+        vec3  ccSpec = (ccNDF * ccG * ccF) / (4.0 * NdotV * NdotL + 0.0001);
+        ccContrib = ccSpec * mat.clearcoat * NdotL * radiance;
+
+        // Clearcoat absorbs some energy from the base layer
+        float ccFresnel = ccF.r;
+        diffuse  *= (1.0 - mat.clearcoat * ccFresnel);
+        specular *= (1.0 - mat.clearcoat * ccFresnel);
+    }
+
+    // Combine
+    vec3 result = (diffuse * diffuseNdotL + specular * NdotL + transmitted) * radiance;
+    result += ccContrib;
+
+    return result;
+}
+
 void main() {
-    // Sample material properties
-    MaterialProperties material = sampleMaterial();
-    // Get surface normal (with normal mapping)
-    vec3 N = getNormalFromMap();
     vec3 V = normalize(u_cameraPosition - FragPos);
-    // Calculate base reflectance (F0)
-    vec3 F0 = vec3(0.04);  // Default for dielectrics
+    vec3 T = normalize(Tangent);
+    vec3 B = normalize(Bitangent);
+    vec3 Ngeom = normalize(Normal);
+
+    // Parallax mapping (shifts UVs based on height map)
+    vec2 uv = TexCoords;
+    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_HEIGHT) && u_material.heightScale > 0.0) {
+        mat3 TBN = mat3(T, B, Ngeom);
+        vec3 viewDirTS = normalize(transpose(TBN) * V);
+        uv = parallaxMapping(uv, viewDirTS);
+    }
+
+    // Sample material with (potentially displaced) UVs
+    MaterialProperties material = sampleMaterial(uv);
+
+    // Normal from map (with normalScale intensity)
+    vec3 N = getNormalFromMap(uv);
+
+    // F0 from IOR (physically correct instead of hardcoded 0.04)
+    float f0Dielectric = pow((material.ior - 1.0) / (material.ior + 1.0), 2.0);
+    vec3 F0 = vec3(f0Dielectric);
     F0 = mix(F0, material.albedo.rgb, material.metallic);
 
+    // Lighting
     vec3 Lo = vec3(0.0);
 
     if (u_lights.lightCount == 0) {
-        // Fallback: Default directional light
+        // Fallback: default directional light
         vec3 L = normalize(vec3(-1.0, -1.0, 1.0));
-        vec3 radiance = vec3(1.0) * 3.0;
-        float NdotL = max(dot(N, L), 0.0);
-
-        Lo = calculateBRDF(N, V, L, material.albedo.rgb, material.metallic, material.roughness, F0) 
-             * radiance * NdotL;
+        vec3 radiance = vec3(3.0);
+        Lo = evaluateLight(N, V, L, T, B, material, F0, radiance);
     }
     else {
-        // Loop through all scene lights
         for (int i = 0; i < u_lights.lightCount; i++) {
             Light light = u_lights.lights[i];
 
             vec3  L = vec3(0.0);
             float attenuation = 1.0;
 
-            // Calculate light direction and attenuation based on type
             if (light.type == LIGHT_TYPE_DIRECTIONAL) {
-                // direction stored toward scene; from surface to light is -dir
                 L = normalize(-light.direction);
             }
             else if (light.type == LIGHT_TYPE_POINT) {
@@ -300,28 +422,30 @@ void main() {
             else if (light.type == LIGHT_TYPE_SPOT) {
                 L = normalize(light.position - FragPos);
                 attenuation = calculateAttenuation(light.position, FragPos, light.radius);
-                attenuation *= calculateSpotAttenuation(light.direction, light.position - FragPos, 
-                                                       light.innerConeAngle, light.outerConeAngle);
+                attenuation *= calculateSpotAttenuation(light.direction, light.position - FragPos,
+                                                        light.innerConeAngle, light.outerConeAngle);
             }
-            // Skip lights that don't contribute
             if (attenuation < 0.001) continue;
-            // Calculate radiance
-            float NdotL = max(dot(N, L), 0.0);
+
             vec3 radiance = light.color * light.intensity * attenuation;
-            
-            // Accumulate light contribution
-            Lo += calculateBRDF(N, V, L, material.albedo.rgb, material.metallic, material.roughness, F0) 
-                  * radiance * NdotL;
+            Lo += evaluateLight(N, V, L, T, B, material, F0, radiance);
         }
     }
 
-    // Ambient lighting with ambient occlusion
-    vec3 ambient = vec3(0.03) * material.albedo.rgb * material.ao;
+    // Ambient with AO
+    vec3 ambient = u_ambientColor * u_ambientIntensity * material.albedo.rgb * material.ao;
 
-    // Combine all lighting
+    // Combine
     vec3 color = ambient + Lo + material.emission;
 
-    // Output with alpha
+    // Exposure
+    color *= u_exposure;
+
+    // Tone mapping & gamma
+    color = ACESFilm(color);
+    color = linearToSRGB(color);
+
+    // Output
     float finalAlpha = material.albedo.a * u_material.alpha;
     FragColor = vec4(color, finalAlpha);
 }

@@ -10,7 +10,7 @@ namespace Engine {
 
 ImVec2 TransformGizmo::worldToScreen(const glm::vec3& worldPos) const {
     glm::vec4 clip = m_viewProj * glm::vec4(worldPos, 1.0f);
-    if (std::abs(clip.w) < 1e-7f) return ImVec2(-10000, -10000);
+    if (clip.w <= 1e-7f) return ImVec2(-10000, -10000);
 
     glm::vec3 ndc = glm::vec3(clip) / clip.w;
     float x = m_vpMin.x + (ndc.x * 0.5f + 0.5f) * m_vpWidth;
@@ -36,14 +36,14 @@ glm::vec3 TransformGizmo::screenToRay(ImVec2 screenPos) const {
 float TransformGizmo::computeScreenFactor(const glm::vec3& gizmoOrigin) const {
     // Project origin to clip space
     glm::vec4 clipOrigin = m_viewProj * glm::vec4(gizmoOrigin, 1.0f);
-    if (std::abs(clipOrigin.w) < 1e-7f) return 1.0f;
+    if (clipOrigin.w <= 1e-7f) return 1.0f;
 
     // Camera right vector from inverse view
     glm::mat4 invView = glm::inverse(m_view);
     glm::vec3 cameraRight = glm::normalize(glm::vec3(invView[0]));
 
     glm::vec4 clipRight = m_viewProj * glm::vec4(gizmoOrigin + cameraRight, 1.0f);
-    if (std::abs(clipRight.w) < 1e-7f) return 1.0f;
+    if (clipRight.w <= 1e-7f) return 1.0f;
 
     glm::vec2 ndcOrigin = glm::vec2(clipOrigin) / clipOrigin.w;
     glm::vec2 ndcRight  = glm::vec2(clipRight) / clipRight.w;
@@ -451,6 +451,14 @@ bool TransformGizmo::handleRotationDrag(glm::mat4& model, const glm::vec3 axes[3
     float crossDot = glm::dot(glm::cross(m_rotationStartDir, currentDir), m_rotationAxis);
     float angle = std::atan2(crossDot, dotVal);
 
+    // Snap rotation angle directly (avoids Euler decomposition gimbal lock)
+    if (m_snapAngle > 0.0f) {
+        angle = std::round(angle / m_snapAngle) * m_snapAngle;
+    }
+
+    // Store delta rotation as quaternion for direct application
+    m_dragRotation = glm::angleAxis(angle, m_rotationAxis);
+
     // Build rotation matrix around the axis through the gizmo origin
     glm::mat4 toOrigin = glm::translate(glm::mat4(1.0f), -m_gizmoOrigin);
     glm::mat4 fromOrigin = glm::translate(glm::mat4(1.0f), m_gizmoOrigin);
@@ -518,6 +526,15 @@ bool TransformGizmo::manipulate(
     m_cameraDir = -glm::normalize(glm::vec3(invView[2]));
 
     m_gizmoOrigin = glm::vec3(model[3]);
+
+    // Don't draw/interact when entity is behind camera
+    glm::vec4 clipOrigin = m_viewProj * glm::vec4(m_gizmoOrigin, 1.0f);
+    if (clipOrigin.w <= 0.0f) {
+        m_hovered = GizmoElement::None;
+        if (m_dragging) { m_dragging = false; m_active = GizmoElement::None; }
+        return false;
+    }
+
     m_screenFactor = computeScreenFactor(m_gizmoOrigin);
     m_originScreen = worldToScreen(m_gizmoOrigin);
     m_mousePos = ImGui::GetMousePos();
@@ -550,6 +567,7 @@ bool TransformGizmo::manipulate(
             // Release
             m_dragging = false;
             m_active = GizmoElement::None;
+            m_dragRotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
         } else {
             // Continue drag
             switch (operation) {

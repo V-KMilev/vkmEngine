@@ -1,7 +1,6 @@
 #pragma once
 
 #include <unordered_map>
-#include <vector>
 
 #include <glm/glm.hpp>
 
@@ -24,6 +23,9 @@ class VisibilitySystem : public System {
     public:
         void update(FrameContext& ctx) override;
 
+        void updateSingleThreaded(FrameContext& ctx);
+        void updateMultiThreaded(FrameContext& ctx);
+
         void setMinPixels(float minPixels) { m_minPixels = minPixels; }
         void setMaxDistance(float maxDistance) { m_maxDistance = maxDistance; }
 
@@ -40,8 +42,9 @@ class VisibilitySystem : public System {
         /// Pre-computed world matrices for parented entities (cleared each frame).
         std::unordered_map<uint32_t, glm::mat4> m_worldMatrixCache;
 
-        /// Per-worker scratch buffers for parallel culling (reused across frames).
-        std::vector<std::vector<VisibleEntity>> m_workerResults;
+        /// Persistent buffers for multithreaded path - reuse capacity across frames.
+        std::vector<uint8_t>   m_visibleFlags;
+        std::vector<glm::mat4> m_modelMatrices;
 };
 
 } // namespace Engine

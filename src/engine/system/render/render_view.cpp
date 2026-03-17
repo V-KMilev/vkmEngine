@@ -97,6 +97,7 @@ void RenderView::build(
     camera.projection     = visibility.projection;
     camera.viewProjection = visibility.projection * visibility.view;
     camera.position       = visibility.cameraPosition;
+    camera.exposure       = visibility.cameraExposure;
 
     // Gather drawables - reserve only grows, never shrinks
     drawables.reserve(visibility.entries.size());

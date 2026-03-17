@@ -78,6 +78,8 @@ class RenderBackend {
          */
         virtual RenderTarget& getDefaultTarget() = 0;
 
+        virtual void setWireframe(bool enabled) = 0;
+
     protected:
         RenderBackendType m_type;
 };
