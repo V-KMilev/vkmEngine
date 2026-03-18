@@ -1,3 +1,4 @@
+#include "viewport_overlay.h"
 #include "../editor_common.h"
 
 #include <GL/glew.h>
@@ -6,7 +7,12 @@
 #include "platform/threading/thread_pool.h"
 
 namespace Engine {
-void EditorSystem::drawViewportOverlay(const FrameContext& ctx) {
+
+void ViewportOverlay::updateMetrics(float deltaTime) {
+    m_metrics.update(deltaTime);
+}
+
+void ViewportOverlay::draw(const FrameContext& ctx, const EditorState& state) {
     ImVec2 regionSize = ImGui::GetContentRegionAvail();
     ImVec2 overlayPos(regionSize.x - 276, 4);
 
@@ -68,24 +74,24 @@ void EditorSystem::drawViewportOverlay(const FrameContext& ctx) {
     // Gizmo mode indicator (bottom-left)
     {
         char wKey[16], eKey[16], rKey[16], spKey[16];
-        getKeyBindLabel(m_keybinds.gizmoTranslate, wKey, sizeof(wKey));
-        getKeyBindLabel(m_keybinds.gizmoRotate, eKey, sizeof(eKey));
-        getKeyBindLabel(m_keybinds.gizmoScale, rKey, sizeof(rKey));
-        getKeyBindLabel(m_keybinds.gizmoToggleSpace, spKey, sizeof(spKey));
+        getKeyBindLabel(state.keybinds.gizmoTranslate, wKey, sizeof(wKey));
+        getKeyBindLabel(state.keybinds.gizmoRotate, eKey, sizeof(eKey));
+        getKeyBindLabel(state.keybinds.gizmoScale, rKey, sizeof(rKey));
+        getKeyBindLabel(state.keybinds.gizmoToggleSpace, spKey, sizeof(spKey));
 
-        const char* opName = (m_gizmoOperation == GizmoOperation::Translate) ? "Translate" :
-                             (m_gizmoOperation == GizmoOperation::Rotate)    ? "Rotate"    :
-                                                                               "Scale";
-        const char* opKey  = (m_gizmoOperation == GizmoOperation::Translate) ? wKey :
-                             (m_gizmoOperation == GizmoOperation::Rotate)    ? eKey : rKey;
-        const char* modeName = (m_gizmoMode == GizmoMode::Local) ? "Local" : "World";
+        const char* opName = (state.gizmoOperation == GizmoOperation::Translate) ? "Translate" :
+                             (state.gizmoOperation == GizmoOperation::Rotate)    ? "Rotate"    :
+                                                                                   "Scale";
+        const char* opKey  = (state.gizmoOperation == GizmoOperation::Translate) ? wKey :
+                             (state.gizmoOperation == GizmoOperation::Rotate)    ? eKey : rKey;
+        const char* modeName = (state.gizmoMode == GizmoMode::Local) ? "Local" : "World";
 
         char gizmoInfo[96];
-        if (m_snapEnabled) {
-            float snapVal = (m_gizmoOperation == GizmoOperation::Translate) ? m_snapTranslate :
-                            (m_gizmoOperation == GizmoOperation::Rotate)    ? m_snapRotate :
-                                                                              m_snapScale;
-            const char* snapUnit = (m_gizmoOperation == GizmoOperation::Rotate) ? "deg" : "";
+        if (state.snapEnabled) {
+            float snapVal = (state.gizmoOperation == GizmoOperation::Translate) ? state.snapTranslate :
+                            (state.gizmoOperation == GizmoOperation::Rotate)    ? state.snapRotate :
+                                                                                  state.snapScale;
+            const char* snapUnit = (state.gizmoOperation == GizmoOperation::Rotate) ? "deg" : "";
             snprintf(gizmoInfo, sizeof(gizmoInfo), "%s [%s] | %s [%s] | Snap: %.2g%s",
                      opName, opKey, modeName, spKey, snapVal, snapUnit);
         } else {
@@ -99,7 +105,8 @@ void EditorSystem::drawViewportOverlay(const FrameContext& ctx) {
         ImGui::PopStyleColor();
     }
 }
-void EditorSystem::drawNavigationGizmo(const FrameContext& ctx, ImVec2 regionMin, ImVec2 regionMax) {
+
+void ViewportOverlay::drawNavigationGizmo(const FrameContext& ctx, ImVec2 regionMin, ImVec2 regionMax) {
     if (!ctx.visibility || !ctx.visibility->hasCamera) return;
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
