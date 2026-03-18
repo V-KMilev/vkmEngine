@@ -1,14 +1,14 @@
 #pragma once
 
-#include <vector>
-
 #include <imgui.h>
 
 #include "core/system.h"
-#include "ecs/entity.h"
-#include "editor_keybinds.h"
-#include "transform_gizmo.h"
-#include "platform/system_metrics.h"
+#include "editor_state.h"
+#include "panels/viewport_overlay.h"
+#include "panels/inspector_panel.h"
+#include "panels/bottom_panel.h"
+#include "panels/hierarchy_panel.h"
+#include "panels/gizmo_overlay.h"
 
 struct GLFWwindow;
 
@@ -17,8 +17,6 @@ namespace Engine {
 class CameraController;
 class VisibilitySystem;
 class RenderSystem;
-class Scene;
-class ResourceManager;
 
 class EditorSystem : public System {
     public:
@@ -39,130 +37,28 @@ class EditorSystem : public System {
         void update(FrameContext& ctx) override;
 
     private:
-        // Layout regions (drawn as BeginChild inside a single fullscreen window)
         void drawMenuBar(FrameContext& ctx);
-        void drawHierarchyPanel(FrameContext& ctx);
-        void drawViewportOverlay(const FrameContext& ctx);
-        void drawInspectorPanel(FrameContext& ctx);
-        void drawBottomPanel(FrameContext& ctx);
         void drawStatusBar(const FrameContext& ctx);
-
-        // Hierarchy helpers
-        void drawEntityNode(Scene& scene, EntityId entity);
-        void drawEntityContextMenu(Scene& scene, EntityId entity);
-        void drawCreateEntityMenu(Scene& scene, ResourceManager& resources);
-
-        // Inspector sections
-        void drawTransformSection(Scene& scene, EntityId id);
-        void drawMeshSection(Scene& scene, ResourceManager& resources, EntityId id);
-        void drawLightSection(Scene& scene, EntityId id);
-        void drawCameraSection(Scene& scene, EntityId id);
-        void drawAnimationSection(Scene& scene, EntityId id);
-        void drawHierarchySection(Scene& scene, EntityId id);
-        void drawAddComponentMenu(Scene& scene, EntityId id);
-
-        // Settings/Resources (bottom tabs)
-        void drawSettingsTab(FrameContext& ctx);
-        void drawResourcesTab(FrameContext& ctx);
-
-        // Navigation gizmo (ImGui DrawList, replaces GL render pass)
-        void drawNavigationGizmo(const FrameContext& ctx, ImVec2 regionMin, ImVec2 regionMax);
-
-        // Transform gizmo (translate/rotate/scale manipulator)
-        void drawTransformGizmo(FrameContext& ctx, ImVec2 vpMin, float vpWidth, float vpHeight);
-
-        // Viewport entity picking (ray cast)
-        void handleViewportPick(FrameContext& ctx, ImVec2 vpMin, float vpWidth, float vpHeight);
-
-        // Entity operations
-        EntityId createEntity(Scene& scene, ResourceManager& resources, const char* type);
-        void duplicateEntity(Scene& scene, EntityId source);
-        void deleteEntity(Scene& scene, EntityId entity);
-        void focusOnSelected(FrameContext& ctx);
-
-        // Widget helpers
-        static bool drawVec3Control(const char* label, float* values,
-                                     float resetValue = 0.0f, float speed = 0.1f);
-        static void drawPropertyLabel(const char* label);
-        static bool drawRemoveButton(const char* compLabel, uint32_t entityIdx);
-        static bool matchesFilter(const char* text, const char* filter);
-
-        void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t bufSize) const;
-        void getEntityIcon(const Scene& scene, EntityId id, char* buf, size_t bufSize) const;
 
     private:
         GLFWwindow*       m_window           = nullptr;
         CameraController* m_cameraController = nullptr;
-        VisibilitySystem* m_visibilitySystem = nullptr;
         RenderSystem*     m_renderSystem     = nullptr;
 
-        EntityId m_selectedEntity{};
+        EditorState      m_state;
+        HierarchyPanel   m_hierarchy;
+        InspectorPanel   m_inspector;
+        BottomPanel      m_bottom;
+        ViewportOverlay  m_viewportOverlay;
+        GizmoOverlay     m_gizmoOverlay;
 
-        // Layout dimensions
-        float m_leftPanelWidth   = 260.0f;
-        float m_rightPanelWidth  = 340.0f;
-        float m_bottomPanelHeight = 200.0f;
-
-        // Panel visibility
-        bool m_showStats     = true;
-        bool m_showHierarchy = true;
-        bool m_showInspector = true;
-        bool m_showBottom    = true;
-
-        // Frame time graph
-        static constexpr int FRAME_HISTORY_SIZE = 240;
-        float m_frameTimeHistory[FRAME_HISTORY_SIZE] = {};
-        int   m_frameTimeOffset = 0;
-        float m_frameTimeMax    = 0.0f;
-
-        // Hierarchy state
-        char m_hierarchyFilter[64] = {};
-        char m_lastFilter[64] = {};
-        std::vector<EntityId> m_cachedRoots;
-        std::vector<EntityId> m_cachedFiltered;
-        size_t m_lastEntityCount = 0;
-        bool m_hierarchyDirty = true;
-
-        // Keybind configuration
-        EditorKeybinds m_keybinds;
-
-        // Transform gizmo state
-        GizmoOperation m_gizmoOperation = GizmoOperation::Translate;
-        GizmoMode      m_gizmoMode      = GizmoMode::Local;
-        TransformGizmo m_gizmo;
-
-        // Gizmo drag start state (for rotation without decompose)
-        glm::quat m_gizmoDragStartRot{1.0f, 0.0f, 0.0f, 0.0f};
-        bool      m_gizmoDragActive = false;
-
-        // Snap settings (0 = disabled)
-        bool  m_snapEnabled    = false;
-        float m_snapTranslate  = 1.0f;
-        float m_snapRotate     = 15.0f;
-        float m_snapScale      = 0.1f;
-
-        // Rendering state
-        bool m_wireframe = false;
-        bool m_viewportHovered = false;
+        // Input state for F5 toggle
+        bool m_f5WasDown = false;
 
         // Panel resize drag state
         bool m_resizingLeft   = false;
         bool m_resizingRight  = false;
         bool m_resizingBottom = false;
-        bool m_editorVisible = true;
-        bool m_f5WasDown = false;
-        bool m_leftMouseWasDown = false;
-
-        SystemMetrics m_metrics;
-
-        // Cached resource counts (updated periodically, not every frame)
-        struct ResourceCounts {
-            size_t transforms = 0, meshes = 0, lights = 0, cameras = 0;
-            size_t animations = 0, hierarchies = 0, names = 0;
-            uint32_t animPlaying = 0, animPaused = 0;
-            uint32_t lightsDir = 0, lightsPoint = 0, lightsSpot = 0, lightsDisabled = 0;
-            float updateTimer = 0.0f;
-        } m_resourceCounts;
 };
 
 } // namespace Engine

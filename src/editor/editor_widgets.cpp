@@ -1,4 +1,15 @@
-#include "editor_common.h"
+#include "editor_widgets.h"
+
+#include <imgui.h>
+#include <cstdio>
+#include <cctype>
+
+#include "ecs/scene.h"
+#include "ecs/component/mesh.h"
+#include "ecs/component/light.h"
+#include "ecs/component/camera.h"
+#include "ecs/component/animation.h"
+#include "ecs/component/name.h"
 
 namespace Engine {
 
@@ -11,8 +22,8 @@ static const ImVec4 kAxisGreenHov = ImVec4(0.40f, 0.80f, 0.30f, 1.00f);
 static const ImVec4 kAxisBlueHov  = ImVec4(0.30f, 0.45f, 0.95f, 1.00f);
 
 static constexpr float kLabelWidth = 100.0f;
-bool EditorSystem::drawVec3Control(const char* label, float* values,
-                                    float resetValue, float speed) {
+bool drawVec3Control(const char* label, float* values,
+                     float resetValue, float speed) {
     bool changed = false;
     ImGui::PushID(label);
 
@@ -58,14 +69,14 @@ bool EditorSystem::drawVec3Control(const char* label, float* values,
     return changed;
 }
 
-void EditorSystem::drawPropertyLabel(const char* label) {
+void drawPropertyLabel(const char* label) {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
     ImGui::SameLine(kLabelWidth);
     ImGui::SetNextItemWidth(-1);
 }
 
-bool EditorSystem::drawRemoveButton(const char* compLabel, uint32_t entityIdx) {
+bool drawRemoveButton(const char* compLabel, uint32_t entityIdx) {
     ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 20);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.3f, 0.3f, 1.0f));
     char id[32];
@@ -80,7 +91,7 @@ bool EditorSystem::drawRemoveButton(const char* compLabel, uint32_t entityIdx) {
     return clicked;
 }
 
-bool EditorSystem::matchesFilter(const char* text, const char* filter) {
+bool matchesFilter(const char* text, const char* filter) {
     for (const char* p = text; *p; ++p) {
         const char* s = filter;
         const char* t = p;
@@ -91,8 +102,8 @@ bool EditorSystem::matchesFilter(const char* text, const char* filter) {
     return false;
 }
 
-void EditorSystem::getEntityDisplayName(const Scene& scene, EntityId id,
-                                         char* buf, size_t bufSize) const {
+void getEntityDisplayName(const Scene& scene, EntityId id,
+                          char* buf, size_t bufSize) {
     if (scene.has<Name>(id)) {
         const auto& name = scene.get<Name>(id);
         if (name.value[0] != '\0') {
@@ -112,8 +123,8 @@ void EditorSystem::getEntityDisplayName(const Scene& scene, EntityId id,
     snprintf(buf, bufSize, "%s %u", typeName, id.index);
 }
 
-void EditorSystem::getEntityIcon(const Scene& scene, EntityId id,
-                                  char* buf, size_t bufSize) const {
+void getEntityIcon(const Scene& scene, EntityId id,
+                   char* buf, size_t bufSize) {
     const char* icon = "[ ]";
     if (scene.has<Camera>(id))    icon = "[C]";
     else if (scene.has<Light>(id)) {

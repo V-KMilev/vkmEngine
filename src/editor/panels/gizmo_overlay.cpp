@@ -1,3 +1,4 @@
+#include "gizmo_overlay.h"
 #include "../editor_common.h"
 
 #include <glm/gtc/quaternion.hpp>
@@ -9,10 +10,10 @@
 
 namespace Engine {
 
-void EditorSystem::drawTransformGizmo(FrameContext& ctx, ImVec2 vpMin, float vpWidth, float vpHeight) {
-    if (!m_selectedEntity || !ctx.scene.isAlive(m_selectedEntity)) return;
+void GizmoOverlay::drawTransformGizmo(FrameContext& ctx, EditorState& state, ImVec2 vpMin, float vpWidth, float vpHeight) {
+    if (!state.selectedEntity || !ctx.scene.isAlive(state.selectedEntity)) return;
     if (!ctx.visibility || !ctx.visibility->hasCamera) return;
-    if (!ctx.scene.has<Transform>(m_selectedEntity)) return;
+    if (!ctx.scene.has<Transform>(state.selectedEntity)) return;
 
     // The 3D rendering covers the full GLFW window (glViewport(0,0,W,H)),
     // so the projection maps clip [-1,1] to the full window, not just the
@@ -33,15 +34,15 @@ void EditorSystem::drawTransformGizmo(FrameContext& ctx, ImVec2 vpMin, float vpW
 
     glm::mat4 subProj = remap * ctx.visibility->projection;
 
-    auto& transform = ctx.scene.get<Transform>(m_selectedEntity);
+    auto& transform = ctx.scene.get<Transform>(state.selectedEntity);
 
     // For parented entities, manipulate in world space and convert back to local
-    bool hasParent = ctx.scene.has<Hierarchy>(m_selectedEntity)
-                  && ctx.scene.get<Hierarchy>(m_selectedEntity).parent;
+    bool hasParent = ctx.scene.has<Hierarchy>(state.selectedEntity)
+                  && ctx.scene.get<Hierarchy>(state.selectedEntity).parent;
 
     glm::mat4 parentWorld = glm::mat4(1.0f);
     if (hasParent) {
-        parentWorld = HierarchyUtils::computeWorldMatrix(ctx.scene, m_selectedEntity);
+        parentWorld = HierarchyUtils::computeWorldMatrix(ctx.scene, state.selectedEntity);
         glm::mat4 localModel = Transform::computeModelMatrix(transform);
         parentWorld = parentWorld * glm::inverse(localModel);
     }
@@ -53,23 +54,23 @@ void EditorSystem::drawTransformGizmo(FrameContext& ctx, ImVec2 vpMin, float vpW
     ImDrawList* drawList = ImGui::GetWindowDrawList();
 
     // Configure gizmo snap (rotation is handled inside the gizmo to avoid gimbal lock)
-    bool snap = m_snapEnabled || ImGui::GetIO().KeyCtrl;
-    m_gizmo.setSnapAngle(snap ? glm::radians(m_snapRotate) : 0.0f);
+    bool snap = state.snapEnabled || ImGui::GetIO().KeyCtrl;
+    m_gizmo.setSnapAngle(snap ? glm::radians(state.snapRotate) : 0.0f);
 
     // Capture start rotation when drag begins
-    if (m_gizmo.isUsing() && !m_gizmoDragActive) {
-        m_gizmoDragStartRot = transform.rotation;
-        m_gizmoDragActive = true;
+    if (m_gizmo.isUsing() && !m_dragActive) {
+        m_dragStartRot = transform.rotation;
+        m_dragActive = true;
     }
     if (!m_gizmo.isUsing()) {
-        m_gizmoDragActive = false;
+        m_dragActive = false;
     }
 
     if (m_gizmo.manipulate(drawList, ctx.visibility->view, subProj,
-                            m_gizmoOperation, m_gizmoMode, model,
+                            state.gizmoOperation, state.gizmoMode, model,
                             vpMin, vpWidth, vpHeight)) {
 
-        if (m_gizmoOperation == GizmoOperation::Rotate) {
+        if (state.gizmoOperation == GizmoOperation::Rotate) {
             // For rotation: apply delta quaternion directly to start rotation
             // This completely bypasses matrix decomposition and avoids quaternion flips
             glm::quat deltaRot = m_gizmo.getDragRotation();
@@ -81,7 +82,7 @@ void EditorSystem::drawTransformGizmo(FrameContext& ctx, ImVec2 vpMin, float vpW
                 deltaRot = invParentRot * deltaRot * parentRot;
             }
 
-            transform.rotation = glm::normalize(deltaRot * m_gizmoDragStartRot);
+            transform.rotation = glm::normalize(deltaRot * m_dragStartRot);
         } else {
             // For translate/scale: decompose is safe (no quaternion boundary issues)
             if (hasParent) {
@@ -98,13 +99,13 @@ void EditorSystem::drawTransformGizmo(FrameContext& ctx, ImVec2 vpMin, float vpW
                 auto snapValue = [](float v, float step) {
                     return std::round(v / step) * step;
                 };
-                if (m_gizmoOperation == GizmoOperation::Translate) {
-                    float s = m_snapTranslate;
+                if (state.gizmoOperation == GizmoOperation::Translate) {
+                    float s = state.snapTranslate;
                     pos.x = snapValue(pos.x, s);
                     pos.y = snapValue(pos.y, s);
                     pos.z = snapValue(pos.z, s);
-                } else if (m_gizmoOperation == GizmoOperation::Scale) {
-                    float s = m_snapScale;
+                } else if (state.gizmoOperation == GizmoOperation::Scale) {
+                    float s = state.snapScale;
                     scale.x = snapValue(scale.x, s);
                     scale.y = snapValue(scale.y, s);
                     scale.z = snapValue(scale.z, s);
@@ -117,7 +118,7 @@ void EditorSystem::drawTransformGizmo(FrameContext& ctx, ImVec2 vpMin, float vpW
     }
 }
 
-void EditorSystem::handleViewportPick(FrameContext& ctx, ImVec2 vpMin, float vpWidth, float vpHeight) {
+void GizmoOverlay::handleViewportPick(FrameContext& ctx, EditorState& state, ImVec2 vpMin, float vpWidth, float vpHeight) {
     if (!ctx.visibility || !ctx.visibility->hasCamera) return;
 
     auto& mouse = ctx.window.getInputHandle().getMouse();
@@ -126,7 +127,7 @@ void EditorSystem::handleViewportPick(FrameContext& ctx, ImVec2 vpMin, float vpW
     m_leftMouseWasDown = leftNow;
 
     if (!leftJustClicked) return;
-    if (!m_viewportHovered) return;
+    if (!state.viewportHovered) return;
     if (m_gizmo.isOver()) return;
     if (m_gizmo.isUsing()) return;
 
@@ -203,11 +204,11 @@ void EditorSystem::handleViewportPick(FrameContext& ctx, ImVec2 vpMin, float vpW
     });
 
     if (hitEntity) {
-        m_selectedEntity = hitEntity;
-        m_hierarchyDirty = true;
+        state.selectedEntity = hitEntity;
+        state.hierarchyDirty = true;
     } else {
         // Click on empty space deselects
-        m_selectedEntity = {};
+        state.selectedEntity = {};
     }
 }
 
