@@ -1,4 +1,7 @@
 #include "editor_system.h"
+#include "editor_widgets.h"
+#include "editor_theme.h"
+#include "editor_actions.h"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -16,22 +19,9 @@
 #include "platform/window/window_manager.h"
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
-#include "ecs/component/mesh.h"
-#include "ecs/component/light.h"
-#include "ecs/component/camera.h"
 #include "ecs/component/animation.h"
-#include "ecs/component/hierarchy.h"
-#include "ecs/component/name.h"
-#include "ecs/hierarchy_utils.h"
 #include "camera_controller.h"
 #include "system/render/render_system.h"
-#include "resource/resource_manager.h"
-#include "system/visibility/bounds_utils.h"
-#include "debug/statistics.h"
-
-#include "generator/light_generators.h"
-#include "generator/mesh_generators.h"
-#include "generator/material_generators.h"
 
 namespace Engine {
 
@@ -43,8 +33,8 @@ EditorSystem::EditorSystem(
 )
     : m_window(window)
     , m_cameraController(cameraController)
-    , m_visibilitySystem(visibilitySystem)
     , m_renderSystem(renderSystem)
+    , m_bottom(cameraController, visibilitySystem, renderSystem)
 {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -52,67 +42,7 @@ EditorSystem::EditorSystem(
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    ImGui::StyleColorsDark();
-    ImGuiStyle& style = ImGui::GetStyle();
-
-    style.WindowRounding    = 4.0f;
-    style.WindowBorderSize  = 1.0f;
-    style.WindowPadding     = ImVec2(8, 6);
-    style.WindowTitleAlign  = ImVec2(0.0f, 0.5f);
-    style.FrameRounding     = 3.0f;
-    style.FramePadding      = ImVec2(6, 4);
-    style.FrameBorderSize   = 0.0f;
-    style.GrabRounding      = 2.0f;
-    style.GrabMinSize       = 10.0f;
-    style.ItemSpacing       = ImVec2(6, 5);
-    style.ItemInnerSpacing  = ImVec2(4, 4);
-    style.IndentSpacing     = 14.0f;
-    style.ScrollbarSize     = 12.0f;
-    style.ScrollbarRounding = 6.0f;
-    style.TabRounding       = 4.0f;
-    style.PopupRounding     = 4.0f;
-    style.ChildRounding     = 4.0f;
-    style.ChildBorderSize   = 0.5f;
-    style.CellPadding       = ImVec2(4, 3);
-    style.SeparatorTextBorderSize = 2.0f;
-
-    ImVec4* c = style.Colors;
-    c[ImGuiCol_Text]                  = ImVec4(0.88f, 0.89f, 0.90f, 1.00f);
-    c[ImGuiCol_TextDisabled]          = ImVec4(0.50f, 0.51f, 0.54f, 1.00f);
-    c[ImGuiCol_WindowBg]              = ImVec4(0.12f, 0.12f, 0.13f, 1.00f);
-    c[ImGuiCol_ChildBg]               = ImVec4(0.13f, 0.13f, 0.14f, 1.00f);
-    c[ImGuiCol_PopupBg]               = ImVec4(0.15f, 0.15f, 0.16f, 0.98f);
-    c[ImGuiCol_Border]                = ImVec4(0.20f, 0.20f, 0.22f, 0.50f);
-    c[ImGuiCol_FrameBg]               = ImVec4(0.08f, 0.08f, 0.09f, 1.00f);
-    c[ImGuiCol_FrameBgHovered]        = ImVec4(0.18f, 0.18f, 0.21f, 1.00f);
-    c[ImGuiCol_FrameBgActive]         = ImVec4(0.24f, 0.24f, 0.28f, 1.00f);
-    c[ImGuiCol_TitleBg]               = ImVec4(0.09f, 0.09f, 0.10f, 1.00f);
-    c[ImGuiCol_TitleBgActive]         = ImVec4(0.13f, 0.13f, 0.15f, 1.00f);
-    c[ImGuiCol_MenuBarBg]             = ImVec4(0.15f, 0.15f, 0.16f, 1.00f);
-    c[ImGuiCol_ScrollbarBg]           = ImVec4(0.08f, 0.08f, 0.09f, 0.60f);
-    c[ImGuiCol_ScrollbarGrab]         = ImVec4(0.30f, 0.30f, 0.34f, 1.00f);
-    c[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.40f, 0.40f, 0.44f, 1.00f);
-    c[ImGuiCol_ScrollbarGrabActive]   = ImVec4(0.50f, 0.50f, 0.54f, 1.00f);
-    c[ImGuiCol_CheckMark]             = ImVec4(0.45f, 0.72f, 1.00f, 1.00f);
-    c[ImGuiCol_SliderGrab]            = ImVec4(0.36f, 0.60f, 0.92f, 1.00f);
-    c[ImGuiCol_SliderGrabActive]      = ImVec4(0.46f, 0.70f, 1.00f, 1.00f);
-    c[ImGuiCol_Button]                = ImVec4(0.18f, 0.18f, 0.21f, 1.00f);
-    c[ImGuiCol_ButtonHovered]         = ImVec4(0.30f, 0.50f, 0.78f, 1.00f);
-    c[ImGuiCol_ButtonActive]          = ImVec4(0.25f, 0.44f, 0.70f, 1.00f);
-    c[ImGuiCol_Header]                = ImVec4(0.16f, 0.16f, 0.18f, 1.00f);
-    c[ImGuiCol_HeaderHovered]         = ImVec4(0.26f, 0.44f, 0.70f, 0.50f);
-    c[ImGuiCol_HeaderActive]          = ImVec4(0.26f, 0.44f, 0.70f, 0.70f);
-    c[ImGuiCol_Separator]             = ImVec4(0.22f, 0.22f, 0.24f, 0.40f);
-    c[ImGuiCol_SeparatorHovered]      = ImVec4(0.36f, 0.60f, 0.92f, 0.60f);
-    c[ImGuiCol_Tab]                   = ImVec4(0.15f, 0.15f, 0.17f, 1.00f);
-    c[ImGuiCol_TabHovered]            = ImVec4(0.30f, 0.50f, 0.78f, 0.75f);
-    c[ImGuiCol_TabSelected]           = ImVec4(0.22f, 0.36f, 0.56f, 1.00f);
-    c[ImGuiCol_PlotLines]             = ImVec4(0.45f, 0.72f, 1.00f, 1.00f);
-    c[ImGuiCol_PlotHistogram]         = ImVec4(0.45f, 0.72f, 1.00f, 0.80f);
-    c[ImGuiCol_TableHeaderBg]         = ImVec4(0.15f, 0.15f, 0.17f, 1.00f);
-    c[ImGuiCol_TableBorderStrong]     = ImVec4(0.22f, 0.22f, 0.24f, 1.00f);
-    c[ImGuiCol_TableBorderLight]      = ImVec4(0.18f, 0.18f, 0.20f, 1.00f);
-    c[ImGuiCol_TableRowBgAlt]         = ImVec4(1.00f, 1.00f, 1.00f, 0.02f);
+    applyEditorTheme();
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
@@ -124,143 +54,18 @@ EditorSystem::~EditorSystem() {
     ImGui::DestroyContext();
 }
 
-EntityId EditorSystem::createEntity(Scene& scene, ResourceManager& resources, const char* type) {
-    auto entity = scene.createEntity();
-    EntityId id = entity.getID();
-
-    scene.add(entity, Transform{});
-    scene.add(entity, Name(type));
-
-    if (std::strcmp(type, "Point Light") == 0) {
-        scene.add(entity, generatePointLight());
-    } else if (std::strcmp(type, "Spot Light") == 0) {
-        scene.add(entity, generateSpotLight());
-    } else if (std::strcmp(type, "Directional Light") == 0) {
-        scene.add(entity, generateDirectionalLight());
-    } else if (std::strcmp(type, "Cube") == 0) {
-        auto meshHandle = resources.add(generateCube());
-        auto matHandle = generateDefaultMaterial(resources);
-        scene.add(entity, Mesh{meshHandle, matHandle});
-    } else if (std::strcmp(type, "Sphere") == 0) {
-        auto meshHandle = resources.add(generateSphere());
-        auto matHandle = generateDefaultMaterial(resources);
-        scene.add(entity, Mesh{meshHandle, matHandle});
-    } else if (std::strcmp(type, "Camera") == 0) {
-        Camera cam;
-        cam.active = false;
-        scene.add(entity, cam);
-    }
-
-    m_hierarchyDirty = true;
-    return id;
-}
-
-void EditorSystem::duplicateEntity(Scene& scene, EntityId source) {
-    auto entity = scene.createEntity();
-    EntityId newId = entity.getID();
-
-    if (scene.has<Transform>(source)) {
-        auto t = scene.get<Transform>(source);
-        t.position += glm::vec3(1.0f, 0.0f, 0.0f);
-        scene.add(entity, std::move(t));
-    }
-    if (scene.has<Name>(source)) {
-        auto n = scene.get<Name>(source);
-        scene.add(entity, std::move(n));
-    }
-    if (scene.has<Mesh>(source)) {
-        scene.add(entity, scene.get<Mesh>(source));
-    }
-    if (scene.has<Light>(source)) {
-        scene.add(entity, scene.get<Light>(source));
-    }
-    if (scene.has<Camera>(source)) {
-        auto cam = scene.get<Camera>(source);
-        cam.active = false;
-        scene.add(entity, cam);
-    }
-    if (scene.has<Animation>(source)) {
-        Animation anim;
-        anim.duration = scene.get<Animation>(source).duration;
-        anim.speed = scene.get<Animation>(source).speed;
-        anim.looping = scene.get<Animation>(source).looping;
-        anim.playing = false;
-        scene.add(entity, std::move(anim));
-    }
-
-    m_hierarchyDirty = true;
-    m_selectedEntity = newId;
-}
-
-void EditorSystem::deleteEntity(Scene& scene, EntityId entity) {
-    if (m_selectedEntity == entity) m_selectedEntity = {};
-
-    if (scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).firstChild) {
-        HierarchyUtils::destroyHierarchy(scene, entity);
-    } else {
-        if (scene.has<Hierarchy>(entity)) {
-            HierarchyUtils::removeFromParent(scene, entity);
-        }
-        scene.destroyEntity(Entity{entity});
-    }
-    m_hierarchyDirty = true;
-}
-
-void EditorSystem::focusOnSelected(FrameContext& ctx) {
-    if (!m_selectedEntity || !ctx.scene.isAlive(m_selectedEntity)) return;
-    if (!ctx.scene.has<Transform>(m_selectedEntity)) return;
-    if (!m_cameraController) return;
-
-    bool hasParent = ctx.scene.has<Hierarchy>(m_selectedEntity)
-                  && ctx.scene.get<Hierarchy>(m_selectedEntity).parent;
-
-    glm::vec3 targetPos;
-    float focusDistance = 5.0f;
-
-    if (ctx.scene.has<Mesh>(m_selectedEntity)) {
-        const auto& mesh = ctx.scene.get<Mesh>(m_selectedEntity);
-        const auto& asset = ctx.resources.get(mesh.mesh);
-
-        glm::mat4 model = hasParent
-            ? HierarchyUtils::computeWorldMatrix(ctx.scene, m_selectedEntity)
-            : Transform::computeModelMatrix(ctx.scene.get<Transform>(m_selectedEntity));
-
-        if (hasValidBounds(asset.boundsMin, asset.boundsMax)) {
-            glm::vec3 localCenter = (asset.boundsMin + asset.boundsMax) * 0.5f;
-            targetPos = glm::vec3(model * glm::vec4(localCenter, 1.0f));
-
-            glm::vec3 extent = asset.boundsMax - asset.boundsMin;
-            float maxExtent = glm::max(extent.x, glm::max(extent.y, extent.z));
-            const auto& t = ctx.scene.get<Transform>(m_selectedEntity);
-            float maxScale = glm::max(t.scale.x, glm::max(t.scale.y, t.scale.z));
-            focusDistance = glm::max(maxExtent * maxScale * 1.5f, 2.0f);
-        } else {
-            targetPos = glm::vec3(model[3]);
-        }
-    } else {
-        if (hasParent) {
-            glm::mat4 wm = HierarchyUtils::computeWorldMatrix(ctx.scene, m_selectedEntity);
-            targetPos = glm::vec3(wm[3]);
-        } else {
-            targetPos = ctx.scene.get<Transform>(m_selectedEntity).position;
-        }
-    }
-
-    m_cameraController->focusOn(ctx.scene, targetPos, focusDistance);
-}
-
 void EditorSystem::update(FrameContext& ctx) {
-    if (!m_editorVisible) {
+    if (!m_state.editorVisible) {
         int f5 = glfwGetKey(m_window, GLFW_KEY_F5);
-        if (f5 == GLFW_PRESS && !m_f5WasDown) m_editorVisible = true;
+        if (f5 == GLFW_PRESS && !m_f5WasDown) m_state.editorVisible = true;
         m_f5WasDown = (f5 == GLFW_PRESS);
         if (m_cameraController) m_cameraController->setEditorInputCapture(false, false);
         return;
     }
 
     if (m_cameraController) {
-        bool blockMouse = (!m_viewportHovered && !m_cameraController->isLooking())
-                       || m_gizmo.isOver();
+        bool blockMouse = (!m_state.viewportHovered && !m_cameraController->isLooking())
+                       || m_gizmoOverlay.isGizmoOver();
         m_cameraController->setEditorInputCapture(blockMouse, ImGui::GetIO().WantTextInput);
     }
 
@@ -270,39 +75,39 @@ void EditorSystem::update(FrameContext& ctx) {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    m_frameTimeHistory[m_frameTimeOffset] = ctx.deltaTime * 1000.0f;
-    m_frameTimeOffset = (m_frameTimeOffset + 1) % FRAME_HISTORY_SIZE;
-    m_metrics.update(ctx.deltaTime);
+    m_viewportOverlay.m_frameTimeHistory[m_viewportOverlay.m_frameTimeOffset] = ctx.deltaTime * 1000.0f;
+    m_viewportOverlay.m_frameTimeOffset = (m_viewportOverlay.m_frameTimeOffset + 1) % ViewportOverlay::FRAME_HISTORY_SIZE;
+    m_viewportOverlay.updateMetrics(ctx.deltaTime);
 
     if (!ImGui::GetIO().WantTextInput) {
-        const auto& kb = m_keybinds;
+        const auto& kb = m_state.keybinds;
 
-        if (isPressed(kb.toggleStats))     m_showStats     = !m_showStats;
-        if (isPressed(kb.toggleHierarchy)) m_showHierarchy = !m_showHierarchy;
-        if (isPressed(kb.toggleInspector)) m_showInspector = !m_showInspector;
-        if (isPressed(kb.toggleBottom))    m_showBottom    = !m_showBottom;
-        if (isPressed(kb.toggleEditor))    m_editorVisible = false;
+        if (isPressed(kb.toggleStats))     m_state.showStats     = !m_state.showStats;
+        if (isPressed(kb.toggleHierarchy)) m_state.showHierarchy = !m_state.showHierarchy;
+        if (isPressed(kb.toggleInspector)) m_state.showInspector = !m_state.showInspector;
+        if (isPressed(kb.toggleBottom))    m_state.showBottom    = !m_state.showBottom;
+        if (isPressed(kb.toggleEditor))    m_state.editorVisible = false;
 
-        if (isPressed(kb.deleteEntity) && m_selectedEntity && ctx.scene.isAlive(m_selectedEntity)) {
-            deleteEntity(ctx.scene, m_selectedEntity);
+        if (isPressed(kb.deleteEntity) && m_state.selectedEntity && ctx.scene.isAlive(m_state.selectedEntity)) {
+            EditorActions::deleteEntity(ctx.scene, m_state, m_state.selectedEntity);
         }
         if (isPressed(kb.deselect)) {
-            m_selectedEntity = {};
+            m_state.selectedEntity = {};
         }
-        if (isPressed(kb.duplicate) && m_selectedEntity && ctx.scene.isAlive(m_selectedEntity)) {
-            duplicateEntity(ctx.scene, m_selectedEntity);
+        if (isPressed(kb.duplicate) && m_state.selectedEntity && ctx.scene.isAlive(m_state.selectedEntity)) {
+            EditorActions::duplicateEntity(ctx.scene, m_state, m_state.selectedEntity);
         }
-        if (isPressed(kb.focusSelected) && m_selectedEntity && ctx.scene.isAlive(m_selectedEntity)) {
-            focusOnSelected(ctx);
+        if (isPressed(kb.focusSelected) && m_state.selectedEntity && ctx.scene.isAlive(m_state.selectedEntity)) {
+            EditorActions::focusOnSelected(ctx, m_state, m_cameraController);
         }
 
         // Gizmo mode shortcuts (only when camera NOT in fly mode)
         if (!m_cameraController->isLooking()) {
-            if (isPressed(kb.gizmoTranslate))   m_gizmoOperation = GizmoOperation::Translate;
-            if (isPressed(kb.gizmoRotate))      m_gizmoOperation = GizmoOperation::Rotate;
-            if (isPressed(kb.gizmoScale))       m_gizmoOperation = GizmoOperation::Scale;
+            if (isPressed(kb.gizmoTranslate))   m_state.gizmoOperation = GizmoOperation::Translate;
+            if (isPressed(kb.gizmoRotate))      m_state.gizmoOperation = GizmoOperation::Rotate;
+            if (isPressed(kb.gizmoScale))       m_state.gizmoOperation = GizmoOperation::Scale;
             if (isPressed(kb.gizmoToggleSpace)) {
-                m_gizmoMode = (m_gizmoMode == GizmoMode::Local) ? GizmoMode::World : GizmoMode::Local;
+                m_state.gizmoMode = (m_state.gizmoMode == GizmoMode::Local) ? GizmoMode::World : GizmoMode::Local;
             }
         }
     }
@@ -332,19 +137,19 @@ void EditorSystem::update(FrameContext& ctx) {
 
         float toolbarH = ImGui::GetCursorPosY();
         float statusBarH = ImGui::GetFrameHeight() + 4;
-        float bottomH = m_showBottom ? m_bottomPanelHeight : 0.0f;
+        float bottomH = m_state.showBottom ? m_state.bottomPanelHeight : 0.0f;
         float mainH = viewport->WorkSize.y - toolbarH - statusBarH - bottomH;
 
-        float leftW  = m_showHierarchy ? m_leftPanelWidth : 0.0f;
-        float rightW = m_showInspector ? m_rightPanelWidth : 0.0f;
+        float leftW  = m_state.showHierarchy ? m_state.leftPanelWidth : 0.0f;
+        float rightW = m_state.showInspector ? m_state.rightPanelWidth : 0.0f;
 
         // Track panel edge positions for border-less resize detection
         ImVec2 panelAreaStart = ImGui::GetCursorScreenPos();
 
-        if (m_showHierarchy) {
+        if (m_state.showHierarchy) {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
             if (ImGui::BeginChild("##Hierarchy", ImVec2(leftW, mainH), ImGuiChildFlags_Borders)) {
-                drawHierarchyPanel(ctx);
+                m_hierarchy.draw(ctx, m_state);
             }
             ImGui::EndChild();
             ImGui::PopStyleVar();
@@ -357,32 +162,32 @@ void EditorSystem::update(FrameContext& ctx) {
             ImVec2 vpMin = ImGui::GetCursorScreenPos();
             if (ImGui::BeginChild("##Viewport", ImVec2(centerW, mainH), ImGuiChildFlags_None)) {
                 ImVec2 vpMax = ImVec2(vpMin.x + centerW, vpMin.y + mainH);
-                m_viewportHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
-                if (m_showStats) drawViewportOverlay(ctx);
-                drawNavigationGizmo(ctx, vpMin, vpMax);
-                drawTransformGizmo(ctx, vpMin, centerW, mainH);
-                handleViewportPick(ctx, vpMin, centerW, mainH);
+                m_state.viewportHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+                if (m_state.showStats) m_viewportOverlay.draw(ctx, m_state);
+                m_viewportOverlay.drawNavigationGizmo(ctx, vpMin, vpMax);
+                m_gizmoOverlay.drawTransformGizmo(ctx, m_state, vpMin, centerW, mainH);
+                m_gizmoOverlay.handleViewportPick(ctx, m_state, vpMin, centerW, mainH);
             } else {
-                m_viewportHovered = false;
+                m_state.viewportHovered = false;
             }
             ImGui::EndChild();
             ImGui::PopStyleColor();
             ImGui::SameLine(0, 0);
         }
 
-        if (m_showInspector) {
+        if (m_state.showInspector) {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
             if (ImGui::BeginChild("##Inspector", ImVec2(rightW, mainH), ImGuiChildFlags_Borders)) {
-                drawInspectorPanel(ctx);
+                m_inspector.draw(ctx, m_state);
             }
             ImGui::EndChild();
             ImGui::PopStyleVar();
         }
 
-        if (m_showBottom) {
+        if (m_state.showBottom) {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
             if (ImGui::BeginChild("##Bottom", ImVec2(0, bottomH), ImGuiChildFlags_Borders)) {
-                drawBottomPanel(ctx);
+                m_bottom.draw(ctx, m_state);
             }
             ImGui::EndChild();
             ImGui::PopStyleVar();
@@ -397,7 +202,7 @@ void EditorSystem::update(FrameContext& ctx) {
             ImVec2 delta = ImGui::GetIO().MouseDelta;
             bool alreadyResizing = m_resizingLeft || m_resizingRight || m_resizingBottom;
             // Block new resize if an ImGui widget or gizmo is active
-            bool canStartNew = !ImGui::IsAnyItemActive() && !m_gizmo.isUsing() && !alreadyResizing;
+            bool canStartNew = !ImGui::IsAnyItemActive() && !m_gizmoOverlay.isGizmoUsing() && !alreadyResizing;
 
             auto handleEdge = [&](bool show, float edgePos, bool horizontal,
                                   bool& resizingFlag, float& panelSize, float sign,
@@ -434,12 +239,12 @@ void EditorSystem::update(FrameContext& ctx) {
                 }
             };
 
-            handleEdge(m_showHierarchy, panelAreaStart.x + leftW, false,
-                       m_resizingLeft, m_leftPanelWidth, 1.0f, 180.0f, 500.0f);
-            handleEdge(m_showInspector, panelAreaStart.x + viewport->WorkSize.x - rightW, false,
-                       m_resizingRight, m_rightPanelWidth, -1.0f, 240.0f, 600.0f);
-            handleEdge(m_showBottom, panelAreaStart.y + mainH, true,
-                       m_resizingBottom, m_bottomPanelHeight, -1.0f, 100.0f, 500.0f);
+            handleEdge(m_state.showHierarchy, panelAreaStart.x + leftW, false,
+                       m_resizingLeft, m_state.leftPanelWidth, 1.0f, 180.0f, 500.0f);
+            handleEdge(m_state.showInspector, panelAreaStart.x + viewport->WorkSize.x - rightW, false,
+                       m_resizingRight, m_state.rightPanelWidth, -1.0f, 240.0f, 600.0f);
+            handleEdge(m_state.showBottom, panelAreaStart.y + mainH, true,
+                       m_resizingBottom, m_state.bottomPanelHeight, -1.0f, 100.0f, 500.0f);
 
             if (!mouseDown) {
                 m_resizingLeft = m_resizingRight = m_resizingBottom = false;
@@ -459,7 +264,7 @@ void EditorSystem::update(FrameContext& ctx) {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-    if (m_renderSystem && m_wireframe) m_renderSystem->setWireframe(true);
+    if (m_renderSystem && m_state.wireframe) m_renderSystem->setWireframe(true);
 }
 
 void EditorSystem::drawMenuBar(FrameContext& ctx) {
@@ -467,15 +272,15 @@ void EditorSystem::drawMenuBar(FrameContext& ctx) {
 
     if (ImGui::BeginMenu("View")) {
         char lbl[48];
-        ImGui::MenuItem("Stats Overlay", getKeyBindLabel(m_keybinds.toggleStats, lbl, sizeof(lbl)), &m_showStats);
-        ImGui::MenuItem("Hierarchy",     getKeyBindLabel(m_keybinds.toggleHierarchy, lbl, sizeof(lbl)), &m_showHierarchy);
-        ImGui::MenuItem("Inspector",     getKeyBindLabel(m_keybinds.toggleInspector, lbl, sizeof(lbl)), &m_showInspector);
-        ImGui::MenuItem("Bottom Panel",  getKeyBindLabel(m_keybinds.toggleBottom, lbl, sizeof(lbl)), &m_showBottom);
+        ImGui::MenuItem("Stats Overlay", getKeyBindLabel(m_state.keybinds.toggleStats, lbl, sizeof(lbl)), &m_state.showStats);
+        ImGui::MenuItem("Hierarchy",     getKeyBindLabel(m_state.keybinds.toggleHierarchy, lbl, sizeof(lbl)), &m_state.showHierarchy);
+        ImGui::MenuItem("Inspector",     getKeyBindLabel(m_state.keybinds.toggleInspector, lbl, sizeof(lbl)), &m_state.showInspector);
+        ImGui::MenuItem("Bottom Panel",  getKeyBindLabel(m_state.keybinds.toggleBottom, lbl, sizeof(lbl)), &m_state.showBottom);
         ImGui::EndMenu();
     }
 
     if (ImGui::BeginMenu("Scene")) {
-        drawCreateEntityMenu(ctx.scene, ctx.resources);
+        EditorActions::drawCreateEntityMenu(ctx.scene, ctx.resources, m_state);
         ImGui::Separator();
         if (ImGui::MenuItem("Pause All Animations")) {
             ctx.scene.forEach<Animation>([](EntityId, Animation& a) { a.playing = false; });
@@ -485,8 +290,8 @@ void EditorSystem::drawMenuBar(FrameContext& ctx) {
         }
         ImGui::Separator();
         char deselectLbl[48];
-        if (ImGui::MenuItem("Deselect", getKeyBindLabel(m_keybinds.deselect, deselectLbl, sizeof(deselectLbl)))) {
-            m_selectedEntity = {};
+        if (ImGui::MenuItem("Deselect", getKeyBindLabel(m_state.keybinds.deselect, deselectLbl, sizeof(deselectLbl)))) {
+            m_state.selectedEntity = {};
         }
         ImGui::EndMenu();
     }
@@ -524,24 +329,6 @@ void EditorSystem::drawMenuBar(FrameContext& ctx) {
     ImGui::EndMenuBar();
 }
 
-void EditorSystem::drawCreateEntityMenu(Scene& scene, ResourceManager& resources) {
-    if (ImGui::BeginMenu("Create")) {
-        if (ImGui::MenuItem("Empty Entity")) {
-            m_selectedEntity = createEntity(scene, resources, "Empty");
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItem("Cube"))    m_selectedEntity = createEntity(scene, resources, "Cube");
-        if (ImGui::MenuItem("Sphere"))  m_selectedEntity = createEntity(scene, resources, "Sphere");
-        ImGui::Separator();
-        if (ImGui::MenuItem("Point Light"))       m_selectedEntity = createEntity(scene, resources, "Point Light");
-        if (ImGui::MenuItem("Spot Light"))        m_selectedEntity = createEntity(scene, resources, "Spot Light");
-        if (ImGui::MenuItem("Directional Light")) m_selectedEntity = createEntity(scene, resources, "Directional Light");
-        ImGui::Separator();
-        if (ImGui::MenuItem("Camera"))  m_selectedEntity = createEntity(scene, resources, "Camera");
-        ImGui::EndMenu();
-    }
-}
-
 void EditorSystem::drawStatusBar(const FrameContext& ctx) {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 0));
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.10f, 0.10f, 0.11f, 1.0f));
@@ -550,15 +337,15 @@ void EditorSystem::drawStatusBar(const FrameContext& ctx) {
         ImGui::SetCursorPosX(8);
         ImGui::AlignTextToFramePadding();
 
-        if (m_selectedEntity && ctx.scene.isAlive(m_selectedEntity)) {
+        if (m_state.selectedEntity && ctx.scene.isAlive(m_state.selectedEntity)) {
             ImGui::TextDisabled("Selected:");
             ImGui::SameLine(0, 4);
             char selName[64];
-            getEntityDisplayName(ctx.scene, m_selectedEntity, selName, sizeof(selName));
+            getEntityDisplayName(ctx.scene, m_state.selectedEntity, selName, sizeof(selName));
             ImGui::Text("%s", selName);
 
-            if (ctx.scene.has<Transform>(m_selectedEntity)) {
-                const auto& pos = ctx.scene.get<Transform>(m_selectedEntity).position;
+            if (ctx.scene.has<Transform>(m_state.selectedEntity)) {
+                const auto& pos = ctx.scene.get<Transform>(m_state.selectedEntity).position;
                 ImGui::SameLine(0, 16);
                 ImGui::TextDisabled("Pos: (%.1f, %.1f, %.1f)", pos.x, pos.y, pos.z);
             }

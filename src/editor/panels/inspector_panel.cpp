@@ -1,9 +1,11 @@
+#include "inspector_panel.h"
 #include "../editor_common.h"
 
 #include "generator/light_generators.h"
 
 namespace Engine {
-void EditorSystem::drawInspectorPanel(FrameContext& ctx) {
+
+void InspectorPanel::draw(FrameContext& ctx, EditorState& state) {
     // Panel header
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.78f, 0.90f, 1.0f));
     ImGui::TextUnformatted("Inspector");
@@ -11,13 +13,13 @@ void EditorSystem::drawInspectorPanel(FrameContext& ctx) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    if (!m_selectedEntity || !ctx.scene.isAlive(m_selectedEntity)) {
+    if (!state.selectedEntity || !ctx.scene.isAlive(state.selectedEntity)) {
         ImGui::TextDisabled("No entity selected");
         return;
     }
 
     auto& scene = ctx.scene;
-    EntityId id = m_selectedEntity;
+    EntityId id = state.selectedEntity;
 
     // Name editing
     {
@@ -42,7 +44,7 @@ void EditorSystem::drawInspectorPanel(FrameContext& ctx) {
     if (scene.has<Light>(id))      drawLightSection(scene, id);
     if (scene.has<Camera>(id))     drawCameraSection(scene, id);
     if (scene.has<Animation>(id))  drawAnimationSection(scene, id);
-    if (scene.has<Hierarchy>(id))  drawHierarchySection(scene, id);
+    if (scene.has<Hierarchy>(id))  drawHierarchySection(scene, state, id);
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -51,7 +53,7 @@ void EditorSystem::drawInspectorPanel(FrameContext& ctx) {
     drawAddComponentMenu(scene, id);
 }
 
-void EditorSystem::drawAddComponentMenu(Scene& scene, EntityId id) {
+void InspectorPanel::drawAddComponentMenu(Scene& scene, EntityId id) {
     if (ImGui::Button("Add Component", ImVec2(-1, 0))) {
         ImGui::OpenPopup("##AddComp");
     }
@@ -74,7 +76,8 @@ void EditorSystem::drawAddComponentMenu(Scene& scene, EntityId id) {
         ImGui::EndPopup();
     }
 }
-void EditorSystem::drawTransformSection(Scene& scene, EntityId id) {
+
+void InspectorPanel::drawTransformSection(Scene& scene, EntityId id) {
     bool open = ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen);
     if (!open) return;
 
@@ -97,7 +100,7 @@ void EditorSystem::drawTransformSection(Scene& scene, EntityId id) {
     ImGui::Spacing();
 }
 
-void EditorSystem::drawMeshSection(Scene& scene, ResourceManager& resources, EntityId id) {
+void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources, EntityId id) {
     bool open = ImGui::CollapsingHeader("Mesh##Sec", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
     if (drawRemoveButton("Mesh", id.index)) { scene.remove<Mesh>(Entity{id}); return; }
 
@@ -212,7 +215,7 @@ void EditorSystem::drawMeshSection(Scene& scene, ResourceManager& resources, Ent
     ImGui::Spacing();
 }
 
-void EditorSystem::drawLightSection(Scene& scene, EntityId id) {
+void InspectorPanel::drawLightSection(Scene& scene, EntityId id) {
     bool open = ImGui::CollapsingHeader("Light##Sec", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
     if (drawRemoveButton("Light", id.index)) { scene.remove<Light>(Entity{id}); return; }
 
@@ -253,7 +256,7 @@ void EditorSystem::drawLightSection(Scene& scene, EntityId id) {
     ImGui::Spacing();
 }
 
-void EditorSystem::drawCameraSection(Scene& scene, EntityId id) {
+void InspectorPanel::drawCameraSection(Scene& scene, EntityId id) {
     bool open = ImGui::CollapsingHeader("Camera##Sec", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
     if (drawRemoveButton("Camera", id.index)) { scene.remove<Camera>(Entity{id}); return; }
 
@@ -283,7 +286,7 @@ void EditorSystem::drawCameraSection(Scene& scene, EntityId id) {
     ImGui::Spacing();
 }
 
-void EditorSystem::drawAnimationSection(Scene& scene, EntityId id) {
+void InspectorPanel::drawAnimationSection(Scene& scene, EntityId id) {
     bool open = ImGui::CollapsingHeader("Animation##Sec", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
     if (drawRemoveButton("Animation", id.index)) { scene.remove<Animation>(Entity{id}); return; }
 
@@ -320,7 +323,7 @@ void EditorSystem::drawAnimationSection(Scene& scene, EntityId id) {
     ImGui::Spacing();
 }
 
-void EditorSystem::drawHierarchySection(Scene& scene, EntityId id) {
+void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, EntityId id) {
     if (!ImGui::CollapsingHeader("Hierarchy##Sec")) return;
     const auto& h = scene.get<Hierarchy>(id);
 
@@ -330,7 +333,7 @@ void EditorSystem::drawHierarchySection(Scene& scene, EntityId id) {
         char parentName[64];
         getEntityDisplayName(scene, h.parent, parentName, sizeof(parentName));
         if (ImGui::SmallButton(parentName)) {
-            m_selectedEntity = h.parent;
+            state.selectedEntity = h.parent;
         }
     } else {
         ImGui::TextDisabled("Root (no parent)");
@@ -344,8 +347,8 @@ void EditorSystem::drawHierarchySection(Scene& scene, EntityId id) {
             getEntityDisplayName(scene, child, name, sizeof(name));
             char lbl[96];
             snprintf(lbl, sizeof(lbl), "  %s %s", icon, name);
-            if (ImGui::Selectable(lbl, m_selectedEntity == child)) {
-                m_selectedEntity = child;
+            if (ImGui::Selectable(lbl, state.selectedEntity == child)) {
+                state.selectedEntity = child;
             }
         });
     }

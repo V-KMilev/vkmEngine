@@ -1,7 +1,10 @@
+#include "hierarchy_panel.h"
 #include "../editor_common.h"
+#include "../editor_actions.h"
 
 namespace Engine {
-void EditorSystem::drawHierarchyPanel(FrameContext& ctx) {
+
+void HierarchyPanel::draw(FrameContext& ctx, EditorState& state) {
     auto& scene = ctx.scene;
 
     // Panel header
@@ -13,24 +16,24 @@ void EditorSystem::drawHierarchyPanel(FrameContext& ctx) {
 
     float btnW = ImGui::GetFrameHeight();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - btnW - ImGui::GetStyle().ItemSpacing.x);
-    ImGui::InputTextWithHint("##Filter", "Search...", m_hierarchyFilter, sizeof(m_hierarchyFilter));
+    ImGui::InputTextWithHint("##Filter", "Search...", m_filter, sizeof(m_filter));
     ImGui::SameLine();
     if (ImGui::Button("+", ImVec2(btnW, 0))) {
         ImGui::OpenPopup("##CreatePopup");
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Create Entity");
     if (ImGui::BeginPopup("##CreatePopup")) {
-        drawCreateEntityMenu(scene, ctx.resources);
+        EditorActions::drawCreateEntityMenu(scene, ctx.resources, state);
         ImGui::EndPopup();
     }
     ImGui::Spacing();
 
-    bool hasFilter = m_hierarchyFilter[0] != '\0';
+    bool hasFilter = m_filter[0] != '\0';
 
     if (ImGui::BeginChild("##Tree", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()))) {
         // Rebuild root list only when entities change (not every frame).
         size_t currentCount = scene.entityCount();
-        bool wasDirty = m_hierarchyDirty || currentCount != m_lastEntityCount;
+        bool wasDirty = state.hierarchyDirty || currentCount != m_lastEntityCount;
         if (wasDirty) {
             m_cachedRoots.clear();
             m_cachedRoots.reserve(currentCount);
@@ -39,23 +42,23 @@ void EditorSystem::drawHierarchyPanel(FrameContext& ctx) {
                 if (isRoot) m_cachedRoots.push_back(id);
             });
             m_lastEntityCount = currentCount;
-            m_hierarchyDirty = false;
+            state.hierarchyDirty = false;
         }
 
         const auto& displayList = hasFilter ? m_cachedFiltered : m_cachedRoots;
 
         if (hasFilter) {
             // Only rebuild filtered list when filter text or entity count changes
-            bool filterChanged = std::strcmp(m_hierarchyFilter, m_lastFilter) != 0;
+            bool filterChanged = std::strcmp(m_filter, m_lastFilter) != 0;
             if (filterChanged || wasDirty) {
-                std::strncpy(m_lastFilter, m_hierarchyFilter, sizeof(m_lastFilter) - 1);
+                std::strncpy(m_lastFilter, m_filter, sizeof(m_lastFilter) - 1);
                 m_lastFilter[sizeof(m_lastFilter) - 1] = '\0';
                 m_cachedFiltered.clear();
                 // Search all entities (not just roots) so children are discoverable
                 scene.forEach<Transform>([&](EntityId id, const Transform&) {
                     char name[64];
                     getEntityDisplayName(scene, id, name, sizeof(name));
-                    if (matchesFilter(name, m_hierarchyFilter))
+                    if (matchesFilter(name, m_filter))
                         m_cachedFiltered.push_back(id);
                 });
             }
@@ -70,28 +73,28 @@ void EditorSystem::drawHierarchyPanel(FrameContext& ctx) {
                 if (hasFilter) {
                     ImGuiTreeNodeFlags f = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen
                                          | ImGuiTreeNodeFlags_SpanAvailWidth;
-                    if (m_selectedEntity == id) f |= ImGuiTreeNodeFlags_Selected;
+                    if (state.selectedEntity == id) f |= ImGuiTreeNodeFlags_Selected;
                     char icon[8], name[64];
                     getEntityIcon(scene, id, icon, sizeof(icon));
                     getEntityDisplayName(scene, id, name, sizeof(name));
                     ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<uintptr_t>(id.index)),
                                      f, "%s  %s", icon, name);
-                    if (ImGui::IsItemClicked()) m_selectedEntity = id;
-                    drawEntityContextMenu(scene, id);
+                    if (ImGui::IsItemClicked()) state.selectedEntity = id;
+                    drawEntityContextMenu(scene, state, id);
                 } else {
-                    drawEntityNode(scene, id);
+                    drawEntityNode(scene, state, id);
                 }
             }
         }
 
         if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
             && !ImGui::IsAnyItemHovered()) {
-            m_selectedEntity = {};
+            state.selectedEntity = {};
         }
 
         // Right-click on empty space
         if (ImGui::BeginPopupContextWindow("##HierarchyCtx", ImGuiPopupFlags_NoOpenOverItems | ImGuiPopupFlags_MouseButtonRight)) {
-            drawCreateEntityMenu(scene, ctx.resources);
+            EditorActions::drawCreateEntityMenu(scene, ctx.resources, state);
             ImGui::EndPopup();
         }
     }
@@ -100,14 +103,14 @@ void EditorSystem::drawHierarchyPanel(FrameContext& ctx) {
     ImGui::TextDisabled("%zu entities", scene.entityCount());
 }
 
-void EditorSystem::drawEntityNode(Scene& scene, EntityId entity) {
+void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId entity) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow
                              | ImGuiTreeNodeFlags_SpanAvailWidth
                              | ImGuiTreeNodeFlags_FramePadding;
 
     bool hasChildren = scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).firstChild;
     if (!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-    if (m_selectedEntity == entity) flags |= ImGuiTreeNodeFlags_Selected;
+    if (state.selectedEntity == entity) flags |= ImGuiTreeNodeFlags_Selected;
 
     char icon[8], name[64];
     getEntityIcon(scene, entity, icon, sizeof(icon));
@@ -116,19 +119,19 @@ void EditorSystem::drawEntityNode(Scene& scene, EntityId entity) {
         reinterpret_cast<void*>(static_cast<uintptr_t>(entity.index)),
         flags, "%s  %s", icon, name);
 
-    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) m_selectedEntity = entity;
+    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) state.selectedEntity = entity;
 
-    drawEntityContextMenu(scene, entity);
+    drawEntityContextMenu(scene, state, entity);
 
     if (nodeOpen && hasChildren) {
         HierarchyUtils::forEachChild(scene, entity, [&](EntityId child) {
-            drawEntityNode(scene, child);
+            drawEntityNode(scene, state, child);
         });
         ImGui::TreePop();
     }
 }
 
-void EditorSystem::drawEntityContextMenu(Scene& scene, EntityId entity) {
+void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, EntityId entity) {
     if (!ImGui::BeginPopupContextItem()) return;
 
     char ctxName[64];
@@ -136,9 +139,9 @@ void EditorSystem::drawEntityContextMenu(Scene& scene, EntityId entity) {
     ImGui::TextDisabled("%s", ctxName);
     ImGui::Separator();
 
-    if (ImGui::MenuItem("Select")) m_selectedEntity = entity;
-    if (ImGui::MenuItem("Duplicate", "Ctrl+D")) duplicateEntity(scene, entity);
-    if (ImGui::MenuItem("Delete", "Del")) deleteEntity(scene, entity);
+    if (ImGui::MenuItem("Select")) state.selectedEntity = entity;
+    if (ImGui::MenuItem("Duplicate", "Ctrl+D")) EditorActions::duplicateEntity(scene, state, entity);
+    if (ImGui::MenuItem("Delete", "Del")) EditorActions::deleteEntity(scene, state, entity);
 
     if (scene.has<Transform>(entity)) {
         ImGui::Separator();

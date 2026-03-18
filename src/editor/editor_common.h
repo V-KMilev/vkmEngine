@@ -1,9 +1,11 @@
 #pragma once
 
 // Common includes for editor panel implementation files.
-// Each panel .cpp includes this instead of duplicating the list.
+// Each panel .cpp includes its own header first, then this convenience header.
 
-#include "editor_system.h"
+#include "editor_state.h"
+#include "editor_widgets.h"
+#include "editor_keybinds.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
