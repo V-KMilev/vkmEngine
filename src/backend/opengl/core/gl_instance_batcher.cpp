@@ -35,6 +35,17 @@ void GLInstanceBatcher::build(const std::vector<DrawableData>& drawables) {
             batch.materialType  = drawables[batchStart].materialType;
             batch.instanceCount = static_cast<uint32_t>(i - batchStart);
             batch.firstInstance = static_cast<uint32_t>(batchStart);
+
+            // castShadows=true entries are sorted to the front of each batch
+            // (see RenderView::sortDrawables), so the shadow-castable instances
+            // form a contiguous prefix [firstInstance, firstInstance + shadowInstanceCount).
+            uint32_t shadowCount = 0;
+            for (size_t k = batchStart; k < i; ++k) {
+                if (!drawables[k].castShadows) break;
+                ++shadowCount;
+            }
+            batch.shadowInstanceCount = shadowCount;
+
             m_batches.push_back(batch);
 
             batchStart = i;

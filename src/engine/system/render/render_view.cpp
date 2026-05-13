@@ -19,10 +19,13 @@ namespace Engine {
 namespace {
 
     /**
-     * @brief Sort drawables by (materialType, material, mesh) for optimal batching.
+     * @brief Sort drawables by (materialType, material, mesh, castShadows) for optimal batching.
      *
-     * Sort key: bits 63-62 = MaterialType, 61-32 = material ID, 31-0 = mesh ID.
-     * Opaque (0) renders first, then Transparent (1), then Unlit (2).
+     * Sort key (MSB -> LSB):
+     *   bits 63-62 : MaterialType  (Opaque=0 first, then Transparent=1, then Unlit=2)
+     *   bits 61-30 : material ID
+     *   bits 29-1  : mesh ID       (capped at 29 bits)
+     *   bit  0     : !castShadows  (shadow-casters sort to the front of each batch)
      */
     void sortDrawables(std::vector<DrawableData>& drawables) {
         if (drawables.size() <= 1) return;
@@ -30,9 +33,10 @@ namespace {
         const uint32_t n = static_cast<uint32_t>(drawables.size());
 
         auto makeKey = [](const DrawableData& d) -> uint64_t {
-            return (static_cast<uint64_t>(d.materialType) << 62)
-                 | (static_cast<uint64_t>(d.material.id()) << 32)
-                 | d.mesh.id();
+            return (static_cast<uint64_t>(d.materialType)                  << 62)
+                 | (static_cast<uint64_t>(d.material.id())                 << 30)
+                 | (static_cast<uint64_t>(d.mesh.id() & 0x1FFFFFFFu)       <<  1)
+                 | (d.castShadows ? 0ull : 1ull);
         };
 
         // Quick O(N) check: skip sort if already in order
@@ -110,6 +114,7 @@ void RenderView::build(
         drawable.mesh         = mesh.mesh;
         drawable.material     = mesh.material;
         drawable.materialType = resources.get(mesh.material).type;
+        drawable.castShadows  = mesh.castShadows;
         drawable.model        = entry.model;
         drawables.emplace_back(drawable);
     }

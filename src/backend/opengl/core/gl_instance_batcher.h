@@ -23,8 +23,9 @@ struct InstanceBatch {
     MeshHandle mesh;
     MaterialHandle material;
     MaterialType materialType = MaterialType::Opaque;
-    uint32_t instanceCount = 0;
-    uint32_t firstInstance = 0;  ///< Offset into the shared instance buffer.
+    uint32_t instanceCount        = 0;
+    uint32_t shadowInstanceCount  = 0;  ///< Leading prefix of instances that cast shadows.
+    uint32_t firstInstance        = 0;  ///< Offset into the shared instance buffer.
 };
 
 /**
