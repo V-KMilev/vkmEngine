@@ -115,6 +115,10 @@ void GizmoOverlay::drawTransformGizmo(FrameContext& ctx, EditorState& state, ImV
             transform.position = pos;
             transform.scale    = scale;
         }
+
+        // Local transform changed — mark this entity's hierarchy subtree dirty
+        // so HierarchySystem recomputes WorldTransforms next frame.
+        HierarchyOperations::markDirty(ctx.scene, state.selectedEntity);
     }
 }
 

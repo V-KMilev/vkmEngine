@@ -150,6 +150,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
             t.position = glm::vec3(0.0f);
             t.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
             t.scale    = glm::vec3(1.0f);
+            HierarchyOperations::markDirty(scene, entity);
         }
     }
 
