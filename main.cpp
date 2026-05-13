@@ -11,6 +11,7 @@
 #include "core/engine.h"
 #include "system/animation/animation_system.h"
 #include "system/event/event_system.h"
+#include "system/hierarchy/hierarchy_system.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
 #include "camera_controller.h"
@@ -46,6 +47,7 @@ int main() {
         // Systems
         auto& cameraController = engine.addSystem<Engine::CameraController>();
         auto& eventSystem      = engine.addSystem<Engine::EventSystem>();
+        auto& hierarchySystem  = engine.addSystem<Engine::HierarchySystem>();
         auto& visibilitySystem = engine.addSystem<Engine::VisibilitySystem>();
         auto& animationSystem  = engine.addSystem<Engine::AnimationSystem>();
         auto& renderSystem     = engine.addSystem<Engine::RenderSystem>();

@@ -92,7 +92,7 @@ void InspectorPanel::drawTransformSection(Scene& scene, EntityId id) {
     drawVec3Control("Scale", glm::value_ptr(t.scale), 1.0f, 0.01f);
 
     if (scene.has<Hierarchy>(id) && scene.get<Hierarchy>(id).parent) {
-        glm::mat4 worldMat = HierarchyUtils::computeWorldMatrix(scene, id);
+        glm::mat4 worldMat = HierarchyOperations::computeWorldMatrix(scene, id);
         glm::vec3 worldPos(worldMat[3]);
         ImGui::TextDisabled("  World: (%.1f, %.1f, %.1f)", worldPos.x, worldPos.y, worldPos.z);
     }
@@ -341,7 +341,7 @@ void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, Enti
 
     if (h.firstChild) {
         ImGui::TextDisabled("Children:");
-        HierarchyUtils::forEachChild(scene, id, [&](EntityId child) {
+        HierarchyOperations::forEachChild(scene, id, [&](EntityId child) {
             char icon[8], name[64];
             getEntityIcon(scene, child, icon, sizeof(icon));
             getEntityDisplayName(scene, child, name, sizeof(name));

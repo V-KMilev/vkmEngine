@@ -6,7 +6,7 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/transform.h"
 
-namespace Engine::HierarchyUtils {
+namespace Engine::HierarchyOperations {
 
 /**
  * @brief Attach a child entity to a parent entity.
@@ -32,6 +32,18 @@ void setParent(Scene& scene, EntityId child, EntityId parent);
 void removeFromParent(Scene& scene, EntityId entity);
 
 /**
+ * @brief Detach an entity from its hierarchy, reparenting its children to its parent.
+ *
+ * Children of @p entity become children of @p entity's parent (root if none),
+ * then @p entity itself is unlinked. Used before destroying an entity when you
+ * want to preserve its descendants in the tree. Does NOT destroy the entity.
+ *
+ * @param scene The scene containing the entity.
+ * @param entity The entity to detach.
+ */
+void detachAndReparentChildren(Scene& scene, EntityId entity);
+
+/**
  * @brief Compute the world-space model matrix for an entity, accounting for hierarchy.
  *
  * Walks up the parent chain and multiplies local matrices top-down.
@@ -43,6 +55,18 @@ void removeFromParent(Scene& scene, EntityId entity);
  * @return The world-space model matrix.
  */
 glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity);
+
+/**
+ * @brief Resolve world transforms for every entity with a Hierarchy component.
+ *
+ * For each such entity, computes its world matrix via computeWorldMatrix and
+ * writes it to a WorldTransform component (added on demand). This is the
+ * per-frame work HierarchySystem runs, exposed here as a free function so
+ * editors / loaders / bake passes can trigger it outside the frame loop.
+ *
+ * @param scene The scene to resolve.
+ */
+void resolveWorldTransforms(Scene& scene);
 
 /**
  * @brief Iterate over all direct children of an entity.
@@ -72,4 +96,4 @@ void forEachChild(const Scene& scene, EntityId parent, Fn&& fn) {
  */
 void destroyHierarchy(Scene& scene, EntityId entity);
 
-} // namespace Engine::HierarchyUtils
+} // namespace Engine::HierarchyOperations

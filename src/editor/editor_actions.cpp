@@ -15,7 +15,7 @@
 #include "ecs/component/animation.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/name.h"
-#include "ecs/hierarchy_utils.h"
+#include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
 #include "system/visibility/bounds_utils.h"
 #include "camera_controller.h"
@@ -99,10 +99,10 @@ void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
     if (state.selectedEntity == entity) state.selectedEntity = {};
 
     if (scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).firstChild) {
-        HierarchyUtils::destroyHierarchy(scene, entity);
+        HierarchyOperations::destroyHierarchy(scene, entity);
     } else {
         if (scene.has<Hierarchy>(entity)) {
-            HierarchyUtils::removeFromParent(scene, entity);
+            HierarchyOperations::removeFromParent(scene, entity);
         }
         scene.destroyEntity(Entity{entity});
     }
@@ -125,7 +125,7 @@ void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController* ca
         const auto& asset = ctx.resources.get(mesh.mesh);
 
         glm::mat4 model = hasParent
-            ? HierarchyUtils::computeWorldMatrix(ctx.scene, state.selectedEntity)
+            ? HierarchyOperations::computeWorldMatrix(ctx.scene, state.selectedEntity)
             : Transform::computeModelMatrix(ctx.scene.get<Transform>(state.selectedEntity));
 
         if (hasValidBounds(asset.boundsMin, asset.boundsMax)) {
@@ -142,7 +142,7 @@ void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController* ca
         }
     } else {
         if (hasParent) {
-            glm::mat4 wm = HierarchyUtils::computeWorldMatrix(ctx.scene, state.selectedEntity);
+            glm::mat4 wm = HierarchyOperations::computeWorldMatrix(ctx.scene, state.selectedEntity);
             targetPos = glm::vec3(wm[3]);
         } else {
             targetPos = ctx.scene.get<Transform>(state.selectedEntity).position;

@@ -5,13 +5,15 @@
 #include <vector>
 
 #include "ecs/entity.h"
-#include "ecs/component/hierarchy.h"
 #include "core/memory/slot_allocator.h"
 #include "core/memory/sparse_set.h"
 #include "core/memory/types.h"
 #include "debug/statistics.h"
 
 namespace Engine {
+
+class Scene;
+void detachFromHierarchy(Scene& scene, EntityId entity);
 
 /**
  * @brief Central registry managing entities and an open set of component types.
@@ -40,9 +42,6 @@ class Scene {
          */
         Entity createEntity() {
             StorageIndex id = m_entityAllocator.allocate();
-            if (id.index >= m_componentMasks.size())
-                m_componentMasks.resize(id.index + 1, 0);
-            m_componentMasks[id.index] = 0;
             STATS_RECORD_ENTITY_CREATE();
             return Entity{id};
         }
@@ -71,55 +70,13 @@ class Scene {
          */
         void destroyEntity(Entity entity) {
             EntityId id = entity.getID();
+            detachFromHierarchy(*this, id);
 
-            // Clean up hierarchy: reparent children to grandparent, unlink from parent
-            auto* hierarchySet = findStorage<Hierarchy>();
-            if (hierarchySet && hierarchySet->contains(id.index)) {
-                Hierarchy& h = hierarchySet->get(id.index);
-
-                // Reparent children to this entity's parent (detach if root)
-                EntityId child = h.firstChild;
-                while (child) {
-                    Hierarchy& childH = hierarchySet->get(child.index);
-                    EntityId nextChild = childH.nextSibling;
-
-                    childH.prevSibling = {};
-                    childH.nextSibling = {};
-                    childH.parent = h.parent;
-
-                    if (h.parent) {
-                        Hierarchy& parentH = hierarchySet->get(h.parent.index);
-                        childH.nextSibling = parentH.firstChild;
-                        if (parentH.firstChild) {
-                            hierarchySet->get(parentH.firstChild.index).prevSibling = child;
-                        }
-                        parentH.firstChild = child;
-                    }
-
-                    child = nextChild;
-                }
-
-                // Unlink from parent's child list
-                if (h.parent) {
-                    if (h.prevSibling) {
-                        hierarchySet->get(h.prevSibling.index).nextSibling = h.nextSibling;
-                    } else {
-                        hierarchySet->get(h.parent.index).firstChild = h.nextSibling;
-                    }
-                    if (h.nextSibling) {
-                        hierarchySet->get(h.nextSibling.index).prevSibling = h.prevSibling;
-                    }
+            for (auto& set : m_components) {
+                if (set && set->has(id.index)) {
+                    set->remove(id.index);
                 }
             }
-
-            uint64_t mask = m_componentMasks[id.index];
-            while (mask) {
-                uint32_t bit = static_cast<uint32_t>(__builtin_ctzll(mask));
-                if (bit < m_components.size() && m_components[bit])
-                    m_components[bit]->remove(id.index);
-                mask &= mask - 1;
-            }
-            m_componentMasks[id.index] = 0;
             m_entityAllocator.free(id);
             STATS_RECORD_ENTITY_DESTROY();
         }
@@ -135,11 +92,7 @@ class Scene {
         auto& add(Entity entity, T && component) {
             VKM_ASSERT(isAlive(entity), "Scene::add called with dead/stale entity");
             using U = std::remove_cv_t<std::remove_reference_t<T>>;
-            auto& result = getStorage<U>().add(entity.getID().index, std::forward<T>(component));
-            TypeId tid = typeId<U>();
-            VKM_ASSERT(tid < 64, "Component type count exceeds 64-bit mask capacity");
-            m_componentMasks[entity.getID().index] |= (uint64_t(1) << tid);
-            return result;
+            return getStorage<U>().add(entity.getID().index, std::forward<T>(component));
         }
 
         /**
@@ -201,8 +154,6 @@ class Scene {
             auto* store = findStorage<T>();
             if (store && store->has(entity.getID().index)) {
                 store->remove(entity.getID().index);
-                TypeId tid = typeId<T>();
-                m_componentMasks[entity.getID().index] &= ~(uint64_t(1) << tid);
             }
         }
 
@@ -320,7 +271,6 @@ class Scene {
     private:
         SlotAllocator m_entityAllocator;
         std::vector<std::unique_ptr<ISparseSet>> m_components;
-        std::vector<uint64_t> m_componentMasks; ///< Per-entity bitmask of attached component types (indexed by entity index)
 };
 
 } // namespace Engine

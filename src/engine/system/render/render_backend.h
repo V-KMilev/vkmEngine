@@ -80,6 +80,15 @@ class RenderBackend {
 
         virtual void setWireframe(bool enabled) = 0;
 
+        /**
+         * @brief Synchronise backend-side GPU resources with the RenderView.
+         *
+         * Called by RenderSystem once per frame, after RenderView::build and
+         * before pipeline.execute. Default no-op for backends that don't need
+         * a separate sync step.
+         */
+        virtual void syncResources(const RenderView& view, const ResourceManager& resources) {}
+
     protected:
         RenderBackendType m_type;
 };
