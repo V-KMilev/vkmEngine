@@ -69,22 +69,19 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
 
     auto& glView = gl.getView();
 
-    glView.syncMeshes(view, resources);
-    glView.syncMaterials(view, resources);
-    glView.syncTextures(view, resources);
-    glView.syncLights(view, resources);
-    glView.purgeStaleIfNeeded(view);
-
+    // Resource sync happens in RenderBackend::syncResources before pass execution.
     glView.buildInstanceBatches(view);
 
     auto& batcher = glView.getInstanceBatcher();
     const auto& batches = batcher.getBatches();
+    auto& instanceBuffer = batcher.getBuffer();
 
-    // Bind lights UBO (shared across all shader variants)
-    glView.getLights().bind(GLConfig::UBOBindingPoints::Lights);
+    // CameraBlock and LightsBlock UBOs are owned by GLView and bound once
+    // per frame in sync().
 
     Core::Shader* currentShader = nullptr;
     MaterialType currentType = MaterialType::Opaque;
+    MaterialHandle currentMaterial{};
 
     for (size_t i = 0; i < batches.size(); ++i) {
         const auto& batch = batches[i];
@@ -112,36 +109,31 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
             shader->bind();
             STATS_RECORD_SHADER_SWITCH();
 
-            shader->setUniform3fv(GLConfig::UniformNames::CameraPosition, view.camera.position);
-            shader->setUniformMatrix4fv(GLConfig::UniformNames::ViewProjection, view.camera.viewProjection);
-            shader->setUniform1f(GLConfig::UniformNames::Exposure, view.camera.exposure);
-            shader->setUniform3fv(GLConfig::UniformNames::AmbientColor, view.environment.ambientColor);
-            shader->setUniform1f(GLConfig::UniformNames::AmbientIntensity, view.environment.ambientIntensity);
-
             currentShader = shader;
             currentType = batch.materialType;
         }
 
-        // Bind material (UBO + textures)
-        if (batch.material) {
+        // Bind material (UBO + textures) — skip when identical to previous batch
+        if (batch.material && batch.material != currentMaterial) {
             const GLMaterial* material = glView.getMaterial(batch.material);
             if (material) {
                 material->bind(GLConfig::UBOBindingPoints::Material);
                 material->bindTextures(glView);
+                currentMaterial = batch.material;
             } else {
                 LOG_WARNING("Failed to get material for batch (skipping material bind)");
             }
         }
 
-        // Get mesh and instance buffer, issue draw call
+        // Get mesh, attach shared instance buffer to its VAO (cached / no-op on
+        // repeat), then issue a base-instance draw that reads from the right offset.
         GLMesh* mesh = glView.getMutableMesh(batch.mesh);
-        GLInstanceBuffer* instanceBuffer = batcher.getInstanceBuffer(i);
 
-        if (mesh && instanceBuffer) {
-            instanceBuffer->attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
-            mesh->drawInstanced(GL_TRIANGLES, batch.instanceCount);
+        if (mesh) {
+            instanceBuffer.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
+            mesh->drawInstancedBaseInstance(GL_TRIANGLES, batch.instanceCount, batch.firstInstance);
         } else {
-            LOG_WARNING("Failed to get mesh or instance buffer for batch (skipping draw call)");
+            LOG_WARNING("Failed to get mesh for batch (skipping draw call)");
         }
     }
 

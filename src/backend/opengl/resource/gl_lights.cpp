@@ -42,40 +42,37 @@ void GLLights::update(const std::vector<LightData>& lights) {
         const LightData& lightData = lights[i];
         LightGPUData& gpuLight = data.lights[i];
 
-        // Position and type
-        gpuLight.position = lightData.position;
-        gpuLight.type = static_cast<int>(lightData.type);
+        gpuLight.position = glm::vec4(lightData.position, static_cast<float>(lightData.type));
+        gpuLight.color    = glm::vec4(lightData.color, lightData.intensity);
 
-        // Color and intensity
-        gpuLight.color = lightData.color;
-        gpuLight.intensity = lightData.intensity;
+        const glm::vec3 dir = (lightData.type == LightType::Directional || lightData.type == LightType::Spot)
+            ? glm::normalize(lightData.rotation * glm::vec3(0.0f, 0.0f, 1.0f))
+            : glm::vec3(0.0f);
+        gpuLight.direction = glm::vec4(dir, lightData.radius);
 
-        // Direction (from rotation) and radius
-        if (lightData.type == LightType::Directional || lightData.type == LightType::Spot) {
-            // Compute direction from rotation (forward vector)
-            gpuLight.direction = glm::normalize(lightData.rotation * glm::vec3(0.0f, 0.0f, 1.0f));
-        } else {
-            // For point lights, direction is not used (set to default)
-            gpuLight.direction = glm::vec3(0.0f, 0.0f, 0.0f);
-        }
-        gpuLight.radius = lightData.radius;
-
-        // Spot light parameters
-        gpuLight.innerConeAngle = lightData.innerConeAngle;
-        gpuLight.outerConeAngle = lightData.outerConeAngle;
-        gpuLight.castShadows = lightData.castShadows ? 1.0f : 0.0f;
+        gpuLight.spot = glm::vec4(
+            lightData.innerConeAngle,
+            lightData.outerConeAngle,
+            lightData.castShadows ? 1.0f : 0.0f,
+            0.0f
+        );
     }
 
-    // Set light count
     data.lightCount = static_cast<int>(lightCount);
     m_lightCount = lightCount;
 
-    // Update or create UBO
-    if (m_ubo) {
-        m_ubo->update(&data, sizeof(LightsUBOData));
-    } else {
+    const bool firstUpload = !m_ubo;
+    const bool changed = firstUpload
+        || std::memcmp(&data, &m_lastData, sizeof(LightsUBOData)) != 0;
+
+    if (!changed) return;
+
+    if (firstUpload) {
         m_ubo = std::make_unique<Core::UniformBuffer>(&data, sizeof(LightsUBOData));
+    } else {
+        m_ubo->update(&data, sizeof(LightsUBOData));
     }
+    m_lastData = data;
 }
 
 void GLLights::bind(uint32_t bindingPoint) const {

@@ -1,10 +1,13 @@
 #pragma once
 
+#include <memory>
+
 #include <GL/glew.h>
 
 #include "system/render/render_target.h"
 #include "gl_frame_buffer.h"
 #include "gl_render_buffer.h"
+#include "gl_texture.h"
 
 namespace Engine {
 
@@ -60,9 +63,7 @@ class GLFramebufferTarget : public RenderTarget {
             createAttachments();
         }
 
-        ~GLFramebufferTarget() override {
-            destroyAttachments();
-        }
+        ~GLFramebufferTarget() override = default;
 
         GLFramebufferTarget(const GLFramebufferTarget&) = delete;
         GLFramebufferTarget& operator=(const GLFramebufferTarget&) = delete;
@@ -82,7 +83,6 @@ class GLFramebufferTarget : public RenderTarget {
             if (width == m_width && height == m_height) return;
             m_width = width;
             m_height = height;
-            destroyAttachments();
             createAttachments();
         }
 
@@ -90,49 +90,36 @@ class GLFramebufferTarget : public RenderTarget {
         uint32_t getHeight() const override { return m_height; }
 
         /** @brief Get the color attachment texture ID for sampling. */
-        GLuint getColorTexture() const { return m_colorTexture; }
+        GLuint getColorTexture() const { return m_colorTexture ? m_colorTexture->getID() : 0; }
 
     private:
         void createAttachments() {
-            // Color texture (RGBA8)
-            glGenTextures(1, &m_colorTexture);
-            glBindTexture(GL_TEXTURE_2D, m_colorTexture);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, m_width, m_height, 0,
-                         GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glBindTexture(GL_TEXTURE_2D, 0);
+            Core::Texture2DParams texParams;
+            texParams.width = m_width;
+            texParams.height = m_height;
+            texParams.internalFormat = GL_RGBA8;
+            texParams.format = GL_RGBA;
+            texParams.type = GL_UNSIGNED_BYTE;
+            texParams.wrapS = Core::TextureWrap::ClampToEdge;
+            texParams.wrapT = Core::TextureWrap::ClampToEdge;
+            texParams.minFilter = Core::TextureMinFilter::Linear;
+            texParams.magFilter = Core::TextureMagFilter::Linear;
+            texParams.generateMipmaps = false;
+            m_colorTexture = std::make_unique<Core::Texture2D>("framebuffer_color", texParams);
 
-            // Depth renderbuffer
-            glGenRenderbuffers(1, &m_depthRBO);
-            glBindRenderbuffer(GL_RENDERBUFFER, m_depthRBO);
-            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, m_width, m_height);
-            glBindRenderbuffer(GL_RENDERBUFFER, 0);
+            m_depthRBO = std::make_unique<Core::RenderBuffer>();
+            m_depthRBO->storage(GL_DEPTH24_STENCIL8, m_width, m_height);
 
-            // Attach to FBO
             m_fbo.bind();
-            m_fbo.attachTexture2D(GL_COLOR_ATTACHMENT0, m_colorTexture);
-            m_fbo.attachRenderBuffer(GL_DEPTH_STENCIL_ATTACHMENT, m_depthRBO);
+            m_fbo.attachTexture2D(GL_COLOR_ATTACHMENT0, m_colorTexture->getID());
+            m_fbo.attachRenderBuffer(GL_DEPTH_STENCIL_ATTACHMENT, m_depthRBO->getID());
             m_fbo.unbind();
-        }
-
-        void destroyAttachments() {
-            if (m_colorTexture) {
-                glDeleteTextures(1, &m_colorTexture);
-                m_colorTexture = 0;
-            }
-            if (m_depthRBO) {
-                glDeleteRenderbuffers(1, &m_depthRBO);
-                m_depthRBO = 0;
-            }
         }
 
     private:
         Core::FrameBuffer m_fbo;
-        GLuint m_colorTexture = 0;
-        GLuint m_depthRBO     = 0;
+        std::unique_ptr<Core::Texture2D> m_colorTexture;
+        std::unique_ptr<Core::RenderBuffer> m_depthRBO;
         uint32_t m_width;
         uint32_t m_height;
 };

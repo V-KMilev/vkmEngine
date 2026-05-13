@@ -23,7 +23,11 @@ layout (location = 5) in vec4 aModelCol1;
 layout (location = 6) in vec4 aModelCol2;
 layout (location = 7) in vec4 aModelCol3;
 
-uniform mat4 u_viewProjection;
+layout(std140, binding = 2) uniform CameraBlock {
+    mat4 viewProjection;
+    vec4 cameraPosition;  // xyz = position, w = exposure
+    vec4 ambient;         // xyz = color, w = intensity
+} u_camera;
 
 // Outputs to fragment shader
 out vec3 FragPos;
@@ -58,5 +62,5 @@ void main() {
     Bitangent = cross(Normal, Tangent) * aTangent.w;
 
     // Final clip-space position
-    gl_Position = u_viewProjection * model * vec4(aPos, 1.0);
+    gl_Position = u_camera.viewProjection * model * vec4(aPos, 1.0);
 }

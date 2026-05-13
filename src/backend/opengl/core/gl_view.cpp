@@ -1,12 +1,10 @@
 #include "gl_view.h"
 
 #include <algorithm>
-#include <unordered_set>
 #include <vector>
 
 #include "logger.h"
 
-#include "config/gl_config.h"
 #include "config/gl_texture_mapping.h"
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"
@@ -18,254 +16,162 @@
 
 namespace Engine {
 
-GLView::~GLView() {
-    m_meshes.clear();
-    m_materials.clear();
-    m_textures.clear();
+namespace {
 
+template<typename HandleT>
+void sortUnique(std::vector<HandleT>& handles) {
+    std::sort(handles.begin(), handles.end(),
+        [](const HandleT& a, const HandleT& b) { return a.id() < b.id(); });
+    handles.erase(std::unique(handles.begin(), handles.end(),
+        [](const HandleT& a, const HandleT& b) { return a.id() == b.id(); }), handles.end());
+}
+
+void collectMeshHandles(const RenderView& view, std::vector<MeshHandle>& out) {
+    out.clear();
+    out.reserve(view.drawables.size());
+    for (const auto& d : view.drawables) {
+        if (d.mesh) out.push_back(d.mesh);
+    }
+    sortUnique(out);
+}
+
+void collectMaterialHandles(const RenderView& view, std::vector<MaterialHandle>& out) {
+    out.clear();
+    uint32_t lastId = UINT32_MAX;
+    for (const auto& d : view.drawables) {
+        if (!d.material) continue;
+        if (d.material.id() == lastId) continue;  // sorted: skip consecutive duplicates
+        lastId = d.material.id();
+        out.push_back(d.material);
+    }
+    sortUnique(out);
+}
+
+void collectTextureHandles(
+    const std::vector<MaterialHandle>& materialHandles,
+    const ResourceManager& resources,
+    std::vector<TextureHandle>& out
+) {
+    out.clear();
+    for (const auto& mh : materialHandles) {
+        const auto& material = resources.get(mh);
+        for (const auto& mapping : g_textureMappings) {
+            const TextureHandle& th = material.*mapping.handlePtr;
+            if (th) out.push_back(th);
+        }
+    }
+    sortUnique(out);
+}
+
+} // namespace
+
+GLView::~GLView() {
     LOG_TRACE("Destroying GLView");
 }
 
-void GLView::syncMeshes(
-    const RenderView& renderView,
-    const ResourceManager& resourceManager
+template<typename AssetT, typename GLT>
+void GLView::syncTable(
+    GLResourceTable<GLT>& table,
+    const std::vector<Handle<AssetT>>& handles,
+    const ResourceManager& resources
 ) {
-    // Skip sync entirely when no mesh resources changed and drawable count is stable
-    const uint64_t currentVersion = resourceManager.getTypeVersion<MeshAsset>();
-    const size_t currentCount = renderView.drawables.size();
-    if (currentVersion == m_lastMeshVersion && currentCount == m_lastDrawableCount) {
-        return;
-    }
+    for (const auto& h : handles) {
+        const uint32_t id = h.id();
+        const auto& asset = resources.get(h);
+        const uint64_t v = asset.version;
 
-    // Collect unique mesh handles via sort+unique (cache-friendly on small arrays,
-    // outperforms hash-based dedup for typical scene sizes due to sequential access)
-    thread_local std::vector<MeshHandle> meshHandles;
-    meshHandles.clear();
-    meshHandles.reserve(renderView.drawables.size());
-
-    for (const auto& drawable : renderView.drawables) {
-        if (drawable.mesh) {
-            meshHandles.push_back(drawable.mesh);
+        if (id >= table.entries.size()) {
+            table.entries.resize(id + 1);
+            table.versions.resize(id + 1, 0);
         }
-    }
 
-    std::sort(meshHandles.begin(), meshHandles.end(),
-        [](const MeshHandle& a, const MeshHandle& b) { return a.id() < b.id(); });
-    meshHandles.erase(std::unique(meshHandles.begin(), meshHandles.end(),
-        [](const MeshHandle& a, const MeshHandle& b) { return a.id() == b.id(); }), meshHandles.end());
-
-    for (const auto& handle : meshHandles) {
-        const uint32_t key = handle.id();
-        const auto& asset = resourceManager.get(handle);
-        const uint64_t version = asset.version;
-
-        auto it = m_meshes.find(key);
-
-        if (it == m_meshes.end()) {
-            m_meshes[key] = std::make_unique<GLMesh>(asset);
-            m_meshVersions[key] = version;
-        } else if (m_meshVersions[key] != version) {
-            it->second->update(asset);
-            m_meshVersions[key] = version;
-        }
-    }
-
-    m_lastMeshVersion = currentVersion;
-    m_lastDrawableCount = currentCount;
-}
-
-void GLView::syncMaterials(
-    const RenderView& renderView,
-    const ResourceManager& resourceManager
-) {
-    // Drawables are sorted by material, so we can skip consecutive duplicates
-    uint32_t lastMaterial = UINT32_MAX;
-
-    for (const auto& drawable : renderView.drawables) {
-        if (!drawable.material) continue;
-
-        const uint32_t key = drawable.material.id();
-        if (key == lastMaterial) continue;
-        lastMaterial = key;
-
-        const auto& asset = resourceManager.get(drawable.material);
-        const uint64_t version = asset.version;
-
-        auto it = m_materials.find(key);
-
-        if (it == m_materials.end()) {
-            m_materials[key] = std::make_unique<GLMaterial>(asset);
-            m_materialVersions[key] = version;
-        } else if (m_materialVersions[key] != version) {
-            it->second->update(asset);
-            m_materialVersions[key] = version;
+        if (!table.entries[id]) {
+            table.entries[id] = std::make_unique<GLT>(asset);
+            table.versions[id] = v;
+        } else if (table.versions[id] != v) {
+            table.entries[id]->update(asset);
+            table.versions[id] = v;
         }
     }
 }
 
-void GLView::syncTextures(
-    const RenderView& renderView,
-    const ResourceManager& resourceManager
-) {
-    // Collect unique texture handles (full handles for resourceManager lookup)
-    thread_local std::vector<TextureHandle> textureHandles;
-    textureHandles.clear();
+void GLView::sync(const RenderView& view, const ResourceManager& resources) {
+    // Drawable-driven sync (meshes/materials/textures): early-out when neither
+    // resource versions nor drawable count have changed.
+    const uint64_t meshTypeVersion     = resources.getTypeVersion<MeshAsset>();
+    const uint64_t materialTypeVersion = resources.getTypeVersion<MaterialAsset>();
+    const uint64_t textureTypeVersion  = resources.getTypeVersion<TextureAsset>();
+    const size_t drawableCount = view.drawables.size();
 
-    uint32_t lastMaterial = UINT32_MAX;  // Fast path for sorted drawables
+    const bool resourcesDirty =
+           meshTypeVersion     != m_lastMeshTypeVersion
+        || materialTypeVersion != m_lastMaterialTypeVersion
+        || textureTypeVersion  != m_lastTextureTypeVersion
+        || drawableCount       != m_lastDrawableCount;
 
-    for (const auto& drawable : renderView.drawables) {
-        if (!drawable.material) continue;
+    thread_local std::vector<MeshHandle>     meshHandles;
+    thread_local std::vector<MaterialHandle> materialHandles;
+    thread_local std::vector<TextureHandle>  textureHandles;
 
-        // Drawables are sorted by material - skip if same as last
-        if (drawable.material.id() == lastMaterial) continue;
-        lastMaterial = drawable.material.id();
+    if (resourcesDirty) {
+        collectMeshHandles(view, meshHandles);
+        collectMaterialHandles(view, materialHandles);
+        collectTextureHandles(materialHandles, resources, textureHandles);
 
-        const auto& material = resourceManager.get(drawable.material);
+        syncTable<MeshAsset>    (m_meshTable,     meshHandles,     resources);
+        syncTable<MaterialAsset>(m_materialTable, materialHandles, resources);
+        syncTable<TextureAsset> (m_textureTable,  textureHandles,  resources);
 
-        for (const auto& mapping : g_textureMappings) {
-            const TextureHandle& handle = material.*mapping.handlePtr;
-            if (handle) {
-                textureHandles.push_back(handle);
-            }
-        }
+        m_lastMeshTypeVersion     = meshTypeVersion;
+        m_lastMaterialTypeVersion = materialTypeVersion;
+        m_lastTextureTypeVersion  = textureTypeVersion;
+        m_lastDrawableCount       = drawableCount;
     }
 
-    // Sort by id and remove duplicates
-    std::sort(textureHandles.begin(), textureHandles.end(),
-        [](const TextureHandle& a, const TextureHandle& b) { return a.id() < b.id(); });
-    textureHandles.erase(std::unique(textureHandles.begin(), textureHandles.end(),
-        [](const TextureHandle& a, const TextureHandle& b) { return a.id() == b.id(); }), textureHandles.end());
+    // Per-frame UBOs (camera, lights) are owned by GLView and bound here so
+    // every subsequent pass can read them by binding point without rebinding.
+    m_camera.update(view.camera, view.environment);
+    m_camera.bind();
 
-    // Sync each referenced texture
-    for (const auto& handle : textureHandles) {
-        const uint32_t key = handle.id();
-        const auto& asset = resourceManager.get(handle);
-        const uint64_t version = asset.version;
-
-        auto it = m_textures.find(key);
-
-        if (it == m_textures.end()) {
-            m_textures[key] = std::make_unique<GLTexture>(asset);
-            m_textureVersions[key] = version;
-
-        } else if (m_textureVersions[key] != version) {
-            it->second->update(asset);
-            m_textureVersions[key] = version;
-        }
-    }
-}
-
-void GLView::syncLights(
-    const RenderView& renderView,
-    const ResourceManager& resourceManager
-) {
-    m_lights.update(renderView.lights);
+    m_lights.update(view.lights);
+    m_lights.bind();
 }
 
 const GLMesh* GLView::getMesh(const MeshHandle& handle) const {
-    auto it = m_meshes.find(handle.id());
-
-    if (it == m_meshes.end() || !it->second) {
-        LOG_WARNING("GLMesh not found for handle %u (not synced or invalid)", handle.id());
+    const uint32_t id = handle.id();
+    if (id >= m_meshTable.entries.size() || !m_meshTable.entries[id]) {
+        LOG_WARNING("GLMesh not found for handle %u (not synced or invalid)", id);
         return nullptr;
     }
-
-    return it->second.get();
+    return m_meshTable.entries[id].get();
 }
 
 const GLMaterial* GLView::getMaterial(const MaterialHandle& handle) const {
-    auto it = m_materials.find(handle.id());
-
-    if (it == m_materials.end() || !it->second) {
-        LOG_WARNING("GLMaterial not found for handle %u (not synced or invalid)", handle.id());
+    const uint32_t id = handle.id();
+    if (id >= m_materialTable.entries.size() || !m_materialTable.entries[id]) {
+        LOG_WARNING("GLMaterial not found for handle %u (not synced or invalid)", id);
         return nullptr;
     }
-
-    return it->second.get();
+    return m_materialTable.entries[id].get();
 }
 
 const GLTexture* GLView::getTexture(const TextureHandle& handle) const {
-    auto it = m_textures.find(handle.id());
-
-    if (it == m_textures.end() || !it->second) {
-        LOG_WARNING("GLTexture not found for handle %u (not synced or invalid)", handle.id());
+    const uint32_t id = handle.id();
+    if (id >= m_textureTable.entries.size() || !m_textureTable.entries[id]) {
+        LOG_WARNING("GLTexture not found for handle %u (not synced or invalid)", id);
         return nullptr;
     }
+    return m_textureTable.entries[id].get();
+}
 
-    return it->second.get();
+GLMesh* GLView::getMutableMesh(const MeshHandle& handle) {
+    const uint32_t id = handle.id();
+    if (id >= m_meshTable.entries.size()) return nullptr;
+    return m_meshTable.entries[id].get();
 }
 
 void GLView::buildInstanceBatches(const RenderView& renderView) {
     m_instanceBatcher.build(renderView.drawables);
-}
-
-GLMesh* GLView::getMutableMesh(const MeshHandle& handle) {
-    auto it = m_meshes.find(handle.id());
-
-    if (it == m_meshes.end() || !it->second) {
-        return nullptr;
-    }
-
-    return it->second.get();
-}
-
-void GLView::purgeStaleResources(const RenderView& renderView) {
-    // Collect active mesh and material IDs from this frame's drawables
-    std::unordered_set<uint32_t> activeMeshes;
-    std::unordered_set<uint32_t> activeMaterials;
-    std::unordered_set<uint32_t> activeTextures;
-
-    for (const auto& drawable : renderView.drawables) {
-        if (drawable.mesh) activeMeshes.insert(drawable.mesh.id());
-        if (drawable.material) activeMaterials.insert(drawable.material.id());
-    }
-
-    // Collect active texture IDs from active materials
-    // (textures referenced by materials currently in use)
-    for (const auto& [key, mat] : m_materials) {
-        if (activeMaterials.count(key)) {
-            for (const auto& binding : mat->getTextureBindings()) {
-                if (binding.handle) activeTextures.insert(binding.handle.id());
-            }
-        }
-    }
-
-    // Erase meshes not in current frame
-    for (auto it = m_meshes.begin(); it != m_meshes.end(); ) {
-        if (!activeMeshes.count(it->first)) {
-            m_meshVersions.erase(it->first);
-            it = m_meshes.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
-    // Erase materials not in current frame
-    for (auto it = m_materials.begin(); it != m_materials.end(); ) {
-        if (!activeMaterials.count(it->first)) {
-            m_materialVersions.erase(it->first);
-            it = m_materials.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
-    // Erase textures not referenced by any active material
-    for (auto it = m_textures.begin(); it != m_textures.end(); ) {
-        if (!activeTextures.count(it->first)) {
-            m_textureVersions.erase(it->first);
-            it = m_textures.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
-void GLView::purgeStaleIfNeeded(const RenderView& renderView) {
-    if (++m_purgeCounter >= PURGE_INTERVAL) {
-        purgeStaleResources(renderView);
-        m_purgeCounter = 0;
-    }
 }
 
 } // namespace Engine
