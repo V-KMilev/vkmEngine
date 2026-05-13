@@ -46,6 +46,9 @@ void RenderSystem::update(FrameContext& ctx) {
     // Build snapshot for this frame (reuses vector capacity from previous frame)
     m_renderView.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight);
 
+    // Backend-owned GPU sync (no-op for backends that don't need it).
+    m_backend->syncResources(m_renderView, ctx.resources);
+
     // Execute passes
     m_pipeline.execute(*m_backend, m_renderView, ctx.resources);
 }

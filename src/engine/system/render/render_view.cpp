@@ -11,8 +11,7 @@
 #include "ecs/component/mesh.h"
 #include "ecs/component/light.h"
 #include "ecs/component/transform.h"
-#include "ecs/component/hierarchy.h"
-#include "ecs/hierarchy_utils.h"
+#include "ecs/component/world_transform.h"
 #include "resource/resource_manager.h"
 
 namespace Engine {
@@ -133,9 +132,9 @@ void RenderView::build(
         lightData.outerConeAngle = light.outerConeAngle;
         lightData.castShadows = light.castShadows;
 
-        // Use world-space position/rotation for lights with hierarchy parents
-        if (scene.has<Hierarchy>(id) && scene.get<Hierarchy>(id).parent) {
-            const glm::mat4 worldMatrix = HierarchyUtils::computeWorldMatrix(scene, id);
+        // Use world-space position/rotation when HierarchySystem produced a WorldTransform
+        if (scene.has<WorldTransform>(id)) {
+            const glm::mat4& worldMatrix = scene.get<WorldTransform>(id).model;
             lightData.position = glm::vec3(worldMatrix[3]);
             // Extract world rotation: normalize columns to remove scale, then quat_cast
             lightData.rotation = glm::quat_cast(glm::mat3(

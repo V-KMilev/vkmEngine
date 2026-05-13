@@ -25,7 +25,7 @@
 #include "ecs/component/animation.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/name.h"
-#include "ecs/hierarchy_utils.h"
+#include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
 #include "resource/material_asset.h"
 #include "debug/statistics.h"

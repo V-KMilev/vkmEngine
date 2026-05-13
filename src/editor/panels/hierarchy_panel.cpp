@@ -124,7 +124,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
     drawEntityContextMenu(scene, state, entity);
 
     if (nodeOpen && hasChildren) {
-        HierarchyUtils::forEachChild(scene, entity, [&](EntityId child) {
+        HierarchyOperations::forEachChild(scene, entity, [&](EntityId child) {
             drawEntityNode(scene, state, child);
         });
         ImGui::TreePop();

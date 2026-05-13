@@ -9,6 +9,7 @@ file(GLOB_RECURSE ENGINECORE_SOURCES
     system/animation/*.cpp
     system/visibility/*.cpp
     system/event/*.cpp
+    system/hierarchy/*.cpp
     platform/window/*.cpp
     platform/threading/*.cpp
     debug/*.cpp

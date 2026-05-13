@@ -21,7 +21,7 @@ enum class GizmoElement : int {
 };
 
 /// Custom transform gizmo drawn via ImGui DrawList.
-/// Non-copyable, non-movable. Owned by EditorSystem.
+/// Non-copyable, non-movable. Owned by GizmoOverlay.
 class TransformGizmo {
     public:
         TransformGizmo() = default;

@@ -4,6 +4,8 @@
 
 namespace Engine {
 
+class Scene;
+
 /**
  * @brief Component representing parent-child relationships in an entity hierarchy.
  *
@@ -21,5 +23,18 @@ struct Hierarchy {
     EntityId nextSibling{};   ///< Next child of the same parent
     EntityId prevSibling{};   ///< Previous child of the same parent (for O(1) removal)
 };
+
+/**
+ * @brief Surgically detach an entity from the hierarchy tree, fixing all cross-entity links.
+ *
+ * Reparents children to the entity's parent (or makes them roots if none), then
+ * unlinks the entity from its parent's child list. Leaves the entity's own Hierarchy
+ * component in a disconnected (all-null) state but does NOT remove it.
+ *
+ * Used by Scene::destroyEntity to prevent dangling sibling/parent/child pointers in
+ * surviving entities, and by HierarchyOperations::detachAndReparentChildren which
+ * additionally cleans up the component itself.
+ */
+void detachFromHierarchy(Scene& scene, EntityId entity);
 
 } // namespace Engine

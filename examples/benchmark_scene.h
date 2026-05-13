@@ -13,7 +13,7 @@
 
 #include "core/engine.h"
 #include "ecs/components.h"
-#include "ecs/hierarchy_utils.h"
+#include "system/hierarchy/hierarchy_operations.h"
 
 #include "loader/material_loaders.h"
 #include "generator/mesh_generators.h"
@@ -230,7 +230,7 @@ static Engine::Entity generateBenchmarkScene(
             auto satellite = scene.createEntity();
             scene.add(satellite, Engine::Mesh{cubeMesh, materials[(g + s) % materials.size()]});
             scene.add(satellite, Engine::Transform{localPos, glm::quat(1, 0, 0, 0), glm::vec3(0.5f)});
-            Engine::HierarchyUtils::setParent(scene, satellite.getID(), center.getID());
+            Engine::HierarchyOperations::setParent(scene, satellite.getID(), center.getID());
         }
     }
 
@@ -260,7 +260,7 @@ static Engine::Entity generateBenchmarkScene(
                 glm::quat(1, 0, 0, 0),
                 glm::vec3(0.95f)  // Slight taper
             });
-            Engine::HierarchyUtils::setParent(scene, levelEntity.getID(), prevLevel.getID());
+            Engine::HierarchyOperations::setParent(scene, levelEntity.getID(), prevLevel.getID());
             prevLevel = levelEntity;
         }
     }

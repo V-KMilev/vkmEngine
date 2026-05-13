@@ -1,13 +1,15 @@
-#include "ecs/hierarchy_utils.h"
+#include "system/hierarchy/hierarchy_operations.h"
 
 #include "logger.h"
 
-namespace Engine::HierarchyUtils {
+#include "ecs/component/world_transform.h"
+
+namespace Engine::HierarchyOperations {
 
 void setParent(Scene& scene, EntityId child, EntityId parent) {
-    VKM_ASSERT(scene.isAlive(child), "HierarchyUtils::setParent: child is dead");
-    VKM_ASSERT(scene.isAlive(parent), "HierarchyUtils::setParent: parent is dead");
-    VKM_ASSERT(child != parent, "HierarchyUtils::setParent: entity cannot parent itself");
+    VKM_ASSERT(scene.isAlive(child), "HierarchyOperations::setParent: child is dead");
+    VKM_ASSERT(scene.isAlive(parent), "HierarchyOperations::setParent: parent is dead");
+    VKM_ASSERT(child != parent, "HierarchyOperations::setParent: entity cannot parent itself");
 
     // Cycle detection: walk ancestors of new parent to ensure child is not already an ancestor
     {
@@ -15,7 +17,7 @@ void setParent(Scene& scene, EntityId child, EntityId parent) {
         uint32_t depth = 0;
         while (ancestor && depth < 32) {
             if (ancestor == child) {
-                LOG_WARNING("HierarchyUtils::setParent: cycle detected, ignoring");
+                LOG_WARNING("HierarchyOperations::setParent: cycle detected, ignoring");
                 return;
             }
             if (scene.has<Hierarchy>(ancestor)) {
@@ -77,7 +79,17 @@ void removeFromParent(Scene& scene, EntityId entity) {
     // Remove Hierarchy component if no remaining relationships
     if (!h.firstChild) {
         scene.remove<Hierarchy>(Entity(entity));
+        scene.remove<WorldTransform>(Entity(entity));
     }
+}
+
+void detachAndReparentChildren(Scene& scene, EntityId entity) {
+    if (!scene.has<Hierarchy>(entity)) return;
+
+    Engine::detachFromHierarchy(scene, entity);
+
+    scene.remove<Hierarchy>(Entity(entity));
+    scene.remove<WorldTransform>(Entity(entity));
 }
 
 glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity) {
@@ -107,6 +119,27 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity) {
     return worldMatrix;
 }
 
+void resolveWorldTransforms(Scene& scene) {
+    auto* hierarchyStorage = scene.storage<Hierarchy>();
+    if (!hierarchyStorage) return;
+
+    const uint32_t count = static_cast<uint32_t>(hierarchyStorage->size());
+    for (uint32_t i = 0; i < count; ++i) {
+        const uint32_t entityIdx = hierarchyStorage->keyAt(i);
+        const EntityId id{entityIdx, scene.generationOf(entityIdx)};
+
+        if (!scene.has<Transform>(id)) continue;
+
+        const glm::mat4 world = computeWorldMatrix(scene, id);
+
+        if (scene.has<WorldTransform>(id)) {
+            scene.get<WorldTransform>(id).model = world;
+        } else {
+            scene.add(Entity{id}, WorldTransform{world});
+        }
+    }
+}
+
 void destroyHierarchy(Scene& scene, EntityId entity) {
     if (!scene.isAlive(entity)) return;
 
@@ -130,4 +163,4 @@ void destroyHierarchy(Scene& scene, EntityId entity) {
     scene.destroyEntity(Entity(entity));
 }
 
-} // namespace Engine::HierarchyUtils
+} // namespace Engine::HierarchyOperations

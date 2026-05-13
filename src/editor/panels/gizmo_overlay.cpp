@@ -42,7 +42,7 @@ void GizmoOverlay::drawTransformGizmo(FrameContext& ctx, EditorState& state, ImV
 
     glm::mat4 parentWorld = glm::mat4(1.0f);
     if (hasParent) {
-        parentWorld = HierarchyUtils::computeWorldMatrix(ctx.scene, state.selectedEntity);
+        parentWorld = HierarchyOperations::computeWorldMatrix(ctx.scene, state.selectedEntity);
         glm::mat4 localModel = Transform::computeModelMatrix(transform);
         parentWorld = parentWorld * glm::inverse(localModel);
     }
@@ -166,7 +166,7 @@ void GizmoOverlay::handleViewportPick(FrameContext& ctx, EditorState& state, ImV
         // Compute world matrix (hierarchy-aware)
         glm::mat4 model;
         if (ctx.scene.has<Hierarchy>(id) && ctx.scene.get<Hierarchy>(id).parent) {
-            model = HierarchyUtils::computeWorldMatrix(ctx.scene, id);
+            model = HierarchyOperations::computeWorldMatrix(ctx.scene, id);
         } else {
             model = Transform::computeModelMatrix(transform);
         }
@@ -187,7 +187,7 @@ void GizmoOverlay::handleViewportPick(FrameContext& ctx, EditorState& state, ImV
 
         glm::vec3 pos = transform.position;
         if (ctx.scene.has<Hierarchy>(id) && ctx.scene.get<Hierarchy>(id).parent) {
-            glm::mat4 wm = HierarchyUtils::computeWorldMatrix(ctx.scene, id);
+            glm::mat4 wm = HierarchyOperations::computeWorldMatrix(ctx.scene, id);
             pos = glm::vec3(wm[3]);
         }
 
