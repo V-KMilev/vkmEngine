@@ -22,6 +22,7 @@
 #include "pass/gl_forward_pass.h"
 #include "pass/gl_aabb_debug_pass.h"
 #include "pass/gl_grid_pass.h"
+#include "pass/gl_shadow_pass.h"
 
 // Demo scene
 #include "examples/benchmark_scene.h"
@@ -60,8 +61,11 @@ int main() {
         Core::Shader unlit(shaderDir + "/unlit");
         Core::Shader aabbDebug(shaderDir + "/aabb_debug");
         Core::Shader gridShader(shaderDir + "/grid");
-        // Render passes
+        Core::Shader shadowShader(shaderDir + "/shadow");
+        Core::Shader shadowCubeShader(shaderDir + "/shadow_cube");
+        // Render passes - shadow runs first so the forward pass can sample its result.
         renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
+        renderSystem.addPass(std::make_unique<Engine::GLShadowPass>(shadowShader, shadowCubeShader));
         auto forwardPass = std::make_unique<Engine::GLForwardPass>(pbr);
         forwardPass->setShader(Engine::MaterialType::Unlit, unlit);
         renderSystem.addPass(std::move(forwardPass));

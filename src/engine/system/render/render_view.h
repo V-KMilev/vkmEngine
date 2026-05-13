@@ -39,6 +39,7 @@ struct DrawableData {
     MeshHandle mesh;
     MaterialHandle material;
     MaterialType materialType = MaterialType::Opaque;
+    bool castShadows = true;
 
     glm::mat4 model = {1.0f};
 };
