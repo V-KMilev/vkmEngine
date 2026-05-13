@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <chrono>
 #include <memory>
 #include <vector>
@@ -52,20 +53,22 @@ class Engine {
         const StatisticTracker& getStatistics() const { return m_statistics; }
 
         /**
-         * @brief Create and register a system for per-frame execution.
+         * @brief Create and register a system at the given execution stage.
          *
-         * Engine takes ownership. Systems execute in registration order.
+         * Engine takes ownership. Stages run in SystemStage declaration order;
+         * within a stage, systems run in registration order.
          *
          * @tparam T System subclass to create.
          * @tparam Args Constructor argument types.
+         * @param stage Which frame stage this system belongs to.
          * @param args Forwarded to T's constructor.
          * @return Reference to the newly created system.
          */
         template<typename T, typename... Args>
-        T& addSystem(Args&&... args) {
+        T& addSystem(SystemStage stage, Args&&... args) {
             auto system = std::make_unique<T>(std::forward<Args>(args)...);
             T& ref = *system;
-            m_systems.push_back(std::move(system));
+            m_systemsByStage[static_cast<size_t>(stage)].push_back(std::move(system));
             return ref;
         }
 
@@ -89,7 +92,11 @@ class Engine {
         WindowManager m_window;
         StatisticTracker m_statistics;
 
-        std::vector<std::unique_ptr<System>> m_systems;
+        /// Systems organized by stage. Outer index is SystemStage; inner vector
+        /// preserves registration order within that stage.
+        std::array<std::vector<std::unique_ptr<System>>,
+                   static_cast<size_t>(SystemStage::Count)> m_systemsByStage;
+
         bool m_initialized = false;
 };
 
