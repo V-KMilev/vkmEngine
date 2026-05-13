@@ -6,6 +6,23 @@
 
 namespace Engine::HierarchyOperations {
 
+void markDirty(Scene& scene, EntityId entity) {
+    if (!scene.has<Hierarchy>(entity)) return;
+
+    auto& h = scene.get<Hierarchy>(entity);
+    if (h.dirty) return;  // Already dirty; descendants must already be too
+
+    h.dirty = true;
+    EntityId child = h.firstChild;
+    while (child) {
+        const EntityId next = scene.has<Hierarchy>(child)
+            ? scene.get<Hierarchy>(child).nextSibling
+            : EntityId{};
+        markDirty(scene, child);
+        child = next;
+    }
+}
+
 void setParent(Scene& scene, EntityId child, EntityId parent) {
     VKM_ASSERT(scene.isAlive(child), "HierarchyOperations::setParent: child is dead");
     VKM_ASSERT(scene.isAlive(parent), "HierarchyOperations::setParent: parent is dead");
@@ -52,6 +69,11 @@ void setParent(Scene& scene, EntityId child, EntityId parent) {
         scene.get<Hierarchy>(parentH.firstChild).prevSibling = child;
     }
     parentH.firstChild = child;
+
+    // Reparenting changes the child's world matrix (and all descendants').
+    // markDirty short-circuits if already dirty, which is fine — descendants
+    // were already dirty too in that case.
+    markDirty(scene, child);
 }
 
 void removeFromParent(Scene& scene, EntityId entity) {
@@ -75,6 +97,9 @@ void removeFromParent(Scene& scene, EntityId entity) {
     h.parent = {};
     h.prevSibling = {};
     h.nextSibling = {};
+
+    // Detaching changes this entity's world matrix (and all descendants').
+    markDirty(scene, entity);
 
     // Remove Hierarchy component if no remaining relationships
     if (!h.firstChild) {
@@ -130,6 +155,10 @@ void resolveWorldTransforms(Scene& scene) {
 
         if (!scene.has<Transform>(id)) continue;
 
+        auto& h = scene.get<Hierarchy>(id);
+        // Clean entity with a valid cached WorldTransform — nothing to do.
+        if (!h.dirty && scene.has<WorldTransform>(id)) continue;
+
         const glm::mat4 world = computeWorldMatrix(scene, id);
 
         if (scene.has<WorldTransform>(id)) {
@@ -137,6 +166,7 @@ void resolveWorldTransforms(Scene& scene) {
         } else {
             scene.add(Entity{id}, WorldTransform{world});
         }
+        h.dirty = false;
     }
 }
 
