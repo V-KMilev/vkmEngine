@@ -28,6 +28,7 @@ namespace GLConfig {
         constexpr uint32_t Material = 0;  ///< Material properties UBO
         constexpr uint32_t Lights   = 1;  ///< Lights array UBO
         constexpr uint32_t Camera   = 2;  ///< Camera/view matrices UBO (reserved for future use)
+        constexpr uint32_t Shadow   = 3;  ///< Directional shadow map matrix + params UBO
     }
 
     /**
@@ -49,8 +50,10 @@ namespace GLConfig {
         constexpr uint32_t Transmission         = 7;   ///< Transmission map for transparent materials
         constexpr uint32_t Metallic             = 8;   ///< Separate metallic map (if not using combined)
         constexpr uint32_t Roughness            = 9;   ///< Separate roughness map (if not using combined)
-        
-        constexpr uint32_t Count = 10;  ///< Total number of texture slots used
+        constexpr uint32_t ShadowMap2D          = 10;  ///< Directional + spot shadow array (sampler2DArrayShadow)
+        constexpr uint32_t ShadowMapCube        = 11;  ///< Point shadow cube array (samplerCubeArrayShadow)
+
+        constexpr uint32_t Count = 12;  ///< Total number of texture slots used
     }
 
     /**
@@ -84,13 +87,29 @@ namespace GLConfig {
 
         // Debug uniforms
         constexpr const char* Color = "u_color";
+
+        // Shadow uniforms
+        constexpr const char* ShadowMap2D   = "u_shadowMap2D";
+        constexpr const char* ShadowMapCube = "u_shadowMapCube";
+        constexpr const char* LightSpace    = "u_lightSpace";
+        constexpr const char* LightPosition = "u_lightPosition";
+        constexpr const char* LightRange    = "u_lightRange";
     }
 
     /**
      * @brief Maximum limits for various resources.
      */
     namespace Limits {
-        constexpr uint32_t MaxLights = 32;  ///< Maximum number of lights supported per frame
+        constexpr uint32_t MaxLights              = 32;    ///< Maximum number of lights supported per frame
+
+        // Shadow casters split by map type. Increasing these is essentially free
+        // at runtime but expands the depth-array textures linearly in VRAM and
+        // adds extra shadow passes when more lights opt in.
+        constexpr uint32_t MaxShadowCasters       = 8;     ///< Hard cap matching ShadowBlock UBO array size
+        constexpr uint32_t MaxShadowCasters2D     = 6;     ///< Directional + spot maps (sampler2DArrayShadow)
+        constexpr uint32_t MaxShadowCastersCube   = 2;     ///< Point cubemaps (samplerCubeArrayShadow)
+        constexpr uint32_t ShadowResolution2D     = 2048;  ///< Per-layer resolution of the 2D array
+        constexpr uint32_t ShadowResolutionCube   = 512;   ///< Per-face resolution of cube map layers
     }
 
     /**

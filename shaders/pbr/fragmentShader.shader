@@ -95,6 +95,32 @@ layout(std140, binding = 1) uniform LightsBlock {
     Light lights[MAX_LIGHTS];   // offset 16, 64 bytes per light
 } u_lights;
 
+// Shadow caster array (binding = 3, must match C++ ShadowUBOData).
+//
+// Each caster has:
+//   lightSpace : world -> light clip space  (2D-array casters only)
+//   params.x   = lightIndex into LightsBlock
+//   params.y   = mapLayer:
+//                  >= 0 -> sampler2DArrayShadow layer (directional / spot)
+//                  <  0 -> samplerCubeArrayShadow cube index, encoded as -(idx + 1)
+//   params.z   = bias
+//   params.w   = light range (point lights, used to normalise sample depth)
+const int SHADOW_MAX_CASTERS = 8;
+struct ShadowCaster {
+    mat4 lightSpace;
+    vec4 params;
+};
+layout(std140, binding = 3) uniform ShadowBlock {
+    int          casterCount;
+    int          _pad0;
+    int          _pad1;
+    int          _pad2;
+    ShadowCaster casters[SHADOW_MAX_CASTERS];
+} u_shadow;
+
+uniform sampler2DArrayShadow   u_shadowMap2D;
+uniform samplerCubeArrayShadow u_shadowMapCube;
+
 // Texture samplers
 uniform sampler2D u_albedoTexture;
 uniform sampler2D u_normalTexture;
@@ -199,6 +225,66 @@ vec3 ACESFilm(vec3 x) {
 // Linear to sRGB gamma correction
 vec3 linearToSRGB(vec3 color) {
     return pow(color, vec3(1.0 / 2.2));
+}
+
+// Linear scan: find the caster entry for light index `lightIdx`, or -1 if none.
+int findShadowCaster(int lightIdx) {
+    for (int j = 0; j < u_shadow.casterCount; ++j) {
+        if (int(u_shadow.casters[j].params.x + 0.5) == lightIdx) return j;
+    }
+    return -1;
+}
+
+// Hardware PCF (2x2) + 3x3 kernel on a directional/spot map. Returns 1.0
+// when the fragment lies beyond the shadow camera's far plane.
+float sample2DShadow(int casterIdx, vec3 worldPos, vec3 N, vec3 L) {
+    ShadowCaster caster = u_shadow.casters[casterIdx];
+    float layer = caster.params.y;
+    float biasMax = caster.params.z;
+
+    vec4 lp = caster.lightSpace * vec4(worldPos, 1.0);
+    vec3 proj = lp.xyz / lp.w;
+    proj = proj * 0.5 + 0.5;
+    if (proj.z > 1.0) return 1.0;
+
+    float bias = max(biasMax * (1.0 - dot(N, L)), biasMax * 0.1);
+    proj.z -= bias;
+
+    vec2 texel = 1.0 / vec2(textureSize(u_shadowMap2D, 0).xy);
+    float sum = 0.0;
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            vec2 offset = vec2(float(x), float(y)) * texel;
+            sum += texture(u_shadowMap2D, vec4(proj.xy + offset, layer, proj.z));
+        }
+    }
+    return sum / 9.0;
+}
+
+// Cube-map shadow sample for point lights. Depth was written as a normalised
+// linear distance (|frag - light| / range), so the reference is the same.
+float samplePointShadow(int casterIdx, vec3 worldPos, vec3 lightPos) {
+    ShadowCaster caster = u_shadow.casters[casterIdx];
+    // params.y encodes cube index as -(idx + 1) to distinguish from 2D layers.
+    int cubeIndex = int(-caster.params.y - 0.5);
+    float bias    = caster.params.z;
+    float range   = max(caster.params.w, 0.001);
+
+    vec3 toFrag = worldPos - lightPos;
+    float currentDepth = length(toFrag) / range;
+    if (currentDepth > 1.0) return 1.0;
+
+    vec3 dir = normalize(toFrag);
+    return texture(u_shadowMapCube, vec4(dir, float(cubeIndex)), currentDepth - bias);
+}
+
+// Pick the correct sampler based on the caster's map type encoding.
+float sampleShadowFor(int casterIdx, vec3 worldPos, vec3 lightPos, vec3 N, vec3 L) {
+    ShadowCaster caster = u_shadow.casters[casterIdx];
+    if (caster.params.y < 0.0) {
+        return samplePointShadow(casterIdx, worldPos, lightPos);
+    }
+    return sample2DShadow(casterIdx, worldPos, N, L);
 }
 
 // Calculate distance attenuation for point and spot lights
@@ -434,7 +520,14 @@ void main() {
             }
             if (attenuation < 0.001) continue;
 
-            vec3 radiance = lightCol * intensity * attenuation;
+            // Any light that has a caster entry (regardless of type) gets shadowed.
+            float visibility = 1.0;
+            int casterIdx = findShadowCaster(i);
+            if (casterIdx >= 0) {
+                visibility = sampleShadowFor(casterIdx, FragPos, lightPos, N, L);
+            }
+
+            vec3 radiance = lightCol * intensity * attenuation * visibility;
             Lo += evaluateLight(N, V, L, T, B, material, F0, radiance);
         }
     }

@@ -31,6 +31,8 @@ void GLForwardPass::setupSamplers(Core::Shader& shader) {
     shader.setUniform1i(GLConfig::UniformNames::TransmissionTexture, GLConfig::TextureSlots::Transmission);
     shader.setUniform1i(GLConfig::UniformNames::MetallicTexture, GLConfig::TextureSlots::Metallic);
     shader.setUniform1i(GLConfig::UniformNames::RoughnessTexture, GLConfig::TextureSlots::Roughness);
+    shader.setUniform1i(GLConfig::UniformNames::ShadowMap2D,   GLConfig::TextureSlots::ShadowMap2D);
+    shader.setUniform1i(GLConfig::UniformNames::ShadowMapCube, GLConfig::TextureSlots::ShadowMapCube);
 }
 
 GLForwardPass::GLForwardPass(Core::Shader& pbrShader) : RenderPass("GLForwardPass") {
@@ -69,12 +71,16 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
 
     auto& glView = gl.getView();
 
-    // Resource sync happens in RenderBackend::syncResources before pass execution.
-    glView.buildInstanceBatches(view);
-
+    // Resource sync (incl. instance batch build) happens in
+    // RenderBackend::syncResources before any pass executes.
     auto& batcher = glView.getInstanceBatcher();
     const auto& batches = batcher.getBatches();
     auto& instanceBuffer = batcher.getBuffer();
+
+    // Bind both shadow atlases for the PBR shader to sample.
+    auto& shadowAtlas = glView.getShadowAtlas();
+    shadowAtlas.bind2DForReading(GLConfig::TextureSlots::ShadowMap2D);
+    shadowAtlas.bindCubeForReading(GLConfig::TextureSlots::ShadowMapCube);
 
     // CameraBlock and LightsBlock UBOs are owned by GLView and bound once
     // per frame in sync().

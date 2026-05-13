@@ -13,6 +13,8 @@
 #include "resource/gl_lights.h"
 #include "resource/gl_material.h"
 #include "resource/gl_mesh.h"
+#include "resource/gl_shadow_data.h"
+#include "resource/gl_shadow_map.h"
 #include "resource/gl_texture.h"
 
 namespace Engine {
@@ -72,8 +74,10 @@ class GLView {
 
         const GLLights& getLights() const { return m_lights; }
 
-        /// Builds instance batches from the (already sorted) drawables.
-        void buildInstanceBatches(const RenderView& renderView);
+        GLShadowAtlas&        getShadowAtlas()        { return m_shadowAtlas; }
+        const GLShadowAtlas&  getShadowAtlas()  const { return m_shadowAtlas; }
+        GLShadowData&         getShadowData()         { return m_shadowData; }
+        const GLShadowData&   getShadowData()   const { return m_shadowData; }
 
         GLInstanceBatcher&       getInstanceBatcher()       { return m_instanceBatcher; }
         const GLInstanceBatcher& getInstanceBatcher() const { return m_instanceBatcher; }
@@ -94,6 +98,13 @@ class GLView {
 
         GLCamera          m_camera;
         GLLights          m_lights;
+        GLShadowAtlas     m_shadowAtlas{
+            GLConfig::Limits::ShadowResolution2D,
+            GLConfig::Limits::ShadowResolutionCube,
+            GLConfig::Limits::MaxShadowCasters2D,
+            GLConfig::Limits::MaxShadowCastersCube
+        };
+        GLShadowData      m_shadowData;
         GLInstanceBatcher m_instanceBatcher;
 
         uint64_t m_lastMeshTypeVersion     = 0;

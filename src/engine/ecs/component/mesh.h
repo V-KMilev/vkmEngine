@@ -14,6 +14,7 @@ struct Mesh {
     MeshHandle mesh;              ///< Handle to mesh geometry
     MaterialHandle material;      ///< Handle to material
     bool visible = true;          ///< Is mesh visible?
+    bool castShadows = true;      ///< Should this mesh contribute to shadow maps?
 };
 
 } // namespace Engine
