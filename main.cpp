@@ -44,14 +44,14 @@ int main() {
         window.createWindow("VKM Engine");
         window.setFramerate(0);
 
-        // Systems
-        auto& cameraController = engine.addSystem<Engine::CameraController>();
-        auto& eventSystem      = engine.addSystem<Engine::EventSystem>();
-        auto& hierarchySystem  = engine.addSystem<Engine::HierarchySystem>();
-        auto& visibilitySystem = engine.addSystem<Engine::VisibilitySystem>();
-        auto& animationSystem  = engine.addSystem<Engine::AnimationSystem>();
-        auto& renderSystem     = engine.addSystem<Engine::RenderSystem>();
-        engine.addSystem<Engine::EditorSystem>(
+        // Systems - registered at the stage that matches their role.
+        auto& cameraController = engine.addSystem<Engine::CameraController>(Engine::SystemStage::Input);
+        auto& eventSystem      = engine.addSystem<Engine::EventSystem>     (Engine::SystemStage::Simulation);
+        auto& animationSystem  = engine.addSystem<Engine::AnimationSystem> (Engine::SystemStage::Simulation);
+        auto& hierarchySystem  = engine.addSystem<Engine::HierarchySystem> (Engine::SystemStage::Transform);
+        auto& visibilitySystem = engine.addSystem<Engine::VisibilitySystem>(Engine::SystemStage::Visibility);
+        auto& renderSystem     = engine.addSystem<Engine::RenderSystem>    (Engine::SystemStage::Render);
+        engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
             window.getWindowContext(), &cameraController, &visibilitySystem, &renderSystem);
 
         // Shaders

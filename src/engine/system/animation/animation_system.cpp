@@ -7,8 +7,9 @@
 
 #include "ecs/scene.h"
 #include "ecs/component/animation.h"
+#include "ecs/component/hierarchy.h"
 #include "ecs/component/transform.h"
-#include "system/visibility/visibility.h"
+#include "system/hierarchy/hierarchy_operations.h"
 #include "platform/threading/thread_pool.h"
 
 namespace Engine {
@@ -17,17 +18,17 @@ AnimationSystem::AnimationSystem() = default;
 
 void AnimationSystem::update(FrameContext& ctx) {
     auto& scene = ctx.scene;
-    const auto& visibility = *ctx.visibility;
-    float deltaTime = ctx.deltaTime;
+    const float deltaTime = ctx.deltaTime;
 
-    // Phase 1: Update animation time for ALL animations (even culled ones)
-    // This keeps animations synchronized even when entities go off-screen
     auto* animStorage = scene.storage<Animation>();
     if (!animStorage) return;
 
     const size_t animCount = animStorage->size();
     const size_t grain = std::max<size_t>(128, animCount / (ThreadPool::get().threadCount() * 4));
 
+    // Parallel: advance time and apply tracks to Transform for every playing animation.
+    // Safe across threads because each iteration touches a distinct entity's Transform
+    // slot and no component types are being added/removed during the loop.
     parallelFor(animCount, grain, [&](size_t i) {
         Animation& animation = animStorage->dataAt(static_cast<uint32_t>(i));
         if (!animation.playing) return;
@@ -42,24 +43,26 @@ void AnimationSystem::update(FrameContext& ctx) {
                 animation.playing = false;
             }
         }
+
+        const uint32_t entityIdx = animStorage->keyAt(static_cast<uint32_t>(i));
+        const EntityId id{entityIdx, scene.generationOf(entityIdx)};
+        if (scene.has<Transform>(id)) {
+            applyAnimation(animation, scene.get<Transform>(id));
+        }
     });
 
-    // Phase 2: Apply animations only to visible entities
-    const size_t visibleCount = visibility.entries.size();
-    const size_t applyGrain = std::max<size_t>(64, visibleCount / (ThreadPool::get().threadCount() * 4));
+    // Serial post-pass: mark animated subtrees dirty so HierarchySystem
+    // recomputes WorldTransforms. Done outside the parallel loop because
+    // markDirty walks descendants and would race on Hierarchy::dirty writes.
+    for (size_t i = 0; i < animCount; ++i) {
+        const Animation& animation = animStorage->dataAt(static_cast<uint32_t>(i));
+        if (!animation.playing) continue;
 
-    parallelFor(visibleCount, applyGrain, [&](size_t i) {
-        const auto& entry = visibility.entries[i];
-        if (!scene.isAlive(entry.id)) return;
-        if (!scene.has<Animation>(entry.id)) return;
-        if (!scene.has<Transform>(entry.id)) return;
-
-        auto& animation = scene.get<Animation>(entry.id);
-        if (!animation.playing) return;
-
-        auto& transform = scene.get<Transform>(entry.id);
-        applyAnimation(animation, transform);
-    });
+        const uint32_t entityIdx = animStorage->keyAt(static_cast<uint32_t>(i));
+        const EntityId id{entityIdx, scene.generationOf(entityIdx)};
+        if (!scene.has<Hierarchy>(id)) continue;
+        HierarchyOperations::markDirty(scene, id);
+    }
 }
 
 void AnimationSystem::applyAnimation(const Animation& animation, Transform& transform) const {
