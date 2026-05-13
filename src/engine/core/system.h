@@ -14,11 +14,47 @@ class WindowManager;
 class StatisticTracker;
 
 /**
+ * @brief Named per-frame execution stages.
+ *
+ * Each system is registered at exactly one stage. Stages run in declaration
+ * order each frame; within a stage, systems run in registration order.
+ *
+ * The structure mirrors how a frame actually flows:
+ *   Input        → poll devices, capture/handle input (e.g., CameraController)
+ *   Simulation   → state mutations: events, gameplay, animation, physics
+ *   Transform    → derive world-space data from local Transforms (HierarchySystem)
+ *   Visibility   → culling against the derived world state (VisibilitySystem)
+ *   Render       → submit draw commands (RenderSystem)
+ *   UI           → overlays, editor (EditorSystem)
+ *
+ * fixedUpdate() observes the same ordering (rarely matters in practice).
+ *
+ * Future systems slot in by responsibility:
+ *   Physics      → Simulation (its fixedUpdate hook does the work)
+ *   Gameplay     → Simulation
+ *   Scripting    → Simulation, or split between Input (input scripts) and Render (UI scripts)
+ */
+enum class SystemStage : uint8_t {
+    Input        = 0,
+    Simulation   = 1,
+    Transform    = 2,
+    Visibility   = 3,
+    Render       = 4,
+    UI           = 5,
+
+    Count  ///< Sentinel: number of stages. Keep last.
+};
+
+/**
  * @brief Per-frame state bundle passed to all systems.
  *
  * Provides a uniform interface for systems to access shared per-frame data.
  * visibility is a non-owning pointer to persistent storage (owned by VisibilitySystem)
  * to avoid per-frame vector allocation/deallocation.
+ *
+ * Two deltas:
+ *   - deltaTime: variable, real elapsed time since last render frame. Read in update().
+ *   - fixedDeltaTime: constant simulation step (1/60 by default). Read in fixedUpdate().
  */
 struct FrameContext {
     Scene& scene;
@@ -26,6 +62,7 @@ struct FrameContext {
     WindowManager& window;
     StatisticTracker& statistics;
     float deltaTime;
+    float fixedDeltaTime;
     uint32_t viewportWidth;
     uint32_t viewportHeight;
     const Visibility* visibility = nullptr;
@@ -71,6 +108,19 @@ class System {
          * @param ctx The shared FrameContext for this frame.
          */
         virtual void update(FrameContext& ctx) = 0;
+
+        /**
+         * @brief Execute this system at the fixed simulation rate.
+         *
+         * Called 0+ times per render frame, driven by an accumulator in the main
+         * loop. Use ctx.fixedDeltaTime (not deltaTime). Intended for deterministic
+         * simulation (physics, networking tick). Empty default; opt in by override.
+         *
+         * Note: fixedUpdate runs BEFORE update each frame, so ctx.visibility is
+         * either null (first frame) or stale (previous frame's result). Don't
+         * rely on it from fixedUpdate.
+         */
+        virtual void fixedUpdate(FrameContext& ctx) {}
 
         /**
          * @brief Called once on engine shutdown, in reverse registration order.
