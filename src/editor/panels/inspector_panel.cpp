@@ -82,14 +82,18 @@ void InspectorPanel::drawTransformSection(Scene& scene, EntityId id) {
     if (!open) return;
 
     auto& t = scene.get<Transform>(id);
-    drawVec3Control("Position", glm::value_ptr(t.position), 0.0f, 0.1f);
+    bool changed = false;
+    changed |= drawVec3Control("Position", glm::value_ptr(t.position), 0.0f, 0.1f);
 
     glm::vec3 euler = glm::degrees(glm::eulerAngles(t.rotation));
     if (drawVec3Control("Rotation", glm::value_ptr(euler), 0.0f, 0.5f)) {
         t.rotation = glm::quat(glm::radians(euler));
+        changed = true;
     }
 
-    drawVec3Control("Scale", glm::value_ptr(t.scale), 1.0f, 0.01f);
+    changed |= drawVec3Control("Scale", glm::value_ptr(t.scale), 1.0f, 0.01f);
+
+    if (changed) HierarchyOperations::markDirty(scene, id);
 
     if (scene.has<Hierarchy>(id) && scene.get<Hierarchy>(id).parent) {
         glm::mat4 worldMat = HierarchyOperations::computeWorldMatrix(scene, id);
