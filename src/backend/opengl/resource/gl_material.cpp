@@ -41,9 +41,11 @@ GLMaterial::~GLMaterial() {
 }
 
 void GLMaterial::update(const MaterialAsset& material) {
-    // Build UBO data from material asset
+    // No memcmp-skip here (unlike GLLights / GLCamera): update() is only
+    // called from GLView::syncTable when the asset's version has actually
+    // changed, so the data is always dirty by construction.
     MaterialUBOData uboData;
-    std::memset(&uboData, 0, sizeof(MaterialUBOData));  // Zero out all fields including padding
+    std::memset(&uboData, 0, sizeof(MaterialUBOData));  // zero padding too
 
     // Base PBR properties
     uboData.albedo = material.albedo;

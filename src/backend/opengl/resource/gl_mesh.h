@@ -76,6 +76,14 @@ class GLMesh {
         void drawInstanced(int drawType, uint32_t instanceCount) const;
 
         /**
+         * @brief Instanced draw with a base-instance offset into per-instance attributes.
+         *
+         * Per-instance attribute fetches use @p baseInstance + gl_InstanceID; the in-shader
+         * gl_InstanceID itself stays 0-based.
+         */
+        void drawInstancedBaseInstance(int drawType, uint32_t instanceCount, uint32_t baseInstance) const;
+
+        /**
          * @brief Returns the VAO for external instance buffer attachment.
          * @return Pointer to the VAO, or nullptr if not initialized.
          */

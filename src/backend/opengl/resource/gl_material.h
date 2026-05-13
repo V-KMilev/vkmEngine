@@ -5,6 +5,7 @@
 
 #include <glm/glm.hpp>
 
+#include "config/gl_config.h"
 #include "resource/texture_asset.h"
 
 namespace Core {
@@ -135,13 +136,10 @@ class GLMaterial {
 
         /**
          * @brief Binds the material uniform buffer.
-         * 
-         * Binds the material UBO to the specified binding point. The UBO contains
-         * all material properties and texture presence flags.
-         * 
-         * @param bindingPoint The UBO binding point index (default: 0).
+         *
+         * @param bindingPoint The UBO binding point index.
          */
-        void bind(uint32_t bindingPoint = 0) const;
+        void bind(uint32_t bindingPoint = GLConfig::UBOBindingPoints::Material) const;
 
         /**
          * @brief Binds all textures referenced by this material.

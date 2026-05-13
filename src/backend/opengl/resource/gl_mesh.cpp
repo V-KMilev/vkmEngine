@@ -105,4 +105,21 @@ void GLMesh::drawInstanced(int drawType, uint32_t instanceCount) const {
     STATS_RECORD_DRAW_CALL();
 }
 
+void GLMesh::drawInstancedBaseInstance(int drawType, uint32_t instanceCount, uint32_t baseInstance) const {
+    bind();
+
+    constexpr uintptr_t indicesOffset = 0;
+
+    VKM_GL_CHECK(glDrawElementsInstancedBaseInstance(
+        drawType,
+        static_cast<GLsizei>(m_indexCount),
+        m_ibo->getType(),
+        reinterpret_cast<const void*>(indicesOffset),
+        static_cast<GLsizei>(instanceCount),
+        baseInstance
+    ));
+
+    STATS_RECORD_DRAW_CALL();
+}
+
 } // namespace Engine

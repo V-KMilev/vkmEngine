@@ -58,16 +58,11 @@ void GLGridPass::execute(RenderBackend& backend, const RenderView& view, const R
     model = glm::translate(model, gridPos);
     model = glm::scale(model, glm::vec3(env.gridSize));
 
+    // CameraBlock UBO (binding 2) is bound by GLView for the frame.
     m_shader.setUniformMatrix4fv("u_model", model);
-    m_shader.setUniformMatrix4fv("u_view", view.camera.view);
-    m_shader.setUniformMatrix4fv("u_projection", view.camera.projection);
-
-    // Grid params
     m_shader.setUniform1f("u_gridScale", env.gridScale);
     m_shader.setUniform1f("u_gridFadeStart", env.gridFadeStart);
     m_shader.setUniform1f("u_gridFadeEnd", env.gridFadeEnd);
-
-    m_shader.setUniform3fv("u_cameraPos", view.camera.position);
 
     m_mesh->draw(GL_TRIANGLES);
 

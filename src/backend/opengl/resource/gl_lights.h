@@ -22,31 +22,24 @@ constexpr uint32_t MAX_LIGHTS = GLConfig::Limits::MaxLights;
 
 /**
  * @brief Light data structure matching GLSL std140 layout for uniform buffer.
- * 
- * Each light occupies exactly 64 bytes for efficient GPU access.
- * Uses proper types for better readability while maintaining std140 alignment.
- * 
- * std140 alignment rules:
- * - vec3: 16-byte alignment, 12-byte size
- * - float/int: 4-byte alignment, 4-byte size
- * - Scalars can pack after vec3 within the same 16-byte block
- * 
- * Note: Disabled lights are filtered out when building RenderView, so no 'enabled' field needed.
+ *
+ * Each light occupies exactly 64 bytes. Uses vec4 for every slot to avoid
+ * drivers that fail to pack a trailing scalar into a vec3's 4-byte tail
+ * (spec-legal but unreliable in practice).
+ *
+ * Slot layout:
+ *  - position:   xyz = world position,  w = type (encoded as float, cast in shader)
+ *  - color:      xyz = RGB,             w = intensity
+ *  - direction:  xyz = world direction, w = radius
+ *  - spot:       x   = inner cone,      y = outer cone, z = castShadows, w = pad
+ *
+ * Note: Disabled lights are filtered out when building RenderView.
  */
 struct alignas(16) LightGPUData {
-    glm::vec3 position;          // offset 0,  12 bytes
-    int type;                    // offset 12, 4 bytes (0=directional, 1=point, 2=spot)
-
-    glm::vec3 color;             // offset 16, 12 bytes
-    float intensity;             // offset 28, 4 bytes
-
-    glm::vec3 direction;         // offset 32, 12 bytes
-    float radius;                // offset 44, 4 bytes
-
-    float innerConeAngle;        // offset 48, 4 bytes
-    float outerConeAngle;        // offset 52, 4 bytes
-    float castShadows;           // offset 56, 4 bytes (0.0 = false, 1.0 = true)
-    float _padding;              // offset 60, 4 bytes - REQUIRED for std140 array stride of 64 bytes
+    glm::vec4 position;          // offset 0,  16 bytes  (xyz=position, w=type)
+    glm::vec4 color;             // offset 16, 16 bytes  (xyz=color,    w=intensity)
+    glm::vec4 direction;         // offset 32, 16 bytes  (xyz=dir,      w=radius)
+    glm::vec4 spot;              // offset 48, 16 bytes  (x=inner, y=outer, z=castShadows)
 };
 
 /**
@@ -101,12 +94,10 @@ class GLLights {
 
         /**
          * @brief Bind the lights uniform buffer.
-         * 
-         * Binds the lights UBO to the specified binding point.
-         * 
-         * @param bindingPoint The UBO binding point index (default: 1).
+         *
+         * @param bindingPoint The UBO binding point index.
          */
-        void bind(uint32_t bindingPoint = 1) const;
+        void bind(uint32_t bindingPoint = GLConfig::UBOBindingPoints::Lights) const;
 
         /**
          * @brief Get the current number of lights in the buffer.
@@ -115,7 +106,8 @@ class GLLights {
 
     private:
         std::unique_ptr<Core::UniformBuffer> m_ubo;
-        uint32_t m_lightCount;
+        LightsUBOData m_lastData{};
+        uint32_t m_lightCount = 0;
 };
 
 } // namespace Engine

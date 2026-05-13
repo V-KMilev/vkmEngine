@@ -24,6 +24,7 @@ struct InstanceBatch {
     MaterialHandle material;
     MaterialType materialType = MaterialType::Opaque;
     uint32_t instanceCount = 0;
+    uint32_t firstInstance = 0;  ///< Offset into the shared instance buffer.
 };
 
 /**
@@ -63,12 +64,9 @@ class GLInstanceBatcher {
         const std::vector<InstanceBatch>& getBatches() const { return m_batches; }
 
         /**
-        * @brief Gets the instance buffer for a specific batch.
-        *
-        * @param batchIndex Index into the batches vector
-        * @return Pointer to the instance buffer, or nullptr if not found
+        * @brief Returns the shared instance buffer holding model matrices for all batches.
         */
-        GLInstanceBuffer* getInstanceBuffer(size_t batchIndex);
+        GLInstanceBuffer& getBuffer() { return m_buffer; }
 
         /**
         * @brief Clears all batches (called at frame start).
@@ -77,8 +75,8 @@ class GLInstanceBatcher {
 
     private:
         std::vector<InstanceBatch> m_batches;
-        std::vector<std::unique_ptr<GLInstanceBuffer>> m_instanceBuffers;
         std::vector<glm::mat4> m_matrixScratch;
+        GLInstanceBuffer m_buffer;
 };
 
 } // namespace Engine
