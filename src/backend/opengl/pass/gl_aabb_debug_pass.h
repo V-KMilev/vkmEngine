@@ -1,12 +1,14 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include <glm/glm.hpp>
 
 #include "system/render/render_pass.h"
 
 #include "resource/gl_mesh.h"
+#include "resource/gl_instance_buffer.h"
 
 namespace Core {
     class Shader;
@@ -74,6 +76,8 @@ class GLAABBDebugPass : public RenderPass {
         Core::Shader& m_shader;
 
         std::unique_ptr<GLMesh> m_aabb;
+        GLInstanceBuffer m_instanceBuffer;
+        std::vector<glm::mat4> m_modelScratch;
 };
 
 } // namespace Engine

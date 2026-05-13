@@ -8,10 +8,11 @@ in vec3 Bitangent;
 
 out vec4 FragColor;
 
-uniform vec3  u_cameraPosition;
-uniform float u_exposure;
-uniform vec3  u_ambientColor;
-uniform float u_ambientIntensity;
+layout(std140, binding = 2) uniform CameraBlock {
+    mat4 viewProjection;
+    vec4 cameraPosition;  // xyz = position, w = exposure
+    vec4 ambient;         // xyz = color, w = intensity
+} u_camera;
 
 const float PI = 3.14159265359;
 
@@ -36,17 +37,16 @@ const int LIGHT_TYPE_SPOT        = 2;
 const int MAX_LIGHTS = 32;
 
 // Light data (binding = 1, must match C++ LightGPUData exactly)
+// Light slots are vec4 to sidestep drivers that don't pack vec3+scalar in std140.
+//   position.xyz = world position,  position.w = type (cast to int)
+//   color.xyz    = RGB,             color.w    = intensity
+//   direction.xyz= world direction, direction.w= radius
+//   spot.x       = inner cone,      spot.y     = outer cone, spot.z = castShadows
 struct Light {
-    vec3  position;         // offset 0
-    int   type;             // offset 12
-    vec3  color;            // offset 16
-    float intensity;        // offset 28
-    vec3  direction;        // offset 32
-    float radius;           // offset 44
-    float innerConeAngle;   // offset 48
-    float outerConeAngle;   // offset 52
-    float castShadows;      // offset 56
-    float _padding;         // offset 60 - EXPLICIT padding to 64 bytes
+    vec4 position;
+    vec4 color;
+    vec4 direction;
+    vec4 spot;
 };
 
 // Material properties (binding = 0, must match C++ MaterialUBOData exactly with std140 padding)
@@ -372,7 +372,7 @@ vec3 evaluateLight(
 }
 
 void main() {
-    vec3 V = normalize(u_cameraPosition - FragPos);
+    vec3 V = normalize(u_camera.cameraPosition.xyz - FragPos);
     vec3 T = normalize(Tangent);
     vec3 B = normalize(Bitangent);
     vec3 Ngeom = normalize(Normal);
@@ -409,37 +409,44 @@ void main() {
         for (int i = 0; i < u_lights.lightCount; i++) {
             Light light = u_lights.lights[i];
 
+            vec3  lightPos = light.position.xyz;
+            vec3  lightDir = light.direction.xyz;
+            vec3  lightCol = light.color.xyz;
+            float intensity = light.color.w;
+            float radius    = light.direction.w;
+            int   type      = int(light.position.w);
+
             vec3  L = vec3(0.0);
             float attenuation = 1.0;
 
-            if (light.type == LIGHT_TYPE_DIRECTIONAL) {
-                L = normalize(-light.direction);
+            if (type == LIGHT_TYPE_DIRECTIONAL) {
+                L = normalize(-lightDir);
             }
-            else if (light.type == LIGHT_TYPE_POINT) {
-                L = normalize(light.position - FragPos);
-                attenuation = calculateAttenuation(light.position, FragPos, light.radius);
+            else if (type == LIGHT_TYPE_POINT) {
+                L = normalize(lightPos - FragPos);
+                attenuation = calculateAttenuation(lightPos, FragPos, radius);
             }
-            else if (light.type == LIGHT_TYPE_SPOT) {
-                L = normalize(light.position - FragPos);
-                attenuation = calculateAttenuation(light.position, FragPos, light.radius);
-                attenuation *= calculateSpotAttenuation(light.direction, light.position - FragPos,
-                                                        light.innerConeAngle, light.outerConeAngle);
+            else if (type == LIGHT_TYPE_SPOT) {
+                L = normalize(lightPos - FragPos);
+                attenuation = calculateAttenuation(lightPos, FragPos, radius);
+                attenuation *= calculateSpotAttenuation(lightDir, lightPos - FragPos,
+                                                        light.spot.x, light.spot.y);
             }
             if (attenuation < 0.001) continue;
 
-            vec3 radiance = light.color * light.intensity * attenuation;
+            vec3 radiance = lightCol * intensity * attenuation;
             Lo += evaluateLight(N, V, L, T, B, material, F0, radiance);
         }
     }
 
     // Ambient with AO
-    vec3 ambient = u_ambientColor * u_ambientIntensity * material.albedo.rgb * material.ao;
+    vec3 ambient = u_camera.ambient.xyz * u_camera.ambient.w * material.albedo.rgb * material.ao;
 
     // Combine
     vec3 color = ambient + Lo + material.emission;
 
     // Exposure
-    color *= u_exposure;
+    color *= u_camera.cameraPosition.w;
 
     // Tone mapping & gamma
     color = ACESFilm(color);

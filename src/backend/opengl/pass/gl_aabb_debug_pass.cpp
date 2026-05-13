@@ -67,35 +67,23 @@ void GLAABBDebugPass::initialize() {
 }
 
 void GLAABBDebugPass::execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) {
-    // Validate backend type
     if (backend.getType() != RenderBackendType::OpenGL) {
         LOG_ERROR("GLAABBDebugPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
         return;
     }
 
-    m_shader.bind();
-    STATS_RECORD_SHADER_SWITCH();
+    m_modelScratch.clear();
+    m_modelScratch.reserve(view.drawables.size());
 
-    // Set global uniforms
-    using namespace GLConfig::UniformNames;
-    m_shader.setUniformMatrix4fv(ViewProjection, view.camera.viewProjection);
-    m_shader.setUniform3fv(Color, view.environment.debugColor);
-
-    // Draw AABBs for all visible drawables
     for (const auto& drawable : view.drawables) {
-        // Get mesh asset to access bounds
         const auto& meshAsset = resources.get(drawable.mesh);
 
-        // Skip meshes without valid bounds (degenerate AABBs)
         if ((meshAsset.boundsMin.x == meshAsset.boundsMax.x) &&
             (meshAsset.boundsMin.y == meshAsset.boundsMax.y) &&
             (meshAsset.boundsMin.z == meshAsset.boundsMax.z)) {
             continue;
         }
 
-        // Note: AABBs grow under rotation (the AABB of a rotated box is larger
-        // than the original). This is correct and expected -- not a bug.
-        // Transform AABB from model space to world space
         glm::vec3 worldMin, worldMax;
         localToWorldAABB(
             drawable.model,
@@ -105,19 +93,27 @@ void GLAABBDebugPass::execute(RenderBackend& backend, const RenderView& view, co
             worldMax
         );
 
-        // Compute center and scale of the AABB
-        glm::vec3 center = (worldMin + worldMax) * 0.5f;
-        glm::vec3 size = worldMax - worldMin;
+        const glm::vec3 center = (worldMin + worldMax) * 0.5f;
+        const glm::vec3 size   = worldMax - worldMin;
 
-        // Build model matrix: translate to center, then scale
-        glm::mat4 aabbModel = glm::mat4(1.0f);
-        aabbModel = glm::translate(aabbModel, center);
+        glm::mat4 aabbModel = glm::translate(glm::mat4(1.0f), center);
         aabbModel = glm::scale(aabbModel, size);
-
-        // Set model matrix and draw AABB wireframe
-        m_shader.setUniformMatrix4fv(Model, aabbModel);
-        m_aabb->draw(GL_LINES);
+        m_modelScratch.push_back(aabbModel);
     }
+
+    if (m_modelScratch.empty()) return;
+
+    m_shader.bind();
+    STATS_RECORD_SHADER_SWITCH();
+
+    using namespace GLConfig::UniformNames;
+    // CameraBlock UBO (binding 2) is bound by GLView for the frame.
+    m_shader.setUniform3fv(Color, view.environment.debugColor);
+
+    const uint32_t instanceCount = static_cast<uint32_t>(m_modelScratch.size());
+    m_instanceBuffer.update(m_modelScratch.data(), instanceCount);
+    m_instanceBuffer.attachToVAO(*m_aabb->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
+    m_aabb->drawInstanced(GL_LINES, instanceCount);
 }
 
 } // namespace Engine
