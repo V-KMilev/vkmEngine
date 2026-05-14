@@ -2,11 +2,8 @@
 
 #include <cstdint>
 
+#include "resource/shader_asset.h"
 #include "system/render/render_pass.h"
-
-namespace Core {
-    class Shader;
-}
 
 namespace Engine {
 
@@ -33,19 +30,20 @@ class GLShadowPass : public RenderPass {
         GLShadowPass() = delete;
         ~GLShadowPass() override = default;
 
-        GLShadowPass(const GLShadowPass&) = delete;
-        GLShadowPass& operator=(const GLShadowPass&) = delete;
-        GLShadowPass(GLShadowPass&&) = delete;
-        GLShadowPass& operator=(GLShadowPass&&) = delete;
+        GLShadowPass(const GLShadowPass& other) = delete;
+        GLShadowPass& operator=(const GLShadowPass& other) = delete;
 
-        explicit GLShadowPass(Core::Shader& depthShader);
+        GLShadowPass(GLShadowPass && other) = delete;
+        GLShadowPass& operator=(GLShadowPass && other) = delete;
+
+        explicit GLShadowPass(ShaderHandle depthShader);
 
     public:
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
         void execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) override;
 
     private:
-        Core::Shader& m_depthShader;
+        ShaderHandle m_depthShader;
 };
 
 } // namespace Engine

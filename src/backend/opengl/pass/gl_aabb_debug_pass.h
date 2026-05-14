@@ -5,13 +5,13 @@
 
 #include <glm/glm.hpp>
 
+#include "resource/shader_asset.h"
 #include "system/render/render_pass.h"
 
 #include "resource/gl_mesh.h"
 #include "resource/gl_instance_buffer.h"
 
 namespace Core {
-    class Shader;
     class VertexArray;
     class VertexBuffer;
     class IndexBuffer;
@@ -41,7 +41,7 @@ class GLAABBDebugPass : public RenderPass {
          * @brief Construct a GLAABBDebugPass that draws AABBs with a given shader.
          * @param shader Reference to an OpenGL shader to be used for rendering AABBs.
          */
-        GLAABBDebugPass(Core::Shader& shader);
+        explicit GLAABBDebugPass(ShaderHandle shader);
 
     public:
         /**
@@ -73,7 +73,7 @@ class GLAABBDebugPass : public RenderPass {
         void initialize();
 
     private:
-        Core::Shader& m_shader;
+        ShaderHandle m_shader;
 
         std::unique_ptr<GLMesh> m_aabb;
         GLInstanceBuffer m_instanceBuffer;

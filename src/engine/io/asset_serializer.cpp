@@ -30,6 +30,10 @@ void AssetFactories::registerMaterial(std::string kind, MaterialFactory factory)
     m_materialFactories[std::move(kind)] = std::move(factory);
 }
 
+void AssetFactories::registerShader(std::string kind, ShaderFactory factory) {
+    m_shaderFactories[std::move(kind)] = std::move(factory);
+}
+
 MeshAsset AssetFactories::createMesh(const nlohmann::json& source) const {
     const std::string kind = source.value("kind", std::string{});
     auto it = m_meshFactories.find(kind);
@@ -58,6 +62,16 @@ MaterialHandle AssetFactories::createMaterial(const nlohmann::json& source, Reso
         return {};
     }
     return it->second(source, resources);
+}
+
+ShaderAsset AssetFactories::createShader(const nlohmann::json& source) const {
+    const std::string kind = source.value("kind", std::string{});
+    auto it = m_shaderFactories.find(kind);
+    if (it == m_shaderFactories.end()) {
+        LOG_WARNING("AssetFactories: no shader factory registered for kind '%s'", kind.c_str());
+        return {};
+    }
+    return it->second(source);
 }
 
 // ---- AssetSerializer -----------------------------------------------------

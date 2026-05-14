@@ -7,9 +7,9 @@
 #include "debug/statistics.h"
 
 #include "core/gl_backend.h"
-#include "gl_shader.h"
 #include "resource/gl_mesh.h"
 #include "resource/gl_material.h"
+#include "resource/gl_shader_program.h"
 #include "resource/gl_instance_buffer.h"
 #include "core/gl_instance_batcher.h"
 
@@ -18,34 +18,14 @@
 
 namespace Engine {
 
-void GLForwardPass::setupSamplers(Core::Shader& shader) {
-    shader.bind();
-    shader.setUniform1i(GLConfig::UniformNames::AlbedoTexture, GLConfig::TextureSlots::Albedo);
-    shader.setUniform1i(GLConfig::UniformNames::NormalTexture, GLConfig::TextureSlots::Normal);
-    shader.setUniform1i(GLConfig::UniformNames::MetallicRoughnessTexture, GLConfig::TextureSlots::MetallicRoughness);
-    shader.setUniform1i(GLConfig::UniformNames::AOMetallicRoughnessTexture, GLConfig::TextureSlots::MetallicRoughness);
-    shader.setUniform1i(GLConfig::UniformNames::AOTexture, GLConfig::TextureSlots::AO);
-    shader.setUniform1i(GLConfig::UniformNames::EmissionTexture, GLConfig::TextureSlots::Emission);
-    shader.setUniform1i(GLConfig::UniformNames::HeightTexture, GLConfig::TextureSlots::Height);
-    shader.setUniform1i(GLConfig::UniformNames::ClearcoatTexture, GLConfig::TextureSlots::Clearcoat);
-    shader.setUniform1i(GLConfig::UniformNames::TransmissionTexture, GLConfig::TextureSlots::Transmission);
-    shader.setUniform1i(GLConfig::UniformNames::MetallicTexture, GLConfig::TextureSlots::Metallic);
-    shader.setUniform1i(GLConfig::UniformNames::RoughnessTexture, GLConfig::TextureSlots::Roughness);
-    shader.setUniform1i(GLConfig::UniformNames::ShadowMap2D,   GLConfig::TextureSlots::ShadowMap2D);
-    shader.setUniform1i(GLConfig::UniformNames::ShadowMapCube, GLConfig::TextureSlots::ShadowMapCube);
+GLForwardPass::GLForwardPass(ShaderHandle pbrShader) : RenderPass("GLForwardPass") {
+    m_shaders[static_cast<int>(MaterialType::Opaque)]      = pbrShader;
+    m_shaders[static_cast<int>(MaterialType::Transparent)] = pbrShader;
+    // Unlit stays empty until setShader() is called
 }
 
-GLForwardPass::GLForwardPass(Core::Shader& pbrShader) : RenderPass("GLForwardPass") {
-    m_shaders[static_cast<int>(MaterialType::Opaque)]      = &pbrShader;
-    m_shaders[static_cast<int>(MaterialType::Transparent)]  = &pbrShader;
-    // Unlit stays nullptr until setShader() is called
-
-    setupSamplers(pbrShader);
-}
-
-void GLForwardPass::setShader(MaterialType type, Core::Shader& shader) {
-    m_shaders[static_cast<int>(type)] = &shader;
-    setupSamplers(shader);
+void GLForwardPass::setShader(MaterialType type, ShaderHandle shader) {
+    m_shaders[static_cast<int>(type)] = shader;
 }
 
 void GLForwardPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
@@ -71,8 +51,13 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
 
     auto& glView = gl.getView();
 
-    // Resource sync (incl. instance batch build) happens in
-    // RenderBackend::syncResources before any pass executes.
+    // Resolve every shader variant up-front (resolveShader picks up any
+    // hot-reload version bumps and re-applies the asset's sampler bindings).
+    GLShader* shaders[3] = {};
+    for (size_t i = 0; i < 3; ++i) {
+        shaders[i] = glView.resolveShader(m_shaders[i], resources);
+    }
+
     auto& batcher = glView.getInstanceBatcher();
     const auto& batches = batcher.getBatches();
     auto& instanceBuffer = batcher.getBuffer();
@@ -85,19 +70,18 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
     // CameraBlock and LightsBlock UBOs are owned by GLView and bound once
     // per frame in sync().
 
-    Core::Shader* currentShader = nullptr;
-    MaterialType currentType = MaterialType::Opaque;
-    MaterialHandle currentMaterial{};
+    GLShader*      currentShader   = nullptr;
+    MaterialType   currentType     = MaterialType::Opaque;
+    MaterialHandle currentMaterial = {};
 
     for (size_t i = 0; i < batches.size(); ++i) {
         const auto& batch = batches[i];
 
-        // Switch shader when material type changes
-        Core::Shader* shader = m_shaders[static_cast<int>(batch.materialType)];
-        if (!shader) {
-            // Fall back to opaque PBR shader if variant not set
-            shader = m_shaders[static_cast<int>(MaterialType::Opaque)];
-        }
+        // Pick the shader for this batch's material type, falling back to
+        // the opaque PBR shader if the variant slot is empty.
+        GLShader* shader = shaders[static_cast<int>(batch.materialType)];
+        if (!shader) shader = shaders[static_cast<int>(MaterialType::Opaque)];
+        if (!shader) continue;
 
         if (shader != currentShader) {
             // Transition GL state between material type groups

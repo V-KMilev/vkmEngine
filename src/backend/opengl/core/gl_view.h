@@ -6,6 +6,7 @@
 
 #include "resource/material_asset.h"
 #include "resource/mesh_asset.h"
+#include "resource/shader_asset.h"
 #include "resource/texture_asset.h"
 
 #include "gl_instance_batcher.h"
@@ -13,6 +14,7 @@
 #include "resource/gl_lights.h"
 #include "resource/gl_material.h"
 #include "resource/gl_mesh.h"
+#include "resource/gl_shader_program.h"
 #include "resource/gl_shadow_data.h"
 #include "resource/gl_shadow_map.h"
 #include "resource/gl_texture.h"
@@ -66,6 +68,15 @@ class GLView {
          */
         void sync(const RenderView& view, const ResourceManager& resources);
 
+        /// Sync (compile or recompile-if-version-bumped) and return the
+        /// backend shader for a handle, in one call. Used by render passes
+        /// at draw time; this is how hot reload reaches the GPU side —
+        /// the watcher commits → asset.version bumps → the next resolve
+        /// call rebuilds the program.
+        ///
+        /// Returns nullptr only when the handle is empty or invalid.
+        GLShader* resolveShader(const ShaderHandle& handle, const ResourceManager& resources);
+
         /// Lookup: returns nullptr if not synced or out of range.
         const GLMesh*     getMesh(const MeshHandle& handle) const;
         const GLMaterial* getMaterial(const MaterialHandle& handle) const;
@@ -95,6 +106,7 @@ class GLView {
         GLResourceTable<GLMesh>     m_meshTable;
         GLResourceTable<GLMaterial> m_materialTable;
         GLResourceTable<GLTexture>  m_textureTable;
+        GLResourceTable<GLShader>   m_shaderTable;
 
         GLCamera          m_camera;
         GLLights          m_lights;
