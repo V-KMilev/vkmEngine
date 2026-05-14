@@ -128,17 +128,13 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         m_lastDrawableCount       = drawableCount;
     }
 
-    // Per-frame UBOs (camera, lights, shadow) are owned by GLView and bound
-    // here so every subsequent pass can read them by binding point without
-    // rebinding. The shadow UBO's contents are written by GLShadowPass; we
-    // only bind the slot here so it's stable across the frame.
+    // Per-frame UBOs owned by GLView. Shadow UBO is bound by GLShadowPass
+    // after it populates entries — no need to bind here.
     m_camera.update(view.camera, view.environment);
     m_camera.bind();
 
     m_lights.update(view.lights);
     m_lights.bind();
-
-    m_shadowData.bind();
 
     // Build instance batches once so all subsequent passes (shadow + forward)
     // share the same batched draw list.

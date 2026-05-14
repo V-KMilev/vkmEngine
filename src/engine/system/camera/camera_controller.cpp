@@ -1,4 +1,4 @@
-#include "camera_controller.h"
+#include "system/camera/camera_controller.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -9,6 +9,8 @@
 #include "platform/window/input_handle.h"
 #include "platform/window/glfw_include.h"
 
+#include "core/math/axes.h"
+#include "core/math/rotation.h"
 #include "ecs/component/transform.h"
 
 namespace Engine {
@@ -50,9 +52,8 @@ void CameraController::updateFlyMode(WindowManager& windowManager, glm::vec3& po
 
     updateRotationFromAngles(rotation, m_yaw, m_pitch);
 
-    // Calculate movement direction vectors using Transform helper methods
-    glm::vec3 forward = Transform::computeForward(rotation);
-    glm::vec3 right   = Transform::computeRight(rotation);
+    glm::vec3 forward = Math::computeForward(rotation);
+    glm::vec3 right   = Math::computeRight(rotation);
 
     // Scroll wheel modifies forward/back
     float scrollDelta = static_cast<float>(mouse.getScrollY());
@@ -74,8 +75,8 @@ void CameraController::updateFlyMode(WindowManager& windowManager, glm::vec3& po
     if (keyboard.isKeyPressed(GLFW_KEY_S)) position -= forward * speed;
     if (keyboard.isKeyPressed(GLFW_KEY_A)) position += right * speed;
     if (keyboard.isKeyPressed(GLFW_KEY_D)) position -= right * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_Q)) position += WORLD_AXIS_Y_UP * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_E)) position -= WORLD_AXIS_Y_UP * speed;
+    if (keyboard.isKeyPressed(GLFW_KEY_Q)) position += Math::WORLD_AXIS_Y_UP * speed;
+    if (keyboard.isKeyPressed(GLFW_KEY_E)) position -= Math::WORLD_AXIS_Y_UP * speed;
 }
 
 void CameraController::focusOn(Scene& scene, const glm::vec3& target, float distance) {
@@ -88,7 +89,7 @@ void CameraController::focusOn(Scene& scene, const glm::vec3& target, float dist
     glm::vec3 dir = transform.position - target;
     float len = glm::length(dir);
     if (len < 0.001f) {
-        dir = -Transform::computeForward(transform.rotation);
+        dir = -Math::computeForward(transform.rotation);
     } else {
         dir /= len;
     }
@@ -105,9 +106,9 @@ void CameraController::focusOn(Scene& scene, const glm::vec3& target, float dist
 
 void CameraController::updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch) {
     // Yaw rotates around world up axis
-    glm::quat yawQuat = glm::angleAxis(yaw, WORLD_AXIS_Y_UP);
+    glm::quat yawQuat = glm::angleAxis(yaw, Math::WORLD_AXIS_Y_UP);
     // Pitch rotates around local right axis (negative because mouse Y is inverted)
-    glm::quat pitchQuat = glm::angleAxis(pitch, -WORLD_AXIS_X_RIGHT);
+    glm::quat pitchQuat = glm::angleAxis(pitch, -Math::WORLD_AXIS_X_RIGHT);
     // Apply yaw first, then pitch (order matters for correct behavior)
     rotation = yawQuat * pitchQuat;
 }

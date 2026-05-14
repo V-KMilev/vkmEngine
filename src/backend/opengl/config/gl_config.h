@@ -92,24 +92,17 @@ namespace GLConfig {
         constexpr const char* ShadowMap2D   = "u_shadowMap2D";
         constexpr const char* ShadowMapCube = "u_shadowMapCube";
         constexpr const char* LightSpace    = "u_lightSpace";
-        constexpr const char* LightPosition = "u_lightPosition";
-        constexpr const char* LightRange    = "u_lightRange";
     }
 
     /**
      * @brief Maximum limits for various resources.
      */
     namespace Limits {
-        constexpr uint32_t MaxLights              = 32;    ///< Maximum number of lights supported per frame
-
-        // Shadow casters split by map type. Increasing these is essentially free
-        // at runtime but expands the depth-array textures linearly in VRAM and
-        // adds extra shadow passes when more lights opt in.
-        constexpr uint32_t MaxShadowCasters       = 8;     ///< Hard cap matching ShadowBlock UBO array size
-        constexpr uint32_t MaxShadowCasters2D     = 6;     ///< Directional + spot maps (sampler2DArrayShadow)
-        constexpr uint32_t MaxShadowCastersCube   = 2;     ///< Point cubemaps (samplerCubeArrayShadow)
-        constexpr uint32_t ShadowResolution2D     = 2048;  ///< Per-layer resolution of the 2D array
-        constexpr uint32_t ShadowResolutionCube   = 512;   ///< Per-face resolution of cube map layers
+        // Backend-specific atlas pixel resolutions.
+        // Engine-wide budgets (light count, shadow caster counts) live in
+        // src/engine/core/engine_config.h — Engine::Config.
+        constexpr uint32_t ShadowResolution2D   = 2048;  ///< Per-layer resolution of the 2D array
+        constexpr uint32_t ShadowResolutionCube = 512;   ///< Per-face resolution of cube map layers
     }
 
     /**

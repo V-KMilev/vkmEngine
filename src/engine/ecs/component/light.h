@@ -34,8 +34,11 @@ struct Light {
     float innerConeAngle = 0.5f;               ///< Inner cone angle in radians (full brightness)
     float outerConeAngle = 0.785f;             ///< Outer cone angle in radians (45 degrees default)
 
-    // Shadow parameters (for future use)
-    bool castShadows = false;                  ///< Should this light cast shadows?
+    // Shadow parameters
+    bool  castShadows  = true;                 ///< Should this light cast shadows?
+    float shadowBias   = 0.005f;               ///< Depth comparison bias (slope-scaled for 2D, constant for cube)
+    float shadowExtent = 50.0f;                ///< Directional only: ortho half-size in world units. Ignored for spot/point (uses radius).
+
     bool enabled = true;                       ///< Is this light enabled?
 };
 

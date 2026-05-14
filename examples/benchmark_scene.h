@@ -268,16 +268,18 @@ static Engine::Entity generateBenchmarkScene(
     // Directional light (sun)
     auto sunLight = scene.createEntity();
     {
-        scene.add(sunLight, Engine::generateDirectionalLight(
+        auto light = Engine::generateDirectionalLight(
             glm::vec3(1.0f, 0.95f, 0.9f), 2.0f, true
-        ));
+        );
+        light.shadowExtent = 80.0f;  // Ortho half-size covering most of the benchmark grid
+        scene.add(sunLight, light);
         scene.add(sunLight, Engine::Transform{
             glm::vec3(0.0f, 100.0f, 0.0f),
             glm::vec3(-0.5f, 0.2f, 0.0f)
         });
     }
 
-    // Point lights in a ring - first 2 cast shadows to demo cube-map atlas
+    // Point lights in a ring - all cast shadows (budget will cap to MaxCastersCube)
     for (int i = 0; i < config.pointLightCount; ++i) {
         float angle = (static_cast<float>(i) / config.pointLightCount) * glm::two_pi<float>();
         float radius = 30.0f;
@@ -288,10 +290,8 @@ static Engine::Entity generateBenchmarkScene(
             0.5f + 0.5f * std::sin(angle + glm::pi<float>())
         );
 
-        const bool castShadows = (i < 2);
-
         auto light = scene.createEntity();
-        scene.add(light, Engine::generatePointLight(color, 15.0f, 40.0f, castShadows));
+        scene.add(light, Engine::generatePointLight(color, 15.0f, 40.0f, true));
         scene.add(light, Engine::Transform{glm::vec3(
             std::cos(angle) * radius,
             8.0f,
@@ -299,17 +299,15 @@ static Engine::Entity generateBenchmarkScene(
         )});
     }
 
-    // Spot lights pointing inward - first 3 cast shadows to demo 2D-array atlas
+    // Spot lights pointing inward - all cast shadows (budget will cap to MaxCasters2D)
     for (int i = 0; i < config.spotLightCount; ++i) {
         float angle = (static_cast<float>(i) / config.spotLightCount) * glm::two_pi<float>();
         float radius = 60.0f;
 
-        const bool castShadows = (i < 3);
-
         auto light = scene.createEntity();
         scene.add(light, Engine::generateSpotLight(
             glm::vec3(1.0f, 1.0f, 1.0f),
-            20.0f, 50.0f, 0.3f, 0.6f, castShadows
+            20.0f, 50.0f, 0.3f, 0.6f, true
         ));
         scene.add(light, Engine::Transform{
             glm::vec3(std::cos(angle) * radius, 15.0f, std::sin(angle) * radius),

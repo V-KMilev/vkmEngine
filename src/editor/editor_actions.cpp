@@ -18,7 +18,7 @@
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
 #include "system/visibility/bounds_utils.h"
-#include "camera_controller.h"
+#include "system/camera/camera_controller.h"
 
 #include "generator/light_generators.h"
 #include "generator/mesh_generators.h"

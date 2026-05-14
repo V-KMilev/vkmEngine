@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 #include "config/gl_config.h"
+#include "core/engine_config.h"
 
 namespace Core {
     class UniformBuffer;
@@ -14,45 +15,52 @@ namespace Core {
 namespace Engine {
 
 /**
- * @brief A single shadow caster entry, std140 layout.
+ * @brief 2D shadow caster entry (std140 layout) — directional + spot.
  *
- * The same struct is used for directional / spot (which sample the 2D array)
- * and point (which sample the cube array). lightSpace is only meaningful for
- * 2D-array maps; cube samples derive their lookup vector from the world-space
- * fragment position relative to the light, normalised by `radius`.
+ * Sampled as sampler2DArrayShadow; atlas layer = the entry's index, so no
+ * explicit layer field is needed.
  *
- * Layout:
- *   lightSpace : mat4  (offset 0)   world -> light clip space  (2D casters only)
- *   params     : vec4  (offset 64)
- *     x = lightIndex      (index into the LightsBlock array)
- *     y = mapLayer        (layer in 2D array, or cube index in cube array)
- *     z = bias            (slope-scaled bias maximum)
- *     w = radius          (point lights only; range used to normalise depth)
+ *   lightSpace : mat4  (offset 0)   world -> light clip space
+ *   params.x   : float (offset 64)  depth-compare bias
+ *   params.yzw : float (offset 68)  unused/pad
  */
-struct alignas(16) ShadowCasterGPUData {
+struct alignas(16) Shadow2DCasterGPU {
     glm::mat4 lightSpace = glm::mat4(1.0f);
-    glm::vec4 params     = glm::vec4(-1.0f, 0.0f, 0.005f, 0.0f);
+    glm::vec4 params     = glm::vec4(0.005f, 0.0f, 0.0f, 0.0f);
 };
 
 /**
- * @brief Std140 UBO data with an array of shadow casters.
+ * @brief Cube shadow caster entry (std140 layout) — point lights.
  *
- * Layout:
- *   casterCount : int   (offset 0,  std140 pads the trailing scalar to 16)
- *   casters[]   : ShadowCaster[MaxShadowCasters]
+ * Sampled as samplerCubeArrayShadow; the cube index equals the entry's index.
+ *
+ *   params.x : float  bias
+ *   params.y : float  light range (cube far plane, used to derive projected depth)
+ */
+struct alignas(16) ShadowCubeCasterGPU {
+    glm::vec4 params = glm::vec4(0.005f, 1.0f, 0.0f, 0.0f);
+};
+
+/**
+ * @brief Shadow UBO data (std140).
+ *
+ * Two separate caster arrays — 2D (directional + spot) and cube (point) —
+ * indexed directly by the slot the light is carrying in its GPU data.
  */
 struct alignas(16) ShadowUBOData {
-    int  casterCount = 0;
-    int  _pad[3]     = {0, 0, 0};
-    ShadowCasterGPUData casters[GLConfig::Limits::MaxShadowCasters]{};
+    int count2D     = 0;
+    int countCube   = 0;
+    int _pad0       = 0;
+    int _pad1       = 0;
+    Shadow2DCasterGPU   casters2D  [Config::MaxShadowCasters2D]{};
+    ShadowCubeCasterGPU castersCube[Config::MaxShadowCastersCube]{};
 };
 
 /**
- * @brief Per-frame shadow UBO upload and binding.
+ * @brief Per-frame shadow UBO. Owned by GLView, populated by GLShadowPass.
  *
- * Mirrors GLCamera / GLLights: eager allocation at construction so binding
- * point 3 is always valid, even if no caster is active or the shadow pass
- * is missing. Skips the GPU upload when the data is bytewise unchanged.
+ * Allocation is eager so binding point 3 is always valid even if no caster
+ * is active or the shadow pass is missing.
  */
 class GLShadowData {
     public:
@@ -65,23 +73,25 @@ class GLShadowData {
         GLShadowData& operator=(GLShadowData&&) = delete;
 
     public:
-        /// Reset to "no casters" - the PBR shader will short-circuit shadow sampling.
+        /// Reset both caster counts to 0. Stale array tails are inert — the
+        /// shader only reads the prefix indicated by count2D / countCube.
         void clear();
 
-        /// Append a caster entry. Returns true on success, false when the budget
-        /// (MaxShadowCasters) is exceeded.
-        bool addCaster(const ShadowCasterGPUData& caster);
+        /// Write a 2D caster at the given slot (0..MaxCasters2D-1).
+        void setCaster2D(uint32_t slot, const Shadow2DCasterGPU& caster);
 
-        /// Upload the accumulated casters to the GPU (no-op when bytewise unchanged).
-        void upload();
+        /// Write a cube caster at the given slot (0..MaxCastersCube-1).
+        void setCasterCube(uint32_t slot, const ShadowCubeCasterGPU& caster);
 
-        /// Bind the UBO to the shadow binding point.
-        void bind(uint32_t bindingPoint = GLConfig::UBOBindingPoints::Shadow) const;
+        /// Set the active counts. Must be called after all setCaster*() calls.
+        void setCounts(uint32_t count2D, uint32_t countCube);
+
+        /// Upload to GPU and bind to the shadow binding point.
+        void uploadAndBind();
 
     private:
         std::unique_ptr<Core::UniformBuffer> m_ubo;
         ShadowUBOData                        m_data{};
-        ShadowUBOData                        m_lastData{};
 };
 
 } // namespace Engine
