@@ -27,8 +27,8 @@
 // Asset registration
 #include "asset_registration.h"
 
-// Demo scene
-#include "examples/benchmark_scene.h"
+// Default scene (cube at origin, sun, camera)
+#include "examples/default_scene.h"
 
 int main() {
     try {
@@ -81,22 +81,11 @@ int main() {
         renderSystem.addPass(std::move(aabbPass));
         renderSystem.addPass(std::make_unique<Engine::GLGridPass>(gridShader));
 
-        // Scene setup
-        BenchmarkConfig config;
-        config.gridSize = 100;
-        config.nearLayerCount = 500;
-        config.midLayerCount = 1000;
-        config.farLayerCount = 2000;
-        config.animationRatio = 0.2f;
-        config.pointLightCount = 16;
-        config.spotLightCount = 8;
-        config.useMeshVariety = true;
-        config.useSphereDetail = true;
-
-        auto cameraEntity = generateBenchmarkScene(engine, config);
-
+        // Default scene: a single cube at the origin under a directional
+        // light. Scene/asset round-trip happy: every asset has a source
+        // descriptor so save → cold-start load reproduces this exactly.
+        auto cameraEntity = generateDefaultScene(engine);
         cameraController.setCameraEntity(cameraEntity);
-        generateBenchmarkAnimations(engine.getScene());
 
         engine.run();
 
