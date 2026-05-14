@@ -4,6 +4,7 @@
 #include <tuple>
 #include <vector>
 
+#include "ecs/component/hierarchy.h"
 #include "ecs/entity.h"
 #include "core/memory/slot_allocator.h"
 #include "core/memory/sparse_set.h"
@@ -47,12 +48,31 @@ class Scene {
         }
 
         /**
+         * @brief Allocate an entity at the requested slot index.
+         *
+         * Used by SceneSerializer to recreate saved entities with the same
+         * slot indices they had on disk — that's what makes parent/child
+         * indices (and editor selection mementos) directly valid after a
+         * load, without any id-remap step.
+         */
+        Entity createEntityAt(uint32_t index) {
+            StorageIndex id = m_entityAllocator.allocateAt(index);
+            STATS_RECORD_ENTITY_CREATE();
+            return Entity{id};
+        }
+
+        /**
          * @brief Check if an entity is still alive (valid index + matching generation).
          * @param entity The entity to check.
          * @return true if the entity is alive.
          */
         bool isAlive(Entity entity) const { return isAlive(entity.getID()); }
         bool isAlive(EntityId id) const { return m_entityAllocator.has(id); }
+
+        /// @brief Bounds-tolerant check: is the slot at `index` currently
+        /// holding a live entity? Use this when you only have a raw slot
+        /// index from a previous frame/scene (e.g. a saved selection).
+        bool isAliveAtIndex(uint32_t index) const { return m_entityAllocator.isAliveAtIndex(index); }
 
         /**
          * @brief Number of live entities.
@@ -220,6 +240,35 @@ class Scene {
                     fn(eid, first, std::get<const SparseSet<Rest>*>(restStorages)->get(entityIdx)...);
                 });
             }
+        }
+
+        /**
+         * @brief Invoke fn(EntityId) for every live entity in this scene.
+         *
+         * Iteration order is ascending by slot index. Used by serialization
+         * and editor flows that need to enumerate entities independent of
+         * which components they happen to carry.
+         */
+        template<typename Fn>
+        void forEachEntity(Fn&& fn) const {
+            m_entityAllocator.forEach([&](uint32_t idx) {
+                fn(EntityId{idx, m_entityAllocator.generationOf(idx)});
+            });
+        }
+
+        /**
+         * @brief Remove every entity and reset component storage. Used for
+         * scene load to start from a clean slate.
+         *
+         * Safe in any destruction order: detachFromHierarchy guards each
+         * sibling/parent/child touch with isAlive + has<Hierarchy>, so
+         * already-destroyed neighbours are skipped silently.
+         */
+        void clear() {
+            std::vector<EntityId> ids;
+            ids.reserve(entityCount());
+            forEachEntity([&](EntityId id) { ids.push_back(id); });
+            for (auto id : ids) destroyEntity(Entity{id});
         }
 
         /**

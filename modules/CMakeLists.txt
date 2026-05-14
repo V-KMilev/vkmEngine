@@ -9,6 +9,15 @@ if(NOT TARGET vkmGL)
     add_subdirectory(vkmGL)
 endif()
 
+# nlohmann/json (single-header, INTERFACE target `nlohmann_json`).
+# Suppress its own install rules and tests — the parent project installs
+# whatever subset of targets it wants via its own EXPORT set.
+set(JSON_Install   OFF CACHE BOOL "" FORCE)
+set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
+if(NOT TARGET nlohmann_json)
+    add_subdirectory(json)
+endif()
+
 # ============================================================================
 # ImGui Library
 # ============================================================================

@@ -5,6 +5,7 @@
 file(GLOB_RECURSE ENGINECORE_SOURCES
     core/*.cpp
     ecs/*.cpp
+    io/*.cpp
     resource/*.cpp
     system/animation/*.cpp
     system/camera/*.cpp
@@ -32,6 +33,7 @@ target_link_libraries(EngineCore PUBLIC
     glm
     glfw
     vkmLog
+    nlohmann_json
 )
 target_link_libraries(EngineCore PRIVATE
     glew

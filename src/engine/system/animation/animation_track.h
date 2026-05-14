@@ -142,6 +142,11 @@ class AnimationTrack {
             m_values.clear();
         }
 
+        /// Read-only access to keyframe storage — used by serialization and
+        /// any tool that needs to round-trip the track's contents.
+        const std::vector<float>& getTimes()  const { return m_times; }
+        const std::vector<T>&     getValues() const { return m_values; }
+
     private:
         /**
          * @brief Interpolates between two values using the appropriate method.

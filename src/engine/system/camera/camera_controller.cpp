@@ -18,11 +18,13 @@ namespace Engine {
 CameraController::CameraController() = default;
 
 void CameraController::update(FrameContext& ctx) {
-    if (!ctx.scene.has<Transform>(m_cameraEntity.getID())) {
-        return;
-    }
+    // Guard against a stale handle: after a scene reload the entity the
+    // controller was pointing at may be dead, in which case scene.has would
+    // assert on a dead lookup. setCameraEntity from the editor restores it.
+    if (!ctx.scene.isAlive(m_cameraEntity)) return;
+    if (!ctx.scene.has<Transform>(m_cameraEntity)) return;
 
-    auto& transform = ctx.scene.get<Transform>(m_cameraEntity.getID());
+    auto& transform = ctx.scene.get<Transform>(m_cameraEntity);
 
     updateFlyMode(ctx.window, transform.position, transform.rotation, ctx.deltaTime);
 }

@@ -24,6 +24,9 @@
 #include "pass/gl_grid_pass.h"
 #include "pass/gl_shadow_pass.h"
 
+// Asset registration
+#include "asset_registration.h"
+
 // Demo scene
 #include "examples/benchmark_scene.h"
 
@@ -39,6 +42,11 @@ int main() {
         Engine::printBuildInfo();
         Core::enableGLDebugLogging(true);
 
+        // Register generators/loaders with the engine's asset factory registry
+        // so SceneSerializer can recreate procedural meshes + folder materials
+        // on cold-start scene loads.
+        Engine::registerBuiltinAssetFactories();
+
         auto& engine = Engine::Engine::get();
         auto& window = engine.getWindow();
 
@@ -53,7 +61,7 @@ int main() {
         auto& visibilitySystem = engine.addSystem<Engine::VisibilitySystem>(Engine::SystemStage::Visibility);
         auto& renderSystem     = engine.addSystem<Engine::RenderSystem>    (Engine::SystemStage::Render);
         engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
-            window.getWindowContext(), &cameraController, &visibilitySystem, &renderSystem);
+            window.getWindowContext(), &cameraController, &visibilitySystem, &renderSystem, &eventSystem);
 
         // Shaders
         const std::string shaderDir = std::string(APP_ROOT_DIR) + "/shaders";

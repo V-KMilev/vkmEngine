@@ -6,7 +6,21 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
+#include <nlohmann/json.hpp>
+
 namespace Engine {
+
+namespace {
+    /// Build a JSON source descriptor for a procedural mesh. Stored on the
+    /// MeshAsset so SceneSerializer can recreate it on cold-start load.
+    nlohmann::json meshGeneratorSource(const char* type, nlohmann::json params = nlohmann::json::object()) {
+        nlohmann::json j;
+        j["kind"] = "generator";
+        j["type"] = type;
+        if (!params.empty()) j["params"] = std::move(params);
+        return j;
+    }
+}
 
 MeshAsset generateTriangle(float size) {
     MeshAsset mesh;
@@ -22,6 +36,7 @@ MeshAsset generateTriangle(float size) {
 
     mesh.indices = { 0, 1, 2 };
     mesh.computeAndSetBounds();
+    mesh.source = meshGeneratorSource("triangle", {{"size", size}});
     return mesh;
 }
 
@@ -41,6 +56,10 @@ MeshAsset generatePlane(float width, float height, uint32_t widthSegments, uint3
 
     mesh.indices = { 0, 1, 2,  2, 3, 0 };
     mesh.computeAndSetBounds();
+    mesh.source = meshGeneratorSource("plane", {
+        {"width", width}, {"height", height},
+        {"widthSegments", widthSegments}, {"heightSegments", heightSegments}
+    });
     return mesh;
 }
 
@@ -108,6 +127,7 @@ MeshAsset generateCube() {
     };
 
     mesh.computeAndSetBounds();
+    mesh.source = meshGeneratorSource("cube");
     return mesh;
 }
 
@@ -160,6 +180,7 @@ MeshAsset generateSphere(uint32_t xSegments, uint32_t ySegments) {
     }
 
     mesh.computeAndSetBounds();
+    mesh.source = meshGeneratorSource("sphere", {{"xSegments", xSegments}, {"ySegments", ySegments}});
     return mesh;
 }
 
@@ -211,6 +232,7 @@ MeshAsset generatePyramid(float baseSize, float height) {
     };
 
     mesh.computeAndSetBounds();
+    mesh.source = meshGeneratorSource("pyramid", {{"baseSize", baseSize}, {"height", height}});
     return mesh;
 }
 
@@ -267,6 +289,9 @@ MeshAsset generateCone(
     }
 
     mesh.computeAndSetBounds();
+    mesh.source = meshGeneratorSource("cone", {
+        {"radius", radius}, {"height", height}, {"segments", segments}
+    });
     return mesh;
 }
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstring>
+
 #include <glm/gtx/easing.hpp>
 
 namespace Engine {
@@ -128,6 +130,62 @@ namespace Easing {
     }
     inline float easeInOutBounce(float t) {
         return glm::bounceEaseInOut(t);
+    }
+
+    /// Function-pointer -> stable string name (for serialization).
+    /// Returns "linear" if the pointer is unknown.
+    inline const char* nameOf(EasingFunction f) {
+        if (f == &linear)             return "linear";
+        if (f == &easeInQuad)         return "easeInQuad";
+        if (f == &easeOutQuad)        return "easeOutQuad";
+        if (f == &easeInOutQuad)      return "easeInOutQuad";
+        if (f == &easeInCubic)        return "easeInCubic";
+        if (f == &easeOutCubic)       return "easeOutCubic";
+        if (f == &easeInOutCubic)     return "easeInOutCubic";
+        if (f == &easeInQuart)        return "easeInQuart";
+        if (f == &easeOutQuart)       return "easeOutQuart";
+        if (f == &easeInOutQuart)     return "easeInOutQuart";
+        if (f == &easeInQuint)        return "easeInQuint";
+        if (f == &easeOutQuint)       return "easeOutQuint";
+        if (f == &easeInOutQuint)     return "easeInOutQuint";
+        if (f == &easeInSine)         return "easeInSine";
+        if (f == &easeOutSine)        return "easeOutSine";
+        if (f == &easeInOutSine)      return "easeInOutSine";
+        if (f == &easeInExpo)         return "easeInExpo";
+        if (f == &easeOutExpo)        return "easeOutExpo";
+        if (f == &easeInOutExpo)      return "easeInOutExpo";
+        if (f == &easeInCirc)         return "easeInCirc";
+        if (f == &easeOutCirc)        return "easeOutCirc";
+        if (f == &easeInOutCirc)      return "easeInOutCirc";
+        if (f == &easeInBack)         return "easeInBack";
+        if (f == &easeOutBack)        return "easeOutBack";
+        if (f == &easeInOutBack)      return "easeInOutBack";
+        if (f == &easeInElastic)      return "easeInElastic";
+        if (f == &easeOutElastic)     return "easeOutElastic";
+        if (f == &easeInOutElastic)   return "easeInOutElastic";
+        if (f == &easeInBounce)       return "easeInBounce";
+        if (f == &easeOutBounce)      return "easeOutBounce";
+        if (f == &easeInOutBounce)    return "easeInOutBounce";
+        return "linear";
+    }
+
+    /// Stable string name -> function pointer (for deserialization).
+    /// Falls back to linear if the name is unknown.
+    inline EasingFunction byName(const char* name) {
+        #define VKM_EASING_MATCH(fn) if (std::strcmp(name, #fn) == 0) return &fn
+        VKM_EASING_MATCH(linear);
+        VKM_EASING_MATCH(easeInQuad);   VKM_EASING_MATCH(easeOutQuad);   VKM_EASING_MATCH(easeInOutQuad);
+        VKM_EASING_MATCH(easeInCubic);  VKM_EASING_MATCH(easeOutCubic);  VKM_EASING_MATCH(easeInOutCubic);
+        VKM_EASING_MATCH(easeInQuart);  VKM_EASING_MATCH(easeOutQuart);  VKM_EASING_MATCH(easeInOutQuart);
+        VKM_EASING_MATCH(easeInQuint);  VKM_EASING_MATCH(easeOutQuint);  VKM_EASING_MATCH(easeInOutQuint);
+        VKM_EASING_MATCH(easeInSine);   VKM_EASING_MATCH(easeOutSine);   VKM_EASING_MATCH(easeInOutSine);
+        VKM_EASING_MATCH(easeInExpo);   VKM_EASING_MATCH(easeOutExpo);   VKM_EASING_MATCH(easeInOutExpo);
+        VKM_EASING_MATCH(easeInCirc);   VKM_EASING_MATCH(easeOutCirc);   VKM_EASING_MATCH(easeInOutCirc);
+        VKM_EASING_MATCH(easeInBack);   VKM_EASING_MATCH(easeOutBack);   VKM_EASING_MATCH(easeInOutBack);
+        VKM_EASING_MATCH(easeInElastic); VKM_EASING_MATCH(easeOutElastic); VKM_EASING_MATCH(easeInOutElastic);
+        VKM_EASING_MATCH(easeInBounce); VKM_EASING_MATCH(easeOutBounce); VKM_EASING_MATCH(easeInOutBounce);
+        #undef VKM_EASING_MATCH
+        return &linear;
     }
 } // namespace Easing
 
