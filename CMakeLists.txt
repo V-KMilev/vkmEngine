@@ -50,6 +50,7 @@ target_compile_definitions(BuildInfo INTERFACE
     APP_BRANCH="${PROJECT_BRANCH}"
     APP_COMMIT_HASH="${PROJECT_COMMIT_HASH}"
     APP_BUILD_DATE="${PROJECT_BUILD_DATE}"
+    APP_ROOT_DIR="${PROJECT_ROOT_DIR}"
 )
 
 target_link_libraries(EngineEditor PRIVATE BuildInfo)
@@ -71,7 +72,6 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     APP_VERSION_MAJOR="${PROJECT_VERSION_MAJOR}"
     APP_VERSION_MINOR="${PROJECT_VERSION_MINOR}"
     APP_VERSION_PATCH="${PROJECT_VERSION_PATCH}"
-    APP_ROOT_DIR="${PROJECT_ROOT_DIR}"
 )
 
 foreach(_target EngineCore EngineRendering EngineTools EngineEditor BackendOpenGL ${PROJECT_NAME})
@@ -92,7 +92,7 @@ endforeach()
 include(GNUInstallDirs)
 
 install(TARGETS EngineCore EngineRendering BackendOpenGL EngineTools EngineEditor
-                imgui vkmLog vkmGL glm glm-header-only glfw glew BuildInfo
+                imgui vkmLog vkmGL glm glm-header-only glfw glew BuildInfo nlohmann_json
     EXPORT vkmEngineTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

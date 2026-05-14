@@ -12,13 +12,20 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <filesystem>
+#include <system_error>
+#include <vector>
 
+#include "core/engine.h"
 #include "debug/statistics.h"
 #include "platform/window/window_manager.h"
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/animation.h"
+#include "ecs/component/camera.h"
+#include "io/scene_serializer.h"
 #include "system/camera/camera_controller.h"
+#include "system/event/event_system.h"
 #include "system/render/render_system.h"
 
 namespace Engine {
@@ -27,11 +34,13 @@ EditorSystem::EditorSystem(
     GLFWwindow* window,
     CameraController* cameraController,
     VisibilitySystem* visibilitySystem,
-    RenderSystem* renderSystem
+    RenderSystem* renderSystem,
+    EventSystem* events
 )
     : m_window(window)
     , m_cameraController(cameraController)
     , m_renderSystem(renderSystem)
+    , m_events(events)
     , m_bottom(cameraController, visibilitySystem, renderSystem)
 {
     IMGUI_CHECKVERSION();
@@ -44,9 +53,32 @@ EditorSystem::EditorSystem(
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
+
+    // Anything the editor needs to refresh after a scene reload (camera
+    // controller binding today; potentially more in the future) reacts to
+    // SceneLoadedEvent rather than being bolted onto the loadScene handler.
+    if (m_events) {
+        m_sceneLoadedListenerId = m_events->subscribe<SceneSerializer::SceneLoadedEvent>(
+            [this](const SceneSerializer::SceneLoadedEvent&) {
+                if (!m_cameraController) return;
+                // Re-bind the camera controller to whatever active Camera
+                // the loaded scene has. The previous handle pointed into a
+                // slot that may now hold a different entity (post-load).
+                auto& engine = Engine::get();
+                Entity rebound{};
+                engine.getScene().forEach<Camera>([&](EntityId id, const Camera& c) {
+                    if (c.active && !rebound.getID()) rebound = Entity{id};
+                });
+                m_cameraController->setCameraEntity(rebound);
+            }
+        );
+    }
 }
 
 EditorSystem::~EditorSystem() {
+    if (m_events && m_sceneLoadedListenerId != 0) {
+        m_events->unsubscribe<SceneSerializer::SceneLoadedEvent>(m_sceneLoadedListenerId);
+    }
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -85,6 +117,10 @@ void EditorSystem::update(FrameContext& ctx) {
         if (isPressed(kb.toggleInspector)) m_state.showInspector = !m_state.showInspector;
         if (isPressed(kb.toggleBottom))    m_state.showBottom    = !m_state.showBottom;
         if (isPressed(kb.toggleEditor))    m_state.editorVisible = false;
+
+        if (isPressed(kb.saveSceneAs))     openSaveAsPrompt();
+        else if (isPressed(kb.saveScene))  saveScene(ctx);
+        if (isPressed(kb.loadScene))       openLoadScenePrompt();
 
         if (isPressed(kb.deleteEntity) && m_state.selectedEntity && ctx.scene.isAlive(m_state.selectedEntity)) {
             EditorActions::deleteEntity(ctx.scene, m_state, m_state.selectedEntity);
@@ -268,6 +304,25 @@ void EditorSystem::update(FrameContext& ctx) {
 void EditorSystem::drawMenuBar(FrameContext& ctx) {
     if (!ImGui::BeginMenuBar()) return;
 
+    if (ImGui::BeginMenu("File")) {
+        char lbl[48];
+        const bool haveCurrent = !m_currentScenePath.empty();
+        if (ImGui::MenuItem("Save Scene",   getKeyBindLabel(m_state.keybinds.saveScene, lbl, sizeof(lbl)), false, haveCurrent || true)) {
+            saveScene(ctx);
+        }
+        if (ImGui::MenuItem("Save Scene As...", getKeyBindLabel(m_state.keybinds.saveSceneAs, lbl, sizeof(lbl)))) {
+            openSaveAsPrompt();
+        }
+        if (ImGui::MenuItem("Load Scene...", getKeyBindLabel(m_state.keybinds.loadScene, lbl, sizeof(lbl)))) {
+            openLoadScenePrompt();
+        }
+        if (haveCurrent) {
+            ImGui::Separator();
+            ImGui::TextDisabled("Current: %s", m_currentScenePath.c_str());
+        }
+        ImGui::EndMenu();
+    }
+
     if (ImGui::BeginMenu("View")) {
         char lbl[48];
         ImGui::MenuItem("Stats Overlay", getKeyBindLabel(m_state.keybinds.toggleStats, lbl, sizeof(lbl)), &m_state.showStats);
@@ -308,6 +363,75 @@ void EditorSystem::drawMenuBar(FrameContext& ctx) {
         ImGui::TextDisabled("OpenGL:");   ImGui::SameLine(); ImGui::Text("%s", (const char*)glGetString(GL_VERSION));
         ImGui::TextDisabled("Renderer:"); ImGui::SameLine(); ImGui::Text("%s", (const char*)glGetString(GL_RENDERER));
         ImGui::TextDisabled("ImGui:");    ImGui::SameLine(); ImGui::Text("%s", IMGUI_VERSION);
+        ImGui::EndPopup();
+    }
+
+    // ---- Save As modal -----------------------------------------------------
+    if (m_openSaveAsPopup) {
+        ImGui::OpenPopup("Save Scene As");
+        m_openSaveAsPopup = false;
+    }
+    if (ImGui::BeginPopupModal("Save Scene As", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextDisabled("Saved into %s/scenes/", APP_ROOT_DIR);
+        ImGui::SetNextItemWidth(360.0f);
+        ImGui::InputText("##SaveAsName", m_saveAsBuffer, sizeof(m_saveAsBuffer));
+
+        if (ImGui::Button("Save", ImVec2(120, 0))) {
+            m_currentScenePath = std::string(APP_ROOT_DIR) + "/scenes/" + m_saveAsBuffer;
+            SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    // ---- Load Scene picker -------------------------------------------------
+    if (m_openLoadPopup) {
+        ImGui::OpenPopup("Load Scene");
+        m_openLoadPopup = false;
+    }
+    if (ImGui::BeginPopupModal("Load Scene", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        const std::filesystem::path scenesDir = std::filesystem::path(APP_ROOT_DIR) / "scenes";
+        ImGui::TextDisabled("%s", scenesDir.string().c_str());
+
+        // Collect candidates. Cheap enough to re-list each frame the popup is open.
+        std::vector<std::filesystem::path> candidates;
+        std::error_code ec;
+        for (const auto& entry : std::filesystem::directory_iterator(scenesDir, ec)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".json") {
+                candidates.push_back(entry.path());
+            }
+        }
+        std::sort(candidates.begin(), candidates.end());
+
+        if (candidates.empty()) {
+            ImGui::TextDisabled("(no .json files in scenes/)");
+        } else {
+            ImGui::BeginChild("##SceneList", ImVec2(360, 200), true);
+            for (const auto& p : candidates) {
+                const std::string filename = p.filename().string();
+                const bool isCurrent = (p.string() == m_currentScenePath);
+                if (ImGui::Selectable(filename.c_str(), isCurrent, ImGuiSelectableFlags_AllowDoubleClick)) {
+                    m_currentScenePath = p.string();
+                    if (ImGui::IsMouseDoubleClicked(0)) {
+                        loadScene(ctx);
+                        ImGui::CloseCurrentPopup();
+                    }
+                }
+            }
+            ImGui::EndChild();
+        }
+
+        const bool canLoad = !m_currentScenePath.empty() && !candidates.empty();
+        ImGui::BeginDisabled(!canLoad);
+        if (ImGui::Button("Load", ImVec2(120, 0))) {
+            loadScene(ctx);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
 
@@ -362,6 +486,47 @@ void EditorSystem::drawStatusBar(const FrameContext& ctx) {
 
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
+}
+
+void EditorSystem::saveScene(FrameContext& ctx) {
+    if (m_currentScenePath.empty()) {
+        openSaveAsPrompt();
+        return;
+    }
+    SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath);
+}
+
+void EditorSystem::openSaveAsPrompt() {
+    m_openSaveAsPopup = true;
+}
+
+void EditorSystem::openLoadScenePrompt() {
+    m_openLoadPopup = true;
+}
+
+void EditorSystem::loadScene(FrameContext& ctx) {
+    if (m_currentScenePath.empty()) {
+        m_currentScenePath = std::string(APP_ROOT_DIR) + "/scenes/scene.json";
+    }
+
+    // Stash the selection's slot index. Slot indices are stable across
+    // save/load — if the same entity is in the file, it'll be at the same
+    // slot with a fresh generation, and we re-validate after the load.
+    const uint32_t selectedIdx =
+        (m_state.selectedEntity && ctx.scene.isAlive(m_state.selectedEntity))
+            ? m_state.selectedEntity.index : 0u;
+    m_state.selectedEntity = {};
+
+    if (!SceneSerializer::load(ctx.scene, ctx.resources, m_currentScenePath)) return;
+
+    // Restore selection if its slot is still live in the loaded scene.
+    if (selectedIdx != 0 && ctx.scene.isAliveAtIndex(selectedIdx)) {
+        m_state.selectedEntity = EntityId{selectedIdx, ctx.scene.generationOf(selectedIdx)};
+    }
+
+    // Notify subscribers (camera controller rebind, etc.). The serializer
+    // itself doesn't publish — it has no EventSystem reference.
+    if (m_events) m_events->emit(SceneSerializer::SceneLoadedEvent{m_currentScenePath});
 }
 
 } // namespace Engine

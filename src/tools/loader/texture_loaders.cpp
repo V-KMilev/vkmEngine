@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include <nlohmann/json.hpp>
+
 #include "logger.h"
 #include "resource/resource_manager.h"
 
@@ -87,6 +89,15 @@ TextureHandle loadTexture(
     LOG_INFO("Loaded texture '%s' (%dx%d, %d channels, sRGB: %s)",
         filePath.c_str(), width, height, channels, srgb ? "yes" : "no");
 
+    // Stamp serialization metadata. The file path is the texture's stable
+    // identity — materials reference textures by name on load.
+    texture.name   = filePath;
+    texture.source = {
+        {"kind",           "file"},
+        {"path",           filePath},
+        {"sRGB",           srgb},
+        {"generateMipmaps", generateMipmaps},
+    };
     return resourceManager.add(std::move(texture));
 }
 

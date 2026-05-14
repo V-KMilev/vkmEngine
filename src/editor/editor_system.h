@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <string>
+
 #include <imgui.h>
 
 #include "core/system.h"
@@ -15,6 +18,7 @@ struct GLFWwindow;
 namespace Engine {
 
 class CameraController;
+class EventSystem;
 class VisibilitySystem;
 class RenderSystem;
 
@@ -24,7 +28,8 @@ class EditorSystem : public System {
             GLFWwindow* window,
             CameraController* cameraController,
             VisibilitySystem* visibilitySystem,
-            RenderSystem* renderSystem
+            RenderSystem* renderSystem,
+            EventSystem* events
         );
         ~EditorSystem() override;
 
@@ -40,10 +45,23 @@ class EditorSystem : public System {
         void drawMenuBar(FrameContext& ctx);
         void drawStatusBar(const FrameContext& ctx);
 
+        /// Save to m_currentScenePath (or pop the Save-As prompt if empty).
+        void saveScene(FrameContext& ctx);
+        /// Pop the Save-As prompt; commits on Enter / OK.
+        void openSaveAsPrompt();
+        /// Pop the Load-Scene picker (lists scenes/*.json).
+        void openLoadScenePrompt();
+        /// Load m_currentScenePath. Editor-side post-load work (camera
+        /// rebind, etc.) is handled by the SceneLoadedEvent subscriber.
+        void loadScene(FrameContext& ctx);
+
+
     private:
         GLFWwindow*       m_window           = nullptr;
         CameraController* m_cameraController = nullptr;
         RenderSystem*     m_renderSystem     = nullptr;
+        EventSystem*      m_events           = nullptr;
+        uint64_t          m_sceneLoadedListenerId = 0;
 
         EditorState      m_state;
         HierarchyPanel   m_hierarchy;
@@ -59,6 +77,12 @@ class EditorSystem : public System {
         bool m_resizingLeft   = false;
         bool m_resizingRight  = false;
         bool m_resizingBottom = false;
+
+        // Scene file state.
+        std::string m_currentScenePath;  ///< Empty until the user saves/loads once.
+        bool        m_openSaveAsPopup = false;
+        bool        m_openLoadPopup   = false;
+        char        m_saveAsBuffer[256] = "scene.json";
 };
 
 } // namespace Engine

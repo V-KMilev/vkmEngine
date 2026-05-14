@@ -1,0 +1,93 @@
+#include "asset_registration.h"
+
+#include "io/asset_serializer.h"
+#include "resource/resource_manager.h"
+#include "generator/material_generators.h"
+#include "generator/mesh_generators.h"
+#include "generator/texture_generators.h"
+#include "loader/material_loaders.h"
+#include "loader/texture_loaders.h"
+
+namespace Engine {
+
+void registerBuiltinAssetFactories() {
+    auto& factories = AssetFactories::get();
+
+    // --- Meshes: "generator" kind, type selects which procedural shape ----
+    factories.registerMesh("generator", [](const nlohmann::json& desc) -> MeshAsset {
+        const std::string type = desc.value("type", std::string{});
+        const auto& p = desc.contains("params") ? desc["params"] : nlohmann::json::object();
+
+        if (type == "cube")     return generateCube();
+        if (type == "sphere")   return generateSphere(p.value("xSegments", 32u),
+                                                      p.value("ySegments", 16u));
+        if (type == "cone")     return generateCone(p.value("radius",   0.5f),
+                                                    p.value("height",   1.0f),
+                                                    p.value("segments", 16u));
+        if (type == "pyramid")  return generatePyramid(p.value("baseSize", 2.0f),
+                                                       p.value("height",   2.0f));
+        if (type == "plane")    return generatePlane(p.value("width",          1.0f),
+                                                     p.value("height",         1.0f),
+                                                     p.value("widthSegments",  1u),
+                                                     p.value("heightSegments", 1u));
+        if (type == "triangle") return generateTriangle(p.value("size", 2.0f));
+
+        return {};
+    });
+
+    // --- Textures: "file" kind, loaded via stb_image ---------------------
+    factories.registerTexture("file", [](const nlohmann::json& desc,
+                                         ResourceManager& resources) -> TextureHandle
+    {
+        const std::string path  = desc.value("path", std::string{});
+        if (path.empty()) return {};
+        const bool sRGB         = desc.value("sRGB", false);
+        const bool genMipmaps   = desc.value("generateMipmaps", true);
+        return loadTexture(path, resources, sRGB, genMipmaps);
+    });
+
+    // --- Textures: "builtin" — 1×1 default textures (white/black/normal/gray)
+    factories.registerTexture("builtin", [](const nlohmann::json& desc,
+                                            ResourceManager& resources) -> TextureHandle
+    {
+        const std::string type = desc.value("type", std::string{});
+        if (type == "white")  return generateWhiteTexture(resources);
+        if (type == "black")  return generateBlackTexture(resources);
+        if (type == "normal") return generateNormalTexture(resources);
+        if (type == "gray")   return generateGrayTexture(resources);
+        return {};
+    });
+
+    // --- Materials: "folder" kind, rediscovers textures from disk --------
+    factories.registerMaterial("folder", [](const nlohmann::json& desc,
+                                            ResourceManager& resources) -> MaterialHandle
+    {
+        const std::string path = desc.value("path", std::string{});
+        if (path.empty()) return {};
+        return loadMaterialFromFolder(path, resources);
+    });
+
+    // --- Materials: "default" — a neutral white PBR material -------------
+    factories.registerMaterial("default", [](const nlohmann::json&,
+                                             ResourceManager& resources) -> MaterialHandle
+    {
+        return generateDefaultMaterial(resources);
+    });
+
+    // --- Materials: "inline" — full PBR descriptor with texture refs ----
+    // This is the canonical save format. Texture refs resolve via
+    // findByName<TextureAsset> against textures already loaded earlier in
+    // the assets block.
+    factories.registerMaterial("inline", [](const nlohmann::json& desc,
+                                            ResourceManager& resources) -> MaterialHandle
+    {
+        MaterialAsset mat;
+        AssetSerializer::applyInline(desc, mat, resources);
+        auto handle = resources.add(std::move(mat));
+        // Keep the source on the asset so subsequent saves re-emit cleanly.
+        resources.edit(handle).source = desc;
+        return handle;
+    });
+}
+
+} // namespace Engine
