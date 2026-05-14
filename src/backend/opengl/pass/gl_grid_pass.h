@@ -1,7 +1,7 @@
 #pragma once
 
+#include "resource/shader_asset.h"
 #include "system/render/render_pass.h"
-#include "gl_shader.h"
 #include "resource/gl_mesh.h"
 
 #include <memory>
@@ -49,7 +49,7 @@ class GLGridPass : public RenderPass {
          *
          * @param shader Reference to the OpenGL shader program used to render the grid.
          */
-        GLGridPass(Core::Shader& shader);
+        explicit GLGridPass(ShaderHandle shader);
 
     public:
         /**
@@ -81,7 +81,7 @@ class GLGridPass : public RenderPass {
         void initialize();
 
     private:
-        Core::Shader& m_shader;
+        ShaderHandle m_shader;
 
         std::unique_ptr<GLMesh> m_mesh;
 };

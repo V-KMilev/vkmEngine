@@ -2,6 +2,7 @@
 
 #include "io/asset_serializer.h"
 #include "resource/resource_manager.h"
+#include "resource/shader_asset.h"
 #include "generator/material_generators.h"
 #include "generator/mesh_generators.h"
 #include "generator/texture_generators.h"
@@ -87,6 +88,21 @@ void registerBuiltinAssetFactories() {
         // Keep the source on the asset so subsequent saves re-emit cleanly.
         resources.edit(handle).source = desc;
         return handle;
+    });
+
+    // --- Shaders: "directory" — vkmGL's path-based shader loading -------
+    // The descriptor carries the directory + the sampler→slot bindings the
+    // shader expects. GLShader applies the bindings after every (re)compile
+    // so hot reload survives without each pass re-asserting them.
+    factories.registerShader("directory", [](const nlohmann::json& desc) -> ShaderAsset {
+        ShaderAsset asset;
+        asset.path = desc.value("path", std::string{});
+        if (desc.contains("samplerBindings") && desc["samplerBindings"].is_object()) {
+            for (auto& [name, slot] : desc["samplerBindings"].items()) {
+                asset.samplerBindings[name] = slot.get<int>();
+            }
+        }
+        return asset;
     });
 }
 

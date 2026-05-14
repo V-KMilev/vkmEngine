@@ -5,7 +5,6 @@
 
 #include "gl_debug.h"
 #include "gl_context.h"
-#include "gl_shader.h"
 
 // Engine
 #include "core/engine.h"
@@ -15,17 +14,20 @@
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
 #include "system/camera/camera_controller.h"
+#include "system/io/file_watcher.h"
 #include "editor_system.h"
 
 // Backend
 #include "core/gl_backend.h"
+#include "config/gl_config.h"
 #include "pass/gl_forward_pass.h"
 #include "pass/gl_aabb_debug_pass.h"
 #include "pass/gl_grid_pass.h"
 #include "pass/gl_shadow_pass.h"
 
-// Asset registration
+// Tools
 #include "asset_registration.h"
+#include "loader/shader_loaders.h"
 
 // Default scene (cube at origin, sun, camera)
 #include "examples/default_scene.h"
@@ -63,23 +65,55 @@ int main() {
         engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
             window.getWindowContext(), &cameraController, &visibilitySystem, &renderSystem, &eventSystem);
 
-        // Shaders
+        // Shaders are first-class assets. Sampler→slot bindings live on the
+        // asset and get re-applied automatically every time the backend
+        // (re)compiles them — which includes hot reload.
         const std::string shaderDir = std::string(APP_ROOT_DIR) + "/shaders";
-        Core::Shader pbr(shaderDir + "/pbr");
-        Core::Shader unlit(shaderDir + "/unlit");
-        Core::Shader aabbDebug(shaderDir + "/aabb_debug");
-        Core::Shader gridShader(shaderDir + "/grid");
-        Core::Shader shadowShader(shaderDir + "/shadow");
+        auto& resources = engine.getResources();
+
+        const std::unordered_map<std::string, int> pbrSamplers = {
+            {Engine::GLConfig::UniformNames::AlbedoTexture,              Engine::GLConfig::TextureSlots::Albedo},
+            {Engine::GLConfig::UniformNames::NormalTexture,              Engine::GLConfig::TextureSlots::Normal},
+            {Engine::GLConfig::UniformNames::MetallicRoughnessTexture,   Engine::GLConfig::TextureSlots::MetallicRoughness},
+            {Engine::GLConfig::UniformNames::AOMetallicRoughnessTexture, Engine::GLConfig::TextureSlots::MetallicRoughness},
+            {Engine::GLConfig::UniformNames::AOTexture,                  Engine::GLConfig::TextureSlots::AO},
+            {Engine::GLConfig::UniformNames::EmissionTexture,            Engine::GLConfig::TextureSlots::Emission},
+            {Engine::GLConfig::UniformNames::HeightTexture,              Engine::GLConfig::TextureSlots::Height},
+            {Engine::GLConfig::UniformNames::ClearcoatTexture,           Engine::GLConfig::TextureSlots::Clearcoat},
+            {Engine::GLConfig::UniformNames::TransmissionTexture,        Engine::GLConfig::TextureSlots::Transmission},
+            {Engine::GLConfig::UniformNames::MetallicTexture,            Engine::GLConfig::TextureSlots::Metallic},
+            {Engine::GLConfig::UniformNames::RoughnessTexture,           Engine::GLConfig::TextureSlots::Roughness},
+            {Engine::GLConfig::UniformNames::ShadowMap2D,                Engine::GLConfig::TextureSlots::ShadowMap2D},
+            {Engine::GLConfig::UniformNames::ShadowMapCube,              Engine::GLConfig::TextureSlots::ShadowMapCube},
+        };
+        const std::unordered_map<std::string, int> unlitSamplers = {
+            {Engine::GLConfig::UniformNames::AlbedoTexture,   Engine::GLConfig::TextureSlots::Albedo},
+            {Engine::GLConfig::UniformNames::EmissionTexture, Engine::GLConfig::TextureSlots::Emission},
+        };
+        const auto pbrShader    = Engine::loadShader(resources, shaderDir + "/pbr",        "shader:pbr",        pbrSamplers);
+        const auto unlitShader  = Engine::loadShader(resources, shaderDir + "/unlit",      "shader:unlit",      unlitSamplers);
+        const auto aabbShader   = Engine::loadShader(resources, shaderDir + "/aabb_debug", "shader:aabb_debug");
+        const auto gridShader   = Engine::loadShader(resources, shaderDir + "/grid",       "shader:grid");
+        const auto shadowShader = Engine::loadShader(resources, shaderDir + "/shadow",     "shader:shadow");
+
         // Render passes - shadow runs first so the forward pass can sample its result.
         renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
         renderSystem.addPass(std::make_unique<Engine::GLShadowPass>(shadowShader));
-        auto forwardPass = std::make_unique<Engine::GLForwardPass>(pbr);
-        forwardPass->setShader(Engine::MaterialType::Unlit, unlit);
+        auto forwardPass = std::make_unique<Engine::GLForwardPass>(pbrShader);
+        forwardPass->setShader(Engine::MaterialType::Unlit, unlitShader);
         renderSystem.addPass(std::move(forwardPass));
-        auto aabbPass = std::make_unique<Engine::GLAABBDebugPass>(aabbDebug);
+        auto aabbPass = std::make_unique<Engine::GLAABBDebugPass>(aabbShader);
         aabbPass->setEnabled(false);
         renderSystem.addPass(std::move(aabbPass));
         renderSystem.addPass(std::make_unique<Engine::GLGridPass>(gridShader));
+
+        // Hot reload: file change → asset version bump → backend resyncs.
+        auto& fileWatcher = engine.addSystem<Engine::FileWatcher>(Engine::SystemStage::Input);
+        Engine::watchShader(fileWatcher, resources, pbrShader);
+        Engine::watchShader(fileWatcher, resources, unlitShader);
+        Engine::watchShader(fileWatcher, resources, aabbShader);
+        Engine::watchShader(fileWatcher, resources, gridShader);
+        Engine::watchShader(fileWatcher, resources, shadowShader);
 
         // Default scene: a single cube at the origin under a directional
         // light. Scene/asset round-trip happy: every asset has a source
