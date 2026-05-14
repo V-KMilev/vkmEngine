@@ -60,6 +60,13 @@ class ResourceManager {
             return Handle<T>{key};
         }
 
+        /// @brief Convenience overload: stamp a name onto the asset before insertion.
+        template<typename ResourceType>
+        auto add(ResourceType && resource, std::string name) {
+            resource.name = std::move(name);
+            return add(std::forward<ResourceType>(resource));
+        }
+
         /**
          * @brief Remove a resource by handle.
          */
@@ -142,8 +149,42 @@ class ResourceManager {
             return slot.refCounts[handle.key.index];
         }
 
+        /**
+         * @brief Find a resource by its `name` field. Returns a default
+         * (invalid) handle if the type is unregistered or no asset matches.
+         * Linear scan — intended for editor / scene-load lookups, not hot paths.
+         */
+        template<typename T>
+        Handle<T> findByName(const std::string& name) const {
+            TypeId id = typeId<T>();
+            if (id >= m_slots.size() || !m_slots[id]) return {};
+            const auto& slot = *m_slots[id];
+
+            Handle<T> result{};
+            storageOfConst<T>(slot).forEach([&](uint32_t index, const T& res) {
+                if (result) return;  // first match wins
+                if (res.name == name) {
+                    result = Handle<T>{StorageIndex{index, slot.allocator->generationOf(index)}};
+                }
+            });
+            return result;
+        }
+
         /// @brief Global version counter, incremented on every commit().
         uint64_t getGlobalVersion() const { return m_globalVersion; }
+
+        /**
+         * @brief Drop every resource of every registered type.
+         *
+         * Used by scene-load flows that want a true cold-start (and by tests).
+         * Does not check refcounts — caller is responsible for clearing the
+         * scene first so no entity is still pointing at a freed handle.
+         */
+        void clear() {
+            m_slots.clear();
+            m_dependents.clear();
+            ++m_globalVersion;
+        }
 
         /// @brief Per-type version counter. Bumped only when resources of type T are committed.
         template<typename T>

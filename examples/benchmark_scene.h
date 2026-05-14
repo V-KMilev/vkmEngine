@@ -48,13 +48,14 @@ static Engine::Entity generateBenchmarkScene(
     auto& scene     = engine.getScene();
     auto& resources = engine.getResources();
 
-    // Create mesh variety
-    Engine::MeshHandle cubeMesh = resources.add(Engine::generateCube());
+    // Create mesh variety. Names are the serializable identity used by
+    // SceneSerializer; ResourceManager::findByName resolves them on load.
+    Engine::MeshHandle cubeMesh = resources.add(Engine::generateCube(), "cube");
     Engine::MeshHandle sphereMesh = config.useSphereDetail
-        ? resources.add(Engine::generateSphere(48, 24))  // High detail
-        : resources.add(Engine::generateSphere(32, 16));
-    Engine::MeshHandle coneMesh = resources.add(Engine::generateCone(0.5f, 1.0f, 24));
-    Engine::MeshHandle pyramidMesh = resources.add(Engine::generatePyramid(2.0f, 2.0f));
+        ? resources.add(Engine::generateSphere(48, 24), "sphere")
+        : resources.add(Engine::generateSphere(32, 16), "sphere");
+    Engine::MeshHandle coneMesh    = resources.add(Engine::generateCone(0.5f, 1.0f, 24), "cone");
+    Engine::MeshHandle pyramidMesh = resources.add(Engine::generatePyramid(2.0f, 2.0f), "pyramid");
 
     std::vector<Engine::MeshHandle> meshes = {cubeMesh, sphereMesh};
     if (config.useMeshVariety) {
@@ -62,10 +63,12 @@ static Engine::Entity generateBenchmarkScene(
         meshes.push_back(pyramidMesh);
     }
 
-    // Load materials
+    // Load materials. Stamp names so SceneSerializer can resolve them.
     const std::string assetsDir = std::string(APP_ROOT_DIR) + "/assets";
     Engine::MaterialHandle material1 = Engine::loadMaterialFromFolder(assetsDir + "/PavingStones118_2K-JPG", resources);
     Engine::MaterialHandle material2 = Engine::loadMaterialFromFolder(assetsDir + "/PavingStones115A_2K-JPG", resources);
+    resources.edit(material1).name = "pavingStones118";
+    resources.edit(material2).name = "pavingStones115A";
     std::vector<Engine::MaterialHandle> materials = {material1, material2};
 
     // Camera

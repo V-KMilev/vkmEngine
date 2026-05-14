@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -76,6 +77,52 @@ class SlotAllocator {
         uint32_t generationOf(uint32_t index) const {
             VKM_ASSERT(index < m_generation.size(), "SlotAllocator::generationOf out of bounds");
             return m_generation[index].generation();
+        }
+
+        /**
+         * @brief Check whether `index` currently holds a live slot, with
+         * bounds tolerance — returns false for indices past the allocator's
+         * reach. Slot 0 is reserved and always reports false.
+         */
+        bool isAliveAtIndex(uint32_t index) const {
+            return index > 0
+                && index < m_generation.size()
+                && m_generation[index].alive();
+        }
+
+        /**
+         * @brief Allocate a slot at a specific index. Used by SceneSerializer
+         * so loaded entities keep the slot indices they had at save time
+         * (eliminates id-remap on Hierarchy::parent etc.).
+         *
+         * - Grows the underlying array with dead placeholders up to `index`.
+         * - Removes `index` from the free list if present.
+         * - Asserts in debug if the slot is already alive (collision).
+         */
+        StorageIndex allocateAt(uint32_t index) {
+            VKM_ASSERT(index > 0, "SlotAllocator::allocateAt: slot 0 is reserved");
+            while (m_generation.size() <= index) m_generation.push_back({});
+
+            VKM_ASSERT(!m_generation[index].alive(),
+                "SlotAllocator::allocateAt: slot %u already alive", index);
+
+            auto it = std::find(m_freeList.begin(), m_freeList.end(), index);
+            if (it != m_freeList.end()) m_freeList.erase(it);
+
+            m_generation[index].setAlive(true);
+            return StorageIndex{index, m_generation[index].generation()};
+        }
+
+        /**
+         * @brief Invoke fn(index) for every currently-alive slot. Index 0 is
+         * reserved as the null/invalid slot and is never yielded. Order is
+         * ascending by slot index (not allocation order).
+         */
+        template<typename Fn>
+        void forEach(Fn&& fn) const {
+            for (uint32_t i = 1; i < m_generation.size(); ++i) {
+                if (m_generation[i].alive()) fn(i);
+            }
         }
 
     private:

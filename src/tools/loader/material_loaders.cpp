@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <algorithm>
 
+#include <nlohmann/json.hpp>
+
 #include "logger.h"
 #include "resource/resource_manager.h"
 #include "loader/texture_loaders.h"
@@ -159,7 +161,17 @@ MaterialHandle loadMaterialFromFolder(
     if (findEmission) desc.emissionPath = *findEmission;
     if (findHeight) desc.heightPath = *findHeight;
 
-    return loadMaterialFromDesc(desc, resourceManager);
+    MaterialHandle handle = loadMaterialFromDesc(desc, resourceManager);
+    if (handle) {
+        // Record how this material was created so SceneSerializer can
+        // recreate it on a cold-start load. We deliberately store only
+        // the folder path; texture discovery happens again at reload.
+        resourceManager.edit(handle).source = {
+            {"kind", "folder"},
+            {"path", folderPath}
+        };
+    }
+    return handle;
 }
 
 MaterialHandle loadMaterialFromDesc(

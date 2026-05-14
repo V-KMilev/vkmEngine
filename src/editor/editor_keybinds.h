@@ -24,6 +24,11 @@ struct KeyBind {
 
 /// All configurable editor keybinds with industry-standard defaults.
 struct EditorKeybinds {
+    // File
+    KeyBind saveScene        = { ImGuiKey_S,      KeyMod_Ctrl };
+    KeyBind saveSceneAs      = { ImGuiKey_S,      KeyMod_Ctrl | KeyMod_Shift };
+    KeyBind loadScene        = { ImGuiKey_O,      KeyMod_Ctrl };
+
     // Panel toggles
     KeyBind toggleStats      = { ImGuiKey_F1,     KeyMod_None };
     KeyBind toggleHierarchy  = { ImGuiKey_1,      KeyMod_Ctrl };
