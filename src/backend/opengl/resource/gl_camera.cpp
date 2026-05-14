@@ -18,7 +18,7 @@ GLCamera::GLCamera() = default;
 
 GLCamera::~GLCamera() {
     m_ubo.reset();
-    LOG_TRACE("Destroying GLCamera");
+    LOG_TRACE("Destructed GLCamera");
 }
 
 void GLCamera::update(const CameraData& camera, const EnvironmentConfig& environment) {

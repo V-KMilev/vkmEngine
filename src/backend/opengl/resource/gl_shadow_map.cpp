@@ -79,7 +79,7 @@ GLShadowAtlas::~GLShadowAtlas() {
     if (m_tex2D != 0)   VKM_GL_CHECK(glDeleteTextures(1, &m_tex2D));
     if (m_texCube != 0) VKM_GL_CHECK(glDeleteTextures(1, &m_texCube));
     m_fbo.reset();
-    LOG_TRACE("Destroying GLShadowAtlas");
+    LOG_TRACE("Destructed GLShadowAtlas");
 }
 
 void GLShadowAtlas::bind2DLayerForWriting(uint32_t layer) const {
