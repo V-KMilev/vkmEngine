@@ -18,7 +18,7 @@
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/animation.h"
-#include "camera_controller.h"
+#include "system/camera/camera_controller.h"
 #include "system/render/render_system.h"
 
 namespace Engine {

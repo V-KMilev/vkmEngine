@@ -6,6 +6,7 @@
 
 #include "logger.h"
 
+#include "core/engine_config.h"
 #include "ecs/scene.h"
 #include "system/visibility/visibility.h"
 #include "ecs/component/mesh.h"
@@ -135,13 +136,16 @@ void RenderView::build(
         lightData.radius = light.radius;
         lightData.innerConeAngle = light.innerConeAngle;
         lightData.outerConeAngle = light.outerConeAngle;
-        lightData.castShadows = light.castShadows;
+
+        lightData.castShadows  = light.castShadows;
+        lightData.shadowBias   = light.shadowBias;
+        lightData.shadowExtent = light.shadowExtent;
+        lightData.shadowSlot   = -1;  // assigned in the slot pass below
 
         // Use world-space position/rotation when HierarchySystem produced a WorldTransform
         if (scene.has<WorldTransform>(id)) {
             const glm::mat4& worldMatrix = scene.get<WorldTransform>(id).model;
             lightData.position = glm::vec3(worldMatrix[3]);
-            // Extract world rotation: normalize columns to remove scale, then quat_cast
             lightData.rotation = glm::quat_cast(glm::mat3(
                 glm::normalize(glm::vec3(worldMatrix[0])),
                 glm::normalize(glm::vec3(worldMatrix[1])),
@@ -154,6 +158,20 @@ void RenderView::build(
 
         lights.emplace_back(lightData);
     });
+
+    // Assign shadow slots in light-iteration order, respecting per-type caps.
+    // Slot == atlas layer (2D) or cube index (cube) and is later packed into
+    // the GPU light data so the shader can index directly without a scan.
+    uint32_t taken2D = 0;
+    uint32_t takenCube = 0;
+    for (auto& light : lights) {
+        if (!light.castShadows) continue;
+        if (light.type == LightType::Point) {
+            if (takenCube < Config::MaxShadowCastersCube) light.shadowSlot = static_cast<int>(takenCube++);
+        } else {
+            if (taken2D < Config::MaxShadowCasters2D)     light.shadowSlot = static_cast<int>(taken2D++);
+        }
+    }
 }
 
 } // namespace Engine

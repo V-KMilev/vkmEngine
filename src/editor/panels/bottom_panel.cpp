@@ -1,7 +1,7 @@
 #include "bottom_panel.h"
 #include "../editor_common.h"
 
-#include "camera_controller.h"
+#include "system/camera/camera_controller.h"
 #include "platform/window/window_manager.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
@@ -52,15 +52,12 @@ void BottomPanel::drawRenderingTab(FrameContext& ctx, EditorState& state) {
     ImGui::Spacing();
     ImGui::SeparatorText("Visibility Culling");
     if (m_visibilitySystem) {
-        float minPx = m_visibilitySystem->getMinPixels();
+        auto& settings = m_visibilitySystem->getSettings();
         drawPropertyLabel("Min Pixels");
-        if (ImGui::DragFloat("##MinPx", &minPx, 0.1f, 0.0f, 100.0f, "%.1f"))
-            m_visibilitySystem->setMinPixels(minPx);
+        ImGui::DragFloat("##MinPx", &settings.minPixels, 0.1f, 0.0f, 100.0f, "%.1f");
 
-        float maxDist = m_visibilitySystem->getMaxDistance();
         drawPropertyLabel("Max Distance");
-        if (ImGui::DragFloat("##MaxD", &maxDist, 1.0f, 10.0f, 10000.0f, "%.0f"))
-            m_visibilitySystem->setMaxDistance(maxDist);
+        ImGui::DragFloat("##MaxD", &settings.maxDistance, 1.0f, 10.0f, 10000.0f, "%.0f");
 
         if (ctx.visibility) {
             size_t vis = ctx.visibility->entries.size();
@@ -122,7 +119,7 @@ void BottomPanel::drawViewportTab(FrameContext& ctx, EditorState& state) {
         drawPropertyLabel("Speed Boost");  ImGui::DragFloat("##SB", &s.speedBoost, 0.1f, 1.0f, 20.0f, "%.1fx");
         drawPropertyLabel("Look Sens.");   ImGui::DragFloat("##LS", &s.lookSensitivity, 0.0001f, 0.0001f, 0.01f, "%.4f");
         ImGui::Spacing();
-        if (ImGui::Button("Reset Camera")) s = CameraControllerSettings{};
+        if (ImGui::Button("Reset Camera")) s = CameraController::Settings{};
     } else {
         ImGui::TextDisabled("No camera controller");
     }

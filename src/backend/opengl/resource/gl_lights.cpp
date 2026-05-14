@@ -30,11 +30,11 @@ void GLLights::update(const std::vector<LightData>& lights) {
     std::memset(&data, 0, sizeof(LightsUBOData));
 
     // Clamp to maximum light count
-    uint32_t lightCount = std::min(static_cast<uint32_t>(lights.size()), static_cast<uint32_t>(MAX_LIGHTS));
+    uint32_t lightCount = std::min(static_cast<uint32_t>(lights.size()), static_cast<uint32_t>(Config::MaxLights));
 
-    if (lights.size() > MAX_LIGHTS) {
+    if (lights.size() > Config::MaxLights) {
         LOG_WARNING("Scene has %d lights, but only %d are supported. Excess lights will be ignored.", 
-                 lights.size(), MAX_LIGHTS);
+                 lights.size(), Config::MaxLights);
     }
 
     // Convert each light to GPU format
@@ -53,8 +53,8 @@ void GLLights::update(const std::vector<LightData>& lights) {
         gpuLight.spot = glm::vec4(
             lightData.innerConeAngle,
             lightData.outerConeAngle,
-            lightData.castShadows ? 1.0f : 0.0f,
-            0.0f
+            0.0f,
+            static_cast<float>(lightData.shadowSlot)  // -1 = no shadow
         );
     }
 

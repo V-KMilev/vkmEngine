@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 #include "config/gl_config.h"
+#include "core/engine_config.h"
 
 namespace Core {
     class UniformBuffer;
@@ -16,9 +17,6 @@ namespace Engine {
 }
 
 namespace Engine {
-
-// Maximum number of lights supported in a single draw call
-constexpr uint32_t MAX_LIGHTS = GLConfig::Limits::MaxLights;
 
 /**
  * @brief Light data structure matching GLSL std140 layout for uniform buffer.
@@ -31,7 +29,7 @@ constexpr uint32_t MAX_LIGHTS = GLConfig::Limits::MaxLights;
  *  - position:   xyz = world position,  w = type (encoded as float, cast in shader)
  *  - color:      xyz = RGB,             w = intensity
  *  - direction:  xyz = world direction, w = radius
- *  - spot:       x   = inner cone,      y = outer cone, z = castShadows, w = pad
+ *  - spot:       x   = inner cone,      y = outer cone, z = unused, w = shadowSlot (-1 = no shadow)
  *
  * Note: Disabled lights are filtered out when building RenderView.
  */
@@ -39,7 +37,7 @@ struct alignas(16) LightGPUData {
     glm::vec4 position;          // offset 0,  16 bytes  (xyz=position, w=type)
     glm::vec4 color;             // offset 16, 16 bytes  (xyz=color,    w=intensity)
     glm::vec4 direction;         // offset 32, 16 bytes  (xyz=dir,      w=radius)
-    glm::vec4 spot;              // offset 48, 16 bytes  (x=inner, y=outer, z=castShadows)
+    glm::vec4 spot;              // offset 48, 16 bytes  (x=inner, y=outer, z=unused, w=shadowSlot)
 };
 
 /**
@@ -50,14 +48,14 @@ struct alignas(16) LightGPUData {
  * 
  * Layout:
  * - lightCount: offset 0, 4 bytes (12 bytes padding to next array element)
- * - lights:     offset 16, 64 * GLConfig::Limits::MaxLights bytes
- * 
- * Total size: 16 + (64 * GLConfig::Limits::MaxLights) = 16 + (64 * 32) = 16 + 2048 = 2064 bytes
+ * - lights:     offset 16, 64 * Config::MaxLights bytes
+ *
+ * Total size: 16 + (64 * Config::MaxLights) = 16 + (64 * 32) = 16 + 2048 = 2064 bytes
  */
 struct alignas(16) LightsUBOData {
-    int lightCount;                                    // offset 0, 4 bytes
-    char _padding[12];                                 // offset 4, 12 bytes (explicit padding to offset 16)
-    LightGPUData lights[GLConfig::Limits::MaxLights];  // offset 16, 64 bytes per light
+    int lightCount;                              // offset 0, 4 bytes
+    char _padding[12];                           // offset 4, 12 bytes (explicit padding to offset 16)
+    LightGPUData lights[Config::MaxLights];      // offset 16, 64 bytes per light
 };
 
 /**

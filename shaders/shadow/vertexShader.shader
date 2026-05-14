@@ -1,9 +1,10 @@
 /**
- * 2D shadow depth shader - instanced, used for directional + spot maps.
+ * Shadow depth shader - instanced, shared by 2D-array + cube-array passes.
  *
- * Writes depth into one layer of a sampler2DArrayShadow target. The matching
- * layer is selected on the CPU side via glFramebufferTextureLayer; the
- * vertex stage just needs the per-caster lightSpace matrix as a uniform.
+ * Writes projected depth into the depth attachment the FBO currently points
+ * at; the per-layer / per-face selection is done CPU-side via
+ * glFramebufferTextureLayer before each draw. Both targets use compare-mode
+ * sampling, so we just need the standard projected gl_Position.
  */
 #version 420 core
 

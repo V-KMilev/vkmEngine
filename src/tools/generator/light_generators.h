@@ -17,7 +17,7 @@ namespace Engine {
 Light generateDirectionalLight(
     const glm::vec3& color = {1.0f, 1.0f, 1.0f},
     float intensity = 3.0f,
-    bool castShadows = false
+    bool castShadows = true
 );
 
 /**
@@ -33,7 +33,7 @@ Light generatePointLight(
     const glm::vec3& color = {1.0f, 1.0f, 1.0f},
     float intensity = 10.0f,
     float radius = 10.0f,
-    bool castShadows = false
+    bool castShadows = true
 );
 
 /**
@@ -53,7 +53,7 @@ Light generateSpotLight(
     float radius = 20.0f,
     float innerConeAngle = 0.5f,
     float outerConeAngle = 0.785f,
-    bool castShadows = false
+    bool castShadows = true
 );
 
 } // namespace Engine
