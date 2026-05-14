@@ -5,8 +5,8 @@
 #include "debug/statistics.h"
 
 #include "core/gl_backend.h"
-#include "gl_shader.h"
 #include "resource/gl_mesh.h"
+#include "resource/gl_shader_program.h"
 
 #include "system/render/render_view.h"
 #include "resource/resource_manager.h"
@@ -15,7 +15,7 @@
 
 namespace Engine {
 
-GLGridPass::GLGridPass(Core::Shader& shader)
+GLGridPass::GLGridPass(ShaderHandle shader)
     : RenderPass("GLGridPass")
     , m_shader(shader)
 {
@@ -36,6 +36,10 @@ void GLGridPass::execute(RenderBackend& backend, const RenderView& view, const R
 
     auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
+    auto& glView    = gl.getView();
+
+    GLShader* shader = glView.resolveShader(m_shader, resources);
+    if (!shader) return;
 
     glContext.setBlending(true);
     glContext.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -45,7 +49,7 @@ void GLGridPass::execute(RenderBackend& backend, const RenderView& view, const R
 
     glContext.setFaceCulling(false);
 
-    m_shader.bind();
+    shader->bind();
     STATS_RECORD_SHADER_SWITCH();
 
     // Read grid settings from environment config
@@ -59,10 +63,10 @@ void GLGridPass::execute(RenderBackend& backend, const RenderView& view, const R
     model = glm::scale(model, glm::vec3(env.gridSize));
 
     // CameraBlock UBO (binding 2) is bound by GLView for the frame.
-    m_shader.setUniformMatrix4fv("u_model", model);
-    m_shader.setUniform1f("u_gridScale", env.gridScale);
-    m_shader.setUniform1f("u_gridFadeStart", env.gridFadeStart);
-    m_shader.setUniform1f("u_gridFadeEnd", env.gridFadeEnd);
+    shader->setUniformMatrix4fv("u_model", model);
+    shader->setUniform1f("u_gridScale", env.gridScale);
+    shader->setUniform1f("u_gridFadeStart", env.gridFadeStart);
+    shader->setUniform1f("u_gridFadeEnd", env.gridFadeEnd);
 
     m_mesh->draw(GL_TRIANGLES);
 

@@ -2,10 +2,7 @@
 
 #include "system/render/render_pass.h"
 #include "resource/material_asset.h"
-
-namespace Core {
-    class Shader;
-}
+#include "resource/shader_asset.h"
 
 namespace Engine {
 
@@ -29,25 +26,23 @@ class GLForwardPass : public RenderPass {
 
         /**
          * @brief Construct a GLForwardPass with a PBR shader (used for Opaque and Transparent).
-         * @param pbrShader Reference to the PBR shader.
+         * @param pbrShader Handle to the PBR shader asset. Sampler bindings live
+         *                  on the asset and are reapplied automatically on hot reload.
          */
-        GLForwardPass(Core::Shader& pbrShader);
+        explicit GLForwardPass(ShaderHandle pbrShader);
 
     public:
         /**
-         * @brief Set the shader for a specific material type.
-         * @param type The material type.
-         * @param shader Reference to the shader to use.
+         * @brief Set the shader for a specific material type. Pass an empty
+         * handle to clear it.
          */
-        void setShader(MaterialType type, Core::Shader& shader);
+        void setShader(MaterialType type, ShaderHandle shader);
 
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
         void execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) override;
 
     private:
-        void setupSamplers(Core::Shader& shader);
-
-        Core::Shader* m_shaders[3] = {};  ///< Indexed by MaterialType (Opaque, Transparent, Unlit)
+        ShaderHandle m_shaders[3] = {};  ///< Indexed by MaterialType (Opaque, Transparent, Unlit)
 };
 
 } // namespace Engine

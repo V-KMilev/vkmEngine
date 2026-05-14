@@ -8,6 +8,7 @@
 
 #include "resource/material_asset.h"
 #include "resource/mesh_asset.h"
+#include "resource/shader_asset.h"
 #include "resource/texture_asset.h"
 
 namespace Engine {
@@ -32,23 +33,27 @@ class AssetFactories {
         using MeshFactory     = std::function<MeshAsset     (const nlohmann::json& desc)>;
         using TextureFactory  = std::function<TextureHandle (const nlohmann::json& desc, ResourceManager& resources)>;
         using MaterialFactory = std::function<MaterialHandle(const nlohmann::json& desc, ResourceManager& resources)>;
+        using ShaderFactory   = std::function<ShaderAsset   (const nlohmann::json& desc)>;
 
         static AssetFactories& get();
 
         void registerMesh    (std::string kind, MeshFactory     factory);
         void registerTexture (std::string kind, TextureFactory  factory);
         void registerMaterial(std::string kind, MaterialFactory factory);
+        void registerShader  (std::string kind, ShaderFactory   factory);
 
         /// Look up and invoke. Returns an empty MeshAsset if `kind` is unknown.
         MeshAsset      createMesh    (const nlohmann::json& source) const;
         /// Returns an invalid handle if `kind` is unknown.
         TextureHandle  createTexture (const nlohmann::json& source, ResourceManager& resources) const;
         MaterialHandle createMaterial(const nlohmann::json& source, ResourceManager& resources) const;
+        ShaderAsset    createShader  (const nlohmann::json& source) const;
 
     private:
         std::unordered_map<std::string, MeshFactory>     m_meshFactories;
         std::unordered_map<std::string, TextureFactory>  m_textureFactories;
         std::unordered_map<std::string, MaterialFactory> m_materialFactories;
+        std::unordered_map<std::string, ShaderFactory>   m_shaderFactories;
 };
 
 /**

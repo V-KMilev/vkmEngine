@@ -11,7 +11,9 @@
 
 #include "resource/gl_mesh.h"
 #include "resource/gl_material.h"
+#include "resource/gl_shader_program.h"
 #include "resource/gl_texture.h"
+#include "resource/shader_asset.h"
 #include "resource/texture_asset.h"
 
 namespace Engine {
@@ -66,7 +68,7 @@ void collectTextureHandles(
 } // namespace
 
 GLView::~GLView() {
-    LOG_TRACE("Destroying GLView");
+    LOG_TRACE("Destructed GLView");
 }
 
 template<typename AssetT, typename GLT>
@@ -172,6 +174,16 @@ GLMesh* GLView::getMutableMesh(const MeshHandle& handle) {
     const uint32_t id = handle.id();
     if (id >= m_meshTable.entries.size()) return nullptr;
     return m_meshTable.entries[id].get();
+}
+
+// Shaders aren't referenced by entities, so we resolve them lazily — one
+// call per pass per frame. syncTable handles the "build on first reference
+// or rebuild on version bump" path; hot reload threads through here.
+GLShader* GLView::resolveShader(const ShaderHandle& handle, const ResourceManager& resources) {
+    if (!handle) return nullptr;
+    std::vector<ShaderHandle> one{handle};
+    syncTable<ShaderAsset>(m_shaderTable, one, resources);
+    return m_shaderTable.entries[handle.id()].get();
 }
 
 } // namespace Engine

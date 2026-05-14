@@ -12,6 +12,7 @@ file(GLOB_RECURSE ENGINECORE_SOURCES
     system/visibility/*.cpp
     system/event/*.cpp
     system/hierarchy/*.cpp
+    system/io/*.cpp
     platform/window/*.cpp
     platform/threading/*.cpp
     debug/*.cpp

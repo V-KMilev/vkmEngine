@@ -5,8 +5,8 @@
 #include "debug/statistics.h"
 
 #include "core/gl_backend.h"
-#include "gl_shader.h"
 #include "resource/gl_mesh.h"
+#include "resource/gl_shader_program.h"
 
 #include "system/render/render_view.h"
 #include "resource/resource_manager.h"
@@ -15,7 +15,7 @@
 
 namespace Engine {
 
-GLAABBDebugPass::GLAABBDebugPass(Core::Shader& shader)
+GLAABBDebugPass::GLAABBDebugPass(ShaderHandle shader)
     : RenderPass("GLAABBDebugPass")
     , m_shader(shader)
 {
@@ -103,12 +103,16 @@ void GLAABBDebugPass::execute(RenderBackend& backend, const RenderView& view, co
 
     if (m_modelScratch.empty()) return;
 
-    m_shader.bind();
+    auto& glView = static_cast<GLBackend&>(backend).getView();
+    GLShader* shader = glView.resolveShader(m_shader, resources);
+    if (!shader) return;
+
+    shader->bind();
     STATS_RECORD_SHADER_SWITCH();
 
     using namespace GLConfig::UniformNames;
     // CameraBlock UBO (binding 2) is bound by GLView for the frame.
-    m_shader.setUniform3fv(Color, view.environment.debugColor);
+    shader->setUniform3fv(Color, view.environment.debugColor);
 
     const uint32_t instanceCount = static_cast<uint32_t>(m_modelScratch.size());
     m_instanceBuffer.update(m_modelScratch.data(), instanceCount);

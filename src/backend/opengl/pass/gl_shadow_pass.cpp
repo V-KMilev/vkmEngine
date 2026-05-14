@@ -9,10 +9,10 @@
 
 #include "core/gl_backend.h"
 #include "config/gl_config.h"
-#include "gl_shader.h"
 
 #include "resource/gl_instance_buffer.h"
 #include "resource/gl_mesh.h"
+#include "resource/gl_shader_program.h"
 #include "resource/gl_shadow_data.h"
 #include "resource/gl_shadow_map.h"
 
@@ -90,7 +90,7 @@ void buildCubeFaceMatrices(const glm::vec3& pos, float range, glm::mat4 out[6]) 
 
 } // namespace
 
-GLShadowPass::GLShadowPass(Core::Shader& depthShader)
+GLShadowPass::GLShadowPass(ShaderHandle depthShader)
     : RenderPass("GLShadowPass")
     , m_depthShader(depthShader)
 {
@@ -100,7 +100,7 @@ void GLShadowPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint
     // Shadow map resolution is fixed and independent of the window size.
 }
 
-void GLShadowPass::execute(RenderBackend& backend, const RenderView& view, const ResourceManager& /*resources*/) {
+void GLShadowPass::execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) {
     if (backend.getType() != RenderBackendType::OpenGL) {
         LOG_ERROR("GLShadowPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
         return;
@@ -110,6 +110,12 @@ void GLShadowPass::execute(RenderBackend& backend, const RenderView& view, const
     auto& glView     = gl.getView();
     auto& atlas      = glView.getShadowAtlas();
     auto& shadowData = glView.getShadowData();
+
+    GLShader* shader = glView.resolveShader(m_depthShader, resources);
+    if (!shader) {
+        LOG_ERROR("GLShadowPass: shader handle could not be resolved");
+        return;
+    }
 
     shadowData.clear();
 
@@ -128,7 +134,7 @@ void GLShadowPass::execute(RenderBackend& backend, const RenderView& view, const
     ctx.setFaceCulling(true);
     ctx.setCullFace(GL_FRONT);
 
-    m_depthShader.bind();
+    shader->bind();
     STATS_RECORD_SHADER_SWITCH();
 
     auto drawShadowBatches = [&]() {
@@ -164,7 +170,7 @@ void GLShadowPass::execute(RenderBackend& backend, const RenderView& view, const
 
             for (uint32_t face = 0; face < 6; ++face) {
                 atlas.bindCubeFaceForWriting(slot, face);
-                m_depthShader.setUniformMatrix4fv(GLConfig::UniformNames::LightSpace, cubeFaces[face]);
+                shader->setUniformMatrix4fv(GLConfig::UniformNames::LightSpace, cubeFaces[face]);
                 drawShadowBatches();
             }
         } else {
@@ -181,7 +187,7 @@ void GLShadowPass::execute(RenderBackend& backend, const RenderView& view, const
             ++count2D;
 
             atlas.bind2DLayerForWriting(slot);
-            m_depthShader.setUniformMatrix4fv(GLConfig::UniformNames::LightSpace, lightSpace);
+            shader->setUniformMatrix4fv(GLConfig::UniformNames::LightSpace, lightSpace);
             drawShadowBatches();
         }
     }
