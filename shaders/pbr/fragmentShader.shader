@@ -41,7 +41,8 @@ const int MAX_LIGHTS = 32;
 //   position.xyz = world position,  position.w = type (cast to int)
 //   color.xyz    = RGB,             color.w    = intensity
 //   direction.xyz= world direction, direction.w= radius
-//   spot.x       = inner cone,      spot.y     = outer cone, spot.z = castShadows
+//   spot.x       = inner cone,      spot.y     = outer cone
+//   spot.z       = unused,          spot.w     = shadowSlot (-1 = no shadow)
 struct Light {
     vec4 position;
     vec4 color;
@@ -95,27 +96,28 @@ layout(std140, binding = 1) uniform LightsBlock {
     Light lights[MAX_LIGHTS];   // offset 16, 64 bytes per light
 } u_lights;
 
-// Shadow caster array (binding = 3, must match C++ ShadowUBOData).
+// Shadow caster arrays (binding = 3, must match C++ ShadowUBOData).
+// Split into 2D (directional + spot) and cube (point) — the light's
+// shadowSlot (spot.w) indexes directly into the correct array, no scan.
 //
-// Each caster has:
-//   lightSpace : world -> light clip space  (2D-array casters only)
-//   params.x   = lightIndex into LightsBlock
-//   params.y   = mapLayer:
-//                  >= 0 -> sampler2DArrayShadow layer (directional / spot)
-//                  <  0 -> samplerCubeArrayShadow cube index, encoded as -(idx + 1)
-//   params.z   = bias
-//   params.w   = light range (point lights, used to normalise sample depth)
-const int SHADOW_MAX_CASTERS = 8;
-struct ShadowCaster {
-    mat4 lightSpace;
-    vec4 params;
+// MUST match Engine::ShadowLimits in src/engine/system/render/render_view.h.
+const int SHADOW_MAX_CASTERS_2D   = 6;
+const int SHADOW_MAX_CASTERS_CUBE = 2;
+
+struct Shadow2DCaster {
+    mat4 lightSpace;  // world -> light clip space
+    vec4 params;      // x = bias
+};
+struct ShadowCubeCaster {
+    vec4 params;      // x = bias, y = range
 };
 layout(std140, binding = 3) uniform ShadowBlock {
-    int          casterCount;
-    int          _pad0;
-    int          _pad1;
-    int          _pad2;
-    ShadowCaster casters[SHADOW_MAX_CASTERS];
+    int              count2D;
+    int              countCube;
+    int              _pad0;
+    int              _pad1;
+    Shadow2DCaster   casters2D  [SHADOW_MAX_CASTERS_2D];
+    ShadowCubeCaster castersCube[SHADOW_MAX_CASTERS_CUBE];
 } u_shadow;
 
 uniform sampler2DArrayShadow   u_shadowMap2D;
@@ -227,22 +229,13 @@ vec3 linearToSRGB(vec3 color) {
     return pow(color, vec3(1.0 / 2.2));
 }
 
-// Linear scan: find the caster entry for light index `lightIdx`, or -1 if none.
-int findShadowCaster(int lightIdx) {
-    for (int j = 0; j < u_shadow.casterCount; ++j) {
-        if (int(u_shadow.casters[j].params.x + 0.5) == lightIdx) return j;
-    }
-    return -1;
-}
+// Hardware PCF (2x2) + 3x3 kernel on a directional/spot map. Slot equals
+// both the index into casters2D and the layer in the sampler2DArrayShadow.
+float sample2DShadow(int slot, vec3 worldPos, vec3 N, vec3 L) {
+    Shadow2DCaster c = u_shadow.casters2D[slot];
+    float biasMax = c.params.x;
 
-// Hardware PCF (2x2) + 3x3 kernel on a directional/spot map. Returns 1.0
-// when the fragment lies beyond the shadow camera's far plane.
-float sample2DShadow(int casterIdx, vec3 worldPos, vec3 N, vec3 L) {
-    ShadowCaster caster = u_shadow.casters[casterIdx];
-    float layer = caster.params.y;
-    float biasMax = caster.params.z;
-
-    vec4 lp = caster.lightSpace * vec4(worldPos, 1.0);
+    vec4 lp = c.lightSpace * vec4(worldPos, 1.0);
     vec3 proj = lp.xyz / lp.w;
     proj = proj * 0.5 + 0.5;
     if (proj.z > 1.0) return 1.0;
@@ -255,36 +248,38 @@ float sample2DShadow(int casterIdx, vec3 worldPos, vec3 N, vec3 L) {
     for (int x = -1; x <= 1; ++x) {
         for (int y = -1; y <= 1; ++y) {
             vec2 offset = vec2(float(x), float(y)) * texel;
-            sum += texture(u_shadowMap2D, vec4(proj.xy + offset, layer, proj.z));
+            sum += texture(u_shadowMap2D, vec4(proj.xy + offset, float(slot), proj.z));
         }
     }
     return sum / 9.0;
 }
 
-// Cube-map shadow sample for point lights. Depth was written as a normalised
-// linear distance (|frag - light| / range), so the reference is the same.
-float samplePointShadow(int casterIdx, vec3 worldPos, vec3 lightPos) {
-    ShadowCaster caster = u_shadow.casters[casterIdx];
-    // params.y encodes cube index as -(idx + 1) to distinguish from 2D layers.
-    int cubeIndex = int(-caster.params.y - 0.5);
-    float bias    = caster.params.z;
-    float range   = max(caster.params.w, 0.001);
-
-    vec3 toFrag = worldPos - lightPos;
-    float currentDepth = length(toFrag) / range;
-    if (currentDepth > 1.0) return 1.0;
-
-    vec3 dir = normalize(toFrag);
-    return texture(u_shadowMapCube, vec4(dir, float(cubeIndex)), currentDepth - bias);
+// Convert a world-space direction vector to the projected depth the cube
+// rasterizer would have written for it. Mirrors the perspective(90°, n, far)
+// projection used in gl_shadow_pass.cpp; absMax(dir) is the view-space z on
+// whichever face wins the cubemap face selection.
+const float SHADOW_CUBE_NEAR = 0.1; // MUST match kCubeNear in gl_shadow_pass.cpp
+float vectorToDepth(vec3 dir, float far) {
+    vec3 absDir = abs(dir);
+    float z = max(absDir.x, max(absDir.y, absDir.z));
+    float ndcZ = (far + SHADOW_CUBE_NEAR) / (far - SHADOW_CUBE_NEAR)
+               - (2.0 * far * SHADOW_CUBE_NEAR) / (z * (far - SHADOW_CUBE_NEAR));
+    return (ndcZ + 1.0) * 0.5;
 }
 
-// Pick the correct sampler based on the caster's map type encoding.
-float sampleShadowFor(int casterIdx, vec3 worldPos, vec3 lightPos, vec3 N, vec3 L) {
-    ShadowCaster caster = u_shadow.casters[casterIdx];
-    if (caster.params.y < 0.0) {
-        return samplePointShadow(casterIdx, worldPos, lightPos);
-    }
-    return sample2DShadow(casterIdx, worldPos, N, L);
+// Cube-map shadow sample for point lights. Standard projected depth — no
+// gl_FragDepth override on the write side, so the reference is derived from
+// the lookup vector via the same perspective(90°, n, far).
+float samplePointShadow(int slot, vec3 worldPos, vec3 lightPos) {
+    ShadowCubeCaster c = u_shadow.castersCube[slot];
+    float bias  = c.params.x;
+    float range = max(c.params.y, 0.001);
+
+    vec3 toFrag = worldPos - lightPos;
+    if (length(toFrag) > range) return 1.0;
+
+    float refDepth = vectorToDepth(toFrag, range) - bias;
+    return texture(u_shadowMapCube, vec4(toFrag, float(slot)), refDepth);
 }
 
 // Calculate distance attenuation for point and spot lights
@@ -520,11 +515,14 @@ void main() {
             }
             if (attenuation < 0.001) continue;
 
-            // Any light that has a caster entry (regardless of type) gets shadowed.
+            // shadowSlot was assigned CPU-side and packed into spot.w; -1 means
+            // this light doesn't cast. Dispatch by type — no per-fragment scan.
             float visibility = 1.0;
-            int casterIdx = findShadowCaster(i);
-            if (casterIdx >= 0) {
-                visibility = sampleShadowFor(casterIdx, FragPos, lightPos, N, L);
+            int shadowSlot = int(light.spot.w);
+            if (shadowSlot >= 0) {
+                visibility = (type == LIGHT_TYPE_POINT)
+                    ? samplePointShadow(shadowSlot, FragPos, lightPos)
+                    : sample2DShadow(shadowSlot, FragPos, N, L);
             }
 
             vec3 radiance = lightCol * intensity * attenuation * visibility;

@@ -57,7 +57,11 @@ struct LightData {
     float radius;
     float innerConeAngle;
     float outerConeAngle;
-    bool castShadows;
+
+    bool  castShadows;
+    float shadowBias;
+    float shadowExtent;
+    int   shadowSlot;     ///< Assigned by RenderView::build. -1 = no shadow. Used as atlas layer / cube index.
 
     glm::vec3 position;
     glm::quat rotation;

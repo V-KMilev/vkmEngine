@@ -112,6 +112,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources, E
     auto& mesh = scene.get<Mesh>(id);
 
     drawPropertyLabel("Visible");    ImGui::Checkbox("##MeshVis", &mesh.visible);
+    drawPropertyLabel("Cast Shadow");    ImGui::Checkbox("##MeshShad", &mesh.castShadows);
 
     // Mesh info
     if (mesh.mesh) {
@@ -256,6 +257,14 @@ void InspectorPanel::drawLightSection(Scene& scene, EntityId id) {
     }
 
     drawPropertyLabel("Shadows");  ImGui::Checkbox("##Shad", &light.castShadows);
+    if (light.castShadows) {
+        drawPropertyLabel("Shadow Bias");
+        ImGui::DragFloat("##ShadBias", &light.shadowBias, 0.0005f, 0.0f, 0.1f, "%.4f");
+        if (light.type == LightType::Directional) {
+            drawPropertyLabel("Shadow Extent");
+            ImGui::DragFloat("##ShadExt", &light.shadowExtent, 1.0f, 1.0f, 1000.0f, "%.1f");
+        }
+    }
     drawPropertyLabel("Enabled");  ImGui::Checkbox("##LEn", &light.enabled);
     ImGui::Spacing();
 }

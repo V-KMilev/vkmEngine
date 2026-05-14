@@ -3,6 +3,7 @@
 
 #include <GL/glew.h>
 
+#include "core/math/axes.h"
 #include "debug/statistics.h"
 #include "platform/threading/thread_pool.h"
 
@@ -117,9 +118,9 @@ void ViewportOverlay::drawNavigationGizmo(const FrameContext& ctx, ImVec2 region
 
     // Transform world axes by camera view rotation
     glm::mat3 viewRot = glm::mat3(ctx.visibility->view);
-    glm::vec3 axisX = viewRot * WORLD_AXIS_X_RIGHT;
-    glm::vec3 axisY = viewRot * WORLD_AXIS_Y_UP;
-    glm::vec3 axisZ = viewRot * WORLD_AXIS_Z_FORWARD;
+    glm::vec3 axisX = viewRot * Math::WORLD_AXIS_X_RIGHT;
+    glm::vec3 axisY = viewRot * Math::WORLD_AXIS_Y_UP;
+    glm::vec3 axisZ = viewRot * Math::WORLD_AXIS_Z_FORWARD;
 
     float axisLen = gizmoSize * 0.8f;
 

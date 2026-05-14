@@ -7,6 +7,7 @@ file(GLOB_RECURSE ENGINECORE_SOURCES
     ecs/*.cpp
     resource/*.cpp
     system/animation/*.cpp
+    system/camera/*.cpp
     system/visibility/*.cpp
     system/event/*.cpp
     system/hierarchy/*.cpp

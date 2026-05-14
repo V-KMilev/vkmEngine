@@ -88,7 +88,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const float vpHeight = static_cast<float>(ctx.viewportHeight);
     const float denom = projScaleY * vpHeight;
     const float screenThresholdSq = (denom > 0.0f)
-        ? (m_minPixels * m_minPixels) / (denom * denom)
+        ? (m_settings.minPixels * m_settings.minPixels) / (denom * denom)
         : 0.0f;
 
     VisibilityContext context{
@@ -99,9 +99,9 @@ void VisibilitySystem::update(FrameContext& ctx) {
 
         .viewportWidth  = ctx.viewportWidth,
         .viewportHeight = ctx.viewportHeight,
-        .minPixels      = m_minPixels,
-        .maxDistance    = m_maxDistance,
-        .maxDistanceSquared = m_maxDistance * m_maxDistance,
+        .minPixels      = m_settings.minPixels,
+        .maxDistance    = m_settings.maxDistance,
+        .maxDistanceSquared = m_settings.maxDistance * m_settings.maxDistance,
         .screenSizeThresholdSq = screenThresholdSq
     };
 

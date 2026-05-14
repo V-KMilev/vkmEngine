@@ -2,7 +2,8 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
-#include <glm/gtc/matrix_transform.hpp>
+
+#include "core/math/projection.h"
 
 namespace Engine {
 
@@ -19,6 +20,9 @@ enum class ProjectionType {
  *
  * Simple data-only component. Supports both perspective and orthographic projection.
  * Camera calculations (view/projection matrices) should be handled by systems that process this component.
+ *
+ * For raw projection-matrix construction without a Camera instance, use the
+ * builders in core/math/projection.h.
  */
 struct Camera {
     ProjectionType projection = ProjectionType::Perspective;    ///< Type of projection
@@ -31,40 +35,13 @@ struct Camera {
     bool active               = true;                           ///< Is this camera active?
 
     /**
-     * @brief Compute a perspective projection matrix.
-     * @param fovY Vertical field of view in radians.
-     * @param aspect Aspect ratio (width / height).
-     * @param zNear Near clip plane distance.
-     * @param zFar Far clip plane distance.
-     * @return The perspective projection matrix.
-     */
-    static glm::mat4 makePerspective(float fovY, float aspect, float zNear, float zFar) {
-        return glm::perspective(fovY, aspect, zNear, zFar);
-    }
-
-    /**
-     * @brief Compute an orthographic projection matrix.
-     * @param halfHeight Orthographic half-height in world units.
-     * @param aspect Aspect ratio (width / height).
-     * @param zNear Near clip plane distance.
-     * @param zFar Far clip plane distance.
-     * @return The orthographic projection matrix.
-     */
-    static glm::mat4 makeOrthographic(float halfHeight, float aspect, float zNear, float zFar) {
-        const float halfWidth = halfHeight * aspect;
-        return glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, zNear, zFar);
-    }
-
-    /**
      * @brief Compute the projection matrix for this camera.
-     * @param camera The camera component.
-     * @return The computed projection matrix.
      */
     static glm::mat4 computeProjection(const Camera& camera) {
         if (camera.projection == ProjectionType::Perspective) {
-            return makePerspective(camera.fovY, camera.aspect, camera.zNear, camera.zFar);
+            return Math::makePerspective(camera.fovY, camera.aspect, camera.zNear, camera.zFar);
         } else {
-            return makeOrthographic(camera.orthoHeight, camera.aspect, camera.zNear, camera.zFar);
+            return Math::makeOrthographic(camera.orthoHeight, camera.aspect, camera.zNear, camera.zFar);
         }
     }
 };

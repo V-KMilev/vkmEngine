@@ -14,7 +14,7 @@
 #include "system/hierarchy/hierarchy_system.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
-#include "camera_controller.h"
+#include "system/camera/camera_controller.h"
 #include "editor_system.h"
 
 // Backend
@@ -62,10 +62,9 @@ int main() {
         Core::Shader aabbDebug(shaderDir + "/aabb_debug");
         Core::Shader gridShader(shaderDir + "/grid");
         Core::Shader shadowShader(shaderDir + "/shadow");
-        Core::Shader shadowCubeShader(shaderDir + "/shadow_cube");
         // Render passes - shadow runs first so the forward pass can sample its result.
         renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
-        renderSystem.addPass(std::make_unique<Engine::GLShadowPass>(shadowShader, shadowCubeShader));
+        renderSystem.addPass(std::make_unique<Engine::GLShadowPass>(shadowShader));
         auto forwardPass = std::make_unique<Engine::GLForwardPass>(pbr);
         forwardPass->setShader(Engine::MaterialType::Unlit, unlit);
         renderSystem.addPass(std::move(forwardPass));

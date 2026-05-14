@@ -14,20 +14,6 @@
 namespace Engine {
 
 /**
- * @brief Stores configurable properties that control camera behavior in the editor.
- */
-struct CameraControllerSettings {
-    float zoomSensitivity  = 0.02f;     ///< Sensitivity multiplier for zooming (e.g. mouse scroll).
-    float lookSensitivity  = 0.002f;    ///< Sensitivity multiplier for camera rotation (yaw/pitch).
-    float moveSpeed        = 10.0f;     ///< Default movement speed (units per second).
-    float speedBoost       = 3.0f;      ///< Multiplier for movement when speed boost (e.g. Shift) is active.
-    float scrollMultiplier = 2.0f;      ///< Multiplier for scroll-based adjustments (zoom or movement).
-
-    float minPitch = -90.0f;            ///< Minimum pitch angle in degrees (to prevent flipping).
-    float maxPitch = 90.0f;             ///< Maximum pitch angle in degrees.
-};
-
-/**
  * @brief Camera controller used in the editor, supporting free-fly and look controls.
  *
  * Handles camera movement (WASD, etc.), speed boosting, mouse look, scroll zoom, and pitch/yaw.
@@ -35,6 +21,17 @@ struct CameraControllerSettings {
  */
 class CameraController : public System {
     public:
+        struct Settings {
+            float zoomSensitivity  = 0.02f;     ///< Sensitivity multiplier for zooming (e.g. mouse scroll).
+            float lookSensitivity  = 0.002f;    ///< Sensitivity multiplier for camera rotation (yaw/pitch).
+            float moveSpeed        = 10.0f;     ///< Default movement speed (units per second).
+            float speedBoost       = 3.0f;      ///< Multiplier for movement when speed boost (e.g. Shift) is active.
+            float scrollMultiplier = 2.0f;      ///< Multiplier for scroll-based adjustments (zoom or movement).
+
+            float minPitch = -90.0f;            ///< Minimum pitch angle in degrees (to prevent flipping).
+            float maxPitch = 90.0f;             ///< Maximum pitch angle in degrees.
+        };
+
         CameraController();
         ~CameraController() override = default;
 
@@ -69,8 +66,9 @@ class CameraController : public System {
          */
         void update(FrameContext& ctx) override;
 
-        CameraControllerSettings& getSettings() { return m_settings; }
-        const CameraControllerSettings& getSettings() const { return m_settings; }
+        Settings&       getSettings()       { return m_settings; }
+        const Settings& getSettings() const { return m_settings; }
+        void setSettings(const Settings& s) { m_settings = s; }
         bool isLooking() const { return m_isRightMousePressed; }
 
         /// Move camera to focus on a target position from a given distance.
@@ -96,7 +94,7 @@ class CameraController : public System {
     private:
         Entity m_cameraEntity;
 
-        CameraControllerSettings m_settings;
+        Settings m_settings;
 
         float m_yaw   = 0.0f;
         float m_pitch = 0.0f;

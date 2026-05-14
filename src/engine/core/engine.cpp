@@ -6,17 +6,9 @@
 
 #include "logger.h"
 
-namespace Engine {
+#include "core/engine_config.h"
 
-namespace {
-    // Fixed simulation step (60 Hz). Determines fixedUpdate cadence.
-    constexpr float FIXED_DT = 1.0f / 60.0f;
-    // Cap on the simulation-time accumulator. Without this, a hitch (debugger
-    // pause, swap-to-background, etc.) would queue up enough fixedUpdate ticks
-    // to take longer than the frame budget, making the next frame even slower
-    // ("spiral of death"). 0.25s ≈ 15 ticks max per render frame.
-    constexpr float MAX_ACCUMULATOR = 0.25f;
-}
+namespace Engine {
 
 Engine& Engine::get() {
     static Engine instance;
@@ -34,7 +26,7 @@ void Engine::run() {
         FrameContext ctx{
             m_scene, m_resources, m_window, m_statistics,
             deltaTime,
-            FIXED_DT,
+            Config::FixedTimeStep,
             static_cast<uint32_t>(m_window.getWidth()),
             static_cast<uint32_t>(m_window.getHeight()),
             nullptr
@@ -44,8 +36,8 @@ void Engine::run() {
             initSystems(ctx);
         }
 
-        accumulator = std::min(accumulator + deltaTime, MAX_ACCUMULATOR);
-        while (accumulator >= FIXED_DT) {
+        accumulator = std::min(accumulator + deltaTime, Config::MaxFrameAccumulator);
+        while (accumulator >= Config::FixedTimeStep) {
             for (auto& stage : m_systemsByStage) {
                 for (auto& system : stage) {
                     if (system->isEnabled()) {
@@ -53,7 +45,7 @@ void Engine::run() {
                     }
                 }
             }
-            accumulator -= FIXED_DT;
+            accumulator -= Config::FixedTimeStep;
         }
 
         for (auto& stage : m_systemsByStage) {

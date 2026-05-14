@@ -101,8 +101,8 @@ class GLView {
         GLShadowAtlas     m_shadowAtlas{
             GLConfig::Limits::ShadowResolution2D,
             GLConfig::Limits::ShadowResolutionCube,
-            GLConfig::Limits::MaxShadowCasters2D,
-            GLConfig::Limits::MaxShadowCastersCube
+            Config::MaxShadowCasters2D,
+            Config::MaxShadowCastersCube
         };
         GLShadowData      m_shadowData;
         GLInstanceBatcher m_instanceBatcher;
