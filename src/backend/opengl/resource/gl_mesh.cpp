@@ -23,7 +23,7 @@ GLMesh::~GLMesh() {
     m_vbo.reset();
     m_ibo.reset();
 
-    LOG_TRACE("Destroying GLMesh");
+    LOG_TRACE("Destructed GLMesh");
 }
 
 void GLMesh::update(const MeshAsset& mesh) {

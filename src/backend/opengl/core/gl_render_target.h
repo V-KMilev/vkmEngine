@@ -65,10 +65,11 @@ class GLFramebufferTarget : public RenderTarget {
 
         ~GLFramebufferTarget() override = default;
 
-        GLFramebufferTarget(const GLFramebufferTarget&) = delete;
-        GLFramebufferTarget& operator=(const GLFramebufferTarget&) = delete;
-        GLFramebufferTarget(GLFramebufferTarget&&) = delete;
-        GLFramebufferTarget& operator=(GLFramebufferTarget&&) = delete;
+        GLFramebufferTarget(const GLFramebufferTarget& other) = delete;
+        GLFramebufferTarget& operator=(const GLFramebufferTarget& other) = delete;
+
+        GLFramebufferTarget(GLFramebufferTarget && other) = delete;
+        GLFramebufferTarget& operator=(GLFramebufferTarget && other) = delete;
 
         void bind() override {
             m_fbo.bind();

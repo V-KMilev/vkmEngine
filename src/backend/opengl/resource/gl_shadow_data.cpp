@@ -19,7 +19,7 @@ GLShadowData::GLShadowData() {
 
 GLShadowData::~GLShadowData() {
     m_ubo.reset();
-    LOG_TRACE("Destroying GLShadowData");
+    LOG_TRACE("Destructed GLShadowData");
 }
 
 void GLShadowData::clear() {

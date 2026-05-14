@@ -15,7 +15,7 @@ GLTexture::GLTexture(const TextureAsset& texture) {
 
 GLTexture::~GLTexture() {
     m_texture.reset();
-    LOG_TRACE("Destroying GLTexture");
+    LOG_TRACE("Destructed GLTexture");
 }
 
 void GLTexture::update(const TextureAsset& texture) {

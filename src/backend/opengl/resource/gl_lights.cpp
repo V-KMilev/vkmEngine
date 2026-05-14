@@ -21,7 +21,7 @@ GLLights::GLLights() {
 
 GLLights::~GLLights() {
     m_ubo.reset();
-    LOG_TRACE("Destroying GLLights");
+    LOG_TRACE("Destructed GLLights");
 }
 
 void GLLights::update(const std::vector<LightData>& lights) {
