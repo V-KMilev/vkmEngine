@@ -37,10 +37,11 @@ class GLShadowAtlas {
         );
         ~GLShadowAtlas();
 
-        GLShadowAtlas(const GLShadowAtlas&) = delete;
-        GLShadowAtlas& operator=(const GLShadowAtlas&) = delete;
-        GLShadowAtlas(GLShadowAtlas&&) = delete;
-        GLShadowAtlas& operator=(GLShadowAtlas&&) = delete;
+        GLShadowAtlas(const GLShadowAtlas& other) = delete;
+        GLShadowAtlas& operator=(const GLShadowAtlas& other) = delete;
+
+        GLShadowAtlas(GLShadowAtlas && other) = delete;
+        GLShadowAtlas& operator=(GLShadowAtlas && other) = delete;
 
     public:
         /// Bind FBO, point depth attachment at 2D-array layer, set viewport, clear depth.

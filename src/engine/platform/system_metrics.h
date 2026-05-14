@@ -9,10 +9,11 @@ class SystemMetrics {
         SystemMetrics();
         ~SystemMetrics();
 
-        SystemMetrics(const SystemMetrics&) = delete;
-        SystemMetrics& operator=(const SystemMetrics&) = delete;
-        SystemMetrics(SystemMetrics&&) = delete;
-        SystemMetrics& operator=(SystemMetrics&&) = delete;
+        SystemMetrics(const SystemMetrics& other) = delete;
+        SystemMetrics& operator=(const SystemMetrics& other) = delete;
+
+        SystemMetrics(SystemMetrics && other) = delete;
+        SystemMetrics& operator=(SystemMetrics && other) = delete;
 
         void update(float deltaTime);
 

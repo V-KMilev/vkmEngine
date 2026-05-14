@@ -67,10 +67,11 @@ class GLShadowData {
         GLShadowData();
         ~GLShadowData();
 
-        GLShadowData(const GLShadowData&) = delete;
-        GLShadowData& operator=(const GLShadowData&) = delete;
-        GLShadowData(GLShadowData&&) = delete;
-        GLShadowData& operator=(GLShadowData&&) = delete;
+        GLShadowData(const GLShadowData& other) = delete;
+        GLShadowData& operator=(const GLShadowData& other) = delete;
+
+        GLShadowData(GLShadowData && other) = delete;
+        GLShadowData& operator=(GLShadowData && other) = delete;
 
     public:
         /// Reset both caster counts to 0. Stale array tails are inert — the

@@ -37,7 +37,7 @@ GLMaterial::GLMaterial(const MaterialAsset& material) {
 GLMaterial::~GLMaterial() {
     m_ubo.reset();
 
-    LOG_TRACE("Destroying GLMaterial");
+    LOG_TRACE("Destructed GLMaterial");
 }
 
 void GLMaterial::update(const MaterialAsset& material) {
