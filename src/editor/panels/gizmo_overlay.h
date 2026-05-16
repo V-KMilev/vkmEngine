@@ -7,8 +7,7 @@
 
 namespace Engine {
 
-struct FrameContext;
-struct EditorState;
+struct EditorContext;
 
 /**
  * @brief Viewport overlay for the transform gizmo and entity picking.
@@ -19,8 +18,8 @@ struct EditorState;
  */
 class GizmoOverlay {
     public:
-        void drawTransformGizmo(FrameContext& ctx, EditorState& state, ImVec2 vpMin, float vpW, float vpH);
-        void handleViewportPick(FrameContext& ctx, EditorState& state, ImVec2 vpMin, float vpW, float vpH);
+        void drawTransformGizmo(EditorContext& ec);
+        void handleViewportPick(EditorContext& ec);
         bool isGizmoOver() const  { return m_gizmo.isOver(); }
         bool isGizmoUsing() const { return m_gizmo.isUsing(); }
 

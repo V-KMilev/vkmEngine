@@ -6,8 +6,7 @@
 
 namespace Engine {
 
-struct FrameContext;
-struct EditorState;
+struct EditorContext;
 
 /**
  * @brief Viewport overlay displaying performance stats, gizmo mode indicator, and navigation gizmo.
@@ -17,16 +16,19 @@ struct EditorState;
  */
 class ViewportOverlay {
     public:
-        void draw(const FrameContext& ctx, const EditorState& state);
-        void drawNavigationGizmo(const FrameContext& ctx, ImVec2 regionMin, ImVec2 regionMax);
+        void draw(EditorContext& ec);
+        void drawNavigationGizmo(EditorContext& ec);
         void updateMetrics(float deltaTime);
 
+        /// Push one frame's render time (ms) into the ring buffer.
+        void pushFrameTime(float ms);
+
+    private:
         static constexpr int FRAME_HISTORY_SIZE = 240;
         float m_frameTimeHistory[FRAME_HISTORY_SIZE] = {};
         int   m_frameTimeOffset = 0;
         float m_frameTimeMax    = 0.0f;
 
-    private:
         SystemMetrics m_metrics;
 };
 

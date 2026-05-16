@@ -10,7 +10,13 @@
 
 namespace Engine {
 
-void GizmoOverlay::drawTransformGizmo(FrameContext& ctx, EditorState& state, ImVec2 vpMin, float vpWidth, float vpHeight) {
+void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
+    FrameContext& ctx     = ec.frame;
+    EditorState&  state   = ec.state;
+    ImVec2 vpMin          = ec.viewportPos;
+    float  vpWidth        = ec.viewportSize.x;
+    float  vpHeight       = ec.viewportSize.y;
+
     if (state.gizmoOperation == GizmoOperation::Select) return;  // pick-only, no handles
     if (!state.selectedEntity || !ctx.scene.isAlive(state.selectedEntity)) return;
     if (!ctx.visibility || !ctx.visibility->hasCamera) return;
@@ -123,7 +129,10 @@ void GizmoOverlay::drawTransformGizmo(FrameContext& ctx, EditorState& state, ImV
     }
 }
 
-void GizmoOverlay::handleViewportPick(FrameContext& ctx, EditorState& state, ImVec2 vpMin, float vpWidth, float vpHeight) {
+void GizmoOverlay::handleViewportPick(EditorContext& ec) {
+    FrameContext& ctx   = ec.frame;
+    EditorState&  state = ec.state;
+
     if (!ctx.visibility || !ctx.visibility->hasCamera) return;
 
     auto& mouse = ctx.window.getInputHandle().getMouse();

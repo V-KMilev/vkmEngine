@@ -20,7 +20,11 @@ namespace {
     }
 }
 
-void ViewportToolbar::draw(FrameContext& ctx, EditorState& state, CameraController* camera) {
+void ViewportToolbar::draw(EditorContext& ec) {
+    FrameContext&     ctx    = ec.frame;
+    EditorState&      state  = ec.state;
+    CameraController* camera = ec.cameraController;
+
     const auto& kb = state.keybinds;
 
     auto tool = [&](const char* id, EditorIcon icon, GizmoOperation op,

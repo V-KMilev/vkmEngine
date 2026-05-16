@@ -3,12 +3,11 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "../editor_panel.h"
+
 namespace Engine {
 
-class VisibilitySystem;
-class RenderSystem;
-struct FrameContext;
-struct EditorState;
+struct EditorContext;
 
 /**
  * @brief Editor bottom panel: the per-scene working surface.
@@ -21,18 +20,16 @@ struct EditorState;
  * display, keybinds) intentionally do NOT live here -- they are in the
  * Preferences window (see PreferencesPanel).
  */
-class BottomPanel {
+class BottomPanel : public EditorPanel {
     public:
-        BottomPanel(VisibilitySystem* vis, RenderSystem* render)
-            : m_visibilitySystem(vis), m_renderSystem(render) {}
-
-        void draw(FrameContext& ctx, EditorState& state);
+        const char* panelId() const override { return "Bottom"; }
+        void draw(EditorContext& ec) override;
 
     private:
-        void drawEnvironmentSection(FrameContext& ctx);
-        void drawRenderingSection(FrameContext& ctx, EditorState& state);
-        void drawAnimationSection(FrameContext& ctx, EditorState& state);
-        void drawStatisticsSection(FrameContext& ctx);
+        void drawEnvironmentSection(EditorContext& ec);
+        void drawRenderingSection(EditorContext& ec);
+        void drawAnimationSection(EditorContext& ec);
+        void drawStatisticsSection(EditorContext& ec);
 
         int m_selectedSection = 0;
 
@@ -40,9 +37,6 @@ class BottomPanel {
         // m_animDotTrack: -1 none, 0 position, 1 rotation, 2 scale.
         int   m_animDotTrack = -1;
         float m_animDotTime  = 0.0f;
-
-        VisibilitySystem* m_visibilitySystem = nullptr;
-        RenderSystem*     m_renderSystem     = nullptr;
 
         struct ResourceCounts {
             size_t transforms = 0, meshes = 0, lights = 0, cameras = 0;

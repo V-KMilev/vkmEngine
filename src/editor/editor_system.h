@@ -2,11 +2,13 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include <imgui.h>
 
 #include "core/system.h"
 #include "editor_state.h"
+#include "editor_panel.h"
 #include "panels/viewport_overlay.h"
 #include "panels/inspector_panel.h"
 #include "panels/bottom_panel.h"
@@ -63,6 +65,7 @@ class EditorSystem : public System {
         GLFWwindow*       m_window           = nullptr;
         CameraController* m_cameraController = nullptr;
         RenderSystem*     m_renderSystem     = nullptr;
+        VisibilitySystem* m_visibilitySystem = nullptr;
         EventSystem*      m_events           = nullptr;
         uint64_t          m_sceneLoadedListenerId = 0;
 
@@ -75,6 +78,12 @@ class EditorSystem : public System {
         ViewportToolbar  m_viewportToolbar;
         ViewportPlaybar  m_playbar;
         PreferencesPanel m_preferences;
+
+        /// Registry of the registered panels (the docked panels and the
+        /// Preferences window). Points at the members above; iteration
+        /// seam for panel-wide operations. Viewport overlays are drawn
+        /// explicitly and are deliberately not in here.
+        std::vector<EditorPanel*> m_panels;
 
         // Input state for F5 toggle
         bool m_f5WasDown = false;

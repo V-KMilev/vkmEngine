@@ -5,7 +5,9 @@
 
 namespace Engine {
 
-void InspectorPanel::draw(FrameContext& ctx, EditorState& state) {
+void InspectorPanel::draw(EditorContext& ec) {
+    FrameContext& ctx   = ec.frame;
+    EditorState&  state = ec.state;
     // Panel header
     ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
     ImGui::TextUnformatted("Inspector");

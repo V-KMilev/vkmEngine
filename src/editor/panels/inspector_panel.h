@@ -2,12 +2,14 @@
 
 #include "ecs/entity.h"
 
+#include "../editor_panel.h"
+
 namespace Engine {
 
 class Scene;
 class ResourceManager;
-struct FrameContext;
 struct EditorState;
+struct EditorContext;
 
 /**
  * @brief Editor panel for inspecting and editing the selected entity's components.
@@ -16,9 +18,10 @@ struct EditorState;
  * Camera, Animation, Hierarchy) with inline editing. Includes a full PBR material
  * editor when a Mesh component is present. Stateless -- reads selectedEntity from EditorState.
  */
-class InspectorPanel {
+class InspectorPanel : public EditorPanel {
     public:
-        void draw(FrameContext& ctx, EditorState& state);
+        const char* panelId() const override { return "Inspector"; }
+        void draw(EditorContext& ec) override;
 
     private:
         void drawTransformSection(Scene& scene, EntityId id);

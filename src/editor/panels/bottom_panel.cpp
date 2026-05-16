@@ -30,7 +30,7 @@ namespace {
     }
 }
 
-void BottomPanel::draw(FrameContext& ctx, EditorState& state) {
+void BottomPanel::draw(EditorContext& ec) {
     ImVec2 avail = ImGui::GetContentRegionAvail();
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.10f, 0.10f, 0.11f, 1.0f));
@@ -58,23 +58,26 @@ void BottomPanel::draw(FrameContext& ctx, EditorState& state) {
         sectionHeader(s.name, s.hint);
 
         switch (m_selectedSection) {
-            case 0: drawEnvironmentSection(ctx);         break;
-            case 1: drawRenderingSection(ctx, state);    break;
-            case 2: drawAnimationSection(ctx, state);    break;
-            case 3: drawStatisticsSection(ctx);          break;
+            case 0: drawEnvironmentSection(ec);  break;
+            case 1: drawRenderingSection(ec);    break;
+            case 2: drawAnimationSection(ec);    break;
+            case 3: drawStatisticsSection(ec);   break;
             default: break;
         }
     }
     ImGui::EndChild();
 }
 
-void BottomPanel::drawRenderingSection(FrameContext& ctx, EditorState& state) {
+void BottomPanel::drawRenderingSection(EditorContext& ec) {
+    FrameContext& ctx   = ec.frame;
+    EditorState&  state = ec.state;
+
     ImGui::Checkbox("Wireframe", &state.wireframe);
 
     ImGui::Spacing();
     ImGui::SeparatorText("Render Passes");
-    if (m_renderSystem) {
-        auto& pipeline = m_renderSystem->getPipeline();
+    if (ec.renderSystem) {
+        auto& pipeline = ec.renderSystem->getPipeline();
         for (size_t i = 0; i < pipeline.passCount(); ++i) {
             auto& pass = pipeline.getPass(i);
             bool enabled = pass.isEnabled();
@@ -93,8 +96,8 @@ void BottomPanel::drawRenderingSection(FrameContext& ctx, EditorState& state) {
 
     ImGui::Spacing();
     ImGui::SeparatorText("Visibility Culling");
-    if (m_visibilitySystem) {
-        auto& settings = m_visibilitySystem->getSettings();
+    if (ec.visibilitySystem) {
+        auto& settings = ec.visibilitySystem->getSettings();
         drawPropertyLabel("Min Pixels");
         ImGui::DragFloat("##MinPx", &settings.minPixels, 0.1f, 0.0f, 100.0f, "%.1f");
 
@@ -109,9 +112,9 @@ void BottomPanel::drawRenderingSection(FrameContext& ctx, EditorState& state) {
     }
 }
 
-void BottomPanel::drawEnvironmentSection(FrameContext& ctx) {
-    if (!m_renderSystem) return;
-    auto& env = m_renderSystem->getEnvironment();
+void BottomPanel::drawEnvironmentSection(EditorContext& ec) {
+    if (!ec.renderSystem) return;
+    auto& env = ec.renderSystem->getEnvironment();
 
     ImGui::SeparatorText("Ambient Light");
     drawPropertyLabel("Color");
@@ -141,7 +144,9 @@ void BottomPanel::drawEnvironmentSection(FrameContext& ctx) {
     ImGui::ColorEdit3("##AABBCol", glm::value_ptr(env.debugColor), ImGuiColorEditFlags_Float);
 }
 
-void BottomPanel::drawAnimationSection(FrameContext& ctx, EditorState& state) {
+void BottomPanel::drawAnimationSection(EditorContext& ec) {
+    FrameContext& ctx   = ec.frame;
+    EditorState&  state = ec.state;
     Scene& scene = ctx.scene;
     EntityId id = state.selectedEntity;
 
@@ -462,7 +467,8 @@ void BottomPanel::drawAnimationSection(FrameContext& ctx, EditorState& state) {
     editor(scene.get<Animation>(id));
 }
 
-void BottomPanel::drawStatisticsSection(FrameContext& ctx) {
+void BottomPanel::drawStatisticsSection(EditorContext& ec) {
+    FrameContext& ctx = ec.frame;
     auto& scene = ctx.scene;
 
     // Update cached counts periodically (every 0.5s), not every frame
@@ -517,7 +523,6 @@ void BottomPanel::drawStatisticsSection(FrameContext& ctx) {
     ImGui::TextDisabled("Animations");
     ImGui::Separator();
     ImGui::Text("Playing: %u  Paused: %u", rc.animPlaying, rc.animPaused);
-    ImGui::TextDisabled("(transport: Play/Stop bar, top of viewport)");
 
     ImGui::NextColumn();
 
