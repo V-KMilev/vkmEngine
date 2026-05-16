@@ -94,8 +94,12 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
     ImDrawList* drawList = ImGui::GetWindowDrawList();
 
     float gizmoSize = 60.0f;
-    float padding = 16.0f;
-    ImVec2 center(regionMax.x - gizmoSize - padding, regionMax.y - gizmoSize - padding);
+    // Pin it near the bottom-right corner (toward the right panel). The
+    // gizmo's content reaches about one axis length past its centre, so
+    // inset both axes by just that reach plus a small margin instead of a
+    // full gizmoSize, dropping it closer to the edges without clipping.
+    float edgeInset = gizmoSize * 0.8f + 12.0f;
+    ImVec2 center(regionMax.x - edgeInset, regionMax.y - edgeInset);
 
     // Transform world axes by camera view rotation
     glm::mat3 viewRot = glm::mat3(ctx.visibility->view);

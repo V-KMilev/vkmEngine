@@ -68,7 +68,7 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
         case EditorIcon::Scale: {
             // Build ONE arrowhead (bottom-left) from fully pixel-snapped
             // points, then derive the other as its exact integer mirror about
-            // the snapped centre -- so the two heads are byte-identical, and
+            // the snapped centre - so the two heads are byte-identical, and
             // smaller than before with a longer clear shaft between them.
             const float u = 0.65f;
             float cx = std::round(c.x), cy = std::round(c.y);
@@ -122,7 +122,7 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
         case EditorIcon::Snap: {
             // 3x3 grid: inner lines first (full length so they reach/connect
             // to the frame), then a single AddRect frame on top. AddRect is a
-            // closed path so its corners join cleanly -- no stubs, no plugs.
+            // closed path so its corners join cleanly - no stubs, no plugs.
             // All coords pixel-snapped and symmetric.
             float cx = std::round(c.x), cy = std::round(c.y);
             float half  = std::round(0.8f * r);

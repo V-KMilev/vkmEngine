@@ -38,7 +38,7 @@ void ViewportPlaybar::draw(EditorContext& ec) {
         }
         ImGui::SameLine();
         if (iconButton("vpStop", EditorIcon::Stop, false, any,
-                       "Stop -- pause and rewind all animations", BTN)) {
+                       "Stop - pause and rewind all animations", BTN)) {
             ctx.scene.forEach<Animation>([&](EntityId, Animation& a) {
                 a.playing = false;
                 a.time = 0.0f;

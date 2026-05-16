@@ -10,7 +10,7 @@ class Scene;
  * @brief Component representing parent-child relationships in an entity hierarchy.
  *
  * Uses an intrusive doubly-linked sibling list for O(1) attach/detach.
- * Only entities that participate in a hierarchy need this component --
+ * Only entities that participate in a hierarchy need this component -
  * root entities without parents or children have no Hierarchy component.
  *
  * Tree structure:

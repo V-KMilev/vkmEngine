@@ -19,7 +19,7 @@ struct EditorContext;
  * the selection fills the scrollable detail pane on the right.
  *
  * Editor/application preferences (camera tuning, gizmo snap defaults,
- * display, keybinds) intentionally do NOT live here -- they are in the
+ * display, keybinds) intentionally do NOT live here - they are in the
  * Preferences window (see PreferencesPanel).
  */
 class BottomPanel : public EditorPanel {
