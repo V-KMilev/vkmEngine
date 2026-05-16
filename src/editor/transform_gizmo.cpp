@@ -574,6 +574,7 @@ bool TransformGizmo::manipulate(
                 case GizmoOperation::Translate: modified = handleTranslationDrag(model, axes); break;
                 case GizmoOperation::Rotate:    modified = handleRotationDrag(model, axes);    break;
                 case GizmoOperation::Scale:     modified = handleScaleDrag(model, axes);       break;
+                case GizmoOperation::Select:    break;  // unreachable: skipped in GizmoOverlay
             }
 
             // Update origin and screen axes after model changes
@@ -601,6 +602,7 @@ bool TransformGizmo::manipulate(
                 case GizmoOperation::Translate: m_hovered = hitTestTranslation(axes, screenAxes); break;
                 case GizmoOperation::Rotate:    m_hovered = hitTestRotation(axes);                break;
                 case GizmoOperation::Scale:     m_hovered = hitTestScale(screenAxes);             break;
+                case GizmoOperation::Select:    m_hovered = GizmoElement::None;                   break;
             }
         } else {
             m_hovered = GizmoElement::None;
@@ -656,6 +658,7 @@ bool TransformGizmo::manipulate(
         case GizmoOperation::Translate: drawTranslationGizmo(drawList, screenAxes);  break;
         case GizmoOperation::Rotate:    drawRotationGizmo(drawList, axes);           break;
         case GizmoOperation::Scale:     drawScaleGizmo(drawList, screenAxes);        break;
+        case GizmoOperation::Select:    break;  // unreachable: skipped in GizmoOverlay
     }
 
     drawList->PopClipRect();

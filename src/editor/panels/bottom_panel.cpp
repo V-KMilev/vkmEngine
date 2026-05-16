@@ -1,32 +1,74 @@
 #include "bottom_panel.h"
 #include "../editor_common.h"
 
-#include "system/camera/camera_controller.h"
-#include "platform/window/window_manager.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
 #include "system/render/render_pipeline.h"
-#include "platform/threading/thread_pool.h"
 
 namespace Engine {
 
-void BottomPanel::draw(FrameContext& ctx, EditorState& state) {
-    if (!ImGui::BeginTabBar("##BottomTabs")) return;
+namespace {
+    struct SectionDef { const char* group; const char* name; const char* hint; };
 
-    drawRenderingTab(ctx, state);
-    drawEnvironmentTab(ctx);
-    drawViewportTab(ctx, state);
-    drawEditorTab(state);
-    drawStatisticsTab(ctx);
+    // Order matches the dispatch switch in BottomPanel::draw().
+    const SectionDef kSections[] = {
+        {"WORLD", "Environment", "Ambient, background, grid, debug"},
+        {"WORLD", "Rendering",   "Wireframe, passes, exposure, culling"},
+        {"TOOLS", "Animation",   "Keyframe editor for the selected entity"},
+        {"INFO",  "Statistics",  "Component / light / animation counts"},
+    };
+    constexpr int kSectionCount = static_cast<int>(sizeof(kSections) / sizeof(kSections[0]));
 
-    ImGui::EndTabBar();
+    void sectionHeader(const char* title, const char* hint) {
+        ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
+        ImGui::TextUnformatted(title);
+        ImGui::PopStyleColor();
+        ImGui::SameLine(0, 10);
+        ImGui::TextDisabled("%s", hint);
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
 }
 
-// Rendering: wireframe, render passes, exposure, visibility culling
-void BottomPanel::drawRenderingTab(FrameContext& ctx, EditorState& state) {
-    if (!ImGui::BeginTabItem("Rendering")) return;
-    ImGui::Spacing();
+void BottomPanel::draw(FrameContext& ctx, EditorState& state) {
+    ImVec2 avail = ImGui::GetContentRegionAvail();
 
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.10f, 0.10f, 0.11f, 1.0f));
+    if (ImGui::BeginChild("##BottomNav", ImVec2(150.0f, avail.y), ImGuiChildFlags_Borders)) {
+        const char* lastGroup = nullptr;
+        for (int i = 0; i < kSectionCount; ++i) {
+            if (kSections[i].group != lastGroup) {
+                if (lastGroup) ImGui::Spacing();
+                ImGui::TextDisabled("%s", kSections[i].group);
+                lastGroup = kSections[i].group;
+            }
+            ImGui::Indent(8.0f);
+            if (ImGui::Selectable(kSections[i].name, m_selectedSection == i))
+                m_selectedSection = i;
+            ImGui::Unindent(8.0f);
+        }
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    ImGui::SameLine(0, 6);
+
+    if (ImGui::BeginChild("##BottomDetail", ImVec2(0, avail.y), ImGuiChildFlags_Borders)) {
+        const auto& s = kSections[m_selectedSection];
+        sectionHeader(s.name, s.hint);
+
+        switch (m_selectedSection) {
+            case 0: drawEnvironmentSection(ctx);         break;
+            case 1: drawRenderingSection(ctx, state);    break;
+            case 2: drawAnimationSection(ctx, state);    break;
+            case 3: drawStatisticsSection(ctx);          break;
+            default: break;
+        }
+    }
+    ImGui::EndChild();
+}
+
+void BottomPanel::drawRenderingSection(FrameContext& ctx, EditorState& state) {
     ImGui::Checkbox("Wireframe", &state.wireframe);
 
     ImGui::Spacing();
@@ -65,202 +107,362 @@ void BottomPanel::drawRenderingTab(FrameContext& ctx, EditorState& state) {
             ImGui::TextDisabled("Culled: %zu / %zu", tot > vis ? tot - vis : 0, tot);
         }
     }
-    ImGui::EndTabItem();
 }
 
-// Environment: ambient light, clear color, grid, AABB debug
-void BottomPanel::drawEnvironmentTab(FrameContext& ctx) {
-    if (!ImGui::BeginTabItem("Environment")) return;
+void BottomPanel::drawEnvironmentSection(FrameContext& ctx) {
+    if (!m_renderSystem) return;
+    auto& env = m_renderSystem->getEnvironment();
+
+    ImGui::SeparatorText("Ambient Light");
+    drawPropertyLabel("Color");
+    ImGui::ColorEdit3("##AmbCol", glm::value_ptr(env.ambientColor), ImGuiColorEditFlags_Float);
+    drawPropertyLabel("Intensity");
+    ImGui::DragFloat("##AmbInt", &env.ambientIntensity, 0.005f, 0.0f, 2.0f, "%.3f");
+
     ImGui::Spacing();
+    ImGui::SeparatorText("Background");
+    drawPropertyLabel("Clear Color");
+    ImGui::ColorEdit3("##ClearCol", glm::value_ptr(env.clearColor), ImGuiColorEditFlags_Float);
 
-    if (m_renderSystem) {
-        auto& env = m_renderSystem->getEnvironment();
+    ImGui::Spacing();
+    ImGui::SeparatorText("Grid");
+    drawPropertyLabel("Cell Size");
+    ImGui::DragFloat("##GScale", &env.gridScale, 0.1f, 0.1f, 100.0f, "%.1f");
+    drawPropertyLabel("Grid Size");
+    ImGui::DragFloat("##GSize", &env.gridSize, 10.0f, 10.0f, 10000.0f, "%.0f");
+    drawPropertyLabel("Fade Start");
+    ImGui::DragFloat("##GFadeS", &env.gridFadeStart, 1.0f, 1.0f, env.gridFadeEnd, "%.0f");
+    drawPropertyLabel("Fade End");
+    ImGui::DragFloat("##GFadeE", &env.gridFadeEnd, 1.0f, env.gridFadeStart, 10000.0f, "%.0f");
 
-        ImGui::SeparatorText("Ambient Light");
-        drawPropertyLabel("Color");
-        ImGui::ColorEdit3("##AmbCol", glm::value_ptr(env.ambientColor), ImGuiColorEditFlags_Float);
-        drawPropertyLabel("Intensity");
-        ImGui::DragFloat("##AmbInt", &env.ambientIntensity, 0.005f, 0.0f, 2.0f, "%.3f");
-
-        ImGui::Spacing();
-        ImGui::SeparatorText("Background");
-        drawPropertyLabel("Clear Color");
-        ImGui::ColorEdit3("##ClearCol", glm::value_ptr(env.clearColor), ImGuiColorEditFlags_Float);
-
-        ImGui::Spacing();
-        ImGui::SeparatorText("Grid");
-        drawPropertyLabel("Cell Size");
-        ImGui::DragFloat("##GScale", &env.gridScale, 0.1f, 0.1f, 100.0f, "%.1f");
-        drawPropertyLabel("Grid Size");
-        ImGui::DragFloat("##GSize", &env.gridSize, 10.0f, 10.0f, 10000.0f, "%.0f");
-        drawPropertyLabel("Fade Start");
-        ImGui::DragFloat("##GFadeS", &env.gridFadeStart, 1.0f, 1.0f, env.gridFadeEnd, "%.0f");
-        drawPropertyLabel("Fade End");
-        ImGui::DragFloat("##GFadeE", &env.gridFadeEnd, 1.0f, env.gridFadeStart, 10000.0f, "%.0f");
-
-        ImGui::Spacing();
-        ImGui::SeparatorText("AABB Debug");
-        drawPropertyLabel("Color");
-        ImGui::ColorEdit3("##AABBCol", glm::value_ptr(env.debugColor), ImGuiColorEditFlags_Float);
-    }
-    ImGui::EndTabItem();
+    ImGui::Spacing();
+    ImGui::SeparatorText("AABB Debug");
+    drawPropertyLabel("Color");
+    ImGui::ColorEdit3("##AABBCol", glm::value_ptr(env.debugColor), ImGuiColorEditFlags_Float);
 }
 
-// Viewport: camera controller + display settings (merged)
-void BottomPanel::drawViewportTab(FrameContext& ctx, EditorState& state) {
-    if (!ImGui::BeginTabItem("Viewport")) return;
-    ImGui::Spacing();
+void BottomPanel::drawAnimationSection(FrameContext& ctx, EditorState& state) {
+    Scene& scene = ctx.scene;
+    EntityId id = state.selectedEntity;
 
-    // Camera controls
-    ImGui::SeparatorText("Camera");
-    if (m_cameraController) {
-        auto& s = m_cameraController->getSettings();
-        drawPropertyLabel("Move Speed");   ImGui::DragFloat("##MS", &s.moveSpeed, 0.5f, 0.1f, 200.0f);
-        drawPropertyLabel("Speed Boost");  ImGui::DragFloat("##SB", &s.speedBoost, 0.1f, 1.0f, 20.0f, "%.1fx");
-        drawPropertyLabel("Look Sens.");   ImGui::DragFloat("##LS", &s.lookSensitivity, 0.0001f, 0.0001f, 0.01f, "%.4f");
-        ImGui::Spacing();
-        if (ImGui::Button("Reset Camera")) s = CameraController::Settings{};
-    } else {
-        ImGui::TextDisabled("No camera controller");
+    if (!id || !scene.isAlive(id)) {
+        ImGui::TextDisabled("Select an entity (viewport or Hierarchy) to animate it.");
+        return;
     }
 
-    // Display settings
-    auto& window = ctx.window;
-    ImGui::Spacing();
-    ImGui::SeparatorText("Display");
-    ImGui::Text("Resolution: %zux%zu", window.getWidth(), window.getHeight());
-    ImGui::Text("Threads: %zu", ThreadPool::get().threadCount());
+    char nameBuf[64];
+    getEntityDisplayName(scene, id, nameBuf, sizeof(nameBuf));
+    ImGui::Text("Target: %s  (#%u)", nameBuf, id.index);
 
-    ImGui::Spacing();
-    if (ImGui::Button("Fullscreen", ImVec2(100, 0))) window.updateMode(WindowMode::FULLSCREEN);
-    ImGui::SameLine();
-    if (ImGui::Button("Windowed", ImVec2(100, 0))) window.updateMode(WindowMode::WINDOWED);
-    ImGui::SameLine(0, 16);
-    if (ImGui::Button("VSync On", ImVec2(70, 0))) window.setVSync(true);
-    ImGui::SameLine();
-    if (ImGui::Button("VSync Off", ImVec2(70, 0))) window.setVSync(false);
+    if (!scene.has<Transform>(id)) {
+        ImGui::TextDisabled("Animation drives a Transform -- add a Transform component first.");
+        return;
+    }
 
-    ImGui::Spacing();
-    static int fpsLimit = 0;
-    drawPropertyLabel("FPS Limit");
-    ImGui::SetNextItemWidth(80);
-    ImGui::InputInt("##FPSLim", &fpsLimit, 30);
-    fpsLimit = std::max(0, fpsLimit);
-    ImGui::SameLine();
-    if (ImGui::Button("Apply##fps")) window.setFramerate(fpsLimit);
-    ImGui::SameLine();
-    ImGui::TextDisabled(fpsLimit == 0 ? "(unlimited)" : "");
+    Transform& tf = scene.get<Transform>(id);
 
-    ImGui::EndTabItem();
-}
+    auto editor = [&](Animation& anim) {
+        auto previewPose = [&]() {
+            if (!anim.positionTrack.isEmpty()) tf.position = anim.positionTrack.getValue(anim.time);
+            if (!anim.rotationTrack.isEmpty()) tf.rotation = anim.rotationTrack.getValue(anim.time);
+            if (!anim.scaleTrack.isEmpty())    tf.scale    = anim.scaleTrack.getValue(anim.time);
+            HierarchyOperations::markDirty(scene, id);
+        };
 
-// Editor: gizmo snap settings + keybind rebinding (merged)
-void BottomPanel::drawEditorTab(EditorState& state) {
-    if (!ImGui::BeginTabItem("Editor")) return;
-    ImGui::Spacing();
-
-    // Gizmo snap
-    ImGui::SeparatorText("Gizmo Snapping");
-    ImGui::Checkbox("Snap Enabled", &state.snapEnabled);
-    ImGui::SameLine(0, 16);
-    ImGui::TextDisabled("(Hold Ctrl to temporarily snap)");
-
-    ImGui::Spacing();
-    drawPropertyLabel("Translate");
-    ImGui::DragFloat("##SnapT", &state.snapTranslate, 0.1f, 0.01f, 100.0f, "%.2f units");
-    drawPropertyLabel("Rotate");
-    ImGui::DragFloat("##SnapR", &state.snapRotate, 1.0f, 1.0f, 180.0f, "%.0f deg");
-    drawPropertyLabel("Scale");
-    ImGui::DragFloat("##SnapS", &state.snapScale, 0.01f, 0.01f, 10.0f, "%.2f");
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("Gizmo Mode");
-    drawPropertyLabel("Operation");
-    const char* opNames[] = {"Translate", "Rotate", "Scale"};
-    int opIdx = static_cast<int>(state.gizmoOperation);
-    if (ImGui::Combo("##GizOp", &opIdx, opNames, IM_ARRAYSIZE(opNames)))
-        state.gizmoOperation = static_cast<GizmoOperation>(opIdx);
-    drawPropertyLabel("Space");
-    const char* modeNames[] = {"Local", "World"};
-    int modeIdx = static_cast<int>(state.gizmoMode);
-    if (ImGui::Combo("##GizMode", &modeIdx, modeNames, IM_ARRAYSIZE(modeNames)))
-        state.gizmoMode = static_cast<GizmoMode>(modeIdx);
-
-    // Keybinds
-    ImGui::Spacing();
-    ImGui::SeparatorText("Keybinds");
-
-    static const char* s_rebindTarget = nullptr;
-
-    auto drawKeybindRow = [&](const char* label, KeyBind& bind) {
-        drawPropertyLabel(label);
-        char keyLabel[48];
-        getKeyBindLabel(bind, keyLabel, sizeof(keyLabel));
-
-        char btnId[80];
-        snprintf(btnId, sizeof(btnId), "%s##%s",
-                 (s_rebindTarget == label) ? "Press key..." : keyLabel, label);
-
-        if (ImGui::Button(btnId, ImVec2(120, 0))) {
-            s_rebindTarget = label;
+        float ih = ImGui::GetFrameHeight();
+        const float kGap = 8.0f;
+        if (iconButton("anplay", anim.playing ? EditorIcon::Pause : EditorIcon::Play,
+                       anim.playing, true, anim.playing ? "Pause" : "Play", ih))
+            anim.playing = !anim.playing;
+        ImGui::SameLine(0, kGap);
+        if (iconButton("anstop", EditorIcon::Stop, false, true, "Stop (rewind to start)", ih)) {
+            anim.playing = false;
+            anim.time = 0.0f;
+            previewPose();
         }
+        ImGui::SameLine(0, kGap);
+        if (iconButton("ankey", EditorIcon::Key, false, true,
+                       "Set Key: add/replace keyframes on all 3 tracks at the current time", ih)) {
+            anim.positionTrack.setKeyframe(anim.time, tf.position);
+            anim.rotationTrack.setKeyframe(anim.time, tf.rotation);
+            anim.scaleTrack.setKeyframe(anim.time, tf.scale);
+            anim.updateDuration();
+        }
+        ImGui::SameLine(0, kGap);
+        ImGui::Checkbox("Loop", &anim.looping);
+        ImGui::SameLine(0, kGap);
+        ImGui::SetNextItemWidth(90);
+        ImGui::DragFloat("Speed", &anim.speed, 0.005f, 0.0f, 10.0f, "%.2fx");
+        ImGui::SameLine(0, kGap);
+        ImGui::SetNextItemWidth(110);
+        float lengthEdit = anim.length;
+        if (ImGui::InputFloat("Length", &lengthEdit, 0.1f, 1.0f, "%.2f s")) {
+            anim.length = std::max(0.0f, lengthEdit);
+            anim.updateDuration();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Animation length in seconds (0 = auto from the last keyframe)");
 
-        if (s_rebindTarget == label) {
-            for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k) {
-                auto candidate = static_cast<ImGuiKey>(k);
-                if (candidate == ImGuiKey_LeftCtrl  || candidate == ImGuiKey_RightCtrl  ||
-                    candidate == ImGuiKey_LeftShift || candidate == ImGuiKey_RightShift ||
-                    candidate == ImGuiKey_LeftAlt   || candidate == ImGuiKey_RightAlt)
-                    continue;
+        anim.updateDuration();
+        float dur = anim.duration;
 
-                if (ImGui::IsKeyPressed(candidate)) {
-                    const ImGuiIO& io = ImGui::GetIO();
-                    bind.key  = candidate;
-                    bind.mods = 0;
-                    if (io.KeyCtrl)  bind.mods |= KeyMod_Ctrl;
-                    if (io.KeyShift) bind.mods |= KeyMod_Shift;
-                    if (io.KeyAlt)   bind.mods |= KeyMod_Alt;
-                    s_rebindTarget = nullptr;
-                    break;
+        ImGui::Spacing();
+        {
+            const float laneH  = 16.0f;
+            const float rulerH = 18.0f;
+            const float h = rulerH + laneH * 3.0f + 6.0f;
+            ImVec2 p0 = ImGui::GetCursorScreenPos();
+            float w = ImGui::GetContentRegionAvail().x;
+            ImGui::InvisibleButton("##timeline", ImVec2(w, h));
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + h), IM_COL32(18, 18, 20, 255), 3.0f);
+
+            float D = dur > 1e-4f ? dur : 1.0f;
+            auto timeToX = [&](float t) { return p0.x + (t / D) * w; };
+            auto xToTime = [&](float x) { return std::clamp(((x - p0.x) / w) * D, 0.0f, D); };
+
+            const int ticks = 10;
+            for (int i = 0; i <= ticks; ++i) {
+                float t = D * static_cast<float>(i) / ticks;
+                float x = timeToX(t);
+                dl->AddLine(ImVec2(x, p0.y), ImVec2(x, p0.y + rulerH * 0.5f), IM_COL32(90, 90, 95, 255));
+                char lab[16];
+                snprintf(lab, sizeof(lab), "%.2f", t);
+                dl->AddText(ImVec2(x + 2, p0.y + 1), IM_COL32(150, 150, 155, 255), lab);
+            }
+
+            struct Lane { ImU32 c; const char* n; const std::vector<float>* times; };
+            Lane lanes[3] = {
+                {EditorStyle::AXIS_X_U32, "P", &anim.positionTrack.getTimes()},
+                {EditorStyle::AXIS_Y_U32, "R", &anim.rotationTrack.getTimes()},
+                {EditorStyle::AXIS_Z_U32, "S", &anim.scaleTrack.getTimes()},
+            };
+            auto laneY = [&](int i) {
+                return p0.y + rulerH + laneH * static_cast<float>(i) + laneH * 0.5f;
+            };
+
+            // Keyframe dot under the mouse -> hover highlight + grab target.
+            ImVec2 mp = ImGui::GetIO().MousePos;
+            int   hovTrack = -1;
+            float hovTime  = 0.0f;
+            for (int i = 0; i < 3; ++i) {
+                float ly = laneY(i);
+                for (float t : *lanes[i].times) {
+                    float dx = timeToX(t) - mp.x, dy = ly - mp.y;
+                    if (dx * dx + dy * dy <= 49.0f) { hovTrack = i; hovTime = t; }
                 }
             }
+
+            auto moveDot = [&](auto& trk, float fromT, float toT) {
+                const auto& ts = trk.getTimes();
+                for (size_t k = 0; k < ts.size(); ++k) {
+                    if (ts[k] == fromT) { trk.setKeyframeTime(k, toT); return; }
+                }
+            };
+
+            if (ImGui::IsItemActivated()) {
+                if (hovTrack >= 0) { m_animDotTrack = hovTrack; m_animDotTime = hovTime; }
+                else m_animDotTrack = -1;
+            }
+
+            if (ImGui::IsItemActive()) {
+                float mt = xToTime(mp.x);
+                if (m_animDotTrack == 0)      moveDot(anim.positionTrack, m_animDotTime, mt);
+                else if (m_animDotTrack == 1) moveDot(anim.rotationTrack, m_animDotTime, mt);
+                else if (m_animDotTrack == 2) moveDot(anim.scaleTrack,    m_animDotTime, mt);
+                if (m_animDotTrack >= 0) { m_animDotTime = mt; anim.updateDuration(); }
+                else { anim.time = mt; anim.playing = false; }
+                previewPose();
+            }
+            if (ImGui::IsItemDeactivated()) m_animDotTrack = -1;
+
+            for (int i = 0; i < 3; ++i) {
+                float ly = laneY(i);
+                dl->AddText(ImVec2(p0.x + 3, ly - 7), lanes[i].c, lanes[i].n);
+                dl->AddLine(ImVec2(p0.x + 16, ly), ImVec2(p0.x + w, ly), IM_COL32(45, 45, 50, 255));
+                for (float t : *lanes[i].times) {
+                    bool hot = (i == hovTrack && t == hovTime)
+                            || (i == m_animDotTrack && t == m_animDotTime);
+                    dl->AddCircleFilled(ImVec2(timeToX(t), ly), hot ? 5.5f : 3.5f,
+                                        hot ? EditorStyle::HIGHLIGHT_U32 : lanes[i].c);
+                }
+            }
+
+            float px = timeToX(anim.time);
+            dl->AddLine(ImVec2(px, p0.y), ImVec2(px, p0.y + h), EditorStyle::HIGHLIGHT_U32, 1.5f);
+
+            if (hovTrack >= 0 && ImGui::IsItemHovered())
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
         }
+
+        ImGui::SetNextItemWidth(160);
+        float prevTime = anim.time;
+        if (ImGui::InputFloat("Time", &anim.time, 0.01f, 0.1f, "%.3f s")) {
+            anim.time = std::clamp(anim.time, 0.0f, std::max(dur, 0.0f));
+            if (anim.time != prevTime) { anim.playing = false; previewPose(); }
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("/ %.2f s", dur);
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("Tracks");
+
+        auto vec3Editor = [](const glm::vec3& in, glm::vec3& out) -> bool {
+            out = in;
+            ImGui::SetNextItemWidth(-1);
+            return ImGui::DragFloat3("##v", glm::value_ptr(out), 0.01f, 0.0f, 0.0f, "%.3f");
+        };
+        auto quatEditor = [](const glm::quat& in, glm::quat& out) -> bool {
+            glm::vec3 e = glm::degrees(glm::eulerAngles(in));
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::DragFloat3("##v", glm::value_ptr(e), 0.25f, 0.0f, 0.0f, "%.1f deg")) {
+                out = glm::quat(glm::radians(e));
+                return true;
+            }
+            out = in;
+            return false;
+        };
+
+        float ih2 = ImGui::GetFrameHeight();
+        auto trackEditor = [&](const char* label, const char* tag, auto& track,
+                               auto recordVal, auto valueEditor) {
+            char hdr[48];
+            snprintf(hdr, sizeof(hdr), "%s  (%zu)###%s", label, track.keyframeCount(), tag);
+            if (!ImGui::TreeNodeEx(hdr, ImGuiTreeNodeFlags_DefaultOpen)) return;
+
+            char addId[16];
+            snprintf(addId, sizeof(addId), "ka%s", tag);
+            if (iconButton(addId, EditorIcon::Plus, false, true,
+                           "Add/replace a keyframe at the current time from the live transform", ih2)) {
+                track.setKeyframe(anim.time, recordVal());
+                anim.updateDuration();
+                previewPose();
+            }
+            ImGui::SameLine();
+            char clrId[16];
+            snprintf(clrId, sizeof(clrId), "kc%s", tag);
+            if (iconButton(clrId, EditorIcon::Trash, false, track.keyframeCount() > 0,
+                           "Clear every keyframe on this track", ih2)) {
+                track.clear();
+                anim.updateDuration();
+            }
+            ImGui::SameLine(0, 12);
+            ImGui::SetNextItemWidth(-1);
+            char easeId[24];
+            snprintf(easeId, sizeof(easeId), "##e%s", tag);
+            EasingFunction f = track.getEasing();
+            if (drawEasingCombo(easeId, f)) track.setEasing(f);
+
+            size_t count = track.keyframeCount();
+            if (count == 0) {
+                ImGui::TreePop();
+                return;
+            }
+
+            using V = decltype(recordVal());
+
+            char tableId[16];
+            snprintf(tableId, sizeof(tableId), "##kt%s", tag);
+            if (ImGui::BeginTable(tableId, 4, ImGuiTableFlags_Borders
+                    | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("#");
+                ImGui::TableSetupColumn("Time");
+                ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("##del");
+                ImGui::TableHeadersRow();
+
+                int retimeIdx = -1, deleteIdx = -1, valueIdx = -1;
+                float retimeVal = 0.0f;
+                V newVal{};
+
+                const auto& times  = track.getTimes();
+                const auto& values = track.getValues();
+                for (size_t k = 0; k < count; ++k) {
+                    ImGui::TableNextRow();
+                    ImGui::PushID(static_cast<int>(k));
+
+                    ImGui::TableNextColumn();
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::Text("%zu", k);
+
+                    ImGui::TableNextColumn();
+                    float tt = times[k];
+                    ImGui::SetNextItemWidth(74);
+                    ImGui::InputFloat("##t", &tt, 0.0f, 0.0f, "%.3f");
+                    if (ImGui::IsItemDeactivatedAfterEdit() && tt != times[k]) {
+                        retimeIdx = static_cast<int>(k);
+                        retimeVal = tt;
+                    }
+
+                    ImGui::TableNextColumn();
+                    V tmp{};
+                    if (valueEditor(values[k], tmp)) {
+                        valueIdx = static_cast<int>(k);
+                        newVal = tmp;
+                    }
+
+                    ImGui::TableNextColumn();
+                    if (iconButton("kdel", EditorIcon::Cross, false, true,
+                                   "Delete this keyframe", ih2))
+                        deleteIdx = static_cast<int>(k);
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+
+                if (deleteIdx >= 0) {
+                    track.removeKeyframe(static_cast<size_t>(deleteIdx));
+                    anim.updateDuration();
+                    previewPose();
+                } else if (retimeIdx >= 0) {
+                    track.setKeyframeTime(static_cast<size_t>(retimeIdx), std::max(0.0f, retimeVal));
+                    anim.updateDuration();
+                    previewPose();
+                } else if (valueIdx >= 0) {
+                    track.setKeyframeValue(static_cast<size_t>(valueIdx), newVal);
+                    previewPose();
+                }
+            }
+            ImGui::TreePop();
+        };
+
+        trackEditor("Position", "P", anim.positionTrack, [&] { return tf.position; }, vec3Editor);
+        trackEditor("Rotation", "R", anim.rotationTrack, [&] { return tf.rotation; }, quatEditor);
+        trackEditor("Scale", "S", anim.scaleTrack, [&] { return tf.scale; }, vec3Editor);
     };
 
-    ImGui::TextDisabled("Panels");
-    drawKeybindRow("Toggle Stats",     state.keybinds.toggleStats);
-    drawKeybindRow("Toggle Hierarchy", state.keybinds.toggleHierarchy);
-    drawKeybindRow("Toggle Inspector", state.keybinds.toggleInspector);
-    drawKeybindRow("Toggle Bottom",    state.keybinds.toggleBottom);
-    drawKeybindRow("Toggle Editor",    state.keybinds.toggleEditor);
+    if (!scene.has<Animation>(id)) {
+        Animation preview;
+        preview.length = 5.0f;
 
-    ImGui::Spacing();
-    ImGui::TextDisabled("Entity");
-    drawKeybindRow("Delete",         state.keybinds.deleteEntity);
-    drawKeybindRow("Deselect",       state.keybinds.deselect);
-    drawKeybindRow("Duplicate",      state.keybinds.duplicate);
-    drawKeybindRow("Focus Selected", state.keybinds.focusSelected);
+        ImVec2 ovStart = ImGui::GetCursorScreenPos();
+        float ovW = ImGui::GetContentRegionAvail().x;
 
-    ImGui::Spacing();
-    ImGui::TextDisabled("Gizmo (disabled during fly-cam)");
-    drawKeybindRow("Translate",   state.keybinds.gizmoTranslate);
-    drawKeybindRow("Rotate",      state.keybinds.gizmoRotate);
-    drawKeybindRow("Scale",       state.keybinds.gizmoScale);
-    drawKeybindRow("Local/World", state.keybinds.gizmoToggleSpace);
+        ImGui::BeginDisabled();
+        editor(preview);
+        ImGui::EndDisabled();
 
-    ImGui::Spacing();
-    if (ImGui::Button("Reset Keybinds")) {
-        state.keybinds = EditorKeybinds{};
-        s_rebindTarget = nullptr;
+        float ovEndY = ImGui::GetCursorScreenPos().y;
+        float bw = 240.0f;
+        float bh = ImGui::GetFrameHeight() + 10.0f;
+        ImVec2 bpos(ovStart.x + (ovW - bw) * 0.5f,
+                    (ovStart.y + ovEndY) * 0.5f - bh * 0.5f);
+        ImGui::GetWindowDrawList()->AddRectFilled(
+            ImVec2(bpos.x - 14, bpos.y - 14), ImVec2(bpos.x + bw + 14, bpos.y + bh + 14),
+            IM_COL32(18, 18, 22, 238), 6.0f);
+        ImGui::SetCursorScreenPos(bpos);
+        if (ImGui::Button("Add Animation Component", ImVec2(bw, bh))) {
+            scene.add(Entity{id}, Animation{});
+            Animation& na = scene.get<Animation>(id);
+            na.length = 5.0f;
+            na.updateDuration();
+        }
+        return;
     }
 
-    ImGui::EndTabItem();
+    editor(scene.get<Animation>(id));
 }
 
-// Statistics: component counts, animation/light breakdown
-void BottomPanel::drawStatisticsTab(FrameContext& ctx) {
-    if (!ImGui::BeginTabItem("Statistics")) return;
-
+void BottomPanel::drawStatisticsSection(FrameContext& ctx) {
     auto& scene = ctx.scene;
 
     // Update cached counts periodically (every 0.5s), not every frame
@@ -315,13 +517,7 @@ void BottomPanel::drawStatisticsTab(FrameContext& ctx) {
     ImGui::TextDisabled("Animations");
     ImGui::Separator();
     ImGui::Text("Playing: %u  Paused: %u", rc.animPlaying, rc.animPaused);
-    if (ImGui::SmallButton("Pause All")) {
-        scene.forEach<Animation>([](EntityId, Animation& a) { a.playing = false; });
-    }
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Resume All")) {
-        scene.forEach<Animation>([](EntityId, Animation& a) { a.playing = true; });
-    }
+    ImGui::TextDisabled("(transport: Play/Stop bar, top of viewport)");
 
     ImGui::NextColumn();
 
@@ -331,8 +527,6 @@ void BottomPanel::drawStatisticsTab(FrameContext& ctx) {
     if (rc.lightsDisabled > 0) ImGui::Text("Disabled: %u", rc.lightsDisabled);
 
     ImGui::Columns(1);
-
-    ImGui::EndTabItem();
 }
 
 } // namespace Engine

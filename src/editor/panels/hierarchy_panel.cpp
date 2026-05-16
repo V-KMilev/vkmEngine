@@ -4,11 +4,25 @@
 
 namespace Engine {
 
+namespace {
+    /// True if @p maybeAncestor is @p node itself or anywhere up its parent
+    /// chain. Used to reject drag-reparenting that would create a cycle.
+    bool isSelfOrAncestor(const Scene& scene, EntityId node, EntityId maybeAncestor) {
+        EntityId cur = node;
+        for (int guard = 0; cur && guard < 64; ++guard) {
+            if (cur == maybeAncestor) return true;
+            if (!scene.has<Hierarchy>(cur)) break;
+            cur = scene.get<Hierarchy>(cur).parent;
+        }
+        return false;
+    }
+}
+
 void HierarchyPanel::draw(FrameContext& ctx, EditorState& state) {
     auto& scene = ctx.scene;
 
     // Panel header
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.78f, 0.90f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
     ImGui::TextUnformatted("Hierarchy");
     ImGui::PopStyleColor();
     ImGui::Separator();
@@ -119,6 +133,25 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
         reinterpret_cast<void*>(static_cast<uintptr_t>(entity.index)),
         flags, "%s  %s", icon, name);
 
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
+        ImGui::SetDragDropPayload("VKM_ENTITY", &entity, sizeof(EntityId));
+        ImGui::Text("Reparent %s", name);
+        ImGui::EndDragDropSource();
+    }
+    if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("VKM_ENTITY")) {
+            EntityId dragged = *static_cast<const EntityId*>(pl->Data);
+            // Reject dropping onto self or onto one of the dragged node's
+            // own descendants (would create a hierarchy cycle).
+            if (scene.isAlive(dragged) && !isSelfOrAncestor(scene, entity, dragged)) {
+                HierarchyOperations::setParent(scene, dragged, entity);
+                HierarchyOperations::markDirty(scene, dragged);
+                state.hierarchyDirty = true;
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
+
     if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) state.selectedEntity = entity;
 
     drawEntityContextMenu(scene, state, entity);
@@ -142,6 +175,14 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
     if (ImGui::MenuItem("Select")) state.selectedEntity = entity;
     if (ImGui::MenuItem("Duplicate", "Ctrl+D")) EditorActions::duplicateEntity(scene, state, entity);
     if (ImGui::MenuItem("Delete", "Del")) EditorActions::deleteEntity(scene, state, entity);
+
+    if (scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).parent) {
+        if (ImGui::MenuItem("Unparent")) {
+            HierarchyOperations::removeFromParent(scene, entity);
+            HierarchyOperations::markDirty(scene, entity);
+            state.hierarchyDirty = true;
+        }
+    }
 
     if (scene.has<Transform>(entity)) {
         ImGui::Separator();

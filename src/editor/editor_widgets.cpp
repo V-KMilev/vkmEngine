@@ -1,4 +1,5 @@
 #include "editor_widgets.h"
+#include "editor_style.h"
 
 #include <imgui.h>
 #include <cstdio>
@@ -13,15 +14,16 @@
 
 namespace Engine {
 
-// Axis colors (shared with drawVec3Control)
-static const ImVec4 kAxisRed      = ImVec4(0.80f, 0.18f, 0.18f, 1.00f);
-static const ImVec4 kAxisGreen    = ImVec4(0.30f, 0.70f, 0.20f, 1.00f);
-static const ImVec4 kAxisBlue     = ImVec4(0.20f, 0.35f, 0.85f, 1.00f);
-static const ImVec4 kAxisRedHov   = ImVec4(0.90f, 0.28f, 0.28f, 1.00f);
-static const ImVec4 kAxisGreenHov = ImVec4(0.40f, 0.80f, 0.30f, 1.00f);
-static const ImVec4 kAxisBlueHov  = ImVec4(0.30f, 0.45f, 0.95f, 1.00f);
+namespace {
+    const ImVec4& kAxisRed      = EditorStyle::AXIS_X;
+    const ImVec4& kAxisGreen    = EditorStyle::AXIS_Y;
+    const ImVec4& kAxisBlue     = EditorStyle::AXIS_Z;
+    const ImVec4& kAxisRedHov   = EditorStyle::AXIS_X_HOV;
+    const ImVec4& kAxisGreenHov = EditorStyle::AXIS_Y_HOV;
+    const ImVec4& kAxisBlueHov  = EditorStyle::AXIS_Z_HOV;
+    constexpr float kLabelWidth = EditorStyle::LABEL_WIDTH;
+}
 
-static constexpr float kLabelWidth = 100.0f;
 bool drawVec3Control(const char* label, float* values,
                      float resetValue, float speed) {
     bool changed = false;
@@ -89,6 +91,16 @@ bool drawRemoveButton(const char* compLabel, uint32_t entityIdx) {
         ImGui::PopStyleColor();
     }
     return clicked;
+}
+
+bool drawEasingCombo(const char* id, EasingFunction& easing) {
+    int idx = Easing::indexOf(easing);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::Combo(id, &idx, Easing::kEasingNames, Easing::kEasingCount)) {
+        easing = Easing::byIndex(idx);
+        return true;
+    }
+    return false;
 }
 
 bool matchesFilter(const char* text, const char* filter) {

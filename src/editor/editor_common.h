@@ -6,6 +6,8 @@
 #include "editor_state.h"
 #include "editor_widgets.h"
 #include "editor_keybinds.h"
+#include "editor_style.h"
+#include "editor_icons.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
