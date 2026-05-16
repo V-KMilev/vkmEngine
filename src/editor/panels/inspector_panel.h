@@ -1,5 +1,7 @@
 #pragma once
 
+#include <glm/glm.hpp>
+
 #include "ecs/entity.h"
 
 #include "framework/editor_panel.h"
@@ -31,6 +33,15 @@ class InspectorPanel : public EditorPanel {
         void drawAnimationSection(Scene& scene, EntityId id);
         void drawHierarchySection(Scene& scene, EditorState& state, EntityId id);
         void drawAddComponentMenu(Scene& scene, EntityId id);
+
+        // Euler-angle edit cache for the Transform Rotation field.
+        // Quaternion->Euler is many-to-one and singular at +/-90 deg (gimbal
+        // lock); re-deriving the display from t.rotation every frame makes X/Z
+        // snap to +/-180 and Y jitter. The inspector instead keeps the edited
+        // Euler as the source of truth and only re-seeds it when the rotation
+        // changed externally (different entity, gizmo drag, scene load).
+        EntityId  m_eulerFor{};
+        glm::vec3 m_eulerDeg{0.0f};
 };
 
 } // namespace Engine
