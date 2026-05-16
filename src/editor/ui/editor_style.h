@@ -12,7 +12,7 @@ namespace Engine::EditorStyle {
  * widget styling uses the ImVec4 variants.
  */
 
-// Axis colors (X red, Y green, Z blue) -- ImDrawList packed form.
+// Axis colors (X red, Y green, Z blue) - ImDrawList packed form.
 inline constexpr ImU32 AXIS_X_U32      = IM_COL32(220,  60,  60, 255);
 inline constexpr ImU32 AXIS_Y_U32      = IM_COL32( 80, 190,  60, 255);
 inline constexpr ImU32 AXIS_Z_U32      = IM_COL32( 60, 100, 220, 255);
@@ -21,7 +21,7 @@ inline constexpr ImU32 AXIS_X_FILL_U32 = IM_COL32(220,  60,  60,  50);
 inline constexpr ImU32 AXIS_Y_FILL_U32 = IM_COL32( 80, 190,  60,  50);
 inline constexpr ImU32 AXIS_Z_FILL_U32 = IM_COL32( 60, 100, 220,  50);
 
-// Axis colors -- ImGui widget (ImVec4) form, with hover variants.
+// Axis colors - ImGui widget (ImVec4) form, with hover variants.
 inline const ImVec4 AXIS_X      = ImVec4(0.86f, 0.24f, 0.24f, 1.00f);
 inline const ImVec4 AXIS_Y      = ImVec4(0.31f, 0.75f, 0.24f, 1.00f);
 inline const ImVec4 AXIS_Z      = ImVec4(0.24f, 0.39f, 0.86f, 1.00f);

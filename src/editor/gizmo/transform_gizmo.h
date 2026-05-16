@@ -79,7 +79,7 @@ class TransformGizmo {
         void drawRotationGizmo(ImDrawList* dl, const glm::vec3 axes[3]);
         void drawScaleGizmo(ImDrawList* dl, const ImVec2 screenAxes[3]);
 
-        // Drag handling -- return true if model was modified
+        // Drag handling - return true if model was modified
         bool handleTranslationDrag(glm::mat4& model, const glm::vec3 axes[3]);
         bool handleRotationDrag(glm::mat4& model, const glm::vec3 axes[3]);
         bool handleScaleDrag(glm::mat4& model, const glm::vec3 axes[3]);

@@ -160,7 +160,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
     ImGui::Text("Target: %s  (#%u)", nameBuf, id.index);
 
     if (!scene.has<Transform>(id)) {
-        ImGui::TextDisabled("Animation drives a Transform -- add a Transform component first.");
+        ImGui::TextDisabled("Animation drives a Transform - add a Transform component first.");
         return;
     }
 
