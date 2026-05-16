@@ -1,8 +1,8 @@
 #include "editor_system.h"
-#include "editor_context.h"
-#include "editor_widgets.h"
-#include "editor_theme.h"
-#include "editor_actions.h"
+#include "framework/editor_context.h"
+#include "ui/editor_widgets.h"
+#include "ui/editor_theme.h"
+#include "input/editor_actions.h"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>

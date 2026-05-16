@@ -1,4 +1,4 @@
-#include "transform_gizmo.h"
+#include "gizmo/transform_gizmo.h"
 
 #include <algorithm>
 #include <cmath>

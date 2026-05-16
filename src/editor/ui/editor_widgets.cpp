@@ -1,5 +1,5 @@
-#include "editor_widgets.h"
-#include "editor_style.h"
+#include "ui/editor_widgets.h"
+#include "ui/editor_style.h"
 
 #include <imgui.h>
 #include <cstdio>

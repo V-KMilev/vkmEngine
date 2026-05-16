@@ -1,5 +1,5 @@
-#include "inspector_panel.h"
-#include "../editor_common.h"
+#include "panels/inspector_panel.h"
+#include "framework/editor_common.h"
 
 #include "generator/light_generators.h"
 

@@ -1,5 +1,5 @@
-#include "editor_actions.h"
-#include "editor_state.h"
+#include "input/editor_actions.h"
+#include "framework/editor_state.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
