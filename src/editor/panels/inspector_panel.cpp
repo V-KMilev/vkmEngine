@@ -87,9 +87,17 @@ void InspectorPanel::drawTransformSection(Scene& scene, EntityId id) {
     bool changed = false;
     changed |= drawVec3Control("Position", glm::value_ptr(t.position), 0.0f, 0.1f);
 
-    glm::vec3 euler = glm::degrees(glm::eulerAngles(t.rotation));
-    if (drawVec3Control("Rotation", glm::value_ptr(euler), 0.0f, 0.5f)) {
-        t.rotation = glm::quat(glm::radians(euler));
+    // Re-seed the Euler cache only when the rotation changed outside this
+    // widget (selection change, gizmo, scene load). While the field is being
+    // edited, m_eulerDeg stays the source of truth, so typing 90 in one axis
+    // does not make the others snap to +/-180 via gimbal-lock decomposition.
+    const glm::quat cached = glm::quat(glm::radians(m_eulerDeg));
+    if (!(m_eulerFor == id) || glm::abs(glm::dot(cached, t.rotation)) < 0.9999f) {
+        m_eulerDeg = glm::degrees(glm::eulerAngles(t.rotation));
+        m_eulerFor = id;
+    }
+    if (drawVec3Control("Rotation", glm::value_ptr(m_eulerDeg), 0.0f, 0.5f)) {
+        t.rotation = glm::normalize(glm::quat(glm::radians(m_eulerDeg)));
         changed = true;
     }
 

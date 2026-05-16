@@ -312,16 +312,25 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
         ImGui::Spacing();
         ImGui::SeparatorText("Tracks");
 
-        auto vec3Editor = [](const glm::vec3& in, glm::vec3& out) -> bool {
+        auto vec3Editor = [](size_t, const glm::vec3& in, glm::vec3& out) -> bool {
             out = in;
             ImGui::SetNextItemWidth(-1);
             return ImGui::DragFloat3("##v", glm::value_ptr(out), 0.01f, 0.0f, 0.0f, "%.3f");
         };
-        auto quatEditor = [](const glm::quat& in, glm::quat& out) -> bool {
-            glm::vec3 e = glm::degrees(glm::eulerAngles(in));
+        auto quatEditor = [this](size_t k, const glm::quat& in, glm::quat& out) -> bool {
+            // Gimbal-lock guard (same as InspectorPanel): keep the edited
+            // Euler as the source of truth; only re-derive from the stored
+            // quaternion when this keyframe's rotation changed outside the
+            // drag (different keyframe row, entity switch, keyframe add).
+            const int key = static_cast<int>(k);
+            const glm::quat cached = glm::quat(glm::radians(m_rotEulerDeg));
+            if (m_rotEulerKey != key || glm::abs(glm::dot(cached, in)) < 0.9999f) {
+                m_rotEulerDeg = glm::degrees(glm::eulerAngles(in));
+                m_rotEulerKey = key;
+            }
             ImGui::SetNextItemWidth(-1);
-            if (ImGui::DragFloat3("##v", glm::value_ptr(e), 0.25f, 0.0f, 0.0f, "%.1f deg")) {
-                out = glm::quat(glm::radians(e));
+            if (ImGui::DragFloat3("##v", glm::value_ptr(m_rotEulerDeg), 0.25f, 0.0f, 0.0f, "%.1f deg")) {
+                out = glm::normalize(glm::quat(glm::radians(m_rotEulerDeg)));
                 return true;
             }
             out = in;
@@ -401,7 +410,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
 
                     ImGui::TableNextColumn();
                     V tmp{};
-                    if (valueEditor(values[k], tmp)) {
+                    if (valueEditor(k, values[k], tmp)) {
                         valueIdx = static_cast<int>(k);
                         newVal = tmp;
                     }
