@@ -5,34 +5,42 @@
 
 namespace Engine {
 
-class CameraController;
 class VisibilitySystem;
 class RenderSystem;
 struct FrameContext;
 struct EditorState;
 
 /**
- * @brief Editor bottom panel with tabbed settings, environment, camera, display, keybinds, gizmo, and resources.
+ * @brief Editor bottom panel: the per-scene working surface.
  *
- * Provides tabs for rendering settings (wireframe, pass toggles, culling), environment
- * (ambient light, clear color, grid, AABB debug), camera controller, display (fullscreen, VSync),
- * keybind rebinding, gizmo snap config, and cached resource statistics.
+ * A grouped master-detail browser. The left list is organised into
+ * WORLD (Environment, Rendering), TOOLS (Animation) and INFO (Statistics);
+ * the selection fills the scrollable detail pane on the right.
+ *
+ * Editor/application preferences (camera tuning, gizmo snap defaults,
+ * display, keybinds) intentionally do NOT live here -- they are in the
+ * Preferences window (see PreferencesPanel).
  */
 class BottomPanel {
     public:
-        BottomPanel(CameraController* cam, VisibilitySystem* vis, RenderSystem* render)
-            : m_cameraController(cam), m_visibilitySystem(vis), m_renderSystem(render) {}
+        BottomPanel(VisibilitySystem* vis, RenderSystem* render)
+            : m_visibilitySystem(vis), m_renderSystem(render) {}
 
         void draw(FrameContext& ctx, EditorState& state);
 
     private:
-        void drawRenderingTab(FrameContext& ctx, EditorState& state);
-        void drawEnvironmentTab(FrameContext& ctx);
-        void drawViewportTab(FrameContext& ctx, EditorState& state);
-        void drawEditorTab(EditorState& state);
-        void drawStatisticsTab(FrameContext& ctx);
+        void drawEnvironmentSection(FrameContext& ctx);
+        void drawRenderingSection(FrameContext& ctx, EditorState& state);
+        void drawAnimationSection(FrameContext& ctx, EditorState& state);
+        void drawStatisticsSection(FrameContext& ctx);
 
-        CameraController* m_cameraController = nullptr;
+        int m_selectedSection = 0;
+
+        // Timeline keyframe-dot drag state (Animation section).
+        // m_animDotTrack: -1 none, 0 position, 1 rotation, 2 scale.
+        int   m_animDotTrack = -1;
+        float m_animDotTime  = 0.0f;
+
         VisibilitySystem* m_visibilitySystem = nullptr;
         RenderSystem*     m_renderSystem     = nullptr;
 

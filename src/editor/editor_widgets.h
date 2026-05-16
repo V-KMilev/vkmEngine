@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "ecs/entity.h"
+#include "system/animation/easing.h"
 
 namespace Engine {
 
@@ -21,6 +22,11 @@ bool drawVec3Control(const char* label, float* values,
 void drawPropertyLabel(const char* label);
 bool drawRemoveButton(const char* compLabel, uint32_t entityIdx);
 bool matchesFilter(const char* text, const char* filter);
+
+/// Easing-function dropdown. Lists all named easings; on selection updates
+/// @p easing in place and returns true. @p id must be a unique ImGui id
+/// (e.g. "##easePos"). Sets the next item width to fill the row.
+bool drawEasingCombo(const char* id, EasingFunction& easing);
 
 void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t bufSize);
 void getEntityIcon(const Scene& scene, EntityId id, char* buf, size_t bufSize);

@@ -98,10 +98,13 @@ void CameraController::focusOn(Scene& scene, const glm::vec3& target, float dist
 
     transform.position = target + dir * distance;
 
-    // Recompute yaw/pitch from new look direction (consistent with updateRotationFromAngles)
+    // Recompute yaw/pitch from the new look direction. This must invert the
+    // exact forward mapping updateRotationFromAngles() produces:
+    //   forward = (cos(pitch)*sin(yaw), sin(pitch), cos(pitch)*cos(yaw))
+    // so pitch = asin(forward.y) and yaw = atan2(forward.x, forward.z).
     glm::vec3 lookDir = glm::normalize(target - transform.position);
-    m_pitch = std::asin(std::clamp(-lookDir.y, -1.0f, 1.0f));
-    m_yaw   = std::atan2(-lookDir.x, lookDir.z);
+    m_pitch = std::asin(std::clamp(lookDir.y, -1.0f, 1.0f));
+    m_yaw   = std::atan2(lookDir.x, lookDir.z);
 
     updateRotationFromAngles(transform.rotation, m_yaw, m_pitch);
 }

@@ -12,6 +12,9 @@
 #include "panels/bottom_panel.h"
 #include "panels/hierarchy_panel.h"
 #include "panels/gizmo_overlay.h"
+#include "panels/viewport_toolbar.h"
+#include "panels/playback_bar.h"
+#include "panels/preferences_panel.h"
 
 struct GLFWwindow;
 
@@ -69,6 +72,9 @@ class EditorSystem : public System {
         BottomPanel      m_bottom;
         ViewportOverlay  m_viewportOverlay;
         GizmoOverlay     m_gizmoOverlay;
+        ViewportToolbar  m_viewportToolbar;
+        ViewportPlaybar  m_playbar;
+        PreferencesPanel m_preferences;
 
         // Input state for F5 toggle
         bool m_f5WasDown = false;

@@ -33,10 +33,11 @@ struct EditorState {
     EditorKeybinds keybinds;
 
     // Panel visibility
-    bool showStats     = true;
-    bool showHierarchy = true;
-    bool showInspector = true;
-    bool showBottom    = true;
+    bool showStats       = true;
+    bool showHierarchy   = true;
+    bool showInspector   = true;
+    bool showBottom      = true;
+    bool showPreferences = false;   ///< Preferences window (Ctrl+,)
 
     // Layout dimensions (pixels)
     float leftPanelWidth    = 260.0f;

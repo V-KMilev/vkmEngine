@@ -4,10 +4,13 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "editor_style.h"
+
 namespace Engine {
 
-/// Gizmo operation type.
-enum class GizmoOperation { Translate, Rotate, Scale };
+/// Gizmo operation type. Select is a no-handle mode: picking only, no
+/// manipulation handles drawn (GizmoOverlay skips manipulate() for it).
+enum class GizmoOperation { Translate, Rotate, Scale, Select };
 
 /// Gizmo coordinate space.
 enum class GizmoMode { Local, World };
@@ -137,13 +140,13 @@ class TransformGizmo {
         static constexpr float LINE_THICKNESS      = 2.5f;
         static constexpr float HIGHLIGHT_THICKNESS = 3.5f;
 
-        static constexpr ImU32 COLOR_X         = IM_COL32(220, 60, 60, 255);
-        static constexpr ImU32 COLOR_Y         = IM_COL32(80, 190, 60, 255);
-        static constexpr ImU32 COLOR_Z         = IM_COL32(60, 100, 220, 255);
-        static constexpr ImU32 COLOR_HIGHLIGHT = IM_COL32(255, 210, 50, 255);
-        static constexpr ImU32 COLOR_PLANE_X   = IM_COL32(220, 60, 60, 50);
-        static constexpr ImU32 COLOR_PLANE_Y   = IM_COL32(80, 190, 60, 50);
-        static constexpr ImU32 COLOR_PLANE_Z   = IM_COL32(60, 100, 220, 50);
+        static constexpr ImU32 COLOR_X         = EditorStyle::AXIS_X_U32;
+        static constexpr ImU32 COLOR_Y         = EditorStyle::AXIS_Y_U32;
+        static constexpr ImU32 COLOR_Z         = EditorStyle::AXIS_Z_U32;
+        static constexpr ImU32 COLOR_HIGHLIGHT = EditorStyle::HIGHLIGHT_U32;
+        static constexpr ImU32 COLOR_PLANE_X   = EditorStyle::AXIS_X_FILL_U32;
+        static constexpr ImU32 COLOR_PLANE_Y   = EditorStyle::AXIS_Y_FILL_U32;
+        static constexpr ImU32 COLOR_PLANE_Z   = EditorStyle::AXIS_Z_FILL_U32;
 };
 
 } // namespace Engine
