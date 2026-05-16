@@ -1,6 +1,6 @@
-#include "viewport_toolbar.h"
-#include "../editor_common.h"
-#include "../editor_actions.h"
+#include "overlays/viewport_toolbar.h"
+#include "framework/editor_common.h"
+#include "input/editor_actions.h"
 
 namespace Engine {
 

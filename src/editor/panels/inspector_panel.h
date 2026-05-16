@@ -2,7 +2,7 @@
 
 #include "ecs/entity.h"
 
-#include "../editor_panel.h"
+#include "framework/editor_panel.h"
 
 namespace Engine {
 

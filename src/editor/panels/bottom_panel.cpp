@@ -1,5 +1,5 @@
-#include "bottom_panel.h"
-#include "../editor_common.h"
+#include "panels/bottom_panel.h"
+#include "framework/editor_common.h"
 
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"

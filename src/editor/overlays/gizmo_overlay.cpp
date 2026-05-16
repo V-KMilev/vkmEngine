@@ -1,5 +1,5 @@
-#include "gizmo_overlay.h"
-#include "../editor_common.h"
+#include "overlays/gizmo_overlay.h"
+#include "framework/editor_common.h"
 
 #include <glm/gtc/quaternion.hpp>
 

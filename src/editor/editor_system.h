@@ -7,15 +7,15 @@
 #include <imgui.h>
 
 #include "core/system.h"
-#include "editor_state.h"
-#include "editor_panel.h"
-#include "panels/viewport_overlay.h"
+#include "framework/editor_state.h"
+#include "framework/editor_panel.h"
+#include "overlays/viewport_overlay.h"
 #include "panels/inspector_panel.h"
 #include "panels/bottom_panel.h"
 #include "panels/hierarchy_panel.h"
-#include "panels/gizmo_overlay.h"
-#include "panels/viewport_toolbar.h"
-#include "panels/playback_bar.h"
+#include "overlays/gizmo_overlay.h"
+#include "overlays/viewport_toolbar.h"
+#include "overlays/playback_bar.h"
 #include "panels/preferences_panel.h"
 
 struct GLFWwindow;
