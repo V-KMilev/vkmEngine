@@ -147,7 +147,7 @@ void EditorSystem::update(FrameContext& ctx) {
         ImGui::PopStyleColor();
         ImGui::PopStyleVar(2);
 
-        drawMenuBar(ctx);
+        m_menuBar.draw(ec, m_sceneIO);
 
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
 
@@ -290,92 +290,6 @@ void EditorSystem::update(FrameContext& ctx) {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     if (m_renderSystem && m_state.wireframe) m_renderSystem->setWireframe(true);
-}
-
-void EditorSystem::drawMenuBar(FrameContext& ctx) {
-    if (!ImGui::BeginMenuBar()) return;
-
-    if (ImGui::BeginMenu("File")) {
-        char lbl[48];
-        const bool haveCurrent = m_sceneIO.hasPath();
-        if (ImGui::MenuItem("Save Scene",   getKeyBindLabel(m_state.keybinds.saveScene, lbl, sizeof(lbl)), false, haveCurrent || true)) {
-            m_sceneIO.save(ctx);
-        }
-        if (ImGui::MenuItem("Save Scene As...", getKeyBindLabel(m_state.keybinds.saveSceneAs, lbl, sizeof(lbl)))) {
-            m_sceneIO.requestSaveAs();
-        }
-        if (ImGui::MenuItem("Load Scene...", getKeyBindLabel(m_state.keybinds.loadScene, lbl, sizeof(lbl)))) {
-            m_sceneIO.requestLoad();
-        }
-        if (haveCurrent) {
-            ImGui::Separator();
-            ImGui::TextDisabled("Current: %s", m_sceneIO.path().c_str());
-        }
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu("Edit")) {
-        char lbl[48];
-        if (ImGui::MenuItem("Preferences...",
-                getKeyBindLabel(m_state.keybinds.openPreferences, lbl, sizeof(lbl)),
-                m_state.showPreferences)) {
-            m_state.showPreferences = !m_state.showPreferences;
-        }
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu("View")) {
-        char lbl[48];
-        ImGui::MenuItem("Stats Overlay", getKeyBindLabel(m_state.keybinds.toggleStats, lbl, sizeof(lbl)), &m_state.showStats);
-        ImGui::MenuItem("Hierarchy",     getKeyBindLabel(m_state.keybinds.toggleHierarchy, lbl, sizeof(lbl)), &m_state.showHierarchy);
-        ImGui::MenuItem("Inspector",     getKeyBindLabel(m_state.keybinds.toggleInspector, lbl, sizeof(lbl)), &m_state.showInspector);
-        ImGui::MenuItem("Bottom Panel",  getKeyBindLabel(m_state.keybinds.toggleBottom, lbl, sizeof(lbl)), &m_state.showBottom);
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu("Scene")) {
-        EditorActions::drawCreateEntityMenu(ctx.scene, ctx.resources, m_state);
-        ImGui::Separator();
-        char deselectLbl[48];
-        if (ImGui::MenuItem("Deselect", getKeyBindLabel(m_state.keybinds.deselect, deselectLbl, sizeof(deselectLbl)))) {
-            m_state.selectedEntity = {};
-        }
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu("Help")) {
-        if (ImGui::MenuItem("About")) ImGui::OpenPopup("##About");
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginPopup("##About")) {
-        ImGui::Text("%s  v%s", APP_NAME, APP_VERSION);
-        ImGui::Separator();
-        ImGui::TextDisabled("Branch:");   ImGui::SameLine(); ImGui::Text("%s", APP_BRANCH);
-        ImGui::TextDisabled("Commit:");   ImGui::SameLine(); ImGui::Text("%.8s", APP_COMMIT_HASH);
-        ImGui::TextDisabled("Built:");    ImGui::SameLine(); ImGui::Text("%s", APP_BUILD_DATE);
-        ImGui::TextDisabled("OpenGL:");   ImGui::SameLine(); ImGui::Text("%s", (const char*)glGetString(GL_VERSION));
-        ImGui::TextDisabled("Renderer:"); ImGui::SameLine(); ImGui::Text("%s", (const char*)glGetString(GL_RENDERER));
-        ImGui::TextDisabled("ImGui:");    ImGui::SameLine(); ImGui::Text("%s", IMGUI_VERSION);
-        ImGui::EndPopup();
-    }
-
-    m_sceneIO.drawDialogs(ctx, m_state);
-
-    const auto& info = ctx.statistics.getFrameInfo();
-    char fps[32];
-    snprintf(fps, sizeof(fps), "%.0f FPS", info.frameRateInfo.frameRate);
-    float fpsW = ImGui::CalcTextSize(fps).x;
-    ImGui::SameLine(ImGui::GetWindowWidth() - fpsW - 16.0f);
-    float rate = info.frameRateInfo.frameRate;
-    ImVec4 fpsColor = rate >= 60 ? ImVec4(0.4f, 0.8f, 0.4f, 1.0f) :
-                      rate >= 30 ? ImVec4(0.9f, 0.8f, 0.3f, 1.0f) :
-                                   ImVec4(0.9f, 0.3f, 0.3f, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_Text, fpsColor);
-    ImGui::TextUnformatted(fps);
-    ImGui::PopStyleColor();
-
-    ImGui::EndMenuBar();
 }
 
 void EditorSystem::drawStatusBar(const FrameContext& ctx) {
