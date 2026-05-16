@@ -41,7 +41,8 @@ EditorSystem::EditorSystem(
     , m_cameraController(cameraController)
     , m_renderSystem(renderSystem)
     , m_events(events)
-    , m_bottom(cameraController, visibilitySystem, renderSystem)
+    , m_bottom(visibilitySystem, renderSystem)
+    , m_preferences(cameraController)
 {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -95,7 +96,9 @@ void EditorSystem::update(FrameContext& ctx) {
 
     if (m_cameraController) {
         bool blockMouse = (!m_state.viewportHovered && !m_cameraController->isLooking())
-                       || m_gizmoOverlay.isGizmoOver();
+                       || m_gizmoOverlay.isGizmoOver()
+                       || m_viewportToolbar.isHovered()
+                       || m_playbar.isHovered();
         m_cameraController->setEditorInputCapture(blockMouse, ImGui::GetIO().WantTextInput);
     }
 
@@ -117,6 +120,7 @@ void EditorSystem::update(FrameContext& ctx) {
         if (isPressed(kb.toggleInspector)) m_state.showInspector = !m_state.showInspector;
         if (isPressed(kb.toggleBottom))    m_state.showBottom    = !m_state.showBottom;
         if (isPressed(kb.toggleEditor))    m_state.editorVisible = false;
+        if (isPressed(kb.openPreferences)) m_state.showPreferences = !m_state.showPreferences;
 
         if (isPressed(kb.saveSceneAs))     openSaveAsPrompt();
         else if (isPressed(kb.saveScene))  saveScene(ctx);
@@ -137,6 +141,7 @@ void EditorSystem::update(FrameContext& ctx) {
 
         // Gizmo mode shortcuts (only when camera NOT in fly mode)
         if (!m_cameraController->isLooking()) {
+            if (isPressed(kb.gizmoSelect))      m_state.gizmoOperation = GizmoOperation::Select;
             if (isPressed(kb.gizmoTranslate))   m_state.gizmoOperation = GizmoOperation::Translate;
             if (isPressed(kb.gizmoRotate))      m_state.gizmoOperation = GizmoOperation::Rotate;
             if (isPressed(kb.gizmoScale))       m_state.gizmoOperation = GizmoOperation::Scale;
@@ -200,7 +205,10 @@ void EditorSystem::update(FrameContext& ctx) {
                 if (m_state.showStats) m_viewportOverlay.draw(ctx, m_state);
                 m_viewportOverlay.drawNavigationGizmo(ctx, vpMin, vpMax);
                 m_gizmoOverlay.drawTransformGizmo(ctx, m_state, vpMin, centerW, mainH);
-                m_gizmoOverlay.handleViewportPick(ctx, m_state, vpMin, centerW, mainH);
+                m_viewportToolbar.draw(ctx, m_state, m_cameraController);
+                m_playbar.draw(ctx);
+                if (!m_viewportToolbar.isHovered() && !m_playbar.isHovered())
+                    m_gizmoOverlay.handleViewportPick(ctx, m_state, vpMin, centerW, mainH);
             } else {
                 m_state.viewportHovered = false;
             }
@@ -295,6 +303,12 @@ void EditorSystem::update(FrameContext& ctx) {
     }
     ImGui::End();
 
+    // Preferences is a separate floating window, not part of the docked
+    // editor layout. Drawn after the root window so it stacks on top.
+    if (m_state.showPreferences) {
+        m_preferences.draw(&m_state.showPreferences, ctx, m_state);
+    }
+
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -323,6 +337,16 @@ void EditorSystem::drawMenuBar(FrameContext& ctx) {
         ImGui::EndMenu();
     }
 
+    if (ImGui::BeginMenu("Edit")) {
+        char lbl[48];
+        if (ImGui::MenuItem("Preferences...",
+                getKeyBindLabel(m_state.keybinds.openPreferences, lbl, sizeof(lbl)),
+                m_state.showPreferences)) {
+            m_state.showPreferences = !m_state.showPreferences;
+        }
+        ImGui::EndMenu();
+    }
+
     if (ImGui::BeginMenu("View")) {
         char lbl[48];
         ImGui::MenuItem("Stats Overlay", getKeyBindLabel(m_state.keybinds.toggleStats, lbl, sizeof(lbl)), &m_state.showStats);
@@ -334,13 +358,6 @@ void EditorSystem::drawMenuBar(FrameContext& ctx) {
 
     if (ImGui::BeginMenu("Scene")) {
         EditorActions::drawCreateEntityMenu(ctx.scene, ctx.resources, m_state);
-        ImGui::Separator();
-        if (ImGui::MenuItem("Pause All Animations")) {
-            ctx.scene.forEach<Animation>([](EntityId, Animation& a) { a.playing = false; });
-        }
-        if (ImGui::MenuItem("Resume All Animations")) {
-            ctx.scene.forEach<Animation>([](EntityId, Animation& a) { a.playing = true; });
-        }
         ImGui::Separator();
         char deselectLbl[48];
         if (ImGui::MenuItem("Deselect", getKeyBindLabel(m_state.keybinds.deselect, deselectLbl, sizeof(deselectLbl)))) {

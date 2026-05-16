@@ -197,6 +197,7 @@ nlohmann::json save(const Animation& a) {
         {"rotation", saveTrack(a.rotationTrack, [](const glm::quat& q) { return quatToJson(q); })},
         {"scale",    saveTrack(a.scaleTrack,    [](const glm::vec3& v) { return vec3ToJson(v); })},
         {"time",     a.time},
+        {"length",   a.length},
         {"speed",    a.speed},
         {"playing",  a.playing},
         {"looping",  a.looping},
@@ -208,6 +209,7 @@ void load(const nlohmann::json& j, Animation& a) {
     if (j.contains("rotation")) loadTrack(j["rotation"], a.rotationTrack, quatFromJson);
     if (j.contains("scale"))    loadTrack(j["scale"],    a.scaleTrack,    vec3FromJson);
     a.time    = j.value("time",    a.time);
+    a.length  = j.value("length",  a.length);
     a.speed   = j.value("speed",   a.speed);
     a.playing = j.value("playing", a.playing);
     a.looping = j.value("looping", a.looping);

@@ -7,7 +7,7 @@ namespace Engine {
 
 void InspectorPanel::draw(FrameContext& ctx, EditorState& state) {
     // Panel header
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.78f, 0.90f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
     ImGui::TextUnformatted("Inspector");
     ImGui::PopStyleColor();
     ImGui::Separator();
@@ -296,6 +296,12 @@ void InspectorPanel::drawCameraSection(Scene& scene, EntityId id) {
     drawPropertyLabel("Far Clip");  ImGui::DragFloat("##CFar", &cam.zFar, 1.0f, cam.zNear, 100000.0f, "%.0f");
     drawPropertyLabel("Exposure");  ImGui::DragFloat("##CExp", &cam.exposure, 0.01f, 0.0f, 10.0f, "%.2f");
     drawPropertyLabel("Active");    ImGui::Checkbox("##CAct", &cam.active);
+
+    if (ImGui::Button("Set as Main Camera", ImVec2(-1, 0))) {
+        scene.forEach<Camera>([&](EntityId other, Camera& c) {
+            c.active = (other == id);
+        });
+    }
     ImGui::Spacing();
 }
 
@@ -306,33 +312,36 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EntityId id) {
     if (!open) return;
     auto& anim = scene.get<Animation>(id);
 
-    float btnW = ImGui::GetFrameHeight();
-    bool playing = anim.playing;
-    if (playing) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.28f, 0.48f, 0.76f, 1.0f));
-    if (ImGui::Button(playing ? "||" : ">", ImVec2(btnW * 1.5f, 0))) anim.playing = !anim.playing;
-    if (playing) ImGui::PopStyleColor();
-    ImGui::SameLine();
-    if (ImGui::Button("|<", ImVec2(btnW * 1.5f, 0))) anim.time = 0.0f;
-    ImGui::SameLine();
+    const float kGap = 8.0f;
+    float ih = ImGui::GetFrameHeight();
+    if (iconButton("inspPlay", anim.playing ? EditorIcon::Pause : EditorIcon::Play,
+                   anim.playing, true, anim.playing ? "Pause" : "Play", ih))
+        anim.playing = !anim.playing;
+    ImGui::SameLine(0, kGap);
+    if (iconButton("inspStop", EditorIcon::Stop, false, true, "Stop (rewind)", ih)) {
+        anim.playing = false;
+        anim.time = 0.0f;
+    }
+    ImGui::SameLine(0, kGap);
     ImGui::Checkbox("Loop", &anim.looping);
+    ImGui::SameLine(0, kGap);
+    ImGui::SetNextItemWidth(-1);
+    ImGui::DragFloat("##ASpeed", &anim.speed, 0.005f, 0.0f, 10.0f, "Speed %.2fx");
 
     if (anim.duration > 0.0f) {
         ImGui::SetNextItemWidth(-1);
         char timeFmt[32];
         snprintf(timeFmt, sizeof(timeFmt), "%%.2f / %.2f s", anim.duration);
         ImGui::SliderFloat("##ATime", &anim.time, 0.0f, anim.duration, timeFmt);
-        ImVec4 barCol = anim.playing ? ImVec4(0.33f, 0.56f, 0.88f, 1.0f) : ImVec4(0.40f, 0.40f, 0.44f, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, barCol);
-        ImGui::ProgressBar(anim.time / anim.duration, ImVec2(-1, 3), "");
-        ImGui::PopStyleColor();
     }
 
-    drawPropertyLabel("Speed"); ImGui::DragFloat("##ASpeed", &anim.speed, 0.01f, 0.0f, 10.0f, "%.2fx");
-    ImGui::TextDisabled("Tracks: %s%s%s  Dur: %.2fs",
+    ImGui::TextDisabled("Tracks: %s%s%s | keys %zu/%zu/%zu",
         anim.positionTrack.isEmpty() ? "" : "P ",
         anim.rotationTrack.isEmpty() ? "" : "R ",
-        anim.scaleTrack.isEmpty() ? "" : "S ",
-        anim.duration);
+        anim.scaleTrack.isEmpty()    ? "" : "S ",
+        anim.positionTrack.keyframeCount(),
+        anim.rotationTrack.keyframeCount(),
+        anim.scaleTrack.keyframeCount());
     ImGui::Spacing();
 }
 
@@ -348,8 +357,15 @@ void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, Enti
         if (ImGui::SmallButton(parentName)) {
             state.selectedEntity = h.parent;
         }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Unparent")) {
+            HierarchyOperations::removeFromParent(scene, id);
+            HierarchyOperations::markDirty(scene, id);
+            state.hierarchyDirty = true;
+            return;  // `h` is now stale (component may have been removed)
+        }
     } else {
-        ImGui::TextDisabled("Root (no parent)");
+        ImGui::TextDisabled("Root (no parent). Drag entities in the Hierarchy to parent them.");
     }
 
     if (h.firstChild) {

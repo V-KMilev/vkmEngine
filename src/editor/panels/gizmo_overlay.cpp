@@ -11,6 +11,7 @@
 namespace Engine {
 
 void GizmoOverlay::drawTransformGizmo(FrameContext& ctx, EditorState& state, ImVec2 vpMin, float vpWidth, float vpHeight) {
+    if (state.gizmoOperation == GizmoOperation::Select) return;  // pick-only, no handles
     if (!state.selectedEntity || !ctx.scene.isAlive(state.selectedEntity)) return;
     if (!ctx.visibility || !ctx.visibility->hasCamera) return;
     if (!ctx.scene.has<Transform>(state.selectedEntity)) return;

@@ -187,6 +187,40 @@ namespace Easing {
         #undef VKM_EASING_MATCH
         return &linear;
     }
+
+    /// All easing function names in display order, grouped by family.
+    /// Used to drive UI dropdowns; resolve to a function with byName().
+    inline constexpr const char* kEasingNames[] = {
+        "linear",
+        "easeInQuad",    "easeOutQuad",    "easeInOutQuad",
+        "easeInCubic",   "easeOutCubic",   "easeInOutCubic",
+        "easeInQuart",   "easeOutQuart",   "easeInOutQuart",
+        "easeInQuint",   "easeOutQuint",   "easeInOutQuint",
+        "easeInSine",    "easeOutSine",    "easeInOutSine",
+        "easeInExpo",    "easeOutExpo",    "easeInOutExpo",
+        "easeInCirc",    "easeOutCirc",    "easeInOutCirc",
+        "easeInBack",    "easeOutBack",    "easeInOutBack",
+        "easeInElastic", "easeOutElastic", "easeInOutElastic",
+        "easeInBounce",  "easeOutBounce",  "easeInOutBounce",
+    };
+
+    inline constexpr int kEasingCount =
+        static_cast<int>(sizeof(kEasingNames) / sizeof(kEasingNames[0]));
+
+    /// Index into kEasingNames -> function pointer (clamped to linear).
+    inline EasingFunction byIndex(int i) {
+        if (i < 0 || i >= kEasingCount) return &linear;
+        return byName(kEasingNames[i]);
+    }
+
+    /// Function pointer -> index into kEasingNames (0/linear if unknown).
+    inline int indexOf(EasingFunction f) {
+        const char* n = nameOf(f);
+        for (int i = 0; i < kEasingCount; ++i) {
+            if (std::strcmp(n, kEasingNames[i]) == 0) return i;
+        }
+        return 0;
+    }
 } // namespace Easing
 
 } // namespace Engine

@@ -35,6 +35,7 @@ struct EditorKeybinds {
     KeyBind toggleInspector  = { ImGuiKey_2,      KeyMod_Ctrl };
     KeyBind toggleBottom     = { ImGuiKey_3,      KeyMod_Ctrl };
     KeyBind toggleEditor     = { ImGuiKey_F5,     KeyMod_None };
+    KeyBind openPreferences  = { ImGuiKey_Comma,  KeyMod_Ctrl };
 
     // Entity operations
     KeyBind deleteEntity     = { ImGuiKey_Delete, KeyMod_None };
@@ -43,6 +44,7 @@ struct EditorKeybinds {
     KeyBind focusSelected    = { ImGuiKey_F,      KeyMod_None };
 
     // Gizmo modes (only active when camera NOT in fly mode)
+    KeyBind gizmoSelect      = { ImGuiKey_Q, KeyMod_None };
     KeyBind gizmoTranslate   = { ImGuiKey_W, KeyMod_None };
     KeyBind gizmoRotate      = { ImGuiKey_E, KeyMod_None };
     KeyBind gizmoScale       = { ImGuiKey_R, KeyMod_None };
