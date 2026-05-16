@@ -1,6 +1,6 @@
-#include "hierarchy_panel.h"
-#include "../editor_common.h"
-#include "../editor_actions.h"
+#include "panels/hierarchy_panel.h"
+#include "framework/editor_common.h"
+#include "input/editor_actions.h"
 
 namespace Engine {
 

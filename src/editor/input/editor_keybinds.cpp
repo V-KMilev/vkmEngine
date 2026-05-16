@@ -1,4 +1,4 @@
-#include "editor_keybinds.h"
+#include "input/editor_keybinds.h"
 
 #include <cstdio>
 #include <cstring>

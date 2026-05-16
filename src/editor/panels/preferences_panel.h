@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../editor_panel.h"
+#include "framework/editor_panel.h"
 
 namespace Engine {
 

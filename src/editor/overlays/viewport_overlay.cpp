@@ -1,6 +1,6 @@
-#include "viewport_overlay.h"
-#include "../editor_common.h"
-#include "../editor_style.h"
+#include "overlays/viewport_overlay.h"
+#include "framework/editor_common.h"
+#include "ui/editor_style.h"
 
 #include <GL/glew.h>
 

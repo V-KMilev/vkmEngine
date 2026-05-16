@@ -1,5 +1,5 @@
-#include "preferences_panel.h"
-#include "../editor_common.h"
+#include "panels/preferences_panel.h"
+#include "framework/editor_common.h"
 
 #include "system/camera/camera_controller.h"
 #include "platform/window/window_manager.h"

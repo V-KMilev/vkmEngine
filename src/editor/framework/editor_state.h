@@ -1,8 +1,8 @@
 #pragma once
 
 #include "ecs/entity.h"
-#include "editor_keybinds.h"
-#include "transform_gizmo.h"
+#include "input/editor_keybinds.h"
+#include "gizmo/transform_gizmo.h"
 
 namespace Engine {
 

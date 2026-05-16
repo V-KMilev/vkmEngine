@@ -3,7 +3,7 @@
 #include <imgui.h>
 #include <glm/gtc/quaternion.hpp>
 
-#include "transform_gizmo.h"
+#include "gizmo/transform_gizmo.h"
 
 namespace Engine {
 

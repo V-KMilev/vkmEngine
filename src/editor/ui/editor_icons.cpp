@@ -1,5 +1,5 @@
-#include "editor_icons.h"
-#include "editor_style.h"
+#include "ui/editor_icons.h"
+#include "ui/editor_style.h"
 
 #include <cmath>
 #include <cstdio>
@@ -126,12 +126,14 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
             // All coords pixel-snapped and symmetric.
             float cx = std::round(c.x), cy = std::round(c.y);
             float half  = std::round(0.8f * r);
-            float inner = std::round(half / 3.0f);
+            float inner = std::round(half / 4.0f);
             float offset = 0.4f;
-            dl->AddLine(ImVec2(cx - inner, cy - half), ImVec2(cx - inner, cy + half), col, th / 1.2f);
-            dl->AddLine(ImVec2(cx + inner, cy - half), ImVec2(cx + inner, cy + half), col, th / 1.2f);
-            dl->AddLine(ImVec2(cx - half, cy - inner), ImVec2(cx + half, cy - inner), col, th / 1.2f);
-            dl->AddLine(ImVec2(cx - half, cy + inner), ImVec2(cx + half, cy + inner), col, th / 1.2f);
+            float cxInner = cx - offset;
+            float cyInner = cy - offset;
+            dl->AddLine(ImVec2(cxInner - inner, cyInner - half), ImVec2(cxInner - inner, cyInner + half), col, th / 1.3f);
+            dl->AddLine(ImVec2(cxInner + inner, cyInner - half), ImVec2(cxInner + inner, cyInner + half), col, th / 1.3f);
+            dl->AddLine(ImVec2(cxInner - half, cyInner - inner), ImVec2(cxInner + half, cyInner - inner), col, th / 1.3f);
+            dl->AddLine(ImVec2(cxInner - half, cyInner + inner), ImVec2(cxInner + half, cyInner + inner), col, th / 1.3f);
             dl->AddRect(ImVec2(cx - half - offset, cy - half - offset), ImVec2(cx + half + offset, cy + half + offset), col, 0.0f, 0, th);
             break;
         }

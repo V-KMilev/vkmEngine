@@ -3,12 +3,12 @@
 // Common includes for editor panel implementation files.
 // Each panel .cpp includes its own header first, then this convenience header.
 
-#include "editor_state.h"
-#include "editor_context.h"
-#include "editor_widgets.h"
-#include "editor_keybinds.h"
-#include "editor_style.h"
-#include "editor_icons.h"
+#include "framework/editor_state.h"
+#include "framework/editor_context.h"
+#include "ui/editor_widgets.h"
+#include "input/editor_keybinds.h"
+#include "ui/editor_style.h"
+#include "ui/editor_icons.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
