@@ -1,5 +1,5 @@
-#include "ui/editor_icons.h"
-#include "ui/editor_style.h"
+#include "editor_icons.h"
+#include "editor_style.h"
 
 #include <cmath>
 #include <cstdio>

@@ -9,6 +9,9 @@
 #include "framework/editor_panel.h"
 #include "framework/scene_io_controller.h"
 #include "framework/editor_menu_bar.h"
+#include "framework/editor_status_bar.h"
+#include "framework/editor_shortcuts.h"
+#include "framework/editor_panel_resize.h"
 #include "overlays/viewport_overlay.h"
 #include "panels/inspector_panel.h"
 #include "panels/bottom_panel.h"
@@ -22,6 +25,7 @@ struct GLFWwindow;
 
 namespace Engine {
 
+struct EditorContext;
 class CameraController;
 class EventSystem;
 class VisibilitySystem;
@@ -47,7 +51,11 @@ class EditorSystem : public System {
         void update(FrameContext& ctx) override;
 
     private:
-        void drawStatusBar(const FrameContext& ctx);
+        /// The root-window panel arrangement: the docked panels, the viewport
+        /// (with its overlays), border-resize and the status bar. This is the
+        /// shell's own job (driving the panels), so it stays a method here
+        /// rather than a unit that would need every panel passed back in.
+        void drawWorkspace(EditorContext& ec);
 
     private:
         GLFWwindow*       m_window           = nullptr;
@@ -58,6 +66,9 @@ class EditorSystem : public System {
 
         SceneIOController m_sceneIO;
         EditorMenuBar     m_menuBar;
+        EditorStatusBar   m_statusBar;
+        EditorShortcuts   m_shortcuts;
+        EditorPanelResize m_panelResize;
 
         EditorState      m_state;
         HierarchyPanel   m_hierarchy;
@@ -77,11 +88,6 @@ class EditorSystem : public System {
 
         // Input state for F5 toggle
         bool m_f5WasDown = false;
-
-        // Panel resize drag state
-        bool m_resizingLeft   = false;
-        bool m_resizingRight  = false;
-        bool m_resizingBottom = false;
 };
 
 } // namespace Engine

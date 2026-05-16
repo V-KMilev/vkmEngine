@@ -18,7 +18,7 @@ struct EditorContext;
  *
  * Displays collapsible sections for each component type (Transform, Mesh, Light,
  * Camera, Animation, Hierarchy) with inline editing. Includes a full PBR material
- * editor when a Mesh component is present. Stateless -- reads selectedEntity from EditorState.
+ * editor when a Mesh component is present. Stateless - reads selectedEntity from EditorState.
  */
 class InspectorPanel : public EditorPanel {
     public:

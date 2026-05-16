@@ -8,7 +8,7 @@ namespace Engine {
  * @brief Vector icon set drawn with ImDrawList (no icon-font dependency).
  *
  * Shared by the viewport toolbar and the animation editor so iconography
- * stays consistent. Strictly ASCII source per the style guide -- glyphs
+ * stays consistent. Strictly ASCII source per the style guide - glyphs
  * are stroked/filled primitives, not font characters.
  */
 enum class EditorIcon {
