@@ -1,7 +1,5 @@
 #pragma once
 
-#include <cstdint>
-#include <string>
 #include <vector>
 
 #include <imgui.h>
@@ -9,6 +7,7 @@
 #include "core/system.h"
 #include "framework/editor_state.h"
 #include "framework/editor_panel.h"
+#include "framework/scene_io_controller.h"
 #include "overlays/viewport_overlay.h"
 #include "panels/inspector_panel.h"
 #include "panels/bottom_panel.h"
@@ -50,24 +49,14 @@ class EditorSystem : public System {
         void drawMenuBar(FrameContext& ctx);
         void drawStatusBar(const FrameContext& ctx);
 
-        /// Save to m_currentScenePath (or pop the Save-As prompt if empty).
-        void saveScene(FrameContext& ctx);
-        /// Pop the Save-As prompt; commits on Enter / OK.
-        void openSaveAsPrompt();
-        /// Pop the Load-Scene picker (lists scenes/*.json).
-        void openLoadScenePrompt();
-        /// Load m_currentScenePath. Editor-side post-load work (camera
-        /// rebind, etc.) is handled by the SceneLoadedEvent subscriber.
-        void loadScene(FrameContext& ctx);
-
-
     private:
         GLFWwindow*       m_window           = nullptr;
         CameraController* m_cameraController = nullptr;
         RenderSystem*     m_renderSystem     = nullptr;
         VisibilitySystem* m_visibilitySystem = nullptr;
         EventSystem*      m_events           = nullptr;
-        uint64_t          m_sceneLoadedListenerId = 0;
+
+        SceneIOController m_sceneIO;
 
         EditorState      m_state;
         HierarchyPanel   m_hierarchy;
@@ -92,12 +81,6 @@ class EditorSystem : public System {
         bool m_resizingLeft   = false;
         bool m_resizingRight  = false;
         bool m_resizingBottom = false;
-
-        // Scene file state.
-        std::string m_currentScenePath;  ///< Empty until the user saves/loads once.
-        bool        m_openSaveAsPopup = false;
-        bool        m_openLoadPopup   = false;
-        char        m_saveAsBuffer[256] = "scene.json";
 };
 
 } // namespace Engine
