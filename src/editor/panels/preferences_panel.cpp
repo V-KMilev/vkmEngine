@@ -30,12 +30,15 @@ namespace {
     }
 }
 
-void PreferencesPanel::draw(bool* open, FrameContext& ctx, EditorState& state) {
+void PreferencesPanel::draw(EditorContext& ec) {
+    FrameContext& ctx   = ec.frame;
+    EditorState&  state = ec.state;
+
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(660, 460), ImGuiCond_FirstUseEver);
 
-    if (!ImGui::Begin("Preferences", open, ImGuiWindowFlags_NoCollapse)) {
+    if (!ImGui::Begin("Preferences", &state.showPreferences, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
         return;
     }
@@ -66,7 +69,7 @@ void PreferencesPanel::draw(bool* open, FrameContext& ctx, EditorState& state) {
         const auto& s = kSections[m_selectedSection];
         sectionHeader(s.name, s.hint);
         switch (m_selectedSection) {
-            case 0: drawCameraSection();          break;
+            case 0: drawCameraSection(ec);        break;
             case 1: drawGizmoSection(state);      break;
             case 2: drawDisplaySection(ctx);      break;
             case 3: drawKeybindsSection(state);   break;
@@ -78,12 +81,12 @@ void PreferencesPanel::draw(bool* open, FrameContext& ctx, EditorState& state) {
     ImGui::End();
 }
 
-void PreferencesPanel::drawCameraSection() {
-    if (!m_cameraController) {
+void PreferencesPanel::drawCameraSection(EditorContext& ec) {
+    if (!ec.cameraController) {
         ImGui::TextDisabled("No camera controller");
         return;
     }
-    auto& s = m_cameraController->getSettings();
+    auto& s = ec.cameraController->getSettings();
     drawPropertyLabel("Move Speed");   ImGui::DragFloat("##MS", &s.moveSpeed, 0.5f, 0.1f, 200.0f);
     drawPropertyLabel("Speed Boost");  ImGui::DragFloat("##SB", &s.speedBoost, 0.1f, 1.0f, 20.0f, "%.1fx");
     drawPropertyLabel("Look Sens.");   ImGui::DragFloat("##LS", &s.lookSensitivity, 0.0001f, 0.0001f, 0.01f, "%.4f");

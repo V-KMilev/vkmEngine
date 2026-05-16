@@ -18,7 +18,9 @@ namespace {
     }
 }
 
-void HierarchyPanel::draw(FrameContext& ctx, EditorState& state) {
+void HierarchyPanel::draw(EditorContext& ec) {
+    FrameContext& ctx   = ec.frame;
+    EditorState&  state = ec.state;
     auto& scene = ctx.scene;
 
     // Panel header
@@ -78,7 +80,7 @@ void HierarchyPanel::draw(FrameContext& ctx, EditorState& state) {
             }
         }
 
-        // ImGuiListClipper: only draws visible rows instead of all 13,000+.
+        // ImGuiListClipper: only build/draw the rows actually on screen.
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(displayList.size()));
         while (clipper.Step()) {

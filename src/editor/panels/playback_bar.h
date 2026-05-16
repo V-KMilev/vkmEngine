@@ -2,19 +2,18 @@
 
 namespace Engine {
 
-struct FrameContext;
+struct EditorContext;
 
 /**
- * @brief Top-centre transport bar (Play/Pause + Stop), engine-style.
+ * @brief Top-centre animation playback bar (Play/Pause + Stop).
  *
  * A small floating icon bar in the viewport (same look as the bottom-left
  * tool box) that drives global animation playback: Play/Pause toggles all
- * Animation components, Stop pauses and rewinds them. Replaces the old
- * "Pause/Resume All Animations" menu items and Statistics buttons.
+ * Animation components, Stop pauses and rewinds them.
  */
 class ViewportPlaybar {
     public:
-        void draw(FrameContext& ctx);
+        void draw(EditorContext& ec);
 
         /// True while the mouse is over the bar (so the viewport does not
         /// also treat the click as a pick / camera input).
