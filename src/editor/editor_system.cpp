@@ -1,4 +1,5 @@
 #include "editor_system.h"
+#include "editor_context.h"
 #include "editor_widgets.h"
 #include "editor_theme.h"
 #include "editor_actions.h"
@@ -40,10 +41,11 @@ EditorSystem::EditorSystem(
     : m_window(window)
     , m_cameraController(cameraController)
     , m_renderSystem(renderSystem)
+    , m_visibilitySystem(visibilitySystem)
     , m_events(events)
-    , m_bottom(visibilitySystem, renderSystem)
-    , m_preferences(cameraController)
 {
+    m_panels = { &m_hierarchy, &m_inspector, &m_bottom, &m_preferences };
+
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
 
@@ -55,16 +57,13 @@ EditorSystem::EditorSystem(
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
 
-    // Anything the editor needs to refresh after a scene reload (camera
-    // controller binding today; potentially more in the future) reacts to
-    // SceneLoadedEvent rather than being bolted onto the loadScene handler.
+    // Editor-side refresh after a scene reload.
     if (m_events) {
         m_sceneLoadedListenerId = m_events->subscribe<SceneSerializer::SceneLoadedEvent>(
             [this](const SceneSerializer::SceneLoadedEvent&) {
                 if (!m_cameraController) return;
-                // Re-bind the camera controller to whatever active Camera
-                // the loaded scene has. The previous handle pointed into a
-                // slot that may now hold a different entity (post-load).
+                // Re-bind the camera controller to the loaded scene's active
+                // Camera; the prior handle's slot may now hold another entity.
                 auto& engine = Engine::get();
                 Entity rebound{};
                 engine.getScene().forEach<Camera>([&](EntityId id, const Camera& c) {
@@ -108,9 +107,11 @@ void EditorSystem::update(FrameContext& ctx) {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    m_viewportOverlay.m_frameTimeHistory[m_viewportOverlay.m_frameTimeOffset] = ctx.deltaTime * 1000.0f;
-    m_viewportOverlay.m_frameTimeOffset = (m_viewportOverlay.m_frameTimeOffset + 1) % ViewportOverlay::FRAME_HISTORY_SIZE;
+    m_viewportOverlay.pushFrameTime(ctx.deltaTime * 1000.0f);
     m_viewportOverlay.updateMetrics(ctx.deltaTime);
+
+    EditorContext ec{ ctx, m_state, m_cameraController, m_renderSystem,
+                      m_visibilitySystem, m_events };
 
     if (!ImGui::GetIO().WantTextInput) {
         const auto& kb = m_state.keybinds;
@@ -188,7 +189,7 @@ void EditorSystem::update(FrameContext& ctx) {
         if (m_state.showHierarchy) {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
             if (ImGui::BeginChild("##Hierarchy", ImVec2(leftW, mainH), ImGuiChildFlags_Borders)) {
-                m_hierarchy.draw(ctx, m_state);
+                m_hierarchy.draw(ec);
             }
             ImGui::EndChild();
             ImGui::PopStyleVar();
@@ -200,15 +201,16 @@ void EditorSystem::update(FrameContext& ctx) {
             float centerW = viewport->WorkSize.x - leftW - rightW;
             ImVec2 vpMin = ImGui::GetCursorScreenPos();
             if (ImGui::BeginChild("##Viewport", ImVec2(centerW, mainH), ImGuiChildFlags_None)) {
-                ImVec2 vpMax = ImVec2(vpMin.x + centerW, vpMin.y + mainH);
+                ec.viewportPos  = vpMin;
+                ec.viewportSize = ImVec2(centerW, mainH);
                 m_state.viewportHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
-                if (m_state.showStats) m_viewportOverlay.draw(ctx, m_state);
-                m_viewportOverlay.drawNavigationGizmo(ctx, vpMin, vpMax);
-                m_gizmoOverlay.drawTransformGizmo(ctx, m_state, vpMin, centerW, mainH);
-                m_viewportToolbar.draw(ctx, m_state, m_cameraController);
-                m_playbar.draw(ctx);
+                if (m_state.showStats) m_viewportOverlay.draw(ec);
+                m_viewportOverlay.drawNavigationGizmo(ec);
+                m_gizmoOverlay.drawTransformGizmo(ec);
+                m_viewportToolbar.draw(ec);
+                m_playbar.draw(ec);
                 if (!m_viewportToolbar.isHovered() && !m_playbar.isHovered())
-                    m_gizmoOverlay.handleViewportPick(ctx, m_state, vpMin, centerW, mainH);
+                    m_gizmoOverlay.handleViewportPick(ec);
             } else {
                 m_state.viewportHovered = false;
             }
@@ -220,7 +222,7 @@ void EditorSystem::update(FrameContext& ctx) {
         if (m_state.showInspector) {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
             if (ImGui::BeginChild("##Inspector", ImVec2(rightW, mainH), ImGuiChildFlags_Borders)) {
-                m_inspector.draw(ctx, m_state);
+                m_inspector.draw(ec);
             }
             ImGui::EndChild();
             ImGui::PopStyleVar();
@@ -229,7 +231,7 @@ void EditorSystem::update(FrameContext& ctx) {
         if (m_state.showBottom) {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
             if (ImGui::BeginChild("##Bottom", ImVec2(0, bottomH), ImGuiChildFlags_Borders)) {
-                m_bottom.draw(ctx, m_state);
+                m_bottom.draw(ec);
             }
             ImGui::EndChild();
             ImGui::PopStyleVar();
@@ -303,10 +305,9 @@ void EditorSystem::update(FrameContext& ctx) {
     }
     ImGui::End();
 
-    // Preferences is a separate floating window, not part of the docked
-    // editor layout. Drawn after the root window so it stacks on top.
+    // Separate floating window; drawn after the root so it stacks on top.
     if (m_state.showPreferences) {
-        m_preferences.draw(&m_state.showPreferences, ctx, m_state);
+        m_preferences.draw(ec);
     }
 
     ImGui::Render();

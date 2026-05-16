@@ -9,7 +9,9 @@ namespace {
     constexpr float PAD = 5.0f;
 }
 
-void ViewportPlaybar::draw(FrameContext& ctx) {
+void ViewportPlaybar::draw(EditorContext& ec) {
+    FrameContext& ctx = ec.frame;
+
     size_t total = 0, playing = 0;
     ctx.scene.forEach<Animation>([&](EntityId, const Animation& a) {
         ++total;

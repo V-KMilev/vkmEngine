@@ -14,7 +14,14 @@ void ViewportOverlay::updateMetrics(float deltaTime) {
     m_metrics.update(deltaTime);
 }
 
-void ViewportOverlay::draw(const FrameContext& ctx, const EditorState& state) {
+void ViewportOverlay::pushFrameTime(float ms) {
+    m_frameTimeHistory[m_frameTimeOffset] = ms;
+    m_frameTimeOffset = (m_frameTimeOffset + 1) % FRAME_HISTORY_SIZE;
+}
+
+void ViewportOverlay::draw(EditorContext& ec) {
+    const FrameContext& ctx = ec.frame;
+
     ImVec2 regionSize = ImGui::GetContentRegionAvail();
     ImVec2 overlayPos(regionSize.x - 276, 4);
 
@@ -75,11 +82,14 @@ void ViewportOverlay::draw(const FrameContext& ctx, const EditorState& state) {
 
     // The active tool / space / snap state is shown by the viewport toolbar
     // (bottom-left), so no separate text indicator is drawn here.
-    (void)state;
 }
 
-void ViewportOverlay::drawNavigationGizmo(const FrameContext& ctx, ImVec2 regionMin, ImVec2 regionMax) {
+void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
+    const FrameContext& ctx = ec.frame;
     if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+
+    const ImVec2 regionMax(ec.viewportPos.x + ec.viewportSize.x,
+                           ec.viewportPos.y + ec.viewportSize.y);
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
 

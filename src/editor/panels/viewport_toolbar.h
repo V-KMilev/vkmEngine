@@ -4,9 +4,7 @@
 
 namespace Engine {
 
-class CameraController;
-struct FrameContext;
-struct EditorState;
+struct EditorContext;
 
 /**
  * @brief Floating in-viewport tool box (top-left), Unity/Unreal style.
@@ -18,7 +16,7 @@ struct EditorState;
  */
 class ViewportToolbar {
     public:
-        void draw(FrameContext& ctx, EditorState& state, CameraController* camera);
+        void draw(EditorContext& ec);
 
         /// True while the mouse is over the toolbar (so the viewport does not
         /// also treat the click as a pick / camera input).

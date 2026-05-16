@@ -4,6 +4,7 @@
 // Each panel .cpp includes its own header first, then this convenience header.
 
 #include "editor_state.h"
+#include "editor_context.h"
 #include "editor_widgets.h"
 #include "editor_keybinds.h"
 #include "editor_style.h"

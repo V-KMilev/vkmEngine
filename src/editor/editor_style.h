@@ -7,9 +7,9 @@ namespace Engine::EditorStyle {
 /**
  * @brief Shared editor visual constants.
  *
- * Single source of truth for colors and metrics that were previously
- * duplicated across panels, widgets and the gizmo. Drawlist code uses the
- * `*_U32` packed colors; ImGui widget styling uses the ImVec4 variants.
+ * Single source of truth for colors and metrics used by panels, widgets
+ * and the gizmo. Drawlist code uses the `*_U32` packed colors; ImGui
+ * widget styling uses the ImVec4 variants.
  */
 
 // Axis colors (X red, Y green, Z blue) -- ImDrawList packed form.
