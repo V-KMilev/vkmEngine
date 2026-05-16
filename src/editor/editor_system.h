@@ -8,6 +8,7 @@
 #include "framework/editor_state.h"
 #include "framework/editor_panel.h"
 #include "framework/scene_io_controller.h"
+#include "framework/editor_menu_bar.h"
 #include "overlays/viewport_overlay.h"
 #include "panels/inspector_panel.h"
 #include "panels/bottom_panel.h"
@@ -46,7 +47,6 @@ class EditorSystem : public System {
         void update(FrameContext& ctx) override;
 
     private:
-        void drawMenuBar(FrameContext& ctx);
         void drawStatusBar(const FrameContext& ctx);
 
     private:
@@ -57,6 +57,7 @@ class EditorSystem : public System {
         EventSystem*      m_events           = nullptr;
 
         SceneIOController m_sceneIO;
+        EditorMenuBar     m_menuBar;
 
         EditorState      m_state;
         HierarchyPanel   m_hierarchy;
