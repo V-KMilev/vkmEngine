@@ -12,19 +12,60 @@
 #include "core/math/axes.h"
 #include "core/math/rotation.h"
 #include "ecs/component/transform.h"
+#include "ecs/component/camera.h"
 
 namespace Engine {
 
 CameraController::CameraController() = default;
 
-void CameraController::update(FrameContext& ctx) {
-    // Guard against a stale handle: after a scene reload the entity the
-    // controller was pointing at may be dead, in which case scene.has would
-    // assert on a dead lookup. setCameraEntity from the editor restores it.
-    if (!ctx.scene.isAlive(m_cameraEntity)) return;
-    if (!ctx.scene.has<Transform>(m_cameraEntity)) return;
+EntityId CameraController::resolveActiveCamera(Scene& scene) {
+    // Fast path: keep flying the current camera while it stays the active one.
+    EntityId cur = m_cameraEntity.getID();
+    if (cur && scene.isAlive(cur)
+        && scene.has<Camera>(cur) && scene.has<Transform>(cur)
+        && scene.get<Camera>(cur).active) {
+        return cur;
+    }
 
-    auto& transform = ctx.scene.get<Transform>(m_cameraEntity);
+    // The camera the renderer uses is the one with Camera.active (same rule
+    // as VisibilitySystem) - fly that, so "you move what you see".
+    EntityId found{};
+    scene.forEach<Camera, Transform>([&](EntityId id, const Camera& c, const Transform&) {
+        if (found) return;
+        if (c.active) found = id;
+    });
+    if (found) return found;
+
+    // Nothing active (nothing renders anyway): keep the current entity so the
+    // controller stays usable instead of going dead.
+    if (cur && scene.isAlive(cur) && scene.has<Transform>(cur)) return cur;
+    return {};
+}
+
+void CameraController::reseedAnglesFromRotation(const glm::quat& rotation) {
+    // Inverse of updateRotationFromAngles():
+    //   forward = (cos(pitch)*sin(yaw), sin(pitch), cos(pitch)*cos(yaw))
+    const glm::vec3 f = Math::computeForward(rotation);
+    m_pitch = std::asin(std::clamp(f.y, -1.0f, 1.0f));
+    m_yaw   = std::atan2(f.x, f.z);
+}
+
+void CameraController::update(FrameContext& ctx) {
+    // Always drive the active rendered camera. This keeps the fly controls
+    // working after "Set as Main Camera" / a scene load (the old code flew a
+    // fixed entity while the renderer used a different one).
+    EntityId target = resolveActiveCamera(ctx.scene);
+    if (!target || !ctx.scene.isAlive(target) || !ctx.scene.has<Transform>(target)) return;
+
+    m_cameraEntity = Entity{target};
+    auto& transform = ctx.scene.get<Transform>(target);
+
+    // On a camera switch re-derive yaw/pitch from its current orientation so
+    // the first look drag continues smoothly instead of snapping.
+    if (!(m_lastDrivenId == target)) {
+        reseedAnglesFromRotation(transform.rotation);
+        m_lastDrivenId = target;
+    }
 
     updateFlyMode(ctx.window, transform.position, transform.rotation, ctx.deltaTime);
 }
