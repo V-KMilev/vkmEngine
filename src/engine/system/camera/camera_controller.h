@@ -48,6 +48,11 @@ class CameraController : public System {
          */
         void setCameraEntity(Entity cameraEntity) { m_cameraEntity = cameraEntity; }
 
+        /// The entity the controller is currently flying (the active rendered
+        /// camera). The editor uses this to suppress the transform gizmo on
+        /// it - a gizmo there would fight the fly controls.
+        Entity getCameraEntity() const { return m_cameraEntity; }
+
         /**
          * @brief Notify the controller that the editor UI is capturing input.
          *
@@ -91,8 +96,19 @@ class CameraController : public System {
          */
         void updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch);
 
+        /// Resolve the camera the editor renders through: the entity whose
+        /// Camera component is `active` (Transform required). Falls back to
+        /// the current entity so the view never dies mid-edit.
+        EntityId resolveActiveCamera(Scene& scene);
+
+        /// Re-derive m_yaw / m_pitch from a rotation (inverse of
+        /// updateRotationFromAngles) so retargeting / focus does not snap
+        /// the look direction on the next right-mouse drag.
+        void reseedAnglesFromRotation(const glm::quat& rotation);
+
     private:
-        Entity m_cameraEntity;
+        Entity   m_cameraEntity;
+        EntityId m_lastDrivenId{};   ///< Detects a camera switch -> reseed angles
 
         Settings m_settings;
 
