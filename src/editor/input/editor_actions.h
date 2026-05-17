@@ -24,6 +24,11 @@ void deleteEntity(Scene& scene, EditorState& state, EntityId entity);
 void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController* camera);
 void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState& state);
 
+/// Render the "Import Model" modal. Must be called once per frame from the
+/// menu-bar scope (like SceneIOController::drawDialogs) so the modal
+/// survives the Create menu closing when the item is clicked.
+void drawModelImportDialog(Scene& scene, ResourceManager& resources, EditorState& state);
+
 } // namespace EditorActions
 
 } // namespace Engine

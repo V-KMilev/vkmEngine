@@ -86,6 +86,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     }
 
     sceneIO.drawDialogs(ctx, state);
+    EditorActions::drawModelImportDialog(ctx.scene, ctx.resources, state);
 
     const auto& info = ctx.statistics.getFrameInfo();
     char fps[32];
