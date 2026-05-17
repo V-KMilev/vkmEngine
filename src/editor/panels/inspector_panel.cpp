@@ -2,8 +2,117 @@
 #include "framework/editor_common.h"
 
 #include "generator/light_generators.h"
+#include "loader/texture_loaders.h"
+#include "loader/material_loaders.h"
+
+#include <cstdio>
+#include <cctype>
+#include <string>
+#include <filesystem>
+#include <system_error>
 
 namespace Engine {
+
+namespace {
+    bool isImageExt(std::string ext) {
+        for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return ext == ".png" || ext == ".jpg" || ext == ".jpeg"
+            || ext == ".tga" || ext == ".bmp";
+    }
+
+    // One material texture-slot row: shows the bound texture, a Set button
+    // (modal that lists every image under assets/ recursively) and Clear.
+    // Returns true if the binding changed.
+    bool textureSlot(ResourceManager& res, const char* label,
+                     TextureHandle& slot, bool srgb) {
+        ImGui::PushID(label);
+        drawPropertyLabel(label);
+
+        std::string cur = "(none)";
+        if (slot) {
+            const auto& t = res.get(slot);
+            cur = !t.filePath.empty() ? t.filePath : t.name;
+        }
+        ImGui::TextUnformatted(cur.c_str());
+        ImGui::SameLine();
+
+        bool changed = false;
+        char pop[80];
+        snprintf(pop, sizeof(pop), "Pick##%s", label);
+        if (ImGui::SmallButton("Set")) ImGui::OpenPopup(pop);
+        ImGui::SameLine();
+        if (slot) {
+            if (ImGui::SmallButton("Clear")) { slot = TextureHandle{}; changed = true; }
+        } else {
+            ImGui::BeginDisabled();
+            ImGui::SmallButton("Clear");
+            ImGui::EndDisabled();
+        }
+
+        if (ImGui::BeginPopupModal(pop, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            const std::filesystem::path root =
+                std::filesystem::path(APP_ROOT_DIR) / "assets";
+            ImGui::TextDisabled("%s  (sRGB: %s)", root.string().c_str(),
+                srgb ? "yes" : "no");
+            ImGui::Separator();
+            std::error_code ec;
+            int shown = 0;
+            for (const auto& e :
+                    std::filesystem::recursive_directory_iterator(root, ec)) {
+                if (!e.is_regular_file()) continue;
+                if (!isImageExt(e.path().extension().string())) continue;
+                std::error_code rel_ec;
+                const std::string rel = std::filesystem::relative(
+                    e.path(), std::filesystem::path(APP_ROOT_DIR), rel_ec)
+                    .generic_string();
+                if (ImGui::Selectable(rel.c_str())) {
+                    TextureHandle h = loadTexture(e.path().string(), res, srgb, true);
+                    if (h) { slot = h; changed = true; }
+                    ImGui::CloseCurrentPopup();
+                }
+                if (++shown > 4000) break;  // safety cap
+            }
+            if (shown == 0) ImGui::TextDisabled("(no images under assets/)");
+            ImGui::Separator();
+            if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+
+        ImGui::PopID();
+        return changed;
+    }
+
+    // "Load PBR Folder" modal: lists the immediate sub-folders of assets/.
+    // On pick, writes the absolute folder path to @p out and returns true.
+    bool pbrFolderBrowse(std::string& out) {
+        bool picked = false;
+        if (ImGui::SmallButton("Load PBR Folder...")) ImGui::OpenPopup("PBRFolder");
+        if (ImGui::BeginPopupModal("PBRFolder", nullptr,
+                ImGuiWindowFlags_AlwaysAutoResize)) {
+            const std::filesystem::path root =
+                std::filesystem::path(APP_ROOT_DIR) / "assets";
+            ImGui::TextDisabled("%s", root.string().c_str());
+            ImGui::Separator();
+            std::error_code ec;
+            int shown = 0;
+            for (const auto& e : std::filesystem::directory_iterator(root, ec)) {
+                if (!e.is_directory()) continue;
+                const std::string name = e.path().filename().string();
+                if (ImGui::Selectable(name.c_str())) {
+                    out = e.path().string();
+                    picked = true;
+                    ImGui::CloseCurrentPopup();
+                }
+                ++shown;
+            }
+            if (shown == 0) ImGui::TextDisabled("(no sub-folders in assets/)");
+            ImGui::Separator();
+            if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+        return picked;
+    }
+}
 
 void InspectorPanel::draw(EditorContext& ec) {
     FrameContext& ctx   = ec.frame;
@@ -137,10 +246,53 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources, E
 
     ImGui::Spacing();
 
+    // Asset pickers: swap which loaded mesh / material this component uses.
+    {
+        const std::string mn = mesh.mesh
+            ? resources.get(mesh.mesh).name : std::string("(none)");
+        drawPropertyLabel("Mesh Asset");
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::BeginCombo("##MeshPick", mn.empty() ? "(unnamed)" : mn.c_str())) {
+            resources.forEachOfType<MeshAsset>([&](MeshHandle h, const MeshAsset& a) {
+                ImGui::PushID(static_cast<int>(h.id()));
+                const bool sel = mesh.mesh && mesh.mesh.id() == h.id();
+                if (ImGui::Selectable(a.name.empty() ? "(unnamed)" : a.name.c_str(), sel))
+                    mesh.mesh = h;
+                ImGui::PopID();
+            });
+            ImGui::EndCombo();
+        }
+
+        const std::string mtn = mesh.material
+            ? resources.get(mesh.material).name : std::string("(none)");
+        drawPropertyLabel("Material Asset");
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::BeginCombo("##MatPick", mtn.empty() ? "(unnamed)" : mtn.c_str())) {
+            resources.forEachOfType<MaterialAsset>([&](MaterialHandle h, const MaterialAsset& a) {
+                ImGui::PushID(static_cast<int>(h.id()));
+                const bool sel = mesh.material && mesh.material.id() == h.id();
+                if (ImGui::Selectable(a.name.empty() ? "(unnamed)" : a.name.c_str(), sel))
+                    mesh.material = h;
+                ImGui::PopID();
+            });
+            ImGui::EndCombo();
+        }
+    }
+
+    ImGui::Spacing();
+
     // Material properties
     if (mesh.material) {
         bool matOpen = ImGui::TreeNodeEx("Material", ImGuiTreeNodeFlags_DefaultOpen);
         if (matOpen) {
+            // Replace this slot's whole material from an auto-discovered
+            // PBR texture folder (Color/Normal/Roughness/... by name).
+            std::string pbrFolder;
+            if (pbrFolderBrowse(pbrFolder)) {
+                MaterialHandle h = loadMaterialFromFolder(pbrFolder, resources);
+                if (h) mesh.material = h;
+            }
+
             auto& mat = resources.edit(mesh.material);
             bool changed = false;
 
@@ -241,6 +393,26 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources, E
                 changed |= ImGui::SliderFloat("##SheenR", &mat.sheenRoughness,
                     0.0f, 1.0f, "%.2f");
 
+                ImGui::TreePop();
+            }
+
+            // Texture maps. sRGB for colour inputs (albedo/emission),
+            // linear for data maps.
+            if (ImGui::TreeNode("Textures##Mat")) {
+                changed |= textureSlot(resources, "Albedo",    mat.albedoTexture,    true);
+                changed |= textureSlot(resources, "Normal",    mat.normalTexture,    false);
+                changed |= textureSlot(resources, "Roughness", mat.roughnessTexture, false);
+                changed |= textureSlot(resources, "Metallic",  mat.metallicTexture,  false);
+                changed |= textureSlot(resources, "AO",        mat.aoTexture,        false);
+                changed |= textureSlot(resources, "Emission",  mat.emissionTexture,  true);
+                changed |= textureSlot(resources, "Height",    mat.heightTexture,    false);
+                changed |= textureSlot(resources, "Clearcoat", mat.clearcoatTexture, false);
+                changed |= textureSlot(resources, "Transmission",
+                    mat.transmissionTexture, false);
+                changed |= textureSlot(resources, "Metallic+Roughness",
+                    mat.metallicRoughnessTexture, false);
+                changed |= textureSlot(resources, "AO+Metallic+Roughness",
+                    mat.aoMetallicRoughnessTexture, false);
                 ImGui::TreePop();
             }
 

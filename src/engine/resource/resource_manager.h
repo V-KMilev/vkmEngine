@@ -170,6 +170,22 @@ class ResourceManager {
             return result;
         }
 
+        /**
+         * @brief Visit every live resource of type T as (Handle<T>, const T&).
+         *
+         * Linear scan - for editor asset pickers / tooling, not hot paths.
+         * A no-op when the type is unregistered.
+         */
+        template<typename T, typename Fn>
+        void forEachOfType(Fn&& fn) const {
+            TypeId id = typeId<T>();
+            if (id >= m_slots.size() || !m_slots[id]) return;
+            const auto& slot = *m_slots[id];
+            storageOfConst<T>(slot).forEach([&](uint32_t index, const T& res) {
+                fn(Handle<T>{StorageIndex{index, slot.allocator->generationOf(index)}}, res);
+            });
+        }
+
         /// @brief Global version counter, incremented on every commit().
         uint64_t getGlobalVersion() const { return m_globalVersion; }
 
