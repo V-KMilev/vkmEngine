@@ -78,6 +78,12 @@ class GLView {
         /// Returns nullptr only when the handle is empty or invalid.
         GLShader* resolveShader(const ShaderHandle& handle, const ResourceManager& resources);
 
+        /// Ensure a GPU material/mesh exists and is up to date for @p handle
+        /// even when no scene entity references it (editor previews, asset
+        /// browser). Same lazy build-or-rebuild path as resolveShader.
+        const GLMaterial* ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources);
+        GLMesh*           ensureMesh(const MeshHandle& handle, const ResourceManager& resources);
+
         /// Lookup: returns nullptr if not synced or out of range.
         const GLMesh*     getMesh(const MeshHandle& handle) const;
         const GLMaterial* getMaterial(const MaterialHandle& handle) const;

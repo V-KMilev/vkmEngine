@@ -1,5 +1,9 @@
 #include "system/render/render_system.h"
 
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp>   // glm::rotation (GLM_ENABLE_EXPERIMENTAL is project-wide)
+
 #include "logger.h"
 
 #include "resource/resource_manager.h"
@@ -40,6 +44,10 @@ void RenderSystem::update(FrameContext& ctx) {
         resize(ctx.viewportWidth, ctx.viewportHeight);
     }
 
+    // Refill the editor thumbnail bake budget for this frame (consumed during
+    // the later UI stage by the Asset Browser).
+    m_thumbBudget = kThumbBudgetPerFrame;
+
     // Copy environment config before build so it's available if build() ever reads it
     m_renderView.environment = m_environment;
     m_renderView.deltaTime   = ctx.deltaTime;
@@ -65,6 +73,127 @@ void RenderSystem::clearPasses() {
 void RenderSystem::setWireframe(bool enabled) {
     m_environment.wireframe = enabled;
     if (m_backend) m_backend->setWireframe(enabled);
+}
+
+uint32_t RenderSystem::renderMaterialPreview(
+    ResourceManager& resources,
+    const MaterialHandle& material,
+    const MeshHandle& mesh,
+    float yawDeg, float pitchDeg, float distance,
+    uint32_t size
+) {
+    if (!m_backend || size == 0 || !material || !mesh) return 0;
+
+    // --- Studio camera orbiting the origin ---
+    const float yaw   = glm::radians(yawDeg);
+    const float pitch = glm::radians(pitchDeg);
+    const glm::vec3 eye = distance * glm::vec3(
+        glm::cos(pitch) * glm::sin(yaw),
+        glm::sin(pitch),
+        glm::cos(pitch) * glm::cos(yaw));
+
+    RenderView& v = m_previewView;
+    v.drawables.clear();
+    v.lights.clear();
+
+    v.camera.view           = glm::lookAt(eye, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    v.camera.projection     = glm::perspective(glm::radians(40.0f), 1.0f, 0.05f, 100.0f);
+    v.camera.viewProjection = v.camera.projection * v.camera.view;
+    v.camera.position       = eye;
+    v.camera.exposure       = 1.0f;
+
+    // The scene's environment (IBL bake / SSR / bloom all match the viewport),
+    // but with view-dependent / temporal effects forced off so a static
+    // material ball reads as a clean, stable studio shot.
+    v.environment              = m_environment;
+    v.environment.autoExposure = false;   // deterministic studio exposure
+    v.environment.taa          = false;
+    v.environment.dof          = false;
+    v.environment.motionBlur   = false;
+
+    v.viewportWidth  = size;
+    v.viewportHeight = size;
+    v.deltaTime      = 0.0f;
+
+    DrawableData d;
+    d.mesh         = mesh;
+    d.material     = material;
+    d.materialType = resources.get(material).type;
+    d.castShadows  = false;
+    d.model        = glm::mat4(1.0f);
+    v.drawables.emplace_back(d);
+
+    // Single directional key light; IBL fills the rest.
+    LightData key{};
+    key.type           = LightType::Directional;
+    key.color          = glm::vec3(1.0f);
+    key.intensity      = 2.5f;
+    key.radius         = 0.0f;
+    key.innerConeAngle = 0.0f;
+    key.outerConeAngle = 0.0f;
+    key.castShadows    = false;
+    key.shadowBias     = 0.0f;
+    key.shadowExtent   = 0.0f;
+    key.shadowSlot     = -1;
+    key.position       = glm::vec3(0.0f);
+    key.rotation       = glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f),
+                             glm::normalize(glm::vec3(-0.5f, -0.7f, -0.6f)));
+    v.lights.emplace_back(key);
+
+    // World-grid and AABB-debug make no sense around a single preview shape;
+    // suppress just those two, leave the rest of the pipeline intact.
+    const size_t passes = m_graph.passCount();
+    for (size_t i = 0; i < passes; ++i) {
+        RenderPass& p = m_graph.getPass(i);
+        const std::string& n = p.getName();
+        if (n == "GLGridPass" || n == "GLAABBDebugPass") {
+            m_previewPassWasEnabled.push_back({ i, p.isEnabled() });
+            p.setEnabled(false);
+        }
+    }
+
+    m_backend->beginPreview(size);
+    m_backend->syncResources(v, resources);
+    m_graph.execute(*m_backend, v, resources);
+    m_backend->endPreview();
+
+    for (const auto& s : m_previewPassWasEnabled) {
+        m_graph.getPass(s.first).setEnabled(s.second);
+    }
+    m_previewPassWasEnabled.clear();
+
+    return m_backend->previewColorTexture();
+}
+
+uint32_t RenderSystem::materialPreviewTexture(
+    ResourceManager& resources,
+    const MaterialHandle& material,
+    const MeshHandle& mesh,
+    float yawDeg, float pitchDeg, float distance,
+    uint64_t key, uint64_t version, bool live
+) {
+    if (!m_backend) return 0;
+
+    if (!live) {
+        const uint32_t cached = m_backend->cachedPreview(key);
+        auto it = m_thumbVersion.find(key);
+        const bool fresh = cached && it != m_thumbVersion.end() && it->second == version;
+        if (fresh) return cached;            // up to date - no work
+        if (m_thumbBudget == 0) return cached;  // wait our turn (0 = placeholder)
+        --m_thumbBudget;
+    }
+
+    // One fixed offscreen resolution for every preview so switching between
+    // the 512 Material Editor and small grid thumbnails never reallocates
+    // the preview targets mid-frame.
+    const uint32_t liveTex =
+        renderMaterialPreview(resources, material, mesh,
+                              yawDeg, pitchDeg, distance, kPreviewRes);
+    if (!liveTex) return live ? 0u : m_backend->cachedPreview(key);
+
+    const uint32_t snap = m_backend->snapshotPreviewToCache(key, kPreviewRes);
+    if (!live) m_thumbVersion[key] = version;
+    return snap ? snap : liveTex;
 }
 
 
