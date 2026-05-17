@@ -55,6 +55,9 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         ImGui::MenuItem("Hierarchy",     getKeyBindLabel(state.keybinds.toggleHierarchy, lbl, sizeof(lbl)), &state.showHierarchy);
         ImGui::MenuItem("Inspector",     getKeyBindLabel(state.keybinds.toggleInspector, lbl, sizeof(lbl)), &state.showInspector);
         ImGui::MenuItem("Bottom Panel",  getKeyBindLabel(state.keybinds.toggleBottom, lbl, sizeof(lbl)), &state.showBottom);
+        ImGui::Separator();
+        ImGui::MenuItem("Material Editor", nullptr, &state.showMaterialEditor);
+        ImGui::MenuItem("Asset Browser",   nullptr, &state.showAssetBrowser);
         ImGui::EndMenu();
     }
 

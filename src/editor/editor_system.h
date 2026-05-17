@@ -20,6 +20,8 @@
 #include "overlays/viewport_toolbar.h"
 #include "overlays/playback_bar.h"
 #include "panels/preferences_panel.h"
+#include "panels/material_editor.h"
+#include "panels/asset_browser.h"
 
 struct GLFWwindow;
 
@@ -79,6 +81,8 @@ class EditorSystem : public System {
         ViewportToolbar  m_viewportToolbar;
         ViewportPlaybar  m_playbar;
         PreferencesPanel m_preferences;
+        MaterialEditorPanel m_materialEditor;
+        AssetBrowserPanel m_assetBrowser;
 
         /// Registry of the registered panels (the docked panels and the
         /// Preferences window). Points at the members above; iteration

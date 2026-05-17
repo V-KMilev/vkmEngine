@@ -26,13 +26,18 @@ EditorSystem::EditorSystem(
     , m_events(events)
     , m_sceneIO(events, cameraController)
 {
-    m_panels = { &m_hierarchy, &m_inspector, &m_bottom, &m_preferences };
+    m_panels = { &m_hierarchy, &m_inspector, &m_bottom, &m_preferences,
+                 &m_materialEditor, &m_assetBrowser };
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
 
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    // Floating windows (Material Editor, Preferences) move only by their
+    // title bar - dragging inside the body must not drag the window, so
+    // viewport orbiting on the material preview stays put.
+    io.ConfigWindowsMoveFromTitleBarOnly = true;
 
     applyEditorTheme();
 
@@ -114,6 +119,12 @@ void EditorSystem::update(FrameContext& ctx) {
     // Separate floating window; drawn after the root so it stacks on top.
     if (m_state.showPreferences) {
         m_preferences.draw(ec);
+    }
+    if (m_state.showMaterialEditor) {
+        m_materialEditor.draw(ec);
+    }
+    if (m_state.showAssetBrowser) {
+        m_assetBrowser.draw(ec);
     }
 
     ImGui::Render();
