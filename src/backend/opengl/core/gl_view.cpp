@@ -186,4 +186,18 @@ GLShader* GLView::resolveShader(const ShaderHandle& handle, const ResourceManage
     return m_shaderTable.entries[handle.id()].get();
 }
 
+const GLMaterial* GLView::ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources) {
+    if (!handle) return nullptr;
+    std::vector<MaterialHandle> one{handle};
+    syncTable<MaterialAsset>(m_materialTable, one, resources);
+    return m_materialTable.entries[handle.id()].get();
+}
+
+GLMesh* GLView::ensureMesh(const MeshHandle& handle, const ResourceManager& resources) {
+    if (!handle) return nullptr;
+    std::vector<MeshHandle> one{handle};
+    syncTable<MeshAsset>(m_meshTable, one, resources);
+    return m_meshTable.entries[handle.id()].get();
+}
+
 } // namespace Engine

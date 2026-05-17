@@ -2,6 +2,9 @@
 
 #include <memory>
 #include <cstdint>
+#include <vector>
+#include <utility>
+#include <unordered_map>
 
 #include "system/render/render_graph.h"
 #include "system/render/render_view.h"
@@ -101,11 +104,61 @@ class RenderSystem : public System {
         void setWireframe(bool enabled);
         bool getWireframe() const { return m_environment.wireframe; }
 
+        /**
+         * @brief Render one material on a preview shape through the REAL
+         *        pipeline into an offscreen texture; returns its backend
+         *        texture id (usable as an ImGui ImTextureID; 0 on failure).
+         *
+         * Editor-facing (Material Editor / Asset Browser). Builds a studio
+         * RenderView (orbit camera + key light + the scene's environment) and
+         * re-executes the same render graph in the backend's preview-target
+         * mode - so the preview gets IBL/SSR/GTAO/bloom/tone mapping for free
+         * and can never drift from the viewport.
+         *
+         * @param mesh The shape to draw (a built-in preview primitive or the
+         *             selected entity's mesh - the caller decides; this layer
+         *             stays free of the mesh generators).
+         */
+        uint32_t renderMaterialPreview(ResourceManager& resources,
+                const MaterialHandle& material, const MeshHandle& mesh,
+                float yawDeg, float pitchDeg, float distance, uint32_t size);
+
+        /**
+         * @brief Stable preview/thumbnail texture for one material on a shape.
+         *
+         * Wraps renderMaterialPreview with a per-@p key snapshot so the
+         * result survives later previews overwriting the shared target
+         * (Asset Browser grid + the live Material Editor).
+         *
+         * @param key  Caller-defined cache key (0 is fine; pick distinct keys
+         *             per asset). @param version Re-bake only when this
+         *             changes (e.g. the asset's resource version).
+         * @param live true = always re-render this frame (Material Editor),
+         *             bypassing the version check and the per-frame budget.
+         *             false = budgeted lazy bake (thumbnail grid); returns the
+         *             last snapshot (or 0) until its turn comes.
+         */
+        uint32_t materialPreviewTexture(ResourceManager& resources,
+                const MaterialHandle& material, const MeshHandle& mesh,
+                float yawDeg, float pitchDeg, float distance,
+                uint64_t key, uint64_t version, bool live);
+
     private:
         std::unique_ptr<RenderBackend> m_backend;
         RenderGraph m_graph;
 
         RenderView m_renderView;  ///< Persistent - vectors reuse capacity across frames.
+
+        // Material-preview scratch (editor): persistent view to reuse capacity.
+        RenderView m_previewView;
+        std::vector<std::pair<size_t, bool>> m_previewPassWasEnabled;  ///< (pass index, prior enabled) restored after a preview
+
+        // Thumbnail throttle: at most kThumbBudgetPerFrame fresh (non-live)
+        // bakes per frame so an Asset Browser grid spreads its work out.
+        static constexpr uint32_t kThumbBudgetPerFrame = 3;
+        static constexpr uint32_t kPreviewRes          = 512;  ///< One fixed offscreen res for all previews (no target thrash)
+        uint32_t m_thumbBudget = 0;
+        std::unordered_map<uint64_t, uint64_t> m_thumbVersion;  ///< key -> last baked asset version
 
         EnvironmentConfig m_environment;
 
