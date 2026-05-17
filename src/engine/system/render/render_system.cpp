@@ -26,7 +26,7 @@ void RenderSystem::resize(uint32_t width, uint32_t height) {
     if (!m_backend) return;
 
     m_backend->resize(width, height);
-    m_pipeline.onResize(*m_backend, width, height);
+    m_graph.onResize(*m_backend, width, height);
 }
 
 void RenderSystem::update(FrameContext& ctx) {
@@ -42,6 +42,7 @@ void RenderSystem::update(FrameContext& ctx) {
 
     // Copy environment config before build so it's available if build() ever reads it
     m_renderView.environment = m_environment;
+    m_renderView.deltaTime   = ctx.deltaTime;
 
     // Build snapshot for this frame (reuses vector capacity from previous frame)
     m_renderView.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight);
@@ -50,15 +51,15 @@ void RenderSystem::update(FrameContext& ctx) {
     m_backend->syncResources(m_renderView, ctx.resources);
 
     // Execute passes
-    m_pipeline.execute(*m_backend, m_renderView, ctx.resources);
+    m_graph.execute(*m_backend, m_renderView, ctx.resources);
 }
 
 void RenderSystem::addPass(std::unique_ptr<RenderPass> pass) {
-    m_pipeline.addPass(std::move(pass));
+    m_graph.addPass(std::move(pass));
 }
 
 void RenderSystem::clearPasses() {
-    m_pipeline.clear();
+    m_graph.clear();
 }
 
 void RenderSystem::setWireframe(bool enabled) {

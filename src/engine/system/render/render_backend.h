@@ -89,6 +89,15 @@ class RenderBackend {
          */
         virtual void syncResources(const RenderView& view, const ResourceManager& resources) {}
 
+        /**
+         * @brief Resolve the multisampled scene color into a sampleable copy.
+         *
+         * Driven by the RenderGraph: invoked once before the first pass that
+         * reads the resolved scene color, and again only after a later pass
+         * writes the scene color. Default no-op for backends without MSAA.
+         */
+        virtual void resolveSceneColor() {}
+
     protected:
         RenderBackendType m_type;
 };
