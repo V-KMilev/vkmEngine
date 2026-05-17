@@ -3,7 +3,7 @@
 #include <memory>
 #include <cstdint>
 
-#include "system/render/render_pipeline.h"
+#include "system/render/render_graph.h"
 #include "system/render/render_view.h"
 #include "core/system.h"
 
@@ -92,8 +92,8 @@ class RenderSystem : public System {
          */
         void update(FrameContext& ctx) override;
 
-        RenderPipeline& getPipeline() { return m_pipeline; }
-        const RenderPipeline& getPipeline() const { return m_pipeline; }
+        RenderGraph& getPipeline() { return m_graph; }
+        const RenderGraph& getPipeline() const { return m_graph; }
 
         EnvironmentConfig& getEnvironment() { return m_environment; }
         const EnvironmentConfig& getEnvironment() const { return m_environment; }
@@ -103,7 +103,7 @@ class RenderSystem : public System {
 
     private:
         std::unique_ptr<RenderBackend> m_backend;
-        RenderPipeline m_pipeline;
+        RenderGraph m_graph;
 
         RenderView m_renderView;  ///< Persistent - vectors reuse capacity across frames.
 
