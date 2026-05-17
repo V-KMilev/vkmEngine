@@ -1,121 +1,110 @@
+/**
+ * PBR fragment shader - energy-conserving Cook-Torrance.
+ *
+ * Outputs LINEAR scene-referred radiance into the HDR target. There is no
+ * exposure, tone mapping, or gamma here on purpose - the composite pass owns
+ * the entire display transform (exposure -> AgX -> sRGB). Doing it per-object
+ * would clamp light and double-correct on blending.
+ *
+ * Specular: GGX NDF + height-correlated Smith visibility + Schlick Fresnel,
+ * isotropic or anisotropic. Diffuse: energy-conserving Lambert coupled via
+ * (1 - F). F0 from material IOR, lerped to albedo by metalness. Optional
+ * clearcoat (own lobe, analytic + IBL), subsurface wrap + back translucency,
+ * thin transmission, and parallax-occlusion mapping. All advanced terms are
+ * scalar-driven from the material UBO and are no-ops at their defaults.
+ */
 #version 420 core
 
-in vec3 FragPos;
-in vec3 Normal;
-in vec2 TexCoords;
-in vec3 Tangent;
-in vec3 Bitangent;
+in vec3 vWorldPos;
+in vec3 vNormal;
+in vec2 vUV;
+in vec3 vTangent;
+in vec3 vBitangent;
 
 out vec4 FragColor;
 
-layout(std140, binding = 2) uniform CameraBlock {
-    mat4 viewProjection;
-    vec4 cameraPosition;  // xyz = position, w = exposure
-    vec4 ambient;         // xyz = color, w = intensity
-} u_camera;
-
 const float PI = 3.14159265359;
 
-// Texture flags (must match MaterialTextureFlags in C++)
-const int TEXTURE_FLAG_ALBEDO                = 1 << 0;
-const int TEXTURE_FLAG_NORMAL                = 1 << 1;
-const int TEXTURE_FLAG_METALLIC_ROUGHNESS    = 1 << 2;
-const int TEXTURE_FLAG_METALLIC              = 1 << 3;
-const int TEXTURE_FLAG_ROUGHNESS             = 1 << 4;
-const int TEXTURE_FLAG_AO                    = 1 << 5;
-const int TEXTURE_FLAG_AO_METALLIC_ROUGHNESS = 1 << 6;
-const int TEXTURE_FLAG_EMISSION              = 1 << 7;
-const int TEXTURE_FLAG_HEIGHT                = 1 << 8;
-const int TEXTURE_FLAG_CLEARCOAT             = 1 << 9;
-const int TEXTURE_FLAG_TRANSMISSION          = 1 << 10;
+// Texture presence flags - must match MaterialTextureFlags in gl_material.h.
+const int TEX_ALBEDO                = 1 << 0;
+const int TEX_NORMAL                = 1 << 1;
+const int TEX_METALLIC_ROUGHNESS    = 1 << 2;
+const int TEX_METALLIC              = 1 << 3;
+const int TEX_ROUGHNESS             = 1 << 4;
+const int TEX_AO                    = 1 << 5;
+const int TEX_AO_METALLIC_ROUGHNESS = 1 << 6;
+const int TEX_EMISSION              = 1 << 7;
+const int TEX_HEIGHT                = 1 << 8;
+const int TEX_CLEARCOAT             = 1 << 9;
+const int TEX_TRANSMISSION          = 1 << 10;
 
-// Light types
-const int LIGHT_TYPE_DIRECTIONAL = 0;
-const int LIGHT_TYPE_POINT       = 1;
-const int LIGHT_TYPE_SPOT        = 2;
+const int LIGHT_DIRECTIONAL = 0;
+const int LIGHT_POINT       = 1;
+const int LIGHT_SPOT        = 2;
 
-const int MAX_LIGHTS = 32;
+const int MAX_LIGHTS = 32;                 // Engine::Config::MaxLights
+const int SHADOW_MAX_CASTERS_2D   = 6;     // Engine::Config::MaxShadowCasters2D
+const int SHADOW_MAX_CASTERS_CUBE = 2;     // Engine::Config::MaxShadowCastersCube
 
-// Light data (binding = 1, must match C++ LightGPUData exactly)
-// Light slots are vec4 to sidestep drivers that don't pack vec3+scalar in std140.
-//   position.xyz = world position,  position.w = type (cast to int)
-//   color.xyz    = RGB,             color.w    = intensity
-//   direction.xyz= world direction, direction.w= radius
-//   spot.x       = inner cone,      spot.y     = outer cone
-//   spot.z       = unused,          spot.w     = shadowSlot (-1 = no shadow)
-struct Light {
-    vec4 position;
-    vec4 color;
-    vec4 direction;
-    vec4 spot;
-};
+// Must match kCubeNear in gl_shadow_pass.cpp - used to rebuild the projected
+// depth the point-light cube faces wrote.
+const float SHADOW_CUBE_NEAR = 0.1;
 
-// Material properties (binding = 0, must match C++ MaterialUBOData exactly with std140 padding)
 layout(std140, binding = 0) uniform MaterialBlock {
-    vec4 albedo;                          // offset 0
-    vec3 emission;                        // offset 16
-    float pad0;                           // offset 28
-
-    float metallic;                       // offset 32
-    float roughness;                      // offset 36
-    float ior;                            // offset 40
-    float transmission;                   // offset 44
-
-    float alpha;                          // offset 48
-    float ao;                             // offset 52
-    float clearcoat;                      // offset 56
-    float clearcoatRoughness;             // offset 60
-
-    float anisotropy;                     // offset 64
-    float pad1_0;                         // offset 68
-    float pad1_1;                         // offset 72
-    float pad1_2;                         // offset 76
-
-    vec3 anisotropyDirection;             // offset 80
-    float pad2;                           // offset 92
-
-    float subsurface;                     // offset 96
-    float pad3_0;                         // offset 100
-    float pad3_1;                         // offset 104
-    float pad3_2;                         // offset 108
-
-    vec3 subsurfaceColor;                 // offset 112
-    float pad4;                           // offset 124
-
-    float heightScale;                    // offset 128
-    float normalScale;                    // offset 132
-    int   textureFlags;                   // offset 136
-    float pad5;                           // offset 140
+    vec4  albedo;
+    vec3  emission;             float _mp0;
+    float metallic;
+    float roughness;
+    float ior;
+    float transmission;
+    float alpha;
+    float ao;
+    float clearcoat;
+    float clearcoatRoughness;
+    float anisotropy;           float sheenColorR; float sheenColorG; float sheenColorB;
+    vec3  anisotropyDirection;  float _mp4;
+    float subsurface;           float _mp5; float _mp6; float _mp7;
+    vec3  subsurfaceColor;      float _mp8;
+    float heightScale;
+    float normalScale;
+    int   textureFlags;
+    float sheenRoughness;
 } u_material;
 
+layout(std140, binding = 2) uniform CameraBlock {
+    mat4 viewProjection;
+    vec4 cameraPosition;  // xyz = position, w = exposure (used by composite)
+    vec4 ambient;         // xyz = color,    w = intensity
+} u_camera;
+
+struct Light {
+    vec4 position;   // xyz = world position, w = type
+    vec4 color;      // xyz = rgb,            w = intensity
+    vec4 direction;  // xyz = world dir,      w = radius
+    vec4 spot;       // x = inner, y = outer, z = unused, w = shadowSlot
+};
+
 layout(std140, binding = 1) uniform LightsBlock {
-    int   lightCount;           // offset 0, 4 bytes
-    float lightspad1;
-    float lightspad2;
-    float lightspad3;
-    Light lights[MAX_LIGHTS];   // offset 16, 64 bytes per light
+    int   lightCount;
+    int   _lp0;
+    int   _lp1;
+    int   _lp2;
+    Light lights[MAX_LIGHTS];
 } u_lights;
 
-// Shadow caster arrays (binding = 3, must match C++ ShadowUBOData).
-// Split into 2D (directional + spot) and cube (point) — the light's
-// shadowSlot (spot.w) indexes directly into the correct array, no scan.
-//
-// MUST match Engine::ShadowLimits in src/engine/system/render/render_view.h.
-const int SHADOW_MAX_CASTERS_2D   = 6;
-const int SHADOW_MAX_CASTERS_CUBE = 2;
-
 struct Shadow2DCaster {
-    mat4 lightSpace;  // world -> light clip space
-    vec4 params;      // x = bias
+    mat4 lightSpace;
+    vec4 params;     // x = bias
 };
 struct ShadowCubeCaster {
-    vec4 params;      // x = bias, y = range
+    vec4 params;     // x = bias, y = range
 };
+
 layout(std140, binding = 3) uniform ShadowBlock {
-    int              count2D;
-    int              countCube;
-    int              _pad0;
-    int              _pad1;
+    int count2D;
+    int countCube;
+    int csmBaseSlot;   // first 2D layer of cascade 0 (-1 = no CSM)
+    int csmCount;      // active sun cascade count
     Shadow2DCaster   casters2D  [SHADOW_MAX_CASTERS_2D];
     ShadowCubeCaster castersCube[SHADOW_MAX_CASTERS_CUBE];
 } u_shadow;
@@ -123,153 +112,148 @@ layout(std140, binding = 3) uniform ShadowBlock {
 uniform sampler2DArrayShadow   u_shadowMap2D;
 uniform samplerCubeArrayShadow u_shadowMapCube;
 
-// Texture samplers
 uniform sampler2D u_albedoTexture;
 uniform sampler2D u_normalTexture;
 uniform sampler2D u_metallicRoughnessTexture;
-uniform sampler2D u_metallicTexture;
-uniform sampler2D u_roughnessTexture;
-uniform sampler2D u_aoTexture;
 uniform sampler2D u_aoMetallicRoughnessTexture;
+uniform sampler2D u_aoTexture;
 uniform sampler2D u_emissionTexture;
 uniform sampler2D u_heightTexture;
-uniform sampler2D u_clearcoatTexture;
-uniform sampler2D u_transmissionTexture;
+uniform sampler2D u_metallicTexture;
+uniform sampler2D u_roughnessTexture;
 
-bool hasTexture(int flags, int flag) {
-    return (flags & flag) != 0;
+// Image-based lighting (split-sum). u_hasIBL gates between IBL and the flat
+// ambient fallback; the maps are bound by the forward pass when a bake exists.
+uniform samplerCube u_irradianceMap;
+uniform samplerCube u_prefilterMap;
+uniform sampler2D   u_brdfLUT;
+uniform int   u_hasIBL;
+uniform float u_iblIntensity;
+
+// Screen-space AO (GTAO), sampled by window coordinate.
+uniform sampler2D u_ssao;
+uniform int       u_ssaoEnabled;
+
+const float MAX_PREFILTER_LOD = 4.0;  // GLIBL::PREFILTER_MIPS - 1
+
+bool hasTex(int flag) {
+    return (u_material.textureFlags & flag) != 0;
 }
 
-// Parallax offset mapping
-vec2 parallaxMapping(vec2 uv, vec3 viewDirTS) {
-    float height = texture(u_heightTexture, uv).r;
-    vec2 offset = viewDirTS.xy / max(viewDirTS.z, 0.001) * (height * u_material.heightScale);
-    return uv - offset;
-}
+// Parallax-occlusion mapping: ray-march the height field along the
+// tangent-space view direction, then interpolate the crossing for a smooth
+// silhouette. More layers at grazing angles.
+vec2 parallax(vec2 uv, vec3 viewDirTS) {
+    const float MIN_LAYERS = 8.0;
+    const float MAX_LAYERS = 32.0;
+    float numLayers = mix(MAX_LAYERS, MIN_LAYERS,
+        clamp(abs(viewDirTS.z), 0.0, 1.0));
 
-// Normal mapping with adjustable intensity
-vec3 getNormalFromMap(vec2 uv) {
-    if (!hasTexture(u_material.textureFlags, TEXTURE_FLAG_NORMAL)) {
-        return normalize(Normal);
+    float layerDepth = 1.0 / numLayers;
+    float curLayerDepth = 0.0;
+
+    vec2 maxOffset = (viewDirTS.xy / max(viewDirTS.z, 0.001)) * u_material.heightScale;
+    vec2 deltaUV = maxOffset / numLayers;
+
+    vec2  curUV = uv;
+    float curH  = texture(u_heightTexture, curUV).r;
+
+    for (int i = 0; i < int(MAX_LAYERS); ++i) {
+        if (curLayerDepth >= curH) break;
+        curUV -= deltaUV;
+        curH = texture(u_heightTexture, curUV).r;
+        curLayerDepth += layerDepth;
     }
 
-    vec3 tangentNormal = texture(u_normalTexture, uv).rgb * 2.0 - 1.0;
-    tangentNormal.xy *= u_material.normalScale;
-    tangentNormal = normalize(tangentNormal);
-    mat3 TBN = mat3(normalize(Tangent), normalize(Bitangent), normalize(Normal));
-    return normalize(TBN * tangentNormal);
+    vec2  prevUV = curUV + deltaUV;
+    float afterD  = curH - curLayerDepth;
+    float beforeD = texture(u_heightTexture, prevUV).r - curLayerDepth + layerDepth;
+    float w = afterD / (afterD - beforeD);
+    return mix(curUV, prevUV, clamp(w, 0.0, 1.0));
 }
 
-// Normal Distribution Function (GGX/Trowbridge-Reitz)
-float distributionGGX(vec3 N, vec3 H, float roughness) {
-    float a  = roughness * roughness;
+vec3 getNormal(vec2 uv, mat3 tbn) {
+    if (!hasTex(TEX_NORMAL)) {
+        return normalize(vNormal);
+    }
+    vec3 n = texture(u_normalTexture, uv).rgb * 2.0 - 1.0;
+    n.xy *= u_material.normalScale;
+    return normalize(tbn * normalize(n));
+}
+
+// GGX / Trowbridge-Reitz normal distribution (Karis stable form).
+float distributionGGX(float NdotH, float a) {
     float a2 = a * a;
-    float NdotH  = max(dot(N, H), 0.0);
-    float NdotH2 = NdotH * NdotH;
-
-    float numerator   = a2;
-    float denominator = (NdotH2 * (a2 - 1.0) + 1.0);
-    denominator = PI * denominator * denominator;
-
-    return numerator / denominator;
+    float d  = (NdotH * a2 - NdotH) * NdotH + 1.0;
+    return a2 / max(PI * d * d, 1e-7);
 }
 
-// Anisotropic NDF (GGX with directional roughness)
-float distributionGGXAnisotropic(vec3 H, vec3 T, vec3 B, vec3 N, float at, float ab) {
-    float TdotH = dot(T, H);
-    float BdotH = dot(B, H);
-    float NdotH = max(dot(N, H), 0.0);
+// Height-correlated Smith visibility (already folds in the 1/(4 NoL NoV)).
+float visSmithCorrelated(float NdotV, float NdotL, float a) {
+    float a2 = a * a;
+    float gv = NdotL * sqrt(NdotV * NdotV * (1.0 - a2) + a2);
+    float gl = NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2);
+    return 0.5 / max(gv + gl, 1e-5);
+}
 
+// Charlie sheen distribution + Ashikhmin visibility (glTF KHR_materials_sheen
+// / Filament cloth). Used for fabric/dust grazing retroreflection.
+float distributionCharlie(float NdotH, float roughness) {
+    float invR = 1.0 / max(roughness, 0.07);
+    float cos2 = NdotH * NdotH;
+    float sin2 = max(1.0 - cos2, 0.0);
+    return (2.0 + invR) * pow(sin2, invR * 0.5) / (2.0 * PI);
+}
+
+float visAshikhmin(float NdotV, float NdotL) {
+    return clamp(1.0 / (4.0 * (NdotL + NdotV - NdotL * NdotV)), 0.0, 1.0);
+}
+
+// Anisotropic GGX (Burley / Filament): at, ab are tangent/bitangent alphas.
+float distributionGGXAniso(float NdotH, float ToH, float BoH, float at, float ab) {
     float a2 = at * ab;
-    float d = (TdotH * TdotH) / (at * at)
-            + (BdotH * BdotH) / (ab * ab)
-            + NdotH * NdotH;
-
-    return 1.0 / (PI * a2 * d * d + 0.0001);
+    vec3  v  = vec3(ab * ToH, at * BoH, a2 * NdotH);
+    float v2 = dot(v, v);
+    float w2 = a2 / max(v2, 1e-8);
+    return a2 * w2 * w2 * (1.0 / PI);
 }
 
-// Geometry Function (Schlick-GGX)
-float geometrySchlickGGX(float NdotV, float roughness) {
-    float r = (roughness + 1.0);
-    float k = (r * r) / 8.0;
-
-    float numerator   = NdotV;
-    float denominator = NdotV * (1.0 - k) + k;
-
-    return numerator / denominator;
+float visSmithAniso(float at, float ab,
+                    float ToV, float BoV, float NdotV,
+                    float ToL, float BoL, float NdotL) {
+    float lambdaV = NdotL * length(vec3(at * ToV, ab * BoV, NdotV));
+    float lambdaL = NdotV * length(vec3(at * ToL, ab * BoL, NdotL));
+    return 0.5 / max(lambdaV + lambdaL, 1e-5);
 }
 
-// Geometry Function (Smith's method)
-float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
-    float NdotV = max(dot(N, V), 0.0);
-    float NdotL = max(dot(N, L), 0.0);
-    float ggx1  = geometrySchlickGGX(NdotV, roughness);
-    float ggx2  = geometrySchlickGGX(NdotL, roughness);
-
-    return ggx1 * ggx2;
+vec3 fresnelSchlick(float u, vec3 f0) {
+    float f = pow(clamp(1.0 - u, 0.0, 1.0), 5.0);
+    return f0 + (vec3(1.0) - f0) * f;
 }
 
-// Fresnel-Schlick approximation
-vec3 fresnelSchlick(float cosTheta, vec3 F0) {
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
-// ACES filmic tone mapping (Narkowicz fit)
-vec3 ACESFilm(vec3 x) {
-    float a = 2.51;
-    float b = 0.03;
-    float c = 2.43;
-    float d = 0.59;
-    float e = 0.14;
-    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
-}
-
-// Linear to sRGB gamma correction
-vec3 linearToSRGB(vec3 color) {
-    return pow(color, vec3(1.0 / 2.2));
-}
-
-// Hardware PCF (2x2) + 3x3 kernel on a directional/spot map. Slot equals
-// both the index into casters2D and the layer in the sampler2DArrayShadow.
-float sample2DShadow(int slot, vec3 worldPos, vec3 N, vec3 L) {
+float sample2DShadow(int slot, vec3 worldPos, float NdotL) {
     Shadow2DCaster c = u_shadow.casters2D[slot];
-    float biasMax = c.params.x;
 
     vec4 lp = c.lightSpace * vec4(worldPos, 1.0);
     vec3 proj = lp.xyz / lp.w;
     proj = proj * 0.5 + 0.5;
     if (proj.z > 1.0) return 1.0;
 
-    float bias = max(biasMax * (1.0 - dot(N, L)), biasMax * 0.1);
-    proj.z -= bias;
+    float biasMax = c.params.x;
+    float bias = max(biasMax * (1.0 - NdotL), biasMax * 0.2);
+    float ref = proj.z - bias;
 
     vec2 texel = 1.0 / vec2(textureSize(u_shadowMap2D, 0).xy);
     float sum = 0.0;
     for (int x = -1; x <= 1; ++x) {
         for (int y = -1; y <= 1; ++y) {
-            vec2 offset = vec2(float(x), float(y)) * texel;
-            sum += texture(u_shadowMap2D, vec4(proj.xy + offset, float(slot), proj.z));
+            vec2 off = vec2(float(x), float(y)) * texel;
+            sum += texture(u_shadowMap2D, vec4(proj.xy + off, float(slot), ref));
         }
     }
     return sum / 9.0;
 }
 
-// Convert a world-space direction vector to the projected depth the cube
-// rasterizer would have written for it. Mirrors the perspective(90°, n, far)
-// projection used in gl_shadow_pass.cpp; absMax(dir) is the view-space z on
-// whichever face wins the cubemap face selection.
-const float SHADOW_CUBE_NEAR = 0.1; // MUST match kCubeNear in gl_shadow_pass.cpp
-float vectorToDepth(vec3 dir, float far) {
-    vec3 absDir = abs(dir);
-    float z = max(absDir.x, max(absDir.y, absDir.z));
-    float ndcZ = (far + SHADOW_CUBE_NEAR) / (far - SHADOW_CUBE_NEAR)
-               - (2.0 * far * SHADOW_CUBE_NEAR) / (z * (far - SHADOW_CUBE_NEAR));
-    return (ndcZ + 1.0) * 0.5;
-}
-
-// Cube-map shadow sample for point lights. Standard projected depth — no
-// gl_FragDepth override on the write side, so the reference is derived from
-// the lookup vector via the same perspective(90°, n, far).
 float samplePointShadow(int slot, vec3 worldPos, vec3 lightPos) {
     ShadowCubeCaster c = u_shadow.castersCube[slot];
     float bias  = c.params.x;
@@ -278,272 +262,300 @@ float samplePointShadow(int slot, vec3 worldPos, vec3 lightPos) {
     vec3 toFrag = worldPos - lightPos;
     if (length(toFrag) > range) return 1.0;
 
-    float refDepth = vectorToDepth(toFrag, range) - bias;
-    return texture(u_shadowMapCube, vec4(toFrag, float(slot)), refDepth);
+    // Rebuild the projected depth the cube face wrote with a 90 deg
+    // perspective(near = SHADOW_CUBE_NEAR, far = range).
+    vec3 a = abs(toFrag);
+    float zc = max(a.x, max(a.y, a.z));
+    float n = SHADOW_CUBE_NEAR;
+    float f = range;
+    float ndc = (f + n) / (f - n) - (2.0 * f * n) / (zc * (f - n));
+    float ref = (ndc * 0.5 + 0.5) - bias;
+
+    return texture(u_shadowMapCube, vec4(toFrag, float(slot)), ref);
 }
 
-// Calculate distance attenuation for point and spot lights
-float calculateAttenuation(vec3 lightPos, vec3 fragPos, float radius) {
-    float distance = length(lightPos - fragPos);
-    float attenuation = clamp(1.0 - (distance / radius), 0.0, 1.0);
-    return attenuation * attenuation; // Quadratic falloff
+// Pick the tightest sun cascade that contains the fragment (cascades are
+// ordered near -> far). Falls back to the largest cascade at the edges.
+int selectCascade(vec3 worldPos) {
+    for (int c = 0; c < u_shadow.csmCount; ++c) {
+        int layer = u_shadow.csmBaseSlot + c;
+        vec4 lp = u_shadow.casters2D[layer].lightSpace * vec4(worldPos, 1.0);
+        vec3 p = lp.xyz / lp.w * 0.5 + 0.5;
+        if (p.x > 0.02 && p.x < 0.98 &&
+            p.y > 0.02 && p.y < 0.98 &&
+            p.z > 0.0  && p.z < 1.0)
+            return layer;
+    }
+    return u_shadow.csmBaseSlot + u_shadow.csmCount - 1;
 }
 
-// Calculate cone attenuation for spot lights
-float calculateSpotAttenuation(vec3 lightDir, vec3 lightToFrag, float innerAngle, float outerAngle) {
-    float theta   = dot(lightDir, normalize(-lightToFrag));
-    float epsilon = max(cos(innerAngle) - cos(outerAngle), 0.0001);
-    float intensity = clamp((theta - cos(outerAngle)) / epsilon, 0.0, 1.0);
-    return intensity;
-}
-
-struct MaterialProperties {
-    vec4  albedo;
+struct Surface {
+    vec3  albedo;
     float metallic;
     float roughness;
     float ao;
     vec3  emission;
-    float ior;
-    float transmission;
-    float clearcoat;
-    float clearcoatRoughness;
-    float anisotropy;
-    float subsurface;
-    vec3  subsurfaceColor;
 };
 
-MaterialProperties sampleMaterial(vec2 uv) {
-    MaterialProperties props;
-    // Sample albedo
-    props.albedo = u_material.albedo;
-    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_ALBEDO)) {
-        props.albedo *= texture(u_albedoTexture, uv);
-    }
-    // Initialize from material uniforms
-    props.metallic           = u_material.metallic;
-    props.emission           = u_material.emission;
-    props.roughness          = u_material.roughness;
-    props.ao                 = u_material.ao;
-    props.ior                = u_material.ior;
-    props.transmission       = u_material.transmission;
-    props.clearcoat          = u_material.clearcoat;
-    props.clearcoatRoughness = u_material.clearcoatRoughness;
-    props.anisotropy         = u_material.anisotropy;
-    props.subsurface         = u_material.subsurface;
-    props.subsurfaceColor    = u_material.subsurfaceColor;
+Surface sampleSurface(vec2 uv) {
+    Surface s;
 
-    // Sample packed textures (priority order)
-    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_AO_METALLIC_ROUGHNESS)) {
-        vec3 aoMR = texture(u_aoMetallicRoughnessTexture, uv).rgb;
-        props.ao        *= aoMR.r;
-        props.metallic   = aoMR.g;
-        props.roughness  = aoMR.b;
+    s.albedo = u_material.albedo.rgb;
+    if (hasTex(TEX_ALBEDO)) {
+        s.albedo *= texture(u_albedoTexture, uv).rgb;
     }
-    else if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_METALLIC_ROUGHNESS)) {
+
+    s.metallic  = u_material.metallic;
+    s.roughness = u_material.roughness;
+    s.ao        = u_material.ao;
+    s.emission  = u_material.emission;
+
+    if (hasTex(TEX_AO_METALLIC_ROUGHNESS)) {
+        vec3 amr = texture(u_aoMetallicRoughnessTexture, uv).rgb;
+        s.ao        *= amr.r;
+        s.metallic   = amr.g;
+        s.roughness  = amr.b;
+    } else if (hasTex(TEX_METALLIC_ROUGHNESS)) {
         vec3 mr = texture(u_metallicRoughnessTexture, uv).rgb;
-        props.metallic  = mr.b;
-        props.roughness = mr.g;
-    }
-    else {
-        if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_METALLIC)) {
-            props.metallic *= texture(u_metallicTexture, uv).r;
-        }
-        if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_ROUGHNESS)) {
-            props.roughness *= texture(u_roughnessTexture, uv).r;
-        }
-    }
-    // Clamp roughness to prevent NDF singularity
-    props.roughness = clamp(props.roughness, 0.04, 1.0);
-
-    // Sample AO separately if needed
-    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_AO) &&
-        !hasTexture(u_material.textureFlags, TEXTURE_FLAG_AO_METALLIC_ROUGHNESS)) {
-        props.ao *= texture(u_aoTexture, uv).r;
-    }
-    // Sample emission
-    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_EMISSION)) {
-        props.emission *= texture(u_emissionTexture, uv).rgb;
-    }
-    // Sample clearcoat
-    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_CLEARCOAT)) {
-        props.clearcoat *= texture(u_clearcoatTexture, uv).r;
-    }
-    // Sample transmission
-    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_TRANSMISSION)) {
-        props.transmission *= texture(u_transmissionTexture, uv).r;
+        s.metallic  = mr.b;
+        s.roughness = mr.g;
+    } else {
+        if (hasTex(TEX_METALLIC))  s.metallic  *= texture(u_metallicTexture,  uv).r;
+        if (hasTex(TEX_ROUGHNESS)) s.roughness *= texture(u_roughnessTexture, uv).r;
     }
 
-    return props;
+    if (hasTex(TEX_AO) && !hasTex(TEX_AO_METALLIC_ROUGHNESS)) {
+        s.ao *= texture(u_aoTexture, uv).r;
+    }
+    if (hasTex(TEX_EMISSION)) {
+        s.emission *= texture(u_emissionTexture, uv).rgb;
+    }
+
+    s.roughness = clamp(s.roughness, 0.045, 1.0);
+    return s;
 }
 
-// Full per-light contribution including all material features
-vec3 evaluateLight(
-    vec3 N, vec3 V, vec3 L, vec3 T, vec3 B,
-    MaterialProperties mat, vec3 F0, vec3 radiance
-) {
+// Smooth windowed inverse-square falloff (physically based, finite range).
+float distanceAttenuation(float dist, float radius) {
+    float invSqr = 1.0 / max(dist * dist, 1e-4);
+    float window = clamp(1.0 - pow(dist / max(radius, 1e-3), 4.0), 0.0, 1.0);
+    return invSqr * window * window;
+}
+
+vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, vec3 radiance) {
     vec3 H = normalize(V + L);
     float NdotL = max(dot(N, L), 0.0);
-    float NdotV = max(dot(N, V), 0.0);
-    float HdotV = max(dot(H, V), 0.0);
 
-    // Normal Distribution Function
-    float NDF;
-    if (mat.anisotropy > 0.001) {
-        // Anisotropic GGX: stretch roughness along tangent/bitangent
-        float at = max(mat.roughness * (1.0 + mat.anisotropy), 0.04);
-        float ab = max(mat.roughness * (1.0 - mat.anisotropy), 0.04);
-        NDF = distributionGGXAnisotropic(H, T, B, N, at, ab);
+    bool hasBack = u_material.subsurface > 0.001 || u_material.transmission > 0.001;
+    if (NdotL <= 0.0 && !hasBack) return vec3(0.0);
+
+    float NdotV = max(dot(N, V), 1e-4);
+    float NdotH = max(dot(N, H), 0.0);
+    float VdotH = max(dot(V, H), 0.0);
+
+    float a = s.roughness * s.roughness;
+
+    // Base specular: anisotropic when configured, isotropic otherwise.
+    float D, Vis;
+    if (u_material.anisotropy > 0.001) {
+        vec3 aT = normalize(T * u_material.anisotropyDirection.x +
+                            B * u_material.anisotropyDirection.y +
+                            N * u_material.anisotropyDirection.z);
+        vec3 aB = normalize(cross(N, aT));
+        aT = normalize(cross(aB, N));
+        float at = max(a * (1.0 + u_material.anisotropy), 1e-3);
+        float ab = max(a * (1.0 - u_material.anisotropy), 1e-3);
+        D   = distributionGGXAniso(NdotH, dot(aT, H), dot(aB, H), at, ab);
+        Vis = visSmithAniso(at, ab, dot(aT, V), dot(aB, V), NdotV,
+                                    dot(aT, L), dot(aB, L), NdotL);
     } else {
-        NDF = distributionGGX(N, H, mat.roughness);
+        D   = distributionGGX(NdotH, a);
+        Vis = visSmithCorrelated(NdotV, NdotL, a);
+    }
+    vec3 F = fresnelSchlick(VdotH, f0);
+    vec3 specular = D * Vis * F;
+
+    // Diffuse with optional subsurface wrap (light bleeds past the terminator).
+    vec3 kd = (vec3(1.0) - F) * (1.0 - s.metallic);
+    vec3 diffuse = kd * s.albedo / PI;
+    float diffNoL = NdotL;
+    if (u_material.subsurface > 0.001) {
+        float w = u_material.subsurface;
+        diffNoL = clamp((dot(N, L) + w) / ((1.0 + w) * (1.0 + w)), 0.0, 1.0);
     }
 
-    // Geometry & Fresnel
-    float G  = geometrySmith(N, V, L, mat.roughness);
-    vec3  F  = fresnelSchlick(HdotV, F0);
-
-    // Specular (Cook-Torrance)
-    vec3  specular = (NDF * G * F) / (4.0 * NdotV * NdotL + 0.0001);
-
-    // Diffuse with energy conservation
-    vec3 kD = (vec3(1.0) - F) * (1.0 - mat.metallic);
-
-    // Subsurface scattering: wrap lighting approximation
-    float diffuseNdotL = NdotL;
-    vec3  diffuseAlbedo = mat.albedo.rgb;
-    if (mat.subsurface > 0.001) {
-        // Wrap the N.L term so light bleeds to the back side
-        diffuseNdotL = max((dot(N, L) + mat.subsurface) / (1.0 + mat.subsurface), 0.0);
-        // Tint with subsurface color
-        diffuseAlbedo = mix(diffuseAlbedo, mat.subsurfaceColor * diffuseAlbedo, mat.subsurface);
-    }
-
-    vec3 diffuse = kD * diffuseAlbedo / PI;
-
-    // ---- Transmission (back-face illumination) ----
+    // Thin transmission: reduce front diffuse, add a back-lit term.
     vec3 transmitted = vec3(0.0);
-    if (mat.transmission > 0.001) {
-        float backNdotL = max(dot(-N, L), 0.0);
-        transmitted = kD * mat.albedo.rgb * mat.transmission * backNdotL / PI;
-        // Reduce front diffuse proportionally
-        diffuse *= (1.0 - mat.transmission);
+    if (u_material.transmission > 0.001) {
+        float kt = u_material.transmission * (1.0 - s.metallic);
+        diffuse *= (1.0 - kt);
+        transmitted = kt * s.albedo / PI * max(dot(-N, L), 0.0);
     }
 
-    // ---- Clearcoat (second specular lobe) ----
+    // Subsurface back translucency, tinted.
+    vec3 sss = vec3(0.0);
+    if (u_material.subsurface > 0.001) {
+        sss = u_material.subsurfaceColor * s.albedo
+            * clamp(dot(-N, L), 0.0, 1.0) * u_material.subsurface;
+    }
+
+    vec3 baseLit = diffuse * diffNoL + specular * NdotL;
+
+    // Clearcoat: a second, always-dielectric GGX lobe that also attenuates
+    // the base layer by its Fresnel.
     vec3 ccContrib = vec3(0.0);
-    if (mat.clearcoat > 0.001) {
-        float ccRoughness = clamp(mat.clearcoatRoughness, 0.04, 1.0);
-        float ccNDF = distributionGGX(N, H, ccRoughness);
-        float ccG   = geometrySmith(N, V, L, ccRoughness);
-        // Clearcoat is always dielectric (F0 = 0.04)
-        vec3  ccF   = fresnelSchlick(HdotV, vec3(0.04));
-        vec3  ccSpec = (ccNDF * ccG * ccF) / (4.0 * NdotV * NdotL + 0.0001);
-        ccContrib = ccSpec * mat.clearcoat * NdotL * radiance;
-
-        // Clearcoat absorbs some energy from the base layer
-        float ccFresnel = ccF.r;
-        diffuse  *= (1.0 - mat.clearcoat * ccFresnel);
-        specular *= (1.0 - mat.clearcoat * ccFresnel);
+    if (u_material.clearcoat > 0.001) {
+        float ccRough = clamp(u_material.clearcoatRoughness, 0.045, 1.0);
+        float cca = ccRough * ccRough;
+        float ccD = distributionGGX(NdotH, cca);
+        float ccV = visSmithCorrelated(NdotV, NdotL, cca);
+        float ccF = fresnelSchlick(VdotH, vec3(0.04)).x * u_material.clearcoat;
+        baseLit *= (1.0 - ccF);
+        ccContrib = vec3(ccD * ccV * ccF) * NdotL;
     }
 
-    // Combine
-    vec3 result = (diffuse * diffuseNdotL + specular * NdotL + transmitted) * radiance;
-    result += ccContrib;
+    // Sheen / cloth lobe (Charlie). Disabled when sheenColor is black.
+    vec3 sheenColor = vec3(u_material.sheenColorR, u_material.sheenColorG, u_material.sheenColorB);
+    vec3 sheen = vec3(0.0);
+    if (max(sheenColor.r, max(sheenColor.g, sheenColor.b)) > 0.0) {
+        float sheenD = distributionCharlie(NdotH, u_material.sheenRoughness);
+        float sheenV = visAshikhmin(NdotV, NdotL);
+        sheen = sheenColor * (sheenD * sheenV * NdotL);
+    }
 
-    return result;
+    return (baseLit + ccContrib + transmitted + sss + sheen) * radiance;
 }
 
 void main() {
-    vec3 V = normalize(u_camera.cameraPosition.xyz - FragPos);
-    vec3 T = normalize(Tangent);
-    vec3 B = normalize(Bitangent);
-    vec3 Ngeom = normalize(Normal);
+    vec3 V = normalize(u_camera.cameraPosition.xyz - vWorldPos);
 
-    // Parallax mapping (shifts UVs based on height map)
-    vec2 uv = TexCoords;
-    if (hasTexture(u_material.textureFlags, TEXTURE_FLAG_HEIGHT) && u_material.heightScale > 0.0) {
-        mat3 TBN = mat3(T, B, Ngeom);
-        vec3 viewDirTS = normalize(transpose(TBN) * V);
-        uv = parallaxMapping(uv, viewDirTS);
+    vec3 T = normalize(vTangent);
+    vec3 B = normalize(vBitangent);
+    vec3 Ng = normalize(vNormal);
+    mat3 TBN = mat3(T, B, Ng);
+
+    vec2 uv = vUV;
+    if (hasTex(TEX_HEIGHT) && u_material.heightScale > 0.0) {
+        vec3 viewTS = normalize(transpose(TBN) * V);
+        uv = parallax(uv, viewTS);
     }
 
-    // Sample material with (potentially displaced) UVs
-    MaterialProperties material = sampleMaterial(uv);
+    Surface s = sampleSurface(uv);
+    vec3 N = getNormal(uv, TBN);
 
-    // Normal from map (with normalScale intensity)
-    vec3 N = getNormalFromMap(uv);
+    float f0Dielectric = pow((u_material.ior - 1.0) / (u_material.ior + 1.0), 2.0);
+    vec3 f0 = mix(vec3(f0Dielectric), s.albedo, s.metallic);
 
-    // F0 from IOR (physically correct instead of hardcoded 0.04)
-    float f0Dielectric = pow((material.ior - 1.0) / (material.ior + 1.0), 2.0);
-    vec3 F0 = vec3(f0Dielectric);
-    F0 = mix(F0, material.albedo.rgb, material.metallic);
-
-    // Lighting
     vec3 Lo = vec3(0.0);
 
-    if (u_lights.lightCount == 0) {
-        // Fallback: default directional light
-        vec3 L = normalize(vec3(-1.0, -1.0, 1.0));
-        vec3 radiance = vec3(3.0);
-        Lo = evaluateLight(N, V, L, T, B, material, F0, radiance);
+    for (int i = 0; i < u_lights.lightCount && i < MAX_LIGHTS; ++i) {
+        Light light = u_lights.lights[i];
+
+        vec3  lightPos = light.position.xyz;
+        vec3  lightDir = normalize(light.direction.xyz);
+        vec3  lightCol = light.color.xyz;
+        float intensity = light.color.w;
+        float radius    = light.direction.w;
+        int   type      = int(light.position.w);
+
+        vec3  L;
+        float atten = 1.0;
+
+        if (type == LIGHT_DIRECTIONAL) {
+            L = normalize(-lightDir);
+        } else {
+            vec3 toLight = lightPos - vWorldPos;
+            float dist = length(toLight);
+            L = toLight / max(dist, 1e-4);
+            atten = distanceAttenuation(dist, radius);
+
+            if (type == LIGHT_SPOT) {
+                float cosInner = cos(light.spot.x);
+                float cosOuter = cos(light.spot.y);
+                float cd = dot(lightDir, -L);
+                float cone = clamp((cd - cosOuter) / max(cosInner - cosOuter, 1e-4), 0.0, 1.0);
+                atten *= cone * cone;
+            }
+        }
+
+        if (atten <= 0.0) continue;
+
+        float NdotL = max(dot(N, L), 0.0);
+        float visibility = 1.0;
+        int shadowSlot = int(light.spot.w);
+        if (shadowSlot >= 0 && NdotL > 0.0) {
+            if (type == LIGHT_POINT) {
+                visibility = samplePointShadow(shadowSlot, vWorldPos, lightPos);
+            } else if (type == LIGHT_DIRECTIONAL && u_shadow.csmCount > 0) {
+                visibility = sample2DShadow(selectCascade(vWorldPos), vWorldPos, NdotL);
+            } else {
+                visibility = sample2DShadow(shadowSlot, vWorldPos, NdotL);
+            }
+        }
+
+        vec3 radiance = lightCol * intensity * atten * visibility;
+        Lo += evaluateLight(N, V, L, T, B, s, f0, radiance);
     }
-    else {
-        for (int i = 0; i < u_lights.lightCount; i++) {
-            Light light = u_lights.lights[i];
 
-            vec3  lightPos = light.position.xyz;
-            vec3  lightDir = light.direction.xyz;
-            vec3  lightCol = light.color.xyz;
-            float intensity = light.color.w;
-            float radius    = light.direction.w;
-            int   type      = int(light.position.w);
+    vec3 ambient;
+    if (u_hasIBL == 1) {
+        // Split-sum IBL with Fdez-Aguera multiscatter energy conservation
+        // (Khronos glTF sample-viewer formulation).
+        float NdotV = max(dot(N, V), 1e-4);
+        vec3  R = reflect(-V, N);
 
-            vec3  L = vec3(0.0);
-            float attenuation = 1.0;
+        // Roughness-aware Fresnel (Sebastien Lagarde).
+        vec3 F = f0 + (max(vec3(1.0 - s.roughness), f0) - f0) * pow(1.0 - NdotV, 5.0);
 
-            if (type == LIGHT_TYPE_DIRECTIONAL) {
-                L = normalize(-lightDir);
-            }
-            else if (type == LIGHT_TYPE_POINT) {
-                L = normalize(lightPos - FragPos);
-                attenuation = calculateAttenuation(lightPos, FragPos, radius);
-            }
-            else if (type == LIGHT_TYPE_SPOT) {
-                L = normalize(lightPos - FragPos);
-                attenuation = calculateAttenuation(lightPos, FragPos, radius);
-                attenuation *= calculateSpotAttenuation(lightDir, lightPos - FragPos,
-                                                        light.spot.x, light.spot.y);
-            }
-            if (attenuation < 0.001) continue;
+        vec3 irradiance  = texture(u_irradianceMap, N).rgb;
+        vec3 prefiltered = textureLod(u_prefilterMap, R, s.roughness * MAX_PREFILTER_LOD).rgb;
+        vec2 dfg         = texture(u_brdfLUT, vec2(NdotV, s.roughness)).rg;
 
-            // shadowSlot was assigned CPU-side and packed into spot.w; -1 means
-            // this light doesn't cast. Dispatch by type — no per-fragment scan.
-            float visibility = 1.0;
-            int shadowSlot = int(light.spot.w);
-            if (shadowSlot >= 0) {
-                visibility = (type == LIGHT_TYPE_POINT)
-                    ? samplePointShadow(shadowSlot, FragPos, lightPos)
-                    : sample2DShadow(shadowSlot, FragPos, N, L);
-            }
+        vec3  FssEss = F * dfg.x + dfg.y;
+        float Ess    = dfg.x + dfg.y;
+        float Ems    = 1.0 - Ess;
+        vec3  Favg   = f0 + (1.0 - f0) / 21.0;
+        vec3  Fms    = FssEss * Favg / (1.0 - Ems * Favg);
+        vec3  kD     = (1.0 - FssEss - Fms * Ems) * (1.0 - s.metallic);
 
-            vec3 radiance = lightCol * intensity * attenuation * visibility;
-            Lo += evaluateLight(N, V, L, T, B, material, F0, radiance);
+        vec3 specularIBL = FssEss * prefiltered;
+        vec3 diffuseIBL  = (Fms * Ems + kD) * irradiance * s.albedo;
+
+        ambient = (diffuseIBL + specularIBL) * s.ao * u_iblIntensity;
+
+        // Clearcoat IBL: a dielectric specular lobe over the base ambient.
+        if (u_material.clearcoat > 0.001) {
+            float ccRough = clamp(u_material.clearcoatRoughness, 0.045, 1.0);
+            float ccFr = (0.04 + 0.96 * pow(1.0 - NdotV, 5.0)) * u_material.clearcoat;
+            vec3  ccPref = textureLod(u_prefilterMap, R, ccRough * MAX_PREFILTER_LOD).rgb;
+            vec2  ccDfg  = texture(u_brdfLUT, vec2(NdotV, ccRough)).rg;
+            vec3  ccSpecIBL = ccPref * (0.04 * ccDfg.x + ccDfg.y);
+            ambient = ambient * (1.0 - ccFr) + ccSpecIBL * ccFr * s.ao * u_iblIntensity;
+        }
+    } else {
+        // Flat ambient fallback when no environment map is set.
+        ambient = u_camera.ambient.xyz * u_camera.ambient.w * s.albedo * s.ao;
+    }
+
+    // Screen-space AO darkens only the ambient/indirect term.
+    if (u_ssaoEnabled == 1) {
+        float ssao = texture(u_ssao, gl_FragCoord.xy / vec2(textureSize(u_ssao, 0))).r;
+        ambient *= ssao;
+    }
+
+    vec3 color = ambient + Lo + s.emission;
+
+    // Environment refraction for transmissive materials: glass shows the
+    // refracted IBL. True scene-behind SSR-refraction needs an opaque-color
+    // copy (separate pre-transparent pass) - documented follow-up.
+    if (u_material.transmission > 0.001 && u_hasIBL == 1) {
+        vec3 rdir = refract(-V, N, 1.0 / max(u_material.ior, 1.0));
+        if (dot(rdir, rdir) > 0.0) {
+            vec3 refr = textureLod(u_prefilterMap, rdir,
+                            s.roughness * MAX_PREFILTER_LOD).rgb * s.albedo;
+            color = mix(color, refr, clamp(u_material.transmission, 0.0, 1.0));
         }
     }
 
-    // Ambient with AO
-    vec3 ambient = u_camera.ambient.xyz * u_camera.ambient.w * material.albedo.rgb * material.ao;
-
-    // Combine
-    vec3 color = ambient + Lo + material.emission;
-
-    // Exposure
-    color *= u_camera.cameraPosition.w;
-
-    // Tone mapping & gamma
-    color = ACESFilm(color);
-    color = linearToSRGB(color);
-
-    // Output
-    float finalAlpha = material.albedo.a * u_material.alpha;
-    FragColor = vec4(color, finalAlpha);
+    FragColor = vec4(color, u_material.albedo.a * u_material.alpha);
 }
