@@ -3,6 +3,7 @@
 #include "ecs/entity.h"
 #include "input/editor_keybinds.h"
 #include "gizmo/transform_gizmo.h"
+#include "resource/material_asset.h"  // MaterialHandle (Material Editor target)
 
 namespace Engine {
 
@@ -38,6 +39,9 @@ struct EditorState {
     bool showInspector   = true;
     bool showBottom      = true;
     bool showPreferences = false;   ///< Preferences window (Ctrl+,)
+    bool showMaterialEditor = false;            ///< Material Editor window
+    MaterialHandle materialEditorTarget{};      ///< Which material it edits (else: selected entity's)
+    bool showAssetBrowser   = false;            ///< Asset Browser window (material/mesh thumbnail grid)
 
     // Layout dimensions (pixels)
     float leftPanelWidth    = 260.0f;

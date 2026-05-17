@@ -23,12 +23,7 @@ void HierarchyPanel::draw(EditorContext& ec) {
     EditorState&  state = ec.state;
     auto& scene = ctx.scene;
 
-    // Panel header
-    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
-    ImGui::TextUnformatted("Hierarchy");
-    ImGui::PopStyleColor();
-    ImGui::Separator();
-    ImGui::Spacing();
+    drawPanelTitle("Hierarchy");
 
     float btnW = ImGui::GetFrameHeight();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - btnW - ImGui::GetStyle().ItemSpacing.x);

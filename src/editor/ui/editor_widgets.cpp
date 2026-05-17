@@ -4,6 +4,7 @@
 #include <imgui.h>
 #include <cstdio>
 #include <cctype>
+#include <vector>
 
 #include "ecs/scene.h"
 #include "ecs/component/mesh.h"
@@ -76,6 +77,125 @@ void drawPropertyLabel(const char* label) {
     ImGui::TextUnformatted(label);
     ImGui::SameLine(kLabelWidth);
     ImGui::SetNextItemWidth(-1);
+}
+
+namespace {
+    struct CardState {
+        ImVec4 accent;
+        float  startY = 0.0f;   // body top, screen-space y
+        float  lineX  = 0.0f;   // left accent-line x, screen-space
+        bool   open   = false;
+    };
+    // ImGui is single-threaded; a plain stack is enough. Cards never nest in
+    // the inspector but the stack keeps begin/end strictly balanced anyway.
+    std::vector<CardState> g_cardStack;
+    constexpr float kCardIndent = 14.0f;
+}
+
+bool styledCollapsingHeader(const char* title, const ImVec4& accent,
+                            bool defaultOpen) {
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth
+                             | ImGuiTreeNodeFlags_AllowOverlap
+                             | ImGuiTreeNodeFlags_FramePadding;
+    if (defaultOpen) flags |= ImGuiTreeNodeFlags_DefaultOpen;
+
+    ImGui::PushStyleColor(ImGuiCol_Header,        ImVec4(0.19f, 0.20f, 0.23f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.25f, 0.27f, 0.31f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive,  ImVec4(0.23f, 0.25f, 0.29f, 1.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 7));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+
+    const bool open = ImGui::CollapsingHeader(title, flags);
+    const ImVec2 rMin = ImGui::GetItemRectMin();
+    const ImVec2 rMax = ImGui::GetItemRectMax();
+
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(3);
+
+    // Accent strip welded to the header's left edge.
+    ImGui::GetWindowDrawList()->AddRectFilled(
+        ImVec2(rMin.x, rMin.y), ImVec2(rMin.x + 3.0f, rMax.y),
+        ImGui::GetColorU32(accent));
+    return open;
+}
+
+bool beginComponentCard(const char* title, const ImVec4& accent,
+                        bool defaultOpen, bool* removeClicked) {
+    ImGui::PushID(title);
+    ImGui::Spacing();
+
+    const bool open   = styledCollapsingHeader(title, accent, defaultOpen);
+    const ImVec2 rMin = ImGui::GetItemRectMin();
+
+    if (removeClicked) {
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x
+                        + ImGui::GetCursorPosX() - 20);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::DANGER_HOV);
+        if (ImGui::SmallButton("x")) *removeClicked = true;
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove component");
+        ImGui::PopStyleColor(2);
+    }
+
+    CardState st;
+    st.accent = accent;
+    st.open   = open;
+    st.lineX  = rMin.x + kCardIndent * 0.5f;
+    if (open) {
+        ImGui::Indent(kCardIndent);
+        ImGui::Spacing();
+        st.startY = ImGui::GetCursorScreenPos().y;
+    }
+    g_cardStack.push_back(st);
+    return open;
+}
+
+void endComponentCard() {
+    CardState st = g_cardStack.back();
+    g_cardStack.pop_back();
+
+    if (st.open) {
+        ImGui::Spacing();
+        const float endY = ImGui::GetCursorScreenPos().y;
+        ImGui::Unindent(kCardIndent);
+        const ImU32 c = ImGui::GetColorU32(ImVec4(
+            st.accent.x, st.accent.y, st.accent.z, 0.30f));
+        ImGui::GetWindowDrawList()->AddLine(
+            ImVec2(st.lineX, st.startY), ImVec2(st.lineX, endY), c, 2.0f);
+    }
+    ImGui::PopID();
+    ImGui::Spacing();
+}
+
+namespace {
+    // A crisp full-width accent rule under the current cursor - replaces the
+    // flat default Separator so every panel/section reads the same way.
+    void accentRule() {
+        const ImVec2 p = ImGui::GetCursorScreenPos();
+        const float  w = ImGui::GetContentRegionAvail().x;
+        ImGui::GetWindowDrawList()->AddRectFilled(
+            ImVec2(p.x, p.y + 1.0f), ImVec2(p.x + w, p.y + 2.5f),
+            ImGui::GetColorU32(EditorStyle::ACCENT));
+        ImGui::Dummy(ImVec2(0.0f, 5.0f));
+    }
+}
+
+void drawPanelTitle(const char* title) {
+    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
+    ImGui::TextUnformatted(title);
+    ImGui::PopStyleColor();
+    accentRule();
+}
+
+void drawSectionHeader(const char* title, const char* hint) {
+    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
+    ImGui::TextUnformatted(title);
+    ImGui::PopStyleColor();
+    if (hint && hint[0]) {
+        ImGui::SameLine(0.0f, 10.0f);
+        ImGui::TextDisabled("%s", hint);
+    }
+    accentRule();
 }
 
 bool drawRemoveButton(const char* compLabel, uint32_t entityIdx) {

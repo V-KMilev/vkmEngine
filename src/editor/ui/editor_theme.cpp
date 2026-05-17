@@ -24,7 +24,10 @@ void applyEditorTheme() {
     style.ScrollbarRounding = 6.0f;
     style.TabRounding       = 4.0f;
     style.PopupRounding     = 4.0f;
-    style.ChildRounding     = 4.0f;
+    // Docked panels are child regions tiled edge-to-edge; rounded corners
+    // leave triangular gaps at the seams. Square them (floating windows
+    // keep WindowRounding).
+    style.ChildRounding     = 0.0f;
     style.ChildBorderSize   = 0.5f;
     style.CellPadding       = ImVec2(4, 3);
     style.SeparatorTextBorderSize = 2.0f;
@@ -66,6 +69,19 @@ void applyEditorTheme() {
     c[ImGuiCol_TableBorderStrong]     = ImVec4(0.22f, 0.22f, 0.24f, 1.00f);
     c[ImGuiCol_TableBorderLight]      = ImVec4(0.18f, 0.18f, 0.20f, 1.00f);
     c[ImGuiCol_TableRowBgAlt]         = ImVec4(1.00f, 1.00f, 1.00f, 0.02f);
+
+    // Fill the remaining slots so nothing falls back to StyleColorsDark's
+    // teal defaults (these are what made stray bits look "un-themed").
+    c[ImGuiCol_BorderShadow]          = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    c[ImGuiCol_TextSelectedBg]        = ImVec4(0.30f, 0.50f, 0.78f, 0.40f);
+    c[ImGuiCol_DragDropTarget]        = ImVec4(0.95f, 0.70f, 0.30f, 0.90f);
+    c[ImGuiCol_ResizeGrip]            = ImVec4(0.30f, 0.30f, 0.34f, 0.40f);
+    c[ImGuiCol_ResizeGripHovered]     = ImVec4(0.36f, 0.60f, 0.92f, 0.65f);
+    c[ImGuiCol_ResizeGripActive]      = ImVec4(0.46f, 0.70f, 1.00f, 0.90f);
+    c[ImGuiCol_NavHighlight]          = ImVec4(0.36f, 0.60f, 0.92f, 1.00f);
+    c[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
+    c[ImGuiCol_NavWindowingDimBg]     = ImVec4(0.05f, 0.05f, 0.06f, 0.55f);
+    c[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.05f, 0.05f, 0.06f, 0.55f);
 }
 
 } // namespace Engine

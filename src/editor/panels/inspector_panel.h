@@ -27,7 +27,7 @@ class InspectorPanel : public EditorPanel {
 
     private:
         void drawTransformSection(Scene& scene, EntityId id);
-        void drawMeshSection(Scene& scene, ResourceManager& resources, EntityId id);
+        void drawMeshSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawLightSection(Scene& scene, EntityId id);
         void drawCameraSection(Scene& scene, EntityId id);
         void drawAnimationSection(Scene& scene, EntityId id);
