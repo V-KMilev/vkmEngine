@@ -66,7 +66,10 @@ void GLAABBDebugPass::initialize() {
     m_aabb = std::make_unique<GLMesh>(wireframeMesh);
 }
 
-void GLAABBDebugPass::execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) {
+void GLAABBDebugPass::execute(RenderGraphContext& rg) {
+    RenderBackend& backend = rg.backend;
+    const RenderView& view = rg.view;
+    const ResourceManager& resources = rg.resources;
     if (backend.getType() != RenderBackendType::OpenGL) {
         LOG_ERROR("GLAABBDebugPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
         return;

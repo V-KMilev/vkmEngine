@@ -7,11 +7,15 @@
 #include "gl_context.h"
 #include "gl_view.h"
 #include "gl_render_target.h"
+#include "gl_hdr_target.h"
+#include "resource/gl_bloom.h"
+#include "resource/gl_auto_exposure.h"
+#include "resource/gl_gbuffer.h"
+#include "gl_frame_resources.h"
 
 namespace Engine {
     struct RenderView;
     class ResourceManager;
-    class RenderPipeline;
 }
 
 namespace Engine {
@@ -51,6 +55,7 @@ class GLBackend : public RenderBackend {
         RenderTarget& getDefaultTarget() override { return m_defaultTarget; }
         void setWireframe(bool enabled) override;
         void syncResources(const RenderView& view, const ResourceManager& resources) override;
+        void resolveSceneColor() override { m_frame.hdr().resolve(); }
 
         /**
          * @brief Get the OpenGL rendering context.
@@ -95,10 +100,45 @@ class GLBackend : public RenderBackend {
          */
         const GLView& getView() const { return m_view; }
 
+        /**
+         * @brief Offscreen linear-HDR scene target (MSAA RGBA16F + resolve).
+         *
+         * The scene passes render into this; the composite pass resolves it
+         * and applies exposure + AgX tone mapping to the backbuffer. Lighting
+         * is therefore never clamped before tone mapping.
+         */
+        GLHdrTarget&       getHdrTarget()       { return m_frame.hdr(); }
+        const GLHdrTarget& getHdrTarget() const { return m_frame.hdr(); }
+
+        /// Bloom mip-chain target (built from the resolved HDR scene).
+        GLBloom&       getBloom()       { return m_frame.bloom(); }
+        const GLBloom& getBloom() const { return m_frame.bloom(); }
+
+        /// Auto-exposure metering + adaptation targets.
+        GLAutoExposure&       getAutoExposure()       { return m_frame.autoExposure(); }
+        const GLAutoExposure& getAutoExposure() const { return m_frame.autoExposure(); }
+
+        /// View-space normal/position G-buffer + AO target (GTAO).
+        GLGBuffer&       getGBuffer()       { return m_frame.gbuffer(); }
+        const GLGBuffer& getGBuffer() const { return m_frame.gbuffer(); }
+
+        /// TAA ping-pong history target.
+        GLTAA&       getTAA()       { return m_frame.taa(); }
+        const GLTAA& getTAA() const { return m_frame.taa(); }
+
+        /// Shared scratch target for in-place post passes (DoF, motion blur).
+        GLPostScratch&       getPostScratch()       { return m_frame.scratch(); }
+        const GLPostScratch& getPostScratch() const { return m_frame.scratch(); }
+
+        /// The render graph's transient resource pool (HDR/bloom/AO/exposure).
+        FrameResources&       getFrameResources()       { return m_frame; }
+        const FrameResources& getFrameResources() const { return m_frame; }
+
     private:
         Core::Context m_context;
         GLView m_view;
         GLDefaultRenderTarget m_defaultTarget;
+        FrameResources m_frame;
 };
 
 } // namespace Engine

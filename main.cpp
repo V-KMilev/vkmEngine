@@ -24,6 +24,17 @@
 #include "pass/gl_aabb_debug_pass.h"
 #include "pass/gl_grid_pass.h"
 #include "pass/gl_shadow_pass.h"
+#include "pass/gl_composite_pass.h"
+#include "pass/gl_ibl_bake_pass.h"
+#include "pass/gl_skybox_pass.h"
+#include "pass/gl_bloom_pass.h"
+#include "pass/gl_exposure_pass.h"
+#include "pass/gl_prepass.h"
+#include "pass/gl_gtao_pass.h"
+#include "pass/gl_ssr_pass.h"
+#include "pass/gl_taa_pass.h"
+#include "pass/gl_dof_pass.h"
+#include "pass/gl_motion_blur_pass.h"
 
 // Tools
 #include "asset_registration.h"
@@ -79,12 +90,15 @@ int main() {
             {Engine::GLConfig::UniformNames::AOTexture,                  Engine::GLConfig::TextureSlots::AO},
             {Engine::GLConfig::UniformNames::EmissionTexture,            Engine::GLConfig::TextureSlots::Emission},
             {Engine::GLConfig::UniformNames::HeightTexture,              Engine::GLConfig::TextureSlots::Height},
-            {Engine::GLConfig::UniformNames::ClearcoatTexture,           Engine::GLConfig::TextureSlots::Clearcoat},
-            {Engine::GLConfig::UniformNames::TransmissionTexture,        Engine::GLConfig::TextureSlots::Transmission},
+            // Clearcoat/transmission samplers return with their material phase.
             {Engine::GLConfig::UniformNames::MetallicTexture,            Engine::GLConfig::TextureSlots::Metallic},
             {Engine::GLConfig::UniformNames::RoughnessTexture,           Engine::GLConfig::TextureSlots::Roughness},
             {Engine::GLConfig::UniformNames::ShadowMap2D,                Engine::GLConfig::TextureSlots::ShadowMap2D},
             {Engine::GLConfig::UniformNames::ShadowMapCube,              Engine::GLConfig::TextureSlots::ShadowMapCube},
+            {Engine::GLConfig::UniformNames::IrradianceMap,              Engine::GLConfig::TextureSlots::IrradianceMap},
+            {Engine::GLConfig::UniformNames::PrefilterMap,               Engine::GLConfig::TextureSlots::PrefilterMap},
+            {Engine::GLConfig::UniformNames::BrdfLUT,                    Engine::GLConfig::TextureSlots::BrdfLUT},
+            {Engine::GLConfig::UniformNames::SSAO,                       Engine::GLConfig::TextureSlots::SSAO},
         };
         const std::unordered_map<std::string, int> unlitSamplers = {
             {Engine::GLConfig::UniformNames::AlbedoTexture,   Engine::GLConfig::TextureSlots::Albedo},
@@ -96,16 +110,90 @@ int main() {
         const auto gridShader   = Engine::loadShader(resources, shaderDir + "/grid",       "shader:grid");
         const auto shadowShader = Engine::loadShader(resources, shaderDir + "/shadow",     "shader:shadow");
 
+        // Composite/AgX post pass: u_hdr samples the resolved HDR scene target.
+        const std::unordered_map<std::string, int> compositeSamplers = {
+            {"u_hdr", 0},
+            {"u_bloom", 1},
+            {"u_adaptedLum", 2},
+            {"u_colorLut", 3},
+        };
+        const auto compositeShader = Engine::loadShader(resources, shaderDir + "/post/composite", "shader:composite", compositeSamplers);
+
+        // IBL bake + skybox. Bake sampler 0 = source (equirect / env cube).
+        const std::unordered_map<std::string, int> equirectSamplers = { {"u_equirect", 0} };
+        const std::unordered_map<std::string, int> envCubeSamplers   = { {"u_envCube", 0} };
+        const auto equirectShader   = Engine::loadShader(resources, shaderDir + "/ibl/equirect",   "shader:ibl_equirect",   equirectSamplers);
+        const auto irradianceShader = Engine::loadShader(resources, shaderDir + "/ibl/irradiance", "shader:ibl_irradiance", envCubeSamplers);
+        const auto prefilterShader  = Engine::loadShader(resources, shaderDir + "/ibl/prefilter",  "shader:ibl_prefilter",  envCubeSamplers);
+        const auto brdfShader       = Engine::loadShader(resources, shaderDir + "/ibl/brdf",       "shader:ibl_brdf");
+        const auto skyboxShader     = Engine::loadShader(resources, shaderDir + "/skybox",         "shader:skybox",         envCubeSamplers);
+
+        // Bloom (COD/Jimenez): both passes sample one source mip at slot 0.
+        const std::unordered_map<std::string, int> bloomSamplers = { {"u_src", 0} };
+        const auto bloomDownShader = Engine::loadShader(resources, shaderDir + "/post/bloom_down", "shader:bloom_down", bloomSamplers);
+        const auto bloomUpShader   = Engine::loadShader(resources, shaderDir + "/post/bloom_up",   "shader:bloom_up",   bloomSamplers);
+
+        // Auto-exposure: lum shader reads the scene; adapt reads lum + history.
+        const std::unordered_map<std::string, int> lumSamplers   = { {"u_hdr", 0} };
+        const std::unordered_map<std::string, int> adaptSamplers = { {"u_lumTex", 0}, {"u_prevAdapt", 1} };
+        const auto lumShader      = Engine::loadShader(resources, shaderDir + "/post/lum",      "shader:lum",      lumSamplers);
+        const auto exposureShader = Engine::loadShader(resources, shaderDir + "/post/exposure", "shader:exposure", adaptSamplers);
+
+        // Depth/normal prepass + GTAO. GTAO reads the view-space MRT.
+        const std::unordered_map<std::string, int> gtaoSamplers = { {"u_normalTex", 0}, {"u_posTex", 1} };
+        const auto prepassShader = Engine::loadShader(resources, shaderDir + "/prepass",   "shader:prepass");
+        const auto gtaoShader    = Engine::loadShader(resources, shaderDir + "/post/gtao", "shader:gtao", gtaoSamplers);
+
+        // SSR reuses the prepass G-buffer + resolved HDR (slots 0/1/2).
+        const std::unordered_map<std::string, int> ssrSamplers = {
+            {"u_sceneColor", 0}, {"u_viewNormal", 1}, {"u_viewPos", 2}
+        };
+        const auto ssrShader = Engine::loadShader(resources, shaderDir + "/post/ssr", "shader:ssr", ssrSamplers);
+
+        // TAA reprojects history (slots: current/history/viewPos = 0/1/2).
+        const std::unordered_map<std::string, int> taaSamplers = {
+            {"u_current", 0}, {"u_history", 1}, {"u_viewPos", 2}
+        };
+        const auto taaShader = Engine::loadShader(resources, shaderDir + "/post/taa", "shader:taa", taaSamplers);
+
+        // DoF + motion blur read scene/viewPos (slots 0/1) into the scratch.
+        const std::unordered_map<std::string, int> postGeomSamplers = {
+            {"u_scene", 0}, {"u_viewPos", 1}
+        };
+        const auto dofShader = Engine::loadShader(resources, shaderDir + "/post/dof",         "shader:dof",         postGeomSamplers);
+        const auto mbShader  = Engine::loadShader(resources, shaderDir + "/post/motion_blur", "shader:motion_blur", postGeomSamplers);
+
         // Render passes - shadow runs first so the forward pass can sample its result.
         renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
+        // Bake runs first (no-ops unless the environment map changed).
+        renderSystem.addPass(std::make_unique<Engine::GLIBLBakePass>(
+            equirectShader, irradianceShader, prefilterShader, brdfShader));
         renderSystem.addPass(std::make_unique<Engine::GLShadowPass>(shadowShader));
+        // Depth/normal prepass then GTAO; the forward pass samples the AO.
+        renderSystem.addPass(std::make_unique<Engine::GLPrepass>(prepassShader));
+        renderSystem.addPass(std::make_unique<Engine::GLGTAOPass>(gtaoShader));
         auto forwardPass = std::make_unique<Engine::GLForwardPass>(pbrShader);
         forwardPass->setShader(Engine::MaterialType::Unlit, unlitShader);
         renderSystem.addPass(std::move(forwardPass));
+        // Skybox fills the background in the HDR target, after opaque.
+        renderSystem.addPass(std::make_unique<Engine::GLSkyboxPass>(skyboxShader));
         auto aabbPass = std::make_unique<Engine::GLAABBDebugPass>(aabbShader);
         aabbPass->setEnabled(false);
         renderSystem.addPass(std::move(aabbPass));
         renderSystem.addPass(std::make_unique<Engine::GLGridPass>(gridShader));
+        // Screen-space reflections, additively blended into the HDR scene.
+        renderSystem.addPass(std::make_unique<Engine::GLSSRPass>(ssrShader));
+        // TAA (off by default) stabilises the resolved HDR before bloom.
+        renderSystem.addPass(std::make_unique<Engine::GLTAAPass>(taaShader));
+        // DoF then motion blur (both off by default) over the resolved HDR.
+        renderSystem.addPass(std::make_unique<Engine::GLDofPass>(dofShader));
+        renderSystem.addPass(std::make_unique<Engine::GLMotionBlurPass>(mbShader));
+        // Bloom over the resolved HDR scene; blended in the composite.
+        renderSystem.addPass(std::make_unique<Engine::GLBloomPass>(bloomDownShader, bloomUpShader));
+        // Auto-exposure metering + eye adaptation (read by the composite).
+        renderSystem.addPass(std::make_unique<Engine::GLExposurePass>(lumShader, exposureShader));
+        // Final pass: resolve HDR + bloom + exposure/AgX/sRGB to the backbuffer.
+        renderSystem.addPass(std::make_unique<Engine::GLCompositePass>(compositeShader));
 
         // Hot reload: file change → asset version bump → backend resyncs.
         auto& fileWatcher = engine.addSystem<Engine::FileWatcher>(Engine::SystemStage::Input);
@@ -114,12 +202,31 @@ int main() {
         Engine::watchShader(fileWatcher, resources, aabbShader);
         Engine::watchShader(fileWatcher, resources, gridShader);
         Engine::watchShader(fileWatcher, resources, shadowShader);
+        Engine::watchShader(fileWatcher, resources, compositeShader);
+        Engine::watchShader(fileWatcher, resources, equirectShader);
+        Engine::watchShader(fileWatcher, resources, irradianceShader);
+        Engine::watchShader(fileWatcher, resources, prefilterShader);
+        Engine::watchShader(fileWatcher, resources, brdfShader);
+        Engine::watchShader(fileWatcher, resources, skyboxShader);
+        Engine::watchShader(fileWatcher, resources, bloomDownShader);
+        Engine::watchShader(fileWatcher, resources, bloomUpShader);
+        Engine::watchShader(fileWatcher, resources, lumShader);
+        Engine::watchShader(fileWatcher, resources, exposureShader);
+        Engine::watchShader(fileWatcher, resources, prepassShader);
+        Engine::watchShader(fileWatcher, resources, gtaoShader);
+        Engine::watchShader(fileWatcher, resources, ssrShader);
+        Engine::watchShader(fileWatcher, resources, taaShader);
+        Engine::watchShader(fileWatcher, resources, dofShader);
+        Engine::watchShader(fileWatcher, resources, mbShader);
 
         // Default scene: a single cube at the origin under a directional
         // light. Scene/asset round-trip happy: every asset has a source
         // descriptor so save → cold-start load reproduces this exactly.
         auto cameraEntity = generateDefaultScene(engine);
         cameraController.setCameraEntity(cameraEntity);
+
+        // Default IBL environment (editable live from the Environment panel).
+        renderSystem.getEnvironment().environmentMapPath = rootDir + "/assets/env/environment.hdr";
 
         engine.run();
 

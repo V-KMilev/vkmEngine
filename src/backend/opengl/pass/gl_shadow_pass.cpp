@@ -1,8 +1,10 @@
 #include "gl_shadow_pass.h"
 
 #include <cmath>
+#include <algorithm>
 
 #include <GL/glew.h>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "logger.h"
 #include "debug/statistics.h"
@@ -31,33 +33,88 @@ namespace {
 // SHADOW_CUBE_NEAR in shaders/pbr/fragmentShader.shader mirrors this value.
 constexpr float kCubeNear = 0.1f;
 
-glm::mat4 directionalLightSpace(
-    const glm::quat& rotation,
-    const glm::vec3& focus,
-    float extent,
-    uint32_t resolution
+// Stable cascaded shadow matrices for a directional light.
+//
+// Splits the camera frustum with a practical (log/uniform blend) scheme out
+// to `maxShadowDist`, fits each cascade with a bounding sphere (rotation- and
+// motion-stable, no shimmer), and texel-snaps the result. `maxShadowDist`
+// comes from the Light's shadowExtent so a single knob still drives it.
+void computeCascades(
+    const glm::mat4& camView,
+    const glm::mat4& camProj,
+    const glm::vec3& lightDir,
+    float maxShadowDist,
+    uint32_t resolution,
+    glm::mat4 out[Config::NumCascades]
 ) {
-    // Heuristic far/distance derived from the user-facing extent so a single
-    // knob on the Light component drives the whole ortho frustum.
-    const float distance = extent * 1.5f;
-    const float near     = 0.5f;
-    const float far      = extent * 3.0f;
+    const float p00 = camProj[0][0];
+    const float p11 = camProj[1][1];
+    const float A   = camProj[2][2];
+    const float B   = camProj[3][2];
 
-    const glm::vec3 forward = Math::computeForward(rotation);
-    const glm::vec3 up      = Math::computeUp(rotation);
-    const glm::vec3 right   = Math::computeRight(rotation);
+    const float nearZ  = B / (A - 1.0f);
+    const float farZ   = B / (A + 1.0f);
+    const float aspect = p11 / p00;
+    const float fovy   = 2.0f * std::atan(1.0f / p11);
 
-    // Snap focus to shadow-texel grid so the ortho frustum only translates
-    // in whole-texel increments as the camera moves. Without this the
-    // projected shadow texels slide under fragments and edges shimmer.
-    const float texelSize = (2.0f * extent) / static_cast<float>(resolution);
-    const float r = std::floor(glm::dot(focus, right) / texelSize) * texelSize;
-    const float u = std::floor(glm::dot(focus, up)    / texelSize) * texelSize;
-    const float f = glm::dot(focus, forward);
-    const glm::vec3 snapped = right * r + up * u + forward * f;
+    const float csmFar = std::min(farZ, std::max(maxShadowDist, nearZ + 1.0f));
 
-    const glm::mat4 proj = Math::makeOrthographic(extent, 1.0f, near, far);
-    return proj * Transform::computeView({snapped - forward * distance, rotation});
+    const float lambda = 0.6f;
+    float splits[Config::NumCascades];
+    for (uint32_t i = 0; i < Config::NumCascades; ++i) {
+        const float p    = static_cast<float>(i + 1) / static_cast<float>(Config::NumCascades);
+        const float logS = nearZ * std::pow(csmFar / nearZ, p);
+        const float linS = nearZ + (csmFar - nearZ) * p;
+        splits[i] = lambda * logS + (1.0f - lambda) * linS;
+    }
+
+    const glm::vec3 ld = glm::normalize(lightDir);
+    const glm::vec3 up = (std::abs(ld.y) > 0.99f) ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
+
+    float prev = nearZ;
+    for (uint32_t c = 0; c < Config::NumCascades; ++c) {
+        const float zn = prev;
+        const float zf = splits[c];
+        prev = zf;
+
+        const glm::mat4 invVP = glm::inverse(glm::perspective(fovy, aspect, zn, zf) * camView);
+
+        glm::vec3 corners[8];
+        int idx = 0;
+        for (int x = 0; x < 2; ++x)
+            for (int y = 0; y < 2; ++y)
+                for (int z = 0; z < 2; ++z) {
+                    const glm::vec4 pt = invVP * glm::vec4(
+                        x ? 1.0f : -1.0f, y ? 1.0f : -1.0f, z ? 1.0f : -1.0f, 1.0f);
+                    corners[idx++] = glm::vec3(pt) / pt.w;
+                }
+
+        glm::vec3 center(0.0f);
+        for (const auto& cr : corners) center += cr;
+        center /= 8.0f;
+
+        float radius = 0.0f;
+        for (const auto& cr : corners) radius = std::max(radius, glm::length(cr - center));
+        radius = std::ceil(radius * 16.0f) / 16.0f;  // quantize for stability
+
+        const glm::mat4 lightView = glm::lookAt(center - ld * (radius * 2.0f), center, up);
+        const float     zext      = radius * 6.0f;   // capture occluders behind the cascade
+        const glm::mat4 lightProj = glm::ortho(-radius, radius, -radius, radius, -zext, zext);
+
+        glm::mat4 vp = lightProj * lightView;
+
+        // Texel snap: round the projected origin to the shadow-map grid so
+        // cascade edges do not shimmer as the camera moves.
+        const glm::vec4 originH = vp * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+        const float texScale = static_cast<float>(resolution) * 0.5f;
+        const glm::vec2 origin  = glm::vec2(originH) * texScale;
+        const glm::vec2 rounded = glm::round(origin);
+        const glm::vec2 offset  = (rounded - origin) / texScale;
+        vp[3][0] += offset.x;
+        vp[3][1] += offset.y;
+
+        out[c] = vp;
+    }
 }
 
 glm::mat4 spotLightSpace(
@@ -100,7 +157,10 @@ void GLShadowPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint
     // Shadow map resolution is fixed and independent of the window size.
 }
 
-void GLShadowPass::execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) {
+void GLShadowPass::execute(RenderGraphContext& rg) {
+    RenderBackend& backend = rg.backend;
+    const RenderView& view = rg.view;
+    const ResourceManager& resources = rg.resources;
     if (backend.getType() != RenderBackendType::OpenGL) {
         LOG_ERROR("GLShadowPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
         return;
@@ -173,12 +233,30 @@ void GLShadowPass::execute(RenderBackend& backend, const RenderView& view, const
                 shader->setUniformMatrix4fv(GLConfig::UniformNames::LightSpace, cubeFaces[face]);
                 drawShadowBatches();
             }
+        } else if (light.type == LightType::Directional) {
+            glm::mat4 cascades[Config::NumCascades];
+            computeCascades(view.camera.view, view.camera.projection,
+                            Math::computeForward(light.rotation),
+                            light.shadowExtent, GLConfig::Limits::ShadowResolution2D,
+                            cascades);
+
+            for (uint32_t c = 0; c < Config::NumCascades; ++c) {
+                const uint32_t layer = slot + c;
+
+                Shadow2DCasterGPU entry;
+                entry.lightSpace = cascades[c];
+                entry.params     = glm::vec4(light.shadowBias, 0.0f, 0.0f, 0.0f);
+                shadowData.setCaster2D(layer, entry);
+
+                atlas.bind2DLayerForWriting(layer);
+                shader->setUniformMatrix4fv(GLConfig::UniformNames::LightSpace, cascades[c]);
+                drawShadowBatches();
+            }
+            shadowData.setCSM(static_cast<int>(slot), static_cast<int>(Config::NumCascades));
+            count2D += Config::NumCascades;
         } else {
-            const glm::mat4 lightSpace = (light.type == LightType::Directional)
-                ? directionalLightSpace(light.rotation, view.camera.position,
-                                        light.shadowExtent, GLConfig::Limits::ShadowResolution2D)
-                : spotLightSpace(light.position, light.rotation,
-                                 light.outerConeAngle, light.radius);
+            const glm::mat4 lightSpace = spotLightSpace(light.position, light.rotation,
+                                                        light.outerConeAngle, light.radius);
 
             Shadow2DCasterGPU entry;
             entry.lightSpace = lightSpace;
