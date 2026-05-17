@@ -6,6 +6,7 @@
 #include "platform/window/window_manager.h"
 #include "platform/window/input_handle.h"
 #include "system/visibility/bounds_utils.h"
+#include "system/camera/camera_controller.h"
 #include "resource/resource_manager.h"
 
 namespace Engine {
@@ -21,6 +22,13 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
     if (!state.selectedEntity || !ctx.scene.isAlive(state.selectedEntity)) return;
     if (!ctx.visibility || !ctx.visibility->hasCamera) return;
     if (!ctx.scene.has<Transform>(state.selectedEntity)) return;
+
+    // The camera you fly *is* the viewport eye: a transform gizmo on it would
+    // fight the fly controller (both write its Transform every frame). It can
+    // still be selected - Camera params stay editable in the Inspector.
+    if (ec.cameraController
+        && state.selectedEntity == ec.cameraController->getCameraEntity().getID())
+        return;
 
     // The 3D rendering covers the full GLFW window (glViewport(0,0,W,H)),
     // so the projection maps clip [-1,1] to the full window, not just the
