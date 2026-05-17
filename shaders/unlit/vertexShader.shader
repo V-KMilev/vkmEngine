@@ -1,17 +1,14 @@
 /**
- * Unlit Vertex Shader - Instanced Rendering
+ * Unlit vertex shader - instanced.
  *
- * Same vertex layout as PBR but only passes position and UV to fragment.
+ * Same per-vertex (0-3) / per-instance model matrix (4-7) layout as the PBR
+ * shader. Emits only what the unlit fragment needs: clip position and UV.
  */
 #version 420 core
 
-// Per-vertex attributes (from mesh VBO)
 layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec3 aNorm;
 layout (location = 2) in vec2 aUV;
-layout (location = 3) in vec4 aTangent;
 
-// Per-instance model matrix (from instance buffer, divisor=1)
 layout (location = 4) in vec4 aModelCol0;
 layout (location = 5) in vec4 aModelCol1;
 layout (location = 6) in vec4 aModelCol2;
@@ -19,14 +16,14 @@ layout (location = 7) in vec4 aModelCol3;
 
 layout(std140, binding = 2) uniform CameraBlock {
     mat4 viewProjection;
-    vec4 cameraPosition;  // xyz = position, w = exposure
-    vec4 ambient;         // xyz = color, w = intensity
+    vec4 cameraPosition;
+    vec4 ambient;
 } u_camera;
 
-out vec2 TexCoords;
+out vec2 vUV;
 
 void main() {
     mat4 model = mat4(aModelCol0, aModelCol1, aModelCol2, aModelCol3);
-    TexCoords = aUV;
+    vUV = aUV;
     gl_Position = u_camera.viewProjection * model * vec4(aPos, 1.0);
 }

@@ -1,23 +1,18 @@
 /**
- * PBR Vertex Shader - Instanced Rendering
+ * PBR vertex shader - instanced.
  *
- * Transforms vertices and prepares data for PBR fragment shader.
- * Uses GPU instancing: model matrices are passed via per-instance
- * vertex attributes (locations 4-7) rather than uniforms.
- *
- * Attribute Layout:
- *   0-3: Per-vertex (position, normal, uv, tangent)
- *   4-7: Per-instance (model matrix columns, divisor=1)
+ * Per-vertex attributes are locations 0-3; the per-instance model matrix is
+ * locations 4-7 (divisor 1), filled by the shared instance buffer. Outputs
+ * world-space position and a TBN basis for the fragment shader. No lighting
+ * or color transform happens here.
  */
 #version 420 core
 
-// Per-vertex attributes (from mesh VBO)
 layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec3 aNorm;
+layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aUV;
-layout (location = 3) in vec4 aTangent;     // xyz = tangent, w = handedness
+layout (location = 3) in vec4 aTangent;   // xyz = tangent, w = handedness
 
-// Per-instance model matrix (from instance buffer, divisor=1)
 layout (location = 4) in vec4 aModelCol0;
 layout (location = 5) in vec4 aModelCol1;
 layout (location = 6) in vec4 aModelCol2;
@@ -26,41 +21,31 @@ layout (location = 7) in vec4 aModelCol3;
 layout(std140, binding = 2) uniform CameraBlock {
     mat4 viewProjection;
     vec4 cameraPosition;  // xyz = position, w = exposure
-    vec4 ambient;         // xyz = color, w = intensity
+    vec4 ambient;         // xyz = color,    w = intensity
 } u_camera;
 
-// Outputs to fragment shader
-out vec3 FragPos;
-out vec3 Normal;
-out vec2 TexCoords;
-out vec3 Tangent;
-out vec3 Bitangent;
+out vec3 vWorldPos;
+out vec3 vNormal;
+out vec2 vUV;
+out vec3 vTangent;
+out vec3 vBitangent;
 
 void main() {
-    // Reconstruct model matrix from instance attributes
     mat4 model = mat4(aModelCol0, aModelCol1, aModelCol2, aModelCol3);
 
-    // Transform position to world space
-    FragPos = vec3(model * vec4(aPos, 1.0));
+    vec4 worldPos = model * vec4(aPos, 1.0);
+    vWorldPos = worldPos.xyz;
 
-    // Normal matrix: mat3(model) is correct for uniform scale (no shear/non-uniform).
-    // Avoids per-vertex inverse() (~30 FLOPs). If non-uniform scale is needed later,
-    // precompute the normal matrix on CPU as an additional instance attribute.
+    // mat3(model) is correct for uniform scale (no shear/non-uniform); avoids
+    // a per-vertex inverse. Non-uniform scale would need a CPU normal matrix.
     mat3 normalMatrix = mat3(model);
-    Normal = normalize(normalMatrix * aNorm);
+    vNormal = normalize(normalMatrix * aNormal);
 
-    // Pass through texture coordinates
-    TexCoords = aUV;
+    vTangent = normalize(normalMatrix * aTangent.xyz);
+    vTangent = normalize(vTangent - dot(vTangent, vNormal) * vNormal);
+    vBitangent = cross(vNormal, vTangent) * aTangent.w;
 
-    // Build TBN matrix for normal mapping
-    Tangent = normalize(normalMatrix * aTangent.xyz);
+    vUV = aUV;
 
-    // Gram-Schmidt re-orthogonalization
-    Tangent = normalize(Tangent - dot(Tangent, Normal) * Normal);
-
-    // Bitangent with handedness correction
-    Bitangent = cross(Normal, Tangent) * aTangent.w;
-
-    // Final clip-space position
-    gl_Position = u_camera.viewProjection * model * vec4(aPos, 1.0);
+    gl_Position = u_camera.viewProjection * worldPos;
 }
