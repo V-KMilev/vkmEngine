@@ -23,6 +23,12 @@
 #include "generator/light_generators.h"
 #include "generator/mesh_generators.h"
 #include "generator/material_generators.h"
+#include "loader/model_loader.h"
+
+#include <cctype>
+#include <string>
+#include <filesystem>
+#include <system_error>
 
 namespace Engine {
 namespace EditorActions {
@@ -166,8 +172,59 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
         if (ImGui::MenuItem("Directional Light")) state.selectedEntity = createEntity(scene, resources, state, "Directional Light");
         ImGui::Separator();
         if (ImGui::MenuItem("Camera"))  state.selectedEntity = createEntity(scene, resources, state, "Camera");
+        ImGui::Separator();
+        // The modal can't live here: the menu closes on click and this
+        // function stops being called. Defer to drawModelImportDialog().
+        if (ImGui::MenuItem("Import Model...")) state.requestModelImport = true;
         ImGui::EndMenu();
     }
+}
+
+void drawModelImportDialog(Scene& scene, ResourceManager& resources, EditorState& state) {
+    if (state.requestModelImport) {
+        ImGui::OpenPopup("Import Model");
+        state.requestModelImport = false;
+    }
+    if (!ImGui::BeginPopupModal("Import Model", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+
+    auto isModelExt = [](const std::string& e) {
+        return e == ".gltf" || e == ".glb" || e == ".obj" || e == ".fbx"
+            || e == ".dae"  || e == ".stl" || e == ".ply" || e == ".3ds";
+    };
+
+    const std::filesystem::path root = std::filesystem::path(APP_ROOT_DIR) / "assets";
+    ImGui::TextDisabled("%s", root.string().c_str());
+    ImGui::TextDisabled("glTF / GLB / OBJ / FBX / DAE / STL / PLY / 3DS");
+    ImGui::Separator();
+    std::error_code ec;
+    int shown = 0;
+    for (const auto& entry :
+            std::filesystem::recursive_directory_iterator(root, ec)) {
+        if (!entry.is_regular_file()) continue;
+        std::string ext = entry.path().extension().string();
+        for (char& c : ext)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (!isModelExt(ext)) continue;
+        std::error_code rel_ec;
+        const std::string rel = std::filesystem::relative(
+            entry.path(), std::filesystem::path(APP_ROOT_DIR), rel_ec)
+            .generic_string();
+        if (ImGui::Selectable(rel.c_str())) {
+            EntityId rootId =
+                importModelIntoScene(entry.path().string(), resources, scene);
+            if (rootId) {
+                state.selectedEntity = rootId;
+                state.hierarchyDirty = true;
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        if (++shown > 2000) break;  // safety cap
+    }
+    if (shown == 0) ImGui::TextDisabled("(no supported model files under assets/)");
+    ImGui::Separator();
+    if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
 }
 
 } // namespace EditorActions

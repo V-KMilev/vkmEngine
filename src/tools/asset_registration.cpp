@@ -8,6 +8,7 @@
 #include "generator/texture_generators.h"
 #include "loader/material_loaders.h"
 #include "loader/texture_loaders.h"
+#include "loader/model_loader.h"
 
 namespace Engine {
 
@@ -34,6 +35,12 @@ void registerBuiltinAssetFactories() {
         if (type == "triangle") return generateTriangle(p.value("size", 2.0f));
 
         return {};
+    });
+
+    // --- Meshes: "model" kind, one aiMesh re-imported via Assimp ---------
+    factories.registerMesh("model", [](const nlohmann::json& desc) -> MeshAsset {
+        return loadModelMesh(desc.value("path", std::string{}),
+                             desc.value("mesh", -1));
     });
 
     // --- Textures: "file" kind, loaded via stb_image ---------------------
@@ -88,6 +95,14 @@ void registerBuiltinAssetFactories() {
         // Keep the source on the asset so subsequent saves re-emit cleanly.
         resources.edit(handle).source = desc;
         return handle;
+    });
+
+    // --- Materials: "model" kind, re-imported (with textures) via Assimp -
+    factories.registerMaterial("model", [](const nlohmann::json& desc,
+                                           ResourceManager& resources) -> MaterialHandle
+    {
+        return loadModelMaterial(desc.value("path", std::string{}),
+                                 desc.value("material", -1), resources);
     });
 
     // --- Shaders: "directory" — vkmGL's path-based shader loading -------
