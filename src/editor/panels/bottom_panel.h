@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include <glm/glm.hpp>
 
@@ -28,12 +29,27 @@ class BottomPanel : public EditorPanel {
         void draw(EditorContext& ec) override;
 
     private:
-        void drawEnvironmentSection(EditorContext& ec);
+        // "Rendering" detail = a preset bar + a tab bar (Lighting / Camera /
+        // Effects / Scene / Pipeline). Each tab groups the EnvironmentConfig
+        // knobs into collapsible cards with an enable toggle in the header.
         void drawRenderingSection(EditorContext& ec);
+        void drawPresetBar(EditorContext& ec);
+        void drawLightingTab(EditorContext& ec);
+        void drawCameraTab(EditorContext& ec);
+        void drawEffectsTab(EditorContext& ec);
+        void drawSceneTab(EditorContext& ec);
+        void drawPipelineTab(EditorContext& ec);
+
         void drawAnimationSection(EditorContext& ec);
         void drawStatisticsSection(EditorContext& ec);
 
         int m_selectedSection = 0;
+
+        // Remembered values so a header toggle can switch an effect fully off
+        // and back on without losing the user's tuning.
+        std::string m_iblPathMemo;                 ///< restored when IBL re-enabled
+        std::string m_lutPathMemo;                 ///< restored when grading re-enabled
+        float       m_bloomStrengthMemo = 0.04f;   ///< restored when bloom re-enabled
 
         // Timeline keyframe-dot drag state (Animation section).
         // m_animDotTrack: -1 none, 0 position, 1 rotation, 2 scale.

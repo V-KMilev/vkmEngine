@@ -5,6 +5,12 @@
 #include "system/render/render_system.h"
 #include "system/render/render_graph.h"
 
+#include <cstdio>
+#include <string>
+#include <filesystem>
+#include <system_error>
+#include <initializer_list>
+
 namespace Engine {
 
 namespace {
@@ -12,10 +18,9 @@ namespace {
 
     // Order matches the dispatch switch in BottomPanel::draw().
     const SectionDef kSections[] = {
-        {"WORLD", "Environment", "Ambient, background, grid, debug"},
-        {"WORLD", "Rendering",   "Wireframe, passes, exposure, culling"},
-        {"TOOLS", "Animation",   "Keyframe editor for the selected entity"},
-        {"INFO",  "Statistics",  "Component / light / animation counts"},
+        {"WORLD", "Rendering",  "Lighting, camera, effects, pipeline"},
+        {"TOOLS", "Animation",  "Keyframe editor for the selected entity"},
+        {"INFO",  "Statistics", "Component / light / animation counts"},
     };
     constexpr int kSectionCount = static_cast<int>(sizeof(kSections) / sizeof(kSections[0]));
 
@@ -27,6 +32,92 @@ namespace {
         ImGui::TextDisabled("%s", hint);
         ImGui::Separator();
         ImGui::Spacing();
+    }
+
+    // Collapsible card. When @p enabled is non-null a checkbox precedes the
+    // title (the effect's on/off, readable even while collapsed). Returns
+    // true when the body should be drawn.
+    bool cardHeader(const char* id, const char* title, bool* enabled) {
+        ImGui::PushID(id);
+        if (enabled) { ImGui::Checkbox("##en", enabled); ImGui::SameLine(); }
+        bool open = ImGui::CollapsingHeader(title);
+        ImGui::PopID();
+        return open;
+    }
+
+    // Labelled bounded slider with a hover tooltip. Returns true on change.
+    bool sliderF(const char* label, const char* id, float* v,
+                 float lo, float hi, const char* fmt, const char* tip,
+                 bool logarithmic = false) {
+        drawPropertyLabel(label);
+        ImGui::SetNextItemWidth(-1.0f);
+        bool ch = ImGui::SliderFloat(id, v, lo, hi, fmt,
+            logarithmic ? ImGuiSliderFlags_Logarithmic : 0);
+        if (tip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
+        return ch;
+    }
+
+    // "Browse" button + modal listing APP_ROOT_DIR/<subdir> filtered by
+    // extension; picking a file writes a root-relative path into @p target.
+    void fileBrowse(const char* id, const char* subdir,
+                    std::initializer_list<const char*> exts,
+                    std::string& target) {
+        char popupId[64];
+        snprintf(popupId, sizeof(popupId), "Browse##%s", id);
+        if (ImGui::Button(popupId)) ImGui::OpenPopup(popupId);
+        if (ImGui::BeginPopupModal(popupId, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            const std::filesystem::path root = std::filesystem::path(APP_ROOT_DIR) / subdir;
+            ImGui::TextDisabled("%s", root.string().c_str());
+            ImGui::Separator();
+            std::error_code ec;
+            bool any = false;
+            for (const auto& e : std::filesystem::directory_iterator(root, ec)) {
+                if (!e.is_regular_file()) continue;
+                const std::string ext = e.path().extension().string();
+                bool match = false;
+                for (const char* x : exts) if (ext == x) { match = true; break; }
+                if (!match) continue;
+                any = true;
+                const std::string name = e.path().filename().string();
+                if (ImGui::Selectable(name.c_str())) {
+                    target = std::string(subdir) + "/" + name;
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+            if (!any) ImGui::TextDisabled("(no matching files here)");
+            ImGui::Separator();
+            if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+    }
+
+    enum class Preset { Low, Medium, High, Cinematic };
+
+    // Presets only flip effect enables + bloom amount (predictable; they do
+    // not clobber paths, colours, grid or exposure tuning).
+    void applyPreset(EnvironmentConfig& env, Preset p) {
+        switch (p) {
+            case Preset::Low:
+                env.ssao = false; env.ssr = false; env.taa = false;
+                env.dof = false; env.motionBlur = false;
+                env.bloomStrength = 0.0f; env.autoExposure = true;
+                break;
+            case Preset::Medium:
+                env.ssao = true;  env.ssr = false; env.taa = false;
+                env.dof = false; env.motionBlur = false;
+                env.bloomStrength = 0.03f; env.autoExposure = true;
+                break;
+            case Preset::High:
+                env.ssao = true;  env.ssr = true;  env.taa = false;
+                env.dof = false; env.motionBlur = false;
+                env.bloomStrength = 0.04f; env.autoExposure = true;
+                break;
+            case Preset::Cinematic:
+                env.ssao = true;  env.ssr = true;  env.taa = true;
+                env.dof = true;  env.motionBlur = true;
+                env.bloomStrength = 0.06f; env.autoExposure = true;
+                break;
+        }
     }
 }
 
@@ -58,10 +149,9 @@ void BottomPanel::draw(EditorContext& ec) {
         sectionHeader(s.name, s.hint);
 
         switch (m_selectedSection) {
-            case 0: drawEnvironmentSection(ec);  break;
-            case 1: drawRenderingSection(ec);    break;
-            case 2: drawAnimationSection(ec);    break;
-            case 3: drawStatisticsSection(ec);   break;
+            case 0: drawRenderingSection(ec);   break;
+            case 1: drawAnimationSection(ec);   break;
+            case 2: drawStatisticsSection(ec);  break;
             default: break;
         }
     }
@@ -69,17 +159,276 @@ void BottomPanel::draw(EditorContext& ec) {
 }
 
 void BottomPanel::drawRenderingSection(EditorContext& ec) {
-    FrameContext& ctx   = ec.frame;
-    EditorState&  state = ec.state;
+    if (!ec.renderSystem) {
+        ImGui::TextDisabled("Render system unavailable.");
+        return;
+    }
+
+    drawPresetBar(ec);
+    ImGui::Spacing();
+
+    if (ImGui::BeginTabBar("##RenderTabs")) {
+        if (ImGui::BeginTabItem("Lighting")) { ImGui::Spacing(); drawLightingTab(ec); ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("Camera"))   { ImGui::Spacing(); drawCameraTab(ec);   ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("Effects"))  { ImGui::Spacing(); drawEffectsTab(ec);  ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("Scene"))    { ImGui::Spacing(); drawSceneTab(ec);    ImGui::EndTabItem(); }
+        if (ImGui::BeginTabItem("Pipeline")) { ImGui::Spacing(); drawPipelineTab(ec); ImGui::EndTabItem(); }
+        ImGui::EndTabBar();
+    }
+}
+
+void BottomPanel::drawPresetBar(EditorContext& ec) {
+    auto& env = ec.renderSystem->getEnvironment();
+
+    ImGui::TextDisabled("Preset");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Low"))       applyPreset(env, Preset::Low);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Medium"))    applyPreset(env, Preset::Medium);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("High"))      applyPreset(env, Preset::High);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Cinematic")) applyPreset(env, Preset::Cinematic);
+    ImGui::SameLine(0, 16);
+    if (ImGui::SmallButton("Reset Defaults")) {
+        const std::string ep = env.environmentMapPath;
+        const std::string lp = env.colorLutPath;
+        env = EnvironmentConfig{};
+        env.environmentMapPath = ep;   // keep the asset references
+        env.colorLutPath       = lp;
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Restore documented defaults (keeps the HDR / LUT paths)");
+}
+
+void BottomPanel::drawLightingTab(EditorContext& ec) {
+    auto& env = ec.renderSystem->getEnvironment();
+
+    // IBL on/off is "has a path"; remember the last path so a toggle is
+    // lossless.
+    bool       iblOn   = !env.environmentMapPath.empty();
+    const bool iblPrev = iblOn;
+    const bool iblOpen = cardHeader("ibl", "Environment Map (IBL)", &iblOn);
+    if (iblOn != iblPrev) {
+        if (iblOn) {
+            env.environmentMapPath = !m_iblPathMemo.empty()
+                ? m_iblPathMemo : std::string("assets/env/environment.hdr");
+        } else {
+            m_iblPathMemo = env.environmentMapPath;
+            env.environmentMapPath.clear();
+        }
+    }
+    if (iblOpen) {
+        ImGui::BeginDisabled(!iblOn);
+        static char hdrBuf[260];
+        snprintf(hdrBuf, sizeof(hdrBuf), "%s", env.environmentMapPath.c_str());
+        drawPropertyLabel("HDR Path");
+        ImGui::SetNextItemWidth(-150.0f);
+        if (ImGui::InputText("##IBLPath", hdrBuf, sizeof(hdrBuf),
+                ImGuiInputTextFlags_EnterReturnsTrue))
+            env.environmentMapPath = hdrBuf;
+        ImGui::SameLine();
+        if (ImGui::Button("Apply##IBL")) env.environmentMapPath = hdrBuf;
+        ImGui::SameLine();
+        fileBrowse("ibl", "assets/env", {".hdr", ".HDR"}, env.environmentMapPath);
+        sliderF("Intensity", "##IBLInt", &env.iblIntensity, 0.0f, 5.0f, "%.2f",
+                "Strength of image-based ambient + specular");
+        if (env.environmentMapPath.empty())
+            ImGui::TextDisabled("No map - flat ambient fallback");
+        else
+            ImGui::TextDisabled("Active: %s", env.environmentMapPath.c_str());
+        ImGui::EndDisabled();
+    }
+
+    ImGui::Spacing();
+    if (cardHeader("sky", "Analytic Sky (Preetham)", &env.proceduralSky)) {
+        ImGui::BeginDisabled(!env.proceduralSky);
+        sliderF("Turbidity", "##SkyTurb", &env.skyTurbidity, 1.7f, 10.0f, "%.2f",
+                "Haze: ~2 clear, ~10 hazy");
+        sliderF("Intensity", "##SkyInt", &env.skyIntensity, 0.0f, 10.0f, "%.2f",
+                "Sky brightness multiplier");
+        ImGui::TextDisabled("Sun direction = scene directional light");
+        ImGui::EndDisabled();
+    }
+
+    ImGui::Spacing();
+    if (cardHeader("amb", "Ambient Light", nullptr)) {
+        drawPropertyLabel("Color");
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::ColorEdit3("##AmbCol", glm::value_ptr(env.ambientColor),
+            ImGuiColorEditFlags_Float);
+        sliderF("Intensity", "##AmbInt", &env.ambientIntensity, 0.0f, 2.0f, "%.3f",
+                "Flat ambient used when no IBL map is set");
+    }
+
+    ImGui::Spacing();
+    if (cardHeader("bg", "Background", nullptr)) {
+        drawPropertyLabel("Clear Color");
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::ColorEdit3("##ClearCol", glm::value_ptr(env.clearColor),
+            ImGuiColorEditFlags_Float);
+    }
+}
+
+void BottomPanel::drawCameraTab(EditorContext& ec) {
+    FrameContext& ctx = ec.frame;
+    auto& env = ec.renderSystem->getEnvironment();
+
+    if (cardHeader("exp", "Exposure", nullptr)) {
+        const float camExp = (ctx.visibility && ctx.visibility->hasCamera)
+            ? ctx.visibility->cameraExposure : 1.0f;
+        ImGui::TextDisabled("Manual camera exposure: %.2f (edit on the Camera entity)",
+            camExp);
+        ImGui::Checkbox("Auto Exposure (eye adaptation)", &env.autoExposure);
+        ImGui::BeginDisabled(!env.autoExposure);
+        sliderF("Key", "##ExpKey", &env.exposureKey, 0.01f, 1.0f, "%.3f",
+                "Target middle-grey the scene adapts toward");
+        sliderF("Adapt Speed", "##ExpSpd", &env.exposureSpeed, 0.05f, 10.0f, "%.2f",
+                "How fast the eye adapts (per second)");
+        drawPropertyLabel("Min / Max");
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::DragFloatRange2("##ExpRange", &env.exposureMin, &env.exposureMax,
+            0.01f, 0.001f, 32.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Clamp on the auto-derived exposure");
+        ImGui::EndDisabled();
+    }
+
+    ImGui::Spacing();
+    if (cardHeader("dof", "Depth of Field", &env.dof)) {
+        ImGui::BeginDisabled(!env.dof);
+        sliderF("Focus Distance", "##DofDist", &env.dofFocusDistance, 0.1f, 200.0f,
+                "%.1f", "View-space distance kept sharp", true);
+        sliderF("Focus Range", "##DofRange", &env.dofFocusRange, 0.1f, 200.0f,
+                "%.1f", "Depth around the focus that stays sharp", true);
+        sliderF("Max Blur", "##DofBlur", &env.dofMaxBlur, 0.0f, 0.1f, "%.3f",
+                "Largest gather radius (UV)");
+        ImGui::EndDisabled();
+    }
+
+    ImGui::Spacing();
+    if (cardHeader("mb", "Motion Blur (camera)", &env.motionBlur)) {
+        ImGui::BeginDisabled(!env.motionBlur);
+        sliderF("Strength", "##MbStr", &env.motionBlurStrength, 0.0f, 4.0f, "%.2f",
+                "Camera reprojection blur amount");
+        ImGui::EndDisabled();
+    }
+}
+
+void BottomPanel::drawEffectsTab(EditorContext& ec) {
+    auto& env = ec.renderSystem->getEnvironment();
+
+    // Bloom "on" = strength > 0; remember the last strength.
+    bool       bloomOn   = env.bloomStrength > 0.0001f;
+    const bool bloomPrev = bloomOn;
+    const bool bloomOpen = cardHeader("bloom", "Bloom", &bloomOn);
+    if (bloomOn != bloomPrev) {
+        if (bloomOn) {
+            env.bloomStrength = m_bloomStrengthMemo > 0.0001f
+                ? m_bloomStrengthMemo : 0.04f;
+        } else {
+            m_bloomStrengthMemo = env.bloomStrength;
+            env.bloomStrength = 0.0f;
+        }
+    }
+    if (bloomOpen) {
+        ImGui::BeginDisabled(!bloomOn);
+        if (sliderF("Strength", "##BloomStr", &env.bloomStrength, 0.0f, 0.3f, "%.3f",
+                "Linear-HDR bloom blended before exposure + AgX")
+            && env.bloomStrength > 0.0001f)
+            m_bloomStrengthMemo = env.bloomStrength;
+        ImGui::EndDisabled();
+    }
+
+    ImGui::Spacing();
+    if (cardHeader("ssao", "Ambient Occlusion (GTAO)", &env.ssao)) {
+        ImGui::BeginDisabled(!env.ssao);
+        sliderF("Radius", "##AoRad", &env.ssaoRadius, 0.05f, 5.0f, "%.2f",
+                "View-space sampling radius");
+        sliderF("Intensity", "##AoInt", &env.ssaoIntensity, 0.0f, 4.0f, "%.2f",
+                "Occlusion darkening strength");
+        ImGui::EndDisabled();
+    }
+
+    ImGui::Spacing();
+    if (cardHeader("ssr", "Screen-Space Reflections", &env.ssr)) {
+        ImGui::BeginDisabled(!env.ssr);
+        sliderF("Intensity", "##SsrInt", &env.ssrIntensity, 0.0f, 2.0f, "%.2f",
+                "Reflection blend strength");
+        sliderF("Max Distance", "##SsrDist", &env.ssrMaxDistance, 0.5f, 50.0f, "%.1f",
+                "View-space ray length");
+        sliderF("Thickness", "##SsrThick", &env.ssrThickness, 0.02f, 4.0f, "%.2f",
+                "Depth hit tolerance");
+        ImGui::EndDisabled();
+    }
+
+    ImGui::Spacing();
+    if (cardHeader("taa", "Temporal AA", &env.taa)) {
+        ImGui::BeginDisabled(!env.taa);
+        sliderF("History Blend", "##TaaBlend", &env.taaBlend, 0.0f, 0.98f, "%.3f",
+                "History weight (MSAA already does spatial edge AA)");
+        ImGui::EndDisabled();
+    }
+
+    ImGui::Spacing();
+    if (cardHeader("cg", "Color Grading (LUT)", &env.colorGrade)) {
+        ImGui::BeginDisabled(!env.colorGrade);
+        static char lutBuf[260];
+        snprintf(lutBuf, sizeof(lutBuf), "%s", env.colorLutPath.c_str());
+        drawPropertyLabel("LUT strip");
+        ImGui::SetNextItemWidth(-150.0f);
+        if (ImGui::InputText("##LutPath", lutBuf, sizeof(lutBuf),
+                ImGuiInputTextFlags_EnterReturnsTrue))
+            env.colorLutPath = lutBuf;
+        ImGui::SameLine();
+        if (ImGui::Button("Apply##LUT")) env.colorLutPath = lutBuf;
+        ImGui::SameLine();
+        fileBrowse("lut", "assets/lut", {".png", ".PNG"}, env.colorLutPath);
+        sliderF("Intensity", "##LutInt", &env.colorGradeIntensity, 0.0f, 1.0f, "%.2f",
+                "Blend toward the graded look");
+        if (!env.colorLutPath.empty())
+            ImGui::TextDisabled("Active: %s", env.colorLutPath.c_str());
+        ImGui::EndDisabled();
+    }
+}
+
+void BottomPanel::drawSceneTab(EditorContext& ec) {
+    EditorState& state = ec.state;
+    auto& env = ec.renderSystem->getEnvironment();
 
     ImGui::Checkbox("Wireframe", &state.wireframe);
 
     ImGui::Spacing();
-    ImGui::SeparatorText("Render Passes");
+    if (cardHeader("grid", "Grid", nullptr)) {
+        sliderF("Cell Size", "##GScale", &env.gridScale, 0.1f, 100.0f, "%.1f",
+                "World units per grid cell");
+        drawPropertyLabel("Extent");
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::DragFloat("##GSize", &env.gridSize, 10.0f, 10.0f, 10000.0f, "%.0f");
+        sliderF("Fade Start", "##GFadeS", &env.gridFadeStart, 1.0f,
+                env.gridFadeEnd, "%.0f", "Distance the grid begins to fade");
+        sliderF("Fade End", "##GFadeE", &env.gridFadeEnd, env.gridFadeStart,
+                10000.0f, "%.0f", "Distance the grid fully fades", true);
+    }
+
+    ImGui::Spacing();
+    if (cardHeader("aabb", "AABB Debug", nullptr)) {
+        drawPropertyLabel("Box Color");
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::ColorEdit3("##AABBCol", glm::value_ptr(env.debugColor),
+            ImGuiColorEditFlags_Float);
+    }
+}
+
+void BottomPanel::drawPipelineTab(EditorContext& ec) {
+    FrameContext& ctx = ec.frame;
+
+    ImGui::TextDisabled("Toggle individual graph passes (advanced).");
+    ImGui::Spacing();
     if (ec.renderSystem) {
-        auto& pipeline = ec.renderSystem->getPipeline();
-        for (size_t i = 0; i < pipeline.passCount(); ++i) {
-            auto& pass = pipeline.getPass(i);
+        auto& graph = ec.renderSystem->getPipeline();
+        for (size_t i = 0; i < graph.passCount(); ++i) {
+            auto& pass = graph.getPass(i);
             bool enabled = pass.isEnabled();
             if (ImGui::Checkbox(pass.getName().c_str(), &enabled))
                 pass.setEnabled(enabled);
@@ -87,176 +436,20 @@ void BottomPanel::drawRenderingSection(EditorContext& ec) {
     }
 
     ImGui::Spacing();
-    ImGui::SeparatorText("Exposure");
-    {
-        float exp = (ctx.visibility && ctx.visibility->hasCamera)
-            ? ctx.visibility->cameraExposure : 1.0f;
-        ImGui::TextDisabled("Camera exposure: %.2f (edit on Camera entity)", exp);
-    }
-
-    ImGui::Spacing();
     ImGui::SeparatorText("Visibility Culling");
     if (ec.visibilitySystem) {
         auto& settings = ec.visibilitySystem->getSettings();
-        drawPropertyLabel("Min Pixels");
-        ImGui::DragFloat("##MinPx", &settings.minPixels, 0.1f, 0.0f, 100.0f, "%.1f");
-
+        sliderF("Min Pixels", "##MinPx", &settings.minPixels, 0.0f, 100.0f, "%.1f",
+                "Skip objects smaller than this on screen");
         drawPropertyLabel("Max Distance");
+        ImGui::SetNextItemWidth(-1.0f);
         ImGui::DragFloat("##MaxD", &settings.maxDistance, 1.0f, 10.0f, 10000.0f, "%.0f");
-
         if (ctx.visibility) {
             size_t vis = ctx.visibility->entries.size();
             size_t tot = ctx.scene.entityCount();
             ImGui::TextDisabled("Culled: %zu / %zu", tot > vis ? tot - vis : 0, tot);
         }
     }
-}
-
-void BottomPanel::drawEnvironmentSection(EditorContext& ec) {
-    if (!ec.renderSystem) return;
-    auto& env = ec.renderSystem->getEnvironment();
-
-    ImGui::SeparatorText("Environment Map (IBL)");
-    {
-        static char pathBuf[260] = "assets/env/environment.hdr";
-        drawPropertyLabel("HDR Path");
-        ImGui::SetNextItemWidth(-60.0f);
-        ImGui::InputText("##IBLPath", pathBuf, sizeof(pathBuf));
-        ImGui::SameLine();
-        if (ImGui::Button("Apply##IBL")) env.environmentMapPath = pathBuf;
-
-        if (!env.environmentMapPath.empty()) {
-            ImGui::TextDisabled("Active: %s", env.environmentMapPath.c_str());
-            drawPropertyLabel("IBL Intensity");
-            ImGui::DragFloat("##IBLInt", &env.iblIntensity, 0.01f, 0.0f, 10.0f, "%.2f");
-            if (ImGui::Button("Clear##IBL")) env.environmentMapPath.clear();
-        } else {
-            ImGui::TextDisabled("No environment map (flat ambient)");
-        }
-    }
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("Procedural Sky");
-    ImGui::Checkbox("Analytic Sky (background)", &env.proceduralSky);
-    if (env.proceduralSky) {
-        drawPropertyLabel("Turbidity");
-        ImGui::DragFloat("##SkyTurb", &env.skyTurbidity, 0.05f, 1.7f, 10.0f, "%.2f");
-        drawPropertyLabel("Sky Intensity");
-        ImGui::DragFloat("##SkyInt", &env.skyIntensity, 0.02f, 0.0f, 10.0f, "%.2f");
-        ImGui::TextDisabled("Sun = scene directional light");
-    }
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("Ambient Occlusion");
-    ImGui::Checkbox("SSAO", &env.ssao);
-    if (env.ssao) {
-        drawPropertyLabel("Radius");
-        ImGui::DragFloat("##AoRad", &env.ssaoRadius, 0.01f, 0.05f, 5.0f, "%.2f");
-        drawPropertyLabel("Intensity");
-        ImGui::DragFloat("##AoInt", &env.ssaoIntensity, 0.02f, 0.0f, 4.0f, "%.2f");
-    }
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("Reflections (SSR)");
-    ImGui::Checkbox("SSR", &env.ssr);
-    if (env.ssr) {
-        drawPropertyLabel("Intensity");
-        ImGui::DragFloat("##SsrInt", &env.ssrIntensity, 0.02f, 0.0f, 2.0f, "%.2f");
-        drawPropertyLabel("Max Distance");
-        ImGui::DragFloat("##SsrDist", &env.ssrMaxDistance, 0.1f, 0.5f, 50.0f, "%.1f");
-        drawPropertyLabel("Thickness");
-        ImGui::DragFloat("##SsrThick", &env.ssrThickness, 0.01f, 0.02f, 4.0f, "%.2f");
-    }
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("TAA (temporal)");
-    ImGui::Checkbox("TAA", &env.taa);
-    if (env.taa) {
-        drawPropertyLabel("History Blend");
-        ImGui::DragFloat("##TaaBlend", &env.taaBlend, 0.005f, 0.0f, 0.98f, "%.3f");
-    }
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("Depth of Field");
-    ImGui::Checkbox("DoF", &env.dof);
-    if (env.dof) {
-        drawPropertyLabel("Focus Distance");
-        ImGui::DragFloat("##DofDist", &env.dofFocusDistance, 0.1f, 0.1f, 500.0f, "%.1f");
-        drawPropertyLabel("Focus Range");
-        ImGui::DragFloat("##DofRange", &env.dofFocusRange, 0.1f, 0.1f, 500.0f, "%.1f");
-        drawPropertyLabel("Max Blur");
-        ImGui::DragFloat("##DofBlur", &env.dofMaxBlur, 0.001f, 0.0f, 0.1f, "%.3f");
-    }
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("Motion Blur");
-    ImGui::Checkbox("Motion Blur", &env.motionBlur);
-    if (env.motionBlur) {
-        drawPropertyLabel("Strength");
-        ImGui::DragFloat("##MbStr", &env.motionBlurStrength, 0.02f, 0.0f, 4.0f, "%.2f");
-    }
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("Color Grading (LUT)");
-    ImGui::Checkbox("Color Grade", &env.colorGrade);
-    if (env.colorGrade) {
-        static char lutBuf[260] = "";
-        drawPropertyLabel("LUT (256x16)");
-        ImGui::SetNextItemWidth(-60.0f);
-        ImGui::InputText("##LutPath", lutBuf, sizeof(lutBuf));
-        ImGui::SameLine();
-        if (ImGui::Button("Apply##LUT")) env.colorLutPath = lutBuf;
-        drawPropertyLabel("Intensity");
-        ImGui::DragFloat("##LutInt", &env.colorGradeIntensity, 0.01f, 0.0f, 1.0f, "%.2f");
-        if (!env.colorLutPath.empty())
-            ImGui::TextDisabled("Active: %s", env.colorLutPath.c_str());
-    }
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("Post (Bloom)");
-    drawPropertyLabel("Bloom Strength");
-    ImGui::DragFloat("##BloomStr", &env.bloomStrength, 0.002f, 0.0f, 0.5f, "%.3f");
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("Exposure");
-    ImGui::Checkbox("Auto Exposure", &env.autoExposure);
-    if (env.autoExposure) {
-        drawPropertyLabel("Key");
-        ImGui::DragFloat("##ExpKey", &env.exposureKey, 0.005f, 0.01f, 1.0f, "%.3f");
-        drawPropertyLabel("Adapt Speed");
-        ImGui::DragFloat("##ExpSpd", &env.exposureSpeed, 0.05f, 0.05f, 10.0f, "%.2f");
-        drawPropertyLabel("Min / Max");
-        ImGui::DragFloatRange2("##ExpRange", &env.exposureMin, &env.exposureMax,
-            0.01f, 0.001f, 32.0f, "%.2f");
-    }
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("Ambient Light");
-    drawPropertyLabel("Color");
-    ImGui::ColorEdit3("##AmbCol", glm::value_ptr(env.ambientColor), ImGuiColorEditFlags_Float);
-    drawPropertyLabel("Intensity");
-    ImGui::DragFloat("##AmbInt", &env.ambientIntensity, 0.005f, 0.0f, 2.0f, "%.3f");
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("Background");
-    drawPropertyLabel("Clear Color");
-    ImGui::ColorEdit3("##ClearCol", glm::value_ptr(env.clearColor), ImGuiColorEditFlags_Float);
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("Grid");
-    drawPropertyLabel("Cell Size");
-    ImGui::DragFloat("##GScale", &env.gridScale, 0.1f, 0.1f, 100.0f, "%.1f");
-    drawPropertyLabel("Grid Size");
-    ImGui::DragFloat("##GSize", &env.gridSize, 10.0f, 10.0f, 10000.0f, "%.0f");
-    drawPropertyLabel("Fade Start");
-    ImGui::DragFloat("##GFadeS", &env.gridFadeStart, 1.0f, 1.0f, env.gridFadeEnd, "%.0f");
-    drawPropertyLabel("Fade End");
-    ImGui::DragFloat("##GFadeE", &env.gridFadeEnd, 1.0f, env.gridFadeStart, 10000.0f, "%.0f");
-
-    ImGui::Spacing();
-    ImGui::SeparatorText("AABB Debug");
-    drawPropertyLabel("Color");
-    ImGui::ColorEdit3("##AABBCol", glm::value_ptr(env.debugColor), ImGuiColorEditFlags_Float);
 }
 
 void BottomPanel::drawAnimationSection(EditorContext& ec) {

@@ -119,7 +119,7 @@ void EditorSystem::update(FrameContext& ctx) {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-    if (m_renderSystem && m_state.wireframe) m_renderSystem->setWireframe(true);
+    if (m_renderSystem) m_renderSystem->setWireframe(m_state.wireframe);
 }
 
 void EditorSystem::drawWorkspace(EditorContext& ec) {
