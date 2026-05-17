@@ -208,6 +208,12 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources, E
                 drawPropertyLabel("Strength");
                 changed |= ImGui::SliderFloat("##Aniso", &mat.anisotropy, 0.0f, 1.0f, "%.2f");
 
+                drawPropertyLabel("Direction");
+                changed |= ImGui::DragFloat3("##AnisoDir",
+                    glm::value_ptr(mat.anisotropyDirection), 0.01f, -1.0f, 1.0f, "%.2f");
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Tangent-space anisotropy direction");
+
                 ImGui::TreePop();
             }
 
@@ -219,6 +225,21 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources, E
                 drawPropertyLabel("Color");
                 changed |= ImGui::ColorEdit3("##SSSCol", glm::value_ptr(mat.subsurfaceColor),
                     ImGuiColorEditFlags_Float);
+
+                ImGui::TreePop();
+            }
+
+            // Sheen / cloth (Charlie). A black sheen colour disables it.
+            if (ImGui::TreeNode("Sheen##Mat")) {
+                drawPropertyLabel("Color");
+                changed |= ImGui::ColorEdit3("##SheenCol", glm::value_ptr(mat.sheenColor),
+                    ImGuiColorEditFlags_Float);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Black = no sheen (fabric / cloth rim term)");
+
+                drawPropertyLabel("Roughness");
+                changed |= ImGui::SliderFloat("##SheenR", &mat.sheenRoughness,
+                    0.0f, 1.0f, "%.2f");
 
                 ImGui::TreePop();
             }

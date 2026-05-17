@@ -93,7 +93,7 @@ struct EnvironmentConfig {
     // Screen-space ambient occlusion (GTAO), modulates the ambient term.
     bool  ssao          = true;
     float ssaoRadius    = 0.5f;
-    float ssaoIntensity = 1.0f;
+    float ssaoIntensity = 0.8f;   // full-strength GTAO tends to over-darken contact
 
     // Screen-space reflections, additively blended into the HDR scene.
     bool  ssr            = true;
@@ -104,7 +104,7 @@ struct EnvironmentConfig {
     // Temporal anti-aliasing (camera-reprojection). Off by default; MSAA
     // already does spatial edge AA, so this is temporal stabilisation.
     bool  taa      = false;
-    float taaBlend = 0.9f;         // history weight
+    float taaBlend = 0.92f;        // history weight (smoother; only used when TAA on)
 
     // Depth of field (off by default). View-space focus.
     bool  dof              = false;
@@ -129,7 +129,7 @@ struct EnvironmentConfig {
     // from the adapted scene luminance; the camera exposure becomes EV bias.
     bool  autoExposure  = true;
     float exposureKey   = 0.18f;   // target middle-gray
-    float exposureSpeed = 1.5f;    // adaptation rate (per second)
+    float exposureSpeed = 2.5f;    // adaptation rate (per second; 1.5 felt sluggish)
     float exposureMin   = 0.03f;   // clamp on the derived exposure
     float exposureMax   = 8.0f;
 
