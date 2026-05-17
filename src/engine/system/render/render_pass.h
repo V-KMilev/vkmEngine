@@ -3,11 +3,11 @@
 #include <cstdint>
 #include <string>
 
+#include "system/render/render_graph_builder.h"
+#include "system/render/render_graph_context.h"
+
 namespace Engine {
     class RenderBackend;
-
-    struct RenderView;
-    class ResourceManager;
 }
 
 namespace Engine {
@@ -65,14 +65,22 @@ class RenderPass {
         /**
          * @brief Execute the core rendering logic for this pass.
          *
-         * Called every frame; performs the intended GPU operation(s) described by this pass,
-         * using the provided backend and scene data.
+         * Called every frame with the per-frame RenderGraphContext (backend,
+         * RenderView, ResourceManager, frame index). The graph owns the
+         * transient resource pool the backend exposes.
          *
-         * @param backend Reference to the current RenderBackend (OpenGL, Optix, CPU, etc).
-         * @param view    Scene and camera data needed for rendering.
-         * @param resources Access to all GPU resource handles for this frame.
+         * @param ctx The render graph execution context for this frame.
          */
-        virtual void execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) = 0;
+        virtual void execute(RenderGraphContext& ctx) = 0;
+
+        /**
+         * @brief Declare the transient resources this pass reads and writes.
+         *
+         * Optional - the RenderGraph uses these declarations for ordering
+         * validation, resource lifetimes, and debug. Default: no declarations
+         * (the pass still runs; it just opts out of graph bookkeeping).
+         */
+        virtual void declareResources(RenderGraphBuilder& /*builder*/) const {}
 
     protected:
         std::string m_name;
