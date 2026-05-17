@@ -200,4 +200,21 @@ GLMesh* GLView::ensureMesh(const MeshHandle& handle, const ResourceManager& reso
     return m_meshTable.entries[handle.id()].get();
 }
 
+void GLView::ensureMaterialTextures(const MaterialHandle& handle,
+                                    const ResourceManager& resources) {
+    if (!handle) return;
+    const auto& material = resources.get(handle);
+
+    thread_local std::vector<TextureHandle> texs;
+    texs.clear();
+    for (const auto& mapping : g_textureMappings) {
+        const TextureHandle& th = material.*mapping.handlePtr;
+        if (th) texs.push_back(th);
+    }
+    if (!texs.empty()) {
+        sortUnique(texs);
+        syncTable<TextureAsset>(m_textureTable, texs, resources);
+    }
+}
+
 } // namespace Engine

@@ -84,6 +84,12 @@ class GLView {
         const GLMaterial* ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources);
         GLMesh*           ensureMesh(const MeshHandle& handle, const ResourceManager& resources);
 
+        /// Ensure every texture a material references is GPU-resident. sync()
+        /// only uploads textures on its coarse dirty check; per-asset previews
+        /// (Asset Browser grid) render many one-drawable views per frame and
+        /// would otherwise reuse a stale/empty texture table.
+        void ensureMaterialTextures(const MaterialHandle& handle, const ResourceManager& resources);
+
         /// Lookup: returns nullptr if not synced or out of range.
         const GLMesh*     getMesh(const MeshHandle& handle) const;
         const GLMaterial* getMaterial(const MaterialHandle& handle) const;
