@@ -4,5 +4,6 @@ build/
 cache/
 
 logs/
+assets/
 
 imgui.ini
