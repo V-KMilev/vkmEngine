@@ -86,7 +86,7 @@ struct alignas(16) MaterialUBOData {
     float clearcoatRoughness;            // offset 60
 
     float anisotropy;                    // offset 64
-    float pad1[3];                       // offset 68 (pad to 80)
+    float sheenColor[3];                 // offset 68 (was pad1; r,g,b scalars)
 
     alignas(16) glm::vec3 anisotropyDirection; // offset 80
     float pad2;                          // offset 92
@@ -100,7 +100,7 @@ struct alignas(16) MaterialUBOData {
     float heightScale;                   // offset 128
     float normalScale;                   // offset 132
     int textureFlags;                    // offset 136
-    float pad5;                          // offset 140 (pad to 144)
+    float sheenRoughness;                // offset 140 (was pad5)
 };
 
 /**

@@ -25,6 +25,7 @@ GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL), m_context() {
 void GLBackend::resize(uint32_t width, uint32_t height) {
     m_context.setViewport(0, 0, width, height);
     m_defaultTarget.resize(width, height);
+    m_frame.resize(width, height);
 }
 
 void GLBackend::setWireframe(bool enabled) {

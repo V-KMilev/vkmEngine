@@ -69,6 +69,12 @@ void GLMaterial::update(const MaterialAsset& material) {
     uboData.subsurface = material.subsurface;
     uboData.subsurfaceColor = material.subsurfaceColor;
 
+    // Sheen / cloth (offsets unchanged - repurposed former pad floats)
+    uboData.sheenColor[0] = material.sheenColor.x;
+    uboData.sheenColor[1] = material.sheenColor.y;
+    uboData.sheenColor[2] = material.sheenColor.z;
+    uboData.sheenRoughness = material.sheenRoughness;
+
     // Height/Displacement and normal mapping
     uboData.heightScale = material.heightScale;
     uboData.normalScale = material.normalScale;

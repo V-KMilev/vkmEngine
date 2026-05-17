@@ -31,6 +31,12 @@ namespace Config {
     /// MUST match SHADOW_MAX_CASTERS_CUBE in shaders/pbr/fragmentShader.shader.
     constexpr uint32_t MaxShadowCastersCube = 2;
 
+    /// Cascade count for the directional (sun) shadow. The first directional
+    /// shadow caster reserves this many consecutive 2D atlas layers; remaining
+    /// layers (MaxShadowCasters2D - NumCascades) serve spot lights.
+    /// MUST match NUM_CASCADES in shaders/pbr/fragmentShader.shader.
+    constexpr uint32_t NumCascades = 4;
+
     // ---- Simulation timing ------------------------------------------------
 
     /// Fixed simulation step (60 Hz). Cadence at which fixedUpdate runs.

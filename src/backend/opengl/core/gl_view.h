@@ -17,6 +17,7 @@
 #include "resource/gl_shader_program.h"
 #include "resource/gl_shadow_data.h"
 #include "resource/gl_shadow_map.h"
+#include "resource/gl_ibl.h"
 #include "resource/gl_texture.h"
 
 namespace Engine {
@@ -90,6 +91,9 @@ class GLView {
         GLShadowData&         getShadowData()         { return m_shadowData; }
         const GLShadowData&   getShadowData()   const { return m_shadowData; }
 
+        GLIBL&                getIBL()                { return m_ibl; }
+        const GLIBL&          getIBL()          const { return m_ibl; }
+
         GLInstanceBatcher&       getInstanceBatcher()       { return m_instanceBatcher; }
         const GLInstanceBatcher& getInstanceBatcher() const { return m_instanceBatcher; }
 
@@ -117,6 +121,7 @@ class GLView {
             Config::MaxShadowCastersCube
         };
         GLShadowData      m_shadowData;
+        GLIBL             m_ibl;
         GLInstanceBatcher m_instanceBatcher;
 
         uint64_t m_lastMeshTypeVersion     = 0;

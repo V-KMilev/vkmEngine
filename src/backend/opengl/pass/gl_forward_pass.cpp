@@ -11,6 +11,8 @@
 #include "resource/gl_material.h"
 #include "resource/gl_shader_program.h"
 #include "resource/gl_instance_buffer.h"
+#include "resource/gl_ibl.h"
+#include "resource/gl_gbuffer.h"
 #include "core/gl_instance_batcher.h"
 
 #include "system/render/render_view.h"
@@ -32,7 +34,10 @@ void GLForwardPass::onResize(RenderBackend& backend, uint32_t width, uint32_t he
     // Nothing to do for forward pass
 }
 
-void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) {
+void GLForwardPass::execute(RenderGraphContext& rg) {
+    RenderBackend& backend = rg.backend;
+    const RenderView& view = rg.view;
+    const ResourceManager& resources = rg.resources;
     if (backend.getType() != RenderBackendType::OpenGL) {
         LOG_ERROR("GLForwardPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
         return;
@@ -40,6 +45,11 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
 
     auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
+
+    // The scene renders into the offscreen linear-HDR target so light is
+    // never clamped before tone mapping. The composite pass resolves this
+    // and applies exposure + AgX to the backbuffer.
+    gl.getHdrTarget().bindForRender();
 
     glContext.setClearColor(view.environment.clearColor);
     glContext.clearColor();
@@ -67,6 +77,28 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
     shadowAtlas.bind2DForReading(GLConfig::TextureSlots::ShadowMap2D);
     shadowAtlas.bindCubeForReading(GLConfig::TextureSlots::ShadowMapCube);
 
+    // Bind the baked IBL set (irradiance / prefilter / BRDF LUT) and tell the
+    // PBR shader whether to use it. Falls back to flat ambient when no bake.
+    auto& ibl = glView.getIBL();
+    const bool iblReady = ibl.isReady();
+    if (iblReady) {
+        ibl.bindIrradiance(GLConfig::TextureSlots::IrradianceMap);
+        ibl.bindPrefilter(GLConfig::TextureSlots::PrefilterMap);
+        ibl.bindBrdf(GLConfig::TextureSlots::BrdfLUT);
+    }
+    // Screen-space AO from the prepass/GTAO (slot SSAO); enabled when both
+    // the G-buffer is live and the environment toggle is on.
+    auto& gbuffer = gl.getGBuffer();
+    const bool ssaoOn = gbuffer.isReady() && view.environment.ssao;
+    gbuffer.bindOcclusion(GLConfig::TextureSlots::SSAO);
+
+    if (GLShader* pbr = shaders[static_cast<int>(MaterialType::Opaque)]) {
+        pbr->bind();
+        pbr->setUniform1i("u_hasIBL", iblReady ? 1 : 0);
+        pbr->setUniform1f("u_iblIntensity", view.environment.iblIntensity);
+        pbr->setUniform1i("u_ssaoEnabled", ssaoOn ? 1 : 0);
+    }
+
     // CameraBlock and LightsBlock UBOs are owned by GLView and bound once
     // per frame in sync().
 
@@ -86,14 +118,14 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
         if (shader != currentShader) {
             // Transition GL state between material type groups
             if (currentType == MaterialType::Transparent && batch.materialType != MaterialType::Transparent) {
-                glDepthMask(GL_TRUE);
-                glDisable(GL_BLEND);
+                glContext.setDepthWrite(true);
+                glContext.setBlending(false);
             }
 
             if (batch.materialType == MaterialType::Transparent && currentType != MaterialType::Transparent) {
-                glEnable(GL_BLEND);
-                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                glDepthMask(GL_FALSE);
+                glContext.setBlending(true);
+                glContext.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glContext.setDepthWrite(false);
             }
 
             shader->bind();
@@ -129,8 +161,8 @@ void GLForwardPass::execute(RenderBackend& backend, const RenderView& view, cons
 
     // Restore GL state if we ended in transparent mode
     if (currentType == MaterialType::Transparent) {
-        glDepthMask(GL_TRUE);
-        glDisable(GL_BLEND);
+        glContext.setDepthWrite(true);
+        glContext.setBlending(false);
     }
 }
 

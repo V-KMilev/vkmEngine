@@ -70,7 +70,11 @@ class GLGridPass : public RenderPass {
          * @param view      Render view/camera information
          * @param resources Resource manager for the scene
          */
-        void execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) override;
+        void execute(RenderGraphContext& ctx) override;
+
+        void declareResources(RenderGraphBuilder& builder) const override {
+            builder.write(RGResource::SceneHDR);
+        }
 
     private:
         /**

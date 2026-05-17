@@ -23,8 +23,10 @@ GLShadowData::~GLShadowData() {
 }
 
 void GLShadowData::clear() {
-    m_data.count2D   = 0;
-    m_data.countCube = 0;
+    m_data.count2D     = 0;
+    m_data.countCube   = 0;
+    m_data.csmBaseSlot = -1;
+    m_data.csmCount    = 0;
 }
 
 void GLShadowData::setCaster2D(uint32_t slot, const Shadow2DCasterGPU& caster) {
@@ -40,6 +42,11 @@ void GLShadowData::setCasterCube(uint32_t slot, const ShadowCubeCasterGPU& caste
 void GLShadowData::setCounts(uint32_t count2D, uint32_t countCube) {
     m_data.count2D   = static_cast<int>(count2D);
     m_data.countCube = static_cast<int>(countCube);
+}
+
+void GLShadowData::setCSM(int baseSlot, int count) {
+    m_data.csmBaseSlot = baseSlot;
+    m_data.csmCount    = count;
 }
 
 void GLShadowData::uploadAndBind() {
