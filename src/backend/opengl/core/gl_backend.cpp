@@ -94,6 +94,7 @@ void GLBackend::syncResources(const RenderView& view, const ResourceManager& res
         for (const auto& d : view.drawables) {
             m_view.ensureMesh(d.mesh, resources);
             m_view.ensureMaterial(d.material, resources);
+            m_view.ensureMaterialTextures(d.material, resources);
         }
     }
     m_view.sync(view, resources);
