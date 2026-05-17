@@ -17,3 +17,10 @@ target_include_directories(EngineTools PRIVATE
 target_link_libraries(EngineTools PUBLIC
     EngineCore
 )
+
+# Assimp model import (used privately by loader/model_loader.cpp). Wrapped
+# in BUILD_INTERFACE so it is not pulled into the install/export set
+# (assimp is intentionally not installed).
+target_link_libraries(EngineTools PRIVATE
+    $<BUILD_INTERFACE:assimp>
+)
