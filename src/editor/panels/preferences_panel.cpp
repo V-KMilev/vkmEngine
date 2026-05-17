@@ -20,13 +20,7 @@ namespace {
     constexpr int kSectionCount = static_cast<int>(sizeof(kSections) / sizeof(kSections[0]));
 
     void sectionHeader(const char* title, const char* hint) {
-        ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
-        ImGui::TextUnformatted(title);
-        ImGui::PopStyleColor();
-        ImGui::SameLine(0, 10);
-        ImGui::TextDisabled("%s", hint);
-        ImGui::Separator();
-        ImGui::Spacing();
+        drawSectionHeader(title, hint);
     }
 }
 

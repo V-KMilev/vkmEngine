@@ -25,22 +25,17 @@ namespace {
     constexpr int kSectionCount = static_cast<int>(sizeof(kSections) / sizeof(kSections[0]));
 
     void sectionHeader(const char* title, const char* hint) {
-        ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
-        ImGui::TextUnformatted(title);
-        ImGui::PopStyleColor();
-        ImGui::SameLine(0, 10);
-        ImGui::TextDisabled("%s", hint);
-        ImGui::Separator();
-        ImGui::Spacing();
+        drawSectionHeader(title, hint);
     }
 
     // Collapsible card. When @p enabled is non-null a checkbox precedes the
     // title (the effect's on/off, readable even while collapsed). Returns
-    // true when the body should be drawn.
+    // true when the body should be drawn. Uses the shared card-header look
+    // so these read the same as the Inspector's component cards.
     bool cardHeader(const char* id, const char* title, bool* enabled) {
         ImGui::PushID(id);
         if (enabled) { ImGui::Checkbox("##en", enabled); ImGui::SameLine(); }
-        bool open = ImGui::CollapsingHeader(title);
+        bool open = styledCollapsingHeader(title, EditorStyle::ACCENT);
         ImGui::PopID();
         return open;
     }
