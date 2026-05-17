@@ -50,8 +50,8 @@ struct alignas(16) ShadowCubeCasterGPU {
 struct alignas(16) ShadowUBOData {
     int count2D     = 0;
     int countCube   = 0;
-    int _pad0       = 0;
-    int _pad1       = 0;
+    int csmBaseSlot = -1;   ///< First 2D layer of cascade 0 (-1 = no CSM); was _pad0
+    int csmCount    = 0;    ///< Active cascade count for the sun;        was _pad1
     Shadow2DCasterGPU   casters2D  [Config::MaxShadowCasters2D]{};
     ShadowCubeCasterGPU castersCube[Config::MaxShadowCastersCube]{};
 };
@@ -86,6 +86,9 @@ class GLShadowData {
 
         /// Set the active counts. Must be called after all setCaster*() calls.
         void setCounts(uint32_t count2D, uint32_t countCube);
+
+        /// Record the directional cascade layout (base 2D layer + count).
+        void setCSM(int baseSlot, int count);
 
         /// Upload to GPU and bind to the shadow binding point.
         void uploadAndBind();

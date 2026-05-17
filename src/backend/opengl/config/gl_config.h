@@ -53,7 +53,12 @@ namespace GLConfig {
         constexpr uint32_t ShadowMap2D          = 10;  ///< Directional + spot shadow array (sampler2DArrayShadow)
         constexpr uint32_t ShadowMapCube        = 11;  ///< Point shadow cube array (samplerCubeArrayShadow)
 
-        constexpr uint32_t Count = 12;  ///< Total number of texture slots used
+        constexpr uint32_t IrradianceMap        = 12;  ///< IBL diffuse irradiance cubemap
+        constexpr uint32_t PrefilterMap         = 13;  ///< IBL prefiltered specular cubemap (roughness mips)
+        constexpr uint32_t BrdfLUT              = 14;  ///< IBL split-sum BRDF/DFG lookup (RG16F)
+        constexpr uint32_t SSAO                 = 15;  ///< Screen-space AO factor (R16F, GTAO)
+
+        constexpr uint32_t Count = 16;  ///< Total number of texture slots used
     }
 
     /**
@@ -92,6 +97,13 @@ namespace GLConfig {
         constexpr const char* ShadowMap2D   = "u_shadowMap2D";
         constexpr const char* ShadowMapCube = "u_shadowMapCube";
         constexpr const char* LightSpace    = "u_lightSpace";
+
+        // Image-based lighting uniforms
+        constexpr const char* IrradianceMap = "u_irradianceMap";
+        constexpr const char* PrefilterMap  = "u_prefilterMap";
+        constexpr const char* BrdfLUT       = "u_brdfLUT";
+        constexpr const char* EnvCube       = "u_envCube";
+        constexpr const char* SSAO          = "u_ssao";
     }
 
     /**

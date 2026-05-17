@@ -27,7 +27,10 @@ void GLGridPass::onResize(RenderBackend& backend, uint32_t width, uint32_t heigh
 }
 
 
-void GLGridPass::execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) {
+void GLGridPass::execute(RenderGraphContext& rg) {
+    RenderBackend& backend = rg.backend;
+    const RenderView& view = rg.view;
+    const ResourceManager& resources = rg.resources;
     // Validate backend type
     if (backend.getType() != RenderBackendType::OpenGL) {
         LOG_ERROR("GLGridPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));

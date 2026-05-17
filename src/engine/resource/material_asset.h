@@ -46,6 +46,10 @@ struct MaterialAsset : public Resource {
     float subsurface          = 0.0f;            ///< Subsurface scattering strength
     glm::vec3 subsurfaceColor = {1,1,1};         ///< Subsurface color tint
 
+    // Sheen / cloth (Charlie). Default sheenColor 0 = no sheen (no-op).
+    glm::vec3 sheenColor   = {0,0,0};            ///< Sheen tint (0 = disabled)
+    float     sheenRoughness = 0.3f;             ///< Sheen lobe roughness
+
     // Height/Displacement and Normal mapping
     float heightScale = 0.0f;                   ///< Height map scale for parallax/displacement mapping (0.02-0.1 typical)
     float normalScale = 1.0f;                   ///< Normal map intensity (0: flat, 1: normal, >1: exaggerated)

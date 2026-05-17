@@ -164,12 +164,22 @@ void RenderView::build(
     // the GPU light data so the shader can index directly without a scan.
     uint32_t taken2D = 0;
     uint32_t takenCube = 0;
+    bool csmAssigned = false;
     for (auto& light : lights) {
         if (!light.castShadows) continue;
         if (light.type == LightType::Point) {
             if (takenCube < Config::MaxShadowCastersCube) light.shadowSlot = static_cast<int>(takenCube++);
-        } else {
-            if (taken2D < Config::MaxShadowCasters2D)     light.shadowSlot = static_cast<int>(taken2D++);
+        } else if (light.type == LightType::Directional) {
+            // The first directional caster owns the cascade block (NumCascades
+            // consecutive 2D layers); shadowSlot is the base layer. Additional
+            // directional casters get no shadow (kept simple - one sun).
+            if (!csmAssigned && taken2D + Config::NumCascades <= Config::MaxShadowCasters2D) {
+                light.shadowSlot = static_cast<int>(taken2D);
+                taken2D += Config::NumCascades;
+                csmAssigned = true;
+            }
+        } else { // Spot
+            if (taken2D < Config::MaxShadowCasters2D) light.shadowSlot = static_cast<int>(taken2D++);
         }
     }
 }

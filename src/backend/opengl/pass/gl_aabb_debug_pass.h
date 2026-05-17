@@ -62,7 +62,11 @@ class GLAABBDebugPass : public RenderPass {
          * @param view      Provides scene and camera information.
          * @param resources Access to GPU mesh and material handles for this frame.
          */
-        void execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) override;
+        void execute(RenderGraphContext& ctx) override;
+
+        void declareResources(RenderGraphBuilder& builder) const override {
+            builder.write(RGResource::SceneHDR);
+        }
 
     private:
         /**

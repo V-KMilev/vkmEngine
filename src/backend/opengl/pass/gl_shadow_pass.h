@@ -40,7 +40,11 @@ class GLShadowPass : public RenderPass {
 
     public:
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) override;
+        void execute(RenderGraphContext& ctx) override;
+
+        void declareResources(RenderGraphBuilder& builder) const override {
+            builder.write(RGResource::ShadowAtlas);
+        }
 
     private:
         ShaderHandle m_depthShader;

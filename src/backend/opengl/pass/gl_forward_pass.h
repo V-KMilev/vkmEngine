@@ -39,7 +39,14 @@ class GLForwardPass : public RenderPass {
         void setShader(MaterialType type, ShaderHandle shader);
 
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources) override;
+        void execute(RenderGraphContext& ctx) override;
+
+        void declareResources(RenderGraphBuilder& builder) const override {
+            builder.read(RGResource::ShadowAtlas);
+            builder.read(RGResource::IBL);
+            builder.read(RGResource::AO);
+            builder.write(RGResource::SceneHDR);
+        }
 
     private:
         ShaderHandle m_shaders[3] = {};  ///< Indexed by MaterialType (Opaque, Transparent, Unlit)

@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <cstdint>
+#include <string>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -74,9 +75,63 @@ struct LightData {
  * Lives on RenderSystem, copied into RenderView each frame.
  */
 struct EnvironmentConfig {
-    // Ambient light
+    // Ambient light (fallback when no environment map is set)
     glm::vec3 ambientColor     = glm::vec3(1.0f);
     float     ambientIntensity = 0.03f;
+
+    // Image-based lighting. Empty path = no IBL (uses the flat ambient above).
+    // The bake pass (re)bakes whenever this path changes.
+    std::string environmentMapPath = "";
+    float       iblIntensity       = 1.0f;
+
+    // Analytic Preetham sky (background only) instead of the HDRI cubemap.
+    // Off by default; sun direction comes from the scene directional light.
+    bool  proceduralSky = false;
+    float skyTurbidity  = 3.0f;   // ~2 clear .. ~10 hazy
+    float skyIntensity  = 1.0f;
+
+    // Screen-space ambient occlusion (GTAO), modulates the ambient term.
+    bool  ssao          = true;
+    float ssaoRadius    = 0.5f;
+    float ssaoIntensity = 1.0f;
+
+    // Screen-space reflections, additively blended into the HDR scene.
+    bool  ssr            = true;
+    float ssrIntensity   = 0.6f;
+    float ssrMaxDistance = 8.0f;   // view-space ray length
+    float ssrThickness   = 0.5f;   // view-space hit tolerance
+
+    // Temporal anti-aliasing (camera-reprojection). Off by default; MSAA
+    // already does spatial edge AA, so this is temporal stabilisation.
+    bool  taa      = false;
+    float taaBlend = 0.9f;         // history weight
+
+    // Depth of field (off by default). View-space focus.
+    bool  dof              = false;
+    float dofFocusDistance = 10.0f;
+    float dofFocusRange    = 12.0f;
+    float dofMaxBlur       = 0.015f;  // gather radius in UV
+
+    // Camera motion blur (off by default).
+    bool  motionBlur         = false;
+    float motionBlurStrength = 0.5f;
+
+    // Color-grading LUT (16^3 strip), applied post-display. Empty path /
+    // disabled = identity (no regression).
+    bool        colorGrade          = false;
+    std::string colorLutPath        = "";
+    float       colorGradeIntensity = 1.0f;
+
+    // Post-processing. Bloom is blended in linear HDR before exposure + AgX.
+    float bloomStrength = 0.04f;
+
+    // Auto-exposure (eye adaptation). When on, the composite derives exposure
+    // from the adapted scene luminance; the camera exposure becomes EV bias.
+    bool  autoExposure  = true;
+    float exposureKey   = 0.18f;   // target middle-gray
+    float exposureSpeed = 1.5f;    // adaptation rate (per second)
+    float exposureMin   = 0.03f;   // clamp on the derived exposure
+    float exposureMax   = 8.0f;
 
     // Background
     glm::vec4 clearColor = glm::vec4(0.1f, 0.1f, 0.12f, 1.0f);
@@ -108,6 +163,8 @@ struct RenderView {
 
     uint32_t viewportWidth  = 0;
     uint32_t viewportHeight = 0;
+
+    float deltaTime = 0.0f;  ///< Real seconds since last frame (eye adaptation)
 
     /**
     * @brief Populate this RenderView for the current frame from the scene.
