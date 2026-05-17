@@ -2,6 +2,9 @@
 
 #include <cstdint>
 
+#include "resource/material_asset.h"
+#include "resource/mesh_asset.h"
+
 namespace Engine {
     class RenderTarget;
     struct RenderView;
@@ -97,6 +100,46 @@ class RenderBackend {
          * writes the scene color. Default no-op for backends without MSAA.
          */
         virtual void resolveSceneColor() {}
+
+        /**
+         * @brief Enter offscreen "preview" mode at @p size x @p size.
+         *
+         * While active, every transient target accessor (HDR, G-buffer,
+         * bloom, exposure, default target, ...) returns a private preview
+         * set instead of the window-sized ones, so the unmodified render
+         * graph can be re-executed into an offscreen texture. Paired with
+         * endPreview(). Default: no-op (backend doesn't support previews).
+         *
+         * Editor-facing: the Material Editor / Asset Browser drive the real
+         * pipeline through this so the preview can never drift from the
+         * viewport.
+         */
+        virtual void beginPreview(uint32_t size) { (void)size; }
+
+        /** @brief Leave preview mode; subsequent passes target the window. */
+        virtual void endPreview() {}
+
+        /**
+         * @brief GL texture id of the last preview's composited color,
+         *        usable as an ImGui ImTextureID (0 if unsupported / none).
+         */
+        virtual uint32_t previewColorTexture() const { return 0; }
+
+        /**
+         * @brief Copy the just-rendered preview into a stable per-key
+         *        thumbnail texture and return its id.
+         *
+         * The single preview target is overwritten by the next render, so
+         * grid thumbnails (Asset Browser) and the live Material Editor must
+         * each own a persistent copy. @p key is caller-defined and opaque.
+         * Default: unsupported.
+         */
+        virtual uint32_t snapshotPreviewToCache(uint64_t key, uint32_t size) {
+            (void)key; (void)size; return 0;
+        }
+
+        /** @brief Cached thumbnail id for @p key, or 0 if never snapshotted. */
+        virtual uint32_t cachedPreview(uint64_t key) const { (void)key; return 0; }
 
     protected:
         RenderBackendType m_type;
