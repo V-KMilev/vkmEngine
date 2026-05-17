@@ -3,7 +3,7 @@
 
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
-#include "system/render/render_pipeline.h"
+#include "system/render/render_graph.h"
 
 namespace Engine {
 
@@ -116,6 +116,121 @@ void BottomPanel::drawEnvironmentSection(EditorContext& ec) {
     if (!ec.renderSystem) return;
     auto& env = ec.renderSystem->getEnvironment();
 
+    ImGui::SeparatorText("Environment Map (IBL)");
+    {
+        static char pathBuf[260] = "assets/env/environment.hdr";
+        drawPropertyLabel("HDR Path");
+        ImGui::SetNextItemWidth(-60.0f);
+        ImGui::InputText("##IBLPath", pathBuf, sizeof(pathBuf));
+        ImGui::SameLine();
+        if (ImGui::Button("Apply##IBL")) env.environmentMapPath = pathBuf;
+
+        if (!env.environmentMapPath.empty()) {
+            ImGui::TextDisabled("Active: %s", env.environmentMapPath.c_str());
+            drawPropertyLabel("IBL Intensity");
+            ImGui::DragFloat("##IBLInt", &env.iblIntensity, 0.01f, 0.0f, 10.0f, "%.2f");
+            if (ImGui::Button("Clear##IBL")) env.environmentMapPath.clear();
+        } else {
+            ImGui::TextDisabled("No environment map (flat ambient)");
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Procedural Sky");
+    ImGui::Checkbox("Analytic Sky (background)", &env.proceduralSky);
+    if (env.proceduralSky) {
+        drawPropertyLabel("Turbidity");
+        ImGui::DragFloat("##SkyTurb", &env.skyTurbidity, 0.05f, 1.7f, 10.0f, "%.2f");
+        drawPropertyLabel("Sky Intensity");
+        ImGui::DragFloat("##SkyInt", &env.skyIntensity, 0.02f, 0.0f, 10.0f, "%.2f");
+        ImGui::TextDisabled("Sun = scene directional light");
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Ambient Occlusion");
+    ImGui::Checkbox("SSAO", &env.ssao);
+    if (env.ssao) {
+        drawPropertyLabel("Radius");
+        ImGui::DragFloat("##AoRad", &env.ssaoRadius, 0.01f, 0.05f, 5.0f, "%.2f");
+        drawPropertyLabel("Intensity");
+        ImGui::DragFloat("##AoInt", &env.ssaoIntensity, 0.02f, 0.0f, 4.0f, "%.2f");
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Reflections (SSR)");
+    ImGui::Checkbox("SSR", &env.ssr);
+    if (env.ssr) {
+        drawPropertyLabel("Intensity");
+        ImGui::DragFloat("##SsrInt", &env.ssrIntensity, 0.02f, 0.0f, 2.0f, "%.2f");
+        drawPropertyLabel("Max Distance");
+        ImGui::DragFloat("##SsrDist", &env.ssrMaxDistance, 0.1f, 0.5f, 50.0f, "%.1f");
+        drawPropertyLabel("Thickness");
+        ImGui::DragFloat("##SsrThick", &env.ssrThickness, 0.01f, 0.02f, 4.0f, "%.2f");
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("TAA (temporal)");
+    ImGui::Checkbox("TAA", &env.taa);
+    if (env.taa) {
+        drawPropertyLabel("History Blend");
+        ImGui::DragFloat("##TaaBlend", &env.taaBlend, 0.005f, 0.0f, 0.98f, "%.3f");
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Depth of Field");
+    ImGui::Checkbox("DoF", &env.dof);
+    if (env.dof) {
+        drawPropertyLabel("Focus Distance");
+        ImGui::DragFloat("##DofDist", &env.dofFocusDistance, 0.1f, 0.1f, 500.0f, "%.1f");
+        drawPropertyLabel("Focus Range");
+        ImGui::DragFloat("##DofRange", &env.dofFocusRange, 0.1f, 0.1f, 500.0f, "%.1f");
+        drawPropertyLabel("Max Blur");
+        ImGui::DragFloat("##DofBlur", &env.dofMaxBlur, 0.001f, 0.0f, 0.1f, "%.3f");
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Motion Blur");
+    ImGui::Checkbox("Motion Blur", &env.motionBlur);
+    if (env.motionBlur) {
+        drawPropertyLabel("Strength");
+        ImGui::DragFloat("##MbStr", &env.motionBlurStrength, 0.02f, 0.0f, 4.0f, "%.2f");
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Color Grading (LUT)");
+    ImGui::Checkbox("Color Grade", &env.colorGrade);
+    if (env.colorGrade) {
+        static char lutBuf[260] = "";
+        drawPropertyLabel("LUT (256x16)");
+        ImGui::SetNextItemWidth(-60.0f);
+        ImGui::InputText("##LutPath", lutBuf, sizeof(lutBuf));
+        ImGui::SameLine();
+        if (ImGui::Button("Apply##LUT")) env.colorLutPath = lutBuf;
+        drawPropertyLabel("Intensity");
+        ImGui::DragFloat("##LutInt", &env.colorGradeIntensity, 0.01f, 0.0f, 1.0f, "%.2f");
+        if (!env.colorLutPath.empty())
+            ImGui::TextDisabled("Active: %s", env.colorLutPath.c_str());
+    }
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Post (Bloom)");
+    drawPropertyLabel("Bloom Strength");
+    ImGui::DragFloat("##BloomStr", &env.bloomStrength, 0.002f, 0.0f, 0.5f, "%.3f");
+
+    ImGui::Spacing();
+    ImGui::SeparatorText("Exposure");
+    ImGui::Checkbox("Auto Exposure", &env.autoExposure);
+    if (env.autoExposure) {
+        drawPropertyLabel("Key");
+        ImGui::DragFloat("##ExpKey", &env.exposureKey, 0.005f, 0.01f, 1.0f, "%.3f");
+        drawPropertyLabel("Adapt Speed");
+        ImGui::DragFloat("##ExpSpd", &env.exposureSpeed, 0.05f, 0.05f, 10.0f, "%.2f");
+        drawPropertyLabel("Min / Max");
+        ImGui::DragFloatRange2("##ExpRange", &env.exposureMin, &env.exposureMax,
+            0.01f, 0.001f, 32.0f, "%.2f");
+    }
+
+    ImGui::Spacing();
     ImGui::SeparatorText("Ambient Light");
     drawPropertyLabel("Color");
     ImGui::ColorEdit3("##AmbCol", glm::value_ptr(env.ambientColor), ImGuiColorEditFlags_Float);
