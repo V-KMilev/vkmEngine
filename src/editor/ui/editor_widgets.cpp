@@ -99,9 +99,9 @@ bool styledCollapsingHeader(const char* title, const ImVec4& accent,
                              | ImGuiTreeNodeFlags_FramePadding;
     if (defaultOpen) flags |= ImGuiTreeNodeFlags_DefaultOpen;
 
-    ImGui::PushStyleColor(ImGuiCol_Header,        ImVec4(0.19f, 0.20f, 0.23f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.25f, 0.27f, 0.31f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_HeaderActive,  ImVec4(0.23f, 0.25f, 0.29f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Header,        EditorStyle::CARD_HEADER);
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, EditorStyle::CARD_HEADER_HOV);
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive,  EditorStyle::CARD_HEADER_ACT);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 7));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
 
@@ -131,7 +131,7 @@ bool beginComponentCard(const char* title, const ImVec4& accent,
         ImGui::SameLine(ImGui::GetContentRegionAvail().x
                         + ImGui::GetCursorPosX() - 20);
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::DANGER_HOV);
+        ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::DANGER);
         if (ImGui::SmallButton("x")) *removeClicked = true;
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove component");
         ImGui::PopStyleColor(2);
@@ -200,7 +200,7 @@ void drawSectionHeader(const char* title, const char* hint) {
 
 bool drawRemoveButton(const char* compLabel, uint32_t entityIdx) {
     ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 20);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.3f, 0.3f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::DANGER);
     char id[32];
     snprintf(id, sizeof(id), "x##Rem%s%u", compLabel, entityIdx);
     bool clicked = ImGui::SmallButton(id);
@@ -255,19 +255,74 @@ void getEntityDisplayName(const Scene& scene, EntityId id,
     snprintf(buf, bufSize, "%s %u", typeName, id.index);
 }
 
-void getEntityIcon(const Scene& scene, EntityId id,
-                   char* buf, size_t bufSize) {
-    const char* icon = "[ ]";
-    if (scene.has<Camera>(id))    icon = "[C]";
-    else if (scene.has<Light>(id)) {
-        auto& l = scene.get<Light>(id);
-        if (l.type == LightType::Directional) icon = "[D]";
-        else if (l.type == LightType::Point)  icon = "[P]";
-        else icon = "[S]";
+namespace {
+    // One source of truth for the entity-row glyph size, so the reserved
+    // label space and the drawn icon always agree.
+    float rowIconRadius() { return ImGui::GetFontSize() * 0.62f; }
+
+    // Leading spaces that clear the glyph, so a row's text starts to the
+    // right of the icon drawn into that gap. An optional id keeps ImGui ids
+    // stable when names collide.
+    void iconPaddedLabel(char* out, size_t n, const char* name,
+                         const char* idStr) {
+        const float sw = ImGui::CalcTextSize(" ").x;
+        int pad = (sw > 0.0f)
+            ? static_cast<int>((rowIconRadius() * 2.0f + 6.0f) / sw) + 1 : 4;
+        if (pad < 2)  pad = 2;
+        if (pad > 18) pad = 18;
+        char sp[20];
+        for (int i = 0; i < pad; ++i) sp[i] = ' ';
+        sp[pad] = '\0';
+        if (idStr) snprintf(out, n, "%s%s###%s", sp, name, idStr);
+        else       snprintf(out, n, "%s%s", sp, name);
     }
-    else if (scene.has<Mesh>(id))      icon = "[M]";
-    else if (scene.has<Animation>(id)) icon = "[A]";
-    snprintf(buf, bufSize, "%s", icon);
+    void drawRowGlyph(EditorIcon ic, float startX, ImVec2 rmin, float rh) {
+        const float iconR = rowIconRadius();
+        drawEditorIcon(ImGui::GetWindowDrawList(), ic,
+            ImVec2(startX + iconR, rmin.y + rh * 0.5f), iconR,
+            ImGui::GetColorU32(ImGuiCol_Text));
+    }
+}
+
+EditorIcon entityIconKind(const Scene& scene, EntityId id) {
+    if (scene.has<Camera>(id)) return EditorIcon::Camera;
+    if (scene.has<Light>(id)) {
+        const auto& l = scene.get<Light>(id);
+        if (l.type == LightType::Directional) return EditorIcon::LightDir;
+        if (l.type == LightType::Point)       return EditorIcon::LightPoint;
+        return EditorIcon::LightSpot;
+    }
+    if (scene.has<Mesh>(id))      return EditorIcon::Mesh;
+    if (scene.has<Animation>(id)) return EditorIcon::Anim;
+    return EditorIcon::Entity;
+}
+
+void inlineIcon(EditorIcon icon, float size, ImU32 color) {
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2(size, size));
+    drawEditorIcon(ImGui::GetWindowDrawList(), icon,
+        ImVec2(p.x + size * 0.5f, p.y + size * 0.5f), size * 0.40f, color);
+}
+
+bool entityTreeNode(const void* idPtr, ImGuiTreeNodeFlags flags,
+                    EditorIcon icon, const char* name) {
+    char label[96];
+    iconPaddedLabel(label, sizeof(label), name, nullptr);
+    const bool open = ImGui::TreeNodeEx(const_cast<void*>(idPtr), flags, "%s", label);
+    const ImVec2 rmin = ImGui::GetItemRectMin();
+    const float  rh   = ImGui::GetItemRectSize().y;
+    drawRowGlyph(icon, rmin.x + ImGui::GetTreeNodeToLabelSpacing(), rmin, rh);
+    return open;
+}
+
+bool entitySelectable(const char* idStr, bool selected,
+                      EditorIcon icon, const char* name) {
+    char label[96];
+    iconPaddedLabel(label, sizeof(label), name, idStr);
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    const bool clicked = ImGui::Selectable(label, selected);
+    drawRowGlyph(icon, p.x + 4.0f, p, ImGui::GetItemRectSize().y);
+    return clicked;
 }
 
 } // namespace Engine

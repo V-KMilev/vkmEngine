@@ -43,14 +43,27 @@ namespace {
         std::string cur = "(none)";
         if (slot) {
             const auto& t = res.get(slot);
-            cur = !t.filePath.empty() ? t.filePath : t.name;
+            const std::string& p = !t.filePath.empty() ? t.filePath : t.name;
+            cur = std::filesystem::path(p).filename().string();
+            if (cur.empty()) cur = p;
         }
-        ImGui::TextUnformatted(cur.c_str());
-        ImGui::SameLine();
 
         bool changed = false;
         char pop[80];
         snprintf(pop, sizeof(pop), "Pick##%s", label);
+
+        // File name only, frame-aligned, with Set/Clear pinned to the right so
+        // a long path can never shove them off or overlap them.
+        const ImGuiStyle& st = ImGui::GetStyle();
+        const float setW  = ImGui::CalcTextSize("Set").x   + st.FramePadding.x * 2.0f;
+        const float clrW  = ImGui::CalcTextSize("Clear").x + st.FramePadding.x * 2.0f;
+        const float btnsX = ImGui::GetContentRegionMax().x - setW - clrW
+                          - st.ItemSpacing.x;
+
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(cur.c_str());
+        ImGui::SameLine();
+        if (ImGui::GetCursorPosX() < btnsX) ImGui::SetCursorPosX(btnsX);
         if (ImGui::SmallButton("Set")) ImGui::OpenPopup(pop);
         ImGui::SameLine();
         if (slot) {

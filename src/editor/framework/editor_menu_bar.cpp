@@ -34,7 +34,11 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         }
         if (haveCurrent) {
             ImGui::Separator();
-            ImGui::TextDisabled("Current: %s", sceneIO.path().c_str());
+            // Just the scene file name - the "Current:" prefix was noise.
+            const std::string& p = sceneIO.path();
+            const size_t s = p.find_last_of("/\\");
+            ImGui::TextDisabled("%s",
+                s == std::string::npos ? p.c_str() : p.c_str() + s + 1);
         }
         ImGui::EndMenu();
     }

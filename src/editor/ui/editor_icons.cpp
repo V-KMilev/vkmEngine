@@ -24,6 +24,22 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
     const float th = std::max(1.5f, r * 0.20f);
     auto P = [&](float x, float y) { return ImVec2(c.x + x * r, c.y + y * r); };
 
+    // Isometric cube (regular hexagon + 3-spoke "Y"). Shared by SpaceLocal
+    // and the Mesh entity glyph so they read identically.
+    auto isoCube = [&]() {
+        const float R  = 0.84f;
+        const float hx = 0.86603f * R;  // sqrt(3)/2 * R
+        const float hy = 0.5f * R;
+        ImVec2 v0 = P(0.0f, -R),  v1 = P(hx, -hy), v2 = P(hx, hy);
+        ImVec2 v3 = P(0.0f,  R),  v4 = P(-hx, hy), v5 = P(-hx, -hy);
+        ImVec2 hexa[6] = { v0, v1, v2, v3, v4, v5 };
+        dl->AddPolyline(hexa, 6, col, ImDrawFlags_Closed, th);
+        ImVec2 m = P(0.0f, 0.0f);
+        dl->AddLine(m, v0, col, th);
+        dl->AddLine(m, v2, col, th);
+        dl->AddLine(m, v4, col, th);
+    };
+
     switch (icon) {
         case EditorIcon::Select: {
             ImVec2 pts[] = {
@@ -93,24 +109,9 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
             dl->AddTriangleFilled(B, b1, b2, col);
             break;
         }
-        case EditorIcon::SpaceLocal: {
-            // Isometric cube: regular hexagon outline + a 3-spoke "Y" to the
-            // centre vertex. Mirror-symmetric about the vertical axis.
-            const float R  = 0.84f;
-            const float hx = 0.86603f * R;  // sqrt(3)/2 * R
-            const float hy = 0.5f * R;
-            ImVec2 v0 = P(0.0f, -R);
-            ImVec2 v1 = P(hx, -hy);
-            ImVec2 v2 = P(hx, hy);
-            ImVec2 v3 = P(0.0f, R);
-            ImVec2 v4 = P(-hx, hy);
-            ImVec2 v5 = P(-hx, -hy);
-            ImVec2 hexa[6] = { v0, v1, v2, v3, v4, v5 };
-            dl->AddPolyline(hexa, 6, col, ImDrawFlags_Closed, th);
-            ImVec2 m = P(0.0f, 0.0f);
-            dl->AddLine(m, v0, col, th);  // edge up to top
-            dl->AddLine(m, v2, col, th);  // edge to lower-right
-            dl->AddLine(m, v4, col, th);  // edge to lower-left
+        case EditorIcon::SpaceLocal:
+        case EditorIcon::Mesh: {
+            isoCube();
             break;
         }
         case EditorIcon::SpaceWorld: {
@@ -189,6 +190,75 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
         case EditorIcon::Cross: {
             dl->AddLine(P(-0.5f, -0.5f), P(0.5f, 0.5f), col, th * 1.3f);
             dl->AddLine(P(-0.5f, 0.5f),  P(0.5f, -0.5f), col, th * 1.3f);
+            break;
+        }
+        case EditorIcon::Entity: {
+            // Hierarchy / node tree: a parent node branching to two children
+            // (clearer than a generic box for plain transform entities).
+            const float nr = r * 0.20f;
+            dl->AddLine(P(0.0f, -0.40f), P(0.0f, 0.10f), col, th);    // stem
+            dl->AddLine(P(-0.48f, 0.10f), P(0.48f, 0.10f), col, th);  // bus
+            dl->AddLine(P(-0.48f, 0.10f), P(-0.48f, 0.38f), col, th); // drop L
+            dl->AddLine(P(0.48f, 0.10f),  P(0.48f, 0.38f),  col, th); // drop R
+            dl->AddCircleFilled(P(0.0f, -0.60f),  nr, col);  // parent
+            dl->AddCircleFilled(P(-0.48f, 0.58f), nr, col);  // child L
+            dl->AddCircleFilled(P(0.48f, 0.58f),  nr, col);  // child R
+            break;
+        }
+        case EditorIcon::Camera: {
+            // Body centred on y=0; lens cone mirror-symmetric about y=0.
+            dl->AddRect(P(-0.62f, -0.36f), P(0.30f, 0.36f), col, r * 0.14f, 0, th);
+            dl->AddLine(P(0.30f, -0.16f), P(0.66f, -0.32f), col, th);  // lens top
+            dl->AddLine(P(0.30f,  0.16f), P(0.66f,  0.32f), col, th);  // lens bottom
+            dl->AddLine(P(0.66f, -0.32f), P(0.66f,  0.32f), col, th);  // lens back
+            dl->AddCircle(P(-0.16f, 0.0f), r * 0.17f, col, 16, th);    // lens glass
+            break;
+        }
+        case EditorIcon::LightDir: {
+            // Sun: 8 evenly spaced rays, all starting a fixed gap outside the
+            // circle edge and all exactly the same length.
+            const float cr = r * 0.30f;
+            dl->AddCircle(c, cr, col, 20, th);
+            for (int i = 0; i < 8; ++i) {
+                float a = static_cast<float>(i) * 0.78539816f;  // pi/4
+                ImVec2 d(std::cos(a), std::sin(a));
+                dl->AddLine(ImVec2(c.x + d.x * (cr + r * 0.14f),
+                                   c.y + d.y * (cr + r * 0.14f)),
+                            ImVec2(c.x + d.x * (cr + r * 0.46f),
+                                   c.y + d.y * (cr + r * 0.46f)), col, th);
+            }
+            break;
+        }
+        case EditorIcon::LightPoint: {
+            // Point: filled bulb + 8 short rays, same gap/length treatment as
+            // the sun so the light family reads consistently.
+            const float cr = r * 0.26f;
+            dl->AddCircleFilled(c, cr, col);
+            for (int i = 0; i < 8; ++i) {
+                float a = static_cast<float>(i) * 0.78539816f;  // pi/4
+                ImVec2 d(std::cos(a), std::sin(a));
+                dl->AddLine(ImVec2(c.x + d.x * (cr + r * 0.12f),
+                                   c.y + d.y * (cr + r * 0.12f)),
+                            ImVec2(c.x + d.x * (cr + r * 0.34f),
+                                   c.y + d.y * (cr + r * 0.34f)), col, th);
+            }
+            break;
+        }
+        case EditorIcon::LightSpot: {
+            ImVec2 apex = P(0.0f, -0.62f);
+            dl->AddCircleFilled(apex, r * 0.15f, col);
+            dl->AddLine(apex, P(-0.52f, 0.55f), col, th);
+            dl->AddLine(apex, P(0.52f, 0.55f),  col, th);
+            dl->AddLine(P(-0.52f, 0.55f), P(0.52f, 0.55f), col, th);
+            break;
+        }
+        case EditorIcon::Anim: {
+            dl->AddLine(P(-0.80f, 0.0f), P(0.80f, 0.0f), col, th);
+            ImVec2 dia[4] = { P(0.0f, -0.42f), P(0.34f, 0.0f),
+                              P(0.0f, 0.42f),  P(-0.34f, 0.0f) };
+            dl->AddConvexPolyFilled(dia, 4, col);
+            dl->AddLine(P(-0.52f, -0.17f), P(-0.52f, 0.17f), col, th);
+            dl->AddLine(P(0.52f, -0.17f),  P(0.52f, 0.17f),  col, th);
             break;
         }
     }

@@ -133,21 +133,12 @@ namespace {
         return -1;
     }
 
-    const char* presetName(int idx) {
-        switch (idx) {
-            case 0:  return "Low";
-            case 1:  return "Medium";
-            case 2:  return "High";
-            case 3:  return "Cinematic";
-            default: return "Custom";
-        }
-    }
 }
 
 void BottomPanel::draw(EditorContext& ec) {
     ImVec2 avail = ImGui::GetContentRegionAvail();
 
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.10f, 0.10f, 0.11f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::NAV_BG);
     if (ImGui::BeginChild("##BottomNav", ImVec2(150.0f, avail.y), ImGuiChildFlags_Borders)) {
         const char* lastGroup = nullptr;
         for (int i = 0; i < kSectionCount; ++i) {
@@ -237,10 +228,12 @@ void BottomPanel::drawPresetBar(EditorContext& ec) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Restore documented defaults (keeps the HDR / LUT paths)");
 
-    ImGui::SameLine(0, 16);
-    ImGui::TextColored(active >= 0 ? EditorStyle::ACCENT
-                                   : ImVec4(0.65f, 0.65f, 0.65f, 1.0f),
-        "Active: %s", presetName(active));
+    // The highlighted button already says which preset is active; only the
+    // "no preset matches" case needs a word, since nothing is highlighted then.
+    if (active < 0) {
+        ImGui::SameLine(0, 16);
+        ImGui::TextDisabled("Custom");
+    }
 }
 
 void BottomPanel::drawLightingTab(EditorContext& ec) {
@@ -278,7 +271,8 @@ void BottomPanel::drawLightingTab(EditorContext& ec) {
         if (env.environmentMapPath.empty())
             ImGui::TextDisabled("No map - flat ambient fallback");
         else
-            ImGui::TextDisabled("Active: %s", env.environmentMapPath.c_str());
+            ImGui::TextDisabled("%s",
+                std::filesystem::path(env.environmentMapPath).filename().string().c_str());
         ImGui::EndDisabled();
     }
 
@@ -438,7 +432,8 @@ void BottomPanel::drawEffectsTab(EditorContext& ec) {
         sliderF("Intensity", "##LutInt", &env.colorGradeIntensity, 0.0f, 1.0f, "%.2f",
                 "Blend toward the graded look");
         if (!env.colorLutPath.empty())
-            ImGui::TextDisabled("Active: %s", env.colorLutPath.c_str());
+            ImGui::TextDisabled("%s",
+                std::filesystem::path(env.colorLutPath).filename().string().c_str());
         ImGui::EndDisabled();
     }
 }
