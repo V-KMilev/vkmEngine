@@ -122,12 +122,21 @@ struct EnvironmentConfig {
     std::string colorLutPath        = "";
     float       colorGradeIntensity = 1.0f;
 
-    // Post-processing. Bloom is blended in linear HDR before exposure + AgX.
+    // Display transform / tone mapping curve owned by the composite pass.
+    // 0 = AgX (filmic, desaturates highlights), 1 = Khronos PBR Neutral
+    // (albedo-faithful - matches online glTF viewers), 2 = ACES, 3 = Reinhard.
+    // Default 1: makes metals/colored materials read like the PBR references.
+    int tonemap = 1;
+
+    // Post-processing. Bloom is blended in linear HDR before exposure.
     float bloomStrength = 0.04f;
 
-    // Auto-exposure (eye adaptation). When on, the composite derives exposure
-    // from the adapted scene luminance; the camera exposure becomes EV bias.
-    bool  autoExposure  = true;
+    // Auto-exposure (eye adaptation). OFF by default: fixed-exposure is what
+    // glTF/PBR reference viewers (Khronos sample-viewer, model-viewer) use, so
+    // material color/contrast reads as intended instead of being flattened by
+    // continuous re-metering. When on, the composite derives exposure from the
+    // adapted scene luminance and the camera exposure becomes EV bias.
+    bool  autoExposure  = false;
     float exposureKey   = 0.18f;   // target middle-gray
     float exposureSpeed = 2.5f;    // adaptation rate (per second; 1.5 felt sluggish)
     float exposureMin   = 0.03f;   // clamp on the derived exposure

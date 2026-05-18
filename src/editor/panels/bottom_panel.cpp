@@ -1,5 +1,6 @@
 #include "panels/bottom_panel.h"
 #include "framework/editor_common.h"
+#include "ui/editor_style.h"
 
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
@@ -95,23 +96,50 @@ namespace {
             case Preset::Low:
                 env.ssao = false; env.ssr = false; env.taa = false;
                 env.dof = false; env.motionBlur = false;
-                env.bloomStrength = 0.0f; env.autoExposure = true;
+                env.bloomStrength = 0.0f;
                 break;
             case Preset::Medium:
                 env.ssao = true;  env.ssr = false; env.taa = false;
                 env.dof = false; env.motionBlur = false;
-                env.bloomStrength = 0.03f; env.autoExposure = true;
+                env.bloomStrength = 0.03f;
                 break;
             case Preset::High:
                 env.ssao = true;  env.ssr = true;  env.taa = false;
                 env.dof = false; env.motionBlur = false;
-                env.bloomStrength = 0.04f; env.autoExposure = true;
+                env.bloomStrength = 0.04f;
                 break;
             case Preset::Cinematic:
                 env.ssao = true;  env.ssr = true;  env.taa = true;
                 env.dof = true;  env.motionBlur = true;
-                env.bloomStrength = 0.06f; env.autoExposure = true;
+                env.bloomStrength = 0.06f;
                 break;
+        }
+    }
+
+    // Which preset (if any) the current env exactly matches. -1 = Custom
+    // (the user hand-tuned a controlled value since applying a preset).
+    int detectPreset(const EnvironmentConfig& env) {
+        auto matches = [&](bool ssao, bool ssr, bool taa, bool dof,
+                           bool mb, float bloom) {
+            float d = env.bloomStrength - bloom;
+            if (d < 0.0f) d = -d;
+            return env.ssao == ssao && env.ssr == ssr && env.taa == taa &&
+                   env.dof == dof && env.motionBlur == mb && d < 5e-4f;
+        };
+        if (matches(false, false, false, false, false, 0.00f)) return 0; // Low
+        if (matches(true,  false, false, false, false, 0.03f)) return 1; // Medium
+        if (matches(true,  true,  false, false, false, 0.04f)) return 2; // High
+        if (matches(true,  true,  true,  true,  true,  0.06f)) return 3; // Cinematic
+        return -1;
+    }
+
+    const char* presetName(int idx) {
+        switch (idx) {
+            case 0:  return "Low";
+            case 1:  return "Medium";
+            case 2:  return "High";
+            case 3:  return "Cinematic";
+            default: return "Custom";
         }
     }
 }
@@ -175,15 +203,29 @@ void BottomPanel::drawRenderingSection(EditorContext& ec) {
 void BottomPanel::drawPresetBar(EditorContext& ec) {
     auto& env = ec.renderSystem->getEnvironment();
 
+    const int active = detectPreset(env);
+
     ImGui::TextDisabled("Preset");
     ImGui::SameLine();
-    if (ImGui::SmallButton("Low"))       applyPreset(env, Preset::Low);
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Medium"))    applyPreset(env, Preset::Medium);
-    ImGui::SameLine();
-    if (ImGui::SmallButton("High"))      applyPreset(env, Preset::High);
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Cinematic")) applyPreset(env, Preset::Cinematic);
+
+    // The active preset's button is tinted with the editor accent so it is
+    // obvious which one the renderer is on; "Custom" once a value is tuned.
+    auto presetButton = [&](const char* label, Preset p, int idx) {
+        const bool on = (active == idx);
+        if (on) {
+            ImGui::PushStyleColor(ImGuiCol_Button,        EditorStyle::ACCENT);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, EditorStyle::ACCENT);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  EditorStyle::ACCENT);
+        }
+        if (ImGui::SmallButton(label)) applyPreset(env, p);
+        if (on) ImGui::PopStyleColor(3);
+        ImGui::SameLine();
+    };
+    presetButton("Low",       Preset::Low,       0);
+    presetButton("Medium",    Preset::Medium,    1);
+    presetButton("High",      Preset::High,      2);
+    presetButton("Cinematic", Preset::Cinematic, 3);
+
     ImGui::SameLine(0, 16);
     if (ImGui::SmallButton("Reset Defaults")) {
         const std::string ep = env.environmentMapPath;
@@ -194,6 +236,11 @@ void BottomPanel::drawPresetBar(EditorContext& ec) {
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Restore documented defaults (keeps the HDR / LUT paths)");
+
+    ImGui::SameLine(0, 16);
+    ImGui::TextColored(active >= 0 ? EditorStyle::ACCENT
+                                   : ImVec4(0.65f, 0.65f, 0.65f, 1.0f),
+        "Active: %s", presetName(active));
 }
 
 void BottomPanel::drawLightingTab(EditorContext& ec) {
@@ -207,7 +254,7 @@ void BottomPanel::drawLightingTab(EditorContext& ec) {
     if (iblOn != iblPrev) {
         if (iblOn) {
             env.environmentMapPath = !m_iblPathMemo.empty()
-                ? m_iblPathMemo : std::string("assets/env/environment.hdr");
+                ? m_iblPathMemo : std::string("assets/envs/environment.hdr");
         } else {
             m_iblPathMemo = env.environmentMapPath;
             env.environmentMapPath.clear();
@@ -225,7 +272,7 @@ void BottomPanel::drawLightingTab(EditorContext& ec) {
         ImGui::SameLine();
         if (ImGui::Button("Apply##IBL")) env.environmentMapPath = hdrBuf;
         ImGui::SameLine();
-        fileBrowse("ibl", "assets/env", {".hdr", ".HDR"}, env.environmentMapPath);
+        fileBrowse("ibl", "assets/envs", {".hdr", ".HDR"}, env.environmentMapPath);
         sliderF("Intensity", "##IBLInt", &env.iblIntensity, 0.0f, 5.0f, "%.2f",
                 "Strength of image-based ambient + specular");
         if (env.environmentMapPath.empty())
@@ -270,6 +317,15 @@ void BottomPanel::drawCameraTab(EditorContext& ec) {
     auto& env = ec.renderSystem->getEnvironment();
 
     if (cardHeader("exp", "Exposure", nullptr)) {
+        drawPropertyLabel("Tone Mapping");
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::Combo("##Tonemap", &env.tonemap,
+            "AgX (filmic)\0PBR Neutral (albedo-faithful)\0ACES\0Reinhard\0");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "Display transform. PBR Neutral preserves material color\n"
+                "(matches online glTF viewers); AgX is a desaturating film look.");
+
         const float camExp = (ctx.visibility && ctx.visibility->hasCamera)
             ? ctx.visibility->cameraExposure : 1.0f;
         ImGui::TextDisabled("Manual camera exposure: %.2f (edit on the Camera entity)",

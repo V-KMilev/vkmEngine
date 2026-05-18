@@ -1,9 +1,10 @@
 /**
- * Composite fragment shader - exposure -> AgX -> sRGB.
+ * Composite fragment shader - exposure -> tone map -> sRGB.
  *
  * The single owner of the display transform. Samples the resolved linear HDR
- * scene, applies camera exposure, the AgX tone mapping curve (Troy Sobotka /
- * minimal fit, "punchy" look), then the sRGB OETF for the 8-bit backbuffer.
+ * scene, applies camera exposure, a selectable tone-mapping curve
+ * (u_tonemap: AgX / Khronos PBR Neutral / ACES / Reinhard), then the sRGB
+ * OETF for the 8-bit backbuffer.
  *
  * Exposure rides in the camera UBO (cameraPosition.w) bound for the frame.
  */
@@ -16,6 +17,12 @@ out vec4 FragColor;
 uniform sampler2D u_hdr;
 uniform sampler2D u_bloom;
 uniform float u_bloomStrength;
+
+// Display transform selector: 0 = AgX (filmic, desaturates highlights),
+// 1 = Khronos PBR Neutral (albedo-faithful - matches online glTF viewers),
+// 2 = ACES filmic, 3 = Reinhard. Each outputs display-linear; the sRGB
+// OETF below re-encodes for the 8-bit buffer.
+uniform int u_tonemap;
 
 uniform sampler2D u_adaptedLum;
 uniform int   u_autoExposure;
@@ -94,6 +101,35 @@ vec3 lutLookup(vec3 c) {
                texture(u_colorLut, vec2(u1, v)).rgb, fb);
 }
 
+// Khronos PBR Neutral tone mapper. Purpose-built to preserve material
+// color/hue (only the near-white highlights compress + desaturate), which
+// is why online glTF/PBR previews look "more realistic" than a filmic
+// curve. https://github.com/KhronosGroup/ToneMapping
+vec3 pbrNeutral(vec3 color) {
+    const float startCompression = 0.8 - 0.04;
+    const float desaturation     = 0.15;
+
+    float x = min(color.r, min(color.g, color.b));
+    float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
+    color -= offset;
+
+    float peak = max(color.r, max(color.g, color.b));
+    if (peak < startCompression) return color;
+
+    float d = 1.0 - startCompression;
+    float newPeak = 1.0 - d * d / (peak + d - startCompression);
+    color *= newPeak / peak;
+
+    float g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
+    return mix(color, newPeak * vec3(1.0), g);
+}
+
+// Narkowicz ACES filmic approximation (display-linear out).
+vec3 acesFilmic(vec3 x) {
+    const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+
 vec3 sRGBEncode(vec3 c) {
     vec3 lo = c * 12.92;
     vec3 hi = 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
@@ -117,9 +153,18 @@ void main() {
     }
     hdr *= exposure;
 
-    vec3 color = agx(hdr);
-    color = agxLook(color);
-    color = agxEotf(color);
+    vec3 color;
+    if (u_tonemap == 0) {            // AgX - filmic, desaturating
+        color = agx(hdr);
+        color = agxLook(color);
+        color = agxEotf(color);
+    } else if (u_tonemap == 2) {     // ACES filmic
+        color = acesFilmic(hdr);
+    } else if (u_tonemap == 3) {     // Reinhard (extended)
+        color = hdr / (hdr + vec3(1.0));
+    } else {                         // 1 = Khronos PBR Neutral (default)
+        color = pbrNeutral(hdr);
+    }
     color = sRGBEncode(clamp(color, 0.0, 1.0));
 
     if (u_lutEnabled == 1) {
