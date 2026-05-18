@@ -48,6 +48,14 @@ class GLShadowPass : public RenderPass {
 
     private:
         ShaderHandle m_depthShader;
+
+        // Dirty-skip: a static scene + static sun re-rasterizing 4 cascades +
+        // 6 cube faces every frame is pure waste. When the shadow signature
+        // (camera frustum, caster lights, caster geometry) is unchanged we
+        // skip the whole pass - the atlas depth and the Shadow UBO (binding 3,
+        // nothing else rebinds it) stay valid from the last render.
+        uint64_t m_lastSig  = 0;
+        bool     m_havePrev = false;
 };
 
 } // namespace Engine

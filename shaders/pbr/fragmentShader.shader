@@ -131,9 +131,12 @@ uniform sampler2D   u_brdfLUT;
 uniform int   u_hasIBL;
 uniform float u_iblIntensity;
 
-// Screen-space AO (GTAO), sampled by window coordinate.
+// Screen-space AO (GTAO). u_ssao is HALF resolution, so it is sampled by
+// normalized screen UV (fragcoord / full viewport) - independent of the AO
+// texture's own size - and linear-filtered up by the hardware.
 uniform sampler2D u_ssao;
 uniform int       u_ssaoEnabled;
+uniform vec2      u_screenSize;   // full viewport pixels
 
 const float MAX_PREFILTER_LOD = 6.0;  // GLIBL::PREFILTER_MIPS - 1
 
@@ -525,7 +528,7 @@ void main() {
     // separate occlusion (below) so metals do not read as dull plastic.
     float ssaoFactor = 1.0;
     if (u_ssaoEnabled == 1) {
-        ssaoFactor = texture(u_ssao, gl_FragCoord.xy / vec2(textureSize(u_ssao, 0))).r;
+        ssaoFactor = texture(u_ssao, gl_FragCoord.xy / u_screenSize).r;
     }
 
     vec3 ambient;

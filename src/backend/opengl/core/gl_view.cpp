@@ -179,23 +179,33 @@ GLMesh* GLView::getMutableMesh(const MeshHandle& handle) {
 // Shaders aren't referenced by entities, so we resolve them lazily — one
 // call per pass per frame. syncTable handles the "build on first reference
 // or rebuild on version bump" path; hot reload threads through here.
+// The single-element scratch lists below are thread_local and reused (clear +
+// push_back, capacity kept) instead of a fresh std::vector per call: these
+// run multiple times per frame from nearly every pass, on the render thread.
+// Same pattern as ensureMaterialTextures.
 GLShader* GLView::resolveShader(const ShaderHandle& handle, const ResourceManager& resources) {
     if (!handle) return nullptr;
-    std::vector<ShaderHandle> one{handle};
+    thread_local std::vector<ShaderHandle> one;
+    one.clear();
+    one.push_back(handle);
     syncTable<ShaderAsset>(m_shaderTable, one, resources);
     return m_shaderTable.entries[handle.id()].get();
 }
 
 const GLMaterial* GLView::ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources) {
     if (!handle) return nullptr;
-    std::vector<MaterialHandle> one{handle};
+    thread_local std::vector<MaterialHandle> one;
+    one.clear();
+    one.push_back(handle);
     syncTable<MaterialAsset>(m_materialTable, one, resources);
     return m_materialTable.entries[handle.id()].get();
 }
 
 GLMesh* GLView::ensureMesh(const MeshHandle& handle, const ResourceManager& resources) {
     if (!handle) return nullptr;
-    std::vector<MeshHandle> one{handle};
+    thread_local std::vector<MeshHandle> one;
+    one.clear();
+    one.push_back(handle);
     syncTable<MeshAsset>(m_meshTable, one, resources);
     return m_meshTable.entries[handle.id()].get();
 }
