@@ -43,33 +43,18 @@ void InspectorPanel::draw(EditorContext& ec) {
         }
         auto& name = scene.get<Name>(id);
 
-        char icon[8];
-        getEntityIcon(scene, id, icon, sizeof(icon));
-
-        ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::ACCENT);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(icon);
-        ImGui::PopStyleColor();
+        // Type glyph + editable name + id. The component cards below already
+        // show what is attached, so no redundant text summary here.
+        const float ih = ImGui::GetFrameHeight();
+        inlineIcon(entityIconKind(scene, id), ih,
+                   ImGui::GetColorU32(EditorStyle::ACCENT));
         ImGui::SameLine();
 
         ImGui::SetNextItemWidth(-46.0f);
         ImGui::InputText("##Name", name.value, sizeof(name.value));
         ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
         ImGui::TextDisabled("#%u", id.index);
-
-        // One-line summary of which components are attached.
-        char summary[160] = {0};
-        auto add = [&](const char* s) {
-            if (summary[0]) strncat(summary, " | ", sizeof(summary) - strlen(summary) - 1);
-            strncat(summary, s, sizeof(summary) - strlen(summary) - 1);
-        };
-        if (scene.has<Transform>(id))  add("Transform");
-        if (scene.has<Mesh>(id))       add("Mesh");
-        if (scene.has<Light>(id))      add("Light");
-        if (scene.has<Camera>(id))     add("Camera");
-        if (scene.has<Animation>(id))  add("Animation");
-        if (scene.has<Hierarchy>(id))  add("Hierarchy");
-        ImGui::TextDisabled("%s", summary[0] ? summary : "(no components)");
     }
 
     ImGui::Spacing();
@@ -91,9 +76,7 @@ void InspectorPanel::draw(EditorContext& ec) {
 
 void InspectorPanel::drawAddComponentMenu(Scene& scene, EntityId id) {
     ImGui::PushStyleColor(ImGuiCol_Button, EditorStyle::ACCENT);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-        ImVec4(EditorStyle::ACCENT.x + 0.08f, EditorStyle::ACCENT.y + 0.08f,
-               EditorStyle::ACCENT.z + 0.08f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, EditorStyle::ACCENT_HOV);
     const bool clicked = ImGui::Button("+  Add Component", ImVec2(-1, 0));
     ImGui::PopStyleColor(2);
     if (clicked) ImGui::OpenPopup("##AddComp");
@@ -218,12 +201,14 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
             const MaterialAsset& m = resources.get(mesh.material);
             ImGui::TextDisabled("Material: %s",
                 m.name.empty() ? "(unnamed)" : m.name.c_str());
-            if (ImGui::Button("Edit Material")) {
+            const float bw = (ImGui::GetContentRegionAvail().x
+                              - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+            if (ImGui::Button("Edit Material", ImVec2(bw, 0))) {
                 state.materialEditorTarget = mesh.material;
                 state.showMaterialEditor   = true;
             }
             ImGui::SameLine();
-            if (ImGui::Button("Duplicate")) {
+            if (ImGui::Button("Duplicate", ImVec2(bw, 0))) {
                 MaterialAsset copy = m;
                 copy.version = 1;
                 copy.name = (m.name.empty() ? std::string("material") : m.name) + " copy";
@@ -402,12 +387,12 @@ void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, Enti
             if (hh.firstChild) {
                 ImGui::TextDisabled("Children:");
                 HierarchyOperations::forEachChild(scene, id, [&](EntityId child) {
-                    char icon[8], name[64];
-                    getEntityIcon(scene, child, icon, sizeof(icon));
+                    char name[64];
                     getEntityDisplayName(scene, child, name, sizeof(name));
-                    char lbl[96];
-                    snprintf(lbl, sizeof(lbl), "  %s %s", icon, name);
-                    if (ImGui::Selectable(lbl, state.selectedEntity == child)) {
+                    char cid[16];
+                    snprintf(cid, sizeof(cid), "%u", child.index);
+                    if (entitySelectable(cid, state.selectedEntity == child,
+                                         entityIconKind(scene, child), name)) {
                         state.selectedEntity = child;
                     }
                 });

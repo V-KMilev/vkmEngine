@@ -7,6 +7,7 @@
 
 #include "ecs/entity.h"
 #include "system/animation/easing.h"
+#include "ui/editor_icons.h"
 
 namespace Engine {
 
@@ -63,6 +64,24 @@ void drawSectionHeader(const char* title, const char* hint);
 bool drawEasingCombo(const char* id, EasingFunction& easing);
 
 void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t bufSize);
-void getEntityIcon(const Scene& scene, EntityId id, char* buf, size_t bufSize);
+
+/// Which entity-type glyph represents @p id (camera / light variant / mesh /
+/// animation / generic). Replaces the [C]/[M] ASCII badge.
+EditorIcon entityIconKind(const Scene& scene, EntityId id);
+
+/// Draw a non-interactive vector icon inline: reserves a @p size square at the
+/// cursor and renders @p icon centered in it (pair with SameLine + text).
+void inlineIcon(EditorIcon icon, float size, ImU32 color);
+
+/// A tree node row prefixed with a type glyph (replaces the [C] ASCII):
+/// <arrow> <icon> <name>. Forwards to TreeNodeEx; the caller still handles
+/// click / drag / context exactly as before. Returns the TreeNodeEx result.
+bool entityTreeNode(const void* idPtr, ImGuiTreeNodeFlags flags,
+                    EditorIcon icon, const char* name);
+
+/// A Selectable row prefixed with a type glyph. @p idStr keeps the ImGui id
+/// stable when names collide. Returns true the frame it is clicked.
+bool entitySelectable(const char* idStr, bool selected,
+                      EditorIcon icon, const char* name);
 
 } // namespace Engine

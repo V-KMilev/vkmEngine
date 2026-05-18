@@ -29,17 +29,35 @@ inline const ImVec4 AXIS_X_HOV  = ImVec4(0.94f, 0.34f, 0.34f, 1.00f);
 inline const ImVec4 AXIS_Y_HOV  = ImVec4(0.41f, 0.85f, 0.34f, 1.00f);
 inline const ImVec4 AXIS_Z_HOV  = ImVec4(0.34f, 0.49f, 0.94f, 1.00f);
 
-// Accent used for active/selected affordances (toolbar tool, snap on, ...).
-inline const ImVec4 ACCENT      = ImVec4(0.26f, 0.52f, 0.88f, 1.00f);
+// Accent used for active/selected affordances (toolbar tool, snap on,
+// active preset, slider grabs, selection, ...). A single vivid blue drives
+// the whole UI - changing this one value re-tints every accent surface.
+inline const ImVec4 ACCENT      = ImVec4(0.29f, 0.62f, 1.00f, 1.00f);
+inline const ImVec4 ACCENT_HOV  = ImVec4(0.42f, 0.71f, 1.00f, 1.00f);
+inline const ImVec4 ACCENT_DIM  = ImVec4(0.29f, 0.62f, 1.00f, 0.22f);  // translucent fill
 
-// Panel title text (Hierarchy / Inspector / Bottom section headers).
-inline const ImVec4 HEADER_TEXT = ImVec4(0.70f, 0.78f, 0.90f, 1.00f);
+// Panel / section title text.
+inline const ImVec4 HEADER_TEXT = ImVec4(0.78f, 0.85f, 0.97f, 1.00f);
+
+// Component-card header (collapsing). Hoisted here so the card look stays
+// in lockstep with the theme instead of being hardcoded in the widget.
+inline const ImVec4 CARD_HEADER     = ImVec4(0.175f, 0.190f, 0.225f, 1.00f);
+inline const ImVec4 CARD_HEADER_HOV = ImVec4(0.235f, 0.255f, 0.300f, 1.00f);
+inline const ImVec4 CARD_HEADER_ACT = ImVec4(0.215f, 0.235f, 0.280f, 1.00f);
+
+// Left master-detail nav background (Bottom / Preferences).
+inline const ImVec4 NAV_BG      = ImVec4(0.090f, 0.095f, 0.110f, 1.00f);
 
 // Translucent background for floating viewport overlays.
-inline const ImVec4 OVERLAY_BG  = ImVec4(0.11f, 0.11f, 0.12f, 0.85f);
+inline const ImVec4 OVERLAY_BG  = ImVec4(0.10f, 0.10f, 0.12f, 0.88f);
 
-// Danger hover (delete buttons).
-inline const ImVec4 DANGER_HOV  = ImVec4(0.72f, 0.26f, 0.26f, 1.00f);
+// Destructive actions (delete / remove). One pair, used everywhere.
+inline const ImVec4 DANGER      = ImVec4(0.86f, 0.34f, 0.34f, 1.00f);
+inline const ImVec4 DANGER_HOV  = ImVec4(0.74f, 0.26f, 0.26f, 1.00f);
+
+// Typography hierarchy: panel/section titles render at this font scale so
+// the eye gets structure in a dense, feature-heavy editor.
+inline constexpr float TITLE_SCALE = 1.16f;
 
 // Width reserved for aligned property labels in inspector-style rows.
 inline constexpr float LABEL_WIDTH = 100.0f;

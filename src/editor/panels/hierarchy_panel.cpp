@@ -85,11 +85,10 @@ void HierarchyPanel::draw(EditorContext& ec) {
                     ImGuiTreeNodeFlags f = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen
                                          | ImGuiTreeNodeFlags_SpanAvailWidth;
                     if (state.selectedEntity == id) f |= ImGuiTreeNodeFlags_Selected;
-                    char icon[8], name[64];
-                    getEntityIcon(scene, id, icon, sizeof(icon));
+                    char name[64];
                     getEntityDisplayName(scene, id, name, sizeof(name));
-                    ImGui::TreeNodeEx(reinterpret_cast<void*>(static_cast<uintptr_t>(id.index)),
-                                     f, "%s  %s", icon, name);
+                    entityTreeNode(reinterpret_cast<void*>(static_cast<uintptr_t>(id.index)),
+                                   f, entityIconKind(scene, id), name);
                     if (ImGui::IsItemClicked()) state.selectedEntity = id;
                     drawEntityContextMenu(scene, state, id);
                 } else {
@@ -123,12 +122,11 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
     if (!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     if (state.selectedEntity == entity) flags |= ImGuiTreeNodeFlags_Selected;
 
-    char icon[8], name[64];
-    getEntityIcon(scene, entity, icon, sizeof(icon));
+    char name[64];
     getEntityDisplayName(scene, entity, name, sizeof(name));
-    bool nodeOpen = ImGui::TreeNodeEx(
+    bool nodeOpen = entityTreeNode(
         reinterpret_cast<void*>(static_cast<uintptr_t>(entity.index)),
-        flags, "%s  %s", icon, name);
+        flags, entityIconKind(scene, entity), name);
 
     if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
         ImGui::SetDragDropPayload("VKM_ENTITY", &entity, sizeof(EntityId));
