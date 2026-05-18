@@ -1,5 +1,6 @@
 #include "panels/preferences_panel.h"
 #include "framework/editor_common.h"
+#include "ui/editor_style.h"
 
 #include "system/camera/camera_controller.h"
 #include "platform/window/window_manager.h"
@@ -39,7 +40,7 @@ void PreferencesPanel::draw(EditorContext& ec) {
 
     ImVec2 avail = ImGui::GetContentRegionAvail();
 
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.10f, 0.10f, 0.11f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::NAV_BG);
     if (ImGui::BeginChild("##PrefNav", ImVec2(150.0f, avail.y), ImGuiChildFlags_Borders)) {
         const char* lastGroup = nullptr;
         for (int i = 0; i < kSectionCount; ++i) {
