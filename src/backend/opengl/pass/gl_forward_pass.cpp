@@ -101,6 +101,10 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         pbr->setUniform1i("u_hasIBL", iblReady ? 1 : 0);
         pbr->setUniform1f("u_iblIntensity", view.environment.iblIntensity);
         pbr->setUniform1i("u_ssaoEnabled", ssaoOn ? 1 : 0);
+        // Half-res AO is sampled by normalized screen UV (see pbr frag).
+        pbr->setUniform2f("u_screenSize",
+            static_cast<float>(view.viewportWidth),
+            static_cast<float>(view.viewportHeight));
     }
 
     // CameraBlock and LightsBlock UBOs are owned by GLView and bound once
