@@ -99,6 +99,7 @@ int main() {
             {Engine::GLConfig::UniformNames::PrefilterMap,               Engine::GLConfig::TextureSlots::PrefilterMap},
             {Engine::GLConfig::UniformNames::BrdfLUT,                    Engine::GLConfig::TextureSlots::BrdfLUT},
             {Engine::GLConfig::UniformNames::SSAO,                       Engine::GLConfig::TextureSlots::SSAO},
+            {Engine::GLConfig::UniformNames::EnvCube,                    Engine::GLConfig::TextureSlots::EnvCube},
         };
         const std::unordered_map<std::string, int> unlitSamplers = {
             {Engine::GLConfig::UniformNames::AlbedoTexture,   Engine::GLConfig::TextureSlots::Albedo},
@@ -226,7 +227,7 @@ int main() {
         cameraController.setCameraEntity(cameraEntity);
 
         // Default IBL environment (editable live from the Environment panel).
-        renderSystem.getEnvironment().environmentMapPath = rootDir + "/assets/env/environment.hdr";
+        renderSystem.getEnvironment().environmentMapPath = rootDir + "/assets/envs/environment.hdr";
 
         engine.run();
 

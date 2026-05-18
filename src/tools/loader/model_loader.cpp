@@ -261,9 +261,11 @@ namespace {
             aiColor3D sheen;
             if (mt->Get(AI_MATKEY_SHEEN_COLOR_FACTOR, sheen) == AI_SUCCESS)
                 out.sheenColor = toVec3(sheen);
+            // KHR_materials_emissive_strength. Captured here, applied AFTER
+            // the emissive-texture fallback below (so a dropped factor does
+            // not zero out the strength too).
             float emInt = 1.0f;
-            if (mt->Get(AI_MATKEY_EMISSIVE_INTENSITY, emInt) == AI_SUCCESS)
-                out.emission *= emInt;  // KHR_materials_emissive_strength
+            mt->Get(AI_MATKEY_EMISSIVE_INTENSITY, emInt);
 
             std::unordered_map<std::string, TextureHandle> cache;
             auto pick = [&](std::initializer_list<aiTextureType> types, bool srgb) {
@@ -283,6 +285,19 @@ namespace {
                                   aiTextureType_LIGHTMAP}, false);
             out.emissionTexture = pick({aiTextureType_EMISSIVE,
                                         aiTextureType_EMISSION_COLOR}, true);
+
+            // glTF multiplies the emissive texture by emissiveFactor. Assimp's
+            // glTF importer frequently drops the factor; if a texture is bound
+            // but the factor came back ~black, fall back to white so the glow
+            // (DamagedHelmet vents/eyes, etc.) is not silently lost. Then
+            // apply KHR_materials_emissive_strength last.
+            if (out.emissionTexture &&
+                out.emission.r < 1e-4f &&
+                out.emission.g < 1e-4f &&
+                out.emission.b < 1e-4f) {
+                out.emission = glm::vec3(1.0f);
+            }
+            out.emission *= emInt;
             out.clearcoatTexture    = pick({aiTextureType_CLEARCOAT},    false);
             out.transmissionTexture = pick({aiTextureType_TRANSMISSION}, false);
             out.heightTexture       = pick({aiTextureType_DISPLACEMENT}, false);

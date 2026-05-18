@@ -55,6 +55,10 @@ target_compile_definitions(BuildInfo INTERFACE
 
 target_link_libraries(EngineEditor PRIVATE BuildInfo)
 
+# EngineTools resolves relative asset paths (HDR env / color LUT) against
+# APP_ROOT_DIR, so it needs the same build-info definitions.
+target_link_libraries(EngineTools PRIVATE BuildInfo)
+
 add_executable(${PROJECT_NAME}
     main.cpp
 )

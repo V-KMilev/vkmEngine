@@ -69,9 +69,14 @@ GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL), m_context() {
     
     // Initialize default OpenGL state
     m_context.setDefaultState();
-    
+
     // Disable face culling by default (can be overridden by render passes)
     m_context.setFaceCulling(false);
+
+    // Filter across cubemap face borders. Without this the IBL prefilter /
+    // irradiance cubemaps show hard seams on glossy reflections (worst at the
+    // low mip resolutions the prefilter uses). Global, immutable state.
+    glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
 }
 
 void GLBackend::resize(uint32_t width, uint32_t height) {

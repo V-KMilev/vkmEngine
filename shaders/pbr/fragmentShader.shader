@@ -126,6 +126,7 @@ uniform sampler2D u_roughnessTexture;
 // ambient fallback; the maps are bound by the forward pass when a bake exists.
 uniform samplerCube u_irradianceMap;
 uniform samplerCube u_prefilterMap;
+uniform samplerCube u_envCube;       // raw env radiance - sharp mirror at low roughness
 uniform sampler2D   u_brdfLUT;
 uniform int   u_hasIBL;
 uniform float u_iblIntensity;
@@ -134,7 +135,7 @@ uniform float u_iblIntensity;
 uniform sampler2D u_ssao;
 uniform int       u_ssaoEnabled;
 
-const float MAX_PREFILTER_LOD = 4.0;  // GLIBL::PREFILTER_MIPS - 1
+const float MAX_PREFILTER_LOD = 6.0;  // GLIBL::PREFILTER_MIPS - 1
 
 bool hasTex(int flag) {
     return (u_material.textureFlags & flag) != 0;
@@ -179,6 +180,24 @@ vec3 getNormal(vec2 uv, mat3 tbn) {
     vec3 n = texture(u_normalTexture, uv).rgb * 2.0 - 1.0;
     n.xy *= u_material.normalScale;
     return normalize(tbn * normalize(n));
+}
+
+// Geometric specular antialiasing - Karis (UE4) / Filament. Raises roughness
+// proportionally to screen-space shading-normal variance, so high-frequency
+// normal-map detail and sharp curvature do not alias into shimmering specular
+// highlights. That micro-sparkle is what makes an otherwise-correct PBR
+// surface read as "raw/CG" instead of the reference's "finished" look. No
+// ghosting and ~free (two derivatives), unlike a temporal solution.
+float specularAA(vec3 N, float roughness) {
+    const float SAA_VARIANCE  = 0.25;
+    const float SAA_THRESHOLD = 0.18;
+    vec3  dndu     = dFdx(N);
+    vec3  dndv     = dFdy(N);
+    float variance = SAA_VARIANCE * (dot(dndu, dndu) + dot(dndv, dndv));
+    float alpha2   = (roughness * roughness) * (roughness * roughness);
+    float kernel   = min(2.0 * variance, SAA_THRESHOLD);
+    float a2       = clamp(alpha2 + kernel, 0.0, 1.0);
+    return sqrt(sqrt(a2));   // back to perceptual roughness
 }
 
 // GGX / Trowbridge-Reitz normal distribution (Karis stable form).
@@ -443,6 +462,10 @@ void main() {
     Surface s = sampleSurface(uv);
     vec3 N = getNormal(uv, TBN);
 
+    // Tame specular shimmer from normal-map detail / curvature before the
+    // roughness drives both the analytic lobes and the IBL LOD.
+    s.roughness = specularAA(N, s.roughness);
+
     float f0Dielectric = pow((u_material.ior - 1.0) / (u_material.ior + 1.0), 2.0);
     vec3 f0 = mix(vec3(f0Dielectric), s.albedo, s.metallic);
 
@@ -497,6 +520,14 @@ void main() {
         Lo += evaluateLight(N, V, L, T, B, s, f0, radiance);
     }
 
+    // Screen-space AO factor, sampled once. It and the material AO map
+    // attenuate only the indirect DIFFUSE term; specular reflections get a
+    // separate occlusion (below) so metals do not read as dull plastic.
+    float ssaoFactor = 1.0;
+    if (u_ssaoEnabled == 1) {
+        ssaoFactor = texture(u_ssao, gl_FragCoord.xy / vec2(textureSize(u_ssao, 0))).r;
+    }
+
     vec3 ambient;
     if (u_hasIBL == 1) {
         // Split-sum IBL with Fdez-Aguera multiscatter energy conservation
@@ -509,6 +540,16 @@ void main() {
 
         vec3 irradiance  = texture(u_irradianceMap, N).rgb;
         vec3 prefiltered = textureLod(u_prefilterMap, R, s.roughness * MAX_PREFILTER_LOD).rgb;
+
+        // Polished metal: the prefilter (even at 512) is GGX-convolved at
+        // mip 0, so a perfect mirror still reads slightly soft. Blend in the
+        // raw environment cube at very low roughness for a true reflection.
+        // smoothstep keeps the transition seamless into the prefiltered set.
+        if (s.roughness < 0.2) {
+            vec3 sharp = textureLod(u_envCube, R, 0.0).rgb;
+            prefiltered = mix(sharp, prefiltered, smoothstep(0.0, 0.2, s.roughness));
+        }
+
         vec2 dfg         = texture(u_brdfLUT, vec2(NdotV, s.roughness)).rg;
 
         vec3  FssEss = F * dfg.x + dfg.y;
@@ -518,10 +559,19 @@ void main() {
         vec3  Fms    = FssEss * Favg / (1.0 - Ems * Favg);
         vec3  kD     = (1.0 - FssEss - Fms * Ems) * (1.0 - s.metallic);
 
-        vec3 specularIBL = FssEss * prefiltered;
-        vec3 diffuseIBL  = (Fms * Ems + kD) * irradiance * s.albedo;
+        // Diffuse indirect takes the full AO (map * SSAO). Specular indirect
+        // uses Lagarde/Frostbite specular occlusion: it preserves reflections
+        // on smooth surfaces and only occludes rough cavities, instead of the
+        // old `* s.ao` that flatly dimmed every metal.
+        float diffuseAO = s.ao * ssaoFactor;
+        float specOcc   = clamp(pow(NdotV + diffuseAO,
+                                    exp2(-16.0 * s.roughness - 1.0))
+                                - 1.0 + diffuseAO, 0.0, 1.0);
 
-        ambient = (diffuseIBL + specularIBL) * s.ao * u_iblIntensity;
+        vec3 specularIBL = FssEss * prefiltered * specOcc;
+        vec3 diffuseIBL  = (Fms * Ems + kD) * irradiance * s.albedo * diffuseAO;
+
+        ambient = (diffuseIBL + specularIBL) * u_iblIntensity;
 
         // Clearcoat IBL: a dielectric specular lobe over the base ambient.
         if (u_material.clearcoat > 0.001) {
@@ -533,14 +583,10 @@ void main() {
             ambient = ambient * (1.0 - ccFr) + ccSpecIBL * ccFr * s.ao * u_iblIntensity;
         }
     } else {
-        // Flat ambient fallback when no environment map is set.
-        ambient = u_camera.ambient.xyz * u_camera.ambient.w * s.albedo * s.ao;
-    }
-
-    // Screen-space AO darkens only the ambient/indirect term.
-    if (u_ssaoEnabled == 1) {
-        float ssao = texture(u_ssao, gl_FragCoord.xy / vec2(textureSize(u_ssao, 0))).r;
-        ambient *= ssao;
+        // Flat ambient fallback when no environment map is set. This term is
+        // purely diffuse, so the full AO (map * SSAO) applies directly.
+        ambient = u_camera.ambient.xyz * u_camera.ambient.w * s.albedo
+                * s.ao * ssaoFactor;
     }
 
     vec3 color = ambient + Lo + s.emission;

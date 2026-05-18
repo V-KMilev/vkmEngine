@@ -43,8 +43,8 @@ class GLIBL {
         static constexpr int ENV_SIZE        = 512;  ///< Environment cubemap face size
         static constexpr int ENV_MIPS        = 6;    ///< Env cube mip count (prefilter source)
         static constexpr int IRRADIANCE_SIZE = 32;   ///< Diffuse irradiance face size
-        static constexpr int PREFILTER_SIZE  = 128;  ///< Prefiltered specular base face size
-        static constexpr int PREFILTER_MIPS  = 5;    ///< Roughness mip count
+        static constexpr int PREFILTER_SIZE  = 512;  ///< Prefiltered specular base face size
+        static constexpr int PREFILTER_MIPS  = 7;    ///< Roughness mip count (512..8). MAX_PREFILTER_LOD in pbr shader = this - 1
         static constexpr int BRDF_SIZE       = 512;  ///< BRDF/DFG LUT size
 
         /// True when a (re)bake is required: a non-empty path that differs

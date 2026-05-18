@@ -57,8 +57,9 @@ namespace GLConfig {
         constexpr uint32_t PrefilterMap         = 13;  ///< IBL prefiltered specular cubemap (roughness mips)
         constexpr uint32_t BrdfLUT              = 14;  ///< IBL split-sum BRDF/DFG lookup (RG16F)
         constexpr uint32_t SSAO                 = 15;  ///< Screen-space AO factor (R16F, GTAO)
+        constexpr uint32_t EnvCube              = 16;  ///< Raw environment cubemap (sharp mirror reflection at low roughness)
 
-        constexpr uint32_t Count = 16;  ///< Total number of texture slots used
+        constexpr uint32_t Count = 17;  ///< Total number of texture slots used
     }
 
     /**

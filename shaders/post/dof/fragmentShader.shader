@@ -1,10 +1,13 @@
 /**
- * Depth of field - circle-of-confusion disc blur.
+ * Depth of field - depth-aware circle-of-confusion gather.
  *
- * CoC from the prepass view-space depth vs a focus distance/range; a 16-tap
- * Poisson disc gathers the resolved HDR scaled by CoC, then lerps sharp to
- * blurred. Background (no geometry) stays sharp. Simple gather (no separable
- * near/far bokeh) - tuned conservative, editor-toggleable.
+ * CoC is a smooth band around the focus distance (view-space depth from the
+ * prepass). A 16-tap Poisson disc gathers the resolved HDR, but every tap is
+ * weighted by ITS OWN CoC, so a sharp in-focus surface never bleeds into a
+ * defocused region (no halo around the subject) and the focused silhouette
+ * stays clean. Background (no geometry) is treated as fully defocused, so a
+ * blurred subject does not get a razor edge against it. Single gather pass
+ * (no separable near/far bokeh) - editor-toggleable.
  */
 #version 420 core
 
@@ -15,8 +18,8 @@ out vec4 FragColor;
 uniform sampler2D u_scene;
 uniform sampler2D u_viewPos;
 
-uniform float u_focusDistance;  // view-space metres in focus
-uniform float u_focusRange;     // distance over which it fully defocuses
+uniform float u_focusDistance;  // view-space metres kept sharp
+uniform float u_focusRange;     // distance over which it ramps to full blur
 uniform float u_maxBlur;        // max gather radius in UV
 
 const vec2 POISSON[16] = vec2[16](
@@ -30,28 +33,40 @@ const vec2 POISSON[16] = vec2[16](
     vec2( 0.19984126,  0.78641367), vec2( 0.14383161, -0.14100790)
 );
 
+// 0 at the focus distance, smoothly -> 1 by focusRange. Missing geometry
+// (background) reads as fully defocused so a blurred subject has no hard
+// edge against the sky.
+float cocAt(vec2 uv) {
+    vec3 vp = texture(u_viewPos, uv).xyz;
+    if (dot(vp, vp) < 1e-8) return 1.0;
+    float dist = abs(-vp.z - u_focusDistance);
+    return smoothstep(0.0, max(u_focusRange, 1e-3), dist);
+}
+
 void main() {
-    vec3 cur = texture(u_scene, vUV).rgb;
+    vec3  centerCol = texture(u_scene, vUV).rgb;
+    float centerCoC = cocAt(vUV);
 
-    vec3 vp = texture(u_viewPos, vUV).xyz;
-    if (dot(vp, vp) < 1e-8) {            // background stays sharp
-        FragColor = vec4(cur, 1.0);
+    if (centerCoC < 0.02) {              // in focus - keep it crisp
+        FragColor = vec4(centerCol, 1.0);
         return;
     }
 
-    float depth = -vp.z;                 // positive view distance
-    float coc = clamp(abs(depth - u_focusDistance) / max(u_focusRange, 1e-3), 0.0, 1.0);
-    if (coc < 0.01) {
-        FragColor = vec4(cur, 1.0);
-        return;
-    }
+    float radius = centerCoC * u_maxBlur;
 
-    float radius = coc * u_maxBlur;
-    vec3 sum = cur;
+    vec3  acc  = centerCol;
+    float wsum = 1.0;
     for (int i = 0; i < 16; ++i) {
-        sum += texture(u_scene, vUV + POISSON[i] * radius).rgb;
+        vec2  suv  = vUV + POISSON[i] * radius;
+        float scoc = cocAt(suv);
+        // Only samples at least as defocused as this pixel contribute: a
+        // sharp in-focus surface cannot smear outward, killing the halo and
+        // keeping the subject's silhouette clean.
+        float w = smoothstep(0.0, 1.0, scoc / max(centerCoC, 1e-3));
+        acc  += texture(u_scene, suv).rgb * w;
+        wsum += w;
     }
-    vec3 blurred = sum / 17.0;
 
-    FragColor = vec4(mix(cur, blurred, coc), 1.0);
+    vec3 blurred = acc / wsum;
+    FragColor = vec4(mix(centerCol, blurred, centerCoC), 1.0);
 }
