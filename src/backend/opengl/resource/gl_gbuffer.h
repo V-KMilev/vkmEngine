@@ -16,9 +16,11 @@ namespace Engine {
  *
  * A single-sample MRT (view-space normal + view-space position, RGBA16F) with
  * a depth renderbuffer, plus a one-channel R16F ambient-occlusion texture the
- * GTAO pass writes and the forward PBR pass samples. Viewport-sized, rebuilt
- * on resize. Header-only to mirror gl_hdr_target.h - all GL machinery is in
- * the Core wrappers.
+ * GTAO pass writes and the forward PBR pass samples. The geometry MRT is
+ * viewport-sized; the AO target is HALF resolution (GTAO is low frequency -
+ * 4x less work) with linear filtering so the forward pass gets a free smooth
+ * upsample. Rebuilt on resize. Header-only to mirror gl_hdr_target.h - all GL
+ * machinery is in the Core wrappers.
  */
 class GLGBuffer {
     public:
@@ -51,11 +53,11 @@ class GLGBuffer {
             glViewport(0, 0, static_cast<GLsizei>(m_width), static_cast<GLsizei>(m_height));
         }
 
-        /// Bind the single-channel AO target for the GTAO pass.
+        /// Bind the single-channel (half-res) AO target for the GTAO pass.
         void bindAO() const {
             if (!m_ready) return;
             m_aoFbo->bind();
-            glViewport(0, 0, static_cast<GLsizei>(m_width), static_cast<GLsizei>(m_height));
+            glViewport(0, 0, static_cast<GLsizei>(m_aoWidth), static_cast<GLsizei>(m_aoHeight));
         }
 
         /// Bind the view-space normal G-buffer to a sampler slot.
@@ -101,8 +103,14 @@ class GLGBuffer {
             const bool geoOk = m_geoFbo->isComplete();
             m_geoFbo->unbind();
 
-            m_ao = std::make_unique<Core::Texture2D>(
-                "gbuffer_ao", colorParams(m_width, m_height, GL_R16F, GL_RED));
+            // Half-res AO with linear filtering: 4x fewer fragments and the
+            // forward pass samples it as a smooth bilinear upsample.
+            m_aoWidth  = m_width  > 1 ? m_width  / 2u : 1u;
+            m_aoHeight = m_height > 1 ? m_height / 2u : 1u;
+            Core::Texture2DParams aop = colorParams(m_aoWidth, m_aoHeight, GL_R16F, GL_RED);
+            aop.minFilter = Core::TextureMinFilter::Linear;
+            aop.magFilter = Core::TextureMagFilter::Linear;
+            m_ao = std::make_unique<Core::Texture2D>("gbuffer_ao", aop);
 
             m_aoFbo = std::make_unique<Core::FrameBuffer>();
             m_aoFbo->bind();
@@ -122,9 +130,11 @@ class GLGBuffer {
         std::unique_ptr<Core::Texture2D>   m_ao;
         std::unique_ptr<Core::FrameBuffer> m_aoFbo;
 
-        uint32_t m_width  = 0;
-        uint32_t m_height = 0;
-        bool     m_ready  = false;
+        uint32_t m_width    = 0;
+        uint32_t m_height   = 0;
+        uint32_t m_aoWidth  = 0;   // half of m_width  (GTAO target)
+        uint32_t m_aoHeight = 0;   // half of m_height
+        bool     m_ready    = false;
 };
 
 } // namespace Engine

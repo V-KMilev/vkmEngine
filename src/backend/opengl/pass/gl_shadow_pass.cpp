@@ -33,6 +33,41 @@ namespace {
 // SHADOW_CUBE_NEAR in shaders/pbr/fragmentShader.shader mirrors this value.
 constexpr float kCubeNear = 0.1f;
 
+// FNV-1a over the only inputs that change shadow-map content: the camera
+// (CSM cascades are fit to its frustum), every shadow-casting light's
+// transform/params, and every shadow-casting drawable's world matrix + mesh.
+// Light color/intensity and material do not affect depth, so they are out.
+// Assumes transform-based animation (model matrix captures motion); per-vertex
+// / skinned deformation would need a frame tag here.
+void hashBytes(uint64_t& h, const void* data, size_t n) {
+    const unsigned char* p = static_cast<const unsigned char*>(data);
+    for (size_t i = 0; i < n; ++i) { h ^= p[i]; h *= 1099511628211ull; }
+}
+
+uint64_t shadowSignature(const RenderView& view) {
+    uint64_t h = 1469598103934665603ull;  // FNV-1a offset basis
+    hashBytes(h, &view.camera.view,       sizeof(glm::mat4));
+    hashBytes(h, &view.camera.projection, sizeof(glm::mat4));
+    for (const auto& l : view.lights) {
+        if (l.shadowSlot < 0) continue;
+        const int t = static_cast<int>(l.type);
+        hashBytes(h, &t,              sizeof(t));
+        hashBytes(h, &l.position,     sizeof(glm::vec3));
+        hashBytes(h, &l.rotation,     sizeof(glm::quat));
+        hashBytes(h, &l.radius,       sizeof(float));
+        hashBytes(h, &l.shadowBias,   sizeof(float));
+        hashBytes(h, &l.shadowExtent, sizeof(float));
+        hashBytes(h, &l.shadowSlot,   sizeof(int));
+    }
+    for (const auto& d : view.drawables) {
+        if (!d.castShadows) continue;
+        hashBytes(h, &d.model, sizeof(glm::mat4));
+        const uint32_t mid = d.mesh.id();
+        hashBytes(h, &mid, sizeof(mid));
+    }
+    return h;
+}
+
 // Stable cascaded shadow matrices for a directional light.
 //
 // Splits the camera frustum with a practical (log/uniform blend) scheme out
@@ -166,6 +201,12 @@ void GLShadowPass::execute(RenderGraphContext& rg) {
         return;
     }
 
+    // Skip the whole pass when nothing that changes a shadow map moved. The
+    // first frame (m_havePrev == false) always renders so the atlas + UBO are
+    // populated before any later skip relies on them.
+    const uint64_t sig = shadowSignature(view);
+    if (m_havePrev && sig == m_lastSig) return;
+
     auto& gl         = static_cast<GLBackend&>(backend);
     auto& glView     = gl.getView();
     auto& atlas      = glView.getShadowAtlas();
@@ -282,6 +323,9 @@ void GLShadowPass::execute(RenderGraphContext& rg) {
     ctx.setViewport(0, 0,
         static_cast<int32_t>(view.viewportWidth),
         static_cast<int32_t>(view.viewportHeight));
+
+    m_lastSig  = sig;
+    m_havePrev = true;
 }
 
 } // namespace Engine
