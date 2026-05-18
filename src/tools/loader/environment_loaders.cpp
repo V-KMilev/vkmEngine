@@ -1,6 +1,7 @@
 #include "loader/environment_loaders.h"
 
 #include <cstddef>
+#include <filesystem>
 
 #include "logger.h"
 
@@ -10,8 +11,28 @@
 
 namespace Engine {
 
+namespace {
+    // The editor stores asset paths relative to the project root (e.g.
+    // "assets/envs/environment_v3.hdr"), but the process working directory is
+    // not the project root, so a bare fopen fails ("can't fopen" -> IBL stays
+    // off). Resolve relatives against APP_ROOT_DIR (the documented engine
+    // convention - matches scene IO / model import). Absolute paths (the
+    // main.cpp default) pass through unchanged.
+    std::string resolveAssetPath(const std::string& p) {
+#ifdef APP_ROOT_DIR
+        std::filesystem::path fp(p);
+        if (fp.is_relative()) {
+            return (std::filesystem::path(APP_ROOT_DIR) / fp)
+                       .lexically_normal().string();
+        }
+#endif
+        return p;
+    }
+}
+
 HDRImage loadHDRImage(const std::string& filePath) {
     HDRImage image;
+    const std::string resolved = resolveAssetPath(filePath);
 
     // GL texture origin is bottom-left; flip so the sky lands at v = 1, which
     // is what the equirect bake shader expects (matches texture_loaders.cpp).
@@ -20,11 +41,11 @@ HDRImage loadHDRImage(const std::string& filePath) {
     int width = 0;
     int height = 0;
     int channels = 0;
-    float* data = stbi_loadf(filePath.c_str(), &width, &height, &channels, 3);
+    float* data = stbi_loadf(resolved.c_str(), &width, &height, &channels, 3);
 
     if (!data) {
         LOG_ERROR("Failed to load HDR environment '%s': %s",
-            filePath.c_str(), stbi_failure_reason());
+            resolved.c_str(), stbi_failure_reason());
         return image;
     }
 
@@ -37,23 +58,24 @@ HDRImage loadHDRImage(const std::string& filePath) {
     stbi_image_free(data);
 
     LOG_INFO("Loaded HDR environment '%s' (%dx%d equirect)",
-        filePath.c_str(), width, height);
+        resolved.c_str(), width, height);
     return image;
 }
 
 LDRImage loadColorLUT(const std::string& filePath) {
     LDRImage image;
+    const std::string resolved = resolveAssetPath(filePath);
 
     stbi_set_flip_vertically_on_load(true);
 
     int width = 0;
     int height = 0;
     int channels = 0;
-    unsigned char* data = stbi_load(filePath.c_str(), &width, &height, &channels, 4);
+    unsigned char* data = stbi_load(resolved.c_str(), &width, &height, &channels, 4);
 
     if (!data) {
         LOG_ERROR("Failed to load color LUT '%s': %s",
-            filePath.c_str(), stbi_failure_reason());
+            resolved.c_str(), stbi_failure_reason());
         return image;
     }
 
@@ -65,7 +87,7 @@ LDRImage loadColorLUT(const std::string& filePath) {
 
     stbi_image_free(data);
 
-    LOG_INFO("Loaded color LUT '%s' (%dx%d)", filePath.c_str(), width, height);
+    LOG_INFO("Loaded color LUT '%s' (%dx%d)", resolved.c_str(), width, height);
     return image;
 }
 

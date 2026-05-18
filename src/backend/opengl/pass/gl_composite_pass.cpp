@@ -67,6 +67,9 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     shader->bind();
     STATS_RECORD_SHADER_SWITCH();
 
+    // Display transform selector (AgX / PBR Neutral / ACES / Reinhard).
+    shader->setUniform1i("u_tonemap", view.environment.tonemap);
+
     // CameraBlock UBO (binding 2) is bound for the frame by GLView; the
     // composite shader reads exposure from cameraPosition.w.
     hdr.bindResolvedColor(0);

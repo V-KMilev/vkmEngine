@@ -85,6 +85,10 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         ibl.bindIrradiance(GLConfig::TextureSlots::IrradianceMap);
         ibl.bindPrefilter(GLConfig::TextureSlots::PrefilterMap);
         ibl.bindBrdf(GLConfig::TextureSlots::BrdfLUT);
+        // Raw env cube too: the PBR shader blends a sharp env reflection in
+        // at low roughness so polished metal reads as a true mirror, not the
+        // prefilter's mip-0 GGX blur.
+        ibl.bindEnvCube(GLConfig::TextureSlots::EnvCube);
     }
     // Screen-space AO from the prepass/GTAO (slot SSAO); enabled when both
     // the G-buffer is live and the environment toggle is on.
