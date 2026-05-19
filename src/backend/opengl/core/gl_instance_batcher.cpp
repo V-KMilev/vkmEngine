@@ -1,9 +1,28 @@
 #include "gl_instance_batcher.h"
 
-#include "resource/gl_instance_buffer.h"
+#include <unordered_map>
+
+#include "gl_vertex_array.h"  // Core::VertexArray
 #include "system/render/render_view.h"
 
 namespace Engine {
+
+namespace {
+    // A mesh's VAO is shared, but the camera batcher and the shadow batcher
+    // are distinct instance buffers. A VAO's instanced attribute slots can
+    // reference only one buffer at a time, so ownership is tracked globally:
+    // re-attach when a different batcher used the VAO last, no-op while this
+    // one still owns it. (Policy lives here, not in Core::InstanceBuffer.)
+    std::unordered_map<uint32_t, const GLInstanceBatcher*> g_vaoOwner;
+}
+
+void GLInstanceBatcher::attachToVAO(Core::VertexArray& vao, uint32_t startIndex) {
+    const uint32_t vaoId = vao.getID();
+    const GLInstanceBatcher*& owner = g_vaoOwner[vaoId];
+    if (owner == this) return;   // VAO's instanced attribs already point here
+    owner = this;
+    m_buffer.attachToVAO(vao, startIndex);
+}
 
 void GLInstanceBatcher::build(const std::vector<DrawableData>& drawables) {
     m_batches.clear();

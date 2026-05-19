@@ -164,6 +164,13 @@ struct RenderView {
     EnvironmentConfig environment;
 
     std::vector<DrawableData> drawables;
+
+    /// Shadow-casting geometry for the shadow pass. Built from the WHOLE
+    /// scene (not the camera frustum) so occluders behind / beside the
+    /// camera still cast shadows into view - camera-frustum culling here is
+    /// what made shadows pop and flicker as the view moved.
+    std::vector<DrawableData> shadowCasters;
+
     std::vector<LightData> lights;
 
     uint32_t viewportWidth  = 0;

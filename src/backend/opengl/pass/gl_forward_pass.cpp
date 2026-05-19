@@ -10,7 +10,6 @@
 #include "resource/gl_mesh.h"
 #include "resource/gl_material.h"
 #include "resource/gl_shader_program.h"
-#include "resource/gl_instance_buffer.h"
 #include "resource/gl_ibl.h"
 #include "resource/gl_gbuffer.h"
 #include "core/gl_instance_batcher.h"
@@ -51,9 +50,13 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     // and applies exposure + AgX to the backbuffer.
     gl.getHdrTarget().bindForRender();
 
-    glContext.setClearColor(view.environment.clearColor);
-    glContext.clearColor();
-    glContext.clear();
+    // The opaque (or legacy All) pass owns the clear. The transparent pass
+    // must NOT clear - it refracts the opaque+sky scene drawn before it.
+    if (m_phase != Phase::Transparent) {
+        glContext.setClearColor(view.environment.clearColor);
+        glContext.clearColor();
+        glContext.clear();
+    }
 
     if (view.drawables.empty()) {
         return;
@@ -70,7 +73,6 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
 
     auto& batcher = glView.getInstanceBatcher();
     const auto& batches = batcher.getBatches();
-    auto& instanceBuffer = batcher.getBuffer();
 
     // Bind both shadow atlases for the PBR shader to sample.
     auto& shadowAtlas = glView.getShadowAtlas();
@@ -105,6 +107,9 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         pbr->setUniform2f("u_screenSize",
             static_cast<float>(view.viewportWidth),
             static_cast<float>(view.viewportHeight));
+        // No opaque-scene copy yet this frame: transmissive materials fall
+        // back to IBL refraction until the opaque->transparent boundary.
+        pbr->setUniform1i("u_hasSceneColor", 0);
     }
 
     // CameraBlock and LightsBlock UBOs are owned by GLView and bound once
@@ -114,8 +119,48 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     MaterialType   currentType     = MaterialType::Opaque;
     MaterialHandle currentMaterial = {};
 
+    // Which material classes this pass draws.
+    auto inPhase = [&](MaterialType t) {
+        if (m_phase == Phase::Opaque)      return t != MaterialType::Transparent;
+        if (m_phase == Phase::Transparent) return t == MaterialType::Transparent;
+        return true;  // All (legacy single pass)
+    };
+
+    // Dedicated transparent pass: the opaque geometry AND the skybox have
+    // already been drawn into the HDR target by earlier passes. Snapshot
+    // that as the scene-behind source, then set transparent GL state once
+    // up front (the in-loop type transition below only drives Phase::All).
+    if (m_phase == Phase::Transparent) {
+        bool anyTransparent = false;
+        for (const auto& b : batches)
+            if (b.materialType == MaterialType::Transparent) { anyTransparent = true; break; }
+        if (!anyTransparent) return;  // opaque+sky already in the HDR; nothing to add
+
+        auto& hdrT = gl.getHdrTarget();
+        hdrT.resolve();
+        hdrT.bindForRender();
+        hdrT.bindResolvedColor(GLConfig::TextureSlots::SceneColor);
+        if (GLShader* pbrT = shaders[static_cast<int>(MaterialType::Opaque)]) {
+            pbrT->bind();
+            pbrT->setUniform1i("u_hasSceneColor", 1);
+            currentShader = pbrT;
+        }
+        glContext.setBlending(true);
+        glContext.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glContext.setDepthWrite(false);
+        // Cull back faces so a closed transmissive mesh shows only its front
+        // surface (engine default is no culling + depth-write to hide back
+        // faces; depth-write is off here, so without this you see through to
+        // the inside / far faces of glass).
+        glContext.setFaceCulling(true);
+        glContext.setCullFace(GL_BACK);
+        currentType = MaterialType::Transparent;
+    }
+
     for (size_t i = 0; i < batches.size(); ++i) {
         const auto& batch = batches[i];
+
+        if (!inPhase(batch.materialType)) continue;
 
         // Pick the shader for this batch's material type, falling back to
         // the opaque PBR shader if the variant slot is empty.
@@ -123,24 +168,47 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         if (!shader) shader = shaders[static_cast<int>(MaterialType::Opaque)];
         if (!shader) continue;
 
-        if (shader != currentShader) {
-            // Transition GL state between material type groups
+        // Material-type transition (blend/depth state + the opaque-scene
+        // snapshot). Driven by the material TYPE, not shader identity:
+        // opaque and transparent share the PBR program, so a
+        // shader-equality guard never fires at the opaque->transparent
+        // boundary and transparent would render with opaque state.
+        if (batch.materialType != currentType) {
             if (currentType == MaterialType::Transparent && batch.materialType != MaterialType::Transparent) {
                 glContext.setDepthWrite(true);
                 glContext.setBlending(false);
+                glContext.setFaceCulling(false);
             }
 
             if (batch.materialType == MaterialType::Transparent && currentType != MaterialType::Transparent) {
+                // First transparent batch: snapshot the opaque-only scene so
+                // transmissive materials refract what is actually behind them
+                // (resolve MSAA -> single-sample, rebind the MSAA target for
+                // the upcoming transparent draws, bind the copy for sampling).
+                auto& hdrT = gl.getHdrTarget();
+                hdrT.resolve();
+                hdrT.bindForRender();
+                hdrT.bindResolvedColor(GLConfig::TextureSlots::SceneColor);
+                if (GLShader* pbrT = shaders[static_cast<int>(MaterialType::Opaque)]) {
+                    pbrT->bind();
+                    pbrT->setUniform1i("u_hasSceneColor", 1);
+                    currentShader = pbrT;  // we just bound it
+                }
+
                 glContext.setBlending(true);
                 glContext.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                 glContext.setDepthWrite(false);
+                glContext.setFaceCulling(true);
+                glContext.setCullFace(GL_BACK);
             }
 
+            currentType = batch.materialType;
+        }
+
+        if (shader != currentShader) {
             shader->bind();
             STATS_RECORD_SHADER_SWITCH();
-
             currentShader = shader;
-            currentType = batch.materialType;
         }
 
         // Bind material (UBO + textures) — skip when identical to previous batch
@@ -160,17 +228,19 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         GLMesh* mesh = glView.getMutableMesh(batch.mesh);
 
         if (mesh) {
-            instanceBuffer.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
+            batcher.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
             mesh->drawInstancedBaseInstance(GL_TRIANGLES, batch.instanceCount, batch.firstInstance);
         } else {
             LOG_WARNING("Failed to get mesh for batch (skipping draw call)");
         }
     }
 
-    // Restore GL state if we ended in transparent mode
+    // Restore GL state if we ended in transparent mode (back to the engine
+    // default: no face culling, depth-write on, blending off).
     if (currentType == MaterialType::Transparent) {
         glContext.setDepthWrite(true);
         glContext.setBlending(false);
+        glContext.setFaceCulling(false);
     }
 }
 

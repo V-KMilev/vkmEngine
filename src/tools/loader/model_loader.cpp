@@ -240,8 +240,6 @@ namespace {
             if (mt->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS)
                 out.alpha = opacity;
             out.alpha = glm::min(out.alpha, out.albedo.a);
-            out.type  = out.alpha < 0.999f ? MaterialType::Transparent
-                                           : MaterialType::Opaque;
 
             // Advanced KHR PBR factors. Each is AI_SUCCESS-guarded so a
             // model that does not specify one keeps the MaterialAsset
@@ -250,6 +248,14 @@ namespace {
                 out.ior = f;
             if (mt->Get(AI_MATKEY_TRANSMISSION_FACTOR, f) == AI_SUCCESS)
                 out.transmission = f;
+
+            // KHR_materials_transmission glass keeps alpha = 1 (transmission
+            // is not alpha blending), so classify on transmission too -
+            // otherwise it imports Opaque, never reaches the transparent
+            // batch, and the scene-behind refraction path stays dark.
+            out.type = (out.alpha < 0.999f || out.transmission > 0.001f)
+                         ? MaterialType::Transparent
+                         : MaterialType::Opaque;
             if (mt->Get(AI_MATKEY_CLEARCOAT_FACTOR, f) == AI_SUCCESS)
                 out.clearcoat = f;
             if (mt->Get(AI_MATKEY_CLEARCOAT_ROUGHNESS_FACTOR, f) == AI_SUCCESS)
