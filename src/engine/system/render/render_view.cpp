@@ -86,6 +86,7 @@ void RenderView::build(
 ) {
     // Clear vectors but keep capacity from previous frame
     drawables.clear();
+    shadowCasters.clear();
     lights.clear();
 
     this->viewportWidth  = viewportWidth;
@@ -122,6 +123,28 @@ void RenderView::build(
 
     // Sort drawables for optimal batching
     sortDrawables(drawables);
+
+    // Shadow casters: every shadow-casting mesh in the scene, independent of
+    // the camera frustum. The shadow pass needs occluders that are off-screen
+    // (behind/beside the camera, or only their shadow is in view); culling
+    // these to the camera frustum is what made Sponza's shadows flicker and
+    // vanish on view changes. Use the hierarchy's world matrix when present.
+    shadowCasters.reserve(drawables.size());
+    scene.forEach<Mesh>([&](EntityId id, const Mesh& mesh) {
+        if (!mesh.visible || !mesh.castShadows) return;
+        if (!scene.has<Transform>(id)) return;
+
+        DrawableData caster;
+        caster.mesh         = mesh.mesh;
+        caster.material     = mesh.material;
+        caster.materialType = resources.get(mesh.material).type;
+        caster.castShadows  = true;
+        caster.model        = scene.has<WorldTransform>(id)
+            ? scene.get<WorldTransform>(id).model
+            : Transform::computeModelMatrix(scene.get<Transform>(id));
+        shadowCasters.emplace_back(caster);
+    });
+    sortDrawables(shadowCasters);
 
     // Gather lights (dense iteration, no holes)
     lights.reserve(scene.count<Light>());

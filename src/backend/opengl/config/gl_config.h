@@ -58,8 +58,9 @@ namespace GLConfig {
         constexpr uint32_t BrdfLUT              = 14;  ///< IBL split-sum BRDF/DFG lookup (RG16F)
         constexpr uint32_t SSAO                 = 15;  ///< Screen-space AO factor (R16F, GTAO)
         constexpr uint32_t EnvCube              = 16;  ///< Raw environment cubemap (sharp mirror reflection at low roughness)
+        constexpr uint32_t SceneColor           = 17;  ///< Resolved opaque scene color (transmissive scene-behind refraction)
 
-        constexpr uint32_t Count = 17;  ///< Total number of texture slots used
+        constexpr uint32_t Count = 18;  ///< Total number of texture slots used
     }
 
     /**
@@ -105,6 +106,7 @@ namespace GLConfig {
         constexpr const char* BrdfLUT       = "u_brdfLUT";
         constexpr const char* EnvCube       = "u_envCube";
         constexpr const char* SSAO          = "u_ssao";
+        constexpr const char* SceneColor    = "u_sceneColor";
     }
 
     /**

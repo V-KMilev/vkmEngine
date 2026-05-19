@@ -38,6 +38,18 @@ class GLForwardPass : public RenderPass {
          */
         void setShader(MaterialType type, ShaderHandle shader);
 
+        /**
+         * @brief Which material classes this pass draws.
+         *
+         * Split rendering: an Opaque pass (clears + draws opaque/unlit), then
+         * the skybox fills the background, then a Transparent pass snapshots
+         * that opaque+sky scene and draws transmissive/blended materials so
+         * they refract what is actually behind them. @c All keeps the legacy
+         * single-pass behaviour.
+         */
+        enum class Phase { All, Opaque, Transparent };
+        void setPhase(Phase p) { m_phase = p; }
+
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
         void execute(RenderGraphContext& ctx) override;
 
@@ -50,6 +62,7 @@ class GLForwardPass : public RenderPass {
 
     private:
         ShaderHandle m_shaders[3] = {};  ///< Indexed by MaterialType (Opaque, Transparent, Unlit)
+        Phase        m_phase = Phase::All;
 };
 
 } // namespace Engine

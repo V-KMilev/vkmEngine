@@ -9,7 +9,10 @@
 #include "resource/resource_handle.h"
 #include "resource/mesh_asset.h"
 #include "resource/material_asset.h"
-#include "resource/gl_instance_buffer.h"
+
+#include "gl_instance_buffer.h"  // Core::InstanceBuffer (vkmGL)
+
+namespace Core { class VertexArray; }
 
 namespace Engine {
 
@@ -65,9 +68,16 @@ class GLInstanceBatcher {
         const std::vector<InstanceBatch>& getBatches() const { return m_batches; }
 
         /**
-        * @brief Returns the shared instance buffer holding model matrices for all batches.
+        * @brief Bind this batcher's instance matrices onto @p vao.
+        *
+        * Owns the cross-batcher VAO arbitration policy: meshes share one VAO,
+        * but the camera batcher and the shadow batcher are distinct buffers,
+        * so the VAO's instanced attributes must be re-pointed whenever the
+        * other batcher used that VAO since. Tracked globally; a no-op while
+        * this batcher still owns the VAO. (The Core::InstanceBuffer itself is
+        * deliberately policy-free.)
         */
-        GLInstanceBuffer& getBuffer() { return m_buffer; }
+        void attachToVAO(Core::VertexArray& vao, uint32_t startIndex = 4);
 
         /**
         * @brief Clears all batches (called at frame start).
@@ -77,7 +87,7 @@ class GLInstanceBatcher {
     private:
         std::vector<InstanceBatch> m_batches;
         std::vector<glm::mat4> m_matrixScratch;
-        GLInstanceBuffer m_buffer;
+        Core::InstanceBuffer m_buffer;
 };
 
 } // namespace Engine

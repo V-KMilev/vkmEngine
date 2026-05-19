@@ -138,9 +138,11 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     m_lights.update(view.lights);
     m_lights.bind();
 
-    // Build instance batches once so all subsequent passes (shadow + forward)
-    // share the same batched draw list.
+    // Camera-visible batches for the forward/visible passes.
     m_instanceBatcher.build(view.drawables);
+    // Full-scene shadow-caster batches (not camera-frustum culled) so the
+    // shadow pass renders occluders that are off-screen but still cast in.
+    m_shadowBatcher.build(view.shadowCasters);
 }
 
 const GLMesh* GLView::getMesh(const MeshHandle& handle) const {

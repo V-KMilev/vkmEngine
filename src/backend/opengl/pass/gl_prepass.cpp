@@ -10,7 +10,6 @@
 #include "resource/gl_mesh.h"
 #include "resource/gl_material.h"
 #include "resource/gl_shader_program.h"
-#include "resource/gl_instance_buffer.h"
 #include "resource/gl_gbuffer.h"
 #include "core/gl_instance_batcher.h"
 
@@ -62,7 +61,6 @@ void GLPrepass::execute(RenderGraphContext& rg) {
 
     auto& batcher        = glView.getInstanceBatcher();
     const auto& batches  = batcher.getBatches();
-    auto& instanceBuffer = batcher.getBuffer();
 
     for (const auto& batch : batches) {
         if (batch.materialType != MaterialType::Opaque) continue;
@@ -77,7 +75,7 @@ void GLPrepass::execute(RenderGraphContext& rg) {
             material->bind(GLConfig::UBOBindingPoints::Material);
         }
 
-        instanceBuffer.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
+        batcher.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
         mesh->drawInstancedBaseInstance(GL_TRIANGLES, batch.instanceCount, batch.firstInstance);
     }
 }

@@ -109,6 +109,11 @@ class GLView {
         GLInstanceBatcher&       getInstanceBatcher()       { return m_instanceBatcher; }
         const GLInstanceBatcher& getInstanceBatcher() const { return m_instanceBatcher; }
 
+        /// Separate batch list for the shadow pass, built from the full-scene
+        /// shadow-caster set (NOT the camera-culled drawables).
+        GLInstanceBatcher&       getShadowBatcher()       { return m_shadowBatcher; }
+        const GLInstanceBatcher& getShadowBatcher() const { return m_shadowBatcher; }
+
     private:
         /// Reconcile a single resource table against a deduped handle list.
         template<typename AssetT, typename GLT>
@@ -135,6 +140,7 @@ class GLView {
         GLShadowData      m_shadowData;
         GLIBL             m_ibl;
         GLInstanceBatcher m_instanceBatcher;
+        GLInstanceBatcher m_shadowBatcher;
 
         uint64_t m_lastMeshTypeVersion     = 0;
         uint64_t m_lastMaterialTypeVersion = 0;

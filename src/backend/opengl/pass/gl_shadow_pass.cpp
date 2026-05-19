@@ -12,7 +12,6 @@
 #include "core/gl_backend.h"
 #include "config/gl_config.h"
 
-#include "resource/gl_instance_buffer.h"
 #include "resource/gl_mesh.h"
 #include "resource/gl_shader_program.h"
 #include "resource/gl_shadow_data.h"
@@ -59,8 +58,10 @@ uint64_t shadowSignature(const RenderView& view) {
         hashBytes(h, &l.shadowExtent, sizeof(float));
         hashBytes(h, &l.shadowSlot,   sizeof(int));
     }
-    for (const auto& d : view.drawables) {
-        if (!d.castShadows) continue;
+    // Hash the shadow-caster set (full scene), NOT the camera-culled
+    // drawables - otherwise the skip would miss off-screen caster motion
+    // and re-render needlessly on every camera pan.
+    for (const auto& d : view.shadowCasters) {
         hashBytes(h, &d.model, sizeof(glm::mat4));
         const uint32_t mid = d.mesh.id();
         hashBytes(h, &mid, sizeof(mid));
@@ -220,9 +221,10 @@ void GLShadowPass::execute(RenderGraphContext& rg) {
 
     shadowData.clear();
 
-    auto& batcher        = glView.getInstanceBatcher();
+    // Shadow casters come from the dedicated full-scene batcher, not the
+    // camera-culled forward batcher.
+    auto& batcher        = glView.getShadowBatcher();
     const auto& batches  = batcher.getBatches();
-    auto& instanceBuffer = batcher.getBuffer();
 
     auto& ctx = gl.getContext();
     const bool   prevCullEnabled = ctx.isFaceCullingEnabled();
@@ -241,13 +243,13 @@ void GLShadowPass::execute(RenderGraphContext& rg) {
     auto drawShadowBatches = [&]() {
         for (const auto& batch : batches) {
             if (batch.materialType != MaterialType::Opaque) continue;
-            if (batch.shadowInstanceCount == 0) continue;
+            if (batch.instanceCount == 0) continue;
 
             GLMesh* mesh = glView.getMutableMesh(batch.mesh);
             if (!mesh) continue;
 
-            instanceBuffer.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
-            mesh->drawInstancedBaseInstance(GL_TRIANGLES, batch.shadowInstanceCount, batch.firstInstance);
+            batcher.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
+            mesh->drawInstancedBaseInstance(GL_TRIANGLES, batch.instanceCount, batch.firstInstance);
         }
     };
 
