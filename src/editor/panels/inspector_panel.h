@@ -5,6 +5,7 @@
 #include "ecs/entity.h"
 
 #include "framework/editor_panel.h"
+#include "panels/environment_inspector.h"
 
 namespace Engine {
 
@@ -33,6 +34,10 @@ class InspectorPanel : public EditorPanel {
         void drawAnimationSection(Scene& scene, EntityId id);
         void drawHierarchySection(Scene& scene, EditorState& state, EntityId id);
         void drawAddComponentMenu(Scene& scene, EntityId id);
+
+        // The Environment singleton entity gets the whole rendering/post stack
+        // here instead of the usual component cards.
+        EnvironmentInspector m_environmentUI;
 
         // Euler-angle edit cache for the Transform Rotation field.
         // Quaternion->Euler is many-to-one and singular at +/-90 deg (gimbal

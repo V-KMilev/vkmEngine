@@ -261,6 +261,16 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
             dl->AddLine(P(0.52f, -0.17f),  P(0.52f, 0.17f),  col, th);
             break;
         }
+        case EditorIcon::Environment: {
+            // Globe: outer circle + equator + meridian. Every element is
+            // concentric on c, so it is symmetric by construction (no
+            // lopsided strokes, no mismatched shapes).
+            const float R = r * 0.80f;
+            dl->AddCircle(c, R, col, 32, th);
+            dl->AddEllipse(c, ImVec2(R, R * 0.36f), col, 0.0f, 32, th); // equator
+            dl->AddEllipse(c, ImVec2(R * 0.36f, R), col, 0.0f, 32, th); // meridian
+            break;
+        }
     }
 }
 

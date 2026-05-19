@@ -37,6 +37,8 @@ void GLGridPass::execute(RenderGraphContext& rg) {
         return;
     }
 
+    if (!view.environment.gridEnabled) return;
+
     auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
     auto& glView    = gl.getView();

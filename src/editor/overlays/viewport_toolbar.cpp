@@ -2,6 +2,8 @@
 #include "framework/editor_common.h"
 #include "input/editor_actions.h"
 
+#include "system/render/environment.h"
+
 namespace Engine {
 
 namespace {
@@ -65,6 +67,21 @@ void ViewportToolbar::draw(EditorContext& ec) {
         if (iconButton("snp", EditorIcon::Snap, state.snapEnabled, true,
                        "Grid snap (hold Ctrl for temporary)", BTN))
             state.snapEnabled = !state.snapEnabled;
+
+        // "Show" menu: per-view debug overlays (grid / AABB / wireframe).
+        // These are viewport state, not buried in the Environment settings.
+        ImGui::SameLine(0, SEP);
+        if (ImGui::Button("Show", ImVec2(0, BTN)))
+            ImGui::OpenPopup("##ShowMenu");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Toggle grid, bounds and wireframe");
+        if (ImGui::BeginPopup("##ShowMenu")) {
+            EnvironmentConfig& env = sceneEnvironment(ctx.scene);
+            ImGui::Checkbox("Grid",       &env.gridEnabled);
+            ImGui::Checkbox("AABB Bounds", &env.aabbDebug);
+            ImGui::Checkbox("Wireframe",  &state.wireframe);
+            ImGui::EndPopup();
+        }
 
         bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
         char dupTip[48], focTip[48], delTip[48];
