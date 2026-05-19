@@ -9,7 +9,8 @@
 #include "system/render/render_pass.h"
 
 #include "resource/gl_mesh.h"
-#include "resource/gl_instance_buffer.h"
+
+#include "gl_instance_buffer.h"  // Core::InstanceBuffer (vkmGL)
 
 namespace Core {
     class VertexArray;
@@ -80,7 +81,7 @@ class GLAABBDebugPass : public RenderPass {
         ShaderHandle m_shader;
 
         std::unique_ptr<GLMesh> m_aabb;
-        GLInstanceBuffer m_instanceBuffer;
+        Core::InstanceBuffer m_instanceBuffer;
         std::vector<glm::mat4> m_modelScratch;
 };
 

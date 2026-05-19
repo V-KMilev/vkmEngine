@@ -101,6 +101,7 @@ int main() {
             {Engine::GLConfig::UniformNames::BrdfLUT,                    Engine::GLConfig::TextureSlots::BrdfLUT},
             {Engine::GLConfig::UniformNames::SSAO,                       Engine::GLConfig::TextureSlots::SSAO},
             {Engine::GLConfig::UniformNames::EnvCube,                    Engine::GLConfig::TextureSlots::EnvCube},
+            {Engine::GLConfig::UniformNames::SceneColor,                 Engine::GLConfig::TextureSlots::SceneColor},
         };
         const std::unordered_map<std::string, int> unlitSamplers = {
             {Engine::GLConfig::UniformNames::AlbedoTexture,   Engine::GLConfig::TextureSlots::Albedo},
@@ -174,11 +175,21 @@ int main() {
         // Depth/normal prepass then GTAO; the forward pass samples the AO.
         renderSystem.addPass(std::make_unique<Engine::GLPrepass>(prepassShader));
         renderSystem.addPass(std::make_unique<Engine::GLGTAOPass>(gtaoShader));
-        auto forwardPass = std::make_unique<Engine::GLForwardPass>(pbrShader);
-        forwardPass->setShader(Engine::MaterialType::Unlit, unlitShader);
-        renderSystem.addPass(std::move(forwardPass));
-        // Skybox fills the background in the HDR target, after opaque.
+        // Split forward render so transmissive glass refracts the real
+        // scene: opaque/unlit first, then the skybox fills the background,
+        // then the transparent pass snapshots that opaque+sky image and
+        // draws blended/transmissive materials on top of it.
+        auto opaquePass = std::make_unique<Engine::GLForwardPass>(pbrShader);
+        opaquePass->setShader(Engine::MaterialType::Unlit, unlitShader);
+        opaquePass->setPhase(Engine::GLForwardPass::Phase::Opaque);
+        renderSystem.addPass(std::move(opaquePass));
+        // Skybox fills the background in the HDR target, after opaque and
+        // before transparent so glass over empty space refracts the sky.
         renderSystem.addPass(std::make_unique<Engine::GLSkyboxPass>(skyboxShader));
+        auto transparentPass = std::make_unique<Engine::GLForwardPass>(pbrShader);
+        transparentPass->setShader(Engine::MaterialType::Unlit, unlitShader);
+        transparentPass->setPhase(Engine::GLForwardPass::Phase::Transparent);
+        renderSystem.addPass(std::move(transparentPass));
         // Gated per-frame by env.aabbDebug (off by default); the pass itself
         // stays enabled so the Scene-tab toggle is the single switch.
         renderSystem.addPass(std::make_unique<Engine::GLAABBDebugPass>(aabbShader));

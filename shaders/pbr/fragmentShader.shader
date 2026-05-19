@@ -138,6 +138,12 @@ uniform sampler2D u_ssao;
 uniform int       u_ssaoEnabled;
 uniform vec2      u_screenSize;   // full viewport pixels
 
+// Resolved opaque-only scene color, bound by the forward pass at the
+// opaque->transparent boundary. Lets transmissive materials refract what is
+// actually behind them; u_hasSceneColor gates it (0 = fall back to IBL).
+uniform sampler2D u_sceneColor;
+uniform int       u_hasSceneColor;
+
 const float MAX_PREFILTER_LOD = 6.0;  // GLIBL::PREFILTER_MIPS - 1
 
 bool hasTex(int flag) {
@@ -594,16 +600,33 @@ void main() {
 
     vec3 color = ambient + Lo + s.emission;
 
-    // Environment refraction for transmissive materials: glass shows the
-    // refracted IBL. True scene-behind SSR-refraction needs an opaque-color
-    // copy (separate pre-transparent pass) - documented follow-up.
-    if (u_material.transmission > 0.001 && u_hasIBL == 1) {
+    // Refraction for transmissive materials. When the forward pass has
+    // snapshotted the opaque scene (u_hasSceneColor), glass shows the actual
+    // geometry behind it, screen-space-offset along the bent ray; otherwise
+    // it falls back to refracted IBL (first frame / no opaque behind).
+    if (u_material.transmission > 0.001) {
         vec3 rdir = refract(-V, N, 1.0 / max(u_material.ior, 1.0));
-        if (dot(rdir, rdir) > 0.0) {
-            vec3 refr = textureLod(u_prefilterMap, rdir,
-                            s.roughness * MAX_PREFILTER_LOD).rgb * s.albedo;
-            color = mix(color, refr, clamp(u_material.transmission, 0.0, 1.0));
+        vec3 refr;
+        if (u_hasSceneColor == 1 && dot(rdir, rdir) > 0.0) {
+            // Project a short refracted ray into screen space and offset by
+            // that delta. Using world-space xy directly (the old code)
+            // smeared with the view angle - this is camera-correct.
+            float thick = 0.20 + 0.40 * clamp(u_material.transmission, 0.0, 1.0);
+            vec4 cs0 = u_camera.viewProjection * vec4(vWorldPos, 1.0);
+            vec4 cs1 = u_camera.viewProjection * vec4(vWorldPos + rdir * thick, 1.0);
+            vec2 p0  = cs0.xy / max(cs0.w, 1e-4) * 0.5 + 0.5;
+            vec2 p1  = cs1.xy / max(cs1.w, 1e-4) * 0.5 + 0.5;
+            vec2 uv  = gl_FragCoord.xy / u_screenSize
+                     + (p1 - p0) * (1.0 + 2.0 * s.roughness);
+            uv = clamp(uv, vec2(0.0), vec2(1.0));
+            refr = texture(u_sceneColor, uv).rgb * s.albedo;
+        } else if (u_hasIBL == 1 && dot(rdir, rdir) > 0.0) {
+            refr = textureLod(u_prefilterMap, rdir,
+                        s.roughness * MAX_PREFILTER_LOD).rgb * s.albedo;
+        } else {
+            refr = color;
         }
+        color = mix(color, refr, clamp(u_material.transmission, 0.0, 1.0));
     }
 
     FragColor = vec4(color, u_material.albedo.a * u_material.alpha);
