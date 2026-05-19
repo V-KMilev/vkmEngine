@@ -18,7 +18,9 @@ enum class EditorIcon {
     Play, Pause, Stop, Key, Plus, Cross,
     // Entity-type glyphs (Hierarchy / Inspector identity) - replace the old
     // [C]/[M]/[D] ASCII badges.
-    Entity, Mesh, Camera, LightDir, LightPoint, LightSpot, Anim
+    Entity, Mesh, Camera, LightDir, LightPoint, LightSpot, Anim,
+    // Singleton scene Environment (globe).
+    Environment
 };
 
 /// Draw @p icon centered at @p c with half-extent @p r in color @p col.

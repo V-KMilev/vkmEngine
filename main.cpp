@@ -13,6 +13,7 @@
 #include "system/hierarchy/hierarchy_system.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
+#include "system/render/environment.h"
 #include "system/camera/camera_controller.h"
 #include "system/io/file_watcher.h"
 #include "editor_system.h"
@@ -178,9 +179,9 @@ int main() {
         renderSystem.addPass(std::move(forwardPass));
         // Skybox fills the background in the HDR target, after opaque.
         renderSystem.addPass(std::make_unique<Engine::GLSkyboxPass>(skyboxShader));
-        auto aabbPass = std::make_unique<Engine::GLAABBDebugPass>(aabbShader);
-        aabbPass->setEnabled(false);
-        renderSystem.addPass(std::move(aabbPass));
+        // Gated per-frame by env.aabbDebug (off by default); the pass itself
+        // stays enabled so the Scene-tab toggle is the single switch.
+        renderSystem.addPass(std::make_unique<Engine::GLAABBDebugPass>(aabbShader));
         renderSystem.addPass(std::make_unique<Engine::GLGridPass>(gridShader));
         // Screen-space reflections, additively blended into the HDR scene.
         renderSystem.addPass(std::make_unique<Engine::GLSSRPass>(ssrShader));
@@ -226,8 +227,11 @@ int main() {
         auto cameraEntity = generateDefaultScene(engine);
         cameraController.setCameraEntity(cameraEntity);
 
-        // Default IBL environment (editable live from the Environment panel).
-        renderSystem.getEnvironment().environmentMapPath = rootDir + "/assets/envs/environment.hdr";
+        // Environment is a singleton scene entity, selectable in the editor
+        // (Hierarchy "Environment" row -> Inspector). Create it now and seed
+        // the default IBL map.
+        Engine::sceneEnvironment(engine.getScene()).environmentMapPath =
+            rootDir + "/assets/envs/environment.hdr";
 
         engine.run();
 

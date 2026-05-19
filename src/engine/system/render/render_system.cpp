@@ -9,6 +9,7 @@
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
 #include "system/visibility/visibility.h"
+#include "system/render/environment.h"
 
 #include "system/render/render_backend.h"
 #include "system/render/render_pass.h"
@@ -48,7 +49,10 @@ void RenderSystem::update(FrameContext& ctx) {
     // the later UI stage by the Asset Browser).
     m_thumbBudget = kThumbBudgetPerFrame;
 
-    // Copy environment config before build so it's available if build() ever reads it
+    // Environment lives as a singleton component on a scene entity (editable
+    // in the Inspector). Pull it each frame; mirror into m_environment so the
+    // legacy getEnvironment()/getWireframe() accessors stay valid.
+    m_environment = sceneEnvironment(ctx.scene);
     m_renderView.environment = m_environment;
     m_renderView.deltaTime   = ctx.deltaTime;
 

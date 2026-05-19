@@ -1,6 +1,8 @@
 #include "panels/inspector_panel.h"
 #include "framework/editor_common.h"
 
+#include "system/render/render_view.h"   // EnvironmentConfig
+
 #include "generator/light_generators.h"
 
 #include <string>
@@ -59,6 +61,14 @@ void InspectorPanel::draw(EditorContext& ec) {
 
     ImGui::Spacing();
     ImGui::Separator();
+    ImGui::Spacing();
+
+    // The Environment singleton owns the rendering/post stack - render that
+    // instead of the usual component cards, and skip Add Component.
+    if (scene.has<EnvironmentConfig>(id)) {
+        m_environmentUI.draw(ec, scene.get<EnvironmentConfig>(id));
+        return;
+    }
 
     if (scene.has<Transform>(id))  drawTransformSection(scene, id);
     if (scene.has<Mesh>(id))       drawMeshSection(scene, ctx.resources, state, id);

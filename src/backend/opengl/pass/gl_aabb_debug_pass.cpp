@@ -75,6 +75,8 @@ void GLAABBDebugPass::execute(RenderGraphContext& rg) {
         return;
     }
 
+    if (!view.environment.aabbDebug) return;
+
     m_modelScratch.clear();
     m_modelScratch.reserve(view.drawables.size());
 
