@@ -99,20 +99,24 @@ void EditorSystem::update(FrameContext& ctx) {
                                | ImGuiWindowFlags_NoSavedSettings
                                | ImGuiWindowFlags_MenuBar;
 
+    // Full-viewport host: square it (theme WindowRounding=6 would round the
+    // top corners and leave triangular gaps in the menu bar). Floating
+    // windows still keep their rounding.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
 
     if (ImGui::Begin("##Editor", nullptr, rootFlags)) {
         ImGui::PopStyleColor();
-        ImGui::PopStyleVar(2);
+        ImGui::PopStyleVar(3);
 
         m_menuBar.draw(ec, m_sceneIO);
         drawWorkspace(ec);
 
     } else {
         ImGui::PopStyleColor();
-        ImGui::PopStyleVar(2);
+        ImGui::PopStyleVar(3);
     }
     ImGui::End();
 

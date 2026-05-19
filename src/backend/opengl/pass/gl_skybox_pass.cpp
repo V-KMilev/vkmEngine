@@ -42,18 +42,7 @@ void GLSkyboxPass::execute(RenderGraphContext& rg) {
     auto& glView = gl.getView();
     auto& ibl    = glView.getIBL();
 
-    const bool proceduralSky = view.environment.proceduralSky;
-    if (!ibl.isReady() && !proceduralSky) return;  // nothing to draw
-
-    // Direction toward the sun = opposite the first directional light's
-    // forward (rotation * +Z, matching GLLights). Default if no sun.
-    glm::vec3 sunToward = glm::normalize(glm::vec3(0.3f, 0.7f, 0.2f));
-    for (const auto& l : view.lights) {
-        if (l.type == LightType::Directional) {
-            sunToward = glm::normalize(-(l.rotation * glm::vec3(0.0f, 0.0f, 1.0f)));
-            break;
-        }
-    }
+    if (!ibl.isReady()) return;  // no baked environment -> nothing to draw
 
     GLShader* shader = glView.resolveShader(m_shader, resources);
     if (!shader) return;
@@ -77,14 +66,8 @@ void GLSkyboxPass::execute(RenderGraphContext& rg) {
     shader->setUniformMatrix4fv("u_view", view.camera.view);
     shader->setUniformMatrix4fv("u_projection", view.camera.projection);
     shader->setUniform1f("u_iblIntensity", view.environment.iblIntensity);
-    shader->setUniform1i("u_proceduralSky", proceduralSky ? 1 : 0);
-    shader->setUniform3fv("u_sunDir", sunToward);
-    shader->setUniform1f("u_turbidity", view.environment.skyTurbidity);
-    shader->setUniform1f("u_skyIntensity", view.environment.skyIntensity);
 
-    if (ibl.isReady()) {
-        ibl.bindEnvCube(0);
-    }
+    ibl.bindEnvCube(0);
 
     m_cube->draw(GL_TRIANGLES);
 

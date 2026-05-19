@@ -12,6 +12,7 @@
 #include "ecs/component/camera.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/name.h"
+#include "system/render/render_view.h"   // EnvironmentConfig (singleton glyph)
 
 namespace Engine {
 
@@ -285,6 +286,7 @@ namespace {
 }
 
 EditorIcon entityIconKind(const Scene& scene, EntityId id) {
+    if (scene.has<EnvironmentConfig>(id)) return EditorIcon::Environment;
     if (scene.has<Camera>(id)) return EditorIcon::Camera;
     if (scene.has<Light>(id)) {
         const auto& l = scene.get<Light>(id);

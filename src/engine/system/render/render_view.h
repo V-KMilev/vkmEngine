@@ -84,12 +84,6 @@ struct EnvironmentConfig {
     std::string environmentMapPath = "";
     float       iblIntensity       = 1.0f;
 
-    // Analytic Preetham sky (background only) instead of the HDRI cubemap.
-    // Off by default; sun direction comes from the scene directional light.
-    bool  proceduralSky = false;
-    float skyTurbidity  = 3.0f;   // ~2 clear .. ~10 hazy
-    float skyIntensity  = 1.0f;
-
     // Screen-space ambient occlusion (GTAO), modulates the ambient term.
     bool  ssao          = true;
     float ssaoRadius    = 0.5f;
@@ -104,13 +98,13 @@ struct EnvironmentConfig {
     // Temporal anti-aliasing (camera-reprojection). Off by default; MSAA
     // already does spatial edge AA, so this is temporal stabilisation.
     bool  taa      = false;
-    float taaBlend = 0.92f;        // history weight (smoother; only used when TAA on)
+    float taaBlend = 0.5f;         // history weight (only used when TAA on)
 
     // Depth of field (off by default). View-space focus.
     bool  dof              = false;
-    float dofFocusDistance = 10.0f;
-    float dofFocusRange    = 12.0f;
-    float dofMaxBlur       = 0.015f;  // gather radius in UV
+    float dofFocusDistance = 5.0f;
+    float dofFocusRange    = 50.0f;
+    float dofMaxBlur       = 0.001f;  // gather radius in UV
 
     // Camera motion blur (off by default).
     bool  motionBlur         = false;
@@ -129,7 +123,7 @@ struct EnvironmentConfig {
     int tonemap = 1;
 
     // Post-processing. Bloom is blended in linear HDR before exposure.
-    float bloomStrength = 0.04f;
+    float bloomStrength = 0.01f;
 
     // Auto-exposure (eye adaptation). OFF by default: fixed-exposure is what
     // glTF/PBR reference viewers (Khronos sample-viewer, model-viewer) use, so
@@ -146,12 +140,14 @@ struct EnvironmentConfig {
     glm::vec4 clearColor = glm::vec4(0.1f, 0.1f, 0.12f, 1.0f);
 
     // Grid
+    bool  gridEnabled   = true;
     float gridSize      = 1000.0f;
     float gridScale     = 1.0f;
     float gridFadeStart = 50.0f;
     float gridFadeEnd   = 550.0f;
 
-    // Debug visualization
+    // Debug visualization (AABB wireframes). Off by default.
+    bool      aabbDebug  = false;
     glm::vec3 debugColor = glm::vec3(1.0f, 0.0f, 0.0f);
 
     // Rendering

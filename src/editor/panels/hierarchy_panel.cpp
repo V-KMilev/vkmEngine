@@ -2,6 +2,8 @@
 #include "framework/editor_common.h"
 #include "input/editor_actions.h"
 
+#include "system/render/render_view.h"   // EnvironmentConfig (singleton row)
+
 namespace Engine {
 
 namespace {
@@ -37,6 +39,23 @@ void HierarchyPanel::draw(EditorContext& ec) {
         EditorActions::drawCreateEntityMenu(scene, ctx.resources, state);
         ImGui::EndPopup();
     }
+    ImGui::Spacing();
+
+    // Pinned scene-level entity. The Environment has no Transform so it never
+    // appears in the entity tree below; this is its single, always-visible
+    // entry point (Godot WorldEnvironment / Unreal World Settings pattern).
+    {
+        EntityId envId{};
+        scene.forEach<EnvironmentConfig>([&](EntityId id, EnvironmentConfig&) {
+            if (!envId) envId = id;
+        });
+        if (envId) {
+            const bool sel = state.selectedEntity == envId;
+            if (entitySelectable("##EnvRow", sel, EditorIcon::Environment, "Environment"))
+                state.selectedEntity = envId;
+        }
+    }
+    ImGui::Separator();
     ImGui::Spacing();
 
     bool hasFilter = m_filter[0] != '\0';
