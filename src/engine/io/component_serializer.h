@@ -13,6 +13,7 @@
 namespace Engine {
 
 class ResourceManager;
+struct EnvironmentConfig;  // system/render/render_view.h
 
 /**
  * @brief Per-component (de)serialization to JSON.
@@ -53,6 +54,11 @@ namespace ComponentSerializer {
     /// playback state, and the per-track easing function by stable name.
     nlohmann::json save(const Animation&);
     void load(const nlohmann::json&, Animation&);
+
+    /// EnvironmentConfig: the singleton Environment entity's rendering/post
+    /// stack. All fields are JSON primitives; load tolerates missing keys.
+    nlohmann::json save(const EnvironmentConfig&);
+    void load(const nlohmann::json&, EnvironmentConfig&);
 
 } // namespace ComponentSerializer
 

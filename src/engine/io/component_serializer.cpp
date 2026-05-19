@@ -6,6 +6,7 @@
 #include "logger.h"
 
 #include "resource/resource_manager.h"
+#include "system/render/render_view.h"   // EnvironmentConfig
 
 namespace Engine::ComponentSerializer {
 
@@ -214,6 +215,93 @@ void load(const nlohmann::json& j, Animation& a) {
     a.playing = j.value("playing", a.playing);
     a.looping = j.value("looping", a.looping);
     a.updateDuration();
+}
+
+// ---- EnvironmentConfig ---------------------------------------------------
+// The singleton "Environment" entity's whole rendering/post stack. Every
+// field is a JSON primitive; load uses .value() fallbacks so older saves
+// (missing keys) keep the struct defaults and stay forward-compatible.
+nlohmann::json save(const EnvironmentConfig& e) {
+    return {
+        {"ambientColor",        vec3ToJson(e.ambientColor)},
+        {"ambientIntensity",    e.ambientIntensity},
+        {"environmentMapPath",  e.environmentMapPath},
+        {"iblIntensity",        e.iblIntensity},
+        {"ssao",                e.ssao},
+        {"ssaoRadius",          e.ssaoRadius},
+        {"ssaoIntensity",       e.ssaoIntensity},
+        {"ssr",                 e.ssr},
+        {"ssrIntensity",        e.ssrIntensity},
+        {"ssrMaxDistance",      e.ssrMaxDistance},
+        {"ssrThickness",        e.ssrThickness},
+        {"taa",                 e.taa},
+        {"taaBlend",            e.taaBlend},
+        {"dof",                 e.dof},
+        {"dofFocusDistance",    e.dofFocusDistance},
+        {"dofFocusRange",       e.dofFocusRange},
+        {"dofMaxBlur",          e.dofMaxBlur},
+        {"motionBlur",          e.motionBlur},
+        {"motionBlurStrength",  e.motionBlurStrength},
+        {"colorGrade",          e.colorGrade},
+        {"colorLutPath",        e.colorLutPath},
+        {"colorGradeIntensity", e.colorGradeIntensity},
+        {"tonemap",             e.tonemap},
+        {"bloomStrength",       e.bloomStrength},
+        {"autoExposure",        e.autoExposure},
+        {"exposureKey",         e.exposureKey},
+        {"exposureSpeed",       e.exposureSpeed},
+        {"exposureMin",         e.exposureMin},
+        {"exposureMax",         e.exposureMax},
+        {"clearColor",          vec4ToJson(e.clearColor)},
+        {"gridEnabled",         e.gridEnabled},
+        {"gridSize",            e.gridSize},
+        {"gridScale",           e.gridScale},
+        {"gridFadeStart",       e.gridFadeStart},
+        {"gridFadeEnd",         e.gridFadeEnd},
+        {"aabbDebug",           e.aabbDebug},
+        {"debugColor",          vec3ToJson(e.debugColor)},
+        {"wireframe",           e.wireframe},
+    };
+}
+void load(const nlohmann::json& j, EnvironmentConfig& e) {
+    if (j.contains("ambientColor")) e.ambientColor = vec3FromJson(j["ambientColor"]);
+    e.ambientIntensity    = j.value("ambientIntensity",    e.ambientIntensity);
+    e.environmentMapPath  = j.value("environmentMapPath",  e.environmentMapPath);
+    e.iblIntensity        = j.value("iblIntensity",        e.iblIntensity);
+    e.ssao                = j.value("ssao",                e.ssao);
+    e.ssaoRadius          = j.value("ssaoRadius",          e.ssaoRadius);
+    e.ssaoIntensity       = j.value("ssaoIntensity",       e.ssaoIntensity);
+    e.ssr                 = j.value("ssr",                 e.ssr);
+    e.ssrIntensity        = j.value("ssrIntensity",        e.ssrIntensity);
+    e.ssrMaxDistance      = j.value("ssrMaxDistance",      e.ssrMaxDistance);
+    e.ssrThickness        = j.value("ssrThickness",        e.ssrThickness);
+    e.taa                 = j.value("taa",                 e.taa);
+    e.taaBlend            = j.value("taaBlend",            e.taaBlend);
+    e.dof                 = j.value("dof",                 e.dof);
+    e.dofFocusDistance    = j.value("dofFocusDistance",    e.dofFocusDistance);
+    e.dofFocusRange       = j.value("dofFocusRange",       e.dofFocusRange);
+    e.dofMaxBlur          = j.value("dofMaxBlur",          e.dofMaxBlur);
+    e.motionBlur          = j.value("motionBlur",          e.motionBlur);
+    e.motionBlurStrength  = j.value("motionBlurStrength",  e.motionBlurStrength);
+    e.colorGrade          = j.value("colorGrade",          e.colorGrade);
+    e.colorLutPath        = j.value("colorLutPath",        e.colorLutPath);
+    e.colorGradeIntensity = j.value("colorGradeIntensity", e.colorGradeIntensity);
+    e.tonemap             = j.value("tonemap",             e.tonemap);
+    e.bloomStrength       = j.value("bloomStrength",       e.bloomStrength);
+    e.autoExposure        = j.value("autoExposure",        e.autoExposure);
+    e.exposureKey         = j.value("exposureKey",         e.exposureKey);
+    e.exposureSpeed       = j.value("exposureSpeed",       e.exposureSpeed);
+    e.exposureMin         = j.value("exposureMin",         e.exposureMin);
+    e.exposureMax         = j.value("exposureMax",         e.exposureMax);
+    if (j.contains("clearColor")) e.clearColor = vec4FromJson(j["clearColor"]);
+    e.gridEnabled         = j.value("gridEnabled",         e.gridEnabled);
+    e.gridSize            = j.value("gridSize",            e.gridSize);
+    e.gridScale           = j.value("gridScale",           e.gridScale);
+    e.gridFadeStart       = j.value("gridFadeStart",       e.gridFadeStart);
+    e.gridFadeEnd         = j.value("gridFadeEnd",         e.gridFadeEnd);
+    e.aabbDebug           = j.value("aabbDebug",           e.aabbDebug);
+    if (j.contains("debugColor")) e.debugColor = vec3FromJson(j["debugColor"]);
+    e.wireframe           = j.value("wireframe",           e.wireframe);
 }
 
 } // namespace Engine::ComponentSerializer
