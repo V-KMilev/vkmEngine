@@ -14,6 +14,7 @@
 #include "io/asset_serializer.h"
 #include "io/component_serializer.h"
 #include "resource/resource_manager.h"
+#include "system/render/render_view.h"   // EnvironmentConfig
 #include "system/hierarchy/hierarchy_operations.h"
 
 namespace Engine::SceneSerializer {
@@ -55,6 +56,7 @@ bool save(const Scene& scene, const ResourceManager& resources, const std::strin
         emitIfPresent<Mesh>     (scene, id, components, "Mesh",      [&](const Mesh& c)      { return CS::save(c, resources); });
         emitIfPresent<Hierarchy>(scene, id, components, "Hierarchy", [&](const Hierarchy& c) { return CS::save(c); });
         emitIfPresent<Animation>(scene, id, components, "Animation", [&](const Animation& c) { return CS::save(c); });
+        emitIfPresent<EnvironmentConfig>(scene, id, components, "Environment", [&](const EnvironmentConfig& c) { return CS::save(c); });
         // WorldTransform is derived — not persisted.
 
         entity["components"] = std::move(components);
@@ -145,6 +147,10 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
         if (components.contains("Animation")) {
             Animation a; CS::load(components["Animation"], a);
             scene.add(entity, std::move(a));
+        }
+        if (components.contains("Environment")) {
+            EnvironmentConfig c; CS::load(components["Environment"], c);
+            scene.add(entity, std::move(c));
         }
         if (components.contains("Hierarchy")) {
             const uint32_t parentIdx = CS::loadParentIndex(components["Hierarchy"]);
