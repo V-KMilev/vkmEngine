@@ -51,7 +51,7 @@ void AssetBrowserPanel::ensureAssets(ResourceManager& resources) {
     if (m_assetsReady) return;
 
     m_sphere = resources.findByName<MeshAsset>("mesh:preview_sphere");
-    if (!m_sphere) m_sphere = resources.add(generateSphere(), "mesh:preview_sphere");
+    if (!m_sphere) m_sphere = resources.addInternal(generateSphere(), "mesh:preview_sphere");
 
     m_neutral = resources.findByName<MaterialAsset>("mat:thumb_neutral");
     if (!m_neutral) {
@@ -59,7 +59,7 @@ void AssetBrowserPanel::ensureAssets(ResourceManager& resources) {
         m.albedo    = glm::vec4(0.78f, 0.78f, 0.80f, 1.0f);
         m.metallic  = 0.0f;
         m.roughness = 0.55f;
-        m_neutral = resources.add(std::move(m), "mat:thumb_neutral");
+        m_neutral = resources.addInternal(std::move(m), "mat:thumb_neutral");
     }
     m_assetsReady = true;
 }
@@ -120,7 +120,7 @@ void AssetBrowserPanel::drawMaterials(EditorContext& ec) {
 
     int i = 0;
     resources.forEachOfType<MaterialAsset>([&](MaterialHandle h, const MaterialAsset& a) {
-        if (h == m_neutral) return;  // internal helper - not user-facing
+        if (a.internal) return;  // editor helpers (e.g. thumbnail neutral) are not user-facing
 
         const uint64_t key = materialKey(h.id());
         const uint32_t tex = ec.renderSystem
@@ -178,7 +178,7 @@ void AssetBrowserPanel::drawMeshes(EditorContext& ec) {
 
     int i = 0;
     resources.forEachOfType<MeshAsset>([&](MeshHandle h, const MeshAsset& a) {
-        if (h == m_sphere) return;  // internal preview primitive
+        if (a.internal) return;  // editor preview primitives are not user-facing
 
         const uint64_t key = meshKey(h.id());
         const uint32_t tex = ec.renderSystem

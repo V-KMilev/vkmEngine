@@ -60,6 +60,17 @@ class ResourceManager {
             return add(std::forward<ResourceType>(resource));
         }
 
+        /// @brief Insert an editor-internal asset (preview primitives, neutral
+        /// thumbnail materials, etc.). Pickers, the Asset Browser and the
+        /// scene saver all filter on `Resource::internal` so these never
+        /// surface to the user or get serialized.
+        template<typename ResourceType>
+        auto addInternal(ResourceType && resource, std::string name) {
+            resource.internal = true;
+            resource.name = std::move(name);
+            return add(std::forward<ResourceType>(resource));
+        }
+
         /**
          * @brief Remove a resource by handle.
          */
