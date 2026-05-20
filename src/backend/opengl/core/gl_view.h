@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "resource/material_asset.h"
@@ -78,6 +79,25 @@ class GLView {
         /// Returns nullptr only when the handle is empty or invalid.
         GLShader* resolveShader(const ShaderHandle& handle, const ResourceManager& resources);
 
+        /// Resolve a per-material variant of @p handle, compiled with the
+        /// #defines that match @p featureFlags (a MaterialFeature bitset).
+        ///
+        /// First call for a given (handle, flags) pair compiles a fresh
+        /// GLShader with the right defines and caches it; subsequent calls
+        /// return the cached program. When the underlying asset version
+        /// bumps (hot reload of the .shader file), every variant for that
+        /// asset is dropped and rebuilt lazily on the next resolve.
+        ///
+        /// flags == 0 is a legitimate variant ("no optional features") and
+        /// gets its own cache entry; it does NOT collapse to the ubershader
+        /// path. The whole point of the variant cache is that flags == 0
+        /// compiles to a much smaller program than the ubershader.
+        ///
+        /// Returns nullptr only when the handle is empty or invalid.
+        GLShader* resolveShaderVariant(const ShaderHandle& handle,
+                                       uint32_t featureFlags,
+                                       const ResourceManager& resources);
+
         /// Ensure a GPU material/mesh exists and is up to date for @p handle
         /// even when no scene entity references it (editor previews, asset
         /// browser). Same lazy build-or-rebuild path as resolveShader.
@@ -128,6 +148,16 @@ class GLView {
         GLResourceTable<GLMaterial> m_materialTable;
         GLResourceTable<GLTexture>  m_textureTable;
         GLResourceTable<GLShader>   m_shaderTable;
+
+        /// Per-material shader-variant cache. Key packs shaderId (high 32
+        /// bits) + feature flags (low 32 bits). Value tracks the compiled
+        /// variant + the asset version it was built against so a hot
+        /// reload of the base shader invalidates every variant at once.
+        struct VariantEntry {
+            std::unique_ptr<GLShader> program;
+            uint64_t                  assetVersion = 0;
+        };
+        std::unordered_map<uint64_t, VariantEntry> m_shaderVariants;
 
         GLCamera          m_camera;
         GLLights          m_lights;

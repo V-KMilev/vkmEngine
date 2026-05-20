@@ -40,12 +40,17 @@ std::string processFile(const fs::path& filePath,
     std::string line;
 
     while (std::getline(in, line)) {
-        // Detect `#include "..."`. Leading whitespace allowed; the directive
-        // must not be inside a line-comment.
-        const size_t commentPos = line.find("//");
-        size_t includePos = line.find("#include");
-        if (includePos != std::string::npos && (commentPos == std::string::npos || commentPos > includePos)) {
-            const size_t q1 = line.find('"', includePos);
+        // Only treat `#include` as a directive when it's the FIRST non-
+        // whitespace token on the line. That keeps the preprocessor from
+        // false-matching `#include` inside comments / docstrings / strings.
+        size_t firstNonWS = 0;
+        while (firstNonWS < line.size() &&
+               (line[firstNonWS] == ' ' || line[firstNonWS] == '\t')) {
+            ++firstNonWS;
+        }
+        const bool isDirective = line.compare(firstNonWS, 8, "#include") == 0;
+        if (isDirective) {
+            const size_t q1 = line.find('"', firstNonWS + 8);
             const size_t q2 = q1 != std::string::npos ? line.find('"', q1 + 1) : std::string::npos;
             if (q1 != std::string::npos && q2 != std::string::npos && q2 > q1) {
                 const std::string rel = line.substr(q1 + 1, q2 - q1 - 1);
