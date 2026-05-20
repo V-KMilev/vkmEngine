@@ -212,10 +212,6 @@ std::vector<std::string> featureFlagsToDefines(uint32_t flags) {
     return defines;
 }
 
-constexpr uint64_t makeVariantKey(uint32_t shaderId, uint32_t flags) {
-    return (static_cast<uint64_t>(shaderId) << 32) | flags;
-}
-
 } // namespace
 
 GLShader* GLView::resolveShaderVariant(
@@ -225,8 +221,9 @@ GLShader* GLView::resolveShaderVariant(
 {
     if (!handle) return nullptr;
     const ShaderAsset& asset = resources.get(handle);
-    const uint32_t shaderId  = handle.id();
-    const uint64_t key       = makeVariantKey(shaderId, featureFlags);
+    const uint32_t shaderId   = handle.id();
+    const uint32_t generation = handle.key.generation;
+    const VariantKey key{shaderId, generation, featureFlags};
 
     auto it = m_shaderVariants.find(key);
     if (it != m_shaderVariants.end()) {
@@ -235,7 +232,7 @@ GLShader* GLView::resolveShaderVariant(
         // A file edit invalidates them all, not just the one we're looking up.
         if (it->second.assetVersion != asset.version) {
             for (auto vit = m_shaderVariants.begin(); vit != m_shaderVariants.end(); ) {
-                if (static_cast<uint32_t>(vit->first >> 32) == shaderId) {
+                if (vit->first.shaderId == shaderId) {
                     vit = m_shaderVariants.erase(vit);
                 } else {
                     ++vit;
@@ -243,6 +240,20 @@ GLShader* GLView::resolveShaderVariant(
             }
         } else {
             return it->second.program.get();
+        }
+    } else {
+        // Cache miss for this (shaderId, generation): if there are entries
+        // for the same shaderId at an older generation, the slot has been
+        // recycled (SlotAllocator hands out the same index after a free,
+        // bumping the generation). The old handles are unreachable, so the
+        // old variants are dead weight at best, stale-by-name hazards at
+        // worst - evict them.
+        for (auto vit = m_shaderVariants.begin(); vit != m_shaderVariants.end(); ) {
+            if (vit->first.shaderId == shaderId && vit->first.generation != generation) {
+                vit = m_shaderVariants.erase(vit);
+            } else {
+                ++vit;
+            }
         }
     }
 
