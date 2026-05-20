@@ -89,9 +89,22 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
     }
 
     const int version = doc.value("version", 0);
-    if (version != FILE_FORMAT_VERSION) {
-        LOG_ERROR("SceneSerializer::load: file version %d, expected %d", version, FILE_FORMAT_VERSION);
+    if (version <= 0) {
+        LOG_ERROR("SceneSerializer::load: missing/invalid 'version' field");
         return false;
+    }
+    if (version > FILE_FORMAT_VERSION) {
+        LOG_ERROR("SceneSerializer::load: file version %d is newer than this build (%d); refusing to load",
+            version, FILE_FORMAT_VERSION);
+        return false;
+    }
+    if (version < FILE_FORMAT_VERSION) {
+        // Older files load on a best-effort basis: every per-component load()
+        // uses json.value("key", fallback) so missing fields keep their
+        // struct defaults. Migrations live here when fields are renamed or
+        // their meaning changes (no schema migrations needed at v1).
+        LOG_INFO("SceneSerializer::load: file version %d, current is %d (loading with defaults for missing fields)",
+            version, FILE_FORMAT_VERSION);
     }
     if (!doc.contains("entities") || !doc["entities"].is_array()) {
         LOG_ERROR("SceneSerializer::load: missing or invalid 'entities' array");

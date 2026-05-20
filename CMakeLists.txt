@@ -13,6 +13,11 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # Git metadata
 include(cmake/git_metadata.cmake)
 
+# Derive shaders/_generated/engine_config.glsl from src/engine/core/engine_config.h
+# so the cross-language constants (MAX_LIGHTS, NUM_CASCADES, ...) have a single
+# C++ source of truth instead of comment-driven mirroring in each shader file.
+include(cmake/generate_shader_config.cmake)
+
 add_subdirectory(modules)
 
 # Fix submodule include dirs for export compatibility (they lack generator expressions)
