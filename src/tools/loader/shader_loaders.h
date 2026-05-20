@@ -22,14 +22,19 @@ inline ShaderHandle loadShader(
     ResourceManager& resources,
     const std::string& path,
     const std::string& name,
-    std::unordered_map<std::string, int> samplerBindings = {})
+    std::unordered_map<std::string, int> samplerBindings = {},
+    bool variantAware = false)
 {
     ShaderAsset asset;
     asset.path            = path;
     asset.samplerBindings = std::move(samplerBindings);
+    asset.variantAware    = variantAware;
     asset.source = {{"kind", "directory"}, {"path", path}};
     if (!asset.samplerBindings.empty()) {
         asset.source["samplerBindings"] = asset.samplerBindings;
+    }
+    if (variantAware) {
+        asset.source["variantAware"] = true;
     }
     return resources.add(std::move(asset), name);
 }

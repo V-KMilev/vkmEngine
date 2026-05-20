@@ -107,7 +107,10 @@ int main() {
             {Engine::GLConfig::UniformNames::AlbedoTexture,   Engine::GLConfig::TextureSlots::Albedo},
             {Engine::GLConfig::UniformNames::EmissionTexture, Engine::GLConfig::TextureSlots::Emission},
         };
-        const auto pbrShader    = Engine::loadShader(resources, shaderDir + "/pbr",        "shader:pbr",        pbrSamplers);
+        // pbr is variantAware: per-material feature flags drive an
+        // #ifdef HAS_X variant cache. unlit and every other shader share
+        // a single compiled program.
+        const auto pbrShader    = Engine::loadShader(resources, shaderDir + "/pbr",        "shader:pbr",        pbrSamplers, /*variantAware=*/true);
         const auto unlitShader  = Engine::loadShader(resources, shaderDir + "/unlit",      "shader:unlit",      unlitSamplers);
         const auto aabbShader   = Engine::loadShader(resources, shaderDir + "/aabb_debug", "shader:aabb_debug");
         const auto gridShader   = Engine::loadShader(resources, shaderDir + "/grid",       "shader:grid");
