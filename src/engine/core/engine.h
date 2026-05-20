@@ -81,6 +81,14 @@ class Engine {
          * @brief Allow systems within @p stage to dispatch in parallel
          *        across layers of the per-stage schedule.
          *
+         * STATUS: API present, not yet wired anywhere. vkmEngine's stages
+         * currently have <=2 systems each, so layer partitioning buys
+         * nothing - the per-system data-parallel `parallelFor` inside
+         * HierarchySystem / AnimationSystem / VisibilitySystem is the
+         * actual scaling lever today. Revisit once 3+ peers share a stage
+         * (Physics + AI + Particles + Audio under Simulation is the
+         * intended motivating case).
+         *
          * Off by default for every stage. Systems within a stage are
          * grouped into "layers" by their SystemAccess declarations - two
          * systems share a layer only when neither's writes overlap the
@@ -97,7 +105,14 @@ class Engine {
          *   - No shared external writes outside declared component access
          *     (ResourceManager, GPU state, file system, ...).
          *   - No add-on-read patterns (e.g. HierarchyOperations adds a
-         *     WorldTransform if missing - that's a structural change).
+         *     WorldTransform if missing - that's a structural change). The
+         *     hierarchy-attach prereq fix has eliminated this one specifically,
+         *     but the audit shape stays.
+         *   - SystemAccess::reads/writes only describe component access; any
+         *     system that reads ResourceManager, GPU state, or other external
+         *     state from inside its update body cannot be declared parallel-
+         *     safe by an empty SystemAccess - it should stay conservative
+         *     (default-empty, treated as "writes everything").
          */
         void setParallelDispatch(SystemStage stage, bool enabled);
 
@@ -147,6 +162,12 @@ class Engine {
 
         std::array<StageSchedule,
                    static_cast<size_t>(SystemStage::Count)> m_schedule;
+
+        /// Subset of systems that actually implement fixedUpdate(). Built
+        /// once at init from System::hasFixedUpdate(); the accumulator loop
+        /// iterates this list instead of dispatching the empty virtual
+        /// across every registered system every tick.
+        std::vector<System*> m_fixedUpdaters;
 
         bool m_initialized = false;
 };
