@@ -31,6 +31,15 @@ struct ShaderAsset : public Resource {
     /// uniform-name -> texture slot. Applied after every compile by
     /// the backend so the binding survives hot reload.
     std::unordered_map<std::string, int> samplerBindings;
+
+    /// Whether this shader's source uses material-feature #defines and
+    /// should therefore be compiled per-material through the variant
+    /// cache. Default false: the shader is a single program reused by
+    /// every material that references it (the right choice for unlit,
+    /// depth-only, and every post-processing pass). Set to true for
+    /// shaders whose source has `#ifdef HAS_TRANSMISSION` / `_CLEARCOAT`
+    /// / ... blocks (today: pbr).
+    bool variantAware = false;
 };
 
 using ShaderHandle = Handle<ShaderAsset>;

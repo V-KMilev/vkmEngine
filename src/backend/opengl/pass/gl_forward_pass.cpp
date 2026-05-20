@@ -224,15 +224,25 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
             currentType = batch.materialType;
         }
 
-        // Resolve the per-material shader variant. featureFlags is cached
-        // on GLMaterial at sync time, so this is a hash lookup in the hot
-        // path. Falls back to the Opaque slot's shader when the type slot
-        // is empty (e.g. Unlit isn't wired up by the caller).
+        // Resolve the shader for this batch. Variant-aware shaders (today:
+        // pbr) go through the per-material variant cache so each material
+        // gets a program with only its features compiled in. Variant-
+        // unaware shaders (unlit, ...) share one program across materials -
+        // routing them through the variant cache would compile redundant
+        // identical programs since their source doesn't reference HAS_X.
+        // Falls back to the Opaque slot's shader when the type slot is
+        // empty (e.g. AlphaMask not wired up by the caller).
         const GLMaterial* material = glView.getMaterial(batch.material);
-        const uint32_t flags = material ? material->getFeatureFlags() : 0u;
         ShaderHandle baseHandle = m_shaders[static_cast<int>(batch.materialType)];
         if (!baseHandle) baseHandle = m_shaders[static_cast<int>(MaterialType::Opaque)];
-        GLShader* shader = glView.resolveShaderVariant(baseHandle, flags, resources);
+        const ShaderAsset& shaderAsset = resources.get(baseHandle);
+        GLShader* shader = nullptr;
+        if (shaderAsset.variantAware) {
+            const uint32_t flags = material ? material->getFeatureFlags() : 0u;
+            shader = glView.resolveShaderVariant(baseHandle, flags, resources);
+        } else {
+            shader = glView.resolveShader(baseHandle, resources);
+        }
         if (!shader) continue;
 
         if (shader != currentShader) {
