@@ -194,6 +194,72 @@ GLShader* GLView::resolveShader(const ShaderHandle& handle, const ResourceManage
     return m_shaderTable.entries[handle.id()].get();
 }
 
+namespace {
+
+/// Map a MaterialFeature bitset to the #define tokens the PBR shader expects.
+/// Order is irrelevant - the preprocessor emits one #define line per token.
+std::vector<std::string> featureFlagsToDefines(uint32_t flags) {
+    std::vector<std::string> defines;
+    defines.push_back("MATERIAL_VARIANT");  // turns off the ubershader fallback block
+    if (flags & toBits(MaterialFeature::Transmission)) defines.emplace_back("HAS_TRANSMISSION");
+    if (flags & toBits(MaterialFeature::Volume))       defines.emplace_back("HAS_VOLUME");
+    if (flags & toBits(MaterialFeature::Clearcoat))    defines.emplace_back("HAS_CLEARCOAT");
+    if (flags & toBits(MaterialFeature::Anisotropy))   defines.emplace_back("HAS_ANISOTROPY");
+    if (flags & toBits(MaterialFeature::Subsurface))   defines.emplace_back("HAS_SUBSURFACE");
+    if (flags & toBits(MaterialFeature::Sheen))        defines.emplace_back("HAS_SHEEN");
+    if (flags & toBits(MaterialFeature::Parallax))     defines.emplace_back("HAS_PARALLAX");
+    if (flags & toBits(MaterialFeature::AlphaMask))    defines.emplace_back("HAS_ALPHA_MASK");
+    return defines;
+}
+
+constexpr uint64_t makeVariantKey(uint32_t shaderId, uint32_t flags) {
+    return (static_cast<uint64_t>(shaderId) << 32) | flags;
+}
+
+} // namespace
+
+GLShader* GLView::resolveShaderVariant(
+    const ShaderHandle& handle,
+    uint32_t featureFlags,
+    const ResourceManager& resources)
+{
+    if (!handle) return nullptr;
+    const ShaderAsset& asset = resources.get(handle);
+    const uint32_t shaderId  = handle.id();
+    const uint64_t key       = makeVariantKey(shaderId, featureFlags);
+
+    auto it = m_shaderVariants.find(key);
+    if (it != m_shaderVariants.end()) {
+        // Hot-reload safety: if the base asset version changed since we built
+        // this variant, drop every variant of this shader and rebuild lazily.
+        // A file edit invalidates them all, not just the one we're looking up.
+        if (it->second.assetVersion != asset.version) {
+            for (auto vit = m_shaderVariants.begin(); vit != m_shaderVariants.end(); ) {
+                if (static_cast<uint32_t>(vit->first >> 32) == shaderId) {
+                    vit = m_shaderVariants.erase(vit);
+                } else {
+                    ++vit;
+                }
+            }
+        } else {
+            return it->second.program.get();
+        }
+    }
+
+    VariantEntry entry;
+    try {
+        entry.program = std::make_unique<GLShader>(asset, featureFlagsToDefines(featureFlags));
+        entry.assetVersion = asset.version;
+    } catch (const std::exception& e) {
+        LOG_ERROR("GLView: shader variant compile failed (shader '%s', flags 0x%x): %s",
+            asset.name.c_str(), featureFlags, e.what());
+        return nullptr;
+    }
+    GLShader* raw = entry.program.get();
+    m_shaderVariants.emplace(key, std::move(entry));
+    return raw;
+}
+
 const GLMaterial* GLView::ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources) {
     if (!handle) return nullptr;
     thread_local std::vector<MaterialHandle> one;
