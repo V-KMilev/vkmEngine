@@ -36,6 +36,16 @@ class RenderTarget {
 
         virtual uint32_t getWidth() const = 0;
         virtual uint32_t getHeight() const = 0;
+
+        /**
+         * @brief Backend-typed id of this target's primary color attachment.
+         *
+         * For ImGui interop + thumbnail-cache copies: the editor needs to
+         * sample the rendered output without going through any pass. Targets
+         * that don't have a sampleable color attachment (e.g. depth-only
+         * shadow maps) return 0.
+         */
+        virtual uint32_t getColorTexture() const { return 0; }
 };
 
 } // namespace Engine

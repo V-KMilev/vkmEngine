@@ -2,6 +2,10 @@
 
 #include <cstdint>
 
+#include "system/render/frame_resources.h"
+#include "system/render/render_graph.h"
+#include "system/render/render_graph_resource.h"
+
 #include "gl_hdr_target.h"
 #include "resource/gl_bloom.h"
 #include "resource/gl_auto_exposure.h"
@@ -12,33 +16,44 @@
 namespace Engine {
 
 /**
- * @brief The render graph's pool of viewport-sized transient GPU targets.
+ * @brief OpenGL implementation of the graph's transient resource pool.
  *
- * One owner, one resize. Holds the HDR scene target, the bloom mip chain,
- * the auto-exposure metering targets, and the thin G-buffer. Passes reach
- * these through the backend (and, going forward, the RenderGraphContext)
- * rather than each owning a slice of backend state. Auto-exposure is
- * fixed-size and self-allocates lazily, so it has no resize step.
+ * Holds the HDR scene target, the bloom mip chain, the auto-exposure
+ * metering targets, the thin G-buffer, the TAA history, and the shared
+ * post scratch target. resize() reallocates everything; registerWith()
+ * publishes each sub-resource into the graph's typed pool keyed by
+ * RGResource (so passes look up via ctx.resource<GLHdrTarget>(SceneHDR)).
+ *
+ * Auto-exposure is fixed-size and self-allocates lazily, so it has no
+ * resize step.
  */
-class FrameResources {
+class GLFrameResources : public FrameResources {
     public:
-        FrameResources() = default;
-        ~FrameResources() = default;
-
-        FrameResources(const FrameResources& other) = delete;
-        FrameResources& operator=(const FrameResources& other) = delete;
-
-        FrameResources(FrameResources && other) = delete;
-        FrameResources& operator=(FrameResources && other) = delete;
+        GLFrameResources() = default;
+        ~GLFrameResources() override = default;
 
     public:
-        void resize(uint32_t width, uint32_t height) {
+        void resize(uint32_t width, uint32_t height) override {
             m_hdr.resize(width, height);
             m_bloom.resize(width, height);
             m_gbuffer.resize(width, height);
             m_taa.resize(width, height);
             m_scratch.resize(width, height);
         }
+
+        void registerWith(RenderGraph& graph) override {
+            graph.registerResource(RGResource::SceneHDR,         &m_hdr);
+            graph.registerResource(RGResource::SceneHDRResolved, &m_hdr);
+            graph.registerResource(RGResource::BloomChain,       &m_bloom);
+            graph.registerResource(RGResource::AdaptedLuminance, &m_autoExposure);
+            graph.registerResource(RGResource::GBufferNormal,    &m_gbuffer);
+            graph.registerResource(RGResource::GBufferPosition,  &m_gbuffer);
+            graph.registerResource(RGResource::AO,               &m_gbuffer);
+            graph.registerResource(RGResource::TAAHistory,       &m_taa);
+            graph.registerResource(RGResource::PostScratch,      &m_scratch);
+        }
+
+        void resolveSceneColor() override { m_hdr.resolve(); }
 
         GLHdrTarget&          hdr()                { return m_hdr; }
         const GLHdrTarget&    hdr()          const { return m_hdr; }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 
 #include "resource/material_asset.h"
 #include "resource/mesh_asset.h"
@@ -10,6 +11,7 @@ namespace Engine {
     struct RenderView;
     class ResourceManager;
     class RenderGraph;
+    class FrameResources;
 }
 
 namespace Engine {
@@ -94,68 +96,82 @@ class RenderBackend {
         virtual void syncResources(const RenderView& view, const ResourceManager& resources) {}
 
         /**
-         * @brief Resolve the multisampled scene color into a sampleable copy.
+         * @brief Force every mesh/material/texture in @p view resident on
+         *        the GPU before the next syncResources.
          *
-         * Driven by the RenderGraph: invoked once before the first pass that
-         * reads the resolved scene color, and again only after a later pass
-         * writes the scene color. Default no-op for backends without MSAA.
+         * Editor previews construct a tiny hand-built RenderView (one
+         * preview shape + one preview material) that can slip past sync's
+         * version-gating heuristics. RenderSystem calls this on the
+         * preview path before syncResources to force those handles to
+         * upload. Default no-op for backends that don't need it.
          */
-        virtual void resolveSceneColor() {}
+        virtual void ensurePreviewResourceTables(const RenderView& view,
+                                                  const ResourceManager& resources) {
+            (void)view; (void)resources;
+        }
 
         /**
-         * @brief Publish the concrete backend objects backing each logical
-         *        RGResource into the graph's resource pool.
+         * @brief Publish persistent resources into the graph's pool.
          *
-         * Called once at the top of every RenderGraph::execute() so the
-         * pool stays in sync with the active set - notably the editor's
-         * offscreen preview path swaps in a private FrameResources and
-         * needs the pool to repoint without recompiling the graph.
-         *
-         * Default no-op: backends that don't expose their resources via the
-         * pool keep the old pattern (passes downcast and call typed
-         * accessors directly).
+         * For resources whose lifetime exceeds a frame and which don't get
+         * swapped by editor previews (e.g. the shadow atlas, the IBL set).
+         * Called once by the graph the first time it executes. The default
+         * is a no-op; backends override to register what they expose.
          */
-        virtual void populateGraphResources(RenderGraph& graph) {}
+        virtual void registerPersistentResources(RenderGraph& /*graph*/) {}
 
         /**
-         * @brief Enter offscreen "preview" mode at @p size x @p size.
+         * @brief Construct a backend-specific FrameResources pool.
          *
-         * While active, every transient target accessor (HDR, G-buffer,
-         * bloom, exposure, default target, ...) returns a private preview
-         * set instead of the window-sized ones, so the unmodified render
-         * graph can be re-executed into an offscreen texture. Paired with
-         * endPreview(). Default: no-op (backend doesn't support previews).
+         * The graph holds the returned pool via unique_ptr<FrameResources>
+         * and reaches it through the engine-side abstract interface (resize
+         * + registerWith + resolveSceneColor). Backends decide what
+         * concrete sub-resources go in the pool; the graph just publishes
+         * them into its typed lookup via FrameResources::registerWith.
          *
-         * Editor-facing: the Material Editor / Asset Browser drive the real
-         * pipeline through this so the preview can never drift from the
-         * viewport.
+         * Called by the graph at first resize/execute and again when the
+         * editor opens an offscreen preview (which needs its own pool at
+         * the preview size).
          */
-        virtual void beginPreview(uint32_t size) { (void)size; }
-
-        /** @brief Leave preview mode; subsequent passes target the window. */
-        virtual void endPreview() {}
+        virtual std::unique_ptr<FrameResources> createFrameResources() = 0;
 
         /**
-         * @brief GL texture id of the last preview's composited color,
-         *        usable as an ImGui ImTextureID (0 if unsupported / none).
+         * @brief Construct a backend-specific offscreen RenderTarget at
+         *        (size, size) for an editor material preview.
+         *
+         * Returned via unique_ptr<RenderTarget>; the graph owns it for the
+         * lifetime of the preview session and routes RGResource::Backbuffer
+         * to it while the preview is active. Default: nullptr (backend
+         * doesn't support previews).
          */
-        virtual uint32_t previewColorTexture() const { return 0; }
+        virtual std::unique_ptr<RenderTarget> createOffscreenTarget(uint32_t size) {
+            (void)size; return nullptr;
+        }
 
         /**
-         * @brief Copy the just-rendered preview into a stable per-key
-         *        thumbnail texture and return its id.
+         * @brief Backend-specific stable thumbnail copy.
          *
-         * The single preview target is overwritten by the next render, so
-         * grid thumbnails (Asset Browser) and the live Material Editor must
-         * each own a persistent copy. @p key is caller-defined and opaque.
-         * Default: unsupported.
+         * The graph's offscreen preview target gets overwritten by the next
+         * preview, so editor surfaces that need a persistent texture
+         * (Asset Browser grid, Material Editor live frame) ask the graph
+         * to snapshot per-key. The graph delegates the GL-level copy here.
+         *
+         * Implementations should be idempotent on @p key (reuse the
+         * existing storage when present); the graph maintains the cache.
+         *
+         * @param srcTextureId  Backend-typed texture id to copy from
+         *                      (the preview target's color attachment).
+         * @param size          Square thumbnail size in pixels.
+         * @return Backend-typed texture id of the cached snapshot. 0 on
+         *         failure or when the backend doesn't support thumbnails.
          */
-        virtual uint32_t snapshotPreviewToCache(uint64_t key, uint32_t size) {
-            (void)key; (void)size; return 0;
+        virtual uint32_t snapshotToTexture(uint32_t srcTextureId, uint64_t key,
+                                            uint32_t size) {
+            (void)srcTextureId; (void)key; (void)size; return 0;
         }
 
         /** @brief Cached thumbnail id for @p key, or 0 if never snapshotted. */
-        virtual uint32_t cachedPreview(uint64_t key) const { (void)key; return 0; }
+        virtual uint32_t cachedThumbnail(uint64_t key) const { (void)key; return 0; }
 
     protected:
         RenderBackendType m_type;
