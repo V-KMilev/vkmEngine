@@ -76,8 +76,8 @@ class GLLights {
         GLLights(const GLLights& other) = delete;
         GLLights& operator=(const GLLights& other) = delete;
 
-        GLLights(GLLights&& other) = delete;
-        GLLights& operator=(GLLights&& other) = delete;
+        GLLights(GLLights && other) = delete;
+        GLLights& operator=(GLLights && other) = delete;
 
     public:
         /**

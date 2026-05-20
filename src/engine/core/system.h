@@ -71,8 +71,10 @@ struct FrameContext {
 /**
  * @brief Declares which component types a system reads and writes.
  *
- * Used for dependency validation and as a foundation for future parallel scheduling.
- * Systems with no write-write conflicts on the same TypeIds could potentially run concurrently.
+ * Currently used only as a startup diagnostic: Engine::initSystems warns when
+ * two systems declare overlapping writes. Systems still execute sequentially
+ * within their stage; this is NOT a parallel scheduler input today. Override
+ * declareAccess() on systems you want covered by the warning.
  */
 struct SystemAccess {
     std::vector<TypeId> reads;   ///< Component TypeIds this system reads from
@@ -130,8 +132,10 @@ class System {
         /**
          * @brief Declare which component types this system reads and writes.
          *
-         * Override to enable dependency validation and future parallel scheduling.
-         * Default returns empty (no declarations).
+         * Override to participate in the startup write-write conflict warning
+         * (see SystemAccess). Default returns empty (the system opts out of
+         * the diagnostic; ordering is governed entirely by stage + registration
+         * order).
          */
         virtual SystemAccess declareAccess() const { return {}; }
 

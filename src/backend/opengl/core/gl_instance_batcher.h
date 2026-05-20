@@ -3,6 +3,7 @@
 #include <vector>
 #include <memory>
 #include <cstdint>
+#include <unordered_map>
 
 #include <glm/glm.hpp>
 
@@ -88,6 +89,16 @@ class GLInstanceBatcher {
         std::vector<InstanceBatch> m_batches;
         std::vector<glm::mat4> m_matrixScratch;
         Core::InstanceBuffer m_buffer;
+
+        /// Cross-batcher VAO arbitration. Meshes share one VAO across the
+        /// camera and shadow batchers, but the VAO's instanced attributes can
+        /// only point at one buffer at a time; this map records the most
+        /// recent owner so attachToVAO is a no-op while we still own it and a
+        /// real rebind when another batcher used the VAO since.
+        ///
+        /// Lives on the class (rather than as a file-local global) so the
+        /// arbitration state is reachable for inspection / tests if needed.
+        static std::unordered_map<uint32_t, const GLInstanceBatcher*> s_vaoOwner;
 };
 
 } // namespace Engine
