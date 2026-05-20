@@ -146,10 +146,17 @@ namespace {
 
         if (beginComponentCard("Base", kAccBase, true)) {
             drawPropertyLabel("Type");
-            const char* matTypes[] = {"Opaque", "Transparent", "Unlit"};
+            // Order must match the MaterialType enum value (Opaque=0,
+            // Transparent=1, Unlit=2, AlphaMask=3).
+            const char* matTypes[] = {"Opaque", "Transparent", "Unlit", "AlphaMask"};
             int matTypeIdx = static_cast<int>(mat.type);
             if (ImGui::Combo("##MatType", &matTypeIdx, matTypes, IM_ARRAYSIZE(matTypes))) {
                 mat.type = static_cast<MaterialType>(matTypeIdx);
+                // Picking AlphaMask in the editor should turn on the discard
+                // path even if the asset shipped with cutoff = 0 (off).
+                if (mat.type == MaterialType::AlphaMask && mat.alphaCutoff <= 0.0f) {
+                    mat.alphaCutoff = 0.5f;
+                }
                 changed = true;
             }
 
@@ -172,6 +179,11 @@ namespace {
 
             drawPropertyLabel("Alpha");
             changed |= ImGui::SliderFloat("##Alpha", &mat.alpha, 0.0f, 1.0f, "%.2f");
+
+            drawPropertyLabel("Alpha Cutoff");
+            changed |= ImGui::SliderFloat("##AlphaCutoff", &mat.alphaCutoff, 0.0f, 1.0f, "%.2f");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("0 = off. >0 enables AlphaMask: fragments with albedo.a < cutoff are discarded (foliage/leaves)");
         }
         endComponentCard();
 

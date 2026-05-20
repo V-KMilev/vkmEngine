@@ -4,6 +4,7 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include <assimp/material.h>
+#include <assimp/GltfMaterial.h>   // AI_MATKEY_GLTF_ALPHAMODE / ALPHACUTOFF
 
 // Assimp's headers can drag in platform headers that #define ERROR / near /
 // far (wingdi) which collide with logger.h's LogLevel::ERROR. Guard before
@@ -249,13 +250,29 @@ namespace {
             if (mt->Get(AI_MATKEY_TRANSMISSION_FACTOR, f) == AI_SUCCESS)
                 out.transmission = f;
 
-            // KHR_materials_transmission glass keeps alpha = 1 (transmission
-            // is not alpha blending), so classify on transmission too -
-            // otherwise it imports Opaque, never reaches the transparent
-            // batch, and the scene-behind refraction path stays dark.
-            out.type = (out.alpha < 0.999f || out.transmission > 0.001f)
-                         ? MaterialType::Transparent
-                         : MaterialType::Opaque;
+            // Classify type. glTF carries an explicit alphaMode that beats
+            // the alpha-channel heuristics:
+            //   "MASK"  -> AlphaMask (alpha-tested foliage / leaves; depth-
+            //              writing in the opaque phase, no blending).
+            //   "BLEND" -> Transparent (or sorted via the heuristics below
+            //              when the asset is older / has no glTF metadata).
+            // KHR_materials_transmission glass keeps alpha = 1, so the
+            // heuristic also classifies on transmission > 0 so glass imports
+            // as Transparent and the scene-behind refraction path lights up.
+            aiString alphaMode;
+            const bool hasAlphaMode = (mt->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS);
+            float cutoff = 0.5f;  // glTF default
+            mt->Get(AI_MATKEY_GLTF_ALPHACUTOFF, cutoff);
+            if (hasAlphaMode && std::strcmp(alphaMode.C_Str(), "MASK") == 0) {
+                out.type        = MaterialType::AlphaMask;
+                out.alphaCutoff = cutoff;
+            } else if (hasAlphaMode && std::strcmp(alphaMode.C_Str(), "BLEND") == 0) {
+                out.type = MaterialType::Transparent;
+            } else {
+                out.type = (out.alpha < 0.999f || out.transmission > 0.001f)
+                             ? MaterialType::Transparent
+                             : MaterialType::Opaque;
+            }
             if (mt->Get(AI_MATKEY_CLEARCOAT_FACTOR, f) == AI_SUCCESS)
                 out.clearcoat = f;
             if (mt->Get(AI_MATKEY_CLEARCOAT_ROUGHNESS_FACTOR, f) == AI_SUCCESS)

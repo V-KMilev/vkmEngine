@@ -72,7 +72,9 @@ layout(std140, binding = 0) uniform MaterialBlock {
     // KHR_materials_volume - Beer-Lambert through the transmissive medium.
     // attenuationDistance shares the std140 padding of attenuationColor.
     vec3  attenuationColor;     float attenuationDistance;
-    float thicknessFactor;      float _mp9; float _mp10; float _mp11;
+    // alphaCutoff > 0 enables glTF alphaMode = MASK (alpha-tested foliage).
+    float thicknessFactor;      float alphaCutoff;
+    float _mp10; float _mp11;
 } u_material;
 
 layout(std140, binding = 2) uniform CameraBlock {
@@ -528,6 +530,14 @@ void main() {
     if (hasTex(TEX_HEIGHT) && u_material.heightScale > 0.0) {
         vec3 viewTS = normalize(transpose(TBN) * V);
         uv = parallax(uv, viewTS);
+    }
+
+    // Alpha test for foliage / leaves (glTF alphaMode = MASK). Done before
+    // any lighting work so masked-out pixels skip the whole PBR cost. The
+    // sample matches sampleSurface's albedo fetch so the discard is exact.
+    if (u_material.alphaCutoff > 0.0) {
+        float aTex = hasTex(TEX_ALBEDO) ? texture(u_albedoTexture, uv).a : 1.0;
+        if (u_material.albedo.a * aTex < u_material.alphaCutoff) discard;
     }
 
     Surface s = sampleSurface(uv);

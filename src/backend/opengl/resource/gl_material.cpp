@@ -31,6 +31,7 @@ static_assert(offsetof(MaterialUBOData, textureFlags) == 136, "textureFlags offs
 static_assert(offsetof(MaterialUBOData, attenuationColor) == 144, "attenuationColor offset");
 static_assert(offsetof(MaterialUBOData, attenuationDistance) == 156, "attenuationDistance offset");
 static_assert(offsetof(MaterialUBOData, thicknessFactor) == 160, "thicknessFactor offset");
+static_assert(offsetof(MaterialUBOData, alphaCutoff) == 164, "alphaCutoff offset");
 
 
 GLMaterial::GLMaterial(const MaterialAsset& material) {
@@ -88,6 +89,11 @@ void GLMaterial::update(const MaterialAsset& material) {
     uboData.attenuationColor    = material.attenuationColor;
     uboData.attenuationDistance = material.attenuationDistance;
     uboData.thicknessFactor     = material.thicknessFactor;
+
+    // Alpha-tested foliage / leaves (glTF alphaMode = MASK). 0 disables the
+    // discard in the shader; the loader sets the glTF default (0.5) only
+    // when the asset is actually classified as AlphaMask.
+    uboData.alphaCutoff         = material.alphaCutoff;
 
     // Process all texture mappings in a single loop
     // Build texture flags bitfield and bindings list
