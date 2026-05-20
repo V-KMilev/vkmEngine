@@ -71,6 +71,18 @@ class GLBackend : public RenderBackend {
                                    uint32_t size) override;
         uint32_t cachedThumbnail(uint64_t key) const override;
 
+        /// Drop a single cached thumbnail. Wire to asset-destruction events
+        /// so a long editor session doesn't accumulate textures for assets
+        /// the user has already removed. The cache key is the same uint64_t
+        /// the asset browser passes through snapshotToTexture (materialKey /
+        /// meshKey in asset_browser.cpp encode the asset handle id).
+        void evictThumbnail(uint64_t key) override;
+
+        /// Drop every cached thumbnail. Use on scene swap or wholesale
+        /// asset-graph reset; cheaper than a per-key sweep when most
+        /// entries are going away anyway.
+        void clearThumbnailCache() override;
+
         // Editor preview rebinds the backbuffer after a preview session
         // since the composite pass left the offscreen FBO bound; without
         // this ImGui (which renders into the currently bound FBO) would
