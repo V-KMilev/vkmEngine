@@ -20,22 +20,22 @@ ThreadPool& ThreadPool::get() {
 void ThreadPool::addTask(Task && task) {
     {
         std::lock_guard<std::mutex> lock(m_tasksMutex);
+        ++m_taskCount;
         m_tasks.emplace_back(std::move(task));
     }
 
-    ++m_taskCount;
     m_tasksCV.notify_one();
 }
 
 void ThreadPool::addTasks(std::vector<Task>&& tasks) {
     {
         std::lock_guard<std::mutex> lock(m_tasksMutex);
+        m_taskCount += tasks.size();
         for (auto& task : tasks) {
             m_tasks.emplace_back(std::move(task));
         }
     }
 
-    m_taskCount += tasks.size();
     m_tasksCV.notify_all();
 }
 
