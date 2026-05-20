@@ -37,7 +37,7 @@ MeshAsset AssetFactories::createMesh(const nlohmann::json& source) const {
     const std::string kind = source.value("kind", std::string{});
     auto it = m_meshFactories.find(kind);
     if (it == m_meshFactories.end()) {
-        LOG_WARNING("AssetFactories: no mesh factory registered for kind '%s'", kind.c_str());
+        LOG_ERROR("AssetFactories: no mesh factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
         return {};
     }
     return it->second(source);
@@ -47,7 +47,7 @@ TextureHandle AssetFactories::createTexture(const nlohmann::json& source, Resour
     const std::string kind = source.value("kind", std::string{});
     auto it = m_textureFactories.find(kind);
     if (it == m_textureFactories.end()) {
-        LOG_WARNING("AssetFactories: no texture factory registered for kind '%s'", kind.c_str());
+        LOG_ERROR("AssetFactories: no texture factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
         return {};
     }
     return it->second(source, resources);
@@ -57,7 +57,7 @@ MaterialHandle AssetFactories::createMaterial(const nlohmann::json& source, Reso
     const std::string kind = source.value("kind", std::string{});
     auto it = m_materialFactories.find(kind);
     if (it == m_materialFactories.end()) {
-        LOG_WARNING("AssetFactories: no material factory registered for kind '%s'", kind.c_str());
+        LOG_ERROR("AssetFactories: no material factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
         return {};
     }
     return it->second(source, resources);
@@ -67,7 +67,7 @@ ShaderAsset AssetFactories::createShader(const nlohmann::json& source) const {
     const std::string kind = source.value("kind", std::string{});
     auto it = m_shaderFactories.find(kind);
     if (it == m_shaderFactories.end()) {
-        LOG_WARNING("AssetFactories: no shader factory registered for kind '%s'", kind.c_str());
+        LOG_ERROR("AssetFactories: no shader factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
         return {};
     }
     return it->second(source);
@@ -185,8 +185,14 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
             const std::string texName = src["textures"][f.key].get<std::string>();
             const TextureHandle h = resources.findByName<TextureAsset>(texName);
             if (!h) {
-                LOG_WARNING("AssetSerializer: material texture ref '%s' (%s) unresolved",
+                // Keep whatever was already in the slot rather than zeroing
+                // it: the file referenced a name that didn't resolve in the
+                // current asset graph (typo, dependency not loaded yet, or a
+                // texture deleted under us). Silently dropping to null would
+                // give the material a transparent-black map at draw time.
+                LOG_WARNING("AssetSerializer: material texture ref '%s' (%s) unresolved; keeping previous slot value",
                     f.key, texName.c_str());
+                continue;
             }
             m.*f.member = h;
         }
@@ -224,11 +230,14 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
     scene.forEach<Mesh>([&](EntityId, const Mesh& m) {
         if (m.mesh && seenMeshes.insert(m.mesh.id()).second) {
             const auto& asset = resources.get(m.mesh);
-            emitDescriptor(meshes, asset.name, asset.source);
+            // Editor-internal assets (preview primitives etc.) never serialize:
+            // they belong to the running editor, not to the user's scene.
+            if (!asset.internal) emitDescriptor(meshes, asset.name, asset.source);
         }
         if (m.material && seenMaterials.insert(m.material.id()).second) {
             const auto& asset = resources.get(m.material);
-            // Materials always save as `inline` — captures the actual runtime
+            if (asset.internal) return;
+            // Materials always save as `inline` - captures the actual runtime
             // state (including editor scalar tweaks) regardless of how the
             // material was originally created.
             emitDescriptor(materials, asset.name, materialToInline(asset, resources));

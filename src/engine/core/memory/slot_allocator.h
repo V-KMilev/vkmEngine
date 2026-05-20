@@ -28,6 +28,15 @@ class SlotAllocator {
         SlotAllocator(SlotAllocator && other) = delete;
         SlotAllocator& operator=(SlotAllocator && other) = delete;
 
+        /// @brief Swap internal state with another allocator. Lets the
+        /// containing Scene support a staging-then-swap load path without
+        /// breaking the no-copy/no-move invariant.
+        void swap(SlotAllocator& other) noexcept {
+            using std::swap;
+            swap(m_generation, other.m_generation);
+            swap(m_freeList,   other.m_freeList);
+        }
+
     public:
         /**
         * @brief Allocate a new handle with a unique index and current generation.
