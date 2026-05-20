@@ -155,6 +155,22 @@ void RenderView::build(
     // Gather drawables - reserve only grows, never shrinks
     drawables.reserve(visibility.entries.size());
 
+    // Lazy MaterialType memo: ResourceManager::get walks a slot table +
+    // SparseSet per call. On a 13k-entity scene with ~100 unique materials
+    // that's two orders of magnitude of redundant work per frame. Linear
+    // scan over a thread_local vector beats unordered_map's hashing +
+    // allocator traffic for the small-N case we actually see in practice.
+    static thread_local std::vector<std::pair<uint32_t, MaterialType>> matTypeMemo;
+    matTypeMemo.clear();
+    auto materialTypeOf = [&](MaterialHandle h) -> MaterialType {
+        if (!h) return MaterialType::Opaque;
+        const uint32_t id = h.id();
+        for (const auto& kv : matTypeMemo) if (kv.first == id) return kv.second;
+        const MaterialType t = resources.get(h).type;
+        matTypeMemo.emplace_back(id, t);
+        return t;
+    };
+
     // Guard against stale EntityIds (entity deleted between visibility and render).
     for (const auto& entry : visibility.entries) {
         if (!scene.isAlive(entry.id)) continue;
@@ -163,7 +179,7 @@ void RenderView::build(
         DrawableData drawable;
         drawable.mesh         = mesh.mesh;
         drawable.material     = mesh.material;
-        drawable.materialType = resources.get(mesh.material).type;
+        drawable.materialType = materialTypeOf(mesh.material);
         drawable.castShadows  = mesh.castShadows;
         drawable.model        = entry.model;
         drawables.emplace_back(drawable);
@@ -181,19 +197,31 @@ void RenderView::build(
     // (behind/beside the camera, or only their shadow is in view); culling
     // these to the camera frustum is what made Sponza's shadows flicker and
     // vanish on view changes. Use the hierarchy's world matrix when present.
+    //
+    // Two perf wins over the previous version:
+    //   - forEach<Mesh, Transform> intersects the two SparseSets in the inner
+    //     loop, so the has<Transform> branch becomes a SparseSet membership
+    //     check on the dense side (no second lookup, no fall-through).
+    //   - materialTypeOf is the same memo used for the drawables loop, so we
+    //     pay one ResourceManager::get per unique material across both lists
+    //     instead of once per entity.
+    // We also drop non-Opaque casters at gather time: the shadow pass already
+    // filters them out, but emplace + matrix copy + sort still cost us.
     shadowCasters.reserve(drawables.size());
-    scene.forEach<Mesh>([&](EntityId id, const Mesh& mesh) {
+    scene.forEach<Mesh, Transform>([&](EntityId id, const Mesh& mesh, const Transform& transform) {
         if (!mesh.visible || !mesh.castShadows) return;
-        if (!scene.has<Transform>(id)) return;
+
+        const MaterialType mt = materialTypeOf(mesh.material);
+        if (mt != MaterialType::Opaque) return;
 
         DrawableData caster;
         caster.mesh         = mesh.mesh;
         caster.material     = mesh.material;
-        caster.materialType = resources.get(mesh.material).type;
+        caster.materialType = mt;
         caster.castShadows  = true;
         caster.model        = scene.has<WorldTransform>(id)
             ? scene.get<WorldTransform>(id).model
-            : Transform::computeModelMatrix(scene.get<Transform>(id));
+            : Transform::computeModelMatrix(transform);
         shadowCasters.emplace_back(caster);
     });
     sortDrawables(shadowCasters);
