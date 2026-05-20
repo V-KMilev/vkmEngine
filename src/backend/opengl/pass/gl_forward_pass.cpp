@@ -282,11 +282,27 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         // after this transparent batch has rendered, re-resolve the HDR target
         // so u_sceneColor now contains opaque + sky + every transparent batch
         // drawn so far. The next (closer) batch's screen-space refraction then
-        // refracts what's actually behind it - including farther glass. Skipped
-        // after the last transparent (no consumer) and outside Phase::Transparent.
+        // refracts what's actually behind it - including farther glass.
+        //
+        // Only the next-consumer batch that actually samples u_sceneColor
+        // needs this snapshot - i.e. one with the Transmission feature.
+        // A scene of plain alpha-blended particles, or a single piece of
+        // glass with non-transmissive transparents around it, pays nothing
+        // here; only multi-layer glass triggers the per-batch resolve.
         if (m_phase == Phase::Transparent && i < lastTransparentIdx) {
-            hdrT.resolve();
-            hdrT.bindForRender();
+            bool nextNeedsSnapshot = false;
+            for (size_t j = i + 1; j <= lastTransparentIdx; ++j) {
+                if (batches[j].materialType != MaterialType::Transparent) continue;
+                const GLMaterial* next = glView.getMaterial(batches[j].material);
+                if (next && (next->getFeatureFlags() & toBits(MaterialFeature::Transmission))) {
+                    nextNeedsSnapshot = true;
+                }
+                break;  // each later transmissive batch will trigger its own resolve via this same check
+            }
+            if (nextNeedsSnapshot) {
+                hdrT.resolve();
+                hdrT.bindForRender();
+            }
         }
     }
 
