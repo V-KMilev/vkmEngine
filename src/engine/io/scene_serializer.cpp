@@ -1,7 +1,10 @@
 #include "io/scene_serializer.h"
 
+#include <array>
 #include <fstream>
 #include <limits>
+#include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -26,14 +29,55 @@ namespace CS = ComponentSerializer;
 
 constexpr int FILE_FORMAT_VERSION = 1;
 
-/// Try to read a component from an entity and emit a JSON entry for it.
-template<typename Component, typename Fn>
-void emitIfPresent(const Scene& scene, EntityId id,
-                   json& components, const char* key, Fn&& saver)
-{
-    if (scene.has<Component>(id)) {
-        components[key] = saver(scene.get<Component>(id));
-    }
+/// One component type's save + load (+ JSON key) bundled together. The
+/// scene loops over a table of these instead of repeating the same
+/// has<T>/get<T>/CS::save / contains/CS::load/add pattern per type at
+/// both ends - adding a new component becomes a single table entry, not
+/// matched edits in scene save and scene load (and the known-key list).
+struct ComponentEntry {
+    const char* key;
+    void (*save)(const Scene&, EntityId, json&, const ResourceManager&);
+    /// `load` may be null for components whose load is structurally
+    /// special (Hierarchy collects parent links in pass 1 and wires them
+    /// up in pass 2; it can't be a simple has-and-add). The save side
+    /// stays uniform; the load loop just skips null entries.
+    void (*load)(Scene&, Entity, const json&, ResourceManager&);
+};
+
+void saveName       (const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<Name>(id))              c["Name"]        = CS::save(s.get<Name>(id)); }
+void saveTransform  (const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<Transform>(id))         c["Transform"]   = CS::save(s.get<Transform>(id)); }
+void saveCamera     (const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<Camera>(id))            c["Camera"]      = CS::save(s.get<Camera>(id)); }
+void saveLight      (const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<Light>(id))             c["Light"]       = CS::save(s.get<Light>(id)); }
+void saveMesh       (const Scene& s, EntityId id, json& c, const ResourceManager& r) { if (s.has<Mesh>(id))              c["Mesh"]        = CS::save(s.get<Mesh>(id), r); }
+void saveHierarchy  (const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<Hierarchy>(id))         c["Hierarchy"]   = CS::save(s.get<Hierarchy>(id)); }
+void saveAnimation  (const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<Animation>(id))         c["Animation"]   = CS::save(s.get<Animation>(id)); }
+void saveEnvironment(const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<EnvironmentConfig>(id)) c["Environment"] = CS::save(s.get<EnvironmentConfig>(id)); }
+
+void loadName       (Scene& s, Entity e, const json& src, ResourceManager&)   { if (src.contains("Name"))        { Name c;              CS::load(src["Name"],        c);    s.add(e, std::move(c)); } }
+void loadTransform  (Scene& s, Entity e, const json& src, ResourceManager&)   { if (src.contains("Transform"))   { Transform c;         CS::load(src["Transform"],   c);    s.add(e, std::move(c)); } }
+void loadCamera     (Scene& s, Entity e, const json& src, ResourceManager&)   { if (src.contains("Camera"))      { Camera c;            CS::load(src["Camera"],      c);    s.add(e, std::move(c)); } }
+void loadLight      (Scene& s, Entity e, const json& src, ResourceManager&)   { if (src.contains("Light"))       { Light c;             CS::load(src["Light"],       c);    s.add(e, std::move(c)); } }
+void loadMesh       (Scene& s, Entity e, const json& src, ResourceManager& r) { if (src.contains("Mesh"))        { Mesh c;              CS::load(src["Mesh"],        c, r); s.add(e, std::move(c)); } }
+void loadAnimation  (Scene& s, Entity e, const json& src, ResourceManager&)   { if (src.contains("Animation"))   { Animation a;         CS::load(src["Animation"],   a);    s.add(e, std::move(a)); } }
+void loadEnvironment(Scene& s, Entity e, const json& src, ResourceManager&)   { if (src.contains("Environment")) { EnvironmentConfig c; CS::load(src["Environment"], c);    s.add(e, std::move(c)); } }
+// Hierarchy load is two-pass (parent indices collected in pass 1, then
+// setParent called in pass 2). Save fits the table; load is wired by hand
+// in load() with a null entry below.
+
+constexpr std::array<ComponentEntry, 8> kRegistry = {{
+    {"Name",        saveName,        loadName},
+    {"Transform",   saveTransform,   loadTransform},
+    {"Camera",      saveCamera,      loadCamera},
+    {"Light",       saveLight,       loadLight},
+    {"Mesh",        saveMesh,        loadMesh},
+    {"Animation",   saveAnimation,   loadAnimation},
+    {"Environment", saveEnvironment, loadEnvironment},
+    {"Hierarchy",   saveHierarchy,   nullptr},  // see load() for the pass-1/2 split
+}};
+
+bool isKnownComponentKey(const std::string& k) {
+    for (const auto& e : kRegistry) if (k == e.key) return true;
+    return false;
 }
 
 } // namespace
@@ -49,15 +93,9 @@ bool save(const Scene& scene, const ResourceManager& resources, const std::strin
         entity["id"] = id.index;
         json components = json::object();
 
-        emitIfPresent<Name>     (scene, id, components, "Name",      [&](const Name& c)      { return CS::save(c); });
-        emitIfPresent<Transform>(scene, id, components, "Transform", [&](const Transform& c) { return CS::save(c); });
-        emitIfPresent<Camera>   (scene, id, components, "Camera",    [&](const Camera& c)    { return CS::save(c); });
-        emitIfPresent<Light>    (scene, id, components, "Light",     [&](const Light& c)     { return CS::save(c); });
-        emitIfPresent<Mesh>     (scene, id, components, "Mesh",      [&](const Mesh& c)      { return CS::save(c, resources); });
-        emitIfPresent<Hierarchy>(scene, id, components, "Hierarchy", [&](const Hierarchy& c) { return CS::save(c); });
-        emitIfPresent<Animation>(scene, id, components, "Animation", [&](const Animation& c) { return CS::save(c); });
-        emitIfPresent<EnvironmentConfig>(scene, id, components, "Environment", [&](const EnvironmentConfig& c) { return CS::save(c); });
-        // WorldTransform is derived — not persisted.
+        // WorldTransform is derived from Transform + Hierarchy each frame -
+        // not in the registry, not persisted.
+        for (const auto& reg : kRegistry) reg.save(scene, id, components, resources);
 
         entity["components"] = std::move(components);
         doc["entities"].push_back(std::move(entity));
@@ -111,84 +149,102 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
         return false;
     }
 
-    // Populate the asset graph before touching entities — Mesh components
+    // Populate the asset graph before touching entities - Mesh components
     // will resolve their handles by name during entity load. Idempotent:
     // assets already present in ResourceManager are kept as-is.
     if (doc.contains("assets")) {
         AssetSerializer::loadAssets(doc["assets"], resources);
     }
 
-    scene.clear();
+    // Two-phase load: deserialise into a staging scene first. A throw or
+    // unrecoverable error here is contained - the live scene is only
+    // touched once the entire load has succeeded. Avoids the
+    // "malformed-file-leaves-editor-empty" failure mode.
+    Scene staging;
 
     // Pass 1: create each entity at its saved slot index and populate
     // non-relational components. Hierarchy::parent is captured for pass 2
     // because the parent might not have been created yet on first sight.
     std::vector<std::pair<uint32_t, uint32_t>> parentLinks;  // (child idx, parent idx)
     size_t entityCount = 0;
+    std::set<std::string> unknownKeys;  // dedup warnings - one per drift, not per entity
 
-    for (const auto& entry : doc["entities"]) {
-        const uint32_t id = entry.value("id", 0u);
-        if (id == 0) {
-            LOG_WARNING("SceneSerializer::load: entity with id=0 skipped (slot 0 reserved)");
-            continue;
-        }
-        const Entity entity = scene.createEntityAt(id);
-        ++entityCount;
+    try {
+        for (const auto& entry : doc["entities"]) {
+            const uint32_t id = entry.value("id", 0u);
+            if (id == 0) {
+                LOG_WARNING("SceneSerializer::load: entity with id=0 skipped (slot 0 reserved)");
+                continue;
+            }
+            const Entity entity = staging.createEntityAt(id);
+            ++entityCount;
 
-        const auto& components = entry.value("components", json::object());
+            const auto& components = entry.value("components", json::object());
 
-        if (components.contains("Name")) {
-            Name c; CS::load(components["Name"], c);
-            scene.add(entity, std::move(c));
-        }
-        if (components.contains("Transform")) {
-            Transform c; CS::load(components["Transform"], c);
-            scene.add(entity, std::move(c));
-        }
-        if (components.contains("Camera")) {
-            Camera c; CS::load(components["Camera"], c);
-            scene.add(entity, std::move(c));
-        }
-        if (components.contains("Light")) {
-            Light c; CS::load(components["Light"], c);
-            scene.add(entity, std::move(c));
-        }
-        if (components.contains("Mesh")) {
-            Mesh c; CS::load(components["Mesh"], c, resources);
-            scene.add(entity, std::move(c));
-        }
-        if (components.contains("Animation")) {
-            Animation a; CS::load(components["Animation"], a);
-            scene.add(entity, std::move(a));
-        }
-        if (components.contains("Environment")) {
-            EnvironmentConfig c; CS::load(components["Environment"], c);
-            scene.add(entity, std::move(c));
-        }
-        if (components.contains("Hierarchy")) {
-            const uint32_t parentIdx = CS::loadParentIndex(components["Hierarchy"]);
-            if (parentIdx != std::numeric_limits<uint32_t>::max() && parentIdx != 0) {
-                parentLinks.emplace_back(id, parentIdx);
+            // Run every registered component's loader. Hierarchy has a null
+            // load fn in the table because it needs two-pass treatment;
+            // handle it explicitly below.
+            for (const auto& reg : kRegistry) {
+                if (reg.load) reg.load(staging, entity, components, resources);
+            }
+            if (components.contains("Hierarchy")) {
+                const uint32_t parentIdx = CS::loadParentIndex(components["Hierarchy"]);
+                if (parentIdx != std::numeric_limits<uint32_t>::max() && parentIdx != 0) {
+                    parentLinks.emplace_back(id, parentIdx);
+                }
+            }
+
+            if (components.is_object()) {
+                for (const auto& kv : components.items()) {
+                    if (!isKnownComponentKey(kv.key())) unknownKeys.insert(kv.key());
+                }
             }
         }
-    }
 
-    // Pass 2: wire up Hierarchy::parent now that every entity exists at its
-    // saved slot. setParent rebuilds firstChild/nextSibling/prevSibling on
-    // both sides and marks WorldTransform dirty.
-    for (const auto& [childIdx, parentIdx] : parentLinks) {
-        if (!scene.isAliveAtIndex(parentIdx)) {
-            LOG_WARNING("SceneSerializer::load: parent slot %u not found in file; entity %u left as root",
-                parentIdx, childIdx);
-            continue;
+        // Pass 2: wire up Hierarchy::parent now that every entity exists at
+        // its saved slot. setParent rebuilds firstChild/nextSibling/
+        // prevSibling on both sides and marks WorldTransform dirty.
+        for (const auto& [childIdx, parentIdx] : parentLinks) {
+            if (!staging.isAliveAtIndex(parentIdx)) {
+                LOG_WARNING("SceneSerializer::load: parent slot %u not found in file; entity %u left as root",
+                    parentIdx, childIdx);
+                continue;
+            }
+            const EntityId childId {childIdx,  staging.generationOf(childIdx)};
+            const EntityId parentId{parentIdx, staging.generationOf(parentIdx)};
+            HierarchyOperations::setParent(staging, childId, parentId);
         }
-        const EntityId childId {childIdx,  scene.generationOf(childIdx)};
-        const EntityId parentId{parentIdx, scene.generationOf(parentIdx)};
-        HierarchyOperations::setParent(scene, childId, parentId);
+    } catch (const std::exception& e) {
+        LOG_ERROR("SceneSerializer::load: aborted while reading '%s': %s (live scene unchanged)",
+            path.c_str(), e.what());
+        return false;
     }
 
-    // SparseSet capacity may have grown then shrunk during clear()/load —
-    // reclaim wasted slots so the loaded scene doesn't carry orphan capacity.
+    for (const std::string& k : unknownKeys) {
+        LOG_WARNING("SceneSerializer::load: unknown component key '%s' in '%s' (schema drift; dropped)",
+            k.c_str(), path.c_str());
+    }
+
+    // Commit. swap moves staging's contents into the live scene; staging
+    // now holds the previously-live entities and destroys them when it
+    // goes out of scope. We deliberately don't call scene.clear() first -
+    // that would walk the live entities entity-by-entity (each one
+    // detachFromHierarchy + per-component remove) just to throw them away,
+    // when staging's default destruction does the same memory release in
+    // one pass per component storage.
+    //
+    // Asset state caveat: AssetSerializer::loadAssets() above mutates the
+    // shared ResourceManager BEFORE this swap, so a failure during the
+    // staging build (caught above) leaves any newly-loaded assets in
+    // the resource graph as orphans. They're additive (no asset of the
+    // same name is overwritten) so it's a leak, not corruption. A proper
+    // transactional load would need an asset-graph swap mechanism;
+    // tracked alongside the binary-scene-cache work.
+    scene.swap(staging);
+
+    // SparseSet capacity may have grown then shrunk during the staging
+    // load - reclaim wasted slots so the loaded scene doesn't carry
+    // orphan capacity.
     scene.compact();
 
     LOG_INFO("Loaded scene from '%s' (%zu entities, %zu hierarchy links)",
