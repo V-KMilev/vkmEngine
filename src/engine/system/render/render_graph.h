@@ -27,10 +27,36 @@ struct RGResourceLifetime {
  *
  * Supersedes RenderPipeline: same ordered execution, but each pass declares
  * the transient resources it reads/writes (RenderPass::declareResources).
- * compile() validates ordering (read-before-write), computes per-resource
- * lifetimes, and exposes both for debug. Concrete GPU storage still lives in
- * the backend for now; moving it into a graph-owned, lifetime-aliased pool
- * (with auto-inserted resolves) is the next step and does not change this API.
+ * compile() validates ordering (read-before-write) and computes per-resource
+ * lifetimes (firstWrite -> lastRead), exposed via lifetime() for debug.
+ *
+ * STATE OF THE GRAPH (long-term roadmap):
+ *
+ *   What it owns today:
+ *     - The pass list and execution order.
+ *     - The compile-time validation of resource ordering.
+ *     - The MSAA -> single-sample resolve hook between writes to SceneHDR
+ *       and reads of SceneHDRResolved.
+ *
+ *   What still lives on the backend (the next steps):
+ *     - The concrete GPU storage for each RGResource (FrameResources
+ *       inside GLBackend - HDR target, bloom chain, GBuffer, etc.).
+ *     - Passes still reach for backend.getHdrTarget() / getBloom() / ...
+ *       at execute time instead of resolving by RGResource enum.
+ *
+ *   Migration plan when the next step lands:
+ *     1. Move the FrameResources pool into the graph itself, keyed by
+ *        RGResource enum. Backend still allocates the underlying GL
+ *        objects but hands them to the graph at resize() time.
+ *     2. RenderGraphContext gains a getResource<T>(RGResource) accessor.
+ *     3. Passes use that accessor instead of backend-typed getters. The
+ *        existing read/write declarations stay the same.
+ *     4. With ownership in the graph, lifetime aliasing (two resources
+ *        with disjoint [firstWrite..lastRead] sharing storage) becomes a
+ *        natural follow-up - memory budget knob without changing passes.
+ *
+ *   None of this changes the RenderGraph public API; passes that don't
+ *   touch backend-typed resources never need an edit.
  */
 class RenderGraph {
     public:
