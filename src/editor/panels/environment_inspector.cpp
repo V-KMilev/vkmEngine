@@ -340,6 +340,40 @@ void EnvironmentInspector::drawPost(EditorContext& /*ec*/, EnvironmentConfig& en
     }
 
     ImGui::Spacing();
+    if (cardHeader("lensdirt", "Lens Dirt", &env.lensDirt)) {
+        ImGui::BeginDisabled(!env.lensDirt);
+        sliderF("Intensity", "##DirtInt", &env.lensDirtIntensity, 0.0f, 2.0f, "%.2f",
+                "Dust spots light up wherever bloom is bright. Needs bloom on.");
+        ImGui::EndDisabled();
+    }
+
+    ImGui::Spacing();
+    if (cardHeader("lensflare", "Lens Flare", &env.lensFlare)) {
+        ImGui::BeginDisabled(!env.lensFlare);
+        sliderF("Intensity", "##LFInt", &env.lensFlareIntensity, 0.0f, 4.0f, "%.2f",
+                "Overall flare gain");
+        sliderF("Threshold", "##LFThr", &env.lensFlareThreshold, 0.0f, 8.0f, "%.2f",
+                "HDR luminance floor for contributing pixels");
+        drawPropertyLabel("Ghosts");
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::SliderInt("##LFGhosts", &env.lensFlareGhostCount, 1, 8);
+        sliderF("Ghost Spacing", "##LFSpace", &env.lensFlareGhostSpacing, 0.05f, 1.0f, "%.2f",
+                "UV step between ghosts along the optical axis");
+        sliderF("Halo Radius", "##LFHalo", &env.lensFlareHaloRadius, 0.0f, 0.6f, "%.2f",
+                "UV distance from source to halo ring");
+        sliderF("Chromatic", "##LFChrom", &env.lensFlareChromatic, 0.0f, 0.04f, "%.3f",
+                "Per-channel UV offset for rainbow fringe");
+
+        ImGui::Spacing();
+        ImGui::Checkbox("Starburst", &env.starburst);
+        if (env.starburst) {
+            sliderF("Star Intensity", "##StarInt", &env.starburstIntensity, 0.0f, 4.0f, "%.2f",
+                    "Aperture-blade spokes multiplied onto the halo");
+        }
+        ImGui::EndDisabled();
+    }
+
+    ImGui::Spacing();
     if (cardHeader("ssao", "Ambient Occlusion (GTAO)", &env.ssao)) {
         ImGui::BeginDisabled(!env.ssao);
         sliderF("Radius", "##AoRad", &env.ssaoRadius, 0.05f, 5.0f, "%.2f",

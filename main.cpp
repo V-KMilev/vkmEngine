@@ -36,6 +36,7 @@
 #include "pass/gl_taa_pass.h"
 #include "pass/gl_dof_pass.h"
 #include "pass/gl_motion_blur_pass.h"
+#include "pass/gl_lens_flare_pass.h"
 
 // Tools
 #include "asset_registration.h"
@@ -122,6 +123,7 @@ int main() {
             {"u_bloom", 1},
             {"u_adaptedLum", 2},
             {"u_colorLut", 3},
+            {"u_dirt", 4},
         };
         const auto compositeShader = Engine::loadShader(resources, shaderDir + "/post/composite", "shader:composite", compositeSamplers);
 
@@ -169,6 +171,13 @@ int main() {
         const auto dofShader = Engine::loadShader(resources, shaderDir + "/post/dof",         "shader:dof",         postGeomSamplers);
         const auto mbShader  = Engine::loadShader(resources, shaderDir + "/post/motion_blur", "shader:motion_blur", postGeomSamplers);
 
+        // Lens flare reads the resolved HDR scene at slot 0; the procedural
+        // starburst mask is bound to slot 1 by the pass.
+        const std::unordered_map<std::string, int> lensFlareSamplers = {
+            {"u_hdr", 0}, {"u_starburst", 1}
+        };
+        const auto lensFlareShader = Engine::loadShader(resources, shaderDir + "/post/lens_flare", "shader:lens_flare", lensFlareSamplers);
+
         // Render passes - shadow runs first so the forward pass can sample its result.
         renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
         // Bake runs first (no-ops unless the environment map changed).
@@ -199,6 +208,11 @@ int main() {
         renderSystem.addPass(std::make_unique<Engine::GLGridPass>(gridShader));
         // Screen-space reflections, additively blended into the HDR scene.
         renderSystem.addPass(std::make_unique<Engine::GLSSRPass>(ssrShader));
+        // Lens flare (off by default) - ghosts + halo from bright pixels,
+        // additively blended into the HDR scene. Runs after SSR so its
+        // reflections can themselves cause flare, and before TAA/DoF so the
+        // flares get temporally stabilised and optionally defocused.
+        renderSystem.addPass(std::make_unique<Engine::GLLensFlarePass>(lensFlareShader));
         // TAA (off by default) stabilises the resolved HDR before bloom.
         renderSystem.addPass(std::make_unique<Engine::GLTAAPass>(taaShader));
         // DoF then motion blur (both off by default) over the resolved HDR.
@@ -234,6 +248,7 @@ int main() {
         Engine::watchShader(fileWatcher, resources, taaShader);
         Engine::watchShader(fileWatcher, resources, dofShader);
         Engine::watchShader(fileWatcher, resources, mbShader);
+        Engine::watchShader(fileWatcher, resources, lensFlareShader);
 
         // Default scene: a single cube at the origin under a directional
         // light. Scene/asset round-trip happy: every asset has a source
