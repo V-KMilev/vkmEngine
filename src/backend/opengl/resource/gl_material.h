@@ -176,11 +176,24 @@ class GLMaterial {
          */
         const std::vector<TextureBinding>& getTextureBindings() const { return m_textureBindings; }
 
+        /**
+         * @brief Optional-feature bitset (MaterialFeature) cached at update().
+         *
+         * Drives the per-material shader variant lookup in GLForwardPass:
+         * each unique flag combination compiles its own PBR program with the
+         * matching #ifdef HAS_X gates active and everything else dead-coded
+         * out. Recomputed whenever the asset version bumps - editor edits
+         * pick up new features automatically.
+         */
+        uint32_t getFeatureFlags() const { return m_featureFlags; }
+
     private:
         std::unique_ptr<Core::UniformBuffer> m_ubo;
 
         // Store texture bindings for efficient iteration
         std::vector<TextureBinding> m_textureBindings;
+
+        uint32_t m_featureFlags = 0;
 };
 
 } // namespace Engine

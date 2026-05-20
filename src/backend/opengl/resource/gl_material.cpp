@@ -95,6 +95,10 @@ void GLMaterial::update(const MaterialAsset& material) {
     // when the asset is actually classified as AlphaMask.
     uboData.alphaCutoff         = material.alphaCutoff;
 
+    // Cache the optional-feature bitset so the forward pass can pick the
+    // right shader variant for this material without re-reading the asset.
+    m_featureFlags = material.featureFlags();
+
     // Process all texture mappings in a single loop
     // Build texture flags bitfield and bindings list
     m_textureBindings.clear();

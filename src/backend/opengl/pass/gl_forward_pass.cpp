@@ -65,13 +65,6 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
 
     auto& glView = gl.getView();
 
-    // Resolve every shader variant up-front (resolveShader picks up any
-    // hot-reload version bumps and re-applies the asset's sampler bindings).
-    GLShader* shaders[4] = {};
-    for (size_t i = 0; i < 4; ++i) {
-        shaders[i] = glView.resolveShader(m_shaders[i], resources);
-    }
-
     auto& batcher = glView.getInstanceBatcher();
     const auto& batches = batcher.getBatches();
 
@@ -99,19 +92,39 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     const bool ssaoOn = gbuffer.isReady() && view.environment.ssao;
     gbuffer.bindOcclusion(GLConfig::TextureSlots::SSAO);
 
-    if (GLShader* pbr = shaders[static_cast<int>(MaterialType::Opaque)]) {
-        pbr->bind();
-        pbr->setUniform1i("u_hasIBL", iblReady ? 1 : 0);
-        pbr->setUniform1f("u_iblIntensity", view.environment.iblIntensity);
-        pbr->setUniform1i("u_ssaoEnabled", ssaoOn ? 1 : 0);
-        // Half-res AO is sampled by normalized screen UV (see pbr frag).
-        pbr->setUniform2f("u_screenSize",
-            static_cast<float>(view.viewportWidth),
-            static_cast<float>(view.viewportHeight));
-        // No opaque-scene copy yet this frame: transmissive materials fall
-        // back to IBL refraction until the opaque->transparent boundary.
-        pbr->setUniform1i("u_hasSceneColor", 0);
-    }
+    // Per-material shader variants mean we no longer have a single PBR
+    // program to set frame-wide uniforms on up front. Capture them in a
+    // local snapshot and re-apply whenever we bind a new variant - the
+    // GL_INVALID_OPERATION-safe path is to just call setUniform after each
+    // bind (locations are cached and missing names resolve to -1 no-op).
+    struct PBRFrameUniforms {
+        int   hasIBL;
+        float iblIntensity;
+        int   ssaoEnabled;
+        float screenW;
+        float screenH;
+        int   hasSceneColor;  // flips 0 -> 1 at the opaque/transparent boundary
+    };
+    PBRFrameUniforms frame{
+        iblReady ? 1 : 0,
+        view.environment.iblIntensity,
+        ssaoOn  ? 1 : 0,
+        static_cast<float>(view.viewportWidth),
+        static_cast<float>(view.viewportHeight),
+        0,
+    };
+    auto applyFrameUniforms = [&](GLShader* sh) {
+        // u_screenSize and u_hasSceneColor get stripped from PBR variants
+        // that don't compile HAS_TRANSMISSION; check hasUniform first so
+        // we don't spam vkmGL's missing-uniform warning per shader switch.
+        sh->setUniform1i("u_hasIBL", frame.hasIBL);
+        sh->setUniform1f("u_iblIntensity", frame.iblIntensity);
+        sh->setUniform1i("u_ssaoEnabled", frame.ssaoEnabled);
+        if (sh->hasUniform("u_screenSize"))
+            sh->setUniform2f("u_screenSize", frame.screenW, frame.screenH);
+        if (sh->hasUniform("u_hasSceneColor"))
+            sh->setUniform1i("u_hasSceneColor", frame.hasSceneColor);
+    };
 
     // CameraBlock and LightsBlock UBOs are owned by GLView and bound once
     // per frame in sync().
@@ -131,6 +144,9 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     // already been drawn into the HDR target by earlier passes. Snapshot
     // that as the scene-behind source, then set transparent GL state once
     // up front (the in-loop type transition below only drives Phase::All).
+    // We don't pre-bind a PBR program here any more - each batch picks its
+    // own variant below and applyFrameUniforms() pushes u_hasSceneColor=1
+    // into that variant when it binds.
     if (m_phase == Phase::Transparent) {
         bool anyTransparent = false;
         for (const auto& b : batches)
@@ -141,11 +157,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         hdrT.resolve();
         hdrT.bindForRender();
         hdrT.bindResolvedColor(GLConfig::TextureSlots::SceneColor);
-        if (GLShader* pbrT = shaders[static_cast<int>(MaterialType::Opaque)]) {
-            pbrT->bind();
-            pbrT->setUniform1i("u_hasSceneColor", 1);
-            currentShader = pbrT;
-        }
+        frame.hasSceneColor = 1;
         glContext.setBlending(true);
         glContext.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glContext.setDepthWrite(false);
@@ -173,22 +185,15 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
 
         if (!inPhase(batch.materialType)) continue;
 
-        // Pick the shader for this batch's material type, falling back to
-        // the opaque PBR shader if the variant slot is empty.
-        GLShader* shader = shaders[static_cast<int>(batch.materialType)];
-        if (!shader) shader = shaders[static_cast<int>(MaterialType::Opaque)];
-        if (!shader) continue;
-
-        // Material-type transition (blend/depth state + the opaque-scene
-        // snapshot). Driven by the material TYPE, not shader identity:
-        // opaque and transparent share the PBR program, so a
-        // shader-equality guard never fires at the opaque->transparent
-        // boundary and transparent would render with opaque state.
+        // Material-type transition: blend/depth state + the opaque-scene
+        // snapshot. Type drives this (not shader identity) because per-
+        // material variants make the shader change within a type too.
         if (batch.materialType != currentType) {
             if (currentType == MaterialType::Transparent && batch.materialType != MaterialType::Transparent) {
                 glContext.setDepthWrite(true);
                 glContext.setBlending(false);
                 glContext.setFaceCulling(false);
+                frame.hasSceneColor = 0;
             }
 
             if (batch.materialType == MaterialType::Transparent && currentType != MaterialType::Transparent) {
@@ -200,11 +205,14 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
                 hdrT.resolve();
                 hdrT.bindForRender();
                 hdrT.bindResolvedColor(GLConfig::TextureSlots::SceneColor);
-                if (GLShader* pbrT = shaders[static_cast<int>(MaterialType::Opaque)]) {
-                    pbrT->bind();
-                    pbrT->setUniform1i("u_hasSceneColor", 1);
-                    currentShader = pbrT;  // we just bound it
-                }
+                frame.hasSceneColor = 1;
+
+                // currentShader is the last opaque variant. Re-apply the
+                // new u_hasSceneColor immediately so any glass batch that
+                // happens to bind the same shader (unlikely with variants
+                // but possible if their feature flags collide) sees the
+                // updated value without a redundant rebind.
+                if (currentShader) applyFrameUniforms(currentShader);
 
                 glContext.setBlending(true);
                 glContext.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -216,15 +224,26 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
             currentType = batch.materialType;
         }
 
+        // Resolve the per-material shader variant. featureFlags is cached
+        // on GLMaterial at sync time, so this is a hash lookup in the hot
+        // path. Falls back to the Opaque slot's shader when the type slot
+        // is empty (e.g. Unlit isn't wired up by the caller).
+        const GLMaterial* material = glView.getMaterial(batch.material);
+        const uint32_t flags = material ? material->getFeatureFlags() : 0u;
+        ShaderHandle baseHandle = m_shaders[static_cast<int>(batch.materialType)];
+        if (!baseHandle) baseHandle = m_shaders[static_cast<int>(MaterialType::Opaque)];
+        GLShader* shader = glView.resolveShaderVariant(baseHandle, flags, resources);
+        if (!shader) continue;
+
         if (shader != currentShader) {
             shader->bind();
+            applyFrameUniforms(shader);
             STATS_RECORD_SHADER_SWITCH();
             currentShader = shader;
         }
 
         // Bind material (UBO + textures) — skip when identical to previous batch
         if (batch.material && batch.material != currentMaterial) {
-            const GLMaterial* material = glView.getMaterial(batch.material);
             if (material) {
                 material->bind(GLConfig::UBOBindingPoints::Material);
                 material->bindTextures(glView);

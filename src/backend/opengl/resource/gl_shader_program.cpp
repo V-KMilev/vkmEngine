@@ -54,7 +54,13 @@ void GLShader::applySamplerBindings(const ShaderAsset& asset) {
     if (asset.samplerBindings.empty()) return;
     bind();
     for (const auto& [uniformName, slot] : asset.samplerBindings) {
-        setUniform1i(uniformName.c_str(), slot);
+        // Per-material variants legitimately strip samplers whose feature
+        // wasn't enabled at compile time (e.g. u_sceneColor when the variant
+        // has no HAS_TRANSMISSION). Skip silently instead of triggering
+        // vkmGL's "uniform does not exist" warning per stripped slot.
+        if (hasUniform(uniformName.c_str())) {
+            setUniform1i(uniformName.c_str(), slot);
+        }
     }
 }
 
