@@ -46,10 +46,17 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
 
+    // Graph-registered transient resources. Persistent backend state
+    // (GLView / GLContext / default target) still comes through gl.
+    auto& hdrT       = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    auto& gbuffer    = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
+    auto& ibl        = *rg.resource<GLIBL>(RGResource::IBL);
+    auto& shadowAtlas = *rg.resource<GLShadowAtlas>(RGResource::ShadowAtlas);
+
     // The scene renders into the offscreen linear-HDR target so light is
     // never clamped before tone mapping. The composite pass resolves this
     // and applies exposure + AgX to the backbuffer.
-    gl.getHdrTarget().bindForRender();
+    hdrT.bindForRender();
 
     // The opaque (or legacy All) pass owns the clear. The transparent pass
     // must NOT clear - it refracts the opaque+sky scene drawn before it.
@@ -69,13 +76,11 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     const auto& batches = batcher.getBatches();
 
     // Bind both shadow atlases for the PBR shader to sample.
-    auto& shadowAtlas = glView.getShadowAtlas();
     shadowAtlas.bind2DForReading(GLConfig::TextureSlots::ShadowMap2D);
     shadowAtlas.bindCubeForReading(GLConfig::TextureSlots::ShadowMapCube);
 
     // Bind the baked IBL set (irradiance / prefilter / BRDF LUT) and tell the
     // PBR shader whether to use it. Falls back to flat ambient when no bake.
-    auto& ibl = glView.getIBL();
     const bool iblReady = ibl.isReady();
     if (iblReady) {
         ibl.bindIrradiance(GLConfig::TextureSlots::IrradianceMap);
@@ -88,7 +93,6 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     }
     // Screen-space AO from the prepass/GTAO (slot SSAO); enabled when both
     // the G-buffer is live and the environment toggle is on.
-    auto& gbuffer = gl.getGBuffer();
     const bool ssaoOn = gbuffer.isReady() && view.environment.ssao;
     gbuffer.bindOcclusion(GLConfig::TextureSlots::SSAO);
 
@@ -153,7 +157,6 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
             if (b.materialType == MaterialType::Transparent) { anyTransparent = true; break; }
         if (!anyTransparent) return;  // opaque+sky already in the HDR; nothing to add
 
-        auto& hdrT = gl.getHdrTarget();
         hdrT.resolve();
         hdrT.bindForRender();
         hdrT.bindResolvedColor(GLConfig::TextureSlots::SceneColor);
@@ -201,7 +204,6 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
                 // transmissive materials refract what is actually behind them
                 // (resolve MSAA -> single-sample, rebind the MSAA target for
                 // the upcoming transparent draws, bind the copy for sampling).
-                auto& hdrT = gl.getHdrTarget();
                 hdrT.resolve();
                 hdrT.bindForRender();
                 hdrT.bindResolvedColor(GLConfig::TextureSlots::SceneColor);
@@ -281,7 +283,6 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         // refracts what's actually behind it - including farther glass. Skipped
         // after the last transparent (no consumer) and outside Phase::Transparent.
         if (m_phase == Phase::Transparent && i < lastTransparentIdx) {
-            auto& hdrT = gl.getHdrTarget();
             hdrT.resolve();
             hdrT.bindForRender();
         }

@@ -45,9 +45,9 @@ void GLTAAPass::execute(RenderGraphContext& rg) {
     if (!view.environment.taa) return;  // off by default - no-op
 
     auto& gl      = static_cast<GLBackend&>(backend);
-    auto& hdr     = gl.getHdrTarget();
-    auto& gbuffer = gl.getGBuffer();
-    auto& taa     = gl.getTAA();
+    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
+    auto& taa = *rg.resource<GLTAA>(RGResource::TAAHistory);
     if (!hdr.isReady() || !gbuffer.isReady() || !taa.isReady()) return;
 
     GLShader* shader = gl.getView().resolveShader(m_shader, resources);

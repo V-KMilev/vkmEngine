@@ -210,7 +210,7 @@ void GLShadowPass::execute(RenderGraphContext& rg) {
 
     auto& gl         = static_cast<GLBackend&>(backend);
     auto& glView     = gl.getView();
-    auto& atlas      = glView.getShadowAtlas();
+    auto& atlas      = *rg.resource<GLShadowAtlas>(RGResource::ShadowAtlas);
     auto& shadowData = glView.getShadowData();
 
     GLShader* shader = glView.resolveShader(m_depthShader, resources);
