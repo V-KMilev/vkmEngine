@@ -50,8 +50,8 @@ class GLCamera {
         GLCamera(const GLCamera& other) = delete;
         GLCamera& operator=(const GLCamera& other) = delete;
 
-        GLCamera(GLCamera&& other) = delete;
-        GLCamera& operator=(GLCamera&& other) = delete;
+        GLCamera(GLCamera && other) = delete;
+        GLCamera& operator=(GLCamera && other) = delete;
 
     public:
         /**

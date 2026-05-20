@@ -424,7 +424,7 @@ void EnvironmentInspector::drawPipeline(EditorContext& ec) {
     ImGui::TextDisabled("Toggle individual graph passes (advanced).");
     ImGui::Spacing();
     if (ec.renderSystem) {
-        auto& graph = ec.renderSystem->getPipeline();
+        auto& graph = ec.renderSystem->getGraph();
         for (size_t i = 0; i < graph.passCount(); ++i) {
             auto& pass = graph.getPass(i);
             bool enabled = pass.isEnabled();

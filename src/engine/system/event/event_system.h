@@ -46,8 +46,8 @@ class EventSystem : public System {
         EventSystem(const EventSystem& other) = delete;
         EventSystem& operator=(const EventSystem& other) = delete;
 
-        EventSystem(EventSystem&& other) = delete;
-        EventSystem& operator=(EventSystem&& other) = delete;
+        EventSystem(EventSystem && other) = delete;
+        EventSystem& operator=(EventSystem && other) = delete;
 
         using ListenerId = uint32_t;
 

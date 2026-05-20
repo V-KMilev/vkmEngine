@@ -95,8 +95,8 @@ class RenderSystem : public System {
          */
         void update(FrameContext& ctx) override;
 
-        RenderGraph& getPipeline() { return m_graph; }
-        const RenderGraph& getPipeline() const { return m_graph; }
+        RenderGraph& getGraph() { return m_graph; }
+        const RenderGraph& getGraph() const { return m_graph; }
 
         EnvironmentConfig& getEnvironment() { return m_environment; }
         const EnvironmentConfig& getEnvironment() const { return m_environment; }
@@ -162,8 +162,8 @@ class RenderSystem : public System {
 
         EnvironmentConfig m_environment;
 
-        uint32_t m_width;
-        uint32_t m_height;
+        uint32_t m_width  = 0;
+        uint32_t m_height = 0;
 };
 
 } // namespace Engine
