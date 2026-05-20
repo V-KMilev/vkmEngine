@@ -11,8 +11,11 @@ namespace Engine::HierarchyOperations {
 /**
  * @brief Attach a child entity to a parent entity.
  *
- * If the child already has a parent, it is detached first.
- * Hierarchy components are added automatically to both entities as needed.
+ * If the child already has a parent, it is detached first. Both Hierarchy
+ * and WorldTransform are added automatically to either endpoint that's
+ * missing them - pre-seeding WorldTransform here is what lets
+ * resolveWorldTransforms() stay free of structural mutation and parallelise
+ * by depth.
  *
  * @param scene The scene containing both entities.
  * @param child The entity to attach as a child.
@@ -72,12 +75,18 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity);
 void markDirty(Scene& scene, EntityId entity);
 
 /**
- * @brief Resolve world transforms for every entity with a Hierarchy component.
+ * @brief Resolve world transforms for every dirty hierarchical entity.
  *
- * For each such entity, computes its world matrix via computeWorldMatrix and
- * writes it to a WorldTransform component (added on demand). This is the
- * per-frame work HierarchySystem runs, exposed here as a free function so
- * editors / loaders / bake passes can trigger it outside the frame loop.
+ * For each entity with a Hierarchy whose dirty flag is set, computes its
+ * world matrix via computeWorldMatrix and writes it into the entity's
+ * pre-seeded WorldTransform. Dirty entities are bucketed by absolute
+ * depth in a serial pass and then each bucket runs through parallelFor;
+ * parents finish before children by construction so reads of an
+ * ancestor's matrix never race a write.
+ *
+ * This is the per-frame work HierarchySystem runs, exposed here as a
+ * free function so editors / loaders / bake passes can trigger it
+ * outside the frame loop.
  *
  * @param scene The scene to resolve.
  */

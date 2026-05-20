@@ -135,7 +135,19 @@ class GLView {
         const GLInstanceBatcher& getShadowBatcher() const { return m_shadowBatcher; }
 
     private:
-        /// Reconcile a single resource table against a deduped handle list.
+        /**
+         * @brief Reconcile a single GL-side resource table against a
+         *        deduplicated handle list from this frame's RenderView.
+         *
+         * For each unique handle, ensures the table has a slot at handle.id()
+         * and rebuilds the GL wrapper when the asset's version has changed
+         * since last seen. Entries the scene no longer references are left
+         * in place (a camera that pans away from everything shouldn't
+         * trigger GPU churn).
+         *
+         * @tparam AssetT CPU asset type (MeshAsset, TextureAsset, ...).
+         * @tparam GLT    GL wrapper type (GLMesh, GLTexture, ...).
+         */
         template<typename AssetT, typename GLT>
         void syncTable(
             GLResourceTable<GLT>& table,

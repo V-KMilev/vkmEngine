@@ -100,22 +100,32 @@ struct SystemAccess {
     std::vector<TypeId> reads;   ///< Component TypeIds this system reads from
     std::vector<TypeId> writes;  ///< Component TypeIds this system writes to
 
-    /// True when the system has explicitly declared it touches no component
-    /// state. Default-constructed / list-initialised SystemAccess leaves
-    /// this false; the scheduler treats those as "conservative" (writes
-    /// everything) and serialises the system on its own layer. An
-    /// explicit-empty declaration (returned by SystemAccess::none()) is
-    /// parallel-safe with any other system.
-    ///
-    /// This split matters for "trivial" systems whose work doesn't touch
-    /// the ECS at all (debug overlays, frame stat printers): without
-    /// SystemAccess::none() they get a dedicated layer they don't need.
+    /**
+     * @brief True when the system explicitly declared it touches no
+     *        component state.
+     *
+     * Default-constructed / list-initialised SystemAccess leaves this
+     * false; the scheduler treats those as "conservative" (writes
+     * everything) and serialises the system on its own layer. An
+     * explicit-empty declaration (returned by SystemAccess::none()) is
+     * parallel-safe with any other system.
+     *
+     * This split matters for "trivial" systems whose work doesn't touch
+     * the ECS at all (debug overlays, frame stat printers): without
+     * SystemAccess::none() they get a dedicated layer they don't need.
+     */
     bool noAccessDeclared = false;
 
-    /// Factory for the explicit "I touch no component state" declaration.
-    /// Use this in declareAccess() overrides on systems whose update body
-    /// has no reads, no writes, no scene mutation, and no external state
-    /// changes that other parallel-safe systems care about.
+    /**
+     * @brief Factory for the explicit "I touch no component state"
+     *        declaration.
+     *
+     * Use this in declareAccess() overrides on systems whose update body
+     * has no reads, no writes, no scene mutation, and no external state
+     * changes that other parallel-safe systems care about.
+     *
+     * @return SystemAccess with noAccessDeclared = true.
+     */
     static SystemAccess none() {
         SystemAccess a;
         a.noAccessDeclared = true;
@@ -126,9 +136,13 @@ struct SystemAccess {
 /**
  * @brief Abstract base class for per-frame systems.
  *
- * Systems are executed sequentially in registration order. Each system
- * reads from and/or writes to the FrameContext. Systems support lifecycle
- * hooks (init/shutdown) and can be enabled/disabled at runtime.
+ * Systems are scheduled per SystemStage and executed in stage order each
+ * frame. Within a stage, the default is registration order; Engine's layer
+ * scheduler can run independent systems concurrently when their
+ * SystemAccess declarations don't conflict and the stage has parallel
+ * dispatch enabled. Systems read from and/or write to a shared
+ * FrameContext and support init/update/fixedUpdate/shutdown hooks plus
+ * runtime enable/disable.
  */
 class System {
     public:
@@ -185,10 +199,13 @@ class System {
         /**
          * @brief Declare which component types this system reads and writes.
          *
-         * Override to participate in the startup write-write conflict warning
-         * (see SystemAccess). Default returns empty (the system opts out of
-         * the diagnostic; ordering is governed entirely by stage + registration
-         * order).
+         * Drives Engine's per-stage layer scheduler (see SystemAccess for the
+         * full contract). Default returns an empty access, which the scheduler
+         * treats conservatively (the system conflicts with everything in its
+         * stage and runs on its own layer). Systems that genuinely touch no
+         * shared component state should return SystemAccess::none() instead -
+         * that's explicitly "no access" and lets the scheduler pack them
+         * concurrently with anyone else.
          */
         virtual SystemAccess declareAccess() const { return {}; }
 
