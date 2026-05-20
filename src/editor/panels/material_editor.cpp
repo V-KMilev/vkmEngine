@@ -25,6 +25,7 @@ namespace {
     const ImVec4 kAccAniso  = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);  // purple
     const ImVec4 kAccSSS    = ImVec4(0.88f, 0.45f, 0.55f, 1.0f);  // pink
     const ImVec4 kAccSheen  = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);  // gold
+    const ImVec4 kAccVol    = ImVec4(0.55f, 0.85f, 0.65f, 1.0f);  // mint - glass volume
     const ImVec4 kAccTex    = EditorStyle::AXIS_Y;                 // green
 
     bool isImageExt(std::string ext) {
@@ -231,6 +232,27 @@ namespace {
             drawPropertyLabel("Roughness");
             changed |= ImGui::SliderFloat("##SheenR", &mat.sheenRoughness,
                 0.0f, 1.0f, "%.2f");
+        }
+        endComponentCard();
+
+        if (beginComponentCard("Volume", kAccVol, false)) {
+            drawPropertyLabel("Thickness");
+            changed |= ImGui::DragFloat("##Thick", &mat.thicknessFactor,
+                0.01f, 0.0f, 100.0f, "%.3f");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Volume thickness in metres. 0 = thin-walled (no absorption)");
+
+            drawPropertyLabel("Atten. Distance");
+            changed |= ImGui::DragFloat("##AttD", &mat.attenuationDistance,
+                0.01f, 0.0001f, 1000.0f, "%.3f");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Path length (m) at which white light becomes attenuation color");
+
+            drawPropertyLabel("Atten. Color");
+            changed |= ImGui::ColorEdit3("##AttC", glm::value_ptr(mat.attenuationColor),
+                ImGuiColorEditFlags_Float);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Transmittance after one attenuation distance (white = clear)");
         }
         endComponentCard();
 
