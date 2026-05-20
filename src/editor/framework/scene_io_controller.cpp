@@ -108,33 +108,34 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
         ImGui::EndPopup();
     }
 
+    const std::filesystem::path scenesDir = std::filesystem::path(APP_ROOT_DIR) / "scenes";
     if (m_openLoadPopup) {
+        // Refresh the cached listing once per open. The popup may stay up for
+        // many frames; re-listing the directory each one is wasted work.
+        m_loadCandidates.clear();
+        std::error_code ec;
+        for (const auto& entry : std::filesystem::directory_iterator(scenesDir, ec)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".json") {
+                m_loadCandidates.push_back(entry.path().string());
+            }
+        }
+        std::sort(m_loadCandidates.begin(), m_loadCandidates.end());
+
         ImGui::OpenPopup("Load Scene");
         m_openLoadPopup = false;
     }
     if (ImGui::BeginPopupModal("Load Scene", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        const std::filesystem::path scenesDir = std::filesystem::path(APP_ROOT_DIR) / "scenes";
         ImGui::TextDisabled("%s", scenesDir.string().c_str());
 
-        // Collect candidates. Cheap enough to re-list each frame the popup is open.
-        std::vector<std::filesystem::path> candidates;
-        std::error_code ec;
-        for (const auto& entry : std::filesystem::directory_iterator(scenesDir, ec)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".json") {
-                candidates.push_back(entry.path());
-            }
-        }
-        std::sort(candidates.begin(), candidates.end());
-
-        if (candidates.empty()) {
+        if (m_loadCandidates.empty()) {
             ImGui::TextDisabled("(no .json files in scenes/)");
         } else {
             ImGui::BeginChild("##SceneList", ImVec2(360, 200), true);
-            for (const auto& p : candidates) {
-                const std::string filename = p.filename().string();
-                const bool isCurrent = (p.string() == m_currentScenePath);
+            for (const auto& p : m_loadCandidates) {
+                const std::string filename = std::filesystem::path(p).filename().string();
+                const bool isCurrent = (p == m_currentScenePath);
                 if (ImGui::Selectable(filename.c_str(), isCurrent, ImGuiSelectableFlags_AllowDoubleClick)) {
-                    m_currentScenePath = p.string();
+                    m_currentScenePath = p;
                     if (ImGui::IsMouseDoubleClicked(0)) {
                         load(ctx, state);
                         ImGui::CloseCurrentPopup();
@@ -144,7 +145,7 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
             ImGui::EndChild();
         }
 
-        const bool canLoad = !m_currentScenePath.empty() && !candidates.empty();
+        const bool canLoad = !m_currentScenePath.empty() && !m_loadCandidates.empty();
         ImGui::BeginDisabled(!canLoad);
         if (ImGui::Button("Load", ImVec2(120, 0))) {
             load(ctx, state);
