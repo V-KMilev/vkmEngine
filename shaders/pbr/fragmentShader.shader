@@ -42,16 +42,11 @@ const int LIGHT_DIRECTIONAL = 0;
 const int LIGHT_POINT       = 1;
 const int LIGHT_SPOT        = 2;
 
-// These mirror shaders/_generated/engine_config.glsl, which is auto-derived
-// from src/engine/core/engine_config.h at CMake configure time. Once vkmGL
-// supports shader-side #include, replace these lines with:
-//     #include "_generated/engine_config.glsl"
-// SHADOW_CUBE_NEAR comes from gl_shadow_pass.cpp's CUBE_NEAR (per-pass
-// constant; the generator hand-mirrors it for now).
-const int MAX_LIGHTS              = 32;
-const int SHADOW_MAX_CASTERS_2D   = 6;
-const int SHADOW_MAX_CASTERS_CUBE = 2;
-const float SHADOW_CUBE_NEAR      = 0.1;
+// Cross-language constants: single C++ source of truth in
+// src/engine/core/engine_config.h. cmake/generate_shader_config.cmake
+// emits the generated header at configure time; the engine's shader
+// preprocessor (src/tools/loader/shader_preprocessor.cpp) inlines it.
+#include "../_generated/engine_config.glsl"
 
 layout(std140, binding = 0) uniform MaterialBlock {
     vec4  albedo;

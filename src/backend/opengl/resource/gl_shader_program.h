@@ -33,8 +33,17 @@ class GLShader : public Core::Shader {
         /// a bad edit doesn't propagate — the next successful edit recovers.
         void update(const ShaderAsset& asset);
 
+    protected:
+        /// Re-run the engine-side preprocessor so hot reload picks up edits
+        /// to included files too, not just the top-level vert/frag shader.
+        void reloadSource() override;
+
     private:
         void applySamplerBindings(const ShaderAsset& asset);
+
+        /// Read vert/frag/geom from disk and resolve their `#include`s.
+        /// Returns a GraphicsShaderSource ready to compile.
+        static Core::GraphicsShaderSource preprocessSourceFor(const std::string& dirPath);
 };
 
 } // namespace Engine
