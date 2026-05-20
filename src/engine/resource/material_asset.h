@@ -12,7 +12,8 @@ namespace Engine {
 enum class MaterialType : uint8_t {
     Opaque      = 0,
     Transparent = 1,
-    Unlit       = 2
+    Unlit       = 2,
+    AlphaMask   = 3   ///< glTF alphaMode = MASK; alpha-tested, writes depth, no blending
 };
 
 /**
@@ -35,6 +36,7 @@ struct MaterialAsset : public Resource {
     float transmission = 0.0f;                   ///< Transmission factor (0: opaque, 1: fully transparent)
     float alpha        = 1.0f;                   ///< Alpha/opacity (0: transparent, 1: opaque)
     float ao           = 1.0f;                   ///< Ambient occlusion factor (0: fully occluded, 1: no occlusion)
+    float alphaCutoff  = 0.0f;                   ///< AlphaMask cutoff (>0 enables discard; glTF default 0.5)
 
     // Advanced PBR properties
     float clearcoat               = 0.0f;        ///< Clearcoat layer strength (0: none, 1: full)

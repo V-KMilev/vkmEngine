@@ -110,7 +110,8 @@ struct alignas(16) MaterialUBOData {
     float attenuationDistance;                 // offset 156
 
     float thicknessFactor;               // offset 160
-    float pad6[3];                       // offset 164 (pad to 176)
+    float alphaCutoff;                   // offset 164 (was pad6[0])
+    float pad6[2];                       // offset 168 (pad to 176)
 };
 
 /**

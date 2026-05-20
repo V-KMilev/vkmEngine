@@ -23,7 +23,7 @@ namespace {
      * @brief Sort drawables by (materialType, material, mesh, castShadows) for optimal batching.
      *
      * Sort key (MSB -> LSB):
-     *   bits 63-62 : MaterialType  (Opaque=0 first, then Transparent=1, then Unlit=2)
+     *   bits 63-62 : sort priority (Opaque, AlphaMask, Unlit, Transparent)
      *   bits 61-30 : material ID
      *   bits 29-1  : mesh ID       (capped at 29 bits)
      *   bit  0     : !castShadows  (shadow-casters sort to the front of each batch)
@@ -33,8 +33,23 @@ namespace {
 
         const uint32_t n = static_cast<uint32_t>(drawables.size());
 
-        auto makeKey = [](const DrawableData& d) -> uint64_t {
-            return (static_cast<uint64_t>(d.materialType)                  << 62)
+        // Render-order priority is decoupled from MaterialType's raw enum
+        // value so we can insert new types (e.g. AlphaMask between Opaque
+        // and Transparent) without renumbering the enum. Order matters: the
+        // forward pass needs all depth-writing material classes drawn
+        // before Transparent so the per-batch HDR snapshot includes them.
+        auto sortPriority = [](MaterialType t) -> uint64_t {
+            switch (t) {
+                case MaterialType::Opaque:      return 0;
+                case MaterialType::AlphaMask:   return 1;
+                case MaterialType::Unlit:       return 2;
+                case MaterialType::Transparent: return 3;
+            }
+            return 0;
+        };
+
+        auto makeKey = [&](const DrawableData& d) -> uint64_t {
+            return (sortPriority(d.materialType)                           << 62)
                  | (static_cast<uint64_t>(d.material.id())                 << 30)
                  | (static_cast<uint64_t>(d.mesh.id() & 0x1FFFFFFFu)       <<  1)
                  | (d.castShadows ? 0ull : 1ull);
