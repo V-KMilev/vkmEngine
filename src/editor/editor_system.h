@@ -33,6 +33,21 @@ class EventSystem;
 class VisibilitySystem;
 class RenderSystem;
 
+/**
+ * @brief Top-level editor System: owns the panel set, the workspace shell,
+ *        and the long-lived editor-state.
+ *
+ * Constructed once at boot with non-owning pointers to the rendering /
+ * input / event collaborators it needs. Each update():
+ *  - Routes input intent (capture flags) to CameraController.
+ *  - Drives the menu bar, status bar, shortcut handler and panel resizer.
+ *  - Draws the docked panels and the floating preview/overlay panels.
+ *  - Lets the SceneIOController emit any pending Save-As / Load dialogs.
+ *
+ * Everything mutating goes through the EditorContext aggregate; the
+ * panels themselves are EditorPanel implementations that don't know
+ * about each other.
+ */
 class EditorSystem : public System {
     public:
         EditorSystem(

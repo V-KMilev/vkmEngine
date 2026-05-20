@@ -8,43 +8,63 @@ class Scene;
 class ResourceManager;
 
 /**
- * @brief Save / load a Scene's entities + components to/from a JSON file.
+ * @brief Save / load a Scene + the assets it references to/from JSON.
  *
- * Scope (Phase 1): entities and their component data are persisted. Assets
- * referenced by Mesh components are looked up by their `name` field in the
- * provided ResourceManager — assets themselves are not serialized. The
- * asset graph must already be populated when load() is called.
+ * Both entities and their referenced assets persist: SceneSerializer emits
+ * an `assets` block (textures, materials, meshes) alongside the `entities`
+ * block, and the loader uses AssetSerializer factories to recreate them on
+ * the way back in. Asset references inside components (Mesh handles,
+ * material texture refs) resolve by `name` through ResourceManager - the
+ * stable identity across save/load.
  *
- * Load semantics: the target Scene is cleared first, then entities are
- * re-created from the file. Saved entity indices do not survive across
- * runs (slot allocation differs); references between entities (e.g.
- * Hierarchy::parent) are remapped through a two-pass algorithm.
+ * Load is transactional at the scene level: entities deserialise into a
+ * staging Scene first and are committed via Scene::swap only on full
+ * success, so a malformed file leaves the live scene untouched. Asset
+ * state is not transactional today (the asset graph is mutated before
+ * the swap; documented inline in the .cpp).
+ *
+ * Slot indices survive a save -> load round trip - the loader recreates
+ * each entity at the same slot via Scene::createEntityAt, so cross-entity
+ * references in the file (e.g. Hierarchy::parent indices) work directly
+ * without a remap step. Indices are NOT stable across live edits between
+ * runs - editing the scene allocates fresh slots that may not match the
+ * last saved layout.
  */
 namespace SceneSerializer {
 
-    /// Emitted by callers of `load()` after a successful load. Subscribers
-    /// (camera controllers, editor panels, gameplay code that tracks
-    /// entities) listen via the EventSystem and refresh anything cached
-    /// across scene reloads. SceneSerializer itself does NOT publish —
-    /// that's the caller's responsibility, since only the caller has
-    /// access to an EventSystem.
-    ///
-    /// Slot indices are preserved across save/load, so entity references
-    /// held by file format consumers (Hierarchy::parent) work directly,
-    /// and external holders just need to re-validate by index.
+    /**
+     * @brief Emitted by callers of load() after a successful load.
+     *
+     * Subscribers (camera controllers, editor panels, gameplay code that
+     * tracks entities) listen via EventSystem and refresh anything cached
+     * across scene reloads. SceneSerializer itself does NOT publish -
+     * that's the caller's responsibility, since only the caller has access
+     * to an EventSystem.
+     */
     struct SceneLoadedEvent {
         std::string path;
     };
 
-    /// @return true on success; false (and a logged error) on I/O failure.
+    /**
+     * @brief Save @p scene + the assets it references to @p path.
+     *
+     * @return true on success; false (and a logged error) on I/O failure.
+     */
     bool save(const Scene& scene, const ResourceManager& resources, const std::string& path);
 
-    /// Loads assets first (idempotent: skips assets already present by name),
-    /// then clears the scene and rebuilds entities at their saved slot
-    /// indices. ResourceManager is mutable because asset deserialization
-    /// populates new assets.
-    ///
-    /// @return true on success; on failure the scene may be partially loaded.
+    /**
+     * @brief Load a scene from @p path, replacing the live @p scene atomically.
+     *
+     * Assets are loaded first (idempotent: skips assets already present by
+     * name) into the provided ResourceManager. Entities deserialise into a
+     * staging Scene and only commit via swap on full success - a failure
+     * leaves @p scene unchanged. Assets newly loaded along the way are
+     * NOT rolled back on failure (the orphans persist until a manual
+     * cleanup; documented in the .cpp).
+     *
+     * @return true on success; false (and a logged error) on failure, with
+     *         the live scene untouched.
+     */
     bool load(Scene& scene, ResourceManager& resources, const std::string& path);
 
 } // namespace SceneSerializer

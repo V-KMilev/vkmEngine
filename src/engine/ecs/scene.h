@@ -272,29 +272,44 @@ class Scene {
         }
 
         /**
-         * @brief Direct access to the SparseSet for component type T (for index-based iteration).
-         * @tparam T Component type.
-         * @return Pointer to the SparseSet, or nullptr if unregistered.
+         * @brief Compact every component SparseSet to reclaim wasted memory.
+         *
+         * Called by SceneSerializer after load: the staging-then-swap path
+         * can leave the sparse array oversized for the slots it now holds.
          */
-        /// @brief Compact all component sparse arrays to reclaim wasted memory.
         void compact() {
             for (auto& set : m_components) {
                 if (set) set->compact();
             }
         }
 
-        /// @brief Swap internal state with another Scene. Used by
-        /// SceneSerializer to commit a fully-loaded staging scene atomically -
-        /// either the load succeeds and the live scene is replaced, or it
-        /// fails and the live scene is left untouched. Systems access storage
-        /// via storage<T>() each frame (no cached pointers across calls), so
-        /// a swap between frames is safe.
+        /**
+         * @brief Swap internal state with another Scene.
+         *
+         * Used by SceneSerializer to commit a fully-loaded staging scene
+         * atomically - either the load succeeds and the live scene is
+         * replaced, or it fails and the live scene is left untouched.
+         * Systems access storage via storage<T>() each frame (no cached
+         * pointers across calls), so a swap between frames is safe.
+         *
+         * @param other Scene whose state to exchange with this.
+         */
         void swap(Scene& other) noexcept {
             using std::swap;
             m_entityAllocator.swap(other.m_entityAllocator);  // non-movable, member swap
             swap(m_components, other.m_components);
         }
 
+        /**
+         * @brief Direct access to the typed SparseSet for component type T.
+         *
+         * Use for index-based / parallel iteration where Scene::get<T>(id)
+         * per element would be wasteful. Returns nullptr if no entity has
+         * ever added a T (the storage is lazy).
+         *
+         * @tparam T Component type.
+         * @return Pointer to the SparseSet, or nullptr if unregistered.
+         */
         template<typename T>
         SparseSet<T>* storage() { return findStorage<T>(); }
 

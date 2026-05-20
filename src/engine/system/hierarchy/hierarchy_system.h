@@ -5,12 +5,15 @@
 namespace Engine {
 
 /**
- * @brief Resolves hierarchical transforms into a WorldTransform component.
+ * @brief Resolves hierarchical transforms into the WorldTransform component.
  *
- * Runs before VisibilitySystem. For every entity with a Hierarchy component,
- * computes the world-space model matrix by walking the parent chain and writes
- * it to a WorldTransform component (added on demand). Downstream systems read
- * WorldTransform when present, falling back to Transform for root entities.
+ * Runs in the Transform stage (before VisibilitySystem). For each dirty
+ * entity with a Hierarchy component, computes its world-space model matrix
+ * by walking the parent chain and writes the result into its WorldTransform
+ * (pre-seeded by HierarchyOperations::setParent so this loop never has to
+ * mutate the component graph - which is what lets it parallelise over
+ * depth buckets). Downstream systems read WorldTransform when present and
+ * fall back to Transform for root entities.
  */
 class HierarchySystem : public System {
     public:

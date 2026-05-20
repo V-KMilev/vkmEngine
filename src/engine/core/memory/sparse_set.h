@@ -27,14 +27,15 @@ class ISparseSet {
 * @class SparseSet
 * @brief Dense-packed storage indexed by external uint32_t keys.
 *
-* Maps uint32_t keys to densely packed elements for cache-friendly O(n) iteration.
-* Provides O(1) add, remove, has, and get.
+* Maps uint32_t keys to densely packed elements for cache-friendly O(n)
+* iteration. Provides O(1) add, remove, has, and get.
 *
-* Unlike Storage<T>, SparseSet does not manage slot allocation or generation
-* counters - the caller owns the key lifecycle. This makes it leaner: one sparse
-* array instead of two, no free list overhead.
+* SparseSet does not manage slot allocation or generation counters - the
+* caller owns the key lifecycle (Scene pairs this with SlotAllocator for
+* entities; ResourceManager pairs it with a per-type allocator for assets).
 *
-* Uses swap-and-pop removal with memcpy optimization for trivially copyable types.
+* Removal is swap-and-pop with a memcpy fast path for trivially copyable
+* types.
 *
 * @tparam T Element type to store.
 */
