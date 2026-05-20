@@ -61,7 +61,7 @@ class GLForwardPass : public RenderPass {
         }
 
     private:
-        ShaderHandle m_shaders[3] = {};  ///< Indexed by MaterialType (Opaque, Transparent, Unlit)
+        ShaderHandle m_shaders[4] = {};  ///< Indexed by MaterialType (Opaque, Transparent, Unlit, AlphaMask)
         Phase        m_phase = Phase::All;
 };
 

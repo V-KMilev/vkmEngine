@@ -22,6 +22,7 @@ namespace Engine {
 GLForwardPass::GLForwardPass(ShaderHandle pbrShader) : RenderPass("GLForwardPass") {
     m_shaders[static_cast<int>(MaterialType::Opaque)]      = pbrShader;
     m_shaders[static_cast<int>(MaterialType::Transparent)] = pbrShader;
+    m_shaders[static_cast<int>(MaterialType::AlphaMask)]   = pbrShader;
     // Unlit stays empty until setShader() is called
 }
 
@@ -66,8 +67,8 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
 
     // Resolve every shader variant up-front (resolveShader picks up any
     // hot-reload version bumps and re-applies the asset's sampler bindings).
-    GLShader* shaders[3] = {};
-    for (size_t i = 0; i < 3; ++i) {
+    GLShader* shaders[4] = {};
+    for (size_t i = 0; i < 4; ++i) {
         shaders[i] = glView.resolveShader(m_shaders[i], resources);
     }
 

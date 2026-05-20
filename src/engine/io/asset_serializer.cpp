@@ -119,6 +119,7 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     src["kind"]  = "inline";
     src["type"]  = (m.type == MaterialType::Transparent) ? "Transparent"
                  : (m.type == MaterialType::Unlit)       ? "Unlit"
+                 : (m.type == MaterialType::AlphaMask)   ? "AlphaMask"
                                                          : "Opaque";
     src["albedo"]              = vec4ToJson(m.albedo);
     src["emission"]            = vec3ToJson(m.emission);
@@ -139,6 +140,7 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     src["thicknessFactor"]     = m.thicknessFactor;
     src["attenuationDistance"] = m.attenuationDistance;
     src["attenuationColor"]    = vec3ToJson(m.attenuationColor);
+    src["alphaCutoff"]         = m.alphaCutoff;
 
     nlohmann::json textures = nlohmann::json::object();
     for (const auto& f : kMaterialTextureFields) {
@@ -155,6 +157,7 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
     const std::string typeStr = src.value("type", std::string{"Opaque"});
     m.type = (typeStr == "Transparent") ? MaterialType::Transparent
            : (typeStr == "Unlit")       ? MaterialType::Unlit
+           : (typeStr == "AlphaMask")   ? MaterialType::AlphaMask
                                         : MaterialType::Opaque;
 
     m.albedo              = vec4FromJson(src.value("albedo",              nlohmann::json{}), m.albedo);
@@ -176,6 +179,7 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
     m.thicknessFactor     = src.value("thicknessFactor",     m.thicknessFactor);
     m.attenuationDistance = src.value("attenuationDistance", m.attenuationDistance);
     m.attenuationColor    = vec3FromJson(src.value("attenuationColor",    nlohmann::json{}), m.attenuationColor);
+    m.alphaCutoff         = src.value("alphaCutoff",         m.alphaCutoff);
 
     if (src.contains("textures") && src["textures"].is_object()) {
         for (const auto& f : kMaterialTextureFields) {
