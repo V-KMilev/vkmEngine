@@ -35,6 +35,24 @@
  */
 #version 420 core
 
+// ---- Material variant gates -----------------------------------------------
+// Each optional PBR lobe lives behind an #ifdef so a material that doesn't
+// use it can skip the cost at compile time. The variant cache passes
+// MATERIAL_VARIANT plus the specific HAS_* flags for that material. When
+// the shader compiles without MATERIAL_VARIANT (ubershader / default) all
+// gates are turned on, so behaviour is unchanged for callers that haven't
+// migrated to the variant cache yet.
+#ifndef MATERIAL_VARIANT
+    #define HAS_TRANSMISSION
+    #define HAS_VOLUME
+    #define HAS_CLEARCOAT
+    #define HAS_ANISOTROPY
+    #define HAS_SUBSURFACE
+    #define HAS_SHEEN
+    #define HAS_PARALLAX
+    #define HAS_ALPHA_MASK
+#endif
+
 in vec3 vWorldPos;
 in vec3 vNormal;
 in vec2 vUV;
@@ -456,7 +474,15 @@ vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, v
     vec3 H = normalize(V + L);
     float NdotL = max(dot(N, L), 0.0);
 
-    bool hasBack = u_material.subsurface > 0.001 || u_material.transmission > 0.001;
+    // Materials with subsurface or transmission can light back-facing
+    // fragments; otherwise we early out on NdotL == 0.
+    bool hasBack = false;
+#ifdef HAS_SUBSURFACE
+    if (u_material.subsurface > 0.001) hasBack = true;
+#endif
+#ifdef HAS_TRANSMISSION
+    if (u_material.transmission > 0.001) hasBack = true;
+#endif
     if (NdotL <= 0.0 && !hasBack) return vec3(0.0);
 
     float NdotV = max(dot(N, V), 1e-4);
@@ -467,6 +493,7 @@ vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, v
 
     // Base specular: anisotropic when configured, isotropic otherwise.
     float D, Vis;
+#ifdef HAS_ANISOTROPY
     if (u_material.anisotropy > 0.001) {
         vec3 aT = normalize(T * u_material.anisotropyDirection.x +
                             B * u_material.anisotropyDirection.y +
@@ -478,7 +505,9 @@ vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, v
         D   = distributionGGXAniso(NdotH, dot(aT, H), dot(aB, H), at, ab);
         Vis = visSmithAniso(at, ab, dot(aT, V), dot(aB, V), NdotV,
                                     dot(aT, L), dot(aB, L), NdotL);
-    } else {
+    } else
+#endif
+    {
         D   = distributionGGX(NdotH, a);
         Vis = visSmithCorrelated(NdotV, NdotL, a);
     }
@@ -489,31 +518,38 @@ vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, v
     vec3 kd = (vec3(1.0) - F) * (1.0 - s.metallic);
     vec3 diffuse = kd * s.albedo / PI;
     float diffNoL = NdotL;
+#ifdef HAS_SUBSURFACE
     if (u_material.subsurface > 0.001) {
         float w = u_material.subsurface;
         diffNoL = clamp((dot(N, L) + w) / ((1.0 + w) * (1.0 + w)), 0.0, 1.0);
     }
+#endif
 
     // Thin transmission: reduce front diffuse, add a back-lit term.
     vec3 transmitted = vec3(0.0);
+#ifdef HAS_TRANSMISSION
     if (u_material.transmission > 0.001) {
         float kt = u_material.transmission * (1.0 - s.metallic);
         diffuse *= (1.0 - kt);
         transmitted = kt * s.albedo / PI * max(dot(-N, L), 0.0);
     }
+#endif
 
     // Subsurface back translucency, tinted.
     vec3 sss = vec3(0.0);
+#ifdef HAS_SUBSURFACE
     if (u_material.subsurface > 0.001) {
         sss = u_material.subsurfaceColor * s.albedo
             * clamp(dot(-N, L), 0.0, 1.0) * u_material.subsurface;
     }
+#endif
 
     vec3 baseLit = diffuse * diffNoL + specular * NdotL;
 
     // Clearcoat: a second, always-dielectric GGX lobe that also attenuates
     // the base layer by its Fresnel.
     vec3 ccContrib = vec3(0.0);
+#ifdef HAS_CLEARCOAT
     if (u_material.clearcoat > 0.001) {
         float ccRough = clamp(u_material.clearcoatRoughness, 0.045, 1.0);
         float cca = ccRough * ccRough;
@@ -523,15 +559,18 @@ vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, v
         baseLit *= (1.0 - ccF);
         ccContrib = vec3(ccD * ccV * ccF) * NdotL;
     }
+#endif
 
     // Sheen / cloth lobe (Charlie). Disabled when sheenColor is black.
-    vec3 sheenColor = vec3(u_material.sheenColorR, u_material.sheenColorG, u_material.sheenColorB);
     vec3 sheen = vec3(0.0);
+#ifdef HAS_SHEEN
+    vec3 sheenColor = vec3(u_material.sheenColorR, u_material.sheenColorG, u_material.sheenColorB);
     if (max(sheenColor.r, max(sheenColor.g, sheenColor.b)) > 0.0) {
         float sheenD = distributionCharlie(NdotH, u_material.sheenRoughness);
         float sheenV = visAshikhmin(NdotV, NdotL);
         sheen = sheenColor * (sheenD * sheenV * NdotL);
     }
+#endif
 
     return (baseLit + ccContrib + transmitted + sss + sheen) * radiance;
 }
@@ -545,18 +584,22 @@ void main() {
     mat3 TBN = mat3(T, B, Ng);
 
     vec2 uv = vUV;
+#ifdef HAS_PARALLAX
     if (hasTex(TEX_HEIGHT) && u_material.heightScale > 0.0) {
         vec3 viewTS = normalize(transpose(TBN) * V);
         uv = parallax(uv, viewTS);
     }
+#endif
 
     // Alpha test for foliage / leaves (glTF alphaMode = MASK). Done before
     // any lighting work so masked-out pixels skip the whole PBR cost. The
     // sample matches sampleSurface's albedo fetch so the discard is exact.
+#ifdef HAS_ALPHA_MASK
     if (u_material.alphaCutoff > 0.0) {
         float aTex = hasTex(TEX_ALBEDO) ? texture(u_albedoTexture, uv).a : 1.0;
         if (u_material.albedo.a * aTex < u_material.alphaCutoff) discard;
     }
+#endif
 
     Surface s = sampleSurface(uv);
     vec3 N = getNormal(uv, TBN);
@@ -673,6 +716,7 @@ void main() {
         ambient = (diffuseIBL + specularIBL) * u_iblIntensity;
 
         // Clearcoat IBL: a dielectric specular lobe over the base ambient.
+#ifdef HAS_CLEARCOAT
         if (u_material.clearcoat > 0.001) {
             float ccRough = clamp(u_material.clearcoatRoughness, 0.045, 1.0);
             float ccFr = (0.04 + 0.96 * pow(1.0 - NdotV, 5.0)) * u_material.clearcoat;
@@ -681,6 +725,7 @@ void main() {
             vec3  ccSpecIBL = ccPref * (0.04 * ccDfg.x + ccDfg.y);
             ambient = ambient * (1.0 - ccFr) + ccSpecIBL * ccFr * s.ao * u_iblIntensity;
         }
+#endif
     } else {
         // Flat ambient fallback when no environment map is set. This term is
         // purely diffuse, so the full AO (map * SSAO) applies directly.
@@ -694,6 +739,7 @@ void main() {
     // snapshotted the opaque scene (u_hasSceneColor), glass shows the actual
     // geometry behind it, screen-space-offset along the bent ray; otherwise
     // it falls back to refracted IBL (first frame / no opaque behind).
+#ifdef HAS_TRANSMISSION
     if (u_material.transmission > 0.001) {
         vec3 rdir = refract(-V, N, 1.0 / max(u_material.ior, 1.0));
         vec3 refr;
@@ -701,7 +747,11 @@ void main() {
         // with declared volume bends light over a physically grounded
         // distance) and the Beer-Lambert path length below. Falls back to the
         // old transmission-scaled heuristic when no volume is declared.
+    #ifdef HAS_VOLUME
         float volThick = u_material.thicknessFactor;
+    #else
+        float volThick = 0.0;
+    #endif
         float thick = (volThick > 0.0)
             ? volThick
             : (0.20 + 0.40 * clamp(u_material.transmission, 0.0, 1.0));
@@ -729,6 +779,7 @@ void main() {
         // it). Path through volume is approximated as thickness / cos(theta);
         // attenuationDistance is the path at which transmittance equals
         // attenuationColor, so per channel: T = pow(c, len / d).
+    #ifdef HAS_VOLUME
         if (volThick > 0.0 && u_material.attenuationDistance > 0.0) {
             float cosT = max(abs(dot(N, rdir)), 0.1);
             float pathLen = volThick / cosT;
@@ -736,9 +787,11 @@ void main() {
                              vec3(pathLen / max(u_material.attenuationDistance, 1e-4)));
             refr *= atten;
         }
+    #endif
 
         color = mix(color, refr, clamp(u_material.transmission, 0.0, 1.0));
     }
+#endif
 
     FragColor = vec4(color, u_material.albedo.a * u_material.alpha);
 }
