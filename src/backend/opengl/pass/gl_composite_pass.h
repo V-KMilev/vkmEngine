@@ -59,6 +59,8 @@ class GLCompositePass : public RenderPass {
 
         std::unique_ptr<Core::Texture2D> m_lut;  ///< Lazily loaded color-grading LUT
         std::string m_lutPath;                   ///< Path the LUT was loaded from (reload guard)
+
+        std::unique_ptr<Core::Texture2D> m_dirt; ///< Procedural lens-dirt mask (generated once)
 };
 
 } // namespace Engine

@@ -35,6 +35,14 @@ uniform sampler2D u_colorLut;
 uniform int   u_lutEnabled;
 uniform float u_lutIntensity;
 
+// Lens dirt: procedurally generated dust/scratch mask multiplied into the
+// bloom contribution so dust lights up wherever there is glare on screen.
+// Tiled with screen UV. When u_dirtEnabled is 0 the texture is still bound
+// to keep the sampler valid; the multiply collapses to identity.
+uniform sampler2D u_dirt;
+uniform int   u_dirtEnabled;
+uniform float u_dirtIntensity;
+
 layout(std140, binding = 2) uniform CameraBlock {
     mat4 viewProjection;
     vec4 cameraPosition;  // xyz = position, w = exposure
@@ -141,6 +149,13 @@ void main() {
 
     // Energy-conserving bloom blend (linear HDR, before the display transform).
     vec3 bloom = textureLod(u_bloom, vUV, 0.0).rgb;
+    // Lens dirt: brighten the bloom where dust spots are, so dust visually
+    // lights up only when there's glare to refract through it. Tiled twice
+    // across the viewport to get a usable speck density at any aspect.
+    if (u_dirtEnabled == 1) {
+        vec3 dirt = texture(u_dirt, vUV * 2.0).rgb;
+        bloom *= (1.0 + dirt * u_dirtIntensity);
+    }
     hdr = mix(hdr, bloom, u_bloomStrength);
 
     // Manual camera exposure always applies; when auto-exposure is on it is

@@ -2,6 +2,10 @@
 
 #include <GL/glew.h>
 
+#include <cmath>
+#include <cstdint>
+#include <vector>
+
 #include "logger.h"
 #include "debug/print_helper.h"
 #include "debug/statistics.h"
@@ -21,6 +25,79 @@
 #include "loader/environment_loaders.h"
 
 namespace Engine {
+
+namespace {
+
+// Procedural lens-dirt mask: sparse Gaussian "dust" blobs over a low-noise
+// background, plus a few faint diagonal streaks. Deterministic. Tileable
+// because every blob wraps on torus distance, so sampling with plain
+// non-clamped UVs would not show seams either.
+std::unique_ptr<Core::Texture2D> makeDirtTexture() {
+    constexpr int W = 512;
+    constexpr int H = 512;
+
+    auto hash = [](uint32_t s) {
+        s = (s ^ 61u) ^ (s >> 16);
+        s *= 9u;
+        s = s ^ (s >> 4);
+        s *= 0x27d4eb2du;
+        s = s ^ (s >> 15);
+        return (s & 0xFFFFFFu) / float(0xFFFFFFu);
+    };
+
+    std::vector<uint8_t> pixels(W * H * 4, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            float n = hash(static_cast<uint32_t>(y * W + x));
+            float v = 0.02f + 0.03f * n;          // dim background grit
+            pixels[(y * W + x) * 4 + 0] = static_cast<uint8_t>(v * 255.0f);
+            pixels[(y * W + x) * 4 + 1] = static_cast<uint8_t>(v * 255.0f);
+            pixels[(y * W + x) * 4 + 2] = static_cast<uint8_t>(v * 255.0f);
+            pixels[(y * W + x) * 4 + 3] = 255;
+        }
+    }
+
+    // ~120 dust blobs of varying sizes / brightness, scattered uniformly.
+    constexpr int BLOBS = 120;
+    for (int b = 0; b < BLOBS; ++b) {
+        float cx = hash(static_cast<uint32_t>(b * 3u + 0u)) * W;
+        float cy = hash(static_cast<uint32_t>(b * 3u + 1u)) * H;
+        float rs = hash(static_cast<uint32_t>(b * 3u + 2u));
+        float radius = 2.0f + rs * 10.0f;
+        float bright = 0.35f + rs * 0.55f;
+        int r2 = static_cast<int>(radius * 3.0f);
+
+        for (int dy = -r2; dy <= r2; ++dy) {
+            for (int dx = -r2; dx <= r2; ++dx) {
+                int xi = (static_cast<int>(cx) + dx + W) % W;
+                int yi = (static_cast<int>(cy) + dy + H) % H;
+                float d2 = float(dx * dx + dy * dy);
+                float g = std::exp(-d2 / (radius * radius)) * bright;
+                int idx = (yi * W + xi) * 4;
+                for (int c = 0; c < 3; ++c) {
+                    int v = pixels[idx + c] + static_cast<int>(g * 255.0f);
+                    pixels[idx + c] = static_cast<uint8_t>(std::min(v, 255));
+                }
+            }
+        }
+    }
+
+    Core::Texture2DParams p;
+    p.width           = W;
+    p.height          = H;
+    p.internalFormat  = GL_RGBA8;
+    p.format          = GL_RGBA;
+    p.type            = GL_UNSIGNED_BYTE;
+    p.wrapS           = Core::TextureWrap::Repeat;
+    p.wrapT           = Core::TextureWrap::Repeat;
+    p.minFilter       = Core::TextureMinFilter::Linear;
+    p.magFilter       = Core::TextureMagFilter::Linear;
+    p.generateMipmaps = false;
+    p.data            = pixels.data();
+    return std::make_unique<Core::Texture2D>("lens_dirt_procedural", p);
+}
+
+} // namespace
 
 GLCompositePass::GLCompositePass(ShaderHandle shader)
     : RenderPass("GLCompositePass")
@@ -124,6 +201,14 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     if (m_lut) m_lut->bindSlot(3);
     shader->setUniform1i("u_lutEnabled", lutOn ? 1 : 0);
     shader->setUniform1f("u_lutIntensity", view.environment.colorGradeIntensity);
+
+    // Lens dirt (slot 4): procedurally generated on first enable, then kept
+    // resident. Off when env.lensDirt is false; the shader gates the multiply.
+    if (view.environment.lensDirt && !m_dirt) m_dirt = makeDirtTexture();
+    if (m_dirt) m_dirt->bindSlot(4);
+    shader->setUniform1i("u_dirtEnabled",
+        (view.environment.lensDirt && m_dirt) ? 1 : 0);
+    shader->setUniform1f("u_dirtIntensity", view.environment.lensDirtIntensity);
 
     m_screenTri->draw();
 

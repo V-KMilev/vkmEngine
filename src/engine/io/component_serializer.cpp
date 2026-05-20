@@ -234,6 +234,17 @@ nlohmann::json save(const EnvironmentConfig& e) {
         {"dofMaxBlur",          e.dofMaxBlur},
         {"motionBlur",          e.motionBlur},
         {"motionBlurStrength",  e.motionBlurStrength},
+        {"lensFlare",             e.lensFlare},
+        {"lensFlareIntensity",    e.lensFlareIntensity},
+        {"lensFlareThreshold",    e.lensFlareThreshold},
+        {"lensFlareGhostCount",   e.lensFlareGhostCount},
+        {"lensFlareGhostSpacing", e.lensFlareGhostSpacing},
+        {"lensFlareHaloRadius",   e.lensFlareHaloRadius},
+        {"lensFlareChromatic",    e.lensFlareChromatic},
+        {"starburst",             e.starburst},
+        {"starburstIntensity",    e.starburstIntensity},
+        {"lensDirt",              e.lensDirt},
+        {"lensDirtIntensity",     e.lensDirtIntensity},
         {"colorGrade",          e.colorGrade},
         {"colorLutPath",        e.colorLutPath},
         {"colorGradeIntensity", e.colorGradeIntensity},
@@ -275,6 +286,17 @@ void load(const nlohmann::json& j, EnvironmentConfig& e) {
     e.dofMaxBlur          = j.value("dofMaxBlur",          e.dofMaxBlur);
     e.motionBlur          = j.value("motionBlur",          e.motionBlur);
     e.motionBlurStrength  = j.value("motionBlurStrength",  e.motionBlurStrength);
+    e.lensFlare             = j.value("lensFlare",             e.lensFlare);
+    e.lensFlareIntensity    = j.value("lensFlareIntensity",    e.lensFlareIntensity);
+    e.lensFlareThreshold    = j.value("lensFlareThreshold",    e.lensFlareThreshold);
+    e.lensFlareGhostCount   = j.value("lensFlareGhostCount",   e.lensFlareGhostCount);
+    e.lensFlareGhostSpacing = j.value("lensFlareGhostSpacing", e.lensFlareGhostSpacing);
+    e.lensFlareHaloRadius   = j.value("lensFlareHaloRadius",   e.lensFlareHaloRadius);
+    e.lensFlareChromatic    = j.value("lensFlareChromatic",    e.lensFlareChromatic);
+    e.starburst             = j.value("starburst",             e.starburst);
+    e.starburstIntensity    = j.value("starburstIntensity",    e.starburstIntensity);
+    e.lensDirt              = j.value("lensDirt",              e.lensDirt);
+    e.lensDirtIntensity     = j.value("lensDirtIntensity",     e.lensDirtIntensity);
     e.colorGrade          = j.value("colorGrade",          e.colorGrade);
     e.colorLutPath        = j.value("colorLutPath",        e.colorLutPath);
     e.colorGradeIntensity = j.value("colorGradeIntensity", e.colorGradeIntensity);
