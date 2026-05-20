@@ -263,6 +263,23 @@ vec3 fresnelSchlick(float u, vec3 f0) {
     return f0 + (vec3(1.0) - f0) * f;
 }
 
+// 12-tap Poisson disk. Pre-normalized to a unit disk so the per-cascade
+// kernel radius scales it cleanly. Picked for a flat-ish PSD (no obvious
+// clusters that produce visible banding).
+const vec2 kPoissonDisk12[12] = vec2[12](
+    vec2(-0.326,-0.406), vec2(-0.840,-0.074), vec2(-0.696, 0.457),
+    vec2(-0.203, 0.621), vec2( 0.962,-0.195), vec2( 0.473,-0.480),
+    vec2( 0.519, 0.767), vec2( 0.185,-0.893), vec2( 0.507, 0.064),
+    vec2( 0.896, 0.412), vec2(-0.322,-0.933), vec2(-0.792,-0.598)
+);
+
+// Interleaved Gradient Noise (Jorge Jimenez). Deterministic per-pixel noise
+// that gives clean rotation angles for the PCF disk - no temporal flicker,
+// no visible texel-aligned banding when the camera moves.
+float ign(vec2 p) {
+    return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
+}
+
 float sample2DShadow(int slot, vec3 worldPos, float NdotL) {
     Shadow2DCaster c = u_shadow.casters2D[slot];
 
@@ -276,14 +293,23 @@ float sample2DShadow(int slot, vec3 worldPos, float NdotL) {
     float ref = proj.z - bias;
 
     vec2 texel = 1.0 / vec2(textureSize(u_shadowMap2D, 0).xy);
+    // ~1.5-texel disk radius - matches the visual softness of the old 3x3
+    // box but without the gridded screen-door pattern. Cheap to widen later.
+    vec2 kernel = texel * 1.5;
+
+    // Per-fragment disk rotation. Without this, the Poisson points cluster
+    // identically on every fragment and produce visible noise patterns; with
+    // it the noise averages out into uniform softness.
+    float a = ign(gl_FragCoord.xy) * 6.2831853;
+    float sa = sin(a), ca = cos(a);
+    mat2 rot = mat2(ca, -sa, sa, ca);
+
     float sum = 0.0;
-    for (int x = -1; x <= 1; ++x) {
-        for (int y = -1; y <= 1; ++y) {
-            vec2 off = vec2(float(x), float(y)) * texel;
-            sum += texture(u_shadowMap2D, vec4(proj.xy + off, float(slot), ref));
-        }
+    for (int i = 0; i < 12; ++i) {
+        vec2 off = rot * kPoissonDisk12[i] * kernel;
+        sum += texture(u_shadowMap2D, vec4(proj.xy + off, float(slot), ref));
     }
-    return sum / 9.0;
+    return sum / 12.0;
 }
 
 float samplePointShadow(int slot, vec3 worldPos, vec3 lightPos) {
@@ -306,19 +332,51 @@ float samplePointShadow(int slot, vec3 worldPos, vec3 lightPos) {
     return texture(u_shadowMapCube, vec4(toFrag, float(slot)), ref);
 }
 
-// Pick the tightest sun cascade that contains the fragment (cascades are
-// ordered near -> far). Falls back to the largest cascade at the edges.
-int selectCascade(vec3 worldPos) {
+// Pick the tightest sun cascade that contains the fragment AND compute a
+// 0..1 blend factor that ramps up as the fragment approaches the cascade's
+// outer NDC edge. Cascades are ordered near -> far; the largest one is the
+// fallback at the world edge.
+struct CascadePick {
+    int layer;
+    float blend;  // 0 = fully inside chosen cascade, 1 = use next cascade
+};
+
+CascadePick selectCascade(vec3 worldPos) {
+    CascadePick result;
+    result.layer = u_shadow.csmBaseSlot + u_shadow.csmCount - 1;
+    result.blend = 0.0;
+
     for (int c = 0; c < u_shadow.csmCount; ++c) {
         int layer = u_shadow.csmBaseSlot + c;
         vec4 lp = u_shadow.casters2D[layer].lightSpace * vec4(worldPos, 1.0);
         vec3 p = lp.xyz / lp.w * 0.5 + 0.5;
         if (p.x > 0.02 && p.x < 0.98 &&
             p.y > 0.02 && p.y < 0.98 &&
-            p.z > 0.0  && p.z < 1.0)
-            return layer;
+            p.z > 0.0  && p.z < 1.0) {
+            result.layer = layer;
+            // Distance to nearest 2D edge in NDC. Start fading at 0.10
+            // (well inside the cascade); fully transitioned by 0.02 (the
+            // containment threshold). At 4 cascades this band is a small
+            // fraction of the cascade width and produces a soft seam.
+            float edge = min(min(p.x, 1.0 - p.x), min(p.y, 1.0 - p.y));
+            result.blend = 1.0 - smoothstep(0.02, 0.10, edge);
+            break;
+        }
     }
-    return u_shadow.csmBaseSlot + u_shadow.csmCount - 1;
+    return result;
+}
+
+float sampleCSM(vec3 worldPos, float NdotL) {
+    CascadePick pick = selectCascade(worldPos);
+    float s0 = sample2DShadow(pick.layer, worldPos, NdotL);
+    // Blend into the next cascade only when one exists; the outermost
+    // cascade has no farther cascade to blend to.
+    int last = u_shadow.csmBaseSlot + u_shadow.csmCount - 1;
+    if (pick.blend > 0.0 && pick.layer < last) {
+        float s1 = sample2DShadow(pick.layer + 1, worldPos, NdotL);
+        return mix(s0, s1, pick.blend);
+    }
+    return s0;
 }
 
 struct Surface {
@@ -523,7 +581,7 @@ void main() {
             if (type == LIGHT_POINT) {
                 visibility = samplePointShadow(shadowSlot, vWorldPos, lightPos);
             } else if (type == LIGHT_DIRECTIONAL && u_shadow.csmCount > 0) {
-                visibility = sample2DShadow(selectCascade(vWorldPos), vWorldPos, NdotL);
+                visibility = sampleCSM(vWorldPos, NdotL);
             } else {
                 visibility = sample2DShadow(shadowSlot, vWorldPos, NdotL);
             }
