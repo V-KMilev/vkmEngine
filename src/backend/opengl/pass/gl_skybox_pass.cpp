@@ -40,7 +40,8 @@ void GLSkyboxPass::execute(RenderGraphContext& rg) {
 
     auto& gl     = static_cast<GLBackend&>(backend);
     auto& glView = gl.getView();
-    auto& ibl    = glView.getIBL();
+    auto& ibl    = *rg.resource<GLIBL>(RGResource::IBL);
+    auto& hdrT   = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
 
     if (!ibl.isReady()) return;  // no baked environment -> nothing to draw
 
@@ -48,7 +49,7 @@ void GLSkyboxPass::execute(RenderGraphContext& rg) {
     if (!shader) return;
 
     // Draw into the same HDR target as the scene (no clear).
-    gl.getHdrTarget().bindForRender();
+    hdrT.bindForRender();
 
     auto&        ctx       = gl.getContext();
     const GLenum prevFunc  = ctx.getDepthFunc();

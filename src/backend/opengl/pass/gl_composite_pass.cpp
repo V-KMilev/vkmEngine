@@ -44,7 +44,7 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     }
 
     auto& gl  = static_cast<GLBackend&>(backend);
-    auto& hdr = gl.getHdrTarget();
+    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
     if (!hdr.isReady()) return;
 
     GLShader* shader = gl.getView().resolveShader(m_shader, resources);
@@ -75,14 +75,14 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     hdr.bindResolvedColor(0);
 
     // Bloom (slot 1). Strength 0 when unavailable so it is a no-op.
-    auto& bloom = gl.getBloom();
+    auto& bloom = *rg.resource<GLBloom>(RGResource::BloomChain);
     const bool bloomReady = bloom.isReady();
     bloom.bind(1);
     shader->setUniform1f("u_bloomStrength",
         bloomReady ? view.environment.bloomStrength : 0.0f);
 
     // Auto-exposure (slot 2). Off when unavailable -> manual exposure only.
-    auto& ae = gl.getAutoExposure();
+    auto& ae = *rg.resource<GLAutoExposure>(RGResource::AdaptedLuminance);
     const bool aeOn = ae.isReady() && view.environment.autoExposure;
     ae.bindAdapted(2);
     shader->setUniform1i("u_autoExposure", aeOn ? 1 : 0);

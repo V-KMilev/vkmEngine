@@ -61,6 +61,7 @@ class GLBackend : public RenderBackend {
         void setWireframe(bool enabled) override;
         void syncResources(const RenderView& view, const ResourceManager& resources) override;
         void resolveSceneColor() override { frame().hdr().resolve(); }
+        void populateGraphResources(RenderGraph& graph) override;
 
         /// Offscreen preview path (Material Editor / Asset Browser).
         /// Redirects the whole graph's targets to a private preview set so

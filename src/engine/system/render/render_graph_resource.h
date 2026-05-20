@@ -27,6 +27,7 @@ enum class RGResource : uint8_t {
     BloomChain,
     AdaptedLuminance,
     TAAHistory,
+    PostScratch,    ///< Shared scratch target for in-place post passes (DoF / motion blur).
     Backbuffer,
 
     Count
@@ -46,6 +47,7 @@ inline const char* rgResourceName(RGResource r) {
         case RGResource::BloomChain:        return "BloomChain";
         case RGResource::AdaptedLuminance:  return "AdaptedLuminance";
         case RGResource::TAAHistory:        return "TAAHistory";
+        case RGResource::PostScratch:       return "PostScratch";
         case RGResource::Backbuffer:        return "Backbuffer";
         default:                            return "Unknown";
     }
@@ -56,7 +58,8 @@ inline const char* rgResourceName(RGResource r) {
 inline bool rgResourceIsImplicit(RGResource r) {
     return r == RGResource::SceneHDRResolved
         || r == RGResource::Backbuffer
-        || r == RGResource::TAAHistory;  // persistent ping-pong, no producer pass
+        || r == RGResource::TAAHistory     // persistent ping-pong, no producer pass
+        || r == RGResource::PostScratch;   // shared scratch, written by callers
 }
 
 } // namespace Engine

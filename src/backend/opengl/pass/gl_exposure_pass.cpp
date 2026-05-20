@@ -40,8 +40,8 @@ void GLExposurePass::execute(RenderGraphContext& rg) {
     }
 
     auto& gl  = static_cast<GLBackend&>(backend);
-    auto& hdr = gl.getHdrTarget();
-    auto& ae  = gl.getAutoExposure();
+    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    auto& ae = *rg.resource<GLAutoExposure>(RGResource::AdaptedLuminance);
     if (!hdr.isReady()) return;
 
     GLShader* lum   = gl.getView().resolveShader(m_lumShader, resources);

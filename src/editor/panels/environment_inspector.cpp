@@ -6,6 +6,7 @@
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
 #include "system/render/render_graph.h"
+#include "system/render/render_pass.h"
 
 #include <cstdio>
 #include <cstring>

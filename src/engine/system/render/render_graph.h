@@ -4,8 +4,15 @@
 #include <vector>
 #include <cstdint>
 
-#include "system/render/render_pass.h"
 #include "system/render/render_graph_resource.h"
+
+namespace Engine {
+
+class RenderPass;       // defined in render_pass.h
+class RenderBackend;    // defined in render_backend.h
+struct RenderView;      // defined in render_view.h
+class ResourceManager;
+}
 
 namespace Engine {
 
@@ -60,8 +67,8 @@ struct RGResourceLifetime {
  */
 class RenderGraph {
     public:
-        RenderGraph() = default;
-        ~RenderGraph() = default;
+        RenderGraph();
+        ~RenderGraph();
 
         RenderGraph(const RenderGraph& other) = delete;
         RenderGraph& operator=(const RenderGraph& other) = delete;
@@ -82,8 +89,8 @@ class RenderGraph {
 
     public:
         size_t passCount() const { return m_passes.size(); }
-        RenderPass& getPass(size_t index) { return *m_passes[index]; }
-        const RenderPass& getPass(size_t index) const { return *m_passes[index]; }
+        RenderPass& getPass(size_t index);
+        const RenderPass& getPass(size_t index) const;
 
         const RGResourceLifetime& lifetime(RGResource r) const {
             return m_lifetimes[static_cast<uint32_t>(r)];
@@ -91,11 +98,31 @@ class RenderGraph {
         const std::vector<RGResource>& passReads(size_t index)  const { return m_reads[index]; }
         const std::vector<RGResource>& passWrites(size_t index) const { return m_writes[index]; }
 
+        /// Register the concrete backend object that backs a logical
+        /// resource id. The backend calls this from
+        /// `RenderBackend::populateGraphResources(*this)` at the top of
+        /// every execute() so the active set is up-to-date - in particular
+        /// the editor's preview path swaps in a private FrameResources and
+        /// needs the pool to repoint without recompiling the graph.
+        ///
+        /// Storage is type-erased; passes downcast via the typed accessor
+        /// `RenderGraphContext::resource<T>(id)`.
+        void registerResource(RGResource id, void* ptr) {
+            m_resources[static_cast<uint32_t>(id)] = ptr;
+        }
+
+        /// Raw resource pointer. Prefer `RenderGraphContext::resource<T>()`
+        /// at pass call sites; this is the low-level accessor.
+        void* getResource(RGResource id) const {
+            return m_resources[static_cast<uint32_t>(id)];
+        }
+
     private:
         std::vector<std::unique_ptr<RenderPass>> m_passes;
         std::vector<std::vector<RGResource>>     m_reads;
         std::vector<std::vector<RGResource>>     m_writes;
         RGResourceLifetime                       m_lifetimes[RG_RESOURCE_COUNT];
+        void*                                    m_resources[RG_RESOURCE_COUNT] = {};
         bool                                     m_compiled = false;
         uint64_t                                 m_frameIndex = 0;
 };
