@@ -116,6 +116,7 @@ void registerBuiltinAssetFactories() {
                 asset.samplerBindings[name] = slot.get<int>();
             }
         }
+        asset.variantAware = desc.value("variantAware", false);
         return asset;
     });
 }
