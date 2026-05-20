@@ -24,7 +24,7 @@ namespace {
 using nlohmann::json;
 namespace CS = ComponentSerializer;
 
-constexpr int kFileFormatVersion = 1;
+constexpr int FILE_FORMAT_VERSION = 1;
 
 /// Try to read a component from an entity and emit a JSON entry for it.
 template<typename Component, typename Fn>
@@ -40,7 +40,7 @@ void emitIfPresent(const Scene& scene, EntityId id,
 
 bool save(const Scene& scene, const ResourceManager& resources, const std::string& path) {
     json doc;
-    doc["version"]  = kFileFormatVersion;
+    doc["version"]  = FILE_FORMAT_VERSION;
     doc["assets"]   = AssetSerializer::saveAssetsForScene(scene, resources);
     doc["entities"] = json::array();
 
@@ -89,8 +89,8 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
     }
 
     const int version = doc.value("version", 0);
-    if (version != kFileFormatVersion) {
-        LOG_ERROR("SceneSerializer::load: file version %d, expected %d", version, kFileFormatVersion);
+    if (version != FILE_FORMAT_VERSION) {
+        LOG_ERROR("SceneSerializer::load: file version %d, expected %d", version, FILE_FORMAT_VERSION);
         return false;
     }
     if (!doc.contains("entities") || !doc["entities"].is_array()) {

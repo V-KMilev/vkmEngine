@@ -153,10 +153,10 @@ class RenderSystem : public System {
         RenderView m_previewView;
         std::vector<std::pair<size_t, bool>> m_previewPassWasEnabled;  ///< (pass index, prior enabled) restored after a preview
 
-        // Thumbnail throttle: at most kThumbBudgetPerFrame fresh (non-live)
+        // Thumbnail throttle: at most THUMB_BUDGET_PER_FRAME fresh (non-live)
         // bakes per frame so an Asset Browser grid spreads its work out.
-        static constexpr uint32_t kThumbBudgetPerFrame = 3;
-        static constexpr uint32_t kPreviewRes          = 512;  ///< One fixed offscreen res for all previews (no target thrash)
+        static constexpr uint32_t THUMB_BUDGET_PER_FRAME = 3;
+        static constexpr uint32_t PREVIEW_RES            = 512;  ///< One fixed offscreen res for all previews (no target thrash)
         uint32_t m_thumbBudget = 0;
         std::unordered_map<uint64_t, uint64_t> m_thumbVersion;  ///< key -> last baked asset version
 

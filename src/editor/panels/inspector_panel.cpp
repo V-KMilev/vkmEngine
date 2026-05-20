@@ -12,12 +12,12 @@ namespace Engine {
 namespace {
     // Per-component accent colors - the left strip / guide line that lets the
     // eye group a card at a glance (Transform blue, Mesh green, ...).
-    const ImVec4 kAccentTransform = EditorStyle::AXIS_Z;
-    const ImVec4 kAccentMesh      = EditorStyle::AXIS_Y;
-    const ImVec4 kAccentLight     = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);
-    const ImVec4 kAccentCamera    = ImVec4(0.30f, 0.78f, 0.80f, 1.0f);
-    const ImVec4 kAccentAnim      = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);
-    const ImVec4 kAccentHierarchy = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);
+    const ImVec4 ACCENT_TRANSFORM = EditorStyle::AXIS_Z;
+    const ImVec4 ACCENT_MESH      = EditorStyle::AXIS_Y;
+    const ImVec4 ACCENT_LIGHT     = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);
+    const ImVec4 ACCENT_CAMERA    = ImVec4(0.30f, 0.78f, 0.80f, 1.0f);
+    const ImVec4 ACCENT_ANIM      = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);
+    const ImVec4 ACCENT_HIERARCHY = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);
 }
 
 void InspectorPanel::draw(EditorContext& ec) {
@@ -36,7 +36,7 @@ void InspectorPanel::draw(EditorContext& ec) {
     auto& scene = ctx.scene;
     EntityId id = state.selectedEntity;
 
-    // --- Identity header: type badge + name + id + component summary ---
+    // Identity header: type badge + name + id + component summary.
     {
         if (!scene.has<Name>(id)) {
             char fallback[64];
@@ -114,7 +114,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EntityId id) {
 
 void InspectorPanel::drawTransformSection(Scene& scene, EntityId id) {
     // Transform is intrinsic - no remove affordance.
-    const bool open = beginComponentCard("Transform", kAccentTransform, true);
+    const bool open = beginComponentCard("Transform", ACCENT_TRANSFORM, true);
     if (open) {
         auto& t = scene.get<Transform>(id);
         bool changed = false;
@@ -152,7 +152,7 @@ void InspectorPanel::drawTransformSection(Scene& scene, EntityId id) {
 void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
                                      EditorState& state, EntityId id) {
     bool remove = false;
-    const bool open = beginComponentCard("Mesh", kAccentMesh, true, &remove);
+    const bool open = beginComponentCard("Mesh", ACCENT_MESH, true, &remove);
     if (open) {
         auto& mesh = scene.get<Mesh>(id);
 
@@ -241,7 +241,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
 
 void InspectorPanel::drawLightSection(Scene& scene, EntityId id) {
     bool remove = false;
-    const bool open = beginComponentCard("Light", kAccentLight, true, &remove);
+    const bool open = beginComponentCard("Light", ACCENT_LIGHT, true, &remove);
     if (open) {
         auto& light = scene.get<Light>(id);
 
@@ -291,7 +291,7 @@ void InspectorPanel::drawLightSection(Scene& scene, EntityId id) {
 
 void InspectorPanel::drawCameraSection(Scene& scene, EntityId id) {
     bool remove = false;
-    const bool open = beginComponentCard("Camera", kAccentCamera, true, &remove);
+    const bool open = beginComponentCard("Camera", ACCENT_CAMERA, true, &remove);
     if (open) {
         auto& cam = scene.get<Camera>(id);
 
@@ -328,23 +328,23 @@ void InspectorPanel::drawCameraSection(Scene& scene, EntityId id) {
 
 void InspectorPanel::drawAnimationSection(Scene& scene, EntityId id) {
     bool remove = false;
-    const bool open = beginComponentCard("Animation", kAccentAnim, true, &remove);
+    const bool open = beginComponentCard("Animation", ACCENT_ANIM, true, &remove);
     if (open) {
         auto& anim = scene.get<Animation>(id);
 
-        const float kGap = 8.0f;
+        const float GAP = 8.0f;
         float ih = ImGui::GetFrameHeight();
         if (iconButton("inspPlay", anim.playing ? EditorIcon::Pause : EditorIcon::Play,
                        anim.playing, true, anim.playing ? "Pause" : "Play", ih))
             anim.playing = !anim.playing;
-        ImGui::SameLine(0, kGap);
+        ImGui::SameLine(0, GAP);
         if (iconButton("inspStop", EditorIcon::Stop, false, true, "Stop (rewind)", ih)) {
             anim.playing = false;
             anim.time = 0.0f;
         }
-        ImGui::SameLine(0, kGap);
+        ImGui::SameLine(0, GAP);
         ImGui::Checkbox("Loop", &anim.looping);
-        ImGui::SameLine(0, kGap);
+        ImGui::SameLine(0, GAP);
         ImGui::SetNextItemWidth(-1);
         ImGui::DragFloat("##ASpeed", &anim.speed, 0.005f, 0.0f, 10.0f, "Speed %.2fx");
 
@@ -368,7 +368,7 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EntityId id) {
 }
 
 void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, EntityId id) {
-    const bool open = beginComponentCard("Hierarchy", kAccentHierarchy, false);
+    const bool open = beginComponentCard("Hierarchy", ACCENT_HIERARCHY, false);
     if (open) {
         const auto& h = scene.get<Hierarchy>(id);
 

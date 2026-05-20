@@ -89,7 +89,6 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
 }
 
 void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
-    // ---- Save As modal -----------------------------------------------------
     if (m_openSaveAsPopup) {
         ImGui::OpenPopup("Save Scene As");
         m_openSaveAsPopup = false;
@@ -109,7 +108,6 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
         ImGui::EndPopup();
     }
 
-    // ---- Load Scene picker -------------------------------------------------
     if (m_openLoadPopup) {
         ImGui::OpenPopup("Load Scene");
         m_openLoadPopup = false;

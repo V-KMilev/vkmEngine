@@ -17,13 +17,13 @@
 namespace Engine {
 
 namespace {
-    const ImVec4& kAxisRed      = EditorStyle::AXIS_X;
-    const ImVec4& kAxisGreen    = EditorStyle::AXIS_Y;
-    const ImVec4& kAxisBlue     = EditorStyle::AXIS_Z;
-    const ImVec4& kAxisRedHov   = EditorStyle::AXIS_X_HOV;
-    const ImVec4& kAxisGreenHov = EditorStyle::AXIS_Y_HOV;
-    const ImVec4& kAxisBlueHov  = EditorStyle::AXIS_Z_HOV;
-    constexpr float kLabelWidth = EditorStyle::LABEL_WIDTH;
+    const ImVec4& AXIS_RED       = EditorStyle::AXIS_X;
+    const ImVec4& AXIS_GREEN     = EditorStyle::AXIS_Y;
+    const ImVec4& AXIS_BLUE      = EditorStyle::AXIS_Z;
+    const ImVec4& AXIS_RED_HOV   = EditorStyle::AXIS_X_HOV;
+    const ImVec4& AXIS_GREEN_HOV = EditorStyle::AXIS_Y_HOV;
+    const ImVec4& AXIS_BLUE_HOV  = EditorStyle::AXIS_Z_HOV;
+    constexpr float LABEL_WIDTH  = EditorStyle::LABEL_WIDTH;
 }
 
 bool drawVec3Control(const char* label, float* values,
@@ -33,16 +33,16 @@ bool drawVec3Control(const char* label, float* values,
 
     float lineHeight = ImGui::GetFrameHeight();
     ImVec2 buttonSize(lineHeight + 2.0f, lineHeight);
-    float inputWidth = (ImGui::GetContentRegionAvail().x - kLabelWidth
+    float inputWidth = (ImGui::GetContentRegionAvail().x - LABEL_WIDTH
                         - buttonSize.x * 3 - ImGui::GetStyle().ItemSpacing.x * 5) / 3.0f;
 
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
-    ImGui::SameLine(kLabelWidth);
+    ImGui::SameLine(LABEL_WIDTH);
 
-    ImGui::PushStyleColor(ImGuiCol_Button, kAxisRed);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kAxisRedHov);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, kAxisRed);
+    ImGui::PushStyleColor(ImGuiCol_Button, AXIS_RED);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, AXIS_RED_HOV);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, AXIS_RED);
     if (ImGui::Button("X", buttonSize)) { values[0] = resetValue; changed = true; }
     ImGui::PopStyleColor(3);
     ImGui::SameLine(0, 2);
@@ -50,9 +50,9 @@ bool drawVec3Control(const char* label, float* values,
     changed |= ImGui::DragFloat("##X", &values[0], speed, 0.0f, 0.0f, "%.2f");
     ImGui::SameLine(0, 6);
 
-    ImGui::PushStyleColor(ImGuiCol_Button, kAxisGreen);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kAxisGreenHov);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, kAxisGreen);
+    ImGui::PushStyleColor(ImGuiCol_Button, AXIS_GREEN);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, AXIS_GREEN_HOV);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, AXIS_GREEN);
     if (ImGui::Button("Y", buttonSize)) { values[1] = resetValue; changed = true; }
     ImGui::PopStyleColor(3);
     ImGui::SameLine(0, 2);
@@ -60,9 +60,9 @@ bool drawVec3Control(const char* label, float* values,
     changed |= ImGui::DragFloat("##Y", &values[1], speed, 0.0f, 0.0f, "%.2f");
     ImGui::SameLine(0, 6);
 
-    ImGui::PushStyleColor(ImGuiCol_Button, kAxisBlue);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, kAxisBlueHov);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, kAxisBlue);
+    ImGui::PushStyleColor(ImGuiCol_Button, AXIS_BLUE);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, AXIS_BLUE_HOV);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, AXIS_BLUE);
     if (ImGui::Button("Z", buttonSize)) { values[2] = resetValue; changed = true; }
     ImGui::PopStyleColor(3);
     ImGui::SameLine(0, 2);
@@ -76,7 +76,7 @@ bool drawVec3Control(const char* label, float* values,
 void drawPropertyLabel(const char* label) {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
-    ImGui::SameLine(kLabelWidth);
+    ImGui::SameLine(LABEL_WIDTH);
     ImGui::SetNextItemWidth(-1);
 }
 
@@ -90,7 +90,7 @@ namespace {
     // ImGui is single-threaded; a plain stack is enough. Cards never nest in
     // the inspector but the stack keeps begin/end strictly balanced anyway.
     std::vector<CardState> g_cardStack;
-    constexpr float kCardIndent = 14.0f;
+    constexpr float CARD_INDENT = 14.0f;
 }
 
 bool styledCollapsingHeader(const char* title, const ImVec4& accent,
@@ -141,9 +141,9 @@ bool beginComponentCard(const char* title, const ImVec4& accent,
     CardState st;
     st.accent = accent;
     st.open   = open;
-    st.lineX  = rMin.x + kCardIndent * 0.5f;
+    st.lineX  = rMin.x + CARD_INDENT * 0.5f;
     if (open) {
-        ImGui::Indent(kCardIndent);
+        ImGui::Indent(CARD_INDENT);
         ImGui::Spacing();
         st.startY = ImGui::GetCursorScreenPos().y;
     }
@@ -158,7 +158,7 @@ void endComponentCard() {
     if (st.open) {
         ImGui::Spacing();
         const float endY = ImGui::GetCursorScreenPos().y;
-        ImGui::Unindent(kCardIndent);
+        ImGui::Unindent(CARD_INDENT);
         const ImU32 c = ImGui::GetColorU32(ImVec4(
             st.accent.x, st.accent.y, st.accent.z, 0.30f));
         ImGui::GetWindowDrawList()->AddLine(
@@ -217,7 +217,7 @@ bool drawRemoveButton(const char* compLabel, uint32_t entityIdx) {
 bool drawEasingCombo(const char* id, EasingFunction& easing) {
     int idx = Easing::indexOf(easing);
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::Combo(id, &idx, Easing::kEasingNames, Easing::kEasingCount)) {
+    if (ImGui::Combo(id, &idx, Easing::EASING_NAMES, Easing::EASING_COUNT)) {
         easing = Easing::byIndex(idx);
         return true;
     }
