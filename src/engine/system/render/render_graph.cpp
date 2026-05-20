@@ -4,10 +4,12 @@
 
 #include "logger.h"
 #include "debug/statistics.h"
+#include "system/render/frame_resources.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_graph_builder.h"
 #include "system/render/render_graph_context.h"
 #include "system/render/render_pass.h"
+#include "system/render/render_target.h"
 
 namespace Engine {
 
@@ -41,9 +43,27 @@ void RenderGraph::clear() {
 }
 
 void RenderGraph::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
+    m_width  = width;
+    m_height = height;
+    // Lazy-create the default pool on first resize; resize the existing pool
+    // on subsequent calls. The backend factory may return nullptr while the
+    // backend is still mid-setup (rare); guard so we don't crash here.
+    FrameResources& f = ensureFrame(backend);
+    f.resize(width, height);
     for (auto& pass : m_passes) {
         pass->onResize(backend, width, height);
     }
+}
+
+FrameResources& RenderGraph::ensureFrame(RenderBackend& backend) {
+    if (!m_frame) {
+        m_frame = backend.createFrameResources();
+    }
+    return *m_frame;
+}
+
+FrameResources& RenderGraph::activeFrame() const {
+    return m_previewActive && m_previewFrame ? *m_previewFrame : *m_frame;
 }
 
 void RenderGraph::compile() {
@@ -91,10 +111,27 @@ void RenderGraph::execute(
 ) {
     if (!m_compiled) compile();
 
-    // Refresh the resource pool from the backend's active set. The editor
-    // preview path swaps in a private FrameResources, so the pool isn't
-    // a one-shot setup.
-    backend.populateGraphResources(*this);
+    // Refresh the resource pool from the active FrameResources (default or
+    // preview). registerWith() re-publishes every sub-resource into the
+    // typed pool, so a preview swap just needs an extra call into this path.
+    FrameResources& f = m_previewActive && m_previewFrame
+        ? *m_previewFrame : ensureFrame(backend);
+    f.registerWith(*this);
+
+    // Persistent resources (ShadowAtlas, IBL) are published once - they
+    // outlive the frame and don't change across previews.
+    if (!m_persistentRegistered) {
+        backend.registerPersistentResources(*this);
+        m_persistentRegistered = true;
+    }
+
+    // Backbuffer routes through the typed pool too. Preview sessions point
+    // it at the offscreen target the graph owns; otherwise it's the window
+    // backbuffer the backend hands us.
+    RenderTarget* target = (m_previewActive && m_previewTarget)
+        ? m_previewTarget.get()
+        : &backend.getDefaultTarget();
+    registerResource(RGResource::Backbuffer, target);
 
     RenderGraphContext ctx{ backend, view, resources, *this, m_frameIndex++ };
 
@@ -108,7 +145,7 @@ void RenderGraph::execute(
         if (!pass.isEnabled()) continue;
 
         if (sceneDirty && contains(m_reads[i], RGResource::SceneHDRResolved)) {
-            backend.resolveSceneColor();
+            f.resolveSceneColor();
             sceneDirty = false;
         }
 
@@ -119,6 +156,46 @@ void RenderGraph::execute(
             sceneDirty = true;
         }
     }
+}
+
+void RenderGraph::beginPreview(RenderBackend& backend, uint32_t size) {
+    if (size == 0) return;
+    if (!m_previewFrame || m_previewSize != size) {
+        m_previewFrame = backend.createFrameResources();
+        m_previewTarget = backend.createOffscreenTarget(size);
+        m_previewSize = size;
+    }
+    if (m_previewFrame) m_previewFrame->resize(size, size);
+    m_previewActive = true;
+}
+
+void RenderGraph::endPreview() {
+    m_previewActive = false;
+    // Keep the preview pool + target around for reuse on the next session.
+    // Note: the composite pass left the offscreen FBO bound. Callers (e.g.
+    // RenderSystem.renderMaterialPreview) need to rebind the backbuffer
+    // before subsequent UI rendering, or ImGui draws into the preview FBO.
+}
+
+uint32_t RenderGraph::previewColorTexture() const {
+    if (!m_previewTarget) return 0u;
+    return m_previewTarget->getColorTexture();
+}
+
+uint32_t RenderGraph::snapshotPreviewToCache(RenderBackend& backend,
+                                             uint64_t key, uint32_t size) {
+    if (!m_previewTarget) return 0u;
+    const uint32_t srcId = m_previewTarget->getColorTexture();
+    if (srcId == 0u) return 0u;
+    const uint32_t id = backend.snapshotToTexture(srcId, key, size);
+    if (id != 0u) m_thumbCache[key] = id;
+    return id;
+}
+
+uint32_t RenderGraph::cachedPreview(RenderBackend& backend, uint64_t key) const {
+    auto it = m_thumbCache.find(key);
+    if (it != m_thumbCache.end()) return it->second;
+    return backend.cachedThumbnail(key);
 }
 
 } // namespace Engine

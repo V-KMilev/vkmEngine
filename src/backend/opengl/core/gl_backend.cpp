@@ -7,30 +7,25 @@
 #include "gl_context.h"
 #include "gl_shader.h"
 #include "gl_texture.h"
+#include "gl_frame_resources.h"
 
 #include "system/render/render_graph.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
 
-void GLBackend::beginPreview(uint32_t size) {
-    if (size == 0) return;
-    if (!m_previewTarget || m_previewSize != size) {
-        m_previewTarget = std::make_unique<GLFramebufferTarget>(size, size);
-        m_previewFrame.resize(size, size);
-        m_previewSize = size;
-    }
-    m_previewMode = true;
+std::unique_ptr<FrameResources> GLBackend::createFrameResources() {
+    return std::make_unique<GLFrameResources>();
 }
 
-uint32_t GLBackend::previewColorTexture() const {
-    return m_previewTarget ? m_previewTarget->getColorTexture() : 0u;
+std::unique_ptr<RenderTarget> GLBackend::createOffscreenTarget(uint32_t size) {
+    if (size == 0) return nullptr;
+    return std::make_unique<GLFramebufferTarget>(size, size);
 }
 
-uint32_t GLBackend::snapshotPreviewToCache(uint64_t key, uint32_t size) {
-    if (!m_previewTarget || size == 0) return 0;
-    const GLuint src = m_previewTarget->getColorTexture();
-    if (!src) return 0;
+uint32_t GLBackend::snapshotToTexture(uint32_t srcTextureId, uint64_t key,
+                                      uint32_t size) {
+    if (srcTextureId == 0 || size == 0) return 0;
 
     auto& slot = m_thumbCache[key];
     if (!slot) {
@@ -48,18 +43,27 @@ uint32_t GLBackend::snapshotPreviewToCache(uint64_t key, uint32_t size) {
         slot = std::make_unique<Core::Texture2D>("thumb", p);
     }
 
-    // The preview target and the cache slot are both RGBA8 at the same size,
-    // so a straight image copy is the cheapest stable snapshot.
-    glCopyImageSubData(src,            GL_TEXTURE_2D, 0, 0, 0, 0,
-                       slot->getID(),  GL_TEXTURE_2D, 0, 0, 0, 0,
+    // Both textures are RGBA8 at the same size, so a straight image copy
+    // is the cheapest stable snapshot.
+    glCopyImageSubData(srcTextureId,  GL_TEXTURE_2D, 0, 0, 0, 0,
+                       slot->getID(), GL_TEXTURE_2D, 0, 0, 0, 0,
                        static_cast<GLsizei>(size),
                        static_cast<GLsizei>(size), 1);
     return slot->getID();
 }
 
-uint32_t GLBackend::cachedPreview(uint64_t key) const {
+uint32_t GLBackend::cachedThumbnail(uint64_t key) const {
     auto it = m_thumbCache.find(key);
     return (it != m_thumbCache.end() && it->second) ? it->second->getID() : 0u;
+}
+
+void GLBackend::registerPersistentResources(RenderGraph& graph) {
+    // Resources whose lifetime exceeds a frame and which don't swap on
+    // preview - the shadow atlas + the IBL set both live on GLView and are
+    // created once at construction. Registered after FrameResources so the
+    // graph can call this lazily on first execute().
+    graph.registerResource(RGResource::ShadowAtlas, &m_view.getShadowAtlas());
+    graph.registerResource(RGResource::IBL,         &m_view.getIBL());
 }
 
 GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL), m_context() {
@@ -83,7 +87,7 @@ GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL), m_context() {
 void GLBackend::resize(uint32_t width, uint32_t height) {
     m_context.setViewport(0, 0, width, height);
     m_defaultTarget.resize(width, height);
-    m_frame.resize(width, height);
+    // Transient pool is owned and resized by RenderGraph::onResize now.
 }
 
 void GLBackend::setWireframe(bool enabled) {
@@ -91,43 +95,22 @@ void GLBackend::setWireframe(bool enabled) {
 }
 
 void GLBackend::syncResources(const RenderView& view, const ResourceManager& resources) {
-    // GLView::sync gates GPU-table uploads on type-version / drawable-count
-    // deltas. A preview's tiny hand-built view (a freshly registered
-    // primitive, a not-in-scene material) can slip past that heuristic, so
-    // force its mesh/material resident before the unconditional batcher/UBO
-    // rebuild inside sync().
-    if (m_previewMode) {
-        for (const auto& d : view.drawables) {
-            m_view.ensureMesh(d.mesh, resources);
-            m_view.ensureMaterial(d.material, resources);
-            m_view.ensureMaterialTextures(d.material, resources);
-        }
-    }
     m_view.sync(view, resources);
 }
 
-void GLBackend::populateGraphResources(RenderGraph& graph) {
-    // Resolve the active pool (preview swaps in m_previewFrame). Sub-
-    // resources of the gbuffer (Normal / Position / AO) all point at the
-    // same GLGBuffer object - that's the lifetime granularity the graph
-    // tracks, but they share physical storage.
-    auto& f = frame();
-    graph.registerResource(RGResource::SceneHDR,          &f.hdr());
-    graph.registerResource(RGResource::SceneHDRResolved,  &f.hdr());
-    graph.registerResource(RGResource::BloomChain,        &f.bloom());
-    graph.registerResource(RGResource::AdaptedLuminance,  &f.autoExposure());
-    graph.registerResource(RGResource::GBufferNormal,     &f.gbuffer());
-    graph.registerResource(RGResource::GBufferPosition,   &f.gbuffer());
-    graph.registerResource(RGResource::AO,                &f.gbuffer());
-    graph.registerResource(RGResource::TAAHistory,        &f.taa());
-    graph.registerResource(RGResource::PostScratch,       &f.scratch());
-
-    // GLView-owned resources (lifetime longer than a frame).
-    graph.registerResource(RGResource::ShadowAtlas,       &m_view.getShadowAtlas());
-    graph.registerResource(RGResource::IBL,               &m_view.getIBL());
-
-    // Backbuffer: in preview mode this becomes the offscreen FBO target.
-    graph.registerResource(RGResource::Backbuffer, &getDefaultTarget());
+void GLBackend::ensurePreviewResourceTables(const RenderView& view,
+                                             const ResourceManager& resources) {
+    // GLView::sync gates GPU-table uploads on type-version / drawable-count
+    // deltas. A preview's tiny hand-built view (a freshly registered
+    // primitive, a not-in-scene material) can slip past that heuristic, so
+    // editor previews call this before syncResources to force its
+    // mesh/material/textures resident before the unconditional batcher/UBO
+    // rebuild inside sync().
+    for (const auto& d : view.drawables) {
+        m_view.ensureMesh(d.mesh, resources);
+        m_view.ensureMaterial(d.material, resources);
+        m_view.ensureMaterialTextures(d.material, resources);
+    }
 }
 
 } // namespace Engine

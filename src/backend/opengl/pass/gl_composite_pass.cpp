@@ -7,6 +7,7 @@
 #include "debug/statistics.h"
 
 #include "core/gl_backend.h"
+#include "core/gl_hdr_target.h"
 #include "resource/gl_shader_program.h"
 #include "resource/gl_bloom.h"
 #include "resource/gl_auto_exposure.h"
@@ -55,8 +56,13 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     // SceneHDRResolved is produced by the graph (auto MSAA-resolve) before
     // this pass runs - see RenderGraph::execute.
 
-    // Composite to the backbuffer (full window).
-    backend.getDefaultTarget().bind();
+    // Composite to the backbuffer. The graph routes RGResource::Backbuffer
+    // at either the window backbuffer or the offscreen preview target
+    // depending on whether a preview session is active; this is what makes
+    // the unchanged graph render into either destination cleanly.
+    auto* backbuffer = rg.resource<RenderTarget>(RGResource::Backbuffer);
+    if (backbuffer) backbuffer->bind();
+    else backend.getDefaultTarget().bind();
 
     // Fullscreen blit: no depth, no blend, no culling.
     glContext.setDepthTest(false);

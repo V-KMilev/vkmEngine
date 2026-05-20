@@ -6,6 +6,7 @@
 #include "debug/print_helper.h"
 
 #include "core/gl_backend.h"
+#include "core/gl_hdr_target.h"
 #include "resource/gl_shader_program.h"
 #include "resource/gl_auto_exposure.h"
 

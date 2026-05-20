@@ -8,6 +8,7 @@
 #include "debug/statistics.h"
 
 #include "core/gl_backend.h"
+#include "core/gl_hdr_target.h"
 #include "resource/gl_shader_program.h"
 #include "resource/gl_ibl.h"
 
