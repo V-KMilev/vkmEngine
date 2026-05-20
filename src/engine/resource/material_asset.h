@@ -50,6 +50,15 @@ struct MaterialAsset : public Resource {
     glm::vec3 sheenColor   = {0,0,0};            ///< Sheen tint (0 = disabled)
     float     sheenRoughness = 0.3f;             ///< Sheen lobe roughness
 
+    // KHR_materials_volume - Beer-Lambert absorption inside a transmissive
+    // medium. thicknessFactor == 0 means "thin-walled" and absorption is
+    // disabled (matches the glTF spec default). attenuationColor is the
+    // color that white light turns into after travelling attenuationDistance
+    // through the volume; transmittance per channel = pow(c, t / d).
+    float     thicknessFactor     = 0.0f;        ///< Volume thickness in metres (0: thin-walled, no absorption)
+    float     attenuationDistance = 1.0f;        ///< Path length at which radiance reaches attenuationColor (m)
+    glm::vec3 attenuationColor    = {1,1,1};     ///< Transmittance after one attenuationDistance (white = no tint)
+
     // Height/Displacement and Normal mapping
     float heightScale = 0.0f;                   ///< Height map scale for parallax/displacement mapping (0.02-0.1 typical)
     float normalScale = 1.0f;                   ///< Normal map intensity (0: flat, 1: normal, >1: exaggerated)

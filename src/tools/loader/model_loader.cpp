@@ -267,6 +267,18 @@ namespace {
             aiColor3D sheen;
             if (mt->Get(AI_MATKEY_SHEEN_COLOR_FACTOR, sheen) == AI_SUCCESS)
                 out.sheenColor = toVec3(sheen);
+
+            // KHR_materials_volume. thickness == 0 in glTF means thin-walled
+            // (no absorption); leave defaults so the shader skips Beer-Lambert.
+            // attenuationDistance defaults to +inf in glTF; we ship 1.0 so the
+            // editor can tweak something visible without divide-by-zero risk.
+            if (mt->Get(AI_MATKEY_VOLUME_THICKNESS_FACTOR, f) == AI_SUCCESS)
+                out.thicknessFactor = f;
+            if (mt->Get(AI_MATKEY_VOLUME_ATTENUATION_DISTANCE, f) == AI_SUCCESS && f > 0.0f)
+                out.attenuationDistance = f;
+            aiColor3D atten;
+            if (mt->Get(AI_MATKEY_VOLUME_ATTENUATION_COLOR, atten) == AI_SUCCESS)
+                out.attenuationColor = toVec3(atten);
             // KHR_materials_emissive_strength. Captured here, applied AFTER
             // the emissive-texture fallback below (so a dropped factor does
             // not zero out the strength too).
