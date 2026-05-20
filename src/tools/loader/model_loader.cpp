@@ -21,12 +21,16 @@
 
 #include "stb_image.h"   // declarations only; impl is in texture_loaders.cpp
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <functional>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -52,6 +56,64 @@ namespace {
         aiProcess_JoinIdenticalVertices |
         aiProcess_GenUVCoords |
         aiProcess_ImproveCacheLocality;
+
+    /// LRU cache of parsed Assimp scenes keyed by canonical path. The
+    /// AssetSerializer loadGroup loop calls loadModelMesh / loadModelMaterial
+    /// once per asset, so a glTF with N meshes + M materials previously
+    /// triggered N+M full re-parses of the same file. The Importer owns the
+    /// aiScene; we hand callers a shared_ptr so a concurrent eviction can't
+    /// destroy the scene out from under them mid-build.
+    class ImporterCache {
+        public:
+            std::shared_ptr<Assimp::Importer> get(const std::string& path) {
+                std::error_code ec;
+                std::string canonical;
+                {
+                    auto p = std::filesystem::weakly_canonical(path, ec);
+                    canonical = ec ? path : p.string();
+                }
+
+                std::lock_guard<std::mutex> lock(m_mutex);
+
+                auto it = std::find_if(m_entries.begin(), m_entries.end(),
+                    [&](const Entry& e) { return e.path == canonical; });
+                if (it != m_entries.end()) {
+                    auto cached = it->importer;
+                    Entry moved = std::move(*it);
+                    m_entries.erase(it);
+                    m_entries.insert(m_entries.begin(), std::move(moved));
+                    return cached;
+                }
+
+                auto importer = std::make_shared<Assimp::Importer>();
+                if (!importer->ReadFile(path, POST_PROCESS_FLAGS)) {
+                    // Log here while we still have the Importer that holds
+                    // the real error string. Callers would otherwise see a
+                    // null shared_ptr with no way to recover the cause.
+                    LOG_ERROR("model load failed '%s': %s", path.c_str(),
+                        importer->GetErrorString());
+                    return nullptr;
+                }
+
+                m_entries.insert(m_entries.begin(), Entry{canonical, importer});
+                while (m_entries.size() > kMaxCached) m_entries.pop_back();
+                return importer;
+            }
+
+        private:
+            struct Entry {
+                std::string path;
+                std::shared_ptr<Assimp::Importer> importer;
+            };
+            static constexpr size_t kMaxCached = 2;
+            std::vector<Entry> m_entries;
+            std::mutex m_mutex;
+    };
+
+    ImporterCache& importerCache() {
+        static ImporterCache instance;
+        return instance;
+    }
 
     std::string stemOf(const std::string& path) {
         return std::filesystem::path(path).stem().string();
@@ -354,25 +416,19 @@ namespace {
 } // namespace
 
 MeshAsset loadModelMesh(const std::string& path, int meshIndex) {
-    Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(path, POST_PROCESS_FLAGS);
-    if (!scene) {
-        LOG_ERROR("model load failed '%s': %s", path.c_str(),
-            importer.GetErrorString());
-        return {};
-    }
+    auto importer = importerCache().get(path);
+    if (!importer) return {};  // get() already logged the Assimp error
+    const aiScene* scene = importer->GetScene();
+    if (!scene) return {};
     return buildMesh(scene, path, meshIndex);
 }
 
 MaterialHandle loadModelMaterial(const std::string& path, int materialIndex,
                                  ResourceManager& resources) {
-    Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(path, POST_PROCESS_FLAGS);
-    if (!scene) {
-        LOG_ERROR("model load failed '%s': %s", path.c_str(),
-            importer.GetErrorString());
-        return {};
-    }
+    auto importer = importerCache().get(path);
+    if (!importer) return {};
+    const aiScene* scene = importer->GetScene();
+    if (!scene) return {};
     return buildMaterial(scene, path, materialIndex, resources);
 }
 
