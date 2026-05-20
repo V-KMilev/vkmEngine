@@ -122,12 +122,16 @@ class EventSystem : public System {
 
             void flush() override {
                 if (queue.empty()) return;
-                // Swap to local so re-entrant enqueues from listeners land in
-                // a fresh queue and fire next frame, not this one.
-                std::vector<EventT> local;
-                local.swap(queue);
-                for (auto& e : local) {
-                    for (auto& l : listeners) l.cb(e);
+                // Swap to locals so re-entrant enqueues / subscribes from
+                // listener callbacks land in fresh storage and fire next
+                // frame, not this one. Snapshotting `listeners` too matters
+                // because a callback that subscribes mid-flush would
+                // invalidate iterators if `listeners` reallocates.
+                std::vector<EventT> localEvents;
+                localEvents.swap(queue);
+                std::vector<Entry> localListeners = listeners;
+                for (auto& e : localEvents) {
+                    for (auto& l : localListeners) l.cb(e);
                 }
             }
         };

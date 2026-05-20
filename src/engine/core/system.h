@@ -99,6 +99,28 @@ struct FrameContext {
 struct SystemAccess {
     std::vector<TypeId> reads;   ///< Component TypeIds this system reads from
     std::vector<TypeId> writes;  ///< Component TypeIds this system writes to
+
+    /// True when the system has explicitly declared it touches no component
+    /// state. Default-constructed / list-initialised SystemAccess leaves
+    /// this false; the scheduler treats those as "conservative" (writes
+    /// everything) and serialises the system on its own layer. An
+    /// explicit-empty declaration (returned by SystemAccess::none()) is
+    /// parallel-safe with any other system.
+    ///
+    /// This split matters for "trivial" systems whose work doesn't touch
+    /// the ECS at all (debug overlays, frame stat printers): without
+    /// SystemAccess::none() they get a dedicated layer they don't need.
+    bool noAccessDeclared = false;
+
+    /// Factory for the explicit "I touch no component state" declaration.
+    /// Use this in declareAccess() overrides on systems whose update body
+    /// has no reads, no writes, no scene mutation, and no external state
+    /// changes that other parallel-safe systems care about.
+    static SystemAccess none() {
+        SystemAccess a;
+        a.noAccessDeclared = true;
+        return a;
+    }
 };
 
 /**
@@ -143,6 +165,17 @@ class System {
          * rely on it from fixedUpdate.
          */
         virtual void fixedUpdate(FrameContext& ctx) {}
+
+        /**
+         * @brief Whether this system implements fixedUpdate().
+         *
+         * Override and return true in any system that provides a real
+         * fixedUpdate body. The engine builds a filtered list at init so the
+         * fixed-step accumulator loop only visits opt-in systems instead of
+         * dispatching empty virtuals across every registered system every
+         * tick. Default false matches the default empty fixedUpdate.
+         */
+        virtual bool hasFixedUpdate() const { return false; }
 
         /**
          * @brief Called once on engine shutdown, in reverse registration order.
