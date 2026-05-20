@@ -45,9 +45,9 @@ void GLMotionBlurPass::execute(RenderGraphContext& rg) {
     if (!view.environment.motionBlur) return;  // off by default - no-op
 
     auto& gl      = static_cast<GLBackend&>(backend);
-    auto& hdr     = gl.getHdrTarget();
-    auto& gbuffer = gl.getGBuffer();
-    auto& scratch = gl.getPostScratch();
+    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
+    auto& scratch = *rg.resource<GLPostScratch>(RGResource::PostScratch);
     if (!hdr.isReady() || !gbuffer.isReady() || !scratch.isReady()) return;
 
     GLShader* shader = gl.getView().resolveShader(m_shader, resources);

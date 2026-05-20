@@ -39,7 +39,7 @@ void GLGTAOPass::execute(RenderGraphContext& rg) {
     }
 
     auto& gl      = static_cast<GLBackend&>(backend);
-    auto& gbuffer = gl.getGBuffer();
+    auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
     if (!gbuffer.isReady()) return;
 
     GLShader* shader = gl.getView().resolveShader(m_shader, resources);

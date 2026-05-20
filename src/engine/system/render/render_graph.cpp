@@ -7,8 +7,20 @@
 #include "system/render/render_backend.h"
 #include "system/render/render_graph_builder.h"
 #include "system/render/render_graph_context.h"
+#include "system/render/render_pass.h"
 
 namespace Engine {
+
+RenderGraph::RenderGraph()  = default;
+RenderGraph::~RenderGraph() = default;
+
+RenderPass& RenderGraph::getPass(size_t index) {
+    return *m_passes[index];
+}
+
+const RenderPass& RenderGraph::getPass(size_t index) const {
+    return *m_passes[index];
+}
 
 namespace {
     bool contains(const std::vector<RGResource>& list, RGResource r) {
@@ -79,7 +91,12 @@ void RenderGraph::execute(
 ) {
     if (!m_compiled) compile();
 
-    RenderGraphContext ctx{ backend, view, resources, m_frameIndex++ };
+    // Refresh the resource pool from the backend's active set. The editor
+    // preview path swaps in a private FrameResources, so the pool isn't
+    // a one-shot setup.
+    backend.populateGraphResources(*this);
+
+    RenderGraphContext ctx{ backend, view, resources, *this, m_frameIndex++ };
 
     // The graph owns the MSAA->single-sample resolve: it runs once before the
     // first pass that samples SceneHDRResolved, and again only after a later

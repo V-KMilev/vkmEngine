@@ -40,7 +40,7 @@ void GLPrepass::execute(RenderGraphContext& rg) {
 
     auto& gl      = static_cast<GLBackend&>(backend);
     auto& glView  = gl.getView();
-    auto& gbuffer = gl.getGBuffer();
+    auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
     if (!gbuffer.isReady() || view.drawables.empty()) return;
 
     GLShader* shader = glView.resolveShader(m_shader, resources);

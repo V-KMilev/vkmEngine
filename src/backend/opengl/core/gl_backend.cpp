@@ -8,6 +8,7 @@
 #include "gl_shader.h"
 #include "gl_texture.h"
 
+#include "system/render/render_graph.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
@@ -103,6 +104,30 @@ void GLBackend::syncResources(const RenderView& view, const ResourceManager& res
         }
     }
     m_view.sync(view, resources);
+}
+
+void GLBackend::populateGraphResources(RenderGraph& graph) {
+    // Resolve the active pool (preview swaps in m_previewFrame). Sub-
+    // resources of the gbuffer (Normal / Position / AO) all point at the
+    // same GLGBuffer object - that's the lifetime granularity the graph
+    // tracks, but they share physical storage.
+    auto& f = frame();
+    graph.registerResource(RGResource::SceneHDR,          &f.hdr());
+    graph.registerResource(RGResource::SceneHDRResolved,  &f.hdr());
+    graph.registerResource(RGResource::BloomChain,        &f.bloom());
+    graph.registerResource(RGResource::AdaptedLuminance,  &f.autoExposure());
+    graph.registerResource(RGResource::GBufferNormal,     &f.gbuffer());
+    graph.registerResource(RGResource::GBufferPosition,   &f.gbuffer());
+    graph.registerResource(RGResource::AO,                &f.gbuffer());
+    graph.registerResource(RGResource::TAAHistory,        &f.taa());
+    graph.registerResource(RGResource::PostScratch,       &f.scratch());
+
+    // GLView-owned resources (lifetime longer than a frame).
+    graph.registerResource(RGResource::ShadowAtlas,       &m_view.getShadowAtlas());
+    graph.registerResource(RGResource::IBL,               &m_view.getIBL());
+
+    // Backbuffer: in preview mode this becomes the offscreen FBO target.
+    graph.registerResource(RGResource::Backbuffer, &getDefaultTarget());
 }
 
 } // namespace Engine

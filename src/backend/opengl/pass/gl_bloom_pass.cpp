@@ -44,8 +44,8 @@ void GLBloomPass::execute(RenderGraphContext& rg) {
     }
 
     auto& gl    = static_cast<GLBackend&>(backend);
-    auto& hdr   = gl.getHdrTarget();
-    auto& bloom = gl.getBloom();
+    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    auto& bloom = *rg.resource<GLBloom>(RGResource::BloomChain);
     if (!hdr.isReady() || !bloom.isReady()) return;
 
     GLShader* down = gl.getView().resolveShader(m_downShader, resources);

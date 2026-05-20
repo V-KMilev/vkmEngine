@@ -71,7 +71,7 @@ void GLIBLBakePass::execute(RenderGraphContext& rg) {
 
     auto& gl     = static_cast<GLBackend&>(backend);
     auto& glView = gl.getView();
-    auto& ibl    = glView.getIBL();
+    auto& ibl    = *rg.resource<GLIBL>(RGResource::IBL);
 
     const std::string& path = view.environment.environmentMapPath;
     if (path.empty() || path == m_skipPath) return;

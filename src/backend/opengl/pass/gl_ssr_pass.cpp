@@ -40,8 +40,8 @@ void GLSSRPass::execute(RenderGraphContext& rg) {
     if (!view.environment.ssr) return;
 
     auto& gl      = static_cast<GLBackend&>(backend);
-    auto& gbuffer = gl.getGBuffer();
-    auto& hdr     = gl.getHdrTarget();
+    auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
+    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
     if (!gbuffer.isReady() || !hdr.isReady()) return;
 
     GLShader* shader = gl.getView().resolveShader(m_shader, resources);

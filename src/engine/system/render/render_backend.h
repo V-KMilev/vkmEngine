@@ -9,6 +9,7 @@ namespace Engine {
     class RenderTarget;
     struct RenderView;
     class ResourceManager;
+    class RenderGraph;
 }
 
 namespace Engine {
@@ -100,6 +101,21 @@ class RenderBackend {
          * writes the scene color. Default no-op for backends without MSAA.
          */
         virtual void resolveSceneColor() {}
+
+        /**
+         * @brief Publish the concrete backend objects backing each logical
+         *        RGResource into the graph's resource pool.
+         *
+         * Called once at the top of every RenderGraph::execute() so the
+         * pool stays in sync with the active set - notably the editor's
+         * offscreen preview path swaps in a private FrameResources and
+         * needs the pool to repoint without recompiling the graph.
+         *
+         * Default no-op: backends that don't expose their resources via the
+         * pool keep the old pattern (passes downcast and call typed
+         * accessors directly).
+         */
+        virtual void populateGraphResources(RenderGraph& graph) {}
 
         /**
          * @brief Enter offscreen "preview" mode at @p size x @p size.
