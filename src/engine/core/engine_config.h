@@ -17,8 +17,6 @@ namespace Engine {
  */
 namespace Config {
 
-    // ---- Rendering budgets ------------------------------------------------
-
     /// Maximum number of lights uploaded per frame.
     /// MUST match MAX_LIGHTS in shaders/pbr/fragmentShader.shader.
     constexpr uint32_t MaxLights = 32;
@@ -36,8 +34,6 @@ namespace Config {
     /// layers (MaxShadowCasters2D - NumCascades) serve spot lights.
     /// MUST match NUM_CASCADES in shaders/pbr/fragmentShader.shader.
     constexpr uint32_t NumCascades = 4;
-
-    // ---- Simulation timing ------------------------------------------------
 
     /// Fixed simulation step (60 Hz). Cadence at which fixedUpdate runs.
     constexpr float FixedTimeStep = 1.0f / 60.0f;

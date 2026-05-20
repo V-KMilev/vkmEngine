@@ -47,7 +47,7 @@ void RenderSystem::update(FrameContext& ctx) {
 
     // Refill the editor thumbnail bake budget for this frame (consumed during
     // the later UI stage by the Asset Browser).
-    m_thumbBudget = kThumbBudgetPerFrame;
+    m_thumbBudget = THUMB_BUDGET_PER_FRAME;
 
     // Environment lives as a singleton component on a scene entity (editable
     // in the Inspector). Pull it each frame; mirror into m_environment so the
@@ -88,7 +88,7 @@ uint32_t RenderSystem::renderMaterialPreview(
 ) {
     if (!m_backend || size == 0 || !material || !mesh) return 0;
 
-    // --- Studio camera orbiting the origin ---
+    // Studio camera orbiting the origin.
     const float yaw   = glm::radians(yawDeg);
     const float pitch = glm::radians(pitchDeg);
     const glm::vec3 eye = distance * glm::vec3(
@@ -192,10 +192,10 @@ uint32_t RenderSystem::materialPreviewTexture(
     // the preview targets mid-frame.
     const uint32_t liveTex =
         renderMaterialPreview(resources, material, mesh,
-                              yawDeg, pitchDeg, distance, kPreviewRes);
+                              yawDeg, pitchDeg, distance, PREVIEW_RES);
     if (!liveTex) return live ? 0u : m_backend->cachedPreview(key);
 
-    const uint32_t snap = m_backend->snapshotPreviewToCache(key, kPreviewRes);
+    const uint32_t snap = m_backend->snapshotPreviewToCache(key, PREVIEW_RES);
     if (!live) m_thumbVersion[key] = version;
     return snap ? snap : liveTex;
 }

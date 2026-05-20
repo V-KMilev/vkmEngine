@@ -69,7 +69,7 @@ class RenderGraph {
         std::vector<std::unique_ptr<RenderPass>> m_passes;
         std::vector<std::vector<RGResource>>     m_reads;
         std::vector<std::vector<RGResource>>     m_writes;
-        RGResourceLifetime                       m_lifetimes[kRGResourceCount];
+        RGResourceLifetime                       m_lifetimes[RG_RESOURCE_COUNT];
         bool                                     m_compiled = false;
         uint64_t                                 m_frameIndex = 0;
 };

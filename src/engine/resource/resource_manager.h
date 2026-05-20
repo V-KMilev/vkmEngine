@@ -210,8 +210,8 @@ class ResourceManager {
             return m_slots[id]->typeVersion;
         }
 
-        // --- Resource dependency tracking ---
-
+        /// Resource dependency tracking. Records a directed edge `from -> to`
+        /// so remove(to) can warn when there are live dependents.
         template<typename FromHandle, typename ToHandle>
         void addDependency(const FromHandle& from, const ToHandle& to) {
             uint64_t fromKey = packKey<typename FromHandle::resource_t>(from.key.index);

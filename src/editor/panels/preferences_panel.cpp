@@ -12,13 +12,13 @@ namespace {
     struct SectionDef { const char* group; const char* name; const char* hint; };
 
     // Order matches the dispatch switch in PreferencesPanel::draw().
-    const SectionDef kSections[] = {
+    const SectionDef SECTIONS[] = {
         {"VIEWPORT",    "Camera",   "Fly-camera movement and sensitivity"},
         {"VIEWPORT",    "Gizmo",    "Transform snap step sizes"},
         {"APPLICATION", "Display",  "Resolution, fullscreen, VSync, FPS cap"},
         {"INPUT",       "Keybinds", "Rebind editor shortcuts"},
     };
-    constexpr int kSectionCount = static_cast<int>(sizeof(kSections) / sizeof(kSections[0]));
+    constexpr int SECTION_COUNT = static_cast<int>(sizeof(SECTIONS) / sizeof(SECTIONS[0]));
 
     void sectionHeader(const char* title, const char* hint) {
         drawSectionHeader(title, hint);
@@ -43,14 +43,14 @@ void PreferencesPanel::draw(EditorContext& ec) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::NAV_BG);
     if (ImGui::BeginChild("##PrefNav", ImVec2(150.0f, avail.y), ImGuiChildFlags_Borders)) {
         const char* lastGroup = nullptr;
-        for (int i = 0; i < kSectionCount; ++i) {
-            if (kSections[i].group != lastGroup) {
+        for (int i = 0; i < SECTION_COUNT; ++i) {
+            if (SECTIONS[i].group != lastGroup) {
                 if (lastGroup) ImGui::Spacing();
-                ImGui::TextDisabled("%s", kSections[i].group);
-                lastGroup = kSections[i].group;
+                ImGui::TextDisabled("%s", SECTIONS[i].group);
+                lastGroup = SECTIONS[i].group;
             }
             ImGui::Indent(8.0f);
-            if (ImGui::Selectable(kSections[i].name, m_selectedSection == i))
+            if (ImGui::Selectable(SECTIONS[i].name, m_selectedSection == i))
                 m_selectedSection = i;
             ImGui::Unindent(8.0f);
         }
@@ -61,7 +61,7 @@ void PreferencesPanel::draw(EditorContext& ec) {
     ImGui::SameLine(0, 6);
 
     if (ImGui::BeginChild("##PrefDetail", ImVec2(0, avail.y), ImGuiChildFlags_Borders)) {
-        const auto& s = kSections[m_selectedSection];
+        const auto& s = SECTIONS[m_selectedSection];
         sectionHeader(s.name, s.hint);
         switch (m_selectedSection) {
             case 0: drawCameraSection(ec);        break;

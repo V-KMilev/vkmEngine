@@ -32,7 +32,7 @@ enum class RGResource : uint8_t {
     Count
 };
 
-constexpr uint32_t kRGResourceCount = static_cast<uint32_t>(RGResource::Count);
+constexpr uint32_t RG_RESOURCE_COUNT = static_cast<uint32_t>(RGResource::Count);
 
 inline const char* rgResourceName(RGResource r) {
     switch (r) {

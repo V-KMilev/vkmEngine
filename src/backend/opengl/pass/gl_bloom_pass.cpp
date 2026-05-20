@@ -18,7 +18,7 @@
 namespace Engine {
 
 namespace {
-    constexpr float kUpsampleRadius = 0.005f;  // tent filter radius in UV space
+    constexpr float UPSAMPLE_RADIUS = 0.005f;  // tent filter radius in UV space
 }
 
 GLBloomPass::GLBloomPass(ShaderHandle downsampleShader, ShaderHandle upsampleShader)
@@ -83,7 +83,7 @@ void GLBloomPass::execute(RenderGraphContext& rg) {
 
     // Additive upsample back up the chain (tent filter).
     up->bind();
-    up->setUniform1f("u_filterRadius", kUpsampleRadius);
+    up->setUniform1f("u_filterRadius", UPSAMPLE_RADIUS);
     bloom.bind(0);
     ctx.setBlending(true);
     ctx.setBlendFunc(GL_ONE, GL_ONE);

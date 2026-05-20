@@ -30,7 +30,7 @@ namespace Engine {
 namespace {
 
 // SHADOW_CUBE_NEAR in shaders/pbr/fragmentShader.shader mirrors this value.
-constexpr float kCubeNear = 0.1f;
+constexpr float CUBE_NEAR = 0.1f;
 
 // FNV-1a over the only inputs that change shadow-map content: the camera
 // (CSM cascades are fit to its frustum), every shadow-casting light's
@@ -169,7 +169,7 @@ glm::mat4 spotLightSpace(
 
 void buildCubeFaceMatrices(const glm::vec3& pos, float range, glm::mat4 out[6]) {
     const glm::mat4 proj = Math::makePerspective(
-        glm::radians(90.0f), 1.0f, kCubeNear, std::max(range, 1.0f));
+        glm::radians(90.0f), 1.0f, CUBE_NEAR, std::max(range, 1.0f));
 
     // Standard OpenGL cube-map face conventions: face direction + the up
     // vector that orients the face's u/v axes consistently across the cube.

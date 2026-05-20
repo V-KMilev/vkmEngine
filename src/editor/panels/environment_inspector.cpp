@@ -23,11 +23,11 @@ namespace {
     // Per-group accent rail colors - same palette the Inspector uses for
     // Transform/Light/Camera so the Environment reads as part of the editor,
     // not a bolted-on panel.
-    const ImVec4 kAccentLighting = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);  // gold
-    const ImVec4 kAccentCamera   = ImVec4(0.30f, 0.78f, 0.80f, 1.0f);  // cyan
-    const ImVec4 kAccentPost     = EditorStyle::ACCENT;                // blue
-    const ImVec4 kAccentScene    = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);  // gray
-    const ImVec4 kAccentPipe     = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);  // purple
+    const ImVec4 ACCENT_LIGHTING = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);  // gold
+    const ImVec4 ACCENT_CAMERA   = ImVec4(0.30f, 0.78f, 0.80f, 1.0f);  // cyan
+    const ImVec4 ACCENT_POST     = EditorStyle::ACCENT;                // blue
+    const ImVec4 ACCENT_SCENE    = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);  // gray
+    const ImVec4 ACCENT_PIPE     = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);  // purple
 
     // An effect sub-block inside a group card: a hairline divider, an
     // optional enable checkbox, then the title in header text. Body is
@@ -165,7 +165,7 @@ void EnvironmentInspector::drawPresetBar(EnvironmentConfig& env) {
     ImGui::SameLine();
     ImGui::TextDisabled(active < 0 ? "(Custom)" : "");
 
-    static const char* kNames[4] = { "Low", "Medium", "High", "Cinematic" };
+    static const char* PRESET_NAMES[4] = { "Low", "Medium", "High", "Cinematic" };
 
     const float h      = ImGui::GetFrameHeight() * 1.25f;
     const float resetW = 64.0f;
@@ -185,7 +185,7 @@ void EnvironmentInspector::drawPresetBar(EnvironmentConfig& env) {
             on ? EditorStyle::ACCENT_HOV : EditorStyle::CARD_HEADER_HOV);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive,
             on ? EditorStyle::ACCENT : EditorStyle::CARD_HEADER_ACT);
-        if (ImGui::Button(kNames[i], ImVec2(segW, h)))
+        if (ImGui::Button(PRESET_NAMES[i], ImVec2(segW, h)))
             applyPreset(env, static_cast<Preset>(i));
         ImGui::PopStyleColor(3);
         if (i < 3) ImGui::SameLine(0.0f, 0.0f);
@@ -476,15 +476,15 @@ void EnvironmentInspector::draw(EditorContext& ec, EnvironmentConfig& env) {
         endComponentCard();
     };
 
-    card("Lighting",          kAccentLighting, true, &EnvironmentInspector::drawLighting);
-    card("Camera & Exposure", kAccentCamera,   true, &EnvironmentInspector::drawCamera);
-    card("Post-Processing",   kAccentPost,     true, &EnvironmentInspector::drawPost);
-    card("Scene & Debug",     kAccentScene,    true, &EnvironmentInspector::drawScene);
+    card("Lighting",          ACCENT_LIGHTING, true, &EnvironmentInspector::drawLighting);
+    card("Camera & Exposure", ACCENT_CAMERA,   true, &EnvironmentInspector::drawCamera);
+    card("Post-Processing",   ACCENT_POST,     true, &EnvironmentInspector::drawPost);
+    card("Scene & Debug",     ACCENT_SCENE,    true, &EnvironmentInspector::drawScene);
 
     // Pipeline takes only the context; advanced, collapsed by default.
     if (!filtering || matchesFilter("Pipeline (advanced)", m_filter)) {
         if (filtering) ImGui::SetNextItemOpen(true, ImGuiCond_Always);
-        if (beginComponentCard("Pipeline (advanced)", kAccentPipe, false))
+        if (beginComponentCard("Pipeline (advanced)", ACCENT_PIPE, false))
             drawPipeline(ec);
         endComponentCard();
     }

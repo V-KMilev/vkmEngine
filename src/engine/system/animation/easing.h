@@ -190,7 +190,7 @@ namespace Easing {
 
     /// All easing function names in display order, grouped by family.
     /// Used to drive UI dropdowns; resolve to a function with byName().
-    inline constexpr const char* kEasingNames[] = {
+    inline constexpr const char* EASING_NAMES[] = {
         "linear",
         "easeInQuad",    "easeOutQuad",    "easeInOutQuad",
         "easeInCubic",   "easeOutCubic",   "easeInOutCubic",
@@ -204,20 +204,20 @@ namespace Easing {
         "easeInBounce",  "easeOutBounce",  "easeInOutBounce",
     };
 
-    inline constexpr int kEasingCount =
-        static_cast<int>(sizeof(kEasingNames) / sizeof(kEasingNames[0]));
+    inline constexpr int EASING_COUNT =
+        static_cast<int>(sizeof(EASING_NAMES) / sizeof(EASING_NAMES[0]));
 
-    /// Index into kEasingNames -> function pointer (clamped to linear).
+    /// Index into EASING_NAMES -> function pointer (clamped to linear).
     inline EasingFunction byIndex(int i) {
-        if (i < 0 || i >= kEasingCount) return &linear;
-        return byName(kEasingNames[i]);
+        if (i < 0 || i >= EASING_COUNT) return &linear;
+        return byName(EASING_NAMES[i]);
     }
 
-    /// Function pointer -> index into kEasingNames (0/linear if unknown).
+    /// Function pointer -> index into EASING_NAMES (0/linear if unknown).
     inline int indexOf(EasingFunction f) {
         const char* n = nameOf(f);
-        for (int i = 0; i < kEasingCount; ++i) {
-            if (std::strcmp(n, kEasingNames[i]) == 0) return i;
+        for (int i = 0; i < EASING_COUNT; ++i) {
+            if (std::strcmp(n, EASING_NAMES[i]) == 0) return i;
         }
         return 0;
     }

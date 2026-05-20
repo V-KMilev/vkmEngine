@@ -62,10 +62,9 @@ class GLIBL {
         /// Upload (or replace) the source equirectangular HDR as RGB16F.
         void uploadEquirect(uint32_t width, uint32_t height, const float* rgb);
 
-        // --- Bake-pass render-target ops (capture FBO + per-face/mip attach).
-        //     Each attach also sizes the viewport to the target it points at,
-        //     so the bake pass holds no GL state itself.
-
+        /// Bake-pass render-target ops (capture FBO + per-face/mip attach).
+        /// Each attach also sizes the viewport to the target it points at, so
+        /// the bake pass holds no GL state itself.
         void bindCaptureFbo()   const { m_captureFbo->bind(); }
         void unbindCaptureFbo() const { m_captureFbo->unbind(); }
 
@@ -100,8 +99,7 @@ class GLIBL {
             glViewport(0, 0, BRDF_SIZE, BRDF_SIZE);
         }
 
-        // --- Sampler binds for the forward + skybox passes.
-
+        /// Sampler binds for the forward + skybox passes.
         void bindEnvCube(uint32_t slot)    const { m_envCube.bindSlot(slot); }
         void bindIrradiance(uint32_t slot) const { m_irradiance.bindSlot(slot); }
         void bindPrefilter(uint32_t slot)  const { m_prefilter.bindSlot(slot); }
