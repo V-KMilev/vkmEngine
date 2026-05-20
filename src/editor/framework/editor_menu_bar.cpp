@@ -23,7 +23,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     if (ImGui::BeginMenu("File")) {
         char lbl[48];
         const bool haveCurrent = sceneIO.hasPath();
-        if (ImGui::MenuItem("Save Scene",   getKeyBindLabel(state.keybinds.saveScene, lbl, sizeof(lbl)), false, haveCurrent || true)) {
+        if (ImGui::MenuItem("Save Scene",   getKeyBindLabel(state.keybinds.saveScene, lbl, sizeof(lbl)), false, haveCurrent)) {
             sceneIO.save(ctx);
         }
         if (ImGui::MenuItem("Save Scene As...", getKeyBindLabel(state.keybinds.saveSceneAs, lbl, sizeof(lbl)))) {

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace Engine {
 
@@ -59,6 +60,11 @@ class SceneIOController {
         bool        m_openSaveAsPopup = false;
         bool        m_openLoadPopup   = false;
         char        m_saveAsBuffer[256] = "scene.json";
+
+        /// Cached scenes/*.json listing. Refreshed when the Load picker opens;
+        /// stays stable while it's open instead of re-listing the directory
+        /// every frame the modal is up.
+        std::vector<std::string> m_loadCandidates;
 };
 
 } // namespace Engine
