@@ -135,6 +135,15 @@ class RenderGraph {
         /** @brief Cached thumbnail id for @p key, or 0 if never snapshotted. */
         uint32_t cachedPreview(RenderBackend& backend, uint64_t key) const;
 
+        /// Drop a single thumbnail from both the graph-side id map and the
+        /// backend's underlying texture cache. Call this when the source
+        /// asset has been destroyed; otherwise long editing sessions leak
+        /// textures for assets the user has already removed.
+        void evictThumbnail(RenderBackend& backend, uint64_t key);
+
+        /// Drop every cached thumbnail (graph + backend).
+        void clearThumbnailCache(RenderBackend& backend);
+
     public:
         size_t passCount() const { return m_passes.size(); }
         RenderPass& getPass(size_t index);
@@ -176,7 +185,8 @@ class RenderGraph {
         std::vector<std::vector<RGResource>>     m_writes;
         RGResourceLifetime                       m_lifetimes[RG_RESOURCE_COUNT];
         void*                                    m_resources[RG_RESOURCE_COUNT] = {};
-        bool                                     m_compiled = false;
+        bool                                     m_compiled = false;        ///< compile() has run against the current pass set
+        bool                                     m_compileClean = false;    ///< Last compile() validated cleanly (no read-before-write)
         bool                                     m_persistentRegistered = false;
         uint64_t                                 m_frameIndex = 0;
 

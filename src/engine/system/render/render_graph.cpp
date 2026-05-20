@@ -40,6 +40,10 @@ void RenderGraph::clear() {
     m_reads.clear();
     m_writes.clear();
     m_compiled = false;
+    // Backend-owned persistents (ShadowAtlas, IBL) must be re-registered
+    // after a clear+repopulate; otherwise the next execute() skips the
+    // registerPersistentResources() call and passes see null handles.
+    m_persistentRegistered = false;
 }
 
 void RenderGraph::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
@@ -67,12 +71,24 @@ FrameResources& RenderGraph::activeFrame() const {
 }
 
 void RenderGraph::compile() {
+    // CAVEAT: declareResources() is called without RenderView, so the
+    // lifetimes computed here reflect an "everything-enabled" schedule.
+    // Post passes (TAA, DoF, Motion Blur, SSR) early-out at execute time
+    // when their view.environment.* toggle is off but still declare their
+    // writes here. That's harmless today - lifetimes are only consumed by
+    // the editor debug view and the LOG_INFO summary. Once future work
+    // wires lifetime-based pool aliasing (see RenderGraph header doc),
+    // either declareResources will need a RenderView arg (and toggles
+    // will trigger a recompile) or the aliaser will need to inflate
+    // lifetimes for any resource a toggle-controlled pass might still
+    // produce.
     const size_t n = m_passes.size();
     m_reads.assign(n, {});
     m_writes.assign(n, {});
     for (uint32_t i = 0; i < RG_RESOURCE_COUNT; ++i) m_lifetimes[i] = RGResourceLifetime{};
 
     bool produced[RG_RESOURCE_COUNT] = {};
+    bool clean = true;
 
     for (size_t i = 0; i < n; ++i) {
         RenderGraphBuilder builder(m_reads[i], m_writes[i]);
@@ -85,6 +101,7 @@ void RenderGraph::compile() {
             if (!produced[ri] && !rgResourceIsImplicit(r)) {
                 LOG_WARNING("RenderGraph: pass '%s' reads %s before any pass writes it",
                     m_passes[i]->getName().c_str(), rgResourceName(r));
+                clean = false;
             }
         }
         // Then this pass's writes become available to later passes.
@@ -101,7 +118,13 @@ void RenderGraph::compile() {
     }
     LOG_INFO("RenderGraph compiled: %zu passes, %u transient resources", n, usedResources);
 
-    m_compiled = true;
+    // We attempted compile against the current pass set - don't retry next
+    // frame unless the pass set actually changes (addPass / clear flip
+    // m_compiled back to false). `clean` is recorded separately so execute()
+    // can run with the schedule we have while making the validation failure
+    // visible exactly once instead of spamming every frame.
+    m_compiled     = true;
+    m_compileClean = clean;
 }
 
 void RenderGraph::execute(
@@ -135,25 +158,36 @@ void RenderGraph::execute(
 
     RenderGraphContext ctx{ backend, view, resources, *this, m_frameIndex++ };
 
-    // The graph owns the MSAA->single-sample resolve: it runs once before the
-    // first pass that samples SceneHDRResolved, and again only after a later
-    // pass has written SceneHDR (e.g. SSR). Passes no longer self-resolve.
-    bool sceneDirty = false;
+    // The graph owns the MSAA->single-sample resolve. sceneResolveDirty ==
+    // "SceneHDRResolved is stale w.r.t. SceneHDR" and is driven explicitly
+    // by what each pass writes:
+    //   - write(SceneHDR)         -> resolved buffer is now stale
+    //   - write(SceneHDRResolved) -> pass authored the resolved buffer
+    //                                 directly; it's authoritative until
+    //                                 the next SceneHDR write
+    //   - resolve()               -> resolved buffer is fresh
+    // Passes no longer self-resolve. New passes that write SceneHDR between
+    // a TAA/DoF/MB run and composite are handled correctly here without any
+    // pass-side change.
+    bool sceneResolveDirty = false;
 
     for (size_t i = 0; i < m_passes.size(); ++i) {
         RenderPass& pass = *m_passes[i];
         if (!pass.isEnabled()) continue;
 
-        if (sceneDirty && contains(m_reads[i], RGResource::SceneHDRResolved)) {
+        if (sceneResolveDirty && contains(m_reads[i], RGResource::SceneHDRResolved)) {
             f.resolveSceneColor();
-            sceneDirty = false;
+            sceneResolveDirty = false;
         }
 
         pass.execute(ctx);
         STATS_RECORD_RENDER_PASS();
 
         if (contains(m_writes[i], RGResource::SceneHDR)) {
-            sceneDirty = true;
+            sceneResolveDirty = true;
+        }
+        if (contains(m_writes[i], RGResource::SceneHDRResolved)) {
+            sceneResolveDirty = false;
         }
     }
 }
@@ -196,6 +230,16 @@ uint32_t RenderGraph::cachedPreview(RenderBackend& backend, uint64_t key) const 
     auto it = m_thumbCache.find(key);
     if (it != m_thumbCache.end()) return it->second;
     return backend.cachedThumbnail(key);
+}
+
+void RenderGraph::evictThumbnail(RenderBackend& backend, uint64_t key) {
+    m_thumbCache.erase(key);
+    backend.evictThumbnail(key);
+}
+
+void RenderGraph::clearThumbnailCache(RenderBackend& backend) {
+    m_thumbCache.clear();
+    backend.clearThumbnailCache();
 }
 
 } // namespace Engine

@@ -57,6 +57,14 @@ uint32_t GLBackend::cachedThumbnail(uint64_t key) const {
     return (it != m_thumbCache.end() && it->second) ? it->second->getID() : 0u;
 }
 
+void GLBackend::evictThumbnail(uint64_t key) {
+    m_thumbCache.erase(key);
+}
+
+void GLBackend::clearThumbnailCache() {
+    m_thumbCache.clear();
+}
+
 void GLBackend::registerPersistentResources(RenderGraph& graph) {
     // Resources whose lifetime exceeds a frame and which don't swap on
     // preview - the shadow atlas + the IBL set both live on GLView and are
