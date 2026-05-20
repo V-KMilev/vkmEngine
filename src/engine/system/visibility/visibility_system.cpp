@@ -24,6 +24,14 @@
 
 namespace Engine {
 
+SystemAccess VisibilitySystem::declareAccess() const {
+    return SystemAccess{
+        /*reads*/  { typeId<Camera>(), typeId<Transform>(),
+                     typeId<WorldTransform>(), typeId<Mesh>() },
+        /*writes*/ {},  // m_result is internal, not a Scene component.
+    };
+}
+
 void VisibilitySystem::update(FrameContext& ctx) {
     // Reuse persistent buffer - clear keeps capacity, avoiding per-frame allocation
     m_result.entries.clear();

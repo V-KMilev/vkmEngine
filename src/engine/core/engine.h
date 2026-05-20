@@ -77,12 +77,60 @@ class Engine {
          */
         void run();
 
+        /**
+         * @brief Allow systems within @p stage to dispatch in parallel
+         *        across layers of the per-stage schedule.
+         *
+         * Off by default for every stage. Systems within a stage are
+         * grouped into "layers" by their SystemAccess declarations - two
+         * systems share a layer only when neither's writes overlap the
+         * other's reads or writes. With parallel dispatch on, the ThreadPool
+         * fans out across each layer's systems and waits for the layer to
+         * finish before moving on; without it, layers run sequentially in
+         * registration order.
+         *
+         * The caller is responsible for guaranteeing the systems in @p stage
+         * are thread-safe at the level of their declared accesses. The
+         * audit checklist:
+         *   - No scene.add / scene.remove / scene.destroyEntity (structural
+         *     SparseSet mutations are not thread-safe).
+         *   - No shared external writes outside declared component access
+         *     (ResourceManager, GPU state, file system, ...).
+         *   - No add-on-read patterns (e.g. HierarchyOperations adds a
+         *     WorldTransform if missing - that's a structural change).
+         */
+        void setParallelDispatch(SystemStage stage, bool enabled);
+
     private:
         Engine() = default;
         ~Engine() = default;
 
+        /**
+         * @brief Per-system bundle: the system pointer + its declared access.
+         */
+        struct ScheduledSystem {
+            System*       system = nullptr;
+            SystemAccess  access;
+        };
+
+        /**
+         * @brief Per-stage execution plan computed once at init time.
+         *
+         * Systems within a stage are partitioned into layers using a greedy
+         * assignment: each system goes into the earliest layer where its
+         * reads/writes don't conflict with any system already in that layer.
+         * Layers run in order; within a layer, systems run concurrently
+         * when parallel dispatch is on, sequentially otherwise.
+         */
+        struct StageSchedule {
+            std::vector<std::vector<ScheduledSystem>> layers;
+            bool parallelDispatch = false;
+        };
+
         void initSystems(FrameContext& ctx);
         void shutdownSystems();
+        void buildSchedule();   ///< Compute m_schedule from m_systemsByStage.
+        void updateStage(SystemStage stage, FrameContext& ctx);
         void printStats(const FrameContext& ctx);
 
     private:
@@ -96,6 +144,9 @@ class Engine {
         /// preserves registration order within that stage.
         std::array<std::vector<std::unique_ptr<System>>,
                    static_cast<size_t>(SystemStage::Count)> m_systemsByStage;
+
+        std::array<StageSchedule,
+                   static_cast<size_t>(SystemStage::Count)> m_schedule;
 
         bool m_initialized = false;
 };

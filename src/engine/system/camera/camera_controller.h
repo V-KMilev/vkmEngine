@@ -71,6 +71,12 @@ class CameraController : public System {
          */
         void update(FrameContext& ctx) override;
 
+        /**
+         * @brief Reads Camera, writes Transform (only the camera entity's).
+         * No structural Scene changes.
+         */
+        SystemAccess declareAccess() const override;
+
         Settings&       getSettings()       { return m_settings; }
         const Settings& getSettings() const { return m_settings; }
         void setSettings(const Settings& s) { m_settings = s; }
