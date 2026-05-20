@@ -69,6 +69,10 @@ layout(std140, binding = 0) uniform MaterialBlock {
     float normalScale;
     int   textureFlags;
     float sheenRoughness;
+    // KHR_materials_volume - Beer-Lambert through the transmissive medium.
+    // attenuationDistance shares the std140 padding of attenuationColor.
+    vec3  attenuationColor;     float attenuationDistance;
+    float thicknessFactor;      float _mp9; float _mp10; float _mp11;
 } u_material;
 
 layout(std140, binding = 2) uniform CameraBlock {
@@ -607,11 +611,18 @@ void main() {
     if (u_material.transmission > 0.001) {
         vec3 rdir = refract(-V, N, 1.0 / max(u_material.ior, 1.0));
         vec3 refr;
+        // Volume thickness drives both the refraction step length (so glass
+        // with declared volume bends light over a physically grounded
+        // distance) and the Beer-Lambert path length below. Falls back to the
+        // old transmission-scaled heuristic when no volume is declared.
+        float volThick = u_material.thicknessFactor;
+        float thick = (volThick > 0.0)
+            ? volThick
+            : (0.20 + 0.40 * clamp(u_material.transmission, 0.0, 1.0));
         if (u_hasSceneColor == 1 && dot(rdir, rdir) > 0.0) {
             // Project a short refracted ray into screen space and offset by
             // that delta. Using world-space xy directly (the old code)
             // smeared with the view angle - this is camera-correct.
-            float thick = 0.20 + 0.40 * clamp(u_material.transmission, 0.0, 1.0);
             vec4 cs0 = u_camera.viewProjection * vec4(vWorldPos, 1.0);
             vec4 cs1 = u_camera.viewProjection * vec4(vWorldPos + rdir * thick, 1.0);
             vec2 p0  = cs0.xy / max(cs0.w, 1e-4) * 0.5 + 0.5;
@@ -626,6 +637,20 @@ void main() {
         } else {
             refr = color;
         }
+
+        // KHR_materials_volume Beer-Lambert. Only kicks in when the asset
+        // declares a non-zero thickness (thin-walled glTF default disables
+        // it). Path through volume is approximated as thickness / cos(theta);
+        // attenuationDistance is the path at which transmittance equals
+        // attenuationColor, so per channel: T = pow(c, len / d).
+        if (volThick > 0.0 && u_material.attenuationDistance > 0.0) {
+            float cosT = max(abs(dot(N, rdir)), 0.1);
+            float pathLen = volThick / cosT;
+            vec3 atten = pow(max(u_material.attenuationColor, vec3(1e-5)),
+                             vec3(pathLen / max(u_material.attenuationDistance, 1e-4)));
+            refr *= atten;
+        }
+
         color = mix(color, refr, clamp(u_material.transmission, 0.0, 1.0));
     }
 

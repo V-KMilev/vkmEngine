@@ -63,12 +63,14 @@ enum class MaterialTextureFlags : uint32_t {
  * 16  : vec3  emission + pad0
  * 32  : float metallic, roughness, ior, transmission
  * 48  : float alpha, ao, clearcoat, clearcoatRoughness
- * 64  : float anisotropy, pad1[3] (pad to next vec3)
+ * 64  : float anisotropy, sheenColor[3]
  * 80  : vec3  anisotropyDirection + pad2
  * 96  : float subsurface, pad3[3] (pad to next vec3)
  * 112 : vec3  subsurfaceColor + pad4
- * 128 : float heightScale, int textureFlags, pad5[2]
- * Total: 144 bytes
+ * 128 : float heightScale, normalScale, int textureFlags, float sheenRoughness
+ * 144 : vec3  attenuationColor + float attenuationDistance
+ * 160 : float thicknessFactor + pad6[3]
+ * Total: 176 bytes
  */
 struct alignas(16) MaterialUBOData {
     glm::vec4 albedo;                    // offset 0
@@ -101,6 +103,14 @@ struct alignas(16) MaterialUBOData {
     float normalScale;                   // offset 132
     int textureFlags;                    // offset 136
     float sheenRoughness;                // offset 140 (was pad5)
+
+    // KHR_materials_volume. attenuationDistance packs into the .w of the
+    // attenuationColor vec4 slot so the std140 padding does double duty.
+    alignas(16) glm::vec3 attenuationColor;    // offset 144
+    float attenuationDistance;                 // offset 156
+
+    float thicknessFactor;               // offset 160
+    float pad6[3];                       // offset 164 (pad to 176)
 };
 
 /**

@@ -18,7 +18,7 @@ namespace Engine {
 
 // Check if MaterialUBOData is 16-byte aligned for std140
 static_assert(sizeof(MaterialUBOData) % 16 == 0, "MaterialUBOData must be 16-byte aligned for std140");
-static_assert(sizeof(MaterialUBOData) == 144, "MaterialUBOData must be 144 bytes");
+static_assert(sizeof(MaterialUBOData) == 176, "MaterialUBOData must be 176 bytes");
 static_assert(offsetof(MaterialUBOData, albedo) == 0, "albedo offset");
 static_assert(offsetof(MaterialUBOData, emission) == 16, "emission offset");
 static_assert(offsetof(MaterialUBOData, metallic) == 32, "metallic offset");
@@ -28,6 +28,9 @@ static_assert(offsetof(MaterialUBOData, subsurfaceColor) == 112, "subsurfaceColo
 static_assert(offsetof(MaterialUBOData, heightScale) == 128, "heightScale offset");
 static_assert(offsetof(MaterialUBOData, normalScale) == 132, "normalScale offset");
 static_assert(offsetof(MaterialUBOData, textureFlags) == 136, "textureFlags offset");
+static_assert(offsetof(MaterialUBOData, attenuationColor) == 144, "attenuationColor offset");
+static_assert(offsetof(MaterialUBOData, attenuationDistance) == 156, "attenuationDistance offset");
+static_assert(offsetof(MaterialUBOData, thicknessFactor) == 160, "thicknessFactor offset");
 
 
 GLMaterial::GLMaterial(const MaterialAsset& material) {
@@ -78,6 +81,13 @@ void GLMaterial::update(const MaterialAsset& material) {
     // Height/Displacement and normal mapping
     uboData.heightScale = material.heightScale;
     uboData.normalScale = material.normalScale;
+
+    // KHR_materials_volume. Default (thicknessFactor == 0) skips Beer-Lambert
+    // in the shader; the other two are still sent so live edits work as soon
+    // as thickness becomes non-zero.
+    uboData.attenuationColor    = material.attenuationColor;
+    uboData.attenuationDistance = material.attenuationDistance;
+    uboData.thicknessFactor     = material.thicknessFactor;
 
     // Process all texture mappings in a single loop
     // Build texture flags bitfield and bindings list

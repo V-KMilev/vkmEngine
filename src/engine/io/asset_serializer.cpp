@@ -136,6 +136,9 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     src["subsurfaceColor"]     = vec3ToJson(m.subsurfaceColor);
     src["heightScale"]         = m.heightScale;
     src["normalScale"]         = m.normalScale;
+    src["thicknessFactor"]     = m.thicknessFactor;
+    src["attenuationDistance"] = m.attenuationDistance;
+    src["attenuationColor"]    = vec3ToJson(m.attenuationColor);
 
     nlohmann::json textures = nlohmann::json::object();
     for (const auto& f : kMaterialTextureFields) {
@@ -170,6 +173,9 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
     m.subsurfaceColor     = vec3FromJson(src.value("subsurfaceColor",     nlohmann::json{}), m.subsurfaceColor);
     m.heightScale         = src.value("heightScale",         m.heightScale);
     m.normalScale         = src.value("normalScale",         m.normalScale);
+    m.thicknessFactor     = src.value("thicknessFactor",     m.thicknessFactor);
+    m.attenuationDistance = src.value("attenuationDistance", m.attenuationDistance);
+    m.attenuationColor    = vec3FromJson(src.value("attenuationColor",    nlohmann::json{}), m.attenuationColor);
 
     if (src.contains("textures") && src["textures"].is_object()) {
         for (const auto& f : kMaterialTextureFields) {
