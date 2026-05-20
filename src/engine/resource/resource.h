@@ -32,6 +32,19 @@ struct Resource {
         std::string name;
 
         /**
+         * @brief Editor-internal resource flag.
+         *
+         * True for assets the editor creates for its own use (preview meshes,
+         * neutral materials for thumbnails, etc.). Pickers, the Asset Browser,
+         * and SceneSerializer all filter these out so they don't pollute the
+         * user's asset graph or get written to scene saves.
+         *
+         * Default false: anything imported, authored, or loaded from disk is
+         * the user's asset.
+         */
+        bool internal = false;
+
+        /**
          * @brief Origin descriptor as a JSON object.
          *
          * Set by whatever generator or loader created this asset. A null
