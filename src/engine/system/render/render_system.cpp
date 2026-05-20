@@ -13,6 +13,7 @@
 
 #include "system/render/render_backend.h"
 #include "system/render/render_pass.h"
+#include "system/render/render_target.h"
 
 namespace Engine {
 
@@ -156,17 +157,24 @@ uint32_t RenderSystem::renderMaterialPreview(
         }
     }
 
-    m_backend->beginPreview(size);
+    m_graph.beginPreview(*m_backend, size);
+    // Preview's hand-built RenderView can slip past sync's version-gating
+    // heuristics; force the mesh/material/texture resident first.
+    m_backend->ensurePreviewResourceTables(v, resources);
     m_backend->syncResources(v, resources);
     m_graph.execute(*m_backend, v, resources);
-    m_backend->endPreview();
+    m_graph.endPreview();
+    // The composite pass left the preview FBO bound. Rebind the window
+    // backbuffer so ImGui (which draws into the active FBO) doesn't end
+    // up rendering the editor into the preview texture.
+    m_backend->getDefaultTarget().bind();
 
     for (const auto& s : m_previewPassWasEnabled) {
         m_graph.getPass(s.first).setEnabled(s.second);
     }
     m_previewPassWasEnabled.clear();
 
-    return m_backend->previewColorTexture();
+    return m_graph.previewColorTexture();
 }
 
 uint32_t RenderSystem::materialPreviewTexture(
@@ -179,7 +187,7 @@ uint32_t RenderSystem::materialPreviewTexture(
     if (!m_backend) return 0;
 
     if (!live) {
-        const uint32_t cached = m_backend->cachedPreview(key);
+        const uint32_t cached = m_graph.cachedPreview(*m_backend, key);
         auto it = m_thumbVersion.find(key);
         const bool fresh = cached && it != m_thumbVersion.end() && it->second == version;
         if (fresh) return cached;            // up to date - no work
@@ -193,9 +201,9 @@ uint32_t RenderSystem::materialPreviewTexture(
     const uint32_t liveTex =
         renderMaterialPreview(resources, material, mesh,
                               yawDeg, pitchDeg, distance, PREVIEW_RES);
-    if (!liveTex) return live ? 0u : m_backend->cachedPreview(key);
+    if (!liveTex) return live ? 0u : m_graph.cachedPreview(*m_backend, key);
 
-    const uint32_t snap = m_backend->snapshotPreviewToCache(key, PREVIEW_RES);
+    const uint32_t snap = m_graph.snapshotPreviewToCache(*m_backend, key, PREVIEW_RES);
     if (!live) m_thumbVersion[key] = version;
     return snap ? snap : liveTex;
 }

@@ -9,15 +9,11 @@
 #include "gl_context.h"
 #include "gl_view.h"
 #include "gl_render_target.h"
-#include "gl_hdr_target.h"
-#include "resource/gl_bloom.h"
-#include "resource/gl_auto_exposure.h"
-#include "resource/gl_gbuffer.h"
-#include "gl_frame_resources.h"
 
 namespace Engine {
     struct RenderView;
     class ResourceManager;
+    class FrameResources;
 }
 
 namespace Engine {
@@ -55,30 +51,31 @@ class GLBackend : public RenderBackend {
          */
         void resize(uint32_t width, uint32_t height) override;
         RenderTarget& getDefaultTarget() override {
-            return m_previewMode ? static_cast<RenderTarget&>(*m_previewTarget)
-                                 : static_cast<RenderTarget&>(m_defaultTarget);
+            // Backend always returns the window backbuffer. The graph routes
+            // RGResource::Backbuffer at the offscreen preview target when a
+            // preview session is open - that swap lives in RenderGraph, not
+            // here, so the backend stays narrow.
+            return m_defaultTarget;
         }
         void setWireframe(bool enabled) override;
         void syncResources(const RenderView& view, const ResourceManager& resources) override;
-        void resolveSceneColor() override { frame().hdr().resolve(); }
-        void populateGraphResources(RenderGraph& graph) override;
 
-        /// Offscreen preview path (Material Editor / Asset Browser).
-        /// Redirects the whole graph's targets to a private preview set so
-        /// the unmodified pipeline can be re-run into an FBO. See RenderBackend.
-        void     beginPreview(uint32_t size) override;
-        // Leave preview mode AND rebind the real backbuffer + viewport. The
-        // preview's composite pass left the offscreen preview FBO bound;
-        // without this, ImGui (which renders into the currently bound FBO)
-        // would draw the whole editor into the 512x512 preview texture and
-        // the screen would show only the bare scene.
-        void     endPreview() override {
-            m_previewMode = false;
-            m_defaultTarget.bind();
-        }
-        uint32_t previewColorTexture() const override;
-        uint32_t snapshotPreviewToCache(uint64_t key, uint32_t size) override;
-        uint32_t cachedPreview(uint64_t key) const override;
+        void ensurePreviewResourceTables(const RenderView& view,
+                                          const ResourceManager& resources) override;
+
+        std::unique_ptr<FrameResources>  createFrameResources() override;
+        std::unique_ptr<RenderTarget>    createOffscreenTarget(uint32_t size) override;
+        void registerPersistentResources(RenderGraph& graph) override;
+
+        uint32_t snapshotToTexture(uint32_t srcTextureId, uint64_t key,
+                                   uint32_t size) override;
+        uint32_t cachedThumbnail(uint64_t key) const override;
+
+        // Editor preview rebinds the backbuffer after a preview session
+        // since the composite pass left the offscreen FBO bound; without
+        // this ImGui (which renders into the currently bound FBO) would
+        // draw the whole editor into the preview texture.
+        void rebindDefaultTarget() { m_defaultTarget.bind(); }
 
         /**
          * @brief Get the OpenGL rendering context.
@@ -123,62 +120,14 @@ class GLBackend : public RenderBackend {
          */
         const GLView& getView() const { return m_view; }
 
-        /**
-         * @brief Offscreen linear-HDR scene target (MSAA RGBA16F + resolve).
-         *
-         * The scene passes render into this; the composite pass resolves it
-         * and applies exposure + AgX tone mapping to the backbuffer. Lighting
-         * is therefore never clamped before tone mapping.
-         */
-        GLHdrTarget&       getHdrTarget()       { return frame().hdr(); }
-        const GLHdrTarget& getHdrTarget() const { return frame().hdr(); }
-
-        /// Bloom mip-chain target (built from the resolved HDR scene).
-        GLBloom&       getBloom()       { return frame().bloom(); }
-        const GLBloom& getBloom() const { return frame().bloom(); }
-
-        /// Auto-exposure metering + adaptation targets.
-        GLAutoExposure&       getAutoExposure()       { return frame().autoExposure(); }
-        const GLAutoExposure& getAutoExposure() const { return frame().autoExposure(); }
-
-        /// View-space normal/position G-buffer + AO target (GTAO).
-        GLGBuffer&       getGBuffer()       { return frame().gbuffer(); }
-        const GLGBuffer& getGBuffer() const { return frame().gbuffer(); }
-
-        /// TAA ping-pong history target.
-        GLTAA&       getTAA()       { return frame().taa(); }
-        const GLTAA& getTAA() const { return frame().taa(); }
-
-        /// Shared scratch target for in-place post passes (DoF, motion blur).
-        GLPostScratch&       getPostScratch()       { return frame().scratch(); }
-        const GLPostScratch& getPostScratch() const { return frame().scratch(); }
-
-        /// The render graph's transient resource pool (HDR/bloom/AO/exposure).
-        FrameResources&       getFrameResources()       { return frame(); }
-        const FrameResources& getFrameResources() const { return frame(); }
-
-    private:
-        /// The active transient pool: the private preview set while a preview
-        /// is rendering, the window-sized set otherwise. This is what lets the
-        /// whole render graph run into an offscreen target untouched.
-        FrameResources&       frame()       { return m_previewMode ? m_previewFrame : m_frame; }
-        const FrameResources& frame() const { return m_previewMode ? m_previewFrame : m_frame; }
-
     private:
         Core::Context m_context;
         GLView m_view;
         GLDefaultRenderTarget m_defaultTarget;
-        FrameResources m_frame;
 
-        // Preview render-target context (offscreen, editor-driven).
-        FrameResources                       m_previewFrame;
-        std::unique_ptr<GLFramebufferTarget> m_previewTarget;
-        bool                                 m_previewMode = false;
-        uint32_t                             m_previewSize = 0;
-
-        // Persistent per-key thumbnail snapshots (Asset Browser grid + the
-        // live Material Editor). Copied off the shared preview target so it
-        // can be overwritten by the next render without aliasing.
+        /// Per-key thumbnail snapshots (Asset Browser grid + the live
+        /// Material Editor). The graph keeps a key->id index; the backend
+        /// owns the GL textures themselves.
         std::unordered_map<uint64_t, std::unique_ptr<Core::Texture2D>> m_thumbCache;
 };
 
