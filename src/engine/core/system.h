@@ -71,10 +71,30 @@ struct FrameContext {
 /**
  * @brief Declares which component types a system reads and writes.
  *
- * Currently used only as a startup diagnostic: Engine::initSystems warns when
- * two systems declare overlapping writes. Systems still execute sequentially
- * within their stage; this is NOT a parallel scheduler input today. Override
- * declareAccess() on systems you want covered by the warning.
+ * Drives the per-stage layer scheduler in Engine. Engine::buildSchedule()
+ * partitions each stage's systems into layers using a greedy assignment:
+ * a system goes into the earliest layer where its (reads + writes) don't
+ * overlap any other system's writes, and its writes don't overlap any
+ * other system's reads. With parallel dispatch enabled for a stage (via
+ * Engine::setParallelDispatch), systems within a layer fan out across
+ * the ThreadPool; otherwise the layer runs sequentially.
+ *
+ * Default returned by System::declareAccess() is empty (no reads, no
+ * writes). The scheduler treats that as "conservative": the system
+ * conflicts with every other system in the stage and always ends up in
+ * its own dedicated layer. The safe default - a system that hasn't
+ * declared, or whose work is genuinely unpredictable (EventSystem
+ * flushing user callbacks, EditorSystem reacting to user input), never
+ * gets parallel-dispatched.
+ *
+ * Systems that DO declare access are committing to a contract:
+ *   - They touch only the listed component TypeIds.
+ *   - They don't call scene.add / scene.remove / scene.destroyEntity
+ *     (structural SparseSet mutations are not thread-safe and would
+ *     race with other parallel-dispatched systems).
+ *   - They don't write shared external state (ResourceManager versions,
+ *     Window state, GPU state, ...) outside what other parallel-safe
+ *     systems can tolerate.
  */
 struct SystemAccess {
     std::vector<TypeId> reads;   ///< Component TypeIds this system reads from
