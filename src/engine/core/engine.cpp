@@ -31,6 +31,12 @@ bool overlaps(const std::vector<TypeId>& a, const std::vector<TypeId>& b) {
 }
 
 bool isConservative(const SystemAccess& a) {
+    // An empty SystemAccess that was not explicitly declared via
+    // SystemAccess::none() is treated as "writes everything" - the safe
+    // default for systems that didn't bother to declare. A system that
+    // explicitly declared empty (touches no ECS / no shared state) is
+    // parallel-safe with anyone and is NOT conservative.
+    if (a.noAccessDeclared) return false;
     return a.reads.empty() && a.writes.empty();
 }
 
@@ -72,13 +78,16 @@ void Engine::run() {
             initSystems(ctx);
         }
 
-        accumulator = std::min(accumulator + deltaTime, Config::MaxFrameAccumulator);
+        const float beforeClamp = accumulator + deltaTime;
+        accumulator = std::min(beforeClamp, Config::MaxFrameAccumulator);
+        if (beforeClamp > Config::MaxFrameAccumulator) {
+            LOG_WARNING("Engine: frame accumulator clamped (%.3fs > %.3fs cap) - spiral-of-death guard fired; some fixed ticks dropped",
+                beforeClamp, Config::MaxFrameAccumulator);
+        }
         while (accumulator >= Config::FixedTimeStep) {
-            for (auto& stage : m_systemsByStage) {
-                for (auto& system : stage) {
-                    if (system->isEnabled()) {
-                        system->fixedUpdate(ctx);
-                    }
+            for (System* system : m_fixedUpdaters) {
+                if (system->isEnabled()) {
+                    system->fixedUpdate(ctx);
                 }
             }
             accumulator -= Config::FixedTimeStep;
@@ -102,8 +111,14 @@ void Engine::initSystems(FrameContext& ctx) {
     buildSchedule();
 
     // Init systems in registration order, top to bottom of every stage.
+    // While we're at it, collect the systems that opt into fixedUpdate so
+    // the per-tick loop only visits them instead of every registered system.
+    m_fixedUpdaters.clear();
     for (auto& stage : m_systemsByStage) {
-        for (auto& system : stage) system->init(ctx);
+        for (auto& system : stage) {
+            system->init(ctx);
+            if (system->hasFixedUpdate()) m_fixedUpdaters.push_back(system.get());
+        }
     }
     m_initialized = true;
 }
