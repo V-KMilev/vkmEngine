@@ -255,6 +255,7 @@ GLShader* GLView::resolveShaderVariant(
             asset.name.c_str(), featureFlags, e.what());
         return nullptr;
     }
+    LOG_INFO("GLView: compiled shader variant '%s' flags=0x%x", asset.name.c_str(), featureFlags);
     GLShader* raw = entry.program.get();
     m_shaderVariants.emplace(key, std::move(entry));
     return raw;
