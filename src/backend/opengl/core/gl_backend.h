@@ -62,9 +62,9 @@ class GLBackend : public RenderBackend {
         void syncResources(const RenderView& view, const ResourceManager& resources) override;
         void resolveSceneColor() override { frame().hdr().resolve(); }
 
-        // --- Offscreen preview (Material Editor / Asset Browser) ---
-        // Redirects the whole graph's targets to a private preview set so the
-        // unmodified pipeline can be re-run into an FBO. See RenderBackend.
+        /// Offscreen preview path (Material Editor / Asset Browser).
+        /// Redirects the whole graph's targets to a private preview set so
+        /// the unmodified pipeline can be re-run into an FBO. See RenderBackend.
         void     beginPreview(uint32_t size) override;
         // Leave preview mode AND rebind the real backbuffer + viewport. The
         // preview's composite pass left the offscreen preview FBO bound;

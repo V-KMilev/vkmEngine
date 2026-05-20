@@ -20,11 +20,11 @@ namespace {
     // Order matches the dispatch switch in BottomPanel::draw().
     // Rendering/environment moved to the Inspector (select the "Environment"
     // entity in the Hierarchy). This panel is now per-entity tools + info.
-    const SectionDef kSections[] = {
+    const SectionDef SECTIONS[] = {
         {"TOOLS", "Animation",  "Keyframe editor for the selected entity"},
         {"INFO",  "Statistics", "Component / light / animation counts"},
     };
-    constexpr int kSectionCount = static_cast<int>(sizeof(kSections) / sizeof(kSections[0]));
+    constexpr int SECTION_COUNT = static_cast<int>(sizeof(SECTIONS) / sizeof(SECTIONS[0]));
 
     void sectionHeader(const char* title, const char* hint) {
         drawSectionHeader(title, hint);
@@ -39,14 +39,14 @@ void BottomPanel::draw(EditorContext& ec) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::NAV_BG);
     if (ImGui::BeginChild("##BottomNav", ImVec2(150.0f, avail.y), ImGuiChildFlags_Borders)) {
         const char* lastGroup = nullptr;
-        for (int i = 0; i < kSectionCount; ++i) {
-            if (kSections[i].group != lastGroup) {
+        for (int i = 0; i < SECTION_COUNT; ++i) {
+            if (SECTIONS[i].group != lastGroup) {
                 if (lastGroup) ImGui::Spacing();
-                ImGui::TextDisabled("%s", kSections[i].group);
-                lastGroup = kSections[i].group;
+                ImGui::TextDisabled("%s", SECTIONS[i].group);
+                lastGroup = SECTIONS[i].group;
             }
             ImGui::Indent(8.0f);
-            if (ImGui::Selectable(kSections[i].name, m_selectedSection == i))
+            if (ImGui::Selectable(SECTIONS[i].name, m_selectedSection == i))
                 m_selectedSection = i;
             ImGui::Unindent(8.0f);
         }
@@ -57,7 +57,7 @@ void BottomPanel::draw(EditorContext& ec) {
     ImGui::SameLine(0, 6);
 
     if (ImGui::BeginChild("##BottomDetail", ImVec2(0, avail.y), ImGuiChildFlags_Borders)) {
-        const auto& s = kSections[m_selectedSection];
+        const auto& s = SECTIONS[m_selectedSection];
         sectionHeader(s.name, s.hint);
 
         switch (m_selectedSection) {
@@ -100,17 +100,17 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
         };
 
         float ih = ImGui::GetFrameHeight();
-        const float kGap = 8.0f;
+        const float GAP = 8.0f;
         if (iconButton("anplay", anim.playing ? EditorIcon::Pause : EditorIcon::Play,
                        anim.playing, true, anim.playing ? "Pause" : "Play", ih))
             anim.playing = !anim.playing;
-        ImGui::SameLine(0, kGap);
+        ImGui::SameLine(0, GAP);
         if (iconButton("anstop", EditorIcon::Stop, false, true, "Stop (rewind to start)", ih)) {
             anim.playing = false;
             anim.time = 0.0f;
             previewPose();
         }
-        ImGui::SameLine(0, kGap);
+        ImGui::SameLine(0, GAP);
         if (iconButton("ankey", EditorIcon::Key, false, true,
                        "Set Key: add/replace keyframes on all 3 tracks at the current time", ih)) {
             anim.positionTrack.setKeyframe(anim.time, tf.position);
@@ -118,12 +118,12 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             anim.scaleTrack.setKeyframe(anim.time, tf.scale);
             anim.updateDuration();
         }
-        ImGui::SameLine(0, kGap);
+        ImGui::SameLine(0, GAP);
         ImGui::Checkbox("Loop", &anim.looping);
-        ImGui::SameLine(0, kGap);
+        ImGui::SameLine(0, GAP);
         ImGui::SetNextItemWidth(90);
         ImGui::DragFloat("Speed", &anim.speed, 0.005f, 0.0f, 10.0f, "%.2fx");
-        ImGui::SameLine(0, kGap);
+        ImGui::SameLine(0, GAP);
         ImGui::SetNextItemWidth(110);
         float lengthEdit = anim.length;
         if (ImGui::InputFloat("Length", &lengthEdit, 0.1f, 1.0f, "%.2f s")) {

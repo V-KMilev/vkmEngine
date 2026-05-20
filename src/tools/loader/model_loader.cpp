@@ -45,7 +45,7 @@ namespace {
 
     // Identical between live import and the persistence factories so Assimp's
     // global mesh/material indices stay stable for a given file.
-    constexpr unsigned kPostProcess =
+    constexpr unsigned POST_PROCESS_FLAGS =
         aiProcess_Triangulate |
         aiProcess_GenSmoothNormals |
         aiProcess_CalcTangentSpace |
@@ -355,7 +355,7 @@ namespace {
 
 MeshAsset loadModelMesh(const std::string& path, int meshIndex) {
     Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(path, kPostProcess);
+    const aiScene* scene = importer.ReadFile(path, POST_PROCESS_FLAGS);
     if (!scene) {
         LOG_ERROR("model load failed '%s': %s", path.c_str(),
             importer.GetErrorString());
@@ -367,7 +367,7 @@ MeshAsset loadModelMesh(const std::string& path, int meshIndex) {
 MaterialHandle loadModelMaterial(const std::string& path, int materialIndex,
                                  ResourceManager& resources) {
     Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(path, kPostProcess);
+    const aiScene* scene = importer.ReadFile(path, POST_PROCESS_FLAGS);
     if (!scene) {
         LOG_ERROR("model load failed '%s': %s", path.c_str(),
             importer.GetErrorString());
@@ -379,7 +379,7 @@ MaterialHandle loadModelMaterial(const std::string& path, int materialIndex,
 EntityId importModelIntoScene(const std::string& path, ResourceManager& resources,
                               Scene& scene) {
     Assimp::Importer importer;
-    const aiScene* aScene = importer.ReadFile(path, kPostProcess);
+    const aiScene* aScene = importer.ReadFile(path, POST_PROCESS_FLAGS);
     if (!aScene || aScene->mNumMeshes == 0) {
         LOG_ERROR("model import failed '%s': %s", path.c_str(),
             importer.GetErrorString());

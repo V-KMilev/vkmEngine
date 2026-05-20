@@ -19,14 +19,14 @@ namespace Engine {
 namespace {
     // Card accents - keep the Material Editor in the same visual language as
     // the Inspector (left accent strip + guide line per group).
-    const ImVec4 kAccBase   = ImVec4(0.90f, 0.55f, 0.25f, 1.0f);  // warm
-    const ImVec4 kAccSurf   = ImVec4(0.28f, 0.74f, 0.74f, 1.0f);  // teal
-    const ImVec4 kAccCoat   = ImVec4(0.45f, 0.62f, 0.92f, 1.0f);  // light blue
-    const ImVec4 kAccAniso  = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);  // purple
-    const ImVec4 kAccSSS    = ImVec4(0.88f, 0.45f, 0.55f, 1.0f);  // pink
-    const ImVec4 kAccSheen  = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);  // gold
-    const ImVec4 kAccVol    = ImVec4(0.55f, 0.85f, 0.65f, 1.0f);  // mint - glass volume
-    const ImVec4 kAccTex    = EditorStyle::AXIS_Y;                 // green
+    const ImVec4 ACC_BASE   = ImVec4(0.90f, 0.55f, 0.25f, 1.0f);  // warm
+    const ImVec4 ACC_SURF   = ImVec4(0.28f, 0.74f, 0.74f, 1.0f);  // teal
+    const ImVec4 ACC_COAT   = ImVec4(0.45f, 0.62f, 0.92f, 1.0f);  // light blue
+    const ImVec4 ACC_ANISO  = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);  // purple
+    const ImVec4 ACC_SSS    = ImVec4(0.88f, 0.45f, 0.55f, 1.0f);  // pink
+    const ImVec4 ACC_SHEEN  = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);  // gold
+    const ImVec4 ACC_VOL    = ImVec4(0.55f, 0.85f, 0.65f, 1.0f);  // mint - glass volume
+    const ImVec4 ACC_TEX    = EditorStyle::AXIS_Y;                 // green
 
     bool isImageExt(std::string ext) {
         for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -144,7 +144,7 @@ namespace {
     bool drawMaterialBody(ResourceManager& resources, MaterialAsset& mat) {
         bool changed = false;
 
-        if (beginComponentCard("Base", kAccBase, true)) {
+        if (beginComponentCard("Base", ACC_BASE, true)) {
             drawPropertyLabel("Type");
             // Order must match the MaterialType enum value (Opaque=0,
             // Transparent=1, Unlit=2, AlphaMask=3).
@@ -187,7 +187,7 @@ namespace {
         }
         endComponentCard();
 
-        if (beginComponentCard("Surface", kAccSurf, false)) {
+        if (beginComponentCard("Surface", ACC_SURF, false)) {
             drawPropertyLabel("IOR");
             changed |= ImGui::DragFloat("##IOR", &mat.ior, 0.01f, 1.0f, 3.0f, "%.2f");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("1.0 air, 1.33 water, 1.5 glass, 2.4 diamond");
@@ -203,7 +203,7 @@ namespace {
         }
         endComponentCard();
 
-        if (beginComponentCard("Clearcoat", kAccCoat, false)) {
+        if (beginComponentCard("Clearcoat", ACC_COAT, false)) {
             drawPropertyLabel("Strength");
             changed |= ImGui::SliderFloat("##CC", &mat.clearcoat, 0.0f, 1.0f, "%.2f");
 
@@ -212,7 +212,7 @@ namespace {
         }
         endComponentCard();
 
-        if (beginComponentCard("Anisotropy", kAccAniso, false)) {
+        if (beginComponentCard("Anisotropy", ACC_ANISO, false)) {
             drawPropertyLabel("Strength");
             changed |= ImGui::SliderFloat("##Aniso", &mat.anisotropy, 0.0f, 1.0f, "%.2f");
 
@@ -224,7 +224,7 @@ namespace {
         }
         endComponentCard();
 
-        if (beginComponentCard("Subsurface", kAccSSS, false)) {
+        if (beginComponentCard("Subsurface", ACC_SSS, false)) {
             drawPropertyLabel("Strength");
             changed |= ImGui::SliderFloat("##SSS", &mat.subsurface, 0.0f, 1.0f, "%.2f");
 
@@ -234,7 +234,7 @@ namespace {
         }
         endComponentCard();
 
-        if (beginComponentCard("Sheen", kAccSheen, false)) {
+        if (beginComponentCard("Sheen", ACC_SHEEN, false)) {
             drawPropertyLabel("Color");
             changed |= ImGui::ColorEdit3("##SheenCol", glm::value_ptr(mat.sheenColor),
                 ImGuiColorEditFlags_Float);
@@ -247,7 +247,7 @@ namespace {
         }
         endComponentCard();
 
-        if (beginComponentCard("Volume", kAccVol, false)) {
+        if (beginComponentCard("Volume", ACC_VOL, false)) {
             drawPropertyLabel("Thickness");
             changed |= ImGui::DragFloat("##Thick", &mat.thicknessFactor,
                 0.01f, 0.0f, 100.0f, "%.3f");
@@ -268,7 +268,7 @@ namespace {
         }
         endComponentCard();
 
-        if (beginComponentCard("Textures", kAccTex, false)) {
+        if (beginComponentCard("Textures", ACC_TEX, false)) {
             changed |= textureSlot(resources, "Albedo",    mat.albedoTexture,    true);
             changed |= textureSlot(resources, "Normal",    mat.normalTexture,    false);
             changed |= textureSlot(resources, "Roughness", mat.roughnessTexture, false);
@@ -348,11 +348,11 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
     }
 
     // ===== Left pane: studio preview + view controls =====
-    const float kPreview = 320.0f;
-    const float kPaneW   = kPreview + 36.0f;
+    const float PREVIEW_SIZE = 320.0f;
+    const float PANE_WIDTH   = PREVIEW_SIZE + 36.0f;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
-    ImGui::BeginChild("##mePreview", ImVec2(kPaneW, 0), ImGuiChildFlags_Borders);
+    ImGui::BeginChild("##mePreview", ImVec2(PANE_WIDTH, 0), ImGuiChildFlags_Borders);
     {
         const MeshHandle entityMesh =
             (selMesh && selMesh->mesh) ? selMesh->mesh : MeshHandle{};
@@ -370,15 +370,15 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         if (tex) {
             const ImVec2 origin = ImGui::GetCursorScreenPos();
             ImGui::Image(static_cast<ImTextureID>(static_cast<intptr_t>(tex)),
-                ImVec2(kPreview, kPreview), ImVec2(0, 1), ImVec2(1, 0));
+                ImVec2(PREVIEW_SIZE, PREVIEW_SIZE), ImVec2(0, 1), ImVec2(1, 0));
             // Thin frame around the studio render.
             ImGui::GetWindowDrawList()->AddRect(
-                origin, ImVec2(origin.x + kPreview, origin.y + kPreview),
+                origin, ImVec2(origin.x + PREVIEW_SIZE, origin.y + PREVIEW_SIZE),
                 IM_COL32(255, 255, 255, 36), 3.0f);
             // Transparent hit-target so the orbit drag owns the active id and
             // never moves the window (see editor ConfigWindowsMoveFromTitleBar).
             ImGui::SetCursorScreenPos(origin);
-            ImGui::InvisibleButton("##orbit", ImVec2(kPreview, kPreview));
+            ImGui::InvisibleButton("##orbit", ImVec2(PREVIEW_SIZE, PREVIEW_SIZE));
             if (ImGui::IsItemActive()) {
                 const ImVec2 d = ImGui::GetIO().MouseDelta;
                 m_yaw   -= d.x * 0.4f;

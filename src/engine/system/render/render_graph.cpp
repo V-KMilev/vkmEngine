@@ -38,9 +38,9 @@ void RenderGraph::compile() {
     const size_t n = m_passes.size();
     m_reads.assign(n, {});
     m_writes.assign(n, {});
-    for (uint32_t i = 0; i < kRGResourceCount; ++i) m_lifetimes[i] = RGResourceLifetime{};
+    for (uint32_t i = 0; i < RG_RESOURCE_COUNT; ++i) m_lifetimes[i] = RGResourceLifetime{};
 
-    bool produced[kRGResourceCount] = {};
+    bool produced[RG_RESOURCE_COUNT] = {};
 
     for (size_t i = 0; i < n; ++i) {
         RenderGraphBuilder builder(m_reads[i], m_writes[i]);
@@ -64,7 +64,7 @@ void RenderGraph::compile() {
     }
 
     uint32_t usedResources = 0;
-    for (uint32_t i = 0; i < kRGResourceCount; ++i) {
+    for (uint32_t i = 0; i < RG_RESOURCE_COUNT; ++i) {
         if (m_lifetimes[i].used()) ++usedResources;
     }
     LOG_INFO("RenderGraph compiled: %zu passes, %u transient resources", n, usedResources);

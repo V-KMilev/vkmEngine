@@ -27,7 +27,6 @@ glm::quat quatFromJson(const nlohmann::json& j) {
 
 } // namespace
 
-// ---- Name -----------------------------------------------------------------
 nlohmann::json save(const Name& n) {
     return nlohmann::json{{"value", std::string(n.value)}};
 }
@@ -37,7 +36,6 @@ void load(const nlohmann::json& j, Name& n) {
     n.value[sizeof(n.value) - 1] = '\0';
 }
 
-// ---- Transform -----------------------------------------------------------
 nlohmann::json save(const Transform& t) {
     return {
         {"position", vec3ToJson(t.position)},
@@ -51,7 +49,6 @@ void load(const nlohmann::json& j, Transform& t) {
     if (j.contains("scale"))    t.scale    = vec3FromJson(j["scale"]);
 }
 
-// ---- Camera --------------------------------------------------------------
 nlohmann::json save(const Camera& c) {
     return {
         {"projection",   c.projection == ProjectionType::Perspective ? "Perspective" : "Orthographic"},
@@ -76,7 +73,6 @@ void load(const nlohmann::json& j, Camera& c) {
     c.active      = j.value("active",      c.active);
 }
 
-// ---- Light ---------------------------------------------------------------
 namespace {
 const char* lightTypeName(LightType t) {
     switch (t) {
@@ -120,7 +116,6 @@ void load(const nlohmann::json& j, Light& l) {
     l.enabled        = j.value("enabled",        l.enabled);
 }
 
-// ---- Mesh ----------------------------------------------------------------
 nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
     const std::string meshName     = m.mesh     ? resources.get(m.mesh).name     : "";
     const std::string materialName = m.material ? resources.get(m.material).name : "";
@@ -152,7 +147,6 @@ void load(const nlohmann::json& j, Mesh& m, const ResourceManager& resources) {
     m.castShadows = j.value("castShadows", m.castShadows);
 }
 
-// ---- Hierarchy -----------------------------------------------------------
 nlohmann::json save(const Hierarchy& h) {
     return nlohmann::json{{"parent", h.parent.index}};
 }
@@ -160,7 +154,6 @@ uint32_t loadParentIndex(const nlohmann::json& j) {
     return j.value("parent", std::numeric_limits<uint32_t>::max());
 }
 
-// ---- Animation -----------------------------------------------------------
 namespace {
 
 template<typename T, typename ValueWriter>
@@ -217,7 +210,6 @@ void load(const nlohmann::json& j, Animation& a) {
     a.updateDuration();
 }
 
-// ---- EnvironmentConfig ---------------------------------------------------
 // The singleton "Environment" entity's whole rendering/post stack. Every
 // field is a JSON primitive; load uses .value() fallbacks so older saves
 // (missing keys) keep the struct defaults and stay forward-compatible.

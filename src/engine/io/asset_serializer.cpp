@@ -12,7 +12,6 @@
 
 namespace Engine {
 
-// ---- AssetFactories ------------------------------------------------------
 AssetFactories& AssetFactories::get() {
     static AssetFactories instance;
     return instance;
@@ -74,7 +73,6 @@ ShaderAsset AssetFactories::createShader(const nlohmann::json& source) const {
     return it->second(source);
 }
 
-// ---- AssetSerializer -----------------------------------------------------
 namespace AssetSerializer {
 
 namespace {
@@ -86,7 +84,7 @@ struct TexField {
     const char* key;
     TextureHandle MaterialAsset::* member;
 };
-constexpr std::array<TexField, 11> kMaterialTextureFields = {{
+constexpr std::array<TexField, 11> MATERIAL_TEXTURE_FIELDS = {{
     {"albedo",              &MaterialAsset::albedoTexture},
     {"normal",              &MaterialAsset::normalTexture},
     {"metallicRoughness",   &MaterialAsset::metallicRoughnessTexture},
@@ -143,7 +141,7 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     src["alphaCutoff"]         = m.alphaCutoff;
 
     nlohmann::json textures = nlohmann::json::object();
-    for (const auto& f : kMaterialTextureFields) {
+    for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
         const TextureHandle& h = m.*f.member;
         if (h) textures[f.key] = resources.get(h).name;
     }
@@ -182,7 +180,7 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
     m.alphaCutoff         = src.value("alphaCutoff",         m.alphaCutoff);
 
     if (src.contains("textures") && src["textures"].is_object()) {
-        for (const auto& f : kMaterialTextureFields) {
+        for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
             if (!src["textures"].contains(f.key)) continue;
             const std::string texName = src["textures"][f.key].get<std::string>();
             const TextureHandle h = resources.findByName<TextureAsset>(texName);
@@ -236,7 +234,7 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
             emitDescriptor(materials, asset.name, materialToInline(asset, resources));
             // Pull every texture this material references into the texture
             // descriptor pool too.
-            for (const auto& f : kMaterialTextureFields) emitTexture(asset.*f.member);
+            for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
         }
     });
 

@@ -46,7 +46,7 @@ const int MAX_LIGHTS = 32;                 // Engine::Config::MaxLights
 const int SHADOW_MAX_CASTERS_2D   = 6;     // Engine::Config::MaxShadowCasters2D
 const int SHADOW_MAX_CASTERS_CUBE = 2;     // Engine::Config::MaxShadowCastersCube
 
-// Must match kCubeNear in gl_shadow_pass.cpp - used to rebuild the projected
+// Must match CUBE_NEAR in gl_shadow_pass.cpp - used to rebuild the projected
 // depth the point-light cube faces wrote.
 const float SHADOW_CUBE_NEAR = 0.1;
 

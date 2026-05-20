@@ -15,7 +15,7 @@ namespace Engine {
 void registerBuiltinAssetFactories() {
     auto& factories = AssetFactories::get();
 
-    // --- Meshes: "generator" kind, type selects which procedural shape ----
+    // Meshes: "generator" kind. type selects which procedural shape.
     factories.registerMesh("generator", [](const nlohmann::json& desc) -> MeshAsset {
         const std::string type = desc.value("type", std::string{});
         const auto& p = desc.contains("params") ? desc["params"] : nlohmann::json::object();
@@ -37,13 +37,13 @@ void registerBuiltinAssetFactories() {
         return {};
     });
 
-    // --- Meshes: "model" kind, one aiMesh re-imported via Assimp ---------
+    // Meshes: "model" kind. One aiMesh re-imported via Assimp.
     factories.registerMesh("model", [](const nlohmann::json& desc) -> MeshAsset {
         return loadModelMesh(desc.value("path", std::string{}),
                              desc.value("mesh", -1));
     });
 
-    // --- Textures: "file" kind, loaded via stb_image ---------------------
+    // Textures: "file" kind. Loaded via stb_image.
     factories.registerTexture("file", [](const nlohmann::json& desc,
                                          ResourceManager& resources) -> TextureHandle
     {
@@ -54,7 +54,7 @@ void registerBuiltinAssetFactories() {
         return loadTexture(path, resources, sRGB, genMipmaps);
     });
 
-    // --- Textures: "builtin" — 1×1 default textures (white/black/normal/gray)
+    // Textures: "builtin" kind. 1x1 default textures (white/black/normal/gray).
     factories.registerTexture("builtin", [](const nlohmann::json& desc,
                                             ResourceManager& resources) -> TextureHandle
     {
@@ -66,7 +66,7 @@ void registerBuiltinAssetFactories() {
         return {};
     });
 
-    // --- Materials: "folder" kind, rediscovers textures from disk --------
+    // Materials: "folder" kind. Rediscovers textures from disk.
     factories.registerMaterial("folder", [](const nlohmann::json& desc,
                                             ResourceManager& resources) -> MaterialHandle
     {
@@ -75,17 +75,16 @@ void registerBuiltinAssetFactories() {
         return loadMaterialFromFolder(path, resources);
     });
 
-    // --- Materials: "default" — a neutral white PBR material -------------
+    // Materials: "default" kind. A neutral white PBR material.
     factories.registerMaterial("default", [](const nlohmann::json&,
                                              ResourceManager& resources) -> MaterialHandle
     {
         return generateDefaultMaterial(resources);
     });
 
-    // --- Materials: "inline" — full PBR descriptor with texture refs ----
-    // This is the canonical save format. Texture refs resolve via
-    // findByName<TextureAsset> against textures already loaded earlier in
-    // the assets block.
+    // Materials: "inline" kind. Full PBR descriptor with texture refs - the
+    // canonical save format. Texture refs resolve via findByName<TextureAsset>
+    // against textures already loaded earlier in the assets block.
     factories.registerMaterial("inline", [](const nlohmann::json& desc,
                                             ResourceManager& resources) -> MaterialHandle
     {
@@ -97,7 +96,7 @@ void registerBuiltinAssetFactories() {
         return handle;
     });
 
-    // --- Materials: "model" kind, re-imported (with textures) via Assimp -
+    // Materials: "model" kind. Re-imported with textures via Assimp.
     factories.registerMaterial("model", [](const nlohmann::json& desc,
                                            ResourceManager& resources) -> MaterialHandle
     {
@@ -105,8 +104,8 @@ void registerBuiltinAssetFactories() {
                                  desc.value("material", -1), resources);
     });
 
-    // --- Shaders: "directory" — vkmGL's path-based shader loading -------
-    // The descriptor carries the directory + the sampler→slot bindings the
+    // Shaders: "directory" kind. vkmGL's path-based shader loading. The
+    // descriptor carries the directory + the sampler->slot bindings the
     // shader expects. GLShader applies the bindings after every (re)compile
     // so hot reload survives without each pass re-asserting them.
     factories.registerShader("directory", [](const nlohmann::json& desc) -> ShaderAsset {
