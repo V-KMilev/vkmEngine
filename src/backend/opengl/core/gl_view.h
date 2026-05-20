@@ -149,15 +149,35 @@ class GLView {
         GLResourceTable<GLTexture>  m_textureTable;
         GLResourceTable<GLShader>   m_shaderTable;
 
-        /// Per-material shader-variant cache. Key packs shaderId (high 32
-        /// bits) + feature flags (low 32 bits). Value tracks the compiled
-        /// variant + the asset version it was built against so a hot
-        /// reload of the base shader invalidates every variant at once.
+        /// Per-material shader-variant cache. Keyed by (shaderId, generation,
+        /// flags) so a slot recycled by SlotAllocator gets fresh entries
+        /// instead of inheriting the previous occupant's compiled programs.
+        /// Value tracks the asset version the variant was built against so a
+        /// hot reload of the base shader invalidates every variant at once.
+        struct VariantKey {
+            uint32_t shaderId   = 0;
+            uint32_t generation = 0;
+            uint32_t flags      = 0;
+
+            bool operator==(const VariantKey& o) const noexcept {
+                return shaderId == o.shaderId
+                    && generation == o.generation
+                    && flags == o.flags;
+            }
+        };
+        struct VariantKeyHash {
+            size_t operator()(const VariantKey& k) const noexcept {
+                uint64_t h = static_cast<uint64_t>(k.shaderId);
+                h ^= static_cast<uint64_t>(k.generation) + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2);
+                h ^= static_cast<uint64_t>(k.flags)      + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2);
+                return static_cast<size_t>(h);
+            }
+        };
         struct VariantEntry {
             std::unique_ptr<GLShader> program;
             uint64_t                  assetVersion = 0;
         };
-        std::unordered_map<uint64_t, VariantEntry> m_shaderVariants;
+        std::unordered_map<VariantKey, VariantEntry, VariantKeyHash> m_shaderVariants;
 
         GLCamera          m_camera;
         GLLights          m_lights;
