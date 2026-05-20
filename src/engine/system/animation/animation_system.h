@@ -8,18 +8,20 @@ struct Animation;
 struct Transform;
 
 /**
- * @brief System that processes and updates all Animation components in the scene.
- * 
- * The AnimationSystem:
- * - Updates animation timelines based on delta time
- * - Applies animated values to Transform components
- * - Handles playback control (play, pause, loop, speed)
- * 
- * Usage:
- * @code
- *   AnimationSystem animationManager;
- *   animationManager.update(scene, deltaTime);
- * @endcode
+ * @brief Advances every Animation component and writes its result into the
+ *        entity's Transform.
+ *
+ * Registered at SystemStage::Simulation. Each update:
+ *  - Advances animation.time by deltaTime * speed.
+ *  - Applies positionTrack / rotationTrack / scaleTrack values to the
+ *    Transform via easing-aware sampling.
+ *  - Handles playback control (playing, looping, speed).
+ *  - Marks the touched subtrees dirty so HierarchySystem rebuilds their
+ *    WorldTransforms downstream the same frame.
+ *
+ * The inner per-track loop is parallelised over playing entities; the
+ * dirty-mark pass stays serial (markDirty cascades into the same
+ * Hierarchy memory).
  */
 class AnimationSystem : public System {
     public:

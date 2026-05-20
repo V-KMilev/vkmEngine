@@ -75,7 +75,20 @@ class RenderGraph {
         RenderGraph& operator=(RenderGraph && other) = delete;
 
     public:
+        /**
+         * @brief Append a pass to the end of the schedule. Takes ownership.
+         *
+         * Marks the graph dirty so compile() re-runs on the next execute().
+         */
         void addPass(std::unique_ptr<RenderPass> pass);
+
+        /**
+         * @brief Drop every pass + cached declarations.
+         *
+         * Also resets m_persistentRegistered so the next execute() re-asks
+         * the backend for ShadowAtlas / IBL handles (they're tied to the
+         * pass set's expectations).
+         */
         void clear();
 
         /**
@@ -135,13 +148,20 @@ class RenderGraph {
         /** @brief Cached thumbnail id for @p key, or 0 if never snapshotted. */
         uint32_t cachedPreview(RenderBackend& backend, uint64_t key) const;
 
-        /// Drop a single thumbnail from both the graph-side id map and the
-        /// backend's underlying texture cache. Call this when the source
-        /// asset has been destroyed; otherwise long editing sessions leak
-        /// textures for assets the user has already removed.
+        /**
+         * @brief Drop a single thumbnail from both the graph-side id map
+         *        and the backend's underlying texture cache.
+         *
+         * Call this when the source asset has been destroyed; otherwise
+         * long editing sessions leak textures for assets the user has
+         * already removed.
+         *
+         * @param backend The render backend whose cache also holds @p key.
+         * @param key Thumbnail cache key (asset-derived; see asset_browser).
+         */
         void evictThumbnail(RenderBackend& backend, uint64_t key);
 
-        /// Drop every cached thumbnail (graph + backend).
+        /** @brief Drop every cached thumbnail (graph + backend). */
         void clearThumbnailCache(RenderBackend& backend);
 
     public:

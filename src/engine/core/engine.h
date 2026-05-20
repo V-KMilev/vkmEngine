@@ -16,14 +16,17 @@ namespace Engine {
 /**
  * @brief Central engine singleton that owns core state and runs the main loop.
  *
- * Owns the Scene, ResourceManager, and system pipeline. Systems are registered
- * in execution order and updated sequentially each frame via FrameContext.
+ * Owns the Scene, ResourceManager, WindowManager, StatisticTracker, and the
+ * per-stage system pipeline. Systems are registered at a SystemStage and run
+ * in stage order each frame; within a stage they run in registration order
+ * unless setParallelDispatch is enabled and their SystemAccess permits
+ * concurrent execution.
  *
  * Usage:
  *   auto& engine = Engine::get();
- *   engine.addSystem(&cameraController);
- *   engine.addSystem(&renderManager);
- *   engine.run();
+ *   engine.addSystem<CameraController>(SystemStage::Input);
+ *   engine.addSystem<RenderSystem>(SystemStage::Render);
+ *   engine.run();  // blocks until window closes
  */
 class Engine {
     public:

@@ -20,7 +20,7 @@ struct Animation {
     AnimationTrack<glm::quat> rotationTrack;    ///< Rotation animation track
     AnimationTrack<glm::vec3> scaleTrack;       ///< Scale animation track
 
-    float duration = 0.0f;    ///< Cached effective duration in seconds (max of tracks and length)
+    float duration = 0.0f;    ///< Cached effective duration in seconds. Stale until updateDuration() is called after a track/length edit.
     float length   = 0.0f;    ///< Explicit minimum length in seconds (0 = auto from last keyframe)
     float time     = 0.0f;    ///< Current animation time in seconds
     float speed    = 1.0f;    ///< Playback speed multiplier (1.0 = normal, 2.0 = double speed, etc.)

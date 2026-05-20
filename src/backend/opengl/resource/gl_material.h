@@ -153,12 +153,14 @@ class GLMaterial {
         void bind(uint32_t bindingPoint = GLConfig::UBOBindingPoints::Material) const;
 
         /**
-         * @brief Binds all textures referenced by this material.
-         * 
-         * Binds textures to their assigned texture slots as defined in the material.
-         * This should be called after bind() to ensure textures are available for rendering.
-         * 
-         * @param view The GLView containing the synced texture resources.
+         * @brief Bind every texture this material references to its assigned slot.
+         *
+         * Precondition: GLView::sync() (or ensureMaterialTextures for the
+         * preview path) has already uploaded the texture data; this method
+         * only resolves handles through @p view and issues the binds. Call
+         * after bind() so the material's UBO is also live for the draw.
+         *
+         * @param view The GLView holding the synced texture wrappers.
          */
         void bindTextures(const class GLView& view) const;
 

@@ -95,10 +95,13 @@ class CameraController : public System {
         void updateFlyMode(WindowManager& window, glm::vec3& position, glm::quat& rotation, float deltaTime);
 
         /**
-         * @brief Compute a quaternion from yaw/pitch angles and apply to rotation.
-         * @param rotation Reference to output rotation.
-         * @param yaw Horizontal angle (radians or degrees as internally used).
-         * @param pitch Vertical angle.
+         * @brief Compute a quaternion from yaw/pitch and write it to @p rotation.
+         *
+         * Yaw first, then pitch (order matters - swapping causes roll drift).
+         *
+         * @param rotation Output rotation; overwritten.
+         * @param yaw      Horizontal angle in radians (about world Y-up).
+         * @param pitch    Vertical angle in radians (about local X-right).
          */
         void updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch);
 

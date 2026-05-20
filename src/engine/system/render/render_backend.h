@@ -173,13 +173,19 @@ class RenderBackend {
         /** @brief Cached thumbnail id for @p key, or 0 if never snapshotted. */
         virtual uint32_t cachedThumbnail(uint64_t key) const { (void)key; return 0; }
 
-        /// Drop a single cached thumbnail. Backends that don't keep a
-        /// cache (or that haven't snapshotted @p key yet) treat this as a
-        /// no-op.
+        /**
+         * @brief Drop a single cached thumbnail.
+         *
+         * Backends that don't keep a cache (or haven't snapshotted @p key
+         * yet) treat this as a no-op.
+         */
         virtual void evictThumbnail(uint64_t key) { (void)key; }
 
-        /// Drop every cached thumbnail. Same no-op semantics on backends
-        /// without a cache.
+        /**
+         * @brief Drop every cached thumbnail.
+         *
+         * Same no-op semantics on backends without a cache.
+         */
         virtual void clearThumbnailCache() {}
 
     protected:
