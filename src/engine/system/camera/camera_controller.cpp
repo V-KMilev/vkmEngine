@@ -18,6 +18,13 @@ namespace Engine {
 
 CameraController::CameraController() = default;
 
+SystemAccess CameraController::declareAccess() const {
+    return SystemAccess{
+        /*reads*/  { typeId<Camera>() },
+        /*writes*/ { typeId<Transform>() },
+    };
+}
+
 EntityId CameraController::resolveActiveCamera(Scene& scene) {
     // Fast path: keep flying the current camera while it stays the active one.
     EntityId cur = m_cameraEntity.getID();
