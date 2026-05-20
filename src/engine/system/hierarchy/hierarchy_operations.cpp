@@ -1,6 +1,11 @@
 #include "system/hierarchy/hierarchy_operations.h"
 
+#include <array>
+#include <vector>
+
 #include "logger.h"
+
+#include "platform/threading/thread_pool.h"
 
 #include "ecs/component/world_transform.h"
 
@@ -49,12 +54,20 @@ void setParent(Scene& scene, EntityId child, EntityId parent) {
     // Detach from current parent (if any)
     removeFromParent(scene, child);
 
-    // Ensure both entities have Hierarchy components
+    // Ensure both entities have Hierarchy + WorldTransform components.
+    // Pre-seeding WorldTransform here keeps resolveWorldTransforms() free of
+    // structural mutation, which is the precondition for parallelising it.
     if (!scene.has<Hierarchy>(child)) {
         scene.add(Entity(child), Hierarchy{});
     }
+    if (!scene.has<WorldTransform>(child)) {
+        scene.add(Entity(child), WorldTransform{});
+    }
     if (!scene.has<Hierarchy>(parent)) {
         scene.add(Entity(parent), Hierarchy{});
+    }
+    if (!scene.has<WorldTransform>(parent)) {
+        scene.add(Entity(parent), WorldTransform{});
     }
 
     auto& childH = scene.get<Hierarchy>(child);
@@ -148,6 +161,18 @@ void resolveWorldTransforms(Scene& scene) {
     auto* hierarchyStorage = scene.storage<Hierarchy>();
     if (!hierarchyStorage) return;
 
+    // Bucket dirty entities by their absolute depth from a root. Within a
+    // single depth, entities are mutually independent (no parent-child links
+    // between siblings or cousins) so a parallelFor over the bucket is safe.
+    // Depths are processed in order, so a child at depth d+1 always observes
+    // its parent's finalised WorldTransform.
+    //
+    // Invariant relied on here: every entity with Hierarchy also has
+    // WorldTransform (pre-seeded by setParent) — no structural mutation
+    // happens inside the parallel section.
+    static constexpr uint32_t MAX_DEPTH = 32;
+    std::array<std::vector<EntityId>, MAX_DEPTH> buckets;
+
     const uint32_t count = static_cast<uint32_t>(hierarchyStorage->size());
     for (uint32_t i = 0; i < count; ++i) {
         const uint32_t entityIdx = hierarchyStorage->keyAt(i);
@@ -155,18 +180,32 @@ void resolveWorldTransforms(Scene& scene) {
 
         if (!scene.has<Transform>(id)) continue;
 
-        auto& h = scene.get<Hierarchy>(id);
-        // Clean entity with a valid cached WorldTransform — nothing to do.
-        if (!h.dirty && scene.has<WorldTransform>(id)) continue;
+        const auto& h = hierarchyStorage->dataAt(i);
+        if (!h.dirty) continue;
 
-        const glm::mat4 world = computeWorldMatrix(scene, id);
+        VKM_ASSERT(scene.has<WorldTransform>(id),
+            "resolveWorldTransforms: Hierarchy without WorldTransform");
 
-        if (scene.has<WorldTransform>(id)) {
-            scene.get<WorldTransform>(id).model = world;
-        } else {
-            scene.add(Entity{id}, WorldTransform{world});
+        uint32_t depth = 0;
+        EntityId current = h.parent;
+        while (current && depth < MAX_DEPTH) {
+            if (!hierarchyStorage->contains(current.index)) break;
+            current = hierarchyStorage->get(current.index).parent;
+            ++depth;
         }
-        h.dirty = false;
+        if (depth >= MAX_DEPTH) continue;
+        buckets[depth].push_back(id);
+    }
+
+    for (uint32_t d = 0; d < MAX_DEPTH; ++d) {
+        const auto& bucket = buckets[d];
+        if (bucket.empty()) continue;
+
+        parallelFor(bucket.size(), [&](size_t i) {
+            const EntityId id = bucket[i];
+            scene.get<WorldTransform>(id).model = computeWorldMatrix(scene, id);
+            scene.get<Hierarchy>(id).dirty = false;
+        });
     }
 }
 
