@@ -29,8 +29,9 @@ namespace Engine {
 
 namespace {
 
-// SHADOW_CUBE_NEAR in shaders/pbr/fragmentShader.shader mirrors this value.
-constexpr float CUBE_NEAR = 0.1f;
+// Mirror of Config::ShadowCubeNear; the GLSL side gets it through
+// shaders/_generated/engine_config.glsl extracted from engine_config.h.
+constexpr float CUBE_NEAR = Config::ShadowCubeNear;
 
 // FNV-1a over the only inputs that change shadow-map content: the camera
 // (CSM cascades are fit to its frustum), every shadow-casting light's

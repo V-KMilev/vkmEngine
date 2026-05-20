@@ -35,6 +35,14 @@ namespace Config {
     /// MUST match NUM_CASCADES in shaders/pbr/fragmentShader.shader.
     constexpr uint32_t NumCascades = 4;
 
+    /// Near plane used when rasterising and sampling point-light cube
+    /// shadows. Pinned to a small but non-zero value so depth values keep
+    /// resolution at typical occluder distances without losing fragments
+    /// inside very small lights.
+    /// MUST match SHADOW_CUBE_NEAR in shaders/pbr/fragmentShader.shader
+    /// (the generated engine_config.glsl mirrors this value).
+    constexpr float ShadowCubeNear = 0.1f;
+
     /// Fixed simulation step (60 Hz). Cadence at which fixedUpdate runs.
     constexpr float FixedTimeStep = 1.0f / 60.0f;
 
