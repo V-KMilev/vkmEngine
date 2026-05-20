@@ -42,13 +42,16 @@ const int LIGHT_DIRECTIONAL = 0;
 const int LIGHT_POINT       = 1;
 const int LIGHT_SPOT        = 2;
 
-const int MAX_LIGHTS = 32;                 // Engine::Config::MaxLights
-const int SHADOW_MAX_CASTERS_2D   = 6;     // Engine::Config::MaxShadowCasters2D
-const int SHADOW_MAX_CASTERS_CUBE = 2;     // Engine::Config::MaxShadowCastersCube
-
-// Must match CUBE_NEAR in gl_shadow_pass.cpp - used to rebuild the projected
-// depth the point-light cube faces wrote.
-const float SHADOW_CUBE_NEAR = 0.1;
+// These mirror shaders/_generated/engine_config.glsl, which is auto-derived
+// from src/engine/core/engine_config.h at CMake configure time. Once vkmGL
+// supports shader-side #include, replace these lines with:
+//     #include "_generated/engine_config.glsl"
+// SHADOW_CUBE_NEAR comes from gl_shadow_pass.cpp's CUBE_NEAR (per-pass
+// constant; the generator hand-mirrors it for now).
+const int MAX_LIGHTS              = 32;
+const int SHADOW_MAX_CASTERS_2D   = 6;
+const int SHADOW_MAX_CASTERS_CUBE = 2;
+const float SHADOW_CUBE_NEAR      = 0.1;
 
 layout(std140, binding = 0) uniform MaterialBlock {
     vec4  albedo;
