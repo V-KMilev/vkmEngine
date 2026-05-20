@@ -157,6 +157,16 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         currentType = MaterialType::Transparent;
     }
 
+    // Index of the last Transparent batch - used to skip a wasted resnapshot
+    // after the final glass draw in the transparent phase. (Always -1 when
+    // there are no transparent batches; the loop simply never resnapshots.)
+    size_t lastTransparentIdx = static_cast<size_t>(-1);
+    if (m_phase == Phase::Transparent) {
+        for (size_t i = 0; i < batches.size(); ++i)
+            if (batches[i].materialType == MaterialType::Transparent)
+                lastTransparentIdx = i;
+    }
+
     for (size_t i = 0; i < batches.size(); ++i) {
         const auto& batch = batches[i];
 
@@ -232,6 +242,18 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
             mesh->drawInstancedBaseInstance(GL_TRIANGLES, batch.instanceCount, batch.firstInstance);
         } else {
             LOG_WARNING("Failed to get mesh for batch (skipping draw call)");
+        }
+
+        // Per-batch refresh of the opaque-scene snapshot for layered glass:
+        // after this transparent batch has rendered, re-resolve the HDR target
+        // so u_sceneColor now contains opaque + sky + every transparent batch
+        // drawn so far. The next (closer) batch's screen-space refraction then
+        // refracts what's actually behind it - including farther glass. Skipped
+        // after the last transparent (no consumer) and outside Phase::Transparent.
+        if (m_phase == Phase::Transparent && i < lastTransparentIdx) {
+            auto& hdrT = gl.getHdrTarget();
+            hdrT.resolve();
+            hdrT.bindForRender();
         }
     }
 

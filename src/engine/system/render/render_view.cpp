@@ -75,6 +75,39 @@ namespace {
 
         drawables.swap(sorted);
     }
+
+    /**
+     * @brief Sort the contiguous Transparent run back-to-front from the camera.
+     *
+     * sortDrawables() groups by (materialType, material, mesh) for batching,
+     * which leaves transparents in an arbitrary order along Z. The transparent
+     * forward phase draws into HDR with depth-write off and refreshes its
+     * opaque-scene snapshot after every batch, so back-to-front ordering means
+     * (a) blending composites correctly and (b) closer panes refract the
+     * panes behind them. Centroid = the model's translation column; cheap and
+     * good enough for non-degenerate transparents (intersecting / huge
+     * transparents are an inherent limit of per-object sorting).
+     */
+    void sortTransparentsByDepth(std::vector<DrawableData>& drawables,
+                                 const glm::vec3& camPos) {
+        const size_t n = drawables.size();
+
+        size_t lo = 0;
+        while (lo < n && drawables[lo].materialType != MaterialType::Transparent) ++lo;
+        size_t hi = lo;
+        while (hi < n && drawables[hi].materialType == MaterialType::Transparent) ++hi;
+        if (hi - lo <= 1) return;
+
+        auto distSq = [&](const DrawableData& d) {
+            const glm::vec3 v = glm::vec3(d.model[3]) - camPos;
+            return v.x * v.x + v.y * v.y + v.z * v.z;
+        };
+
+        std::sort(drawables.begin() + lo, drawables.begin() + hi,
+            [&](const DrawableData& a, const DrawableData& b) {
+                return distSq(a) > distSq(b);  // farthest first
+            });
+    }
 }
 
 void RenderView::build(
@@ -121,8 +154,12 @@ void RenderView::build(
         drawables.emplace_back(drawable);
     }
 
-    // Sort drawables for optimal batching
+    // Sort drawables for optimal batching, then sub-sort just the
+    // transparent run back-to-front (so blending order is correct and the
+    // per-batch refraction snapshot in the transparent forward phase shows
+    // panes-behind-panes correctly refracted through).
     sortDrawables(drawables);
+    sortTransparentsByDepth(drawables, camera.position);
 
     // Shadow casters: every shadow-casting mesh in the scene, independent of
     // the camera frustum. The shadow pass needs occluders that are off-screen
