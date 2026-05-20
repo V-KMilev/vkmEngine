@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "gl_shader.h"             // Core::Shader (vkmGL)
 #include "resource/shader_asset.h"
 
@@ -21,6 +24,11 @@ namespace Engine {
 class GLShader : public Core::Shader {
     public:
         explicit GLShader(const ShaderAsset& asset);
+        /// Variant construction: same shader source as @p asset, plus a
+        /// list of preprocessor #defines injected below the #version line.
+        /// Used by the per-material variant cache to gate optional PBR
+        /// features at compile time.
+        GLShader(const ShaderAsset& asset, std::vector<std::string> defines);
         ~GLShader() override;
 
         GLShader(const GLShader& other) = delete;
@@ -33,17 +41,28 @@ class GLShader : public Core::Shader {
         /// a bad edit doesn't propagate — the next successful edit recovers.
         void update(const ShaderAsset& asset);
 
+        /// The variant defines this program was compiled with (empty for
+        /// the default ubershader). The cache keys on the hash of these.
+        const std::vector<std::string>& getDefines() const { return m_defines; }
+
     protected:
         /// Re-run the engine-side preprocessor so hot reload picks up edits
         /// to included files too, not just the top-level vert/frag shader.
+        /// Honors the variant's saved defines so the rebuilt program stays
+        /// the same variant after a source edit.
         void reloadSource() override;
 
     private:
         void applySamplerBindings(const ShaderAsset& asset);
 
-        /// Read vert/frag/geom from disk and resolve their `#include`s.
-        /// Returns a GraphicsShaderSource ready to compile.
-        static Core::GraphicsShaderSource preprocessSourceFor(const std::string& dirPath);
+        /// Read vert/frag/geom from disk, resolve their `#include`s, and
+        /// inject the supplied #defines below the #version line. Returns
+        /// a GraphicsShaderSource ready to compile.
+        static Core::GraphicsShaderSource preprocessSourceFor(
+            const std::string& dirPath,
+            const std::vector<std::string>& defines);
+
+        std::vector<std::string> m_defines;  ///< Variant-defining #defines (empty = ubershader).
 };
 
 } // namespace Engine

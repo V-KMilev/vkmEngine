@@ -65,11 +65,38 @@ std::string processFile(const fs::path& filePath,
     return out.str();
 }
 
+/// Splice a `#define` block right after the file's `#version` line.
+/// GLSL requires #version to be the first non-comment, non-empty line; any
+/// #define above it is a compile error, so we have to find the version
+/// directive ourselves and inject below it. If no #version line is found
+/// (rare: e.g. an included snippet rendered standalone) we prepend at the
+/// top - the GLSL compiler will surface its own error in that case.
+std::string injectDefines(const std::string& src,
+                          const std::vector<std::string>& defines) {
+    if (defines.empty()) return src;
+
+    std::ostringstream block;
+    block << "// Variant defines injected by the shader preprocessor:\n";
+    for (const auto& d : defines) block << "#define " << d << "\n";
+
+    const size_t versionPos = src.find("#version");
+    if (versionPos == std::string::npos) {
+        return block.str() + src;
+    }
+    const size_t eol = src.find('\n', versionPos);
+    if (eol == std::string::npos) {
+        return src + "\n" + block.str();
+    }
+    return src.substr(0, eol + 1) + block.str() + src.substr(eol + 1);
+}
+
 } // namespace
 
-std::string preprocessShaderFile(const std::string& filePath) {
+std::string preprocessShaderFile(const std::string& filePath,
+                                 const std::vector<std::string>& defines) {
     std::unordered_set<std::string> visited;
-    return processFile(fs::path(filePath), visited);
+    std::string src = processFile(fs::path(filePath), visited);
+    return injectDefines(src, defines);
 }
 
 } // namespace Engine

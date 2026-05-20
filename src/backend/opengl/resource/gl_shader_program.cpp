@@ -13,7 +13,15 @@ namespace fs = std::filesystem;
 }
 
 GLShader::GLShader(const ShaderAsset& asset)
-    : Core::Shader(preprocessSourceFor(asset.path))
+    : Core::Shader(preprocessSourceFor(asset.path, {}))
+    , m_defines()
+{
+    applySamplerBindings(asset);
+}
+
+GLShader::GLShader(const ShaderAsset& asset, std::vector<std::string> defines)
+    : Core::Shader(preprocessSourceFor(asset.path, defines))
+    , m_defines(std::move(defines))
 {
     applySamplerBindings(asset);
 }
@@ -37,7 +45,9 @@ void GLShader::reloadSource() {
     // Re-run the include preprocessor instead of falling back to
     // Core::Shader's path-based reload. Touch on any of the source files
     // (top-level or included) and the next compile will pick up the edit.
-    m_source = preprocessSourceFor(getPath());
+    // Carry forward this variant's #defines so a hot reload of the base
+    // shader source doesn't accidentally rebuild as the ubershader.
+    m_source = preprocessSourceFor(getPath(), m_defines);
 }
 
 void GLShader::applySamplerBindings(const ShaderAsset& asset) {
@@ -48,17 +58,20 @@ void GLShader::applySamplerBindings(const ShaderAsset& asset) {
     }
 }
 
-Core::GraphicsShaderSource GLShader::preprocessSourceFor(const std::string& dirPath) {
+Core::GraphicsShaderSource GLShader::preprocessSourceFor(
+    const std::string& dirPath,
+    const std::vector<std::string>& defines)
+{
     const fs::path dir(dirPath);
     const std::string vsPath = (dir / "vertexShader.shader").string();
     const std::string fsPath = (dir / "fragmentShader.shader").string();
     const std::string gsPath = (dir / "geometryShader.shader").string();
 
-    std::string vs = preprocessShaderFile(vsPath);
-    std::string fs = preprocessShaderFile(fsPath);
+    std::string vs = preprocessShaderFile(vsPath, defines);
+    std::string fs = preprocessShaderFile(fsPath, defines);
     std::string gs;
     if (std::filesystem::exists(gsPath)) {
-        gs = preprocessShaderFile(gsPath);
+        gs = preprocessShaderFile(gsPath, defines);
     }
     return Core::GraphicsShaderSource(dirPath, std::move(vs), std::move(fs), std::move(gs));
 }
