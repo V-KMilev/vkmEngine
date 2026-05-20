@@ -295,9 +295,9 @@ MeshHandle MaterialEditorPanel::previewMesh(ResourceManager& resources,
     if (m_primitive == 3 && entityMesh) return entityMesh;
 
     if (!m_primsReady) {
-        m_sphere = resources.add(generateSphere(),                "mesh:preview_sphere");
-        m_cube   = resources.add(generateCube(),                  "mesh:preview_cube");
-        m_plane  = resources.add(generatePlane(2.0f, 2.0f, 1, 1), "mesh:preview_plane");
+        m_sphere = resources.addInternal(generateSphere(),                "mesh:preview_sphere");
+        m_cube   = resources.addInternal(generateCube(),                  "mesh:preview_cube");
+        m_plane  = resources.addInternal(generatePlane(2.0f, 2.0f, 1, 1), "mesh:preview_plane");
         m_primsReady = true;
     }
     switch (m_primitive) {
