@@ -283,6 +283,18 @@ class Scene {
             }
         }
 
+        /// @brief Swap internal state with another Scene. Used by
+        /// SceneSerializer to commit a fully-loaded staging scene atomically -
+        /// either the load succeeds and the live scene is replaced, or it
+        /// fails and the live scene is left untouched. Systems access storage
+        /// via storage<T>() each frame (no cached pointers across calls), so
+        /// a swap between frames is safe.
+        void swap(Scene& other) noexcept {
+            using std::swap;
+            m_entityAllocator.swap(other.m_entityAllocator);  // non-movable, member swap
+            swap(m_components, other.m_components);
+        }
+
         template<typename T>
         SparseSet<T>* storage() { return findStorage<T>(); }
 
