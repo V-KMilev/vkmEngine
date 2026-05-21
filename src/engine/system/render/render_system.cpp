@@ -90,6 +90,22 @@ void RenderSystem::invalidateTemporalHistory() {
     m_graph.invalidateTemporalHistory();
 }
 
+size_t RenderSystem::passCount() const {
+    return m_graph.passCount();
+}
+
+std::string_view RenderSystem::passName(size_t index) const {
+    return m_graph.getPass(index).getName();
+}
+
+bool RenderSystem::isPassEnabled(size_t index) const {
+    return m_graph.getPass(index).isEnabled();
+}
+
+void RenderSystem::setPassEnabled(size_t index, bool enabled) {
+    m_graph.getPass(index).setEnabled(enabled);
+}
+
 uint32_t RenderSystem::renderMaterialPreview(
     ResourceManager& resources,
     const MaterialHandle& material,

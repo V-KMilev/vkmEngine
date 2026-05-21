@@ -33,6 +33,7 @@ namespace {
 void RenderGraph::addPass(std::unique_ptr<RenderPass> pass) {
     m_passes.emplace_back(std::move(pass));
     m_compiled = false;
+    m_lastEnabled.clear();
 }
 
 void RenderGraph::clear() {
@@ -40,6 +41,7 @@ void RenderGraph::clear() {
     m_reads.clear();
     m_writes.clear();
     m_compiled = false;
+    m_lastEnabled.clear();
     // Backend-owned persistents (ShadowAtlas, IBL) must be re-registered
     // after a clear+repopulate; otherwise the next execute() skips the
     // registerPersistentResources() call and passes see null handles.
@@ -70,18 +72,11 @@ FrameResources& RenderGraph::activeFrame() const {
     return m_previewActive && m_previewFrame ? *m_previewFrame : *m_frame;
 }
 
-void RenderGraph::compile() {
-    // CAVEAT: declareResources() is called without RenderView, so the
-    // lifetimes computed here reflect an "everything-enabled" schedule.
-    // Post passes (TAA, DoF, Motion Blur, SSR) early-out at execute time
-    // when their view.environment.* toggle is off but still declare their
-    // writes here. That's harmless today - lifetimes are only consumed by
-    // the editor debug view and the LOG_INFO summary. Once future work
-    // wires lifetime-based pool aliasing (see RenderGraph header doc),
-    // either declareResources will need a RenderView arg (and toggles
-    // will trigger a recompile) or the aliaser will need to inflate
-    // lifetimes for any resource a toggle-controlled pass might still
-    // produce.
+void RenderGraph::compile(const RenderView* view) {
+    // Disabled passes contribute no declarations: their reads/writes
+    // don't extend lifetimes and don't appear in the read-before-write
+    // validation. When view is null (first compile before any frame),
+    // every pass declares and lifetimes are conservative.
     const size_t n = m_passes.size();
     m_reads.assign(n, {});
     m_writes.assign(n, {});
@@ -89,8 +84,13 @@ void RenderGraph::compile() {
 
     bool produced[RG_RESOURCE_COUNT] = {};
     bool clean = true;
+    size_t activePasses = 0;
 
     for (size_t i = 0; i < n; ++i) {
+        const bool active = view ? m_passes[i]->enabledForView(*view) : m_passes[i]->isEnabled();
+        if (!active) continue;
+        ++activePasses;
+
         RenderGraphBuilder builder(m_reads[i], m_writes[i]);
         m_passes[i]->declareResources(builder);
 
@@ -116,14 +116,24 @@ void RenderGraph::compile() {
     for (uint32_t i = 0; i < RG_RESOURCE_COUNT; ++i) {
         if (m_lifetimes[i].used()) ++usedResources;
     }
-    LOG_INFO("RenderGraph compiled: %zu passes, %u transient resources%s",
-        n, usedResources, clean ? "" : " (with validation warnings)");
+    LOG_INFO("RenderGraph compiled: %zu/%zu passes active, %u transient resources%s",
+        activePasses, n, usedResources, clean ? "" : " (with validation warnings)");
 
     // Mark compiled so we don't redo this work every frame. addPass() /
-    // clear() flip the flag back to false to force a re-compile. The
-    // per-pass LOG_WARNING above is the (once-per-compile) validation
-    // signal; execute() runs the schedule we have regardless.
+    // clear() flip the flag back to false to force a re-compile, and
+    // execute() recompiles when the enable-vector changes.
     m_compiled = true;
+
+    // Cache the enable state we just compiled against. execute() compares
+    // each frame and recompiles only when it changes.
+    if (view) {
+        m_lastEnabled.assign(n, false);
+        for (size_t i = 0; i < n; ++i) {
+            m_lastEnabled[i] = m_passes[i]->enabledForView(*view);
+        }
+    } else {
+        m_lastEnabled.clear();
+    }
 }
 
 void RenderGraph::execute(
@@ -131,7 +141,18 @@ void RenderGraph::execute(
     const RenderView& view,
     const ResourceManager& resources
 ) {
-    if (!m_compiled) compile();
+    // First compile is structural (pass set just changed); subsequent
+    // compiles are triggered by enable-state diffs so lifetimes reflect
+    // the schedule that's actually going to run.
+    if (!m_compiled) {
+        compile(&view);
+    } else {
+        bool enableChanged = m_lastEnabled.size() != m_passes.size();
+        for (size_t i = 0; !enableChanged && i < m_passes.size(); ++i) {
+            if (m_lastEnabled[i] != m_passes[i]->enabledForView(view)) enableChanged = true;
+        }
+        if (enableChanged) compile(&view);
+    }
 
     // Refresh the resource pool from the active FrameResources (default or
     // preview). registerWith() re-publishes every sub-resource into the

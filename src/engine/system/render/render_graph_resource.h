@@ -58,8 +58,9 @@ inline const char* rgResourceName(RGResource r) {
 inline bool rgResourceIsImplicit(RGResource r) {
     return r == RGResource::SceneHDRResolved
         || r == RGResource::Backbuffer
-        || r == RGResource::TAAHistory     // persistent ping-pong, no producer pass
-        || r == RGResource::PostScratch;   // shared scratch, written by callers
+        || r == RGResource::TAAHistory       // persistent ping-pong, no producer pass
+        || r == RGResource::AdaptedLuminance // persistent ping-pong; composite gates on u_autoExposure
+        || r == RGResource::PostScratch;     // shared scratch, written by callers
 }
 
 } // namespace Engine
