@@ -168,6 +168,53 @@ struct AABBDebugConfig {
 };
 
 /**
+ * @brief Top-level rendering mode.
+ *
+ * Default is the photoreal pipeline. Other entries are diagnostic views
+ * that swap large parts of the pipeline (forward shading, post chain,
+ * display transform) for inspection-friendly behavior. Resolved into a
+ * RenderModeConfig once per frame so passes don't have to know which
+ * specific mode triggered which decision.
+ */
+enum class RenderMode : uint8_t {
+    Default = 0,
+    Wireframe,     ///< Unlit lines through PBR meshes; post chain bypassed.
+};
+
+/**
+ * @brief Pass-facing facts derived from a RenderMode.
+ *
+ * Single source of truth for "is the post chain off this frame?", "is
+ * the forward pass drawing wireframe?", "should composite bypass the
+ * display transform?" - resolved by RenderSystem::update once per
+ * frame and read directly by each consumer. Adding a new diagnostic
+ * mode is one place: the resolveModeConfig() switch grows; every pass
+ * already reads the right boolean.
+ */
+struct RenderModeConfig {
+    RenderMode mode = RenderMode::Default;
+
+    /// Disables HDR-altering post passes (SSR, Bloom, LensFlare, TAA,
+    /// DoF, MotionBlur, Exposure) so the diagnostic view is clean.
+    bool disablePost = false;
+
+    /// Force-off the PBR shader's AO sample for the frame. The gbuffer
+    /// AO is computed from filled-triangle geometry; in wireframe that
+    /// AO doesn't correspond to what's actually drawn.
+    bool disableSSAO = false;
+
+    /// Composite skips exposure + tonemap + LUT, just sRGB-encodes the
+    /// linear HDR. Used so diagnostic colors show pixel-exact.
+    bool bypassDisplayXform = false;
+
+    /// Forward pass routes every batch through the unlit shader.
+    bool forceUnlit = false;
+
+    /// Forward pass enables GL_LINE polygon mode for the geometry phase.
+    bool wireframe = false;
+};
+
+/**
  * @brief Backend-agnostic environment/scene settings.
  *
  * Written by the editor, read by backend passes during rendering.
@@ -195,14 +242,32 @@ struct EnvironmentConfig {
 
     /// Display transform / tone-mapping curve owned by the composite pass.
     /// 0 = AgX, 1 = Khronos PBR Neutral (default), 2 = ACES, 3 = Reinhard.
-    int       tonemap    = 1;
+    int        tonemap    = 1;
     /// Background clear color (linear HDR).
-    glm::vec4 clearColor = glm::vec4(0.1f, 0.1f, 0.12f, 1.0f);
-    /// Geometry pass renders triangles as lines. Diagnostic view; the
-    /// post chain bypasses tonemap and most effects skip themselves
-    /// (see enabledForView overrides on each pass).
-    bool      wireframe  = false;
+    glm::vec4  clearColor = glm::vec4(0.1f, 0.1f, 0.12f, 1.0f);
+    /// Top-level render mode (Default / Wireframe / future debug views).
+    /// Resolved into a RenderModeConfig in RenderView each frame; passes
+    /// read facts from view.modeConfig, not this enum directly.
+    RenderMode renderMode = RenderMode::Default;
 };
+
+/// Translate an env's RenderMode into the boolean facts passes read.
+inline RenderModeConfig resolveModeConfig(RenderMode mode) {
+    RenderModeConfig c;
+    c.mode = mode;
+    switch (mode) {
+        case RenderMode::Wireframe:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.forceUnlit         = true;
+            c.wireframe          = true;
+            break;
+        case RenderMode::Default:
+            break;
+    }
+    return c;
+}
 
 /**
  * @brief Collection of scene data needed for a rendering pass.
@@ -212,6 +277,12 @@ struct EnvironmentConfig {
 struct RenderView {
     CameraData camera;
     EnvironmentConfig environment;
+
+    /// Pre-resolved facts for the current frame's render mode. Cheap to
+    /// derive (a switch on env.renderMode); passes read this instead of
+    /// branching on the enum directly so a new mode is one place to
+    /// update (resolveModeConfig).
+    RenderModeConfig modeConfig;
 
     std::vector<DrawableData> drawables;
 

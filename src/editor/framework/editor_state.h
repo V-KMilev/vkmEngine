@@ -49,8 +49,8 @@ struct EditorState {
     float bottomPanelHeight = 200.0f;
 
     // Flags
-    // (Wireframe lives on EnvironmentConfig::wireframe so it round-trips
-    // with the scene; the viewport toolbar writes that directly.)
+    // (Render mode lives on EnvironmentConfig::renderMode and round-trips
+    // with the scene; passes read view.modeConfig, derived once per frame.)
     bool viewportHovered = false;    ///< Whether mouse is over viewport
     bool hierarchyDirty  = true;     ///< Set by entity ops, consumed by HierarchyPanel
     bool editorVisible   = true;     ///< Toggle entire editor UI (F5)

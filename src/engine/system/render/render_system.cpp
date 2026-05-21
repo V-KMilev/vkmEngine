@@ -55,19 +55,18 @@ void RenderSystem::update(FrameContext& ctx) {
     // getEnvironment() returns a stable reference between frames.
     m_environment = sceneEnvironment(ctx.scene);
     m_renderView.environment = m_environment;
+    m_renderView.modeConfig  = resolveModeConfig(m_environment.renderMode);
     m_renderView.deltaTime   = ctx.deltaTime;
 
     // Build snapshot for this frame (reuses vector capacity from previous frame)
     m_renderView.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight);
 
-    // Wireframe is a diagnostic view: the forward pass routes every batch
-    // through the unlit shader, AABB/Grid are unlit at the shader level,
-    // and SSAO would sample filled-triangle gbuffer AO at line pixels
-    // (lying about occlusion). Force env.ao.enabled off so the unlit path skips
-    // the AO sample cleanly. Pass-level decisions (which post passes run,
-    // composite bypass) live on each pass via enabledForView() and on
-    // composite via env.wireframe directly.
-    if (m_environment.wireframe) {
+    // Render-mode-driven env tweaks live alongside the mode resolution
+    // since they're conceptually part of the mode. The PBR shader's AO
+    // sample uses filled-triangle gbuffer AO at every fragment; in
+    // diagnostic views where the geometry isn't actually solid that's a
+    // lie - force AO off so the unlit path skips the sample cleanly.
+    if (m_renderView.modeConfig.disableSSAO) {
         m_renderView.environment.ao.enabled = false;
     }
 

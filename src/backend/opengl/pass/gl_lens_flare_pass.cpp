@@ -68,7 +68,7 @@ std::unique_ptr<Core::Texture2D> makeStarburstTexture() {
 } // namespace
 
 bool GLLensFlarePass::enabledForView(const RenderView& view) const {
-    return isEnabled() && view.environment.lensFlare.enabled && !view.environment.wireframe;
+    return isEnabled() && view.environment.lensFlare.enabled && !view.modeConfig.disablePost;
 }
 
 GLLensFlarePass::GLLensFlarePass(ShaderHandle shader)

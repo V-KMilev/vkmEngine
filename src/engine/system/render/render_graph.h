@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <cstdint>
 
@@ -225,6 +226,17 @@ class RenderGraph {
         /// the lifetime data without paying the compile cost every frame.
         std::vector<bool>                        m_lastEnabled;
         uint64_t                                 m_frameIndex = 0;
+
+#ifndef NDEBUG
+        /// Debug-only access-drift check. After every pass.execute() the
+        /// graph compares ctx.accessedResources against the pass's
+        /// declared reads/writes and warns about either direction of
+        /// drift, once per (pass index, resource) pair. These sets keep
+        /// the log from flooding when a real mismatch repeats every frame.
+        void checkPassAccess(size_t passIndex, uint32_t accessedMask);
+        std::unordered_set<uint64_t> m_accessWarnDeclaredUnused;  ///< pass-and-resource pairs already warned about
+        std::unordered_set<uint64_t> m_accessWarnUndeclared;
+#endif
 
         /// Transient pool for the default viewport. Allocated lazily via
         /// RenderBackend::createFrameResources on first onResize/execute.

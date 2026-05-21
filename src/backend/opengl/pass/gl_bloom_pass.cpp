@@ -26,7 +26,7 @@ bool GLBloomPass::enabledForView(const RenderView& view) const {
     // Skip when strength is zero (no visible contribution) or in wireframe.
     return isEnabled()
         && view.environment.bloom.strength > 0.0001f
-        && !view.environment.wireframe;
+        && !view.modeConfig.disablePost;
 }
 
 GLBloomPass::GLBloomPass(ShaderHandle downsampleShader, ShaderHandle upsampleShader)

@@ -20,7 +20,7 @@ namespace Engine {
 bool GLSSRPass::enabledForView(const RenderView& view) const {
     // Off in wireframe: SSR reads filled-triangle gbuffer positions and
     // would draw a ghost of the solid mesh between wireframe lines.
-    return isEnabled() && view.environment.ssr.enabled && !view.environment.wireframe;
+    return isEnabled() && view.environment.ssr.enabled && !view.modeConfig.disablePost;
 }
 
 GLSSRPass::GLSSRPass(ShaderHandle shader)
