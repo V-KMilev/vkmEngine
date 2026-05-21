@@ -11,7 +11,7 @@
 #include "debug/print_helper.h"
 
 #include "core/gl_backend.h"
-#include "core/gl_hdr_target.h"
+#include "core/gl_scene_target.h"
 #include "resource/gl_shader_program.h"
 
 #include "texture/gl_texture.h"
@@ -81,7 +81,7 @@ GLLensFlarePass::GLLensFlarePass(ShaderHandle shader)
 GLLensFlarePass::~GLLensFlarePass() = default;
 
 void GLLensFlarePass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
-    // Reuses GLHdrTarget, which is owned and resized by GLBackend.
+    // Reuses GLSceneTarget, which is owned and resized by GLBackend.
 }
 
 void GLLensFlarePass::execute(RenderGraphContext& rg) {
@@ -93,7 +93,7 @@ void GLLensFlarePass::execute(RenderGraphContext& rg) {
         return;
     }
     auto& gl  = static_cast<GLBackend&>(backend);
-    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     if (!hdr.isReady()) return;
 
     GLShader* shader = gl.getView().resolveShader(m_shader, resources);

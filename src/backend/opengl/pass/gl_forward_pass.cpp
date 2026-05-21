@@ -7,7 +7,7 @@
 #include "debug/statistics.h"
 
 #include "core/gl_backend.h"
-#include "core/gl_hdr_target.h"
+#include "core/gl_scene_target.h"
 #include "resource/gl_shadow_map.h"
 #include "resource/gl_mesh.h"
 #include "resource/gl_material.h"
@@ -64,7 +64,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
 
     // Graph-registered transient resources. Persistent backend state
     // (GLView / GLContext / default target) still comes through gl.
-    auto& hdrT       = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    auto& hdrT       = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     auto& gbuffer    = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
     auto& ibl        = *rg.resource<GLIBL>(RGResource::IBL);
     auto& shadowAtlas = *rg.resource<GLShadowAtlas>(RGResource::ShadowAtlas);

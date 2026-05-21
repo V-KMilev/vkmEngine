@@ -50,7 +50,7 @@ struct RenderGraphContext {
     /// Typed access to a graph-registered resource. Returns nullptr when
     /// the backend hasn't published @p id this frame. The caller is
     /// responsible for picking @p T to match the concrete type the
-    /// backend registered (OpenGL backend registers GLHdrTarget* for
+    /// backend registered (OpenGL backend registers GLSceneTarget* for
     /// SceneHDR, GLBloom* for BloomChain, etc.).
     template<typename T>
     T* resource(RGResource id) const {
