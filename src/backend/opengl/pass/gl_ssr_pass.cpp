@@ -20,7 +20,7 @@ namespace Engine {
 bool GLSSRPass::enabledForView(const RenderView& view) const {
     // Off in wireframe: SSR reads filled-triangle gbuffer positions and
     // would draw a ghost of the solid mesh between wireframe lines.
-    return isEnabled() && view.environment.ssr && !view.environment.wireframe;
+    return isEnabled() && view.environment.ssr.enabled && !view.environment.wireframe;
 }
 
 GLSSRPass::GLSSRPass(ShaderHandle shader)
@@ -65,9 +65,9 @@ void GLSSRPass::execute(RenderGraphContext& rg) {
 
     shader->bind();
     shader->setUniformMatrix4fv("u_projection", view.camera.projection);
-    shader->setUniform1f("u_intensity",   view.environment.ssrIntensity);
-    shader->setUniform1f("u_maxDistance", view.environment.ssrMaxDistance);
-    shader->setUniform1f("u_thickness",   view.environment.ssrThickness);
+    shader->setUniform1f("u_intensity",   view.environment.ssr.intensity);
+    shader->setUniform1f("u_maxDistance", view.environment.ssr.maxDistance);
+    shader->setUniform1f("u_thickness",   view.environment.ssr.thickness);
 
     hdr.bindResolvedColor(0);
     gbuffer.bindNormal(1);

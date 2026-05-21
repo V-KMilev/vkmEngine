@@ -21,7 +21,7 @@ bool GLExposurePass::enabledForView(const RenderView& view) const {
     // Skip metering entirely when auto-exposure is off; the composite
     // already gates on it. Also off in wireframe (would meter a dark scene
     // and crank exposure on the next non-wireframe frame).
-    return isEnabled() && view.environment.autoExposure && !view.environment.wireframe;
+    return isEnabled() && view.environment.exposure.autoExposure && !view.environment.wireframe;
 }
 
 GLExposurePass::GLExposurePass(ShaderHandle lumShader, ShaderHandle adaptShader)
@@ -79,7 +79,7 @@ void GLExposurePass::execute(RenderGraphContext& rg) {
     adapt->bind();
     adapt->setUniform1f("u_lumMaxLod", static_cast<float>(GLAutoExposure::LUM_MIPS - 1));
     adapt->setUniform1f("u_deltaTime", view.deltaTime);
-    adapt->setUniform1f("u_speed", view.environment.exposureSpeed);
+    adapt->setUniform1f("u_speed", view.environment.exposure.speed);
 
     ae.bindLum(0);
     ae.bindAdapted(1);

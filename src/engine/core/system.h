@@ -65,6 +65,15 @@ struct FrameContext {
     float fixedDeltaTime;
     uint32_t viewportWidth;
     uint32_t viewportHeight;
+
+    /// Per-frame visibility snapshot - reads from VisibilitySystem, which
+    /// populates it in SystemStage::Visibility. Lifecycle:
+    ///   - null on the very first frame (no stage has run yet)
+    ///   - null in updates that run before Visibility stage (Input,
+    ///     Simulation, Transform) - those stages don't have data yet
+    ///   - non-null in Visibility, Render, UI from frame 2 onward
+    /// Editor overlays guard with `if (ctx.visibility)` so they degrade
+    /// to a no-op on the first frame instead of asserting.
     const Visibility* visibility = nullptr;
 };
 

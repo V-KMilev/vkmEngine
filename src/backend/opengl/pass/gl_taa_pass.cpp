@@ -22,7 +22,7 @@
 namespace Engine {
 
 bool GLTAAPass::enabledForView(const RenderView& view) const {
-    return isEnabled() && view.environment.taa && !view.environment.wireframe;
+    return isEnabled() && view.environment.taa.enabled && !view.environment.wireframe;
 }
 
 GLTAAPass::GLTAAPass(ShaderHandle shader)
@@ -69,7 +69,7 @@ void GLTAAPass::execute(RenderGraphContext& rg) {
     shader->setUniformMatrix4fv("u_invView", glm::inverse(view.camera.view));
     shader->setUniformMatrix4fv("u_prevViewProj",
         m_havePrev ? m_prevViewProj : view.camera.viewProjection);
-    shader->setUniform1f("u_blend", view.environment.taaBlend);
+    shader->setUniform1f("u_blend", view.environment.taa.blend);
     shader->setUniform1i("u_primed", (m_havePrev && taa.primed()) ? 1 : 0);
 
     hdr.bindResolvedColor(0);

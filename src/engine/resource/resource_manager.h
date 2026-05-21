@@ -183,6 +183,82 @@ class ResourceManager {
             });
         }
 
+        /// Pair handed out by AssetRange. Lets callers use range-based for
+        /// AND structured bindings: `for (auto [handle, asset] : ...)`.
+        template<typename T>
+        struct AssetView {
+            Handle<T> handle;
+            const T*  asset;
+        };
+
+        /**
+         * @brief Range view over every live asset of type @p T.
+         *
+         * Same semantics as forEachOfType but with iterator-based access -
+         * supports early break/continue without the callback's
+         * return-skip-only flow:
+         *
+         *   for (auto [h, asset] : resources.assetsOfType<MaterialAsset>()) {
+         *       if (asset->editorOnly) continue;
+         *       ...
+         *   }
+         *
+         * Iterators are forward, single-pass, const. They become invalid
+         * if the underlying SparseSet is mutated mid-iteration; the
+         * existing forEachOfType has the same property.
+         */
+        template<typename T>
+        class AssetRange {
+            public:
+                AssetRange() = default;
+                AssetRange(const SparseSet<T>* set, const SlotAllocator* alloc)
+                    : m_set(set), m_alloc(alloc) {}
+
+            public:
+                class Iterator {
+                    public:
+                        Iterator(const SparseSet<T>* set, const SlotAllocator* alloc, uint32_t i)
+                            : m_set(set), m_alloc(alloc), m_index(i) {}
+
+                        AssetView<T> operator*() const {
+                            const uint32_t key = m_set->keyAt(m_index);
+                            return AssetView<T>{
+                                Handle<T>{StorageIndex{key, m_alloc->generationOf(key)}},
+                                &m_set->dataAt(m_index)
+                            };
+                        }
+                        Iterator& operator++() { ++m_index; return *this; }
+                        bool operator!=(const Iterator& o) const { return m_index != o.m_index; }
+
+                    private:
+                        const SparseSet<T>*  m_set;
+                        const SlotAllocator* m_alloc;
+                        uint32_t             m_index;
+                };
+
+                Iterator begin() const {
+                    return Iterator(m_set, m_alloc, 0);
+                }
+                Iterator end() const {
+                    return Iterator(m_set, m_alloc,
+                        m_set ? static_cast<uint32_t>(m_set->size()) : 0);
+                }
+
+            private:
+                const SparseSet<T>*  m_set   = nullptr;
+                const SlotAllocator* m_alloc = nullptr;
+        };
+
+        /// Range view over every live asset of type @p T.
+        /// Empty range when the type has no registered slots yet.
+        template<typename T>
+        AssetRange<T> assetsOfType() const {
+            TypeId id = typeId<T>();
+            if (id >= m_slots.size() || !m_slots[id]) return AssetRange<T>{};
+            const auto& slot = *m_slots[id];
+            return AssetRange<T>{ &storageOfConst<T>(slot), slot.allocator.get() };
+        }
+
         /// @brief Global version counter, incremented on every commit().
         uint64_t getGlobalVersion() const { return m_globalVersion; }
 

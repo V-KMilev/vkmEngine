@@ -98,7 +98,7 @@ namespace {
                 }
 
                 m_entries.insert(m_entries.begin(), Entry{canonical, importer});
-                while (m_entries.size() > kMaxCached) m_entries.pop_back();
+                while (m_entries.size() > MAX_CACHED) m_entries.pop_back();
                 return importer;
             }
 
@@ -107,7 +107,14 @@ namespace {
                 std::string path;
                 std::shared_ptr<Assimp::Importer> importer;
             };
-            static constexpr size_t kMaxCached = 2;
+            // LRU cap. Sized for a typical asset-import batch: the
+            // SceneSerializer load path calls loadModelMesh /
+            // loadModelMaterial once per (mesh, material) referenced by
+            // the file, and a single glTF can split across several
+            // sub-models. 8 entries comfortably covers the common case
+            // while keeping retained aiScene memory bounded - each entry
+            // is a few MB.
+            static constexpr size_t MAX_CACHED = 8;
             std::vector<Entry> m_entries;
             std::mutex m_mutex;
     };

@@ -68,120 +68,140 @@ struct LightData {
     glm::quat rotation;
 };
 
+// Each renderer subsystem owns a small config sub-struct. Adding a new
+// effect adds a sub-struct, not another flat field; each sub-struct can
+// gain or shed members without churn on unrelated effects' callers; and
+// the JSON persistence groups settings as nested objects so future
+// per-effect versioning (a "BloomConfigV2" deprecating a field) doesn't
+// require touching every other effect's persisted layout.
+
+struct AmbientConfig {
+    glm::vec3 color     = glm::vec3(1.0f);
+    float     intensity = 0.03f;
+};
+
+struct IBLConfig {
+    std::string path      = "";   ///< Empty = no IBL bake; ambient fallback applies.
+    float       intensity = 1.0f;
+};
+
+struct AOConfig {
+    bool  enabled   = true;
+    float radius    = 0.5f;
+    float intensity = 0.8f;        ///< Full-strength GTAO tends to over-darken contact.
+};
+
+struct SSRConfig {
+    bool  enabled     = true;
+    float intensity   = 0.6f;
+    float maxDistance = 8.0f;      ///< View-space ray length.
+    float thickness   = 0.5f;      ///< View-space hit tolerance.
+};
+
+struct TAAConfig {
+    bool  enabled = false;
+    float blend   = 0.5f;          ///< History weight (only used when enabled).
+};
+
+struct DofConfig {
+    bool  enabled       = false;
+    float focusDistance = 5.0f;
+    float focusRange    = 50.0f;
+    float maxBlur       = 0.001f;  ///< Gather radius in UV.
+};
+
+struct MotionBlurConfig {
+    bool  enabled  = false;
+    float strength = 0.5f;
+};
+
+struct StarburstConfig {
+    bool  enabled   = false;
+    float intensity = 1.0f;
+};
+
+struct LensFlareConfig {
+    bool  enabled         = false;
+    float intensity       = 0.15f;   ///< Additive linear HDR; bloom + tonemap amplify.
+    float threshold       = 4.0f;    ///< HDR luminance floor - excludes diffuse sky.
+    int   ghostCount      = 6;       ///< Ghosts along the optical axis (1..8).
+    float ghostSpacing    = 0.2f;    ///< UV step between ghosts.
+    float haloRadius      = 0.3f;    ///< UV distance from source to halo ring.
+    float chromatic       = 0.003f;  ///< Per-channel UV offset for fringe.
+    StarburstConfig starburst;
+};
+
+struct LensDirtConfig {
+    bool  enabled   = false;
+    float intensity = 0.4f;
+};
+
+struct BloomConfig {
+    float strength = 0.01f;          ///< Linear-HDR blend before exposure + tonemap.
+};
+
+struct ExposureConfig {
+    bool  autoExposure = false;      ///< Off by default - matches glTF reference viewers.
+    float key          = 0.18f;      ///< Target middle-gray.
+    float speed        = 2.5f;       ///< Adaptation rate (per second).
+    float min          = 0.03f;      ///< Clamp on the derived exposure.
+    float max          = 8.0f;
+};
+
+struct ColorGradeConfig {
+    bool        enabled   = false;
+    std::string lutPath   = "";
+    float       intensity = 1.0f;
+};
+
+struct GridConfig {
+    bool  enabled   = true;
+    float size      = 1000.0f;
+    float scale     = 1.0f;
+    float fadeStart = 50.0f;
+    float fadeEnd   = 550.0f;
+};
+
+struct AABBDebugConfig {
+    bool      enabled = false;
+    glm::vec3 color   = glm::vec3(1.0f, 0.0f, 0.0f);
+};
+
 /**
  * @brief Backend-agnostic environment/scene settings.
  *
  * Written by the editor, read by backend passes during rendering.
- * Lives on RenderSystem, copied into RenderView each frame.
+ * Lives on RenderSystem, copied into RenderView each frame. Composed of
+ * per-effect sub-configs (see above) so each subsystem owns its own
+ * settings shape independently.
  */
 struct EnvironmentConfig {
-    // Ambient light (fallback when no environment map is set)
-    glm::vec3 ambientColor     = glm::vec3(1.0f);
-    float     ambientIntensity = 0.03f;
+    AmbientConfig    ambient;
+    IBLConfig        ibl;
 
-    // Image-based lighting. Empty path = no IBL (uses the flat ambient above).
-    // The bake pass (re)bakes whenever this path changes.
-    std::string environmentMapPath = "";
-    float       iblIntensity       = 1.0f;
+    AOConfig         ao;
+    SSRConfig        ssr;
+    TAAConfig        taa;
+    DofConfig        dof;
+    MotionBlurConfig motionBlur;
+    LensFlareConfig  lensFlare;
+    LensDirtConfig   lensDirt;
+    BloomConfig      bloom;
+    ExposureConfig   exposure;
+    ColorGradeConfig colorGrade;
 
-    // Screen-space ambient occlusion (GTAO), modulates the ambient term.
-    bool  ssao          = true;
-    float ssaoRadius    = 0.5f;
-    float ssaoIntensity = 0.8f;   // full-strength GTAO tends to over-darken contact
+    GridConfig       grid;
+    AABBDebugConfig  aabbDebug;
 
-    // Screen-space reflections, additively blended into the HDR scene.
-    bool  ssr            = true;
-    float ssrIntensity   = 0.6f;
-    float ssrMaxDistance = 8.0f;   // view-space ray length
-    float ssrThickness   = 0.5f;   // view-space hit tolerance
-
-    // Temporal anti-aliasing (camera-reprojection). Off by default; MSAA
-    // already does spatial edge AA, so this is temporal stabilisation.
-    bool  taa      = false;
-    float taaBlend = 0.5f;         // history weight (only used when TAA on)
-
-    // Depth of field (off by default). View-space focus.
-    bool  dof              = false;
-    float dofFocusDistance = 5.0f;
-    float dofFocusRange    = 50.0f;
-    float dofMaxBlur       = 0.001f;  // gather radius in UV
-
-    // Camera motion blur (off by default).
-    bool  motionBlur         = false;
-    float motionBlurStrength = 0.5f;
-
-    // Screen-space lens flare (ghosts + halo + chromatic aberration) over
-    // the resolved HDR scene. Any bright pixel above lensFlareThreshold
-    // generates flare; off by default since the effect is artistic, not
-    // physically required.
-    //
-    // Defaults target a cinematic sun-on-IBL look: threshold high enough to
-    // exclude the diffuse sky (which sits at HDR ~1-3), tight ghost chain
-    // for a readable line of reflections, subtle chromatic fringe.
-    bool  lensFlare             = false;
-    float lensFlareIntensity    = 0.15f;  // additive in linear HDR; bloom + tonemap amplify this
-    float lensFlareThreshold    = 4.0f;   // HDR luminance floor - excludes sky, keeps sun/emissives
-    int   lensFlareGhostCount   = 6;      // ghosts along the optical axis (1..8)
-    float lensFlareGhostSpacing = 0.2f;   // UV step between ghosts - tight cinematic chain
-    float lensFlareHaloRadius   = 0.3f;   // UV distance from source to halo ring
-    float lensFlareChromatic    = 0.003f; // per-channel UV offset for fringe - subtle
-
-    // Aperture-blade starburst on the lens flare halo. Multiplies a radial
-    // spoke pattern (procedurally generated by GLLensFlarePass on first use)
-    // into the halo term, rotating with camera orientation so it feels
-    // physically tied to the lens.
-    bool  starburst          = false;
-    float starburstIntensity = 1.0f;
-
-    // Lens dirt - multiplies a procedural dust texture against the bloom
-    // (and therefore the flare, which gets bloomed). Spots light up when
-    // bright pixels are on screen, grounding the post stack in a physical
-    // lens. Cheap and high-impact when bloom is on.
-    bool  lensDirt          = false;
-    float lensDirtIntensity = 0.4f;
-
-    // Color-grading LUT (16^3 strip), applied post-display. Empty path /
-    // disabled = identity (no regression).
-    bool        colorGrade          = false;
-    std::string colorLutPath        = "";
-    float       colorGradeIntensity = 1.0f;
-
-    // Display transform / tone mapping curve owned by the composite pass.
-    // 0 = AgX (filmic, desaturates highlights), 1 = Khronos PBR Neutral
-    // (albedo-faithful - matches online glTF viewers), 2 = ACES, 3 = Reinhard.
-    // Default 1: makes metals/colored materials read like the PBR references.
-    int tonemap = 1;
-
-    // Post-processing. Bloom is blended in linear HDR before exposure.
-    float bloomStrength = 0.01f;
-
-    // Auto-exposure (eye adaptation). OFF by default: fixed-exposure is what
-    // glTF/PBR reference viewers (Khronos sample-viewer, model-viewer) use, so
-    // material color/contrast reads as intended instead of being flattened by
-    // continuous re-metering. When on, the composite derives exposure from the
-    // adapted scene luminance and the camera exposure becomes EV bias.
-    bool  autoExposure  = false;
-    float exposureKey   = 0.18f;   // target middle-gray
-    float exposureSpeed = 2.5f;    // adaptation rate (per second; 1.5 felt sluggish)
-    float exposureMin   = 0.03f;   // clamp on the derived exposure
-    float exposureMax   = 8.0f;
-
-    // Background
+    /// Display transform / tone-mapping curve owned by the composite pass.
+    /// 0 = AgX, 1 = Khronos PBR Neutral (default), 2 = ACES, 3 = Reinhard.
+    int       tonemap    = 1;
+    /// Background clear color (linear HDR).
     glm::vec4 clearColor = glm::vec4(0.1f, 0.1f, 0.12f, 1.0f);
-
-    // Grid
-    bool  gridEnabled   = true;
-    float gridSize      = 1000.0f;
-    float gridScale     = 1.0f;
-    float gridFadeStart = 50.0f;
-    float gridFadeEnd   = 550.0f;
-
-    // Debug visualization (AABB wireframes). Off by default.
-    bool      aabbDebug  = false;
-    glm::vec3 debugColor = glm::vec3(1.0f, 0.0f, 0.0f);
-
-    // Rendering
-    bool wireframe = false;
+    /// Geometry pass renders triangles as lines. Diagnostic view; the
+    /// post chain bypasses tonemap and most effects skip themselves
+    /// (see enabledForView overrides on each pass).
+    bool      wireframe  = false;
 };
 
 /**

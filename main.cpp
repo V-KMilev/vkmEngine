@@ -62,7 +62,7 @@ int main() {
         // on cold-start scene loads.
         Engine::registerBuiltinAssetFactories();
 
-        auto& engine = Engine::Engine::get();
+        Engine::Engine engine;
         auto& window = engine.getWindow();
 
         window.createWindow("VKM Engine");
@@ -203,7 +203,7 @@ int main() {
         transparentPass->setShader(Engine::MaterialType::Unlit, unlitShader);
         transparentPass->setPhase(Engine::GLForwardPass::Phase::Transparent);
         renderSystem.addPass(std::move(transparentPass));
-        // Gated per-frame by env.aabbDebug (off by default); the pass itself
+        // Gated per-frame by env.aabbDebug.enabled (off by default); the pass itself
         // stays enabled so the Scene-tab toggle is the single switch.
         renderSystem.addPass(std::make_unique<Engine::GLAABBDebugPass>(aabbShader));
         renderSystem.addPass(std::make_unique<Engine::GLGridPass>(gridShader));
@@ -260,7 +260,7 @@ int main() {
         // Environment is a singleton scene entity, selectable in the editor
         // (Hierarchy "Environment" row -> Inspector). Create it now and seed
         // the default IBL map.
-        Engine::sceneEnvironment(engine.getScene()).environmentMapPath =
+        Engine::sceneEnvironment(engine.getScene()).ibl.path =
             rootDir + "/assets/envs/environment.hdr";
 
         engine.run();
