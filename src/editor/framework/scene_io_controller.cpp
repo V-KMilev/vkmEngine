@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 
-#include "core/engine.h"
 #include "core/system.h"
 #include "ecs/scene.h"
 #include "ecs/component/camera.h"
@@ -26,34 +25,13 @@ SceneIOController::SceneIOController(EventSystem* events, CameraController* came
     , m_cameraController(cameraController)
     , m_renderSystem(renderSystem)
 {
-    // Editor-side refresh after a scene reload.
-    if (m_events) {
-        m_sceneLoadedListenerId = m_events->subscribe<SceneSerializer::SceneLoadedEvent>(
-            [this](const SceneSerializer::SceneLoadedEvent&) {
-                // TAA / other temporal effects must drop their history -
-                // reprojecting the old scene's data over the new one
-                // smears for several frames after the swap.
-                if (m_renderSystem) m_renderSystem->invalidateTemporalHistory();
-
-                if (!m_cameraController) return;
-                // Re-bind the camera controller to the loaded scene's active
-                // Camera; the prior handle's slot may now hold another entity.
-                auto& engine = Engine::get();
-                Entity rebound{};
-                engine.getScene().forEach<Camera>([&](EntityId id, const Camera& c) {
-                    if (c.active && !rebound.getID()) rebound = Entity{id};
-                });
-                m_cameraController->setCameraEntity(rebound);
-            }
-        );
-    }
+    // Post-load editor housekeeping (camera rebind, temporal-history
+    // invalidate) lives in load() directly - no self-subscribe needed.
+    // Other listeners (outside this class) still receive
+    // SceneSerializer::SceneLoadedEvent when load() emits it below.
 }
 
-SceneIOController::~SceneIOController() {
-    if (m_events && m_sceneLoadedListenerId != 0) {
-        m_events->unsubscribe<SceneSerializer::SceneLoadedEvent>(m_sceneLoadedListenerId);
-    }
-}
+SceneIOController::~SceneIOController() = default;
 
 void SceneIOController::save(FrameContext& ctx) {
     if (m_currentScenePath.empty()) {
@@ -91,8 +69,25 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
         state.selectedEntity = EntityId{selectedIdx, ctx.scene.generationOf(selectedIdx)};
     }
 
-    // Notify subscribers (camera controller rebind, etc.). The serializer
-    // itself doesn't publish — it has no EventSystem reference.
+    // Re-bind the camera controller to the new scene's active Camera -
+    // the prior handle's slot may now hold a different entity (or be empty).
+    if (m_cameraController) {
+        Entity rebound{};
+        ctx.scene.forEach<Camera>([&](EntityId id, const Camera& c) {
+            if (c.active && !rebound.getID()) rebound = Entity{id};
+        });
+        m_cameraController->setCameraEntity(rebound);
+    }
+
+    // TAA / other reprojection-based post effects must drop their
+    // history - sampling the old scene's history over the new view
+    // smears for several frames after the swap.
+    if (m_renderSystem) m_renderSystem->invalidateTemporalHistory();
+
+    // Tell external subscribers (anything that cares about scene swaps)
+    // the load happened. The two effects above used to ride this event
+    // back to us via a self-subscribe; that needed Engine::get() to fetch
+    // the Scene, so we just do them directly here now that we have ctx.
     if (m_events) m_events->emit(SceneSerializer::SceneLoadedEvent{m_currentScenePath});
 }
 

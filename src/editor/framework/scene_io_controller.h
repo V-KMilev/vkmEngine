@@ -16,8 +16,9 @@ class RenderSystem;
  * @brief Owns editor scene file I/O.
  *
  * Holds the current scene path, performs Save / Save-As / Load, renders the
- * Save-As and Load-picker modals, and owns the post-load camera rebind
- * (subscribes to SceneSerializer::SceneLoadedEvent itself).
+ * Save-As and Load-picker modals, and runs post-load editor housekeeping
+ * (camera rebind, temporal-history invalidate) directly inside load().
+ * Emits SceneSerializer::SceneLoadedEvent for external subscribers.
  *
  * Extracted from EditorSystem (god-file decomposition). EditorSystem owns one
  * of these and forwards menu/keybind intents to it; drawDialogs() must be
@@ -57,7 +58,6 @@ class SceneIOController {
         EventSystem*      m_events           = nullptr;
         CameraController* m_cameraController = nullptr;
         RenderSystem*     m_renderSystem     = nullptr;
-        uint64_t          m_sceneLoadedListenerId = 0;
 
         std::string m_currentScenePath;  ///< Empty until the user saves/loads once.
         bool        m_openSaveAsPopup = false;
