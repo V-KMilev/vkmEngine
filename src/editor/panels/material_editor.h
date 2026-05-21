@@ -37,12 +37,6 @@ class MaterialEditorPanel : public EditorPanel {
         float m_pitch    = 20.0f;
         float m_distance = 3.0f;
         int   m_primitive = 0;     ///< 0 sphere, 1 cube, 2 plane, 3 entity mesh
-
-        // Cached built-in preview primitives (registered on first use).
-        MeshHandle m_sphere;
-        MeshHandle m_cube;
-        MeshHandle m_plane;
-        bool       m_primsReady = false;
 };
 
 } // namespace Engine

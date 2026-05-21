@@ -33,9 +33,11 @@ class AssetBrowserPanel : public EditorPanel {
         void drawMeshes(EditorContext& ec);
 
         float      m_cell = 104.0f;          ///< Thumbnail edge in px
-        MeshHandle m_sphere;                 ///< Shape for material thumbnails
+
+        // Re-acquired every draw via ensureAssets - no ready flag so a
+        // ResourceManager swap (scene load) doesn't leave stale handles.
+        MeshHandle     m_sphere;             ///< Shape for material thumbnails
         MaterialHandle m_neutral;            ///< Material for mesh thumbnails
-        bool       m_assetsReady = false;
 };
 
 } // namespace Engine
