@@ -225,19 +225,29 @@ GLShader* GLView::resolveShaderVariant(
     const uint32_t generation = handle.key.generation;
     const VariantKey key{shaderId, generation, featureFlags};
 
+    // Helper: drop every variant for this shaderId. Uses the per-shaderId
+    // subkey set so we touch O(variants_for_this_shader) entries instead
+    // of scanning the whole map. Pruning the inner set keeps the index
+    // self-cleaning.
+    auto evictShader = [&](uint32_t sid, bool keepGen, uint32_t keepGeneration) {
+        auto sit = m_shaderVariantsByShader.find(sid);
+        if (sit == m_shaderVariantsByShader.end()) return;
+        auto& subkeys = sit->second;
+        for (auto skit = subkeys.begin(); skit != subkeys.end(); ) {
+            if (keepGen && skit->generation == keepGeneration) { ++skit; continue; }
+            m_shaderVariants.erase(VariantKey{sid, skit->generation, skit->flags});
+            skit = subkeys.erase(skit);
+        }
+        if (subkeys.empty()) m_shaderVariantsByShader.erase(sit);
+    };
+
     auto it = m_shaderVariants.find(key);
     if (it != m_shaderVariants.end()) {
         // Hot-reload safety: if the base asset version changed since we built
         // this variant, drop every variant of this shader and rebuild lazily.
         // A file edit invalidates them all, not just the one we're looking up.
         if (it->second.assetVersion != asset.version) {
-            for (auto vit = m_shaderVariants.begin(); vit != m_shaderVariants.end(); ) {
-                if (vit->first.shaderId == shaderId) {
-                    vit = m_shaderVariants.erase(vit);
-                } else {
-                    ++vit;
-                }
-            }
+            evictShader(shaderId, false, 0);
         } else {
             return it->second.program.get();
         }
@@ -248,13 +258,7 @@ GLShader* GLView::resolveShaderVariant(
         // bumping the generation). The old handles are unreachable, so the
         // old variants are dead weight at best, stale-by-name hazards at
         // worst - evict them.
-        for (auto vit = m_shaderVariants.begin(); vit != m_shaderVariants.end(); ) {
-            if (vit->first.shaderId == shaderId && vit->first.generation != generation) {
-                vit = m_shaderVariants.erase(vit);
-            } else {
-                ++vit;
-            }
-        }
+        evictShader(shaderId, true, generation);
     }
 
     VariantEntry entry;
@@ -269,6 +273,7 @@ GLShader* GLView::resolveShaderVariant(
     LOG_INFO("GLView: compiled shader variant '%s' flags=0x%x", asset.name.c_str(), featureFlags);
     GLShader* raw = entry.program.get();
     m_shaderVariants.emplace(key, std::move(entry));
+    m_shaderVariantsByShader[shaderId].insert({generation, featureFlags});
     return raw;
 }
 

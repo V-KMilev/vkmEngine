@@ -57,7 +57,6 @@ class GLBackend : public RenderBackend {
             // here, so the backend stays narrow.
             return m_defaultTarget;
         }
-        void setWireframe(bool enabled) override;
         void syncResources(const RenderView& view, const ResourceManager& resources) override;
 
         void ensurePreviewResourceTables(const RenderView& view,

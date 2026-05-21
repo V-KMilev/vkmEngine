@@ -295,9 +295,19 @@ MeshHandle MaterialEditorPanel::previewMesh(ResourceManager& resources,
     if (m_primitive == 3 && entityMesh) return entityMesh;
 
     if (!m_primsReady) {
-        m_sphere = resources.addInternal(generateSphere(),                "mesh:preview_sphere");
-        m_cube   = resources.addInternal(generateCube(),                  "mesh:preview_cube");
-        m_plane  = resources.addInternal(generatePlane(2.0f, 2.0f, 1, 1), "mesh:preview_plane");
+        // Reuse existing internal previews if another editor panel already
+        // registered them - they share names and any add-without-lookup
+        // would create duplicate assets that consume slots and double the
+        // GPU upload.
+        m_sphere = resources.findByName<MeshAsset>("mesh:preview_sphere");
+        if (!m_sphere) m_sphere = resources.addInternal(generateSphere(), "mesh:preview_sphere");
+
+        m_cube = resources.findByName<MeshAsset>("mesh:preview_cube");
+        if (!m_cube) m_cube = resources.addInternal(generateCube(), "mesh:preview_cube");
+
+        m_plane = resources.findByName<MeshAsset>("mesh:preview_plane");
+        if (!m_plane) m_plane = resources.addInternal(generatePlane(2.0f, 2.0f, 1, 1), "mesh:preview_plane");
+
         m_primsReady = true;
     }
     switch (m_primitive) {

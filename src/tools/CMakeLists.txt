@@ -1,7 +1,7 @@
 # ============================================================================
 # Engine Tools Library (Optional utilities)
 # ============================================================================
-file(GLOB_RECURSE ENGINETOOLS_SOURCES *.cpp)
+file(GLOB_RECURSE ENGINETOOLS_SOURCES CONFIGURE_DEPENDS *.cpp)
 
 add_library(EngineTools STATIC ${ENGINETOOLS_SOURCES})
 

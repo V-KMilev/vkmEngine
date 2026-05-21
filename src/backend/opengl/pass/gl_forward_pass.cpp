@@ -72,6 +72,14 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         return;
     }
 
+    // Wireframe is a geometry-pass concern only. Setting polygon mode
+    // globally (as backend->setWireframe did historically) also makes the
+    // fullscreen-triangle post passes rasterize as 3 line segments instead
+    // of filled tris - composite never writes the backbuffer and the screen
+    // appears frozen. Apply locally and restore before exit.
+    const bool wireframe = view.environment.wireframe;
+    if (wireframe) glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
     auto& glView = gl.getView();
 
     auto& batcher = glView.getInstanceBatcher();
@@ -313,6 +321,10 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         glContext.setBlending(false);
         glContext.setFaceCulling(false);
     }
+
+    // Restore polygon mode so downstream post passes can rasterize filled
+    // triangles. The wrapper dedupes when wireframe is already off.
+    if (wireframe) glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
 } // namespace Engine

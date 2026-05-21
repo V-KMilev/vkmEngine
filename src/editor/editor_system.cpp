@@ -24,7 +24,7 @@ EditorSystem::EditorSystem(
     , m_renderSystem(renderSystem)
     , m_visibilitySystem(visibilitySystem)
     , m_events(events)
-    , m_sceneIO(events, cameraController)
+    , m_sceneIO(events, cameraController, renderSystem)
 {
     m_panels = { &m_hierarchy, &m_inspector, &m_bottom, &m_preferences,
                  &m_materialEditor, &m_assetBrowser };
@@ -73,8 +73,6 @@ void EditorSystem::update(FrameContext& ctx) {
                        || m_playbar.isHovered();
         m_cameraController->setEditorInputCapture(blockMouse, ImGui::GetIO().WantTextInput);
     }
-
-    if (m_renderSystem) m_renderSystem->setWireframe(false);
 
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -133,8 +131,6 @@ void EditorSystem::update(FrameContext& ctx) {
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-    if (m_renderSystem) m_renderSystem->setWireframe(m_state.wireframe);
 }
 
 void EditorSystem::drawWorkspace(EditorContext& ec) {

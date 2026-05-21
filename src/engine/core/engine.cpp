@@ -81,8 +81,27 @@ void Engine::run() {
         const float beforeClamp = accumulator + deltaTime;
         accumulator = std::min(beforeClamp, Config::MaxFrameAccumulator);
         if (beforeClamp > Config::MaxFrameAccumulator) {
-            LOG_WARNING("Engine: frame accumulator clamped (%.3fs > %.3fs cap) - spiral-of-death guard fired; some fixed ticks dropped",
-                beforeClamp, Config::MaxFrameAccumulator);
+            // Sustained slow frames would spam this every tick. Rate-limit
+            // to one warning per second of wall clock; on the throttled
+            // frames just bump a counter and emit a summary on the next
+            // un-throttled warning.
+            using Clock = std::chrono::steady_clock;
+            static auto lastWarn = Clock::time_point{};
+            static int suppressed = 0;
+            const auto now = Clock::now();
+            if (now - lastWarn >= std::chrono::seconds(1)) {
+                if (suppressed > 0) {
+                    LOG_WARNING("Engine: frame accumulator clamped (%.3fs > %.3fs cap, +%d similar in the last second) - spiral-of-death guard fired; some fixed ticks dropped",
+                        beforeClamp, Config::MaxFrameAccumulator, suppressed);
+                } else {
+                    LOG_WARNING("Engine: frame accumulator clamped (%.3fs > %.3fs cap) - spiral-of-death guard fired; some fixed ticks dropped",
+                        beforeClamp, Config::MaxFrameAccumulator);
+                }
+                suppressed = 0;
+                lastWarn = now;
+            } else {
+                ++suppressed;
+            }
         }
         while (accumulator >= Config::FixedTimeStep) {
             for (System* system : m_fixedUpdaters) {

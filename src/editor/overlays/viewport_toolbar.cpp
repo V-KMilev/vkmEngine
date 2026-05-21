@@ -79,7 +79,7 @@ void ViewportToolbar::draw(EditorContext& ec) {
             EnvironmentConfig& env = sceneEnvironment(ctx.scene);
             ImGui::Checkbox("Grid",       &env.gridEnabled);
             ImGui::Checkbox("AABB Bounds", &env.aabbDebug);
-            ImGui::Checkbox("Wireframe",  &state.wireframe);
+            ImGui::Checkbox("Wireframe",  &env.wireframe);
             ImGui::EndPopup();
         }
 

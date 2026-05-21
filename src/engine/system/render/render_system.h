@@ -101,8 +101,15 @@ class RenderSystem : public System {
         EnvironmentConfig& getEnvironment() { return m_environment; }
         const EnvironmentConfig& getEnvironment() const { return m_environment; }
 
-        void setWireframe(bool enabled);
-        bool getWireframe() const { return m_environment.wireframe; }
+        /**
+         * @brief Invalidate temporal post-processing history (TAA).
+         *
+         * Call after any view discontinuity - scene load, camera teleport,
+         * "frame on selection" jumps, etc. Without this, TAA reprojects
+         * across the discontinuity and smears the new view for several
+         * frames. Cheap; just flips the primed flag on the history buffer.
+         */
+        void invalidateTemporalHistory();
 
         /**
          * @brief Render one material on a preview shape through the REAL
@@ -144,6 +151,10 @@ class RenderSystem : public System {
                 uint64_t key, uint64_t version, bool live);
 
     private:
+        /// Mirror env toggles onto pass.setEnabled() before execute, so the
+        /// graph's resolve-dirty tracking only counts passes that actually run.
+        void syncPassToggles();
+
         std::unique_ptr<RenderBackend> m_backend;
         RenderGraph m_graph;
 

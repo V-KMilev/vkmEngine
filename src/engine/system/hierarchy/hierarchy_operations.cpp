@@ -147,6 +147,17 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity) {
         }
     }
 
+    if (current && depth >= MAX_DEPTH) {
+        // A deeper-than-supported chain would silently snap to identity from
+        // a partial root; surface it once so misimports are loud.
+        static bool warned = false;
+        if (!warned) {
+            LOG_WARNING("computeWorldMatrix: hierarchy depth exceeds %u; deeper ancestors ignored",
+                MAX_DEPTH);
+            warned = true;
+        }
+    }
+
     // Multiply local matrices top-down (root first)
     glm::mat4 worldMatrix(1.0f);
     for (uint32_t i = depth; i > 0; --i) {
@@ -193,19 +204,45 @@ void resolveWorldTransforms(Scene& scene) {
             current = hierarchyStorage->get(current.index).parent;
             ++depth;
         }
-        if (depth >= MAX_DEPTH) continue;
+        if (depth >= MAX_DEPTH) {
+            static bool warned = false;
+            if (!warned) {
+                LOG_WARNING("resolveWorldTransforms: hierarchy depth exceeds %u; entity %u skipped (and any descendants)",
+                    MAX_DEPTH, id.index);
+                warned = true;
+            }
+            continue;
+        }
         buckets[depth].push_back(id);
     }
 
+    // Depth-bucket invariant lets each child read its parent's already-final
+    // WorldTransform instead of re-walking the ancestor chain. parent_world
+    // * local is one matrix multiply per dirty entity vs. depth-many in
+    // computeWorldMatrix - a real win on shallow-but-wide scenes.
     for (uint32_t d = 0; d < MAX_DEPTH; ++d) {
         const auto& bucket = buckets[d];
         if (bucket.empty()) continue;
 
-        parallelFor(bucket.size(), [&](size_t i) {
-            const EntityId id = bucket[i];
-            scene.get<WorldTransform>(id).model = computeWorldMatrix(scene, id);
-            scene.get<Hierarchy>(id).dirty = false;
-        });
+        if (d == 0) {
+            parallelFor(bucket.size(), [&](size_t i) {
+                const EntityId id = bucket[i];
+                scene.get<WorldTransform>(id).model =
+                    Transform::computeModelMatrix(scene.get<Transform>(id));
+                scene.get<Hierarchy>(id).dirty = false;
+            });
+        } else {
+            parallelFor(bucket.size(), [&](size_t i) {
+                const EntityId id = bucket[i];
+                const Hierarchy& h = scene.get<Hierarchy>(id);
+                const glm::mat4 parentWorld =
+                    scene.get<WorldTransform>(h.parent).model;
+                const glm::mat4 local =
+                    Transform::computeModelMatrix(scene.get<Transform>(id));
+                scene.get<WorldTransform>(id).model = parentWorld * local;
+                scene.get<Hierarchy>(id).dirty = false;
+            });
+        }
     }
 }
 

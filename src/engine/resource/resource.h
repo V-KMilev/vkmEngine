@@ -32,7 +32,7 @@ struct Resource {
         std::string name;
 
         /**
-         * @brief Editor-internal resource flag.
+         * @brief Editor-only asset flag.
          *
          * True for assets the editor creates for its own use (preview meshes,
          * neutral materials for thumbnails, etc.). Pickers, the Asset Browser,
@@ -41,8 +41,12 @@ struct Resource {
          *
          * Default false: anything imported, authored, or loaded from disk is
          * the user's asset.
+         *
+         * Named editorOnly (not "internal") because "internal" already
+         * means something specific in C++ (internal linkage), which made
+         * the field read as something unrelated to user/tool visibility.
          */
-        bool internal = false;
+        bool editorOnly = false;
 
         /**
          * @brief Origin descriptor as a JSON object.

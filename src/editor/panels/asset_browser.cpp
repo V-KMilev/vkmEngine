@@ -120,7 +120,7 @@ void AssetBrowserPanel::drawMaterials(EditorContext& ec) {
 
     int i = 0;
     resources.forEachOfType<MaterialAsset>([&](MaterialHandle h, const MaterialAsset& a) {
-        if (a.internal) return;  // editor helpers (e.g. thumbnail neutral) are not user-facing
+        if (a.editorOnly) return;  // editor helpers (e.g. thumbnail neutral) are not user-facing
 
         const uint64_t key = materialKey(h.id());
         const uint32_t tex = ec.renderSystem
@@ -178,7 +178,7 @@ void AssetBrowserPanel::drawMeshes(EditorContext& ec) {
 
     int i = 0;
     resources.forEachOfType<MeshAsset>([&](MeshHandle h, const MeshAsset& a) {
-        if (a.internal) return;  // editor preview primitives are not user-facing
+        if (a.editorOnly) return;  // editor preview primitives are not user-facing
 
         const uint64_t key = meshKey(h.id());
         const uint32_t tex = ec.renderSystem
