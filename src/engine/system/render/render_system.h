@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <cstdint>
+#include <string_view>
 #include <vector>
 #include <utility>
 #include <unordered_map>
@@ -95,8 +96,18 @@ class RenderSystem : public System {
          */
         void update(FrameContext& ctx) override;
 
-        RenderGraph& getGraph() { return m_graph; }
-        const RenderGraph& getGraph() const { return m_graph; }
+        /**
+         * @brief Narrow pass introspection for editor / debug tooling.
+         *
+         * Lets the Environment Inspector's advanced "Pipeline" tab list
+         * passes and force-toggle them without #include "render_graph.h"
+         * or knowledge of the pass class hierarchy. The graph itself stays
+         * an engine internal; this surface is what's stable for tools.
+         */
+        size_t           passCount() const;
+        std::string_view passName(size_t index) const;
+        bool             isPassEnabled(size_t index) const;
+        void             setPassEnabled(size_t index, bool enabled);
 
         EnvironmentConfig& getEnvironment() { return m_environment; }
         const EnvironmentConfig& getEnvironment() const { return m_environment; }

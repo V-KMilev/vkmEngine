@@ -459,12 +459,16 @@ void EnvironmentInspector::drawPipeline(EditorContext& ec) {
     ImGui::TextDisabled("Toggle individual graph passes (advanced).");
     ImGui::Spacing();
     if (ec.renderSystem) {
-        auto& graph = ec.renderSystem->getGraph();
-        for (size_t i = 0; i < graph.passCount(); ++i) {
-            auto& pass = graph.getPass(i);
-            bool enabled = pass.isEnabled();
-            if (ImGui::Checkbox(pass.getName().c_str(), &enabled))
-                pass.setEnabled(enabled);
+        // Narrow API on RenderSystem - the panel doesn't include
+        // render_graph.h or know about the pass class hierarchy.
+        for (size_t i = 0; i < ec.renderSystem->passCount(); ++i) {
+            bool enabled = ec.renderSystem->isPassEnabled(i);
+            const std::string_view name = ec.renderSystem->passName(i);
+            // ImGui::Checkbox needs a C string; passName is null-terminated
+            // (RenderPass::getName returns const std::string&) so .data()
+            // is safe here.
+            if (ImGui::Checkbox(name.data(), &enabled))
+                ec.renderSystem->setPassEnabled(i, enabled);
         }
     }
 
