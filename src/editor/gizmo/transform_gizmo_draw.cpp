@@ -1,5 +1,6 @@
 #include "gizmo/transform_gizmo.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <glm/gtc/matrix_transform.hpp>
