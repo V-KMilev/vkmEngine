@@ -6,7 +6,7 @@
 
 #include <glm/glm.hpp>
 
-#include "framework/editor_panel.h"
+#include "ui/editor_widgets.h"  // EulerCache
 
 namespace Engine {
 
@@ -23,30 +23,22 @@ struct EditorContext;
  * Hierarchy's pinned Environment row). Editor/application preferences are in
  * the Preferences window (see PreferencesPanel).
  */
-class BottomPanel : public EditorPanel {
+class BottomPanel {
     public:
-        const char* panelId() const override { return "Bottom"; }
-        void draw(EditorContext& ec) override;
+        void draw(EditorContext& ec);
 
     private:
         void drawAnimationSection(EditorContext& ec);
         void drawStatisticsSection(EditorContext& ec);
-
-        int m_selectedSection = 0;
 
         // Timeline keyframe-dot drag state (Animation section).
         // m_animDotTrack: -1 none, 0 position, 1 rotation, 2 scale.
         int   m_animDotTrack = -1;
         float m_animDotTime  = 0.0f;
 
-        // Euler-angle edit cache for the rotation keyframe editor. Same
-        // gimbal-lock guard as InspectorPanel: quaternion->Euler is singular
-        // at +/-90 deg, so the edited Euler is the source of truth and is only
-        // re-derived from the stored quat when that keyframe's rotation
-        // changed outside the drag. m_rotEulerKey: keyframe index the cache is
-        // valid for (-1 = none).
-        int       m_rotEulerKey = -1;
-        glm::vec3 m_rotEulerDeg{0.0f};
+        // Euler-angle edit cache for the rotation keyframe editor, keyed by
+        // keyframe index. See EulerCache for the gimbal-lock rationale.
+        EulerCache<int> m_rotEulerCache;
 
         struct ResourceCounts {
             size_t transforms = 0, meshes = 0, lights = 0, cameras = 0;

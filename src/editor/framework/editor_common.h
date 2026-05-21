@@ -2,6 +2,11 @@
 
 // Common includes for editor panel implementation files.
 // Each panel .cpp includes its own header first, then this convenience header.
+//
+// Scope: the panel framework (state/context/widgets/style/icons/keybinds),
+// the ImGui + glm prelude, and the ECS component types that essentially
+// every panel touches. Heavier engine-side headers (debug stats, visibility,
+// bounds utils) are NOT here — pull them in explicitly where used.
 
 #include "framework/editor_state.h"
 #include "framework/editor_context.h"
@@ -14,12 +19,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include <algorithm>
-#include <cstring>
-#include <cstdio>
-#include <cmath>
-
-#include "core/engine.h"
+#include "core/system.h"   // FrameContext
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/mesh.h"
@@ -31,6 +31,3 @@
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
 #include "resource/material_asset.h"
-#include "debug/statistics.h"
-#include "system/visibility/visibility.h"
-#include "system/visibility/bounds_utils.h"

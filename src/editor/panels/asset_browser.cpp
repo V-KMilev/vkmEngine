@@ -125,11 +125,9 @@ void AssetBrowserPanel::drawMaterials(EditorContext& ec) {
         if (a.editorOnly) return;  // editor helpers (e.g. thumbnail neutral) are not user-facing
 
         const uint64_t key = materialKey(h.id());
-        const uint32_t tex = ec.renderSystem
-            ? ec.renderSystem->materialPreviewTexture(
-                  resources, h, m_sphere, 30.0f, 18.0f, 2.6f,
-                  key, a.version, /*live*/ false)
-            : 0u;
+        const uint32_t tex = ec.renderSystem.materialPreviewTexture(
+            resources, h, m_sphere, 30.0f, 18.0f, 2.6f,
+            key, a.version, /*live*/ false);
 
         ImGui::PushID(static_cast<int>(h.id()));
         ImGui::BeginGroup();
@@ -183,11 +181,9 @@ void AssetBrowserPanel::drawMeshes(EditorContext& ec) {
         if (a.editorOnly) return;  // editor preview primitives are not user-facing
 
         const uint64_t key = meshKey(h.id());
-        const uint32_t tex = ec.renderSystem
-            ? ec.renderSystem->materialPreviewTexture(
-                  resources, m_neutral, h, 25.0f, 15.0f, 2.6f,
-                  key, a.version, /*live*/ false)
-            : 0u;
+        const uint32_t tex = ec.renderSystem.materialPreviewTexture(
+            resources, m_neutral, h, 25.0f, 15.0f, 2.6f,
+            key, a.version, /*live*/ false);
 
         ImGui::PushID(static_cast<int>(h.id()));
         ImGui::BeginGroup();

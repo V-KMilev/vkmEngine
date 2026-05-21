@@ -4,8 +4,6 @@
 #include <imgui.h>
 #include <glm/glm.hpp>
 
-#include <cstring>
-
 #include "core/engine.h"
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
@@ -17,6 +15,7 @@
 #include "ecs/component/name.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
+#include "system/visibility/visibility.h"
 #include "system/visibility/bounds_utils.h"
 #include "system/camera/camera_controller.h"
 
@@ -25,42 +24,68 @@
 #include "generator/material_generators.h"
 #include "loader/model_loader.h"
 
-#include <cctype>
 #include <string>
 #include <filesystem>
-#include <system_error>
 
 namespace Engine {
 namespace EditorActions {
 
-EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& state, const char* type) {
+namespace {
+    const char* defaultName(EntityKind k) {
+        switch (k) {
+            case EntityKind::Empty:            return "Empty";
+            case EntityKind::Cube:             return "Cube";
+            case EntityKind::Sphere:           return "Sphere";
+            case EntityKind::PointLight:       return "Point Light";
+            case EntityKind::SpotLight:        return "Spot Light";
+            case EntityKind::DirectionalLight: return "Directional Light";
+            case EntityKind::Camera:           return "Camera";
+        }
+        return "Entity";
+    }
+}
+
+EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& state, EntityKind kind) {
     auto entity = scene.createEntity();
     EntityId id = entity.getID();
 
     scene.add(entity, Transform{});
-    scene.add(entity, Name(type));
+    scene.add(entity, Name(defaultName(kind)));
 
-    if (std::strcmp(type, "Point Light") == 0) {
-        scene.add(entity, generatePointLight());
-    } else if (std::strcmp(type, "Spot Light") == 0) {
-        scene.add(entity, generateSpotLight());
-    } else if (std::strcmp(type, "Directional Light") == 0) {
-        scene.add(entity, generateDirectionalLight());
-    } else if (std::strcmp(type, "Cube") == 0) {
-        auto meshHandle = resources.add(generateCube());
-        auto matHandle = generateDefaultMaterial(resources);
-        scene.add(entity, Mesh{meshHandle, matHandle});
-    } else if (std::strcmp(type, "Sphere") == 0) {
-        auto meshHandle = resources.add(generateSphere());
-        auto matHandle = generateDefaultMaterial(resources);
-        scene.add(entity, Mesh{meshHandle, matHandle});
-    } else if (std::strcmp(type, "Camera") == 0) {
-        Camera cam;
-        cam.active = false;
-        scene.add(entity, cam);
+    switch (kind) {
+        case EntityKind::Empty:
+            break;
+        case EntityKind::PointLight:
+            scene.add(entity, generatePointLight());
+            break;
+        case EntityKind::SpotLight:
+            scene.add(entity, generateSpotLight());
+            break;
+        case EntityKind::DirectionalLight:
+            scene.add(entity, generateDirectionalLight());
+            break;
+        case EntityKind::Cube: {
+            auto meshHandle = resources.add(generateCube());
+            auto matHandle  = generateDefaultMaterial(resources);
+            scene.add(entity, Mesh{meshHandle, matHandle});
+            break;
+        }
+        case EntityKind::Sphere: {
+            auto meshHandle = resources.add(generateSphere());
+            auto matHandle  = generateDefaultMaterial(resources);
+            scene.add(entity, Mesh{meshHandle, matHandle});
+            break;
+        }
+        case EntityKind::Camera: {
+            Camera cam;
+            cam.active = false;
+            scene.add(entity, cam);
+            break;
+        }
     }
 
     state.hierarchyDirty = true;
+        state.markSceneDirty();
     return id;
 }
 
@@ -98,6 +123,7 @@ void duplicateEntity(Scene& scene, EditorState& state, EntityId source) {
     }
 
     state.hierarchyDirty = true;
+        state.markSceneDirty();
     state.selectedEntity = newId;
 }
 
@@ -113,12 +139,12 @@ void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
         scene.destroyEntity(Entity{entity});
     }
     state.hierarchyDirty = true;
+        state.markSceneDirty();
 }
 
-void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController* camera) {
+void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController& camera) {
     if (!state.selectedEntity || !ctx.scene.isAlive(state.selectedEntity)) return;
     if (!ctx.scene.has<Transform>(state.selectedEntity)) return;
-    if (!camera) return;
 
     bool hasParent = ctx.scene.has<Hierarchy>(state.selectedEntity)
                   && ctx.scene.get<Hierarchy>(state.selectedEntity).parent;
@@ -155,23 +181,54 @@ void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController* ca
         }
     }
 
-    camera->focusOn(ctx.scene, targetPos, focusDistance);
+    camera.focusOn(ctx.scene, targetPos, focusDistance);
+}
+
+void frameAll(FrameContext& ctx, CameraController& camera) {
+    if (!ctx.visibility || ctx.visibility->entries.empty()) return;
+
+    glm::vec3 mn(std::numeric_limits<float>::max());
+    glm::vec3 mx(-std::numeric_limits<float>::max());
+    bool any = false;
+    for (const VisibleEntity& v : ctx.visibility->entries) {
+        if (!ctx.scene.has<Mesh>(v.id)) continue;
+        const auto& mesh = ctx.scene.get<Mesh>(v.id);
+        const auto& asset = ctx.resources.get(mesh.mesh);
+        if (!hasValidBounds(asset.boundsMin, asset.boundsMax)) continue;
+
+        glm::vec3 wMin, wMax;
+        localToWorldAABB(v.model, asset.boundsMin, asset.boundsMax, wMin, wMax);
+        mn = glm::min(mn, wMin);
+        mx = glm::max(mx, wMax);
+        any = true;
+    }
+    if (!any) return;
+
+    const glm::vec3 center = (mn + mx) * 0.5f;
+    const glm::vec3 extent = mx - mn;
+    const float diag = glm::length(extent);
+    // Fit a sphere of radius diag/2 in the perspective frustum. Assume a
+    // ~50 deg vertical FOV target; a 1.5x pad gives breathing room. The
+    // camera controller normalises the look direction.
+    const float distance = std::max(2.0f, diag * 1.1f);
+    camera.focusOn(ctx.scene, center, distance);
 }
 
 void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState& state) {
     if (ImGui::BeginMenu("Create")) {
-        if (ImGui::MenuItem("Empty Entity")) {
-            state.selectedEntity = createEntity(scene, resources, state, "Empty");
-        }
+        auto item = [&](const char* label, EntityKind k) {
+            if (ImGui::MenuItem(label)) state.selectedEntity = createEntity(scene, resources, state, k);
+        };
+        item("Empty Entity", EntityKind::Empty);
         ImGui::Separator();
-        if (ImGui::MenuItem("Cube"))    state.selectedEntity = createEntity(scene, resources, state, "Cube");
-        if (ImGui::MenuItem("Sphere"))  state.selectedEntity = createEntity(scene, resources, state, "Sphere");
+        item("Cube",   EntityKind::Cube);
+        item("Sphere", EntityKind::Sphere);
         ImGui::Separator();
-        if (ImGui::MenuItem("Point Light"))       state.selectedEntity = createEntity(scene, resources, state, "Point Light");
-        if (ImGui::MenuItem("Spot Light"))        state.selectedEntity = createEntity(scene, resources, state, "Spot Light");
-        if (ImGui::MenuItem("Directional Light")) state.selectedEntity = createEntity(scene, resources, state, "Directional Light");
+        item("Point Light",       EntityKind::PointLight);
+        item("Spot Light",        EntityKind::SpotLight);
+        item("Directional Light", EntityKind::DirectionalLight);
         ImGui::Separator();
-        if (ImGui::MenuItem("Camera"))  state.selectedEntity = createEntity(scene, resources, state, "Camera");
+        item("Camera", EntityKind::Camera);
         ImGui::Separator();
         // The modal can't live here: the menu closes on click and this
         // function stops being called. Defer to drawModelImportDialog().
@@ -180,51 +237,34 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
     }
 }
 
-void drawModelImportDialog(Scene& scene, ResourceManager& resources, EditorState& state) {
+void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorState& state) {
     if (state.requestModelImport) {
-        ImGui::OpenPopup("Import Model");
+        const std::filesystem::path appRoot = APP_ROOT_DIR;
+        m_picker.options.popupId    = "Import Model";
+        m_picker.options.title      = "Import Model";
+        m_picker.options.root       = appRoot / "assets";
+        m_picker.options.recursive  = true;
+        m_picker.options.kind       = AssetPicker::Kind::Files;
+        m_picker.options.extensions = {
+            ".gltf", ".glb", ".obj", ".fbx", ".dae", ".stl", ".ply", ".3ds"
+        };
+        m_picker.options.maxResults = 2000;
+        m_picker.options.relativeTo = appRoot;
+        m_picker.options.hint       = "glTF / GLB / OBJ / FBX / DAE / STL / PLY / 3DS";
+        m_picker.open();
         state.requestModelImport = false;
     }
-    if (!ImGui::BeginPopupModal("Import Model", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-        return;
-
-    auto isModelExt = [](const std::string& e) {
-        return e == ".gltf" || e == ".glb" || e == ".obj" || e == ".fbx"
-            || e == ".dae"  || e == ".stl" || e == ".ply" || e == ".3ds";
-    };
-
-    const std::filesystem::path root = std::filesystem::path(APP_ROOT_DIR) / "assets";
-    ImGui::TextDisabled("%s", root.string().c_str());
-    ImGui::TextDisabled("glTF / GLB / OBJ / FBX / DAE / STL / PLY / 3DS");
-    ImGui::Separator();
-    std::error_code ec;
-    int shown = 0;
-    for (const auto& entry :
-            std::filesystem::recursive_directory_iterator(root, ec)) {
-        if (!entry.is_regular_file()) continue;
-        std::string ext = entry.path().extension().string();
-        for (char& c : ext)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        if (!isModelExt(ext)) continue;
-        std::error_code rel_ec;
-        const std::string rel = std::filesystem::relative(
-            entry.path(), std::filesystem::path(APP_ROOT_DIR), rel_ec)
-            .generic_string();
-        if (ImGui::Selectable(rel.c_str())) {
-            EntityId rootId =
-                importModelIntoScene(entry.path().string(), resources, scene);
-            if (rootId) {
-                state.selectedEntity = rootId;
-                state.hierarchyDirty = true;
-            }
-            ImGui::CloseCurrentPopup();
+    std::string picked;
+    if (m_picker.draw(picked)) {
+        EntityId rootId = importModelIntoScene(
+            (std::filesystem::path(APP_ROOT_DIR) / picked).string(),
+            resources, scene);
+        if (rootId) {
+            state.selectedEntity = rootId;
+            state.hierarchyDirty = true;
+        state.markSceneDirty();
         }
-        if (++shown > 2000) break;  // safety cap
     }
-    if (shown == 0) ImGui::TextDisabled("(no supported model files under assets/)");
-    ImGui::Separator();
-    if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
-    ImGui::EndPopup();
 }
 
 } // namespace EditorActions

@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include "framework/asset_picker.h"
+
 namespace Engine {
 
 struct EditorContext;
@@ -34,11 +36,22 @@ class EnvironmentInspector {
 
         char m_filter[64] = {};
 
+        // Edit buffers for the IBL HDR / LUT path InputText fields. They are
+        // re-synced from the EnvironmentConfig at the top of each draw, so
+        // switching the selected entity doesn't leak the in-flight edit.
+        char m_hdrPathBuf[260] = {};
+        char m_lutPathBuf[260] = {};
+
         // Remembered values so a header toggle can switch an effect fully off
         // and back on without losing the user's tuning.
         std::string m_iblPathMemo;
         std::string m_lutPathMemo;
         float       m_bloomStrengthMemo = 0.04f;
+
+        // One picker per browse button so popup ids stay unique and caches
+        // survive open-close cycles.
+        AssetPicker m_iblPicker;
+        AssetPicker m_lutPicker;
 };
 
 } // namespace Engine

@@ -76,7 +76,7 @@ int main() {
         auto& visibilitySystem = engine.addSystem<Engine::VisibilitySystem>(Engine::SystemStage::Visibility);
         auto& renderSystem     = engine.addSystem<Engine::RenderSystem>    (Engine::SystemStage::Render);
         engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
-            window.getWindowContext(), &cameraController, &visibilitySystem, &renderSystem, &eventSystem);
+            window.getWindowContext(), cameraController, visibilitySystem, renderSystem, eventSystem);
 
         // Shaders are first-class assets. Sampler→slot bindings live on the
         // asset and get re-applied automatically every time the backend

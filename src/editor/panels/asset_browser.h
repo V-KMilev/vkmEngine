@@ -1,6 +1,5 @@
 #pragma once
 
-#include "framework/editor_panel.h"
 #include "resource/mesh_asset.h"
 #include "resource/material_asset.h"
 
@@ -22,10 +21,9 @@ class ResourceManager;
  * cell size and the two cached helper assets (a preview sphere for material
  * thumbnails, a neutral material for mesh thumbnails) live here.
  */
-class AssetBrowserPanel : public EditorPanel {
+class AssetBrowserPanel {
     public:
-        const char* panelId() const override { return "AssetBrowser"; }
-        void draw(EditorContext& ec) override;
+        void draw(EditorContext& ec);
 
     private:
         void ensureAssets(ResourceManager& resources);

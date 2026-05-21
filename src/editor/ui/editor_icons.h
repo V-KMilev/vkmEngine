@@ -20,7 +20,9 @@ enum class EditorIcon {
     // [C]/[M]/[D] ASCII badges.
     Entity, Mesh, Camera, LightDir, LightPoint, LightSpot, Anim,
     // Singleton scene Environment (globe).
-    Environment
+    Environment,
+    // Viewport actions
+    FrameAll, Screenshot
 };
 
 /// Draw @p icon centered at @p c with half-extent @p r in color @p col.

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include "ecs/entity.h"
 #include "input/editor_keybinds.h"
 #include "gizmo/transform_gizmo.h"
@@ -55,6 +58,16 @@ struct EditorState {
     bool hierarchyDirty  = true;     ///< Set by entity ops, consumed by HierarchyPanel
     bool editorVisible   = true;     ///< Toggle entire editor UI (F5)
     bool requestModelImport = false;  ///< Set by the Import Model menu item, consumed by the menu-bar dialog
+
+    // Scene I/O state
+    bool sceneDirty = false;    ///< Unsaved edits since last save/load. Title shows '*'.
+    std::vector<std::string> recentScenes;  ///< MRU list (absolute paths), most-recent first.
+    static constexpr size_t MaxRecentScenes = 8;
+
+    /// Mark the scene as having unsaved changes. Call from every code path
+    /// that mutates the live Scene (entity ops, gizmo drags, inspector edits).
+    /// Cheap, idempotent.
+    void markSceneDirty() { sceneDirty = true; }
 };
 
 } // namespace Engine

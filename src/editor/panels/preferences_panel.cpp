@@ -8,80 +8,50 @@
 
 namespace Engine {
 
-namespace {
-    struct SectionDef { const char* group; const char* name; const char* hint; };
-
-    // Order matches the dispatch switch in PreferencesPanel::draw().
-    const SectionDef SECTIONS[] = {
-        {"VIEWPORT",    "Camera",   "Fly-camera movement and sensitivity"},
-        {"VIEWPORT",    "Gizmo",    "Transform snap step sizes"},
-        {"APPLICATION", "Display",  "Resolution, fullscreen, VSync, FPS cap"},
-        {"INPUT",       "Keybinds", "Rebind editor shortcuts"},
-    };
-    constexpr int SECTION_COUNT = static_cast<int>(sizeof(SECTIONS) / sizeof(SECTIONS[0]));
-
-    void sectionHeader(const char* title, const char* hint) {
-        drawSectionHeader(title, hint);
-    }
-}
-
 void PreferencesPanel::draw(EditorContext& ec) {
     FrameContext& ctx   = ec.frame;
     EditorState&  state = ec.state;
 
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(660, 460), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(620, 480), ImGuiCond_FirstUseEver);
 
     if (!ImGui::Begin("Preferences", &state.showPreferences, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
         return;
     }
 
-    ImVec2 avail = ImGui::GetContentRegionAvail();
-
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::NAV_BG);
-    if (ImGui::BeginChild("##PrefNav", ImVec2(150.0f, avail.y), ImGuiChildFlags_Borders)) {
-        const char* lastGroup = nullptr;
-        for (int i = 0; i < SECTION_COUNT; ++i) {
-            if (SECTIONS[i].group != lastGroup) {
-                if (lastGroup) ImGui::Spacing();
-                ImGui::TextDisabled("%s", SECTIONS[i].group);
-                lastGroup = SECTIONS[i].group;
-            }
-            ImGui::Indent(8.0f);
-            if (ImGui::Selectable(SECTIONS[i].name, m_selectedSection == i))
-                m_selectedSection = i;
-            ImGui::Unindent(8.0f);
+    // Tab bar instead of master-detail: four sections aren't enough to
+    // justify a sidebar. Tabs are more idiomatic for a Preferences window.
+    if (ImGui::BeginTabBar("##PrefTabs", ImGuiTabBarFlags_None)) {
+        if (ImGui::BeginTabItem("Camera")) {
+            ImGui::Spacing();
+            drawCameraSection(ec);
+            ImGui::EndTabItem();
         }
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
-
-    ImGui::SameLine(0, 6);
-
-    if (ImGui::BeginChild("##PrefDetail", ImVec2(0, avail.y), ImGuiChildFlags_Borders)) {
-        const auto& s = SECTIONS[m_selectedSection];
-        sectionHeader(s.name, s.hint);
-        switch (m_selectedSection) {
-            case 0: drawCameraSection(ec);        break;
-            case 1: drawGizmoSection(state);      break;
-            case 2: drawDisplaySection(ctx);      break;
-            case 3: drawKeybindsSection(state);   break;
-            default: break;
+        if (ImGui::BeginTabItem("Gizmo")) {
+            ImGui::Spacing();
+            drawGizmoSection(state);
+            ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("Display")) {
+            ImGui::Spacing();
+            drawDisplaySection(ctx);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Keybinds")) {
+            ImGui::Spacing();
+            drawKeybindsSection(state);
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
     }
-    ImGui::EndChild();
 
     ImGui::End();
 }
 
 void PreferencesPanel::drawCameraSection(EditorContext& ec) {
-    if (!ec.cameraController) {
-        ImGui::TextDisabled("No camera controller");
-        return;
-    }
-    auto& s = ec.cameraController->getSettings();
+    auto& s = ec.cameraController.getSettings();
     drawPropertyLabel("Move Speed");   ImGui::DragFloat("##MS", &s.moveSpeed, 0.5f, 0.1f, 200.0f);
     drawPropertyLabel("Speed Boost");  ImGui::DragFloat("##SB", &s.speedBoost, 0.1f, 1.0f, 20.0f, "%.1fx");
     drawPropertyLabel("Look Sens.");   ImGui::DragFloat("##LS", &s.lookSensitivity, 0.0001f, 0.0001f, 0.01f, "%.4f");
@@ -130,20 +100,17 @@ void PreferencesPanel::drawDisplaySection(FrameContext& ctx) {
 
     ImGui::Spacing();
     ImGui::SeparatorText("Frame Cap");
-    static int fpsLimit = 0;
     drawPropertyLabel("FPS Limit");
     ImGui::SetNextItemWidth(80);
-    ImGui::InputInt("##FPSLim", &fpsLimit, 30);
-    fpsLimit = std::max(0, fpsLimit);
+    ImGui::InputInt("##FPSLim", &m_fpsLimitEdit, 30);
+    m_fpsLimitEdit = std::max(0, m_fpsLimitEdit);
     ImGui::SameLine();
-    if (ImGui::Button("Apply##fps")) window.setFramerate(fpsLimit);
+    if (ImGui::Button("Apply##fps")) window.setFramerate(m_fpsLimitEdit);
     ImGui::SameLine();
-    ImGui::TextDisabled(fpsLimit == 0 ? "(unlimited)" : "");
+    ImGui::TextDisabled(m_fpsLimitEdit == 0 ? "(unlimited)" : "");
 }
 
 void PreferencesPanel::drawKeybindsSection(EditorState& state) {
-    static const char* s_rebindTarget = nullptr;
-
     auto drawKeybindRow = [&](const char* label, KeyBind& bind) {
         drawPropertyLabel(label);
         char keyLabel[48];
@@ -151,13 +118,13 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
 
         char btnId[80];
         snprintf(btnId, sizeof(btnId), "%s##%s",
-                 (s_rebindTarget == label) ? "Press key..." : keyLabel, label);
+                 (m_rebindTarget == label) ? "Press key..." : keyLabel, label);
 
         if (ImGui::Button(btnId, ImVec2(120, 0))) {
-            s_rebindTarget = label;
+            m_rebindTarget = label;
         }
 
-        if (s_rebindTarget == label) {
+        if (m_rebindTarget == label) {
             for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k) {
                 auto candidate = static_cast<ImGuiKey>(k);
                 if (candidate == ImGuiKey_LeftCtrl  || candidate == ImGuiKey_RightCtrl  ||
@@ -172,7 +139,7 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
                     if (io.KeyCtrl)  bind.mods |= KeyMod_Ctrl;
                     if (io.KeyShift) bind.mods |= KeyMod_Shift;
                     if (io.KeyAlt)   bind.mods |= KeyMod_Alt;
-                    s_rebindTarget = nullptr;
+                    m_rebindTarget = nullptr;
                     break;
                 }
             }
@@ -187,7 +154,7 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
     ImGui::Spacing();
     ImGui::TextDisabled("Windows & Panels");
     drawKeybindRow("Toggle Stats",     state.keybinds.toggleStats);
-    drawKeybindRow("Toggle Hierarchy", state.keybinds.toggleHierarchy);
+    drawKeybindRow("Toggle Scene",     state.keybinds.toggleHierarchy);
     drawKeybindRow("Toggle Inspector", state.keybinds.toggleInspector);
     drawKeybindRow("Toggle Bottom",    state.keybinds.toggleBottom);
     drawKeybindRow("Toggle Editor",    state.keybinds.toggleEditor);
@@ -211,7 +178,7 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
     ImGui::Spacing();
     if (ImGui::Button("Reset Keybinds")) {
         state.keybinds = EditorKeybinds{};
-        s_rebindTarget = nullptr;
+        m_rebindTarget = nullptr;
     }
 }
 

@@ -1,11 +1,14 @@
 #include "editor_system.h"
 #include "framework/editor_context.h"
+#include "framework/editor_settings.h"
 #include "ui/editor_theme.h"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
+
+#include <string>
 
 #include "system/camera/camera_controller.h"
 #include "system/render/render_system.h"
@@ -14,10 +17,10 @@ namespace Engine {
 
 EditorSystem::EditorSystem(
     GLFWwindow* window,
-    CameraController* cameraController,
-    VisibilitySystem* visibilitySystem,
-    RenderSystem* renderSystem,
-    EventSystem* events
+    CameraController& cameraController,
+    VisibilitySystem& visibilitySystem,
+    RenderSystem& renderSystem,
+    EventSystem& events
 )
     : m_window(window)
     , m_cameraController(cameraController)
@@ -26,9 +29,6 @@ EditorSystem::EditorSystem(
     , m_events(events)
     , m_sceneIO(events, cameraController, renderSystem)
 {
-    m_panels = { &m_hierarchy, &m_inspector, &m_bottom, &m_preferences,
-                 &m_materialEditor, &m_assetBrowser };
-
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
 
@@ -39,16 +39,45 @@ EditorSystem::EditorSystem(
     // viewport orbiting on the material preview stays put.
     io.ConfigWindowsMoveFromTitleBarOnly = true;
 
+    // ImGui ini lives next to the engine so floating-window positions and
+    // table column widths persist alongside our own editor_settings.json.
+    // Static so the c_str pointer stays valid for ImGui's lifetime.
+    static std::string s_iniPath = std::string(APP_ROOT_DIR) + "/imgui.ini";
+    io.IniFilename = s_iniPath.c_str();
+
     applyEditorTheme();
+
+    // Restore persisted editor state (panel widths, toggles, snap, keybinds,
+    // recent scenes). Missing/invalid file is non-fatal - defaults apply.
+    EditorSettings::load(m_state);
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
 }
 
 EditorSystem::~EditorSystem() {
+    EditorSettings::save(m_state);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+}
+
+namespace {
+    // Keep the GLFW window title in sync with the scene state: "<file> [*] - VKM Engine".
+    // Updates only when something the title shows changes to avoid GLFW churn.
+    void syncWindowTitle(GLFWwindow* w, const std::string& path, bool dirty) {
+        static std::string s_last;
+        std::string fname = "untitled";
+        if (!path.empty()) {
+            const size_t s = path.find_last_of("/\\");
+            fname = (s == std::string::npos) ? path : path.substr(s + 1);
+        }
+        std::string title = fname + (dirty ? " *" : "") + " - VKM Engine";
+        if (title != s_last) {
+            glfwSetWindowTitle(w, title.c_str());
+            s_last = std::move(title);
+        }
+    }
 }
 
 void EditorSystem::update(FrameContext& ctx) {
@@ -61,17 +90,45 @@ void EditorSystem::update(FrameContext& ctx) {
     if (f5Down && !m_f5WasDown) m_state.editorVisible = !m_state.editorVisible;
     m_f5WasDown = f5Down;
 
+    syncWindowTitle(m_window, m_sceneIO.path(), m_state.sceneDirty);
+
     if (!m_state.editorVisible) {
-        if (m_cameraController) m_cameraController->setEditorInputCapture(false, false);
+        m_cameraController.setEditorInputCapture(false, false);
+
+        // While the editor is hidden, draw a tiny corner hint so new users
+        // know how to bring it back. Otherwise F5 is a one-way trap door.
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        {
+            const ImGuiViewport* vp = ImGui::GetMainViewport();
+            const float pad = 10.0f;
+            const ImVec2 size(180, 28);
+            ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - size.x - pad,
+                                           vp->WorkPos.y + vp->WorkSize.y - size.y - pad));
+            ImGui::SetNextWindowSize(size);
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.55f));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+            ImGui::Begin("##F5Hint", nullptr,
+                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+                ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoMove |
+                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
+            ImGui::TextDisabled("Press F5 to show editor");
+            ImGui::End();
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor();
+        }
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         return;
     }
 
-    if (m_cameraController) {
-        bool blockMouse = (!m_state.viewportHovered && !m_cameraController->isLooking())
+    {
+        bool blockMouse = (!m_state.viewportHovered && !m_cameraController.isLooking())
                        || m_gizmoOverlay.isGizmoOver()
                        || m_viewportToolbar.isHovered()
                        || m_playbar.isHovered();
-        m_cameraController->setEditorInputCapture(blockMouse, ImGui::GetIO().WantTextInput);
+        m_cameraController.setEditorInputCapture(blockMouse, ImGui::GetIO().WantTextInput);
     }
 
     ImGui_ImplOpenGL3_NewFrame();
@@ -82,7 +139,7 @@ void EditorSystem::update(FrameContext& ctx) {
     m_viewportOverlay.updateMetrics(ctx.deltaTime);
 
     EditorContext ec{ ctx, m_state, m_cameraController, m_renderSystem,
-                      m_visibilitySystem, m_events };
+                      m_visibilitySystem, m_events, {}, {} };
 
     m_shortcuts.process(ec, m_sceneIO);
 
@@ -169,6 +226,8 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
             m_state.viewportHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
             if (m_state.showStats) m_viewportOverlay.draw(ec);
             m_viewportOverlay.drawNavigationGizmo(ec);
+            m_gizmoOverlay.drawLightGizmos(ec);
+            m_gizmoOverlay.drawCameraGizmos(ec);
             m_gizmoOverlay.drawTransformGizmo(ec);
             m_viewportToolbar.draw(ec);
             m_playbar.draw(ec);
