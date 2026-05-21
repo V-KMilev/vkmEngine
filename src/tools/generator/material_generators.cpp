@@ -28,7 +28,7 @@ MaterialHandle generateDefaultMaterial(ResourceManager& resourceManager) {
 
     auto handle = resourceManager.add(std::move(material));
     // Stamp a source so SceneSerializer can recreate this on cold-start load.
-    resourceManager.edit(handle).source = {{"kind", "default"}};
+    resourceManager.edit(handle).sourceJson() = {{"kind", "default"}};
     LOG_TRACE("Generated default material (handle: %u)", handle.id());
 
     return handle;

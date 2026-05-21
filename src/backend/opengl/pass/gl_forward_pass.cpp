@@ -21,6 +21,20 @@
 
 namespace Engine {
 
+namespace {
+
+/// RAII guard: restore GL_FILL polygon mode on destruction. Used to wrap
+/// the wireframe set/restore around the body of execute() so every return
+/// path (including the transparent-phase "no transparent batches" early
+/// exit) leaves polygon mode back at GL_FILL - otherwise post passes
+/// rasterize as line segments and ImGui draws as outlines.
+struct PolygonModeGuard {
+    Core::Context* ctx;
+    ~PolygonModeGuard() { if (ctx) ctx->setPolygonMode(GL_FRONT_AND_BACK, GL_FILL); }
+};
+
+} // namespace
+
 GLForwardPass::GLForwardPass(ShaderHandle pbrShader) : RenderPass("GLForwardPass") {
     m_shaders[static_cast<int>(MaterialType::Opaque)]      = pbrShader;
     m_shaders[static_cast<int>(MaterialType::Transparent)] = pbrShader;
@@ -79,18 +93,12 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         return;
     }
 
-    // Wireframe is a geometry-pass concern only. Setting polygon mode
-    // globally (as backend->setWireframe did historically) makes the
-    // fullscreen-triangle post passes rasterize as 3 line segments instead
-    // of filled tris - composite never writes the backbuffer, ImGui draws
-    // as outlines, and the screen appears frozen. Apply locally and use
-    // an RAII guard so every return path (including the transparent-phase
-    // "no transparent batches" early-out below) restores GL_FILL.
+    // Wireframe is a geometry-pass concern only - applying polygon mode
+    // globally would make fullscreen-triangle post passes rasterize as
+    // line segments. The PolygonModeGuard in the anonymous namespace
+    // above restores GL_FILL on every return path.
     const bool wireframe = view.environment.wireframe;
-    struct PolygonModeGuard {
-        Core::Context* ctx;
-        ~PolygonModeGuard() { if (ctx) ctx->setPolygonMode(GL_FRONT_AND_BACK, GL_FILL); }
-    } wireframeGuard{ wireframe ? &glContext : nullptr };
+    PolygonModeGuard wireframeGuard{ wireframe ? &glContext : nullptr };
     if (wireframe) glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
     auto& glView = gl.getView();
