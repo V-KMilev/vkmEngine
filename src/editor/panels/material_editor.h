@@ -1,7 +1,8 @@
 #pragma once
 
-#include "framework/editor_panel.h"
 #include "resource/mesh_asset.h"
+#include "resource/texture_asset.h"   // TextureHandle
+#include "framework/asset_picker.h"
 
 namespace Engine {
 
@@ -22,21 +23,37 @@ class ResourceManager;
  * scene's baked IBL, and shown via ImGui::Image - the editor never touches
  * GL itself.
  */
-class MaterialEditorPanel : public EditorPanel {
+class MaterialEditorPanel {
     public:
-        const char* panelId() const override { return "MaterialEditor"; }
-        void draw(EditorContext& ec) override;
+        void draw(EditorContext& ec);
 
     private:
         /// Lazily register the built-in preview shapes as real MeshAssets
         /// (one-time) and return the handle for the current selection.
         MeshHandle previewMesh(ResourceManager& resources, const MeshHandle& entityMesh);
 
+        /// One material texture-slot row. Returns true on change.
+        bool textureSlot(ResourceManager& res, const char* label,
+                         TextureHandle& slot, bool srgb);
+        /// "Load PBR Folder" modal entry point; returns true once a folder
+        /// is picked, writing the absolute path to @p outFolder.
+        bool pbrFolderBrowse(std::string& outFolder);
+        /// The full PBR + texture editor body. Returns true if anything changed.
+        bool drawMaterialBody(ResourceManager& resources, class MaterialAsset& mat);
+
         // Orbit/zoom state for the preview camera.
         float m_yaw      = 35.0f;
         float m_pitch    = 20.0f;
         float m_distance = 3.0f;
         int   m_primitive = 0;     ///< 0 sphere, 1 cube, 2 plane, 3 entity mesh
+
+        // One picker per modal so each cache survives independent open/close.
+        AssetPicker m_pbrFolderPicker;
+        AssetPicker m_texturePicker;
+        /// Which texture slot the current m_texturePicker session is editing.
+        /// Null when no picker is active.
+        TextureHandle* m_pendingTexture = nullptr;
+        bool          m_pendingTextureSrgb = false;
 };
 
 } // namespace Engine

@@ -5,8 +5,6 @@
 
 #include "ecs/entity.h"
 
-#include "framework/editor_panel.h"
-
 namespace Engine {
 
 class Scene;
@@ -20,10 +18,9 @@ struct EditorContext;
  * entity selection, and context menus (create, duplicate, delete).
  * Owns its filter text and cached entity lists (rebuilt only when dirty).
  */
-class HierarchyPanel : public EditorPanel {
+class HierarchyPanel {
     public:
-        const char* panelId() const override { return "Hierarchy"; }
-        void draw(EditorContext& ec) override;
+        void draw(EditorContext& ec);
 
     private:
         void drawEntityNode(Scene& scene, EditorState& state, EntityId entity);

@@ -24,19 +24,39 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
     const float th = std::max(1.5f, r * 0.20f);
     auto P = [&](float x, float y) { return ImVec2(c.x + x * r, c.y + y * r); };
 
-    // Isometric cube (regular hexagon + 3-spoke "Y"). Shared by SpaceLocal
-    // and the Mesh entity glyph so they read identically.
+    // Isometric cube as one continuous outline + three filled face accents,
+    // so the three visible faces read as one solid shape instead of three
+    // independent strokes with mismatched anti-aliasing at the centre.
     auto isoCube = [&]() {
-        const float R  = 0.84f;
-        const float hx = 0.86603f * R;  // sqrt(3)/2 * R
-        const float hy = 0.5f * R;
-        ImVec2 v0 = P(0.0f, -R),  v1 = P(hx, -hy), v2 = P(hx, hy);
-        ImVec2 v3 = P(0.0f,  R),  v4 = P(-hx, hy), v5 = P(-hx, -hy);
-        ImVec2 hexa[6] = { v0, v1, v2, v3, v4, v5 };
+        const float R  = std::round(0.82f * r);
+        const float hx = std::round(0.86603f * R);  // sqrt(3)/2 * R
+        const float hy = std::round(0.5f * R);
+        const float cx = std::round(c.x);
+        const float cy = std::round(c.y);
+        const ImVec2 v0(cx,       cy - R);
+        const ImVec2 v1(cx + hx,  cy - hy);
+        const ImVec2 v2(cx + hx,  cy + hy);
+        const ImVec2 v3(cx,       cy + R);
+        const ImVec2 v4(cx - hx,  cy + hy);
+        const ImVec2 v5(cx - hx,  cy - hy);
+        const ImVec2 m( cx, cy);
+
+        // Subtle face fills (top-right / bottom / top-left rhombuses) so the
+        // cube has depth, with the outline drawn over them to crisp the edges.
+        const ImU32 fill = (col & 0x00FFFFFF) | (0x30u << 24);
+        ImVec2 fTop[4] = { v0, v1, m, v5 };
+        ImVec2 fRgt[4] = { v1, v2, v3, m };
+        ImVec2 fLft[4] = { m, v3, v4, v5 };
+        dl->AddConvexPolyFilled(fTop, 4, fill);
+        dl->AddConvexPolyFilled(fRgt, 4, fill);
+        dl->AddConvexPolyFilled(fLft, 4, fill);
+
+        const ImVec2 hexa[6] = { v0, v1, v2, v3, v4, v5 };
         dl->AddPolyline(hexa, 6, col, ImDrawFlags_Closed, th);
-        ImVec2 m = P(0.0f, 0.0f);
-        dl->AddLine(m, v0, col, th);
-        dl->AddLine(m, v2, col, th);
+        // Internal Y as a single polyline (v0 -> m -> v2 then m -> v4) so the
+        // strokes share endpoints and the centre never accumulates AA stubs.
+        const ImVec2 yShape[3] = { v0, m, v2 };
+        dl->AddPolyline(yShape, 3, col, ImDrawFlags_None, th);
         dl->AddLine(m, v4, col, th);
     };
 
@@ -193,82 +213,171 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
             break;
         }
         case EditorIcon::Entity: {
-            // Hierarchy / node tree: a parent node branching to two children
-            // (clearer than a generic box for plain transform entities).
-            const float nr = r * 0.20f;
-            dl->AddLine(P(0.0f, -0.40f), P(0.0f, 0.10f), col, th);    // stem
-            dl->AddLine(P(-0.48f, 0.10f), P(0.48f, 0.10f), col, th);  // bus
-            dl->AddLine(P(-0.48f, 0.10f), P(-0.48f, 0.38f), col, th); // drop L
-            dl->AddLine(P(0.48f, 0.10f),  P(0.48f, 0.38f),  col, th); // drop R
-            dl->AddCircleFilled(P(0.0f, -0.60f),  nr, col);  // parent
-            dl->AddCircleFilled(P(-0.48f, 0.58f), nr, col);  // child L
-            dl->AddCircleFilled(P(0.48f, 0.58f),  nr, col);  // child R
+            // Generic transform entity: a hollow diamond with a smaller
+            // filled diamond inside. Symmetric, reads at any size, and
+            // doesn't compete visually with the type-specific glyphs.
+            const ImVec2 outer[4] = { P(0,-0.78f), P(0.78f,0), P(0,0.78f), P(-0.78f,0) };
+            dl->AddPolyline(outer, 4, col, ImDrawFlags_Closed, th);
+            const ImVec2 inner[4] = { P(0,-0.32f), P(0.32f,0), P(0,0.32f), P(-0.32f,0) };
+            dl->AddConvexPolyFilled(inner, 4, col);
             break;
         }
         case EditorIcon::Camera: {
-            // Body centred on y=0; lens cone mirror-symmetric about y=0.
-            dl->AddRect(P(-0.62f, -0.36f), P(0.30f, 0.36f), col, r * 0.14f, 0, th);
-            dl->AddLine(P(0.30f, -0.16f), P(0.66f, -0.32f), col, th);  // lens top
-            dl->AddLine(P(0.30f,  0.16f), P(0.66f,  0.32f), col, th);  // lens bottom
-            dl->AddLine(P(0.66f, -0.32f), P(0.66f,  0.32f), col, th);  // lens back
-            dl->AddCircle(P(-0.16f, 0.0f), r * 0.17f, col, 16, th);    // lens glass
+            // Camera body (rounded rectangle) + a small viewfinder bump on
+            // top + a filled lens trapezoid on the right + a hollow lens
+            // glass. Drawn as a single body + a closed polyline for the lens
+            // so every seam joins cleanly at small sizes.
+            const ImVec2 bMin = P(-0.62f, -0.32f);
+            const ImVec2 bMax = P( 0.30f,  0.40f);
+            dl->AddRect(bMin, bMax, col, r * 0.14f, 0, th);
+            // Top viewfinder tab (centered on body x-axis 0).
+            dl->AddRectFilled(P(-0.16f, -0.46f), P(0.14f, -0.32f), col, r * 0.06f);
+
+            // Lens as a closed trapezoid - convex poly for clean joins.
+            const ImVec2 lens[4] = {
+                P(0.30f, -0.18f), P(0.66f, -0.30f),
+                P(0.66f,  0.30f), P(0.30f,  0.18f),
+            };
+            dl->AddPolyline(lens, 4, col, ImDrawFlags_Closed, th);
+
+            // Lens glass: a centered circle on the lens midline.
+            dl->AddCircleFilled(P(0.48f, 0.0f), r * 0.10f, col);
             break;
         }
-        case EditorIcon::LightDir: {
-            // Sun: 8 evenly spaced rays, all starting a fixed gap outside the
-            // circle edge and all exactly the same length.
-            const float cr = r * 0.30f;
-            dl->AddCircle(c, cr, col, 20, th);
-            for (int i = 0; i < 8; ++i) {
-                float a = static_cast<float>(i) * 0.78539816f;  // pi/4
-                ImVec2 d(std::cos(a), std::sin(a));
-                dl->AddLine(ImVec2(c.x + d.x * (cr + r * 0.14f),
-                                   c.y + d.y * (cr + r * 0.14f)),
-                            ImVec2(c.x + d.x * (cr + r * 0.46f),
-                                   c.y + d.y * (cr + r * 0.46f)), col, th);
-            }
-            break;
-        }
-        case EditorIcon::LightPoint: {
-            // Point: filled bulb + 8 short rays, same gap/length treatment as
-            // the sun so the light family reads consistently.
-            const float cr = r * 0.26f;
-            dl->AddCircleFilled(c, cr, col);
-            for (int i = 0; i < 8; ++i) {
-                float a = static_cast<float>(i) * 0.78539816f;  // pi/4
-                ImVec2 d(std::cos(a), std::sin(a));
-                dl->AddLine(ImVec2(c.x + d.x * (cr + r * 0.12f),
-                                   c.y + d.y * (cr + r * 0.12f)),
-                            ImVec2(c.x + d.x * (cr + r * 0.34f),
-                                   c.y + d.y * (cr + r * 0.34f)), col, th);
-            }
-            break;
-        }
+        case EditorIcon::LightDir:
+        case EditorIcon::LightPoint:
         case EditorIcon::LightSpot: {
-            ImVec2 apex = P(0.0f, -0.62f);
-            dl->AddCircleFilled(apex, r * 0.15f, col);
-            dl->AddLine(apex, P(-0.52f, 0.55f), col, th);
-            dl->AddLine(apex, P(0.52f, 0.55f),  col, th);
-            dl->AddLine(P(-0.52f, 0.55f), P(0.52f, 0.55f), col, th);
+            // One canonical lightbulb for every light type. At icon size the
+            // directional/point/spot differences never read clearly; the
+            // row label and the viewport wireframe already convey type. A
+            // single confident bulb with emission rays is much more legible.
+            //
+            // Geometry (pixel-snapped, symmetric about the vertical axis):
+            //   * Tall ellipse bulb (A-shape silhouette - taller than wide)
+            //   * 5 emission rays in the upper hemisphere
+            //   * Soft halo behind the bulb for the "glow" cue
+            //   * Trapezoid neck joining bulb to base
+            //   * Screw cap with two faint thread lines
+            const float cx     = std::round(c.x);
+            const float bulbRx = std::round(r * 0.32f);
+            const float bulbRy = std::round(r * 0.44f);
+            const ImVec2 bulbC(cx, std::round(c.y - r * 0.22f));
+
+            // Soft halo - underplays the bulb as "lit" without competing
+            // with the rays.
+            const ImU32 halo = (col & 0x00FFFFFF) | (0x28u << 24);
+            dl->AddEllipseFilled(bulbC,
+                ImVec2(bulbRx + std::round(r * 0.10f),
+                       bulbRy + std::round(r * 0.10f)),
+                halo, 0.0f, 24);
+
+            // Five emission rays in the upper hemisphere (left -> up -> right).
+            // Even angular spacing with a small inset from the horizontal so
+            // the side rays don't graze the bulb's equator.
+            constexpr float PI_F = 3.14159265f;
+            const float rayGap = std::max(2.0f, std::round(r * 0.16f));
+            const float rayLen = std::round(r * 0.22f);
+            const int   rayN   = 5;
+            for (int i = 0; i < rayN; ++i) {
+                const float a  = -PI_F + (i + 1.0f) * PI_F / (rayN + 1);
+                const float dx = std::cos(a);
+                const float dy = std::sin(a);
+                // Ellipse edge along (dx, dy):
+                //   r_edge = (rx * ry) / sqrt((ry*dx)^2 + (rx*dy)^2)
+                const float er = (bulbRx * bulbRy) /
+                    std::sqrt((bulbRy * dx) * (bulbRy * dx) +
+                              (bulbRx * dy) * (bulbRx * dy));
+                const ImVec2 s(bulbC.x + dx * (er + rayGap),
+                               bulbC.y + dy * (er + rayGap));
+                const ImVec2 e(s.x + dx * rayLen, s.y + dy * rayLen);
+                dl->AddLine(s, e, col, th);
+            }
+
+            // Bulb glass: tall ellipse for classic A-shape.
+            dl->AddEllipseFilled(bulbC, ImVec2(bulbRx, bulbRy), col, 0.0f, 24);
+
+            // Neck: trapezoid joining bulb to base.
+            const float neckTopY = bulbC.y + std::round(bulbRy * 0.80f);
+            const float neckH    = std::round(bulbRy * 0.22f);
+            const float neckW0   = std::round(bulbRx * 0.78f);
+            const float neckW1   = std::round(bulbRx * 0.58f);
+            const ImVec2 neck[4] = {
+                ImVec2(cx - neckW0, neckTopY),
+                ImVec2(cx + neckW0, neckTopY),
+                ImVec2(cx + neckW1, neckTopY + neckH),
+                ImVec2(cx - neckW1, neckTopY + neckH),
+            };
+            dl->AddConvexPolyFilled(neck, 4, col);
+
+            // Screw cap below the neck.
+            const float baseY0 = neckTopY + neckH;
+            const float baseW  = std::round(bulbRx * 0.58f);
+            const float baseH  = std::round(bulbRy * 0.32f);
+            dl->AddRectFilled(ImVec2(cx - baseW, baseY0),
+                              ImVec2(cx + baseW, baseY0 + baseH),
+                              col, std::max(1.0f, baseH * 0.10f));
+
+            // Thread hints on the cap so it reads as a screw base, not a tab.
+            const ImU32 dim = (col & 0x00FFFFFF) | (0x60u << 24);
+            const float tInset = std::max(1.0f, baseW * 0.20f);
+            dl->AddLine(ImVec2(cx - baseW + tInset, baseY0 + baseH * 0.38f),
+                        ImVec2(cx + baseW - tInset, baseY0 + baseH * 0.38f), dim, 1.0f);
+            dl->AddLine(ImVec2(cx - baseW + tInset, baseY0 + baseH * 0.72f),
+                        ImVec2(cx + baseW - tInset, baseY0 + baseH * 0.72f), dim, 1.0f);
             break;
         }
         case EditorIcon::Anim: {
-            dl->AddLine(P(-0.80f, 0.0f), P(0.80f, 0.0f), col, th);
-            ImVec2 dia[4] = { P(0.0f, -0.42f), P(0.34f, 0.0f),
-                              P(0.0f, 0.42f),  P(-0.34f, 0.0f) };
-            dl->AddConvexPolyFilled(dia, 4, col);
-            dl->AddLine(P(-0.52f, -0.17f), P(-0.52f, 0.17f), col, th);
-            dl->AddLine(P(0.52f, -0.17f),  P(0.52f, 0.17f),  col, th);
+            // Timeline with three keyframes (small / large / small),
+            // centred on the entity's icon row. The horizontal rule
+            // is drawn first so the diamond fills sit cleanly over it.
+            dl->AddLine(P(-0.78f, 0.0f), P(0.78f, 0.0f), col, th);
+            auto diamond = [&](float x, float s) {
+                const ImVec2 d[4] = {
+                    ImVec2(c.x + x * r,        c.y - s * r),
+                    ImVec2(c.x + (x + s) * r,  c.y           ),
+                    ImVec2(c.x + x * r,        c.y + s * r),
+                    ImVec2(c.x + (x - s) * r,  c.y           ),
+                };
+                dl->AddConvexPolyFilled(d, 4, col);
+            };
+            diamond(-0.50f, 0.20f);
+            diamond( 0.00f, 0.36f);  // hero key
+            diamond( 0.50f, 0.20f);
+            break;
+        }
+        case EditorIcon::FrameAll: {
+            // Brackets enclosing a small square - "fit everything in view".
+            dl->AddLine(P(-0.62f, -0.62f), P(-0.32f, -0.62f), col, th);
+            dl->AddLine(P(-0.62f, -0.62f), P(-0.62f, -0.32f), col, th);
+            dl->AddLine(P( 0.62f, -0.62f), P( 0.32f, -0.62f), col, th);
+            dl->AddLine(P( 0.62f, -0.62f), P( 0.62f, -0.32f), col, th);
+            dl->AddLine(P(-0.62f,  0.62f), P(-0.32f,  0.62f), col, th);
+            dl->AddLine(P(-0.62f,  0.62f), P(-0.62f,  0.32f), col, th);
+            dl->AddLine(P( 0.62f,  0.62f), P( 0.32f,  0.62f), col, th);
+            dl->AddLine(P( 0.62f,  0.62f), P( 0.62f,  0.32f), col, th);
+            dl->AddRect(P(-0.20f, -0.20f), P(0.20f, 0.20f), col, 0.0f, 0, th);
+            break;
+        }
+        case EditorIcon::Screenshot: {
+            // Stylised camera body with a lens circle.
+            dl->AddRect(P(-0.78f, -0.34f), P(0.78f, 0.58f), col, r * 0.16f, 0, th);
+            // Top viewfinder bump
+            dl->AddRect(P(-0.22f, -0.56f), P(0.22f, -0.34f), col, r * 0.10f, 0, th);
+            dl->AddCircle(c, r * 0.32f, col, 24, th);
+            dl->AddCircleFilled(P(0.50f, -0.10f), r * 0.06f, col);  // flash dot
             break;
         }
         case EditorIcon::Environment: {
-            // Globe: outer circle + equator + meridian. Every element is
-            // concentric on c, so it is symmetric by construction (no
-            // lopsided strokes, no mismatched shapes).
-            const float R = r * 0.80f;
-            dl->AddCircle(c, R, col, 32, th);
-            dl->AddEllipse(c, ImVec2(R, R * 0.36f), col, 0.0f, 32, th); // equator
-            dl->AddEllipse(c, ImVec2(R * 0.36f, R), col, 0.0f, 32, th); // meridian
+            // Globe: outer circle + equator + meridian + a tilted equator
+            // that reads as a hemisphere when stacked. All concentric, all
+            // centred on a pixel-snapped origin.
+            const float cx = std::round(c.x);
+            const float cy = std::round(c.y);
+            const ImVec2 cc(cx, cy);
+            const float R = std::round(r * 0.80f);
+            dl->AddCircle(cc, R, col, 32, th);
+            dl->AddEllipse(cc, ImVec2(R,         R * 0.36f), col, 0.0f, 32, th);
+            dl->AddEllipse(cc, ImVec2(R * 0.36f, R),         col, 0.0f, 32, th);
             break;
         }
     }

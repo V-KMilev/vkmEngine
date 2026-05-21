@@ -1,7 +1,5 @@
 #pragma once
 
-#include "framework/editor_panel.h"
-
 namespace Engine {
 
 struct FrameContext;
@@ -16,13 +14,11 @@ struct EditorContext;
  * opposed to per-scene data: fly-camera tuning, gizmo snap defaults,
  * window/display options, and keybind rebinding.
  */
-class PreferencesPanel : public EditorPanel {
+class PreferencesPanel {
     public:
-        const char* panelId() const override { return "Preferences"; }
-
         /// Draws the window while state.showPreferences is true; the
         /// title-bar X clears it.
-        void draw(EditorContext& ec) override;
+        void draw(EditorContext& ec);
 
     private:
         void drawCameraSection(EditorContext& ec);
@@ -30,7 +26,13 @@ class PreferencesPanel : public EditorPanel {
         void drawDisplaySection(FrameContext& ctx);
         void drawKeybindsSection(EditorState& state);
 
-        int m_selectedSection = 0;
+        // Display section: FPS cap value the InputInt edits before "Apply".
+        int m_fpsLimitEdit = 0;
+
+        // Keybinds section: identifies which row is currently capturing a
+        // keystroke. Stable across calls; nullptr means no active rebind.
+        // Uses label pointer-identity, matching the rebind row labels below.
+        const char* m_rebindTarget = nullptr;
 };
 
 } // namespace Engine

@@ -4,6 +4,8 @@
 #include <cstdint>
 
 #include <imgui.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "ecs/entity.h"
 #include "system/animation/easing.h"
@@ -62,6 +64,51 @@ void drawSectionHeader(const char* title, const char* hint);
 /// @p easing in place and returns true. @p id must be a unique ImGui id
 /// (e.g. "##easePos"). Sets the next item width to fill the row.
 bool drawEasingCombo(const char* id, EasingFunction& easing);
+
+/**
+ * @brief Stable Euler-angle edit cache for quaternion-backed rotations.
+ *
+ * Quaternion -> Euler is many-to-one and singular at +/-90 deg (gimbal
+ * lock); re-deriving the display from the stored quaternion every frame
+ * makes typed axes snap to +/-180 and the orthogonal axis jitter. This
+ * cache keeps the edited Euler as the source of truth and only re-seeds
+ * from the quaternion when it changed externally (selection switched,
+ * gizmo drag, scene load, etc.).
+ *
+ * Usage:
+ *   EulerCache<EntityId> cache;  // panel member
+ *   ...
+ *   cache.sync(id, q);           // before drawing the field
+ *   if (drawVec3Control(..., cache.degrees(), ...)) q = cache.toQuat();
+ *
+ * The Key template parameter is whatever identifies "this is the same
+ * rotation source" — an EntityId for inspectors, a keyframe index for
+ * animation tracks. A different key forces a re-seed from @p q.
+ */
+template<class Key>
+class EulerCache {
+    public:
+        /// Reseed the cache from @p q if the key changed or @p q diverged
+        /// from the cached quaternion (rotation set from outside).
+        void sync(const Key& key, const glm::quat& q) {
+            const glm::quat cached = glm::quat(glm::radians(m_degrees));
+            const bool keyChanged   = !m_haveKey || !(m_key == key);
+            const bool quatDiverged = glm::abs(glm::dot(cached, q)) < 0.9999f;
+            if (keyChanged || quatDiverged) {
+                m_degrees = glm::degrees(glm::eulerAngles(q));
+                m_key     = key;
+                m_haveKey = true;
+            }
+        }
+
+        float* degrees() { return &m_degrees.x; }
+        glm::quat toQuat() const { return glm::normalize(glm::quat(glm::radians(m_degrees))); }
+
+    private:
+        glm::vec3 m_degrees{0.0f};
+        Key       m_key{};
+        bool      m_haveKey = false;
+};
 
 void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t bufSize);
 

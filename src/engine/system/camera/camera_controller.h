@@ -85,6 +85,12 @@ class CameraController : public System {
         /// Move camera to focus on a target position from a given distance.
         void focusOn(Scene& scene, const glm::vec3& target, float distance);
 
+        /// Snap the camera to look at @p target from a specific world-space
+        /// direction (e.g. (1,0,0) for "view from +X"). Used by the
+        /// navigation-gizmo view presets.
+        void viewFrom(Scene& scene, const glm::vec3& target,
+                      const glm::vec3& direction, float distance);
+
     private:
         /**
          * @brief Update camera transform based on fly mode controls.

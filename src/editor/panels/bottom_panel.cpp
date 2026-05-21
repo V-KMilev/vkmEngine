@@ -14,59 +14,21 @@
 
 namespace Engine {
 
-namespace {
-    struct SectionDef { const char* group; const char* name; const char* hint; };
-
-    // Order matches the dispatch switch in BottomPanel::draw().
-    // Rendering/environment moved to the Inspector (select the "Environment"
-    // entity in the Hierarchy). This panel is now per-entity tools + info.
-    const SectionDef SECTIONS[] = {
-        {"TOOLS", "Animation",  "Keyframe editor for the selected entity"},
-        {"INFO",  "Statistics", "Component / light / animation counts"},
-    };
-    constexpr int SECTION_COUNT = static_cast<int>(sizeof(SECTIONS) / sizeof(SECTIONS[0]));
-
-    void sectionHeader(const char* title, const char* hint) {
-        drawSectionHeader(title, hint);
-    }
-
-
-}
-
 void BottomPanel::draw(EditorContext& ec) {
-    ImVec2 avail = ImGui::GetContentRegionAvail();
-
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::NAV_BG);
-    if (ImGui::BeginChild("##BottomNav", ImVec2(150.0f, avail.y), ImGuiChildFlags_Borders)) {
-        const char* lastGroup = nullptr;
-        for (int i = 0; i < SECTION_COUNT; ++i) {
-            if (SECTIONS[i].group != lastGroup) {
-                if (lastGroup) ImGui::Spacing();
-                ImGui::TextDisabled("%s", SECTIONS[i].group);
-                lastGroup = SECTIONS[i].group;
-            }
-            ImGui::Indent(8.0f);
-            if (ImGui::Selectable(SECTIONS[i].name, m_selectedSection == i))
-                m_selectedSection = i;
-            ImGui::Unindent(8.0f);
+    // Tab bar (animation editor + scene statistics). Two sections didn't
+    // justify a master-detail layout - tabs are more idiomatic and free
+    // up the 150px sidebar for content.
+    if (ImGui::BeginTabBar("##BottomTabs", ImGuiTabBarFlags_None)) {
+        if (ImGui::BeginTabItem("Animation")) {
+            drawAnimationSection(ec);
+            ImGui::EndTabItem();
         }
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
-
-    ImGui::SameLine(0, 6);
-
-    if (ImGui::BeginChild("##BottomDetail", ImVec2(0, avail.y), ImGuiChildFlags_Borders)) {
-        const auto& s = SECTIONS[m_selectedSection];
-        sectionHeader(s.name, s.hint);
-
-        switch (m_selectedSection) {
-            case 0: drawAnimationSection(ec);   break;
-            case 1: drawStatisticsSection(ec);  break;
-            default: break;
+        if (ImGui::BeginTabItem("Statistics")) {
+            drawStatisticsSection(ec);
+            ImGui::EndTabItem();
         }
+        ImGui::EndTabBar();
     }
-    ImGui::EndChild();
 }
 
 void BottomPanel::drawAnimationSection(EditorContext& ec) {
@@ -243,19 +205,11 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             return ImGui::DragFloat3("##v", glm::value_ptr(out), 0.01f, 0.0f, 0.0f, "%.3f");
         };
         auto quatEditor = [this](size_t k, const glm::quat& in, glm::quat& out) -> bool {
-            // Gimbal-lock guard (same as InspectorPanel): keep the edited
-            // Euler as the source of truth; only re-derive from the stored
-            // quaternion when this keyframe's rotation changed outside the
-            // drag (different keyframe row, entity switch, keyframe add).
-            const int key = static_cast<int>(k);
-            const glm::quat cached = glm::quat(glm::radians(m_rotEulerDeg));
-            if (m_rotEulerKey != key || glm::abs(glm::dot(cached, in)) < 0.9999f) {
-                m_rotEulerDeg = glm::degrees(glm::eulerAngles(in));
-                m_rotEulerKey = key;
-            }
+            // Gimbal-lock guard via the shared EulerCache helper.
+            m_rotEulerCache.sync(static_cast<int>(k), in);
             ImGui::SetNextItemWidth(-1);
-            if (ImGui::DragFloat3("##v", glm::value_ptr(m_rotEulerDeg), 0.25f, 0.0f, 0.0f, "%.1f deg")) {
-                out = glm::normalize(glm::quat(glm::radians(m_rotEulerDeg)));
+            if (ImGui::DragFloat3("##v", m_rotEulerCache.degrees(), 0.25f, 0.0f, 0.0f, "%.1f deg")) {
+                out = m_rotEulerCache.toQuat();
                 return true;
             }
             out = in;
@@ -435,37 +389,36 @@ void BottomPanel::drawStatisticsSection(EditorContext& ec) {
     }
 
     const auto& rc = m_resourceCounts;
-    float colW = ImGui::GetContentRegionAvail().x / 3.0f;
 
-    ImGui::Columns(3, "##ResCols", true);
-    ImGui::SetColumnWidth(0, colW);
-    ImGui::SetColumnWidth(1, colW);
+    if (ImGui::BeginTable("##ResCols", 3,
+            ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchSame)) {
+        ImGui::TableNextRow();
 
-    ImGui::TextDisabled("Component Counts");
-    ImGui::Separator();
-    struct CI { const char* n; size_t c; };
-    CI comps[] = {
-        {"Transform", rc.transforms}, {"Mesh", rc.meshes},
-        {"Light", rc.lights}, {"Camera", rc.cameras},
-        {"Animation", rc.animations}, {"Hierarchy", rc.hierarchies},
-        {"Name", rc.names},
-    };
-    for (const auto& co : comps) ImGui::Text("%-12s %zu", co.n, co.c);
+        ImGui::TableNextColumn();
+        ImGui::TextDisabled("Component Counts");
+        ImGui::Separator();
+        struct CI { const char* n; size_t c; };
+        CI comps[] = {
+            {"Transform", rc.transforms}, {"Mesh", rc.meshes},
+            {"Light", rc.lights}, {"Camera", rc.cameras},
+            {"Animation", rc.animations}, {"Hierarchy", rc.hierarchies},
+            {"Name", rc.names},
+        };
+        for (const auto& co : comps) ImGui::Text("%-12s %zu", co.n, co.c);
 
-    ImGui::NextColumn();
+        ImGui::TableNextColumn();
+        ImGui::TextDisabled("Animations");
+        ImGui::Separator();
+        ImGui::Text("Playing: %u  Paused: %u", rc.animPlaying, rc.animPaused);
 
-    ImGui::TextDisabled("Animations");
-    ImGui::Separator();
-    ImGui::Text("Playing: %u  Paused: %u", rc.animPlaying, rc.animPaused);
+        ImGui::TableNextColumn();
+        ImGui::TextDisabled("Lights");
+        ImGui::Separator();
+        ImGui::Text("Dir: %u  Point: %u  Spot: %u", rc.lightsDir, rc.lightsPoint, rc.lightsSpot);
+        if (rc.lightsDisabled > 0) ImGui::Text("Disabled: %u", rc.lightsDisabled);
 
-    ImGui::NextColumn();
-
-    ImGui::TextDisabled("Lights");
-    ImGui::Separator();
-    ImGui::Text("Dir: %u  Point: %u  Spot: %u", rc.lightsDir, rc.lightsPoint, rc.lightsSpot);
-    if (rc.lightsDisabled > 0) ImGui::Text("Disabled: %u", rc.lightsDisabled);
-
-    ImGui::Columns(1);
+        ImGui::EndTable();
+    }
 }
 
 } // namespace Engine

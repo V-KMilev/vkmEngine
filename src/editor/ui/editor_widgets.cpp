@@ -2,6 +2,7 @@
 #include "ui/editor_style.h"
 
 #include <imgui.h>
+#include <algorithm>
 #include <cstdio>
 #include <cctype>
 #include <vector>
@@ -76,7 +77,11 @@ bool drawVec3Control(const char* label, float* values,
 void drawPropertyLabel(const char* label) {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
-    ImGui::SameLine(LABEL_WIDTH);
+    // Labels that exceed the reserved column don't get truncated - the next
+    // item just starts after the actual text width plus a padding. Short
+    // labels still align at LABEL_WIDTH so the inspector reads as a column.
+    const float lw = ImGui::CalcTextSize(label).x + ImGui::GetStyle().ItemSpacing.x;
+    ImGui::SameLine(std::max(LABEL_WIDTH, lw));
     ImGui::SetNextItemWidth(-1);
 }
 
@@ -87,9 +92,15 @@ namespace {
         float  lineX  = 0.0f;   // left accent-line x, screen-space
         bool   open   = false;
     };
-    // ImGui is single-threaded; a plain stack is enough. Cards never nest in
-    // the inspector but the stack keeps begin/end strictly balanced anyway.
-    std::vector<CardState> g_cardStack;
+    // Accessor instead of a bare global: keeps the stack a single instance
+    // (cards never nest deeply, but the stack still enforces balanced
+    // begin/end pairs) while making the lifetime explicit. thread_local
+    // so this is honest about the only context where the stack is valid:
+    // the ImGui-owning thread.
+    std::vector<CardState>& cardStack() {
+        thread_local std::vector<CardState> s;
+        return s;
+    }
     constexpr float CARD_INDENT = 14.0f;
 }
 
@@ -147,13 +158,13 @@ bool beginComponentCard(const char* title, const ImVec4& accent,
         ImGui::Spacing();
         st.startY = ImGui::GetCursorScreenPos().y;
     }
-    g_cardStack.push_back(st);
+    cardStack().push_back(st);
     return open;
 }
 
 void endComponentCard() {
-    CardState st = g_cardStack.back();
-    g_cardStack.pop_back();
+    CardState st = cardStack().back();
+    cardStack().pop_back();
 
     if (st.open) {
         ImGui::Spacing();

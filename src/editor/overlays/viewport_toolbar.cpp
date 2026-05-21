@@ -1,6 +1,9 @@
 #include "overlays/viewport_toolbar.h"
 #include "framework/editor_common.h"
+#include "framework/screenshot.h"
 #include "input/editor_actions.h"
+
+#include "platform/window/window_manager.h"
 
 
 namespace Engine {
@@ -24,13 +27,13 @@ namespace {
 void ViewportToolbar::draw(EditorContext& ec) {
     FrameContext&     ctx    = ec.frame;
     EditorState&      state  = ec.state;
-    CameraController* camera = ec.cameraController;
+    CameraController& camera = ec.cameraController;
 
     const auto& kb = state.keybinds;
 
     auto tool = [&](const char* id, EditorIcon icon, GizmoOperation op,
                     const char* name, const KeyBind& bind) {
-        char tip[48];
+        char tip[80];
         tipFor(tip, sizeof(tip), name, &bind);
         if (iconButton(id, icon, state.gizmoOperation == op, true, tip, BTN))
             state.gizmoOperation = op;
@@ -56,7 +59,7 @@ void ViewportToolbar::draw(EditorContext& ec) {
 
         ImGui::SameLine(0, SEP);
         bool world = state.gizmoMode == GizmoMode::World;
-        char spcTip[48];
+        char spcTip[80];
         tipFor(spcTip, sizeof(spcTip), world ? "Space: World" : "Space: Local",
                &kb.gizmoToggleSpace);
         if (iconButton("spc", world ? EditorIcon::SpaceWorld : EditorIcon::SpaceLocal,
@@ -68,7 +71,7 @@ void ViewportToolbar::draw(EditorContext& ec) {
             state.snapEnabled = !state.snapEnabled;
 
         bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
-        char dupTip[48], focTip[48], delTip[48];
+        char dupTip[80], focTip[80], delTip[80];
         tipFor(dupTip, sizeof(dupTip), "Duplicate", &kb.duplicate);
         tipFor(focTip, sizeof(focTip), "Focus camera on selection", &kb.focusSelected);
         tipFor(delTip, sizeof(delTip), "Delete", &kb.deleteEntity);
@@ -82,6 +85,17 @@ void ViewportToolbar::draw(EditorContext& ec) {
         ImGui::SameLine();
         if (iconButton("del", EditorIcon::Trash, false, haveSel, delTip, BTN))
             EditorActions::deleteEntity(ctx.scene, state, state.selectedEntity);
+
+        // Right group: scene-wide view actions.
+        ImGui::SameLine(0, SEP);
+        if (iconButton("frameAll", EditorIcon::FrameAll, false, true,
+                       "Frame All  (Shift+F)", BTN))
+            EditorActions::frameAll(ctx, camera);
+        ImGui::SameLine();
+        if (iconButton("shot", EditorIcon::Screenshot, false, true,
+                       "Save viewport screenshot to APP_ROOT_DIR/screenshots/", BTN)) {
+            captureViewportScreenshot(ctx.window);
+        }
 
         m_hovered = ImGui::IsWindowHovered(
             ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
