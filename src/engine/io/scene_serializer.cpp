@@ -149,18 +149,17 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
         return false;
     }
 
-    // Populate the asset graph before touching entities - Mesh components
-    // will resolve their handles by name during entity load. Idempotent:
-    // assets already present in ResourceManager are kept as-is.
-    if (doc.contains("assets")) {
-        AssetSerializer::loadAssets(doc["assets"], resources);
-    }
-
-    // Two-phase load: deserialise into a staging scene first. A throw or
-    // unrecoverable error here is contained - the live scene is only
-    // touched once the entire load has succeeded. Avoids the
-    // "malformed-file-leaves-editor-empty" failure mode.
+    // Transactional load: build both a staging Scene and a staging
+    // ResourceManager. Asset factories that re-create from descriptors
+    // (textures, materials, meshes) write into the staging RM, so a
+    // failure mid-load leaves the live asset graph untouched. On full
+    // success both swap into place in one commit phase.
     Scene staging;
+    ResourceManager stagingResources;
+
+    if (doc.contains("assets")) {
+        AssetSerializer::loadAssets(doc["assets"], stagingResources);
+    }
 
     // Pass 1: create each entity at its saved slot index and populate
     // non-relational components. Hierarchy::parent is captured for pass 2
@@ -183,9 +182,11 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
 
             // Run every registered component's loader. Hierarchy has a null
             // load fn in the table because it needs two-pass treatment;
-            // handle it explicitly below.
+            // handle it explicitly below. Components that reference assets
+            // (Mesh) look them up in the staging RM so the resolution
+            // sees what loadAssets just built.
             for (const auto& reg : kRegistry) {
-                if (reg.load) reg.load(staging, entity, components, resources);
+                if (reg.load) reg.load(staging, entity, components, stagingResources);
             }
             if (components.contains("Hierarchy")) {
                 const uint32_t parentIdx = CS::loadParentIndex(components["Hierarchy"]);
@@ -225,26 +226,18 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
             k.c_str(), path.c_str());
     }
 
-    // Commit. swap moves staging's contents into the live scene; staging
-    // now holds the previously-live entities and destroys them when it
-    // goes out of scope. We deliberately don't call scene.clear() first -
-    // that would walk the live entities entity-by-entity (each one
-    // detachFromHierarchy + per-component remove) just to throw them away,
-    // when staging's default destruction does the same memory release in
-    // one pass per component storage.
+    // Commit phase: both stagings swap into place in one step. Until this
+    // point a throw would leave both `scene` and `resources` untouched -
+    // the malformed-file-half-loads-state failure mode is gone for both
+    // entities and assets. Compact the new live scene to reclaim sparse
+    // capacity that grew/shrunk during the staging build.
     //
-    // Asset state caveat: AssetSerializer::loadAssets() above mutates the
-    // shared ResourceManager BEFORE this swap, so a failure during the
-    // staging build (caught above) leaves any newly-loaded assets in
-    // the resource graph as orphans. They're additive (no asset of the
-    // same name is overwritten) so it's a leak, not corruption. A proper
-    // transactional load would need an asset-graph swap mechanism;
-    // tracked alongside the binary-scene-cache work.
+    // Outstanding handles into `resources` from before this call are
+    // stale - editor panels that cached handles to editor-only previews
+    // (MaterialEditor preview meshes, AssetBrowser neutral material)
+    // re-acquire on next use via findByName-or-addInternal (O(1) now).
     scene.swap(staging);
-
-    // SparseSet capacity may have grown then shrunk during the staging
-    // load - reclaim wasted slots so the loaded scene doesn't carry
-    // orphan capacity.
+    resources.swap(stagingResources);
     scene.compact();
 
     LOG_INFO("Loaded scene from '%s' (%zu entities, %zu hierarchy links)",

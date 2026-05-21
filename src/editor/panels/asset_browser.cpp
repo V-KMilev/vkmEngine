@@ -48,8 +48,11 @@ namespace {
 }  // namespace
 
 void AssetBrowserPanel::ensureAssets(ResourceManager& resources) {
-    if (m_assetsReady) return;
-
+    // Re-acquire every call rather than caching with a "ready" flag:
+    // SceneSerializer::load swaps the ResourceManager wholesale, so any
+    // cached handle survives the swap as a dangling (index, generation)
+    // pair into the now-discarded manager. findByName is O(1) (per-type
+    // name index in ResourceManager), so the cost is negligible.
     m_sphere = resources.findByName<MeshAsset>("mesh:preview_sphere");
     if (!m_sphere) m_sphere = resources.addInternal(generateSphere(), "mesh:preview_sphere");
 
@@ -61,7 +64,6 @@ void AssetBrowserPanel::ensureAssets(ResourceManager& resources) {
         m.roughness = 0.55f;
         m_neutral = resources.addInternal(std::move(m), "mat:thumb_neutral");
     }
-    m_assetsReady = true;
 }
 
 void AssetBrowserPanel::draw(EditorContext& ec) {
