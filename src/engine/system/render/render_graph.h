@@ -104,8 +104,12 @@ class RenderGraph {
         void execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources);
 
         /// Collect declarations, validate ordering, compute lifetimes.
-        /// Idempotent; auto-invoked by execute() when the pass set changed.
-        void compile();
+        /// When @p view is non-null, passes that report
+        /// !enabledForView(*view) are skipped: their reads/writes don't
+        /// participate in lifetime extents, so the graph reflects what
+        /// will actually run this frame. Idempotent; auto-invoked by
+        /// execute() when the pass set or enable state changes.
+        void compile(const RenderView* view = nullptr);
 
         /**
          * @brief Open an offscreen material preview session at (size, size).
@@ -214,6 +218,12 @@ class RenderGraph {
         void*                                    m_resources[RG_RESOURCE_COUNT] = {};
         bool                                     m_compiled = false;        ///< compile() has run against the current pass set
         bool                                     m_persistentRegistered = false;
+
+        /// Per-pass enable state captured at the last compile. execute()
+        /// recomputes the current enable vector each frame and triggers
+        /// a recompile only when it differs - so toggling env.taa flips
+        /// the lifetime data without paying the compile cost every frame.
+        std::vector<bool>                        m_lastEnabled;
         uint64_t                                 m_frameIndex = 0;
 
         /// Transient pool for the default viewport. Allocated lazily via
