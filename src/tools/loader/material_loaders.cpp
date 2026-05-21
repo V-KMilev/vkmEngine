@@ -166,7 +166,7 @@ MaterialHandle loadMaterialFromFolder(
         // Record how this material was created so SceneSerializer can
         // recreate it on a cold-start load. We deliberately store only
         // the folder path; texture discovery happens again at reload.
-        resourceManager.edit(handle).source = {
+        resourceManager.edit(handle).sourceJson() = {
             {"kind", "folder"},
             {"path", folderPath}
         };

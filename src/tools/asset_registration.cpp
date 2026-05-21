@@ -92,7 +92,7 @@ void registerBuiltinAssetFactories() {
         AssetSerializer::applyInline(desc, mat, resources);
         auto handle = resources.add(std::move(mat));
         // Keep the source on the asset so subsequent saves re-emit cleanly.
-        resources.edit(handle).source = desc;
+        resources.edit(handle).sourceJson() = desc;
         return handle;
     });
 

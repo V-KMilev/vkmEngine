@@ -36,7 +36,7 @@ MeshAsset generateTriangle(float size) {
 
     mesh.indices = { 0, 1, 2 };
     mesh.computeAndSetBounds();
-    mesh.source = meshGeneratorSource("triangle", {{"size", size}});
+    mesh.sourceJson() = meshGeneratorSource("triangle", {{"size", size}});
     return mesh;
 }
 
@@ -56,7 +56,7 @@ MeshAsset generatePlane(float width, float height, uint32_t widthSegments, uint3
 
     mesh.indices = { 0, 1, 2,  2, 3, 0 };
     mesh.computeAndSetBounds();
-    mesh.source = meshGeneratorSource("plane", {
+    mesh.sourceJson() = meshGeneratorSource("plane", {
         {"width", width}, {"height", height},
         {"widthSegments", widthSegments}, {"heightSegments", heightSegments}
     });
@@ -127,7 +127,7 @@ MeshAsset generateCube() {
     };
 
     mesh.computeAndSetBounds();
-    mesh.source = meshGeneratorSource("cube");
+    mesh.sourceJson() = meshGeneratorSource("cube");
     return mesh;
 }
 
@@ -180,7 +180,7 @@ MeshAsset generateSphere(uint32_t xSegments, uint32_t ySegments) {
     }
 
     mesh.computeAndSetBounds();
-    mesh.source = meshGeneratorSource("sphere", {{"xSegments", xSegments}, {"ySegments", ySegments}});
+    mesh.sourceJson() = meshGeneratorSource("sphere", {{"xSegments", xSegments}, {"ySegments", ySegments}});
     return mesh;
 }
 
@@ -232,7 +232,7 @@ MeshAsset generatePyramid(float baseSize, float height) {
     };
 
     mesh.computeAndSetBounds();
-    mesh.source = meshGeneratorSource("pyramid", {{"baseSize", baseSize}, {"height", height}});
+    mesh.sourceJson() = meshGeneratorSource("pyramid", {{"baseSize", baseSize}, {"height", height}});
     return mesh;
 }
 
@@ -289,7 +289,7 @@ MeshAsset generateCone(
     }
 
     mesh.computeAndSetBounds();
-    mesh.source = meshGeneratorSource("cone", {
+    mesh.sourceJson() = meshGeneratorSource("cone", {
         {"radius", radius}, {"height", height}, {"segments", segments}
     });
     return mesh;

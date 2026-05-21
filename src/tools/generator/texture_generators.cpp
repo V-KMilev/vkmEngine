@@ -18,8 +18,8 @@ namespace {
                                    TextureAsset texture)
     {
         if (auto existing = rm.findByName<TextureAsset>(name)) return existing;
-        texture.name   = name;
-        texture.source = source;
+        texture.name           = name;
+        texture.sourceJson()   = source;
         return rm.add(std::move(texture));
     }
 

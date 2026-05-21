@@ -1,9 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 namespace Engine {
 
@@ -18,51 +19,44 @@ namespace Engine {
  */
 struct Resource {
     public:
-        Resource() = default;
-        ~Resource() = default;
+        // Rule-of-5 out-of-line: the source unique_ptr<json> needs the
+        // full json type (only forward-declared here) to destruct +
+        // copy-clone, so the special members are defined in resource.cpp.
+        Resource();
+        ~Resource();
 
-        Resource(const Resource& other) = default;
-        Resource& operator=(const Resource& other) = default;
+        Resource(const Resource& other);
+        Resource& operator=(const Resource& other);
 
-        Resource(Resource && other) = default;
-        Resource& operator=(Resource && other) = default;
+        Resource(Resource && other) noexcept;
+        Resource& operator=(Resource && other) noexcept;
 
     public:
-        uint64_t    version = 1;
+        bool hasSource() const noexcept { return source != nullptr; }
+
+        /// Mutable access to the source JSON, allocating an empty object
+        /// if the slot is null. Callers must #include <nlohmann/json.hpp>.
+        nlohmann::json&       sourceJson();
+
+        /// Const access. Asserts hasSource(); use hasSource() to guard.
+        const nlohmann::json& sourceJson() const;
+
+    public:
+        uint64_t    version    = 1;
         std::string name;
+        bool        editorOnly = false;   ///< Filtered from pickers / Asset Browser / scene save. See ResourceManager::addInternal.
 
-        /**
-         * @brief Editor-only asset flag.
-         *
-         * True for assets the editor creates for its own use (preview meshes,
-         * neutral materials for thumbnails, etc.). Pickers, the Asset Browser,
-         * and SceneSerializer all filter these out so they don't pollute the
-         * user's asset graph or get written to scene saves.
-         *
-         * Default false: anything imported, authored, or loaded from disk is
-         * the user's asset.
-         *
-         * Named editorOnly (not "internal") because "internal" already
-         * means something specific in C++ (internal linkage), which made
-         * the field read as something unrelated to user/tool visibility.
-         */
-        bool editorOnly = false;
-
-        /**
-         * @brief Origin descriptor as a JSON object.
-         *
-         * Set by whatever generator or loader created this asset. A null
-         * value means the origin is not tracked (the asset won't survive
-         * a SceneSerializer save → cold-start load).
-         *
-         * Shape is loader-specific. Examples:
-         *   {"kind":"generator","type":"sphere","segments":48,"rings":24}
-         *   {"kind":"folder","path":"assets/PavingStones118_2K-JPG"}
-         *   {"kind":"file","path":"assets/foo.png","sRGB":true}
-         *
-         * Consumed by Engine::AssetSerializer to recreate the asset on load.
-         */
-        nlohmann::json source;
+        /// Origin descriptor JSON, lazy-allocated. Stored behind a
+        /// unique_ptr so this header only forward-declares nlohmann::json -
+        /// every TU that includes a Resource subclass (MeshAsset, ...)
+        /// avoids the ~10k-line json template tax. Callers that read or
+        /// write it must #include <nlohmann/json.hpp> in their .cpp.
+        ///
+        /// Shape is loader-specific. Examples:
+        ///   {"kind":"generator","type":"sphere","segments":48,"rings":24}
+        ///   {"kind":"folder","path":"assets/PavingStones118_2K-JPG"}
+        ///   {"kind":"file","path":"assets/foo.png","sRGB":true}
+        std::unique_ptr<nlohmann::json> source;
 };
 
 } // namespace Engine

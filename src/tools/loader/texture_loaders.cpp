@@ -91,8 +91,8 @@ TextureHandle loadTexture(
 
     // Stamp serialization metadata. The file path is the texture's stable
     // identity — materials reference textures by name on load.
-    texture.name   = filePath;
-    texture.source = {
+    texture.name         = filePath;
+    texture.sourceJson() = {
         {"kind",           "file"},
         {"path",           filePath},
         {"sRGB",           srgb},
