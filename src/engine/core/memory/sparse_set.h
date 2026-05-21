@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -21,6 +22,10 @@ class ISparseSet {
         virtual size_t size() const = 0;
         virtual size_t sparseCapacity() const = 0;
         virtual void compact() = 0;
+        /// @brief Drop every element. Used by Scene::clear and shutdown
+        ///        paths that want O(types) tear-down rather than
+        ///        O(entities × types) one-element-at-a-time removal.
+        virtual void clear() = 0;
 };
 
 /**
@@ -145,6 +150,16 @@ class SparseSet : public ISparseSet {
 
         /// @brief Current capacity of the sparse-to-dense mapping array.
         size_t sparseCapacity() const override { return m_dataIndex.size(); }
+
+        /// @brief Drop every element. The dense and sparse arrays empty;
+        ///        their capacity is retained so a subsequent rebuild
+        ///        doesn't re-pay allocation cost.
+        void clear() override {
+            m_data.clear();
+            m_dataId.clear();
+            // Mark every sparse slot empty without reallocating.
+            std::fill(m_dataIndex.begin(), m_dataIndex.end(), EMPTY);
+        }
 
         /// @brief Shrink the sparse array to fit only live keys, reclaiming wasted memory.
         void compact() override {

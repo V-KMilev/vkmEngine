@@ -58,6 +58,14 @@ class FrameResources {
          */
         virtual void resolveSceneColor() = 0;
 
+        /**
+         * @brief Invalidate temporal-history sub-resources (TAA, etc.) so
+         *        reprojection-based effects re-prime instead of smearing
+         *        across a view discontinuity (scene load, camera teleport).
+         *        Default no-op for pools without a temporal stage.
+         */
+        virtual void invalidateTemporalHistory() {}
+
     protected:
         FrameResources() = default;
 };

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -48,8 +50,15 @@ class ResourceManager {
             auto& slot = getSlot<T>();
 
             StorageIndex key = slot.allocator->allocate();
+            // Capture the name before move (some types are large).
+            std::string indexName = resource.name;
             storageOf<T>(slot).add(key.index, std::forward<ResourceType>(resource));
 
+            // Maintain the per-type name index for O(1) findByName. Unnamed
+            // assets don't enter the index (no key to look them up by).
+            if (!indexName.empty()) {
+                slot.nameIndex.emplace(std::move(indexName), key.index);
+            }
             return Handle<T>{key};
         }
 
@@ -75,7 +84,7 @@ class ResourceManager {
          */
         template<typename ResourceType>
         auto addInternal(ResourceType && resource, std::string name) {
-            resource.internal = true;
+            resource.editorOnly = true;
             resource.name = std::move(name);
             return add(std::forward<ResourceType>(resource));
         }
@@ -88,6 +97,14 @@ class ResourceManager {
             using T = typename HandleType::resource_t;
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator->has(handle.key), "ResourceManager::remove invalid handle");
+            // Drop the name->index mapping if the asset registered one.
+            const T& res = storageOfConst<T>(slot).get(handle.key.index);
+            if (!res.name.empty()) {
+                auto it = slot.nameIndex.find(res.name);
+                if (it != slot.nameIndex.end() && it->second == handle.key.index) {
+                    slot.nameIndex.erase(it);
+                }
+            }
             storageOf<T>(slot).remove(handle.key.index);
             slot.allocator->free(handle.key);
         }
@@ -127,7 +144,12 @@ class ResourceManager {
         /**
          * @brief Find a resource by its `name` field. Returns a default
          * (invalid) handle if the type is unregistered or no asset matches.
-         * Linear scan — intended for editor / scene-load lookups, not hot paths.
+         *
+         * O(1) lookup via a per-type name->index map maintained on
+         * add/remove. Caveat: the index is populated from the resource's
+         * `name` at insertion time; later mutations to `name` via edit()
+         * are not reflected. Don't rename assets after registering them,
+         * or call removeByName/add() instead.
          */
         template<typename T>
         Handle<T> findByName(const std::string& name) const {
@@ -135,14 +157,14 @@ class ResourceManager {
             if (id >= m_slots.size() || !m_slots[id]) return {};
             const auto& slot = *m_slots[id];
 
-            Handle<T> result{};
-            storageOfConst<T>(slot).forEach([&](uint32_t index, const T& res) {
-                if (result) return;  // first match wins
-                if (res.name == name) {
-                    result = Handle<T>{StorageIndex{index, slot.allocator->generationOf(index)}};
-                }
-            });
-            return result;
+            auto it = slot.nameIndex.find(name);
+            if (it == slot.nameIndex.end()) return {};
+            const uint32_t index = it->second;
+            // Defensive: if the entry was removed (shouldn't happen because
+            // remove() erases the mapping, but guards against rename-after-
+            // add drift), fall back to invalid.
+            if (!storageOfConst<T>(slot).contains(index)) return {};
+            return Handle<T>{StorageIndex{index, slot.allocator->generationOf(index)}};
         }
 
         /**
@@ -185,11 +207,14 @@ class ResourceManager {
         }
 
     private:
-        /// Per-type bundle: lifetime, storage, version.
+        /// Per-type bundle: lifetime, storage, version, name index.
         struct TypedSlot {
             std::unique_ptr<SlotAllocator>  allocator;
             std::unique_ptr<ISparseSet>     storage;
             uint64_t                        typeVersion = 0;
+            /// name -> storage index. O(1) findByName backing. Populated
+            /// from Resource::name on add(), erased on remove().
+            std::unordered_map<std::string, uint32_t> nameIndex;
         };
 
         template<typename T>

@@ -1,7 +1,7 @@
 # ============================================================================
 # OpenGL Backend Library
 # ============================================================================
-file(GLOB_RECURSE BACKENDOPENGL_SOURCES *.cpp)
+file(GLOB_RECURSE BACKENDOPENGL_SOURCES CONFIGURE_DEPENDS *.cpp)
 
 add_library(BackendOpenGL STATIC ${BACKENDOPENGL_SOURCES})
 

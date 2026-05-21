@@ -178,7 +178,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::BeginCombo("##MeshPick", mn.empty() ? "(unnamed)" : mn.c_str())) {
             resources.forEachOfType<MeshAsset>([&](MeshHandle h, const MeshAsset& a) {
-                if (a.internal) return;  // hide editor-only preview primitives
+                if (a.editorOnly) return;  // hide editor-only preview primitives
                 ImGui::PushID(static_cast<int>(h.id()));
                 const bool sel = mesh.mesh && mesh.mesh.id() == h.id();
                 if (ImGui::Selectable(a.name.empty() ? "(unnamed)" : a.name.c_str(), sel))
@@ -194,7 +194,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::BeginCombo("##MatPick", mtn.empty() ? "(unnamed)" : mtn.c_str())) {
             resources.forEachOfType<MaterialAsset>([&](MaterialHandle h, const MaterialAsset& a) {
-                if (a.internal) return;  // hide editor-only helper materials
+                if (a.editorOnly) return;  // hide editor-only helper materials
                 ImGui::PushID(static_cast<int>(h.id()));
                 const bool sel = mesh.material && mesh.material.id() == h.id();
                 if (ImGui::Selectable(a.name.empty() ? "(unnamed)" : a.name.c_str(), sel))

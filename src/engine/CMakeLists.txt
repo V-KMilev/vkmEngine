@@ -1,8 +1,9 @@
 # ============================================================================
 # Engine Core Library
-# NOTE: Re-run cmake after adding/removing source files (GLOB_RECURSE limitation)
+# CONFIGURE_DEPENDS lets the build re-glob on demand; adding/removing a
+# source file no longer needs a manual cmake reconfigure.
 # ============================================================================
-file(GLOB_RECURSE ENGINECORE_SOURCES
+file(GLOB_RECURSE ENGINECORE_SOURCES CONFIGURE_DEPENDS
     core/*.cpp
     ecs/*.cpp
     io/*.cpp
@@ -49,7 +50,7 @@ target_compile_definitions(EngineCore PUBLIC
 # ============================================================================
 # Engine Rendering Library
 # ============================================================================
-file(GLOB_RECURSE ENGINERENDERING_SOURCES system/render/*.cpp)
+file(GLOB_RECURSE ENGINERENDERING_SOURCES CONFIGURE_DEPENDS system/render/*.cpp)
 
 add_library(EngineRendering STATIC ${ENGINERENDERING_SOURCES})
 

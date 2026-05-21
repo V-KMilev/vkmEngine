@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+#include "l_assert.h"
+
 #include "core/memory/types.h"
 #include "core/system.h"
 
@@ -95,6 +97,7 @@ class EventSystem : public System {
             std::vector<Entry> listeners;
             std::vector<EventT> queue;
             ListenerId nextId = 1;
+            int        flushDepth = 0;   ///< >0 while inside emit/flush
 
             ListenerId subscribe(std::function<void(const EventT&)> cb) {
                 const ListenerId id = nextId++;
@@ -103,6 +106,15 @@ class EventSystem : public System {
             }
 
             bool remove(ListenerId id) override {
+                // Mid-flush unsubscribe would invalidate the iteration. The
+                // snapshot dance is paid every frame on hot buses; banning
+                // it lets emit/flush walk `listeners` by index without
+                // copying. Listeners that need self-unsubscribe should
+                // enqueue an event to be processed after the current flush
+                // returns.
+                VKM_ASSERT(flushDepth == 0,
+                    "EventSystem: unsubscribe is not allowed from inside a "
+                    "listener callback during emit/flush");
                 for (auto it = listeners.begin(); it != listeners.end(); ++it) {
                     if (it->id == id) {
                         listeners.erase(it);
@@ -113,7 +125,13 @@ class EventSystem : public System {
             }
 
             void emit(const EventT& event) {
-                for (auto& l : listeners) l.cb(event);
+                // Subscribe is allowed (push_back stays valid by index past
+                // the end of the current loop bound). Unsubscribe is banned
+                // by the assert above.
+                ++flushDepth;
+                const size_t n = listeners.size();
+                for (size_t i = 0; i < n; ++i) listeners[i].cb(event);
+                --flushDepth;
             }
 
             void enqueue(EventT event) {
@@ -122,17 +140,19 @@ class EventSystem : public System {
 
             void flush() override {
                 if (queue.empty()) return;
-                // Swap to locals so re-entrant enqueues / subscribes from
-                // listener callbacks land in fresh storage and fire next
-                // frame, not this one. Snapshotting `listeners` too matters
-                // because a callback that subscribes mid-flush would
-                // invalidate iterators if `listeners` reallocates.
+                // Swap the queue so re-entrant enqueues land in fresh
+                // storage and fire next frame. Listeners are iterated by
+                // index against the current bound; subscribe mid-flush is
+                // safe (new listeners join next frame's flush), unsubscribe
+                // is asserted-against above.
                 std::vector<EventT> localEvents;
                 localEvents.swap(queue);
-                std::vector<Entry> localListeners = listeners;
+                ++flushDepth;
+                const size_t n = listeners.size();
                 for (auto& e : localEvents) {
-                    for (auto& l : localListeners) l.cb(e);
+                    for (size_t i = 0; i < n; ++i) listeners[i].cb(e);
                 }
+                --flushDepth;
             }
         };
 

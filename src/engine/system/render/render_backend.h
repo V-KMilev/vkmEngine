@@ -84,8 +84,6 @@ class RenderBackend {
          */
         virtual RenderTarget& getDefaultTarget() = 0;
 
-        virtual void setWireframe(bool enabled) = 0;
-
         /**
          * @brief Synchronise backend-side GPU resources with the RenderView.
          *

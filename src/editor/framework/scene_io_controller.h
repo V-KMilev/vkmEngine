@@ -10,6 +10,7 @@ struct FrameContext;
 struct EditorState;
 class EventSystem;
 class CameraController;
+class RenderSystem;
 
 /**
  * @brief Owns editor scene file I/O.
@@ -25,7 +26,8 @@ class CameraController;
  */
 class SceneIOController {
     public:
-        SceneIOController(EventSystem* events, CameraController* cameraController);
+        SceneIOController(EventSystem* events, CameraController* cameraController,
+                          RenderSystem* renderSystem = nullptr);
         ~SceneIOController();
 
         SceneIOController(const SceneIOController& other) = delete;
@@ -54,6 +56,7 @@ class SceneIOController {
 
         EventSystem*      m_events           = nullptr;
         CameraController* m_cameraController = nullptr;
+        RenderSystem*     m_renderSystem     = nullptr;
         uint64_t          m_sceneLoadedListenerId = 0;
 
         std::string m_currentScenePath;  ///< Empty until the user saves/loads once.

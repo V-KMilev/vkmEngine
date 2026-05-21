@@ -16,17 +16,25 @@
 #include "io/scene_serializer.h"
 #include "system/camera/camera_controller.h"
 #include "system/event/event_system.h"
+#include "system/render/render_system.h"
 
 namespace Engine {
 
-SceneIOController::SceneIOController(EventSystem* events, CameraController* cameraController)
+SceneIOController::SceneIOController(EventSystem* events, CameraController* cameraController,
+                                     RenderSystem* renderSystem)
     : m_events(events)
     , m_cameraController(cameraController)
+    , m_renderSystem(renderSystem)
 {
     // Editor-side refresh after a scene reload.
     if (m_events) {
         m_sceneLoadedListenerId = m_events->subscribe<SceneSerializer::SceneLoadedEvent>(
             [this](const SceneSerializer::SceneLoadedEvent&) {
+                // TAA / other temporal effects must drop their history -
+                // reprojecting the old scene's data over the new one
+                // smears for several frames after the swap.
+                if (m_renderSystem) m_renderSystem->invalidateTemporalHistory();
+
                 if (!m_cameraController) return;
                 // Re-bind the camera controller to the loaded scene's active
                 // Camera; the prior handle's slot may now hold another entity.
@@ -94,15 +102,42 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
         m_openSaveAsPopup = false;
     }
     if (ImGui::BeginPopupModal("Save Scene As", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextDisabled("Saved into %s/scenes/", APP_ROOT_DIR);
+        ImGui::TextDisabled("Saved into %s/scenes/ (.json appended automatically)", APP_ROOT_DIR);
         ImGui::SetNextItemWidth(360.0f);
         ImGui::InputText("##SaveAsName", m_saveAsBuffer, sizeof(m_saveAsBuffer));
 
-        if (ImGui::Button("Save", ImVec2(120, 0))) {
-            m_currentScenePath = std::string(APP_ROOT_DIR) + "/scenes/" + m_saveAsBuffer;
+        // Canonicalise the filename: trim whitespace, append .json if the
+        // user didn't, and check for an existing file under scenes/. Without
+        // these the Load picker (which filters by .json) would silently fail
+        // to list a saved-without-extension file.
+        std::string name = m_saveAsBuffer;
+        while (!name.empty() && (name.back() == ' ' || name.back() == '\t')) name.pop_back();
+        size_t lead = 0;
+        while (lead < name.size() && (name[lead] == ' ' || name[lead] == '\t')) ++lead;
+        if (lead > 0) name.erase(0, lead);
+        std::string finalName = name;
+        if (!finalName.empty()) {
+            const std::filesystem::path p(finalName);
+            if (p.extension() != ".json") finalName += ".json";
+        }
+        const std::string finalPath = std::string(APP_ROOT_DIR) + "/scenes/" + finalName;
+        const bool empty = finalName.empty();
+        const bool collides = !empty && std::filesystem::exists(finalPath);
+        if (!empty && name != finalName) {
+            ImGui::TextDisabled("Will save as: %s", finalName.c_str());
+        }
+        if (collides) {
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f),
+                "Overwrites existing %s", finalName.c_str());
+        }
+
+        ImGui::BeginDisabled(empty);
+        if (ImGui::Button(collides ? "Overwrite" : "Save", ImVec2(120, 0))) {
+            m_currentScenePath = finalPath;
             SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath);
             ImGui::CloseCurrentPopup();
         }
+        ImGui::EndDisabled();
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();

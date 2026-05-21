@@ -98,10 +98,6 @@ void GLBackend::resize(uint32_t width, uint32_t height) {
     // Transient pool is owned and resized by RenderGraph::onResize now.
 }
 
-void GLBackend::setWireframe(bool enabled) {
-    m_context.setPolygonMode(GL_FRONT_AND_BACK, enabled ? GL_LINE : GL_FILL);
-}
-
 void GLBackend::syncResources(const RenderView& view, const ResourceManager& resources) {
     m_view.sync(view, resources);
 }
