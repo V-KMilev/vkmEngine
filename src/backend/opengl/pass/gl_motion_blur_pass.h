@@ -43,6 +43,8 @@ class GLMotionBlurPass : public RenderPass {
             builder.write(RGResource::SceneHDRResolved);
         }
 
+        bool enabledForView(const RenderView& view) const override;
+
     private:
         ShaderHandle m_shader;
         std::unique_ptr<Core::ScreenTriangle> m_screenTri;

@@ -8,6 +8,7 @@
 
 namespace Engine {
     class RenderBackend;
+    struct RenderView;
 }
 
 namespace Engine {
@@ -49,6 +50,20 @@ class RenderPass {
 
         bool isEnabled() const { return m_enabled; }
         void setEnabled(bool enabled) { m_enabled = enabled; }
+
+        /**
+         * @brief View-conditional enable.
+         *
+         * Returns whether the pass should run for the given frame. Default
+         * is just `isEnabled()` (the explicit toggle). Passes that key off
+         * environment state (debug pass on `env.aabbDebug`, post pass off
+         * in `env.wireframe`, ...) override this so the knowledge of *when
+         * I should run* lives with the pass instead of in a central
+         * pass-name switch. Called once per frame by RenderGraph::execute.
+         */
+        virtual bool enabledForView(const RenderView& /*view*/) const {
+            return m_enabled;
+        }
 
         /**
          * @brief Respond to framebuffer or window resizing by adapting the pass.

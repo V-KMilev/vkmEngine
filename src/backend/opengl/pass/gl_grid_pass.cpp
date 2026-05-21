@@ -5,6 +5,7 @@
 #include "debug/statistics.h"
 
 #include "core/gl_backend.h"
+#include "core/gl_hdr_target.h"
 #include "resource/gl_mesh.h"
 #include "resource/gl_shader_program.h"
 
@@ -14,6 +15,10 @@
 #include "generator/mesh_generators.h"
 
 namespace Engine {
+
+bool GLGridPass::enabledForView(const RenderView& view) const {
+    return isEnabled() && view.environment.gridEnabled;
+}
 
 GLGridPass::GLGridPass(ShaderHandle shader)
     : RenderPass("GLGridPass")
@@ -42,6 +47,12 @@ void GLGridPass::execute(RenderGraphContext& rg) {
     auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
     auto& glView    = gl.getView();
+
+    // Route to the HDR FBO's overlay attachment so the grid's authored
+    // colours skip the composite tonemap chain and show on screen exactly.
+    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    if (!hdr.isReady()) return;
+    hdr.bindForOverlay();
 
     GLShader* shader = glView.resolveShader(m_shader, resources);
     if (!shader) return;
