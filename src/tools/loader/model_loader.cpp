@@ -21,6 +21,8 @@
 
 #include "stb_image.h"   // declarations only; impl is in texture_loaders.cpp
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -181,8 +183,8 @@ namespace {
                 out.indices.push_back(face.mIndices[k]);
         }
 
-        out.name   = meshName(path, meshIdx);
-        out.source = { {"kind", "model"}, {"path", path}, {"mesh", meshIdx} };
+        out.name           = meshName(path, meshIdx);
+        out.sourceJson()   = { {"kind", "model"}, {"path", path}, {"mesh", meshIdx} };
         out.computeAndSetBounds();
         return out;
     }
@@ -207,7 +209,7 @@ namespace {
         tex.srgb     = srgb;
         tex.name     = name;
         tex.pixelData.assign(rgba, rgba + static_cast<size_t>(w) * h * 4);
-        tex.source   = { {"kind", "model-image"}, {"name", name} };
+        tex.sourceJson() = { {"kind", "model-image"}, {"name", name} };
         return res.add(std::move(tex));
     }
 
@@ -279,8 +281,8 @@ namespace {
         if (MaterialHandle e = res.findByName<MaterialAsset>(nm)) return e;
 
         MaterialAsset out;
-        out.name   = nm;
-        out.source = { {"kind", "model"}, {"path", path}, {"material", matIdx} };
+        out.name           = nm;
+        out.sourceJson()   = { {"kind", "model"}, {"path", path}, {"material", matIdx} };
 
         if (scene && matIdx >= 0 && matIdx < static_cast<int>(scene->mNumMaterials)) {
             const aiMaterial* mt = scene->mMaterials[matIdx];

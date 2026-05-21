@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include <nlohmann/json.hpp>
+
 #include "resource/resource_manager.h"
 #include "resource/shader_asset.h"
 #include "system/io/file_watcher.h"
@@ -29,12 +31,12 @@ inline ShaderHandle loadShader(
     asset.path            = path;
     asset.samplerBindings = std::move(samplerBindings);
     asset.variantAware    = variantAware;
-    asset.source = {{"kind", "directory"}, {"path", path}};
+    asset.sourceJson() = {{"kind", "directory"}, {"path", path}};
     if (!asset.samplerBindings.empty()) {
-        asset.source["samplerBindings"] = asset.samplerBindings;
+        asset.sourceJson()["samplerBindings"] = asset.samplerBindings;
     }
     if (variantAware) {
-        asset.source["variantAware"] = true;
+        asset.sourceJson()["variantAware"] = true;
     }
     return resources.add(std::move(asset), name);
 }

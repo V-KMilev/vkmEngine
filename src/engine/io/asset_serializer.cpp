@@ -199,14 +199,15 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
     }
 }
 
-/// Emit one asset descriptor. Skips assets with no source — they can't be
-/// recreated at load time and would round-trip into nothing.
-void emitDescriptor(nlohmann::json& target, const std::string& name, const nlohmann::json& source) {
-    if (source.is_null()) {
+/// Emit one asset descriptor. Skips assets with no source - they can't be
+/// recreated at load time and would round-trip into nothing. @p source may
+/// be null (asset's source pointer wasn't populated) and is logged + skipped.
+void emitDescriptor(nlohmann::json& target, const std::string& name, const nlohmann::json* source) {
+    if (!source || source->is_null()) {
         LOG_WARNING("AssetSerializer: asset '%s' has no source; skipping in save", name.c_str());
         return;
     }
-    target.push_back({{"name", name}, {"source", source}});
+    target.push_back({{"name", name}, {"source", *source}});
 }
 
 } // namespace
@@ -224,7 +225,7 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
         if (!h) return;
         if (!seenTextures.insert(h.id()).second) return;
         const auto& asset = resources.get(h);
-        emitDescriptor(textures, asset.name, asset.source);
+        emitDescriptor(textures, asset.name, asset.source.get());
     };
 
     scene.forEach<Mesh>([&](EntityId, const Mesh& m) {
@@ -232,7 +233,7 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
             const auto& asset = resources.get(m.mesh);
             // Editor-only assets (preview primitives etc.) never serialize:
             // they belong to the running editor, not to the user's scene.
-            if (!asset.editorOnly) emitDescriptor(meshes, asset.name, asset.source);
+            if (!asset.editorOnly) emitDescriptor(meshes, asset.name, asset.source.get());
         }
         if (m.material && seenMaterials.insert(m.material.id()).second) {
             const auto& asset = resources.get(m.material);
@@ -240,7 +241,8 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
             // Materials always save as `inline` - captures the actual runtime
             // state (including editor scalar tweaks) regardless of how the
             // material was originally created.
-            emitDescriptor(materials, asset.name, materialToInline(asset, resources));
+            nlohmann::json inlineDesc = materialToInline(asset, resources);
+            emitDescriptor(materials, asset.name, &inlineDesc);
             // Pull every texture this material references into the texture
             // descriptor pool too.
             for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
@@ -308,7 +310,7 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
             LOG_WARNING("AssetSerializer: mesh '%s' recreated empty — skipping", name.c_str());
             return;
         }
-        mesh.source = source;
+        mesh.sourceJson() = source;
         resources.add(std::move(mesh), name);
     });
 
