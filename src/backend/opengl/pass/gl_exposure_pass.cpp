@@ -6,7 +6,7 @@
 #include "debug/print_helper.h"
 
 #include "core/gl_backend.h"
-#include "core/gl_hdr_target.h"
+#include "core/gl_scene_target.h"
 #include "resource/gl_shader_program.h"
 #include "resource/gl_auto_exposure.h"
 
@@ -48,7 +48,7 @@ void GLExposurePass::execute(RenderGraphContext& rg) {
     }
 
     auto& gl  = static_cast<GLBackend&>(backend);
-    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     auto& ae = *rg.resource<GLAutoExposure>(RGResource::AdaptedLuminance);
     if (!hdr.isReady()) return;
 

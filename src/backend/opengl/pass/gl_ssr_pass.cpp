@@ -6,7 +6,7 @@
 #include "debug/print_helper.h"
 
 #include "core/gl_backend.h"
-#include "core/gl_hdr_target.h"
+#include "core/gl_scene_target.h"
 #include "resource/gl_shader_program.h"
 #include "resource/gl_gbuffer.h"
 
@@ -33,7 +33,7 @@ GLSSRPass::GLSSRPass(ShaderHandle shader)
 GLSSRPass::~GLSSRPass() = default;
 
 void GLSSRPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
-    // Reuses GLGBuffer / GLHdrTarget, both owned and resized by GLBackend.
+    // Reuses GLGBuffer / GLSceneTarget, both owned and resized by GLBackend.
 }
 
 void GLSSRPass::execute(RenderGraphContext& rg) {
@@ -46,7 +46,7 @@ void GLSSRPass::execute(RenderGraphContext& rg) {
     }
     auto& gl      = static_cast<GLBackend&>(backend);
     auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
-    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     if (!gbuffer.isReady() || !hdr.isReady()) return;
 
     GLShader* shader = gl.getView().resolveShader(m_shader, resources);

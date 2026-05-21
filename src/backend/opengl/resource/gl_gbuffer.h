@@ -19,7 +19,7 @@ namespace Engine {
  * GTAO pass writes and the forward PBR pass samples. The geometry MRT is
  * viewport-sized; the AO target is HALF resolution (GTAO is low frequency -
  * 4x less work) with linear filtering so the forward pass gets a free smooth
- * upsample. Rebuilt on resize. Header-only to mirror gl_hdr_target.h - all GL
+ * upsample. Rebuilt on resize. Header-only to mirror gl_scene_target.h - all GL
  * machinery is in the Core wrappers.
  */
 class GLGBuffer {

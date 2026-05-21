@@ -8,7 +8,7 @@
 #include "debug/print_helper.h"
 
 #include "core/gl_backend.h"
-#include "core/gl_hdr_target.h"
+#include "core/gl_scene_target.h"
 #include "resource/gl_shader_program.h"
 #include "resource/gl_gbuffer.h"
 #include "resource/gl_post_scratch.h"
@@ -48,7 +48,7 @@ void GLMotionBlurPass::execute(RenderGraphContext& rg) {
         return;
     }
     auto& gl      = static_cast<GLBackend&>(backend);
-    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
     auto& scratch = *rg.resource<GLPostScratch>(RGResource::PostScratch);
     if (!hdr.isReady() || !gbuffer.isReady() || !scratch.isReady()) return;

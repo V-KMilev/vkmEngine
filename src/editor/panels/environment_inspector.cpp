@@ -427,7 +427,25 @@ void EnvironmentInspector::drawPost(EditorContext& /*ec*/, EnvironmentConfig& en
 }
 
 void EnvironmentInspector::drawScene(EditorContext& /*ec*/, EnvironmentConfig& env) {
-    // Grid / AABB also have one-click toggles in the viewport "Show" menu.
+    // Render mode (Default / Wireframe / future debug views). The forward
+    // pass + post chain key off view.modeConfig derived from this each
+    // frame; selecting Wireframe routes geometry through the unlit shader,
+    // disables post-effects, and bypasses the display transform.
+    {
+        drawPropertyLabel("Render Mode");
+        ImGui::SetNextItemWidth(-1.0f);
+        static const char* MODE_NAMES[] = { "Default", "Wireframe" };
+        int modeIdx = static_cast<int>(env.renderMode);
+        if (ImGui::Combo("##RenderMode", &modeIdx, MODE_NAMES, IM_ARRAYSIZE(MODE_NAMES))) {
+            env.renderMode = static_cast<RenderMode>(modeIdx);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Diagnostic view selector. Wireframe shows unlit "
+                              "geometry edges with post-effects + tonemap bypassed.");
+        }
+        ImGui::Spacing();
+    }
+
     if (cardHeader("grid", "Grid", &env.grid.enabled)) {
         ImGui::BeginDisabled(!env.grid.enabled);
         sliderF("Cell Size", "##GScale", &env.grid.scale, 0.1f, 100.0f, "%.1f",

@@ -14,26 +14,37 @@
 namespace Engine {
 
 /**
- * @brief Offscreen HDR scene target with MSAA, plus a resolved sample source.
+ * @brief Offscreen scene-render target: MSAA HDR + MSAA overlay + depth.
  *
- * The whole scene (opaque, grid, debug) renders into a multisampled float
- * color buffer so light is never clamped before tone mapping. After the
- * scene passes, resolve() blits the MSAA buffer down into a single-sample
- * RGBA16F texture that the composite/AgX pass samples.
+ * Single FBO with three MSAA attachments sharing one depth/stencil
+ * renderbuffer:
+ *   - color 0: RGBA16F HDR for the lit scene (forward + skybox + SSR +
+ *              all tonemapped post). resolve() blits to a single-sample
+ *              RGBA16F texture the composite/AgX pass samples.
+ *   - color 1: RGBA8 overlay for diagnostic passes (AABB / Grid).
+ *              resolveOverlay() blits to a single-sample RGBA8 texture
+ *              that composite blends OVER the tonemapped scene with
+ *              sRGB encode only - so debug colors show pixel-exact
+ *              regardless of exposure / tonemap / bloom.
+ *   - depth/stencil: shared by both color attachments, so AABB / Grid
+ *              get the same scene-geometry depth-test for free.
+ *
+ * bindForRender() routes draw-buffer to attachment 0; bindForOverlay()
+ * routes it to attachment 1; clearOverlay() clears only attachment 1.
  *
  * Header-only to mirror gl_render_target.h; all GL machinery already lives
  * in the Core wrappers (multisample renderbuffer storage + FBO blit).
  */
-class GLHdrTarget {
+class GLSceneTarget {
     public:
-        GLHdrTarget() = default;
-        ~GLHdrTarget() = default;
+        GLSceneTarget() = default;
+        ~GLSceneTarget() = default;
 
-        GLHdrTarget(const GLHdrTarget& other) = delete;
-        GLHdrTarget& operator=(const GLHdrTarget& other) = delete;
+        GLSceneTarget(const GLSceneTarget& other) = delete;
+        GLSceneTarget& operator=(const GLSceneTarget& other) = delete;
 
-        GLHdrTarget(GLHdrTarget && other) = delete;
-        GLHdrTarget& operator=(GLHdrTarget && other) = delete;
+        GLSceneTarget(GLSceneTarget && other) = delete;
+        GLSceneTarget& operator=(GLSceneTarget && other) = delete;
 
     public:
         /**
