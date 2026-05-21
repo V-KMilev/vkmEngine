@@ -19,8 +19,8 @@
 
 namespace Engine {
 
-SceneIOController::SceneIOController(EventSystem* events, CameraController* cameraController,
-                                     RenderSystem* renderSystem)
+SceneIOController::SceneIOController(EventSystem& events, CameraController& cameraController,
+                                     RenderSystem& renderSystem)
     : m_events(events)
     , m_cameraController(cameraController)
     , m_renderSystem(renderSystem)
@@ -33,12 +33,19 @@ SceneIOController::SceneIOController(EventSystem* events, CameraController* came
 
 SceneIOController::~SceneIOController() = default;
 
-void SceneIOController::save(FrameContext& ctx) {
+void SceneIOController::save(FrameContext& ctx, EditorState& state) {
     if (m_currentScenePath.empty()) {
         requestSaveAs();
         return;
     }
     SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath);
+    state.sceneDirty = false;
+    pushRecent(state, m_currentScenePath);
+}
+
+void SceneIOController::loadPath(FrameContext& ctx, EditorState& state, const std::string& path) {
+    m_currentScenePath = path;
+    load(ctx, state);
 }
 
 void SceneIOController::requestSaveAs() {
@@ -71,24 +78,34 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
 
     // Re-bind the camera controller to the new scene's active Camera -
     // the prior handle's slot may now hold a different entity (or be empty).
-    if (m_cameraController) {
+    {
         Entity rebound{};
         ctx.scene.forEach<Camera>([&](EntityId id, const Camera& c) {
             if (c.active && !rebound.getID()) rebound = Entity{id};
         });
-        m_cameraController->setCameraEntity(rebound);
+        m_cameraController.setCameraEntity(rebound);
     }
 
     // TAA / other reprojection-based post effects must drop their
     // history - sampling the old scene's history over the new view
     // smears for several frames after the swap.
-    if (m_renderSystem) m_renderSystem->invalidateTemporalHistory();
+    m_renderSystem.invalidateTemporalHistory();
 
     // Tell external subscribers (anything that cares about scene swaps)
     // the load happened. The two effects above used to ride this event
     // back to us via a self-subscribe; that needed Engine::get() to fetch
     // the Scene, so we just do them directly here now that we have ctx.
-    if (m_events) m_events->emit(SceneSerializer::SceneLoadedEvent{m_currentScenePath});
+    m_events.emit(SceneSerializer::SceneLoadedEvent{m_currentScenePath});
+
+    state.sceneDirty = false;
+    pushRecent(state, m_currentScenePath);
+}
+
+void SceneIOController::pushRecent(EditorState& state, const std::string& path) {
+    auto& mru = state.recentScenes;
+    mru.erase(std::remove(mru.begin(), mru.end(), path), mru.end());
+    mru.insert(mru.begin(), path);
+    if (mru.size() > EditorState::MaxRecentScenes) mru.resize(EditorState::MaxRecentScenes);
 }
 
 void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
@@ -130,6 +147,8 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
         if (ImGui::Button(collides ? "Overwrite" : "Save", ImVec2(120, 0))) {
             m_currentScenePath = finalPath;
             SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath);
+            state.sceneDirty = false;
+            pushRecent(state, m_currentScenePath);
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndDisabled();

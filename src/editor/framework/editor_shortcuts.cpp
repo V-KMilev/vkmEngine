@@ -16,7 +16,7 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
 
     FrameContext&     ctx    = ec.frame;
     EditorState&      state  = ec.state;
-    CameraController* camera = ec.cameraController;
+    CameraController& camera = ec.cameraController;
     const auto&       kb     = state.keybinds;
 
     if (isPressed(kb.toggleStats))     state.showStats     = !state.showStats;
@@ -29,7 +29,7 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
     if (isPressed(kb.openPreferences)) state.showPreferences = !state.showPreferences;
 
     if (isPressed(kb.saveSceneAs))     sceneIO.requestSaveAs();
-    else if (isPressed(kb.saveScene))  sceneIO.save(ctx);
+    else if (isPressed(kb.saveScene))  sceneIO.save(ctx, state);
     if (isPressed(kb.loadScene))       sceneIO.requestLoad();
 
     if (isPressed(kb.deleteEntity) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
@@ -44,9 +44,14 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
     if (isPressed(kb.focusSelected) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
         EditorActions::focusOnSelected(ctx, state, camera);
     }
+    // Shift+F: frame the whole scene. Standard Blender/Unity binding.
+    if (!ImGui::GetIO().KeyCtrl && ImGui::GetIO().KeyShift && !ImGui::GetIO().KeyAlt
+        && ImGui::IsKeyPressed(ImGuiKey_F)) {
+        EditorActions::frameAll(ctx, camera);
+    }
 
     // Gizmo mode shortcuts (only when camera NOT in fly mode)
-    if (!camera->isLooking()) {
+    if (!camera.isLooking()) {
         if (isPressed(kb.gizmoSelect))      state.gizmoOperation = GizmoOperation::Select;
         if (isPressed(kb.gizmoTranslate))   state.gizmoOperation = GizmoOperation::Translate;
         if (isPressed(kb.gizmoRotate))      state.gizmoOperation = GizmoOperation::Rotate;

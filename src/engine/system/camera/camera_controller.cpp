@@ -157,6 +157,24 @@ void CameraController::focusOn(Scene& scene, const glm::vec3& target, float dist
     updateRotationFromAngles(transform.rotation, m_yaw, m_pitch);
 }
 
+void CameraController::viewFrom(Scene& scene, const glm::vec3& target,
+                                const glm::vec3& direction, float distance) {
+    EntityId camId = m_cameraEntity.getID();
+    if (!camId || !scene.has<Transform>(camId)) return;
+
+    auto& transform = scene.get<Transform>(camId);
+
+    const float dlen = glm::length(direction);
+    if (dlen < 1e-6f) return;
+    const glm::vec3 dir = direction / dlen;
+
+    transform.position = target + dir * distance;
+    const glm::vec3 lookDir = -dir;
+    m_pitch = std::asin(std::clamp(lookDir.y, -1.0f, 1.0f));
+    m_yaw   = std::atan2(lookDir.x, lookDir.z);
+    updateRotationFromAngles(transform.rotation, m_yaw, m_pitch);
+}
+
 void CameraController::updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch) {
     // Yaw rotates around world up axis
     glm::quat yawQuat = glm::angleAxis(yaw, Math::WORLD_AXIS_Y_UP);

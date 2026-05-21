@@ -3,6 +3,7 @@
 #include "ui/editor_style.h"
 
 #include "system/render/render_view.h"          // EnvironmentConfig
+#include "system/visibility/visibility.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
 #include "system/render/render_graph.h"
@@ -70,38 +71,26 @@ namespace {
         return ch;
     }
 
-    // "Browse" button + modal listing APP_ROOT_DIR/<subdir> filtered by
-    // extension; picking a file writes a root-relative path into @p target.
-    void fileBrowse(const char* id, const char* subdir,
-                    std::initializer_list<const char*> exts,
-                    std::string& target) {
-        char popupId[64];
-        snprintf(popupId, sizeof(popupId), "Browse##%s", id);
-        if (ImGui::Button(popupId)) ImGui::OpenPopup(popupId);
-        if (ImGui::BeginPopupModal(popupId, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            const std::filesystem::path root = std::filesystem::path(APP_ROOT_DIR) / subdir;
-            ImGui::TextDisabled("%s", root.string().c_str());
-            ImGui::Separator();
-            std::error_code ec;
-            bool any = false;
-            for (const auto& e : std::filesystem::directory_iterator(root, ec)) {
-                if (!e.is_regular_file()) continue;
-                const std::string ext = e.path().extension().string();
-                bool match = false;
-                for (const char* x : exts) if (ext == x) { match = true; break; }
-                if (!match) continue;
-                any = true;
-                const std::string name = e.path().filename().string();
-                if (ImGui::Selectable(name.c_str())) {
-                    target = std::string(subdir) + "/" + name;
-                    ImGui::CloseCurrentPopup();
-                }
-            }
-            if (!any) ImGui::TextDisabled("(no matching files here)");
-            ImGui::Separator();
-            if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
+    // "Browse" button + AssetPicker modal. Picker is owned by the panel
+    // (one per slot) so its on-open scan cache outlives a single draw.
+    void browseButton(const char* btnLabel, AssetPicker& picker,
+                      const char* subdir,
+                      std::initializer_list<const char*> exts,
+                      std::string& target) {
+        if (ImGui::Button(btnLabel)) {
+            const std::filesystem::path appRoot = APP_ROOT_DIR;
+            picker.options.popupId    = btnLabel;
+            picker.options.title      = "Browse";
+            picker.options.root       = appRoot / subdir;
+            picker.options.recursive  = false;
+            picker.options.kind       = AssetPicker::Kind::Files;
+            picker.options.extensions.clear();
+            for (const char* x : exts) picker.options.extensions.emplace_back(x);
+            picker.options.relativeTo = appRoot;
+            picker.open();
         }
+        std::string picked;
+        if (picker.draw(picked)) target = picked;
     }
 
     enum class Preset { Low, Medium, High, Cinematic };
@@ -224,17 +213,17 @@ void EnvironmentInspector::drawLighting(EditorContext& /*ec*/, EnvironmentConfig
     }
     if (iblOpen) {
         ImGui::BeginDisabled(!iblOn);
-        static char hdrBuf[260];
-        snprintf(hdrBuf, sizeof(hdrBuf), "%s", env.ibl.path.c_str());
+        snprintf(m_hdrPathBuf, sizeof(m_hdrPathBuf), "%s", env.ibl.path.c_str());
         drawPropertyLabel("HDR Path");
         ImGui::SetNextItemWidth(-150.0f);
-        if (ImGui::InputText("##IBLPath", hdrBuf, sizeof(hdrBuf),
+        if (ImGui::InputText("##IBLPath", m_hdrPathBuf, sizeof(m_hdrPathBuf),
                 ImGuiInputTextFlags_EnterReturnsTrue))
-            env.ibl.path = hdrBuf;
+            env.ibl.path = m_hdrPathBuf;
         ImGui::SameLine();
-        if (ImGui::Button("Apply##IBL")) env.ibl.path = hdrBuf;
+        if (ImGui::Button("Apply##IBL")) env.ibl.path = m_hdrPathBuf;
         ImGui::SameLine();
-        fileBrowse("ibl", "assets/envs", {".hdr", ".HDR"}, env.ibl.path);
+        browseButton("Browse##IBL", m_iblPicker, "assets/envs",
+                     {".hdr", ".HDR"}, env.ibl.path);
         sliderF("Intensity", "##IBLInt", &env.ibl.intensity, 0.0f, 5.0f, "%.2f",
                 "Strength of image-based ambient + specular");
         if (env.ibl.path.empty())
@@ -406,17 +395,17 @@ void EnvironmentInspector::drawPost(EditorContext& /*ec*/, EnvironmentConfig& en
     ImGui::Spacing();
     if (cardHeader("cg", "Color Grading (LUT)", &env.colorGrade.enabled)) {
         ImGui::BeginDisabled(!env.colorGrade.enabled);
-        static char lutBuf[260];
-        snprintf(lutBuf, sizeof(lutBuf), "%s", env.colorGrade.lutPath.c_str());
+        snprintf(m_lutPathBuf, sizeof(m_lutPathBuf), "%s", env.colorGrade.lutPath.c_str());
         drawPropertyLabel("LUT strip");
         ImGui::SetNextItemWidth(-150.0f);
-        if (ImGui::InputText("##LutPath", lutBuf, sizeof(lutBuf),
+        if (ImGui::InputText("##LutPath", m_lutPathBuf, sizeof(m_lutPathBuf),
                 ImGuiInputTextFlags_EnterReturnsTrue))
-            env.colorGrade.lutPath = lutBuf;
+            env.colorGrade.lutPath = m_lutPathBuf;
         ImGui::SameLine();
-        if (ImGui::Button("Apply##LUT")) env.colorGrade.lutPath = lutBuf;
+        if (ImGui::Button("Apply##LUT")) env.colorGrade.lutPath = m_lutPathBuf;
         ImGui::SameLine();
-        fileBrowse("lut", "assets/lut", {".png", ".PNG"}, env.colorGrade.lutPath);
+        browseButton("Browse##LUT", m_lutPicker, "assets/lut",
+                     {".png", ".PNG"}, env.colorGrade.lutPath);
         sliderF("Intensity", "##LutInt", &env.colorGrade.intensity, 0.0f, 1.0f, "%.2f",
                 "Blend toward the graded look");
         if (!env.colorGrade.lutPath.empty())
@@ -476,24 +465,22 @@ void EnvironmentInspector::drawPipeline(EditorContext& ec) {
 
     ImGui::TextDisabled("Toggle individual graph passes (advanced).");
     ImGui::Spacing();
-    if (ec.renderSystem) {
-        // Narrow API on RenderSystem - the panel doesn't include
-        // render_graph.h or know about the pass class hierarchy.
-        for (size_t i = 0; i < ec.renderSystem->passCount(); ++i) {
-            bool enabled = ec.renderSystem->isPassEnabled(i);
-            const std::string_view name = ec.renderSystem->passName(i);
-            // ImGui::Checkbox needs a C string; passName is null-terminated
-            // (RenderPass::getName returns const std::string&) so .data()
-            // is safe here.
-            if (ImGui::Checkbox(name.data(), &enabled))
-                ec.renderSystem->setPassEnabled(i, enabled);
-        }
+    // Narrow API on RenderSystem - the panel doesn't include render_graph.h
+    // or know about the pass class hierarchy.
+    for (size_t i = 0; i < ec.renderSystem.passCount(); ++i) {
+        bool enabled = ec.renderSystem.isPassEnabled(i);
+        const std::string_view name = ec.renderSystem.passName(i);
+        // ImGui::Checkbox needs a C string; passName is null-terminated
+        // (RenderPass::getName returns const std::string&) so .data()
+        // is safe here.
+        if (ImGui::Checkbox(name.data(), &enabled))
+            ec.renderSystem.setPassEnabled(i, enabled);
     }
 
     ImGui::Spacing();
     ImGui::SeparatorText("Visibility Culling");
-    if (ec.visibilitySystem) {
-        auto& settings = ec.visibilitySystem->getSettings();
+    {
+        auto& settings = ec.visibilitySystem.getSettings();
         sliderF("Min Pixels", "##MinPx", &settings.minPixels, 0.0f, 100.0f, "%.1f",
                 "Skip objects smaller than this on screen");
         drawPropertyLabel("Max Distance");

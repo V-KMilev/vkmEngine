@@ -4,10 +4,12 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "platform/window/window_manager.h"
-#include "platform/window/input_handle.h"
+#include "system/visibility/visibility.h"
 #include "system/visibility/bounds_utils.h"
 #include "system/camera/camera_controller.h"
 #include "resource/resource_manager.h"
+#include "ecs/component/world_transform.h"
+#include "core/math/rotation.h"
 
 namespace Engine {
 
@@ -26,8 +28,7 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
     // The camera you fly *is* the viewport eye: a transform gizmo on it would
     // fight the fly controller (both write its Transform every frame). It can
     // still be selected - Camera params stay editable in the Inspector.
-    if (ec.cameraController
-        && state.selectedEntity == ec.cameraController->getCameraEntity().getID())
+    if (state.selectedEntity == ec.cameraController.getCameraEntity().getID())
         return;
 
     // The 3D rendering covers the full GLFW window (glViewport(0,0,W,H)),
@@ -134,7 +135,329 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
         // Local transform changed — mark this entity's hierarchy subtree dirty
         // so HierarchySystem recomputes WorldTransforms next frame.
         HierarchyOperations::markDirty(ctx.scene, state.selectedEntity);
+        state.markSceneDirty();
     }
+}
+
+namespace {
+    // Project a world point through the viewport's view+projection into
+    // screen coordinates inside the viewport child rect. Returns false when
+    // the point is behind the camera. The viewport's 3D backbuffer covers
+    // the full GLFW window, so the projection is over winW/winH and the
+    // result is then offset to the viewport's screen origin (vpMin).
+    bool projectToViewport(const glm::mat4& vp, const glm::vec3& p,
+                           ImVec2 vpMin, float winW, float winH,
+                           ImVec2 vpSize, ImVec2& out) {
+        const glm::vec4 clip = vp * glm::vec4(p, 1.0f);
+        if (clip.w <= 1e-5f) return false;
+        const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+        // The 3D pass renders to the full window, so NDC maps to (winW, winH).
+        // The editor's viewport child is a sub-rect of the window — convert
+        // window-space pixels into viewport-local screen coords.
+        const float winX =  (ndc.x * 0.5f + 0.5f) * winW;
+        const float winY =  (1.0f - (ndc.y * 0.5f + 0.5f)) * winH;
+        // window screen coords already include vpMin since the GLFW window
+        // origin matches the ImGui main viewport origin.
+        (void)vpMin; (void)vpSize;
+        out = ImVec2(winX, winY);
+        return true;
+    }
+
+    glm::vec3 lightWorldPos(const Scene& scene, EntityId id, const Transform& tf) {
+        if (scene.has<WorldTransform>(id))
+            return glm::vec3(scene.get<WorldTransform>(id).model[3]);
+        return tf.position;
+    }
+}
+
+void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
+    FrameContext& ctx = ec.frame;
+    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+
+    const glm::mat4 vp = ctx.visibility->projection * ctx.visibility->view;
+    const float winW = static_cast<float>(ctx.window.getWidth());
+    const float winH = static_cast<float>(ctx.window.getHeight());
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->PushClipRect(ec.viewportPos,
+        ImVec2(ec.viewportPos.x + ec.viewportSize.x,
+               ec.viewportPos.y + ec.viewportSize.y), true);
+
+    ctx.scene.forEach<Light, Transform>([&](EntityId id, const Light& light, const Transform& tf) {
+        if (!light.enabled) return;
+        const bool selected = (ec.state.selectedEntity == id);
+        const ImU32 col = selected
+            ? EditorStyle::HIGHLIGHT_U32
+            : IM_COL32(static_cast<int>(light.color.r * 220),
+                       static_cast<int>(light.color.g * 220),
+                       static_cast<int>(light.color.b * 220), 200);
+
+        const glm::vec3 pos = lightWorldPos(ctx.scene, id, tf);
+        const glm::vec3 dir = glm::normalize(Math::computeForward(tf.rotation));
+
+        // Billboard icon at the entity origin so a light is always findable
+        // even if the wireframe is tiny or pointed away. Drawn first so the
+        // wireframe overlays it; for the user the dot reads as "the light
+        // lives here".
+        {
+            ImVec2 sp;
+            if (projectToViewport(vp, pos, ec.viewportPos, winW, winH, ec.viewportSize, sp)) {
+                const float r = 8.0f;
+                // Dim disc behind the glyph so the icon reads on any background.
+                dl->AddCircleFilled(sp, r + 1.0f, IM_COL32(15, 15, 18, 180), 16);
+                const EditorIcon glyph =
+                    light.type == LightType::Directional ? EditorIcon::LightDir :
+                    light.type == LightType::Point       ? EditorIcon::LightPoint :
+                                                            EditorIcon::LightSpot;
+                drawEditorIcon(dl, glyph, sp, r * 0.85f, col);
+            }
+        }
+
+        switch (light.type) {
+            case LightType::Directional: {
+                // Sun gizmo: a small disc at the light origin plus three
+                // parallel rays in the forward direction. The triangular
+                // offset reads as "parallel rays" instead of a single arrow
+                // (which always looked more like a spotlight).
+                const float L      = 1.5f;          // ray length (world units)
+                const float spread = 0.18f;         // lateral offset of side rays
+                const float discR  = 0.10f;         // sun disc radius
+
+                // Build an orthonormal basis in the plane perpendicular to dir
+                // so the three rays are coplanar with that plane.
+                const glm::vec3 up = std::abs(dir.y) < 0.99f
+                    ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
+                const glm::vec3 right = glm::normalize(glm::cross(dir, up));
+                const glm::vec3 udir  = glm::normalize(glm::cross(right, dir));
+
+                const glm::vec3 offsets[3] = {
+                    glm::vec3(0.0f),
+                    right *  spread + udir *  spread * 0.5f,
+                    right * -spread + udir *  spread * 0.5f,
+                };
+
+                // Disc outline (perpendicular to dir) so the user can see the
+                // light origin distinctly from the rays.
+                {
+                    const int N = 16;
+                    ImVec2 prev{};
+                    bool havePrev = false;
+                    for (int s = 0; s <= N; ++s) {
+                        const float t = (static_cast<float>(s) / N) * 6.2831853f;
+                        const glm::vec3 p = pos + (right * std::cos(t) + udir * std::sin(t)) * discR;
+                        ImVec2 sp;
+                        if (projectToViewport(vp, p, ec.viewportPos, winW, winH, ec.viewportSize, sp)) {
+                            if (havePrev) dl->AddLine(prev, sp, col, 1.5f);
+                            prev = sp; havePrev = true;
+                        } else havePrev = false;
+                    }
+                }
+
+                // Three parallel arrows from the disc plane forward.
+                for (int i = 0; i < 3; ++i) {
+                    const glm::vec3 start = pos + offsets[i];
+                    const glm::vec3 end   = start + dir * L;
+                    ImVec2 a, b;
+                    if (!projectToViewport(vp, start, ec.viewportPos, winW, winH, ec.viewportSize, a)) continue;
+                    if (!projectToViewport(vp, end,   ec.viewportPos, winW, winH, ec.viewportSize, b)) continue;
+                    dl->AddLine(a, b, col, 2.0f);
+
+                    ImVec2 dv(b.x - a.x, b.y - a.y);
+                    const float len = std::sqrt(dv.x*dv.x + dv.y*dv.y);
+                    if (len > 1.0f) {
+                        dv.x /= len; dv.y /= len;
+                        const ImVec2 perp(-dv.y, dv.x);
+                        const float h = 6.0f;
+                        dl->AddTriangleFilled(b,
+                            ImVec2(b.x - dv.x * h * 2 + perp.x * h, b.y - dv.y * h * 2 + perp.y * h),
+                            ImVec2(b.x - dv.x * h * 2 - perp.x * h, b.y - dv.y * h * 2 - perp.y * h), col);
+                    }
+                }
+                break;
+            }
+            case LightType::Point: {
+                // Three orthogonal great-circle wireframes at radius.
+                const int N = 32;
+                const float r = std::max(0.05f, light.radius);
+                const glm::vec3 axes[3][2] = {
+                    {{1,0,0},{0,1,0}}, {{1,0,0},{0,0,1}}, {{0,1,0},{0,0,1}}
+                };
+                for (int ring = 0; ring < 3; ++ring) {
+                    ImVec2 prev{};
+                    bool havePrev = false;
+                    for (int s = 0; s <= N; ++s) {
+                        const float t = (static_cast<float>(s) / N) * 6.2831853f;
+                        const glm::vec3 p = pos + (axes[ring][0] * std::cos(t) + axes[ring][1] * std::sin(t)) * r;
+                        ImVec2 sp;
+                        if (projectToViewport(vp, p, ec.viewportPos, winW, winH, ec.viewportSize, sp)) {
+                            if (havePrev) dl->AddLine(prev, sp, col, 1.0f);
+                            prev = sp;
+                            havePrev = true;
+                        } else {
+                            havePrev = false;
+                        }
+                    }
+                }
+                break;
+            }
+            case LightType::Spot: {
+                // Cone: apex at pos, base circle of half-angle outerCone at radius.
+                const float r = std::max(0.05f, light.radius);
+                const float half = light.outerConeAngle;
+                const float baseR = std::tan(half) * r;
+                const glm::vec3 baseC = pos + dir * r;
+
+                // Basis perpendicular to dir.
+                glm::vec3 tangent = std::abs(dir.y) < 0.99f
+                    ? glm::normalize(glm::cross(dir, glm::vec3(0, 1, 0)))
+                    : glm::normalize(glm::cross(dir, glm::vec3(1, 0, 0)));
+                glm::vec3 bitangent = glm::cross(dir, tangent);
+
+                ImVec2 apexSp;
+                bool haveApex = projectToViewport(vp, pos, ec.viewportPos, winW, winH, ec.viewportSize, apexSp);
+
+                // Base ring + 4 spokes from apex.
+                const int N = 32;
+                ImVec2 prev{};
+                bool havePrev = false;
+                for (int s = 0; s <= N; ++s) {
+                    const float t = (static_cast<float>(s) / N) * 6.2831853f;
+                    const glm::vec3 p = baseC + (tangent * std::cos(t) + bitangent * std::sin(t)) * baseR;
+                    ImVec2 sp;
+                    if (projectToViewport(vp, p, ec.viewportPos, winW, winH, ec.viewportSize, sp)) {
+                        if (havePrev) dl->AddLine(prev, sp, col, 1.0f);
+                        prev = sp;
+                        havePrev = true;
+                        if (haveApex && (s % 8) == 0) dl->AddLine(apexSp, sp, col, 1.0f);
+                    } else {
+                        havePrev = false;
+                    }
+                }
+                break;
+            }
+        }
+    });
+
+    dl->PopClipRect();
+}
+
+void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
+    FrameContext& ctx = ec.frame;
+    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+
+    const glm::mat4 vp = ctx.visibility->projection * ctx.visibility->view;
+    const float winW = static_cast<float>(ctx.window.getWidth());
+    const float winH = static_cast<float>(ctx.window.getHeight());
+    const EntityId activeCamId = ec.cameraController.getCameraEntity().getID();
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->PushClipRect(ec.viewportPos,
+        ImVec2(ec.viewportPos.x + ec.viewportSize.x,
+               ec.viewportPos.y + ec.viewportSize.y), true);
+
+    ctx.scene.forEach<Camera, Transform>([&](EntityId id, const Camera& cam, const Transform& tf) {
+        // The active editor camera *is* the viewer - drawing a frustum
+        // there would put a gizmo inside the user's eye. Skip it.
+        if (id == activeCamId) return;
+
+        const bool selected = (ec.state.selectedEntity == id);
+        const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : IM_COL32(120, 200, 220, 220);
+
+        const glm::vec3 pos = (ctx.scene.has<WorldTransform>(id))
+            ? glm::vec3(ctx.scene.get<WorldTransform>(id).model[3])
+            : tf.position;
+        const glm::vec3 fwd   = glm::normalize(Math::computeForward(tf.rotation));
+        const glm::vec3 right = glm::normalize(glm::cross(fwd,
+            std::abs(fwd.y) < 0.99f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0)));
+        const glm::vec3 up    = glm::normalize(glm::cross(right, fwd));
+
+        const float dist   = 1.5f;
+        const float aspect = ec.viewportSize.y > 1.0f
+            ? ec.viewportSize.x / ec.viewportSize.y : 16.0f / 9.0f;
+
+        // Frustum half-extents at the chosen depth.
+        float halfH, halfW;
+        if (cam.projection == ProjectionType::Perspective) {
+            halfH = std::tan(cam.fovY * 0.5f) * dist;
+            halfW = halfH * aspect;
+        } else {
+            halfH = cam.orthoHeight * 0.5f;
+            halfW = halfH * aspect;
+        }
+
+        const glm::vec3 c = pos + fwd * dist;
+        const glm::vec3 corners[4] = {
+            c + right *  halfW + up *  halfH,  // top-right
+            c + right * -halfW + up *  halfH,  // top-left
+            c + right * -halfW + up * -halfH,  // bottom-left
+            c + right *  halfW + up * -halfH,  // bottom-right
+        };
+
+        ImVec2 apexSp;
+        bool haveApex = projectToViewport(vp, pos, ec.viewportPos, winW, winH, ec.viewportSize, apexSp);
+
+        ImVec2 cornerSp[4]{};
+        bool haveCorner[4] = {};
+        for (int i = 0; i < 4; ++i) {
+            haveCorner[i] = projectToViewport(vp, corners[i],
+                ec.viewportPos, winW, winH, ec.viewportSize, cornerSp[i]);
+        }
+
+        // For ortho: also project the apex face (a rectangle at the camera
+        // origin, same extents) so the gizmo reads as a box, not a pyramid.
+        if (cam.projection == ProjectionType::Orthographic) {
+            const glm::vec3 nearCorners[4] = {
+                pos + right *  halfW + up *  halfH,
+                pos + right * -halfW + up *  halfH,
+                pos + right * -halfW + up * -halfH,
+                pos + right *  halfW + up * -halfH,
+            };
+            ImVec2 nearSp[4]{};
+            bool haveNear[4] = {};
+            for (int i = 0; i < 4; ++i) {
+                haveNear[i] = projectToViewport(vp, nearCorners[i],
+                    ec.viewportPos, winW, winH, ec.viewportSize, nearSp[i]);
+            }
+            for (int i = 0; i < 4; ++i) {
+                if (haveNear[i] && haveNear[(i + 1) % 4])
+                    dl->AddLine(nearSp[i], nearSp[(i + 1) % 4], col, 1.0f);
+                if (haveNear[i] && haveCorner[i])
+                    dl->AddLine(nearSp[i], cornerSp[i], col, 1.0f);
+            }
+        } else if (haveApex) {
+            // Perspective: spokes from apex to far corners.
+            for (int i = 0; i < 4; ++i) {
+                if (haveCorner[i]) dl->AddLine(apexSp, cornerSp[i], col, 1.5f);
+            }
+        }
+
+        // Far-face rectangle (perspective & ortho share this).
+        for (int i = 0; i < 4; ++i) {
+            const int j = (i + 1) % 4;
+            if (haveCorner[i] && haveCorner[j])
+                dl->AddLine(cornerSp[i], cornerSp[j], col, 1.0f);
+        }
+
+        // "Up" indicator: small triangular tab on the top edge so the
+        // camera's roll is visible at a glance.
+        if (haveCorner[0] && haveCorner[1]) {
+            const ImVec2 mid((cornerSp[0].x + cornerSp[1].x) * 0.5f,
+                             (cornerSp[0].y + cornerSp[1].y) * 0.5f);
+            const ImVec2 tab(mid.x, mid.y - 8.0f);
+            dl->AddTriangleFilled(tab,
+                ImVec2(mid.x - 5.0f, mid.y),
+                ImVec2(mid.x + 5.0f, mid.y), col);
+        }
+
+        // Billboard camera icon at the position.
+        if (haveApex) {
+            const float r = 8.0f;
+            dl->AddCircleFilled(apexSp, r + 1.0f, IM_COL32(15, 15, 18, 180), 16);
+            drawEditorIcon(dl, EditorIcon::Camera, apexSp, r * 0.85f, col);
+        }
+    });
+
+    dl->PopClipRect();
 }
 
 void GizmoOverlay::handleViewportPick(EditorContext& ec) {
@@ -143,12 +466,9 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
 
     if (!ctx.visibility || !ctx.visibility->hasCamera) return;
 
-    auto& mouse = ctx.window.getInputHandle().getMouse();
-    bool leftNow = mouse.isButtonPressed(0); // GLFW_MOUSE_BUTTON_LEFT
-    bool leftJustClicked = leftNow && !m_leftMouseWasDown;
-    m_leftMouseWasDown = leftNow;
-
-    if (!leftJustClicked) return;
+    // Input via ImGui (same source as the rest of the editor): the editor
+    // gates mouse capture per-frame and ImGui handles edge detection.
+    if (!ImGui::IsMouseClicked(ImGuiMouseButton_Left)) return;
     if (!state.viewportHovered) return;
     if (m_gizmo.isOver()) return;
     if (m_gizmo.isUsing()) return;
@@ -158,8 +478,9 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
     float winW = static_cast<float>(ctx.window.getWidth());
     float winH = static_cast<float>(ctx.window.getHeight());
 
-    float mouseX = static_cast<float>(mouse.getX());
-    float mouseY = static_cast<float>(mouse.getY());
+    const ImVec2 mp = ImGui::GetMousePos();
+    float mouseX = mp.x;
+    float mouseY = mp.y;
 
     // Convert to NDC [-1, 1]
     float ndcX =  (2.0f * mouseX / winW)  - 1.0f;
@@ -177,41 +498,38 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
     glm::vec3 rayOrigin = ctx.visibility->cameraPosition;
     glm::vec3 invDir(1.0f / worldDir.x, 1.0f / worldDir.y, 1.0f / worldDir.z);
 
-    // Test against all mesh entities, find nearest hit
+    // Test against the culled visible set instead of the whole scene: the
+    // visibility pass already filtered frustum/distance/size AND precomputed
+    // each entity's world matrix, so picking gets it for free. Off-screen /
+    // hidden meshes are not pickable - that matches what the user can see.
     EntityId hitEntity{};
     float nearestT = std::numeric_limits<float>::max();
 
-    ctx.scene.forEach<Mesh, Transform>([&](EntityId id, const Mesh& mesh, const Transform& transform) {
+    for (const VisibleEntity& v : ctx.visibility->entries) {
+        if (!ctx.scene.has<Mesh>(v.id)) continue;
+        const Mesh& mesh = ctx.scene.get<Mesh>(v.id);
         const auto& asset = ctx.resources.get(mesh.mesh);
-        if (!hasValidBounds(asset.boundsMin, asset.boundsMax)) return;
-
-        // Compute world matrix (hierarchy-aware)
-        glm::mat4 model;
-        if (ctx.scene.has<Hierarchy>(id) && ctx.scene.get<Hierarchy>(id).parent) {
-            model = HierarchyOperations::computeWorldMatrix(ctx.scene, id);
-        } else {
-            model = Transform::computeModelMatrix(transform);
-        }
+        if (!hasValidBounds(asset.boundsMin, asset.boundsMax)) continue;
 
         glm::vec3 worldMin, worldMax;
-        localToWorldAABB(model, asset.boundsMin, asset.boundsMax, worldMin, worldMax);
+        localToWorldAABB(v.model, asset.boundsMin, asset.boundsMax, worldMin, worldMax);
 
         float t;
         if (rayIntersectsAABB(rayOrigin, invDir, worldMin, worldMax, t) && t < nearestT) {
             nearestT = t;
-            hitEntity = id;
+            hitEntity = v.id;
         }
-    });
+    }
 
-    // Also test light entities (no mesh, just position proximity)
+    // Also test light entities (no mesh, just position proximity). Lights
+    // aren't in the visibility set, but HierarchySystem already cached each
+    // hierarchical entity's WorldTransform so we just read it.
     ctx.scene.forEach<Light, Transform>([&](EntityId id, const Light&, const Transform& transform) {
         if (ctx.scene.has<Mesh>(id)) return; // already tested above
 
-        glm::vec3 pos = transform.position;
-        if (ctx.scene.has<Hierarchy>(id) && ctx.scene.get<Hierarchy>(id).parent) {
-            glm::mat4 wm = HierarchyOperations::computeWorldMatrix(ctx.scene, id);
-            pos = glm::vec3(wm[3]);
-        }
+        glm::vec3 pos = ctx.scene.has<WorldTransform>(id)
+            ? glm::vec3(ctx.scene.get<WorldTransform>(id).model[3])
+            : transform.position;
 
         // Use a small sphere-like AABB around the light position
         float radius = 0.5f;
@@ -228,6 +546,7 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
     if (hitEntity) {
         state.selectedEntity = hitEntity;
         state.hierarchyDirty = true;
+        state.markSceneDirty();
     } else {
         // Click on empty space deselects
         state.selectedEntity = {};

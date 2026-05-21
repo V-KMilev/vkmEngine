@@ -11,6 +11,7 @@
 #include <cstdio>
 
 #include "core/system.h"
+#include "debug/statistics.h"
 
 namespace Engine {
 
@@ -24,7 +25,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         char lbl[48];
         const bool haveCurrent = sceneIO.hasPath();
         if (ImGui::MenuItem("Save Scene",   getKeyBindLabel(state.keybinds.saveScene, lbl, sizeof(lbl)), false, haveCurrent)) {
-            sceneIO.save(ctx);
+            sceneIO.save(ctx, state);
         }
         if (ImGui::MenuItem("Save Scene As...", getKeyBindLabel(state.keybinds.saveSceneAs, lbl, sizeof(lbl)))) {
             sceneIO.requestSaveAs();
@@ -32,13 +33,32 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         if (ImGui::MenuItem("Load Scene...", getKeyBindLabel(state.keybinds.loadScene, lbl, sizeof(lbl)))) {
             sceneIO.requestLoad();
         }
+
+        // Recent scenes: MRU list maintained by SceneIOController on every
+        // save/load. Click loads through the same housekeeping path.
+        const bool haveRecents = !state.recentScenes.empty();
+        if (ImGui::BeginMenu("Open Recent", haveRecents)) {
+            for (const auto& p : state.recentScenes) {
+                const size_t s = p.find_last_of("/\\");
+                const char* shortName = (s == std::string::npos) ? p.c_str() : p.c_str() + s + 1;
+                ImGui::PushID(p.c_str());
+                if (ImGui::MenuItem(shortName)) sceneIO.loadPath(ctx, state, p);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", p.c_str());
+                ImGui::PopID();
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Clear list")) state.recentScenes.clear();
+            ImGui::EndMenu();
+        }
+
         if (haveCurrent) {
             ImGui::Separator();
             // Just the scene file name - the "Current:" prefix was noise.
             const std::string& p = sceneIO.path();
             const size_t s = p.find_last_of("/\\");
-            ImGui::TextDisabled("%s",
-                s == std::string::npos ? p.c_str() : p.c_str() + s + 1);
+            ImGui::TextDisabled("%s%s",
+                s == std::string::npos ? p.c_str() : p.c_str() + s + 1,
+                state.sceneDirty ? "  (modified)" : "");
         }
         ImGui::EndMenu();
     }
@@ -56,16 +76,24 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     if (ImGui::BeginMenu("View")) {
         char lbl[48];
         ImGui::MenuItem("Stats Overlay", getKeyBindLabel(state.keybinds.toggleStats, lbl, sizeof(lbl)), &state.showStats);
-        ImGui::MenuItem("Hierarchy",     getKeyBindLabel(state.keybinds.toggleHierarchy, lbl, sizeof(lbl)), &state.showHierarchy);
+        ImGui::MenuItem("Scene",         getKeyBindLabel(state.keybinds.toggleHierarchy, lbl, sizeof(lbl)), &state.showHierarchy);
         ImGui::MenuItem("Inspector",     getKeyBindLabel(state.keybinds.toggleInspector, lbl, sizeof(lbl)), &state.showInspector);
         ImGui::MenuItem("Bottom Panel",  getKeyBindLabel(state.keybinds.toggleBottom, lbl, sizeof(lbl)), &state.showBottom);
+        ImGui::Separator();
+        if (ImGui::MenuItem("Frame Selected", getKeyBindLabel(state.keybinds.focusSelected, lbl, sizeof(lbl)),
+                            false, !!state.selectedEntity)) {
+            EditorActions::focusOnSelected(ctx, state, ec.cameraController);
+        }
+        if (ImGui::MenuItem("Frame All", "Shift+F")) {
+            EditorActions::frameAll(ctx, ec.cameraController);
+        }
         ImGui::Separator();
         ImGui::MenuItem("Material Editor", nullptr, &state.showMaterialEditor);
         ImGui::MenuItem("Asset Browser",   nullptr, &state.showAssetBrowser);
         ImGui::EndMenu();
     }
 
-    if (ImGui::BeginMenu("Scene")) {
+    if (ImGui::BeginMenu("Entity")) {
         EditorActions::drawCreateEntityMenu(ctx.scene, ctx.resources, state);
         ImGui::Separator();
         char deselectLbl[48];
@@ -93,7 +121,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     }
 
     sceneIO.drawDialogs(ctx, state);
-    EditorActions::drawModelImportDialog(ctx.scene, ctx.resources, state);
+    m_modelImport.draw(ctx.scene, ctx.resources, state);
 
     const auto& info = ctx.statistics.getFrameInfo();
     char fps[32];

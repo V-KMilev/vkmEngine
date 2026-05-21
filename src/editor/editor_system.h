@@ -1,24 +1,21 @@
 #pragma once
 
-#include <vector>
-
 #include <imgui.h>
 
 #include "core/system.h"
 #include "framework/editor_state.h"
-#include "framework/editor_panel.h"
 #include "framework/scene_io_controller.h"
 #include "framework/editor_menu_bar.h"
 #include "framework/editor_status_bar.h"
 #include "framework/editor_shortcuts.h"
 #include "framework/editor_panel_resize.h"
 #include "overlays/viewport_overlay.h"
-#include "panels/inspector_panel.h"
-#include "panels/bottom_panel.h"
-#include "panels/hierarchy_panel.h"
 #include "overlays/gizmo_overlay.h"
 #include "overlays/viewport_toolbar.h"
 #include "overlays/playback_bar.h"
+#include "panels/hierarchy_panel.h"
+#include "panels/inspector_panel.h"
+#include "panels/bottom_panel.h"
 #include "panels/preferences_panel.h"
 #include "panels/material_editor.h"
 #include "panels/asset_browser.h"
@@ -45,17 +42,16 @@ class RenderSystem;
  *  - Lets the SceneIOController emit any pending Save-As / Load dialogs.
  *
  * Everything mutating goes through the EditorContext aggregate; the
- * panels themselves are EditorPanel implementations that don't know
- * about each other.
+ * panels themselves are plain classes that don't know about each other.
  */
 class EditorSystem : public System {
     public:
         EditorSystem(
             GLFWwindow* window,
-            CameraController* cameraController,
-            VisibilitySystem* visibilitySystem,
-            RenderSystem* renderSystem,
-            EventSystem* events
+            CameraController& cameraController,
+            VisibilitySystem& visibilitySystem,
+            RenderSystem& renderSystem,
+            EventSystem& events
         );
         ~EditorSystem() override;
 
@@ -75,11 +71,11 @@ class EditorSystem : public System {
         void drawWorkspace(EditorContext& ec);
 
     private:
-        GLFWwindow*       m_window           = nullptr;
-        CameraController* m_cameraController = nullptr;
-        RenderSystem*     m_renderSystem     = nullptr;
-        VisibilitySystem* m_visibilitySystem = nullptr;
-        EventSystem*      m_events           = nullptr;
+        GLFWwindow*       m_window;
+        CameraController& m_cameraController;
+        RenderSystem&     m_renderSystem;
+        VisibilitySystem& m_visibilitySystem;
+        EventSystem&      m_events;
 
         SceneIOController m_sceneIO;
         EditorMenuBar     m_menuBar;
@@ -98,12 +94,6 @@ class EditorSystem : public System {
         PreferencesPanel m_preferences;
         MaterialEditorPanel m_materialEditor;
         AssetBrowserPanel m_assetBrowser;
-
-        /// Registry of the registered panels (the docked panels and the
-        /// Preferences window). Points at the members above; iteration
-        /// seam for panel-wide operations. Viewport overlays are drawn
-        /// explicitly and are deliberately not in here.
-        std::vector<EditorPanel*> m_panels;
 
         // Input state for F5 toggle
         bool m_f5WasDown = false;

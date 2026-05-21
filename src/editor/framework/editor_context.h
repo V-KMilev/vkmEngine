@@ -18,15 +18,20 @@ class EventSystem;
  * editor-relevant engine systems, and the current viewport child rect. It
  * is passed by reference to every panel's draw(), so a panel never carries
  * injected system pointers of its own and every draw() has one signature.
+ *
+ * Collaborators are non-owning references: the editor is always constructed
+ * with live RenderSystem / VisibilitySystem / CameraController / EventSystem
+ * instances (main.cpp registers them before the editor system), so panels
+ * don't guard against nullptr.
  */
 struct EditorContext {
     FrameContext& frame;
     EditorState&  state;
 
-    CameraController* cameraController = nullptr;
-    RenderSystem*     renderSystem     = nullptr;
-    VisibilitySystem* visibilitySystem = nullptr;
-    EventSystem*      events           = nullptr;
+    CameraController& cameraController;
+    RenderSystem&     renderSystem;
+    VisibilitySystem& visibilitySystem;
+    EventSystem&      events;
 
     // Viewport child rect in screen space. Set by EditorSystem each frame
     // just before the in-viewport overlays are drawn.

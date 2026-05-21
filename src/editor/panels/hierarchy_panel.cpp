@@ -25,7 +25,7 @@ void HierarchyPanel::draw(EditorContext& ec) {
     EditorState&  state = ec.state;
     auto& scene = ctx.scene;
 
-    drawPanelTitle("Hierarchy");
+    drawPanelTitle("Scene");
 
     float btnW = ImGui::GetFrameHeight();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - btnW - ImGui::GetStyle().ItemSpacing.x);
@@ -147,6 +147,31 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
         reinterpret_cast<void*>(static_cast<uintptr_t>(entity.index)),
         flags, entityIconKind(scene, entity), name);
 
+    // Hover tooltip: full name, id, and a component digest. Covers truncated
+    // names in narrow panels and gives an at-a-glance summary.
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !ImGui::IsItemToggledOpen()) {
+        ImGui::BeginTooltip();
+        ImGui::TextUnformatted(name);
+        ImGui::TextDisabled("#%u", entity.index);
+        ImGui::Separator();
+        char comps[160] = {};
+        size_t off = 0;
+        auto append = [&](const char* s) {
+            if (off >= sizeof(comps) - 1) return;
+            const int n = snprintf(comps + off, sizeof(comps) - off,
+                off ? "  %s" : "%s", s);
+            if (n > 0) off += static_cast<size_t>(n);
+        };
+        if (scene.has<Transform>(entity)) append("Transform");
+        if (scene.has<Mesh>(entity))      append("Mesh");
+        if (scene.has<Light>(entity))     append("Light");
+        if (scene.has<Camera>(entity))    append("Camera");
+        if (scene.has<Animation>(entity)) append("Animation");
+        if (scene.has<Hierarchy>(entity)) append("Hierarchy");
+        ImGui::TextUnformatted(comps[0] ? comps : "(no components)");
+        ImGui::EndTooltip();
+    }
+
     if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
         ImGui::SetDragDropPayload("VKM_ENTITY", &entity, sizeof(EntityId));
         ImGui::Text("Reparent %s", name);
@@ -161,6 +186,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
                 HierarchyOperations::setParent(scene, dragged, entity);
                 HierarchyOperations::markDirty(scene, dragged);
                 state.hierarchyDirty = true;
+        state.markSceneDirty();
             }
         }
         ImGui::EndDragDropTarget();
@@ -195,6 +221,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
             HierarchyOperations::removeFromParent(scene, entity);
             HierarchyOperations::markDirty(scene, entity);
             state.hierarchyDirty = true;
+        state.markSceneDirty();
         }
     }
 

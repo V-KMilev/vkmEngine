@@ -9,7 +9,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <cctype>
+#include <functional>
 #include <string>
+#include <utility>
+#include <vector>
 #include <filesystem>
 #include <system_error>
 #include <algorithm>
@@ -28,120 +31,11 @@ namespace {
     const ImVec4 ACC_VOL    = ImVec4(0.55f, 0.85f, 0.65f, 1.0f);  // mint - glass volume
     const ImVec4 ACC_TEX    = EditorStyle::AXIS_Y;                 // green
 
-    bool isImageExt(std::string ext) {
-        for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return ext == ".png" || ext == ".jpg" || ext == ".jpeg"
-            || ext == ".tga" || ext == ".bmp";
-    }
-
-    // One material texture-slot row: bound texture name + Set (recursive
-    // assets/ image picker, sRGB-correct) + Clear. Returns true on change.
-    bool textureSlot(ResourceManager& res, const char* label,
-                     TextureHandle& slot, bool srgb) {
-        ImGui::PushID(label);
-        drawPropertyLabel(label);
-
-        std::string cur = "(none)";
-        if (slot) {
-            const auto& t = res.get(slot);
-            const std::string& p = !t.filePath.empty() ? t.filePath : t.name;
-            cur = std::filesystem::path(p).filename().string();
-            if (cur.empty()) cur = p;
-        }
-
-        bool changed = false;
-        char pop[80];
-        snprintf(pop, sizeof(pop), "Pick##%s", label);
-
-        // File name only, frame-aligned, with Set/Clear pinned to the right so
-        // a long path can never shove them off or overlap them.
-        const ImGuiStyle& st = ImGui::GetStyle();
-        const float setW  = ImGui::CalcTextSize("Set").x   + st.FramePadding.x * 2.0f;
-        const float clrW  = ImGui::CalcTextSize("Clear").x + st.FramePadding.x * 2.0f;
-        const float btnsX = ImGui::GetContentRegionMax().x - setW - clrW
-                          - st.ItemSpacing.x;
-
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(cur.c_str());
-        ImGui::SameLine();
-        if (ImGui::GetCursorPosX() < btnsX) ImGui::SetCursorPosX(btnsX);
-        if (ImGui::SmallButton("Set")) ImGui::OpenPopup(pop);
-        ImGui::SameLine();
-        if (slot) {
-            if (ImGui::SmallButton("Clear")) { slot = TextureHandle{}; changed = true; }
-        } else {
-            ImGui::BeginDisabled();
-            ImGui::SmallButton("Clear");
-            ImGui::EndDisabled();
-        }
-
-        if (ImGui::BeginPopupModal(pop, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            const std::filesystem::path root =
-                std::filesystem::path(APP_ROOT_DIR) / "assets";
-            ImGui::TextDisabled("%s  (sRGB: %s)", root.string().c_str(),
-                srgb ? "yes" : "no");
-            ImGui::Separator();
-            std::error_code ec;
-            int shown = 0;
-            for (const auto& e :
-                    std::filesystem::recursive_directory_iterator(root, ec)) {
-                if (!e.is_regular_file()) continue;
-                if (!isImageExt(e.path().extension().string())) continue;
-                std::error_code rel_ec;
-                const std::string rel = std::filesystem::relative(
-                    e.path(), std::filesystem::path(APP_ROOT_DIR), rel_ec)
-                    .generic_string();
-                if (ImGui::Selectable(rel.c_str())) {
-                    TextureHandle h = loadTexture(e.path().string(), res, srgb, true);
-                    if (h) { slot = h; changed = true; }
-                    ImGui::CloseCurrentPopup();
-                }
-                if (++shown > 4000) break;  // safety cap
-            }
-            if (shown == 0) ImGui::TextDisabled("(no images under assets/)");
-            ImGui::Separator();
-            if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
-        }
-
-        ImGui::PopID();
-        return changed;
-    }
-
-    // "Load PBR Folder" modal: immediate sub-folders of assets/. On pick
-    // writes the absolute folder path to @p out and returns true.
-    bool pbrFolderBrowse(std::string& out) {
-        bool picked = false;
-        if (ImGui::SmallButton("Load PBR Folder...")) ImGui::OpenPopup("PBRFolder");
-        if (ImGui::BeginPopupModal("PBRFolder", nullptr,
-                ImGuiWindowFlags_AlwaysAutoResize)) {
-            const std::filesystem::path root =
-                std::filesystem::path(APP_ROOT_DIR) / "assets";
-            ImGui::TextDisabled("%s", root.string().c_str());
-            ImGui::Separator();
-            std::error_code ec;
-            int shown = 0;
-            for (const auto& e : std::filesystem::directory_iterator(root, ec)) {
-                if (!e.is_directory()) continue;
-                const std::string name = e.path().filename().string();
-                if (ImGui::Selectable(name.c_str())) {
-                    out = e.path().string();
-                    picked = true;
-                    ImGui::CloseCurrentPopup();
-                }
-                ++shown;
-            }
-            if (shown == 0) ImGui::TextDisabled("(no sub-folders in assets/)");
-            ImGui::Separator();
-            if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
-        }
-        return picked;
-    }
-
     // The full PBR + texture editor body, grouped into accent cards (same
-    // widget language as the Inspector). Returns true if anything changed.
-    bool drawMaterialBody(ResourceManager& resources, MaterialAsset& mat) {
+    // widget language as the Inspector). Free-function helper - composed
+    // from MaterialEditorPanel::drawMaterialBody below.
+    bool drawMaterialBodyImpl(ResourceManager& resources, MaterialAsset& mat,
+                              const std::function<bool(const char*, TextureHandle&, bool)>& slot) {
         bool changed = false;
 
         if (beginComponentCard("Base", ACC_BASE, true)) {
@@ -269,20 +163,17 @@ namespace {
         endComponentCard();
 
         if (beginComponentCard("Textures", ACC_TEX, false)) {
-            changed |= textureSlot(resources, "Albedo",    mat.albedoTexture,    true);
-            changed |= textureSlot(resources, "Normal",    mat.normalTexture,    false);
-            changed |= textureSlot(resources, "Roughness", mat.roughnessTexture, false);
-            changed |= textureSlot(resources, "Metallic",  mat.metallicTexture,  false);
-            changed |= textureSlot(resources, "AO",        mat.aoTexture,        false);
-            changed |= textureSlot(resources, "Emission",  mat.emissionTexture,  true);
-            changed |= textureSlot(resources, "Height",    mat.heightTexture,    false);
-            changed |= textureSlot(resources, "Clearcoat", mat.clearcoatTexture, false);
-            changed |= textureSlot(resources, "Transmission",
-                mat.transmissionTexture, false);
-            changed |= textureSlot(resources, "Metallic+Roughness",
-                mat.metallicRoughnessTexture, false);
-            changed |= textureSlot(resources, "AO+Metallic+Roughness",
-                mat.aoMetallicRoughnessTexture, false);
+            changed |= slot("Albedo",    mat.albedoTexture,    true);
+            changed |= slot("Normal",    mat.normalTexture,    false);
+            changed |= slot("Roughness", mat.roughnessTexture, false);
+            changed |= slot("Metallic",  mat.metallicTexture,  false);
+            changed |= slot("AO",        mat.aoTexture,        false);
+            changed |= slot("Emission",  mat.emissionTexture,  true);
+            changed |= slot("Height",    mat.heightTexture,    false);
+            changed |= slot("Clearcoat", mat.clearcoatTexture, false);
+            changed |= slot("Transmission",        mat.transmissionTexture,        false);
+            changed |= slot("Metallic+Roughness",  mat.metallicRoughnessTexture,   false);
+            changed |= slot("AO+Metallic+Roughness", mat.aoMetallicRoughnessTexture, false);
         }
         endComponentCard();
 
@@ -309,6 +200,85 @@ MeshHandle MaterialEditorPanel::previewMesh(ResourceManager& resources,
         case 2:  return getOrAdd("mesh:preview_plane",  [] { return generatePlane(2.0f, 2.0f, 1, 1); });
         default: return getOrAdd("mesh:preview_sphere", [] { return generateSphere(); });
     }
+}
+
+bool MaterialEditorPanel::textureSlot(ResourceManager& res, const char* label,
+                                      TextureHandle& slot, bool srgb) {
+    ImGui::PushID(label);
+    drawPropertyLabel(label);
+
+    std::string cur = "(none)";
+    if (slot) {
+        const auto& t = res.get(slot);
+        const std::string& p = !t.filePath.empty() ? t.filePath : t.name;
+        cur = std::filesystem::path(p).filename().string();
+        if (cur.empty()) cur = p;
+    }
+
+    bool changed = false;
+
+    // File name only, frame-aligned, with Set/Clear pinned to the right so
+    // a long path can never shove them off or overlap them.
+    const ImGuiStyle& st = ImGui::GetStyle();
+    const float setW  = ImGui::CalcTextSize("Set").x   + st.FramePadding.x * 2.0f;
+    const float clrW  = ImGui::CalcTextSize("Clear").x + st.FramePadding.x * 2.0f;
+    const float btnsX = ImGui::GetContentRegionMax().x - setW - clrW - st.ItemSpacing.x;
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(cur.c_str());
+    ImGui::SameLine();
+    if (ImGui::GetCursorPosX() < btnsX) ImGui::SetCursorPosX(btnsX);
+    if (ImGui::SmallButton("Set")) {
+        // Configure the panel-owned picker for this slot, then open it.
+        // Only one slot's picker is active at a time (single popup).
+        const std::filesystem::path appRoot = APP_ROOT_DIR;
+        m_texturePicker.options.popupId    = "PickTexture";
+        m_texturePicker.options.title      = "Pick Texture";
+        m_texturePicker.options.root       = appRoot / "assets";
+        m_texturePicker.options.recursive  = true;
+        m_texturePicker.options.kind       = AssetPicker::Kind::Files;
+        m_texturePicker.options.extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp"};
+        m_texturePicker.options.maxResults = 4000;
+        m_texturePicker.options.relativeTo = appRoot;
+        m_texturePicker.options.hint       = srgb ? "sRGB: yes" : "sRGB: no";
+        m_texturePicker.open();
+        m_pendingTexture     = &slot;
+        m_pendingTextureSrgb = srgb;
+    }
+    ImGui::SameLine();
+    if (slot) {
+        if (ImGui::SmallButton("Clear")) { slot = TextureHandle{}; changed = true; }
+    } else {
+        ImGui::BeginDisabled();
+        ImGui::SmallButton("Clear");
+        ImGui::EndDisabled();
+    }
+
+    ImGui::PopID();
+    return changed;
+}
+
+bool MaterialEditorPanel::pbrFolderBrowse(std::string& outFolder) {
+    if (ImGui::SmallButton("Load PBR Folder...")) {
+        const std::filesystem::path appRoot = APP_ROOT_DIR;
+        m_pbrFolderPicker.options.popupId   = "PBRFolder";
+        m_pbrFolderPicker.options.title     = "Load PBR Folder";
+        m_pbrFolderPicker.options.root      = appRoot / "assets";
+        m_pbrFolderPicker.options.recursive = false;
+        m_pbrFolderPicker.options.kind      = AssetPicker::Kind::Directories;
+        m_pbrFolderPicker.options.extensions.clear();
+        m_pbrFolderPicker.options.relativeTo.clear();  // return absolute path
+        m_pbrFolderPicker.options.hint.clear();
+        m_pbrFolderPicker.open();
+    }
+    return m_pbrFolderPicker.draw(outFolder);
+}
+
+bool MaterialEditorPanel::drawMaterialBody(ResourceManager& resources, MaterialAsset& mat) {
+    return drawMaterialBodyImpl(resources, mat,
+        [&](const char* label, TextureHandle& slot, bool srgb) {
+            return textureSlot(resources, label, slot, srgb);
+        });
 }
 
 void MaterialEditorPanel::draw(EditorContext& ec) {
@@ -339,12 +309,22 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         ImGui::Spacing();
         ImGui::SetNextItemWidth(-1);
         if (ImGui::BeginCombo("##PickMat", "(choose a material)")) {
+            // Snapshot once so ImGuiListClipper can window the visible rows.
+            std::vector<std::pair<MaterialHandle, const MaterialAsset*>> rows;
             resources.forEachOfType<MaterialAsset>([&](MaterialHandle h, const MaterialAsset& a) {
-                ImGui::PushID(static_cast<int>(h.id()));
-                if (ImGui::Selectable(a.name.empty() ? "(unnamed)" : a.name.c_str()))
-                    state.materialEditorTarget = h;
-                ImGui::PopID();
+                rows.emplace_back(h, &a);
             });
+            ImGuiListClipper clipper;
+            clipper.Begin(static_cast<int>(rows.size()));
+            while (clipper.Step()) {
+                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                    const auto& [h, a] = rows[i];
+                    ImGui::PushID(static_cast<int>(h.id()));
+                    if (ImGui::Selectable(a->name.empty() ? "(unnamed)" : a->name.c_str()))
+                        state.materialEditorTarget = h;
+                    ImGui::PopID();
+                }
+            }
             ImGui::EndCombo();
         }
         ImGui::End();
@@ -365,8 +345,8 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         // live=true: re-render every frame and snapshot to a dedicated key so
         // it survives the Asset Browser baking thumbnails into the shared
         // target later this same frame (ImGui samples textures at Render).
-        uint32_t tex = (ec.renderSystem && shape)
-            ? ec.renderSystem->materialPreviewTexture(
+        uint32_t tex = shape
+            ? ec.renderSystem.materialPreviewTexture(
                   resources, target, shape, m_yaw, m_pitch, m_distance,
                   /*key*/ 0ull, /*version*/ 0ull, /*live*/ true)
             : 0u;
@@ -454,6 +434,19 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         // viewport refresh next frame).
         auto& mat = resources.edit(target);
         if (drawMaterialBody(resources, mat)) resources.commit(target);
+
+        // Resolve the texture picker outside the slot row so it survives
+        // the slot's PushID scope and matches the slot's pending target.
+        std::string pickedTex;
+        if (m_texturePicker.draw(pickedTex) && m_pendingTexture) {
+            const std::string abs = (std::filesystem::path(APP_ROOT_DIR) / pickedTex).string();
+            TextureHandle h = loadTexture(abs, resources, m_pendingTextureSrgb, true);
+            if (h) {
+                *m_pendingTexture = h;
+                resources.commit(target);
+            }
+            m_pendingTexture = nullptr;
+        }
     }
     ImGui::EndChild();
 
