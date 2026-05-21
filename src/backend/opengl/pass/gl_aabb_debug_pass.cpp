@@ -17,7 +17,7 @@
 namespace Engine {
 
 bool GLAABBDebugPass::enabledForView(const RenderView& view) const {
-    return isEnabled() && view.environment.aabbDebug;
+    return isEnabled() && view.environment.aabbDebug.enabled;
 }
 
 
@@ -81,7 +81,7 @@ void GLAABBDebugPass::execute(RenderGraphContext& rg) {
         return;
     }
 
-    if (!view.environment.aabbDebug) return;
+    if (!view.environment.aabbDebug.enabled) return;
 
     m_modelScratch.clear();
     m_modelScratch.reserve(view.drawables.size());
@@ -116,7 +116,7 @@ void GLAABBDebugPass::execute(RenderGraphContext& rg) {
 
     // Route to the HDR FBO's overlay attachment instead of the HDR colour
     // attachment - diagnostic colours skip the composite's tonemap chain
-    // and the visible AABBs show their authored debugColor exactly.
+    // and the visible AABBs show their authored aabbDebug.color exactly.
     auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
     if (!hdr.isReady()) return;
     hdr.bindForOverlay();
@@ -130,7 +130,7 @@ void GLAABBDebugPass::execute(RenderGraphContext& rg) {
 
     using namespace GLConfig::UniformNames;
     // CameraBlock UBO (binding 2) is bound by GLView for the frame.
-    shader->setUniform3fv(Color, view.environment.debugColor);
+    shader->setUniform3fv(Color, view.environment.aabbDebug.color);
 
     const uint32_t instanceCount = static_cast<uint32_t>(m_modelScratch.size());
     m_instanceBuffer.update(m_modelScratch.data(), instanceCount);

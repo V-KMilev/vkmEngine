@@ -20,7 +20,7 @@
 namespace Engine {
 
 bool GLDofPass::enabledForView(const RenderView& view) const {
-    return isEnabled() && view.environment.dof && !view.environment.wireframe;
+    return isEnabled() && view.environment.dof.enabled && !view.environment.wireframe;
 }
 
 GLDofPass::GLDofPass(ShaderHandle shader)
@@ -63,9 +63,9 @@ void GLDofPass::execute(RenderGraphContext& rg) {
     scratch.bindForRender();
 
     shader->bind();
-    shader->setUniform1f("u_focusDistance", view.environment.dofFocusDistance);
-    shader->setUniform1f("u_focusRange",    view.environment.dofFocusRange);
-    shader->setUniform1f("u_maxBlur",       view.environment.dofMaxBlur);
+    shader->setUniform1f("u_focusDistance", view.environment.dof.focusDistance);
+    shader->setUniform1f("u_focusRange",    view.environment.dof.focusRange);
+    shader->setUniform1f("u_maxBlur",       view.environment.dof.maxBlur);
 
     hdr.bindResolvedColor(0);
     gbuffer.bindPosition(1);

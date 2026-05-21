@@ -54,8 +54,8 @@ void GLGTAOPass::execute(RenderGraphContext& rg) {
     ctx.setFaceCulling(false);
 
     shader->bind();
-    shader->setUniform1f("u_radius",    view.environment.ssaoRadius);
-    shader->setUniform1f("u_intensity", view.environment.ssaoIntensity);
+    shader->setUniform1f("u_radius",    view.environment.ao.radius);
+    shader->setUniform1f("u_intensity", view.environment.ao.intensity);
     shader->setUniform1f("u_bias",      0.02f);
     shader->setUniform1f("u_power",     1.5f);
     shader->setUniform1f("u_proj11",    view.camera.projection[1][1]);

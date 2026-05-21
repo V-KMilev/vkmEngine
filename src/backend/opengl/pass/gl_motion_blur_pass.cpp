@@ -22,7 +22,7 @@
 namespace Engine {
 
 bool GLMotionBlurPass::enabledForView(const RenderView& view) const {
-    return isEnabled() && view.environment.motionBlur && !view.environment.wireframe;
+    return isEnabled() && view.environment.motionBlur.enabled && !view.environment.wireframe;
 }
 
 GLMotionBlurPass::GLMotionBlurPass(ShaderHandle shader)
@@ -68,7 +68,7 @@ void GLMotionBlurPass::execute(RenderGraphContext& rg) {
     shader->setUniformMatrix4fv("u_invView", glm::inverse(view.camera.view));
     shader->setUniformMatrix4fv("u_prevViewProj",
         m_havePrev ? m_prevViewProj : view.camera.viewProjection);
-    shader->setUniform1f("u_strength", view.environment.motionBlurStrength);
+    shader->setUniform1f("u_strength", view.environment.motionBlur.strength);
     shader->setUniform1i("u_primed", m_havePrev ? 1 : 0);
 
     hdr.bindResolvedColor(0);

@@ -63,12 +63,12 @@ void RenderSystem::update(FrameContext& ctx) {
     // Wireframe is a diagnostic view: the forward pass routes every batch
     // through the unlit shader, AABB/Grid are unlit at the shader level,
     // and SSAO would sample filled-triangle gbuffer AO at line pixels
-    // (lying about occlusion). Force env.ssao off so the unlit path skips
+    // (lying about occlusion). Force env.ao.enabled off so the unlit path skips
     // the AO sample cleanly. Pass-level decisions (which post passes run,
     // composite bypass) live on each pass via enabledForView() and on
     // composite via env.wireframe directly.
     if (m_environment.wireframe) {
-        m_renderView.environment.ssao = false;
+        m_renderView.environment.ao.enabled = false;
     }
 
     // Backend-owned GPU sync (no-op for backends that don't need it).
@@ -136,11 +136,11 @@ uint32_t RenderSystem::renderMaterialPreview(
     // The scene's environment (IBL bake / SSR / bloom all match the viewport),
     // but with view-dependent / temporal effects forced off so a static
     // material ball reads as a clean, stable studio shot.
-    v.environment              = m_environment;
-    v.environment.autoExposure = false;   // deterministic studio exposure
-    v.environment.taa          = false;
-    v.environment.dof          = false;
-    v.environment.motionBlur   = false;
+    v.environment                       = m_environment;
+    v.environment.exposure.autoExposure = false;   // deterministic studio exposure
+    v.environment.taa.enabled           = false;
+    v.environment.dof.enabled           = false;
+    v.environment.motionBlur.enabled    = false;
 
     v.viewportWidth  = size;
     v.viewportHeight = size;

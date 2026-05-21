@@ -68,7 +68,7 @@ std::unique_ptr<Core::Texture2D> makeStarburstTexture() {
 } // namespace
 
 bool GLLensFlarePass::enabledForView(const RenderView& view) const {
-    return isEnabled() && view.environment.lensFlare && !view.environment.wireframe;
+    return isEnabled() && view.environment.lensFlare.enabled && !view.environment.wireframe;
 }
 
 GLLensFlarePass::GLLensFlarePass(ShaderHandle shader)
@@ -113,21 +113,21 @@ void GLLensFlarePass::execute(RenderGraphContext& rg) {
     ctx.setBlendFunc(GL_ONE, GL_ONE);   // additive: flare adds onto the scene
 
     shader->bind();
-    shader->setUniform1f("u_threshold",    view.environment.lensFlareThreshold);
-    shader->setUniform1f("u_intensity",    view.environment.lensFlareIntensity);
-    shader->setUniform1f("u_chromatic",    view.environment.lensFlareChromatic);
-    shader->setUniform1i("u_ghostCount",   view.environment.lensFlareGhostCount);
-    shader->setUniform1f("u_ghostSpacing", view.environment.lensFlareGhostSpacing);
-    shader->setUniform1f("u_haloRadius",   view.environment.lensFlareHaloRadius);
+    shader->setUniform1f("u_threshold",    view.environment.lensFlare.threshold);
+    shader->setUniform1f("u_intensity",    view.environment.lensFlare.intensity);
+    shader->setUniform1f("u_chromatic",    view.environment.lensFlare.chromatic);
+    shader->setUniform1i("u_ghostCount",   view.environment.lensFlare.ghostCount);
+    shader->setUniform1f("u_ghostSpacing", view.environment.lensFlare.ghostSpacing);
+    shader->setUniform1f("u_haloRadius",   view.environment.lensFlare.haloRadius);
 
     // Starburst (slot 1): procedural aperture-blade pattern multiplied into
     // the halo, rotated by camera yaw so the spokes feel anchored to the
     // physical lens, not painted on the screen.
-    if (view.environment.starburst && !m_starburst) m_starburst = makeStarburstTexture();
+    if (view.environment.lensFlare.starburst.enabled && !m_starburst) m_starburst = makeStarburstTexture();
     if (m_starburst) m_starburst->bindSlot(1);
-    const bool starOn = view.environment.starburst && m_starburst;
+    const bool starOn = view.environment.lensFlare.starburst.enabled && m_starburst;
     shader->setUniform1i("u_starburstEnabled", starOn ? 1 : 0);
-    shader->setUniform1f("u_starburstIntensity", view.environment.starburstIntensity);
+    shader->setUniform1f("u_starburstIntensity", view.environment.lensFlare.starburst.intensity);
     // Camera forward in world space (view matrix rows = camera basis in world).
     const float fx = view.camera.view[0][2];
     const float fz = view.camera.view[2][2];

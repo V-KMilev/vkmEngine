@@ -165,21 +165,21 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     const bool bloomReady = bloom.isReady();
     bloom.bind(1);
     shader->setUniform1f("u_bloomStrength",
-        bloomReady ? view.environment.bloomStrength : 0.0f);
+        bloomReady ? view.environment.bloom.strength : 0.0f);
 
     // Auto-exposure (slot 2). Off when unavailable -> manual exposure only.
     auto& ae = *rg.resource<GLAutoExposure>(RGResource::AdaptedLuminance);
-    const bool aeOn = ae.isReady() && view.environment.autoExposure;
+    const bool aeOn = ae.isReady() && view.environment.exposure.autoExposure;
     ae.bindAdapted(2);
     shader->setUniform1i("u_autoExposure", aeOn ? 1 : 0);
-    shader->setUniform1f("u_exposureKey", view.environment.exposureKey);
-    shader->setUniform1f("u_exposureMin", view.environment.exposureMin);
-    shader->setUniform1f("u_exposureMax", view.environment.exposureMax);
+    shader->setUniform1f("u_exposureKey", view.environment.exposure.key);
+    shader->setUniform1f("u_exposureMin", view.environment.exposure.min);
+    shader->setUniform1f("u_exposureMax", view.environment.exposure.max);
 
     // Color-grading LUT (slot 3). Loaded lazily when the path changes; a
     // failed path is recorded so it is not retried every frame.
-    const std::string& lutPath = view.environment.colorLutPath;
-    if (view.environment.colorGrade && !lutPath.empty() && lutPath != m_lutPath) {
+    const std::string& lutPath = view.environment.colorGrade.lutPath;
+    if (view.environment.colorGrade.enabled && !lutPath.empty() && lutPath != m_lutPath) {
         LDRImage img = loadColorLUT(lutPath);
         if (img.valid()) {
             Core::Texture2DParams p;
@@ -198,12 +198,12 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
         }
         m_lutPath = lutPath;  // record (even on failure) to stop per-frame reloads
     }
-    const bool lutOn = view.environment.colorGrade && m_lut
+    const bool lutOn = view.environment.colorGrade.enabled && m_lut
         && !lutPath.empty() && lutPath == m_lutPath;
     // Slot 3: bind when present; the u_lutEnabled gate decides actual use.
     if (m_lut) m_lut->bindSlot(3);
     shader->setUniform1i("u_lutEnabled", lutOn ? 1 : 0);
-    shader->setUniform1f("u_lutIntensity", view.environment.colorGradeIntensity);
+    shader->setUniform1f("u_lutIntensity", view.environment.colorGrade.intensity);
 
     // Diagnostic overlay (slot 5): AABB/Grid (and any future debug pass)
     // write to the HDR FBO's overlay attachment instead of HDR colour, so
@@ -218,12 +218,12 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     else backend.getDefaultTarget().bind();
 
     // Lens dirt (slot 4): procedurally generated on first enable, then kept
-    // resident. Off when env.lensDirt is false; the shader gates the multiply.
-    if (view.environment.lensDirt && !m_dirt) m_dirt = makeDirtTexture();
+    // resident. Off when env.lensDirt.enabled is false; the shader gates the multiply.
+    if (view.environment.lensDirt.enabled && !m_dirt) m_dirt = makeDirtTexture();
     if (m_dirt) m_dirt->bindSlot(4);
     shader->setUniform1i("u_dirtEnabled",
-        (view.environment.lensDirt && m_dirt) ? 1 : 0);
-    shader->setUniform1f("u_dirtIntensity", view.environment.lensDirtIntensity);
+        (view.environment.lensDirt.enabled && m_dirt) ? 1 : 0);
+    shader->setUniform1f("u_dirtIntensity", view.environment.lensDirt.intensity);
 
     m_screenTri->draw();
 
