@@ -37,6 +37,11 @@ class ThreadPool {
 
         void waitToFinish();
 
+        /// True when called from a thread owned by the pool. parallelFor
+        /// must not be re-entered from inside a task body — the calling
+        /// worker would spin in waitToFinish() forever on its own slot.
+        static bool isWorkerThread();
+
     private:
         ThreadPool(size_t threadCount);
         ~ThreadPool();
@@ -55,6 +60,7 @@ class ThreadPool {
 
         std::mutex m_tasksMutex;
         std::condition_variable m_tasksCV;
+        std::condition_variable m_doneCV;   ///< Signalled when m_taskCount drops to 0
 };
 
 template<class Function>
@@ -64,6 +70,21 @@ void parallelFor(size_t count, size_t grain, Function && function) {
     }
 
     grain = std::max(grain, size_t(1));
+
+    // Re-entering parallelFor from inside a worker would deadlock: the
+    // worker's own slot stays in m_taskCount, so waitToFinish() never
+    // returns. Fall back to a serial sweep on the calling worker thread.
+    if (ThreadPool::isWorkerThread()) {
+        auto invokeAt = [&](size_t i) {
+            if constexpr (std::is_invocable_v<Function, size_t>) {
+                function(i);
+            } else {
+                function();
+            }
+        };
+        for (size_t i = 0; i < count; ++i) invokeAt(i);
+        return;
+    }
 
     auto invokeAt = [&](size_t i) {
         if constexpr (std::is_invocable_v<Function, size_t>) {

@@ -230,13 +230,13 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
     scene.forEach<Mesh>([&](EntityId, const Mesh& m) {
         if (m.mesh && seenMeshes.insert(m.mesh.id()).second) {
             const auto& asset = resources.get(m.mesh);
-            // Editor-internal assets (preview primitives etc.) never serialize:
+            // Editor-only assets (preview primitives etc.) never serialize:
             // they belong to the running editor, not to the user's scene.
-            if (!asset.internal) emitDescriptor(meshes, asset.name, asset.source);
+            if (!asset.editorOnly) emitDescriptor(meshes, asset.name, asset.source);
         }
         if (m.material && seenMaterials.insert(m.material.id()).second) {
             const auto& asset = resources.get(m.material);
-            if (asset.internal) return;
+            if (asset.editorOnly) return;
             // Materials always save as `inline` - captures the actual runtime
             // state (including editor scalar tweaks) regardless of how the
             // material was originally created.

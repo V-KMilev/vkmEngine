@@ -134,6 +134,28 @@ class SlotAllocator {
             }
         }
 
+        /**
+         * @brief Reset every slot to dead in one pass, bumping generations
+         * so any outstanding handles correctly compare as stale.
+         *
+         * O(slots) — used by Scene::clear for total reset, far cheaper than
+         * iterating live entities and free()-ing each one when the goal is
+         * to drop everything. Slot 0 stays reserved (untouched).
+         */
+        void clear() {
+            for (uint32_t i = 1; i < m_generation.size(); ++i) {
+                if (m_generation[i].alive()) {
+                    m_generation[i].setAlive(false);
+                    m_generation[i].bumpGeneration();
+                }
+            }
+            m_freeList.clear();
+            // Every slot above index 0 is now dead and re-allocatable.
+            for (uint32_t i = 1; i < m_generation.size(); ++i) {
+                m_freeList.push_back(i);
+            }
+        }
+
     private:
         /// @brief Pop a slot from the free list, or grow the generation array if empty.
         uint32_t allocateSlot() {

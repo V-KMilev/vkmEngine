@@ -116,15 +116,14 @@ void RenderGraph::compile() {
     for (uint32_t i = 0; i < RG_RESOURCE_COUNT; ++i) {
         if (m_lifetimes[i].used()) ++usedResources;
     }
-    LOG_INFO("RenderGraph compiled: %zu passes, %u transient resources", n, usedResources);
+    LOG_INFO("RenderGraph compiled: %zu passes, %u transient resources%s",
+        n, usedResources, clean ? "" : " (with validation warnings)");
 
-    // We attempted compile against the current pass set - don't retry next
-    // frame unless the pass set actually changes (addPass / clear flip
-    // m_compiled back to false). `clean` is recorded separately so execute()
-    // can run with the schedule we have while making the validation failure
-    // visible exactly once instead of spamming every frame.
-    m_compiled     = true;
-    m_compileClean = clean;
+    // Mark compiled so we don't redo this work every frame. addPass() /
+    // clear() flip the flag back to false to force a re-compile. The
+    // per-pass LOG_WARNING above is the (once-per-compile) validation
+    // signal; execute() runs the schedule we have regardless.
+    m_compiled = true;
 }
 
 void RenderGraph::execute(
@@ -240,6 +239,14 @@ void RenderGraph::evictThumbnail(RenderBackend& backend, uint64_t key) {
 void RenderGraph::clearThumbnailCache(RenderBackend& backend) {
     m_thumbCache.clear();
     backend.clearThumbnailCache();
+}
+
+void RenderGraph::invalidateTemporalHistory() {
+    // Both default and preview pools need flagging - whichever is active
+    // when the next frame runs will re-prime. Skipping the inactive one
+    // would leave a stale primed flag the next time the preview opens.
+    if (m_frame)        m_frame->invalidateTemporalHistory();
+    if (m_previewFrame) m_previewFrame->invalidateTemporalHistory();
 }
 
 } // namespace Engine

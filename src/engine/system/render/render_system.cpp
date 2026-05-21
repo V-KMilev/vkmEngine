@@ -51,8 +51,8 @@ void RenderSystem::update(FrameContext& ctx) {
     m_thumbBudget = THUMB_BUDGET_PER_FRAME;
 
     // Environment lives as a singleton component on a scene entity (editable
-    // in the Inspector). Pull it each frame; mirror into m_environment so the
-    // legacy getEnvironment()/getWireframe() accessors stay valid.
+    // in the Inspector). Pull it each frame; mirror into m_environment so
+    // getEnvironment() returns a stable reference between frames.
     m_environment = sceneEnvironment(ctx.scene);
     m_renderView.environment = m_environment;
     m_renderView.deltaTime   = ctx.deltaTime;
@@ -63,8 +63,25 @@ void RenderSystem::update(FrameContext& ctx) {
     // Backend-owned GPU sync (no-op for backends that don't need it).
     m_backend->syncResources(m_renderView, ctx.resources);
 
+    // Map env toggles onto pass.setEnabled() so the graph can fully skip
+    // them. A pass that early-outs inside its body still has its declared
+    // writes counted by the graph's resolve-dirty tracking, which can
+    // force a spurious MSAA resolve downstream. Disabling the pass at
+    // the graph level keeps the declarations honest.
+    syncPassToggles();
+
     // Execute passes
     m_graph.execute(*m_backend, m_renderView, ctx.resources);
+}
+
+void RenderSystem::syncPassToggles() {
+    const size_t passes = m_graph.passCount();
+    for (size_t i = 0; i < passes; ++i) {
+        RenderPass& p = m_graph.getPass(i);
+        const std::string& n = p.getName();
+        if (n == "GLAABBDebugPass") p.setEnabled(m_environment.aabbDebug);
+        else if (n == "GLGridPass") p.setEnabled(m_environment.gridEnabled);
+    }
 }
 
 void RenderSystem::addPass(std::unique_ptr<RenderPass> pass) {
@@ -75,9 +92,8 @@ void RenderSystem::clearPasses() {
     m_graph.clear();
 }
 
-void RenderSystem::setWireframe(bool enabled) {
-    m_environment.wireframe = enabled;
-    if (m_backend) m_backend->setWireframe(enabled);
+void RenderSystem::invalidateTemporalHistory() {
+    m_graph.invalidateTemporalHistory();
 }
 
 uint32_t RenderSystem::renderMaterialPreview(

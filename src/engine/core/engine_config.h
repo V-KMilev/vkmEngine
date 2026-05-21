@@ -38,9 +38,9 @@ namespace Config {
     /// Near plane used when rasterising and sampling point-light cube
     /// shadows. Pinned to a small but non-zero value so depth values keep
     /// resolution at typical occluder distances without losing fragments
-    /// inside very small lights.
-    /// MUST match SHADOW_CUBE_NEAR in shaders/pbr/fragmentShader.shader
-    /// (the generated engine_config.glsl mirrors this value).
+    /// inside very small lights. cmake/generate_shader_config.cmake reads
+    /// this value at build time and emits it as SHADOW_CUBE_NEAR into
+    /// shaders/_generated/engine_config.glsl - single source of truth.
     constexpr float ShadowCubeNear = 0.1f;
 
     /// Fixed simulation step (60 Hz). Cadence at which fixedUpdate runs.

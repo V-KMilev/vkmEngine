@@ -11,27 +11,16 @@
  * (1 - F). F0 from material IOR, lerped to albedo by metalness. Optional
  * clearcoat (own lobe, analytic + IBL), subsurface wrap + back translucency,
  * thin transmission, KHR_materials_volume Beer-Lambert absorption, sheen,
- * alpha-test (foliage), and parallax-occlusion mapping. All advanced terms
- * are scalar-driven from the material UBO and are no-ops at their defaults.
+ * alpha-test (foliage), and parallax-occlusion mapping.
  *
- * Long-term: this is an UBER-SHADER. Every fragment pays the cost of every
- * feature guard even when the material has no transmission / clearcoat /
- * sheen / volume. As more features land this becomes the dominant cost
- * ceiling for the rasterizer. The intended fix is shader permutations:
+ * Optional lobes are #ifdef HAS_X-gated and only compile in when the
+ * material's feature flags request them. GLView keeps a per-material
+ * variant cache keyed on (shader, asset generation, flag set), so two
+ * transmissive materials share one compiled program and a non-transmissive
+ * material pays zero runtime cost for the transmission lobe.
  *
- *   - Compile a per-material variant by adding `#define HAS_TRANSMISSION`
- *     / HAS_CLEARCOAT / HAS_SHEEN / HAS_VOLUME / HAS_ALPHA_MASK at the top
- *     of the source string, gated by the material's actual feature flags.
- *   - Each material binds the variant matching its flag set; the unused
- *     branches are dead-code-eliminated at compile time.
- *   - Cache compiled variants by flag set so two transmissive materials
- *     share one program.
- *
- * The shader #include preprocessor (src/tools/loader/shader_preprocessor.cpp)
- * already gives us the seam to inject those #defines per material - the
- * remaining work is the per-material variant cache in GLView and the
- * MaterialAsset -> feature-flag-set mapping. Out of scope for the current
- * commit set; tracked here so the rationale doesn't get lost.
+ * #defines are injected per material at compile time via the shader
+ * #include preprocessor (src/tools/loader/shader_preprocessor.cpp).
  */
 #version 420 core
 

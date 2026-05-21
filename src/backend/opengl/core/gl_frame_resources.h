@@ -55,6 +55,8 @@ class GLFrameResources : public FrameResources {
 
         void resolveSceneColor() override { m_hdr.resolve(); }
 
+        void invalidateTemporalHistory() override { m_taa.invalidateHistory(); }
+
         GLHdrTarget&          hdr()                { return m_hdr; }
         const GLHdrTarget&    hdr()          const { return m_hdr; }
         GLBloom&              bloom()              { return m_bloom; }

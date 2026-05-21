@@ -164,6 +164,13 @@ class RenderGraph {
         /** @brief Drop every cached thumbnail (graph + backend). */
         void clearThumbnailCache(RenderBackend& backend);
 
+        /**
+         * @brief Invalidate the active FrameResources' temporal history
+         *        (TAA et al.). Call after any view discontinuity so the
+         *        next frame re-primes instead of reprojecting stale data.
+         */
+        void invalidateTemporalHistory();
+
     public:
         size_t passCount() const { return m_passes.size(); }
         RenderPass& getPass(size_t index);
@@ -206,7 +213,6 @@ class RenderGraph {
         RGResourceLifetime                       m_lifetimes[RG_RESOURCE_COUNT];
         void*                                    m_resources[RG_RESOURCE_COUNT] = {};
         bool                                     m_compiled = false;        ///< compile() has run against the current pass set
-        bool                                     m_compileClean = false;    ///< Last compile() validated cleanly (no read-before-write)
         bool                                     m_persistentRegistered = false;
         uint64_t                                 m_frameIndex = 0;
 

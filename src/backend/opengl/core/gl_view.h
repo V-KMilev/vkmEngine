@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "resource/material_asset.h"
@@ -190,6 +191,27 @@ class GLView {
             uint64_t                  assetVersion = 0;
         };
         std::unordered_map<VariantKey, VariantEntry, VariantKeyHash> m_shaderVariants;
+
+        /// shaderId -> set of (generation, flags) variant keys currently
+        /// living in m_shaderVariants. Lets cache misses / hot-reloads
+        /// evict only the entries for one shader instead of scanning the
+        /// global map. Empty inner sets are pruned on the last erase.
+        struct ShaderVariantSubkey {
+            uint32_t generation;
+            uint32_t flags;
+            bool operator==(const ShaderVariantSubkey& o) const noexcept {
+                return generation == o.generation && flags == o.flags;
+            }
+        };
+        struct ShaderVariantSubkeyHash {
+            size_t operator()(const ShaderVariantSubkey& k) const noexcept {
+                return (static_cast<size_t>(k.generation) << 32)
+                     ^ static_cast<size_t>(k.flags);
+            }
+        };
+        std::unordered_map<uint32_t,
+            std::unordered_set<ShaderVariantSubkey, ShaderVariantSubkeyHash>>
+            m_shaderVariantsByShader;
 
         GLCamera          m_camera;
         GLLights          m_lights;

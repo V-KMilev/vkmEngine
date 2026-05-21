@@ -1,6 +1,20 @@
 #include "platform/threading/thread_pool.h"
 
+#include <exception>
+
+#include "logger.h"
+
 namespace Engine {
+
+namespace {
+    // Set inside process() so parallelFor can detect re-entry from a worker
+    // and fall back to a serial sweep instead of deadlocking on its own slot.
+    thread_local bool t_isWorker = false;
+}
+
+bool ThreadPool::isWorkerThread() {
+    return t_isWorker;
+}
 
 ThreadPool::ThreadPool(
     size_t threadCount
@@ -40,9 +54,8 @@ void ThreadPool::addTasks(std::vector<Task>&& tasks) {
 }
 
 void ThreadPool::waitToFinish() {
-    while (m_taskCount > 0) {
-        std::this_thread::yield();
-    }
+    std::unique_lock<std::mutex> lock(m_tasksMutex);
+    m_doneCV.wait(lock, [this]() { return m_taskCount == 0; });
 }
 
 void ThreadPool::start(size_t threadCount) {
@@ -52,7 +65,10 @@ void ThreadPool::start(size_t threadCount) {
 }
 
 void ThreadPool::stop() {
-    m_running = false;
+    {
+        std::lock_guard<std::mutex> lock(m_tasksMutex);
+        m_running = false;
+    }
     m_tasksCV.notify_all();
 
     for (auto& thread : m_threads) {
@@ -66,6 +82,7 @@ void ThreadPool::stop() {
 }
 
 void ThreadPool::process() {
+    t_isWorker = true;
     while (m_running) {
         Task task;
         {
@@ -76,12 +93,27 @@ void ThreadPool::process() {
 
             if (m_tasks.empty() || !m_running) continue;
 
-            task = m_tasks.front();
+            task = std::move(m_tasks.front());
             m_tasks.pop_front();
-        };
+        }
 
-        task.execute();
-        --m_taskCount;
+        // A throwing task must NOT skip the decrement: waitToFinish() would
+        // block forever on a count that never reaches zero. Swallow and log;
+        // task bodies are responsible for their own error reporting.
+        try {
+            task.execute();
+        } catch (const std::exception& e) {
+            LOG_ERROR("ThreadPool task threw: %s", e.what());
+        } catch (...) {
+            LOG_ERROR("ThreadPool task threw unknown exception");
+        }
+
+        size_t remaining;
+        {
+            std::lock_guard<std::mutex> lock(m_tasksMutex);
+            remaining = --m_taskCount;
+        }
+        if (remaining == 0) m_doneCV.notify_all();
     }
 }
 

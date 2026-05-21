@@ -265,10 +265,17 @@ class Scene {
          * already-destroyed neighbours are skipped silently.
          */
         void clear() {
-            std::vector<EntityId> ids;
-            ids.reserve(entityCount());
-            forEachEntity([&](EntityId id) { ids.push_back(id); });
-            for (auto id : ids) destroyEntity(Entity{id});
+            // O(types + entities) rather than the previous
+            // O(entities × types) walk-and-destroy. detachFromHierarchy's
+            // dangling-pointer guard exists for partial deletion (sibling
+            // links pointing at already-freed entities); on a total reset
+            // every entity is going away in a single tear-down, so per-set
+            // clear() + entity-allocator reset gives the same final state
+            // without paying the cross-product cost.
+            for (auto& set : m_components) {
+                if (set) set->clear();
+            }
+            m_entityAllocator.clear();
         }
 
         /**
