@@ -14,27 +14,26 @@
 namespace Engine {
 
 /**
- * @brief Central engine singleton that owns core state and runs the main loop.
+ * @brief Engine context: owns core state and runs the main loop.
  *
- * Owns the Scene, ResourceManager, WindowManager, StatisticTracker, and the
- * per-stage system pipeline. Systems are registered at a SystemStage and run
- * in stage order each frame; within a stage they run in registration order
- * unless setParallelDispatch is enabled and their SystemAccess permits
- * concurrent execution.
+ * Owns the Scene, ResourceManager, WindowManager, and the per-stage
+ * system pipeline. Statistics are a process-global singleton accessed
+ * via the Engine::getStatistics() free function (see debug/statistics.h)
+ * so the STATS_RECORD_* macros work without an Engine handle.
+ *
+ * Non-copyable, non-movable, but stack-constructible: tests and
+ * headless tooling can spin up their own Engine.
  *
  * Usage:
- *   auto& engine = Engine::get();
+ *   Engine::Engine engine;
  *   engine.addSystem<CameraController>(SystemStage::Input);
  *   engine.addSystem<RenderSystem>(SystemStage::Render);
  *   engine.run();  // blocks until window closes
  */
 class Engine {
     public:
-        /**
-         * @brief Get the singleton instance.
-         * @return Reference to the Engine singleton.
-         */
-        static Engine& get();
+        Engine() = default;
+        ~Engine() = default;
 
         Engine(const Engine& other) = delete;
         Engine& operator=(const Engine& other) = delete;
@@ -51,9 +50,6 @@ class Engine {
 
         WindowManager& getWindow()             { return m_window; }
         const WindowManager& getWindow() const { return m_window; }
-
-        StatisticTracker& getStatistics()             { return m_statistics; }
-        const StatisticTracker& getStatistics() const { return m_statistics; }
 
         /**
          * @brief Create and register a system at the given execution stage.
@@ -120,9 +116,6 @@ class Engine {
         void setParallelDispatch(SystemStage stage, bool enabled);
 
     private:
-        Engine() = default;
-        ~Engine() = default;
-
         /**
          * @brief Per-system bundle: the system pointer + its declared access.
          */
@@ -156,7 +149,6 @@ class Engine {
         ResourceManager m_resources;
 
         WindowManager m_window;
-        StatisticTracker m_statistics;
 
         /// Systems organized by stage. Outer index is SystemStage; inner vector
         /// preserves registration order within that stage.

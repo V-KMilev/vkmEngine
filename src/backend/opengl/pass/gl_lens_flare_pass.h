@@ -22,7 +22,7 @@ namespace Engine {
  * occlusion is implicit because hidden lights leave no bright pixel.
  *
  * Runs after SSR and before TAA so reflections cause flare and TAA can
- * temporally stabilise the result. No-op when env.lensFlare is off.
+ * temporally stabilise the result. No-op when env.lensFlare.enabled is off.
  */
 class GLLensFlarePass : public RenderPass {
     public:

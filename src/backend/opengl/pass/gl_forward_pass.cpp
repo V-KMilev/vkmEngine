@@ -124,7 +124,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     }
     // Screen-space AO from the prepass/GTAO (slot SSAO); enabled when both
     // the G-buffer is live and the environment toggle is on.
-    const bool ssaoOn = gbuffer.isReady() && view.environment.ssao;
+    const bool ssaoOn = gbuffer.isReady() && view.environment.ao.enabled;
     gbuffer.bindOcclusion(GLConfig::TextureSlots::SSAO);
 
     // Per-material shader variants mean we no longer have a single PBR
@@ -142,7 +142,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     };
     PBRFrameUniforms frame{
         iblReady ? 1 : 0,
-        view.environment.iblIntensity,
+        view.environment.ibl.intensity,
         ssaoOn  ? 1 : 0,
         static_cast<float>(view.viewportWidth),
         static_cast<float>(view.viewportHeight),

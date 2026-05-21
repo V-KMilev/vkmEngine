@@ -67,7 +67,7 @@ void GLSkyboxPass::execute(RenderGraphContext& rg) {
 
     shader->setUniformMatrix4fv("u_view", view.camera.view);
     shader->setUniformMatrix4fv("u_projection", view.camera.projection);
-    shader->setUniform1f("u_iblIntensity", view.environment.iblIntensity);
+    shader->setUniform1f("u_iblIntensity", view.environment.ibl.intensity);
 
     ibl.bindEnvCube(0);
 

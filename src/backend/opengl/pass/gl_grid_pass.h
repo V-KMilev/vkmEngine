@@ -13,21 +13,6 @@ namespace Core {
 namespace Engine {
 
 /**
- * @brief Configuration parameters for the OpenGL grid rendering pass.
- * 
- * - size: The overall extent of the grid in world units.
- * - scale: The scale of grid lines (spacing between lines).
- * - fadeStart: Distance from the camera at which the grid begins to fade.
- * - fadeEnd: Distance at which the grid is fully faded out/invisible.
- */
-struct GridConfig {
-    float size      = 1000.0f;    ///< World-space size of the grid area
-    float scale     = 1.0f;        ///< Grid cell size (distance between major lines)
-    float fadeStart = 50.0f;       ///< Distance where grid lines start to fade out
-    float fadeEnd   = 550.0f;      ///< Distance where grid lines are fully invisible
-};
-
-/**
  * @brief An OpenGL render pass that draws a ground grid in the scene for orientation.
  * 
  * The grid is typically rendered in the XZ-plane. It can be used for editor or debugging views

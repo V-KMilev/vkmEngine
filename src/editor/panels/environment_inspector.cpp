@@ -112,41 +112,41 @@ namespace {
     void applyPreset(EnvironmentConfig& env, Preset p) {
         switch (p) {
             case Preset::Low:
-                env.ssao = false; env.ssr = false; env.taa = false;
-                env.dof = false; env.motionBlur = false;
-                env.bloomStrength = 0.0f;
-                env.autoExposure = false;
+                env.ao.enabled = false; env.ssr.enabled = false; env.taa.enabled = false;
+                env.dof.enabled = false; env.motionBlur.enabled = false;
+                env.bloom.strength = 0.0f;
+                env.exposure.autoExposure = false;
                 break;
             case Preset::Medium:
-                env.ssao = true;  env.ssr = false; env.taa = false;
-                env.dof = false; env.motionBlur = false;
-                env.bloomStrength = 0.03f;
-                env.autoExposure = false;
+                env.ao.enabled = true;  env.ssr.enabled = false; env.taa.enabled = false;
+                env.dof.enabled = false; env.motionBlur.enabled = false;
+                env.bloom.strength = 0.03f;
+                env.exposure.autoExposure = false;
                 break;
             case Preset::High:
-                env.ssao = true;  env.ssr = true;  env.taa = false;
-                env.dof = false; env.motionBlur = false;
-                env.bloomStrength = 0.04f;
-                env.autoExposure = true;
+                env.ao.enabled = true;  env.ssr.enabled = true;  env.taa.enabled = false;
+                env.dof.enabled = false; env.motionBlur.enabled = false;
+                env.bloom.strength = 0.04f;
+                env.exposure.autoExposure = true;
                 break;
             case Preset::Cinematic:
-                env.ssao = true;  env.ssr = true;  env.taa = true;
-                env.dof = true;  env.motionBlur = true;
-                env.bloomStrength = 0.06f;
-                env.autoExposure = true;
+                env.ao.enabled = true;  env.ssr.enabled = true;  env.taa.enabled = true;
+                env.dof.enabled = true; env.motionBlur.enabled = true;
+                env.bloom.strength = 0.06f;
+                env.exposure.autoExposure = true;
                 break;
         }
     }
 
     // Which preset (if any) the current env exactly matches. -1 = Custom.
     int detectPreset(const EnvironmentConfig& env) {
-        auto matches = [&](bool ssao, bool ssr, bool taa, bool dof,
+        auto matches = [&](bool ao, bool ssr, bool taa, bool dof,
                            bool mb, float bloom, bool ae) {
-            float d = env.bloomStrength - bloom;
+            float d = env.bloom.strength - bloom;
             if (d < 0.0f) d = -d;
-            return env.ssao == ssao && env.ssr == ssr && env.taa == taa &&
-                   env.dof == dof && env.motionBlur == mb &&
-                   env.autoExposure == ae && d < 5e-4f;
+            return env.ao.enabled == ao && env.ssr.enabled == ssr && env.taa.enabled == taa &&
+                   env.dof.enabled == dof && env.motionBlur.enabled == mb &&
+                   env.exposure.autoExposure == ae && d < 5e-4f;
         };
         if (matches(false, false, false, false, false, 0.00f, false)) return 0; // Low
         if (matches(true,  false, false, false, false, 0.03f, false)) return 1; // Medium
@@ -197,11 +197,11 @@ void EnvironmentInspector::drawPresetBar(EnvironmentConfig& env) {
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
     if (ImGui::Button("Reset", ImVec2(resetW, h))) {
-        const std::string ep = env.environmentMapPath;
-        const std::string lp = env.colorLutPath;
+        const std::string ep = env.ibl.path;
+        const std::string lp = env.colorGrade.lutPath;
         env = EnvironmentConfig{};
-        env.environmentMapPath = ep;   // keep the asset references
-        env.colorLutPath       = lp;
+        env.ibl.path = ep;   // keep the asset references
+        env.colorGrade.lutPath       = lp;
     }
     ImGui::PopStyleColor(2);
     if (ImGui::IsItemHovered())
@@ -210,38 +210,38 @@ void EnvironmentInspector::drawPresetBar(EnvironmentConfig& env) {
 }
 
 void EnvironmentInspector::drawLighting(EditorContext& /*ec*/, EnvironmentConfig& env) {
-    bool       iblOn   = !env.environmentMapPath.empty();
+    bool       iblOn   = !env.ibl.path.empty();
     const bool iblPrev = iblOn;
     const bool iblOpen = cardHeader("ibl", "Environment Map (IBL)", &iblOn);
     if (iblOn != iblPrev) {
         if (iblOn) {
-            env.environmentMapPath = !m_iblPathMemo.empty()
+            env.ibl.path = !m_iblPathMemo.empty()
                 ? m_iblPathMemo : std::string("assets/envs/environment.hdr");
         } else {
-            m_iblPathMemo = env.environmentMapPath;
-            env.environmentMapPath.clear();
+            m_iblPathMemo = env.ibl.path;
+            env.ibl.path.clear();
         }
     }
     if (iblOpen) {
         ImGui::BeginDisabled(!iblOn);
         static char hdrBuf[260];
-        snprintf(hdrBuf, sizeof(hdrBuf), "%s", env.environmentMapPath.c_str());
+        snprintf(hdrBuf, sizeof(hdrBuf), "%s", env.ibl.path.c_str());
         drawPropertyLabel("HDR Path");
         ImGui::SetNextItemWidth(-150.0f);
         if (ImGui::InputText("##IBLPath", hdrBuf, sizeof(hdrBuf),
                 ImGuiInputTextFlags_EnterReturnsTrue))
-            env.environmentMapPath = hdrBuf;
+            env.ibl.path = hdrBuf;
         ImGui::SameLine();
-        if (ImGui::Button("Apply##IBL")) env.environmentMapPath = hdrBuf;
+        if (ImGui::Button("Apply##IBL")) env.ibl.path = hdrBuf;
         ImGui::SameLine();
-        fileBrowse("ibl", "assets/envs", {".hdr", ".HDR"}, env.environmentMapPath);
-        sliderF("Intensity", "##IBLInt", &env.iblIntensity, 0.0f, 5.0f, "%.2f",
+        fileBrowse("ibl", "assets/envs", {".hdr", ".HDR"}, env.ibl.path);
+        sliderF("Intensity", "##IBLInt", &env.ibl.intensity, 0.0f, 5.0f, "%.2f",
                 "Strength of image-based ambient + specular");
-        if (env.environmentMapPath.empty())
+        if (env.ibl.path.empty())
             ImGui::TextDisabled("No map - flat ambient fallback");
         else
             ImGui::TextDisabled("%s",
-                std::filesystem::path(env.environmentMapPath).filename().string().c_str());
+                std::filesystem::path(env.ibl.path).filename().string().c_str());
         ImGui::EndDisabled();
     }
 
@@ -249,9 +249,9 @@ void EnvironmentInspector::drawLighting(EditorContext& /*ec*/, EnvironmentConfig
     if (cardHeader("amb", "Ambient Light", nullptr)) {
         drawPropertyLabel("Color");
         ImGui::SetNextItemWidth(-1.0f);
-        ImGui::ColorEdit3("##AmbCol", glm::value_ptr(env.ambientColor),
+        ImGui::ColorEdit3("##AmbCol", glm::value_ptr(env.ambient.color),
             ImGuiColorEditFlags_Float);
-        sliderF("Intensity", "##AmbInt", &env.ambientIntensity, 0.0f, 2.0f, "%.3f",
+        sliderF("Intensity", "##AmbInt", &env.ambient.intensity, 0.0f, 2.0f, "%.3f",
                 "Flat ambient used when no IBL map is set");
     }
 
@@ -281,15 +281,15 @@ void EnvironmentInspector::drawCamera(EditorContext& ec, EnvironmentConfig& env)
             ? ctx.visibility->cameraExposure : 1.0f;
         ImGui::TextDisabled("Manual camera exposure: %.2f (edit on the Camera entity)",
             camExp);
-        ImGui::Checkbox("Auto Exposure (eye adaptation)", &env.autoExposure);
-        ImGui::BeginDisabled(!env.autoExposure);
-        sliderF("Key", "##ExpKey", &env.exposureKey, 0.01f, 1.0f, "%.3f",
+        ImGui::Checkbox("Auto Exposure (eye adaptation)", &env.exposure.autoExposure);
+        ImGui::BeginDisabled(!env.exposure.autoExposure);
+        sliderF("Key", "##ExpKey", &env.exposure.key, 0.01f, 1.0f, "%.3f",
                 "Target middle-grey the scene adapts toward");
-        sliderF("Adapt Speed", "##ExpSpd", &env.exposureSpeed, 0.05f, 10.0f, "%.2f",
+        sliderF("Adapt Speed", "##ExpSpd", &env.exposure.speed, 0.05f, 10.0f, "%.2f",
                 "How fast the eye adapts (per second)");
         drawPropertyLabel("Min / Max");
         ImGui::SetNextItemWidth(-1.0f);
-        ImGui::DragFloatRange2("##ExpRange", &env.exposureMin, &env.exposureMax,
+        ImGui::DragFloatRange2("##ExpRange", &env.exposure.min, &env.exposure.max,
             0.01f, 0.001f, 32.0f, "%.2f");
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Clamp on the auto-derived exposure");
@@ -297,157 +297,157 @@ void EnvironmentInspector::drawCamera(EditorContext& ec, EnvironmentConfig& env)
     }
 
     ImGui::Spacing();
-    if (cardHeader("dof", "Depth of Field", &env.dof)) {
-        ImGui::BeginDisabled(!env.dof);
-        sliderF("Focus Distance", "##DofDist", &env.dofFocusDistance, 0.1f, 200.0f,
+    if (cardHeader("dof", "Depth of Field", &env.dof.enabled)) {
+        ImGui::BeginDisabled(!env.dof.enabled);
+        sliderF("Focus Distance", "##DofDist", &env.dof.focusDistance, 0.1f, 200.0f,
                 "%.1f", "View-space distance kept sharp", true);
-        sliderF("Focus Range", "##DofRange", &env.dofFocusRange, 0.1f, 200.0f,
+        sliderF("Focus Range", "##DofRange", &env.dof.focusRange, 0.1f, 200.0f,
                 "%.1f", "Depth around the focus that stays sharp", true);
-        sliderF("Max Blur", "##DofBlur", &env.dofMaxBlur, 0.0f, 0.1f, "%.3f",
+        sliderF("Max Blur", "##DofBlur", &env.dof.maxBlur, 0.0f, 0.1f, "%.3f",
                 "Largest gather radius (UV)");
         ImGui::EndDisabled();
     }
 
     ImGui::Spacing();
-    if (cardHeader("mb", "Motion Blur (camera)", &env.motionBlur)) {
-        ImGui::BeginDisabled(!env.motionBlur);
-        sliderF("Strength", "##MbStr", &env.motionBlurStrength, 0.0f, 4.0f, "%.2f",
+    if (cardHeader("mb", "Motion Blur (camera)", &env.motionBlur.enabled)) {
+        ImGui::BeginDisabled(!env.motionBlur.enabled);
+        sliderF("Strength", "##MbStr", &env.motionBlur.strength, 0.0f, 4.0f, "%.2f",
                 "Camera reprojection blur amount");
         ImGui::EndDisabled();
     }
 }
 
 void EnvironmentInspector::drawPost(EditorContext& /*ec*/, EnvironmentConfig& env) {
-    bool       bloomOn   = env.bloomStrength > 0.0001f;
+    bool       bloomOn   = env.bloom.strength > 0.0001f;
     const bool bloomPrev = bloomOn;
     const bool bloomOpen = cardHeader("bloom", "Bloom", &bloomOn);
     if (bloomOn != bloomPrev) {
         if (bloomOn) {
-            env.bloomStrength = m_bloomStrengthMemo > 0.0001f
+            env.bloom.strength = m_bloomStrengthMemo > 0.0001f
                 ? m_bloomStrengthMemo : 0.04f;
         } else {
-            m_bloomStrengthMemo = env.bloomStrength;
-            env.bloomStrength = 0.0f;
+            m_bloomStrengthMemo = env.bloom.strength;
+            env.bloom.strength = 0.0f;
         }
     }
     if (bloomOpen) {
         ImGui::BeginDisabled(!bloomOn);
-        if (sliderF("Strength", "##BloomStr", &env.bloomStrength, 0.0f, 0.3f, "%.3f",
+        if (sliderF("Strength", "##BloomStr", &env.bloom.strength, 0.0f, 0.3f, "%.3f",
                 "Linear-HDR bloom blended before exposure + AgX")
-            && env.bloomStrength > 0.0001f)
-            m_bloomStrengthMemo = env.bloomStrength;
+            && env.bloom.strength > 0.0001f)
+            m_bloomStrengthMemo = env.bloom.strength;
         ImGui::EndDisabled();
     }
 
     ImGui::Spacing();
-    if (cardHeader("lensdirt", "Lens Dirt", &env.lensDirt)) {
-        ImGui::BeginDisabled(!env.lensDirt);
-        sliderF("Intensity", "##DirtInt", &env.lensDirtIntensity, 0.0f, 2.0f, "%.2f",
+    if (cardHeader("lensdirt", "Lens Dirt", &env.lensDirt.enabled)) {
+        ImGui::BeginDisabled(!env.lensDirt.enabled);
+        sliderF("Intensity", "##DirtInt", &env.lensDirt.intensity, 0.0f, 2.0f, "%.2f",
                 "Dust spots light up wherever bloom is bright. Needs bloom on.");
         ImGui::EndDisabled();
     }
 
     ImGui::Spacing();
-    if (cardHeader("lensflare", "Lens Flare", &env.lensFlare)) {
-        ImGui::BeginDisabled(!env.lensFlare);
-        sliderF("Intensity", "##LFInt", &env.lensFlareIntensity, 0.0f, 4.0f, "%.2f",
+    if (cardHeader("lensflare", "Lens Flare", &env.lensFlare.enabled)) {
+        ImGui::BeginDisabled(!env.lensFlare.enabled);
+        sliderF("Intensity", "##LFInt", &env.lensFlare.intensity, 0.0f, 4.0f, "%.2f",
                 "Overall flare gain");
-        sliderF("Threshold", "##LFThr", &env.lensFlareThreshold, 0.0f, 8.0f, "%.2f",
+        sliderF("Threshold", "##LFThr", &env.lensFlare.threshold, 0.0f, 8.0f, "%.2f",
                 "HDR luminance floor for contributing pixels");
         drawPropertyLabel("Ghosts");
         ImGui::SetNextItemWidth(-1.0f);
-        ImGui::SliderInt("##LFGhosts", &env.lensFlareGhostCount, 1, 8);
-        sliderF("Ghost Spacing", "##LFSpace", &env.lensFlareGhostSpacing, 0.05f, 1.0f, "%.2f",
+        ImGui::SliderInt("##LFGhosts", &env.lensFlare.ghostCount, 1, 8);
+        sliderF("Ghost Spacing", "##LFSpace", &env.lensFlare.ghostSpacing, 0.05f, 1.0f, "%.2f",
                 "UV step between ghosts along the optical axis");
-        sliderF("Halo Radius", "##LFHalo", &env.lensFlareHaloRadius, 0.0f, 0.6f, "%.2f",
+        sliderF("Halo Radius", "##LFHalo", &env.lensFlare.haloRadius, 0.0f, 0.6f, "%.2f",
                 "UV distance from source to halo ring");
-        sliderF("Chromatic", "##LFChrom", &env.lensFlareChromatic, 0.0f, 0.04f, "%.3f",
+        sliderF("Chromatic", "##LFChrom", &env.lensFlare.chromatic, 0.0f, 0.04f, "%.3f",
                 "Per-channel UV offset for rainbow fringe");
 
         ImGui::Spacing();
-        ImGui::Checkbox("Starburst", &env.starburst);
-        if (env.starburst) {
-            sliderF("Star Intensity", "##StarInt", &env.starburstIntensity, 0.0f, 4.0f, "%.2f",
+        ImGui::Checkbox("Starburst", &env.lensFlare.starburst.enabled);
+        if (env.lensFlare.starburst.enabled) {
+            sliderF("Star Intensity", "##StarInt", &env.lensFlare.starburst.intensity, 0.0f, 4.0f, "%.2f",
                     "Aperture-blade spokes multiplied onto the halo");
         }
         ImGui::EndDisabled();
     }
 
     ImGui::Spacing();
-    if (cardHeader("ssao", "Ambient Occlusion (GTAO)", &env.ssao)) {
-        ImGui::BeginDisabled(!env.ssao);
-        sliderF("Radius", "##AoRad", &env.ssaoRadius, 0.05f, 5.0f, "%.2f",
+    if (cardHeader("ssao", "Ambient Occlusion (GTAO)", &env.ao.enabled)) {
+        ImGui::BeginDisabled(!env.ao.enabled);
+        sliderF("Radius", "##AoRad", &env.ao.radius, 0.05f, 5.0f, "%.2f",
                 "View-space sampling radius");
-        sliderF("Intensity", "##AoInt", &env.ssaoIntensity, 0.0f, 4.0f, "%.2f",
+        sliderF("Intensity", "##AoInt", &env.ao.intensity, 0.0f, 4.0f, "%.2f",
                 "Occlusion darkening strength");
         ImGui::EndDisabled();
     }
 
     ImGui::Spacing();
-    if (cardHeader("ssr", "Screen-Space Reflections", &env.ssr)) {
-        ImGui::BeginDisabled(!env.ssr);
-        sliderF("Intensity", "##SsrInt", &env.ssrIntensity, 0.0f, 2.0f, "%.2f",
+    if (cardHeader("ssr", "Screen-Space Reflections", &env.ssr.enabled)) {
+        ImGui::BeginDisabled(!env.ssr.enabled);
+        sliderF("Intensity", "##SsrInt", &env.ssr.intensity, 0.0f, 2.0f, "%.2f",
                 "Reflection blend strength");
-        sliderF("Max Distance", "##SsrDist", &env.ssrMaxDistance, 0.5f, 50.0f, "%.1f",
+        sliderF("Max Distance", "##SsrDist", &env.ssr.maxDistance, 0.5f, 50.0f, "%.1f",
                 "View-space ray length");
-        sliderF("Thickness", "##SsrThick", &env.ssrThickness, 0.02f, 4.0f, "%.2f",
+        sliderF("Thickness", "##SsrThick", &env.ssr.thickness, 0.02f, 4.0f, "%.2f",
                 "Depth hit tolerance");
         ImGui::EndDisabled();
     }
 
     ImGui::Spacing();
-    if (cardHeader("taa", "Temporal AA", &env.taa)) {
-        ImGui::BeginDisabled(!env.taa);
-        sliderF("History Blend", "##TaaBlend", &env.taaBlend, 0.0f, 0.98f, "%.3f",
+    if (cardHeader("taa", "Temporal AA", &env.taa.enabled)) {
+        ImGui::BeginDisabled(!env.taa.enabled);
+        sliderF("History Blend", "##TaaBlend", &env.taa.blend, 0.0f, 0.98f, "%.3f",
                 "History weight (MSAA already does spatial edge AA)");
         ImGui::EndDisabled();
     }
 
     ImGui::Spacing();
-    if (cardHeader("cg", "Color Grading (LUT)", &env.colorGrade)) {
-        ImGui::BeginDisabled(!env.colorGrade);
+    if (cardHeader("cg", "Color Grading (LUT)", &env.colorGrade.enabled)) {
+        ImGui::BeginDisabled(!env.colorGrade.enabled);
         static char lutBuf[260];
-        snprintf(lutBuf, sizeof(lutBuf), "%s", env.colorLutPath.c_str());
+        snprintf(lutBuf, sizeof(lutBuf), "%s", env.colorGrade.lutPath.c_str());
         drawPropertyLabel("LUT strip");
         ImGui::SetNextItemWidth(-150.0f);
         if (ImGui::InputText("##LutPath", lutBuf, sizeof(lutBuf),
                 ImGuiInputTextFlags_EnterReturnsTrue))
-            env.colorLutPath = lutBuf;
+            env.colorGrade.lutPath = lutBuf;
         ImGui::SameLine();
-        if (ImGui::Button("Apply##LUT")) env.colorLutPath = lutBuf;
+        if (ImGui::Button("Apply##LUT")) env.colorGrade.lutPath = lutBuf;
         ImGui::SameLine();
-        fileBrowse("lut", "assets/lut", {".png", ".PNG"}, env.colorLutPath);
-        sliderF("Intensity", "##LutInt", &env.colorGradeIntensity, 0.0f, 1.0f, "%.2f",
+        fileBrowse("lut", "assets/lut", {".png", ".PNG"}, env.colorGrade.lutPath);
+        sliderF("Intensity", "##LutInt", &env.colorGrade.intensity, 0.0f, 1.0f, "%.2f",
                 "Blend toward the graded look");
-        if (!env.colorLutPath.empty())
+        if (!env.colorGrade.lutPath.empty())
             ImGui::TextDisabled("%s",
-                std::filesystem::path(env.colorLutPath).filename().string().c_str());
+                std::filesystem::path(env.colorGrade.lutPath).filename().string().c_str());
         ImGui::EndDisabled();
     }
 }
 
 void EnvironmentInspector::drawScene(EditorContext& /*ec*/, EnvironmentConfig& env) {
     // Grid / AABB also have one-click toggles in the viewport "Show" menu.
-    if (cardHeader("grid", "Grid", &env.gridEnabled)) {
-        ImGui::BeginDisabled(!env.gridEnabled);
-        sliderF("Cell Size", "##GScale", &env.gridScale, 0.1f, 100.0f, "%.1f",
+    if (cardHeader("grid", "Grid", &env.grid.enabled)) {
+        ImGui::BeginDisabled(!env.grid.enabled);
+        sliderF("Cell Size", "##GScale", &env.grid.scale, 0.1f, 100.0f, "%.1f",
                 "World units per grid cell");
         drawPropertyLabel("Extent");
         ImGui::SetNextItemWidth(-1.0f);
-        ImGui::DragFloat("##GSize", &env.gridSize, 10.0f, 10.0f, 10000.0f, "%.0f");
-        sliderF("Fade Start", "##GFadeS", &env.gridFadeStart, 1.0f,
-                env.gridFadeEnd, "%.0f", "Distance the grid begins to fade");
-        sliderF("Fade End", "##GFadeE", &env.gridFadeEnd, env.gridFadeStart,
+        ImGui::DragFloat("##GSize", &env.grid.size, 10.0f, 10.0f, 10000.0f, "%.0f");
+        sliderF("Fade Start", "##GFadeS", &env.grid.fadeStart, 1.0f,
+                env.grid.fadeEnd, "%.0f", "Distance the grid begins to fade");
+        sliderF("Fade End", "##GFadeE", &env.grid.fadeEnd, env.grid.fadeStart,
                 10000.0f, "%.0f", "Distance the grid fully fades", true);
         ImGui::EndDisabled();
     }
 
     ImGui::Spacing();
-    if (cardHeader("aabb", "AABB Debug", &env.aabbDebug)) {
-        ImGui::BeginDisabled(!env.aabbDebug);
+    if (cardHeader("aabb", "AABB Debug", &env.aabbDebug.enabled)) {
+        ImGui::BeginDisabled(!env.aabbDebug.enabled);
         drawPropertyLabel("Box Color");
         ImGui::SetNextItemWidth(-1.0f);
-        ImGui::ColorEdit3("##AABBCol", glm::value_ptr(env.debugColor),
+        ImGui::ColorEdit3("##AABBCol", glm::value_ptr(env.aabbDebug.color),
             ImGuiColorEditFlags_Float);
         ImGui::EndDisabled();
     }

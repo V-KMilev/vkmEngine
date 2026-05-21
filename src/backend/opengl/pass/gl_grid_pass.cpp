@@ -17,7 +17,7 @@
 namespace Engine {
 
 bool GLGridPass::enabledForView(const RenderView& view) const {
-    return isEnabled() && view.environment.gridEnabled;
+    return isEnabled() && view.environment.grid.enabled;
 }
 
 GLGridPass::GLGridPass(ShaderHandle shader)
@@ -42,7 +42,7 @@ void GLGridPass::execute(RenderGraphContext& rg) {
         return;
     }
 
-    if (!view.environment.gridEnabled) return;
+    if (!view.environment.grid.enabled) return;
 
     auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
@@ -76,13 +76,13 @@ void GLGridPass::execute(RenderGraphContext& rg) {
 
     glm::mat4 model(1.0f);
     model = glm::translate(model, gridPos);
-    model = glm::scale(model, glm::vec3(env.gridSize));
+    model = glm::scale(model, glm::vec3(env.grid.size));
 
     // CameraBlock UBO (binding 2) is bound by GLView for the frame.
     shader->setUniformMatrix4fv("u_model", model);
-    shader->setUniform1f("u_gridScale", env.gridScale);
-    shader->setUniform1f("u_gridFadeStart", env.gridFadeStart);
-    shader->setUniform1f("u_gridFadeEnd", env.gridFadeEnd);
+    shader->setUniform1f("u_gridScale", env.grid.scale);
+    shader->setUniform1f("u_gridFadeStart", env.grid.fadeStart);
+    shader->setUniform1f("u_gridFadeEnd", env.grid.fadeEnd);
 
     m_mesh->draw(GL_TRIANGLES);
 

@@ -8,6 +8,7 @@
 #include "logger.h"
 
 #include "core/engine_config.h"
+#include "debug/statistics.h"
 #include "platform/threading/thread_pool.h"
 
 namespace Engine {
@@ -52,21 +53,17 @@ bool conflicts(const SystemAccess& a, const SystemAccess& b) {
 
 } // namespace
 
-Engine& Engine::get() {
-    static Engine instance;
-    return instance;
-}
-
 void Engine::run() {
     float accumulator = 0.0f;
 
     while (m_window.beginFrame()) {
-        float deltaTime = m_statistics.getFrameInfo().frameRateInfo.frameTime / 1000.0f;
+        StatisticTracker& stats = getStatistics();
+        float deltaTime = stats.getFrameInfo().frameRateInfo.frameTime / 1000.0f;
 
         if (!m_window.updateInput()) break;
 
         FrameContext ctx{
-            m_scene, m_resources, m_window, m_statistics,
+            m_scene, m_resources, m_window, stats,
             deltaTime,
             Config::FixedTimeStep,
             static_cast<uint32_t>(m_window.getWidth()),
@@ -118,7 +115,7 @@ void Engine::run() {
 
         if (!m_window.swapBuffers()) break;
 
-        m_statistics.update();
+        stats.update();
         printStats(ctx);
     }
 
@@ -240,7 +237,7 @@ void Engine::printStats(const FrameContext& ctx) {
     auto now = std::chrono::steady_clock::now();
     if (now - lastStatsPrint < std::chrono::milliseconds(500)) return;
 
-    const auto& info = m_statistics.getFrameInfo();
+    const auto& info = getStatistics().getFrameInfo();
     LOG_VERBOSE("[%lu] %.2fms (%.0f FPS) | Draws: %u | Passes: %u | Visible: %zu/%zu\n",
         info.frameIndex,
         info.frameRateInfo.frameTime,

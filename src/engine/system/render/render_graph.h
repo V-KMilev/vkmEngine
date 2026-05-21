@@ -221,7 +221,7 @@ class RenderGraph {
 
         /// Per-pass enable state captured at the last compile. execute()
         /// recomputes the current enable vector each frame and triggers
-        /// a recompile only when it differs - so toggling env.taa flips
+        /// a recompile only when it differs - so toggling env.taa.enabled flips
         /// the lifetime data without paying the compile cost every frame.
         std::vector<bool>                        m_lastEnabled;
         uint64_t                                 m_frameIndex = 0;

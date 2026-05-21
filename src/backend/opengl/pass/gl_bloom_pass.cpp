@@ -25,7 +25,7 @@ namespace {
 bool GLBloomPass::enabledForView(const RenderView& view) const {
     // Skip when strength is zero (no visible contribution) or in wireframe.
     return isEnabled()
-        && view.environment.bloomStrength > 0.0001f
+        && view.environment.bloom.strength > 0.0001f
         && !view.environment.wireframe;
 }
 

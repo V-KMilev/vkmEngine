@@ -25,7 +25,7 @@ void GLCamera::update(const CameraData& camera, const EnvironmentConfig& environ
     CameraUBOData data{};
     data.viewProjection = camera.viewProjection;
     data.cameraPosition = glm::vec4(camera.position, camera.exposure);
-    data.ambient        = glm::vec4(environment.ambientColor, environment.ambientIntensity);
+    data.ambient        = glm::vec4(environment.ambient.color, environment.ambient.intensity);
 
     const bool firstUpload = !m_ubo;
     const bool changed = firstUpload

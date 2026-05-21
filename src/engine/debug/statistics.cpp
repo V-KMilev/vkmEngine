@@ -2,12 +2,18 @@
 
 #include "debug/frame_tracker.h"
 #include "debug/call_tracker.h"
-#include "core/engine.h"
 
 namespace Engine {
 
 StatisticTracker& getStatistics() {
-    return Engine::get().getStatistics();
+    // Process-global counter, intentionally not tied to Engine - the
+    // STATS_RECORD_* macros are sprinkled across every subsystem and
+    // record into a single observability sink. Static-local gives us
+    // first-use construction without an Engine instance, which lets
+    // tests / headless tooling exercise individual systems without
+    // booting the full engine.
+    static StatisticTracker instance;
+    return instance;
 }
 
 // Lifecycle
