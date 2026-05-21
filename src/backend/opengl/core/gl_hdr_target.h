@@ -51,11 +51,44 @@ class GLHdrTarget {
 
         /**
          * @brief Bind the multisampled FBO and set the viewport for rendering.
+         *        Color attachment 0 (HDR) is the only draw target so non-AABB,
+         *        non-Grid passes can clear+write without touching the overlay.
          */
         void bindForRender() const {
             if (!m_ready) return;
             m_msFbo->bind();
+            const GLenum bufs[1] = { GL_COLOR_ATTACHMENT0 };
+            glDrawBuffers(1, bufs);
             glViewport(0, 0, static_cast<GLsizei>(m_width), static_cast<GLsizei>(m_height));
+        }
+
+        /**
+         * @brief Bind the same MSAA FBO with draw-buffer routed to the overlay
+         *        attachment (color attachment 1). Diagnostic passes (AABB,
+         *        Grid) write here so their pixels skip the tonemap chain in
+         *        the composite while still depth-testing against the shared
+         *        HDR depth attachment.
+         */
+        void bindForOverlay() const {
+            if (!m_ready) return;
+            m_msFbo->bind();
+            const GLenum bufs[2] = { GL_NONE, GL_COLOR_ATTACHMENT1 };
+            glDrawBuffers(2, bufs);
+            glViewport(0, 0, static_cast<GLsizei>(m_width), static_cast<GLsizei>(m_height));
+        }
+
+        /**
+         * @brief Clear the overlay attachment (color attachment 1) to fully
+         *        transparent so composite blends nothing where no diagnostic
+         *        pass drew. Idempotent.
+         */
+        void clearOverlay() const {
+            if (!m_ready) return;
+            m_msFbo->bind();
+            const GLenum bufs[2] = { GL_NONE, GL_COLOR_ATTACHMENT1 };
+            glDrawBuffers(2, bufs);
+            const float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            glClearBufferfv(GL_COLOR, 1, zero);
         }
 
         /**
@@ -65,9 +98,32 @@ class GLHdrTarget {
          */
         void resolve() const {
             if (!m_ready) return;
-            Core::blitColor(m_msFbo->getID(), m_resolveFbo->getID(),
-                static_cast<int>(m_width), static_cast<int>(m_height),
-                static_cast<int>(m_width), static_cast<int>(m_height), GL_NEAREST);
+            // Resolve attachment 0 (HDR scene).
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, m_msFbo->getID());
+            glReadBuffer(GL_COLOR_ATTACHMENT0);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_resolveFbo->getID());
+            const GLenum drawHDR[1] = { GL_COLOR_ATTACHMENT0 };
+            glDrawBuffers(1, drawHDR);
+            glBlitFramebuffer(0, 0, static_cast<int>(m_width), static_cast<int>(m_height),
+                              0, 0, static_cast<int>(m_width), static_cast<int>(m_height),
+                              GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
+
+        /**
+         * @brief Resolve the overlay attachment to its single-sample texture.
+         */
+        void resolveOverlay() const {
+            if (!m_ready || !m_overlayResolveFbo) return;
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, m_msFbo->getID());
+            glReadBuffer(GL_COLOR_ATTACHMENT1);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_overlayResolveFbo->getID());
+            const GLenum drawOv[1] = { GL_COLOR_ATTACHMENT0 };
+            glDrawBuffers(1, drawOv);
+            glBlitFramebuffer(0, 0, static_cast<int>(m_width), static_cast<int>(m_height),
+                              0, 0, static_cast<int>(m_width), static_cast<int>(m_height),
+                              GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
 
         /**
@@ -75,6 +131,14 @@ class GLHdrTarget {
          */
         void bindResolvedColor(uint32_t slot) const {
             if (m_resolveColor) m_resolveColor->bindSlot(slot);
+        }
+
+        /**
+         * @brief Bind the resolved overlay color texture to a sampler slot
+         *        (rgba: rgb = diagnostic colour in linear, a = coverage).
+         */
+        void bindResolvedOverlay(uint32_t slot) const {
+            if (m_overlayResolve) m_overlayResolve->bindSlot(slot);
         }
 
         /// Raw GL id of the resolved single-sample HDR color texture.
@@ -97,9 +161,14 @@ class GLHdrTarget {
             glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
             const int samples = std::clamp(MSAA_SAMPLES, 1, static_cast<int>(maxSamples));
 
-            // Multisampled scene target: float color + packed depth/stencil.
+            // Multisampled scene target: float color + packed depth/stencil
+            // + RGBA8 overlay (diagnostic colour, written by AABB/Grid only).
             m_msColor = std::make_unique<Core::RenderBuffer>();
             m_msColor->storageMultisample(samples, GL_RGBA16F,
+                static_cast<int32_t>(m_width), static_cast<int32_t>(m_height));
+
+            m_msOverlay = std::make_unique<Core::RenderBuffer>();
+            m_msOverlay->storageMultisample(samples, GL_RGBA8,
                 static_cast<int32_t>(m_width), static_cast<int32_t>(m_height));
 
             m_msDepth = std::make_unique<Core::RenderBuffer>();
@@ -109,6 +178,7 @@ class GLHdrTarget {
             m_msFbo = std::make_unique<Core::FrameBuffer>();
             m_msFbo->bind();
             m_msFbo->attachRenderBuffer(GL_COLOR_ATTACHMENT0,        m_msColor->getID());
+            m_msFbo->attachRenderBuffer(GL_COLOR_ATTACHMENT1,        m_msOverlay->getID());
             m_msFbo->attachRenderBuffer(GL_DEPTH_STENCIL_ATTACHMENT, m_msDepth->getID());
             const bool msOk = m_msFbo->isComplete();
             m_msFbo->unbind();
@@ -133,18 +203,35 @@ class GLHdrTarget {
             const bool resolveOk = m_resolveFbo->isComplete();
             m_resolveFbo->unbind();
 
-            m_ready = msOk && resolveOk;
+            // Overlay resolve target (RGBA8, single-sample). Sampled by the
+            // composite as a "draw this colour as-is, post-tonemap" overlay.
+            Core::Texture2DParams oparams = params;
+            oparams.internalFormat = GL_RGBA8;
+            oparams.type           = GL_UNSIGNED_BYTE;
+            m_overlayResolve = std::make_unique<Core::Texture2D>("hdr_overlay_resolve", oparams);
+
+            m_overlayResolveFbo = std::make_unique<Core::FrameBuffer>();
+            m_overlayResolveFbo->bind();
+            m_overlayResolveFbo->attachTexture2D(GL_COLOR_ATTACHMENT0, m_overlayResolve->getID());
+            const bool overlayOk = m_overlayResolveFbo->isComplete();
+            m_overlayResolveFbo->unbind();
+
+            m_ready = msOk && resolveOk && overlayOk;
         }
 
     private:
         static constexpr int MSAA_SAMPLES = 4;  ///< Requested MSAA samples (clamped to GL_MAX_SAMPLES)
 
         std::unique_ptr<Core::RenderBuffer> m_msColor;
+        std::unique_ptr<Core::RenderBuffer> m_msOverlay;
         std::unique_ptr<Core::RenderBuffer> m_msDepth;
         std::unique_ptr<Core::FrameBuffer>  m_msFbo;
 
         std::unique_ptr<Core::Texture2D>    m_resolveColor;
         std::unique_ptr<Core::FrameBuffer>  m_resolveFbo;
+
+        std::unique_ptr<Core::Texture2D>    m_overlayResolve;
+        std::unique_ptr<Core::FrameBuffer>  m_overlayResolveFbo;
 
         uint32_t m_width  = 0;
         uint32_t m_height = 0;

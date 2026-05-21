@@ -151,10 +151,6 @@ class RenderSystem : public System {
                 uint64_t key, uint64_t version, bool live);
 
     private:
-        /// Mirror env toggles onto pass.setEnabled() before execute, so the
-        /// graph's resolve-dirty tracking only counts passes that actually run.
-        void syncPassToggles();
-
         std::unique_ptr<RenderBackend> m_backend;
         RenderGraph m_graph;
 

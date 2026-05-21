@@ -22,6 +22,13 @@ namespace {
     constexpr float UPSAMPLE_RADIUS = 0.005f;  // tent filter radius in UV space
 }
 
+bool GLBloomPass::enabledForView(const RenderView& view) const {
+    // Skip when strength is zero (no visible contribution) or in wireframe.
+    return isEnabled()
+        && view.environment.bloomStrength > 0.0001f
+        && !view.environment.wireframe;
+}
+
 GLBloomPass::GLBloomPass(ShaderHandle downsampleShader, ShaderHandle upsampleShader)
     : RenderPass("GLBloomPass")
     , m_downShader(downsampleShader)

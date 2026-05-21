@@ -73,8 +73,11 @@ class GLGridPass : public RenderPass {
         void execute(RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
-            builder.write(RGResource::SceneHDR);
+            // Writes the HDR overlay attachment only - see gl_aabb_debug_pass.h.
+            (void)builder;
         }
+
+        bool enabledForView(const RenderView& view) const override;
 
     private:
         /**

@@ -17,6 +17,12 @@
 
 namespace Engine {
 
+bool GLSSRPass::enabledForView(const RenderView& view) const {
+    // Off in wireframe: SSR reads filled-triangle gbuffer positions and
+    // would draw a ghost of the solid mesh between wireframe lines.
+    return isEnabled() && view.environment.ssr && !view.environment.wireframe;
+}
+
 GLSSRPass::GLSSRPass(ShaderHandle shader)
     : RenderPass("GLSSRPass")
     , m_shader(shader)
@@ -38,8 +44,6 @@ void GLSSRPass::execute(RenderGraphContext& rg) {
         LOG_ERROR("GLSSRPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
         return;
     }
-    if (!view.environment.ssr) return;
-
     auto& gl      = static_cast<GLBackend&>(backend);
     auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
     auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);

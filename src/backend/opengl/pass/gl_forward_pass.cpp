@@ -62,10 +62,17 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
 
     // The opaque (or legacy All) pass owns the clear. The transparent pass
     // must NOT clear - it refracts the opaque+sky scene drawn before it.
+    // The overlay attachment also gets cleared here, once per frame, so
+    // diagnostic passes (AABB / Grid) draw onto a fully transparent canvas
+    // that the composite blends over the tonemapped scene afterwards.
     if (m_phase != Phase::Transparent) {
         glContext.setClearColor(view.environment.clearColor);
         glContext.clearColor();
         glContext.clear();
+        hdrT.clearOverlay();
+        // clearOverlay() leaves draw-buffer routed to the overlay attachment;
+        // restore HDR-only routing for the rest of this pass.
+        hdrT.bindForRender();
     }
 
     if (view.drawables.empty()) {
@@ -73,11 +80,17 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     }
 
     // Wireframe is a geometry-pass concern only. Setting polygon mode
-    // globally (as backend->setWireframe did historically) also makes the
+    // globally (as backend->setWireframe did historically) makes the
     // fullscreen-triangle post passes rasterize as 3 line segments instead
-    // of filled tris - composite never writes the backbuffer and the screen
-    // appears frozen. Apply locally and restore before exit.
+    // of filled tris - composite never writes the backbuffer, ImGui draws
+    // as outlines, and the screen appears frozen. Apply locally and use
+    // an RAII guard so every return path (including the transparent-phase
+    // "no transparent batches" early-out below) restores GL_FILL.
     const bool wireframe = view.environment.wireframe;
+    struct PolygonModeGuard {
+        Core::Context* ctx;
+        ~PolygonModeGuard() { if (ctx) ctx->setPolygonMode(GL_FRONT_AND_BACK, GL_FILL); }
+    } wireframeGuard{ wireframe ? &glContext : nullptr };
     if (wireframe) glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
     auto& glView = gl.getView();
@@ -245,7 +258,13 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         // Falls back to the Opaque slot's shader when the type slot is
         // empty (e.g. AlphaMask not wired up by the caller).
         const GLMaterial* material = glView.getMaterial(batch.material);
-        ShaderHandle baseHandle = m_shaders[static_cast<int>(batch.materialType)];
+        // Wireframe is a diagnostic view: route every batch through the
+        // unlit shader so the lines aren't AO-darkened, IBL-lit, or shadowed.
+        // The AABB / Grid passes are unlit at the shader level already; this
+        // gives wireframe the same flat-colour treatment for visual parity.
+        ShaderHandle baseHandle = wireframe
+            ? m_shaders[static_cast<int>(MaterialType::Unlit)]
+            : m_shaders[static_cast<int>(batch.materialType)];
         if (!baseHandle) baseHandle = m_shaders[static_cast<int>(MaterialType::Opaque)];
         const ShaderAsset& shaderAsset = resources.get(baseHandle);
         GLShader* shader = nullptr;
@@ -315,16 +334,13 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     }
 
     // Restore GL state if we ended in transparent mode (back to the engine
-    // default: no face culling, depth-write on, blending off).
+    // default: no face culling, depth-write on, blending off). Polygon mode
+    // restore happens in PolygonModeGuard above on any return path.
     if (currentType == MaterialType::Transparent) {
         glContext.setDepthWrite(true);
         glContext.setBlending(false);
         glContext.setFaceCulling(false);
     }
-
-    // Restore polygon mode so downstream post passes can rasterize filled
-    // triangles. The wrapper dedupes when wireframe is already off.
-    if (wireframe) glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
 } // namespace Engine

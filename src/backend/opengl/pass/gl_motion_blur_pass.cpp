@@ -21,6 +21,10 @@
 
 namespace Engine {
 
+bool GLMotionBlurPass::enabledForView(const RenderView& view) const {
+    return isEnabled() && view.environment.motionBlur && !view.environment.wireframe;
+}
+
 GLMotionBlurPass::GLMotionBlurPass(ShaderHandle shader)
     : RenderPass("GLMotionBlurPass")
     , m_shader(shader)
@@ -43,8 +47,6 @@ void GLMotionBlurPass::execute(RenderGraphContext& rg) {
         LOG_ERROR("GLMotionBlurPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
         return;
     }
-    if (!view.environment.motionBlur) return;  // off by default - no-op
-
     auto& gl      = static_cast<GLBackend&>(backend);
     auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
     auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);

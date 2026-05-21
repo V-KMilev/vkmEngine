@@ -41,6 +41,8 @@ class GLExposurePass : public RenderPass {
             builder.write(RGResource::AdaptedLuminance);
         }
 
+        bool enabledForView(const RenderView& view) const override;
+
     private:
         ShaderHandle m_lumShader;
         ShaderHandle m_adaptShader;

@@ -172,7 +172,11 @@ void RenderGraph::execute(
 
     for (size_t i = 0; i < m_passes.size(); ++i) {
         RenderPass& pass = *m_passes[i];
-        if (!pass.isEnabled()) continue;
+        // enabledForView() lets each pass key off RenderView state (env
+        // toggles, render mode, etc.) without a central pass-name switch.
+        // Default returns isEnabled() so passes that don't care behave as
+        // before.
+        if (!pass.enabledForView(view)) continue;
 
         if (sceneResolveDirty && contains(m_reads[i], RGResource::SceneHDRResolved)) {
             f.resolveSceneColor();
