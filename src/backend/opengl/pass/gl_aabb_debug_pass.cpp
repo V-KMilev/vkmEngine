@@ -5,7 +5,7 @@
 #include "debug/statistics.h"
 
 #include "core/gl_backend.h"
-#include "core/gl_hdr_target.h"
+#include "core/gl_scene_target.h"
 #include "resource/gl_mesh.h"
 #include "resource/gl_shader_program.h"
 
@@ -117,7 +117,7 @@ void GLAABBDebugPass::execute(RenderGraphContext& rg) {
     // Route to the HDR FBO's overlay attachment instead of the HDR colour
     // attachment - diagnostic colours skip the composite's tonemap chain
     // and the visible AABBs show their authored aabbDebug.color exactly.
-    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     if (!hdr.isReady()) return;
     hdr.bindForOverlay();
 

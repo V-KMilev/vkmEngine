@@ -6,7 +6,7 @@
 #include "system/render/render_graph.h"
 #include "system/render/render_graph_resource.h"
 
-#include "gl_hdr_target.h"
+#include "gl_scene_target.h"
 #include "resource/gl_bloom.h"
 #include "resource/gl_auto_exposure.h"
 #include "resource/gl_gbuffer.h"
@@ -22,7 +22,7 @@ namespace Engine {
  * metering targets, the thin G-buffer, the TAA history, and the shared
  * post scratch target. resize() reallocates everything; registerWith()
  * publishes each sub-resource into the graph's typed pool keyed by
- * RGResource (so passes look up via ctx.resource<GLHdrTarget>(SceneHDR)).
+ * RGResource (so passes look up via ctx.resource<GLSceneTarget>(SceneHDR)).
  *
  * Auto-exposure is fixed-size and self-allocates lazily, so it has no
  * resize step.
@@ -57,8 +57,8 @@ class GLFrameResources : public FrameResources {
 
         void invalidateTemporalHistory() override { m_taa.invalidateHistory(); }
 
-        GLHdrTarget&          hdr()                { return m_hdr; }
-        const GLHdrTarget&    hdr()          const { return m_hdr; }
+        GLSceneTarget&          hdr()                { return m_hdr; }
+        const GLSceneTarget&    hdr()          const { return m_hdr; }
         GLBloom&              bloom()              { return m_bloom; }
         const GLBloom&        bloom()        const { return m_bloom; }
         GLAutoExposure&       autoExposure()       { return m_autoExposure; }
@@ -71,7 +71,7 @@ class GLFrameResources : public FrameResources {
         const GLPostScratch&  scratch()      const { return m_scratch; }
 
     private:
-        GLHdrTarget    m_hdr;
+        GLSceneTarget    m_hdr;
         GLBloom        m_bloom;
         GLAutoExposure m_autoExposure;
         GLGBuffer      m_gbuffer;

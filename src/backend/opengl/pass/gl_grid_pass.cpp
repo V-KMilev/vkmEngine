@@ -5,7 +5,7 @@
 #include "debug/statistics.h"
 
 #include "core/gl_backend.h"
-#include "core/gl_hdr_target.h"
+#include "core/gl_scene_target.h"
 #include "resource/gl_mesh.h"
 #include "resource/gl_shader_program.h"
 
@@ -50,7 +50,7 @@ void GLGridPass::execute(RenderGraphContext& rg) {
 
     // Route to the HDR FBO's overlay attachment so the grid's authored
     // colours skip the composite tonemap chain and show on screen exactly.
-    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     if (!hdr.isReady()) return;
     hdr.bindForOverlay();
 

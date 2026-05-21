@@ -11,7 +11,7 @@
 #include "debug/statistics.h"
 
 #include "core/gl_backend.h"
-#include "core/gl_hdr_target.h"
+#include "core/gl_scene_target.h"
 #include "resource/gl_shader_program.h"
 #include "resource/gl_bloom.h"
 #include "resource/gl_auto_exposure.h"
@@ -122,7 +122,7 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     }
 
     auto& gl  = static_cast<GLBackend&>(backend);
-    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     if (!hdr.isReady()) return;
 
     GLShader* shader = gl.getView().resolveShader(m_shader, resources);
