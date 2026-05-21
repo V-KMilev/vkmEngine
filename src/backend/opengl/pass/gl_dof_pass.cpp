@@ -20,7 +20,7 @@
 namespace Engine {
 
 bool GLDofPass::enabledForView(const RenderView& view) const {
-    return isEnabled() && view.environment.dof.enabled && !view.environment.wireframe;
+    return isEnabled() && view.environment.dof.enabled && !view.modeConfig.disablePost;
 }
 
 GLDofPass::GLDofPass(ShaderHandle shader)

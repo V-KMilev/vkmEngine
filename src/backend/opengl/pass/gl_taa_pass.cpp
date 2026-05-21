@@ -22,7 +22,7 @@
 namespace Engine {
 
 bool GLTAAPass::enabledForView(const RenderView& view) const {
-    return isEnabled() && view.environment.taa.enabled && !view.environment.wireframe;
+    return isEnabled() && view.environment.taa.enabled && !view.modeConfig.disablePost;
 }
 
 GLTAAPass::GLTAAPass(ShaderHandle shader)

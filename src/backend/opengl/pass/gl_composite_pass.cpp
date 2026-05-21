@@ -152,9 +152,9 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
 
     // Display transform selector (AgX / PBR Neutral / ACES / Reinhard).
     shader->setUniform1i("u_tonemap", view.environment.tonemap);
-    // Wireframe is a diagnostic mode: the shader will skip exposure +
-    // tonemap + LUT and go straight to sRGB so unlit lines stay clean.
-    shader->setUniform1i("u_wireframe", view.environment.wireframe ? 1 : 0);
+    // Diagnostic modes that need an unaltered display transform (wireframe
+    // today, future Normals/Albedo/Overdraw) set modeConfig.bypassDisplayXform.
+    shader->setUniform1i("u_wireframe", view.modeConfig.bypassDisplayXform ? 1 : 0);
 
     // CameraBlock UBO (binding 2) is bound for the frame by GLView; the
     // composite shader reads exposure from cameraPosition.w.

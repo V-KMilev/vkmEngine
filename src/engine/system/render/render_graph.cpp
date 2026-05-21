@@ -204,8 +204,18 @@ void RenderGraph::execute(
             sceneResolveDirty = false;
         }
 
+#ifndef NDEBUG
+        ctx.accessedResources = 0;
+#endif
         pass.execute(ctx);
         STATS_RECORD_RENDER_PASS();
+#ifndef NDEBUG
+        // Compare declared reads+writes against what the pass actually
+        // looked up via ctx.resource<T>(). Drift in either direction is
+        // a one-shot warning (per-pass + per-resource pair) so a real
+        // bug shows up but a busy log doesn't drown the signal.
+        checkPassAccess(i, ctx.accessedResources);
+#endif
 
         if (contains(m_writes[i], RGResource::SceneHDR)) {
             sceneResolveDirty = true;
@@ -215,6 +225,47 @@ void RenderGraph::execute(
         }
     }
 }
+
+#ifndef NDEBUG
+void RenderGraph::checkPassAccess(size_t passIndex, uint32_t accessedMask) {
+    // Build a declared bitmask from m_reads[i] + m_writes[i] and compare.
+    // Two drifts to warn about:
+    //   declared & !accessed -> pass said it would touch X but didn't
+    //   accessed & !declared -> pass touched X without declaring it
+    // Each (pass, resource, direction) gets warned exactly once per
+    // process lifetime - a one-shot std::set guards the log noise.
+    uint32_t declaredMask = 0;
+    for (RGResource r : m_reads[passIndex])  declaredMask |= (1u << static_cast<uint32_t>(r));
+    for (RGResource r : m_writes[passIndex]) declaredMask |= (1u << static_cast<uint32_t>(r));
+
+    const uint32_t declaredOnly = declaredMask & ~accessedMask;
+    const uint32_t accessedOnly = accessedMask & ~declaredMask;
+    if (declaredOnly == 0 && accessedOnly == 0) return;
+
+    const std::string& passName = m_passes[passIndex]->getName();
+
+    for (uint32_t r = 0; r < RG_RESOURCE_COUNT; ++r) {
+        const uint32_t bit = (1u << r);
+        if (declaredOnly & bit) {
+            // The graph already tolerates "declared but unused" - lifetimes
+            // still get extended. Worth a one-shot warn so a pass author
+            // notices stale declarations after a refactor.
+            const uint64_t key = (static_cast<uint64_t>(passIndex) << 8) | r;
+            if (m_accessWarnDeclaredUnused.insert(key).second) {
+                LOG_WARNING("RenderGraph: pass '%s' declared %s but never looked it up via ctx.resource<>()",
+                    passName.c_str(), rgResourceName(static_cast<RGResource>(r)));
+            }
+        }
+        if (accessedOnly & bit) {
+            const uint64_t key = (static_cast<uint64_t>(passIndex) << 8) | r;
+            if (m_accessWarnUndeclared.insert(key).second) {
+                LOG_WARNING("RenderGraph: pass '%s' looked up %s without declaring it (declareResources missing a read/write)",
+                    passName.c_str(), rgResourceName(static_cast<RGResource>(r)));
+            }
+        }
+    }
+}
+#endif
 
 void RenderGraph::beginPreview(RenderBackend& backend, uint32_t size) {
     if (size == 0) return;

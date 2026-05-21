@@ -389,7 +389,7 @@ nlohmann::json save(const EnvironmentConfig& e) {
 
         {"tonemap",    e.tonemap},
         {"clearColor", vec4ToJson(e.clearColor)},
-        {"wireframe",  e.wireframe},
+        {"renderMode", static_cast<int>(e.renderMode)},
     };
 }
 
@@ -411,7 +411,15 @@ void load(const nlohmann::json& j, EnvironmentConfig& e) {
 
     e.tonemap   = j.value("tonemap",   e.tonemap);
     if (j.contains("clearColor")) e.clearColor = vec4FromJson(j["clearColor"]);
-    e.wireframe = j.value("wireframe", e.wireframe);
+
+    // RenderMode replaced the old `wireframe` bool. Read the new int form
+    // first; fall back to the legacy bool so scenes saved before the
+    // refactor still load with their diagnostic view intact.
+    if (j.contains("renderMode")) {
+        e.renderMode = static_cast<RenderMode>(j["renderMode"].get<int>());
+    } else if (j.value("wireframe", false)) {
+        e.renderMode = RenderMode::Wireframe;
+    }
 }
 
 } // namespace Engine::ComponentSerializer

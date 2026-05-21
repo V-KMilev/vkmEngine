@@ -97,7 +97,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     // globally would make fullscreen-triangle post passes rasterize as
     // line segments. The PolygonModeGuard in the anonymous namespace
     // above restores GL_FILL on every return path.
-    const bool wireframe = view.environment.wireframe;
+    const bool wireframe = view.modeConfig.wireframe;
     PolygonModeGuard wireframeGuard{ wireframe ? &glContext : nullptr };
     if (wireframe) glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
@@ -266,11 +266,12 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         // Falls back to the Opaque slot's shader when the type slot is
         // empty (e.g. AlphaMask not wired up by the caller).
         const GLMaterial* material = glView.getMaterial(batch.material);
-        // Wireframe is a diagnostic view: route every batch through the
-        // unlit shader so the lines aren't AO-darkened, IBL-lit, or shadowed.
-        // The AABB / Grid passes are unlit at the shader level already; this
-        // gives wireframe the same flat-colour treatment for visual parity.
-        ShaderHandle baseHandle = wireframe
+        // Diagnostic modes route every batch through the unlit shader so
+        // the geometry isn't AO-darkened, IBL-lit, or shadowed. modeConfig.
+        // forceUnlit captures this for wireframe today; a future
+        // NormalsView mode would use a normals shader the same way (a
+        // new bool in the config or a shader override field).
+        ShaderHandle baseHandle = view.modeConfig.forceUnlit
             ? m_shaders[static_cast<int>(MaterialType::Unlit)]
             : m_shaders[static_cast<int>(batch.materialType)];
         if (!baseHandle) baseHandle = m_shaders[static_cast<int>(MaterialType::Opaque)];
