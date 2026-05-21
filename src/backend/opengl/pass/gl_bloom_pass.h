@@ -42,6 +42,8 @@ class GLBloomPass : public RenderPass {
             builder.write(RGResource::BloomChain);
         }
 
+        bool enabledForView(const RenderView& view) const override;
+
     private:
         ShaderHandle m_downShader;
         ShaderHandle m_upShader;

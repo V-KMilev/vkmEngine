@@ -46,6 +46,8 @@ class GLLensFlarePass : public RenderPass {
             builder.write(RGResource::SceneHDR);
         }
 
+        bool enabledForView(const RenderView& view) const override;
+
     private:
         ShaderHandle m_shader;
         std::unique_ptr<Core::ScreenTriangle> m_screenTri;  ///< Shared attribute-less fullscreen triangle

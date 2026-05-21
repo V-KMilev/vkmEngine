@@ -67,6 +67,10 @@ std::unique_ptr<Core::Texture2D> makeStarburstTexture() {
 
 } // namespace
 
+bool GLLensFlarePass::enabledForView(const RenderView& view) const {
+    return isEnabled() && view.environment.lensFlare && !view.environment.wireframe;
+}
+
 GLLensFlarePass::GLLensFlarePass(ShaderHandle shader)
     : RenderPass("GLLensFlarePass")
     , m_shader(shader)
@@ -88,8 +92,6 @@ void GLLensFlarePass::execute(RenderGraphContext& rg) {
         LOG_ERROR("GLLensFlarePass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
         return;
     }
-    if (!view.environment.lensFlare) return;
-
     auto& gl  = static_cast<GLBackend&>(backend);
     auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
     if (!hdr.isReady()) return;

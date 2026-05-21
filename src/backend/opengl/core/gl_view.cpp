@@ -223,42 +223,31 @@ GLShader* GLView::resolveShaderVariant(
     const ShaderAsset& asset = resources.get(handle);
     const uint32_t shaderId   = handle.id();
     const uint32_t generation = handle.key.generation;
-    const VariantKey key{shaderId, generation, featureFlags};
+    const uint64_t subkey     = variantSubkey(generation, featureFlags);
 
-    // Helper: drop every variant for this shaderId. Uses the per-shaderId
-    // subkey set so we touch O(variants_for_this_shader) entries instead
-    // of scanning the whole map. Pruning the inner set keeps the index
-    // self-cleaning.
-    auto evictShader = [&](uint32_t sid, bool keepGen, uint32_t keepGeneration) {
-        auto sit = m_shaderVariantsByShader.find(sid);
-        if (sit == m_shaderVariantsByShader.end()) return;
-        auto& subkeys = sit->second;
-        for (auto skit = subkeys.begin(); skit != subkeys.end(); ) {
-            if (keepGen && skit->generation == keepGeneration) { ++skit; continue; }
-            m_shaderVariants.erase(VariantKey{sid, skit->generation, skit->flags});
-            skit = subkeys.erase(skit);
-        }
-        if (subkeys.empty()) m_shaderVariantsByShader.erase(sit);
-    };
+    auto& bucket = m_shaderVariants[shaderId];
 
-    auto it = m_shaderVariants.find(key);
-    if (it != m_shaderVariants.end()) {
-        // Hot-reload safety: if the base asset version changed since we built
-        // this variant, drop every variant of this shader and rebuild lazily.
-        // A file edit invalidates them all, not just the one we're looking up.
+    auto it = bucket.find(subkey);
+    if (it != bucket.end()) {
+        // Hot-reload safety: if the base asset version changed since we
+        // built this variant, every variant for this shader is stale. The
+        // nested-map shape lets us evict them in one O(N_for_shader)
+        // clear() without scanning siblings.
         if (it->second.assetVersion != asset.version) {
-            evictShader(shaderId, false, 0);
+            bucket.clear();
         } else {
             return it->second.program.get();
         }
-    } else {
-        // Cache miss for this (shaderId, generation): if there are entries
-        // for the same shaderId at an older generation, the slot has been
-        // recycled (SlotAllocator hands out the same index after a free,
-        // bumping the generation). The old handles are unreachable, so the
-        // old variants are dead weight at best, stale-by-name hazards at
-        // worst - evict them.
-        evictShader(shaderId, true, generation);
+    } else if (!bucket.empty()) {
+        // Cache miss for (shaderId, subkey). Check whether the bucket
+        // holds entries from a previous SlotAllocator generation: those
+        // handles are unreachable so the variants are dead weight (and
+        // hazards on name lookup). Drop any whose generation differs.
+        for (auto bit = bucket.begin(); bit != bucket.end(); ) {
+            const uint32_t entryGen = static_cast<uint32_t>(bit->first >> 32);
+            if (entryGen != generation) bit = bucket.erase(bit);
+            else ++bit;
+        }
     }
 
     VariantEntry entry;
@@ -272,8 +261,7 @@ GLShader* GLView::resolveShaderVariant(
     }
     LOG_INFO("GLView: compiled shader variant '%s' flags=0x%x", asset.name.c_str(), featureFlags);
     GLShader* raw = entry.program.get();
-    m_shaderVariants.emplace(key, std::move(entry));
-    m_shaderVariantsByShader[shaderId].insert({generation, featureFlags});
+    bucket.emplace(subkey, std::move(entry));
     return raw;
 }
 

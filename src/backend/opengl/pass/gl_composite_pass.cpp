@@ -152,6 +152,9 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
 
     // Display transform selector (AgX / PBR Neutral / ACES / Reinhard).
     shader->setUniform1i("u_tonemap", view.environment.tonemap);
+    // Wireframe is a diagnostic mode: the shader will skip exposure +
+    // tonemap + LUT and go straight to sRGB so unlit lines stay clean.
+    shader->setUniform1i("u_wireframe", view.environment.wireframe ? 1 : 0);
 
     // CameraBlock UBO (binding 2) is bound for the frame by GLView; the
     // composite shader reads exposure from cameraPosition.w.
@@ -201,6 +204,18 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     if (m_lut) m_lut->bindSlot(3);
     shader->setUniform1i("u_lutEnabled", lutOn ? 1 : 0);
     shader->setUniform1f("u_lutIntensity", view.environment.colorGradeIntensity);
+
+    // Diagnostic overlay (slot 5): AABB/Grid (and any future debug pass)
+    // write to the HDR FBO's overlay attachment instead of HDR colour, so
+    // their pixels skip the tonemap chain. Resolve the MSAA overlay to its
+    // single-sample texture and bind it here; the shader blends it on top
+    // of the tonemapped result based on overlay alpha.
+    hdr.resolveOverlay();
+    hdr.bindResolvedOverlay(5);
+    // Restore previous bindings disturbed by the overlay resolve blits.
+    hdr.bindResolvedColor(0);
+    if (backbuffer) backbuffer->bind();
+    else backend.getDefaultTarget().bind();
 
     // Lens dirt (slot 4): procedurally generated on first enable, then kept
     // resident. Off when env.lensDirt is false; the shader gates the multiply.

@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "resource/material_asset.h"
@@ -162,56 +161,22 @@ class GLView {
         GLResourceTable<GLTexture>  m_textureTable;
         GLResourceTable<GLShader>   m_shaderTable;
 
-        /// Per-material shader-variant cache. Keyed by (shaderId, generation,
-        /// flags) so a slot recycled by SlotAllocator gets fresh entries
-        /// instead of inheriting the previous occupant's compiled programs.
-        /// Value tracks the asset version the variant was built against so a
-        /// hot reload of the base shader invalidates every variant at once.
-        struct VariantKey {
-            uint32_t shaderId   = 0;
-            uint32_t generation = 0;
-            uint32_t flags      = 0;
-
-            bool operator==(const VariantKey& o) const noexcept {
-                return shaderId == o.shaderId
-                    && generation == o.generation
-                    && flags == o.flags;
-            }
-        };
-        struct VariantKeyHash {
-            size_t operator()(const VariantKey& k) const noexcept {
-                uint64_t h = static_cast<uint64_t>(k.shaderId);
-                h ^= static_cast<uint64_t>(k.generation) + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2);
-                h ^= static_cast<uint64_t>(k.flags)      + 0x9E3779B97F4A7C15ull + (h << 6) + (h >> 2);
-                return static_cast<size_t>(h);
-            }
-        };
+        /// Per-material shader-variant cache. Outer key is shaderId; inner
+        /// key packs (generation, flags) into a uint64 so slot recycles by
+        /// SlotAllocator and feature-flag sets share the same bucket but
+        /// cannot collide. Eviction of all variants for one shader (on hot
+        /// reload or slot recycle) is the inner map's clear(), no global
+        /// scan needed and no parallel index to keep in sync.
         struct VariantEntry {
             std::unique_ptr<GLShader> program;
             uint64_t                  assetVersion = 0;
         };
-        std::unordered_map<VariantKey, VariantEntry, VariantKeyHash> m_shaderVariants;
-
-        /// shaderId -> set of (generation, flags) variant keys currently
-        /// living in m_shaderVariants. Lets cache misses / hot-reloads
-        /// evict only the entries for one shader instead of scanning the
-        /// global map. Empty inner sets are pruned on the last erase.
-        struct ShaderVariantSubkey {
-            uint32_t generation;
-            uint32_t flags;
-            bool operator==(const ShaderVariantSubkey& o) const noexcept {
-                return generation == o.generation && flags == o.flags;
-            }
-        };
-        struct ShaderVariantSubkeyHash {
-            size_t operator()(const ShaderVariantSubkey& k) const noexcept {
-                return (static_cast<size_t>(k.generation) << 32)
-                     ^ static_cast<size_t>(k.flags);
-            }
-        };
-        std::unordered_map<uint32_t,
-            std::unordered_set<ShaderVariantSubkey, ShaderVariantSubkeyHash>>
-            m_shaderVariantsByShader;
+        static constexpr uint64_t variantSubkey(uint32_t generation, uint32_t flags) {
+            return (static_cast<uint64_t>(generation) << 32) | flags;
+        }
+        std::unordered_map<uint32_t /*shaderId*/,
+            std::unordered_map<uint64_t /*subkey*/, VariantEntry>>
+            m_shaderVariants;
 
         GLCamera          m_camera;
         GLLights          m_lights;

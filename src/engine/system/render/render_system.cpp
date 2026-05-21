@@ -60,28 +60,22 @@ void RenderSystem::update(FrameContext& ctx) {
     // Build snapshot for this frame (reuses vector capacity from previous frame)
     m_renderView.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight);
 
+    // Wireframe is a diagnostic view: the forward pass routes every batch
+    // through the unlit shader, AABB/Grid are unlit at the shader level,
+    // and SSAO would sample filled-triangle gbuffer AO at line pixels
+    // (lying about occlusion). Force env.ssao off so the unlit path skips
+    // the AO sample cleanly. Pass-level decisions (which post passes run,
+    // composite bypass) live on each pass via enabledForView() and on
+    // composite via env.wireframe directly.
+    if (m_environment.wireframe) {
+        m_renderView.environment.ssao = false;
+    }
+
     // Backend-owned GPU sync (no-op for backends that don't need it).
     m_backend->syncResources(m_renderView, ctx.resources);
 
-    // Map env toggles onto pass.setEnabled() so the graph can fully skip
-    // them. A pass that early-outs inside its body still has its declared
-    // writes counted by the graph's resolve-dirty tracking, which can
-    // force a spurious MSAA resolve downstream. Disabling the pass at
-    // the graph level keeps the declarations honest.
-    syncPassToggles();
-
     // Execute passes
     m_graph.execute(*m_backend, m_renderView, ctx.resources);
-}
-
-void RenderSystem::syncPassToggles() {
-    const size_t passes = m_graph.passCount();
-    for (size_t i = 0; i < passes; ++i) {
-        RenderPass& p = m_graph.getPass(i);
-        const std::string& n = p.getName();
-        if (n == "GLAABBDebugPass") p.setEnabled(m_environment.aabbDebug);
-        else if (n == "GLGridPass") p.setEnabled(m_environment.gridEnabled);
-    }
 }
 
 void RenderSystem::addPass(std::unique_ptr<RenderPass> pass) {

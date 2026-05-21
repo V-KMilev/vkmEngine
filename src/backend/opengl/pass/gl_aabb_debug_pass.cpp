@@ -5,6 +5,7 @@
 #include "debug/statistics.h"
 
 #include "core/gl_backend.h"
+#include "core/gl_hdr_target.h"
 #include "resource/gl_mesh.h"
 #include "resource/gl_shader_program.h"
 
@@ -14,6 +15,11 @@
 #include "system/visibility/bounds_utils.h"
 
 namespace Engine {
+
+bool GLAABBDebugPass::enabledForView(const RenderView& view) const {
+    return isEnabled() && view.environment.aabbDebug;
+}
+
 
 GLAABBDebugPass::GLAABBDebugPass(ShaderHandle shader)
     : RenderPass("GLAABBDebugPass")
@@ -107,6 +113,13 @@ void GLAABBDebugPass::execute(RenderGraphContext& rg) {
     }
 
     if (m_modelScratch.empty()) return;
+
+    // Route to the HDR FBO's overlay attachment instead of the HDR colour
+    // attachment - diagnostic colours skip the composite's tonemap chain
+    // and the visible AABBs show their authored debugColor exactly.
+    auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
+    if (!hdr.isReady()) return;
+    hdr.bindForOverlay();
 
     auto& glView = static_cast<GLBackend&>(backend).getView();
     GLShader* shader = glView.resolveShader(m_shader, resources);

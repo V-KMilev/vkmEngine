@@ -21,6 +21,10 @@
 
 namespace Engine {
 
+bool GLTAAPass::enabledForView(const RenderView& view) const {
+    return isEnabled() && view.environment.taa && !view.environment.wireframe;
+}
+
 GLTAAPass::GLTAAPass(ShaderHandle shader)
     : RenderPass("GLTAAPass")
     , m_shader(shader)
@@ -43,8 +47,6 @@ void GLTAAPass::execute(RenderGraphContext& rg) {
         LOG_ERROR("GLTAAPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
         return;
     }
-    if (!view.environment.taa) return;  // off by default - no-op
-
     auto& gl      = static_cast<GLBackend&>(backend);
     auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
     auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);

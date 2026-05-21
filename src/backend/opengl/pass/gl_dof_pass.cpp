@@ -19,6 +19,10 @@
 
 namespace Engine {
 
+bool GLDofPass::enabledForView(const RenderView& view) const {
+    return isEnabled() && view.environment.dof && !view.environment.wireframe;
+}
+
 GLDofPass::GLDofPass(ShaderHandle shader)
     : RenderPass("GLDofPass")
     , m_shader(shader)
@@ -41,8 +45,6 @@ void GLDofPass::execute(RenderGraphContext& rg) {
         LOG_ERROR("GLDofPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
         return;
     }
-    if (!view.environment.dof) return;  // off by default - no-op
-
     auto& gl      = static_cast<GLBackend&>(backend);
     auto& hdr = *rg.resource<GLHdrTarget>(RGResource::SceneHDR);
     auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);

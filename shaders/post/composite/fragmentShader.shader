@@ -43,6 +43,18 @@ uniform sampler2D u_dirt;
 uniform int   u_dirtEnabled;
 uniform float u_dirtIntensity;
 
+// Diagnostic display bypass: when set, skip exposure / tonemap / LUT and
+// just clamp+sRGB-encode the linear HDR. Used by wireframe mode so the
+// unlit lines, AABB boxes, and grid lines show their exact authored colour
+// instead of being compressed by AgX/Khronos/ACES.
+uniform int u_wireframe;
+
+// Diagnostic overlay (AABB / Grid). rgb = authored linear colour, a =
+// coverage. Blended on top of the tonemapped scene, sRGB-encoded only,
+// so debug overlays show their exact colours regardless of the rest of
+// the post chain.
+uniform sampler2D u_overlay;
+
 layout(std140, binding = 2) uniform CameraBlock {
     mat4 viewProjection;
     vec4 cameraPosition;  // xyz = position, w = exposure
@@ -147,6 +159,18 @@ vec3 sRGBEncode(vec3 c) {
 void main() {
     vec3 hdr = texture(u_hdr, vUV).rgb;
 
+    // Diagnostic bypass: wireframe mode wants colours exactly as written,
+    // so skip bloom/exposure/tonemap/LUT and go straight to the OETF. The
+    // unlit forward writes linear values to HDR; AABB/Grid still write to
+    // the overlay, so we blend that on top with the same sRGB-only treatment.
+    if (u_wireframe == 1) {
+        vec3 wf = sRGBEncode(clamp(hdr, 0.0, 1.0));
+        vec4 ov = texture(u_overlay, vUV);
+        if (ov.a > 0.0) wf = mix(wf, sRGBEncode(clamp(ov.rgb, 0.0, 1.0)), ov.a);
+        FragColor = vec4(wf, 1.0);
+        return;
+    }
+
     // Energy-conserving bloom blend (linear HDR, before the display transform).
     vec3 bloom = textureLod(u_bloom, vUV, 0.0).rgb;
     // Lens dirt: brighten the bloom where dust spots are, so dust visually
@@ -184,6 +208,14 @@ void main() {
 
     if (u_lutEnabled == 1) {
         color = mix(color, lutLookup(color), u_lutIntensity);
+    }
+
+    // Diagnostic overlay on top, after the display transform. Overlay rgb
+    // is in linear; encode to sRGB and alpha-blend over the tonemapped
+    // result so AABB / Grid show their authored colours exactly.
+    vec4 ov = texture(u_overlay, vUV);
+    if (ov.a > 0.0) {
+        color = mix(color, sRGBEncode(clamp(ov.rgb, 0.0, 1.0)), ov.a);
     }
 
     FragColor = vec4(color, 1.0);

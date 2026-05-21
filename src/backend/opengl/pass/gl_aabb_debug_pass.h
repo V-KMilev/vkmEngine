@@ -66,8 +66,14 @@ class GLAABBDebugPass : public RenderPass {
         void execute(RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
-            builder.write(RGResource::SceneHDR);
+            // Writes only the HDR FBO's overlay attachment, not the HDR
+            // colour itself. Declaring no write keeps the graph's auto
+            // resolve-dirty tracking honest - composite handles overlay
+            // resolution explicitly.
+            (void)builder;
         }
+
+        bool enabledForView(const RenderView& view) const override;
 
     private:
         /**

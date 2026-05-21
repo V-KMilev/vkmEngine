@@ -124,6 +124,7 @@ int main() {
             {"u_adaptedLum", 2},
             {"u_colorLut", 3},
             {"u_dirt", 4},
+            {"u_overlay", 5},
         };
         const auto compositeShader = Engine::loadShader(resources, shaderDir + "/post/composite", "shader:composite", compositeSamplers);
 
