@@ -22,7 +22,7 @@
 namespace Engine {
 
 bool GLMotionBlurPass::enabledForView(const RenderView& view) const {
-    return isEnabled() && view.environment.motionBlur.enabled && !view.environment.wireframe;
+    return isEnabled() && view.environment.motionBlur.enabled && !view.modeConfig.disablePost;
 }
 
 GLMotionBlurPass::GLMotionBlurPass(ShaderHandle shader)
