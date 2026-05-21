@@ -409,3 +409,24 @@ No exceptions in hot paths (systems, ECS queries, rendering).
 - **Charset**: Strictly ASCII (no Unicode symbols in code or comments)
 - **Namespace close**: Always `} // namespace Name`
 - **No section separators**: Do not use decorative separator lines like `// -----------` or `// - Section name -----` to divide code. Use `public:`/`private:` access specifiers, blank lines, and `@brief` comments to organize sections instead
+
+---
+
+## Documentation Comments
+
+Three doc-comment styles are used in vkmEngine. Pick by audience and scope:
+
+| Style | When | Example |
+|---|---|---|
+| `/** @brief ... */` | Public API: class definitions, methods on a public class, free functions intended for callers outside the file | `/** @brief Resolves hierarchical transforms... */` |
+| `/// ...` | Single-line public clarifications, member-level docs, brief notes that don't need `@param`/`@return` structure | `/// Per-type version counter. Bumped only when resources of type T are committed.` |
+| `///< trailing` | Inline annotation on a struct/class member where the field name carries most of the meaning | `bool m_enabled = true;   ///< Pass runs unless explicitly disabled.` |
+| `// ...` | Implementation notes inside a function body. Explain *why*, not *what*. | `// Capture name before move - resource is forwarded below.` |
+
+**No multi-paragraph `///` docs.** If a comment needs more than ~3 lines or
+structured `@param`/`@return` fields, switch to `/** @brief ... */`.
+
+**Default to no comment.** Add one when the *why* is non-obvious: a
+hidden constraint, a subtle invariant, a workaround for a specific
+bug, behavior that would surprise a reader. Identifier-explaining
+comments (`// Increment the counter`) are noise.
