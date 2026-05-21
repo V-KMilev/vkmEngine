@@ -294,26 +294,20 @@ MeshHandle MaterialEditorPanel::previewMesh(ResourceManager& resources,
                                             const MeshHandle& entityMesh) {
     if (m_primitive == 3 && entityMesh) return entityMesh;
 
-    if (!m_primsReady) {
-        // Reuse existing internal previews if another editor panel already
-        // registered them - they share names and any add-without-lookup
-        // would create duplicate assets that consume slots and double the
-        // GPU upload.
-        m_sphere = resources.findByName<MeshAsset>("mesh:preview_sphere");
-        if (!m_sphere) m_sphere = resources.addInternal(generateSphere(), "mesh:preview_sphere");
-
-        m_cube = resources.findByName<MeshAsset>("mesh:preview_cube");
-        if (!m_cube) m_cube = resources.addInternal(generateCube(), "mesh:preview_cube");
-
-        m_plane = resources.findByName<MeshAsset>("mesh:preview_plane");
-        if (!m_plane) m_plane = resources.addInternal(generatePlane(2.0f, 2.0f, 1, 1), "mesh:preview_plane");
-
-        m_primsReady = true;
-    }
+    // Look up each preview every call (findByName is O(1)). Caching the
+    // handles in a flag-gated block would leave them stale across a scene
+    // load - SceneSerializer swaps the whole ResourceManager, dropping
+    // every editor-internal asset along with it. Lazy lookup re-registers
+    // automatically on the next preview after a load.
+    auto getOrAdd = [&](const char* name, auto&& make) {
+        MeshHandle h = resources.findByName<MeshAsset>(name);
+        if (!h) h = resources.addInternal(make(), name);
+        return h;
+    };
     switch (m_primitive) {
-        case 1:  return m_cube;
-        case 2:  return m_plane;
-        default: return m_sphere;   // 0 = sphere; 3 with no entity mesh falls back
+        case 1:  return getOrAdd("mesh:preview_cube",   [] { return generateCube(); });
+        case 2:  return getOrAdd("mesh:preview_plane",  [] { return generatePlane(2.0f, 2.0f, 1, 1); });
+        default: return getOrAdd("mesh:preview_sphere", [] { return generateSphere(); });
     }
 }
 

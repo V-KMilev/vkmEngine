@@ -198,6 +198,34 @@ class ResourceManager {
             ++m_globalVersion;
         }
 
+        /**
+         * @brief Swap the entire asset graph with another ResourceManager.
+         *
+         * Used by SceneSerializer::load for transactional asset+scene swap:
+         * a staging ResourceManager is filled while the live one continues
+         * to back the running editor; on full load success this swap +
+         * Scene::swap commits both in one phase. On failure the staging
+         * is dropped and the live state is untouched, so a malformed
+         * scene file no longer orphans newly-loaded assets in the live
+         * graph.
+         *
+         * Bumps both managers' global versions so handle-version-keyed
+         * caches in the backend (GLView tables) invalidate cleanly.
+         *
+         * NOTE: outstanding handles from before the swap are stale - their
+         * (index, generation) keys point at slots in the OTHER manager.
+         * Editor panels that cache handles to editor-only assets must
+         * re-acquire on next use; the standard pattern is findByName-then-
+         * addInternal, which works because findByName is O(1) now.
+         */
+        void swap(ResourceManager& other) noexcept {
+            using std::swap;
+            swap(m_slots, other.m_slots);
+            swap(m_globalVersion, other.m_globalVersion);
+            ++m_globalVersion;
+            ++other.m_globalVersion;
+        }
+
         /// @brief Per-type version counter. Bumped only when resources of type T are committed.
         template<typename T>
         uint64_t getTypeVersion() const {
