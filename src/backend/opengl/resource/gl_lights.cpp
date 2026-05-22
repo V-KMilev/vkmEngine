@@ -11,7 +11,7 @@
 namespace Engine {
 
 static_assert(sizeof(LightGPUData)  % 16 == 0, "LightGPUData must be 16-byte aligned");
-static_assert(sizeof(LightGPUData) == 80, "LightGPUData must be exactly 80 bytes");
+static_assert(sizeof(LightGPUData) == 96, "LightGPUData must be exactly 96 bytes");
 static_assert(sizeof(LightsUBOData) % 16 == 0, "LightsUBOData must be 16-byte aligned");
 static_assert(offsetof(LightsUBOData, lightCount) == 0, "lightCount offset mismatch");
 static_assert(offsetof(LightsUBOData, lights) == 16, "lights array offset mismatch");
@@ -64,20 +64,27 @@ void GLLights::update(const std::vector<LightData>& lights) {
             static_cast<float>(lightData.shadowSlot)  // -1 = no shadow
         );
 
-        // Area-light geometry; ignored by the shader for non-area types.
-        // For Rect: x=width, y=height. For Disk: x=radius (y unused).
-        const float areaX = (lightData.type == LightType::Disk)
-            ? lightData.areaRadius
-            : lightData.areaWidth;
-        const float areaY = (lightData.type == LightType::Rect)
-            ? lightData.areaHeight
-            : 0.0f;
-        gpuLight.area = glm::vec4(
-            areaX,
-            areaY,
-            0.0f,
-            lightData.twoSided ? 1.0f : 0.0f
-        );
+        // Area-light geometry: half-extent world-space axes so the shader can
+        // recover the rectangle's four corners as
+        //   p_i = position +/- axisU.xyz +/- axisV.xyz
+        // Disk shares the same encoding (axisU and axisV both have magnitude
+        // areaRadius); the shader treats the disk as a 4-vertex polygon
+        // inscribed in the disk in Phase 2C step 1.
+        glm::vec3 halfRight(0.0f);
+        glm::vec3 halfUp(0.0f);
+        if (lightData.type == LightType::Rect) {
+            const glm::vec3 right = lightData.rotation * glm::vec3(1.0f, 0.0f, 0.0f);
+            const glm::vec3 up    = lightData.rotation * glm::vec3(0.0f, 1.0f, 0.0f);
+            halfRight = right * (lightData.areaWidth  * 0.5f);
+            halfUp    = up    * (lightData.areaHeight * 0.5f);
+        } else if (lightData.type == LightType::Disk) {
+            const glm::vec3 right = lightData.rotation * glm::vec3(1.0f, 0.0f, 0.0f);
+            const glm::vec3 up    = lightData.rotation * glm::vec3(0.0f, 1.0f, 0.0f);
+            halfRight = right * lightData.areaRadius;
+            halfUp    = up    * lightData.areaRadius;
+        }
+        gpuLight.axisU = glm::vec4(halfRight, lightData.twoSided ? 1.0f : 0.0f);
+        gpuLight.axisV = glm::vec4(halfUp,    0.0f);
     }
 
     data.lightCount = static_cast<int>(lightCount);
