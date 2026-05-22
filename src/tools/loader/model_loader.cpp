@@ -1,5 +1,16 @@
 #include "model_loader.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -22,18 +33,6 @@
 #include "stb_image.h"   // declarations only; impl is in texture_loaders.cpp
 
 #include <nlohmann/json.hpp>
-
-#include <algorithm>
-#include <cstdint>
-#include <cstring>
-#include <filesystem>
-#include <functional>
-#include <memory>
-#include <mutex>
-#include <string>
-#include <unordered_map>
-#include <vector>
-
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 

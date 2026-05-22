@@ -1,18 +1,17 @@
 #include "panels/inspector_panel.h"
-#include "framework/editor_common.h"
-#include "framework/editor_commands.h"
-
-#include "system/render/render_view.h"   // EnvironmentConfig
-#include "system/visibility/bounds_utils.h"
-#include "input/editor_actions.h"
-
-#include "generator/light_generators.h"
 
 #include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#include "framework/editor_common.h"
+#include "framework/editor_commands.h"
+#include "system/render/render_view.h"   // EnvironmentConfig
+#include "system/visibility/bounds_utils.h"
+#include "input/editor_actions.h"
+#include "generator/light_generators.h"
 
 namespace Engine {
 

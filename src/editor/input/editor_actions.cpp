@@ -1,12 +1,14 @@
 #include "input/editor_actions.h"
-#include "framework/editor_commands.h"
-#include "framework/editor_state.h"
+
+#include <filesystem>
+#include <memory>
+#include <string>
 
 #include <imgui.h>
 #include <glm/glm.hpp>
 
-#include <memory>
-
+#include "framework/editor_commands.h"
+#include "framework/editor_state.h"
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/mesh.h"
@@ -20,14 +22,10 @@
 #include "system/visibility/visibility.h"
 #include "system/visibility/bounds_utils.h"
 #include "system/camera/camera_controller.h"
-
 #include "generator/light_generators.h"
 #include "generator/mesh_generators.h"
 #include "generator/material_generators.h"
 #include "loader/model_loader.h"
-
-#include <string>
-#include <filesystem>
 
 namespace Engine {
 namespace EditorActions {

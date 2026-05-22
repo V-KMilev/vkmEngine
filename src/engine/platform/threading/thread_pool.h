@@ -109,11 +109,11 @@ void parallelFor(size_t count, size_t grain, Function && function) {
         pool.addTasks(std::move(tasks));
     }
 
-    // In case of grain beeing bigger than count, we need to process the entire range on the main thread
+    // In case of grain being bigger than count, we need to process the entire range on the main thread
     grain = std::min(grain, count);
 
     // Main thread processes first chunk instead of spinning idle in waitToFinish,
-    // In case of grain beeing bigger than count, the main thread will process the entire range
+    // In case of grain being bigger than count, the main thread will process the entire range
     // This is to avoid the overhead of the threadpool for small ranges
     for (size_t i = 0; i < grain; ++i) {
         invokeAt(i);

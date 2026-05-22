@@ -21,7 +21,7 @@ namespace Engine {
 class GLGTAOPass : public RenderPass {
     public:
         GLGTAOPass() = delete;
-        ~GLGTAOPass();
+        ~GLGTAOPass() override;
 
         GLGTAOPass(const GLGTAOPass& other) = delete;
         GLGTAOPass& operator=(const GLGTAOPass& other) = delete;

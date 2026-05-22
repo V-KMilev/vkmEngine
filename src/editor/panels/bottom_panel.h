@@ -25,6 +25,16 @@ struct EditorContext;
  */
 class BottomPanel {
     public:
+        BottomPanel() = default;
+        ~BottomPanel() = default;
+
+        BottomPanel(const BottomPanel& other) = delete;
+        BottomPanel& operator=(const BottomPanel& other) = delete;
+
+        BottomPanel(BottomPanel && other) = delete;
+        BottomPanel& operator=(BottomPanel && other) = delete;
+
+    public:
         void draw(EditorContext& ec);
 
     private:

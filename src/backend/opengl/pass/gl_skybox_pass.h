@@ -18,7 +18,7 @@ namespace Engine {
 class GLSkyboxPass : public RenderPass {
     public:
         GLSkyboxPass() = delete;
-        ~GLSkyboxPass() = default;
+        ~GLSkyboxPass() override = default;
 
         GLSkyboxPass(const GLSkyboxPass& other) = delete;
         GLSkyboxPass& operator=(const GLSkyboxPass& other) = delete;

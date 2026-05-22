@@ -1,12 +1,12 @@
 #include "overlays/gizmo_overlay.h"
-#include "framework/editor_common.h"
-#include "framework/editor_commands.h"
 
 #include <algorithm>
 #include <memory>
 
 #include <glm/gtc/quaternion.hpp>
 
+#include "framework/editor_common.h"
+#include "framework/editor_commands.h"
 #include "system/visibility/visibility.h"
 #include "system/visibility/bounds_utils.h"
 #include "system/camera/camera_controller.h"

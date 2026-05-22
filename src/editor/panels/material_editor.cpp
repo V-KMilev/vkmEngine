@@ -1,20 +1,20 @@
 #include "panels/material_editor.h"
-#include "framework/editor_common.h"
 
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
+#include <cstdio>
+#include <filesystem>
+#include <string>
+#include <system_error>
+#include <utility>
+#include <vector>
+
+#include "framework/editor_common.h"
 #include "loader/texture_loaders.h"
 #include "loader/material_loaders.h"
 #include "system/render/render_system.h"
 #include "generator/mesh_generators.h"
-
-#include <cstdint>
-#include <cstdio>
-#include <cctype>
-#include <string>
-#include <utility>
-#include <vector>
-#include <filesystem>
-#include <system_error>
-#include <algorithm>
 
 namespace Engine {
 

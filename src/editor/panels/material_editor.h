@@ -25,6 +25,16 @@ class ResourceManager;
  */
 class MaterialEditorPanel {
     public:
+        MaterialEditorPanel() = default;
+        ~MaterialEditorPanel() = default;
+
+        MaterialEditorPanel(const MaterialEditorPanel& other) = delete;
+        MaterialEditorPanel& operator=(const MaterialEditorPanel& other) = delete;
+
+        MaterialEditorPanel(MaterialEditorPanel && other) = delete;
+        MaterialEditorPanel& operator=(MaterialEditorPanel && other) = delete;
+
+    public:
         void draw(EditorContext& ec);
 
     private:

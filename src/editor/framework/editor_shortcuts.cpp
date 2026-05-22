@@ -1,11 +1,11 @@
 #include "framework/editor_shortcuts.h"
+
+#include <imgui.h>
+
 #include "framework/editor_context.h"
 #include "framework/editor_common.h"
 #include "framework/scene_io_controller.h"
 #include "input/editor_actions.h"
-
-#include <imgui.h>
-
 #include "core/system.h"
 #include "system/camera/camera_controller.h"
 

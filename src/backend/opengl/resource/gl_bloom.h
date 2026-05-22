@@ -51,11 +51,11 @@ class GLBloom {
         int mipHeight(int mip) const { return std::max(m_baseH >> mip, 1); }
 
         /**
-         * @brief Bind the bloom mip chain as a sampler input. The shader selects a
+         * @brief Bind the bloom mip chain as a sampler input.
          *
-         * level via its u_srcLod uniform; mip 0 is the final bloom that the
-         * composite samples (binds 0 when not ready, a harmless no-op since
-         * the composite zeroes bloom strength in that case).
+         * The shader selects a level via its u_srcLod uniform; mip 0 is the
+         * final bloom that the composite samples (binds 0 when not ready, a
+         * harmless no-op since the composite zeroes bloom strength in that case).
          */
         void bind(uint32_t slot) const {
             glActiveTexture(GL_TEXTURE0 + slot);

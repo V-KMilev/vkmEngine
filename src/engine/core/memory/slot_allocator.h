@@ -72,17 +72,17 @@ class SlotAllocator {
         }
 
         /**
-        * @brief Get the current generation for a sparse slot index.
-        * @param index The sparse slot index. Must be in bounds.
-        * @return The current generation counter for that slot.
-        */
-        /**
         * @brief Number of currently live (allocated and not freed) slots.
         */
         size_t size() const {
             return m_generation.size() - 1 - m_freeList.size();
         }
 
+        /**
+        * @brief Get the current generation for a sparse slot index.
+        * @param index The sparse slot index. Must be in bounds.
+        * @return The current generation counter for that slot.
+        */
         uint32_t generationOf(uint32_t index) const {
             VKM_ASSERT(index < m_generation.size(), "SlotAllocator::generationOf out of bounds");
             return m_generation[index].generation();

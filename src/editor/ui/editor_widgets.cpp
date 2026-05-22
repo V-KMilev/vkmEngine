@@ -1,12 +1,13 @@
 #include "ui/editor_widgets.h"
-#include "ui/editor_style.h"
 
-#include <imgui.h>
 #include <algorithm>
-#include <cstdio>
 #include <cctype>
+#include <cstdio>
 #include <vector>
 
+#include <imgui.h>
+
+#include "ui/editor_style.h"
 #include "ecs/scene.h"
 #include "ecs/component/mesh.h"
 #include "ecs/component/light.h"

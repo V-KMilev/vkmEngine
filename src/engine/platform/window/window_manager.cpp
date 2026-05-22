@@ -124,7 +124,7 @@ bool WindowManager::updateMode(WindowMode windowMode) {
             return false;
     }
 
-    // Set window to the coresponding mode
+    // Set window to the corresponding mode
     glfwSetWindowMonitor(
         windowContext,
         monitor,
