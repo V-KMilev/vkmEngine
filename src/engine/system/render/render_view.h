@@ -43,6 +43,11 @@ struct DrawableData {
     bool castShadows = true;
 
     glm::mat4 model = {1.0f};
+
+    /// World-space AABB precomputed by VisibilitySystem - cached so debug
+    /// passes (AABB visualization, picking) don't re-run localToWorldAABB.
+    glm::vec3 worldMin = {0.0f, 0.0f, 0.0f};
+    glm::vec3 worldMax = {0.0f, 0.0f, 0.0f};
 };
 
 /**

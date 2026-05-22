@@ -97,22 +97,19 @@ void Engine::run() {
             // to one warning per second of wall clock; on the throttled
             // frames just bump a counter and emit a summary on the next
             // un-throttled warning.
-            using Clock = std::chrono::steady_clock;
-            static auto lastWarn = Clock::time_point{};
-            static int suppressed = 0;
-            const auto now = Clock::now();
-            if (now - lastWarn >= std::chrono::seconds(1)) {
-                if (suppressed > 0) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now - m_lastAccumClampWarn >= std::chrono::seconds(1)) {
+                if (m_accumClampSuppressed > 0) {
                     LOG_WARNING("Engine: frame accumulator clamped (%.3fs > %.3fs cap, +%d similar in the last second) - spiral-of-death guard fired; some fixed ticks dropped",
-                        beforeClamp, Config::MaxFrameAccumulator, suppressed);
+                        beforeClamp, Config::MaxFrameAccumulator, m_accumClampSuppressed);
                 } else {
                     LOG_WARNING("Engine: frame accumulator clamped (%.3fs > %.3fs cap) - spiral-of-death guard fired; some fixed ticks dropped",
                         beforeClamp, Config::MaxFrameAccumulator);
                 }
-                suppressed = 0;
-                lastWarn = now;
+                m_accumClampSuppressed = 0;
+                m_lastAccumClampWarn = now;
             } else {
-                ++suppressed;
+                ++m_accumClampSuppressed;
             }
         }
         while (accumulator >= Config::FixedTimeStep) {
@@ -248,9 +245,8 @@ void Engine::shutdownSystems() {
 }
 
 void Engine::printStats(const FrameContext& ctx) {
-    static std::chrono::steady_clock::time_point lastStatsPrint;
     auto now = std::chrono::steady_clock::now();
-    if (now - lastStatsPrint < std::chrono::milliseconds(500)) return;
+    if (now - m_lastStatsPrint < std::chrono::milliseconds(500)) return;
 
     const auto& info = getStatistics().getFrameInfo();
     LOG_VERBOSE("[%lu] %.2fms (%.0f FPS) | Draws: %u | Passes: %u | Visible: %zu/%zu\n",
@@ -262,7 +258,7 @@ void Engine::printStats(const FrameContext& ctx) {
         ctx.visibility ? ctx.visibility->entries.size() : 0,
         m_scene.entityCount()
     );
-    lastStatsPrint = now;
+    m_lastStatsPrint = now;
 }
 
 } // namespace Engine

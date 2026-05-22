@@ -121,14 +121,18 @@ FPS-style fly camera. Inherits `System`, updates camera transform from input eac
 ### Configuration
 
 ```cpp
-struct CameraControllerSettings {
-    float zoomSensitivity   = 0.02f;
-    float lookSensitivity   = 0.002f;
-    float moveSpeed         = 10.0f;
-    float speedBoost        = 3.0f;
-    float scrollMultiplier  = 2.0f;
-    float minPitch          = -90.0f;
-    float maxPitch          = 90.0f;
+// Nested as CameraController::Settings.
+class CameraController : public System {
+    struct Settings {
+        float zoomSensitivity   = 0.02f;
+        float lookSensitivity   = 0.002f;
+        float moveSpeed         = 10.0f;
+        float speedBoost        = 3.0f;
+        float scrollMultiplier  = 2.0f;
+        float minPitch          = -90.0f;
+        float maxPitch          = 90.0f;
+    };
+    // ...
 };
 ```
 

@@ -168,6 +168,15 @@ class Engine {
         std::vector<System*> m_fixedUpdaters;
 
         bool m_initialized = false;
+
+        /// Throttle state for accumulator-clamp warnings (one per second).
+        /// Per-instance so headless tools / tests with multiple Engine
+        /// instances don't cross-suppress each other.
+        std::chrono::steady_clock::time_point m_lastAccumClampWarn{};
+        int m_accumClampSuppressed = 0;
+
+        /// Throttle state for printStats (twice a second).
+        std::chrono::steady_clock::time_point m_lastStatsPrint{};
 };
 
 } // namespace Engine

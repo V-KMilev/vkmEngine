@@ -27,10 +27,12 @@ cmake -B build -G Ninja
 cmake --build build
 
 # Run
-./build/engine
+./build/bin/engine        # Linux / macOS
+build\bin\engine.exe      # Windows (MSYS2 + Clang)
 ```
 
-The executable is placed at `build/bin/engine`.
+The executable is placed at `build/bin/engine[.exe]` (set by
+`CMAKE_RUNTIME_OUTPUT_DIRECTORY` in the top-level CMakeLists).
 
 ## CMake Targets
 

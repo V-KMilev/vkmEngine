@@ -50,6 +50,7 @@ class GLCompositePass : public RenderPass {
             builder.read(RGResource::SceneHDRResolved);
             builder.read(RGResource::BloomChain);
             builder.read(RGResource::AdaptedLuminance);
+            builder.read(RGResource::Overlay);
             builder.write(RGResource::Backbuffer);
         }
 

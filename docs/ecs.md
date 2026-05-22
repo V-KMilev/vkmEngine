@@ -47,7 +47,8 @@ scene.remove<Mesh>(entity);
 | **Mesh** | `component/mesh.h` | `MeshHandle mesh, MaterialHandle material, bool visible` |
 | **Light** | `component/light.h` | `LightType type, vec3 color, float intensity, radius, coneAngles` |
 | **Animation** | `component/animation.h` | `AnimationTrack<vec3/quat> tracks, float duration/time/speed, bool playing/looping` |
-| **Hierarchy** | `component/hierarchy.h` | `EntityId parent, firstChild, nextSibling, prevSibling` |
+| **Hierarchy** | `component/hierarchy.h` | `EntityId parent, firstChild, nextSibling, prevSibling, bool dirty` |
+| **WorldTransform** | `component/world_transform.h` | `glm::mat4 model` (resolved each frame from local Transform + parent's WorldTransform) |
 | **Name** | `component/name.h` | `char name[64]` |
 
 ### Static Helpers
@@ -103,12 +104,16 @@ Each component type gets a `SparseSet<T>`:
 
 ## Hierarchy
 
-Parent-child relationships via the `Hierarchy` component. Utility functions in `ecs/hierarchy_utils.h`:
+Parent-child relationships via the `Hierarchy` component. Free functions in `system/hierarchy/hierarchy_operations.h`:
 
 ```cpp
-HierarchyUtils::setParent(scene, child, parent);
-glm::mat4 world = HierarchyUtils::computeWorldMatrix(scene, entity);
-HierarchyUtils::destroyHierarchy(scene, entity);  // destroys entity and all descendants
+HierarchyOperations::setParent(scene, child, parent);
+glm::mat4 world = HierarchyOperations::computeWorldMatrix(scene, entity);
+HierarchyOperations::destroyHierarchy(scene, entity);  // destroys entity and all descendants
+HierarchyOperations::removeFromParent(scene, entity);
+HierarchyOperations::markDirty(scene, entity);
 ```
 
-On entity destruction, children are automatically reparented to the grandparent.
+`setParent` pre-seeds both `Hierarchy` and `WorldTransform` on the involved entities so the per-frame `HierarchySystem::resolveWorldTransforms()` loop has no structural Scene work to do (precondition for parallelising it).
+
+On entity destruction, the leaf path unlinks via `removeFromParent`; the subtree path (`destroyHierarchy`) recursively destroys every descendant. Both paths are undoable through the editor's `DestroySubtreeCommand`.

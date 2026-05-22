@@ -1,10 +1,11 @@
 #include "io/scene_serializer.h"
 
-#include <array>
 #include <fstream>
 #include <limits>
 #include <set>
 #include <string>
+#include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -31,60 +32,108 @@ namespace CS = ComponentSerializer;
 constexpr int FILE_FORMAT_VERSION = 1;
 
 /**
- * @brief One component type's save + load (+ JSON key) bundled together. The
+ * @brief Per-component serialization recipe.
  *
- * scene loops over a table of these instead of repeating the same
- * has<T>/get<T>/CS::save / contains/CS::load/add pattern per type at
- * both ends - adding a new component becomes a single table entry, not
- * matched edits in scene save and scene load (and the known-key list).
+ * Adding a new component is a single specialization: the JSON key, a `save`
+ * static, and a `load` static (or omit `load` for hierarchy-style two-pass
+ * components - the SaveLoadFor<T>::hasLoad fold will skip them in pass 1).
+ *
+ * For "uses ResourceManager" components (just Mesh today), the static
+ * signatures take a `const ResourceManager&` / `ResourceManager&`. For all
+ * others the parameter is ignored; the trait fold passes it unconditionally.
  */
-struct ComponentEntry {
-    const char* key;
-    void (*save)(const Scene&, EntityId, json&, const ResourceManager&);
-    /**
-     * @brief `load` may be null for components whose load is structurally
-     *
-     * special (Hierarchy collects parent links in pass 1 and wires them
-     * up in pass 2; it can't be a simple has-and-add). The save side
-     * stays uniform; the load loop just skips null entries.
-     */
-    void (*load)(Scene&, Entity, const json&, ResourceManager&);
+template<typename T> struct SerializerTraits;  // primary; defined via specialisations below.
+
+template<> struct SerializerTraits<Name> {
+    static constexpr const char* key = "Name";
+    static json save(const Name& v, const ResourceManager&) { return CS::save(v); }
+    static void load(const json& j, Name& v, ResourceManager&) { CS::load(j, v); }
+};
+template<> struct SerializerTraits<Transform> {
+    static constexpr const char* key = "Transform";
+    static json save(const Transform& v, const ResourceManager&) { return CS::save(v); }
+    static void load(const json& j, Transform& v, ResourceManager&) { CS::load(j, v); }
+};
+template<> struct SerializerTraits<Camera> {
+    static constexpr const char* key = "Camera";
+    static json save(const Camera& v, const ResourceManager&) { return CS::save(v); }
+    static void load(const json& j, Camera& v, ResourceManager&) { CS::load(j, v); }
+};
+template<> struct SerializerTraits<Light> {
+    static constexpr const char* key = "Light";
+    static json save(const Light& v, const ResourceManager&) { return CS::save(v); }
+    static void load(const json& j, Light& v, ResourceManager&) { CS::load(j, v); }
+};
+template<> struct SerializerTraits<Mesh> {
+    static constexpr const char* key = "Mesh";
+    static json save(const Mesh& v, const ResourceManager& r) { return CS::save(v, r); }
+    static void load(const json& j, Mesh& v, ResourceManager& r) { CS::load(j, v, r); }
+};
+template<> struct SerializerTraits<Animation> {
+    static constexpr const char* key = "Animation";
+    static json save(const Animation& v, const ResourceManager&) { return CS::save(v); }
+    static void load(const json& j, Animation& v, ResourceManager&) { CS::load(j, v); }
+};
+template<> struct SerializerTraits<EnvironmentConfig> {
+    static constexpr const char* key = "Environment";
+    static json save(const EnvironmentConfig& v, const ResourceManager&) { return CS::save(v); }
+    static void load(const json& j, EnvironmentConfig& v, ResourceManager&) { CS::load(j, v); }
+};
+template<> struct SerializerTraits<Hierarchy> {
+    static constexpr const char* key = "Hierarchy";
+    static json save(const Hierarchy& v, const ResourceManager&) { return CS::save(v); }
+    // No `load` - Hierarchy collects parent links in pass 1 and wires them
+    // up in pass 2 via HierarchyOperations::setParent; the entity has to
+    // exist before its parent slot can be resolved.
 };
 
-void saveName       (const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<Name>(id))              c["Name"]        = CS::save(s.get<Name>(id)); }
-void saveTransform  (const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<Transform>(id))         c["Transform"]   = CS::save(s.get<Transform>(id)); }
-void saveCamera     (const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<Camera>(id))            c["Camera"]      = CS::save(s.get<Camera>(id)); }
-void saveLight      (const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<Light>(id))             c["Light"]       = CS::save(s.get<Light>(id)); }
-void saveMesh       (const Scene& s, EntityId id, json& c, const ResourceManager& r) { if (s.has<Mesh>(id))              c["Mesh"]        = CS::save(s.get<Mesh>(id), r); }
-void saveHierarchy  (const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<Hierarchy>(id))         c["Hierarchy"]   = CS::save(s.get<Hierarchy>(id)); }
-void saveAnimation  (const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<Animation>(id))         c["Animation"]   = CS::save(s.get<Animation>(id)); }
-void saveEnvironment(const Scene& s, EntityId id, json& c, const ResourceManager&)   { if (s.has<EnvironmentConfig>(id)) c["Environment"] = CS::save(s.get<EnvironmentConfig>(id)); }
+/// Compile-time list of every component type that serializes. Adding a
+/// component = add a SerializerTraits specialisation above and add the type
+/// here. The fold operators below propagate the change to save / load /
+/// known-key checks; no other edits required.
+using SerializedComponents = std::tuple<
+    Name, Transform, Camera, Light, Mesh, Animation, EnvironmentConfig, Hierarchy
+>;
 
-void loadName       (Scene& s, Entity e, const json& src, ResourceManager&)   { if (src.contains("Name"))        { Name c;              CS::load(src["Name"],        c);    s.add(e, std::move(c)); } }
-void loadTransform  (Scene& s, Entity e, const json& src, ResourceManager&)   { if (src.contains("Transform"))   { Transform c;         CS::load(src["Transform"],   c);    s.add(e, std::move(c)); } }
-void loadCamera     (Scene& s, Entity e, const json& src, ResourceManager&)   { if (src.contains("Camera"))      { Camera c;            CS::load(src["Camera"],      c);    s.add(e, std::move(c)); } }
-void loadLight      (Scene& s, Entity e, const json& src, ResourceManager&)   { if (src.contains("Light"))       { Light c;             CS::load(src["Light"],       c);    s.add(e, std::move(c)); } }
-void loadMesh       (Scene& s, Entity e, const json& src, ResourceManager& r) { if (src.contains("Mesh"))        { Mesh c;              CS::load(src["Mesh"],        c, r); s.add(e, std::move(c)); } }
-void loadAnimation  (Scene& s, Entity e, const json& src, ResourceManager&)   { if (src.contains("Animation"))   { Animation a;         CS::load(src["Animation"],   a);    s.add(e, std::move(a)); } }
-void loadEnvironment(Scene& s, Entity e, const json& src, ResourceManager&)   { if (src.contains("Environment")) { EnvironmentConfig c; CS::load(src["Environment"], c);    s.add(e, std::move(c)); } }
-// Hierarchy load is two-pass (parent indices collected in pass 1, then
-// setParent called in pass 2). Save fits the table; load is wired by hand
-// in load() with a null entry below.
+// Detect at compile time which traits expose a `load` static. Hierarchy
+// opts out; everyone else opts in.
+template<typename T, typename = void>
+struct HasLoad : std::false_type {};
+template<typename T>
+struct HasLoad<T, std::void_t<decltype(SerializerTraits<T>::load(
+    std::declval<const json&>(), std::declval<T&>(), std::declval<ResourceManager&>()
+))>> : std::true_type {};
 
-constexpr std::array<ComponentEntry, 8> kRegistry = {{
-    {"Name",        saveName,        loadName},
-    {"Transform",   saveTransform,   loadTransform},
-    {"Camera",      saveCamera,      loadCamera},
-    {"Light",       saveLight,       loadLight},
-    {"Mesh",        saveMesh,        loadMesh},
-    {"Animation",   saveAnimation,   loadAnimation},
-    {"Environment", saveEnvironment, loadEnvironment},
-    {"Hierarchy",   saveHierarchy,   nullptr},  // see load() for the pass-1/2 split
-}};
+template<typename T>
+void saveOne(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
+    if (s.has<T>(id)) c[SerializerTraits<T>::key] = SerializerTraits<T>::save(s.get<T>(id), r);
+}
+template<typename T>
+void loadOne(Scene& s, Entity e, const json& src, ResourceManager& r) {
+    if constexpr (HasLoad<T>::value) {
+        const char* key = SerializerTraits<T>::key;
+        if (!src.contains(key)) return;
+        T value;
+        SerializerTraits<T>::load(src[key], value, r);
+        s.add(e, std::move(value));
+    }
+}
+
+template<typename... Ts>
+void saveAll(const Scene& s, EntityId id, json& c, const ResourceManager& r, std::tuple<Ts...>*) {
+    (saveOne<Ts>(s, id, c, r), ...);
+}
+template<typename... Ts>
+void loadAll(Scene& s, Entity e, const json& src, ResourceManager& r, std::tuple<Ts...>*) {
+    (loadOne<Ts>(s, e, src, r), ...);
+}
+template<typename... Ts>
+bool isKnownKey(const std::string& k, std::tuple<Ts...>*) {
+    return ((k == SerializerTraits<Ts>::key) || ...);
+}
 
 bool isKnownComponentKey(const std::string& k) {
-    for (const auto& e : kRegistry) if (k == e.key) return true;
-    return false;
+    return isKnownKey(k, static_cast<SerializedComponents*>(nullptr));
 }
 
 } // namespace
@@ -101,8 +150,8 @@ bool save(const Scene& scene, const ResourceManager& resources, const std::strin
         json components = json::object();
 
         // WorldTransform is derived from Transform + Hierarchy each frame -
-        // not in the registry, not persisted.
-        for (const auto& reg : kRegistry) reg.save(scene, id, components, resources);
+        // not in SerializedComponents, not persisted.
+        saveAll(scene, id, components, resources, static_cast<SerializedComponents*>(nullptr));
 
         entity["components"] = std::move(components);
         doc["entities"].push_back(std::move(entity));
@@ -187,14 +236,13 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
 
             const auto& components = entry.value("components", json::object());
 
-            // Run every registered component's loader. Hierarchy has a null
-            // load fn in the table because it needs two-pass treatment;
-            // handle it explicitly below. Components that reference assets
-            // (Mesh) look them up in the staging RM so the resolution
-            // sees what loadAssets just built.
-            for (const auto& reg : kRegistry) {
-                if (reg.load) reg.load(staging, entity, components, stagingResources);
-            }
+            // Run every component's loader via the trait fold. Hierarchy is
+            // intentionally skipped here (no `load` static in its traits) -
+            // its parent index is captured below for the pass-2 wire-up.
+            // Components that reference assets (Mesh) look them up in the
+            // staging RM so resolution sees what loadAssets just built.
+            loadAll(staging, entity, components, stagingResources,
+                static_cast<SerializedComponents*>(nullptr));
             if (components.contains("Hierarchy")) {
                 const uint32_t parentIdx = CS::loadParentIndex(components["Hierarchy"]);
                 if (parentIdx != std::numeric_limits<uint32_t>::max() && parentIdx != 0) {

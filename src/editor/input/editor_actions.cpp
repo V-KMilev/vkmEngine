@@ -19,6 +19,7 @@
 #include "ecs/component/name.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
+#include "resource/material_asset.h"
 #include "system/visibility/visibility.h"
 #include "system/visibility/bounds_utils.h"
 #include "system/camera/camera_controller.h"
@@ -39,6 +40,29 @@ void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity) 
 void commitStructureChange(EditorState& state) {
     state.hierarchyDirty = true;
     state.markSceneDirty();
+}
+
+MaterialHandle duplicateMaterial(
+    ResourceManager& resources,
+    EditorState& state,
+    MaterialHandle source,
+    Mesh* assignTo
+) {
+    if (!source) return MaterialHandle{};
+    const MaterialAsset& src = resources.get(source);
+
+    MaterialAsset copy = src;  // value copy of params + texture refs
+    copy.version = 1;
+    copy.name = (src.name.empty() ? std::string("material") : src.name) + " copy";
+
+    MaterialHandle nh = resources.add(std::move(copy));
+    if (!nh) return MaterialHandle{};
+
+    if (assignTo) {
+        assignTo->material = nh;
+        state.markSceneDirty();
+    }
+    return nh;
 }
 
 namespace {
@@ -146,23 +170,17 @@ void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
     const EntityId priorSel = state.selectedEntity;
     if (state.selectedEntity == entity) state.selectedEntity = {};
 
-    if (scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).firstChild) {
-        // Subtree destruction isn't undoable yet (would need a full
-        // recursive snapshot). Clear history so the user isn't tempted
-        // to undo past a non-reversible step.
-        HierarchyOperations::destroyHierarchy(scene, entity);
-        state.commands.clear();
-    } else {
-        // Leaf delete: snapshot the entity (components are fully captured
-        // by EntitySnapshot), then destroy. Undo recreates at the same slot.
-        EntitySnapshot snap = EntitySnapshot::capture(scene, entity);
-        if (scene.has<Hierarchy>(entity)) {
-            HierarchyOperations::removeFromParent(scene, entity);
-        }
-        scene.destroyEntity(Entity{entity});
-        state.commands.push(std::make_unique<DestroyEntityCommand>(
-            std::move(snap), priorSel, "Delete Entity"));
-    }
+    // SubtreeSnapshot also covers the single-entity case (nodes.size() == 1)
+    // and records the original parent, so undo always restores the entity
+    // under its original parent even for leaves.
+    SubtreeSnapshot snap = SubtreeSnapshot::capture(scene, entity);
+    const bool hadChildren = scene.has<Hierarchy>(entity)
+                          && scene.get<Hierarchy>(entity).firstChild;
+    const char* label = hadChildren ? "Delete Subtree" : "Delete Entity";
+
+    HierarchyOperations::destroyHierarchy(scene, entity);
+    state.commands.push(std::make_unique<DestroySubtreeCommand>(
+        std::move(snap), priorSel, label));
     commitStructureChange(state);
 }
 

@@ -165,6 +165,11 @@ class GLView {
         );
 
     private:
+        // Each new asset type adds four parallel structures here and ~7 touch
+        // points in sync(): a table field, a lastTypeVersion field, a handle
+        // collector, and entries in the resourcesDirty check + sync calls +
+        // global-version drop. Worth tuple-of-typed-tables + fold-expression
+        // refactor if/when we cross 5 asset types. See docs/misc/gaps.md.
         GLResourceTable<GLMesh>     m_meshTable;
         GLResourceTable<GLMaterial> m_materialTable;
         GLResourceTable<GLTexture>  m_textureTable;

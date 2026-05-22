@@ -41,7 +41,7 @@ struct Animation {
     float duration = 0.0f;
     float time     = 0.0f;
     float speed    = 1.0f;
-    bool playing   = true;
+    bool playing   = false;
     bool looping   = true;
 };
 ```
