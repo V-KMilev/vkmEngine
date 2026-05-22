@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cctype>
-#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,12 +30,13 @@ namespace {
     const ImVec4 ACC_VOL    = ImVec4(0.55f, 0.85f, 0.65f, 1.0f);  // mint - glass volume
     const ImVec4 ACC_TEX    = EditorStyle::AXIS_Y;                 // green
 
-    // The full PBR + texture editor body, grouped into accent cards (same
-    // widget language as the Inspector). Free-function helper - composed
-    // from MaterialEditorPanel::drawMaterialBody below.
-    bool drawMaterialBodyImpl(ResourceManager& resources, MaterialAsset& mat,
-                              const std::function<bool(const char*, TextureHandle&, bool)>& slot) {
-        bool changed = false;
+}  // namespace
+
+bool MaterialEditorPanel::drawMaterialBody(ResourceManager& resources, MaterialAsset& mat) {
+    bool changed = false;
+    auto slot = [&](const char* label, TextureHandle& s, bool srgb) {
+        return textureSlot(resources, label, s, srgb);
+    };
 
         if (beginComponentCard("Base", ACC_BASE, true)) {
             drawPropertyLabel("Type");
@@ -177,9 +177,8 @@ namespace {
         }
         endComponentCard();
 
-        return changed;
-    }
-}  // namespace
+    return changed;
+}
 
 MeshHandle MaterialEditorPanel::previewMesh(ResourceManager& resources,
                                             const MeshHandle& entityMesh) {
@@ -274,13 +273,6 @@ bool MaterialEditorPanel::pbrFolderBrowse(std::string& outFolder) {
     return m_pbrFolderPicker.draw(outFolder);
 }
 
-bool MaterialEditorPanel::drawMaterialBody(ResourceManager& resources, MaterialAsset& mat) {
-    return drawMaterialBodyImpl(resources, mat,
-        [&](const char* label, TextureHandle& slot, bool srgb) {
-            return textureSlot(resources, label, slot, srgb);
-        });
-}
-
 void MaterialEditorPanel::draw(EditorContext& ec) {
     EditorState&     state     = ec.state;
     Scene&           scene     = ec.frame.scene;
@@ -331,7 +323,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         return;
     }
 
-    // ===== Left pane: studio preview + view controls =====
+    // Left pane: studio preview + view controls.
     const float PREVIEW_SIZE = 320.0f;
     const float PANE_WIDTH   = PREVIEW_SIZE + 36.0f;
 
@@ -393,7 +385,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
 
     ImGui::SameLine();
 
-    // ===== Right pane: identity + parameter cards =====
+    // Right pane: identity + parameter cards.
     ImGui::BeginChild("##meParams", ImVec2(0, 0), ImGuiChildFlags_Borders);
     {
         const MaterialAsset& cur = resources.get(target);
@@ -409,7 +401,10 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
                                              : cur.name) + " copy";
             MaterialHandle nh = resources.add(std::move(copy));
             if (nh) {
-                if (selMesh) selMesh->material = nh;   // reassign the entity
+                if (selMesh) {
+                    selMesh->material = nh;    // reassign the entity
+                    state.markSceneDirty();
+                }
                 state.materialEditorTarget = nh;
                 target = nh;
             }
@@ -422,7 +417,10 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         if (pbrFolderBrowse(pbrFolder)) {
             MaterialHandle h = loadMaterialFromFolder(pbrFolder, resources);
             if (h) {
-                if (selMesh) selMesh->material = h;
+                if (selMesh) {
+                    selMesh->material = h;
+                    state.markSceneDirty();
+                }
                 state.materialEditorTarget = h;
                 target = h;
             }
@@ -431,9 +429,13 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         ImGui::Separator();
 
         // Live edit (shared by handle; commit bumps version -> preview +
-        // viewport refresh next frame).
+        // viewport refresh next frame). Materials are scene assets - any
+        // edit is unsaved work.
         auto& mat = resources.edit(target);
-        if (drawMaterialBody(resources, mat)) resources.commit(target);
+        if (drawMaterialBody(resources, mat)) {
+            resources.commit(target);
+            state.markSceneDirty();
+        }
 
         // Resolve the texture picker outside the slot row so it survives
         // the slot's PushID scope and matches the slot's pending target.
@@ -444,6 +446,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
             if (h) {
                 *m_pendingTexture = h;
                 resources.commit(target);
+                state.markSceneDirty();
             }
             m_pendingTexture = nullptr;
         }

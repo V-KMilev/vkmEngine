@@ -5,7 +5,7 @@
 #include "logger.h"
 #include "debug/print_helper.h"
 
-#include <GL/glew.h>
+#include <GL/glew.h>  // glewInit only - the GL function loader. Backend-agnostic callers don't need this.
 #include "platform/window/glfw_include.h"
 
 namespace Engine {
@@ -50,12 +50,12 @@ Window::Window(
     // Make the context current (required for glewInit and glfwSwapInterval)
     glfwMakeContextCurrent(m_window);
 
-    // Initialize GLEW to load GL function pointers (must happen after context is current)
+    // Initialize GLEW to load GL function pointers (must happen after context is current).
+    // Version / device strings are logged by the OpenGL backend when it constructs.
     if (glewInit() != GLEW_OK) {
         LOG_ERROR("Failed to initialize GLEW");
         throw std::runtime_error("Failed to initialize GLEW");
     }
-    LOG_VERBOSE("OpenGL %s initialized", glGetString(GL_VERSION));
 
     // 0 = Uncapped framerate
     // 1 = VSync enabled

@@ -33,8 +33,10 @@ class BottomPanel {
 
         // Timeline keyframe-dot drag state (Animation section).
         // m_animDotTrack: -1 none, 0 position, 1 rotation, 2 scale.
-        int   m_animDotTrack = -1;
-        float m_animDotTime  = 0.0f;
+        // m_animDotIdx: index into the track being dragged. Time would
+        // drift across frames under float math and lose the keyframe.
+        int    m_animDotTrack = -1;
+        size_t m_animDotIdx   = 0;
 
         // Euler-angle edit cache for the rotation keyframe editor, keyed by
         // keyframe index. See EulerCache for the gimbal-lock rationale.

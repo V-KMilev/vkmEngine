@@ -6,7 +6,7 @@
 // Scope: the panel framework (state/context/widgets/style/icons/keybinds),
 // the ImGui + glm prelude, and the ECS component types that essentially
 // every panel touches. Heavier engine-side headers (debug stats, visibility,
-// bounds utils) are NOT here — pull them in explicitly where used.
+// bounds utils) are NOT here - pull them in explicitly where used.
 
 #include "framework/editor_state.h"
 #include "framework/editor_context.h"

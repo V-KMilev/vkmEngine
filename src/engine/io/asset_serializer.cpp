@@ -111,7 +111,7 @@ glm::vec4 vec4FromJson(const nlohmann::json& j, const glm::vec4& fallback) {
 
 /// Build an "inline" material source descriptor capturing all PBR scalars +
 /// texture refs by name. This is what we emit on save regardless of how the
-/// material was first created — editor tweaks survive cold-start load.
+/// material was first created - editor tweaks survive cold-start load.
 nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& resources) {
     nlohmann::json src;
     src["kind"]  = "inline";
@@ -258,7 +258,7 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
 
 bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
     if (!assetsJson.is_object()) {
-        LOG_WARNING("AssetSerializer::loadAssets: assets block is not an object — skipping");
+        LOG_WARNING("AssetSerializer::loadAssets: assets block is not an object - skipping");
         return false;
     }
 
@@ -274,19 +274,19 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
         }
     };
 
-    // Textures first — materials may reference them by name. Order is
-    // important: textures → materials → meshes. Meshes don't depend on the
+    // Textures first - materials may reference them by name. Order is
+    // important: textures -> materials -> meshes. Meshes don't depend on the
     // others; they're last only for output stability.
     loadGroup("textures", [&](const std::string& name, const nlohmann::json& source) {
         if (resources.findByName<TextureAsset>(name)) return;
         TextureHandle h = factories.createTexture(source, resources);
         if (!h) {
-            LOG_WARNING("AssetSerializer: texture '%s' could not be recreated — skipping", name.c_str());
+            LOG_WARNING("AssetSerializer: texture '%s' could not be recreated - skipping", name.c_str());
             return;
         }
         // Texture loaders set name + source themselves; we don't overwrite.
         // (If a custom loader didn't, the asset is still findable until next
-        // session — log so we notice.)
+        // session - log so we notice.)
         if (resources.get(h).name != name) {
             LOG_WARNING("AssetSerializer: texture loader did not set name '%s' (got '%s')",
                 name.c_str(), resources.get(h).name.c_str());
@@ -297,7 +297,7 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
         if (resources.findByName<MaterialAsset>(name)) return;
         MaterialHandle h = factories.createMaterial(source, resources);
         if (!h) {
-            LOG_WARNING("AssetSerializer: material '%s' could not be recreated — skipping", name.c_str());
+            LOG_WARNING("AssetSerializer: material '%s' could not be recreated - skipping", name.c_str());
             return;
         }
         resources.edit(h).name = name;
@@ -307,7 +307,7 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
         if (resources.findByName<MeshAsset>(name)) return;
         MeshAsset mesh = factories.createMesh(source);
         if (mesh.vertices.empty()) {
-            LOG_WARNING("AssetSerializer: mesh '%s' recreated empty — skipping", name.c_str());
+            LOG_WARNING("AssetSerializer: mesh '%s' recreated empty - skipping", name.c_str());
             return;
         }
         mesh.sourceJson() = source;

@@ -2,6 +2,9 @@
 #include "framework/editor_common.h"
 #include "input/editor_actions.h"
 
+#include <cfloat>
+#include <cstring>
+
 #include "system/render/render_view.h"   // EnvironmentConfig (singleton row)
 
 namespace Engine {
@@ -143,9 +146,51 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
 
     char name[64];
     getEntityDisplayName(scene, entity, name, sizeof(name));
+
+    // Inline rename: when this entity is the rename target, replace the
+    // tree-node label with an InputText. Commit on Enter / focus loss,
+    // cancel on Escape. F2 / double-click on the row starts a session.
+    if (m_renameTarget == entity) {
+        ImGui::PushID(static_cast<int>(entity.index));
+        if (m_renameFocusNeeded) {
+            ImGui::SetKeyboardFocusHere();
+            m_renameFocusNeeded = false;
+        }
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        const bool committed = ImGui::InputText("##rename", m_renameBuf, sizeof(m_renameBuf),
+            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+        const bool lostFocus = ImGui::IsItemDeactivated() && !committed;
+        const bool cancelled = ImGui::IsKeyPressed(ImGuiKey_Escape);
+
+        if (committed && m_renameBuf[0] != '\0') {
+            if (!scene.has<Name>(entity)) scene.add(Entity{entity}, Name(m_renameBuf));
+            else {
+                auto& n = scene.get<Name>(entity);
+                std::strncpy(n.value, m_renameBuf, sizeof(n.value) - 1);
+                n.value[sizeof(n.value) - 1] = '\0';
+            }
+            state.markSceneDirty();
+            m_renameTarget = {};
+        } else if (cancelled || lostFocus) {
+            m_renameTarget = {};
+        }
+        ImGui::PopID();
+        return;  // don't draw the tree node this frame; recursion still works next frame
+    }
+
     bool nodeOpen = entityTreeNode(
         reinterpret_cast<void*>(static_cast<uintptr_t>(entity.index)),
         flags, entityIconKind(scene, entity), name);
+
+    // F2 or double-click on a selected, hovered row -> start rename.
+    if (state.selectedEntity == entity && ImGui::IsItemHovered()
+            && (ImGui::IsKeyPressed(ImGuiKey_F2)
+             || ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))) {
+        m_renameTarget = entity;
+        m_renameFocusNeeded = true;
+        std::strncpy(m_renameBuf, name, sizeof(m_renameBuf) - 1);
+        m_renameBuf[sizeof(m_renameBuf) - 1] = '\0';
+    }
 
     // Hover tooltip: full name, id, and a component digest. Covers truncated
     // names in narrow panels and gives an at-a-glance summary.
@@ -184,9 +229,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
             // own descendants (would create a hierarchy cycle).
             if (scene.isAlive(dragged) && !isSelfOrAncestor(scene, entity, dragged)) {
                 HierarchyOperations::setParent(scene, dragged, entity);
-                HierarchyOperations::markDirty(scene, dragged);
-                state.hierarchyDirty = true;
-        state.markSceneDirty();
+                EditorActions::commitHierarchyMutation(scene, state, dragged);
             }
         }
         ImGui::EndDragDropTarget();
@@ -219,9 +262,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
     if (scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).parent) {
         if (ImGui::MenuItem("Unparent")) {
             HierarchyOperations::removeFromParent(scene, entity);
-            HierarchyOperations::markDirty(scene, entity);
-            state.hierarchyDirty = true;
-        state.markSceneDirty();
+            EditorActions::commitHierarchyMutation(scene, state, entity);
         }
     }
 
@@ -232,7 +273,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
             t.position = glm::vec3(0.0f);
             t.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
             t.scale    = glm::vec3(1.0f);
-            HierarchyOperations::markDirty(scene, entity);
+            EditorActions::commitHierarchyMutation(scene, state, entity);
         }
     }
 
@@ -240,6 +281,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
         auto& light = scene.get<Light>(entity);
         if (ImGui::MenuItem(light.enabled ? "Disable Light" : "Enable Light")) {
             light.enabled = !light.enabled;
+            state.markSceneDirty();
         }
     }
 
@@ -247,6 +289,21 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
         auto& mesh = scene.get<Mesh>(entity);
         if (ImGui::MenuItem(mesh.visible ? "Hide" : "Show")) {
             mesh.visible = !mesh.visible;
+            state.markSceneDirty();
+        }
+    }
+
+    if (scene.has<Camera>(entity)) {
+        ImGui::Separator();
+        const auto& cam = scene.get<Camera>(entity);
+        const bool isActive = cam.active;
+        if (ImGui::MenuItem("Look Through Camera", nullptr, false, !isActive)) {
+            // Activate this camera; deactivate all others so the editor's
+            // active-camera lookup picks this one on the next frame.
+            scene.forEach<Camera>([&](EntityId other, Camera& c) {
+                c.active = (other == entity);
+            });
+            state.markSceneDirty();
         }
     }
 

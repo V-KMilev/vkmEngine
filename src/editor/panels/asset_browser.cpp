@@ -142,8 +142,10 @@ void AssetBrowserPanel::drawMaterials(EditorContext& ec) {
                 state.showMaterialEditor   = true;
             }
             ImGui::BeginDisabled(!canAssign);
-            if (ImGui::MenuItem("Assign to selected entity"))
+            if (ImGui::MenuItem("Assign to selected entity")) {
                 scene.get<Mesh>(sel).material = h;
+                state.markSceneDirty();
+            }
             ImGui::EndDisabled();
             if (!canAssign) ImGui::TextDisabled("(select a mesh entity to assign)");
             ImGui::EndPopup();
@@ -194,8 +196,10 @@ void AssetBrowserPanel::drawMeshes(EditorContext& ec) {
 
         if (ImGui::BeginPopupContextItem("##meshctx")) {
             ImGui::BeginDisabled(!canAssign);
-            if (ImGui::MenuItem("Assign to selected entity"))
+            if (ImGui::MenuItem("Assign to selected entity")) {
                 scene.get<Mesh>(sel).mesh = h;
+                state.markSceneDirty();
+            }
             ImGui::EndDisabled();
             if (!canAssign) ImGui::TextDisabled("(select a mesh entity to assign)");
             ImGui::EndPopup();

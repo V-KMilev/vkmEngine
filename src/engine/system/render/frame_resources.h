@@ -13,7 +13,7 @@ class RenderGraph;
  * Concrete pools (GLFrameResources for OpenGL; a future GLVkFrameResources
  * for Vulkan) inherit from this and add their backend-typed accessors. The
  * engine-side RenderGraph holds one of these via unique_ptr and reaches it
- * through this thin interface — engine code never #includes a backend
+ * through this thin interface - engine code never #includes a backend
  * header.
  *
  * Lifecycle:

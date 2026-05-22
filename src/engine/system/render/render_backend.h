@@ -2,12 +2,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "resource/material_asset.h"
 #include "resource/mesh_asset.h"
+#include "system/render/render_target.h"  // unique_ptr<RenderTarget> needs complete type
 
 namespace Engine {
-    class RenderTarget;
     struct RenderView;
     class ResourceManager;
     class RenderGraph;
@@ -185,6 +187,39 @@ class RenderBackend {
          * Same no-op semantics on backends without a cache.
          */
         virtual void clearThumbnailCache() {}
+
+        /**
+         * @brief Read a sub-rect of the swapchain into RGB8 pixels.
+         *
+         * Used by the editor for screenshots. Rect is in window-pixel
+         * coords with ImGui's y-down convention; the backend takes care
+         * of any internal flips so @p outRGB is top-down (PNG-friendly).
+         * @p windowHeight is the full window height (needed by backends
+         * whose framebuffer origin differs from ImGui).
+         *
+         * Default returns false (backend doesn't expose readback).
+         *
+         * @param x,y,w,h        Rect in window pixels, ImGui y-down.
+         * @param windowHeight   Full window height in pixels.
+         * @param outRGB         Resized to w*h*3 bytes on success.
+         * @return true on success, false on invalid rect / unsupported.
+         */
+        virtual bool readbackPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                                     uint32_t windowHeight,
+                                     std::vector<uint8_t>& outRGB) {
+            (void)x; (void)y; (void)w; (void)h;
+            (void)windowHeight; (void)outRGB;
+            return false;
+        }
+
+        /// Short name of the graphics API ("OpenGL", "Vulkan", "CPU").
+        virtual const char* apiName() const { return toString(m_type); }
+
+        /// Runtime API version string, or "" if unavailable.
+        virtual std::string apiVersion() const { return {}; }
+
+        /// Human-readable device / renderer name, or "" if unavailable.
+        virtual std::string deviceName() const { return {}; }
 
     protected:
         RenderBackendType m_type;

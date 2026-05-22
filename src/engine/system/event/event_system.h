@@ -28,7 +28,7 @@ namespace Engine {
  *
  * Caveats:
  *  - Don't subscribe or unsubscribe from inside a listener callback during
- *    emit/flush — iterates the listener vector and a concurrent mutation
+ *    emit/flush - iterates the listener vector and a concurrent mutation
  *    would invalidate it.
  *  - A listener that enqueues an event whose bus has already been flushed
  *    this frame will see that event fire on the next frame's flush.

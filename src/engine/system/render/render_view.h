@@ -278,24 +278,39 @@ struct RenderView {
     CameraData camera;
     EnvironmentConfig environment;
 
-    /// Pre-resolved facts for the current frame's render mode. Cheap to
-    /// derive (a switch on env.renderMode); passes read this instead of
-    /// branching on the enum directly so a new mode is one place to
-    /// update (resolveModeConfig).
+    /**
+     * @brief Pre-resolved facts for the current frame's render mode. Cheap to
+     *
+     * derive (a switch on env.renderMode); passes read this instead of
+     * branching on the enum directly so a new mode is one place to
+     * update (resolveModeConfig).
+     */
     RenderModeConfig modeConfig;
 
     std::vector<DrawableData> drawables;
 
-    /// Shadow-casting geometry for the shadow pass. Built from the WHOLE
-    /// scene (not the camera frustum) so occluders behind / beside the
-    /// camera still cast shadows into view - camera-frustum culling here is
-    /// what made shadows pop and flicker as the view moved.
+    /**
+     * @brief Shadow-casting geometry for the shadow pass. Built from the WHOLE
+     *
+     * scene (not the camera frustum) so occluders behind / beside the
+     * camera still cast shadows into view - camera-frustum culling here is
+     * what made shadows pop and flicker as the view moved.
+     */
     std::vector<DrawableData> shadowCasters;
 
     std::vector<LightData> lights;
 
     uint32_t viewportWidth  = 0;
     uint32_t viewportHeight = 0;
+    // Top-left of the scene-render rect inside the GLFW window (ImGui
+    // coords, y-down). Composite uses this to glViewport into the editor's
+    // viewport child instead of covering the whole backbuffer.
+    uint32_t viewportX = 0;
+    uint32_t viewportY = 0;
+    // Window pixel size. Needed by composite to flip ImGui-style viewportY
+    // (top-down) into OpenGL glViewport (bottom-up).
+    uint32_t windowWidth  = 0;
+    uint32_t windowHeight = 0;
 
     float deltaTime = 0.0f;  ///< Real seconds since last frame (eye adaptation)
 

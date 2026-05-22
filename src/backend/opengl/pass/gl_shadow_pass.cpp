@@ -255,7 +255,7 @@ void GLShadowPass::execute(RenderGraphContext& rg) {
     };
 
     // Walk lights once: build the matrix, write the UBO entry, render the
-    // corresponding atlas slot — no second matrix recomputation.
+    // corresponding atlas slot - no second matrix recomputation.
     uint32_t count2D = 0, countCube = 0;
     glm::mat4 cubeFaces[6];
 

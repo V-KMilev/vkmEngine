@@ -29,6 +29,10 @@ struct EditorKeybinds {
     KeyBind saveSceneAs      = { ImGuiKey_S,      KeyMod_Ctrl | KeyMod_Shift };
     KeyBind loadScene        = { ImGuiKey_O,      KeyMod_Ctrl };
 
+    // Edit
+    KeyBind undo             = { ImGuiKey_Z,      KeyMod_Ctrl };
+    KeyBind redo             = { ImGuiKey_Z,      KeyMod_Ctrl | KeyMod_Shift };
+
     // Panel toggles
     KeyBind toggleStats      = { ImGuiKey_F1,     KeyMod_None };
     KeyBind toggleHierarchy  = { ImGuiKey_1,      KeyMod_Ctrl };

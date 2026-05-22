@@ -3,6 +3,8 @@
 #include <imgui.h>
 #include <glm/gtc/quaternion.hpp>
 
+#include "ecs/entity.h"
+#include "ecs/component/transform.h"
 #include "gizmo/transform_gizmo.h"
 
 namespace Engine {
@@ -36,6 +38,12 @@ class GizmoOverlay {
         TransformGizmo m_gizmo;
         glm::quat m_dragStartRot{1.0f, 0.0f, 0.0f, 0.0f};
         bool m_dragActive = false;
+
+        // Undo bookkeeping: snapshot the transform when a drag begins so
+        // the drag-end can push one TransformChangeCommand covering the
+        // whole drag rather than one per intermediate frame.
+        Transform m_dragStartTransform{};
+        EntityId  m_dragEntity{};
 };
 
 } // namespace Engine

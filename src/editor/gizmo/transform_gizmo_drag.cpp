@@ -75,22 +75,16 @@ bool TransformGizmo::handleScaleDrag(glm::mat4& model, const glm::vec3 axes[3]) 
     float scaleFactor = currentDist / m_scaleStartDist;
     scaleFactor = std::clamp(scaleFactor, 0.01f, 100.0f);
 
-    // Decompose start model to apply scale to specific axis
-    glm::vec3 startPos, startScale, startSkew;
-    glm::vec4 startPersp;
-    glm::quat startRot;
-    glm::decompose(m_dragStartModel, startScale, startRot, startPos, startSkew, startPersp);
+    // Start TRS was decomposed once at drag-start (transform_gizmo.cpp).
+    // Per-axis scale multiplies the cached axis component.
+    const int axisIdx = (m_active == GizmoElement::AxisX) ? 0 :
+                        (m_active == GizmoElement::AxisY) ? 1 : 2;
 
-    // Determine which local axis to scale
-    int axisIdx = (m_active == GizmoElement::AxisX) ? 0 :
-                  (m_active == GizmoElement::AxisY) ? 1 : 2;
-
-    glm::vec3 newScale = startScale;
+    glm::vec3 newScale = m_dragStartScale;
     newScale[axisIdx] *= scaleFactor;
 
-    // Reconstruct model matrix
-    model = glm::translate(glm::mat4(1.0f), startPos)
-          * glm::mat4_cast(glm::normalize(startRot))
+    model = glm::translate(glm::mat4(1.0f), m_dragStartPos)
+          * glm::mat4_cast(glm::normalize(m_dragStartRot))
           * glm::scale(glm::mat4(1.0f), newScale);
     return true;
 }

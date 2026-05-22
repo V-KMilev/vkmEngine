@@ -31,6 +31,13 @@ class HierarchyPanel {
         std::vector<EntityId> m_cachedRoots;
         std::vector<EntityId> m_cachedFiltered;
         size_t m_lastEntityCount = 0;
+
+        // Inline-rename state. m_renameTarget == 0 (default-constructed
+        // EntityId) means "no rename in progress". The buffer survives a
+        // single rename session; cleared on commit/cancel.
+        EntityId m_renameTarget{};
+        char     m_renameBuf[64] = {};
+        bool     m_renameFocusNeeded = false;
 };
 
 } // namespace Engine

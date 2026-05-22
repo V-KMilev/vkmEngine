@@ -35,7 +35,7 @@ class ResourceManager;
  * SlotAllocator reuses freed slots), so the vector stays compact.
  *
  * Entries live as long as the asset lives in ResourceManager. They are NOT
- * purged based on visibility — a camera that pans away from everything
+ * purged based on visibility - a camera that pans away from everything
  * shouldn't trigger GPU resource churn.
  */
 template<typename GLT>
@@ -70,30 +70,36 @@ class GLView {
          */
         void sync(const RenderView& view, const ResourceManager& resources);
 
-        /// Sync (compile or recompile-if-version-bumped) and return the
-        /// backend shader for a handle, in one call. Used by render passes
-        /// at draw time; this is how hot reload reaches the GPU side —
-        /// the watcher commits → asset.version bumps → the next resolve
-        /// call rebuilds the program.
-        ///
-        /// Returns nullptr only when the handle is empty or invalid.
+        /**
+         * @brief Sync (compile or recompile-if-version-bumped) and return the
+         *
+         * backend shader for a handle, in one call. Used by render passes
+         * at draw time; this is how hot reload reaches the GPU side -
+         * the watcher commits -> asset.version bumps -> the next resolve
+         * call rebuilds the program.
+         *
+         * Returns nullptr only when the handle is empty or invalid.
+         */
         GLShader* resolveShader(const ShaderHandle& handle, const ResourceManager& resources);
 
-        /// Resolve a per-material variant of @p handle, compiled with the
-        /// #defines that match @p featureFlags (a MaterialFeature bitset).
-        ///
-        /// First call for a given (handle, flags) pair compiles a fresh
-        /// GLShader with the right defines and caches it; subsequent calls
-        /// return the cached program. When the underlying asset version
-        /// bumps (hot reload of the .shader file), every variant for that
-        /// asset is dropped and rebuilt lazily on the next resolve.
-        ///
-        /// flags == 0 is a legitimate variant ("no optional features") and
-        /// gets its own cache entry; it does NOT collapse to the ubershader
-        /// path. The whole point of the variant cache is that flags == 0
-        /// compiles to a much smaller program than the ubershader.
-        ///
-        /// Returns nullptr only when the handle is empty or invalid.
+        /**
+         * @brief Resolve a per-material variant of @p handle, compiled with the
+         *
+         * #defines that match @p featureFlags (a MaterialFeature bitset).
+         *
+         * First call for a given (handle, flags) pair compiles a fresh
+         * GLShader with the right defines and caches it; subsequent calls
+         * return the cached program. When the underlying asset version
+         * bumps (hot reload of the .shader file), every variant for that
+         * asset is dropped and rebuilt lazily on the next resolve.
+         *
+         * flags == 0 is a legitimate variant ("no optional features") and
+         * gets its own cache entry; it does NOT collapse to the ubershader
+         * path. The whole point of the variant cache is that flags == 0
+         * compiles to a much smaller program than the ubershader.
+         *
+         * Returns nullptr only when the handle is empty or invalid.
+         */
         GLShader* resolveShaderVariant(const ShaderHandle& handle,
                                        uint32_t featureFlags,
                                        const ResourceManager& resources);
@@ -104,10 +110,13 @@ class GLView {
         const GLMaterial* ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources);
         GLMesh*           ensureMesh(const MeshHandle& handle, const ResourceManager& resources);
 
-        /// Ensure every texture a material references is GPU-resident. sync()
-        /// only uploads textures on its coarse dirty check; per-asset previews
-        /// (Asset Browser grid) render many one-drawable views per frame and
-        /// would otherwise reuse a stale/empty texture table.
+        /**
+         * @brief Ensure every texture a material references is GPU-resident. sync()
+         *
+         * only uploads textures on its coarse dirty check; per-asset previews
+         * (Asset Browser grid) render many one-drawable views per frame and
+         * would otherwise reuse a stale/empty texture table.
+         */
         void ensureMaterialTextures(const MaterialHandle& handle, const ResourceManager& resources);
 
         /// Lookup: returns nullptr if not synced or out of range.
@@ -161,12 +170,15 @@ class GLView {
         GLResourceTable<GLTexture>  m_textureTable;
         GLResourceTable<GLShader>   m_shaderTable;
 
-        /// Per-material shader-variant cache. Outer key is shaderId; inner
-        /// key packs (generation, flags) into a uint64 so slot recycles by
-        /// SlotAllocator and feature-flag sets share the same bucket but
-        /// cannot collide. Eviction of all variants for one shader (on hot
-        /// reload or slot recycle) is the inner map's clear(), no global
-        /// scan needed and no parallel index to keep in sync.
+        /**
+         * @brief Per-material shader-variant cache. Outer key is shaderId; inner
+         *
+         * key packs (generation, flags) into a uint64 so slot recycles by
+         * SlotAllocator and feature-flag sets share the same bucket but
+         * cannot collide. Eviction of all variants for one shader (on hot
+         * reload or slot recycle) is the inner map's clear(), no global
+         * scan needed and no parallel index to keep in sync.
+         */
         struct VariantEntry {
             std::unique_ptr<GLShader> program;
             uint64_t                  assetVersion = 0;

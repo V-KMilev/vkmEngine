@@ -38,7 +38,7 @@ class ThreadPool {
         void waitToFinish();
 
         /// True when called from a thread owned by the pool. parallelFor
-        /// must not be re-entered from inside a task body — the calling
+        /// must not be re-entered from inside a task body - the calling
         /// worker would spin in waitToFinish() forever on its own slot.
         static bool isWorkerThread();
 

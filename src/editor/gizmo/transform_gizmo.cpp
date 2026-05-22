@@ -50,8 +50,9 @@ float TransformGizmo::computeScreenFactor(const glm::vec3& gizmoOrigin) const {
     float ndcLength = glm::length(ndcRight - ndcOrigin);
     if (ndcLength < 1e-7f) return 1.0f;
 
-    // Desired size in NDC
-    float ndcDesired = GIZMO_SIZE_PIXELS / (m_vpWidth * 0.5f);
+    // Desired size in NDC, scaled with UI/DPI so the gizmo isn't a tiny
+    // overlay on a 4K display.
+    float ndcDesired = (GIZMO_SIZE_PIXELS * m_uiScale) / (m_vpWidth * 0.5f);
     return ndcDesired / ndcLength;
 }
 
@@ -103,7 +104,6 @@ glm::vec3 TransformGizmo::getDragPlaneNormal(GizmoElement elem, const glm::vec3 
         case GizmoElement::PlaneYZ: return axes[0];
         case GizmoElement::PlaneXZ: return axes[1];
         case GizmoElement::PlaneXY: return axes[2];
-        case GizmoElement::Screen:  return m_cameraDir;
         default: return m_cameraDir;
     }
 }
@@ -138,6 +138,9 @@ bool TransformGizmo::manipulate(
     m_vpMin = vpMin;
     m_vpWidth = vpWidth;
     m_vpHeight = vpHeight;
+    // Font size 13 is ImGui's documented default. On high-DPI displays the
+    // font grows and so should the gizmo's hit/visual scale.
+    m_uiScale = std::max(1.0f, ImGui::GetFontSize() / 13.0f);
 
     glm::mat4 invView = glm::inverse(view);
     m_cameraPos = glm::vec3(invView[3]);
@@ -182,7 +185,9 @@ bool TransformGizmo::manipulate(
 
     if (m_dragging) {
         if (!mouseDown) {
-            // Release
+            // Release. m_dragRotation is meaningful only during a rotation
+            // drag; clear it unconditionally so non-rotate gizmo modes don't
+            // observe a stale quaternion from the previous rotation session.
             m_dragging = false;
             m_active = GizmoElement::None;
             m_dragRotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -233,6 +238,17 @@ bool TransformGizmo::manipulate(
             m_dragStartModel = model;
             m_dragPlaneNormal = getDragPlaneNormal(m_active, axes);
             m_dragPlanePoint = m_gizmoOrigin;
+
+            // Decompose once at drag-start. Skew/perspective are discarded
+            // (the gizmo only ever drives translation/rotation/scale), and
+            // re-decomposing each frame would just throw the same result
+            // away while costing CPU.
+            {
+                glm::vec3 skew;
+                glm::vec4 persp;
+                glm::decompose(m_dragStartModel, m_dragStartScale, m_dragStartRot,
+                               m_dragStartPos, skew, persp);
+            }
 
             glm::vec3 rayDir = screenToRay(m_mousePos);
             float t = intersectRayPlane(m_cameraPos, rayDir, m_dragPlanePoint, m_dragPlaneNormal);

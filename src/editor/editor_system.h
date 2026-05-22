@@ -9,6 +9,7 @@
 #include "framework/editor_status_bar.h"
 #include "framework/editor_shortcuts.h"
 #include "framework/editor_panel_resize.h"
+#include "input/editor_actions.h"   // ModelImportDialog
 #include "overlays/viewport_overlay.h"
 #include "overlays/gizmo_overlay.h"
 #include "overlays/viewport_toolbar.h"
@@ -64,10 +65,13 @@ class EditorSystem : public System {
         void update(FrameContext& ctx) override;
 
     private:
-        /// The root-window panel arrangement: the docked panels, the viewport
-        /// (with its overlays), border-resize and the status bar. This is the
-        /// shell's own job (driving the panels), so it stays a method here
-        /// rather than a unit that would need every panel passed back in.
+        /**
+         * @brief The root-window panel arrangement: the docked panels, the viewport
+         *
+         * (with its overlays), border-resize and the status bar. This is the
+         * shell's own job (driving the panels), so it stays a method here
+         * rather than a unit that would need every panel passed back in.
+         */
         void drawWorkspace(EditorContext& ec);
 
     private:
@@ -82,6 +86,7 @@ class EditorSystem : public System {
         EditorStatusBar   m_statusBar;
         EditorShortcuts   m_shortcuts;
         EditorPanelResize m_panelResize;
+        EditorActions::ModelImportDialog m_modelImport;
 
         EditorState      m_state;
         HierarchyPanel   m_hierarchy;
@@ -94,9 +99,6 @@ class EditorSystem : public System {
         PreferencesPanel m_preferences;
         MaterialEditorPanel m_materialEditor;
         AssetBrowserPanel m_assetBrowser;
-
-        // Input state for F5 toggle
-        bool m_f5WasDown = false;
 };
 
 } // namespace Engine
