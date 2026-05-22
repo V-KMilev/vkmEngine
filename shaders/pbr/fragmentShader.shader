@@ -115,7 +115,8 @@ struct Light {
     vec4 color;      // xyz = rgb,            w = intensity
     vec4 direction;  // xyz = world dir,      w = radius
     vec4 spot;       // x = inner, y = outer, z = unused, w = shadowSlot
-    vec4 area;       // x = width(Rect)/radius(Disk), y = height(Rect), z = unused, w = twoSided
+    vec4 axisU;      // xyz = half-right world axis (Rect/Disk), w = twoSided
+    vec4 axisV;      // xyz = half-up    world axis (Rect/Disk), w = unused
 };
 
 layout(std140, binding = 1) uniform LightsBlock {
@@ -462,6 +463,138 @@ float distanceAttenuation(float dist, float radius) {
     return invSqr * window * window;
 }
 
+// ----------------------------------------------------------------------------
+// LTC area-light integration (Phase 2C step 1: diffuse / Lambertian only).
+//
+// Evaluates the clamped-cosine integral over a planar polygon emitter.
+// Inputs are in a tangent frame where the shading normal is (0,0,1); the
+// caller transforms vertices into that frame.
+//
+// edgeVectorFormFactor is Hill's stable approximation of theta/sin(theta),
+// avoiding the trig discontinuity near v1.v2 == -1. The published constants
+// (Heitz 2016 supplement) match the reference to within FP precision.
+//
+// Phase 2C step 2 will multiply the input vertices by M^-1(NdotV, roughness)
+// before the integral to get the full GGX area-light specular; here we only
+// need the diffuse (M == I) case.
+// ----------------------------------------------------------------------------
+float ltcEdgeIntegral(vec3 v1, vec3 v2) {
+    float x = dot(v1, v2);
+    float y = abs(x);
+    float a = 0.8543985 + (0.4965155 + 0.0145206 * y) * y;
+    float b = 3.4175940 + (4.1616724 + y) * y;
+    float v = a / b;
+    float thetaSinTheta = (x > 0.0)
+        ? v
+        : 0.5 * inversesqrt(max(1.0 - x * x, 1e-7)) - v;
+    return (v1.x * v2.y - v1.y * v2.x) * thetaSinTheta;
+}
+
+// Lambertian irradiance from a 4-vertex polygon at the origin with normal
+// (0,0,1). Returns a value in [0, pi]; divide by pi for unit-Lambertian
+// reflectance. Negative result means the polygon is back-facing (caller
+// folds in two-sided handling).
+float ltcQuadIrradiance(vec3 p0, vec3 p1, vec3 p2, vec3 p3) {
+    vec3 v0 = normalize(p0);
+    vec3 v1 = normalize(p1);
+    vec3 v2 = normalize(p2);
+    vec3 v3 = normalize(p3);
+    float sum = 0.0;
+    sum += ltcEdgeIntegral(v0, v1);
+    sum += ltcEdgeIntegral(v1, v2);
+    sum += ltcEdgeIntegral(v2, v3);
+    sum += ltcEdgeIntegral(v3, v0);
+    return sum;
+}
+
+// World-to-tangent rotation for LTC: rows are (T1, T2, N) where T1 is the
+// view-tangent component in the N plane and T2 = cross(N, T1).
+mat3 ltcTangentFrame(vec3 N, vec3 V) {
+    vec3 T1 = normalize(V - N * dot(V, N));
+    vec3 T2 = cross(N, T1);
+    return transpose(mat3(T1, T2, N));
+}
+
+// ----------------------------------------------------------------------------
+// Representative-point specular for area lights (Karis 2013).
+//
+// Find the point on the area emitter closest to the mirror reflection ray;
+// use it as a point-source for the standard GGX evaluation. The lobe is
+// broadened proportional to the emitter's projected solid angle so a wide
+// rect produces a wide highlight even when the closest point is at the same
+// world position as a point light would be. Cheap, self-contained, and
+// gives the perceptually correct "highlight stretches across the rect"
+// without LUT data.
+// ----------------------------------------------------------------------------
+vec3 areaRectClosestPoint(vec3 rayOrigin, vec3 rayDir,
+                          vec3 center, vec3 axisU, vec3 axisV)
+{
+    // Plane of the rect: normal is U x V (sign matches the light's forward,
+    // since axisU/axisV are derived from the same rotation).
+    vec3 n = cross(axisU, axisV);
+    float nLen2 = max(dot(n, n), 1e-12);
+    n /= sqrt(nLen2);
+
+    // Forward ray-plane intersection; fall back to the closest-point-on-ray
+    // when the ray runs parallel or away from the plane.
+    float denom = dot(rayDir, n);
+    float t = (abs(denom) > 1e-4)
+        ? dot(center - rayOrigin, n) / denom
+        : -1.0;
+    if (t <= 0.0) {
+        t = max(0.0, dot(center - rayOrigin, rayDir));
+    }
+    vec3 hit = rayOrigin + rayDir * t;
+
+    // Clamp the hit into the rect's (U, V) extents. axisU / axisV are
+    // half-extents already, so their magnitudes are the rect's bounds in
+    // their normalised directions.
+    vec3 d = hit - center;
+    float uLen = length(axisU);
+    float vLen = length(axisV);
+    vec3 uNorm = axisU / max(uLen, 1e-4);
+    vec3 vNorm = axisV / max(vLen, 1e-4);
+    float uCoord = clamp(dot(d, uNorm), -uLen, uLen);
+    float vCoord = clamp(dot(d, vNorm), -vLen, vLen);
+    return center + uNorm * uCoord + vNorm * vCoord;
+}
+
+vec3 areaDiskClosestPoint(vec3 rayOrigin, vec3 rayDir,
+                          vec3 center, vec3 axisU, vec3 axisV)
+{
+    // Disk plane (axisU / axisV have equal magnitude = disk radius for Disk
+    // lights, so the cross product is a clean normal regardless of which one
+    // happens to align with the user-authored rotation).
+    vec3 n = cross(axisU, axisV);
+    float nLen2 = max(dot(n, n), 1e-12);
+    n /= sqrt(nLen2);
+
+    float denom = dot(rayDir, n);
+    float t = (abs(denom) > 1e-4)
+        ? dot(center - rayOrigin, n) / denom
+        : -1.0;
+    if (t <= 0.0) {
+        t = max(0.0, dot(center - rayOrigin, rayDir));
+    }
+    vec3 hit = rayOrigin + rayDir * t;
+
+    // Project the offset into the disk plane and clamp to the radius.
+    vec3 d = hit - center;
+    d -= n * dot(d, n);
+    float radius = length(axisU);
+    float dLen   = length(d);
+    if (dLen > radius) d *= (radius / dLen);
+    return center + d;
+}
+
+// Broaden the GGX lobe to cover the light source's projected solid angle.
+// Karis (2013) Eq. 16: alpha' = saturate(alpha + r / (3*dist)). r is the
+// source's representative radius (half the longest extent for a rect, the
+// disk radius for a disk).
+float areaBroadenedAlpha(float alpha, float sourceRadius, float dist) {
+    return clamp(alpha + sourceRadius / max(3.0 * dist, 1e-4), 0.0, 1.0);
+}
+
 vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, vec3 radiance) {
     vec3 H = normalize(V + L);
     float NdotL = max(dot(N, L), 0.0);
@@ -614,6 +747,106 @@ void main() {
         float intensity = light.color.w;
         float radius    = light.direction.w;
         int   type      = int(light.position.w);
+
+        // ---------------------------------------------------------------
+        // Area lights (Rect/Disk): LTC Lambertian diffuse + point-style
+        // GGX specular at the area centre. Step 2 (future) replaces the
+        // specular path with an LTC integral using the M^-1 LUT.
+        // ---------------------------------------------------------------
+        if (type == LIGHT_RECT || type == LIGHT_DISK) {
+            vec3  toCenter = lightPos - vWorldPos;
+            float dist     = length(toCenter);
+            float atten2   = distanceAttenuation(dist, radius);
+            if (atten2 <= 0.0) continue;
+
+            // Shadow visibility from the area's centre (point-style for
+            // 2C step 1; soft penumbra arrives with the LUT path).
+            vec3  Lc          = toCenter / max(dist, 1e-4);
+            float NdotLcenter = max(dot(N, Lc), 0.0);
+            float vis         = 1.0;
+            int   shadowSlot2 = int(light.spot.w);
+            if (shadowSlot2 >= 0 && NdotLcenter > 0.0) {
+                vis = sample2DShadow(shadowSlot2, vWorldPos, NdotLcenter);
+            }
+            if (vis <= 0.0) continue;
+
+            // Build the tangent frame (N = +Z in local space) and transform
+            // the polygon's 4 corners. axisU / axisV are half-extents, so the
+            // 4 combinations of (+/-U, +/-V) give the polygon vertices.
+            mat3 toLocal = ltcTangentFrame(N, V);
+            vec3 U = light.axisU.xyz;
+            vec3 Vv = light.axisV.xyz;
+            vec3 p0 = toLocal * ((lightPos - U - Vv) - vWorldPos);
+            vec3 p1 = toLocal * ((lightPos + U - Vv) - vWorldPos);
+            vec3 p2 = toLocal * ((lightPos + U + Vv) - vWorldPos);
+            vec3 p3 = toLocal * ((lightPos - U + Vv) - vWorldPos);
+
+            float irradiance = ltcQuadIrradiance(p0, p1, p2, p3);
+
+            // Sign tells us which face of the polygon is visible; twoSided
+            // emitters illuminate from either side, otherwise back faces
+            // contribute nothing.
+            bool twoSided = (light.axisU.w > 0.5);
+            if (irradiance < 0.0) {
+                if (twoSided) irradiance = -irradiance;
+                else continue;
+            }
+
+            // ---------- Diffuse: LTC Lambertian integral ----------
+            // The Fresnel term at the area centre is used for the energy
+            // split (kd from F at the centre's half-vector) - this is the
+            // standard approximation for area diffuse since the polygon
+            // doesn't have a single H.
+            vec3  Hc      = normalize(V + Lc);
+            float NdotV2  = max(dot(N, V), 1e-4);
+            float VdotH2  = max(dot(V, Hc), 0.0);
+            vec3  Fc      = fresnelSchlick(VdotH2, f0);
+            vec3  kd      = (vec3(1.0) - Fc) * (1.0 - s.metallic);
+
+            // Lambert BRDF * polygon irradiance. The (1/PI) is the BRDF
+            // normalisation; ltcQuadIrradiance is in [0, PI] so this gives
+            // diffuse in [0, kd*albedo] when the polygon covers the
+            // upper hemisphere.
+            vec3 diffuseArea = kd * s.albedo * (irradiance / PI);
+
+            // ---------- Specular: Karis representative-point ----------
+            // Find the point on the area emitter closest to the mirror
+            // reflection ray; treat it as the specular point source and
+            // broaden the GGX lobe by the emitter's projected solid angle.
+            // Result: highlight stretches and softens with the source's
+            // shape and size, without needing a LUT.
+            vec3 specularArea = vec3(0.0);
+            vec3 R = reflect(-V, N);
+            vec3 closestPoint = (type == LIGHT_RECT)
+                ? areaRectClosestPoint(vWorldPos, R, lightPos, light.axisU.xyz, light.axisV.xyz)
+                : areaDiskClosestPoint(vWorldPos, R, lightPos, light.axisU.xyz, light.axisV.xyz);
+
+            vec3  toCp     = closestPoint - vWorldPos;
+            float distCp   = length(toCp);
+            vec3  Lcp      = toCp / max(distCp, 1e-4);
+            float NdotLcp  = max(dot(N, Lcp), 0.0);
+            if (NdotLcp > 0.0) {
+                // Representative source size for alpha broadening: the
+                // longest half-extent for Rect, the radius for Disk.
+                float sourceRadius = (type == LIGHT_RECT)
+                    ? max(length(light.axisU.xyz), length(light.axisV.xyz))
+                    : length(light.axisU.xyz);
+
+                float a       = s.roughness * s.roughness;
+                float aBroad  = areaBroadenedAlpha(a, sourceRadius, distCp);
+                vec3  Hcp     = normalize(V + Lcp);
+                float NdotHcp = max(dot(N, Hcp), 0.0);
+                float VdotHcp = max(dot(V, Hcp), 0.0);
+                vec3  Fcp     = fresnelSchlick(VdotHcp, f0);
+                float D       = distributionGGX(NdotHcp, aBroad);
+                float Vis     = visSmithCorrelated(NdotV2, NdotLcp, aBroad);
+                specularArea  = D * Vis * Fcp * NdotLcp;
+            }
+
+            vec3 radiance = lightCol * intensity * atten2 * vis;
+            Lo += radiance * (diffuseArea + specularArea);
+            continue;
+        }
 
         vec3  L;
         float atten = 1.0;
