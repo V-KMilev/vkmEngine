@@ -2,16 +2,14 @@
 
 #include <cstdint>
 
+#include "system/render/render_graph.h"
 #include "system/render/render_graph_resource.h"
 
 namespace Engine {
-    class RenderBackend;
-    struct RenderView;
-    class ResourceManager;
-    class RenderGraph;
-}
 
-namespace Engine {
+class RenderBackend;
+struct RenderView;
+class ResourceManager;
 
 /**
  * @brief Per-frame execution context handed to every render pass.
@@ -41,22 +39,22 @@ struct RenderGraphContext {
 
 #ifndef NDEBUG
     /**
-     * @brief Debug-only: bitmask of RGResource ids actually looked up during
+     * @brief Debug-only bitmask of RGResource ids actually looked up during the current pass.
      *
-     * the current pass. Cleared by RenderGraph::execute before each
-     * pass, checked after the pass returns. Mutable so resource<T>()
-     * can stay const-correct from the pass's point of view.
+     * Cleared by RenderGraph::execute before each pass, checked after the
+     * pass returns. Mutable so resource<T>() can stay const-correct from
+     * the pass's point of view.
      */
     mutable uint32_t accessedResources = 0;
 #endif
 
     /**
-     * @brief Typed access to a graph-registered resource. Returns nullptr when
+     * @brief Typed access to a graph-registered resource.
      *
-     * the backend hasn't published @p id this frame. The caller is
-     * responsible for picking @p T to match the concrete type the
-     * backend registered (OpenGL backend registers GLSceneTarget* for
-     * SceneHDR, GLBloom* for BloomChain, etc.).
+     * Returns nullptr when the backend hasn't published @p id this frame.
+     * The caller is responsible for picking @p T to match the concrete
+     * type the backend registered (OpenGL backend registers GLSceneTarget*
+     * for SceneHDR, GLBloom* for BloomChain, etc.).
      */
     template<typename T>
     T* resource(RGResource id) const {
@@ -68,5 +66,3 @@ struct RenderGraphContext {
 };
 
 } // namespace Engine
-
-#include "system/render/render_graph.h"

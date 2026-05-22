@@ -1,18 +1,17 @@
 #include "gl_material.h"
 
-#include <iterator>
 #include <cstring>
+#include <iterator>
 
 #include "logger.h"
-#include "debug/statistics.h"
 
-#include "gl_uniform_buffer.h"
 #include "config/gl_config.h"
 #include "config/gl_texture_mapping.h"
-
-#include "resource/material_asset.h"
 #include "core/gl_view.h"
+#include "debug/statistics.h"
 #include "gl_texture.h"
+#include "gl_uniform_buffer.h"
+#include "resource/material_asset.h"
 
 namespace Engine {
 

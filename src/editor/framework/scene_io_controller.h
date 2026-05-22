@@ -55,11 +55,11 @@ class SceneIOController {
         const std::string& path() const { return m_currentScenePath; }
 
         /**
-         * @brief True while a Save-As prompt is either queued for opening or
+         * @brief True while a Save-As prompt is either queued for opening or currently visible.
          *
-         * currently visible. Used by the save-on-quit flow to detect
-         * whether the user cancelled mid-Save (state.closeAfterSave is
-         * cleared on cancel; left set on success).
+         * Used by the save-on-quit flow to detect whether the user cancelled
+         * mid-Save (state.closeAfterSave is cleared on cancel; left set on
+         * success).
          */
         bool isSaveDialogActive() const;
 
