@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "l_assert.h"
 #include "logger.h"
 #include "debug/statistics.h"
 #include "system/render/frame_resources.h"
@@ -95,12 +96,16 @@ void RenderGraph::compile(const RenderView* view) {
         m_passes[i]->declareResources(builder);
 
         // Reads are validated against everything produced by earlier passes.
+        // In release a warning is enough (the frame still runs, reading stale
+        // or zero memory); in debug we trip an assert so the developer sees
+        // the structural bug immediately, not three rendered frames later.
         for (RGResource r : m_reads[i]) {
             const uint32_t ri = static_cast<uint32_t>(r);
             m_lifetimes[ri].lastRead = static_cast<int>(i);
             if (!produced[ri] && !rgResourceIsImplicit(r)) {
                 LOG_WARNING("RenderGraph: pass '%s' reads %s before any pass writes it",
                     m_passes[i]->getName().c_str(), rgResourceName(r));
+                VKM_ASSERT(false, "RenderGraph read-before-write violation");
                 clean = false;
             }
         }

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "framework/editor_common.h"
+#include "input/editor_actions.h"
 #include "loader/texture_loaders.h"
 #include "loader/material_loaders.h"
 #include "system/render/render_system.h"
@@ -395,16 +396,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         ImGui::PopStyleColor();
 
         if (ImGui::SmallButton("Duplicate")) {
-            MaterialAsset copy = cur;          // value copy of params + tex refs
-            copy.version = 1;
-            copy.name    = (cur.name.empty() ? std::string("material")
-                                             : cur.name) + " copy";
-            MaterialHandle nh = resources.add(std::move(copy));
-            if (nh) {
-                if (selMesh) {
-                    selMesh->material = nh;    // reassign the entity
-                    state.markSceneDirty();
-                }
+            if (MaterialHandle nh = EditorActions::duplicateMaterial(resources, state, target, selMesh)) {
                 state.materialEditorTarget = nh;
                 target = nh;
             }

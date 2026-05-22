@@ -9,14 +9,19 @@
 namespace Engine {
 
 /**
- * @brief A single visible entity and its precomputed world model matrix.
+ * @brief A single visible entity, its world model matrix, and world-space AABB.
  *
- * Combining ID and matrix in one struct improves cache locality when
- * iterating visibility results (vs parallel vectors that cross cache lines).
+ * Combining the fields in one struct improves cache locality when iterating
+ * visibility results (vs parallel vectors that cross cache lines). The AABB
+ * is the result of localToWorldAABB on the mesh's local bounds with this
+ * entity's model matrix; downstream passes (AABB debug, picking) consume it
+ * directly instead of re-transforming.
  */
 struct VisibleEntity {
     EntityId id;
     glm::mat4 model;
+    glm::vec3 worldMin{0.0f};
+    glm::vec3 worldMax{0.0f};
 };
 
 /**

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ecs/entity.h"
+#include "resource/material_asset.h"   // MaterialHandle
 
 #include "framework/asset_picker.h"
 
@@ -11,6 +12,7 @@ class ResourceManager;
 class CameraController;
 struct FrameContext;
 struct EditorState;
+struct Mesh;
 
 /**
  * @brief Entity operations invoked by the editor (menu bar, hierarchy, keybinds).
@@ -51,6 +53,25 @@ void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity);
 /// Mark a non-hierarchy structural change (add/remove entity, etc.).
 /// Used by paths that don't have a specific entity to dirty.
 void commitStructureChange(EditorState& state);
+
+/**
+ * @brief Fork a material asset for safe per-entity edits.
+ *
+ * Copies the asset's params + texture refs, suffixes the name with " copy",
+ * resets the version, and registers the clone in @p resources. If
+ * @p assignTo is non-null, also overwrites its material handle with the clone.
+ * Returns the new handle, or a null handle on registration failure.
+ *
+ * Marks the scene dirty when @p assignTo is non-null (asset add alone does
+ * not modify any entity, so the caller can decide if a scene-level edit
+ * happened).
+ */
+MaterialHandle duplicateMaterial(
+    ResourceManager& resources,
+    EditorState& state,
+    MaterialHandle source,
+    Mesh* assignTo
+);
 
 /// Frame the entire visible scene: union the world-space AABBs of every
 /// visible mesh entity, then focus the camera so the union fits in view.

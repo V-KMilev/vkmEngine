@@ -28,6 +28,20 @@ namespace Engine {
 
 namespace {
 
+// Routes the composite's fullscreen triangle into the editor's scene-viewport
+// rect inside the GLFW window. Without this, the composite would draw into
+// the entire backbuffer at the wrong aspect, behind the editor panels.
+// ImGui's y-axis is top-down; OpenGL's viewport is bottom-up, hence the flip.
+void applyEditorViewport(const Core::Context& glContext, const RenderView& view) {
+    if (view.viewportWidth == 0 || view.viewportHeight == 0) return;
+    if (view.windowHeight < view.viewportY + view.viewportHeight) return;
+    glContext.setViewport(
+        static_cast<int32_t>(view.viewportX),
+        static_cast<int32_t>(view.windowHeight - view.viewportY - view.viewportHeight),
+        static_cast<int32_t>(view.viewportWidth),
+        static_cast<int32_t>(view.viewportHeight));
+}
+
 // Procedural lens-dirt mask: sparse Gaussian "dust" blobs over a low-noise
 // background, plus a few faint diagonal streaks. Deterministic. Tileable
 // because every blob wraps on torus distance, so sampling with plain
@@ -141,19 +155,7 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     if (backbuffer) backbuffer->bind();
     else backend.getDefaultTarget().bind();
 
-    // Override glViewport to the editor's scene-viewport rect inside the
-    // GLFW window. Without this the composite would draw into the entire
-    // backbuffer at the wrong aspect, behind the editor panels. ImGui's
-    // y-axis is top-down; OpenGL's glViewport is bottom-up, hence the
-    // flip from windowHeight.
-    if (view.viewportWidth > 0 && view.viewportHeight > 0
-            && view.windowHeight >= view.viewportY + view.viewportHeight) {
-        glViewport(
-            static_cast<GLint>(view.viewportX),
-            static_cast<GLint>(view.windowHeight - view.viewportY - view.viewportHeight),
-            static_cast<GLsizei>(view.viewportWidth),
-            static_cast<GLsizei>(view.viewportHeight));
-    }
+    applyEditorViewport(glContext, view);
 
     // Fullscreen blit: no depth, no blend, no culling.
     glContext.setDepthTest(false);
@@ -230,15 +232,8 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     hdr.bindResolvedColor(0);
     if (backbuffer) backbuffer->bind();
     else backend.getDefaultTarget().bind();
-    // bind() reset glViewport - apply the editor-viewport override again.
-    if (view.viewportWidth > 0 && view.viewportHeight > 0
-            && view.windowHeight >= view.viewportY + view.viewportHeight) {
-        glViewport(
-            static_cast<GLint>(view.viewportX),
-            static_cast<GLint>(view.windowHeight - view.viewportY - view.viewportHeight),
-            static_cast<GLsizei>(view.viewportWidth),
-            static_cast<GLsizei>(view.viewportHeight));
-    }
+    // bind() reset the viewport - apply the editor-viewport override again.
+    applyEditorViewport(glContext, view);
 
     // Lens dirt (slot 4): procedurally generated on first enable, then kept
     // resident. Off when env.lensDirt.enabled is false; the shader gates the multiply.

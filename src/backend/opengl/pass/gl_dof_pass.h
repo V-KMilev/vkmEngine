@@ -37,8 +37,12 @@ class GLDofPass : public RenderPass {
         void execute(RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
+            // Three-target dance: render into PostScratch, then blit back into
+            // SceneHDRResolved so downstream post passes see the result in the
+            // same logical resource they always read.
             builder.read(RGResource::SceneHDRResolved);
             builder.read(RGResource::GBufferPosition);
+            builder.write(RGResource::PostScratch);
             builder.write(RGResource::SceneHDRResolved);
         }
 

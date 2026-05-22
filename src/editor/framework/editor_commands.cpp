@@ -1,5 +1,7 @@
 #include "framework/editor_commands.h"
 
+#include <algorithm>
+
 #include "ecs/scene.h"
 #include "framework/editor_state.h"
 #include "system/hierarchy/hierarchy_operations.h"
@@ -128,25 +130,124 @@ void CreateEntityCommand::undo(Scene& scene, EditorState& state) {
     if (state.selectedEntity == id) state.selectedEntity = {};
 }
 
-// DestroyEntityCommand
+// SubtreeSnapshot
 
-void DestroyEntityCommand::redo(Scene& scene, EditorState& state) {
-    EntityId id{m_snap.slotIndex, scene.generationOf(m_snap.slotIndex)};
-    if (!scene.isAlive(id)) return;
-    scene.destroyEntity(Entity{id});
-    state.hierarchyDirty = true;
-    if (state.selectedEntity == id) state.selectedEntity = {};
+SubtreeSnapshot SubtreeSnapshot::capture(const Scene& scene, EntityId root) {
+    SubtreeSnapshot s;
+    if (!scene.isAlive(root)) return s;
+    if (scene.has<Hierarchy>(root)) {
+        s.rootParentSlot = scene.get<Hierarchy>(root).parent.index;
+    }
+    // DFS pre-order. Stack pushes children in reverse so the original
+    // firstChild->nextSibling order pops out left-to-right; the nodes
+    // vector therefore lists parents before their children.
+    struct Frame { EntityId id; uint32_t parentSlot; };
+    std::vector<Frame> stack;
+    stack.push_back({root, 0});
+    while (!stack.empty()) {
+        Frame f = stack.back();
+        stack.pop_back();
+        if (!scene.isAlive(f.id)) continue;
+
+        Node n;
+        n.snap = EntitySnapshot::capture(scene, f.id);
+        n.parentSlot = f.parentSlot;
+        s.nodes.push_back(std::move(n));
+
+        if (!scene.has<Hierarchy>(f.id)) continue;
+        const auto& h = scene.get<Hierarchy>(f.id);
+
+        // Collect children left-to-right, then push reversed so DFS pops
+        // them in their original sibling order.
+        std::vector<EntityId> children;
+        EntityId c = h.firstChild;
+        while (c) {
+            if (!scene.isAlive(c) || !scene.has<Hierarchy>(c)) break;
+            children.push_back(c);
+            c = scene.get<Hierarchy>(c).nextSibling;
+        }
+        for (auto it = children.rbegin(); it != children.rend(); ++it) {
+            stack.push_back({*it, f.id.index});
+        }
+    }
+    return s;
 }
 
-void DestroyEntityCommand::undo(Scene& scene, EditorState& state) {
-    Entity e = scene.createEntityAt(m_snap.slotIndex);
-    m_snap.apply(scene, e.getID());
-    state.hierarchyDirty = true;
-    // Restore the selection that was active at destroy time, in case it
-    // pointed at the resurrected entity (the common case).
-    if (m_priorSelection.index == m_snap.slotIndex) {
-        state.selectedEntity = e.getID();
+void SubtreeSnapshot::apply(Scene& scene) const {
+    // Pass 1: recreate every entity at its original slot and re-add its
+    // components. Slot recycling means generations are bumped, but the
+    // slot index is stable.
+    for (const auto& node : nodes) {
+        Entity e = scene.createEntityAt(node.snap.slotIndex);
+        node.snap.apply(scene, e.getID());
     }
+    // Pass 2: link parents. setParent PREPENDS to the parent's child list,
+    // so to restore the original firstChild-first order we walk the nodes
+    // in reverse - the last-captured (rightmost) child links first, the
+    // first-captured (leftmost) child links last and ends up at firstChild.
+    for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
+        const auto& node = *it;
+        EntityId child{node.snap.slotIndex, scene.generationOf(node.snap.slotIndex)};
+        if (!scene.isAlive(child)) continue;
+
+        const uint32_t parentSlot = (node.parentSlot != 0) ? node.parentSlot : rootParentSlot;
+        if (parentSlot == 0) continue;  // top-level
+        EntityId parent{parentSlot, scene.generationOf(parentSlot)};
+        if (!scene.isAlive(parent)) continue;  // external parent died in the meantime
+        HierarchyOperations::setParent(scene, child, parent);
+    }
+}
+
+// DestroySubtreeCommand
+
+void DestroySubtreeCommand::redo(Scene& scene, EditorState& state) {
+    if (m_snap.nodes.empty()) return;
+    const uint32_t rootSlot = m_snap.nodes.front().snap.slotIndex;
+    EntityId root{rootSlot, scene.generationOf(rootSlot)};
+    if (!scene.isAlive(root)) return;
+    HierarchyOperations::destroyHierarchy(scene, root);
+    state.hierarchyDirty = true;
+    if (state.selectedEntity.index == rootSlot) state.selectedEntity = {};
+}
+
+void DestroySubtreeCommand::undo(Scene& scene, EditorState& state) {
+    m_snap.apply(scene);
+    state.hierarchyDirty = true;
+    if (m_priorSelection.index != 0) {
+        // Restore selection if the prior pick was anywhere inside the
+        // resurrected subtree (the common case is the root itself).
+        for (const auto& node : m_snap.nodes) {
+            if (node.snap.slotIndex == m_priorSelection.index) {
+                state.selectedEntity = EntityId{node.snap.slotIndex,
+                    scene.generationOf(node.snap.slotIndex)};
+                break;
+            }
+        }
+    }
+}
+
+// ReparentCommand
+
+void ReparentCommand::redo(Scene& scene, EditorState& state) {
+    if (!scene.isAlive(m_child)) return;
+    if (m_newParent) {
+        if (!scene.isAlive(m_newParent)) return;
+        HierarchyOperations::setParent(scene, m_child, m_newParent);
+    } else {
+        HierarchyOperations::removeFromParent(scene, m_child);
+    }
+    state.hierarchyDirty = true;
+}
+
+void ReparentCommand::undo(Scene& scene, EditorState& state) {
+    if (!scene.isAlive(m_child)) return;
+    if (m_oldParent) {
+        if (!scene.isAlive(m_oldParent)) return;
+        HierarchyOperations::setParent(scene, m_child, m_oldParent);
+    } else {
+        HierarchyOperations::removeFromParent(scene, m_child);
+    }
+    state.hierarchyDirty = true;
 }
 
 } // namespace Engine

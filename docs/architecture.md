@@ -7,28 +7,30 @@ vkmEngine is structured around an ECS core with a sequential system pipeline. Th
 ```
 Engine (singleton)
   |-- Scene (ECS registry)
-  |-- ResourceManager (meshes, textures, materials)
+  |-- ResourceManager (meshes, textures, materials, shaders)
   |-- WindowManager (GLFW window, input)
   |-- StatisticTracker (frame timing, call counters)
-  |-- Systems[] (executed sequentially per frame)
-        |-- CameraController
-        |-- EditorSystem
-        |-- EventSystem
-        |-- VisibilitySystem
-        |-- AnimationSystem
-        |-- RenderSystem
+  |-- Systems[] (executed in SystemStage order, then registration order)
+        |-- CameraController, FileWatcher  (Input)
+        |-- AnimationSystem, EventSystem    (Simulation)
+        |-- HierarchySystem                 (Transform)
+        |-- VisibilitySystem                (Visibility)
+        |-- RenderSystem                    (Render)
+        |-- EditorSystem                    (UI)
 ```
 
 ## System Execution Order
 
-Each frame, systems run in registration order:
+Each frame, systems run by SystemStage; within a stage, by registration order:
 
-1. **CameraController** -- Updates camera transform from user input
-2. **EditorSystem** -- Processes editor UI and interaction
-3. **EventSystem** -- Drains the event queue
-4. **VisibilitySystem** -- Frustum/distance/screen-size culling, populates `FrameContext.visibility`
-5. **AnimationSystem** -- Advances timelines (all entities), applies to transforms (visible only)
-6. **RenderSystem** -- Builds `RenderView` from visibility data, executes render passes
+1. **CameraController** (Input) -- Updates camera transform from user input
+2. **FileWatcher** (Input) -- Polls watched files (shaders) and bumps asset versions on change
+3. **AnimationSystem** (Simulation) -- Advances timelines (all entities), applies to transforms (visible only)
+4. **EventSystem** (Simulation) -- Drains the event queue
+5. **HierarchySystem** (Transform) -- Resolves local Transform + parent link into per-entity WorldTransform
+6. **VisibilitySystem** (Visibility) -- Frustum/distance/screen-size culling, populates `FrameContext.visibility`
+7. **RenderSystem** (Render) -- Builds `RenderView` from visibility data, drives the RenderGraph
+8. **EditorSystem** (UI) -- Processes editor UI and interaction
 
 ## FrameContext
 
@@ -53,24 +55,26 @@ src/
     core/                         # Engine singleton, System base class
       memory/                     # TypeId, Storage, SparseSet, SlotAllocator
     ecs/                          # Scene, Entity
-      component/                  # Transform, Camera, Mesh, Animation, Light, Hierarchy, Name
+      component/                  # Transform, Camera, Mesh, Animation, Light, Hierarchy, WorldTransform, Name
     system/                       # All engine systems
-      render/                     # RenderSystem, RenderBackend, RenderView, RenderPipeline, RenderPass, RenderTarget
+      render/                     # RenderSystem, RenderBackend, RenderView, RenderGraph + builder + context + resources, RenderPass, RenderTarget, FrameResources, Environment
       visibility/                 # Visibility, VisibilityContext, BoundsUtils
-        culling/                  # FrustumCuller, DistanceCulling, ScreenSizeCulling, OcclusionCuller
+        culling/                  # FrustumCuller, DistanceCulling, ScreenSizeCulling, OcclusionCuller (stub)
       animation/                  # AnimationSystem, AnimationTrack, Keyframe, Easing
-      event/                      # EventSystem, Event, EventListener
+      event/                      # EventSystem (typed pub/sub; subscribe<EventT>/emit<EventT>/enqueue<EventT>)
+      hierarchy/                  # HierarchySystem + HierarchyOperations (free functions)
+      io/                         # FileWatcher
     resource/                     # ResourceManager, Resource, ResourceHandle, MeshAsset, MaterialAsset, TextureAsset
     platform/
       window/                     # WindowManager, Window, InputHandle, FrameLimiter
       threading/                  # ThreadPool
     debug/                        # Statistics, FrameTracker, CallTracker, FrameInfo, PrintHelper
   editor/                         # EditorSystem, CameraController, panels, gizmo
-  backend/opengl/                 # OpenGL backend (flat gl_-prefixed includes)
-    core/                         # GLBackend, GLView, GLInstanceBatcher
-    resource/                     # GLMesh, GLMaterial, GLTexture, GLLights, GLInstanceBuffer
-    config/                       # GLConfig, GLTextureMapping
-    pass/                         # GLForwardPass, GLAABBDebugPass, GLGridPass, GLNavigationGizmoPass
+  backend/opengl/                 # OpenGL backend (flat gl_-prefixed includes within a dir)
+    core/                         # GLBackend, GLView, GLInstanceBatcher, GLRenderTarget, GLSceneTarget, GLFrameResources
+    resource/                     # GLMesh, GLMaterial, GLTexture, GLLights, GLShaderProgram, GLShadowAtlas/Data, GLIBL, GLBloom, GLAutoExposure, GLGBuffer, GLTAA, GLPostScratch, GLCamera
+    config/                       # GLConfig, GLTextureMapping, GLFormatConversion
+    pass/                         # GLForwardPass, GLShadowPass, GLPrepass, GLGTAOPass, GLSkyboxPass, GLIBLBakePass, GLAABBDebugPass, GLGridPass, GLSSRPass, GLLensFlarePass, GLTAAPass, GLDofPass, GLMotionBlurPass, GLBloomPass, GLExposurePass, GLCompositePass
   tools/                          <-- include root (src/tools/)
     loader/                       # TextureLoaders, MaterialLoaders
     generator/                    # MeshGenerators, TextureGenerators, MaterialGenerators, LightGenerators

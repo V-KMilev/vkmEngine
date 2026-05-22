@@ -58,8 +58,9 @@ class GLGridPass : public RenderPass {
         void execute(RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
-            // Writes the HDR overlay attachment only - see gl_aabb_debug_pass.h.
-            (void)builder;
+            // Writes the HDR FBO overlay attachment, not SceneHDR colour;
+            // overlay pixels skip the tonemap chain in the composite pass.
+            builder.write(RGResource::Overlay);
         }
 
         bool enabledForView(const RenderView& view) const override;

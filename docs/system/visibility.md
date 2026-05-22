@@ -32,15 +32,18 @@ VisibilitySystem::update()
 
 ```cpp
 struct VisibleEntity {
-    EntityId id;
-    glm::mat4 model;  // pre-computed world matrix
+    EntityId  id;
+    glm::mat4 model;        // pre-computed world matrix
+    glm::vec3 worldMin;     // world-space AABB (cached for debug/picking)
+    glm::vec3 worldMax;
 };
 
 struct Visibility {
     std::vector<VisibleEntity> entries;
     glm::mat4 view, projection;
     glm::vec3 cameraPosition;
-    bool hasCamera;
+    float     cameraExposure = 1.0f;
+    bool      hasCamera;
 };
 ```
 

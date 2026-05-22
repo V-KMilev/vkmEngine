@@ -284,12 +284,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
             }
             ImGui::SameLine();
             if (ImGui::Button("Duplicate", ImVec2(bw, 0))) {
-                MaterialAsset copy = m;
-                copy.version = 1;
-                copy.name = (m.name.empty() ? std::string("material") : m.name) + " copy";
-                MaterialHandle nh = resources.add(std::move(copy));
-                if (nh) {
-                    mesh.material = nh;
+                if (MaterialHandle nh = EditorActions::duplicateMaterial(resources, state, mesh.material, &mesh)) {
                     state.materialEditorTarget = nh;
                     state.showMaterialEditor   = true;
                     changed = true;

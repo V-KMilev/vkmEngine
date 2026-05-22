@@ -131,6 +131,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
     // Each thread writes to disjoint indices, so zero contention / zero atomics.
     m_visibleFlags.resize(meshCount);
     m_modelMatrices.resize(meshCount);
+    m_worldMins.resize(meshCount);
+    m_worldMaxs.resize(meshCount);
 
     std::memset(m_visibleFlags.data(), 0, meshCount);
 
@@ -166,7 +168,9 @@ void VisibilitySystem::update(FrameContext& ctx) {
         if (!ScreenSizeCuller::isVisible(worldMin, worldMax, context)) return;
 
         m_modelMatrices[i] = modelMatrix;
-        m_visibleFlags[i] = 1;
+        m_worldMins[i]     = worldMin;
+        m_worldMaxs[i]     = worldMax;
+        m_visibleFlags[i]  = 1;
     });
 
     // Serial gather - sequential reads, reuses persistent m_result.entries capacity
@@ -175,7 +179,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
         if (!m_visibleFlags[i]) continue;
         const uint32_t entityIdx = meshStorage->keyAt(i);
         const EntityId eid{entityIdx, ctx.scene.generationOf(entityIdx)};
-        m_result.entries.push_back({eid, m_modelMatrices[i]});
+        m_result.entries.push_back({eid, m_modelMatrices[i], m_worldMins[i], m_worldMaxs[i]});
     }
 
     ctx.visibility = &m_result;

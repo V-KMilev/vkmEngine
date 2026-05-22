@@ -12,7 +12,6 @@
 #include "system/render/render_view.h"
 #include "resource/resource_manager.h"
 
-#include "system/visibility/bounds_utils.h"
 
 namespace Engine {
 
@@ -87,25 +86,13 @@ void GLAABBDebugPass::execute(RenderGraphContext& rg) {
     m_modelScratch.reserve(view.drawables.size());
 
     for (const auto& drawable : view.drawables) {
-        const auto& meshAsset = resources.get(drawable.mesh);
+        // VisibilitySystem already transformed the mesh's local AABB into
+        // world space and stored it on the drawable - reuse it instead of
+        // re-running localToWorldAABB here.
+        if (drawable.worldMin == drawable.worldMax) continue;
 
-        if ((meshAsset.boundsMin.x == meshAsset.boundsMax.x) &&
-            (meshAsset.boundsMin.y == meshAsset.boundsMax.y) &&
-            (meshAsset.boundsMin.z == meshAsset.boundsMax.z)) {
-            continue;
-        }
-
-        glm::vec3 worldMin, worldMax;
-        localToWorldAABB(
-            drawable.model,
-            meshAsset.boundsMin,
-            meshAsset.boundsMax,
-            worldMin,
-            worldMax
-        );
-
-        const glm::vec3 center = (worldMin + worldMax) * 0.5f;
-        const glm::vec3 size   = worldMax - worldMin;
+        const glm::vec3 center = (drawable.worldMin + drawable.worldMax) * 0.5f;
+        const glm::vec3 size   = drawable.worldMax - drawable.worldMin;
 
         glm::mat4 aabbModel = glm::translate(glm::mat4(1.0f), center);
         aabbModel = glm::scale(aabbModel, size);

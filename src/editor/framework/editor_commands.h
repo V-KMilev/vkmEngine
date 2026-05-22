@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "ecs/entity.h"
 #include "ecs/component/transform.h"
@@ -96,9 +98,9 @@ class RemoveComponentCommand : public Command {
  * populated only when the entity carried that component. Future component
  * types added to the editor's vocabulary go here too.
  *
- * Hierarchy isn't snapshotted here - destroying a non-leaf entity isn't
- * an undoable action in the current implementation (would need a full
- * subtree snapshot).
+ * Hierarchy itself is not stored here - subtree rewiring is the job of
+ * SubtreeSnapshot, which knows the parent/child links across multiple
+ * entities. Single-entity snapshots are only used for leaf operations.
  */
 struct EntitySnapshot {
     uint32_t slotIndex = 0;
@@ -111,6 +113,32 @@ struct EntitySnapshot {
 
     static EntitySnapshot capture(const Scene& scene, EntityId id);
     void apply(Scene& scene, EntityId id) const;
+};
+
+/**
+ * @brief Snapshot of a whole subtree (entity + every descendant).
+ *
+ * Captures each entity's components plus enough hierarchy info to recreate
+ * the parent/child links exactly. Nodes are stored in DFS pre-order so that
+ * a recreate pass can call setParent in the order parents-before-children.
+ *
+ * Used by DestroySubtreeCommand to make non-leaf entity deletion undoable.
+ */
+struct SubtreeSnapshot {
+    struct Node {
+        EntitySnapshot snap;
+        /// Slot of this node's parent within the subtree (0 if this is the
+        /// subtree root). Distinct from rootParentSlot, which records the
+        /// external parent the root had before destruction.
+        uint32_t parentSlot = 0;
+    };
+    std::vector<Node> nodes;
+    /// Slot of the original parent of the subtree's root (0 if the root
+    /// was top-level). On undo, the root is reattached to this entity.
+    uint32_t rootParentSlot = 0;
+
+    static SubtreeSnapshot capture(const Scene& scene, EntityId root);
+    void apply(Scene& scene) const;
 };
 
 /**
@@ -134,15 +162,15 @@ class CreateEntityCommand : public Command {
 };
 
 /**
- * @brief Destroy a leaf entity, capturing all its components for undo.
+ * @brief Destroy a whole subtree (entity + every descendant), undoable.
  *
- * Only safe for leaf entities (no Hierarchy with children). The editor
- * gates the destroy-with-children path through a different code path that
- * doesn't push an undo entry yet - future work.
+ * Captures every entity in the subtree along with their parent/child wiring
+ * so that undo can re-create the entire structure. The captured slot indices
+ * are reused via Scene::createEntityAt; generations are re-issued naturally.
  */
-class DestroyEntityCommand : public Command {
+class DestroySubtreeCommand : public Command {
     public:
-        DestroyEntityCommand(EntitySnapshot snap, EntityId priorSelection, const char* label)
+        DestroySubtreeCommand(SubtreeSnapshot snap, EntityId priorSelection, const char* label)
             : m_snap(std::move(snap)), m_priorSelection(priorSelection), m_label(label) {}
 
         void redo(Scene&, EditorState&) override;
@@ -150,9 +178,32 @@ class DestroyEntityCommand : public Command {
         const char* label() const override { return m_label; }
 
     private:
-        EntitySnapshot m_snap;
-        EntityId       m_priorSelection;
-        const char*    m_label;
+        SubtreeSnapshot m_snap;
+        EntityId        m_priorSelection;
+        const char*     m_label;
+};
+
+/**
+ * @brief Re-parent an entity, undoable.
+ *
+ * Records (child, oldParent, newParent) at construction; either parent
+ * may be a null EntityId for "top-level". Undo replays the inverse via
+ * HierarchyOperations::setParent / removeFromParent.
+ */
+class ReparentCommand : public Command {
+    public:
+        ReparentCommand(EntityId child, EntityId oldParent, EntityId newParent, const char* label)
+            : m_child(child), m_oldParent(oldParent), m_newParent(newParent), m_label(label) {}
+
+        void redo(Scene&, EditorState&) override;
+        void undo(Scene&, EditorState&) override;
+        const char* label() const override { return m_label; }
+
+    private:
+        EntityId    m_child;
+        EntityId    m_oldParent;
+        EntityId    m_newParent;
+        const char* m_label;
 };
 
 // Template instantiations are emitted in editor_commands.cpp so each
