@@ -749,9 +749,9 @@ void main() {
         int   type      = int(light.position.w);
 
         // ---------------------------------------------------------------
-        // Area lights (Rect/Disk): LTC Lambertian diffuse + point-style
-        // GGX specular at the area centre. Step 2 (future) replaces the
-        // specular path with an LTC integral using the M^-1 LUT.
+        // Area lights (Rect/Disk): LTC Lambertian diffuse + Karis
+        // representative-point GGX specular (broadened alpha). Rect uses
+        // its 4 corners; Disk uses a 12-vertex polygon approximation.
         // ---------------------------------------------------------------
         if (type == LIGHT_RECT || type == LIGHT_DISK) {
             vec3  toCenter = lightPos - vWorldPos;
@@ -771,22 +771,54 @@ void main() {
             if (vis <= 0.0) continue;
 
             // Build the tangent frame (N = +Z in local space) and transform
-            // the polygon's 4 corners. axisU / axisV are half-extents, so the
-            // 4 combinations of (+/-U, +/-V) give the polygon vertices.
+            // the polygon's vertices.
+            //
+            // Vertex order matters: the Lambert edge formula gives positive
+            // irradiance when the polygon is CCW-wound viewed from local +Z
+            // (the shading normal). With axisU / axisV oriented so
+            // cross(axisU, axisV) points along the EMITTER face, surfaces
+            // lit by the emitter front have their normal pointing back at
+            // the polygon - which means the polygon appears CW in local
+            // space. We pre-reverse the world-space winding (emit corners
+            // as bl -> tl -> tr -> br instead of bl -> br -> tr -> tl) so
+            // the local frame sees them as CCW and the integral is
+            // positive on the lit side.
             mat3 toLocal = ltcTangentFrame(N, V);
             vec3 U = light.axisU.xyz;
             vec3 Vv = light.axisV.xyz;
-            vec3 p0 = toLocal * ((lightPos - U - Vv) - vWorldPos);
-            vec3 p1 = toLocal * ((lightPos + U - Vv) - vWorldPos);
-            vec3 p2 = toLocal * ((lightPos + U + Vv) - vWorldPos);
-            vec3 p3 = toLocal * ((lightPos - U + Vv) - vWorldPos);
-
-            float irradiance = ltcQuadIrradiance(p0, p1, p2, p3);
-
-            // Sign tells us which face of the polygon is visible; twoSided
-            // emitters illuminate from either side, otherwise back faces
-            // contribute nothing.
             bool twoSided = (light.axisU.w > 0.5);
+            float irradiance = 0.0;
+
+            if (type == LIGHT_RECT) {
+                vec3 p0 = toLocal * ((lightPos - U - Vv) - vWorldPos);
+                vec3 p1 = toLocal * ((lightPos - U + Vv) - vWorldPos);
+                vec3 p2 = toLocal * ((lightPos + U + Vv) - vWorldPos);
+                vec3 p3 = toLocal * ((lightPos + U - Vv) - vWorldPos);
+                irradiance = ltcQuadIrradiance(p0, p1, p2, p3);
+            } else {
+                // Disk: 12-vertex polygon approximation. A 4-vertex
+                // diamond (the cheap default of using +/-U +/-V) loses
+                // ~36% of the disk's area and looks identical to a
+                // same-size square; 12 vertices is dense enough that
+                // the silhouette reads as circular.
+                const int N_DISK = 12;
+                vec3 verts[12];
+                for (int i = 0; i < N_DISK; ++i) {
+                    float t = -float(i) / float(N_DISK) * 6.2831853;  // CW order
+                    vec3 worldP = lightPos + cos(t) * U + sin(t) * Vv;
+                    verts[i] = normalize(toLocal * (worldP - vWorldPos));
+                }
+                float sum = 0.0;
+                for (int i = 0; i < N_DISK; ++i) {
+                    int j = (i + 1) % N_DISK;
+                    sum += ltcEdgeIntegral(verts[i], verts[j]);
+                }
+                irradiance = sum;
+            }
+
+            // Negative result means the back of the polygon is facing the
+            // surface; twoSided emitters illuminate from either side,
+            // otherwise skip.
             if (irradiance < 0.0) {
                 if (twoSided) irradiance = -irradiance;
                 else continue;
