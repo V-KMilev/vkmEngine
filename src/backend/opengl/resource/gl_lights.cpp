@@ -11,7 +11,7 @@
 namespace Engine {
 
 static_assert(sizeof(LightGPUData)  % 16 == 0, "LightGPUData must be 16-byte aligned");
-static_assert(sizeof(LightGPUData) == 64, "LightGPUData must be exactly 64 bytes");
+static_assert(sizeof(LightGPUData) == 80, "LightGPUData must be exactly 80 bytes");
 static_assert(sizeof(LightsUBOData) % 16 == 0, "LightsUBOData must be 16-byte aligned");
 static_assert(offsetof(LightsUBOData, lightCount) == 0, "lightCount offset mismatch");
 static_assert(offsetof(LightsUBOData, lights) == 16, "lights array offset mismatch");
@@ -45,7 +45,14 @@ void GLLights::update(const std::vector<LightData>& lights) {
         gpuLight.position = glm::vec4(lightData.position, static_cast<float>(lightData.type));
         gpuLight.color    = glm::vec4(lightData.color, lightData.intensity);
 
-        const glm::vec3 dir = (lightData.type == LightType::Directional || lightData.type == LightType::Spot)
+        // Directional, Spot, and area lights (Rect/Disk) all need a world-
+        // space direction. Point lights leave it zeroed.
+        const bool hasDirection =
+               lightData.type == LightType::Directional
+            || lightData.type == LightType::Spot
+            || lightData.type == LightType::Rect
+            || lightData.type == LightType::Disk;
+        const glm::vec3 dir = hasDirection
             ? glm::normalize(lightData.rotation * glm::vec3(0.0f, 0.0f, 1.0f))
             : glm::vec3(0.0f);
         gpuLight.direction = glm::vec4(dir, lightData.radius);
@@ -55,6 +62,21 @@ void GLLights::update(const std::vector<LightData>& lights) {
             lightData.outerConeAngle,
             0.0f,
             static_cast<float>(lightData.shadowSlot)  // -1 = no shadow
+        );
+
+        // Area-light geometry; ignored by the shader for non-area types.
+        // For Rect: x=width, y=height. For Disk: x=radius (y unused).
+        const float areaX = (lightData.type == LightType::Disk)
+            ? lightData.areaRadius
+            : lightData.areaWidth;
+        const float areaY = (lightData.type == LightType::Rect)
+            ? lightData.areaHeight
+            : 0.0f;
+        gpuLight.area = glm::vec4(
+            areaX,
+            areaY,
+            0.0f,
+            lightData.twoSided ? 1.0f : 0.0f
         );
     }
 

@@ -316,7 +316,7 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
         bool changed = false;
 
         drawPropertyLabel("Type");
-        const char* typeNames[] = {"Directional", "Point", "Spot"};
+        const char* typeNames[] = {"Directional", "Point", "Spot", "Rect", "Disk"};
         int typeIdx = static_cast<int>(light.type);
         if (ImGui::Combo("##LType", &typeIdx, typeNames, IM_ARRAYSIZE(typeNames))) {
             light.type = static_cast<LightType>(typeIdx);
@@ -350,6 +350,24 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
                 light.outerConeAngle = glm::radians(outerDeg);
                 changed = true;
             }
+        }
+
+        if (light.type == LightType::Rect) {
+            drawPropertyLabel("Width");
+            changed |= ImGui::DragFloat("##LRectW", &light.areaWidth, 0.05f, 0.01f, 100.0f, "%.2f");
+            drawPropertyLabel("Height");
+            changed |= ImGui::DragFloat("##LRectH", &light.areaHeight, 0.05f, 0.01f, 100.0f, "%.2f");
+            drawPropertyLabel("Two-sided");
+            changed |= ImGui::Checkbox("##LRectTS", &light.twoSided);
+        }
+        if (light.type == LightType::Disk) {
+            drawPropertyLabel("Disk Radius");
+            changed |= ImGui::DragFloat("##LDiskR", &light.areaRadius, 0.05f, 0.01f, 100.0f, "%.2f");
+            drawPropertyLabel("Two-sided");
+            changed |= ImGui::Checkbox("##LDiskTS", &light.twoSided);
+        }
+        if (light.type == LightType::Rect || light.type == LightType::Disk) {
+            ImGui::TextDisabled("Phase 2A: point-style shading; LTC area integral lands in Phase 2C.");
         }
 
         drawPropertyLabel("Shadows");  changed |= ImGui::Checkbox("##Shad", &light.castShadows);

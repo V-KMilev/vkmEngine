@@ -64,6 +64,13 @@ struct LightData {
     float innerConeAngle;
     float outerConeAngle;
 
+    // Area-light geometry. Width/height for Rect, radius for Disk. twoSided
+    // controls whether the back face emits. Ignored for Directional/Point/Spot.
+    float areaWidth  = 1.0f;
+    float areaHeight = 1.0f;
+    float areaRadius = 0.5f;
+    bool  twoSided   = false;
+
     bool  castShadows;
     float shadowBias;
     float shadowExtent;
