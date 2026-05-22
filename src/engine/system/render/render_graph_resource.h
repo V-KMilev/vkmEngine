@@ -79,7 +79,14 @@ inline bool rgResourceIsPersistent(RGResource r) {
 inline bool rgResourceIsImplicit(RGResource r) {
     return rgResourceIsPersistent(r)
         || r == RGResource::SceneHDRResolved  // derived from SceneHDR
-        || r == RGResource::PostScratch;      // shared scratch, written by callers
+        || r == RGResource::PostScratch       // shared scratch, written by callers
+        // Overlay is a physical attachment on the HDR FBO; it always exists
+        // and is cleared each frame, so "no pass wrote it" is a valid state
+        // (composite samples zeros = no overlay visible) rather than an
+        // ordering bug. Marks as implicit so disabling the debug passes
+        // (e.g. during material preview) does not spam read-before-write
+        // warnings.
+        || r == RGResource::Overlay;
 }
 
 } // namespace Engine

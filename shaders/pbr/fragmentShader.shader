@@ -463,21 +463,19 @@ float distanceAttenuation(float dist, float radius) {
     return invSqr * window * window;
 }
 
-// ----------------------------------------------------------------------------
-// LTC area-light integration (Phase 2C step 1: diffuse / Lambertian only).
+// LTC area-light integration - diffuse / Lambertian only.
 //
 // Evaluates the clamped-cosine integral over a planar polygon emitter.
 // Inputs are in a tangent frame where the shading normal is (0,0,1); the
 // caller transforms vertices into that frame.
 //
-// edgeVectorFormFactor is Hill's stable approximation of theta/sin(theta),
+// ltcEdgeIntegral is Hill's stable approximation of theta/sin(theta),
 // avoiding the trig discontinuity near v1.v2 == -1. The published constants
 // (Heitz 2016 supplement) match the reference to within FP precision.
 //
-// Phase 2C step 2 will multiply the input vertices by M^-1(NdotV, roughness)
-// before the integral to get the full GGX area-light specular; here we only
-// need the diffuse (M == I) case.
-// ----------------------------------------------------------------------------
+// The full LTC GGX specular path (multiplying vertices by M^-1(NdotV,
+// roughness) before the integral) is not implemented here; specular is
+// handled separately via the representative-point method below.
 float ltcEdgeIntegral(vec3 v1, vec3 v2) {
     float x = dot(v1, v2);
     float y = abs(x);
@@ -515,7 +513,6 @@ mat3 ltcTangentFrame(vec3 N, vec3 V) {
     return transpose(mat3(T1, T2, N));
 }
 
-// ----------------------------------------------------------------------------
 // Representative-point specular for area lights (Karis 2013).
 //
 // Find the point on the area emitter closest to the mirror reflection ray;
@@ -525,7 +522,6 @@ mat3 ltcTangentFrame(vec3 N, vec3 V) {
 // world position as a point light would be. Cheap, self-contained, and
 // gives the perceptually correct "highlight stretches across the rect"
 // without LUT data.
-// ----------------------------------------------------------------------------
 vec3 areaRectClosestPoint(vec3 rayOrigin, vec3 rayDir,
                           vec3 center, vec3 axisU, vec3 axisV)
 {
@@ -748,11 +744,9 @@ void main() {
         float radius    = light.direction.w;
         int   type      = int(light.position.w);
 
-        // ---------------------------------------------------------------
         // Area lights (Rect/Disk): LTC Lambertian diffuse + Karis
         // representative-point GGX specular (broadened alpha). Rect uses
         // its 4 corners; Disk uses a 12-vertex polygon approximation.
-        // ---------------------------------------------------------------
         if (type == LIGHT_RECT || type == LIGHT_DISK) {
             vec3  toCenter = lightPos - vWorldPos;
             float dist     = length(toCenter);
@@ -824,11 +818,10 @@ void main() {
                 else continue;
             }
 
-            // ---------- Diffuse: LTC Lambertian integral ----------
-            // The Fresnel term at the area centre is used for the energy
-            // split (kd from F at the centre's half-vector) - this is the
-            // standard approximation for area diffuse since the polygon
-            // doesn't have a single H.
+            // Diffuse: LTC Lambertian integral. The Fresnel term at the
+            // area centre is used for the energy split (kd from F at the
+            // centre's half-vector) - this is the standard approximation
+            // for area diffuse since the polygon doesn't have a single H.
             vec3  Hc      = normalize(V + Lc);
             float NdotV2  = max(dot(N, V), 1e-4);
             float VdotH2  = max(dot(V, Hc), 0.0);
@@ -841,10 +834,10 @@ void main() {
             // upper hemisphere.
             vec3 diffuseArea = kd * s.albedo * (irradiance / PI);
 
-            // ---------- Specular: Karis representative-point ----------
-            // Find the point on the area emitter closest to the mirror
-            // reflection ray; treat it as the specular point source and
-            // broaden the GGX lobe by the emitter's projected solid angle.
+            // Specular: Karis representative-point. Find the point on the
+            // area emitter closest to the mirror reflection ray; treat it
+            // as the specular point source and broaden the GGX lobe by the
+            // emitter's projected solid angle.
             // Result: highlight stretches and softens with the source's
             // shape and size, without needing a LUT.
             vec3 specularArea = vec3(0.0);
