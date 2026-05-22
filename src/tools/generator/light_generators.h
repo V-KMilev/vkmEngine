@@ -56,4 +56,52 @@ Light generateSpotLight(
     bool castShadows = true
 );
 
+/**
+ * @brief Generate a rectangular area light (e.g. softbox, monitor).
+ *
+ * Phase 2A: shaded as a point at the rect's centre; LTC area shading
+ * lands in Phase 2C. Authored and serialized today, looks right later.
+ *
+ * @param color Light color (RGB).
+ * @param intensity Light intensity multiplier.
+ * @param width Rect width along the local X axis.
+ * @param height Rect height along the local Y axis.
+ * @param radius Attenuation cutoff distance.
+ * @param twoSided Emit from both faces.
+ * @param castShadows Whether this light should cast shadows.
+ * @return A Light component configured as a rectangular area light.
+ */
+Light generateRectLight(
+    const glm::vec3& color = {1.0f, 1.0f, 1.0f},
+    float intensity = 1.0f,
+    float width = 1.0f,
+    float height = 1.0f,
+    float radius = 15.0f,
+    bool twoSided = false,
+    bool castShadows = true
+);
+
+/**
+ * @brief Generate a disk area light (e.g. spotlight reflector, sun-through-window).
+ *
+ * Phase 2A: shaded as a point at the disk's centre; LTC area shading
+ * lands in Phase 2C.
+ *
+ * @param color Light color (RGB).
+ * @param intensity Light intensity multiplier.
+ * @param areaRadius Disk radius (the emitter size, not the attenuation cutoff).
+ * @param radius Attenuation cutoff distance.
+ * @param twoSided Emit from both faces.
+ * @param castShadows Whether this light should cast shadows.
+ * @return A Light component configured as a disk area light.
+ */
+Light generateDiskLight(
+    const glm::vec3& color = {1.0f, 1.0f, 1.0f},
+    float intensity = 1.0f,
+    float areaRadius = 0.5f,
+    float radius = 15.0f,
+    bool twoSided = false,
+    bool castShadows = true
+);
+
 } // namespace Engine

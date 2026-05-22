@@ -74,6 +74,8 @@ namespace {
             case EntityKind::PointLight:       return "Point Light";
             case EntityKind::SpotLight:        return "Spot Light";
             case EntityKind::DirectionalLight: return "Directional Light";
+            case EntityKind::RectLight:        return "Rect Light";
+            case EntityKind::DiskLight:        return "Disk Light";
             case EntityKind::Camera:           return "Camera";
         }
         return "Entity";
@@ -98,6 +100,12 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
             break;
         case EntityKind::DirectionalLight:
             scene.add(entity, generateDirectionalLight());
+            break;
+        case EntityKind::RectLight:
+            scene.add(entity, generateRectLight());
+            break;
+        case EntityKind::DiskLight:
+            scene.add(entity, generateDiskLight());
             break;
         case EntityKind::Cube: {
             auto meshHandle = resources.add(generateCube());
@@ -270,6 +278,8 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
         item("Point Light",       EntityKind::PointLight);
         item("Spot Light",        EntityKind::SpotLight);
         item("Directional Light", EntityKind::DirectionalLight);
+        item("Rect Light",        EntityKind::RectLight);
+        item("Disk Light",        EntityKind::DiskLight);
         ImGui::Separator();
         item("Camera", EntityKind::Camera);
         ImGui::Separator();

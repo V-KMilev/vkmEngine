@@ -299,6 +299,11 @@ void GLShadowPass::execute(RenderGraphContext& rg) {
             shadowData.setCSM(static_cast<int>(slot), static_cast<int>(Config::NumCascades));
             count2D += Config::NumCascades;
         } else {
+            // Spot + area (Rect/Disk) - all use a perspective shadow from the
+            // light's position along its forward direction. Area lights borrow
+            // outerConeAngle for the projection FOV in Phase 2A (point-style
+            // shadow from the area's centre); soft penumbra arrives with LTC
+            // shading in Phase 2C.
             const glm::mat4 lightSpace = spotLightSpace(light.position, light.rotation,
                                                         light.outerConeAngle, light.radius);
 

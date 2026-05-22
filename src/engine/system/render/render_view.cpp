@@ -243,6 +243,10 @@ void RenderView::build(
         lightData.radius = light.radius;
         lightData.innerConeAngle = light.innerConeAngle;
         lightData.outerConeAngle = light.outerConeAngle;
+        lightData.areaWidth  = light.areaWidth;
+        lightData.areaHeight = light.areaHeight;
+        lightData.areaRadius = light.areaRadius;
+        lightData.twoSided   = light.twoSided;
 
         lightData.castShadows  = light.castShadows;
         lightData.shadowBias   = light.shadowBias;
@@ -285,7 +289,9 @@ void RenderView::build(
                 taken2D += Config::NumCascades;
                 csmAssigned = true;
             }
-        } else { // Spot
+        } else { // Spot, Rect, Disk - 2D atlas shadow
+            // Area lights (Rect/Disk) cast point-style shadows from their
+            // centre in Phase 2A; soft penumbra lands in Phase 2C with LTC.
             if (taken2D < Config::MaxShadowCasters2D) light.shadowSlot = static_cast<int>(taken2D++);
         }
     }
