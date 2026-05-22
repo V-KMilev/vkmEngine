@@ -6,19 +6,20 @@
 namespace Engine {
 
 class WindowManager;
+class RenderBackend;
 
 /**
  * @brief One-shot viewport screenshot to disk.
  *
- * Captures the current default framebuffer with glReadPixels and writes a
- * timestamped PNG into APP_ROOT_DIR/screenshots/. Returns the absolute path
- * on success, empty string on failure.
+ * Asks the active render backend for the viewport rect's pixels and
+ * writes a timestamped PNG into APP_ROOT_DIR/screenshots/. Returns the
+ * absolute path on success, empty string on failure.
  *
- * The whole GLFW window is captured (the engine renders to the default FB
- * sized to the window). This includes any ImGui overlays drawn after the
- * 3D pass when called post-Render, so callers should invoke this BEFORE
- * the ImGui draw pass if they want a clean image.
+ * The 3D pipeline renders into the viewport rect (gl_composite_pass sets
+ * glViewport to it), so the result is a clean 3D image with no editor
+ * chrome - as long as this is called BEFORE the editor's draw pass
+ * submits its UI into the back buffer for this frame.
  */
-std::string captureViewportScreenshot(WindowManager& window);
+std::string captureViewportScreenshot(WindowManager& window, RenderBackend& backend);
 
 }  // namespace Engine

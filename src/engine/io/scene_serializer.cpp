@@ -29,18 +29,24 @@ namespace CS = ComponentSerializer;
 
 constexpr int FILE_FORMAT_VERSION = 1;
 
-/// One component type's save + load (+ JSON key) bundled together. The
-/// scene loops over a table of these instead of repeating the same
-/// has<T>/get<T>/CS::save / contains/CS::load/add pattern per type at
-/// both ends - adding a new component becomes a single table entry, not
-/// matched edits in scene save and scene load (and the known-key list).
+/**
+ * @brief One component type's save + load (+ JSON key) bundled together. The
+ *
+ * scene loops over a table of these instead of repeating the same
+ * has<T>/get<T>/CS::save / contains/CS::load/add pattern per type at
+ * both ends - adding a new component becomes a single table entry, not
+ * matched edits in scene save and scene load (and the known-key list).
+ */
 struct ComponentEntry {
     const char* key;
     void (*save)(const Scene&, EntityId, json&, const ResourceManager&);
-    /// `load` may be null for components whose load is structurally
-    /// special (Hierarchy collects parent links in pass 1 and wires them
-    /// up in pass 2; it can't be a simple has-and-add). The save side
-    /// stays uniform; the load loop just skips null entries.
+    /**
+     * @brief `load` may be null for components whose load is structurally
+     *
+     * special (Hierarchy collects parent links in pass 1 and wires them
+     * up in pass 2; it can't be a simple has-and-add). The save side
+     * stays uniform; the load loop just skips null entries.
+     */
     void (*load)(Scene&, Entity, const json&, ResourceManager&);
 };
 

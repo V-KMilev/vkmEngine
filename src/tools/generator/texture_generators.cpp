@@ -10,7 +10,7 @@
 namespace Engine {
 
 namespace {
-    /// Built-in textures are reused via findByName — they're stable, immutable,
+    /// Built-in textures are reused via findByName - they're stable, immutable,
     /// and naturally shared across materials. The same "builtin:white" handle
     /// is returned every time the generator is asked for one.
     TextureHandle getOrCreateNamed(ResourceManager& rm, const char* name,
@@ -67,7 +67,7 @@ TextureHandle generateSolidColorTexture(
     bool srgb
 ) {
     // Anonymous solid-color textures aren't deduped or stamped with a
-    // builtin source — they're only suitable for transient runtime use.
+    // builtin source - they're only suitable for transient runtime use.
     return resourceManager.add(makeSolidColorAsset(color, srgb));
 }
 

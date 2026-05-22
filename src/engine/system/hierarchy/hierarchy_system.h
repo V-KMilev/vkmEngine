@@ -29,11 +29,14 @@ class HierarchySystem : public System {
     public:
         void update(FrameContext& ctx) override;
 
-        /// Reads the local Transform and the Hierarchy parent link; writes
-        /// only the resolved WorldTransform (pre-seeded at setParent time,
-        /// so this loop never adds storage). Safe to share a parallel
-        /// layer with anything else that reads Transform/Hierarchy and
-        /// doesn't touch WorldTransform.
+        /**
+         * @brief Reads the local Transform and the Hierarchy parent link; writes
+         *
+         * only the resolved WorldTransform (pre-seeded at setParent time,
+         * so this loop never adds storage). Safe to share a parallel
+         * layer with anything else that reads Transform/Hierarchy and
+         * doesn't touch WorldTransform.
+         */
         SystemAccess declareAccess() const override;
 };
 

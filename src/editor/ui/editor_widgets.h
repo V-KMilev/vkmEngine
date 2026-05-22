@@ -46,10 +46,13 @@ bool beginComponentCard(const char* title, const ImVec4& accent,
                         bool defaultOpen, bool* removeClicked = nullptr);
 void endComponentCard();
 
-/// The component-card header on its own: a tinted, rounded CollapsingHeader
-/// with a left accent strip. Drop-in for ImGui::CollapsingHeader (no end
-/// pairing, no body indent) - used so dense panels (Bottom, etc.) read in
-/// the same visual language as the Inspector without restructuring.
+/**
+ * @brief The component-card header on its own: a tinted, rounded CollapsingHeader
+ *
+ * with a left accent strip. Drop-in for ImGui::CollapsingHeader (no end
+ * pairing, no body indent) - used so dense panels (Bottom, etc.) read in
+ * the same visual language as the Inspector without restructuring.
+ */
 bool styledCollapsingHeader(const char* title, const ImVec4& accent,
                             bool defaultOpen = false);
 
@@ -82,7 +85,7 @@ bool drawEasingCombo(const char* id, EasingFunction& easing);
  *   if (drawVec3Control(..., cache.degrees(), ...)) q = cache.toQuat();
  *
  * The Key template parameter is whatever identifies "this is the same
- * rotation source" — an EntityId for inspectors, a keyframe index for
+ * rotation source" - an EntityId for inspectors, a keyframe index for
  * animation tracks. A different key forces a re-seed from @p q.
  */
 template<class Key>

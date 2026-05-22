@@ -266,7 +266,7 @@ class ResourceManager {
          * @brief Drop every resource of every registered type.
          *
          * Used by scene-load flows that want a true cold-start (and by tests).
-         * Does not check refcounts — caller is responsible for clearing the
+         * Does not check refcounts - caller is responsible for clearing the
          * scene first so no entity is still pointing at a freed handle.
          */
         void clear() {

@@ -25,20 +25,6 @@ class GLForwardPass : public RenderPass {
         GLForwardPass& operator=(GLForwardPass && other) = delete;
 
         /**
-         * @brief Construct a GLForwardPass with a PBR shader (used for Opaque and Transparent).
-         * @param pbrShader Handle to the PBR shader asset. Sampler bindings live
-         *                  on the asset and are reapplied automatically on hot reload.
-         */
-        explicit GLForwardPass(ShaderHandle pbrShader);
-
-    public:
-        /**
-         * @brief Set the shader for a specific material type. Pass an empty
-         * handle to clear it.
-         */
-        void setShader(MaterialType type, ShaderHandle shader);
-
-        /**
          * @brief Which material classes this pass draws.
          *
          * Split rendering: an Opaque pass (clears + draws opaque/unlit), then
@@ -48,7 +34,27 @@ class GLForwardPass : public RenderPass {
          * single-pass behaviour.
          */
         enum class Phase { All, Opaque, Transparent };
-        void setPhase(Phase p) { m_phase = p; }
+
+        /**
+         * @brief Construct a GLForwardPass with a PBR shader and a phase.
+         *
+         * The phase is baked into the pass name so the editor's pipeline
+         * dropdown can distinguish the opaque and transparent forward passes
+         * - two instances live in the graph and addressing them by name only
+         * works when the names differ.
+         *
+         * @param pbrShader Handle to the PBR shader asset. Sampler bindings live
+         *                  on the asset and are reapplied automatically on hot reload.
+         * @param phase Which material classes this pass draws (default All).
+         */
+        explicit GLForwardPass(ShaderHandle pbrShader, Phase phase = Phase::All);
+
+    public:
+        /**
+         * @brief Set the shader for a specific material type. Pass an empty
+         * handle to clear it.
+         */
+        void setShader(MaterialType type, ShaderHandle shader);
 
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
         void execute(RenderGraphContext& ctx) override;

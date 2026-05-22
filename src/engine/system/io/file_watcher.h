@@ -15,7 +15,7 @@ namespace Engine {
  *        directories and fires a callback per change.
  *
  * Cheap and portable (just stat per file per poll), no platform-specific
- * filesystem-event API. Backend-agnostic: the callback decides what to do —
+ * filesystem-event API. Backend-agnostic: the callback decides what to do -
  * the typical use is "bump a resource version" so the backend reloads.
  *
  * Polling cadence is `intervalSeconds`; sub-cadence changes batch into a

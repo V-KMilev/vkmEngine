@@ -17,22 +17,24 @@ struct EditorState;
  */
 class EditorPanelResize {
     public:
-        /// Geometry of the current frame's panel area (screen space).
-        struct Layout {
-            ImVec2 areaStart;            ///< Top-left of the panel row.
-            float  mainH  = 0.0f;        ///< Height of the panel row.
-            float  workW  = 0.0f;        ///< Root work-area width.
-            float  leftW  = 0.0f;        ///< Current left panel width (0 = hidden).
-            float  rightW = 0.0f;        ///< Current right panel width (0 = hidden).
-            bool   showLeft   = false;
-            bool   showRight  = false;
-            bool   showBottom = false;
-        };
+        /**
+         * @brief Apply hover cursors and drag deltas; mutates state's panel sizes.
+         *
+         *
+         * @param state        Editor state - read for panel visibility, mutated
+         *                     for panel sizes on drag.
+         * @param areaStart    Top-left of the panel row in screen space.
+         * @param mainH        Height of the panel row (workspace minus toolbar
+         *                     and bottom panel).
+         * @param workW        Root work-area width.
+         * @param blockNew     An ImGui item or the gizmo is active; do not
+         *                     start a new resize this frame (ongoing continue).
+         */
+        void process(EditorState& state, ImVec2 areaStart, float mainH, float workW, bool blockNew);
 
-        /// Apply hover cursors and drag deltas; mutates state's panel sizes.
-        /// @param blockNew an ImGui item or the gizmo is active; do not
-        ///                 start a new resize this frame (ongoing ones continue).
-        void process(EditorState& state, const Layout& layout, bool blockNew);
+        /// Drop any in-progress drag flags. Call when the editor hides
+        /// (F5) so a held drag doesn't ghost-resume on re-show.
+        void resetDragState() { m_resizingLeft = m_resizingRight = m_resizingBottom = false; }
 
     private:
         bool m_resizingLeft   = false;

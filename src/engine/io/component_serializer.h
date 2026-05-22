@@ -23,7 +23,7 @@ struct EnvironmentConfig;  // system/render/render_view.h
  * ResourceManager::findByName; entity references (Hierarchy::parent) are
  * stored as the old-file entity index and remapped in SceneSerializer::load.
  *
- * Animation is intentionally not serialized in Phase 1 — keyframe track
+ * Animation is intentionally not serialized in Phase 1 - keyframe track
  * (de)serialization is its own design decision.
  */
 namespace ComponentSerializer {

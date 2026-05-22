@@ -12,22 +12,25 @@ namespace Engine {
  * @brief OpenGL representation of a ShaderAsset, kept in sync via GLView.
  *
  * Inherits from Core::Shader so render passes can call bind/setUniform*
- * directly on the GLShader pointer — the wrapper only adds asset-aware
- * behaviour on top of the raw shader: sampler→slot bindings get applied
+ * directly on the GLShader pointer - the wrapper only adds asset-aware
+ * behaviour on top of the raw shader: sampler->slot bindings get applied
  * after every (re)compile, which means hot reload survives without each
  * pass having to re-apply them manually.
  *
- * Same lifecycle as GLMesh / GLMaterial / GLTexture — GLView owns one
+ * Same lifecycle as GLMesh / GLMaterial / GLTexture - GLView owns one
  * per ShaderAsset handle and calls update() when the asset's version
  * bumps.
  */
 class GLShader : public Core::Shader {
     public:
         explicit GLShader(const ShaderAsset& asset);
-        /// Variant construction: same shader source as @p asset, plus a
-        /// list of preprocessor #defines injected below the #version line.
-        /// Used by the per-material variant cache to gate optional PBR
-        /// features at compile time.
+        /**
+         * @brief Variant construction: same shader source as @p asset, plus a
+         *
+         * list of preprocessor #defines injected below the #version line.
+         * Used by the per-material variant cache to gate optional PBR
+         * features at compile time.
+         */
         GLShader(const ShaderAsset& asset, std::vector<std::string> defines);
         ~GLShader() override;
 
@@ -38,7 +41,7 @@ class GLShader : public Core::Shader {
         GLShader& operator=(GLShader && other) = delete;
 
         /// Recompile + re-apply sampler bindings. Catches compile errors so
-        /// a bad edit doesn't propagate — the next successful edit recovers.
+        /// a bad edit doesn't propagate - the next successful edit recovers.
         void update(const ShaderAsset& asset);
 
         /// The variant defines this program was compiled with (empty for
@@ -46,10 +49,13 @@ class GLShader : public Core::Shader {
         const std::vector<std::string>& getDefines() const { return m_defines; }
 
     protected:
-        /// Re-run the engine-side preprocessor so hot reload picks up edits
-        /// to included files too, not just the top-level vert/frag shader.
-        /// Honors the variant's saved defines so the rebuilt program stays
-        /// the same variant after a source edit.
+        /**
+         * @brief Re-run the engine-side preprocessor so hot reload picks up edits
+         *
+         * to included files too, not just the top-level vert/frag shader.
+         * Honors the variant's saved defines so the rebuilt program stays
+         * the same variant after a source edit.
+         */
         void reloadSource() override;
 
     private:

@@ -1,5 +1,7 @@
 #include "gl_forward_pass.h"
 
+#include <string>
+
 #include <GL/glew.h>
 
 #include "logger.h"
@@ -23,11 +25,14 @@ namespace Engine {
 
 namespace {
 
-/// RAII guard: restore GL_FILL polygon mode on destruction. Used to wrap
-/// the wireframe set/restore around the body of execute() so every return
-/// path (including the transparent-phase "no transparent batches" early
-/// exit) leaves polygon mode back at GL_FILL - otherwise post passes
-/// rasterize as line segments and ImGui draws as outlines.
+/**
+ * @brief RAII guard: restore GL_FILL polygon mode on destruction. Used to wrap
+ *
+ * the wireframe set/restore around the body of execute() so every return
+ * path (including the transparent-phase "no transparent batches" early
+ * exit) leaves polygon mode back at GL_FILL - otherwise post passes
+ * rasterize as line segments and ImGui draws as outlines.
+ */
 struct PolygonModeGuard {
     Core::Context* ctx;
     ~PolygonModeGuard() { if (ctx) ctx->setPolygonMode(GL_FRONT_AND_BACK, GL_FILL); }
@@ -35,7 +40,19 @@ struct PolygonModeGuard {
 
 } // namespace
 
-GLForwardPass::GLForwardPass(ShaderHandle pbrShader) : RenderPass("GLForwardPass") {
+namespace {
+    const char* phaseSuffix(GLForwardPass::Phase p) {
+        switch (p) {
+            case GLForwardPass::Phase::Opaque:      return " (Opaque)";
+            case GLForwardPass::Phase::Transparent: return " (Transparent)";
+            case GLForwardPass::Phase::All:         return "";
+        }
+        return "";
+    }
+}
+
+GLForwardPass::GLForwardPass(ShaderHandle pbrShader, Phase phase)
+    : RenderPass(std::string("GLForwardPass") + phaseSuffix(phase)), m_phase(phase) {
     m_shaders[static_cast<int>(MaterialType::Opaque)]      = pbrShader;
     m_shaders[static_cast<int>(MaterialType::Transparent)] = pbrShader;
     m_shaders[static_cast<int>(MaterialType::AlphaMask)]   = pbrShader;
@@ -292,7 +309,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
             currentShader = shader;
         }
 
-        // Bind material (UBO + textures) — skip when identical to previous batch
+        // Bind material (UBO + textures) - skip when identical to previous batch
         if (batch.material && batch.material != currentMaterial) {
             if (material) {
                 material->bind(GLConfig::UBOBindingPoints::Material);

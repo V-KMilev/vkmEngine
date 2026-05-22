@@ -20,7 +20,6 @@ enum class GizmoElement : int {
     None = 0,
     AxisX, AxisY, AxisZ,
     PlaneYZ, PlaneXZ, PlaneXY,
-    Screen
 };
 
 /// Custom transform gizmo drawn via ImGui DrawList.
@@ -99,6 +98,7 @@ class TransformGizmo {
         glm::vec3 m_cameraDir{0.0f};
         glm::vec3 m_gizmoOrigin{0.0f};
         float     m_screenFactor = 1.0f;
+        float     m_uiScale      = 1.0f;  ///< DPI scale (ImGui font size / 13).
         ImVec2    m_originScreen{0, 0};
         ImVec2    m_mousePos{0, 0};
         ImVec2    m_vpMin{0, 0};
@@ -115,6 +115,13 @@ class TransformGizmo {
         glm::vec3 m_dragPlanePoint{0.0f};
         glm::vec3 m_dragStartWorldHit{0.0f};
         glm::mat4 m_dragStartModel{1.0f};
+
+        // Decomposed start TRS, captured once at drag-start. Used by
+        // handleScaleDrag so glm::decompose isn't re-run every frame
+        // (which discarded skew + cost CPU for a constant input).
+        glm::vec3 m_dragStartPos{0.0f};
+        glm::quat m_dragStartRot{1.0f, 0.0f, 0.0f, 0.0f};
+        glm::vec3 m_dragStartScale{1.0f};
 
         // Rotation-specific
         glm::vec3 m_rotationAxis{0.0f};

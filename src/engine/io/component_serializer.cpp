@@ -133,13 +133,13 @@ void load(const nlohmann::json& j, Mesh& m, const ResourceManager& resources) {
     if (!meshName.empty()) {
         m.mesh = resources.findByName<MeshAsset>(meshName);
         if (!m.mesh) {
-            LOG_WARNING("SceneLoad: mesh asset '%s' not found — Mesh component left unresolved", meshName.c_str());
+            LOG_WARNING("SceneLoad: mesh asset '%s' not found - Mesh component left unresolved", meshName.c_str());
         }
     }
     if (!materialName.empty()) {
         m.material = resources.findByName<MaterialAsset>(materialName);
         if (!m.material) {
-            LOG_WARNING("SceneLoad: material asset '%s' not found — Mesh component left unresolved", materialName.c_str());
+            LOG_WARNING("SceneLoad: material asset '%s' not found - Mesh component left unresolved", materialName.c_str());
         }
     }
 

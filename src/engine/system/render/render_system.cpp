@@ -8,6 +8,7 @@
 
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
+#include "platform/window/window_manager.h"
 #include "system/visibility/visibility.h"
 #include "system/render/environment.h"
 
@@ -60,6 +61,14 @@ void RenderSystem::update(FrameContext& ctx) {
 
     // Build snapshot for this frame (reuses vector capacity from previous frame)
     m_renderView.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight);
+    // The viewport rect on the GLFW window - composite uses it to glViewport
+    // its fullscreen triangle into the editor's viewport child rather than
+    // smearing the full backbuffer. Window size carries through too so the
+    // composite can flip the y-axis from ImGui-style to GL-style.
+    m_renderView.viewportX    = ctx.viewportX;
+    m_renderView.viewportY    = ctx.viewportY;
+    m_renderView.windowWidth  = static_cast<uint32_t>(ctx.window.getWidth());
+    m_renderView.windowHeight = static_cast<uint32_t>(ctx.window.getHeight());
 
     // Render-mode-driven env tweaks live alongside the mode resolution
     // since they're conceptually part of the mode. The PBR shader's AO

@@ -44,11 +44,14 @@ class GLTAA {
         bool primed() const { return m_primed; }
         void markPrimed()   { m_primed = true; }
 
-        /// Drop the history-valid flag. Callers should invoke this on any
-        /// frame where the previous-frame view is no longer a continuous
-        /// reprojection target - camera teleports, scene cuts, "F" to
-        /// frame-selection, scene loads - so the next TAA pass treats the
-        /// frame as fresh instead of smearing across the discontinuity.
+        /**
+         * @brief Drop the history-valid flag. Callers should invoke this on any
+         *
+         * frame where the previous-frame view is no longer a continuous
+         * reprojection target - camera teleports, scene cuts, "F" to
+         * frame-selection, scene loads - so the next TAA pass treats the
+         * frame as fresh instead of smearing across the discontinuity.
+         */
         void invalidateHistory() { m_primed = false; }
 
         /// Bind last frame's accumulated history to a sampler slot.

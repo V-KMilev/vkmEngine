@@ -1,6 +1,7 @@
 #include "editor_system.h"
 #include "framework/editor_context.h"
 #include "framework/editor_settings.h"
+#include "input/editor_keybinds.h"
 #include "ui/editor_theme.h"
 
 #include <imgui.h>
@@ -8,8 +9,12 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
+#include <filesystem>
 #include <string>
+#include <system_error>
 
+#include "platform/window/window_manager.h"
 #include "system/camera/camera_controller.h"
 #include "system/render/render_system.h"
 
@@ -51,6 +56,16 @@ EditorSystem::EditorSystem(
     // recent scenes). Missing/invalid file is non-fatal - defaults apply.
     EditorSettings::load(m_state);
 
+    // Drop recent-scene entries whose files no longer exist. Without this
+    // the Open Recent menu accumulates dead links across sessions.
+    m_state.recentScenes.erase(
+        std::remove_if(m_state.recentScenes.begin(), m_state.recentScenes.end(),
+            [](const std::string& p) {
+                std::error_code ec;
+                return !std::filesystem::exists(p, ec);
+            }),
+        m_state.recentScenes.end());
+
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
 }
@@ -63,9 +78,45 @@ EditorSystem::~EditorSystem() {
 }
 
 namespace {
-    // Keep the GLFW window title in sync with the scene state: "<file> [*] - VKM Engine".
-    // Updates only when something the title shows changes to avoid GLFW churn.
-    void syncWindowTitle(GLFWwindow* w, const std::string& path, bool dirty) {
+    void drawToast(EditorState& state, float deltaTime) {
+        if (state.toastTimeRemaining <= 0.0f) return;
+        state.toastTimeRemaining -= deltaTime;
+        if (state.toastTimeRemaining <= 0.0f) {
+            state.toastTimeRemaining = 0.0f;
+            return;
+        }
+
+        // Fade the last 0.4s so the toast doesn't pop out.
+        const float alpha = std::min(1.0f, state.toastTimeRemaining / 0.4f);
+
+        ImVec4 bg;
+        switch (state.toastKind) {
+            case EditorState::ToastKind::Error:   bg = ImVec4(0.55f, 0.18f, 0.18f, 0.95f * alpha); break;
+            case EditorState::ToastKind::Warning: bg = ImVec4(0.55f, 0.42f, 0.10f, 0.95f * alpha); break;
+            default:                              bg = ImVec4(0.16f, 0.16f, 0.19f, 0.95f * alpha); break;
+        }
+
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        const float pad = 12.0f;
+        ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + pad,
+                                        vp->WorkPos.y + vp->WorkSize.y - pad),
+                                ImGuiCond_Always, ImVec2(0.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, bg);
+        ImGui::PushStyleColor(ImGuiCol_Text,     ImVec4(1.0f, 1.0f, 1.0f, alpha));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+        ImGui::Begin("##Toast", nullptr,
+            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoInputs     | ImGuiWindowFlags_NoFocusOnAppearing |
+            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::TextUnformatted(state.toastMessage.c_str());
+        ImGui::End();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(2);
+    }
+
+    // Keep the window title in sync with the scene state: "<file> [*] - VKM Engine".
+    // Updates only when the title content actually changes to avoid OS churn.
+    void syncWindowTitle(WindowManager& window, const std::string& path, bool dirty) {
         static std::string s_last;
         std::string fname = "untitled";
         if (!path.empty()) {
@@ -74,32 +125,104 @@ namespace {
         }
         std::string title = fname + (dirty ? " *" : "") + " - VKM Engine";
         if (title != s_last) {
-            glfwSetWindowTitle(w, title.c_str());
+            window.setTitle(title);
             s_last = std::move(title);
         }
     }
 }
 
 void EditorSystem::update(FrameContext& ctx) {
-    // F5 toggles the whole editor UI, both directions, owned here with one
-    // raw-GLFW edge detector. It cannot live in the shortcut path: while the
-    // editor is hidden there is no ImGui frame to poll, so a split hide/show
-    // across two input systems let one physical press fire twice (hide, then
-    // instantly re-show on the next frame).
-    const bool f5Down = glfwGetKey(m_window, GLFW_KEY_F5) == GLFW_PRESS;
-    if (f5Down && !m_f5WasDown) m_state.editorVisible = !m_state.editorVisible;
-    m_f5WasDown = f5Down;
+    syncWindowTitle(ctx.window, m_sceneIO.path(), m_state.sceneDirty);
 
-    syncWindowTitle(m_window, m_sceneIO.path(), m_state.sceneDirty);
+    // Intercept window-close while the scene is dirty: clear shouldClose,
+    // open the save-on-quit modal next frame. A clean scene closes through
+    // normally. The modal lives in the ImGui frame below so it works in
+    // both visible and hidden editor states.
+    if (ctx.window.wantsClose() && m_state.sceneDirty
+            && !m_state.confirmingQuit) {
+        ctx.window.cancelClose();
+        m_state.confirmingQuit = true;
+    }
+
+    // After a "Save" choice in the modal, three outcomes are possible:
+    //   (a) Save was synchronous (path set) -> sceneDirty drops to false -> close now.
+    //   (b) Save-As opened, user picks a name -> sceneDirty drops later -> close then.
+    //   (c) Save-As opened, user cancels -> no save dialog active, scene still
+    //       dirty -> user changed their mind, drop the intent.
+    if (m_state.closeAfterSave) {
+        if (!m_state.sceneDirty) {
+            ctx.window.requestClose();
+            m_state.closeAfterSave = false;
+        } else if (!m_sceneIO.isSaveDialogActive()) {
+            m_state.closeAfterSave = false;
+        }
+    }
+
+    // Begin the ImGui frame before *anything* else: the editor-toggle
+    // keybind (default F5) is processed here so the rebind UI in
+    // Preferences actually drives it. We do the same toggle in both the
+    // hidden and visible branches because the ImGui frame exists in both.
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    if (isPressed(m_state.keybinds.toggleEditor)) {
+        m_state.editorVisible = !m_state.editorVisible;
+        // Releasing input capture immediately on hide stops a held drag
+        // from continuing while the editor isn't drawing.
+        if (!m_state.editorVisible) m_panelResize.resetDragState();
+    }
+
+    // Save-on-quit modal: top-priority, drawn before anything else so it's
+    // visible whether the editor is shown or hidden. Reachable only via
+    // the close-intercept above.
+    if (m_state.confirmingQuit) {
+        ImGui::OpenPopup("Unsaved Changes");
+    }
+    if (ImGui::BeginPopupModal("Unsaved Changes", nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::TextUnformatted("This scene has unsaved changes.");
+        ImGui::Spacing();
+        ImGui::TextDisabled("%s", m_sceneIO.path().empty()
+            ? "(untitled scene)" : m_sceneIO.path().c_str());
+        ImGui::Spacing();
+        if (ImGui::Button("Save", ImVec2(110, 0))) {
+            // save() opens Save-As if there's no current path; closeAfterSave
+            // defers the actual window-close until sceneDirty drops to false.
+            m_sceneIO.save(ctx, m_state);
+            m_state.closeAfterSave = true;
+            m_state.confirmingQuit = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Don't Save", ImVec2(110, 0))) {
+            ctx.window.requestClose();
+            m_state.confirmingQuit = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(110, 0))) {
+            m_state.confirmingQuit = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    // Toast renders in both visible/hidden paths - failure feedback should
+    // not vanish just because F5 was pressed.
+    drawToast(m_state, ctx.deltaTime);
 
     if (!m_state.editorVisible) {
         m_cameraController.setEditorInputCapture(false, false);
 
+        // No panels to layout this frame - let the 3D pipeline fill the
+        // whole window next frame, not the stale viewport sub-rect.
+        ctx.window.setSceneViewport(0, 0,
+            static_cast<uint32_t>(ctx.window.getWidth()),
+            static_cast<uint32_t>(ctx.window.getHeight()));
+
         // While the editor is hidden, draw a tiny corner hint so new users
         // know how to bring it back. Otherwise F5 is a one-way trap door.
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
         {
             const ImGuiViewport* vp = ImGui::GetMainViewport();
             const float pad = 10.0f;
@@ -130,10 +253,6 @@ void EditorSystem::update(FrameContext& ctx) {
                        || m_playbar.isHovered();
         m_cameraController.setEditorInputCapture(blockMouse, ImGui::GetIO().WantTextInput);
     }
-
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
 
     m_viewportOverlay.pushFrameTime(ctx.deltaTime * 1000.0f);
     m_viewportOverlay.updateMetrics(ctx.deltaTime);
@@ -167,6 +286,10 @@ void EditorSystem::update(FrameContext& ctx) {
         ImGui::PopStyleVar(3);
 
         m_menuBar.draw(ec, m_sceneIO);
+        // ModelImportDialog is owned here (not in the menu bar) so it
+        // serves all three import-intent sources: the menu, the Inspector
+        // empty-state button, and the Hierarchy "+" menu.
+        m_modelImport.draw(ctx.scene, ctx.resources, m_state);
         drawWorkspace(ec);
 
     } else {
@@ -223,6 +346,14 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
         if (ImGui::BeginChild("##Viewport", ImVec2(centerW, mainH), ImGuiChildFlags_None)) {
             ec.viewportPos  = vpMin;
             ec.viewportSize = ImVec2(centerW, mainH);
+            // Tell the engine the viewport rect so next frame's render
+            // pipeline sizes its FBOs and projection to this rect instead
+            // of the full GLFW window.
+            ec.frame.window.setSceneViewport(
+                static_cast<uint32_t>(std::max(0.0f, vpMin.x)),
+                static_cast<uint32_t>(std::max(0.0f, vpMin.y)),
+                static_cast<uint32_t>(std::max(1.0f, centerW)),
+                static_cast<uint32_t>(std::max(1.0f, mainH)));
             m_state.viewportHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
             if (m_state.showStats) m_viewportOverlay.draw(ec);
             m_viewportOverlay.drawNavigationGizmo(ec);
@@ -259,16 +390,8 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
         ImGui::PopStyleVar();
     }
 
-    EditorPanelResize::Layout L;
-    L.areaStart  = panelAreaStart;
-    L.mainH      = mainH;
-    L.workW      = viewport->WorkSize.x;
-    L.leftW      = leftW;
-    L.rightW     = rightW;
-    L.showLeft   = m_state.showHierarchy;
-    L.showRight  = m_state.showInspector;
-    L.showBottom = m_state.showBottom;
-    m_panelResize.process(m_state, L, m_gizmoOverlay.isGizmoUsing());
+    m_panelResize.process(m_state, panelAreaStart, mainH,
+                          viewport->WorkSize.x, m_gizmoOverlay.isGizmoUsing());
 
     ImGui::PopStyleVar(); // ItemSpacing
 

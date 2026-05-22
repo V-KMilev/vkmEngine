@@ -1,5 +1,6 @@
 #include "panels/inspector_panel.h"
 #include "framework/editor_common.h"
+#include "framework/editor_commands.h"
 
 #include "system/render/render_view.h"   // EnvironmentConfig
 #include "system/visibility/bounds_utils.h"
@@ -7,6 +8,7 @@
 
 #include "generator/light_generators.h"
 
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -74,7 +76,7 @@ void InspectorPanel::draw(EditorContext& ec) {
     EntityId id = state.selectedEntity;
 
     // Identity header: type badge + name (or "Add name" affordance) + id.
-    // Naming is opt-in — the inspector never adds Name during draw, only on
+    // Naming is opt-in - the inspector never adds Name during draw, only on
     // explicit user action, so a glance at an entity doesn't mutate the scene.
     {
         const float ih = ImGui::GetFrameHeight();
@@ -135,22 +137,33 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
     if (ImGui::BeginPopup("##AddComp")) {
         ImGui::TextDisabled("Add Component");
         ImGui::Separator();
+        // Each add routes through AddComponentCommand so undo can drop the
+        // component the user just added. The component value captured in
+        // the command is the same one we add to the scene.
         if (!scene.has<Mesh>(id) && ImGui::MenuItem("Mesh")) {
-            scene.add(Entity{id}, Mesh{});
+            Mesh m{};
+            scene.add(Entity{id}, m);
+            state.commands.push(std::make_unique<AddComponentCommand<Mesh>>(id, m, "Add Mesh"));
             state.markSceneDirty();
         }
         if (!scene.has<Light>(id) && ImGui::MenuItem("Light")) {
-            scene.add(Entity{id}, generatePointLight());
+            Light l = generatePointLight();
+            scene.add(Entity{id}, l);
+            state.commands.push(std::make_unique<AddComponentCommand<Light>>(id, l, "Add Light"));
             state.markSceneDirty();
         }
         if (!scene.has<Camera>(id) && ImGui::MenuItem("Camera")) {
             Camera cam;
             cam.active = false;
             scene.add(Entity{id}, cam);
+            state.commands.push(std::make_unique<AddComponentCommand<Camera>>(id, cam, "Add Camera"));
             state.markSceneDirty();
         }
         if (!scene.has<Animation>(id) && ImGui::MenuItem("Animation")) {
-            scene.add(Entity{id}, Animation{});
+            Animation a{};
+            scene.add(Entity{id}, a);
+            state.commands.push(std::make_unique<AddComponentCommand<Animation>>(
+                id, std::move(a), "Add Animation"));
             state.markSceneDirty();
         }
         ImGui::EndPopup();
@@ -213,7 +226,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
 
         // Asset pickers: swap which loaded mesh / material this component uses.
         // Combos snapshot the asset list into a local vector so ImGuiListClipper
-        // can window the visible rows — keeps the combo fluid even with
+        // can window the visible rows - keeps the combo fluid even with
         // thousands of materials.
         auto pickAsset = [](const char* id, const char* label, auto& resources,
                             auto& currentHandle, auto* tag) -> bool {
@@ -293,7 +306,10 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
     }
     endComponentCard();
     if (remove) {
+        // Snapshot before removal so undo can restore the exact component.
+        Mesh snap = scene.get<Mesh>(id);
         scene.remove<Mesh>(Entity{id});
+        state.commands.push(std::make_unique<RemoveComponentCommand<Mesh>>(id, snap, "Remove Mesh"));
         state.markSceneDirty();
     }
 }
@@ -357,7 +373,9 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
     }
     endComponentCard();
     if (remove) {
+        Light snap = scene.get<Light>(id);
         scene.remove<Light>(Entity{id});
+        state.commands.push(std::make_unique<RemoveComponentCommand<Light>>(id, snap, "Remove Light"));
         state.markSceneDirty();
     }
 }
@@ -405,7 +423,9 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
     }
     endComponentCard();
     if (remove) {
+        Camera snap = scene.get<Camera>(id);
         scene.remove<Camera>(Entity{id});
+        state.commands.push(std::make_unique<RemoveComponentCommand<Camera>>(id, snap, "Remove Camera"));
         state.markSceneDirty();
     }
 }
@@ -448,7 +468,13 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
             anim.scaleTrack.keyframeCount());
     }
     endComponentCard();
-    if (remove) scene.remove<Animation>(Entity{id});
+    if (remove) {
+        Animation snap = scene.get<Animation>(id);
+        scene.remove<Animation>(Entity{id});
+        state.commands.push(std::make_unique<RemoveComponentCommand<Animation>>(
+            id, std::move(snap), "Remove Animation"));
+        state.markSceneDirty();
+    }
 }
 
 void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, EntityId id) {
@@ -468,9 +494,7 @@ void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, Enti
             ImGui::SameLine();
             if (ImGui::SmallButton("Unparent")) {
                 HierarchyOperations::removeFromParent(scene, id);
-                HierarchyOperations::markDirty(scene, id);
-                state.hierarchyDirty = true;
-        state.markSceneDirty();
+                EditorActions::commitHierarchyMutation(scene, state, id);
                 unparented = true;  // `h` is now stale - skip the rest
             }
         } else {

@@ -16,8 +16,8 @@ namespace Engine {
  * @brief Build and register a shader asset in one call.
  *
  * The `name` is the lookup key (typical convention: "shader:<subdir>").
- * `samplerBindings` survives every recompile (incl. hot reload) — they
- * also get mirrored into the source descriptor so a serialize →
+ * `samplerBindings` survives every recompile (incl. hot reload) - they
+ * also get mirrored into the source descriptor so a serialize ->
  * cold-start load round-trip preserves them.
  */
 inline ShaderHandle loadShader(

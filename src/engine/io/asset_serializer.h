@@ -24,7 +24,7 @@ class Scene;
  * registers factory lambdas here at startup; AssetSerializer dispatches
  * through this registry instead of hard-coding generator names.
  *
- * The map key is the source `kind` field — e.g. "generator" for procedural
+ * The map key is the source `kind` field - e.g. "generator" for procedural
  * meshes, "folder" for folder-loaded materials. A future "file" kind for
  * glTF mesh imports plugs in the same way.
  */
@@ -62,7 +62,7 @@ class AssetFactories {
  * Saves emit only the meshes + materials actually referenced by Mesh
  * components in the scene. Loads recreate them by dispatching each
  * descriptor through AssetFactories; assets with no source are skipped on
- * save (silently — they can't be recreated anyway), and same-named assets
+ * save (silently - they can't be recreated anyway), and same-named assets
  * already in ResourceManager are skipped on load (idempotent re-loads).
  *
  * Textures aren't a top-level concept here: the material `folder` loader

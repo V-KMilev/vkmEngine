@@ -70,17 +70,30 @@ class GLBackend : public RenderBackend {
                                    uint32_t size) override;
         uint32_t cachedThumbnail(uint64_t key) const override;
 
-        /// Drop a single cached thumbnail. Wire to asset-destruction events
-        /// so a long editor session doesn't accumulate textures for assets
-        /// the user has already removed. The cache key is the same uint64_t
-        /// the asset browser passes through snapshotToTexture (materialKey /
-        /// meshKey in asset_browser.cpp encode the asset handle id).
+        /**
+         * @brief Drop a single cached thumbnail. Wire to asset-destruction events
+         *
+         * so a long editor session doesn't accumulate textures for assets
+         * the user has already removed. The cache key is the same uint64_t
+         * the asset browser passes through snapshotToTexture (materialKey /
+         * meshKey in asset_browser.cpp encode the asset handle id).
+         */
         void evictThumbnail(uint64_t key) override;
 
         /// Drop every cached thumbnail. Use on scene swap or wholesale
         /// asset-graph reset; cheaper than a per-key sweep when most
         /// entries are going away anyway.
         void clearThumbnailCache() override;
+
+        /// Read a rectangle of the GL_BACK buffer as RGB8, top-down.
+        /// Saves and restores GL_PACK_ALIGNMENT and GL_READ_BUFFER.
+        bool readbackPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                             uint32_t windowHeight,
+                             std::vector<uint8_t>& outRGB) override;
+
+        const char* apiName()    const override { return "OpenGL"; }
+        std::string apiVersion() const override;
+        std::string deviceName() const override;
 
         // Editor preview rebinds the backbuffer after a preview session
         // since the composite pass left the offscreen FBO bound; without

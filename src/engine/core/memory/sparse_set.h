@@ -24,7 +24,7 @@ class ISparseSet {
         virtual void compact() = 0;
         /// @brief Drop every element. Used by Scene::clear and shutdown
         ///        paths that want O(types) tear-down rather than
-        ///        O(entities × types) one-element-at-a-time removal.
+        ///        O(entities x types) one-element-at-a-time removal.
         virtual void clear() = 0;
 };
 

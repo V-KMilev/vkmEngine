@@ -90,7 +90,7 @@ class SlotAllocator {
 
         /**
          * @brief Check whether `index` currently holds a live slot, with
-         * bounds tolerance — returns false for indices past the allocator's
+         * bounds tolerance - returns false for indices past the allocator's
          * reach. Slot 0 is reserved and always reports false.
          */
         bool isAliveAtIndex(uint32_t index) const {
@@ -138,7 +138,7 @@ class SlotAllocator {
          * @brief Reset every slot to dead in one pass, bumping generations
          * so any outstanding handles correctly compare as stale.
          *
-         * O(slots) — used by Scene::clear for total reset, far cheaper than
+         * O(slots) - used by Scene::clear for total reset, far cheaper than
          * iterating live entities and free()-ing each one when the goal is
          * to drop everything. Slot 0 stays reserved (untouched).
          */

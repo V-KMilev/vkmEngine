@@ -23,14 +23,24 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
     if (isPressed(kb.toggleHierarchy)) state.showHierarchy = !state.showHierarchy;
     if (isPressed(kb.toggleInspector)) state.showInspector = !state.showInspector;
     if (isPressed(kb.toggleBottom))    state.showBottom    = !state.showBottom;
-    // NOTE: toggleEditor (F5) is intentionally not handled here; it is
-    // owned by EditorSystem via raw GLFW so it works while the editor is
-    // hidden (no ImGui frame) and cannot double-fire across both paths.
+    // NOTE: toggleEditor is handled at EditorSystem::update directly so it
+    // runs in both visible and hidden states (the ImGui frame exists in
+    // both). Putting it here would never fire when the editor is hidden.
     if (isPressed(kb.openPreferences)) state.showPreferences = !state.showPreferences;
 
     if (isPressed(kb.saveSceneAs))     sceneIO.requestSaveAs();
     else if (isPressed(kb.saveScene))  sceneIO.save(ctx, state);
     if (isPressed(kb.loadScene))       sceneIO.requestLoad();
+
+    // Undo / redo - checked in this order so Ctrl+Shift+Z (redo) wins
+    // when both bindings would match.
+    if (isPressed(kb.redo)) {
+        state.commands.redo(ctx.scene, state);
+        state.markSceneDirty();
+    } else if (isPressed(kb.undo)) {
+        state.commands.undo(ctx.scene, state);
+        state.markSceneDirty();
+    }
 
     if (isPressed(kb.deleteEntity) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
         EditorActions::deleteEntity(ctx.scene, state, state.selectedEntity);

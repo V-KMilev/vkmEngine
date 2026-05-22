@@ -1,7 +1,5 @@
 #pragma once
 
-#include "input/editor_actions.h"  // ModelImportDialog
-
 namespace Engine {
 
 struct EditorContext;
@@ -18,12 +16,14 @@ class SceneIOController;
  *
  * draw() also renders the scene Save-As / Load dialogs (via the controller)
  * so they stay in the same menu-bar scope they were before.
+ *
+ * Note: the Import Model dialog is owned by EditorSystem (not the menu bar)
+ * because both the Inspector empty-state and the Hierarchy "+" menu also
+ * raise `state.requestModelImport`. The menu bar just toggles the flag.
  */
 class EditorMenuBar {
     public:
         void draw(EditorContext& ec, SceneIOController& sceneIO);
-    private:
-        EditorActions::ModelImportDialog m_modelImport;
 };
 
 } // namespace Engine

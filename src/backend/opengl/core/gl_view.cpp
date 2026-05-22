@@ -131,7 +131,7 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     }
 
     // Per-frame UBOs owned by GLView. Shadow UBO is bound by GLShadowPass
-    // after it populates entries — no need to bind here.
+    // after it populates entries - no need to bind here.
     m_camera.update(view.camera, view.environment);
     m_camera.bind();
 
@@ -178,7 +178,7 @@ GLMesh* GLView::getMutableMesh(const MeshHandle& handle) {
     return m_meshTable.entries[id].get();
 }
 
-// Shaders aren't referenced by entities, so we resolve them lazily — one
+// Shaders aren't referenced by entities, so we resolve them lazily - one
 // call per pass per frame. syncTable handles the "build on first reference
 // or rebuild on version bump" path; hot reload threads through here.
 // The single-element scratch lists below are thread_local and reused (clear +

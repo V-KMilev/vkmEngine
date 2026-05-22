@@ -4,6 +4,9 @@
 
 #include <GL/glew.h>
 
+#include <algorithm>
+#include <utility>
+
 #include "gl_context.h"
 #include "gl_shader.h"
 #include "gl_texture.h"
@@ -75,7 +78,12 @@ void GLBackend::registerPersistentResources(RenderGraph& graph) {
 }
 
 GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL), m_context() {
-    // GLEW is initialized during Window creation (before any GL calls)
+    // GLEW is initialized during Window creation (before any GL calls).
+    // Logging the version + device here keeps GL queries inside the backend.
+    const std::string ver = apiVersion();
+    const std::string dev = deviceName();
+    LOG_VERBOSE("OpenGL %s on %s", ver.empty() ? "?" : ver.c_str(),
+                                    dev.empty() ? "?" : dev.c_str());
 
     // Set default clear color (dark gray)
     m_context.setClearColor({0.1f, 0.1f, 0.1f, 1.0f});
@@ -100,6 +108,52 @@ void GLBackend::resize(uint32_t width, uint32_t height) {
 
 void GLBackend::syncResources(const RenderView& view, const ResourceManager& resources) {
     m_view.sync(view, resources);
+}
+
+bool GLBackend::readbackPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                                uint32_t windowHeight,
+                                std::vector<uint8_t>& outRGB) {
+    if (w == 0 || h == 0) return false;
+    if (y + h > windowHeight) return false;
+
+    outRGB.resize(static_cast<size_t>(w) * h * 3);
+
+    GLint prevPackAlignment = 4;
+    GLint prevReadBuffer    = GL_BACK;
+    glGetIntegerv(GL_PACK_ALIGNMENT, &prevPackAlignment);
+    glGetIntegerv(GL_READ_BUFFER,    &prevReadBuffer);
+
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    // Default framebuffer; back buffer is post-render but pre-swap. GL_FRONT
+    // is undefined under most modern compositors.
+    glReadBuffer(GL_BACK);
+    // ImGui y is top-down; GL is bottom-up. Flip the y origin here.
+    glReadPixels(static_cast<GLint>(x),
+                 static_cast<GLint>(windowHeight - y - h),
+                 static_cast<GLsizei>(w), static_cast<GLsizei>(h),
+                 GL_RGB, GL_UNSIGNED_BYTE, outRGB.data());
+
+    glPixelStorei(GL_PACK_ALIGNMENT, prevPackAlignment);
+    glReadBuffer(static_cast<GLenum>(prevReadBuffer));
+
+    // Flip rows so callers get a top-down image (PNG-friendly).
+    const size_t stride = static_cast<size_t>(w) * 3;
+    for (uint32_t row = 0; row < h / 2; ++row) {
+        uint8_t* a = outRGB.data() + row * stride;
+        uint8_t* b = outRGB.data() + (h - 1 - row) * stride;
+        for (size_t i = 0; i < stride; ++i) std::swap(a[i], b[i]);
+    }
+    return true;
+}
+
+std::string GLBackend::apiVersion() const {
+    const GLubyte* v = glGetString(GL_VERSION);
+    return v ? reinterpret_cast<const char*>(v) : std::string{};
+}
+
+std::string GLBackend::deviceName() const {
+    const GLubyte* v = glGetString(GL_RENDERER);
+    return v ? reinterpret_cast<const char*>(v) : std::string{};
 }
 
 void GLBackend::ensurePreviewResourceTables(const RenderView& view,

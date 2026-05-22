@@ -192,16 +192,16 @@ int main() {
         // scene: opaque/unlit first, then the skybox fills the background,
         // then the transparent pass snapshots that opaque+sky image and
         // draws blended/transmissive materials on top of it.
-        auto opaquePass = std::make_unique<Engine::GLForwardPass>(pbrShader);
+        auto opaquePass = std::make_unique<Engine::GLForwardPass>(
+            pbrShader, Engine::GLForwardPass::Phase::Opaque);
         opaquePass->setShader(Engine::MaterialType::Unlit, unlitShader);
-        opaquePass->setPhase(Engine::GLForwardPass::Phase::Opaque);
         renderSystem.addPass(std::move(opaquePass));
         // Skybox fills the background in the HDR target, after opaque and
         // before transparent so glass over empty space refracts the sky.
         renderSystem.addPass(std::make_unique<Engine::GLSkyboxPass>(skyboxShader));
-        auto transparentPass = std::make_unique<Engine::GLForwardPass>(pbrShader);
+        auto transparentPass = std::make_unique<Engine::GLForwardPass>(
+            pbrShader, Engine::GLForwardPass::Phase::Transparent);
         transparentPass->setShader(Engine::MaterialType::Unlit, unlitShader);
-        transparentPass->setPhase(Engine::GLForwardPass::Phase::Transparent);
         renderSystem.addPass(std::move(transparentPass));
         // Gated per-frame by env.aabbDebug.enabled (off by default); the pass itself
         // stays enabled so the Scene-tab toggle is the single switch.

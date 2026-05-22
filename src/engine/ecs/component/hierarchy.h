@@ -23,10 +23,13 @@ struct Hierarchy {
     EntityId nextSibling{};   ///< Next child of the same parent
     EntityId prevSibling{};   ///< Previous child of the same parent (for O(1) removal)
 
-    /// True if this entity's WorldTransform needs to be recomputed.
-    /// Defaults true so newly-created hierarchical entities resolve on the
-    /// first HierarchySystem tick. Cleared by HierarchyOperations::resolveWorldTransforms.
-    /// Set by HierarchyOperations::markDirty (cascades to descendants).
+    /**
+     * @brief True if this entity's WorldTransform needs to be recomputed.
+     *
+     * Defaults true so newly-created hierarchical entities resolve on the
+     * first HierarchySystem tick. Cleared by HierarchyOperations::resolveWorldTransforms.
+     * Set by HierarchyOperations::markDirty (cascades to descendants).
+     */
     bool dirty = true;
 };
 
