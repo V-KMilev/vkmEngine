@@ -367,7 +367,7 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
             changed |= ImGui::Checkbox("##LDiskTS", &light.twoSided);
         }
         if (light.type == LightType::Rect || light.type == LightType::Disk) {
-            ImGui::TextDisabled("Phase 2A: point-style shading; LTC area integral lands in Phase 2C.");
+            ImGui::TextDisabled("LTC Lambertian diffuse + representative-point GGX specular.");
         }
 
         drawPropertyLabel("Shadows");  changed |= ImGui::Checkbox("##Shad", &light.castShadows);

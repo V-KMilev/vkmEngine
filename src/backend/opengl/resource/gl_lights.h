@@ -21,30 +21,31 @@ namespace Engine {
 /**
  * @brief Light data structure matching GLSL std140 layout for uniform buffer.
  *
- * Each light occupies exactly 80 bytes. Uses vec4 for every slot to avoid
+ * Each light occupies exactly 96 bytes. Uses vec4 for every slot to avoid
  * drivers that fail to pack a trailing scalar into a vec3's 4-byte tail
  * (spec-legal but unreliable in practice).
  *
  * Slot layout:
  *  - position:   xyz = world position,  w = type (encoded as float, cast in shader)
  *  - color:      xyz = RGB,             w = intensity
- *  - direction:  xyz = world direction, w = radius
+ *  - direction:  xyz = world direction (forward / surface normal),
+ *                w   = attenuation radius
  *  - spot:       x   = inner cone,      y = outer cone, z = unused, w = shadowSlot (-1 = no shadow)
- *  - area:       x   = width (Rect) / radius (Disk),
- *                y   = height (Rect, unused for Disk),
- *                z   = unused,
+ *  - axisU:      xyz = half-right world vector (rotation * +X * width/2 for Rect, * areaRadius for Disk),
  *                w   = twoSided (0 or 1, only meaningful for Rect/Disk)
+ *  - axisV:      xyz = half-up world vector (rotation * +Y * height/2 for Rect, * areaRadius for Disk),
+ *                w   = unused
  *
- * Phase 2A note: Rect / Disk lights upload their area params here but the
- * fragment shader treats them as point lights (LTC integration lands in
- * Phase 2C). Disabled lights are filtered out when building RenderView.
+ * For non-area lights (Directional / Point / Spot) axisU/axisV are zero; the
+ * shader's area-light branches are gated on `type`.
  */
 struct alignas(16) LightGPUData {
     glm::vec4 position;          // offset 0,  16 bytes  (xyz=position, w=type)
     glm::vec4 color;             // offset 16, 16 bytes  (xyz=color,    w=intensity)
     glm::vec4 direction;         // offset 32, 16 bytes  (xyz=dir,      w=radius)
     glm::vec4 spot;              // offset 48, 16 bytes  (x=inner, y=outer, z=unused, w=shadowSlot)
-    glm::vec4 area;              // offset 64, 16 bytes  (x=width/radius, y=height, z=unused, w=twoSided)
+    glm::vec4 axisU;             // offset 64, 16 bytes  (xyz=half-right, w=twoSided)
+    glm::vec4 axisV;             // offset 80, 16 bytes  (xyz=half-up,    w=unused)
 };
 
 /**
@@ -55,14 +56,14 @@ struct alignas(16) LightGPUData {
  *
  * Layout:
  * - lightCount: offset 0, 4 bytes (12 bytes padding to next array element)
- * - lights:     offset 16, 80 * Config::MaxLights bytes
+ * - lights:     offset 16, 96 * Config::MaxLights bytes
  *
- * Total size: 16 + (80 * Config::MaxLights) = 16 + (80 * 32) = 16 + 2560 = 2576 bytes
+ * Total size: 16 + (96 * Config::MaxLights) = 16 + (96 * 32) = 16 + 3072 = 3088 bytes
  */
 struct alignas(16) LightsUBOData {
     int lightCount;                              // offset 0, 4 bytes
     char _padding[12];                           // offset 4, 12 bytes (explicit padding to offset 16)
-    LightGPUData lights[Config::MaxLights];      // offset 16, 80 bytes per light
+    LightGPUData lights[Config::MaxLights];      // offset 16, 96 bytes per light
 };
 
 /**
