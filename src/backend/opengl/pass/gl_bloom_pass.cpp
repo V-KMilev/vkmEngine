@@ -3,18 +3,16 @@
 #include <GL/glew.h>
 
 #include "logger.h"
-#include "debug/print_helper.h"
-#include "debug/statistics.h"
 
 #include "core/gl_backend.h"
 #include "core/gl_scene_target.h"
-#include "resource/gl_shader_program.h"
-#include "resource/gl_bloom.h"
-
+#include "debug/print_helper.h"
+#include "debug/statistics.h"
 #include "gl_screen_triangle.h"
-
-#include "system/render/render_view.h"
+#include "resource/gl_bloom.h"
+#include "resource/gl_shader_program.h"
 #include "resource/resource_manager.h"
+#include "system/render/render_view.h"
 
 namespace Engine {
 

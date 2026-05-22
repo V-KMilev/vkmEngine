@@ -1,11 +1,11 @@
 #include "gl_lights.h"
 
-#include <cstring>
 #include <algorithm>
+#include <cstring>
 
 #include "logger.h"
-#include "gl_uniform_buffer.h"
 
+#include "gl_uniform_buffer.h"
 #include "system/render/render_view.h"
 
 namespace Engine {

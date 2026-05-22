@@ -1,17 +1,16 @@
 #include "gl_backend.h"
 
-#include "logger.h"
-
-#include <GL/glew.h>
-
 #include <algorithm>
 #include <utility>
 
+#include <GL/glew.h>
+
+#include "logger.h"
+
 #include "gl_context.h"
+#include "gl_frame_resources.h"
 #include "gl_shader.h"
 #include "gl_texture.h"
-#include "gl_frame_resources.h"
-
 #include "system/render/render_graph.h"
 #include "system/render/render_view.h"
 

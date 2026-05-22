@@ -5,21 +5,20 @@
 #include <GL/glew.h>
 
 #include "logger.h"
-#include "debug/print_helper.h"
-#include "debug/statistics.h"
 
 #include "core/gl_backend.h"
-#include "core/gl_scene_target.h"
-#include "resource/gl_shadow_map.h"
-#include "resource/gl_mesh.h"
-#include "resource/gl_material.h"
-#include "resource/gl_shader_program.h"
-#include "resource/gl_ibl.h"
-#include "resource/gl_gbuffer.h"
 #include "core/gl_instance_batcher.h"
-
-#include "system/render/render_view.h"
+#include "core/gl_scene_target.h"
+#include "debug/print_helper.h"
+#include "debug/statistics.h"
+#include "resource/gl_gbuffer.h"
+#include "resource/gl_ibl.h"
+#include "resource/gl_material.h"
+#include "resource/gl_mesh.h"
+#include "resource/gl_shader_program.h"
+#include "resource/gl_shadow_map.h"
 #include "resource/resource_manager.h"
+#include "system/render/render_view.h"
 
 namespace Engine {
 

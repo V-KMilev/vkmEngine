@@ -5,7 +5,6 @@
 #include "logger.h"
 
 #include "gl_uniform_buffer.h"
-
 #include "system/render/render_view.h"
 
 namespace Engine {

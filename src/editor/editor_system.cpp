@@ -1,22 +1,22 @@
 #include "editor_system.h"
-#include "framework/editor_context.h"
-#include "framework/editor_settings.h"
-#include "input/editor_keybinds.h"
-#include "ui/editor_theme.h"
-
-#include <imgui.h>
-#include <imgui_impl_glfw.h>
-#include <imgui_impl_opengl3.h>
-#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <filesystem>
 #include <string>
 #include <system_error>
 
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
+#include <GLFW/glfw3.h>
+
+#include "framework/editor_context.h"
+#include "framework/editor_settings.h"
+#include "input/editor_keybinds.h"
 #include "platform/window/window_manager.h"
 #include "system/camera/camera_controller.h"
 #include "system/render/render_system.h"
+#include "ui/editor_theme.h"
 
 namespace Engine {
 

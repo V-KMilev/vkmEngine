@@ -8,26 +8,25 @@
 // every panel touches. Heavier engine-side headers (debug stats, visibility,
 // bounds utils) are NOT here - pull them in explicitly where used.
 
-#include "framework/editor_state.h"
-#include "framework/editor_context.h"
-#include "ui/editor_widgets.h"
-#include "input/editor_keybinds.h"
-#include "ui/editor_style.h"
-#include "ui/editor_icons.h"
-
 #include <imgui.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 #include "core/system.h"   // FrameContext
-#include "ecs/scene.h"
-#include "ecs/component/transform.h"
-#include "ecs/component/mesh.h"
-#include "ecs/component/light.h"
-#include "ecs/component/camera.h"
 #include "ecs/component/animation.h"
+#include "ecs/component/camera.h"
 #include "ecs/component/hierarchy.h"
+#include "ecs/component/light.h"
+#include "ecs/component/mesh.h"
 #include "ecs/component/name.h"
-#include "system/hierarchy/hierarchy_operations.h"
-#include "resource/resource_manager.h"
+#include "ecs/component/transform.h"
+#include "ecs/scene.h"
+#include "framework/editor_context.h"
+#include "framework/editor_state.h"
+#include "input/editor_keybinds.h"
 #include "resource/material_asset.h"
+#include "resource/resource_manager.h"
+#include "system/hierarchy/hierarchy_operations.h"
+#include "ui/editor_icons.h"
+#include "ui/editor_style.h"
+#include "ui/editor_widgets.h"
