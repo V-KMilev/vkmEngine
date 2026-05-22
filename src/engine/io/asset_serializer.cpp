@@ -300,7 +300,7 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
             LOG_WARNING("AssetSerializer: material '%s' could not be recreated - skipping", name.c_str());
             return;
         }
-        resources.edit(h).name = name;
+        resources.rename(h, name);
     });
 
     loadGroup("meshes", [&](const std::string& name, const nlohmann::json& source) {

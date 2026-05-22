@@ -140,6 +140,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
         const Mesh& mesh = meshStorage->dataAt(idx);
 
         if (!mesh.visible) return;
+        if (!mesh.mesh) return;  // unresolved Mesh component (empty asset slot)
         if (!transformStorage->contains(entityIdx)) return;
 
         const auto& meshAsset = resources.get(mesh.mesh);
