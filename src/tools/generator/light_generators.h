@@ -59,8 +59,9 @@ Light generateSpotLight(
 /**
  * @brief Generate a rectangular area light (e.g. softbox, monitor).
  *
- * Phase 2A: shaded as a point at the rect's centre; LTC area shading
- * lands in Phase 2C. Authored and serialized today, looks right later.
+ * Shaded with the LTC Lambertian diffuse integral and Karis representative-
+ * point GGX specular. Shadows are still point-style (cast from the rect's
+ * centre).
  *
  * @param color Light color (RGB).
  * @param intensity Light intensity multiplier.
@@ -84,8 +85,9 @@ Light generateRectLight(
 /**
  * @brief Generate a disk area light (e.g. spotlight reflector, sun-through-window).
  *
- * Phase 2A: shaded as a point at the disk's centre; LTC area shading
- * lands in Phase 2C.
+ * Shaded with the LTC Lambertian diffuse integral (12-vertex polygon
+ * approximation) and Karis representative-point GGX specular (exact for
+ * circles). Shadows are still point-style (cast from the disk's centre).
  *
  * @param color Light color (RGB).
  * @param intensity Light intensity multiplier.

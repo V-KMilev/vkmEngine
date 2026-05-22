@@ -8,9 +8,10 @@ namespace Engine {
  * @brief Enumeration of light types.
  *
  * Rect and Disk are area lights - they have a finite emissive surface, not
- * a single point. In Phase 2A their shading is a point approximation
- * (treated as Point at the light's centre); the LTC integral lands in
- * Phase 2C. Authors can still place + serialize + inspect them today.
+ * a single point. Their diffuse is the LTC Lambertian polygon integral
+ * (Disk is approximated by a 12-vertex polygon) and their specular is the
+ * Karis representative-point GGX with a broadened lobe; shadows are
+ * currently point-style, cast from the emitter's centre.
  */
 enum class LightType {
     Directional = 0,    ///< Directional light (sun-like, no position, only direction)

@@ -160,7 +160,16 @@ class ResourceManager {
         }
 
         /**
-         * @brief Commit changes to a resource (bumps resource and per-type versions).
+         * @brief Commit changes to a resource (bumps the per-resource and
+         *        per-type versions; does NOT bump the global version).
+         *
+         * Global version is reserved for handle-invalidating events (swap,
+         * clear, swapSlot) - backends like GLView use a globalVersion delta
+         * to detect "this is a different ResourceManager, drop every cache".
+         * If commit also bumped globalVersion, every per-frame slider drag in
+         * the editor would wipe the GPU cache and re-upload every asset, just
+         * to update one material. The per-resource and per-type versions are
+         * enough to drive incremental sync.
          */
         template<typename HandleType>
         void commit(const HandleType& handle) {
@@ -170,7 +179,6 @@ class ResourceManager {
             VKM_ASSERT(slot.allocator->has(handle.key), "ResourceManager::commit invalid handle");
             ++storageOf<T>(slot).get(handle.key.index).version;
             ++slot.typeVersion;
-            ++m_globalVersion;
         }
 
         /**
