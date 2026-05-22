@@ -11,12 +11,10 @@
 #include "gl_render_target.h"
 
 namespace Engine {
-    struct RenderView;
-    class ResourceManager;
-    class FrameResources;
-}
 
-namespace Engine {
+struct RenderView;
+class ResourceManager;
+class FrameResources;
 
 /**
  * @brief OpenGL implementation of the RenderBackend interface.
@@ -31,7 +29,7 @@ namespace Engine {
 class GLBackend : public RenderBackend {
     public:
         GLBackend();
-        ~GLBackend() = default;
+        ~GLBackend() override = default;
 
         GLBackend(const GLBackend& other) = delete;
         GLBackend& operator=(const GLBackend& other) = delete;

@@ -1,11 +1,11 @@
 #include "panels/asset_browser.h"
-#include "framework/editor_common.h"
 
+#include <algorithm>
+#include <cstdint>
+
+#include "framework/editor_common.h"
 #include "system/render/render_system.h"
 #include "generator/mesh_generators.h"
-
-#include <cstdint>
-#include <algorithm>
 
 namespace Engine {
 

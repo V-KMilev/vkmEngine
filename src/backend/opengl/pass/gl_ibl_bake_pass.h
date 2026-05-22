@@ -28,7 +28,7 @@ namespace Engine {
 class GLIBLBakePass : public RenderPass {
     public:
         GLIBLBakePass() = delete;
-        ~GLIBLBakePass();
+        ~GLIBLBakePass() override;
 
         GLIBLBakePass(const GLIBLBakePass& other) = delete;
         GLIBLBakePass& operator=(const GLIBLBakePass& other) = delete;

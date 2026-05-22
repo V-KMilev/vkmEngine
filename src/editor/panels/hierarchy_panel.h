@@ -20,6 +20,16 @@ struct EditorContext;
  */
 class HierarchyPanel {
     public:
+        HierarchyPanel() = default;
+        ~HierarchyPanel() = default;
+
+        HierarchyPanel(const HierarchyPanel& other) = delete;
+        HierarchyPanel& operator=(const HierarchyPanel& other) = delete;
+
+        HierarchyPanel(HierarchyPanel && other) = delete;
+        HierarchyPanel& operator=(HierarchyPanel && other) = delete;
+
+    public:
         void draw(EditorContext& ec);
 
     private:

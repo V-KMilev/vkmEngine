@@ -23,6 +23,16 @@ struct EditorContext;
  */
 class InspectorPanel {
     public:
+        InspectorPanel() = default;
+        ~InspectorPanel() = default;
+
+        InspectorPanel(const InspectorPanel& other) = delete;
+        InspectorPanel& operator=(const InspectorPanel& other) = delete;
+
+        InspectorPanel(InspectorPanel && other) = delete;
+        InspectorPanel& operator=(InspectorPanel && other) = delete;
+
+    public:
         void draw(EditorContext& ec);
 
     private:

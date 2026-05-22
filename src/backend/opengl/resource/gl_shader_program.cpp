@@ -1,4 +1,4 @@
-#include "resource/gl_shader_program.h"
+#include "gl_shader_program.h"
 
 #include <filesystem>
 

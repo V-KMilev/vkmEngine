@@ -26,7 +26,7 @@ namespace Engine {
 class GLTAAPass : public RenderPass {
     public:
         GLTAAPass() = delete;
-        ~GLTAAPass();
+        ~GLTAAPass() override;
 
         GLTAAPass(const GLTAAPass& other) = delete;
         GLTAAPass& operator=(const GLTAAPass& other) = delete;

@@ -22,7 +22,7 @@ namespace Engine {
 class GLDofPass : public RenderPass {
     public:
         GLDofPass() = delete;
-        ~GLDofPass();
+        ~GLDofPass() override;
 
         GLDofPass(const GLDofPass& other) = delete;
         GLDofPass& operator=(const GLDofPass& other) = delete;

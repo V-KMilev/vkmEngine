@@ -16,7 +16,7 @@ namespace Engine {
 class GLForwardPass : public RenderPass {
     public:
         GLForwardPass() = delete;
-        ~GLForwardPass() = default;
+        ~GLForwardPass() override = default;
 
         GLForwardPass(const GLForwardPass& other) = delete;
         GLForwardPass& operator=(const GLForwardPass& other) = delete;

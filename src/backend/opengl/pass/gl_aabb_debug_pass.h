@@ -30,7 +30,7 @@ namespace Engine {
 class GLAABBDebugPass : public RenderPass {
     public:
         GLAABBDebugPass() = delete;
-        ~GLAABBDebugPass() = default;
+        ~GLAABBDebugPass() override = default;
 
         GLAABBDebugPass(const GLAABBDebugPass& other) = delete;
         GLAABBDebugPass& operator=(const GLAABBDebugPass& other) = delete;

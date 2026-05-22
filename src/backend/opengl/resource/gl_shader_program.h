@@ -25,11 +25,11 @@ class GLShader : public Core::Shader {
     public:
         explicit GLShader(const ShaderAsset& asset);
         /**
-         * @brief Variant construction: same shader source as @p asset, plus a
+         * @brief Variant construction with extra preprocessor defines.
          *
-         * list of preprocessor #defines injected below the #version line.
-         * Used by the per-material variant cache to gate optional PBR
-         * features at compile time.
+         * Same shader source as @p asset, plus a list of preprocessor #defines
+         * injected below the #version line. Used by the per-material variant
+         * cache to gate optional PBR features at compile time.
          */
         GLShader(const ShaderAsset& asset, std::vector<std::string> defines);
         ~GLShader() override;
@@ -50,11 +50,11 @@ class GLShader : public Core::Shader {
 
     protected:
         /**
-         * @brief Re-run the engine-side preprocessor so hot reload picks up edits
+         * @brief Re-run the engine-side preprocessor on hot reload.
          *
-         * to included files too, not just the top-level vert/frag shader.
-         * Honors the variant's saved defines so the rebuilt program stays
-         * the same variant after a source edit.
+         * Picks up edits to included files too, not just the top-level
+         * vert/frag shader. Honors the variant's saved defines so the rebuilt
+         * program stays the same variant after a source edit.
          */
         void reloadSource() override;
 

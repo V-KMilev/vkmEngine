@@ -1,4 +1,4 @@
-#include "resource/gl_texture.h"
+#include "gl_texture.h"
 
 #include "logger.h"
 

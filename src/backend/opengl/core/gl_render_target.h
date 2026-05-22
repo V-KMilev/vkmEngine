@@ -19,6 +19,13 @@ namespace Engine {
 class GLDefaultRenderTarget : public RenderTarget {
     public:
         GLDefaultRenderTarget() = default;
+        ~GLDefaultRenderTarget() override = default;
+
+        GLDefaultRenderTarget(const GLDefaultRenderTarget& other) = delete;
+        GLDefaultRenderTarget& operator=(const GLDefaultRenderTarget& other) = delete;
+
+        GLDefaultRenderTarget(GLDefaultRenderTarget && other) = delete;
+        GLDefaultRenderTarget& operator=(GLDefaultRenderTarget && other) = delete;
 
         void bind() override {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);

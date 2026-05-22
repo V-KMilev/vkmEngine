@@ -27,7 +27,7 @@ namespace Engine {
 class GLLensFlarePass : public RenderPass {
     public:
         GLLensFlarePass() = delete;
-        ~GLLensFlarePass();
+        ~GLLensFlarePass() override;
 
         GLLensFlarePass(const GLLensFlarePass& other) = delete;
         GLLensFlarePass& operator=(const GLLensFlarePass& other) = delete;

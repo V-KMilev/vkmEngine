@@ -1,4 +1,4 @@
-#include "resource/gl_ibl.h"
+#include "gl_ibl.h"
 
 #include "logger.h"
 

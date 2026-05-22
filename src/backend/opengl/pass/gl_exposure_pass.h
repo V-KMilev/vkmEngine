@@ -22,7 +22,7 @@ namespace Engine {
 class GLExposurePass : public RenderPass {
     public:
         GLExposurePass() = delete;
-        ~GLExposurePass();
+        ~GLExposurePass() override;
 
         GLExposurePass(const GLExposurePass& other) = delete;
         GLExposurePass& operator=(const GLExposurePass& other) = delete;

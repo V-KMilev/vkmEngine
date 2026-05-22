@@ -27,7 +27,7 @@ namespace Engine {
 class GLCompositePass : public RenderPass {
     public:
         GLCompositePass() = delete;
-        ~GLCompositePass();
+        ~GLCompositePass() override;
 
         GLCompositePass(const GLCompositePass& other) = delete;
         GLCompositePass& operator=(const GLCompositePass& other) = delete;
