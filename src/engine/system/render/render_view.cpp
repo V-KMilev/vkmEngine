@@ -175,6 +175,7 @@ void RenderView::build(
     for (const auto& entry : visibility.entries) {
         if (!scene.isAlive(entry.id)) continue;
         const auto& mesh = scene.get<Mesh>(entry.id);
+        if (!mesh.mesh || !mesh.material) continue;  // unresolved slot - skip
 
         DrawableData drawable;
         drawable.mesh         = mesh.mesh;
@@ -210,6 +211,7 @@ void RenderView::build(
     shadowCasters.reserve(drawables.size());
     scene.forEach<Mesh, Transform>([&](EntityId id, const Mesh& mesh, const Transform& transform) {
         if (!mesh.visible || !mesh.castShadows) return;
+        if (!mesh.mesh || !mesh.material) return;  // unresolved slot - skip
 
         const MaterialType mt = materialTypeOf(mesh.material);
         if (mt != MaterialType::Opaque) return;

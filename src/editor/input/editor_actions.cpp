@@ -178,7 +178,8 @@ void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController& ca
     glm::vec3 targetPos;
     float focusDistance = 5.0f;
 
-    if (ctx.scene.has<Mesh>(state.selectedEntity)) {
+    if (ctx.scene.has<Mesh>(state.selectedEntity)
+        && ctx.scene.get<Mesh>(state.selectedEntity).mesh) {
         const auto& mesh = ctx.scene.get<Mesh>(state.selectedEntity);
         const auto& asset = ctx.resources.get(mesh.mesh);
 

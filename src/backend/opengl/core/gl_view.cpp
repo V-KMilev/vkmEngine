@@ -98,6 +98,25 @@ void GLView::syncTable(
 }
 
 void GLView::sync(const RenderView& view, const ResourceManager& resources) {
+    // A scene load swaps the whole ResourceManager. Cached GL entries keyed
+    // by handle id are now stale: a new asset may sit at an id that previously
+    // held a different asset with a coincidentally-equal per-asset version,
+    // so the version-skip would keep the wrong GL resource alive. Detect via
+    // the bumped global version and drop every cache.
+    const uint64_t globalVersion = resources.getGlobalVersion();
+    if (globalVersion != m_lastGlobalVersion) {
+        m_meshTable     = {};
+        m_materialTable = {};
+        m_textureTable  = {};
+        m_shaderTable   = {};
+
+        m_lastMeshTypeVersion     = 0;
+        m_lastMaterialTypeVersion = 0;
+        m_lastTextureTypeVersion  = 0;
+        m_lastDrawableCount       = 0;
+        m_lastGlobalVersion       = globalVersion;
+    }
+
     // Drawable-driven sync (meshes/materials/textures): early-out when neither
     // resource versions nor drawable count have changed.
     const uint64_t meshTypeVersion     = resources.getTypeVersion<MeshAsset>();

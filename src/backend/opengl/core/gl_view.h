@@ -207,6 +207,16 @@ class GLView {
         uint64_t m_lastMaterialTypeVersion = 0;
         uint64_t m_lastTextureTypeVersion  = 0;
         size_t   m_lastDrawableCount       = 0;
+
+        /**
+         * @brief Last seen ResourceManager global version (bumped by swap).
+         *
+         * A change forces every cached GL entry to drop because slot ids
+         * no longer map to the same assets after a scene load - per-type
+         * version checks aren't enough on their own (a new asset can land
+         * at an old id with a coincidentally-matching version).
+         */
+        uint64_t m_lastGlobalVersion       = 0;
 };
 
 } // namespace Engine

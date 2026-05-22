@@ -128,6 +128,31 @@ class ResourceManager {
         }
 
         /**
+         * @brief Rename a resource and keep findByName consistent.
+         *
+         * Direct `edit(h).name = ...` only mutates the asset; the per-type
+         * name index won't see the change and findByName(newName) keeps
+         * returning nothing. Use this whenever a name is assigned after add().
+         */
+        template<typename HandleType>
+        void rename(const HandleType& handle, std::string newName) {
+            using T = typename HandleType::resource_t;
+            auto& slot = getSlot<T>();
+            VKM_ASSERT(slot.allocator->has(handle.key), "ResourceManager::rename invalid handle");
+            auto& res = storageOf<T>(slot).get(handle.key.index);
+            if (!res.name.empty()) {
+                auto it = slot.nameIndex.find(res.name);
+                if (it != slot.nameIndex.end() && it->second == handle.key.index) {
+                    slot.nameIndex.erase(it);
+                }
+            }
+            res.name = std::move(newName);
+            if (!res.name.empty()) {
+                slot.nameIndex[res.name] = handle.key.index;
+            }
+        }
+
+        /**
          * @brief Commit changes to a resource (bumps resource and per-type versions).
          */
         template<typename HandleType>
@@ -298,6 +323,27 @@ class ResourceManager {
             using std::swap;
             swap(m_slots, other.m_slots);
             swap(m_globalVersion, other.m_globalVersion);
+            ++m_globalVersion;
+            ++other.m_globalVersion;
+        }
+
+        /**
+         * @brief Swap the per-type slot for @p T with @p other.
+         *
+         * Used by SceneSerializer to keep engine-owned asset types (shaders)
+         * out of the scene-level swap: a full RM swap would strand cached
+         * handles in render passes because the scene-staged RM never had
+         * those types populated. Slot exchange is symmetric and works even
+         * when either side has no slot for @p T yet.
+         */
+        template<typename T>
+        void swapSlot(ResourceManager& other) noexcept {
+            using std::swap;
+            TypeId id = typeId<T>();
+            const size_t needed = static_cast<size_t>(id) + 1;
+            if (m_slots.size() < needed) m_slots.resize(needed);
+            if (other.m_slots.size() < needed) other.m_slots.resize(needed);
+            swap(m_slots[id], other.m_slots[id]);
             ++m_globalVersion;
             ++other.m_globalVersion;
         }

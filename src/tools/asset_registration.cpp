@@ -66,6 +66,19 @@ void registerBuiltinAssetFactories() {
         return {};
     });
 
+    // Textures: "model-image" kind. Re-extract an embedded image from the
+    // source model file. The pixels live in the .glb/.fbx, not in the scene
+    // JSON, so cold-start load reopens the file and pulls the same texture.
+    factories.registerTexture("model-image", [](const nlohmann::json& desc,
+                                                ResourceManager& resources) -> TextureHandle
+    {
+        const std::string path = desc.value("path", std::string{});
+        const std::string ref  = desc.value("ref",  std::string{});
+        const bool        srgb = desc.value("sRGB", false);
+        if (path.empty() || ref.empty()) return {};
+        return loadModelEmbeddedTexture(path, ref, srgb, resources);
+    });
+
     // Materials: "folder" kind. Rediscovers textures from disk.
     factories.registerMaterial("folder", [](const nlohmann::json& desc,
                                             ResourceManager& resources) -> MaterialHandle

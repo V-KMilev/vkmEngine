@@ -200,8 +200,11 @@ namespace {
     }
 
     // Decode raw RGBA8 bytes into a (cached, idempotent) TextureAsset.
+    // @p source is stamped onto the asset so cold-start load can recreate
+    // the same texture via AssetFactories.
     TextureHandle addTexture(ResourceManager& res, const std::string& name,
-                             int w, int h, const unsigned char* rgba, bool srgb) {
+                             int w, int h, const unsigned char* rgba, bool srgb,
+                             nlohmann::json source) {
         if (TextureHandle e = res.findByName<TextureAsset>(name)) return e;
         TextureAsset tex;
         tex.params.width          = static_cast<uint32_t>(w);
@@ -219,8 +222,48 @@ namespace {
         tex.srgb     = srgb;
         tex.name     = name;
         tex.pixelData.assign(rgba, rgba + static_cast<size_t>(w) * h * 4);
-        tex.sourceJson() = { {"kind", "model-image"}, {"name", name} };
+        tex.sourceJson() = std::move(source);
         return res.add(std::move(tex));
+    }
+
+    // Decode one embedded aiTexture into RGBA8 bytes and register it under
+    // @p name. Shared between the live importer (textureFor) and the
+    // model-image factory (loadModelEmbeddedTexture).
+    TextureHandle decodeEmbedded(const aiTexture* emb,
+                                 ResourceManager& res,
+                                 const std::string& name,
+                                 const std::string& modelPath,
+                                 const std::string& ref,
+                                 bool srgb) {
+        if (emb->mHeight == 0) {  // compressed blob (PNG/JPG/...)
+            int w = 0, hh = 0, n = 0;
+            unsigned char* px = stbi_load_from_memory(
+                reinterpret_cast<const unsigned char*>(emb->pcData),
+                static_cast<int>(emb->mWidth), &w, &hh, &n, 4);
+            if (!px) return {};
+            nlohmann::json source = {
+                {"kind", "model-image"}, {"path", modelPath},
+                {"ref",  ref},           {"sRGB", srgb},
+            };
+            TextureHandle h = addTexture(res, name, w, hh, px, srgb, std::move(source));
+            stbi_image_free(px);
+            return h;
+        }
+        // Raw aiTexel BGRA grid.
+        const int w  = static_cast<int>(emb->mWidth);
+        const int hh = static_cast<int>(emb->mHeight);
+        std::vector<unsigned char> rgba(static_cast<size_t>(w) * hh * 4);
+        for (size_t i = 0; i < static_cast<size_t>(w) * hh; ++i) {
+            rgba[i * 4 + 0] = emb->pcData[i].r;
+            rgba[i * 4 + 1] = emb->pcData[i].g;
+            rgba[i * 4 + 2] = emb->pcData[i].b;
+            rgba[i * 4 + 3] = emb->pcData[i].a;
+        }
+        nlohmann::json source = {
+            {"kind", "model-image"}, {"path", modelPath},
+            {"ref",  ref},           {"sRGB", srgb},
+        };
+        return addTexture(res, name, w, hh, rgba.data(), srgb, std::move(source));
     }
 
     // Resolve one material texture slot (embedded or external file) to a
@@ -244,25 +287,7 @@ namespace {
         // Embedded (GLB / FBX): "*<i>" or a name resolvable in mTextures.
         if (const aiTexture* emb = scene->GetEmbeddedTexture(ref.C_Str())) {
             const std::string nm = stem + ":emb:" + key;
-            TextureHandle h;
-            if (emb->mHeight == 0) {  // compressed blob (PNG/JPG/...)
-                int w = 0, hh = 0, n = 0;
-                unsigned char* px = stbi_load_from_memory(
-                    reinterpret_cast<const unsigned char*>(emb->pcData),
-                    static_cast<int>(emb->mWidth), &w, &hh, &n, 4);
-                if (px) { h = addTexture(res, nm, w, hh, px, srgb); stbi_image_free(px); }
-            } else {                  // raw aiTexel BGRA grid
-                const int w = static_cast<int>(emb->mWidth);
-                const int hh = static_cast<int>(emb->mHeight);
-                std::vector<unsigned char> rgba(static_cast<size_t>(w) * hh * 4);
-                for (size_t i = 0; i < static_cast<size_t>(w) * hh; ++i) {
-                    rgba[i * 4 + 0] = emb->pcData[i].r;
-                    rgba[i * 4 + 1] = emb->pcData[i].g;
-                    rgba[i * 4 + 2] = emb->pcData[i].b;
-                    rgba[i * 4 + 3] = emb->pcData[i].a;
-                }
-                h = addTexture(res, nm, w, hh, rgba.data(), srgb);
-            }
+            TextureHandle h = decodeEmbedded(emb, res, nm, modelPath, ref.C_Str(), srgb);
             cache[key] = h;
             return h;
         }
@@ -279,7 +304,12 @@ namespace {
             cache[key] = {};
             return {};
         }
-        TextureHandle h = addTexture(res, stem + ":file:" + key, w, hh, px, srgb);
+        nlohmann::json source = {
+            {"kind", "file"}, {"path", abs}, {"sRGB", srgb},
+            {"generateMipmaps", true},
+        };
+        TextureHandle h = addTexture(res, stem + ":file:" + key, w, hh, px, srgb,
+            std::move(source));
         stbi_image_free(px);
         cache[key] = h;
         return h;
@@ -442,6 +472,26 @@ MaterialHandle loadModelMaterial(const std::string& path, int materialIndex,
     const aiScene* scene = importer->GetScene();
     if (!scene) return {};
     return buildMaterial(scene, path, materialIndex, resources);
+}
+
+TextureHandle loadModelEmbeddedTexture(const std::string& path,
+                                       const std::string& ref,
+                                       bool srgb,
+                                       ResourceManager& resources) {
+    auto importer = importerCache().get(path);
+    if (!importer) return {};
+    const aiScene* scene = importer->GetScene();
+    if (!scene) return {};
+    const aiTexture* emb = scene->GetEmbeddedTexture(ref.c_str());
+    if (!emb) {
+        LOG_WARNING("model-image: embedded texture '%s' not found in '%s'",
+            ref.c_str(), path.c_str());
+        return {};
+    }
+    const std::string key = ref + (srgb ? "#s" : "#l");
+    const std::string name = stemOf(path) + ":emb:" + key;
+    stbi_set_flip_vertically_on_load(true);
+    return decodeEmbedded(emb, resources, name, path, ref, srgb);
 }
 
 EntityId importModelIntoScene(const std::string& path, ResourceManager& resources,

@@ -17,6 +17,7 @@
 #include "io/asset_serializer.h"
 #include "io/component_serializer.h"
 #include "resource/resource_manager.h"
+#include "resource/shader_asset.h"
 #include "system/render/render_view.h"   // EnvironmentConfig
 #include "system/hierarchy/hierarchy_operations.h"
 
@@ -242,8 +243,15 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
     // stale - editor panels that cached handles to editor-only previews
     // (MaterialEditor preview meshes, AssetBrowser neutral material)
     // re-acquire on next use via findByName-or-addInternal (O(1) now).
+    //
+    // Shaders are engine-owned (loaded once in main()) and never enter the
+    // scene file, so the staging RM has no ShaderAsset slot. Swap shaders
+    // back from the just-displaced live RM so cached shader handles in the
+    // render passes stay valid; without this the next frame's IBL bake
+    // dereferences an empty ShaderAsset slot and segfaults.
     scene.swap(staging);
     resources.swap(stagingResources);
+    resources.swapSlot<ShaderAsset>(stagingResources);
     scene.compact();
 
     LOG_INFO("Loaded scene from '%s' (%zu entities, %zu hierarchy links)",
