@@ -16,16 +16,22 @@ namespace Engine {
 class Scene;
 
 /**
- * @brief Reusable ImGui widget helpers for the editor.
+ * @brief XYZ vector control: three drag floats with colored reset buttons (X/Y/Z).
  *
- * Free functions for common UI patterns: XYZ vector controls with colored reset
- * buttons, aligned property labels, component remove buttons, fuzzy search,
- * and entity display name/icon generation.
+ * Returns true the frame any axis is edited. @p resetValue is restored on
+ * button click; @p speed is the ImGui drag speed for each axis.
  */
 bool drawVec3Control(const char* label, float* values,
                      float resetValue = 0.0f, float speed = 0.1f);
+
+/// Right-aligned property label with consistent column width across the panel.
 void drawPropertyLabel(const char* label);
+
+/// Component-card remove button (small "x"). @p entityIdx keeps the ImGui id
+/// stable when the same component appears on multiple entities.
 bool drawRemoveButton(const char* compLabel, uint32_t entityIdx);
+
+/// Case-insensitive substring match. Empty @p filter matches every @p text.
 bool matchesFilter(const char* text, const char* filter);
 
 /**
@@ -47,11 +53,11 @@ bool beginComponentCard(const char* title, const ImVec4& accent,
 void endComponentCard();
 
 /**
- * @brief The component-card header on its own: a tinted, rounded CollapsingHeader
+ * @brief Tinted, accent-stripped CollapsingHeader without a body wrapper.
  *
- * with a left accent strip. Drop-in for ImGui::CollapsingHeader (no end
- * pairing, no body indent) - used so dense panels (Bottom, etc.) read in
- * the same visual language as the Inspector without restructuring.
+ * Drop-in for ImGui::CollapsingHeader (no end pairing, no body indent) - used
+ * so dense panels (Bottom, etc.) read in the same visual language as the
+ * Inspector without restructuring.
  */
 bool styledCollapsingHeader(const char* title, const ImVec4& accent,
                             bool defaultOpen = false);
@@ -113,6 +119,8 @@ class EulerCache {
         bool      m_haveKey = false;
 };
 
+/// Write the user-visible name of @p id into @p buf (falls back to a default
+/// like "Entity 7" when the entity has no Name component).
 void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t bufSize);
 
 /// Which entity-type glyph represents @p id (camera / light variant / mesh /

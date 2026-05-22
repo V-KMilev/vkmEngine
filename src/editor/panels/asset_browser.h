@@ -23,6 +23,16 @@ class ResourceManager;
  */
 class AssetBrowserPanel {
     public:
+        AssetBrowserPanel() = default;
+        ~AssetBrowserPanel() = default;
+
+        AssetBrowserPanel(const AssetBrowserPanel& other) = delete;
+        AssetBrowserPanel& operator=(const AssetBrowserPanel& other) = delete;
+
+        AssetBrowserPanel(AssetBrowserPanel && other) = delete;
+        AssetBrowserPanel& operator=(AssetBrowserPanel && other) = delete;
+
+    public:
         void draw(EditorContext& ec);
 
     private:

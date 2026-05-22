@@ -38,13 +38,13 @@ void deleteEntity(Scene& scene, EditorState& state, EntityId entity);
 void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController& camera);
 
 /**
- * @brief Mark a hierarchy mutation: cascade ECS dirty bits, request a hierarchy
+ * @brief Commit a hierarchy mutation: dirty bits, panel rebuild, scene save flag.
  *
- * panel rebuild, and flag the scene for save. Replaces the
- * HierarchyOperations::markDirty + state.hierarchyDirty + markSceneDirty
- * triplet that used to live at every call site - one missed line dropped
- * the scene-dirty flag, which is the user-trust hazard the editor audit
- * flagged.
+ * Cascades ECS dirty bits, requests a hierarchy panel rebuild, and flags the
+ * scene for save. Replaces the HierarchyOperations::markDirty +
+ * state.hierarchyDirty + markSceneDirty triplet that used to live at every
+ * call site - one missed line dropped the scene-dirty flag, which is the
+ * user-trust hazard the editor audit flagged.
  */
 void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity);
 
@@ -59,10 +59,11 @@ void frameAll(FrameContext& ctx, CameraController& camera);
 void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState& state);
 
 /**
- * @brief Render the "Import Model" modal. Must be called once per frame from the
+ * @brief Render the "Import Model" modal.
  *
- * menu-bar scope (like SceneIOController::drawDialogs) so the modal
- * survives the Create menu closing when the item is clicked.
+ * Must be called once per frame from the menu-bar scope (like
+ * SceneIOController::drawDialogs) so the modal survives the Create menu
+ * closing when the item is clicked.
  *
  * Owns a cached AssetPicker so the modal does not re-scan the assets tree
  * every frame it is open.

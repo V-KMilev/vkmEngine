@@ -22,7 +22,7 @@ namespace Engine {
 class GLSSRPass : public RenderPass {
     public:
         GLSSRPass() = delete;
-        ~GLSSRPass();
+        ~GLSSRPass() override;
 
         GLSSRPass(const GLSSRPass& other) = delete;
         GLSSRPass& operator=(const GLSSRPass& other) = delete;

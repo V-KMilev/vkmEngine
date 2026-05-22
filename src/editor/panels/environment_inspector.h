@@ -24,6 +24,16 @@ struct EnvironmentConfig;
  */
 class EnvironmentInspector {
     public:
+        EnvironmentInspector() = default;
+        ~EnvironmentInspector() = default;
+
+        EnvironmentInspector(const EnvironmentInspector& other) = delete;
+        EnvironmentInspector& operator=(const EnvironmentInspector& other) = delete;
+
+        EnvironmentInspector(EnvironmentInspector && other) = delete;
+        EnvironmentInspector& operator=(EnvironmentInspector && other) = delete;
+
+    public:
         void draw(EditorContext& ec, EnvironmentConfig& env);
 
     private:

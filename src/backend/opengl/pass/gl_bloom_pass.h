@@ -23,7 +23,7 @@ namespace Engine {
 class GLBloomPass : public RenderPass {
     public:
         GLBloomPass() = delete;
-        ~GLBloomPass();
+        ~GLBloomPass() override;
 
         GLBloomPass(const GLBloomPass& other) = delete;
         GLBloomPass& operator=(const GLBloomPass& other) = delete;

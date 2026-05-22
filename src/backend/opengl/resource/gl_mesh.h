@@ -43,13 +43,13 @@ class GLMesh {
          * @brief Returns the number of vertices in the mesh.
          * @return Vertex count.
          */
-         size_t getVertexCount() const { return m_vertexCount; }
+        size_t getVertexCount() const { return m_vertexCount; }
 
-         /**
-          * @brief Returns the number of indices in the mesh.
-          * @return Index count.
-          */
-         size_t getIndexCount() const { return m_indexCount; }
+        /**
+         * @brief Returns the number of indices in the mesh.
+         * @return Index count.
+         */
+        size_t getIndexCount() const { return m_indexCount; }
 
         /**
          * @brief Updates the underlying mesh data on the GPU using a new asset.

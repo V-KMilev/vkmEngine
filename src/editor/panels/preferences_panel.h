@@ -16,6 +16,16 @@ struct EditorContext;
  */
 class PreferencesPanel {
     public:
+        PreferencesPanel() = default;
+        ~PreferencesPanel() = default;
+
+        PreferencesPanel(const PreferencesPanel& other) = delete;
+        PreferencesPanel& operator=(const PreferencesPanel& other) = delete;
+
+        PreferencesPanel(PreferencesPanel && other) = delete;
+        PreferencesPanel& operator=(PreferencesPanel && other) = delete;
+
+    public:
         /// Draws the window while state.showPreferences is true; the
         /// title-bar X clears it.
         void draw(EditorContext& ec);

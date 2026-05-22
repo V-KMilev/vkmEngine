@@ -1,8 +1,9 @@
 #include "ui/editor_icons.h"
-#include "ui/editor_style.h"
 
 #include <cmath>
 #include <cstdio>
+
+#include "ui/editor_style.h"
 
 namespace Engine {
 

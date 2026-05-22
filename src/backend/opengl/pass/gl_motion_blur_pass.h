@@ -23,7 +23,7 @@ namespace Engine {
 class GLMotionBlurPass : public RenderPass {
     public:
         GLMotionBlurPass() = delete;
-        ~GLMotionBlurPass();
+        ~GLMotionBlurPass() override;
 
         GLMotionBlurPass(const GLMotionBlurPass& other) = delete;
         GLMotionBlurPass& operator=(const GLMotionBlurPass& other) = delete;

@@ -21,7 +21,7 @@ namespace Engine {
 class GLGridPass : public RenderPass {
     public:
         GLGridPass() = delete;
-        ~GLGridPass() = default;
+        ~GLGridPass() override = default;
 
         GLGridPass(const GLGridPass& other) = delete;
         GLGridPass& operator=(const GLGridPass& other) = delete;
