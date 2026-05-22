@@ -13,8 +13,16 @@ namespace Engine {
  * computation (first write -> last read), and debug introspection; a later
  * step moves the concrete allocation into a graph-owned pool keyed by these.
  *
+ * Two flavours, distinguished by rgResourceIsPersistent():
+ *   - Transient: produced and consumed within a single frame. Lifetime is
+ *     (first write -> last read) and ordering errors are real.
+ *   - Persistent: ping-pong / history buffers (TAAHistory, AdaptedLuminance)
+ *     and externally owned targets (Backbuffer). They survive across frames,
+ *     so read-before-write within a frame is not an error - the producer is
+ *     "the previous frame".
+ *
  * SceneHDRResolved is the single-sample resolve of SceneHDR - it is a derived
- * resource, so reads of it are never flagged as read-before-write.
+ * resource, so reads of it are never flagged as read-before-write either.
  */
 enum class RGResource : uint8_t {
     ShadowAtlas = 0,
@@ -25,10 +33,11 @@ enum class RGResource : uint8_t {
     SceneHDR,
     SceneHDRResolved,
     BloomChain,
-    AdaptedLuminance,
-    TAAHistory,
-    PostScratch,    ///< Shared scratch target for in-place post passes (DoF / motion blur).
-    Backbuffer,
+    AdaptedLuminance,    ///< Persistent ping-pong (eye adaptation history).
+    TAAHistory,          ///< Persistent ping-pong (TAA reprojection history).
+    PostScratch,         ///< Shared scratch target for in-place post passes (DoF / motion blur).
+    Overlay,             ///< HDR FBO overlay attachment; debug passes write, composite reads.
+    Backbuffer,          ///< Externally owned (window).
 
     Count
 };
@@ -48,19 +57,29 @@ inline const char* rgResourceName(RGResource r) {
         case RGResource::AdaptedLuminance:  return "AdaptedLuminance";
         case RGResource::TAAHistory:        return "TAAHistory";
         case RGResource::PostScratch:       return "PostScratch";
+        case RGResource::Overlay:           return "Overlay";
         case RGResource::Backbuffer:        return "Backbuffer";
         default:                            return "Unknown";
     }
 }
 
-/// True for resources that exist without an explicit producing pass (derived
-/// or externally owned), so reading them is not a graph ordering error.
+/// Persistent across frames: TAA/AE history + externally owned targets.
+/// Lifetime tracking does not apply, and read-before-write within a frame is
+/// satisfied by the previous frame's write.
+inline bool rgResourceIsPersistent(RGResource r) {
+    return r == RGResource::TAAHistory
+        || r == RGResource::AdaptedLuminance
+        || r == RGResource::Backbuffer;
+}
+
+/// True for resources whose reads are never flagged as ordering errors:
+/// persistent resources, derived resources (SceneHDRResolved), or shared
+/// scratch written by callers (PostScratch). All persistent resources are
+/// implicit; not every implicit resource is persistent.
 inline bool rgResourceIsImplicit(RGResource r) {
-    return r == RGResource::SceneHDRResolved
-        || r == RGResource::Backbuffer
-        || r == RGResource::TAAHistory       // persistent ping-pong, no producer pass
-        || r == RGResource::AdaptedLuminance // persistent ping-pong; composite gates on u_autoExposure
-        || r == RGResource::PostScratch;     // shared scratch, written by callers
+    return rgResourceIsPersistent(r)
+        || r == RGResource::SceneHDRResolved  // derived from SceneHDR
+        || r == RGResource::PostScratch;      // shared scratch, written by callers
 }
 
 } // namespace Engine

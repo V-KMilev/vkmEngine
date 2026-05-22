@@ -183,6 +183,8 @@ void RenderView::build(
         drawable.materialType = materialTypeOf(mesh.material);
         drawable.castShadows  = mesh.castShadows;
         drawable.model        = entry.model;
+        drawable.worldMin     = entry.worldMin;
+        drawable.worldMax     = entry.worldMax;
         drawables.emplace_back(drawable);
     }
 

@@ -110,15 +110,25 @@ longer self-resolve.
 enum class RGResource : uint8_t {
     ShadowAtlas, IBL, GBufferNormal, GBufferPosition, AO,
     SceneHDR, SceneHDRResolved, BloomChain, AdaptedLuminance,
-    TAAHistory, Backbuffer,
+    TAAHistory, PostScratch, Overlay, Backbuffer,
     Count
 };
 ```
 
+`AdaptedLuminance`, `TAAHistory`, and `Backbuffer` are *persistent* (survive
+across frames - persistent ping-pong or externally owned); reads of them
+before any in-frame write are not ordering errors because the previous
+frame is the producer. See `rgResourceIsPersistent()` /
+`rgResourceIsImplicit()` in `render_graph_resource.h`.
+
 The graph names resources but doesn't yet own their GPU storage; the
-backend's `FrameResources` still allocates them. Moving the
-allocation/aliasing pool into the graph is tracked in
-`docs/misc/render_roadmap.md` (kept local).
+backend's `FrameResources` still allocates them. Lifetime-based pool aliasing
+(disjoint `[firstWrite..lastRead]` ranges sharing physical storage) is
+**intentionally deferred** at the current scale - the lifetime arrays in
+`compile()` are computed for telemetry and to keep the door open, but at
+~15 transient resources the memory win does not justify the design +
+correctness work. See [`docs/misc/gaps.md`](../misc/gaps.md) for the
+deferral rationale.
 
 ## RenderPass
 
@@ -205,6 +215,7 @@ Sequence as wired in `main.cpp`:
 | `GLAABBDebugPass` | `aabb_debug` | Wireframe AABB visualization (gated by `env.aabbDebug`) |
 | `GLGridPass` | `grid` | Procedural infinite grid with distance fade |
 | `GLSSRPass` | `post/ssr` | Screen-space reflections, additively blended into the HDR scene |
+| `GLLensFlarePass` | `post/lens_flare` | Ghosts + halo from bright pixels, additively blended (off by default). Runs after SSR so reflections can themselves cause flare, and before TAA/DoF for temporal stabilisation |
 | `GLTAAPass` | `post/taa` | Temporal AA (off by default; MSAA already handles spatial) |
 | `GLDoFPass` | `post/dof` | Depth-of-field over the resolved HDR (off by default) |
 | `GLMotionBlurPass` | `post/motion_blur` | Camera motion blur (off by default) |

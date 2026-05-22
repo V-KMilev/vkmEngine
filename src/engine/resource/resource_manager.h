@@ -118,7 +118,14 @@ class ResourceManager {
             return storageOfConst<T>(slot).get(handle.key.index);
         }
 
-        /// @brief Get mutable access to a resource for editing by handle.
+        /**
+         * @brief Get mutable access to a resource for editing by handle.
+         *
+         * IMPORTANT: do NOT mutate the `name` field through this reference -
+         * the per-type findByName index will go stale and findByName(newName)
+         * keeps returning nothing. Use rename(handle, newName) instead. Every
+         * other field is safe to edit in place; only the name is indexed.
+         */
         template<typename HandleType>
         auto& edit(const HandleType& handle) {
             using T = typename HandleType::resource_t;

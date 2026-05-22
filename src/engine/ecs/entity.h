@@ -10,7 +10,13 @@ namespace Engine {
  * @brief Entity identifier backed by a generational StorageIndex.
  *
  * Pairs a sparse-array slot index with a generation counter, giving entities
- * the same use-after-free protection and ID recycling that resource handles enjoy.
+ * the same use-after-free protection and ID recycling that resource handles
+ * enjoy.
+ *
+ * Conceptually distinct from StorageIndex (cross-entity reference vs raw ECS
+ * slot handle) but currently the same type. A newtype split is tracked in
+ * docs/misc/gaps.md - deferred until a real second consumer of StorageIndex
+ * appears outside this alias and Handle<T>.
  */
 using EntityId = StorageIndex;
 
