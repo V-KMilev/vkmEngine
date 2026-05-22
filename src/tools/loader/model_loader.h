@@ -38,6 +38,19 @@ MaterialHandle loadModelMaterial(const std::string& path, int materialIndex,
                                  ResourceManager& resources);
 
 /**
+ * @brief Re-extract one embedded texture from a model file by Assimp ref.
+ *
+ * Decoded with the engine's flip convention; returns an empty handle if
+ * @p path or @p ref don't resolve. Used by the "model-image" texture
+ * factory to round-trip embedded textures through scene save/load - the
+ * pixels live in the model file, not in the scene JSON.
+ */
+TextureHandle loadModelEmbeddedTexture(const std::string& path,
+                                       const std::string& ref,
+                                       bool srgb,
+                                       ResourceManager& resources);
+
+/**
  * @brief Import a whole model file into @p scene.
  *
  * Adds every aiMesh's MeshAsset + MaterialAsset to @p resources (idempotent

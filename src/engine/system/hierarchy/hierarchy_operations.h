@@ -105,8 +105,14 @@ void forEachChild(const Scene& scene, EntityId parent, Fn&& fn) {
 
     EntityId child = scene.get<Hierarchy>(parent).firstChild;
     while (child) {
+        // Snapshot next BEFORE fn so a callback that detaches or destroys
+        // the current child (Unparent context-menu, Delete, etc.) doesn't
+        // strand the iteration on a child whose Hierarchy was just removed.
+        const EntityId next = (scene.isAlive(child) && scene.has<Hierarchy>(child))
+            ? scene.get<Hierarchy>(child).nextSibling
+            : EntityId{};
         fn(child);
-        child = scene.get<Hierarchy>(child).nextSibling;
+        child = next;
     }
 }
 
