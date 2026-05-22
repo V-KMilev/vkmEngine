@@ -27,20 +27,27 @@ class EnvironmentInspector {
         void draw(EditorContext& ec, EnvironmentConfig& env);
 
     private:
-        void drawLighting(EditorContext& ec, EnvironmentConfig& env);
-        void drawCamera(EditorContext& ec, EnvironmentConfig& env);
-        void drawPost(EditorContext& ec, EnvironmentConfig& env);
-        void drawScene(EditorContext& ec, EnvironmentConfig& env);
-        void drawPipeline(EditorContext& ec);
-        void drawPresetBar(EnvironmentConfig& env);
+        // Each section returns true if any input mutated env, so draw()
+        // can mark the scene dirty once at the end. Pipeline returns true
+        // when a pass enable / culling setting changes (also persisted).
+        bool drawLighting(EditorContext& ec, EnvironmentConfig& env);
+        bool drawCamera(EditorContext& ec, EnvironmentConfig& env);
+        bool drawPost(EditorContext& ec, EnvironmentConfig& env);
+        bool drawScene(EditorContext& ec, EnvironmentConfig& env);
+        bool drawPipeline(EditorContext& ec);
+        bool drawPresetBar(EnvironmentConfig& env);
 
         char m_filter[64] = {};
 
-        // Edit buffers for the IBL HDR / LUT path InputText fields. They are
-        // re-synced from the EnvironmentConfig at the top of each draw, so
-        // switching the selected entity doesn't leak the in-flight edit.
-        char m_hdrPathBuf[260] = {};
-        char m_lutPathBuf[260] = {};
+        // Edit buffers for the IBL HDR / LUT path InputText fields. The
+        // buffer is refilled from EnvironmentConfig only when the source
+        // string actually changed (e.g. picker write-back, scene swap) -
+        // refreshing every frame would clobber an in-flight edit before
+        // Enter/Apply could commit it.
+        char        m_hdrPathBuf[260] = {};
+        char        m_lutPathBuf[260] = {};
+        std::string m_hdrPathLastSync;
+        std::string m_lutPathLastSync;
 
         // Remembered values so a header toggle can switch an effect fully off
         // and back on without losing the user's tuning.

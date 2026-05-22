@@ -8,15 +8,21 @@
 
 namespace Engine {
 
-void EditorPanelResize::process(EditorState& state, const Layout& L, bool blockNew) {
+void EditorPanelResize::process(EditorState& state, ImVec2 areaStart, float mainH,
+                                 float workW, bool blockNew) {
     constexpr float RESIZE_ZONE = 4.0f;
 
-    ImVec2 mpos      = ImGui::GetMousePos();
-    bool   mouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-    ImVec2 delta     = ImGui::GetIO().MouseDelta;
-    bool   alreadyResizing = m_resizingLeft || m_resizingRight || m_resizingBottom;
+    const ImVec2 mpos      = ImGui::GetMousePos();
+    const bool   mouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    const ImVec2 delta     = ImGui::GetIO().MouseDelta;
+    const bool   alreadyResizing = m_resizingLeft || m_resizingRight || m_resizingBottom;
     // Block a *new* resize if an ImGui widget or the gizmo is active.
-    bool   canStartNew = !ImGui::IsAnyItemActive() && !blockNew && !alreadyResizing;
+    const bool   canStartNew = !ImGui::IsAnyItemActive() && !blockNew && !alreadyResizing;
+
+    // Mirror the visibility checks that drawWorkspace uses, so the resizer
+    // sees the same panels the user sees.
+    const float leftW  = state.showHierarchy ? state.leftPanelWidth  : 0.0f;
+    const float rightW = state.showInspector ? state.rightPanelWidth : 0.0f;
 
     auto handleEdge = [&](bool show, float edgePos, bool horizontal,
                           bool& resizingFlag, float& panelSize, float sign,
@@ -25,12 +31,12 @@ void EditorPanelResize::process(EditorState& state, const Layout& L, bool blockN
         bool nearEdge;
         if (horizontal) {
             nearEdge = std::abs(mpos.y - edgePos) <= RESIZE_ZONE
-                    && mpos.x >= L.areaStart.x
-                    && mpos.x <= L.areaStart.x + L.workW;
+                    && mpos.x >= areaStart.x
+                    && mpos.x <= areaStart.x + workW;
         } else {
             nearEdge = std::abs(mpos.x - edgePos) <= RESIZE_ZONE
-                    && mpos.y >= L.areaStart.y
-                    && mpos.y <= L.areaStart.y + L.mainH;
+                    && mpos.y >= areaStart.y
+                    && mpos.y <= areaStart.y + mainH;
         }
 
         // Continue an existing resize drag
@@ -53,11 +59,23 @@ void EditorPanelResize::process(EditorState& state, const Layout& L, bool blockN
         }
     };
 
-    handleEdge(L.showLeft, L.areaStart.x + L.leftW, false,
-               m_resizingLeft, state.leftPanelWidth, 1.0f, 180.0f, 500.0f);
-    handleEdge(L.showRight, L.areaStart.x + L.workW - L.rightW, false,
-               m_resizingRight, state.rightPanelWidth, -1.0f, 240.0f, 600.0f);
-    handleEdge(L.showBottom, L.areaStart.y + L.mainH, true,
+    // The horizontal max must leave room for both the other side panel
+    // (if shown) AND a minimum viewport in the middle - clamping each
+    // panel against its own static max only would let the viewport
+    // collapse to nothing.
+    constexpr float MIN_CENTER  = 200.0f;
+    constexpr float LEFT_MIN    = 180.0f;
+    constexpr float LEFT_MAX    = 500.0f;
+    constexpr float RIGHT_MIN   = 240.0f;
+    constexpr float RIGHT_MAX   = 600.0f;
+    const float leftMax  = std::min(LEFT_MAX,  workW - rightW - MIN_CENTER);
+    const float rightMax = std::min(RIGHT_MAX, workW - leftW  - MIN_CENTER);
+
+    handleEdge(state.showHierarchy, areaStart.x + leftW, false,
+               m_resizingLeft, state.leftPanelWidth, 1.0f, LEFT_MIN, std::max(LEFT_MIN, leftMax));
+    handleEdge(state.showInspector, areaStart.x + workW - rightW, false,
+               m_resizingRight, state.rightPanelWidth, -1.0f, RIGHT_MIN, std::max(RIGHT_MIN, rightMax));
+    handleEdge(state.showBottom, areaStart.y + mainH, true,
                m_resizingBottom, state.bottomPanelHeight, -1.0f, 100.0f, 500.0f);
 
     if (!mouseDown) {

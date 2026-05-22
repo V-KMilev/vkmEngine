@@ -79,18 +79,21 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             anim.rotationTrack.setKeyframe(anim.time, tf.rotation);
             anim.scaleTrack.setKeyframe(anim.time, tf.scale);
             anim.updateDuration();
+            state.markSceneDirty();
         }
         ImGui::SameLine(0, GAP);
-        ImGui::Checkbox("Loop", &anim.looping);
+        if (ImGui::Checkbox("Loop", &anim.looping)) state.markSceneDirty();
         ImGui::SameLine(0, GAP);
         ImGui::SetNextItemWidth(90);
-        ImGui::DragFloat("Speed", &anim.speed, 0.005f, 0.0f, 10.0f, "%.2fx");
+        if (ImGui::DragFloat("Speed", &anim.speed, 0.005f, 0.0f, 10.0f, "%.2fx"))
+            state.markSceneDirty();
         ImGui::SameLine(0, GAP);
         ImGui::SetNextItemWidth(110);
         float lengthEdit = anim.length;
         if (ImGui::InputFloat("Length", &lengthEdit, 0.1f, 1.0f, "%.2f s")) {
             anim.length = std::max(0.0f, lengthEdit);
             anim.updateDuration();
+            state.markSceneDirty();
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Animation length in seconds (0 = auto from the last keyframe)");
@@ -134,35 +137,35 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             };
 
             // Keyframe dot under the mouse -> hover highlight + grab target.
+            // Tracked by INDEX rather than time; matching by float equality
+            // breaks the moment setKeyframeTime is invoked mid-drag.
             ImVec2 mp = ImGui::GetIO().MousePos;
-            int   hovTrack = -1;
-            float hovTime  = 0.0f;
+            int    hovTrack = -1;
+            size_t hovIdx   = 0;
             for (int i = 0; i < 3; ++i) {
                 float ly = laneY(i);
-                for (float t : *lanes[i].times) {
-                    float dx = timeToX(t) - mp.x, dy = ly - mp.y;
-                    if (dx * dx + dy * dy <= 49.0f) { hovTrack = i; hovTime = t; }
+                const auto& times = *lanes[i].times;
+                for (size_t k = 0; k < times.size(); ++k) {
+                    float dx = timeToX(times[k]) - mp.x, dy = ly - mp.y;
+                    if (dx * dx + dy * dy <= 49.0f) { hovTrack = i; hovIdx = k; }
                 }
             }
 
-            auto moveDot = [&](auto& trk, float fromT, float toT) {
-                const auto& ts = trk.getTimes();
-                for (size_t k = 0; k < ts.size(); ++k) {
-                    if (ts[k] == fromT) { trk.setKeyframeTime(k, toT); return; }
-                }
+            auto moveDot = [&](auto& trk, size_t idx, float toT) {
+                if (idx < trk.keyframeCount()) trk.setKeyframeTime(idx, toT);
             };
 
             if (ImGui::IsItemActivated()) {
-                if (hovTrack >= 0) { m_animDotTrack = hovTrack; m_animDotTime = hovTime; }
+                if (hovTrack >= 0) { m_animDotTrack = hovTrack; m_animDotIdx = hovIdx; }
                 else m_animDotTrack = -1;
             }
 
             if (ImGui::IsItemActive()) {
                 float mt = xToTime(mp.x);
-                if (m_animDotTrack == 0)      moveDot(anim.positionTrack, m_animDotTime, mt);
-                else if (m_animDotTrack == 1) moveDot(anim.rotationTrack, m_animDotTime, mt);
-                else if (m_animDotTrack == 2) moveDot(anim.scaleTrack,    m_animDotTime, mt);
-                if (m_animDotTrack >= 0) { m_animDotTime = mt; anim.updateDuration(); }
+                if (m_animDotTrack == 0)      moveDot(anim.positionTrack, m_animDotIdx, mt);
+                else if (m_animDotTrack == 1) moveDot(anim.rotationTrack, m_animDotIdx, mt);
+                else if (m_animDotTrack == 2) moveDot(anim.scaleTrack,    m_animDotIdx, mt);
+                if (m_animDotTrack >= 0) { anim.updateDuration(); state.markSceneDirty(); }
                 else { anim.time = mt; anim.playing = false; }
                 previewPose();
             }
@@ -172,10 +175,11 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
                 float ly = laneY(i);
                 dl->AddText(ImVec2(p0.x + 3, ly - 7), lanes[i].c, lanes[i].n);
                 dl->AddLine(ImVec2(p0.x + 16, ly), ImVec2(p0.x + w, ly), IM_COL32(45, 45, 50, 255));
-                for (float t : *lanes[i].times) {
-                    bool hot = (i == hovTrack && t == hovTime)
-                            || (i == m_animDotTrack && t == m_animDotTime);
-                    dl->AddCircleFilled(ImVec2(timeToX(t), ly), hot ? 5.5f : 3.5f,
+                const auto& times = *lanes[i].times;
+                for (size_t k = 0; k < times.size(); ++k) {
+                    bool hot = (i == hovTrack && k == hovIdx)
+                            || (i == m_animDotTrack && k == m_animDotIdx);
+                    dl->AddCircleFilled(ImVec2(timeToX(times[k]), ly), hot ? 5.5f : 3.5f,
                                         hot ? EditorStyle::HIGHLIGHT_U32 : lanes[i].c);
                 }
             }
@@ -230,6 +234,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
                 track.setKeyframe(anim.time, recordVal());
                 anim.updateDuration();
                 previewPose();
+                state.markSceneDirty();
             }
             ImGui::SameLine();
             char clrId[16];
@@ -238,13 +243,14 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
                            "Clear every keyframe on this track", ih2)) {
                 track.clear();
                 anim.updateDuration();
+                state.markSceneDirty();
             }
             ImGui::SameLine(0, 12);
             ImGui::SetNextItemWidth(-1);
             char easeId[24];
             snprintf(easeId, sizeof(easeId), "##e%s", tag);
             EasingFunction f = track.getEasing();
-            if (drawEasingCombo(easeId, f)) track.setEasing(f);
+            if (drawEasingCombo(easeId, f)) { track.setEasing(f); state.markSceneDirty(); }
 
             size_t count = track.keyframeCount();
             if (count == 0) {
@@ -306,13 +312,16 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
                     track.removeKeyframe(static_cast<size_t>(deleteIdx));
                     anim.updateDuration();
                     previewPose();
+                    state.markSceneDirty();
                 } else if (retimeIdx >= 0) {
                     track.setKeyframeTime(static_cast<size_t>(retimeIdx), std::max(0.0f, retimeVal));
                     anim.updateDuration();
                     previewPose();
+                    state.markSceneDirty();
                 } else if (valueIdx >= 0) {
                     track.setKeyframeValue(static_cast<size_t>(valueIdx), newVal);
                     previewPose();
+                    state.markSceneDirty();
                 }
             }
             ImGui::TreePop();
@@ -348,6 +357,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             Animation& na = scene.get<Animation>(id);
             na.length = 5.0f;
             na.updateDuration();
+            state.markSceneDirty();
         }
         return;
     }

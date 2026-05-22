@@ -1,5 +1,6 @@
 #include "gizmo/transform_gizmo.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -52,7 +53,7 @@ void TransformGizmo::drawTranslationGizmo(ImDrawList* dl, const ImVec2 screenAxe
         ImU32 col = colorForElement(axisElems[i], hl);
         float thick = (axisElems[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS;
 
-        dl->AddLine(m_originScreen, screenAxes[i], col, thick);
+        dl->AddLine(m_originScreen, screenAxes[i], col, thick * m_uiScale);
 
         // Arrow head (triangle)
         ImVec2 dir(screenAxes[i].x - m_originScreen.x, screenAxes[i].y - m_originScreen.y);
@@ -61,7 +62,7 @@ void TransformGizmo::drawTranslationGizmo(ImDrawList* dl, const ImVec2 screenAxe
             dir.x /= len;
             dir.y /= len;
             ImVec2 perp(-dir.y, dir.x);
-            float headSize = ARROW_HEAD_PIXELS;
+            float headSize = ARROW_HEAD_PIXELS * m_uiScale;
             ImVec2 tip = screenAxes[i];
             ImVec2 base1(tip.x - dir.x * headSize * 2.0f + perp.x * headSize,
                          tip.y - dir.y * headSize * 2.0f + perp.y * headSize);
@@ -72,7 +73,7 @@ void TransformGizmo::drawTranslationGizmo(ImDrawList* dl, const ImVec2 screenAxe
     }
 
     // Center dot
-    dl->AddCircleFilled(m_originScreen, 3.0f, IM_COL32(255, 255, 255, 200), 8);
+    dl->AddCircleFilled(m_originScreen, 3.0f * m_uiScale, IM_COL32(255, 255, 255, 200), 8);
 }
 
 void TransformGizmo::drawRotationGizmo(ImDrawList* dl, const glm::vec3 axes[3]) {
@@ -84,7 +85,7 @@ void TransformGizmo::drawRotationGizmo(ImDrawList* dl, const glm::vec3 axes[3]) 
             GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ
         };
         ImU32 col = colorForElement(axisElems[i], hl);
-        float thick = (axisElems[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS;
+        float thick = ((axisElems[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS) * m_uiScale;
 
         // Generate circle points on the plane perpendicular to this axis
         glm::vec3 normal = axes[i];
@@ -132,34 +133,28 @@ void TransformGizmo::drawRotationGizmo(ImDrawList* dl, const glm::vec3 axes[3]) 
     }
 
     // Center dot
-    dl->AddCircleFilled(m_originScreen, 3.0f, IM_COL32(255, 255, 255, 200), 8);
+    dl->AddCircleFilled(m_originScreen, 3.0f * m_uiScale, IM_COL32(255, 255, 255, 200), 8);
 }
 
 void TransformGizmo::drawScaleGizmo(ImDrawList* dl, const ImVec2 screenAxes[3]) {
     GizmoElement hl = m_dragging ? m_active : m_hovered;
+    const float scale = m_uiScale;
 
     for (int i = 0; i < 3; ++i) {
         static constexpr GizmoElement axisElems[] = {
             GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ
         };
         ImU32 col = colorForElement(axisElems[i], hl);
-        float thick = (axisElems[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS;
+        float thick = ((axisElems[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS) * scale;
 
         dl->AddLine(m_originScreen, screenAxes[i], col, thick);
 
         // Box handle at endpoint
-        ImVec2 boxMin(screenAxes[i].x - SCALE_BOX_HALF, screenAxes[i].y - SCALE_BOX_HALF);
-        ImVec2 boxMax(screenAxes[i].x + SCALE_BOX_HALF, screenAxes[i].y + SCALE_BOX_HALF);
+        const float half = SCALE_BOX_HALF * scale;
+        ImVec2 boxMin(screenAxes[i].x - half, screenAxes[i].y - half);
+        ImVec2 boxMax(screenAxes[i].x + half, screenAxes[i].y + half);
         dl->AddRectFilled(boxMin, boxMax, col);
     }
-
-    // Center box (uniform scale)
-    float centerSize = 3.5f;
-    dl->AddRectFilled(
-        ImVec2(m_originScreen.x - centerSize, m_originScreen.y - centerSize),
-        ImVec2(m_originScreen.x + centerSize, m_originScreen.y + centerSize),
-        IM_COL32(255, 255, 255, 200)
-    );
 }
 
 } // namespace Engine

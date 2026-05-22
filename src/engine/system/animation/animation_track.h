@@ -26,8 +26,13 @@ class AnimationTrack {
         AnimationTrack(EasingFunction easing = Easing::linear) : m_easing(easing) {}
         ~AnimationTrack() = default;
 
-        AnimationTrack(const AnimationTrack& other) = delete;
-        AnimationTrack& operator=(const AnimationTrack& other) = delete;
+        // Tracks own only POD storage (sorted vectors + an easing function
+        // pointer), so the compiler-generated copy/move are correct and
+        // cheap. Copyability matters for the editor's undo machinery: an
+        // AddAnimation / RemoveAnimation command captures the component
+        // by value to restore it intact on undo.
+        AnimationTrack(const AnimationTrack& other) = default;
+        AnimationTrack& operator=(const AnimationTrack& other) = default;
 
         AnimationTrack(AnimationTrack && other) noexcept = default;
         AnimationTrack& operator=(AnimationTrack && other) noexcept = default;
@@ -196,7 +201,7 @@ class AnimationTrack {
             addKeyframe(time, value);
         }
 
-        /// Read-only access to keyframe storage — used by serialization and
+        /// Read-only access to keyframe storage - used by serialization and
         /// any tool that needs to round-trip the track's contents.
         const std::vector<float>& getTimes()  const { return m_times; }
         const std::vector<T>&     getValues() const { return m_values; }

@@ -158,10 +158,13 @@ class Engine {
         std::array<StageSchedule,
                    static_cast<size_t>(SystemStage::Count)> m_schedule;
 
-        /// Subset of systems that actually implement fixedUpdate(). Built
-        /// once at init from System::hasFixedUpdate(); the accumulator loop
-        /// iterates this list instead of dispatching the empty virtual
-        /// across every registered system every tick.
+        /**
+         * @brief Subset of systems that actually implement fixedUpdate(). Built
+         *
+         * once at init from System::hasFixedUpdate(); the accumulator loop
+         * iterates this list instead of dispatching the empty virtual
+         * across every registered system every tick.
+         */
         std::vector<System*> m_fixedUpdaters;
 
         bool m_initialized = false;

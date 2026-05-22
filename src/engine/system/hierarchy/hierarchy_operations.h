@@ -67,7 +67,7 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity);
  * a Transform that participates in a hierarchy so the next
  * resolveWorldTransforms() picks up the change.
  *
- * Not thread-safe — call from the main thread or after any parallel writes.
+ * Not thread-safe - call from the main thread or after any parallel writes.
  *
  * @param scene The scene containing the entity.
  * @param entity The entity whose subtree should be marked dirty.

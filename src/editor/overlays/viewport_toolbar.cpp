@@ -4,6 +4,7 @@
 #include "input/editor_actions.h"
 
 #include "platform/window/window_manager.h"
+#include "system/render/render_system.h"
 
 
 namespace Engine {
@@ -94,7 +95,7 @@ void ViewportToolbar::draw(EditorContext& ec) {
         ImGui::SameLine();
         if (iconButton("shot", EditorIcon::Screenshot, false, true,
                        "Save viewport screenshot to APP_ROOT_DIR/screenshots/", BTN)) {
-            captureViewportScreenshot(ctx.window);
+            captureViewportScreenshot(ctx.window, ec.renderSystem.getBackend());
         }
 
         m_hovered = ImGui::IsWindowHovered(

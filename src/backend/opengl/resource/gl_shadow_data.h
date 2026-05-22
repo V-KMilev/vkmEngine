@@ -15,7 +15,7 @@ namespace Core {
 namespace Engine {
 
 /**
- * @brief 2D shadow caster entry (std140 layout) — directional + spot.
+ * @brief 2D shadow caster entry (std140 layout) - directional + spot.
  *
  * Sampled as sampler2DArrayShadow; atlas layer = the entry's index, so no
  * explicit layer field is needed.
@@ -30,7 +30,7 @@ struct alignas(16) Shadow2DCasterGPU {
 };
 
 /**
- * @brief Cube shadow caster entry (std140 layout) — point lights.
+ * @brief Cube shadow caster entry (std140 layout) - point lights.
  *
  * Sampled as samplerCubeArrayShadow; the cube index equals the entry's index.
  *
@@ -44,7 +44,7 @@ struct alignas(16) ShadowCubeCasterGPU {
 /**
  * @brief Shadow UBO data (std140).
  *
- * Two separate caster arrays — 2D (directional + spot) and cube (point) —
+ * Two separate caster arrays - 2D (directional + spot) and cube (point) -
  * indexed directly by the slot the light is carrying in its GPU data.
  */
 struct alignas(16) ShadowUBOData {
@@ -74,7 +74,7 @@ class GLShadowData {
         GLShadowData& operator=(GLShadowData && other) = delete;
 
     public:
-        /// Reset both caster counts to 0. Stale array tails are inert — the
+        /// Reset both caster counts to 0. Stale array tails are inert - the
         /// shader only reads the prefix indicated by count2D / countCube.
         void clear();
 

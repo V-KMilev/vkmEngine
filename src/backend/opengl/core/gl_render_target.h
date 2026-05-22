@@ -26,7 +26,7 @@ class GLDefaultRenderTarget : public RenderTarget {
         }
 
         void unbind() override {
-            // Already the default — nothing to do
+            // Already the default - nothing to do
         }
 
         void resize(uint32_t width, uint32_t height) override {

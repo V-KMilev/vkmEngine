@@ -2,8 +2,6 @@
 #include "framework/editor_common.h"
 #include "ui/editor_style.h"
 
-#include <GL/glew.h>
-
 #include "core/math/axes.h"
 #include "debug/statistics.h"
 #include "platform/threading/thread_pool.h"
@@ -156,6 +154,8 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
     drawList->AddCircle(center, gizmoSize * 0.5f, IM_COL32(50, 50, 55, 200), 32, 1.0f);
 
     // Hit-test the endpoints (front-most wins) using current mouse position.
+    // Skip when the mouse isn't over the viewport - otherwise the gizmo
+    // would light up while hovering the Inspector / Hierarchy.
     const ImVec2 mp = ImGui::GetMousePos();
     int hoverIdx = -1;
     float hoverDepth = std::numeric_limits<float>::max();
@@ -163,6 +163,7 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
     for (int i = 0; i < 6; ++i) {
         endPts[i] = ImVec2(center.x + endpoints[i].viewDir.x * axisLen,
                            center.y - endpoints[i].viewDir.y * axisLen);
+        if (!ec.state.viewportHovered) continue;
         const float dx = mp.x - endPts[i].x, dy = mp.y - endPts[i].y;
         if (dx*dx + dy*dy <= labelDotRadius * labelDotRadius
             && endpoints[i].viewDir.z < hoverDepth) {

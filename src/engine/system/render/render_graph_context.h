@@ -40,18 +40,24 @@ struct RenderGraphContext {
     uint64_t                frameIndex = 0;
 
 #ifndef NDEBUG
-    /// Debug-only: bitmask of RGResource ids actually looked up during
-    /// the current pass. Cleared by RenderGraph::execute before each
-    /// pass, checked after the pass returns. Mutable so resource<T>()
-    /// can stay const-correct from the pass's point of view.
+    /**
+     * @brief Debug-only: bitmask of RGResource ids actually looked up during
+     *
+     * the current pass. Cleared by RenderGraph::execute before each
+     * pass, checked after the pass returns. Mutable so resource<T>()
+     * can stay const-correct from the pass's point of view.
+     */
     mutable uint32_t accessedResources = 0;
 #endif
 
-    /// Typed access to a graph-registered resource. Returns nullptr when
-    /// the backend hasn't published @p id this frame. The caller is
-    /// responsible for picking @p T to match the concrete type the
-    /// backend registered (OpenGL backend registers GLSceneTarget* for
-    /// SceneHDR, GLBloom* for BloomChain, etc.).
+    /**
+     * @brief Typed access to a graph-registered resource. Returns nullptr when
+     *
+     * the backend hasn't published @p id this frame. The caller is
+     * responsible for picking @p T to match the concrete type the
+     * backend registered (OpenGL backend registers GLSceneTarget* for
+     * SceneHDR, GLBloom* for BloomChain, etc.).
+     */
     template<typename T>
     T* resource(RGResource id) const {
 #ifndef NDEBUG

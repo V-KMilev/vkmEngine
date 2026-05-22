@@ -15,16 +15,19 @@ namespace Engine {
 
 namespace {
 
-/// Greedy layer assignment: walk systems in registration order, drop each
-/// one into the earliest layer where its access doesn't conflict with any
-/// system already in that layer. Two accesses conflict when one's writes
-/// overlap the other's reads or writes (read-only / read-only is fine).
-///
-/// Systems with empty SystemAccess are treated as "writes everything" -
-/// they conflict with anyone and therefore always end up in their own
-/// dedicated layer. This is the safe default: a system that hasn't
-/// declared accesses (or whose work is genuinely conservative, like
-/// EventSystem flushing user callbacks) never gets parallel-dispatched.
+/**
+ * @brief Greedy layer assignment: walk systems in registration order, drop each
+ *
+ * one into the earliest layer where its access doesn't conflict with any
+ * system already in that layer. Two accesses conflict when one's writes
+ * overlap the other's reads or writes (read-only / read-only is fine).
+ *
+ * Systems with empty SystemAccess are treated as "writes everything" -
+ * they conflict with anyone and therefore always end up in their own
+ * dedicated layer. This is the safe default: a system that hasn't
+ * declared accesses (or whose work is genuinely conservative, like
+ * EventSystem flushing user callbacks) never gets parallel-dispatched.
+ */
 bool overlaps(const std::vector<TypeId>& a, const std::vector<TypeId>& b) {
     for (TypeId t : a)
         if (std::find(b.begin(), b.end(), t) != b.end()) return true;
@@ -62,12 +65,24 @@ void Engine::run() {
 
         if (!m_window.updateInput()) break;
 
+        // The editor (if attached) writes the scene viewport rect to
+        // WindowManager each frame. Without an editor, the 3D pipeline
+        // sees the full window. A zero size in either dimension means
+        // "no editor reported a rect this frame" -> use the window.
+        const uint32_t winW = static_cast<uint32_t>(m_window.getWidth());
+        const uint32_t winH = static_cast<uint32_t>(m_window.getHeight());
+        const uint32_t vpW  = m_window.sceneViewportWidth();
+        const uint32_t vpH  = m_window.sceneViewportHeight();
+        const bool     vpSet = (vpW > 0 && vpH > 0);
+
         FrameContext ctx{
             m_scene, m_resources, m_window, stats,
             deltaTime,
             Config::FixedTimeStep,
-            static_cast<uint32_t>(m_window.getWidth()),
-            static_cast<uint32_t>(m_window.getHeight()),
+            vpSet ? m_window.sceneViewportX() : 0u,
+            vpSet ? m_window.sceneViewportY() : 0u,
+            vpSet ? vpW : winW,
+            vpSet ? vpH : winH,
             nullptr
         };
 

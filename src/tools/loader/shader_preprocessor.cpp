@@ -70,12 +70,15 @@ std::string processFile(const fs::path& filePath,
     return out.str();
 }
 
-/// Splice a `#define` block right after the file's `#version` line.
-/// GLSL requires #version to be the first non-comment, non-empty line; any
-/// #define above it is a compile error, so we have to find the version
-/// directive ourselves and inject below it. If no #version line is found
-/// (rare: e.g. an included snippet rendered standalone) we prepend at the
-/// top - the GLSL compiler will surface its own error in that case.
+/**
+ * @brief Splice a `#define` block right after the file's `#version` line.
+ *
+ * GLSL requires #version to be the first non-comment, non-empty line; any
+ * #define above it is a compile error, so we have to find the version
+ * directive ourselves and inject below it. If no #version line is found
+ * (rare: e.g. an included snippet rendered standalone) we prepend at the
+ * top - the GLSL compiler will surface its own error in that case.
+ */
 std::string injectDefines(const std::string& src,
                           const std::vector<std::string>& defines) {
     if (defines.empty()) return src;

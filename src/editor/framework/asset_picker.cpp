@@ -4,6 +4,8 @@
 #include <cctype>
 #include <system_error>
 
+#include "logger.h"
+
 namespace Engine {
 
 namespace {
@@ -45,28 +47,35 @@ void AssetPicker::refreshIfNeeded() {
     m_paths.clear();
 
     std::error_code ec;
-    auto consider = [&](const std::filesystem::directory_entry& e) {
+    auto consider = [&](const std::filesystem::directory_entry& e) -> bool {
+        if (static_cast<int>(m_paths.size()) >= options.maxResults) return false;
         const bool isFile = e.is_regular_file();
         const bool isDir  = e.is_directory();
-        if (options.kind == Kind::Files && !isFile) return;
-        if (options.kind == Kind::Directories && !isDir) return;
-        if (options.kind == Kind::Files && !extMatches(options.extensions, e.path())) return;
+        if (options.kind == Kind::Files && !isFile) return true;
+        if (options.kind == Kind::Directories && !isDir) return true;
+        if (options.kind == Kind::Files && !extMatches(options.extensions, e.path())) return true;
         m_paths.push_back(e.path());
         m_entries.push_back(displayName(e.path(), options.relativeTo, options.recursive));
-        if (static_cast<int>(m_paths.size()) > options.maxResults) return;
+        return true;
     };
 
     if (options.recursive) {
         for (const auto& e :
                 std::filesystem::recursive_directory_iterator(options.root, ec)) {
-            consider(e);
-            if (static_cast<int>(m_paths.size()) > options.maxResults) break;
+            if (!consider(e)) break;
         }
     } else {
         for (const auto& e : std::filesystem::directory_iterator(options.root, ec)) {
-            consider(e);
-            if (static_cast<int>(m_paths.size()) > options.maxResults) break;
+            if (!consider(e)) break;
         }
+    }
+
+    // Surface unreadable roots loudly - an empty picker with no warning
+    // looks like "no results", which is indistinguishable from a real
+    // empty directory.
+    if (ec) {
+        LOG_WARNING("AssetPicker: cannot iterate %s - %s",
+            options.root.string().c_str(), ec.message().c_str());
     }
 
     // Sort by display name for a stable, predictable browse experience.

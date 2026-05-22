@@ -69,6 +69,14 @@ bool WindowManager::requestClose() {
     return true;
 }
 
+void WindowManager::cancelClose() {
+    if (m_window) glfwSetWindowShouldClose(m_window->getWindowContext(), GLFW_FALSE);
+}
+
+void WindowManager::setTitle(const std::string& title) {
+    if (m_window) glfwSetWindowTitle(m_window->getWindowContext(), title.c_str());
+}
+
 bool WindowManager::swapBuffers() {
     GLFWwindow* windowContext = m_window->getWindowContext();
 
@@ -223,6 +231,13 @@ size_t WindowManager::getHeight() const {
 
 GLFWwindow* WindowManager::getWindowContext() const {
     return m_window ? m_window->getWindowContext() : nullptr;
+}
+
+void WindowManager::setSceneViewport(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    m_sceneVpX = x;
+    m_sceneVpY = y;
+    m_sceneVpW = w;
+    m_sceneVpH = h;
 }
 
 } // namespace Engine

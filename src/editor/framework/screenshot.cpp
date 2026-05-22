@@ -1,7 +1,5 @@
 #include "framework/screenshot.h"
 
-#include <GL/glew.h>
-
 #include <chrono>
 #include <ctime>
 #include <cstdio>
@@ -13,6 +11,7 @@
 #include "stb_image_write.h"
 
 #include "platform/window/window_manager.h"
+#include "system/render/render_backend.h"
 
 namespace Engine {
 
@@ -32,27 +31,26 @@ namespace {
     }
 }
 
-std::string captureViewportScreenshot(WindowManager& window) {
-    const int w = static_cast<int>(window.getWidth());
-    const int h = static_cast<int>(window.getHeight());
-    if (w <= 0 || h <= 0) return {};
+std::string captureViewportScreenshot(WindowManager& window, RenderBackend& backend) {
+    const uint32_t winH = static_cast<uint32_t>(window.getHeight());
 
-    std::vector<unsigned char> pixels(static_cast<size_t>(w) * h * 3);
-
-    // Read from the front buffer (already swapped on screen) so the image
-    // matches what the user just saw. Default unpack alignment of 4 can leave
-    // gaps when width*3 isn't 4-aligned; set tight packing.
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadBuffer(GL_FRONT);
-    glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
-
-    // Flip vertically (OpenGL origin = bottom-left, PNG = top-left).
-    const size_t stride = static_cast<size_t>(w) * 3;
-    for (int y = 0; y < h / 2; ++y) {
-        unsigned char* a = pixels.data() + y * stride;
-        unsigned char* b = pixels.data() + (h - 1 - y) * stride;
-        for (size_t i = 0; i < stride; ++i) std::swap(a[i], b[i]);
+    // Capture just the editor's viewport rect - the 3D pipeline now
+    // renders only into that rect on the backbuffer. Falling back to
+    // the full window gives garbage outside.
+    uint32_t vpX = window.sceneViewportX();
+    uint32_t vpY = window.sceneViewportY();
+    uint32_t w   = window.sceneViewportWidth();
+    uint32_t h   = window.sceneViewportHeight();
+    if (w == 0 || h == 0) {
+        vpX = 0;
+        vpY = 0;
+        w = static_cast<uint32_t>(window.getWidth());
+        h = winH;
     }
+    if (w == 0 || h == 0) return {};
+
+    std::vector<uint8_t> pixels;
+    if (!backend.readbackPixels(vpX, vpY, w, h, winH, pixels)) return {};
 
     std::error_code ec;
     const std::filesystem::path dir = std::filesystem::path(APP_ROOT_DIR) / "screenshots";
@@ -60,8 +58,10 @@ std::string captureViewportScreenshot(WindowManager& window) {
     const std::string filename = "screenshot-" + timestamp() + ".png";
     const std::filesystem::path full = dir / filename;
 
-    if (!stbi_write_png(full.string().c_str(), w, h, 3, pixels.data(),
-                        static_cast<int>(stride))) {
+    const int stride = static_cast<int>(w) * 3;
+    if (!stbi_write_png(full.string().c_str(),
+                        static_cast<int>(w), static_cast<int>(h), 3,
+                        pixels.data(), stride)) {
         return {};
     }
     return full.string();

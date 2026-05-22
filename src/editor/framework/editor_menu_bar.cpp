@@ -1,17 +1,18 @@
 #include "framework/editor_menu_bar.h"
-#include "framework/editor_context.h"
-#include "framework/editor_common.h"
-#include "framework/scene_io_controller.h"
-#include "input/editor_actions.h"
-#include "ui/editor_widgets.h"
-
-#include <imgui.h>
-#include <GL/glew.h>
 
 #include <cstdio>
 
+#include <imgui.h>
+
 #include "core/system.h"
 #include "debug/statistics.h"
+#include "framework/editor_common.h"
+#include "framework/editor_context.h"
+#include "framework/scene_io_controller.h"
+#include "input/editor_actions.h"
+#include "system/render/render_backend.h"
+#include "system/render/render_system.h"
+#include "ui/editor_widgets.h"
 
 namespace Engine {
 
@@ -65,6 +66,26 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
 
     if (ImGui::BeginMenu("Edit")) {
         char lbl[48];
+        // Undo / redo with the top-of-stack label so users see what action
+        // they're reverting (e.g. "Undo Transform", "Redo Create Entity").
+        char undoText[80], redoText[80];
+        const char* undoOp = state.commands.undoLabel();
+        const char* redoOp = state.commands.redoLabel();
+        snprintf(undoText, sizeof(undoText), "Undo%s%s",
+            undoOp ? " " : "", undoOp ? undoOp : "");
+        snprintf(redoText, sizeof(redoText), "Redo%s%s",
+            redoOp ? " " : "", redoOp ? redoOp : "");
+        if (ImGui::MenuItem(undoText, getKeyBindLabel(state.keybinds.undo, lbl, sizeof(lbl)),
+                false, state.commands.canUndo())) {
+            state.commands.undo(ctx.scene, state);
+            state.markSceneDirty();
+        }
+        if (ImGui::MenuItem(redoText, getKeyBindLabel(state.keybinds.redo, lbl, sizeof(lbl)),
+                false, state.commands.canRedo())) {
+            state.commands.redo(ctx.scene, state);
+            state.markSceneDirty();
+        }
+        ImGui::Separator();
         if (ImGui::MenuItem("Preferences...",
                 getKeyBindLabel(state.keybinds.openPreferences, lbl, sizeof(lbl)),
                 state.showPreferences)) {
@@ -114,14 +135,23 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         ImGui::TextDisabled("Branch:");   ImGui::SameLine(); ImGui::Text("%s", APP_BRANCH);
         ImGui::TextDisabled("Commit:");   ImGui::SameLine(); ImGui::Text("%.8s", APP_COMMIT_HASH);
         ImGui::TextDisabled("Built:");    ImGui::SameLine(); ImGui::Text("%s", APP_BUILD_DATE);
-        ImGui::TextDisabled("OpenGL:");   ImGui::SameLine(); ImGui::Text("%s", (const char*)glGetString(GL_VERSION));
-        ImGui::TextDisabled("Renderer:"); ImGui::SameLine(); ImGui::Text("%s", (const char*)glGetString(GL_RENDERER));
+        // API + device come from the active render backend so this dialog
+        // stays correct if the engine ever ships with a non-OpenGL backend.
+        RenderBackend& backend = ec.renderSystem.getBackend();
+        const std::string ver = backend.apiVersion();
+        const std::string dev = backend.deviceName();
+        ImGui::TextDisabled("%s:", backend.apiName());
+        ImGui::SameLine(); ImGui::Text("%s", ver.empty() ? "(unknown)" : ver.c_str());
+        ImGui::TextDisabled("Renderer:");
+        ImGui::SameLine(); ImGui::Text("%s", dev.empty() ? "(unknown)" : dev.c_str());
         ImGui::TextDisabled("ImGui:");    ImGui::SameLine(); ImGui::Text("%s", IMGUI_VERSION);
         ImGui::EndPopup();
     }
 
     sceneIO.drawDialogs(ctx, state);
-    m_modelImport.draw(ctx.scene, ctx.resources, state);
+    // Model-import dialog is drawn at EditorSystem scope: it must be
+    // available from multiple intent sources (Inspector empty-state,
+    // Hierarchy "+"), not just the menu bar.
 
     const auto& info = ctx.statistics.getFrameInfo();
     char fps[32];

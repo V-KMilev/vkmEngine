@@ -13,7 +13,7 @@ namespace Engine {
  *
  * Resources carry a runtime version (for change tracking / hot reload /
  * GPU cache validation) and an optional name. The name is the serializable
- * identity of the asset — `ResourceManager::findByName<T>` resolves a name
+ * identity of the asset - `ResourceManager::findByName<T>` resolves a name
  * back to a Handle on scene load. Code-generated assets may leave it empty
  * if they're not meant to survive serialization.
  */
@@ -46,16 +46,19 @@ struct Resource {
         std::string name;
         bool        editorOnly = false;   ///< Filtered from pickers / Asset Browser / scene save. See ResourceManager::addInternal.
 
-        /// Origin descriptor JSON, lazy-allocated. Stored behind a
-        /// unique_ptr so this header only forward-declares nlohmann::json -
-        /// every TU that includes a Resource subclass (MeshAsset, ...)
-        /// avoids the ~10k-line json template tax. Callers that read or
-        /// write it must #include <nlohmann/json.hpp> in their .cpp.
-        ///
-        /// Shape is loader-specific. Examples:
-        ///   {"kind":"generator","type":"sphere","segments":48,"rings":24}
-        ///   {"kind":"folder","path":"assets/PavingStones118_2K-JPG"}
-        ///   {"kind":"file","path":"assets/foo.png","sRGB":true}
+        /**
+         * @brief Origin descriptor JSON, lazy-allocated. Stored behind a
+         *
+         * unique_ptr so this header only forward-declares nlohmann::json -
+         * every TU that includes a Resource subclass (MeshAsset, ...)
+         * avoids the ~10k-line json template tax. Callers that read or
+         * write it must #include <nlohmann/json.hpp> in their .cpp.
+         *
+         * Shape is loader-specific. Examples:
+         *   {"kind":"generator","type":"sphere","segments":48,"rings":24}
+         *   {"kind":"folder","path":"assets/PavingStones118_2K-JPG"}
+         *   {"kind":"file","path":"assets/foo.png","sRGB":true}
+         */
         std::unique_ptr<nlohmann::json> source;
 };
 

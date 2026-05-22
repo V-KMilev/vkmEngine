@@ -51,7 +51,7 @@ class Scene {
          * @brief Allocate an entity at the requested slot index.
          *
          * Used by SceneSerializer to recreate saved entities with the same
-         * slot indices they had on disk — that's what makes parent/child
+         * slot indices they had on disk - that's what makes parent/child
          * indices (and editor selection mementos) directly valid after a
          * load, without any id-remap step.
          */
@@ -266,7 +266,7 @@ class Scene {
          */
         void clear() {
             // O(types + entities) rather than the previous
-            // O(entities × types) walk-and-destroy. detachFromHierarchy's
+            // O(entities x types) walk-and-destroy. detachFromHierarchy's
             // dangling-pointer guard exists for partial deletion (sibling
             // links pointing at already-freed entities); on a total reset
             // every entity is going away in a single tear-down, so per-set

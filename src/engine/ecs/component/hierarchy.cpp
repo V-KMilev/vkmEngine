@@ -7,7 +7,7 @@ namespace Engine {
 void detachFromHierarchy(Scene& scene, EntityId entity) {
     if (!scene.has<Hierarchy>(entity)) return;
 
-    // Helper: only the entity itself is guaranteed alive at this point —
+    // Helper: only the entity itself is guaranteed alive at this point -
     // siblings/parent/children might have already been destroyed (e.g. during
     // Scene::clear iterating all entities). Touching their Hierarchy is only
     // safe when both isAlive and has<Hierarchy> hold.

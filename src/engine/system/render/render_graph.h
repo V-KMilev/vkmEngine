@@ -104,12 +104,15 @@ class RenderGraph {
 
         void execute(RenderBackend& backend, const RenderView& view, const ResourceManager& resources);
 
-        /// Collect declarations, validate ordering, compute lifetimes.
-        /// When @p view is non-null, passes that report
-        /// !enabledForView(*view) are skipped: their reads/writes don't
-        /// participate in lifetime extents, so the graph reflects what
-        /// will actually run this frame. Idempotent; auto-invoked by
-        /// execute() when the pass set or enable state changes.
+        /**
+         * @brief Collect declarations, validate ordering, compute lifetimes.
+         *
+         * When @p view is non-null, passes that report
+         * !enabledForView(*view) are skipped: their reads/writes don't
+         * participate in lifetime extents, so the graph reflects what
+         * will actually run this frame. Idempotent; auto-invoked by
+         * execute() when the pass set or enable state changes.
+         */
         void compile(const RenderView* view = nullptr);
 
         /**
@@ -187,15 +190,18 @@ class RenderGraph {
         const std::vector<RGResource>& passReads(size_t index)  const { return m_reads[index]; }
         const std::vector<RGResource>& passWrites(size_t index) const { return m_writes[index]; }
 
-        /// Register the concrete backend object that backs a logical
-        /// resource id. The backend calls this from
-        /// `RenderBackend::populateGraphResources(*this)` at the top of
-        /// every execute() so the active set is up-to-date - in particular
-        /// the editor's preview path swaps in a private FrameResources and
-        /// needs the pool to repoint without recompiling the graph.
-        ///
-        /// Storage is type-erased; passes downcast via the typed accessor
-        /// `RenderGraphContext::resource<T>(id)`.
+        /**
+         * @brief Register the concrete backend object backing a logical resource id.
+         *
+         * The backend calls this from
+         * `RenderBackend::populateGraphResources(*this)` at the top of every
+         * execute() so the active set is up-to-date; in particular the editor's
+         * preview path swaps in a private FrameResources and needs the pool to
+         * repoint without recompiling the graph.
+         *
+         * Storage is type-erased; passes downcast via the typed accessor
+         * `RenderGraphContext::resource<T>(id)`.
+         */
         void registerResource(RGResource id, void* ptr) {
             m_resources[static_cast<uint32_t>(id)] = ptr;
         }
@@ -212,6 +218,20 @@ class RenderGraph {
         /// Active pool: the preview one when a session is open, else the default.
         FrameResources& activeFrame() const;
 
+#ifndef NDEBUG
+        /**
+         * @brief Debug-only access-drift check.
+         *
+         * After every pass.execute() the graph compares
+         * ctx.accessedResources against the pass's declared reads/writes
+         * and warns about either direction of drift, once per (pass index,
+         * resource) pair. The sets m_accessWarn* keep the log from
+         * flooding when a real mismatch repeats every frame.
+         */
+        void checkPassAccess(size_t passIndex, uint32_t accessedMask);
+#endif
+
+    private:
         std::vector<std::unique_ptr<RenderPass>> m_passes;
         std::vector<std::vector<RGResource>>     m_reads;
         std::vector<std::vector<RGResource>>     m_writes;
@@ -220,20 +240,18 @@ class RenderGraph {
         bool                                     m_compiled = false;        ///< compile() has run against the current pass set
         bool                                     m_persistentRegistered = false;
 
-        /// Per-pass enable state captured at the last compile. execute()
-        /// recomputes the current enable vector each frame and triggers
-        /// a recompile only when it differs - so toggling env.taa.enabled flips
-        /// the lifetime data without paying the compile cost every frame.
+        /**
+         * @brief Per-pass enable state captured at the last compile.
+         *
+         * execute() recomputes the current enable vector each frame and
+         * triggers a recompile only when it differs, so toggling
+         * env.taa.enabled flips the lifetime data without paying the compile
+         * cost every frame.
+         */
         std::vector<bool>                        m_lastEnabled;
         uint64_t                                 m_frameIndex = 0;
 
 #ifndef NDEBUG
-        /// Debug-only access-drift check. After every pass.execute() the
-        /// graph compares ctx.accessedResources against the pass's
-        /// declared reads/writes and warns about either direction of
-        /// drift, once per (pass index, resource) pair. These sets keep
-        /// the log from flooding when a real mismatch repeats every frame.
-        void checkPassAccess(size_t passIndex, uint32_t accessedMask);
         std::unordered_set<uint64_t> m_accessWarnDeclaredUnused;  ///< pass-and-resource pairs already warned about
         std::unordered_set<uint64_t> m_accessWarnUndeclared;
 #endif

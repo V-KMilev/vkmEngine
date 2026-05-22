@@ -57,12 +57,12 @@ GizmoElement TransformGizmo::hitTestTranslation(const glm::vec3 axes[3], const I
     }
 
     // Test axis lines
-    float bestDist = AXIS_HIT_RADIUS + 1.0f;
+    float bestDist = (AXIS_HIT_RADIUS * m_uiScale) + 1.0f;
     GizmoElement bestElem = GizmoElement::None;
 
     for (int i = 0; i < 3; ++i) {
         float d = distPointToSegment2D(m_mousePos, m_originScreen, screenAxes[i]);
-        if (d < AXIS_HIT_RADIUS && d < bestDist) {
+        if (d < (AXIS_HIT_RADIUS * m_uiScale) && d < bestDist) {
             bestDist = d;
             static constexpr GizmoElement axisElems[] = {
                 GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ
@@ -78,7 +78,7 @@ GizmoElement TransformGizmo::hitTestRotation(const glm::vec3 axes[3]) const {
     glm::vec3 rayDir = screenToRay(m_mousePos);
     float ringRadius = m_screenFactor;
 
-    float bestDist = AXIS_HIT_RADIUS + 1.0f;
+    float bestDist = (AXIS_HIT_RADIUS * m_uiScale) + 1.0f;
     GizmoElement bestElem = GizmoElement::None;
 
     for (int i = 0; i < 3; ++i) {
@@ -99,7 +99,7 @@ GizmoElement TransformGizmo::hitTestRotation(const glm::vec3 axes[3]) const {
             (hitScreen.y - hitOffScreen.y) * (hitScreen.y - hitOffScreen.y)
         );
 
-        if (pixelDiff < AXIS_HIT_RADIUS && pixelDiff < bestDist) {
+        if (pixelDiff < (AXIS_HIT_RADIUS * m_uiScale) && pixelDiff < bestDist) {
             bestDist = pixelDiff;
             static constexpr GizmoElement axisElems[] = {
                 GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ
@@ -113,7 +113,7 @@ GizmoElement TransformGizmo::hitTestRotation(const glm::vec3 axes[3]) const {
 
 GizmoElement TransformGizmo::hitTestScale(const ImVec2 screenAxes[3]) const {
     // Same as translation axis test (lines) plus box handle at endpoints
-    float bestDist = AXIS_HIT_RADIUS + 1.0f;
+    float bestDist = (AXIS_HIT_RADIUS * m_uiScale) + 1.0f;
     GizmoElement bestElem = GizmoElement::None;
 
     for (int i = 0; i < 3; ++i) {
@@ -121,7 +121,7 @@ GizmoElement TransformGizmo::hitTestScale(const ImVec2 screenAxes[3]) const {
         float dx = m_mousePos.x - screenAxes[i].x;
         float dy = m_mousePos.y - screenAxes[i].y;
         float boxDist = std::max(std::abs(dx), std::abs(dy));
-        if (boxDist < SCALE_BOX_HALF + 4.0f && boxDist < bestDist) {
+        if (boxDist < (SCALE_BOX_HALF * m_uiScale) + 4.0f && boxDist < bestDist) {
             bestDist = boxDist;
             static constexpr GizmoElement axisElems[] = {
                 GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ
@@ -132,7 +132,7 @@ GizmoElement TransformGizmo::hitTestScale(const ImVec2 screenAxes[3]) const {
 
         // Check axis line
         float d = distPointToSegment2D(m_mousePos, m_originScreen, screenAxes[i]);
-        if (d < AXIS_HIT_RADIUS && d < bestDist) {
+        if (d < (AXIS_HIT_RADIUS * m_uiScale) && d < bestDist) {
             bestDist = d;
             static constexpr GizmoElement axisElems[] = {
                 GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ

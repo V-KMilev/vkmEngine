@@ -13,7 +13,7 @@ namespace Engine {
  * Each frame:
  *  1. Iterates RenderView::lights; every light with shadowSlot >= 0 is a
  *     caster. Slot assignment (and the per-light shadow parameters) is done
- *     by RenderView::build — this pass just consumes them.
+ *     by RenderView::build - this pass just consumes them.
  *  2. For directional / spot, writes one 2D-array layer at shadowSlot.
  *     For point, writes six cube faces at shadowSlot.
  *  3. Writes the matching Shadow{2D,Cube}CasterGPU entry into the shadow UBO.
@@ -22,7 +22,7 @@ namespace Engine {
  *     `shadowInstanceCount` of each batch covers only castShadows=true
  *     drawables (sorted to the front by RenderView).
  *
- * A single depth shader covers 2D and cube paths — both write standard
+ * A single depth shader covers 2D and cube paths - both write standard
  * projected depth (no gl_FragDepth override).
  */
 class GLShadowPass : public RenderPass {

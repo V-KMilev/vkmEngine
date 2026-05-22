@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "ecs/entity.h"
+#include "framework/command_stack.h"
 #include "input/editor_keybinds.h"
 #include "gizmo/transform_gizmo.h"
 #include "resource/material_asset.h"  // MaterialHandle (Material Editor target)
@@ -61,13 +62,41 @@ struct EditorState {
 
     // Scene I/O state
     bool sceneDirty = false;    ///< Unsaved edits since last save/load. Title shows '*'.
+    bool confirmingQuit  = false;  ///< Save-on-quit modal is open this frame.
+    bool closeAfterSave  = false;  ///< Window-close pending until the next clean save.
     std::vector<std::string> recentScenes;  ///< MRU list (absolute paths), most-recent first.
     static constexpr size_t MaxRecentScenes = 8;
+
+    // Undo/redo history. Every editor mutation that goes through the
+    // command path lands here; Ctrl+Z reverses, Ctrl+Shift+Z re-applies.
+    // Cleared on scene load (entity IDs across scenes aren't comparable).
+    CommandStack commands;
+
+    // Floating-toast notification. Set by pushToast(); ticked down each
+    // frame by EditorSystem; rendered as a corner overlay. Keeps save/load
+    // failures (and other transient feedback) on-screen instead of
+    // burying them in the console log.
+    enum class ToastKind { Info, Warning, Error };
+    std::string toastMessage;
+    float       toastTimeRemaining = 0.0f;
+    ToastKind   toastKind          = ToastKind::Info;
 
     /// Mark the scene as having unsaved changes. Call from every code path
     /// that mutates the live Scene (entity ops, gizmo drags, inspector edits).
     /// Cheap, idempotent.
     void markSceneDirty() { sceneDirty = true; }
+
+    /// Show a transient toast at the corner of the editor. `seconds` <= 0
+    /// uses a kind-appropriate default. Replaces any prior toast.
+    void pushToast(ToastKind kind, std::string msg, float seconds = 0.0f) {
+        if (seconds <= 0.0f) {
+            seconds = (kind == ToastKind::Error) ? 6.0f
+                    : (kind == ToastKind::Warning) ? 4.0f : 2.5f;
+        }
+        toastKind          = kind;
+        toastMessage       = std::move(msg);
+        toastTimeRemaining = seconds;
+    }
 };
 
 } // namespace Engine

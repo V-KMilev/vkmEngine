@@ -1,10 +1,12 @@
 #include "input/editor_actions.h"
+#include "framework/editor_commands.h"
 #include "framework/editor_state.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
 
-#include "core/engine.h"
+#include <memory>
+
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/mesh.h"
@@ -29,6 +31,17 @@
 
 namespace Engine {
 namespace EditorActions {
+
+void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity) {
+    HierarchyOperations::markDirty(scene, entity);
+    state.hierarchyDirty = true;
+    state.markSceneDirty();
+}
+
+void commitStructureChange(EditorState& state) {
+    state.hierarchyDirty = true;
+    state.markSceneDirty();
+}
 
 namespace {
     const char* defaultName(EntityKind k) {
@@ -84,8 +97,11 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         }
     }
 
-    state.hierarchyDirty = true;
-        state.markSceneDirty();
+    // Snapshot the just-created entity so undo can resurrect it intact
+    // (CreateEntityCommand::undo destroys; redo re-creates at the same slot).
+    state.commands.push(std::make_unique<CreateEntityCommand>(
+        EntitySnapshot::capture(scene, id), "Create Entity"));
+    commitStructureChange(state);
     return id;
 }
 
@@ -114,32 +130,42 @@ void duplicateEntity(Scene& scene, EditorState& state, EntityId source) {
         scene.add(entity, cam);
     }
     if (scene.has<Animation>(source)) {
-        Animation anim;
-        anim.duration = scene.get<Animation>(source).duration;
-        anim.speed = scene.get<Animation>(source).speed;
-        anim.looping = scene.get<Animation>(source).looping;
-        anim.playing = false;
+        // Tracks are now copyable - clone the source animation in full
+        // (keyframes and all) so duplicated entities keep their motion.
+        Animation anim = scene.get<Animation>(source);
+        anim.playing   = false;
         scene.add(entity, std::move(anim));
     }
 
-    state.hierarchyDirty = true;
-        state.markSceneDirty();
+    // Same path as createEntity: snapshot the result so undo destroys it.
+    state.commands.push(std::make_unique<CreateEntityCommand>(
+        EntitySnapshot::capture(scene, newId), "Duplicate Entity"));
+    commitStructureChange(state);
     state.selectedEntity = newId;
 }
 
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
+    const EntityId priorSel = state.selectedEntity;
     if (state.selectedEntity == entity) state.selectedEntity = {};
 
     if (scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).firstChild) {
+        // Subtree destruction isn't undoable yet (would need a full
+        // recursive snapshot). Clear history so the user isn't tempted
+        // to undo past a non-reversible step.
         HierarchyOperations::destroyHierarchy(scene, entity);
+        state.commands.clear();
     } else {
+        // Leaf delete: snapshot the entity (components are fully captured
+        // by EntitySnapshot), then destroy. Undo recreates at the same slot.
+        EntitySnapshot snap = EntitySnapshot::capture(scene, entity);
         if (scene.has<Hierarchy>(entity)) {
             HierarchyOperations::removeFromParent(scene, entity);
         }
         scene.destroyEntity(Entity{entity});
+        state.commands.push(std::make_unique<DestroyEntityCommand>(
+            std::move(snap), priorSel, "Delete Entity"));
     }
-    state.hierarchyDirty = true;
-        state.markSceneDirty();
+    commitStructureChange(state);
 }
 
 void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController& camera) {
@@ -261,8 +287,7 @@ void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
             resources, scene);
         if (rootId) {
             state.selectedEntity = rootId;
-            state.hierarchyDirty = true;
-        state.markSceneDirty();
+            commitStructureChange(state);
         }
     }
 }

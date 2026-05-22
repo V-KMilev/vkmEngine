@@ -111,6 +111,29 @@ void PreferencesPanel::drawDisplaySection(FrameContext& ctx) {
 }
 
 void PreferencesPanel::drawKeybindsSection(EditorState& state) {
+    // Build a small frequency table of all current bindings so each row
+    // can flag itself as a conflict in O(1). Manually enumerated rather
+    // than iterating the struct - there's no introspection but the list
+    // is short and stable.
+    const KeyBind* all[] = {
+        &state.keybinds.saveScene, &state.keybinds.saveSceneAs, &state.keybinds.loadScene,
+        &state.keybinds.undo, &state.keybinds.redo,
+        &state.keybinds.toggleStats, &state.keybinds.toggleHierarchy,
+        &state.keybinds.toggleInspector, &state.keybinds.toggleBottom,
+        &state.keybinds.toggleEditor, &state.keybinds.openPreferences,
+        &state.keybinds.deleteEntity, &state.keybinds.deselect,
+        &state.keybinds.duplicate, &state.keybinds.focusSelected,
+        &state.keybinds.gizmoSelect, &state.keybinds.gizmoTranslate,
+        &state.keybinds.gizmoRotate, &state.keybinds.gizmoScale,
+        &state.keybinds.gizmoToggleSpace,
+    };
+    auto isConflict = [&](const KeyBind& b) {
+        if (b.key == ImGuiKey_None) return false;
+        int n = 0;
+        for (const KeyBind* o : all) if (*o == b) ++n;
+        return n > 1;
+    };
+
     auto drawKeybindRow = [&](const char* label, KeyBind& bind) {
         drawPropertyLabel(label);
         char keyLabel[48];
@@ -122,6 +145,15 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
 
         if (ImGui::Button(btnId, ImVec2(120, 0))) {
             m_rebindTarget = label;
+        }
+
+        if (isConflict(bind)) {
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.65f, 0.25f, 1.0f));
+            ImGui::TextUnformatted("(!)");
+            ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("This shortcut is also bound to another action.");
         }
 
         if (m_rebindTarget == label) {
@@ -150,6 +182,11 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
     drawKeybindRow("Save Scene",     state.keybinds.saveScene);
     drawKeybindRow("Save Scene As",  state.keybinds.saveSceneAs);
     drawKeybindRow("Load Scene",     state.keybinds.loadScene);
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Edit");
+    drawKeybindRow("Undo",           state.keybinds.undo);
+    drawKeybindRow("Redo",           state.keybinds.redo);
 
     ImGui::Spacing();
     ImGui::TextDisabled("Windows & Panels");

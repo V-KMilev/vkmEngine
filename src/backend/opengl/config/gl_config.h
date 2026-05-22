@@ -115,7 +115,7 @@ namespace GLConfig {
     namespace Limits {
         // Backend-specific atlas pixel resolutions.
         // Engine-wide budgets (light count, shadow caster counts) live in
-        // src/engine/core/engine_config.h — Engine::Config.
+        // src/engine/core/engine_config.h - Engine::Config.
         constexpr uint32_t ShadowResolution2D   = 2048;  ///< Per-layer resolution of the 2D array
         constexpr uint32_t ShadowResolutionCube = 512;   ///< Per-face resolution of cube map layers
     }

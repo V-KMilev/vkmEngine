@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
 struct GLFWwindow;
 struct GLFWmonitor;
@@ -89,11 +90,25 @@ class WindowManager {
          */
         bool shouldClose() const;
 
+        /// Alias for shouldClose(), used by the save-on-quit flow whose
+        /// "wants to close" reads more naturally than "should close".
+        bool wantsClose() const { return shouldClose(); }
+
         /**
          * @brief Requests that the window be closed.
          * @return true if the request was successful, false otherwise.
          */
         bool requestClose();
+
+        /// Cancel a pending close. Used by the save-on-quit modal when the
+        /// user picks Cancel (or Save - the close is deferred until the
+        /// scene is clean). Keeps GLFW out of the editor.
+        void cancelClose();
+
+        /// Update the window title. Used by the editor to reflect the
+        /// current scene's filename and dirty state without reaching for
+        /// raw GLFW.
+        void setTitle(const std::string& title);
 
         /**
          * @brief Swaps the front and back buffers of the window, presenting the rendered image.
@@ -163,6 +178,22 @@ class WindowManager {
          */
         GLFWwindow* getWindowContext() const;
 
+        /**
+         * @brief Describe the rect inside the window the 3D scene renders into.
+         *
+         * Defaults to the full window. The editor calls this each frame after
+         * laying out its panels so the next frame's render system sees the
+         * viewport rect and sizes its FBOs / projection accordingly.
+         *
+         * @param x,y Top-left of the viewport in window-pixel coords (ImGui-style).
+         * @param w,h Viewport size in pixels. 0 falls back to "use the full window".
+         */
+        void setSceneViewport(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
+        uint32_t sceneViewportX()      const { return m_sceneVpX; }
+        uint32_t sceneViewportY()      const { return m_sceneVpY; }
+        uint32_t sceneViewportWidth()  const { return m_sceneVpW; }
+        uint32_t sceneViewportHeight() const { return m_sceneVpH; }
+
     public:
         WindowManager();
         ~WindowManager();
@@ -172,6 +203,13 @@ class WindowManager {
         std::unique_ptr<InputHandle> m_inputHandle;
         std::unique_ptr<FrameLimiter> m_frameLimiter;
 
+        // Scene viewport rect inside the window (set by the editor, read
+        // by the engine when populating FrameContext). 0 in width/height
+        // means "follow the window".
+        uint32_t m_sceneVpX = 0;
+        uint32_t m_sceneVpY = 0;
+        uint32_t m_sceneVpW = 0;
+        uint32_t m_sceneVpH = 0;
 };
 
 } // namespace Engine

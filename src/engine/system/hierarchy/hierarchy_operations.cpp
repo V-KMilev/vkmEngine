@@ -12,7 +12,7 @@
 namespace Engine::HierarchyOperations {
 
 void markDirty(Scene& scene, EntityId entity) {
-    if (!scene.has<Hierarchy>(entity)) return;
+    if (!entity || !scene.isAlive(entity) || !scene.has<Hierarchy>(entity)) return;
 
     auto& h = scene.get<Hierarchy>(entity);
     if (h.dirty) return;  // Already dirty; descendants must already be too
@@ -20,9 +20,12 @@ void markDirty(Scene& scene, EntityId entity) {
     h.dirty = true;
     EntityId child = h.firstChild;
     while (child) {
-        const EntityId next = scene.has<Hierarchy>(child)
-            ? scene.get<Hierarchy>(child).nextSibling
-            : EntityId{};
+        // A dead-or-Hierarchyless child terminates the walk - the sibling
+        // chain runs through that node's nextSibling, so we can't continue
+        // past it. Corruption is already logged at its source (removeFromParent
+        // / detachFromHierarchy); silently stopping here keeps the engine alive.
+        if (!scene.isAlive(child) || !scene.has<Hierarchy>(child)) break;
+        const EntityId next = scene.get<Hierarchy>(child).nextSibling;
         markDirty(scene, child);
         child = next;
     }
@@ -84,7 +87,7 @@ void setParent(Scene& scene, EntityId child, EntityId parent) {
     parentH.firstChild = child;
 
     // Reparenting changes the child's world matrix (and all descendants').
-    // markDirty short-circuits if already dirty, which is fine — descendants
+    // markDirty short-circuits if already dirty, which is fine - descendants
     // were already dirty too in that case.
     markDirty(scene, child);
 }
@@ -95,16 +98,37 @@ void removeFromParent(Scene& scene, EntityId entity) {
     auto& h = scene.get<Hierarchy>(entity);
     if (!h.parent) return;
 
-    // Unlink from sibling chain
-    if (h.prevSibling) {
-        scene.get<Hierarchy>(h.prevSibling).nextSibling = h.nextSibling;
+    // Snapshot every field we'll need AFTER the same-function remove<> below
+    // - that call swap-and-pops the SparseSet slot, invalidating `h`.
+    const EntityId parent      = h.parent;
+    const EntityId prevSibling = h.prevSibling;
+    const EntityId nextSibling = h.nextSibling;
+    const bool     isLeaf      = !h.firstChild;
+
+    // Sibling/parent link fix-up. Each get<> is guarded against malformed
+    // links - a dangling neighbour shouldn't crash the editor; warn loudly
+    // so the upstream corruption can be found and fixed.
+    if (prevSibling) {
+        if (scene.isAlive(prevSibling) && scene.has<Hierarchy>(prevSibling)) {
+            scene.get<Hierarchy>(prevSibling).nextSibling = nextSibling;
+        } else {
+            LOG_WARNING("removeFromParent: prevSibling %u of entity %u has no Hierarchy (link corruption)",
+                prevSibling.index, entity.index);
+        }
+    } else if (scene.isAlive(parent) && scene.has<Hierarchy>(parent)) {
+        scene.get<Hierarchy>(parent).firstChild = nextSibling;
     } else {
-        // Entity was the first child - update parent's firstChild
-        scene.get<Hierarchy>(h.parent).firstChild = h.nextSibling;
+        LOG_WARNING("removeFromParent: parent %u of entity %u has no Hierarchy (link corruption)",
+            parent.index, entity.index);
     }
 
-    if (h.nextSibling) {
-        scene.get<Hierarchy>(h.nextSibling).prevSibling = h.prevSibling;
+    if (nextSibling) {
+        if (scene.isAlive(nextSibling) && scene.has<Hierarchy>(nextSibling)) {
+            scene.get<Hierarchy>(nextSibling).prevSibling = prevSibling;
+        } else {
+            LOG_WARNING("removeFromParent: nextSibling %u of entity %u has no Hierarchy (link corruption)",
+                nextSibling.index, entity.index);
+        }
     }
 
     h.parent = {};
@@ -114,8 +138,9 @@ void removeFromParent(Scene& scene, EntityId entity) {
     // Detaching changes this entity's world matrix (and all descendants').
     markDirty(scene, entity);
 
-    // Remove Hierarchy component if no remaining relationships
-    if (!h.firstChild) {
+    // No children left -> drop the now-pointless Hierarchy + WorldTransform.
+    // After this call `h` is dangling (swap-and-pop); no further reads of it.
+    if (isLeaf) {
         scene.remove<Hierarchy>(Entity(entity));
         scene.remove<WorldTransform>(Entity(entity));
     }
@@ -138,6 +163,10 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity) {
 
     EntityId current = entity;
     while (current && depth < MAX_DEPTH) {
+        // A dangling parent (dead entity or one missing Transform) breaks
+        // the chain at this point - fall through into a partial-root fold
+        // rather than asserting on scene.get<Transform> below.
+        if (!scene.isAlive(current) || !scene.has<Transform>(current)) break;
         chain[depth++] = current;
 
         if (scene.has<Hierarchy>(current)) {
@@ -179,7 +208,7 @@ void resolveWorldTransforms(Scene& scene) {
     // its parent's finalised WorldTransform.
     //
     // Invariant relied on here: every entity with Hierarchy also has
-    // WorldTransform (pre-seeded by setParent) — no structural mutation
+    // WorldTransform (pre-seeded by setParent) - no structural mutation
     // happens inside the parallel section.
     static constexpr uint32_t MAX_DEPTH = 32;
     std::array<std::vector<EntityId>, MAX_DEPTH> buckets;

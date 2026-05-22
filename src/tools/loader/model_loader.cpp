@@ -59,12 +59,15 @@ namespace {
         aiProcess_GenUVCoords |
         aiProcess_ImproveCacheLocality;
 
-    /// LRU cache of parsed Assimp scenes keyed by canonical path. The
-    /// AssetSerializer loadGroup loop calls loadModelMesh / loadModelMaterial
-    /// once per asset, so a glTF with N meshes + M materials previously
-    /// triggered N+M full re-parses of the same file. The Importer owns the
-    /// aiScene; we hand callers a shared_ptr so a concurrent eviction can't
-    /// destroy the scene out from under them mid-build.
+    /**
+     * @brief LRU cache of parsed Assimp scenes keyed by canonical path. The
+     *
+     * AssetSerializer loadGroup loop calls loadModelMesh / loadModelMaterial
+     * once per asset, so a glTF with N meshes + M materials previously
+     * triggered N+M full re-parses of the same file. The Importer owns the
+     * aiScene; we hand callers a shared_ptr so a concurrent eviction can't
+     * destroy the scene out from under them mid-build.
+     */
     class ImporterCache {
         public:
             std::shared_ptr<Assimp::Importer> get(const std::string& path) {

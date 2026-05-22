@@ -9,9 +9,12 @@
 #include <string>
 #include <vector>
 
+#include "logger.h"
+
 #include "core/system.h"
 #include "ecs/scene.h"
 #include "ecs/component/camera.h"
+#include "ecs/component/name.h"
 #include "io/scene_serializer.h"
 #include "system/camera/camera_controller.h"
 #include "system/event/event_system.h"
@@ -38,9 +41,16 @@ void SceneIOController::save(FrameContext& ctx, EditorState& state) {
         requestSaveAs();
         return;
     }
-    SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath);
+    if (!SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath)) {
+        LOG_ERROR("SceneIOController::save: failed to write %s - scene remains dirty",
+            m_currentScenePath.c_str());
+        state.pushToast(EditorState::ToastKind::Error,
+            "Save failed: " + m_currentScenePath);
+        return;
+    }
     state.sceneDirty = false;
     pushRecent(state, m_currentScenePath);
+    state.pushToast(EditorState::ToastKind::Info, "Saved");
 }
 
 void SceneIOController::loadPath(FrameContext& ctx, EditorState& state, const std::string& path) {
@@ -56,33 +66,66 @@ void SceneIOController::requestLoad() {
     m_openLoadPopup = true;
 }
 
+bool SceneIOController::isSaveDialogActive() const {
+    // Queued (about to open this frame) or already open from a prior frame.
+    return m_openSaveAsPopup || ImGui::IsPopupOpen("Save Scene As");
+}
+
 void SceneIOController::load(FrameContext& ctx, EditorState& state) {
     if (m_currentScenePath.empty()) {
         m_currentScenePath = std::string(APP_ROOT_DIR) + "/scenes/scene.json";
     }
 
-    // Stash the selection's slot index. Slot indices are stable across
-    // save/load — if the same entity is in the file, it'll be at the same
-    // slot with a fresh generation, and we re-validate after the load.
-    const uint32_t selectedIdx =
-        (state.selectedEntity && ctx.scene.isAlive(state.selectedEntity))
-            ? state.selectedEntity.index : 0u;
-    state.selectedEntity = {};
-
-    if (!SceneSerializer::load(ctx.scene, ctx.resources, m_currentScenePath)) return;
-
-    // Restore selection if its slot is still live in the loaded scene.
-    if (selectedIdx != 0 && ctx.scene.isAliveAtIndex(selectedIdx)) {
-        state.selectedEntity = EntityId{selectedIdx, ctx.scene.generationOf(selectedIdx)};
+    // Cache the selection's Name (if any) BEFORE attempting the load -
+    // matching by name post-load is more robust than matching by slot
+    // index alone, which can silently select a different entity that
+    // happens to land in the same slot after the new scene populates it.
+    std::string priorSelectionName;
+    if (state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)
+            && ctx.scene.has<Name>(state.selectedEntity)) {
+        priorSelectionName = ctx.scene.get<Name>(state.selectedEntity).value;
     }
 
-    // Re-bind the camera controller to the new scene's active Camera -
-    // the prior handle's slot may now hold a different entity (or be empty).
+    if (!SceneSerializer::load(ctx.scene, ctx.resources, m_currentScenePath)) {
+        LOG_ERROR("SceneIOController::load: failed to load %s - editor state preserved",
+            m_currentScenePath.c_str());
+        state.pushToast(EditorState::ToastKind::Error,
+            "Load failed: " + m_currentScenePath);
+        return;
+    }
+
+    // Entity IDs don't carry across scenes - any pending undo would
+    // operate on slots that now hold unrelated entities.
+    state.commands.clear();
+
+    // Selection survives the load only when an entity with the same Name
+    // exists in the loaded scene. Anonymous selections (no Name) are
+    // dropped rather than potentially landing on the wrong entity.
+    state.selectedEntity = {};
+    if (!priorSelectionName.empty()) {
+        ctx.scene.forEach<Name>([&](EntityId id, const Name& n) {
+            if (!state.selectedEntity && priorSelectionName == n.value) {
+                state.selectedEntity = id;
+            }
+        });
+    }
+
+    // Re-bind the camera controller to the new scene's active Camera. If
+    // multiple cameras claim active (authoring oversight), pick the first
+    // by iteration order and warn - silently picking one of several would
+    // make the choice look intentional.
     {
         Entity rebound{};
+        int activeCount = 0;
         ctx.scene.forEach<Camera>([&](EntityId id, const Camera& c) {
-            if (c.active && !rebound.getID()) rebound = Entity{id};
+            if (!c.active) return;
+            ++activeCount;
+            if (!rebound.getID()) rebound = Entity{id};
         });
+        if (activeCount > 1) {
+            LOG_WARNING("SceneIOController::load: %d cameras marked active in %s - using the first",
+                activeCount, m_currentScenePath.c_str());
+        }
         m_cameraController.setCameraEntity(rebound);
     }
 
@@ -145,10 +188,20 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
 
         ImGui::BeginDisabled(empty);
         if (ImGui::Button(collides ? "Overwrite" : "Save", ImVec2(120, 0))) {
+            // First-time save: the scenes/ directory may not exist yet.
+            std::error_code mkdirEc;
+            std::filesystem::create_directories(
+                std::filesystem::path(APP_ROOT_DIR) / "scenes", mkdirEc);
             m_currentScenePath = finalPath;
-            SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath);
-            state.sceneDirty = false;
-            pushRecent(state, m_currentScenePath);
+            if (SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath)) {
+                state.sceneDirty = false;
+                pushRecent(state, m_currentScenePath);
+                state.pushToast(EditorState::ToastKind::Info, "Saved " + finalName);
+            } else {
+                LOG_ERROR("SceneIOController: Save As failed for %s", m_currentScenePath.c_str());
+                state.pushToast(EditorState::ToastKind::Error,
+                    "Save failed: " + finalName);
+            }
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndDisabled();

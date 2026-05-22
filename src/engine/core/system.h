@@ -20,19 +20,19 @@ class StatisticTracker;
  * order each frame; within a stage, systems run in registration order.
  *
  * The structure mirrors how a frame actually flows:
- *   Input        → poll devices, capture/handle input (e.g., CameraController)
- *   Simulation   → state mutations: events, gameplay, animation, physics
- *   Transform    → derive world-space data from local Transforms (HierarchySystem)
- *   Visibility   → culling against the derived world state (VisibilitySystem)
- *   Render       → submit draw commands (RenderSystem)
- *   UI           → overlays, editor (EditorSystem)
+ *   Input        -> poll devices, capture/handle input (e.g., CameraController)
+ *   Simulation   -> state mutations: events, gameplay, animation, physics
+ *   Transform    -> derive world-space data from local Transforms (HierarchySystem)
+ *   Visibility   -> culling against the derived world state (VisibilitySystem)
+ *   Render       -> submit draw commands (RenderSystem)
+ *   UI           -> overlays, editor (EditorSystem)
  *
  * fixedUpdate() observes the same ordering (rarely matters in practice).
  *
  * Future systems slot in by responsibility:
- *   Physics      → Simulation (its fixedUpdate hook does the work)
- *   Gameplay     → Simulation
- *   Scripting    → Simulation, or split between Input (input scripts) and Render (UI scripts)
+ *   Physics      -> Simulation (its fixedUpdate hook does the work)
+ *   Gameplay     -> Simulation
+ *   Scripting    -> Simulation, or split between Input (input scripts) and Render (UI scripts)
  */
 enum class SystemStage : uint8_t {
     Input        = 0,
@@ -63,17 +63,26 @@ struct FrameContext {
     StatisticTracker& statistics;
     float deltaTime;
     float fixedDeltaTime;
+    // The scene's render rect within the GLFW window. The editor reports
+    // it via WindowManager::setSceneViewport so the 3D pass renders at the
+    // viewport's aspect & size, not the full window. With no editor, the
+    // engine defaults to the full window.
+    uint32_t viewportX = 0;
+    uint32_t viewportY = 0;
     uint32_t viewportWidth;
     uint32_t viewportHeight;
 
-    /// Per-frame visibility snapshot - reads from VisibilitySystem, which
-    /// populates it in SystemStage::Visibility. Lifecycle:
-    ///   - null on the very first frame (no stage has run yet)
-    ///   - null in updates that run before Visibility stage (Input,
-    ///     Simulation, Transform) - those stages don't have data yet
-    ///   - non-null in Visibility, Render, UI from frame 2 onward
-    /// Editor overlays guard with `if (ctx.visibility)` so they degrade
-    /// to a no-op on the first frame instead of asserting.
+    /**
+     * @brief Per-frame visibility snapshot - reads from VisibilitySystem, which
+     *
+     * populates it in SystemStage::Visibility. Lifecycle:
+     *   - null on the very first frame (no stage has run yet)
+     *   - null in updates that run before Visibility stage (Input,
+     *     Simulation, Transform) - those stages don't have data yet
+     *   - non-null in Visibility, Render, UI from frame 2 onward
+     * Editor overlays guard with `if (ctx.visibility)` so they degrade
+     * to a no-op on the first frame instead of asserting.
+     */
     const Visibility* visibility = nullptr;
 };
 

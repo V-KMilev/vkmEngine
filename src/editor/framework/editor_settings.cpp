@@ -1,8 +1,14 @@
 #include "framework/editor_settings.h"
 #include "framework/editor_state.h"
 
+#include <cstdio>
+#include <filesystem>
 #include <fstream>
+#include <system_error>
+
 #include <nlohmann/json.hpp>
+
+#include "logger.h"
 
 #include "core/system.h"   // APP_ROOT_DIR (via compile_definitions, actually)
 
@@ -11,6 +17,11 @@ namespace EditorSettings {
 
 namespace {
     using nlohmann::json;
+
+    /// Bumped when a load-incompatible change is made to the schema.
+    /// Loaders with a lower version fall back to defaults rather than
+    /// guessing at fields that no longer exist or have different meanings.
+    constexpr int kFileVersion = 1;
 
     json keybindToJson(const KeyBind& k) {
         return json{ {"key", static_cast<int>(k.key)}, {"mods", k.mods} };
@@ -29,7 +40,22 @@ bool load(EditorState& state) {
     std::ifstream in(path());
     if (!in.good()) return false;
     json j;
-    try { in >> j; } catch (...) { return false; }
+    try {
+        in >> j;
+    } catch (const std::exception& e) {
+        LOG_WARNING("EditorSettings::load: failed to parse %s - %s. Using defaults.",
+            path().c_str(), e.what());
+        return false;
+    }
+
+    const int v = j.value("version", 0);
+    if (v != kFileVersion) {
+        // Future-incompatible: better to start from documented defaults than
+        // to load fields with semantically different meanings.
+        LOG_WARNING("EditorSettings::load: file version %d != expected %d. Using defaults.",
+            v, kFileVersion);
+        return false;
+    }
 
     // Panel visibility
     state.showStats         = j.value("showStats",         state.showStats);
@@ -63,6 +89,8 @@ bool load(EditorState& state) {
         bind("saveScene",        state.keybinds.saveScene);
         bind("saveSceneAs",      state.keybinds.saveSceneAs);
         bind("loadScene",        state.keybinds.loadScene);
+        bind("undo",             state.keybinds.undo);
+        bind("redo",             state.keybinds.redo);
         bind("toggleStats",      state.keybinds.toggleStats);
         bind("toggleHierarchy",  state.keybinds.toggleHierarchy);
         bind("toggleInspector",  state.keybinds.toggleInspector);
@@ -94,6 +122,7 @@ bool load(EditorState& state) {
 
 bool save(const EditorState& state) {
     json j;
+    j["version"]           = kFileVersion;
     j["showStats"]         = state.showStats;
     j["showHierarchy"]     = state.showHierarchy;
     j["showInspector"]     = state.showInspector;
@@ -112,6 +141,8 @@ bool save(const EditorState& state) {
     kb["saveScene"]        = keybindToJson(state.keybinds.saveScene);
     kb["saveSceneAs"]      = keybindToJson(state.keybinds.saveSceneAs);
     kb["loadScene"]        = keybindToJson(state.keybinds.loadScene);
+    kb["undo"]             = keybindToJson(state.keybinds.undo);
+    kb["redo"]             = keybindToJson(state.keybinds.redo);
     kb["toggleStats"]      = keybindToJson(state.keybinds.toggleStats);
     kb["toggleHierarchy"]  = keybindToJson(state.keybinds.toggleHierarchy);
     kb["toggleInspector"]  = keybindToJson(state.keybinds.toggleInspector);
@@ -131,9 +162,32 @@ bool save(const EditorState& state) {
 
     j["recentScenes"] = state.recentScenes;
 
-    std::ofstream out(path());
-    if (!out.good()) return false;
-    out << j.dump(2);
+    // Atomic write: serialize to a sibling temp file then rename over the
+    // target. A crash mid-write leaves the previous settings intact instead
+    // of producing a half-written file the next launch can't parse.
+    const std::string target = path();
+    const std::string tmp    = target + ".tmp";
+    {
+        std::ofstream out(tmp);
+        if (!out.good()) {
+            LOG_ERROR("EditorSettings::save: cannot open %s for write", tmp.c_str());
+            return false;
+        }
+        out << j.dump(2);
+        if (!out.good()) {
+            LOG_ERROR("EditorSettings::save: write to %s failed", tmp.c_str());
+            return false;
+        }
+    } // out closes here - flush + fd release before the rename
+
+    std::error_code ec;
+    std::filesystem::rename(tmp, target, ec);
+    if (ec) {
+        LOG_ERROR("EditorSettings::save: rename %s -> %s failed: %s",
+            tmp.c_str(), target.c_str(), ec.message().c_str());
+        std::filesystem::remove(tmp, ec);  // best-effort cleanup
+        return false;
+    }
     return true;
 }
 
