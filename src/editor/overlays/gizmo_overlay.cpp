@@ -337,6 +337,123 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                 }
                 break;
             }
+            case LightType::Rect:
+            case LightType::Disk: {
+                // Wireframe emitter outline. axisU = local +X * width/2 (Rect)
+                // or +X * radius (Disk); axisV = local +Y similarly. Matches
+                // gl_lights.cpp's GPU packing so the gizmo agrees with the
+                // shaded result.
+                const bool isRect = (light.type == LightType::Rect);
+                const float ux = isRect ? light.areaWidth  * 0.5f : light.areaRadius;
+                const float uy = isRect ? light.areaHeight * 0.5f : light.areaRadius;
+                const glm::vec3 right = tf.rotation * glm::vec3(1, 0, 0) * ux;
+                const glm::vec3 up    = tf.rotation * glm::vec3(0, 1, 0) * uy;
+
+                if (isRect) {
+                    const glm::vec3 corners[4] = {
+                        pos - right - up,
+                        pos + right - up,
+                        pos + right + up,
+                        pos - right + up,
+                    };
+                    ImVec2 sp[4];
+                    bool   ok[4];
+                    for (int i = 0; i < 4; ++i) {
+                        ok[i] = projectToViewport(vp, corners[i],
+                                                  ec.viewportPos, ec.viewportSize, sp[i]);
+                    }
+                    for (int i = 0; i < 4; ++i) {
+                        const int j = (i + 1) & 3;
+                        if (ok[i] && ok[j]) dl->AddLine(sp[i], sp[j], col, 1.5f);
+                    }
+                } else {
+                    // Disk: 32-segment circle outline.
+                    const int N = 32;
+                    ImVec2 prev{};
+                    bool havePrev = false;
+                    for (int s = 0; s <= N; ++s) {
+                        const float t = (static_cast<float>(s) / N) * 6.2831853f;
+                        const glm::vec3 p = pos + right * std::cos(t) + up * std::sin(t);
+                        ImVec2 spd;
+                        if (projectToViewport(vp, p, ec.viewportPos, ec.viewportSize, spd)) {
+                            if (havePrev) dl->AddLine(prev, spd, col, 1.5f);
+                            prev = spd;
+                            havePrev = true;
+                        } else {
+                            havePrev = false;
+                        }
+                    }
+                }
+
+                // Emission arrow toward the lit hemisphere (+dir) with a
+                // filled triangle tip. Two-sided emitters get a second
+                // arrow on the back so the user can see the emission is
+                // bidirectional.
+                auto drawEmitArrow = [&](const glm::vec3& tipWorld) {
+                    ImVec2 a, b;
+                    if (!projectToViewport(vp, pos,      ec.viewportPos, ec.viewportSize, a)) return;
+                    if (!projectToViewport(vp, tipWorld, ec.viewportPos, ec.viewportSize, b)) return;
+                    dl->AddLine(a, b, col, 1.5f);
+
+                    ImVec2 dv(b.x - a.x, b.y - a.y);
+                    const float lenPx = std::sqrt(dv.x*dv.x + dv.y*dv.y);
+                    if (lenPx > 1.0f) {
+                        dv.x /= lenPx; dv.y /= lenPx;
+                        const ImVec2 perp(-dv.y, dv.x);
+                        const float h = 5.0f;
+                        dl->AddTriangleFilled(b,
+                            ImVec2(b.x - dv.x * h * 1.7f + perp.x * h * 0.8f,
+                                   b.y - dv.y * h * 1.7f + perp.y * h * 0.8f),
+                            ImVec2(b.x - dv.x * h * 1.7f - perp.x * h * 0.8f,
+                                   b.y - dv.y * h * 1.7f - perp.y * h * 0.8f),
+                            col);
+                    }
+                };
+
+                drawEmitArrow(pos + dir * 0.5f);
+                if (light.twoSided) drawEmitArrow(pos - dir * 0.5f);
+
+                // Attenuation-cutoff sphere: the distance beyond which the
+                // light contributes nothing. Drawn dimmer / thinner than the
+                // emitter outline so the silhouette reads as the actual
+                // emitter shape and the sphere reads as a falloff hint
+                // (matches how Point's 3 great-circle gizmo communicates the
+                // same data).
+                {
+                    const float rr = std::max(0.05f, light.radius);
+                    const ImU32 fade = selected
+                        ? IM_COL32(255, 200, 80, 90)
+                        : IM_COL32(static_cast<int>(light.color.r * 200),
+                                   static_cast<int>(light.color.g * 200),
+                                   static_cast<int>(light.color.b * 200), 80);
+                    const glm::vec3 axes[3][2] = {
+                        {{1, 0, 0}, {0, 1, 0}},
+                        {{1, 0, 0}, {0, 0, 1}},
+                        {{0, 1, 0}, {0, 0, 1}},
+                    };
+                    const int N = 24;
+                    for (int ring = 0; ring < 3; ++ring) {
+                        ImVec2 prevR{};
+                        bool havePrevR = false;
+                        for (int s = 0; s <= N; ++s) {
+                            const float t = (static_cast<float>(s) / N) * 6.2831853f;
+                            const glm::vec3 p = pos
+                                + (axes[ring][0] * std::cos(t)
+                                + axes[ring][1] * std::sin(t)) * rr;
+                            ImVec2 spr;
+                            if (projectToViewport(vp, p,
+                                                  ec.viewportPos, ec.viewportSize, spr)) {
+                                if (havePrevR) dl->AddLine(prevR, spr, fade, 1.0f);
+                                prevR = spr;
+                                havePrevR = true;
+                            } else {
+                                havePrevR = false;
+                            }
+                        }
+                    }
+                }
+                break;
+            }
         }
     });
 
@@ -362,6 +479,11 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
 
         const bool selected = (ec.state.selectedEntity == id);
         const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : IM_COL32(120, 200, 220, 220);
+        // Dimmer fill for the near/far plane "infill" edges so the apex,
+        // far rectangle, and the up-tab read as the primary silhouette.
+        const ImU32 colDim = selected
+            ? IM_COL32(255, 200, 80, 130)
+            : IM_COL32(120, 200, 220, 140);
 
         const glm::vec3 pos = (ctx.scene.has<WorldTransform>(id))
             ? glm::vec3(ctx.scene.get<WorldTransform>(id).model[3])
@@ -371,78 +493,94 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
             std::abs(fwd.y) < 0.99f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0)));
         const glm::vec3 up    = glm::normalize(glm::cross(right, fwd));
 
-        const float dist   = 1.5f;
+        // Use the camera's actual near and far so the gizmo reflects what
+        // the camera really clips. Clamp the minimums so degenerate values
+        // don't produce zero-extent rectangles. The drawn lines extend off
+        // viewport for cameras with large zFar - that's correct; the
+        // projection clipping in projectToViewport handles it.
+        const float zNear = std::max(0.001f, cam.zNear);
+        const float zFar  = std::max(zNear + 0.001f, cam.zFar);
+
         const float aspect = ec.viewportSize.y > 1.0f
             ? ec.viewportSize.x / ec.viewportSize.y : 16.0f / 9.0f;
 
-        // Frustum half-extents at the chosen depth.
-        float halfH, halfW;
+        // Half-extents at each plane. Perspective fans out with depth;
+        // ortho stays the same size at both planes (its rect is fixed by
+        // orthoHeight).
+        float halfHnear, halfWnear, halfHfar, halfWfar;
         if (cam.projection == ProjectionType::Perspective) {
-            halfH = std::tan(cam.fovY * 0.5f) * dist;
-            halfW = halfH * aspect;
+            const float t = std::tan(cam.fovY * 0.5f);
+            halfHnear = t * zNear;  halfWnear = halfHnear * aspect;
+            halfHfar  = t * zFar;   halfWfar  = halfHfar  * aspect;
         } else {
-            halfH = cam.orthoHeight * 0.5f;
-            halfW = halfH * aspect;
+            halfHnear = halfHfar = cam.orthoHeight * 0.5f;
+            halfWnear = halfWfar = halfHnear * aspect;
         }
 
-        const glm::vec3 c = pos + fwd * dist;
-        const glm::vec3 corners[4] = {
-            c + right *  halfW + up *  halfH,  // top-right
-            c + right * -halfW + up *  halfH,  // top-left
-            c + right * -halfW + up * -halfH,  // bottom-left
-            c + right *  halfW + up * -halfH,  // bottom-right
+        const glm::vec3 cNear = pos + fwd * zNear;
+        const glm::vec3 cFar  = pos + fwd * zFar;
+        const glm::vec3 nearCorners[4] = {
+            cNear + right *  halfWnear + up *  halfHnear,  // top-right
+            cNear + right * -halfWnear + up *  halfHnear,  // top-left
+            cNear + right * -halfWnear + up * -halfHnear,  // bottom-left
+            cNear + right *  halfWnear + up * -halfHnear,  // bottom-right
+        };
+        const glm::vec3 farCorners[4] = {
+            cFar + right *  halfWfar + up *  halfHfar,
+            cFar + right * -halfWfar + up *  halfHfar,
+            cFar + right * -halfWfar + up * -halfHfar,
+            cFar + right *  halfWfar + up * -halfHfar,
         };
 
         ImVec2 apexSp;
         bool haveApex = projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, apexSp);
 
-        ImVec2 cornerSp[4]{};
-        bool haveCorner[4] = {};
+        ImVec2 nearSp[4]{};
+        bool haveNear[4] = {};
+        ImVec2 farSp[4]{};
+        bool haveFar[4] = {};
         for (int i = 0; i < 4; ++i) {
-            haveCorner[i] = projectToViewport(vp, corners[i],
-                ec.viewportPos, ec.viewportSize, cornerSp[i]);
+            haveNear[i] = projectToViewport(vp, nearCorners[i],
+                ec.viewportPos, ec.viewportSize, nearSp[i]);
+            haveFar[i]  = projectToViewport(vp, farCorners[i],
+                ec.viewportPos, ec.viewportSize, farSp[i]);
         }
 
-        // For ortho: also project the apex face (a rectangle at the camera
-        // origin, same extents) so the gizmo reads as a box, not a pyramid.
-        if (cam.projection == ProjectionType::Orthographic) {
-            const glm::vec3 nearCorners[4] = {
-                pos + right *  halfW + up *  halfH,
-                pos + right * -halfW + up *  halfH,
-                pos + right * -halfW + up * -halfH,
-                pos + right *  halfW + up * -halfH,
-            };
-            ImVec2 nearSp[4]{};
-            bool haveNear[4] = {};
+        // Perspective: spokes from apex to near corners (gives the "FOV
+        // converges here" cue). Ortho skips them - the parallel near/far
+        // edges already say "ortho".
+        if (cam.projection == ProjectionType::Perspective && haveApex) {
             for (int i = 0; i < 4; ++i) {
-                haveNear[i] = projectToViewport(vp, nearCorners[i],
-                    ec.viewportPos, ec.viewportSize, nearSp[i]);
-            }
-            for (int i = 0; i < 4; ++i) {
-                if (haveNear[i] && haveNear[(i + 1) % 4])
-                    dl->AddLine(nearSp[i], nearSp[(i + 1) % 4], col, 1.0f);
-                if (haveNear[i] && haveCorner[i])
-                    dl->AddLine(nearSp[i], cornerSp[i], col, 1.0f);
-            }
-        } else if (haveApex) {
-            // Perspective: spokes from apex to far corners.
-            for (int i = 0; i < 4; ++i) {
-                if (haveCorner[i]) dl->AddLine(apexSp, cornerSp[i], col, 1.5f);
+                if (haveNear[i]) dl->AddLine(apexSp, nearSp[i], colDim, 1.0f);
             }
         }
 
-        // Far-face rectangle (perspective & ortho share this).
+        // Near rectangle (dim - it's small and close to the apex, so it
+        // reads as supporting detail).
         for (int i = 0; i < 4; ++i) {
             const int j = (i + 1) % 4;
-            if (haveCorner[i] && haveCorner[j])
-                dl->AddLine(cornerSp[i], cornerSp[j], col, 1.0f);
+            if (haveNear[i] && haveNear[j])
+                dl->AddLine(nearSp[i], nearSp[j], colDim, 1.0f);
         }
 
-        // "Up" indicator: small triangular tab on the top edge so the
-        // camera's roll is visible at a glance.
-        if (haveCorner[0] && haveCorner[1]) {
-            const ImVec2 mid((cornerSp[0].x + cornerSp[1].x) * 0.5f,
-                             (cornerSp[0].y + cornerSp[1].y) * 0.5f);
+        // 4 edges connecting near and far corners (the frustum sides).
+        for (int i = 0; i < 4; ++i) {
+            if (haveNear[i] && haveFar[i])
+                dl->AddLine(nearSp[i], farSp[i], col, 1.0f);
+        }
+
+        // Far rectangle (primary silhouette of the camera's reach).
+        for (int i = 0; i < 4; ++i) {
+            const int j = (i + 1) % 4;
+            if (haveFar[i] && haveFar[j])
+                dl->AddLine(farSp[i], farSp[j], col, 1.0f);
+        }
+
+        // "Up" indicator on the far face: small triangular tab on the top
+        // edge so the camera's roll is visible at a glance.
+        if (haveFar[0] && haveFar[1]) {
+            const ImVec2 mid((farSp[0].x + farSp[1].x) * 0.5f,
+                             (farSp[0].y + farSp[1].y) * 0.5f);
             const ImVec2 tab(mid.x, mid.y - 8.0f);
             dl->AddTriangleFilled(tab,
                 ImVec2(mid.x - 5.0f, mid.y),
