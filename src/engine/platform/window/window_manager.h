@@ -8,12 +8,10 @@ struct GLFWwindow;
 struct GLFWmonitor;
 
 namespace Engine {
-    class Window;
-    class InputHandle;
-    class FrameLimiter;
-}
 
-namespace Engine {
+class Window;
+class InputHandle;
+class FrameLimiter;
 
 /**
  * @brief Enumerates supported window modes for the application window.
@@ -71,6 +69,9 @@ constexpr const char* toString(WindowMode type) {
  */
 class WindowManager {
     public:
+        WindowManager();
+        ~WindowManager();
+
         WindowManager(const WindowManager& other) = delete;
         WindowManager& operator=(const WindowManager& other) = delete;
 
@@ -193,10 +194,6 @@ class WindowManager {
         uint32_t sceneViewportY()      const { return m_sceneVpY; }
         uint32_t sceneViewportWidth()  const { return m_sceneVpW; }
         uint32_t sceneViewportHeight() const { return m_sceneVpH; }
-
-    public:
-        WindowManager();
-        ~WindowManager();
 
     private:
         std::unique_ptr<Window> m_window;

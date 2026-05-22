@@ -29,8 +29,8 @@ Resource& Resource::operator=(const Resource& other) {
     return *this;
 }
 
-Resource::Resource(Resource&& other) noexcept = default;
-Resource& Resource::operator=(Resource&& other) noexcept = default;
+Resource::Resource(Resource && other) noexcept = default;
+Resource& Resource::operator=(Resource && other) noexcept = default;
 
 nlohmann::json& Resource::sourceJson() {
     if (!source) source = std::make_unique<nlohmann::json>();

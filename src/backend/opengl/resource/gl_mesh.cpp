@@ -1,15 +1,13 @@
 #include "gl_mesh.h"
 
 #include "logger.h"
-#include "debug/statistics.h"
 
+#include "debug/statistics.h"
+#include "gl_error_handle.h"
+#include "gl_index_buffer.h"
 #include "gl_vertex_array.h"
 #include "gl_vertex_buffer.h"
-#include "gl_index_buffer.h"
 #include "gl_vertex_buffer_layout.h"
-
-#include "gl_error_handle.h"
-
 #include "resource/mesh_asset.h"
 
 namespace Engine {

@@ -10,13 +10,11 @@
 #include "system/render/render_target.h"  // unique_ptr<RenderTarget> needs complete type
 
 namespace Engine {
-    struct RenderView;
-    class ResourceManager;
-    class RenderGraph;
-    class FrameResources;
-}
 
-namespace Engine {
+struct RenderView;
+class ResourceManager;
+class RenderGraph;
+class FrameResources;
 
 /**
  * @brief Enumeration of supported rendering backend types.
@@ -34,7 +32,7 @@ enum class RenderBackendType {
  * @param type The RenderBackendType value to convert.
  * @return const char* String representation of the RenderBackendType.
  */
- constexpr const char* toString(RenderBackendType type) {
+constexpr const char* toString(RenderBackendType type) {
     switch (type) {
         case RenderBackendType::NONE:    return "NONE";
         case RenderBackendType::OpenGL:  return "OpenGL";
@@ -105,8 +103,10 @@ class RenderBackend {
          * preview path before syncResources to force those handles to
          * upload. Default no-op for backends that don't need it.
          */
-        virtual void ensurePreviewResourceTables(const RenderView& view,
-                                                  const ResourceManager& resources) {
+        virtual void ensurePreviewResourceTables(
+            const RenderView& view,
+            const ResourceManager& resources
+        ) {
             (void)view; (void)resources;
         }
 
@@ -165,8 +165,11 @@ class RenderBackend {
          * @return Backend-typed texture id of the cached snapshot. 0 on
          *         failure or when the backend doesn't support thumbnails.
          */
-        virtual uint32_t snapshotToTexture(uint32_t srcTextureId, uint64_t key,
-                                            uint32_t size) {
+        virtual uint32_t snapshotToTexture(
+            uint32_t srcTextureId,
+            uint64_t key,
+            uint32_t size
+        ) {
             (void)srcTextureId; (void)key; (void)size; return 0;
         }
 
@@ -204,9 +207,14 @@ class RenderBackend {
          * @param outRGB         Resized to w*h*3 bytes on success.
          * @return true on success, false on invalid rect / unsupported.
          */
-        virtual bool readbackPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                                     uint32_t windowHeight,
-                                     std::vector<uint8_t>& outRGB) {
+        virtual bool readbackPixels(
+            uint32_t x,
+            uint32_t y,
+            uint32_t w,
+            uint32_t h,
+            uint32_t windowHeight,
+            std::vector<uint8_t>& outRGB
+        ) {
             (void)x; (void)y; (void)w; (void)h;
             (void)windowHeight; (void)outRGB;
             return false;

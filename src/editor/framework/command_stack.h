@@ -27,10 +27,11 @@ class CommandStack {
         CommandStack();
         ~CommandStack();
 
-        CommandStack(const CommandStack&) = delete;
-        CommandStack& operator=(const CommandStack&) = delete;
-        CommandStack(CommandStack&&) = delete;
-        CommandStack& operator=(CommandStack&&) = delete;
+        CommandStack(const CommandStack& other) = delete;
+        CommandStack& operator=(const CommandStack& other) = delete;
+
+        CommandStack(CommandStack && other) = delete;
+        CommandStack& operator=(CommandStack && other) = delete;
 
         /// Push a freshly applied command. Coalesces into the top of the
         /// undo stack if Command::tryMerge says so. Clears the redo stack.

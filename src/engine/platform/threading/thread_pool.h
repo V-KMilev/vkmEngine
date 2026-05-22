@@ -1,16 +1,12 @@
 #pragma once
 
-
-#include <thread>
-
-#include <deque>
-#include <vector>
-
-#include <mutex>
 #include <atomic>
 #include <condition_variable>
-
+#include <deque>
+#include <mutex>
+#include <thread>
 #include <type_traits>
+#include <vector>
 
 #include "platform/threading/task.h"
 
@@ -23,8 +19,8 @@ class ThreadPool {
         ThreadPool(const ThreadPool& other) = delete;
         ThreadPool& operator=(const ThreadPool& other) = delete;
 
-        ThreadPool(ThreadPool&& other) = delete;
-        ThreadPool& operator=(ThreadPool&& other) = delete;
+        ThreadPool(ThreadPool && other) = delete;
+        ThreadPool& operator=(ThreadPool && other) = delete;
 
     public:
         static ThreadPool& get();
