@@ -31,6 +31,8 @@ enum class EntityKind {
     PointLight,
     SpotLight,
     DirectionalLight,
+    RectLight,
+    DiskLight,
     Camera,
 };
 

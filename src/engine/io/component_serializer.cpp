@@ -79,12 +79,16 @@ const char* lightTypeName(LightType t) {
         case LightType::Directional: return "Directional";
         case LightType::Point:       return "Point";
         case LightType::Spot:        return "Spot";
+        case LightType::Rect:        return "Rect";
+        case LightType::Disk:        return "Disk";
     }
     return "Directional";
 }
 LightType lightTypeFromName(const std::string& s) {
     if (s == "Point") return LightType::Point;
     if (s == "Spot")  return LightType::Spot;
+    if (s == "Rect")  return LightType::Rect;
+    if (s == "Disk")  return LightType::Disk;
     return LightType::Directional;
 }
 } // namespace
@@ -97,6 +101,10 @@ nlohmann::json save(const Light& l) {
         {"radius",         l.radius},
         {"innerConeAngle", l.innerConeAngle},
         {"outerConeAngle", l.outerConeAngle},
+        {"areaWidth",      l.areaWidth},
+        {"areaHeight",     l.areaHeight},
+        {"areaRadius",     l.areaRadius},
+        {"twoSided",       l.twoSided},
         {"castShadows",    l.castShadows},
         {"shadowBias",     l.shadowBias},
         {"shadowExtent",   l.shadowExtent},
@@ -110,6 +118,10 @@ void load(const nlohmann::json& j, Light& l) {
     l.radius         = j.value("radius",         l.radius);
     l.innerConeAngle = j.value("innerConeAngle", l.innerConeAngle);
     l.outerConeAngle = j.value("outerConeAngle", l.outerConeAngle);
+    l.areaWidth      = j.value("areaWidth",      l.areaWidth);
+    l.areaHeight     = j.value("areaHeight",     l.areaHeight);
+    l.areaRadius     = j.value("areaRadius",     l.areaRadius);
+    l.twoSided       = j.value("twoSided",       l.twoSided);
     l.castShadows    = j.value("castShadows",    l.castShadows);
     l.shadowBias     = j.value("shadowBias",     l.shadowBias);
     l.shadowExtent   = j.value("shadowExtent",   l.shadowExtent);

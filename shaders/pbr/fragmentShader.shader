@@ -68,6 +68,8 @@ const int TEX_TRANSMISSION          = 1 << 10;
 const int LIGHT_DIRECTIONAL = 0;
 const int LIGHT_POINT       = 1;
 const int LIGHT_SPOT        = 2;
+const int LIGHT_RECT        = 3;  // Phase 2A: shaded as point at light.position; LTC lands in 2C
+const int LIGHT_DISK        = 4;  // Phase 2A: shaded as point at light.position; LTC lands in 2C
 
 // Cross-language constants: single C++ source of truth in
 // src/engine/core/engine_config.h. cmake/generate_shader_config.cmake
@@ -113,6 +115,7 @@ struct Light {
     vec4 color;      // xyz = rgb,            w = intensity
     vec4 direction;  // xyz = world dir,      w = radius
     vec4 spot;       // x = inner, y = outer, z = unused, w = shadowSlot
+    vec4 area;       // x = width(Rect)/radius(Disk), y = height(Rect), z = unused, w = twoSided
 };
 
 layout(std140, binding = 1) uniform LightsBlock {
