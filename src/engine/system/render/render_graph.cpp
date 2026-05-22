@@ -121,7 +121,12 @@ void RenderGraph::compile(const RenderView* view) {
     for (uint32_t i = 0; i < RG_RESOURCE_COUNT; ++i) {
         if (m_lifetimes[i].used()) ++usedResources;
     }
-    LOG_INFO("RenderGraph compiled: %zu/%zu passes active, %u transient resources%s",
+    // VERBOSE because the editor's material-preview path toggles passes per
+    // frame (disables grid + aabb_debug for the preview, re-enables them for
+    // the main view), so this fires twice every frame the Material Editor or
+    // Asset Browser is open. The signal is still here for anyone watching
+    // verbose logs; INFO would just be spam.
+    LOG_VERBOSE("RenderGraph compiled: %zu/%zu passes active, %u transient resources%s",
         activePasses, n, usedResources, clean ? "" : " (with validation warnings)");
 
     // Mark compiled so we don't redo this work every frame. addPass() /
