@@ -4,17 +4,26 @@
 #include <chrono>
 #include <cstddef>
 
-#include "debug/frame_info.h"
-
 namespace Engine {
 
 /**
- * @class FrameTracker
- * @brief Tracks per-frame timing statistics (frametime, framerate, min/max frametime)
- *        over a sliding window of recent frames.
+ * @brief Frame timing snapshot: average / min / max over a sliding window.
+ */
+struct FrameRateInfo {
+    float frameTime    = 0.0f;
+    float frameRate    = 0.0f;
+    float minFrameTime = 0.0f;
+    float maxFrameTime = 0.0f;
+};
+
+/**
+ * @brief Tracks per-frame timing (frametime, framerate, min/max) over a
+ *        sliding window of recent frames.
  *
- * Use this class to gather frame timing data for performance diagnostics, live statistics panels,
- * or adaptive systems. Maintains a running average, min, and max over the most recent SAMPLE_SIZE frames.
+ * Engine owns one and updates it once per main-loop iteration. Drives
+ * the FrameContext.deltaTime feed and the editor's FPS overlay. Separate
+ * from the Tracy profiler (debug/profiler.h): this is the always-on,
+ * release-build-cheap source of frame timing the engine itself needs.
  */
 class FrameTracker {
     public:
@@ -29,25 +38,15 @@ class FrameTracker {
 
     public:
         /**
-         * @brief Updates the timing statistics with the latest elapsed frametime.
+         * @brief Sample the wall clock and fold the new delta into the window.
          *
-         * Call this once each frame, typically at the start or end of your game/render loop.
-         * Computes new average, min, and max statistics using a rolling buffer.
+         * Call once per render frame, typically at end-of-loop.
          */
         void update();
 
-        /**
-         * @brief Resets all accumulated statistics and frame sample buffer.
-         *
-         * Useful to clear historical data, e.g., when pausing or restarting.
-         */
+        /** @brief Drop accumulated samples; reset min/max/avg to zero. */
         void reset();
 
-        /**
-         * @brief Gets the most recently computed frame rate info.
-         *
-         * @return const reference to FrameRateInfo (contains average frameTime, frameRate, min/max times)
-         */
         const FrameRateInfo& getFrameRateInfo() const { return m_frameRateInfo; }
 
     private:
@@ -56,9 +55,9 @@ class FrameTracker {
         static constexpr size_t SAMPLE_SIZE = 60;
         std::array<float, SAMPLE_SIZE> m_frameTimes;
 
-        size_t m_frameIndex = 0;
+        size_t m_frameIndex   = 0;
         size_t m_validSamples = 0;
-        double m_runningSum = 0.0;
+        double m_runningSum   = 0.0;
 
         std::chrono::high_resolution_clock::time_point m_lastFrameTime;
 };

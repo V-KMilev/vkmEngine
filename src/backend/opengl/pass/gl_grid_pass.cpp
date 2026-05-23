@@ -2,7 +2,7 @@
 
 #include "logger.h"
 #include "debug/print_helper.h"
-#include "debug/statistics.h"
+#include "debug/profiler_gl.h"
 
 #include "core/gl_backend.h"
 #include "core/gl_scene_target.h"
@@ -33,6 +33,7 @@ void GLGridPass::onResize(RenderBackend& backend, uint32_t width, uint32_t heigh
 
 
 void GLGridPass::execute(RenderGraphContext& rg) {
+    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
     RenderBackend& backend = rg.backend;
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
@@ -66,7 +67,6 @@ void GLGridPass::execute(RenderGraphContext& rg) {
     glContext.setFaceCulling(false);
 
     shader->bind();
-    STATS_RECORD_SHADER_SWITCH();
 
     // Read grid settings from environment config
     const auto& env = view.environment;

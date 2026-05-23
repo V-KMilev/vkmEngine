@@ -7,6 +7,7 @@
 
 #include "logger.h"
 
+#include "debug/profiler_gl.h"
 #include "gl_context.h"
 #include "gl_frame_resources.h"
 #include "gl_shader.h"
@@ -76,6 +77,10 @@ void GLBackend::registerPersistentResources(RenderGraph& graph) {
     graph.registerResource(RGResource::IBL,         &m_view.getIBL());
 }
 
+void GLBackend::endFrame() {
+    PROFILE_GPU_COLLECT();
+}
+
 GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL), m_context() {
     // GLEW is initialized during Window creation (before any GL calls).
     // Logging the version + device here keeps GL queries inside the backend.
@@ -83,6 +88,12 @@ GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL), m_context() {
     const std::string dev = deviceName();
     LOG_VERBOSE("OpenGL %s on %s", ver.empty() ? "?" : ver.c_str(),
                                     dev.empty() ? "?" : dev.c_str());
+
+    // Tracy GPU profiler bootstrap. Must run on the thread that owns the GL
+    // context (the main thread) before the first PROFILE_GPU_SCOPE; the
+    // backend is constructed after Window::createWindow, so the context is
+    // already live by the time we get here. No-op when VKM_PROFILER is off.
+    PROFILE_GPU_CONTEXT();
 
     // Set default clear color (dark gray)
     m_context.setClearColor({0.1f, 0.1f, 0.1f, 1.0f});

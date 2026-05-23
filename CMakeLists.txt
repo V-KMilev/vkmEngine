@@ -10,6 +10,17 @@ set(PROJECT_ROOT_DIR ${CMAKE_SOURCE_DIR})
 # Place all binaries (exe + dlls) in a single directory so the exe can find its DLLs
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# Profiler (Tracy) toggle. Defaults ON for everything except explicit
+# Release builds. When OFF, debug/profiler.h expands every macro to a
+# zero-cost no-op and Tracy compiles to nothing.
+if(NOT DEFINED VKM_PROFILER)
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        set(VKM_PROFILER OFF CACHE BOOL "Enable Tracy CPU + GPU profiling")
+    else()
+        set(VKM_PROFILER ON  CACHE BOOL "Enable Tracy CPU + GPU profiling")
+    endif()
+endif()
+
 # Git metadata
 include(cmake/git_metadata.cmake)
 

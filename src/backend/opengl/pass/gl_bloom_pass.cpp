@@ -7,7 +7,7 @@
 #include "core/gl_backend.h"
 #include "core/gl_scene_target.h"
 #include "debug/print_helper.h"
-#include "debug/statistics.h"
+#include "debug/profiler_gl.h"
 #include "gl_screen_triangle.h"
 #include "resource/gl_bloom.h"
 #include "resource/gl_shader_program.h"
@@ -42,6 +42,7 @@ void GLBloomPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint3
 }
 
 void GLBloomPass::execute(RenderGraphContext& rg) {
+    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
     RenderBackend& backend = rg.backend;
     const ResourceManager& resources = rg.resources;
     if (backend.getType() != RenderBackendType::OpenGL) {
@@ -102,7 +103,6 @@ void GLBloomPass::execute(RenderGraphContext& rg) {
 
     m_screenTri->unbind();
     bloom.unbindFbo();
-    STATS_RECORD_SHADER_SWITCH();
 
     // Composite restores its own state; leave depth enabled for the next
     // frame's scene passes (they rely on the context default).

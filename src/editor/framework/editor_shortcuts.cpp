@@ -19,7 +19,6 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
     CameraController& camera = ec.cameraController;
     const auto&       kb     = state.keybinds;
 
-    if (isPressed(kb.toggleStats))     state.showStats     = !state.showStats;
     if (isPressed(kb.toggleHierarchy)) state.showHierarchy = !state.showHierarchy;
     if (isPressed(kb.toggleInspector)) state.showInspector = !state.showInspector;
     if (isPressed(kb.toggleBottom))    state.showBottom    = !state.showBottom;

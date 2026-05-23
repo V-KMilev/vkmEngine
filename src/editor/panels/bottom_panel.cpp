@@ -1,34 +1,14 @@
 #include "panels/bottom_panel.h"
-#include "framework/editor_common.h"
-#include "ui/editor_style.h"
-
-#include "system/visibility/visibility_system.h"
-#include "system/render/render_system.h"
-#include "system/render/render_graph.h"
 
 #include <cstdio>
-#include <string>
-#include <filesystem>
-#include <system_error>
-#include <initializer_list>
+
+#include "framework/editor_common.h"
+#include "ui/editor_style.h"
 
 namespace Engine {
 
 void BottomPanel::draw(EditorContext& ec) {
-    // Tab bar (animation editor + scene statistics). Two sections didn't
-    // justify a master-detail layout - tabs are more idiomatic and free
-    // up the 150px sidebar for content.
-    if (ImGui::BeginTabBar("##BottomTabs", ImGuiTabBarFlags_None)) {
-        if (ImGui::BeginTabItem("Animation")) {
-            drawAnimationSection(ec);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Statistics")) {
-            drawStatisticsSection(ec);
-            ImGui::EndTabItem();
-        }
-        ImGui::EndTabBar();
-    }
+    drawAnimationSection(ec);
 }
 
 void BottomPanel::drawAnimationSection(EditorContext& ec) {
@@ -363,72 +343,6 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
     }
 
     editor(scene.get<Animation>(id));
-}
-
-void BottomPanel::drawStatisticsSection(EditorContext& ec) {
-    FrameContext& ctx = ec.frame;
-    auto& scene = ctx.scene;
-
-    // Update cached counts periodically (every 0.5s), not every frame
-    m_resourceCounts.updateTimer += ctx.deltaTime;
-    if (m_resourceCounts.updateTimer >= 0.5f) {
-        m_resourceCounts.updateTimer = 0.0f;
-        auto& rc = m_resourceCounts;
-        rc.transforms  = scene.count<Transform>();
-        rc.meshes      = scene.count<Mesh>();
-        rc.lights      = scene.count<Light>();
-        rc.cameras     = scene.count<Camera>();
-        rc.animations  = scene.count<Animation>();
-        rc.hierarchies = scene.count<Hierarchy>();
-        rc.names       = scene.count<Name>();
-
-        rc.animPlaying = rc.animPaused = 0;
-        scene.forEach<Animation>([&](EntityId, const Animation& a) {
-            if (a.playing) ++rc.animPlaying; else ++rc.animPaused;
-        });
-
-        rc.lightsDir = rc.lightsPoint = rc.lightsSpot = rc.lightsDisabled = 0;
-        scene.forEach<Light>([&](EntityId, const Light& l) {
-            if (!l.enabled) { ++rc.lightsDisabled; return; }
-            switch (l.type) {
-                case LightType::Directional: ++rc.lightsDir; break;
-                case LightType::Point: ++rc.lightsPoint; break;
-                case LightType::Spot: ++rc.lightsSpot; break;
-            }
-        });
-    }
-
-    const auto& rc = m_resourceCounts;
-
-    if (ImGui::BeginTable("##ResCols", 3,
-            ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchSame)) {
-        ImGui::TableNextRow();
-
-        ImGui::TableNextColumn();
-        ImGui::TextDisabled("Component Counts");
-        ImGui::Separator();
-        struct CI { const char* n; size_t c; };
-        CI comps[] = {
-            {"Transform", rc.transforms}, {"Mesh", rc.meshes},
-            {"Light", rc.lights}, {"Camera", rc.cameras},
-            {"Animation", rc.animations}, {"Hierarchy", rc.hierarchies},
-            {"Name", rc.names},
-        };
-        for (const auto& co : comps) ImGui::Text("%-12s %zu", co.n, co.c);
-
-        ImGui::TableNextColumn();
-        ImGui::TextDisabled("Animations");
-        ImGui::Separator();
-        ImGui::Text("Playing: %u  Paused: %u", rc.animPlaying, rc.animPaused);
-
-        ImGui::TableNextColumn();
-        ImGui::TextDisabled("Lights");
-        ImGui::Separator();
-        ImGui::Text("Dir: %u  Point: %u  Spot: %u", rc.lightsDir, rc.lightsPoint, rc.lightsSpot);
-        if (rc.lightsDisabled > 0) ImGui::Text("Disabled: %u", rc.lightsDisabled);
-
-        ImGui::EndTable();
-    }
 }
 
 } // namespace Engine

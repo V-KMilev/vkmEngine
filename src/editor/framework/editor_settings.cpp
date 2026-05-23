@@ -58,7 +58,6 @@ bool load(EditorState& state) {
     }
 
     // Panel visibility
-    state.showStats         = j.value("showStats",         state.showStats);
     state.showHierarchy     = j.value("showHierarchy",     state.showHierarchy);
     state.showInspector     = j.value("showInspector",     state.showInspector);
     state.showBottom        = j.value("showBottom",        state.showBottom);
@@ -91,7 +90,6 @@ bool load(EditorState& state) {
         bind("loadScene",        state.keybinds.loadScene);
         bind("undo",             state.keybinds.undo);
         bind("redo",             state.keybinds.redo);
-        bind("toggleStats",      state.keybinds.toggleStats);
         bind("toggleHierarchy",  state.keybinds.toggleHierarchy);
         bind("toggleInspector",  state.keybinds.toggleInspector);
         bind("toggleBottom",     state.keybinds.toggleBottom);
@@ -123,7 +121,6 @@ bool load(EditorState& state) {
 bool save(const EditorState& state) {
     json j;
     j["version"]           = kFileVersion;
-    j["showStats"]         = state.showStats;
     j["showHierarchy"]     = state.showHierarchy;
     j["showInspector"]     = state.showInspector;
     j["showBottom"]        = state.showBottom;
@@ -143,7 +140,6 @@ bool save(const EditorState& state) {
     kb["loadScene"]        = keybindToJson(state.keybinds.loadScene);
     kb["undo"]             = keybindToJson(state.keybinds.undo);
     kb["redo"]             = keybindToJson(state.keybinds.redo);
-    kb["toggleStats"]      = keybindToJson(state.keybinds.toggleStats);
     kb["toggleHierarchy"]  = keybindToJson(state.keybinds.toggleHierarchy);
     kb["toggleInspector"]  = keybindToJson(state.keybinds.toggleInspector);
     kb["toggleBottom"]     = keybindToJson(state.keybinds.toggleBottom);

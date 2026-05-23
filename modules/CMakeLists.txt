@@ -70,3 +70,20 @@ target_link_libraries(imgui PUBLIC
 
 # imgui uses its own built-in GL loader (imgui_impl_opengl3_loader.h)
 # -- no GLEW dependency, no loader defines needed
+
+# ============================================================================
+# Tracy (CPU + GPU profiler). Gated by VKM_PROFILER so release builds compile
+# Tracy with TRACY_ENABLE=OFF, making every client macro a zero-cost no-op.
+# Engine code talks to Tracy only through debug/profiler.h.
+# ============================================================================
+if(VKM_PROFILER)
+    set(TRACY_ENABLE         ON  CACHE BOOL "" FORCE)
+    set(TRACY_ON_DEMAND      ON  CACHE BOOL "" FORCE)
+    set(TRACY_NO_BROADCAST   OFF CACHE BOOL "" FORCE)
+    set(TRACY_NO_FRAME_IMAGE ON  CACHE BOOL "" FORCE)
+else()
+    set(TRACY_ENABLE OFF CACHE BOOL "" FORCE)
+endif()
+if(NOT TARGET TracyClient)
+    add_subdirectory(tracy)
+endif()

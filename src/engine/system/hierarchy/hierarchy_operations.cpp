@@ -5,6 +5,7 @@
 
 #include "logger.h"
 
+#include "debug/profiler.h"
 #include "platform/threading/thread_pool.h"
 
 #include "ecs/component/world_transform.h"
@@ -198,6 +199,7 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity) {
 }
 
 void resolveWorldTransforms(Scene& scene) {
+    PROFILE_SCOPE("Hierarchy/ResolveWorld");
     auto* hierarchyStorage = scene.storage<Hierarchy>();
     if (!hierarchyStorage) return;
 

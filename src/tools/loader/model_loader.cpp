@@ -37,6 +37,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "logger.h"
+#include "debug/profiler.h"
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
@@ -495,6 +496,7 @@ TextureHandle loadModelEmbeddedTexture(const std::string& path,
 
 EntityId importModelIntoScene(const std::string& path, ResourceManager& resources,
                               Scene& scene) {
+    PROFILE_SCOPE("ModelImport");
     Assimp::Importer importer;
     const aiScene* aScene = importer.ReadFile(path, POST_PROCESS_FLAGS);
     if (!aScene || aScene->mNumMeshes == 0) {

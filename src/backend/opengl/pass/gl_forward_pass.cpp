@@ -10,7 +10,7 @@
 #include "core/gl_instance_batcher.h"
 #include "core/gl_scene_target.h"
 #include "debug/print_helper.h"
-#include "debug/statistics.h"
+#include "debug/profiler_gl.h"
 #include "resource/gl_gbuffer.h"
 #include "resource/gl_ibl.h"
 #include "resource/gl_material.h"
@@ -67,6 +67,7 @@ void GLForwardPass::onResize(RenderBackend& backend, uint32_t width, uint32_t he
 }
 
 void GLForwardPass::execute(RenderGraphContext& rg) {
+    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
     RenderBackend& backend = rg.backend;
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
@@ -304,7 +305,6 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         if (shader != currentShader) {
             shader->bind();
             applyFrameUniforms(shader);
-            STATS_RECORD_SHADER_SWITCH();
             currentShader = shader;
         }
 

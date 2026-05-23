@@ -5,6 +5,7 @@
 
 #include "logger.h"
 
+#include "debug/profiler.h"
 #include "config/gl_texture_mapping.h"
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"
@@ -98,6 +99,8 @@ void GLView::syncTable(
 }
 
 void GLView::sync(const RenderView& view, const ResourceManager& resources) {
+    PROFILE_SCOPE("GLView::sync");
+
     // A scene load swaps the whole ResourceManager. Cached GL entries keyed
     // by handle id are now stale: a new asset may sit at an id that previously
     // held a different asset with a coincidentally-equal per-asset version,
@@ -135,6 +138,7 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     thread_local std::vector<TextureHandle>  textureHandles;
 
     if (resourcesDirty) {
+        PROFILE_SCOPE("GLView/UploadResources");
         collectMeshHandles(view, meshHandles);
         collectMaterialHandles(view, materialHandles);
         collectTextureHandles(materialHandles, resources, textureHandles);

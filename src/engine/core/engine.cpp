@@ -1,19 +1,22 @@
 #include "core/engine.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <chrono>
 #include <vector>
 
 #include "logger.h"
 
 #include "core/engine_config.h"
-#include "debug/statistics.h"
+#include "debug/profiler.h"
 #include "platform/threading/thread_pool.h"
 
 namespace Engine {
 
 namespace {
+
+constexpr const char* STAGE_NAMES[] = {
+    "Input", "Simulation", "Transform", "Visibility", "Render", "UI"
+};
 
 /**
  * @brief Greedy layer assignment: walk systems in registration order, drop each
@@ -60,8 +63,7 @@ void Engine::run() {
     float accumulator = 0.0f;
 
     while (m_window.beginFrame()) {
-        StatisticTracker& stats = getStatistics();
-        float deltaTime = stats.getFrameInfo().frameRateInfo.frameTime / 1000.0f;
+        const float deltaTime = m_frameTracker.getFrameRateInfo().frameTime / 1000.0f;
 
         if (!m_window.updateInput()) break;
 
@@ -76,7 +78,7 @@ void Engine::run() {
         const bool     vpSet = (vpW > 0 && vpH > 0);
 
         FrameContext ctx{
-            m_scene, m_resources, m_window, stats,
+            m_scene, m_resources, m_window, m_frameTracker,
             deltaTime,
             Config::FixedTimeStep,
             vpSet ? m_window.sceneViewportX() : 0u,
@@ -113,6 +115,7 @@ void Engine::run() {
             }
         }
         while (accumulator >= Config::FixedTimeStep) {
+            PROFILE_SCOPE("FixedUpdate");
             for (System* system : m_fixedUpdaters) {
                 if (system->isEnabled()) {
                     system->fixedUpdate(ctx);
@@ -127,14 +130,16 @@ void Engine::run() {
 
         if (!m_window.swapBuffers()) break;
 
-        stats.update();
-        printStats(ctx);
+        m_frameTracker.update();
+        PROFILE_FRAME_MARK();
     }
 
     shutdownSystems();
 }
 
 void Engine::initSystems(FrameContext& ctx) {
+    PROFILE_SCOPE("Engine::initSystems");
+
     // Compute the per-stage layer plan from each system's declared access.
     buildSchedule();
 
@@ -152,10 +157,6 @@ void Engine::initSystems(FrameContext& ctx) {
 }
 
 void Engine::buildSchedule() {
-    static constexpr const char* STAGE_NAMES[] = {
-        "Input", "Simulation", "Transform", "Visibility", "Render", "UI"
-    };
-
     for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
         auto& stage = m_systemsByStage[s];
         StageSchedule& plan = m_schedule[s];
@@ -211,6 +212,8 @@ void Engine::setParallelDispatch(SystemStage stage, bool enabled) {
 }
 
 void Engine::updateStage(SystemStage stage, FrameContext& ctx) {
+    PROFILE_SCOPE_NAMED(STAGE_NAMES[static_cast<size_t>(stage)]);
+
     const StageSchedule& plan = m_schedule[static_cast<size_t>(stage)];
 
     for (const auto& layer : plan.layers) {
@@ -242,23 +245,6 @@ void Engine::shutdownSystems() {
             (*it)->shutdown();
         }
     }
-}
-
-void Engine::printStats(const FrameContext& ctx) {
-    auto now = std::chrono::steady_clock::now();
-    if (now - m_lastStatsPrint < std::chrono::milliseconds(500)) return;
-
-    const auto& info = getStatistics().getFrameInfo();
-    LOG_VERBOSE("[%lu] %.2fms (%.0f FPS) | Draws: %u | Passes: %u | Visible: %zu/%zu\n",
-        info.frameIndex,
-        info.frameRateInfo.frameTime,
-        info.frameRateInfo.frameRate,
-        info.renderSystemInfo.drawCalls,
-        info.renderSystemInfo.renderPasses,
-        ctx.visibility ? ctx.visibility->entries.size() : 0,
-        m_scene.entityCount()
-    );
-    m_lastStatsPrint = now;
 }
 
 } // namespace Engine

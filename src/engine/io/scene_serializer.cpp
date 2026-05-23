@@ -13,6 +13,7 @@
 
 #include "logger.h"
 
+#include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/entity.h"
 #include "io/asset_serializer.h"
@@ -139,6 +140,7 @@ bool isKnownComponentKey(const std::string& k) {
 } // namespace
 
 bool save(const Scene& scene, const ResourceManager& resources, const std::string& path) {
+    PROFILE_SCOPE("SceneSerializer::save");
     json doc;
     doc["version"]  = FILE_FORMAT_VERSION;
     doc["assets"]   = AssetSerializer::saveAssetsForScene(scene, resources);
@@ -168,6 +170,7 @@ bool save(const Scene& scene, const ResourceManager& resources, const std::strin
 }
 
 bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
+    PROFILE_SCOPE("SceneSerializer::load");
     std::ifstream in(path);
     if (!in) {
         LOG_ERROR("SceneSerializer::load failed to open '%s'", path.c_str());

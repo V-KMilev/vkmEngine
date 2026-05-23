@@ -4,6 +4,7 @@
 
 #include "logger.h"
 
+#include "debug/profiler.h"
 #include "core/system.h"
 
 namespace Engine {
@@ -35,6 +36,9 @@ void FileWatcher::update(FrameContext& ctx) {
     if (m_accumulator < m_interval) return;
     m_accumulator = 0.0f;
 
+    // Only emit the zone on poll ticks - skipping it on the no-op frames keeps
+    // the Tracy timeline clean (this fires once every m_interval seconds).
+    PROFILE_SCOPE("FileWatcher/Poll");
     for (auto& entry : m_entries) checkOne(entry);
 }
 

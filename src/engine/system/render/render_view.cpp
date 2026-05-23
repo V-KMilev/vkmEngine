@@ -7,6 +7,7 @@
 #include "logger.h"
 
 #include "core/engine_config.h"
+#include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "system/visibility/visibility.h"
 #include "ecs/component/mesh.h"
@@ -132,6 +133,8 @@ void RenderView::build(
     uint32_t viewportWidth,
     uint32_t viewportHeight
 ) {
+    PROFILE_SCOPE("RenderView::build");
+
     // Clear vectors but keep capacity from previous frame
     drawables.clear();
     shadowCasters.clear();

@@ -121,6 +121,17 @@ class RenderBackend {
         virtual void registerPersistentResources(RenderGraph& /*graph*/) {}
 
         /**
+         * @brief Per-frame backend tail. Called by RenderGraph::execute after
+         *        every pass has run.
+         *
+         * The OpenGL backend uses this to drain completed Tracy GPU timer
+         * queries from this and prior frames; other backends typically have
+         * nothing to do here. Stays an abstract hook so RenderGraph never
+         * needs to include backend headers.
+         */
+        virtual void endFrame() {}
+
+        /**
          * @brief Construct a backend-specific FrameResources pool.
          *
          * The graph holds the returned pool via unique_ptr<FrameResources>

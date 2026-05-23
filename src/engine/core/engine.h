@@ -8,7 +8,7 @@
 #include "ecs/scene.h"
 #include "resource/resource_manager.h"
 #include "platform/window/window_manager.h"
-#include "debug/statistics.h"
+#include "debug/frame_tracker.h"
 #include "core/system.h"
 
 namespace Engine {
@@ -16,10 +16,11 @@ namespace Engine {
 /**
  * @brief Engine context: owns core state and runs the main loop.
  *
- * Owns the Scene, ResourceManager, WindowManager, and the per-stage
- * system pipeline. Statistics are a process-global singleton accessed
- * via the Engine::getStatistics() free function (see debug/statistics.h)
- * so the STATS_RECORD_* macros work without an Engine handle.
+ * Owns the Scene, ResourceManager, WindowManager, FrameTracker, and the
+ * per-stage system pipeline. Profiling is handled via debug/profiler.h
+ * (Tracy facade) - the engine emits FrameMark per loop iteration and
+ * per-stage CPU zones in updateStage(). GPU collect is the backend's job,
+ * fired via RenderBackend::endFrame at the tail of RenderGraph::execute.
  *
  * Non-copyable, non-movable, but stack-constructible: tests and
  * headless tooling can spin up their own Engine.
@@ -142,13 +143,13 @@ class Engine {
         void shutdownSystems();
         void buildSchedule();   ///< Compute m_schedule from m_systemsByStage.
         void updateStage(SystemStage stage, FrameContext& ctx);
-        void printStats(const FrameContext& ctx);
 
     private:
         Scene m_scene;
         ResourceManager m_resources;
 
         WindowManager m_window;
+        FrameTracker  m_frameTracker;
 
         /// Systems organized by stage. Outer index is SystemStage; inner vector
         /// preserves registration order within that stage.
@@ -174,9 +175,6 @@ class Engine {
         /// instances don't cross-suppress each other.
         std::chrono::steady_clock::time_point m_lastAccumClampWarn{};
         int m_accumClampSuppressed = 0;
-
-        /// Throttle state for printStats (twice a second).
-        std::chrono::steady_clock::time_point m_lastStatsPrint{};
 };
 
 } // namespace Engine

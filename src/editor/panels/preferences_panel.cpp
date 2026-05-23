@@ -118,7 +118,7 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
     const KeyBind* all[] = {
         &state.keybinds.saveScene, &state.keybinds.saveSceneAs, &state.keybinds.loadScene,
         &state.keybinds.undo, &state.keybinds.redo,
-        &state.keybinds.toggleStats, &state.keybinds.toggleHierarchy,
+        &state.keybinds.toggleHierarchy,
         &state.keybinds.toggleInspector, &state.keybinds.toggleBottom,
         &state.keybinds.toggleEditor, &state.keybinds.openPreferences,
         &state.keybinds.deleteEntity, &state.keybinds.deselect,
@@ -190,7 +190,6 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
 
     ImGui::Spacing();
     ImGui::TextDisabled("Windows & Panels");
-    drawKeybindRow("Toggle Stats",     state.keybinds.toggleStats);
     drawKeybindRow("Toggle Scene",     state.keybinds.toggleHierarchy);
     drawKeybindRow("Toggle Inspector", state.keybinds.toggleInspector);
     drawKeybindRow("Toggle Bottom",    state.keybinds.toggleBottom);

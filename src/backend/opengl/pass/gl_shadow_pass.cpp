@@ -7,7 +7,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "logger.h"
-#include "debug/statistics.h"
+
+#include "debug/profiler_gl.h"
 
 #include "core/gl_backend.h"
 #include "config/gl_config.h"
@@ -195,6 +196,7 @@ void GLShadowPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint
 }
 
 void GLShadowPass::execute(RenderGraphContext& rg) {
+    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
     RenderBackend& backend = rg.backend;
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
@@ -239,7 +241,6 @@ void GLShadowPass::execute(RenderGraphContext& rg) {
     ctx.setCullFace(GL_FRONT);
 
     shader->bind();
-    STATS_RECORD_SHADER_SWITCH();
 
     auto drawShadowBatches = [&]() {
         for (const auto& batch : batches) {

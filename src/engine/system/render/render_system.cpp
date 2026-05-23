@@ -6,6 +6,7 @@
 
 #include "logger.h"
 
+#include "debug/profiler.h"
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
 #include "platform/window/window_manager.h"
@@ -37,6 +38,8 @@ void RenderSystem::resize(uint32_t width, uint32_t height) {
 }
 
 void RenderSystem::update(FrameContext& ctx) {
+    PROFILE_SCOPE("RenderSystem");
+
     if (!m_backend) {
         LOG_WARNING("No backend set, skipping render frame");
         return;
@@ -60,7 +63,10 @@ void RenderSystem::update(FrameContext& ctx) {
     m_renderView.deltaTime   = ctx.deltaTime;
 
     // Build snapshot for this frame (reuses vector capacity from previous frame)
-    m_renderView.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight);
+    {
+        PROFILE_SCOPE("Render/BuildView");
+        m_renderView.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight);
+    }
     // The viewport rect on the GLFW window - composite uses it to glViewport
     // its fullscreen triangle into the editor's viewport child rather than
     // smearing the full backbuffer. Window size carries through too so the
@@ -80,10 +86,16 @@ void RenderSystem::update(FrameContext& ctx) {
     }
 
     // Backend-owned GPU sync (no-op for backends that don't need it).
-    m_backend->syncResources(m_renderView, ctx.resources);
+    {
+        PROFILE_SCOPE("Render/SyncResources");
+        m_backend->syncResources(m_renderView, ctx.resources);
+    }
 
     // Execute passes
-    m_graph.execute(*m_backend, m_renderView, ctx.resources);
+    {
+        PROFILE_SCOPE("Render/ExecuteGraph");
+        m_graph.execute(*m_backend, m_renderView, ctx.resources);
+    }
 }
 
 void RenderSystem::addPass(std::unique_ptr<RenderPass> pass) {
@@ -121,6 +133,8 @@ uint32_t RenderSystem::renderMaterialPreview(
     float yawDeg, float pitchDeg, float distance,
     uint32_t size
 ) {
+    PROFILE_SCOPE("RenderSystem::renderMaterialPreview");
+
     if (!m_backend || size == 0 || !material || !mesh) return 0;
 
     // Studio camera orbiting the origin.

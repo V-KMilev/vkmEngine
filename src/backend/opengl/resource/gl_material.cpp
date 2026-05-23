@@ -8,7 +8,6 @@
 #include "config/gl_config.h"
 #include "config/gl_texture_mapping.h"
 #include "core/gl_view.h"
-#include "debug/statistics.h"
 #include "gl_texture.h"
 #include "gl_uniform_buffer.h"
 #include "resource/material_asset.h"
@@ -137,7 +136,6 @@ void GLMaterial::bindTextures(const GLView& view) const {
         const GLTexture* texture = view.getTexture(binding.handle);
         if (texture) {
             texture->bind(binding.slot);
-            STATS_RECORD_TEXTURE_BIND();
         }
     }
 }
