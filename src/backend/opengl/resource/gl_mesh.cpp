@@ -2,7 +2,6 @@
 
 #include "logger.h"
 
-#include "debug/statistics.h"
 #include "gl_error_handle.h"
 #include "gl_index_buffer.h"
 #include "gl_vertex_array.h"
@@ -84,7 +83,6 @@ void GLMesh::draw(int drawType) const {
         reinterpret_cast<const void*>(indicesOffset)
     ));
 
-    STATS_RECORD_DRAW_CALL();
 }
 
 void GLMesh::drawInstanced(int drawType, uint32_t instanceCount) const {
@@ -100,7 +98,6 @@ void GLMesh::drawInstanced(int drawType, uint32_t instanceCount) const {
         static_cast<GLsizei>(instanceCount)
     ));
 
-    STATS_RECORD_DRAW_CALL();
 }
 
 void GLMesh::drawInstancedBaseInstance(int drawType, uint32_t instanceCount, uint32_t baseInstance) const {
@@ -117,7 +114,6 @@ void GLMesh::drawInstancedBaseInstance(int drawType, uint32_t instanceCount, uin
         baseInstance
     ));
 
-    STATS_RECORD_DRAW_CALL();
 }
 
 } // namespace Engine

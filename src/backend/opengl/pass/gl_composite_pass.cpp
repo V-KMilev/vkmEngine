@@ -8,7 +8,7 @@
 
 #include "logger.h"
 #include "debug/print_helper.h"
-#include "debug/statistics.h"
+#include "debug/profiler_gl.h"
 
 #include "core/gl_backend.h"
 #include "core/gl_scene_target.h"
@@ -127,6 +127,7 @@ void GLCompositePass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, u
 }
 
 void GLCompositePass::execute(RenderGraphContext& rg) {
+    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
     RenderBackend& backend = rg.backend;
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
@@ -164,7 +165,6 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     glContext.setFaceCulling(false);
 
     shader->bind();
-    STATS_RECORD_SHADER_SWITCH();
 
     // Display transform selector (AgX / PBR Neutral / ACES / Reinhard).
     shader->setUniform1i("u_tonemap", view.environment.tonemap);

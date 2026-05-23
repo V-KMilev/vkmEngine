@@ -42,10 +42,18 @@ target_link_libraries(EngineCore PRIVATE
 )
 
 target_compile_definitions(EngineCore PUBLIC
-    ENABLE_STATISTICS_TRACKING=1
     GLM_ENABLE_EXPERIMENTAL
     GLM_FORCE_INTRINSICS
 )
+
+# Tracy plumbing. The facade (debug/profiler.h) gates every macro on
+# VKM_PROFILER, so consumers don't need to include Tracy headers themselves.
+# TracyClient stays a PUBLIC link so backend/editor TUs that pull profile
+# macros via the facade get the symbols at link time.
+if(VKM_PROFILER)
+    target_compile_definitions(EngineCore PUBLIC VKM_PROFILER=1)
+    target_link_libraries     (EngineCore PUBLIC TracyClient)
+endif()
 
 # ============================================================================
 # Engine Rendering Library

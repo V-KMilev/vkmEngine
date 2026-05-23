@@ -2,7 +2,7 @@
 
 #include "logger.h"
 #include "debug/print_helper.h"
-#include "debug/statistics.h"
+#include "debug/profiler_gl.h"
 
 #include "core/gl_backend.h"
 #include "core/gl_scene_target.h"
@@ -72,6 +72,7 @@ void GLAABBDebugPass::initialize() {
 }
 
 void GLAABBDebugPass::execute(RenderGraphContext& rg) {
+    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
     RenderBackend& backend = rg.backend;
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
@@ -113,7 +114,6 @@ void GLAABBDebugPass::execute(RenderGraphContext& rg) {
     if (!shader) return;
 
     shader->bind();
-    STATS_RECORD_SHADER_SWITCH();
 
     using namespace GLConfig::UniformNames;
     // CameraBlock UBO (binding 2) is bound by GLView for the frame.

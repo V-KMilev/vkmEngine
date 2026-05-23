@@ -11,7 +11,7 @@ namespace Engine {
 class Scene;
 class ResourceManager;
 class WindowManager;
-class StatisticTracker;
+class FrameTracker;
 
 /**
  * @brief Named per-frame execution stages.
@@ -60,7 +60,7 @@ struct FrameContext {
     Scene& scene;
     ResourceManager& resources;
     WindowManager& window;
-    StatisticTracker& statistics;
+    FrameTracker& frameTracker;
     float deltaTime;
     float fixedDeltaTime;
     // The scene's render rect within the GLFW window. The editor reports

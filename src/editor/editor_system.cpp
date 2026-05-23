@@ -10,6 +10,7 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 
+#include "debug/profiler.h"
 #include "framework/editor_context.h"
 #include "framework/editor_settings.h"
 #include "input/editor_keybinds.h"
@@ -132,6 +133,7 @@ namespace {
 }
 
 void EditorSystem::update(FrameContext& ctx) {
+    PROFILE_SCOPE("EditorSystem");
     syncWindowTitle(ctx.window, m_sceneIO.path(), m_state.sceneDirty);
 
     // Intercept window-close while the scene is dirty: clear shouldClose,
@@ -162,9 +164,12 @@ void EditorSystem::update(FrameContext& ctx) {
     // keybind (default F5) is processed here so the rebind UI in
     // Preferences actually drives it. We do the same toggle in both the
     // hidden and visible branches because the ImGui frame exists in both.
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
+    {
+        PROFILE_SCOPE("Editor/ImGuiNewFrame");
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+    }
 
     if (isPressed(m_state.keybinds.toggleEditor)) {
         m_state.editorVisible = !m_state.editorVisible;
@@ -254,9 +259,6 @@ void EditorSystem::update(FrameContext& ctx) {
         m_cameraController.setEditorInputCapture(blockMouse, ImGui::GetIO().WantTextInput);
     }
 
-    m_viewportOverlay.pushFrameTime(ctx.deltaTime * 1000.0f);
-    m_viewportOverlay.updateMetrics(ctx.deltaTime);
-
     EditorContext ec{ ctx, m_state, m_cameraController, m_renderSystem,
                       m_visibilitySystem, m_events, {}, {} };
 
@@ -285,6 +287,7 @@ void EditorSystem::update(FrameContext& ctx) {
         ImGui::PopStyleColor();
         ImGui::PopStyleVar(3);
 
+        PROFILE_SCOPE("Editor/Panels");
         m_menuBar.draw(ec, m_sceneIO);
         // ModelImportDialog is owned here (not in the menu bar) so it
         // serves all three import-intent sources: the menu, the Inspector
@@ -300,17 +303,23 @@ void EditorSystem::update(FrameContext& ctx) {
 
     // Separate floating window; drawn after the root so it stacks on top.
     if (m_state.showPreferences) {
+        PROFILE_SCOPE("Panel/Preferences");
         m_preferences.draw(ec);
     }
     if (m_state.showMaterialEditor) {
+        PROFILE_SCOPE("Panel/MaterialEditor");
         m_materialEditor.draw(ec);
     }
     if (m_state.showAssetBrowser) {
+        PROFILE_SCOPE("Panel/AssetBrowser");
         m_assetBrowser.draw(ec);
     }
 
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    {
+        PROFILE_SCOPE("Editor/ImGuiRender");
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    }
 }
 
 void EditorSystem::drawWorkspace(EditorContext& ec) {
@@ -330,6 +339,7 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
     ImVec2 panelAreaStart = ImGui::GetCursorScreenPos();
 
     if (m_state.showHierarchy) {
+        PROFILE_SCOPE("Panel/Hierarchy");
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
         if (ImGui::BeginChild("##Hierarchy", ImVec2(leftW, mainH), ImGuiChildFlags_Borders)) {
             m_hierarchy.draw(ec);
@@ -340,6 +350,7 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
     }
 
     {
+        PROFILE_SCOPE("Panel/Viewport");
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
         float centerW = viewport->WorkSize.x - leftW - rightW;
         ImVec2 vpMin = ImGui::GetCursorScreenPos();
@@ -355,7 +366,6 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
                 static_cast<uint32_t>(std::max(1.0f, centerW)),
                 static_cast<uint32_t>(std::max(1.0f, mainH)));
             m_state.viewportHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
-            if (m_state.showStats) m_viewportOverlay.draw(ec);
             m_viewportOverlay.drawNavigationGizmo(ec);
             m_gizmoOverlay.drawLightGizmos(ec);
             m_gizmoOverlay.drawCameraGizmos(ec);
@@ -373,6 +383,7 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
     }
 
     if (m_state.showInspector) {
+        PROFILE_SCOPE("Panel/Inspector");
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
         if (ImGui::BeginChild("##Inspector", ImVec2(rightW, mainH), ImGuiChildFlags_Borders)) {
             m_inspector.draw(ec);
@@ -382,6 +393,7 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
     }
 
     if (m_state.showBottom) {
+        PROFILE_SCOPE("Panel/Bottom");
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
         if (ImGui::BeginChild("##Bottom", ImVec2(0, bottomH), ImGuiChildFlags_Borders)) {
             m_bottom.draw(ec);
@@ -395,7 +407,10 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
 
     ImGui::PopStyleVar(); // ItemSpacing
 
-    m_statusBar.draw(ec);
+    {
+        PROFILE_SCOPE("Panel/StatusBar");
+        m_statusBar.draw(ec);
+    }
 }
 
 } // namespace Engine

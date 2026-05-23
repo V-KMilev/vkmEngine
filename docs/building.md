@@ -104,9 +104,17 @@ All targets are built with:
 
 | Define | Scope | Purpose |
 |--------|-------|---------|
-| `ENABLE_STATISTICS_TRACKING=1` | EngineCore (public) | Enables STATS_RECORD_* macros |
+| `VKM_PROFILER=1` | EngineCore (public) | Enables Tracy CPU+GPU zones via debug/profiler.h. Default ON in Debug, OFF otherwise. Pass `-DVKM_PROFILER=OFF` to disable in Debug. |
 | `GLM_ENABLE_EXPERIMENTAL` | EngineCore (public) | GLM experimental features |
 | `GLM_FORCE_INTRINSICS` | EngineCore (public) | GLM SIMD intrinsics |
 | `APP_VERSION` | Executable | Project version string |
 | `APP_ROOT_DIR` | Executable | Absolute path to project root |
 | `APP_BRANCH`, `APP_COMMIT_HASH`, `APP_BUILD_DATE` | BuildInfo | Git metadata |
+
+### Profiling with Tracy
+
+When `VKM_PROFILER=1` (the default in Debug), the engine emits per-frame
+`FrameMark`, per-stage CPU zones, and per-pass CPU+GPU zones over TCP.
+Attach the Tracy profiler GUI (built separately from `modules/tracy/profiler`)
+to inspect a live capture. Macros are in `src/engine/debug/profiler.h` -
+engine code never includes Tracy headers directly.

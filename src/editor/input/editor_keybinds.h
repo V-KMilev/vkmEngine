@@ -34,7 +34,6 @@ struct EditorKeybinds {
     KeyBind redo             = { ImGuiKey_Z,      KeyMod_Ctrl | KeyMod_Shift };
 
     // Panel toggles
-    KeyBind toggleStats      = { ImGuiKey_F1,     KeyMod_None };
     KeyBind toggleHierarchy  = { ImGuiKey_1,      KeyMod_Ctrl };
     KeyBind toggleInspector  = { ImGuiKey_2,      KeyMod_Ctrl };
     KeyBind toggleBottom     = { ImGuiKey_3,      KeyMod_Ctrl };

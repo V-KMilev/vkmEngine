@@ -9,6 +9,7 @@
 #include "platform/window/input_handle.h"
 #include "platform/window/glfw_include.h"
 
+#include "debug/profiler.h"
 #include "core/math/axes.h"
 #include "core/math/rotation.h"
 #include "ecs/component/transform.h"
@@ -58,6 +59,7 @@ void CameraController::reseedAnglesFromRotation(const glm::quat& rotation) {
 }
 
 void CameraController::update(FrameContext& ctx) {
+    PROFILE_SCOPE("CameraController");
     // Always drive the active rendered camera. This keeps the fly controls
     // working after "Set as Main Camera" / a scene load (the old code flew a
     // fixed entity while the renderer used a different one).
