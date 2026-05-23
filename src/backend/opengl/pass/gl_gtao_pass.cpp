@@ -4,6 +4,7 @@
 
 #include "logger.h"
 #include "debug/print_helper.h"
+#include "debug/profiler_gl.h"
 
 #include "core/gl_backend.h"
 #include "resource/gl_shader_program.h"
@@ -30,6 +31,7 @@ void GLGTAOPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32
 }
 
 void GLGTAOPass::execute(RenderGraphContext& rg) {
+    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
     RenderBackend& backend = rg.backend;
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;

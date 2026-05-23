@@ -40,9 +40,12 @@ The per-frame data bundle passed to every system:
 struct FrameContext {
     Scene& scene;
     ResourceManager& resources;
+    WindowManager& window;
+    FrameTracker& frameTracker;
     float deltaTime;
-    uint32_t viewportWidth;
-    uint32_t viewportHeight;
+    float fixedDeltaTime;
+    uint32_t viewportX, viewportY;
+    uint32_t viewportWidth, viewportHeight;
     const Visibility* visibility;  // populated by VisibilitySystem
 };
 ```

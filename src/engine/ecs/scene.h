@@ -9,7 +9,6 @@
 #include "core/memory/slot_allocator.h"
 #include "core/memory/sparse_set.h"
 #include "core/memory/types.h"
-#include "debug/statistics.h"
 
 namespace Engine {
 
@@ -43,7 +42,6 @@ class Scene {
          */
         Entity createEntity() {
             StorageIndex id = m_entityAllocator.allocate();
-            STATS_RECORD_ENTITY_CREATE();
             return Entity{id};
         }
 
@@ -57,7 +55,6 @@ class Scene {
          */
         Entity createEntityAt(uint32_t index) {
             StorageIndex id = m_entityAllocator.allocateAt(index);
-            STATS_RECORD_ENTITY_CREATE();
             return Entity{id};
         }
 
@@ -98,7 +95,6 @@ class Scene {
                 }
             }
             m_entityAllocator.free(id);
-            STATS_RECORD_ENTITY_DESTROY();
         }
 
         /**

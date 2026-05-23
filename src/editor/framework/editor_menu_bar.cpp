@@ -5,7 +5,7 @@
 #include <imgui.h>
 
 #include "core/system.h"
-#include "debug/statistics.h"
+#include "debug/frame_tracker.h"
 #include "framework/editor_common.h"
 #include "framework/editor_context.h"
 #include "framework/scene_io_controller.h"
@@ -96,7 +96,6 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
 
     if (ImGui::BeginMenu("View")) {
         char lbl[48];
-        ImGui::MenuItem("Stats Overlay", getKeyBindLabel(state.keybinds.toggleStats, lbl, sizeof(lbl)), &state.showStats);
         ImGui::MenuItem("Scene",         getKeyBindLabel(state.keybinds.toggleHierarchy, lbl, sizeof(lbl)), &state.showHierarchy);
         ImGui::MenuItem("Inspector",     getKeyBindLabel(state.keybinds.toggleInspector, lbl, sizeof(lbl)), &state.showInspector);
         ImGui::MenuItem("Bottom Panel",  getKeyBindLabel(state.keybinds.toggleBottom, lbl, sizeof(lbl)), &state.showBottom);
@@ -153,12 +152,11 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     // available from multiple intent sources (Inspector empty-state,
     // Hierarchy "+"), not just the menu bar.
 
-    const auto& info = ctx.statistics.getFrameInfo();
+    const float rate = ctx.frameTracker.getFrameRateInfo().frameRate;
     char fps[32];
-    snprintf(fps, sizeof(fps), "%.0f FPS", info.frameRateInfo.frameRate);
+    snprintf(fps, sizeof(fps), "%.0f FPS", rate);
     float fpsW = ImGui::CalcTextSize(fps).x;
     ImGui::SameLine(ImGui::GetWindowWidth() - fpsW - 16.0f);
-    float rate = info.frameRateInfo.frameRate;
     ImVec4 fpsColor = rate >= 60 ? ImVec4(0.4f, 0.8f, 0.4f, 1.0f) :
                       rate >= 30 ? ImVec4(0.9f, 0.8f, 0.3f, 1.0f) :
                                    ImVec4(0.9f, 0.3f, 0.3f, 1.0f);

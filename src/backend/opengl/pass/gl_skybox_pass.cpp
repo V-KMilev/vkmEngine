@@ -5,7 +5,7 @@
 
 #include "logger.h"
 #include "debug/print_helper.h"
-#include "debug/statistics.h"
+#include "debug/profiler_gl.h"
 
 #include "core/gl_backend.h"
 #include "core/gl_scene_target.h"
@@ -31,6 +31,7 @@ void GLSkyboxPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint
 }
 
 void GLSkyboxPass::execute(RenderGraphContext& rg) {
+    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
     RenderBackend& backend = rg.backend;
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
@@ -63,7 +64,6 @@ void GLSkyboxPass::execute(RenderGraphContext& rg) {
     ctx.setFaceCulling(false);     // viewed from inside the cube
 
     shader->bind();
-    STATS_RECORD_SHADER_SWITCH();
 
     shader->setUniformMatrix4fv("u_view", view.camera.view);
     shader->setUniformMatrix4fv("u_projection", view.camera.projection);

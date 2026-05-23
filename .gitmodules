@@ -13,3 +13,6 @@
 [submodule "modules/assimp"]
 	path = modules/assimp
 	url = https://github.com/assimp/assimp.git
+[submodule "modules/tracy"]
+	path = modules/tracy
+	url = https://github.com/wolfpld/tracy.git

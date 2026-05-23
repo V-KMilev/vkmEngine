@@ -538,8 +538,9 @@ void RenderPipeline::execute(
 ) {
     for (auto& pass : m_passes) {
         if (!pass->isEnabled()) continue;
+        PROFILE_SCOPE_NAMED(pass->getName().c_str());
+        PROFILE_GPU_SCOPE_NAMED(pass->getName().c_str());
         pass->execute(backend, view, resources);
-        STATS_RECORD_RENDER_PASS();
     }
 }
 
@@ -936,19 +937,28 @@ do not put side-effectful code inside the condition.
   }
   ```
 
-### 11.1 STATS_RECORD_* macros
+### 11.1 PROFILE_* macros
 
-Per-frame counters use `STATS_RECORD_*` macros from `debug/statistics.h`.
-They compile to no-ops in release. Put them at the point of work, not at
-the call site:
+CPU and GPU profile zones use `PROFILE_*` macros from `debug/profiler.h`.
+They compile to no-ops when `VKM_PROFILER=0` (release builds). Engine
+code never includes Tracy headers directly - go through the facade.
+
+Place a CPU + GPU scope around the work, not the call site. Use the
+`_NAMED` variants for runtime-known names (pass names, system labels);
+use the literal variant otherwise.
 
 ```cpp
 for (auto& pass : m_passes) {
     if (!pass->isEnabled()) continue;
+    PROFILE_SCOPE_NAMED(pass->getName().c_str());
+    PROFILE_GPU_SCOPE_NAMED(pass->getName().c_str());
     pass->execute(backend, view, resources);
-    STATS_RECORD_RENDER_PASS();
 }
 ```
+
+The macros: `PROFILE_FRAME_MARK`, `PROFILE_SCOPE`, `PROFILE_SCOPE_NAMED`,
+`PROFILE_GPU_CONTEXT`, `PROFILE_GPU_COLLECT`, `PROFILE_GPU_SCOPE`,
+`PROFILE_GPU_SCOPE_NAMED`, `PROFILE_PLOT`.
 
 ---
 

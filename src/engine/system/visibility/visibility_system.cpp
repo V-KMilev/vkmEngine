@@ -5,6 +5,7 @@
 
 #include "logger.h"
 
+#include "debug/profiler.h"
 #include "platform/threading/thread_pool.h"
 
 #include "resource/resource_manager.h"
@@ -33,6 +34,8 @@ SystemAccess VisibilitySystem::declareAccess() const {
 }
 
 void VisibilitySystem::update(FrameContext& ctx) {
+    PROFILE_SCOPE("VisibilitySystem");
+
     // Reuse persistent buffer - clear keeps capacity, avoiding per-frame allocation
     m_result.entries.clear();
     m_result.hasCamera = false;
@@ -136,7 +139,9 @@ void VisibilitySystem::update(FrameContext& ctx) {
 
     std::memset(m_visibleFlags.data(), 0, meshCount);
 
-    parallelFor(meshCount, [&](size_t i) {
+    {
+        PROFILE_SCOPE("Visibility/Cull");
+        parallelFor(meshCount, [&](size_t i) {
         const auto idx = static_cast<uint32_t>(i);
         const uint32_t entityIdx = meshStorage->keyAt(idx);
         const Mesh& mesh = meshStorage->dataAt(idx);
@@ -171,9 +176,11 @@ void VisibilitySystem::update(FrameContext& ctx) {
         m_worldMins[i]     = worldMin;
         m_worldMaxs[i]     = worldMax;
         m_visibleFlags[i]  = 1;
-    });
+        });
+    }
 
     // Serial gather - sequential reads, reuses persistent m_result.entries capacity
+    PROFILE_SCOPE("Visibility/Gather");
     m_result.entries.clear();
     for (uint32_t i = 0; i < meshCount; ++i) {
         if (!m_visibleFlags[i]) continue;

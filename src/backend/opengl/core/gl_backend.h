@@ -64,6 +64,10 @@ class GLBackend : public RenderBackend {
         std::unique_ptr<RenderTarget>    createOffscreenTarget(uint32_t size) override;
         void registerPersistentResources(RenderGraph& graph) override;
 
+        /// Drain completed Tracy GPU timer queries. Called by RenderGraph
+        /// at the end of every frame; no-op when VKM_PROFILER is off.
+        void endFrame() override;
+
         uint32_t snapshotToTexture(uint32_t srcTextureId, uint64_t key,
                                    uint32_t size) override;
         uint32_t cachedThumbnail(uint64_t key) const override;

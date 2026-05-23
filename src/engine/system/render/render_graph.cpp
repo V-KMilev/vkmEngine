@@ -4,7 +4,7 @@
 
 #include "l_assert.h"
 #include "logger.h"
-#include "debug/statistics.h"
+#include "debug/profiler.h"
 #include "system/render/frame_resources.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_graph_builder.h"
@@ -217,8 +217,12 @@ void RenderGraph::execute(
 #ifndef NDEBUG
         ctx.accessedResources = 0;
 #endif
-        pass.execute(ctx);
-        STATS_RECORD_RENDER_PASS();
+        {
+            // CPU zone only. GPU timing lives inside each backend pass's
+            // execute() so RenderGraph stays backend-agnostic.
+            PROFILE_SCOPE_NAMED(pass.getName().c_str());
+            pass.execute(ctx);
+        }
 #ifndef NDEBUG
         // Compare declared reads+writes against what the pass actually
         // looked up via ctx.resource<T>(). Drift in either direction is
@@ -234,6 +238,11 @@ void RenderGraph::execute(
             sceneResolveDirty = false;
         }
     }
+
+    // Per-frame backend tail: GL backend drains completed Tracy GPU query
+    // results here; other backends (if any) no-op. Stays an abstract hook
+    // so RenderGraph never needs to include GL headers.
+    backend.endFrame();
 }
 
 #ifndef NDEBUG

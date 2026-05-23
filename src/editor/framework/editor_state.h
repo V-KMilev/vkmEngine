@@ -38,7 +38,6 @@ struct EditorState {
     EditorKeybinds keybinds;
 
     // Panel visibility
-    bool showStats       = true;
     bool showHierarchy   = true;
     bool showInspector   = true;
     bool showBottom      = true;
