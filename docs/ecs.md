@@ -1,77 +1,94 @@
-# Entity-Component-System
+# Entity Component System
 
-The ECS is the core data model. `Scene` is an open type-erased registry -- any type can be a component without modifying Scene.
+The ECS is the core data model. `Scene` is an open type-erased registry:
+any type can be a component without modifying Scene.
 
-## Key Files
+## Key files
 
-- `src/engine/ecs/scene.h` -- Scene registry
-- `src/engine/ecs/entity.h` -- Entity wrapper
-- `src/engine/ecs/component/` -- All component types
-- `src/engine/core/memory/slot_allocator.h` -- Entity handle allocator
-- `src/engine/core/memory/sparse_set.h` -- Component storage
-- `src/engine/core/memory/types.h` -- StorageIndex, TypeId
+- `src/engine/ecs/scene.h` for the Scene registry
+- `src/engine/ecs/entity.h` for the Entity wrapper
+- `src/engine/ecs/component/` for all component types
+- `src/engine/core/memory/slot_allocator.h` for the entity handle allocator
+- `src/engine/core/memory/sparse_set.h` for component storage
+- `src/engine/core/memory/types.h` for `StorageIndex` and `TypeId`
 
 ## Entities
 
-Entities are lightweight handles: `using EntityId = StorageIndex` where `StorageIndex = { uint32_t index, uint32_t generation }`.
+Entities are lightweight handles:
 
-- **Generational**: Generation counter prevents use-after-free. A stale handle with wrong generation is detected.
-- **Recycled**: Destroyed entity slots go onto a LIFO free list for reuse.
-- **Null sentinel**: Index 0 is reserved as null. `operator bool()` returns `index != 0`.
+```cpp
+using EntityId = StorageIndex;             // { uint32_t index, uint32_t generation }
+```
+
+- **Generational.** A generation counter prevents use after free; a stale
+  handle with the wrong generation is detected.
+- **Recycled.** Destroyed entity slots go onto a LIFO free list for reuse.
+- **Null sentinel.** Index 0 is reserved as null; `operator bool()` returns
+  `index != 0`.
 
 ```cpp
 Entity entity = scene.createEntity();
-bool alive = scene.isAlive(entity);
-scene.destroyEntity(entity);  // removes all components, recycles slot
+bool   alive  = scene.isAlive(entity);
+scene.destroyEntity(entity);              // removes all components, recycles slot
 ```
+
+`Scene::createEntityAt(slotIndex)` exists for the scene loader, which
+recreates entities at their saved slot so cross-entity references in the
+file (e.g. `Hierarchy::parent` indices) resolve directly. See
+[IO and serialization](system/io.md) for the round-trip rules.
 
 ## Components
 
-Components are plain structs stored in `SparseSet<T>` containers. Any type can be a component -- no registration or base class needed.
+Components are plain data structs stored in `SparseSet<T>` containers.
+Any type can be a component; no registration, no base class.
 
 ```cpp
-scene.add(entity, Transform{.position = {1, 2, 3}});
-scene.add(entity, Mesh{.mesh = meshHandle, .material = matHandle});
+scene.add(entity, Transform{ .position = {1, 2, 3} });
+scene.add(entity, Mesh{ .mesh = meshHandle, .material = matHandle });
 
 auto& transform = scene.get<Transform>(entity);
-bool hasMesh = scene.has<Mesh>(entity);
+bool  hasMesh   = scene.has<Mesh>(entity);
 scene.remove<Mesh>(entity);
 ```
 
-### Built-in Components
+### Built-in components
 
-| Component | File | Fields |
-|-----------|------|--------|
-| **Transform** | `component/transform.h` | `vec3 position, quat rotation, vec3 scale` |
-| **Camera** | `component/camera.h` | `ProjectionType, fovY, aspect, zNear, zFar, exposure, active` |
-| **Mesh** | `component/mesh.h` | `MeshHandle mesh, MaterialHandle material, bool visible` |
-| **Light** | `component/light.h` | `LightType type, vec3 color, float intensity, radius, coneAngles` |
-| **Animation** | `component/animation.h` | `AnimationTrack<vec3/quat> tracks, float duration/time/speed, bool playing/looping` |
-| **Hierarchy** | `component/hierarchy.h` | `EntityId parent, firstChild, nextSibling, prevSibling, bool dirty` |
-| **WorldTransform** | `component/world_transform.h` | `glm::mat4 model` (resolved each frame from local Transform + parent's WorldTransform) |
-| **Name** | `component/name.h` | `char name[64]` |
+| Component        | File                              | Fields                                                                                                |
+|------------------|-----------------------------------|-------------------------------------------------------------------------------------------------------|
+| `Transform`      | `component/transform.h`           | `vec3 position`, `quat rotation`, `vec3 scale`                                                        |
+| `WorldTransform` | `component/world_transform.h`     | `mat4 model` (resolved each frame by `HierarchySystem`)                                               |
+| `Camera`         | `component/camera.h`              | `ProjectionType`, `fovY`, `aspect`, `zNear`, `zFar`, `exposure`, `active`                             |
+| `Mesh`           | `component/mesh.h`                | `MeshHandle mesh`, `MaterialHandle material`, `bool visible`, `bool castShadows`                      |
+| `Light`          | `component/light.h`               | `LightType` (Directional, Point, Spot, Rect, Disk), color, intensity, attenuation, cone, area, shadow |
+| `Animation`      | `component/animation.h`           | Three tracks (position vec3, rotation quat, scale vec3) plus playback state and explicit `length`     |
+| `Hierarchy`      | `component/hierarchy.h`           | `EntityId parent`, `firstChild`, `nextSibling`, `prevSibling`, `bool dirty`                           |
+| `Name`           | `component/name.h`                | `char name[64]` for editor display and asset look-up by name                                          |
 
-### Static Helpers
+Light gets a full breakdown in [Lighting](system/lighting.md), including
+the area-light fields (`areaWidth`, `areaHeight`, `areaRadius`, `twoSided`)
+introduced for Rect and Disk emitters.
 
-Components are data-only structs with static helper methods:
+### Static helpers
+
+Components are data-only structs with static math helpers when useful:
 
 ```cpp
 glm::mat4 model = Transform::computeModelMatrix(transform);
 glm::mat4 view  = Transform::computeView(transform);
-glm::mat4 proj  = Camera::computeProjection(camera);
+glm::mat4 proj  = Camera::computeProjection(camera, aspect);
 ```
 
 ## Queries
 
-### Single Component
+### Single component
 
 ```cpp
 scene.forEach<Transform>([](EntityId id, Transform& t) {
-    // iterate all entities with Transform
+    // every entity with a Transform
 });
 ```
 
-### Multi-Component
+### Multi-component
 
 ```cpp
 scene.forEach<Mesh, Transform>([](EntityId id, Mesh& mesh, Transform& t) {
@@ -79,41 +96,57 @@ scene.forEach<Mesh, Transform>([](EntityId id, Mesh& mesh, Transform& t) {
 });
 ```
 
-Multi-component queries iterate the first type densely, then check remaining types via `SparseSet::contains()`. Put the rarest component first for best performance.
+Multi-component queries iterate the **first** type densely, then check
+remaining types via `SparseSet::contains()`. Put the rarest component
+first for best performance.
 
-### Direct Storage Access
+### Direct storage access
 
-For index-based parallel iteration:
+For index-based parallel iteration (used by `VisibilitySystem`):
 
 ```cpp
 auto* meshStorage = scene.storage<Mesh>();
 for (uint32_t i = 0; i < meshStorage->size(); ++i) {
     uint32_t entityIdx = meshStorage->keyAt(i);
-    Mesh& mesh = meshStorage->dataAt(i);
+    Mesh&    mesh      = meshStorage->dataAt(i);
 }
 ```
 
-## Component Storage
+## Component storage
 
 Each component type gets a `SparseSet<T>`:
 
-- **Dense array**: Packed component data, no holes. O(n) iteration.
-- **Sparse array**: Maps entity index to dense index. O(1) lookup.
-- **Swap-and-pop removal**: Keeps dense array packed. O(1).
-- **Type erasure**: `ISparseSet` base allows Scene to store heterogeneous sets in a single vector indexed by `typeId<T>()`.
+- **Dense array.** Packed component data, no holes. O(n) iteration.
+- **Sparse array.** Maps entity index to dense index. O(1) lookup.
+- **Swap and pop removal.** Keeps the dense array packed. O(1).
+- **Type erasure.** `ISparseSet` base lets Scene store heterogeneous
+  sets in a single vector indexed by `typeId<T>()`. New component
+  types do not require Scene changes.
 
 ## Hierarchy
 
-Parent-child relationships via the `Hierarchy` component. Free functions in `system/hierarchy/hierarchy_operations.h`:
+Parent and child relationships go through the `Hierarchy` component.
+Mutation goes through `HierarchyOperations` (free functions in
+`system/hierarchy/hierarchy_operations.h`):
 
 ```cpp
 HierarchyOperations::setParent(scene, child, parent);
-glm::mat4 world = HierarchyOperations::computeWorldMatrix(scene, entity);
-HierarchyOperations::destroyHierarchy(scene, entity);  // destroys entity and all descendants
 HierarchyOperations::removeFromParent(scene, entity);
+HierarchyOperations::destroyHierarchy(scene, entity);  // entity + every descendant
+glm::mat4 world = HierarchyOperations::computeWorldMatrix(scene, entity);
 HierarchyOperations::markDirty(scene, entity);
 ```
 
-`setParent` pre-seeds both `Hierarchy` and `WorldTransform` on the involved entities so the per-frame `HierarchySystem::resolveWorldTransforms()` loop has no structural Scene work to do (precondition for parallelising it).
+`setParent` pre-seeds both `Hierarchy` and `WorldTransform` on the
+involved entities so the per-frame `HierarchySystem::resolveWorldTransforms()`
+loop has no structural Scene work to do. That is the precondition that
+lets the resolve loop parallelise over depth buckets. See
+[Hierarchy system](system/hierarchy.md) for the full per-frame flow.
 
-On entity destruction, the leaf path unlinks via `removeFromParent`; the subtree path (`destroyHierarchy`) recursively destroys every descendant. Both paths are undoable through the editor's `DestroySubtreeCommand`.
+On entity destruction:
+
+- The leaf path unlinks via `removeFromParent`.
+- The subtree path (`destroyHierarchy`) recursively destroys every descendant.
+
+Both paths are undoable from the editor through `DestroySubtreeCommand`
+(see [Editor](editor.md)).

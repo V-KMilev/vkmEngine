@@ -18,15 +18,15 @@ namespace Engine {
 namespace Config {
 
     /// Maximum number of lights uploaded per frame.
-    /// MUST match MAX_LIGHTS in shaders/pbr/fragmentShader.shader.
+    /// MUST match MAX_LIGHTS in shaders/pbr/fragment.shader.
     constexpr uint32_t MaxLights = 32;
 
     /// Shadow caster budget for the 2D atlas (directional + spot).
-    /// MUST match SHADOW_MAX_CASTERS_2D in shaders/pbr/fragmentShader.shader.
+    /// MUST match SHADOW_MAX_CASTERS_2D in shaders/pbr/fragment.shader.
     constexpr uint32_t MaxShadowCasters2D = 6;
 
     /// Shadow caster budget for the cube atlas (point lights).
-    /// MUST match SHADOW_MAX_CASTERS_CUBE in shaders/pbr/fragmentShader.shader.
+    /// MUST match SHADOW_MAX_CASTERS_CUBE in shaders/pbr/fragment.shader.
     constexpr uint32_t MaxShadowCastersCube = 2;
 
     /**
@@ -34,7 +34,7 @@ namespace Config {
      *
      * shadow caster reserves this many consecutive 2D atlas layers; remaining
      * layers (MaxShadowCasters2D - NumCascades) serve spot lights.
-     * MUST match NUM_CASCADES in shaders/pbr/fragmentShader.shader.
+     * MUST match NUM_CASCADES in shaders/pbr/fragment.shader.
      */
     constexpr uint32_t NumCascades = 4;
 
