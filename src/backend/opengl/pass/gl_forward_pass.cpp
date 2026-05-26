@@ -176,6 +176,20 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
             sh->setUniform2f("u_screenSize", frame.screenW, frame.screenH);
         if (sh->hasUniform("u_hasSceneColor"))
             sh->setUniform1i("u_hasSceneColor", frame.hasSceneColor);
+        // Diagnostic view selectors. Stripped from the unlit shader's variant,
+        // so check hasUniform. modeConfig.debugMode is 0 in non-diagnostic
+        // modes; forceNeutralMaterial is 0 unless LightingOnly is active.
+        if (sh->hasUniform("u_debugMode"))
+            sh->setUniform1i("u_debugMode", view.modeConfig.debugMode);
+        if (sh->hasUniform("u_forceNeutralMaterial"))
+            sh->setUniform1i("u_forceNeutralMaterial",
+                view.modeConfig.forceNeutralMaterial ? 1 : 0);
+        // Camera clip range for the Depth diagnostic. Pushed unconditionally;
+        // the shader only reads it when u_debugMode == 2.
+        if (sh->hasUniform("u_zNear"))
+            sh->setUniform1f("u_zNear", view.camera.zNear);
+        if (sh->hasUniform("u_zFar"))
+            sh->setUniform1f("u_zFar", view.camera.zFar);
     };
 
     // CameraBlock and LightsBlock UBOs are owned by GLView and bound once
@@ -199,26 +213,32 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     // We don't pre-bind a PBR program here any more - each batch picks its
     // own variant below and applyFrameUniforms() pushes u_hasSceneColor=1
     // into that variant when it binds.
+    bool anyTransparent = false;
     if (m_phase == Phase::Transparent) {
-        bool anyTransparent = false;
         for (const auto& b : batches)
             if (b.materialType == MaterialType::Transparent) { anyTransparent = true; break; }
-        if (!anyTransparent) return;  // opaque+sky already in the HDR; nothing to add
+        // No transparent geometry: still continue if we owe the wireframe
+        // overlay draw at the end. The main batch loop's inPhase() filter
+        // makes the no-transparent case a zero-iteration loop, so it is safe
+        // to fall through; the post-loop overlay block handles the draw.
+        if (!anyTransparent && !view.modeConfig.wireframeOverlay) return;
 
-        hdrT.resolve();
-        hdrT.bindForRender();
-        hdrT.bindResolvedColor(GLConfig::TextureSlots::SceneColor);
-        frame.hasSceneColor = 1;
-        glContext.setBlending(true);
-        glContext.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glContext.setDepthWrite(false);
-        // Cull back faces so a closed transmissive mesh shows only its front
-        // surface (engine default is no culling + depth-write to hide back
-        // faces; depth-write is off here, so without this you see through to
-        // the inside / far faces of glass).
-        glContext.setFaceCulling(true);
-        glContext.setCullFace(GL_BACK);
-        currentType = MaterialType::Transparent;
+        if (anyTransparent) {
+            hdrT.resolve();
+            hdrT.bindForRender();
+            hdrT.bindResolvedColor(GLConfig::TextureSlots::SceneColor);
+            frame.hasSceneColor = 1;
+            glContext.setBlending(true);
+            glContext.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glContext.setDepthWrite(false);
+            // Cull back faces so a closed transmissive mesh shows only its
+            // front surface (engine default is no culling + depth-write to
+            // hide back faces; depth-write is off here, so without this you
+            // see through to the inside / far faces of glass).
+            glContext.setFaceCulling(true);
+            glContext.setCullFace(GL_BACK);
+            currentType = MaterialType::Transparent;
+        }
     }
 
     // Index of the last Transparent batch - used to skip a wasted resnapshot
@@ -365,6 +385,58 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         glContext.setDepthWrite(true);
         glContext.setBlending(false);
         glContext.setFaceCulling(false);
+    }
+
+    // WireframeOverShaded: after the shaded scene is composed, run a second
+    // draw that puts every visible batch into the overlay attachment as line
+    // geometry. Polygon offset pulls the wires forward so they sit visibly
+    // above the fill. Only the Transparent phase does this (it runs last;
+    // opaque overlays would be overwritten by skybox + transparent draws).
+    //
+    // The overlay attachment is the same path AABB / Grid use: composite
+    // blends it on top of the tonemapped scene with no display transform, so
+    // the wires read as flat lines and not bloomed/exposed/tonemapped along
+    // with the HDR shading. The unlit shader is bound with u_lineOverlay = 1
+    // so every line writes a fixed light colour regardless of the material.
+    if (m_phase == Phase::Transparent && view.modeConfig.wireframeOverlay) {
+        ShaderHandle unlit = m_shaders[static_cast<int>(MaterialType::Unlit)];
+        if (!unlit) unlit = m_shaders[static_cast<int>(MaterialType::Opaque)];
+        GLShader* lineShader = glView.resolveShader(unlit, resources);
+        if (lineShader) {
+            hdrT.bindForOverlay();
+
+            glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            glEnable(GL_POLYGON_OFFSET_LINE);
+            glPolygonOffset(-1.0f, -1.0f);
+            glContext.setDepthTest(true);
+            glContext.setDepthWrite(false);
+            glContext.setBlending(false);
+            glContext.setFaceCulling(false);
+
+            lineShader->bind();
+            applyFrameUniforms(lineShader);
+            if (lineShader->hasUniform("u_lineOverlay"))
+                lineShader->setUniform1i("u_lineOverlay", 1);
+
+            for (size_t i = 0; i < batches.size(); ++i) {
+                const auto& batch = batches[i];
+                if (batch.materialType == MaterialType::Transparent) continue;
+                GLMesh* mesh = glView.getMutableMesh(batch.mesh);
+                if (!mesh) continue;
+                batcher.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
+                mesh->drawInstancedBaseInstance(GL_TRIANGLES, batch.instanceCount, batch.firstInstance);
+            }
+
+            glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+            glDisable(GL_POLYGON_OFFSET_LINE);
+            glContext.setDepthWrite(true);
+            if (lineShader->hasUniform("u_lineOverlay"))
+                lineShader->setUniform1i("u_lineOverlay", 0);
+
+            // Restore HDR-only routing so any downstream pass that re-uses the
+            // FBO sees the engine default (color attachment 0).
+            hdrT.bindForRender();
+        }
     }
 }
 

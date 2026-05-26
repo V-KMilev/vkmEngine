@@ -483,22 +483,44 @@ bool EnvironmentInspector::drawScene(EditorContext& /*ec*/, EnvironmentConfig& e
         return open;
     };
 
-    // Render mode (Default / Wireframe / future debug views). The forward
-    // pass + post chain key off view.modeConfig derived from this each
-    // frame; selecting Wireframe routes geometry through the unlit shader,
-    // disables post-effects, and bypasses the display transform.
+    // Render mode (Default + 7 diagnostic views). The forward pass + post
+    // chain key off view.modeConfig derived from this each frame; each
+    // diagnostic mode either routes geometry through a different shader
+    // (Unlit, Wireframe), runs a second wireframe draw on top of the shaded
+    // result (WireframeOverShaded), overrides the material before lighting
+    // (LightingOnly), or branches at the end of the PBR fragment shader to
+    // write a diagnostic value (Normals, Depth, AOOnly). Most modes bypass
+    // the post chain + display transform so what you see is what the shader
+    // wrote.
     {
         drawPropertyLabel("Render Mode");
         ImGui::SetNextItemWidth(-1.0f);
-        static const char* MODE_NAMES[] = { "Default", "Wireframe" };
+        static const char* MODE_NAMES[] = {
+            "Default",
+            "Unlit",
+            "Wireframe",
+            "Wireframe Over Shaded",
+            "Normals",
+            "Depth",
+            "AO Only",
+            "Lighting Only",
+        };
         int modeIdx = static_cast<int>(env.renderMode);
         if (ImGui::Combo("##RenderMode", &modeIdx, MODE_NAMES, IM_ARRAYSIZE(MODE_NAMES))) {
             env.renderMode = static_cast<RenderMode>(modeIdx);
             changed = true;
         }
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Diagnostic view selector. Wireframe shows unlit "
-                              "geometry edges with post-effects + tonemap bypassed.");
+            ImGui::SetTooltip(
+                "Diagnostic view selector.\n"
+                "  Default              full PBR pipeline\n"
+                "  Unlit                albedo + emission only\n"
+                "  Wireframe            unlit lines, no fill\n"
+                "  Wireframe Over Shaded  shaded scene + line overlay\n"
+                "  Normals              world-space normal as RGB\n"
+                "  Depth                distance from camera (white=far)\n"
+                "  AO Only              GTAO factor as grayscale\n"
+                "  Lighting Only        PBR with neutral material");
         }
         ImGui::Spacing();
     }
