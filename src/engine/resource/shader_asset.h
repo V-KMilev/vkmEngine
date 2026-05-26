@@ -11,8 +11,8 @@ namespace Engine {
 /**
  * @brief A shader program described as a directory of source files.
  *
- * The directory contains `vertexShader.shader`, `fragmentShader.shader`,
- * and optionally `geometryShader.shader` - same convention as
+ * The directory contains `vertex.shader`, `fragment.shader`,
+ * and optionally `geometry.shader` - same convention as
  * Core::Shader. The backend (GLShader, future VkShader, etc.) reads
  * this asset to produce its concrete program object.
  *

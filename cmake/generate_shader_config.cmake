@@ -44,7 +44,7 @@ set(_glsl
 //
 // Do not edit by hand - any change will be overwritten next configure.
 // Once vkmGL supports shader-side #include, the inline `const int MAX_LIGHTS`
-// declarations in shaders/pbr/fragmentShader.shader can be deleted and this
+// declarations in shaders/pbr/fragment.shader can be deleted and this
 // file included instead.
 
 const int   MAX_LIGHTS              = ${_max_lights};

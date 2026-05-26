@@ -26,7 +26,7 @@ namespace Engine {
  * `#ifdef HAS_TRANSMISSION` / etc. Each entry should be a plain token or
  * `TOKEN value` - the preprocessor doesn't validate.
  *
- * @param filePath Path to the top-level shader file (e.g. fragmentShader.shader).
+ * @param filePath Path to the top-level shader file (e.g. fragment.shader).
  * @param defines  Optional list of `#define X` tokens to inject.
  * @return Fully expanded source string. Empty on read failure (logged).
  */
