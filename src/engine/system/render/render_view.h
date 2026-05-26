@@ -29,6 +29,12 @@ struct CameraData {
 
     glm::vec3 position = {0.0f, 0.0f, 0.0f};
     float     exposure = 1.0f;
+
+    /// Near/far clip planes copied from the Camera component each frame.
+    /// Used by the PBR shader's Depth diagnostic to linearise depth into
+    /// [0, 1] across the camera's actual range instead of a hardcoded one.
+    float     zNear    = 0.1f;
+    float     zFar     = 1000.0f;
 };
 
 /**
@@ -190,7 +196,13 @@ struct AABBDebugConfig {
  */
 enum class RenderMode : uint8_t {
     Default = 0,
-    Wireframe,     ///< Unlit lines through PBR meshes; post chain bypassed.
+    Unlit,                   ///< Albedo + emission only; no lighting, no post.
+    Wireframe,               ///< Unlit lines through PBR meshes; post chain bypassed.
+    WireframeOverShaded,     ///< Full PBR with a wireframe overlay drawn on top.
+    Normals,                 ///< World-space normal as RGB (normal*0.5+0.5).
+    Depth,                   ///< Linearised camera-space depth as grayscale.
+    AOOnly,                  ///< GTAO factor as grayscale (white = fully lit).
+    LightingOnly,            ///< PBR with material forced to neutral (0.5 albedo, 0 metal, 0.5 rough).
 };
 
 /**
@@ -224,6 +236,22 @@ struct RenderModeConfig {
 
     /// Forward pass enables GL_LINE polygon mode for the geometry phase.
     bool wireframe = false;
+
+    /// Forward pass runs a second wireframe draw on top of the shaded scene.
+    /// Independent from `wireframe`: that one replaces the fill with lines,
+    /// this one overlays lines over the shaded fill.
+    bool wireframeOverlay = false;
+
+    /// Forward pass overrides every material with a neutral PBR (albedo=0.5,
+    /// metallic=0, roughness=0.5) so the lighting term becomes visible without
+    /// material colour noise. Pushed to the PBR shader as u_forceNeutralMaterial.
+    bool forceNeutralMaterial = false;
+
+    /// PBR fragment-shader diagnostic selector. 0 = normal output, 1 = Normals,
+    /// 2 = Depth, 3 = AO. Pushed as u_debugMode; the shader's main() branches
+    /// just before FragColor is written so the diagnostic value lands in the
+    /// HDR target and bypassDisplayXform carries it through composite.
+    int debugMode = 0;
 };
 
 /**
@@ -268,12 +296,43 @@ inline RenderModeConfig resolveModeConfig(RenderMode mode) {
     RenderModeConfig c;
     c.mode = mode;
     switch (mode) {
+        case RenderMode::Unlit:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.forceUnlit         = true;
+            break;
         case RenderMode::Wireframe:
             c.disablePost        = true;
             c.disableSSAO        = true;
             c.bypassDisplayXform = true;
             c.forceUnlit         = true;
             c.wireframe          = true;
+            break;
+        case RenderMode::WireframeOverShaded:
+            c.wireframeOverlay   = true;
+            break;
+        case RenderMode::Normals:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.debugMode          = 1;
+            break;
+        case RenderMode::Depth:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.debugMode          = 2;
+            break;
+        case RenderMode::AOOnly:
+            c.disablePost        = true;
+            c.bypassDisplayXform = true;
+            c.debugMode          = 3;
+            break;
+        case RenderMode::LightingOnly:
+            c.disablePost        = true;
+            c.bypassDisplayXform = true;
+            c.forceNeutralMaterial = true;
             break;
         case RenderMode::Default:
             break;
