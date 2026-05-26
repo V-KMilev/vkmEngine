@@ -69,9 +69,9 @@ Core::GraphicsShaderSource GLShader::preprocessSourceFor(
     const std::vector<std::string>& defines)
 {
     const fs::path dir(dirPath);
-    const std::string vsPath = (dir / "vertexShader.shader").string();
-    const std::string fsPath = (dir / "fragmentShader.shader").string();
-    const std::string gsPath = (dir / "geometryShader.shader").string();
+    const std::string vsPath = (dir / "vertex.shader").string();
+    const std::string fsPath = (dir / "fragment.shader").string();
+    const std::string gsPath = (dir / "geometry.shader").string();
 
     std::string vs = preprocessShaderFile(vsPath, defines);
     std::string fs = preprocessShaderFile(fsPath, defines);

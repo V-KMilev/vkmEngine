@@ -4,11 +4,11 @@ The AnimationSystem processes keyframe-based property animations on entity trans
 
 ## Key Files
 
-- `src/engine/system/animation/animation_system.h` -- AnimationSystem
-- `src/engine/system/animation/animation_track.h` -- AnimationTrack<T>
-- `src/engine/system/animation/keyframe.h` -- Keyframe<T>
-- `src/engine/system/animation/easing.h` -- Easing functions
-- `src/engine/ecs/component/animation.h` -- Animation component
+- `src/engine/system/animation/animation_system.h`: AnimationSystem
+- `src/engine/system/animation/animation_track.h`: AnimationTrack<T>
+- `src/engine/system/animation/keyframe.h`: Keyframe<T>
+- `src/engine/system/animation/easing.h`: Easing functions
+- `src/engine/ecs/component/animation.h`: Animation component
 
 ## Two-Phase Update
 
@@ -46,7 +46,7 @@ struct Animation {
 };
 ```
 
-Each track is independent -- an entity can animate position without rotation, or any combination.
+Each track is independent: an entity can animate position without rotation, or any combination.
 
 ## AnimationTrack<T>
 
@@ -84,13 +84,13 @@ Type aliases: `PositionKeyframe` (vec3), `RotationKeyframe` (quat), `ScaleKeyfra
 
 ## Easing Functions
 
-`using EasingFunction = float(*)(float)` -- Takes normalized `t` in [0,1], returns eased value.
+`using EasingFunction = float(*)(float)`: takes normalized `t` in [0,1], returns eased value.
 
 31+ functions available:
 
 | Category | In | Out | InOut |
 |----------|----|-----|-------|
-| Linear | `linear` | -- | -- |
+| Linear | `linear` | n/a | n/a |
 | Quadratic | `easeInQuad` | `easeOutQuad` | `easeInOutQuad` |
 | Cubic | `easeInCubic` | `easeOutCubic` | `easeInOutCubic` |
 | Quartic | `easeInQuart` | `easeOutQuart` | `easeInOutQuart` |

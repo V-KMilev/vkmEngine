@@ -85,7 +85,17 @@ shaders/
   gizmo/         # Navigation gizmo
 ```
 
-Each folder contains `vertexShader.shader` and `fragmentShader.shader`. Loaded by path prefix:
+Each folder contains the program's source files, named after the GL stage
+they target. The loader hard-codes these names:
+
+| Stage      | Filename          | Required?                       |
+|------------|-------------------|---------------------------------|
+| Vertex     | `vertex.shader`   | Required for graphics programs  |
+| Fragment   | `fragment.shader` | Required for graphics programs  |
+| Geometry   | `geometry.shader` | Optional; loaded if present     |
+| Compute    | `compute.shader`  | Reserved (compute not yet wired)|
+
+A program is loaded by path prefix:
 
 ```cpp
 Core::Shader pbr("shaders/pbr");
