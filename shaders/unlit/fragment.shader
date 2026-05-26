@@ -41,11 +41,23 @@ layout(std140, binding = 0) uniform MaterialBlock {
 uniform sampler2D u_albedoTexture;
 uniform sampler2D u_emissionTexture;
 
+// WireframeOverShaded path: the forward pass binds the unlit shader for a
+// second draw in GL_LINE polygon mode, with u_lineOverlay = 1 so every line
+// outputs a fixed light colour regardless of material. 0 in every other path.
+uniform int u_lineOverlay;
+
 bool hasTex(int flag) {
     return (u_material.textureFlags & flag) != 0;
 }
 
 void main() {
+    if (u_lineOverlay == 1) {
+        // Off-white at moderate intensity: visible against bright and dark
+        // surfaces alike, dim enough not to bloom-blow the composite.
+        FragColor = vec4(0.9, 0.9, 0.9, 1.0);
+        return;
+    }
+
     vec4 base = u_material.albedo;
     if (hasTex(TEX_ALBEDO)) {
         base *= texture(u_albedoTexture, vUV);

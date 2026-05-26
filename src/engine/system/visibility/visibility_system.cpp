@@ -44,6 +44,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
     glm::mat4 projection;
     glm::vec3 cameraPosition;
     float     cameraExposure = 1.0f;
+    float     cameraZNear    = 0.1f;
+    float     cameraZFar     = 1000.0f;
     bool found = false;
 
     // Fast path: try the cached camera entity first (O(1) lookup)
@@ -59,6 +61,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
             view           = Transform::computeView(transform);
             cameraPosition = transform.position;
             cameraExposure = camera.exposure;
+            cameraZNear    = camera.zNear;
+            cameraZFar     = camera.zFar;
             found = true;
         }
     }
@@ -74,6 +78,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
             view           = Transform::computeView(transform);
             cameraPosition = transform.position;
             cameraExposure = camera.exposure;
+            cameraZNear    = camera.zNear;
+            cameraZFar     = camera.zFar;
             m_cachedCameraEntity = id;
             found = true;
         });
@@ -90,6 +96,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
     m_result.projection     = projection;
     m_result.cameraPosition = cameraPosition;
     m_result.cameraExposure = cameraExposure;
+    m_result.cameraZNear    = cameraZNear;
+    m_result.cameraZFar     = cameraZFar;
     m_result.hasCamera      = true;
 
     const glm::mat4 viewProjection = projection * view;

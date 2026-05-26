@@ -173,6 +173,22 @@ uniform sampler2D u_ssao;
 uniform int       u_ssaoEnabled;
 uniform vec2      u_screenSize;   // full viewport pixels
 
+// Diagnostic view selectors. Set by the forward pass from RenderModeConfig.
+// u_debugMode:    0 = normal output, 1 = Normals, 2 = Depth, 3 = AO only.
+//                 The branch lives at the very end of main(); the lighting
+//                 work above still runs but its result is replaced.
+// u_forceNeutralMaterial: 1 = override the sampled material with PBR-neutral
+//                 (albedo 0.5, metallic 0, roughness 0.5, ao 1) so the
+//                 LightingOnly mode shows the lighting term without material
+//                 colour noise.
+uniform int u_debugMode;
+uniform int u_forceNeutralMaterial;
+
+// Camera clip range, pushed by the forward pass from the active Camera
+// component. Only read by the Depth diagnostic (u_debugMode == 2).
+uniform float u_zNear;
+uniform float u_zFar;
+
 // Resolved opaque-only scene color, bound by the forward pass at the
 // opaque->transparent boundary. Lets transmissive materials refract what is
 // actually behind them; u_hasSceneColor gates it (0 = fall back to IBL).
@@ -453,6 +469,17 @@ Surface sampleSurface(vec2 uv) {
     }
 
     s.roughness = clamp(s.roughness, 0.045, 1.0);
+
+    // LightingOnly diagnostic: replace the material with PBR-neutral after
+    // texture sampling, so the rest of the shading (lighting, IBL, AO, shadows)
+    // runs on a uniform surface and only the light response is visible.
+    if (u_forceNeutralMaterial == 1) {
+        s.albedo   = vec3(0.5);
+        s.metallic = 0.0;
+        s.roughness = 0.5;
+        s.ao       = 1.0;
+        s.emission = vec3(0.0);
+    }
     return s;
 }
 
@@ -1042,6 +1069,32 @@ void main() {
         color = mix(color, refr, clamp(u_material.transmission, 0.0, 1.0));
     }
 #endif
+
+    // Diagnostic tail: replace the shaded result with a per-mode visualisation.
+    // Composite is in bypassDisplayXform for these modes, so the value lands
+    // pixel-exact on screen (clamp + sRGB encode only). The shading work above
+    // still runs because N / depth / AO are derived from it - cheap branch.
+    if (u_debugMode == 1) {
+        // World-space normal (normal-mapped + perturbed if HAS_PARALLAX);
+        // remap [-1, 1] -> [0, 1] for display.
+        color = N * 0.5 + 0.5;
+    } else if (u_debugMode == 2) {
+        // Linearised distance-to-camera, normalised to [0, 1] across the
+        // active camera's [zNear, zFar]. Distance is used in place of true
+        // view-space Z because the projection matrix isn't in this shader's
+        // UBO; for visualisation the two are visually equivalent and
+        // distance avoids needing the inverse-projection.
+        float d = length(u_camera.cameraPosition.xyz - vWorldPos);
+        float range = max(u_zFar - u_zNear, 1e-4);
+        float t = clamp((d - u_zNear) / range, 0.0, 1.0);
+        color = vec3(t);
+    } else if (u_debugMode == 3) {
+        float ao = 1.0;
+        if (u_ssaoEnabled == 1) {
+            ao = texture(u_ssao, gl_FragCoord.xy / u_screenSize).r;
+        }
+        color = vec3(ao);
+    }
 
     FragColor = vec4(color, u_material.albedo.a * u_material.alpha);
 }
