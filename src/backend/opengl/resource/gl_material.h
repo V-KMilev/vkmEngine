@@ -189,6 +189,11 @@ class GLMaterial {
          */
         uint32_t getFeatureFlags() const { return m_featureFlags; }
 
+        /// Mirror of MaterialAsset::useOIT - the forward pass reads this per
+        /// batch to decide between the sorted-blend and OIT paths during the
+        /// transparent phase. Refreshed on update().
+        bool getUseOIT() const { return m_useOIT; }
+
     private:
         std::unique_ptr<Core::UniformBuffer> m_ubo;
 
@@ -196,6 +201,7 @@ class GLMaterial {
         std::vector<TextureBinding> m_textureBindings;
 
         uint32_t m_featureFlags = 0;
+        bool     m_useOIT       = false;
 };
 
 } // namespace Engine

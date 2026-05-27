@@ -98,6 +98,7 @@ void GLMaterial::update(const MaterialAsset& material) {
     // Cache the optional-feature bitset so the forward pass can pick the
     // right shader variant for this material without re-reading the asset.
     m_featureFlags = material.featureFlags();
+    m_useOIT       = material.useOIT;
 
     // Process all texture mappings in a single loop
     // Build texture flags bitfield and bindings list
