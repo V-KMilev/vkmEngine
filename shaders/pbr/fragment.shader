@@ -233,6 +233,48 @@ vec2 parallax(vec2 uv, vec3 viewDirTS) {
     return mix(curUV, prevUV, clamp(w, 0.0, 1.0));
 }
 
+// POM self-shadowing. After parallax() has displaced the UV onto the
+// virtual surface, march a second ray toward the light in tangent space
+// and accumulate the worst blocker over the trace. Returns 1.0 = no
+// occlusion, 0.0 = fully shadowed. Gated to a small step count + caller-
+// side single-light usage so the cost stays bounded.
+float parallaxShadow(vec2 uv, vec3 lightDirTS) {
+    // Light is below the tangent-space horizon - no occlusion possible
+    // (the surface itself shadows it via the NdotL term).
+    if (lightDirTS.z <= 0.0) return 1.0;
+
+    const float NUM_LAYERS = 16.0;
+
+    // Surface depth at the displaced UV - the ray climbs from here
+    // toward the light.
+    float startDepth = texture(u_heightTexture, uv).r;
+    if (startDepth <= 0.0) return 1.0;  // Already on the silhouette top.
+
+    vec2  deltaUV    = (lightDirTS.xy / max(lightDirTS.z, 0.01))
+                       * u_material.heightScale / NUM_LAYERS;
+    float deltaDepth = startDepth / NUM_LAYERS;
+
+    vec2  curUV    = uv      + deltaUV;
+    float curDepth = startDepth - deltaDepth;
+
+    // Track the worst blocker rather than averaging - any taller heightmap
+    // value along the path is enough to cast a hard shadow there.
+    float maxBlocker = 0.0;
+    for (int i = 0; i < int(NUM_LAYERS); ++i) {
+        if (curDepth <= 0.0) break;
+        float h = texture(u_heightTexture, curUV).r;
+        if (h > curDepth) {
+            maxBlocker = max(maxBlocker, h - curDepth);
+        }
+        curUV   += deltaUV;
+        curDepth -= deltaDepth;
+    }
+
+    // Soft falloff so the shadow is not all-or-nothing. 8.0 maps a 1/8
+    // of the depth range to fully shadowed, looser than that fades smoothly.
+    return clamp(1.0 - maxBlocker * 8.0, 0.0, 1.0);
+}
+
 vec3 getNormal(vec2 uv, mat3 tbn) {
     if (!hasTex(TEX_NORMAL)) {
         return normalize(vNormal);
@@ -934,6 +976,20 @@ void main() {
                 visibility = sample2DShadow(shadowSlot, vWorldPos, NdotL);
             }
         }
+
+        // POM self-shadowing: only for the directional sun (the loop only
+        // ever has one) when parallax is active and the height map is
+        // present. Gating to directional keeps the per-fragment cost
+        // bounded - additional lights would compound the trace count.
+#ifdef HAS_PARALLAX
+        if (type == LIGHT_DIRECTIONAL
+            && hasTex(TEX_HEIGHT)
+            && u_material.heightScale > 0.0
+            && visibility > 0.0) {
+            vec3 lightDirTS = normalize(transpose(TBN) * L);
+            visibility *= parallaxShadow(uv, lightDirTS);
+        }
+#endif
 
         vec3 radiance = lightCol * intensity * atten * visibility;
         Lo += evaluateLight(N, V, L, T, B, s, f0, radiance);
