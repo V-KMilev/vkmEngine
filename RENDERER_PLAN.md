@@ -594,7 +594,7 @@ These five surface up across the most features and are the highest-leverage to k
 |----|------------------------------------------|-------|------------------------------------------------|------------------------------------------|
 | 1  | Bloom soft-knee threshold                | 1     | Shipped                                        | `a5339bc`                                |
 | 2  | Shader error history                     | 1     | Shipped                                        | `a5339bc`                                |
-| 3  | Expand debug visualizations              | 1     | Partial (7 new modes; no overdraw/batch-id/light-complexity/lightmap-UV) | `a5339bc` |
+| 3  | Expand debug visualizations              | 1     | Shipped (overdraw / batch-id / light-complexity / lightmap-UV stand-in added) | `a5339bc` + this branch |
 | 4  | Screenshot API outside editor            | 1     | Shipped                                        | `a5339bc`                                |
 | 5  | Shader hot-reload include dependency graph | 1   | Shipped                                        | `a5339bc`                                |
 | 6  | Runtime graphics settings UI             | 1     | Shipped                                        | `a5339bc` (+ `cf07df5` overlay expansion)|
@@ -614,4 +614,4 @@ These five surface up across the most features and are the highest-leverage to k
 | 20 | Hi-Z occlusion culling                   | 5     | Shipped (pyramid + CPU-side AABB-vs-pyramid test, one-frame latent) | `1c4e1fa` + `cd73d17` + `b9f6cea` + `46f3e42` |
 | 21 | Real-time GI / light probes              | 5     | Not shipped (depends on #13 + DDGI infrastructure) | -                                    |
 
-**Tally:** 13/21 fully shipped, 5/21 partial, 3/21 not shipped (one of the three needs external LUT data; the other two are week-plus features in their own right).
+**Tally:** 14/21 fully shipped, 5/21 partial, 2/21 not shipped (one needs external LUT data; the other is a multi-week feature in its own right).

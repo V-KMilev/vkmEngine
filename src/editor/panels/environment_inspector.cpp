@@ -593,6 +593,10 @@ bool EnvironmentInspector::drawScene(EditorContext& /*ec*/, EnvironmentConfig& e
             "Albedo Only",
             "World Position",
             "UV",
+            "Overdraw",
+            "Batch ID",
+            "Light Complexity",
+            "Lightmap UV",
         };
         int modeIdx = static_cast<int>(env.renderMode);
         if (ImGui::Combo("##RenderMode", &modeIdx, MODE_NAMES, IM_ARRAYSIZE(MODE_NAMES))) {
@@ -616,7 +620,11 @@ bool EnvironmentInspector::drawScene(EditorContext& /*ec*/, EnvironmentConfig& e
                 "  Tangent Space        world-space tangent as RGB\n"
                 "  Albedo Only          base colour with no lighting\n"
                 "  World Position       fract(worldPos) (1m grid)\n"
-                "  UV                   UV channel 0 as red/green");
+                "  UV                   UV channel 0 as red/green\n"
+                "  Overdraw             additive heatmap of shaded fragments\n"
+                "  Batch ID             hashed RGB per draw batch\n"
+                "  Light Complexity     count of contributing lights (cold->hot)\n"
+                "  Lightmap UV          stand-in (no UV1 channel today)");
         }
         ImGui::Spacing();
     }
