@@ -14,6 +14,7 @@
 #include "resource/gl_shader_program.h"
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"
+#include "system/visibility/culling/occlusion_oracle.h"
 
 namespace Engine {
 
@@ -85,6 +86,38 @@ void GLHiZPass::execute(RenderGraphContext& rg) {
     hiz.unbindFbo();
 
     ctx.setDepthTest(true);
+
+    // CPU-side readback of one mid mip so the next frame's visibility
+    // system can AABB-test against it. Synchronous via glReadPixels;
+    // a future commit can swap in a PBO double-buffer to drop the
+    // stall once the consumer ships. Mip 4 is 1/16th the viewport
+    // resolution - coarse enough to fit in a single readback, fine
+    // enough to discriminate object-sized AABBs.
+    constexpr int kReadbackMip = 4;
+    const int readbackMip = kReadbackMip < mips ? kReadbackMip : mips - 1;
+    const int rw = hiz.mipWidth(readbackMip);
+    const int rh = hiz.mipHeight(readbackMip);
+    std::vector<float> cpu(static_cast<std::size_t>(rw) * rh);
+
+    // Bind the FBO that owns the chosen mip as the read source; mip 0's
+    // pyramid FBO array entry is what attachMip routes to per call, so
+    // we re-issue it here to position the read.
+    hiz.bindFbo();
+    hiz.attachMip(readbackMip);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0,
+                 static_cast<GLsizei>(rw), static_cast<GLsizei>(rh),
+                 GL_RED, GL_FLOAT, cpu.data());
+    hiz.unbindFbo();
+
+    // viewProj = projection * view (column-major glm convention; matches
+    // the rest of the engine's matrix math).
+    const glm::mat4 viewProj = rg.view.camera.projection * rg.view.camera.view;
+    OcclusionOracle::get().publish(std::move(cpu),
+        static_cast<std::uint32_t>(rw),
+        static_cast<std::uint32_t>(rh),
+        viewProj);
 }
 
 } // namespace Engine
