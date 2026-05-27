@@ -161,9 +161,10 @@ struct BloomConfig {
 };
 
 struct OcclusionConfig {
-    /// Build the Hi-Z (max-Z) depth pyramid each frame. Off by default
-    /// while no consumer reads it; flip on once the future occlusion-
-    /// culling pass (#20 in RENDERER_PLAN.md) lands.
+    /// Build the Hi-Z (max-Z) depth pyramid each frame AND use the
+    /// previous frame's pyramid as the visibility-time occlusion
+    /// oracle. 1-frame stale, conservative (visible on miss). Off by
+    /// default so pop-in regressions on fast camera motion are opt-in.
     bool useHiZ = false;
 };
 
