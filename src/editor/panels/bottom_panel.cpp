@@ -66,7 +66,7 @@ void BottomPanel::drawRenderGraphSection(EditorContext& ec) {
     ImGui::Text("%zu passes, %zu transient resources in use, %zu alias group(s)",
                 n, resourcesUsed, graph.aliasGroupCount());
     ImGui::TextDisabled("R = read, W = write, RW = both. Faint = within [firstWrite, lastRead].");
-    ImGui::TextDisabled("Resource-name color = alias group (same color = could share storage).");
+    ImGui::TextDisabled("Resource-name color = alias group (same color = disjoint lifetime AND matching descriptor).");
     ImGui::Separator();
 
     constexpr ImU32 kCellWrite = IM_COL32(200,  60,  60, 100);  // red-ish

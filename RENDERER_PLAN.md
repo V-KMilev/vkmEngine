@@ -608,7 +608,7 @@ These five surface up across the most features and are the highest-leverage to k
 | 14 | POM self-shadowing                       | 3     | Shipped                                        | `5fba9b9`                                |
 | 15 | Weighted-Blended OIT                     | 4     | Shipped (global toggle + per-material opt-in with transmission auto-override) | `83fef57` + this branch |
 | 16 | CSM / PCSS for spot+point lights         | 4     | Partial (true PCSS blocker search + dynamic-kernel PCF for 2D + cube; per-face cube resolution scaling deferred) | `682b2aa` + `580fb55` + this branch |
-| 17 | Render graph resource aliasing           | 4     | Partial (analysis + visualizer color grouping; actual physical aliasing deferred - needs backend descriptor metadata) | `dbc404f` |
+| 17 | Render graph resource aliasing           | 4     | Partial (descriptor-aware analysis + visualizer; physical pool sharing deferred by design - see render_graph.h note, ~50-100 MB savings doesn't justify wrapper refactor at desktop scale) | `dbc404f` + this branch |
 | 18 | LTC area light specular (Phase 2C)       | 4     | Not shipped (needs Heitz pre-computed LUT data) | -                                       |
 | 19 | Thickness-aware subsurface scattering    | 4     | Partial (per-channel colored-wrap; pre-integrated LUT path deferred) | `5056fe7`                |
 | 20 | Hi-Z occlusion culling                   | 5     | Shipped (pyramid + CPU-side AABB-vs-pyramid test, one-frame latent) | `1c4e1fa` + `cd73d17` + `b9f6cea` + `46f3e42` |
