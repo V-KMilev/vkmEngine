@@ -332,6 +332,12 @@ GLShader* GLView::resolveShaderVariant(
     LOG_INFO("Compiled shader variant '%s' key=0x%x", asset.name.c_str(), encoded);
     GLShader* raw = entry.program.get();
     bucket.emplace(subkey, std::move(entry));
+    // Capture the display name on first compile - kept across hot-reload
+    // evictions so the GPU panel's variant-cache row stays labeled even
+    // when the bucket has just been cleared and is empty mid-recompile.
+    if (m_shaderVariantNames.find(shaderId) == m_shaderVariantNames.end()) {
+        m_shaderVariantNames.emplace(shaderId, asset.name);
+    }
     return raw;
 }
 
@@ -368,6 +374,20 @@ void GLView::ensureMaterialTextures(const MaterialHandle& handle,
         sortUnique(texs);
         syncTable<TextureAsset>(m_textureTable, texs, resources);
     }
+}
+
+std::vector<GLView::VariantCacheStats> GLView::getVariantCacheStats() const {
+    std::vector<VariantCacheStats> stats;
+    stats.reserve(m_shaderVariants.size());
+    for (const auto& [shaderId, bucket] : m_shaderVariants) {
+        VariantCacheStats s;
+        s.shaderId = shaderId;
+        s.variants = bucket.size();
+        auto it = m_shaderVariantNames.find(shaderId);
+        if (it != m_shaderVariantNames.end()) s.name = it->second;
+        stats.push_back(std::move(s));
+    }
+    return stats;
 }
 
 } // namespace Engine

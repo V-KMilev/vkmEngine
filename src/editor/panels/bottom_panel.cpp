@@ -4,9 +4,12 @@
 #include <cstdio>
 #include <ctime>
 
+#include "core/gl_backend.h"
+#include "core/gl_view.h"
 #include "debug/gpu_timing.h"
 #include "debug/shader_error_log.h"
 #include "framework/editor_common.h"
+#include "system/render/render_backend.h"
 #include "system/render/render_graph.h"
 #include "system/render/render_graph_resource.h"
 #include "system/render/render_pass.h"
@@ -22,7 +25,7 @@ void BottomPanel::draw(EditorContext& ec) {
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("GPU")) {
-            drawGpuProfilerSection();
+            drawGpuProfilerSection(ec);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Render Graph")) {
@@ -173,11 +176,47 @@ void BottomPanel::drawRenderGraphSection(EditorContext& ec) {
     }
 }
 
-void BottomPanel::drawGpuProfilerSection() {
+void BottomPanel::drawGpuProfilerSection(EditorContext& ec) {
     const auto passes = GpuTimingPool::get().snapshot();
     if (passes.empty()) {
         ImGui::TextDisabled("No passes registered yet - the first frame will populate this.");
         return;
+    }
+
+    // Variant cache stats - collapsing sub-section so the per-pass timings
+    // stay the default-open view. Only meaningful for the OpenGL backend
+    // right now; the check stays narrow so a future backend slots in by
+    // adding its own branch (or exposing the data via RenderBackend).
+    if (ImGui::CollapsingHeader("Variant Cache")) {
+        auto& backend = ec.renderSystem.getBackend();
+        if (backend.getType() == RenderBackendType::OpenGL) {
+            auto& gl = static_cast<GLBackend&>(backend);
+            const auto stats = gl.getView().getVariantCacheStats();
+            std::size_t total = 0;
+            for (const auto& s : stats) total += s.variants;
+            ImGui::Text("%zu compiled program(s) across %zu shader asset(s)",
+                        total, stats.size());
+            if (ImGui::BeginTable("##variant_cache", 3,
+                    ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
+                ImGui::TableSetupColumn("Shader",   ImGuiTableColumnFlags_WidthStretch, 1.6f);
+                ImGui::TableSetupColumn("ID",       ImGuiTableColumnFlags_WidthFixed, 50.0f);
+                ImGui::TableSetupColumn("Variants", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                ImGui::TableHeadersRow();
+                for (const auto& s : stats) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted(s.name.empty() ? "?" : s.name.c_str());
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::Text("%u", s.shaderId);
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::Text("%zu", s.variants);
+                }
+                ImGui::EndTable();
+            }
+        } else {
+            ImGui::TextDisabled("Variant cache stats not available on this backend.");
+        }
+        ImGui::Separator();
     }
 
     double totalLast = 0.0;
