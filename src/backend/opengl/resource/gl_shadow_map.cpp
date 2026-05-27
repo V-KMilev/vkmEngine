@@ -75,6 +75,20 @@ GLShadowAtlas::GLShadowAtlas(
     VKM_GL_CHECK(glDrawBuffer(GL_NONE));
     VKM_GL_CHECK(glReadBuffer(GL_NONE));
     m_fbo->unbind();
+
+    // Compare-off sampler for PCSS blocker search. Linear filter still wanted
+    // (the search averages 12+ taps; bilinear free-samples per tap), but the
+    // shader is reading raw depth here so GL_TEXTURE_COMPARE_MODE must be off.
+    // A sampler-object override leaves the texture's own compare state intact
+    // so the regular sampler2DArrayShadow / samplerCubeArrayShadow paths keep
+    // their hardware PCF.
+    VKM_GL_CHECK(glGenSamplers(1, &m_samplerDepthNoCompare));
+    VKM_GL_CHECK(glSamplerParameteri(m_samplerDepthNoCompare, GL_TEXTURE_COMPARE_MODE, GL_NONE));
+    VKM_GL_CHECK(glSamplerParameteri(m_samplerDepthNoCompare, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+    VKM_GL_CHECK(glSamplerParameteri(m_samplerDepthNoCompare, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+    VKM_GL_CHECK(glSamplerParameteri(m_samplerDepthNoCompare, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    VKM_GL_CHECK(glSamplerParameteri(m_samplerDepthNoCompare, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    VKM_GL_CHECK(glSamplerParameteri(m_samplerDepthNoCompare, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE));
 }
 
 void GLShadowAtlas::ensureResolution(uint32_t res2D, uint32_t resCube) {
@@ -134,6 +148,9 @@ void GLShadowAtlas::ensureResolution(uint32_t res2D, uint32_t resCube) {
 GLShadowAtlas::~GLShadowAtlas() {
     if (m_tex2D != 0)   VKM_GL_CHECK(glDeleteTextures(1, &m_tex2D));
     if (m_texCube != 0) VKM_GL_CHECK(glDeleteTextures(1, &m_texCube));
+    if (m_samplerDepthNoCompare != 0) {
+        VKM_GL_CHECK(glDeleteSamplers(1, &m_samplerDepthNoCompare));
+    }
     m_fbo.reset();
     LOG_TRACE("Destructed GLShadowAtlas");
 }
@@ -175,6 +192,18 @@ void GLShadowAtlas::bind2DForReading(uint32_t slot) const {
 void GLShadowAtlas::bindCubeForReading(uint32_t slot) const {
     VKM_GL_CHECK(glActiveTexture(GL_TEXTURE0 + slot));
     VKM_GL_CHECK(glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, m_texCube));
+}
+
+void GLShadowAtlas::bind2DForReadingDepth(uint32_t slot) const {
+    VKM_GL_CHECK(glActiveTexture(GL_TEXTURE0 + slot));
+    VKM_GL_CHECK(glBindTexture(GL_TEXTURE_2D_ARRAY, m_tex2D));
+    VKM_GL_CHECK(glBindSampler(slot, m_samplerDepthNoCompare));
+}
+
+void GLShadowAtlas::bindCubeForReadingDepth(uint32_t slot) const {
+    VKM_GL_CHECK(glActiveTexture(GL_TEXTURE0 + slot));
+    VKM_GL_CHECK(glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, m_texCube));
+    VKM_GL_CHECK(glBindSampler(slot, m_samplerDepthNoCompare));
 }
 
 } // namespace Engine

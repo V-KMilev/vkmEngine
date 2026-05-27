@@ -86,6 +86,10 @@ int main() {
             {Engine::GLConfig::UniformNames::RoughnessTexture,           Engine::GLConfig::TextureSlots::Roughness},
             {Engine::GLConfig::UniformNames::ShadowMap2D,                Engine::GLConfig::TextureSlots::ShadowMap2D},
             {Engine::GLConfig::UniformNames::ShadowMapCube,              Engine::GLConfig::TextureSlots::ShadowMapCube},
+            // Raw-depth shadow bindings - same textures as above, bound with
+            // a compare-off sampler object for PCSS's blocker-search pass.
+            {Engine::GLConfig::UniformNames::ShadowMap2DDepth,           Engine::GLConfig::TextureSlots::ShadowMap2DDepth},
+            {Engine::GLConfig::UniformNames::ShadowMapCubeDepth,         Engine::GLConfig::TextureSlots::ShadowMapCubeDepth},
             {Engine::GLConfig::UniformNames::IrradianceMap,              Engine::GLConfig::TextureSlots::IrradianceMap},
             {Engine::GLConfig::UniformNames::PrefilterMap,               Engine::GLConfig::TextureSlots::PrefilterMap},
             {Engine::GLConfig::UniformNames::BrdfLUT,                    Engine::GLConfig::TextureSlots::BrdfLUT},
