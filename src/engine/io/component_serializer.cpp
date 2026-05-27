@@ -356,6 +356,13 @@ void loadShadow(const nlohmann::json& j, ShadowConfig& c) {
     c.softness     = j.value("softness",     c.softness);
 }
 
+nlohmann::json saveTransparency(const TransparencyConfig& c) {
+    return {{"useOIT", c.useOIT}};
+}
+void loadTransparency(const nlohmann::json& j, TransparencyConfig& c) {
+    c.useOIT = j.value("useOIT", c.useOIT);
+}
+
 nlohmann::json saveExposure(const ExposureConfig& c) {
     return {{"autoExposure",  c.autoExposure},
             {"key",           c.key},
@@ -424,6 +431,7 @@ nlohmann::json save(const EnvironmentConfig& e) {
         {"lensDirt",   saveLensDirt(e.lensDirt)},
         {"bloom",      saveBloom(e.bloom)},
         {"shadow",     saveShadow(e.shadow)},
+        {"transparency", saveTransparency(e.transparency)},
         {"exposure",   saveExposure(e.exposure)},
         {"colorGrade", saveColorGrade(e.colorGrade)},
         {"grid",       saveGrid(e.grid)},
@@ -447,6 +455,7 @@ void load(const nlohmann::json& j, EnvironmentConfig& e) {
     if (j.contains("lensDirt"))   loadLensDirt(j["lensDirt"],     e.lensDirt);
     if (j.contains("bloom"))      loadBloom(j["bloom"],           e.bloom);
     if (j.contains("shadow"))     loadShadow(j["shadow"],         e.shadow);
+    if (j.contains("transparency")) loadTransparency(j["transparency"], e.transparency);
     if (j.contains("exposure"))   loadExposure(j["exposure"],     e.exposure);
     if (j.contains("colorGrade")) loadColorGrade(j["colorGrade"], e.colorGrade);
     if (j.contains("grid"))       loadGrid(j["grid"],             e.grid);

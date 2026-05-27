@@ -48,7 +48,18 @@ in vec2 vUV;
 in vec3 vTangent;
 in vec3 vBitangent;
 
+// Output routing.
+//   Default (no OIT_PASS define): single RGBA HDR output on color 0.
+//   With OIT_PASS: two outputs - weighted accum on color 0, revealage
+//   on color 1 - for Weighted-Blended OIT (McGuire-Bavoil 2013). The
+//   blend functions are set externally per attachment by the forward
+//   pass when this variant is active.
+#ifdef OIT_PASS
+layout(location = 0) out vec4 OITAccum;
+layout(location = 1) out float OITRevealage;
+#else
 out vec4 FragColor;
+#endif
 
 const float PI = 3.14159265359;
 
@@ -1212,5 +1223,19 @@ void main() {
         color = vec3(fract(vUV.x), fract(vUV.y), 0.0);
     }
 
-    FragColor = vec4(color, u_material.albedo.a * u_material.alpha);
+    float outAlpha = u_material.albedo.a * u_material.alpha;
+#ifdef OIT_PASS
+    // McGuire-Bavoil 2013: weight depends on view-space depth and alpha,
+    // with limits to keep the accum buffer finite even for extreme HDR.
+    // gl_FragCoord.z is in [0, 1] after the depth divide.
+    float z = gl_FragCoord.z;
+    float w = clamp(
+        pow(min(1.0, outAlpha * 10.0) + 0.01, 3.0) * 1e8
+            * pow(1.0 - z * 0.9, 3.0),
+        1e-2, 3e3);
+    OITAccum    = vec4(color * outAlpha, outAlpha) * w;
+    OITRevealage = 1.0 - outAlpha;
+#else
+    FragColor = vec4(color, outAlpha);
+#endif
 }
