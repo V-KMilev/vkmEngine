@@ -124,6 +124,68 @@ void RenderGraph::compile(const RenderView* view) {
     for (uint32_t i = 0; i < RG_RESOURCE_COUNT; ++i) {
         if (m_lifetimes[i].used()) ++usedResources;
     }
+
+    // Alias-group analysis. Sort resources by firstWrite and greedily
+    // assign each to the earliest existing group whose last-read ended
+    // before this resource's first-write (i.e. lifetimes are disjoint).
+    // Persistent resources opt out and get their own singleton group.
+    // This is a "could share storage" upper bound only - real aliasing
+    // needs the backend to compare physical descriptors (size, format,
+    // sample count). See RENDERER_PLAN.md item #17.
+    {
+        for (uint32_t i = 0; i < RG_RESOURCE_COUNT; ++i) m_aliasGroups[i] = -1;
+
+        struct OrderedResource {
+            uint32_t id;
+            int      firstWrite;
+            int      lastRead;
+        };
+        std::vector<OrderedResource> ordered;
+        ordered.reserve(RG_RESOURCE_COUNT);
+        for (uint32_t i = 0; i < RG_RESOURCE_COUNT; ++i) {
+            const auto& lt = m_lifetimes[i];
+            if (!lt.used()) continue;
+            if (rgResourceIsPersistent(static_cast<RGResource>(i))) continue;
+            // Use 0 as the "never read but written" sentinel write extent.
+            const int fw = lt.firstWrite >= 0 ? lt.firstWrite : lt.lastRead;
+            const int lr = lt.lastRead   >= 0 ? lt.lastRead   : lt.firstWrite;
+            if (fw < 0 || lr < 0) continue;
+            ordered.push_back({i, fw, lr});
+        }
+        std::sort(ordered.begin(), ordered.end(),
+            [](const OrderedResource& a, const OrderedResource& b) {
+                return a.firstWrite < b.firstWrite;
+            });
+
+        // Per-group running tail: the largest lastRead assigned so far.
+        std::vector<int> groupTail;
+        for (const auto& r : ordered) {
+            int picked = -1;
+            for (std::size_t g = 0; g < groupTail.size(); ++g) {
+                if (groupTail[g] < r.firstWrite) {
+                    picked = static_cast<int>(g);
+                    break;
+                }
+            }
+            if (picked < 0) {
+                picked = static_cast<int>(groupTail.size());
+                groupTail.push_back(r.lastRead);
+            } else {
+                if (r.lastRead > groupTail[picked]) groupTail[picked] = r.lastRead;
+            }
+            m_aliasGroups[r.id] = picked;
+        }
+        // Persistent resources get their own singleton groups so the
+        // visualizer can still color them; they never alias with transient
+        // groups but each gets a distinct id.
+        int nextGroup = static_cast<int>(groupTail.size());
+        for (uint32_t i = 0; i < RG_RESOURCE_COUNT; ++i) {
+            if (!m_lifetimes[i].used()) continue;
+            if (!rgResourceIsPersistent(static_cast<RGResource>(i))) continue;
+            m_aliasGroups[i] = nextGroup++;
+        }
+        m_aliasGroupCount = static_cast<std::size_t>(nextGroup);
+    }
     // VERBOSE because the editor's material-preview path toggles passes per
     // frame (disables grid + aabb_debug for the preview, re-enables them for
     // the main view), so this fires twice every frame the Material Editor or

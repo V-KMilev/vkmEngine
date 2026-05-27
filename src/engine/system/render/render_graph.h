@@ -194,6 +194,19 @@ class RenderGraph {
         const std::vector<RGResource>& passReads(size_t index)  const { return m_reads[index]; }
         const std::vector<RGResource>& passWrites(size_t index) const { return m_writes[index]; }
 
+        /// Alias group id for a resource (0..N-1). Resources sharing a
+        /// group have disjoint lifetimes and could in principle share
+        /// physical storage. Computed by compile(). -1 = resource never
+        /// used this frame; persistent resources get a unique group of
+        /// their own and never alias. Backend metadata (size, format)
+        /// is not consulted - the groups are an upper bound on what
+        /// could alias, not a guarantee they should. Surfaced in the
+        /// editor's render-graph visualizer.
+        int aliasGroup(RGResource r) const {
+            return m_aliasGroups[static_cast<uint32_t>(r)];
+        }
+        std::size_t aliasGroupCount() const { return m_aliasGroupCount; }
+
         /**
          * @brief Register the concrete backend object backing a logical resource id.
          *
@@ -240,6 +253,8 @@ class RenderGraph {
         std::vector<std::vector<RGResource>>     m_reads;
         std::vector<std::vector<RGResource>>     m_writes;
         RGResourceLifetime                       m_lifetimes[RG_RESOURCE_COUNT];
+        int                                      m_aliasGroups[RG_RESOURCE_COUNT] = {};
+        std::size_t                              m_aliasGroupCount = 0;
         void*                                    m_resources[RG_RESOURCE_COUNT] = {};
         bool                                     m_compiled = false;        ///< compile() has run against the current pass set
         bool                                     m_persistentRegistered = false;
