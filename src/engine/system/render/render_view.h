@@ -257,6 +257,10 @@ enum class RenderMode : uint8_t {
     AlbedoOnly,              ///< Sampled base color with no lighting.
     WorldPosition,           ///< fract(worldPos) as RGB (1m grid).
     UV,                      ///< UV channel 0 as red/green.
+    Overdraw,                ///< Heatmap of per-pixel shaded-fragment count (additive blend).
+    BatchId,                 ///< Hashed RGB per InstanceBatcher batch index.
+    LightComplexity,         ///< Per-fragment count of contributing lights (turbo ramp).
+    LightmapUV,              ///< Reserved for UV channel 1 - stand-in pattern (no UV1 today).
 };
 
 /**
@@ -301,15 +305,23 @@ struct RenderModeConfig {
     /// material colour noise. Pushed to the PBR shader as u_forceNeutralMaterial.
     bool forceNeutralMaterial = false;
 
+    /// Forward pass switches to additive blend (GL_ONE, GL_ONE) with depth-test
+    /// off so every shaded fragment accumulates into the HDR target - the
+    /// resulting saturation is a heatmap of overdraw. Used by the Overdraw
+    /// diagnostic; orthogonal to the wireframe / OIT blend paths (those modes
+    /// take precedence in the inspector).
+    bool overdrawBlend = false;
+
     /**
      * @brief PBR fragment-shader diagnostic selector.
      *
      * 0 = normal output; 1 = Normals, 2 = Depth, 3 = AO, 4 = Roughness,
      * 5 = Metallic, 6 = Emission, 7 = TangentSpace, 8 = AlbedoOnly,
-     * 9 = WorldPosition, 10 = UV. Pushed as u_debugMode; the shader's
-     * main() branches just before FragColor is written so the diagnostic
-     * value lands in the HDR target and bypassDisplayXform carries it
-     * through composite.
+     * 9 = WorldPosition, 10 = UV, 11 = Overdraw, 12 = BatchId,
+     * 13 = LightComplexity, 14 = LightmapUV. Pushed as u_debugMode; the
+     * shader's main() branches just before FragColor is written so the
+     * diagnostic value lands in the HDR target and bypassDisplayXform
+     * carries it through composite.
      */
     int debugMode = 0;
 };
@@ -438,6 +450,31 @@ inline RenderModeConfig resolveModeConfig(RenderMode mode) {
             c.disableSSAO        = true;
             c.bypassDisplayXform = true;
             c.debugMode          = 10;
+            break;
+        case RenderMode::Overdraw:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.overdrawBlend      = true;
+            c.debugMode          = 11;
+            break;
+        case RenderMode::BatchId:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.debugMode          = 12;
+            break;
+        case RenderMode::LightComplexity:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.debugMode          = 13;
+            break;
+        case RenderMode::LightmapUV:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.debugMode          = 14;
             break;
         case RenderMode::Default:
             break;
