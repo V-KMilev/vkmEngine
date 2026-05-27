@@ -33,11 +33,20 @@ namespace {
 
 }  // namespace
 
-bool MaterialEditorPanel::drawMaterialBody(ResourceManager& resources, MaterialAsset& mat) {
+bool MaterialEditorPanel::drawMaterialBody(ResourceManager& resources, MaterialAsset& mat,
+                                           bool globalOIT) {
     bool changed = false;
     auto slot = [&](const char* label, TextureHandle& s, bool srgb) {
         return textureSlot(resources, label, s, srgb);
     };
+
+    // OIT routing is effective only when both global + material flags allow it,
+    // and the material isn't transmissive (which auto-overrides to sorted).
+    // Mirror that in the UI so the checkbox visibly disables when toggling has
+    // no effect - artists shouldn't have to hunt the Environment Inspector to
+    // discover why their checkbox does nothing.
+    const bool oitTransmissive = mat.transmission > 0.001f;
+    const bool oitEffective    = globalOIT && !oitTransmissive;
 
         if (beginComponentCard("Base", ACC_BASE, true)) {
             drawPropertyLabel("Type");
@@ -81,7 +90,17 @@ bool MaterialEditorPanel::drawMaterialBody(ResourceManager& resources, MaterialA
                 ImGui::SetTooltip("0 = off. >0 enables AlphaMask: fragments with albedo.a < cutoff are discarded (foliage/leaves)");
 
             drawPropertyLabel("Use OIT");
+            ImGui::BeginDisabled(!oitEffective);
             changed |= ImGui::Checkbox("##UseOIT", &mat.useOIT);
+            ImGui::EndDisabled();
+            // Inline gating hint when the flag is currently a no-op.
+            if (!globalOIT) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(enable Environment > Lighting > Transparency)");
+            } else if (oitTransmissive) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(overridden: transmission > 0)");
+            }
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip(
                     "Route this material through Weighted-Blended OIT when the\n"
@@ -436,7 +455,8 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         // viewport refresh next frame). Materials are scene assets - any
         // edit is unsaved work.
         auto& mat = resources.edit(target);
-        if (drawMaterialBody(resources, mat)) {
+        const bool globalOIT = ec.renderSystem.getEnvironment().transparency.useOIT;
+        if (drawMaterialBody(resources, mat, globalOIT)) {
             resources.commit(target);
             state.markSceneDirty();
         }
