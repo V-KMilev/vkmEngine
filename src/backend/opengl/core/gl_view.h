@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -184,6 +185,18 @@ class GLView {
         GLInstanceBatcher&       getShadowBatcher()       { return m_shadowBatcher; }
         const GLInstanceBatcher& getShadowBatcher() const { return m_shadowBatcher; }
 
+        /// Per-shader variant count from the variant cache. Indexed by
+        /// shader id (the handle's id field at registration time); the
+        /// total across all entries is the program count the GL driver
+        /// is keeping alive. Useful for diagnosing variant explosion -
+        /// surfaced in the editor's GPU panel.
+        struct VariantCacheStats {
+            std::uint32_t shaderId = 0;
+            std::string   name;       ///< Asset name captured at compile time (e.g. "shader:pbr").
+            std::size_t   variants = 0;
+        };
+        std::vector<VariantCacheStats> getVariantCacheStats() const;
+
     private:
         /**
          * @brief Reconcile a single GL-side resource table against a
@@ -235,6 +248,11 @@ class GLView {
         std::unordered_map<uint32_t /*shaderId*/,
             std::unordered_map<uint64_t /*subkey*/, VariantEntry>>
             m_shaderVariants;
+
+        /// Display names captured the first time each shaderId entered the
+        /// variant cache. Kept separate from the cache so eviction (hot
+        /// reload of the base shader) doesn't churn the name string.
+        std::unordered_map<uint32_t, std::string> m_shaderVariantNames;
 
         GLCamera          m_camera;
         GLLights          m_lights;
