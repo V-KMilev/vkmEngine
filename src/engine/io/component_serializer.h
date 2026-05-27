@@ -7,6 +7,7 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/light.h"
 #include "ecs/component/mesh.h"
+#include "ecs/component/reflection_probe.h"
 #include "ecs/component/name.h"
 #include "ecs/component/transform.h"
 
@@ -39,6 +40,12 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const Light&);
     void load(const nlohmann::json&, Light&);
+
+    /// ReflectionProbe: stores HDR source path + influence radius and
+    /// falloff. Bake state is not stored - the backend re-bakes on load
+    /// from the HDR file referenced by @p hdrPath.
+    nlohmann::json save(const ReflectionProbe&);
+    void load(const nlohmann::json&, ReflectionProbe&);
 
     nlohmann::json save(const Mesh&, const ResourceManager&);
     void load(const nlohmann::json&, Mesh&, const ResourceManager&);

@@ -41,6 +41,7 @@ class InspectorPanel {
         void drawTransformSection(Scene& scene, EditorState& state, EntityId id);
         void drawMeshSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawLightSection(Scene& scene, EditorState& state, EntityId id);
+        void drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id);
         void drawCameraSection(Scene& scene, EditorState& state, EntityId id);
         void drawAnimationSection(Scene& scene, EditorState& state, EntityId id);
         void drawHierarchySection(Scene& scene, EditorState& state, EntityId id);
