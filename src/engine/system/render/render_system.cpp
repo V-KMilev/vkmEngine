@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "RENDER"
+
 #include "system/render/render_system.h"
 
 #include <glm/glm.hpp>
@@ -25,7 +27,14 @@ RenderSystem::~RenderSystem() {
     m_backend.reset();
 }
 
-void RenderSystem::setBackend(std::unique_ptr<RenderBackend> backend) { m_backend = std::move(backend); }
+void RenderSystem::setBackend(std::unique_ptr<RenderBackend> backend) {
+    if (backend) {
+        LOG_INFO("Backend set to '%s'", backend->apiName());
+    } else {
+        LOG_INFO("Backend cleared");
+    }
+    m_backend = std::move(backend);
+}
 
 void RenderSystem::resize(uint32_t width, uint32_t height) {
     m_width = width;
@@ -99,6 +108,8 @@ void RenderSystem::update(FrameContext& ctx) {
 }
 
 void RenderSystem::addPass(std::unique_ptr<RenderPass> pass) {
+    LOG_TRACE("AddPass '%s' (now %zu)",
+        pass ? pass->getName().c_str() : "<null>", m_graph.passCount() + 1);
     m_graph.addPass(std::move(pass));
 }
 

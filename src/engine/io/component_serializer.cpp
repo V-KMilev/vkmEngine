@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "IO"
+
 #include "io/component_serializer.h"
 
 #include <cstring>

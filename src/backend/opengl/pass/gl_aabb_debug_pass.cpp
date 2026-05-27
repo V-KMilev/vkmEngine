@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "BACKEND::GL"
+
 #include "gl_aabb_debug_pass.h"
 
 #include "logger.h"

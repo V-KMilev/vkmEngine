@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "RENDER"
+
 #include "system/render/render_view.h"
 
 #include <algorithm>

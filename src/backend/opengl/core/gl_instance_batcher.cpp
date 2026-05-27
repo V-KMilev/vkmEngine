@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "BACKEND::GL"
+
 #include "gl_instance_batcher.h"
 
 #include "gl_vertex_array.h"  // Core::VertexArray

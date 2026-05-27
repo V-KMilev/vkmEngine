@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "BACKEND::GL"
+
 #include "gl_shader_program.h"
 
 #include <filesystem>
@@ -34,9 +36,9 @@ void GLShader::update(const ShaderAsset& asset) {
     try {
         recompile();
         applySamplerBindings(asset);
-        LOG_INFO("GLShader: recompiled '%s'", getName().c_str());
+        LOG_INFO("Recompiled '%s'", getName().c_str());
     } catch (const std::exception& e) {
-        LOG_ERROR("GLShader: recompile '%s' failed: %s",
+        LOG_ERROR("Recompile '%s' failed: %s",
             getName().c_str(), e.what());
     }
 }

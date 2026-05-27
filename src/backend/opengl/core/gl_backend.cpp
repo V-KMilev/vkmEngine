@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "BACKEND::GL"
+
 #include "gl_backend.h"
 
 #include <algorithm>
@@ -86,8 +88,8 @@ GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL), m_context() {
     // Logging the version + device here keeps GL queries inside the backend.
     const std::string ver = apiVersion();
     const std::string dev = deviceName();
-    LOG_VERBOSE("OpenGL %s on %s", ver.empty() ? "?" : ver.c_str(),
-                                    dev.empty() ? "?" : dev.c_str());
+    LOG_INFO("OpenGL %s on %s", ver.empty() ? "?" : ver.c_str(),
+                                            dev.empty() ? "?" : dev.c_str());
 
     // Tracy GPU profiler bootstrap. Must run on the thread that owns the GL
     // context (the main thread) before the first PROFILE_GPU_SCOPE; the

@@ -1,9 +1,13 @@
+#define VKM_LOG_CATEGORY "CAMERA"
+
 #include "system/camera/camera_controller.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <algorithm>
 #include <cmath>
+
+#include "logger.h"
 
 #include "platform/window/window_manager.h"
 #include "platform/window/input_handle.h"
@@ -157,6 +161,8 @@ void CameraController::focusOn(Scene& scene, const glm::vec3& target, float dist
     m_yaw   = std::atan2(lookDir.x, lookDir.z);
 
     updateRotationFromAngles(transform.rotation, m_yaw, m_pitch);
+    LOG_VERBOSE("FocusOn target=(%.2f,%.2f,%.2f) distance=%.2f",
+        target.x, target.y, target.z, distance);
 }
 
 void CameraController::viewFrom(Scene& scene, const glm::vec3& target,
@@ -175,6 +181,8 @@ void CameraController::viewFrom(Scene& scene, const glm::vec3& target,
     m_pitch = std::asin(std::clamp(lookDir.y, -1.0f, 1.0f));
     m_yaw   = std::atan2(lookDir.x, lookDir.z);
     updateRotationFromAngles(transform.rotation, m_yaw, m_pitch);
+    LOG_VERBOSE("ViewFrom target=(%.2f,%.2f,%.2f) dir=(%.2f,%.2f,%.2f) distance=%.2f",
+        target.x, target.y, target.z, dir.x, dir.y, dir.z, distance);
 }
 
 void CameraController::updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch) {

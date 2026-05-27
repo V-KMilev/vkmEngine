@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "BACKEND::GL"
+
 #include "gl_bloom_pass.h"
 
 #include <GL/glew.h>
