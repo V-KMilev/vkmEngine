@@ -83,7 +83,8 @@ void GLExposurePass::execute(RenderGraphContext& rg) {
     adapt->bind();
     adapt->setUniform1f("u_lumMaxLod", static_cast<float>(GLAutoExposure::LUM_MIPS - 1));
     adapt->setUniform1f("u_deltaTime", view.deltaTime);
-    adapt->setUniform1f("u_speed", view.environment.exposure.speed);
+    adapt->setUniform1f("u_speedBrighten", view.environment.exposure.speedBrighten);
+    adapt->setUniform1f("u_speedDarken",   view.environment.exposure.speedDarken);
 
     ae.bindLum(0);
     ae.bindAdapted(1);

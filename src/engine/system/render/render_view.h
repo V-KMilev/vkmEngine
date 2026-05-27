@@ -168,7 +168,12 @@ struct ShadowConfig {
 struct ExposureConfig {
     bool  autoExposure = false;      ///< Off by default - matches glTF reference viewers.
     float key          = 0.18f;      ///< Target middle-gray.
-    float speed        = 2.5f;       ///< Adaptation rate (per second).
+    /// Adaptation rate when the scene gets BRIGHTER (high default - the
+    /// pupil constricts fast). Per-second exponential ease.
+    float speedBrighten = 5.0f;
+    /// Adaptation rate when the scene gets DARKER (low default - rod
+    /// recovery in the eye is slow, and a fast dark-adapt looks fake).
+    float speedDarken   = 1.0f;
     float min          = 0.03f;      ///< Clamp on the derived exposure.
     float max          = 8.0f;
 };

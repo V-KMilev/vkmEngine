@@ -350,8 +350,12 @@ bool EnvironmentInspector::drawCamera(EditorContext& ec, EnvironmentConfig& env)
         ImGui::BeginDisabled(!env.exposure.autoExposure);
         changed |= sliderF("Key", "##ExpKey", &env.exposure.key, 0.01f, 1.0f, "%.3f",
                 "Target middle-grey the scene adapts toward");
-        changed |= sliderF("Adapt Speed", "##ExpSpd", &env.exposure.speed, 0.05f, 10.0f, "%.2f",
-                "How fast the eye adapts (per second)");
+        changed |= sliderF("Brighten Speed", "##ExpSpdUp",
+                &env.exposure.speedBrighten, 0.05f, 10.0f, "%.2f",
+                "Adaptation rate when the scene gets brighter (pupil constricts fast)");
+        changed |= sliderF("Darken Speed", "##ExpSpdDn",
+                &env.exposure.speedDarken, 0.05f, 10.0f, "%.2f",
+                "Adaptation rate when the scene gets darker (eye rods recover slowly)");
         drawPropertyLabel("Min / Max");
         ImGui::SetNextItemWidth(-1.0f);
         changed |= ImGui::DragFloatRange2("##ExpRange", &env.exposure.min, &env.exposure.max,
