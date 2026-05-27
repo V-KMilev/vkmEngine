@@ -65,15 +65,39 @@ void BottomPanel::drawRenderGraphSection(EditorContext& ec) {
 
     ImGui::Text("%zu passes, %zu transient resources in use, %zu alias group(s)",
                 n, resourcesUsed, graph.aliasGroupCount());
-    ImGui::TextDisabled("R = read, W = write, RW = both. Faint = within [firstWrite, lastRead].");
-    ImGui::TextDisabled("Resource-name color = alias group (same color = disjoint lifetime AND matching descriptor).");
-    ImGui::Separator();
 
     constexpr ImU32 kCellWrite = IM_COL32(200,  60,  60, 100);  // red-ish
     constexpr ImU32 kCellRead  = IM_COL32( 70, 140, 220, 100);  // cyan-ish
     constexpr ImU32 kCellBoth  = IM_COL32(180,  80, 200, 130);  // magenta-ish
     constexpr ImU32 kCellSpan  = IM_COL32(120, 120, 120,  35);  // dim in-lifetime
     constexpr int   kPassColPx = 38;
+
+    // Permanent legend (collapsed by default). The matrix is dense enough
+    // that first-time readers need a swatch key for the cell colours and
+    // the alias-group hue scheme; veterans collapse it and never see it
+    // again. The four-swatch row + paragraph fits in ~40 px when open.
+    if (ImGui::CollapsingHeader("Legend")) {
+        auto swatch = [](ImU32 color, const char* label) {
+            ImVec2 cursor = ImGui::GetCursorScreenPos();
+            const float h = ImGui::GetFontSize();
+            ImGui::GetWindowDrawList()->AddRectFilled(cursor,
+                ImVec2(cursor.x + h, cursor.y + h), color);
+            ImGui::Dummy(ImVec2(h, h));
+            ImGui::SameLine();
+            ImGui::TextUnformatted(label);
+        };
+        swatch(kCellWrite, "Write");      ImGui::SameLine(0.0f, 16.0f);
+        swatch(kCellRead,  "Read");       ImGui::SameLine(0.0f, 16.0f);
+        swatch(kCellBoth,  "Read+Write"); ImGui::SameLine(0.0f, 16.0f);
+        swatch(kCellSpan,  "In lifetime [firstWrite..lastRead]");
+        ImGui::TextDisabled(
+            "Resource-name color = alias group: same hue means disjoint\n"
+            "lifetime AND matching descriptor (shape / format / samples),\n"
+            "so the resources could share physical storage. Hues spread by\n"
+            "golden ratio so adjacent groups stay visually distinct.");
+        ImGui::Spacing();
+    }
+    ImGui::Separator();
 
     const int totalCols = 2 + static_cast<int>(n);
 
