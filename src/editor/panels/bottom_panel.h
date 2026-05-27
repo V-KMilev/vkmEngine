@@ -38,7 +38,7 @@ class BottomPanel {
     private:
         void drawAnimationSection(EditorContext& ec);
         void drawShaderErrorsSection();
-        void drawGpuProfilerSection();
+        void drawGpuProfilerSection(EditorContext& ec);
         void drawRenderGraphSection(EditorContext& ec);
 
         // Timeline keyframe-dot drag state (Animation section).

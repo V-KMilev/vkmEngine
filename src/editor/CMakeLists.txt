@@ -13,6 +13,7 @@ target_include_directories(EngineEditor PUBLIC
 target_link_libraries(EngineEditor PUBLIC
     EngineCore
     EngineTools
+    BackendOpenGL  # variant-cache stats panel reaches into GLView
     imgui
     vkmGL
 )
