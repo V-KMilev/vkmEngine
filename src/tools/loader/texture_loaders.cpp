@@ -88,7 +88,7 @@ TextureHandle loadTexture(
     // Free stb_image data
     stbi_image_free(data);
 
-    LOG_INFO("Loaded texture '%s' (%dx%d, %d channels, sRGB: %s)",
+    LOG_VERBOSE("Loaded texture '%s' (%dx%d, %d channels, sRGB: %s)",
         filePath.c_str(), width, height, channels, srgb ? "yes" : "no");
 
     // Stamp serialization metadata. The file path is the texture's stable

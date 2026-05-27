@@ -242,7 +242,11 @@ namespace {
             unsigned char* px = stbi_load_from_memory(
                 reinterpret_cast<const unsigned char*>(emb->pcData),
                 static_cast<int>(emb->mWidth), &w, &hh, &n, 4);
-            if (!px) return {};
+            if (!px) {
+                LOG_WARNING("Failed to decode embedded texture '%s' from '%s': %s",
+                    ref.c_str(), modelPath.c_str(), stbi_failure_reason());
+                return {};
+            }
             nlohmann::json source = {
                 {"kind", "model-image"}, {"path", modelPath},
                 {"ref",  ref},           {"sRGB", srgb},
