@@ -342,9 +342,9 @@ bool EnvironmentInspector::drawLighting(EditorContext& /*ec*/, EnvironmentConfig
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip(
                 "Build a max-Z depth pyramid from the prepass each frame.\n"
-                "No consumer yet (#20 in RENDERER_PLAN.md); enable to\n"
-                "exercise the pass timing/cost. The pyramid is read in a\n"
-                "future occlusion-culling pass that will land separately.");
+                "The visibility system reads back one mip into\n"
+                "OcclusionOracle to AABB-test candidate occludees against\n"
+                "the previous frame's depth.");
     }
     return changed;
 }

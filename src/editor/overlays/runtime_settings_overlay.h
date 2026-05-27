@@ -25,6 +25,7 @@ class RuntimeSettingsOverlay {
         RuntimeSettingsOverlay(RuntimeSettingsOverlay && other) = delete;
         RuntimeSettingsOverlay& operator=(RuntimeSettingsOverlay && other) = delete;
 
+    public:
         /// Draw the window if the toggle is on. Safe to call every frame.
         void draw(EditorState& state, RenderSystem& renderSystem);
 };

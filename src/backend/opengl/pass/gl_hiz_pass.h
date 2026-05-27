@@ -17,10 +17,9 @@ namespace Engine {
  * Mip 0 is initialised from the prepass view-space position target
  * (init shader writes -pos.z); each subsequent mip is the max(2x2)
  * reduction of the level below (reduce shader). The pyramid lives in
- * GLHiZ via RGResource::HiZPyramid.
- *
- * No consumer ships yet - #20 (occlusion culling) lands later. Toggled
- * off by default so the cost is opt-in until that consumer exists.
+ * GLHiZ via RGResource::HiZPyramid; the visibility system reads back
+ * one mip via OcclusionOracle to AABB-test occluders one frame late.
+ * Gated by env.occlusion.useHiZ; off by default.
  */
 class GLHiZPass : public RenderPass {
     public:

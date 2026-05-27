@@ -129,9 +129,9 @@ void RenderGraph::compile(const RenderView* view) {
     // assign each to the earliest existing group whose last-read ended
     // before this resource's first-write (i.e. lifetimes are disjoint).
     // Persistent resources opt out and get their own singleton group.
-    // This is a "could share storage" upper bound only - real aliasing
+    // This is a "could share storage" upper bound only - actual aliasing
     // needs the backend to compare physical descriptors (size, format,
-    // sample count). See RENDERER_PLAN.md item #17.
+    // sample count) before swapping bindings.
     {
         for (uint32_t i = 0; i < RG_RESOURCE_COUNT; ++i) m_aliasGroups[i] = -1;
 

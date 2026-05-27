@@ -422,7 +422,8 @@ void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Path to the equirect HDR (.hdr) that this probe bakes from.\n"
-                              "Empty = falls back to the global IBL bake at this location.");
+                              "Empty = this probe contributes nothing; the global IBL bake\n"
+                              "is used inside its radius instead.");
 
         drawPropertyLabel("Radius");
         changed |= ImGui::DragFloat("##PRadius", &probe.radius, 0.1f, 0.1f, 1000.0f, "%.2f");
@@ -440,7 +441,6 @@ void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state
         changed |= ImGui::DragFloat("##PIntensity", &probe.intensity, 0.05f, 0.0f, 32.0f, "%.2f");
 
         ImGui::TextDisabled("Bake version: %d", probe.bakeVersion);
-        ImGui::TextDisabled("Backend bake pipeline lands in a follow-up commit.");
 
         if (changed) state.markSceneDirty();
     }

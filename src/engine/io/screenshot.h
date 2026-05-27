@@ -32,16 +32,17 @@ std::string captureRect(RenderBackend& backend,
                         const std::string& outPath);
 
 /**
- * @brief Capture the editor's scene viewport rect into APP_ROOT_DIR/screenshots.
+ * @brief Capture the window's scene viewport rect into APP_ROOT_DIR/screenshots.
  *
- * Falls back to the entire window if no viewport rect is set. Must be called
- * before the editor's draw pass submits UI for this frame, otherwise the
- * captured image will include editor chrome.
+ * Reads WindowManager::sceneViewport* for the source rect, falling back to
+ * the entire window if no viewport sub-rect is set. Must be called before
+ * any UI is submitted on top of the backbuffer this frame; otherwise the
+ * captured image includes that UI.
  *
  * @return The absolute path written on success, empty string on failure.
  */
 std::string captureViewport(WindowManager& window, RenderBackend& backend);
 
-}  // namespace Screenshot
+} // namespace Screenshot
 
-}  // namespace Engine
+} // namespace Engine
