@@ -181,6 +181,10 @@ void VisibilitySystem::update(FrameContext& ctx) {
         if (!FrustumCuller::isVisible(worldMin, worldMax, context)) return;
         if (!DistanceCuller::isVisible(worldMin, worldMax, context)) return;
         if (!ScreenSizeCuller::isVisible(worldMin, worldMax, context)) return;
+        // Hi-Z occlusion: 1-frame stale, conservative (visible on miss).
+        // Returns visible unless OcclusionOracle has a published pyramid
+        // and the AABB is provably behind every cell its footprint covers.
+        if (!OcclusionCuller::isVisible(worldMin, worldMax, context)) return;
 
         m_modelMatrices[i] = modelMatrix;
         m_worldMins[i]     = worldMin;

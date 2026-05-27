@@ -35,7 +35,8 @@ class OcclusionOracle {
             std::vector<float>  pyramid;     ///< [width * height] cells, positive distance.
             std::uint32_t       width  = 0;  ///< Mip dimensions (NOT viewport).
             std::uint32_t       height = 0;
-            glm::mat4           viewProj{1.0f};
+            glm::mat4           view{1.0f};      ///< World -> view (for distance-from-camera).
+            glm::mat4           viewProj{1.0f}; ///< World -> clip (for screen-space bounds).
             bool                ready = false;
         };
 
@@ -43,6 +44,7 @@ class OcclusionOracle {
         void publish(std::vector<float> pyramid,
                      std::uint32_t      width,
                      std::uint32_t      height,
+                     const glm::mat4&   view,
                      const glm::mat4&   viewProj);
 
         /// Consumer side - returns the most recent snapshot. Empty when

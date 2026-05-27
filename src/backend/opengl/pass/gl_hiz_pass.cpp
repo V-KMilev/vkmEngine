@@ -112,11 +112,14 @@ void GLHiZPass::execute(RenderGraphContext& rg) {
     hiz.unbindFbo();
 
     // viewProj = projection * view (column-major glm convention; matches
-    // the rest of the engine's matrix math).
+    // the rest of the engine's matrix math). The view matrix is published
+    // alongside so the AABB test can compute distance-from-camera without
+    // a separate projection-inverse.
     const glm::mat4 viewProj = rg.view.camera.projection * rg.view.camera.view;
     OcclusionOracle::get().publish(std::move(cpu),
         static_cast<std::uint32_t>(rw),
         static_cast<std::uint32_t>(rh),
+        rg.view.camera.view,
         viewProj);
 }
 
