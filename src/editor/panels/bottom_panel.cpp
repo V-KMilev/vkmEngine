@@ -5,8 +5,6 @@
 #include <cstdio>
 #include <ctime>
 
-#include "core/gl_backend.h"
-#include "core/gl_view.h"
 #include "debug/gpu_timing.h"
 #include "debug/shader_error_log.h"
 #include "framework/editor_common.h"
@@ -209,15 +207,14 @@ void BottomPanel::drawGpuProfilerSection(EditorContext& ec) {
         return;
     }
 
-    // Variant cache stats - collapsing sub-section so the per-pass timings
-    // stay the default-open view. Only meaningful for the OpenGL backend
-    // right now; the check stays narrow so a future backend slots in by
-    // adding its own branch (or exposing the data via RenderBackend).
+    // Variant cache stats. Pulled through the backend-agnostic virtual on
+    // RenderBackend; backends without a variant cache return an empty
+    // vector and the panel shows a disabled hint.
     if (ImGui::CollapsingHeader("Variant Cache")) {
-        auto& backend = ec.renderSystem.getBackend();
-        if (backend.getType() == RenderBackendType::OpenGL) {
-            auto& gl = static_cast<GLBackend&>(backend);
-            const auto stats = gl.getView().getVariantCacheStats();
+        const auto stats = ec.renderSystem.getBackend().shaderVariantStats();
+        if (stats.empty()) {
+            ImGui::TextDisabled("Variant cache stats not available on this backend.");
+        } else {
             std::size_t total = 0;
             for (const auto& s : stats) total += s.variants;
             ImGui::Text("%zu compiled program(s) across %zu shader asset(s)",
@@ -239,8 +236,6 @@ void BottomPanel::drawGpuProfilerSection(EditorContext& ec) {
                 }
                 ImGui::EndTable();
             }
-        } else {
-            ImGui::TextDisabled("Variant cache stats not available on this backend.");
         }
         ImGui::Separator();
     }

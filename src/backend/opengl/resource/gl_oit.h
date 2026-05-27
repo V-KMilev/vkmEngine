@@ -38,8 +38,8 @@ class GLOIT {
         GLOIT(const GLOIT& other) = delete;
         GLOIT& operator=(const GLOIT& other) = delete;
 
-        GLOIT(GLOIT&& other) = delete;
-        GLOIT& operator=(GLOIT&& other) = delete;
+        GLOIT(GLOIT && other) = delete;
+        GLOIT& operator=(GLOIT && other) = delete;
 
     public:
         void resize(uint32_t width, uint32_t height) {
@@ -56,10 +56,13 @@ class GLOIT {
         uint32_t height() const { return m_height; }
         GLuint   fboId()  const { return m_fbo ? m_fbo->getID() : 0; }
 
-        /// Bind the FBO with both color attachments routed for draw. Sets
-        /// the viewport and clears accum to (0,0,0,0) and revealage to 1.
-        /// The depth attachment is preserved across the clear so depth
-        /// from copyDepthFrom() still applies.
+        /**
+         * @brief Bind the FBO with both color attachments routed for draw.
+         *
+         * Sets the viewport and clears accum to (0,0,0,0) and revealage to 1.
+         * The depth attachment is preserved across the clear so depth from
+         * copyDepthFrom() still applies.
+         */
         void bindForRender() const {
             if (!m_ready) return;
             m_fbo->bind();
@@ -75,10 +78,13 @@ class GLOIT {
             glClearBufferfv(GL_COLOR, 1, reveal);
         }
 
-        /// Blit the depth from @p srcFboId into this FBO's depth attachment.
-        /// Source is expected to be MSAA (the opaque HDR FBO), this FBO is
-        /// single-sample - the blit performs the depth resolve. Sizes must
-        /// match.
+        /**
+         * @brief Blit depth from @p srcFboId into this FBO's depth attachment.
+         *
+         * Source is expected to be MSAA (the opaque HDR FBO); this FBO is
+         * single-sample, so the blit performs the depth resolve. Sizes must
+         * match.
+         */
         void copyDepthFrom(GLuint srcFboId, uint32_t srcW, uint32_t srcH) const {
             if (!m_ready) return;
             if (srcW != m_width || srcH != m_height) return;

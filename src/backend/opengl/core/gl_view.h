@@ -177,11 +177,14 @@ class GLView {
         GLIBL&                getIBL()                { return m_ibl; }
         const GLIBL&          getIBL()          const { return m_ibl; }
 
-        /// Probe IBL pool: one GLIBL per ReflectionProbe entity in the
-        /// active scene. Indexed by RenderView::probes[] position - the
-        /// forward pass picks the nearest in-radius probe per batch.
-        /// Empty when no probes exist; the bake pass grows the vector
-        /// on demand and the global m_ibl serves as fallback.
+        /**
+         * @brief Probe IBL pool: one GLIBL per ReflectionProbe entity.
+         *
+         * Indexed by RenderView::probes[] position. The forward pass picks
+         * the nearest in-radius probe per frame and binds its cubemaps;
+         * the bake pass grows the vector on demand and the global m_ibl
+         * serves as fallback when no probe covers the camera.
+         */
         std::vector<std::unique_ptr<GLIBL>>&       getProbeIBLs()       { return m_probeIBLs; }
         const std::vector<std::unique_ptr<GLIBL>>& getProbeIBLs() const { return m_probeIBLs; }
 
@@ -193,11 +196,14 @@ class GLView {
         GLInstanceBatcher&       getShadowBatcher()       { return m_shadowBatcher; }
         const GLInstanceBatcher& getShadowBatcher() const { return m_shadowBatcher; }
 
-        /// Per-shader variant count from the variant cache. Indexed by
-        /// shader id (the handle's id field at registration time); the
-        /// total across all entries is the program count the GL driver
-        /// is keeping alive. Useful for diagnosing variant explosion -
-        /// surfaced in the editor's GPU panel.
+        /**
+         * @brief Per-shader variant-cache statistics.
+         *
+         * Indexed by shader id (the handle's id at registration time); the
+         * total across all entries is the program count the GL driver is
+         * keeping alive. Surfaced in the editor's GPU panel to spot
+         * variant explosion.
+         */
         struct VariantCacheStats {
             std::uint32_t shaderId = 0;
             std::string   name;       ///< Asset name captured at compile time (e.g. "shader:pbr").

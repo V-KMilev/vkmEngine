@@ -30,6 +30,13 @@ class ResourceManager;
  */
 class RenderPassFactory {
     public:
+        RenderPassFactory(const RenderPassFactory& other) = delete;
+        RenderPassFactory& operator=(const RenderPassFactory& other) = delete;
+
+        RenderPassFactory(RenderPassFactory && other) = delete;
+        RenderPassFactory& operator=(RenderPassFactory && other) = delete;
+
+    public:
         using Builder = std::function<std::unique_ptr<RenderPass>(ResourceManager&)>;
 
         static RenderPassFactory& get();
