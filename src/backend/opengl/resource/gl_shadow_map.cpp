@@ -77,6 +77,60 @@ GLShadowAtlas::GLShadowAtlas(
     m_fbo->unbind();
 }
 
+void GLShadowAtlas::ensureResolution(uint32_t res2D, uint32_t resCube) {
+    if (res2D == 0)   res2D   = m_res2D;
+    if (resCube == 0) resCube = m_resCube;
+    if (res2D == m_res2D && resCube == m_resCube) return;
+
+    LOG_INFO("ShadowAtlas: resizing 2D %u->%u, cube %u->%u",
+        m_res2D, res2D, m_resCube, resCube);
+
+    // Reallocate the 2D array.
+    if (m_tex2D != 0) {
+        VKM_GL_CHECK(glDeleteTextures(1, &m_tex2D));
+        m_tex2D = 0;
+    }
+    m_res2D = res2D;
+    VKM_GL_CHECK(glGenTextures(1, &m_tex2D));
+    VKM_GL_CHECK(glBindTexture(GL_TEXTURE_2D_ARRAY, m_tex2D));
+    VKM_GL_CHECK(glTexImage3D(
+        GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT24,
+        static_cast<GLsizei>(m_res2D),
+        static_cast<GLsizei>(m_res2D),
+        static_cast<GLsizei>(m_max2D),
+        0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr
+    ));
+    configureCompareSampling(GL_TEXTURE_2D_ARRAY);
+    VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER));
+    VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER));
+    const float borderColor[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    VKM_GL_CHECK(glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, borderColor));
+    VKM_GL_CHECK(glBindTexture(GL_TEXTURE_2D_ARRAY, 0));
+
+    // Reallocate the cube array.
+    if (m_texCube != 0) {
+        VKM_GL_CHECK(glDeleteTextures(1, &m_texCube));
+        m_texCube = 0;
+    }
+    m_resCube = resCube;
+    if (m_maxCube > 0) {
+        VKM_GL_CHECK(glGenTextures(1, &m_texCube));
+        VKM_GL_CHECK(glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, m_texCube));
+        VKM_GL_CHECK(glTexImage3D(
+            GL_TEXTURE_CUBE_MAP_ARRAY, 0, GL_DEPTH_COMPONENT24,
+            static_cast<GLsizei>(m_resCube),
+            static_cast<GLsizei>(m_resCube),
+            static_cast<GLsizei>(m_maxCube * 6),
+            0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr
+        ));
+        configureCompareSampling(GL_TEXTURE_CUBE_MAP_ARRAY);
+        VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+        VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+        VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE));
+        VKM_GL_CHECK(glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, 0));
+    }
+}
+
 GLShadowAtlas::~GLShadowAtlas() {
     if (m_tex2D != 0)   VKM_GL_CHECK(glDeleteTextures(1, &m_tex2D));
     if (m_texCube != 0) VKM_GL_CHECK(glDeleteTextures(1, &m_texCube));

@@ -345,6 +345,15 @@ void loadBloom(const nlohmann::json& j, BloomConfig& c) {
     c.knee      = j.value("knee",      c.knee);
 }
 
+nlohmann::json saveShadow(const ShadowConfig& c) {
+    return {{"atlasRes2D",   c.atlasRes2D},
+            {"atlasResCube", c.atlasResCube}};
+}
+void loadShadow(const nlohmann::json& j, ShadowConfig& c) {
+    c.atlasRes2D   = j.value("atlasRes2D",   c.atlasRes2D);
+    c.atlasResCube = j.value("atlasResCube", c.atlasResCube);
+}
+
 nlohmann::json saveExposure(const ExposureConfig& c) {
     return {{"autoExposure", c.autoExposure}, {"key", c.key},
             {"speed", c.speed}, {"min", c.min}, {"max", c.max}};
@@ -400,6 +409,7 @@ nlohmann::json save(const EnvironmentConfig& e) {
         {"lensFlare",  saveLensFlare(e.lensFlare)},
         {"lensDirt",   saveLensDirt(e.lensDirt)},
         {"bloom",      saveBloom(e.bloom)},
+        {"shadow",     saveShadow(e.shadow)},
         {"exposure",   saveExposure(e.exposure)},
         {"colorGrade", saveColorGrade(e.colorGrade)},
         {"grid",       saveGrid(e.grid)},
@@ -422,6 +432,7 @@ void load(const nlohmann::json& j, EnvironmentConfig& e) {
     if (j.contains("lensFlare"))  loadLensFlare(j["lensFlare"],   e.lensFlare);
     if (j.contains("lensDirt"))   loadLensDirt(j["lensDirt"],     e.lensDirt);
     if (j.contains("bloom"))      loadBloom(j["bloom"],           e.bloom);
+    if (j.contains("shadow"))     loadShadow(j["shadow"],         e.shadow);
     if (j.contains("exposure"))   loadExposure(j["exposure"],     e.exposure);
     if (j.contains("colorGrade")) loadColorGrade(j["colorGrade"], e.colorGrade);
     if (j.contains("grid"))       loadGrid(j["grid"],             e.grid);

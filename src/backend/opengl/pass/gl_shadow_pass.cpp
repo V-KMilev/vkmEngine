@@ -51,6 +51,10 @@ uint64_t shadowSignature(const RenderView& view) {
     uint64_t h = 1469598103934665603ull;  // FNV-1a offset basis
     hashBytes(h, &view.camera.view,       sizeof(glm::mat4));
     hashBytes(h, &view.camera.projection, sizeof(glm::mat4));
+    // Atlas resolution edits invalidate the previous frame's depth - hash
+    // them in so the skip-when-static path re-renders after a slider change.
+    hashBytes(h, &view.environment.shadow.atlasRes2D,   sizeof(uint32_t));
+    hashBytes(h, &view.environment.shadow.atlasResCube, sizeof(uint32_t));
     for (const auto& l : view.lights) {
         if (l.shadowSlot < 0) continue;
         const int t = static_cast<int>(l.type);
@@ -217,6 +221,12 @@ void GLShadowPass::execute(RenderGraphContext& rg) {
     auto& glView     = gl.getView();
     auto& atlas      = *rg.resource<GLShadowAtlas>(RGResource::ShadowAtlas);
     auto& shadowData = glView.getShadowData();
+
+    // Honor runtime atlas-resolution edits (env.shadow.atlasRes2D /
+    // atlasResCube). No-op when nothing changed; on change, the atlas
+    // reallocates its depth textures - re-binds happen below this line.
+    atlas.ensureResolution(view.environment.shadow.atlasRes2D,
+                           view.environment.shadow.atlasResCube);
 
     GLShader* shader = glView.resolveShader(m_depthShader, resources);
     if (!shader) {

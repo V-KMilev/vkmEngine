@@ -6,6 +6,7 @@
 
 #include "l_assert.h"
 #include "logger.h"
+#include "debug/gpu_timing.h"
 #include "debug/profiler.h"
 #include "system/render/frame_resources.h"
 #include "system/render/render_backend.h"
@@ -146,6 +147,13 @@ void RenderGraph::compile(const RenderView* view) {
     } else {
         m_lastEnabled.clear();
     }
+
+    // Publish per-pass slot count + names to the GPU timing pool so the
+    // editor can render meaningful labels. Cheap; runs on compile only.
+    GpuTimingPool::get().resize(n);
+    for (size_t i = 0; i < n; ++i) {
+        GpuTimingPool::get().setPassName(i, m_passes[i]->getName());
+    }
 }
 
 void RenderGraph::execute(
@@ -220,10 +228,13 @@ void RenderGraph::execute(
         ctx.accessedResources = 0;
 #endif
         {
-            // CPU zone only. GPU timing lives inside each backend pass's
-            // execute() so RenderGraph stays backend-agnostic.
+            // CPU zone only. GPU timing flows through the backend's
+            // begin/endPassTimer hooks below; RenderGraph itself stays
+            // backend-agnostic.
             PROFILE_SCOPE_NAMED(pass.getName().c_str());
+            backend.beginPassTimer(i);
             pass.execute(ctx);
+            backend.endPassTimer(i);
         }
 #ifndef NDEBUG
         // Compare declared reads+writes against what the pass actually

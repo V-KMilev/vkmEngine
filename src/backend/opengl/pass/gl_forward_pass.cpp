@@ -253,6 +253,30 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
                 lastTransparentIdx = i;
     }
 
+    // Frame-level shader-variant key pieces: light bucket + shadow-kind mask.
+    // Computed once per frame here and OR'd into the per-batch material flags
+    // when resolving each variant. Buckets are coarse on purpose - the goal
+    // is to give the shader a handful of distinct compile-time paths, not a
+    // unique program per scene.
+    uint8_t lightCountBucket = 0;
+    {
+        const size_t n = view.lights.size();
+        if (n == 0)      lightCountBucket = 0;
+        else if (n == 1) lightCountBucket = 1;
+        else if (n <= 4) lightCountBucket = 2;
+        else             lightCountBucket = 3;
+    }
+    uint8_t shadowKindMask = 0;
+    for (const auto& l : view.lights) {
+        if (l.shadowSlot < 0) continue;
+        switch (l.type) {
+            case LightType::Directional: shadowKindMask |= 0x1u; break;
+            case LightType::Point:       shadowKindMask |= 0x2u; break;
+            case LightType::Spot:        shadowKindMask |= 0x4u; break;
+            default: break;  // Rect / Disk don't cast shadows yet.
+        }
+    }
+
     for (size_t i = 0; i < batches.size(); ++i) {
         const auto& batch = batches[i];
 
@@ -317,8 +341,11 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         const ShaderAsset& shaderAsset = resources.get(baseHandle);
         GLShader* shader = nullptr;
         if (shaderAsset.variantAware) {
-            const uint32_t flags = material ? material->getFeatureFlags() : 0u;
-            shader = glView.resolveShaderVariant(baseHandle, flags, resources);
+            GLView::ShaderVariantKey key;
+            key.materialFlags    = material ? material->getFeatureFlags() : 0u;
+            key.lightCountBucket = lightCountBucket;
+            key.shadowKindMask   = shadowKindMask;
+            shader = glView.resolveShaderVariant(baseHandle, key, resources);
         } else {
             shader = glView.resolveShader(baseHandle, resources);
         }

@@ -10,6 +10,7 @@
 #include "system/render/render_pass.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <filesystem>
@@ -271,6 +272,48 @@ bool EnvironmentInspector::drawLighting(EditorContext& /*ec*/, EnvironmentConfig
         ImGui::SetNextItemWidth(-1.0f);
         changed |= ImGui::ColorEdit3("##ClearCol", glm::value_ptr(env.clearColor),
             ImGuiColorEditFlags_Float);
+    }
+
+    ImGui::Spacing();
+    if (cardHeader("shadow", "Shadow Quality", nullptr)) {
+        static const uint32_t kRes2D[]   = { 512, 1024, 2048, 4096, 8192 };
+        static const char*    kRes2DNames = "512\0" "1024\0" "2048\0" "4096\0" "8192\0";
+        static const uint32_t kResCube[]  = { 128, 256, 512, 1024, 2048 };
+        static const char*    kResCubeNames = "128\0" "256\0" "512\0" "1024\0" "2048\0";
+
+        auto pickIndex = [&](uint32_t current, const uint32_t* arr, int count) {
+            int idx = 0;
+            int bestDelta = std::abs(static_cast<int>(current) - static_cast<int>(arr[0]));
+            for (int i = 1; i < count; ++i) {
+                int d = std::abs(static_cast<int>(current) - static_cast<int>(arr[i]));
+                if (d < bestDelta) { bestDelta = d; idx = i; }
+            }
+            return idx;
+        };
+
+        int idx2D = pickIndex(env.shadow.atlasRes2D, kRes2D, 5);
+        drawPropertyLabel("Directional/Spot");
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::Combo("##Shadow2DRes", &idx2D, kRes2DNames)) {
+            env.shadow.atlasRes2D = kRes2D[idx2D];
+            changed = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Per-layer resolution of the 2D shadow array.\n"
+                              "Changes reallocate the depth texture (~%llu MB at current size).",
+                              static_cast<unsigned long long>(
+                                  static_cast<uint64_t>(env.shadow.atlasRes2D)
+                                  * env.shadow.atlasRes2D * 3 / (1024 * 1024)));
+
+        int idxCube = pickIndex(env.shadow.atlasResCube, kResCube, 5);
+        drawPropertyLabel("Point (cube)");
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::Combo("##ShadowCubeRes", &idxCube, kResCubeNames)) {
+            env.shadow.atlasResCube = kResCube[idxCube];
+            changed = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Per-face resolution of the point-light cube array.");
     }
     return changed;
 }

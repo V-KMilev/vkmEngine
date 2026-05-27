@@ -38,6 +38,8 @@ class BottomPanel {
     private:
         void drawAnimationSection(EditorContext& ec);
         void drawShaderErrorsSection();
+        void drawGpuProfilerSection();
+        void drawRenderGraphSection(EditorContext& ec);
 
         // Timeline keyframe-dot drag state (Animation section).
         // m_animDotTrack: -1 none, 0 position, 1 rotation, 2 scale.

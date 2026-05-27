@@ -109,6 +109,10 @@ class RenderSystem : public System {
         bool             isPassEnabled(size_t index) const;
         void             setPassEnabled(size_t index, bool enabled);
 
+        /// Read-only graph accessor for editor tools (render-graph
+        /// visualizer). Stays const so panels can't mutate the schedule.
+        const RenderGraph& getGraph() const { return m_graph; }
+
         EnvironmentConfig& getEnvironment() { return m_environment; }
         const EnvironmentConfig& getEnvironment() const { return m_environment; }
 

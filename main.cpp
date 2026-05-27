@@ -23,22 +23,9 @@
 // Backend
 #include "core/gl_backend.h"
 #include "config/gl_config.h"
-#include "pass/gl_forward_pass.h"
-#include "pass/gl_aabb_debug_pass.h"
-#include "pass/gl_grid_pass.h"
-#include "pass/gl_shadow_pass.h"
-#include "pass/gl_composite_pass.h"
-#include "pass/gl_ibl_bake_pass.h"
-#include "pass/gl_skybox_pass.h"
-#include "pass/gl_bloom_pass.h"
-#include "pass/gl_exposure_pass.h"
-#include "pass/gl_prepass.h"
-#include "pass/gl_gtao_pass.h"
-#include "pass/gl_ssr_pass.h"
-#include "pass/gl_taa_pass.h"
-#include "pass/gl_dof_pass.h"
-#include "pass/gl_motion_blur_pass.h"
-#include "pass/gl_lens_flare_pass.h"
+#include "pass/gl_pass_registration.h"
+#include "system/render/render_pass.h"
+#include "system/render/render_pass_factory.h"
 
 // Tools
 #include "asset_registration.h"
@@ -183,50 +170,45 @@ int main() {
 
         // Render passes - shadow runs first so the forward pass can sample its result.
         renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
-        // Bake runs first (no-ops unless the environment map changed).
-        renderSystem.addPass(std::make_unique<Engine::GLIBLBakePass>(
-            equirectShader, irradianceShader, prefilterShader, brdfShader));
-        renderSystem.addPass(std::make_unique<Engine::GLShadowPass>(shadowShader));
-        // Depth/normal prepass then GTAO; the forward pass samples the AO.
-        renderSystem.addPass(std::make_unique<Engine::GLPrepass>(prepassShader));
-        renderSystem.addPass(std::make_unique<Engine::GLGTAOPass>(gtaoShader));
-        // Split forward render so transmissive glass refracts the real
-        // scene: opaque/unlit first, then the skybox fills the background,
-        // then the transparent pass snapshots that opaque+sky image and
-        // draws blended/transmissive materials on top of it.
-        auto opaquePass = std::make_unique<Engine::GLForwardPass>(
-            pbrShader, Engine::GLForwardPass::Phase::Opaque);
-        opaquePass->setShader(Engine::MaterialType::Unlit, unlitShader);
-        renderSystem.addPass(std::move(opaquePass));
-        // Skybox fills the background in the HDR target, after opaque and
-        // before transparent so glass over empty space refracts the sky.
-        renderSystem.addPass(std::make_unique<Engine::GLSkyboxPass>(skyboxShader));
-        auto transparentPass = std::make_unique<Engine::GLForwardPass>(
-            pbrShader, Engine::GLForwardPass::Phase::Transparent);
-        transparentPass->setShader(Engine::MaterialType::Unlit, unlitShader);
-        renderSystem.addPass(std::move(transparentPass));
-        // Gated per-frame by env.aabbDebug.enabled (off by default); the pass itself
-        // stays enabled so the Scene-tab toggle is the single switch.
-        renderSystem.addPass(std::make_unique<Engine::GLAABBDebugPass>(aabbShader));
-        renderSystem.addPass(std::make_unique<Engine::GLGridPass>(gridShader));
-        // Screen-space reflections, additively blended into the HDR scene.
-        renderSystem.addPass(std::make_unique<Engine::GLSSRPass>(ssrShader));
-        // Lens flare (off by default) - ghosts + halo from bright pixels,
-        // additively blended into the HDR scene. Runs after SSR so its
-        // reflections can themselves cause flare, and before TAA/DoF so the
-        // flares get temporally stabilised and optionally defocused.
-        renderSystem.addPass(std::make_unique<Engine::GLLensFlarePass>(lensFlareShader));
-        // TAA (off by default) stabilises the resolved HDR before bloom.
-        renderSystem.addPass(std::make_unique<Engine::GLTAAPass>(taaShader));
-        // DoF then motion blur (both off by default) over the resolved HDR.
-        renderSystem.addPass(std::make_unique<Engine::GLDofPass>(dofShader));
-        renderSystem.addPass(std::make_unique<Engine::GLMotionBlurPass>(mbShader));
-        // Bloom over the resolved HDR scene; blended in the composite.
-        renderSystem.addPass(std::make_unique<Engine::GLBloomPass>(bloomDownShader, bloomUpShader));
-        // Auto-exposure metering + eye adaptation (read by the composite).
-        renderSystem.addPass(std::make_unique<Engine::GLExposurePass>(lumShader, exposureShader));
-        // Final pass: resolve HDR + bloom + exposure/AgX/sRGB to the backbuffer.
-        renderSystem.addPass(std::make_unique<Engine::GLCompositePass>(compositeShader));
+
+        // Register every builtin GL pass with the engine-side factory once;
+        // the pipeline below is then a simple name list. This decouples pass
+        // instantiation from main.cpp so adding a pass means editing the
+        // backend's registration file, not this list - and unblocks future
+        // data-driven pipeline configs without further refactor.
+        Engine::registerBuiltinGLPasses();
+
+        // Pipeline order: IBL bake first (no-op unless env map changed),
+        // shadow before forward, prepass+GTAO before forward (AO sampling),
+        // opaque -> sky -> transparent so transmissive glass refracts the
+        // composited opaque+sky image, then debug overlays + post chain.
+        const std::vector<std::string> defaultPipeline = {
+            "GLIBLBakePass",
+            "GLShadowPass",
+            "GLPrepass",
+            "GLGTAOPass",
+            "GLForwardPass.Opaque",
+            "GLSkyboxPass",
+            "GLForwardPass.Transparent",
+            "GLAABBDebugPass",
+            "GLGridPass",
+            "GLSSRPass",
+            "GLLensFlarePass",
+            "GLTAAPass",
+            "GLDofPass",
+            "GLMotionBlurPass",
+            "GLBloomPass",
+            "GLExposurePass",
+            "GLCompositePass",
+        };
+        auto& factory = Engine::RenderPassFactory::get();
+        for (const auto& name : defaultPipeline) {
+            if (auto pass = factory.create(name, resources)) {
+                renderSystem.addPass(std::move(pass));
+            } else {
+                LOG_ERROR("Pipeline: failed to instantiate pass '%s'", name.c_str());
+            }
+        }
 
         // Hot reload: file change → asset version bump → backend resyncs.
         auto& fileWatcher = engine.addSystem<Engine::FileWatcher>(Engine::SystemStage::Input);

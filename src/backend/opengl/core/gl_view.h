@@ -100,8 +100,47 @@ class GLView {
          *
          * Returns nullptr only when the handle is empty or invalid.
          */
+        /**
+         * @brief Compile-time variant key.
+         *
+         * The pieces:
+         *  - materialFlags  - per-material feature bits (MaterialFeature::*).
+         *  - lightCountBucket - bucketed visible-light count: 0 = none,
+         *    1 = one, 2 = 2..4, 3 = 5+. Lets a future shader unroll the
+         *    light loop or fall back to a single-light fast path.
+         *  - shadowKindMask  - bits 0..2 = directional / point / spot shadows
+         *    present this frame. Lets the shader compile out the entire
+         *    sampling helper for kinds the scene doesn't use.
+         *
+         * Encoded into a uint32 that becomes part of the cache subkey, so
+         * adding a new dimension is one struct field + one encode bit.
+         */
+        struct ShaderVariantKey {
+            uint32_t materialFlags    = 0;  ///< 16 bits (MaterialFeature bitset)
+            uint8_t  lightCountBucket = 0;  ///< 4 bits
+            uint8_t  shadowKindMask   = 0;  ///< 3 bits
+
+            /// Pack into 32 bits: [shadow:3][light:4][material:16] - bit
+            /// layout is internal but stable across processes (used as
+            /// part of the cache subkey).
+            uint32_t encode() const {
+                return (materialFlags & 0xFFFFu)
+                     | (static_cast<uint32_t>(lightCountBucket & 0xFu) << 16)
+                     | (static_cast<uint32_t>(shadowKindMask   & 0x7u) << 20);
+            }
+        };
+
+        /// Backwards-compatible shorthand for callers that only need material
+        /// flags (no light/shadow gating yet). Wraps the key into a default-
+        /// bucket variant.
         GLShader* resolveShaderVariant(const ShaderHandle& handle,
                                        uint32_t featureFlags,
+                                       const ResourceManager& resources);
+
+        /// Full-key variant resolve. Compiles a fresh program with the
+        /// appropriate #defines on first lookup; cached thereafter.
+        GLShader* resolveShaderVariant(const ShaderHandle& handle,
+                                       const ShaderVariantKey& key,
                                        const ResourceManager& resources);
 
         /// Ensure a GPU material/mesh exists and is up to date for @p handle
