@@ -160,6 +160,18 @@ struct BloomConfig {
     float knee      = 0.0f;          ///< Half-width of the soft-knee transition around threshold.
 };
 
+struct TransparencyConfig {
+    /// When true the transparent forward phase writes to a Weighted-Blended
+    /// OIT pair (accum + revealage) instead of alpha-blending into the HDR
+    /// scene. A subsequent resolve pass composites the OIT result on top
+    /// of the opaque+sky scene. McGuire-Bavoil 2013.
+    ///
+    /// Off by default. The sorted back-to-front path is required for
+    /// refractive (transmissive) materials - OIT accumulates without
+    /// knowledge of what's behind it, so refraction won't work.
+    bool useOIT = false;
+};
+
 struct ShadowConfig {
     uint32_t atlasRes2D   = 2048;    ///< Per-layer resolution of the 2D array (directional/spot).
     uint32_t atlasResCube = 512;     ///< Per-face resolution of the cube array (point).
@@ -293,6 +305,7 @@ struct EnvironmentConfig {
     AmbientConfig    ambient;
     IBLConfig        ibl;
     ShadowConfig     shadow;
+    TransparencyConfig transparency;
 
     AOConfig         ao;
     SSRConfig        ssr;

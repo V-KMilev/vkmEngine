@@ -163,6 +163,12 @@ class GLSceneTarget {
             return m_resolveFbo ? m_resolveFbo->getID() : 0;
         }
 
+        /// FBO that owns the MSAA HDR + overlay + shared depth attachments.
+        /// Used as a depth-blit source for the single-sample OIT FBO.
+        GLuint msFboId() const {
+            return m_msFbo ? m_msFbo->getID() : 0;
+        }
+
         uint32_t width()  const { return m_width; }
         uint32_t height() const { return m_height; }
 

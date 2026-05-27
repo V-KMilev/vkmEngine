@@ -37,6 +37,8 @@ enum class RGResource : uint8_t {
     TAAHistory,          ///< Persistent ping-pong (TAA reprojection history).
     PostScratch,         ///< Shared scratch target for in-place post passes (DoF / motion blur).
     Overlay,             ///< HDR FBO overlay attachment; debug passes write, composite reads.
+    OITAccum,            ///< Weighted-Blended OIT accumulation (RGBA16F).
+    OITRevealage,        ///< Weighted-Blended OIT revealage (R8).
     Backbuffer,          ///< Externally owned (window).
 
     Count
@@ -58,6 +60,8 @@ inline const char* rgResourceName(RGResource r) {
         case RGResource::TAAHistory:        return "TAAHistory";
         case RGResource::PostScratch:       return "PostScratch";
         case RGResource::Overlay:           return "Overlay";
+        case RGResource::OITAccum:          return "OITAccum";
+        case RGResource::OITRevealage:      return "OITRevealage";
         case RGResource::Backbuffer:        return "Backbuffer";
         default:                            return "Unknown";
     }

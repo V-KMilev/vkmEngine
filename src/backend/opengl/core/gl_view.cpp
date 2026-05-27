@@ -256,6 +256,10 @@ std::vector<std::string> variantKeyToDefines(const GLView::ShaderVariantKey& key
     if (key.shadowKindMask & 0x2u) defines.emplace_back("HAS_POINT_SHADOWS");
     if (key.shadowKindMask & 0x4u) defines.emplace_back("HAS_SPOT_SHADOWS");
 
+    // Weighted-Blended OIT output. The shader switches its FragColor
+    // declaration to two MRT outputs (accum, revealage) when set.
+    if (key.oitPass) defines.emplace_back("OIT_PASS");
+
     return defines;
 }
 

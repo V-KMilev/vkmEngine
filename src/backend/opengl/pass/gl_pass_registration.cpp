@@ -20,6 +20,7 @@
 #include "gl_ibl_bake_pass.h"
 #include "gl_lens_flare_pass.h"
 #include "gl_motion_blur_pass.h"
+#include "gl_oit_resolve_pass.h"
 #include "gl_prepass.h"
 #include "gl_shadow_pass.h"
 #include "gl_skybox_pass.h"
@@ -95,6 +96,10 @@ void registerBuiltinGLPasses() {
 
     f.registerPass("GLLensFlarePass", [](ResourceManager& r) -> std::unique_ptr<RenderPass> {
         return std::make_unique<GLLensFlarePass>(requireShader(r, "shader:lens_flare"));
+    });
+
+    f.registerPass("GLOITResolvePass", [](ResourceManager& r) -> std::unique_ptr<RenderPass> {
+        return std::make_unique<GLOITResolvePass>(requireShader(r, "shader:oit_resolve"));
     });
 
     f.registerPass("GLTAAPass", [](ResourceManager& r) -> std::unique_ptr<RenderPass> {

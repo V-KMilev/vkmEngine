@@ -119,14 +119,16 @@ class GLView {
             uint32_t materialFlags    = 0;  ///< 16 bits (MaterialFeature bitset)
             uint8_t  lightCountBucket = 0;  ///< 4 bits
             uint8_t  shadowKindMask   = 0;  ///< 3 bits
+            bool     oitPass          = false; ///< Weighted-Blended OIT output path.
 
-            /// Pack into 32 bits: [shadow:3][light:4][material:16] - bit
-            /// layout is internal but stable across processes (used as
+            /// Pack into 32 bits: [oit:1][shadow:3][light:4][material:16].
+            /// Layout is internal but stable across processes (used as
             /// part of the cache subkey).
             uint32_t encode() const {
                 return (materialFlags & 0xFFFFu)
                      | (static_cast<uint32_t>(lightCountBucket & 0xFu) << 16)
-                     | (static_cast<uint32_t>(shadowKindMask   & 0x7u) << 20);
+                     | (static_cast<uint32_t>(shadowKindMask   & 0x7u) << 20)
+                     | (oitPass ? (1u << 23) : 0u);
             }
         };
 

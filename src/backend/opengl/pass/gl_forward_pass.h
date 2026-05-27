@@ -64,6 +64,14 @@ class GLForwardPass : public RenderPass {
             builder.read(RGResource::IBL);
             builder.read(RGResource::AO);
             builder.write(RGResource::SceneHDR);
+            // Transparent-phase passes can route to the OIT MRT when the
+            // env toggle is on. Declare unconditionally for the transparent
+            // phase so the graph's lifetime/validation tracking is right
+            // whether OIT is enabled this frame or not.
+            if (m_phase == Phase::Transparent || m_phase == Phase::All) {
+                builder.write(RGResource::OITAccum);
+                builder.write(RGResource::OITRevealage);
+            }
         }
 
     private:
