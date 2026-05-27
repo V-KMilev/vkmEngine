@@ -123,6 +123,20 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         return;
     }
 
+    // Overdraw diagnostic: every shaded fragment additively accumulates a
+    // small constant into the HDR target (see PBR fragment, u_debugMode == 11).
+    // Set the blend / depth state up front for both phases so it overrides
+    // the transparent-phase setup further down; restored at end of pass.
+    // Depth-write is left off so the skybox between Opaque and Transparent
+    // phases sees a stable depth buffer (the opaque clear is still in place).
+    const bool overdraw = view.modeConfig.overdrawBlend;
+    if (overdraw) {
+        glContext.setBlending(true);
+        glContext.setBlendFunc(GL_ONE, GL_ONE);
+        glContext.setDepthTest(false);
+        glContext.setDepthWrite(false);
+    }
+
     // Wireframe is a geometry-pass concern only - applying polygon mode
     // globally would make fullscreen-triangle post passes rasterize as
     // line segments. The PolygonModeGuard in the anonymous namespace
@@ -262,7 +276,14 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         // to fall through; the post-loop overlay block handles the draw.
         if (!anyTransparent && !view.modeConfig.wireframeOverlay) return;
 
-        if (anyTransparent) {
+        if (anyTransparent && overdraw) {
+            // Overdraw blend/depth state is already set above; suppress the
+            // in-loop opaque -> transparent transition so it doesn't reset
+            // depth-write / blend func to the regular transparent path.
+            currentType = MaterialType::Transparent;
+        }
+
+        if (anyTransparent && !overdraw) {
             if (oitActive) {
                 // OIT path: blit the just-rendered opaque depth from the MSAA
                 // HDR FBO into the OIT FBO's single-sample depth so transparents
@@ -345,7 +366,9 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         // Material-type transition: blend/depth state + the opaque-scene
         // snapshot. Type drives this (not shader identity) because per-
         // material variants make the shader change within a type too.
-        if (batch.materialType != currentType) {
+        // Overdraw mode pins blend state for the whole pass, so the
+        // type-transition state writes are suppressed here too.
+        if (batch.materialType != currentType && !overdraw) {
             if (currentType == MaterialType::Transparent && batch.materialType != MaterialType::Transparent) {
                 glContext.setDepthWrite(true);
                 glContext.setBlending(false);
@@ -433,6 +456,12 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
             }
         }
 
+        // BatchId diagnostic: push the loop index so the PBR shader can hash
+        // it to a per-batch colour. Stripped from non-debug variants by the
+        // GLSL compiler; hasUniform handles that without log spam.
+        if (shader->hasUniform("u_batchId"))
+            shader->setUniform1i("u_batchId", static_cast<int>(i));
+
         // Get mesh, attach shared instance buffer to its VAO (cached / no-op on
         // repeat), then issue a base-instance draw that reads from the right offset.
         GLMesh* mesh = glView.getMutableMesh(batch.mesh);
@@ -479,6 +508,15 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         glContext.setDepthWrite(true);
         glContext.setBlending(false);
         glContext.setFaceCulling(false);
+    }
+
+    // Overdraw diagnostic restores blend + depth-test + depth-write to the
+    // engine default so downstream passes (skybox, post, composite, ImGui)
+    // see a clean state.
+    if (overdraw) {
+        glContext.setBlending(false);
+        glContext.setDepthTest(true);
+        glContext.setDepthWrite(true);
     }
 
     // WireframeOverShaded: after the shaded scene is composed, run a second

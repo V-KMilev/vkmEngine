@@ -195,6 +195,11 @@ uniform vec2      u_screenSize;   // full viewport pixels
 uniform int u_debugMode;
 uniform int u_forceNeutralMaterial;
 
+// Per-batch index pushed by the forward pass. Only sampled when the BatchId
+// diagnostic is active; left at 0 for normal rendering so a shader that
+// strips the uniform isn't a hot-path concern.
+uniform int u_batchId;
+
 // Shadow softness knob for the 2D array PCF path (directional + spot).
 // 0 = the engine default 1.5-texel disk; 1 ~= 5.5-texel disk. Pushed from
 // EnvironmentConfig::shadow.softness each frame.
@@ -883,6 +888,11 @@ void main() {
 
     vec3 Lo = vec3(0.0);
 
+    // Number of lights that actually contributed at this fragment (past the
+    // distance / cone / shadow early-outs). Only consumed by the
+    // LightComplexity diagnostic; the loop above always runs it.
+    int debugLightCount = 0;
+
     for (int i = 0; i < u_lights.lightCount && i < MAX_LIGHTS; ++i) {
         Light light = u_lights.lights[i];
 
@@ -1019,6 +1029,7 @@ void main() {
 
             vec3 radiance = lightCol * intensity * atten2 * vis;
             Lo += radiance * (diffuseArea + specularArea);
+            debugLightCount += 1;
             continue;
         }
 
@@ -1073,6 +1084,7 @@ void main() {
 
         vec3 radiance = lightCol * intensity * atten * visibility;
         Lo += evaluateLight(N, V, L, T, B, s, f0, radiance);
+        debugLightCount += 1;
     }
 
     // Screen-space AO factor, sampled once. It and the material AO map
@@ -1251,6 +1263,44 @@ void main() {
     } else if (u_debugMode == 10) {
         // UV channel 0 as RG (B unused) for texturing inspection.
         color = vec3(fract(vUV.x), fract(vUV.y), 0.0);
+    } else if (u_debugMode == 11) {
+        // Overdraw heatmap: the forward pass binds GL_ONE,GL_ONE blend with
+        // depth-test off this frame, so every shaded fragment additively
+        // accumulates this constant. Saturates to white at ~25 fragments
+        // (1/0.04), which surfaces overlapping geometry without blowing out
+        // a typical 1-2x overdraw region.
+        color = vec3(0.04, 0.0, 0.0);
+    } else if (u_debugMode == 12) {
+        // Per-batch identifier hashed to RGB. Three different prime-mixed
+        // sines decorrelate the channels so adjacent batch ids land on
+        // visually distinct colours instead of a near-grey ramp.
+        float b = float(u_batchId);
+        color = vec3(
+            fract(sin(b * 12.9898) * 43758.5453),
+            fract(sin(b * 78.2330) * 12543.7710),
+            fract(sin(b * 39.3460) * 23456.1230)
+        );
+    } else if (u_debugMode == 13) {
+        // Light-complexity heatmap: count of lights that contributed past
+        // the distance / cone / shadow early-outs at this fragment. Mapped
+        // through a turbo-ish three-stop ramp: 0 black -> 4 green -> 8 red.
+        // Saturates at u_lights.lightCount (no more than that can hit).
+        float n = float(debugLightCount);
+        float t = clamp(n / 8.0, 0.0, 1.0);
+        vec3 cold = vec3(0.0, 0.0, 0.4);
+        vec3 mid  = vec3(0.0, 0.8, 0.2);
+        vec3 hot  = vec3(1.0, 0.2, 0.0);
+        color = (t < 0.5)
+            ? mix(cold, mid, t * 2.0)
+            : mix(mid,  hot, (t - 0.5) * 2.0);
+    } else if (u_debugMode == 14) {
+        // Lightmap-UV diagnostic placeholder. The engine doesn't ship a UV1
+        // channel today, so a real lightmap UV display isn't possible -
+        // visualise that fact with a magenta-and-black diagonal stripe so
+        // the user immediately reads "no lightmap UVs" instead of mistaking
+        // black for an unlit lightmap.
+        float stripe = step(0.5, fract((vUV.x + vUV.y) * 4.0));
+        color = mix(vec3(0.0), vec3(1.0, 0.0, 1.0), stripe);
     }
 
     float outAlpha = u_material.albedo.a * u_material.alpha;
