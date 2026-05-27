@@ -18,6 +18,7 @@
 #include "gl_grid_pass.h"
 #include "gl_gtao_pass.h"
 #include "gl_ibl_bake_pass.h"
+#include "gl_hiz_pass.h"
 #include "gl_lens_flare_pass.h"
 #include "gl_motion_blur_pass.h"
 #include "gl_oit_resolve_pass.h"
@@ -100,6 +101,12 @@ void registerBuiltinGLPasses() {
 
     f.registerPass("GLOITResolvePass", [](ResourceManager& r) -> std::unique_ptr<RenderPass> {
         return std::make_unique<GLOITResolvePass>(requireShader(r, "shader:oit_resolve"));
+    });
+
+    f.registerPass("GLHiZPass", [](ResourceManager& r) -> std::unique_ptr<RenderPass> {
+        return std::make_unique<GLHiZPass>(
+            requireShader(r, "shader:hiz_init"),
+            requireShader(r, "shader:hiz_reduce"));
     });
 
     f.registerPass("GLTAAPass", [](ResourceManager& r) -> std::unique_ptr<RenderPass> {

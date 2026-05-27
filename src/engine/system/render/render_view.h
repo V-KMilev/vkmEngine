@@ -160,6 +160,13 @@ struct BloomConfig {
     float knee      = 0.0f;          ///< Half-width of the soft-knee transition around threshold.
 };
 
+struct OcclusionConfig {
+    /// Build the Hi-Z (max-Z) depth pyramid each frame. Off by default
+    /// while no consumer reads it; flip on once the future occlusion-
+    /// culling pass (#20 in RENDERER_PLAN.md) lands.
+    bool useHiZ = false;
+};
+
 struct TransparencyConfig {
     /// When true the transparent forward phase writes to a Weighted-Blended
     /// OIT pair (accum + revealage) instead of alpha-blending into the HDR
@@ -306,6 +313,7 @@ struct EnvironmentConfig {
     IBLConfig        ibl;
     ShadowConfig     shadow;
     TransparencyConfig transparency;
+    OcclusionConfig  occlusion;
 
     AOConfig         ao;
     SSRConfig        ssr;

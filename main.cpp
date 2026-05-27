@@ -177,6 +177,17 @@ int main() {
             resources, shaderDir + "/post/oit_resolve",
             "shader:oit_resolve", oitResolveSamplers);
 
+        // Hi-Z pyramid: init samples the view-space position MRT; reduce
+        // samples the pyramid itself one mip below. No consumer yet (#20).
+        const std::unordered_map<std::string, int> hizInitSamplers   = { {"u_viewPos", 0} };
+        const std::unordered_map<std::string, int> hizReduceSamplers = { {"u_src",     0} };
+        const auto hizInitShader   = Engine::loadShader(
+            resources, shaderDir + "/post/hiz_init",
+            "shader:hiz_init", hizInitSamplers);
+        const auto hizReduceShader = Engine::loadShader(
+            resources, shaderDir + "/post/hiz_reduce",
+            "shader:hiz_reduce", hizReduceSamplers);
+
         // Render passes - shadow runs first so the forward pass can sample its result.
         renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
 
@@ -195,6 +206,7 @@ int main() {
             "GLIBLBakePass",
             "GLShadowPass",
             "GLPrepass",
+            "GLHiZPass",
             "GLGTAOPass",
             "GLForwardPass.Opaque",
             "GLSkyboxPass",
@@ -245,6 +257,8 @@ int main() {
         Engine::watchShader(fileWatcher, resources, mbShader);
         Engine::watchShader(fileWatcher, resources, lensFlareShader);
         Engine::watchShader(fileWatcher, resources, oitResolveShader);
+        Engine::watchShader(fileWatcher, resources, hizInitShader);
+        Engine::watchShader(fileWatcher, resources, hizReduceShader);
 
         // Default scene: a single cube at the origin under a directional
         // light. Scene/asset round-trip happy: every asset has a source

@@ -10,6 +10,7 @@
 #include "resource/gl_bloom.h"
 #include "resource/gl_auto_exposure.h"
 #include "resource/gl_gbuffer.h"
+#include "resource/gl_hiz.h"
 #include "resource/gl_oit.h"
 #include "resource/gl_taa.h"
 #include "resource/gl_post_scratch.h"
@@ -41,6 +42,7 @@ class GLFrameResources : public FrameResources {
             m_taa.resize(width, height);
             m_scratch.resize(width, height);
             m_oit.resize(width, height);
+            m_hiz.resize(width, height);
         }
 
         void registerWith(RenderGraph& graph) override {
@@ -55,6 +57,7 @@ class GLFrameResources : public FrameResources {
             graph.registerResource(RGResource::PostScratch,      &m_scratch);
             graph.registerResource(RGResource::OITAccum,         &m_oit);
             graph.registerResource(RGResource::OITRevealage,     &m_oit);
+            graph.registerResource(RGResource::HiZPyramid,       &m_hiz);
         }
 
         void resolveSceneColor() override { m_hdr.resolve(); }
@@ -75,6 +78,8 @@ class GLFrameResources : public FrameResources {
         const GLPostScratch&  scratch()      const { return m_scratch; }
         GLOIT&                oit()                { return m_oit; }
         const GLOIT&          oit()          const { return m_oit; }
+        GLHiZ&                hiz()                { return m_hiz; }
+        const GLHiZ&          hiz()          const { return m_hiz; }
 
     private:
         GLSceneTarget    m_hdr;
@@ -84,6 +89,7 @@ class GLFrameResources : public FrameResources {
         GLTAA          m_taa;
         GLPostScratch  m_scratch;
         GLOIT          m_oit;
+        GLHiZ          m_hiz;
 };
 
 } // namespace Engine
