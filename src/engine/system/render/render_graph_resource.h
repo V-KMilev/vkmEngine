@@ -134,10 +134,10 @@ struct RGResourceDescriptor {
     Format  format  = Format::None;
     uint8_t samples = 0;       ///< 1 = single-sample, 4 = 4x MSAA, 0 = N/A.
 
-    bool operator==(const RGResourceDescriptor& o) const {
-        return shape == o.shape && format == o.format && samples == o.samples;
+    bool operator==(const RGResourceDescriptor& other) const {
+        return shape == other.shape && format == other.format && samples == other.samples;
     }
-    bool operator!=(const RGResourceDescriptor& o) const { return !(*this == o); }
+    bool operator!=(const RGResourceDescriptor& other) const { return !(*this == other); }
 };
 
 /**

@@ -199,12 +199,14 @@ class RenderGraph {
         /**
          * @brief Alias-group id for a resource (0..N-1).
          *
-         * Resources sharing a group have disjoint lifetimes and could in
-         * principle share physical storage. Computed by compile(); -1 means
-         * the resource was never used this frame. Persistent resources get
-         * a unique group of their own and never alias. Backend descriptor
-         * metadata is not consulted - the groups are an upper bound on what
-         * could alias. Surfaced in the editor's render-graph visualizer.
+         * Resources sharing a group have disjoint lifetimes AND matching
+         * descriptors (shape, format, samples - see rgResourceDescriptor),
+         * so any member of a group could legally point at the same physical
+         * GL object. Computed by compile(); -1 means the resource was never
+         * used this frame. Persistent resources get a unique group of their
+         * own and never alias. Surfaced in the editor's render-graph
+         * visualizer; physical pool sharing that consumes the analysis is
+         * deferred (see the class-level docstring).
          */
         int aliasGroup(RGResource r) const {
             return m_aliasGroups[static_cast<uint32_t>(r)];

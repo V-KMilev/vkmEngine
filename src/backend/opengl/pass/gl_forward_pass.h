@@ -6,7 +6,9 @@
 #include "resource/material_asset.h"
 #include "resource/shader_asset.h"
 
-namespace Core { class Texture2D; }
+namespace Core {
+    class Texture2D;
+}
 
 namespace Engine {
 
