@@ -415,7 +415,8 @@ float samplePointShadow(int slot, vec3 worldPos, vec3 lightPos) {
     float range = max(c.params.y, 0.001);
 
     vec3 toFrag = worldPos - lightPos;
-    if (length(toFrag) > range) return 1.0;
+    float dist = length(toFrag);
+    if (dist > range) return 1.0;
 
     // Rebuild the projected depth the cube face wrote with a 90 deg
     // perspective(near = SHADOW_CUBE_NEAR, far = range).
@@ -426,7 +427,37 @@ float samplePointShadow(int slot, vec3 worldPos, vec3 lightPos) {
     float ndc = (f + n) / (f - n) - (2.0 * f * n) / (zc * (f - n));
     float ref = (ndc * 0.5 + 0.5) - bias;
 
-    return texture(u_shadowMapCube, vec4(toFrag, float(slot)), ref);
+    // Hard center tap when softness is off; matches pre-PCF behavior.
+    if (u_shadowSoftness <= 0.0) {
+        return texture(u_shadowMapCube, vec4(toFrag, float(slot)), ref);
+    }
+
+    // Soft tap: jitter the sample direction in the plane perpendicular
+    // to toFrag with a Poisson disk. The depth reference is held fixed
+    // (the alternative would re-project per-tap, but the visual cost of
+    // a small ref bias on a softened shadow is much smaller than the
+    // cost of computing it 12 times per fragment).
+    vec3 dir = toFrag / max(dist, 1e-4);
+    // Build a tangent frame around dir without picking a degenerate axis.
+    vec3 up = abs(dir.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tx = normalize(cross(up, dir));
+    vec3 ty = cross(dir, tx);
+
+    // Angular kernel - the offset is in world units so it scales with
+    // distance: closer fragments get larger angular spread, matching how
+    // a real area light's penumbra widens.
+    float angle = ign(gl_FragCoord.xy) * 6.2831853;
+    float sa = sin(angle), ca = cos(angle);
+    mat2 rot = mat2(ca, -sa, sa, ca);
+    float kernel = dist * 0.02 * u_shadowSoftness;
+
+    float sum = 0.0;
+    for (int i = 0; i < 12; ++i) {
+        vec2 r = rot * kPoissonDisk12[i] * kernel;
+        vec3 sampleDir = toFrag + tx * r.x + ty * r.y;
+        sum += texture(u_shadowMapCube, vec4(sampleDir, float(slot)), ref);
+    }
+    return sum / 12.0;
 }
 
 // Pick the tightest sun cascade that contains the fragment AND compute a

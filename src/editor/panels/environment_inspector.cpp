@@ -317,8 +317,9 @@ bool EnvironmentInspector::drawLighting(EditorContext& /*ec*/, EnvironmentConfig
 
         changed |= sliderF("Softness", "##ShadowSoft", &env.shadow.softness,
                 0.0f, 1.0f, "%.2f",
-                "PCF kernel-width multiplier for directional/spot shadows.\n"
-                "0 = the default 1.5-texel disk; 1 ~= 5.5-texel disk.");
+                "PCF kernel-width multiplier.\n"
+                "Directional/spot: widens the 1.5-texel base disk.\n"
+                "Point (cube): distance-scaled angular jitter.");
     }
     return changed;
 }
