@@ -2,7 +2,6 @@
 
 #include "gl_forward_pass.h"
 
-#include <cmath>
 #include <limits>
 #include <string>
 #include <vector>
@@ -24,6 +23,7 @@
 #include "resource/gl_oit.h"
 #include "resource/gl_shader_program.h"
 #include "resource/gl_shadow_map.h"
+#include "resource/gl_sss_lut.h"
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"
 
@@ -43,89 +43,6 @@ struct PolygonModeGuard {
     Core::Context* ctx;
     ~PolygonModeGuard() { if (ctx) ctx->setPolygonMode(GL_FRONT_AND_BACK, GL_FILL); }
 };
-
-/**
- * @brief Pre-integrated subsurface LUT (Penner GPU Gems 3 ch. 14).
- *
- * Builds a 2D table indexed by:
- *   X (64 taps) - NdotL remapped from [-1, 1] to [0, 1]
- *   Y (16 taps) - curvature in [0, 1] (driven at the call site by
- *                 length(fwidth(N)) * subsurface)
- *
- * Each texel stores the per-channel diffuse response from convolving
- * max(cos(theta), 0) along the surface with a Gaussian profile whose
- * sigma is per-channel: red penetrates deepest, blue shallowest. With
- * curvature -> 0 the convolution collapses to plain Lambert (clamped
- * cos(theta)); with curvature -> 1 the result widens noticeably past
- * the terminator and the red channel bleeds the farthest, which is
- * the characteristic "warm ear glow" of skin.
- *
- * Numerical integration over 65 samples is enough at this LUT
- * resolution to be artifact-free; ran once at startup so the cost is
- * irrelevant.
- */
-std::unique_ptr<Core::Texture2D> makeSSSLUT() {
-    constexpr int W = 64;
-    constexpr int H = 16;
-
-    // Per-channel diffusion widths, modelled on Burley / Penner skin
-    // params: red ~0.45, green ~0.20, blue ~0.08 in normalised surface
-    // units. Coefficients shaped so curvature = 0 collapses to Lambert.
-    constexpr float sigmaR = 0.45f;
-    constexpr float sigmaG = 0.20f;
-    constexpr float sigmaB = 0.08f;
-
-    std::vector<float> pixels(static_cast<size_t>(W) * H * 4);
-
-    for (int y = 0; y < H; ++y) {
-        // Curvature 0..1 driven by the V axis. Floor at 0.05 so the
-        // bottom row still gives the lit side a slight wrap without
-        // collapsing all bleed at low curvature.
-        const float curvature = std::max((static_cast<float>(y) + 0.5f) / H, 0.05f);
-        for (int x = 0; x < W; ++x) {
-            const float ndotl = (static_cast<float>(x) + 0.5f) / W * 2.0f - 1.0f;
-
-            // Convolve Lambert with a per-channel Gaussian in angular
-            // space around the surface point. The Gaussian's effective
-            // width is (sigma * curvature) so a sharp surface gets a
-            // narrow kernel (plain Lambert), a smooth/curved surface a
-            // wide one (bleed past the terminator).
-            float numR = 0.0f, numG = 0.0f, numB = 0.0f;
-            float denR = 0.0f, denG = 0.0f, denB = 0.0f;
-            constexpr int STEPS = 32;  // half-range; 65 taps total
-            const float base = std::acos(std::clamp(ndotl, -1.0f, 1.0f));
-            for (int i = -STEPS; i <= STEPS; ++i) {
-                const float t = static_cast<float>(i) / STEPS * 3.14159265f;
-                const float lambert = std::max(0.0f, std::cos(base + t));
-                const float wR = std::exp(-t * t / (2.0f * (sigmaR * curvature) * (sigmaR * curvature)));
-                const float wG = std::exp(-t * t / (2.0f * (sigmaG * curvature) * (sigmaG * curvature)));
-                const float wB = std::exp(-t * t / (2.0f * (sigmaB * curvature) * (sigmaB * curvature)));
-                numR += lambert * wR; denR += wR;
-                numG += lambert * wG; denG += wG;
-                numB += lambert * wB; denB += wB;
-            }
-            const int idx = (y * W + x) * 4;
-            pixels[idx + 0] = numR / std::max(denR, 1e-6f);
-            pixels[idx + 1] = numG / std::max(denG, 1e-6f);
-            pixels[idx + 2] = numB / std::max(denB, 1e-6f);
-            pixels[idx + 3] = 1.0f;
-        }
-    }
-
-    Core::Texture2DParams p;
-    p.width           = W;
-    p.height          = H;
-    p.internalFormat  = GL_RGBA32F;
-    p.format          = GL_RGBA;
-    p.type            = GL_FLOAT;
-    p.wrapS           = Core::TextureWrap::ClampToEdge;
-    p.wrapT           = Core::TextureWrap::ClampToEdge;
-    p.minFilter       = Core::TextureMinFilter::Linear;
-    p.magFilter       = Core::TextureMagFilter::Linear;
-    p.generateMipmaps = false;
-    p.data            = pixels.data();
-    return std::make_unique<Core::Texture2D>("sss_preintegrated", p);
-}
 
 } // namespace
 
@@ -525,6 +442,70 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         }
     }
 
+    // Per-batch render: shader variant resolve, material UBO/texture bind,
+    // u_batchId push, draw. Shared between the sorted main loop and the OIT
+    // sub-loop below; the only difference is the OIT_PASS variant flag, so
+    // the lambda takes it as a parameter. State management (currentShader /
+    // currentMaterial caches, polygon mode, blend / depth-test) stays at
+    // the call sites - those depend on phase / overdraw / OIT FBO setup
+    // and don't belong in the per-batch hot path.
+    auto renderBatch = [&](size_t i, bool oitPass) {
+        const auto& batch = batches[i];
+
+        // Diagnostic modes route every batch through the unlit shader so the
+        // geometry isn't AO-darkened, IBL-lit, or shadowed. modeConfig.
+        // forceUnlit captures this for wireframe today; a future NormalsView
+        // mode would use a normals shader the same way.
+        const GLMaterial* material = glView.getMaterial(batch.material);
+        ShaderHandle baseHandle = view.modeConfig.forceUnlit
+            ? m_shaders[static_cast<int>(MaterialType::Unlit)]
+            : m_shaders[static_cast<int>(batch.materialType)];
+        if (!baseHandle) baseHandle = m_shaders[static_cast<int>(MaterialType::Opaque)];
+        const ShaderAsset& shaderAsset = resources.get(baseHandle);
+        GLShader* shader = nullptr;
+        if (shaderAsset.variantAware) {
+            GLView::ShaderVariantKey key;
+            key.materialFlags    = material ? material->getFeatureFlags() : 0u;
+            key.lightCountBucket = lightCountBucket;
+            key.shadowKindMask   = shadowKindMask;
+            key.oitPass          = oitPass;
+            shader = glView.resolveShaderVariant(baseHandle, key, resources);
+        } else {
+            shader = glView.resolveShader(baseHandle, resources);
+        }
+        if (!shader) return;
+
+        if (shader != currentShader) {
+            shader->bind();
+            applyFrameUniforms(shader);
+            currentShader = shader;
+        }
+
+        if (batch.material && batch.material != currentMaterial) {
+            if (material) {
+                material->bind(GLConfig::UBOBindingPoints::Material);
+                material->bindTextures(glView);
+                currentMaterial = batch.material;
+            } else {
+                LOG_WARNING("Failed to get material for batch (skipping material bind)");
+            }
+        }
+
+        // BatchId diagnostic: push the loop index so the PBR shader can hash
+        // it to a per-batch colour. Stripped from non-debug variants by the
+        // GLSL compiler; hasUniform handles that without log spam.
+        if (shader->hasUniform("u_batchId"))
+            shader->setUniform1i("u_batchId", static_cast<int>(i));
+
+        GLMesh* mesh = glView.getMutableMesh(batch.mesh);
+        if (mesh) {
+            batcher.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
+            mesh->drawInstancedBaseInstance(GL_TRIANGLES, batch.instanceCount, batch.firstInstance);
+        } else {
+            LOG_WARNING("Failed to get mesh for batch (skipping draw call)");
+        }
+    };
+
     for (size_t i = 0; i < batches.size(); ++i) {
         const auto& batch = batches[i];
 
@@ -575,76 +556,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
             currentType = batch.materialType;
         }
 
-        // Resolve the shader for this batch. Variant-aware shaders (today:
-        // pbr) go through the per-material variant cache so each material
-        // gets a program with only its features compiled in. Variant-
-        // unaware shaders (unlit, ...) share one program across materials -
-        // routing them through the variant cache would compile redundant
-        // identical programs since their source doesn't reference HAS_X.
-        // Falls back to the Opaque slot's shader when the type slot is
-        // empty (e.g. AlphaMask not wired up by the caller).
-        const GLMaterial* material = glView.getMaterial(batch.material);
-        // Diagnostic modes route every batch through the unlit shader so
-        // the geometry isn't AO-darkened, IBL-lit, or shadowed. modeConfig.
-        // forceUnlit captures this for wireframe today; a future
-        // NormalsView mode would use a normals shader the same way (a
-        // new bool in the config or a shader override field).
-        ShaderHandle baseHandle = view.modeConfig.forceUnlit
-            ? m_shaders[static_cast<int>(MaterialType::Unlit)]
-            : m_shaders[static_cast<int>(batch.materialType)];
-        if (!baseHandle) baseHandle = m_shaders[static_cast<int>(MaterialType::Opaque)];
-        const ShaderAsset& shaderAsset = resources.get(baseHandle);
-        GLShader* shader = nullptr;
-        if (shaderAsset.variantAware) {
-            GLView::ShaderVariantKey key;
-            key.materialFlags    = material ? material->getFeatureFlags() : 0u;
-            key.lightCountBucket = lightCountBucket;
-            key.shadowKindMask   = shadowKindMask;
-            // OIT_PASS variant only for batches actually routed to the OIT
-            // sub-loop below; the variant cache discriminates so the sorted
-            // path can still bind the regular FragColor variant for the same
-            // material when OIT isn't routed (global off, transmissive, or
-            // material useOIT = false).
-            key.oitPass = (m_phase == Phase::Transparent) && oitRoute[i];
-            shader = glView.resolveShaderVariant(baseHandle, key, resources);
-        } else {
-            shader = glView.resolveShader(baseHandle, resources);
-        }
-        if (!shader) continue;
-
-        if (shader != currentShader) {
-            shader->bind();
-            applyFrameUniforms(shader);
-            currentShader = shader;
-        }
-
-        // Bind material (UBO + textures) - skip when identical to previous batch
-        if (batch.material && batch.material != currentMaterial) {
-            if (material) {
-                material->bind(GLConfig::UBOBindingPoints::Material);
-                material->bindTextures(glView);
-                currentMaterial = batch.material;
-            } else {
-                LOG_WARNING("Failed to get material for batch (skipping material bind)");
-            }
-        }
-
-        // BatchId diagnostic: push the loop index so the PBR shader can hash
-        // it to a per-batch colour. Stripped from non-debug variants by the
-        // GLSL compiler; hasUniform handles that without log spam.
-        if (shader->hasUniform("u_batchId"))
-            shader->setUniform1i("u_batchId", static_cast<int>(i));
-
-        // Get mesh, attach shared instance buffer to its VAO (cached / no-op on
-        // repeat), then issue a base-instance draw that reads from the right offset.
-        GLMesh* mesh = glView.getMutableMesh(batch.mesh);
-
-        if (mesh) {
-            batcher.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
-            mesh->drawInstancedBaseInstance(GL_TRIANGLES, batch.instanceCount, batch.firstInstance);
-        } else {
-            LOG_WARNING("Failed to get mesh for batch (skipping draw call)");
-        }
+        renderBatch(i, /*oitPass=*/false);
 
         // Per-batch refresh of the opaque-scene snapshot for layered glass:
         // after this transparent batch has rendered, re-resolve the HDR target
@@ -705,55 +617,8 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         currentType     = MaterialType::Transparent;
 
         for (size_t i = 0; i < batches.size(); ++i) {
-            const auto& batch = batches[i];
             if (!oitRoute[i]) continue;
-
-            const GLMaterial* material = glView.getMaterial(batch.material);
-
-            ShaderHandle baseHandle = view.modeConfig.forceUnlit
-                ? m_shaders[static_cast<int>(MaterialType::Unlit)]
-                : m_shaders[static_cast<int>(batch.materialType)];
-            if (!baseHandle) baseHandle = m_shaders[static_cast<int>(MaterialType::Opaque)];
-            const ShaderAsset& shaderAsset = resources.get(baseHandle);
-            GLShader* shader = nullptr;
-            if (shaderAsset.variantAware) {
-                GLView::ShaderVariantKey key;
-                key.materialFlags    = material ? material->getFeatureFlags() : 0u;
-                key.lightCountBucket = lightCountBucket;
-                key.shadowKindMask   = shadowKindMask;
-                key.oitPass          = true;
-                shader = glView.resolveShaderVariant(baseHandle, key, resources);
-            } else {
-                shader = glView.resolveShader(baseHandle, resources);
-            }
-            if (!shader) continue;
-
-            if (shader != currentShader) {
-                shader->bind();
-                applyFrameUniforms(shader);
-                currentShader = shader;
-            }
-
-            if (batch.material && batch.material != currentMaterial) {
-                if (material) {
-                    material->bind(GLConfig::UBOBindingPoints::Material);
-                    material->bindTextures(glView);
-                    currentMaterial = batch.material;
-                } else {
-                    LOG_WARNING("Failed to get material for batch (skipping material bind)");
-                }
-            }
-
-            if (shader->hasUniform("u_batchId"))
-                shader->setUniform1i("u_batchId", static_cast<int>(i));
-
-            GLMesh* mesh = glView.getMutableMesh(batch.mesh);
-            if (mesh) {
-                batcher.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
-                mesh->drawInstancedBaseInstance(GL_TRIANGLES, batch.instanceCount, batch.firstInstance);
-            } else {
-                LOG_WARNING("Failed to get mesh for batch (skipping draw call)");
-            }
+            renderBatch(i, /*oitPass=*/true);
         }
 
         // Rebind the HDR FBO so any post-loop work (wireframe overlay, the
