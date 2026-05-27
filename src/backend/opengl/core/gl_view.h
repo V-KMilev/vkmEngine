@@ -177,6 +177,14 @@ class GLView {
         GLIBL&                getIBL()                { return m_ibl; }
         const GLIBL&          getIBL()          const { return m_ibl; }
 
+        /// Probe IBL pool: one GLIBL per ReflectionProbe entity in the
+        /// active scene. Indexed by RenderView::probes[] position - the
+        /// forward pass picks the nearest in-radius probe per batch.
+        /// Empty when no probes exist; the bake pass grows the vector
+        /// on demand and the global m_ibl serves as fallback.
+        std::vector<std::unique_ptr<GLIBL>>&       getProbeIBLs()       { return m_probeIBLs; }
+        const std::vector<std::unique_ptr<GLIBL>>& getProbeIBLs() const { return m_probeIBLs; }
+
         GLInstanceBatcher&       getInstanceBatcher()       { return m_instanceBatcher; }
         const GLInstanceBatcher& getInstanceBatcher() const { return m_instanceBatcher; }
 
@@ -264,6 +272,7 @@ class GLView {
         };
         GLShadowData      m_shadowData;
         GLIBL             m_ibl;
+        std::vector<std::unique_ptr<GLIBL>> m_probeIBLs;  ///< One per active probe.
         GLInstanceBatcher m_instanceBatcher;
         GLInstanceBatcher m_shadowBatcher;
 
