@@ -163,9 +163,11 @@ struct BloomConfig {
 struct ShadowConfig {
     uint32_t atlasRes2D   = 2048;    ///< Per-layer resolution of the 2D array (directional/spot).
     uint32_t atlasResCube = 512;     ///< Per-face resolution of the cube array (point).
-    /// PCF kernel width multiplier for the 2D array path. 0 = the engine
-    /// default 1.5-texel disk; 1 = ~5.5-texel disk. Cube shadows do not
-    /// honor this knob today.
+    /// PCF kernel width multiplier. 0 = sharp/single-tap; 1 = wide kernel.
+    /// 2D array path (directional/spot): widens the 1.5-texel base disk.
+    /// Cube path (point): jitters the sample direction in the plane
+    /// perpendicular to the light, with offsets that scale with distance
+    /// so closer fragments get a wider penumbra (area-light-like falloff).
     float    softness     = 0.0f;
 };
 
