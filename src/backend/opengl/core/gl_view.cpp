@@ -222,11 +222,14 @@ GLShader* GLView::resolveShader(const ShaderHandle& handle, const ResourceManage
 
 namespace {
 
-/// Map a MaterialFeature bitset to the #define tokens the PBR shader expects.
+/// Map a ShaderVariantKey to the #define tokens the PBR shader expects.
 /// Order is irrelevant - the preprocessor emits one #define line per token.
-std::vector<std::string> featureFlagsToDefines(uint32_t flags) {
+std::vector<std::string> variantKeyToDefines(const GLView::ShaderVariantKey& key) {
     std::vector<std::string> defines;
     defines.push_back("MATERIAL_VARIANT");  // turns off the ubershader fallback block
+
+    // Material features.
+    const uint32_t flags = key.materialFlags;
     if (flags & toBits(MaterialFeature::Transmission)) defines.emplace_back("HAS_TRANSMISSION");
     if (flags & toBits(MaterialFeature::Volume))       defines.emplace_back("HAS_VOLUME");
     if (flags & toBits(MaterialFeature::Clearcoat))    defines.emplace_back("HAS_CLEARCOAT");
@@ -235,6 +238,24 @@ std::vector<std::string> featureFlagsToDefines(uint32_t flags) {
     if (flags & toBits(MaterialFeature::Sheen))        defines.emplace_back("HAS_SHEEN");
     if (flags & toBits(MaterialFeature::Parallax))     defines.emplace_back("HAS_PARALLAX");
     if (flags & toBits(MaterialFeature::AlphaMask))    defines.emplace_back("HAS_ALPHA_MASK");
+
+    // Light-count bucket (forward consumers can branch on these; current
+    // PBR shader ignores them but the variant cache distinguishes the
+    // entries so a future specialised path can land without touching
+    // every call site).
+    switch (key.lightCountBucket) {
+        case 0: defines.emplace_back("LIGHT_BUCKET_NONE");   break;
+        case 1: defines.emplace_back("LIGHT_BUCKET_SINGLE"); break;
+        case 2: defines.emplace_back("LIGHT_BUCKET_FEW");    break;
+        default: defines.emplace_back("LIGHT_BUCKET_MANY");  break;
+    }
+
+    // Shadow-kind mask. Bit layout matches ShaderVariantKey::shadowKindMask:
+    // bit 0 = directional, bit 1 = point, bit 2 = spot.
+    if (key.shadowKindMask & 0x1u) defines.emplace_back("HAS_DIRECTIONAL_SHADOWS");
+    if (key.shadowKindMask & 0x2u) defines.emplace_back("HAS_POINT_SHADOWS");
+    if (key.shadowKindMask & 0x4u) defines.emplace_back("HAS_SPOT_SHADOWS");
+
     return defines;
 }
 
@@ -245,11 +266,22 @@ GLShader* GLView::resolveShaderVariant(
     uint32_t featureFlags,
     const ResourceManager& resources)
 {
+    ShaderVariantKey key;
+    key.materialFlags = featureFlags;
+    return resolveShaderVariant(handle, key, resources);
+}
+
+GLShader* GLView::resolveShaderVariant(
+    const ShaderHandle& handle,
+    const ShaderVariantKey& key,
+    const ResourceManager& resources)
+{
     if (!handle) return nullptr;
     const ShaderAsset& asset = resources.get(handle);
     const uint32_t shaderId   = handle.id();
     const uint32_t generation = handle.key.generation;
-    const uint64_t subkey     = variantSubkey(generation, featureFlags);
+    const uint32_t encoded    = key.encode();
+    const uint64_t subkey     = variantSubkey(generation, encoded);
 
     auto& bucket = m_shaderVariants[shaderId];
 
@@ -277,13 +309,13 @@ GLShader* GLView::resolveShaderVariant(
     }
 
     VariantEntry entry;
-    const auto defines = featureFlagsToDefines(featureFlags);
+    const auto defines = variantKeyToDefines(key);
     try {
         entry.program = std::make_unique<GLShader>(asset, defines);
         entry.assetVersion = asset.version;
     } catch (const std::exception& e) {
-        LOG_ERROR("Shader variant compile failed (shader '%s', flags 0x%x): %s",
-            asset.name.c_str(), featureFlags, e.what());
+        LOG_ERROR("Shader variant compile failed (shader '%s', key 0x%x): %s",
+            asset.name.c_str(), encoded, e.what());
 
         std::string definesSummary;
         for (const auto& d : defines) {
@@ -293,7 +325,7 @@ GLShader* GLView::resolveShaderVariant(
         ShaderErrorLog::get().push(asset.name, std::move(definesSummary), e.what());
         return nullptr;
     }
-    LOG_INFO("Compiled shader variant '%s' flags=0x%x", asset.name.c_str(), featureFlags);
+    LOG_INFO("Compiled shader variant '%s' key=0x%x", asset.name.c_str(), encoded);
     GLShader* raw = entry.program.get();
     bucket.emplace(subkey, std::move(entry));
     return raw;

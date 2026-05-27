@@ -9,6 +9,7 @@
 
 #include "logger.h"
 
+#include "debug/gpu_timing.h"
 #include "debug/profiler_gl.h"
 #include "gl_context.h"
 #include "gl_frame_resources.h"
@@ -81,6 +82,63 @@ void GLBackend::registerPersistentResources(RenderGraph& graph) {
 
 void GLBackend::endFrame() {
     PROFILE_GPU_COLLECT();
+}
+
+void GLBackend::beginPassTimer(std::size_t passIndex) {
+    if (passIndex >= m_passQueries.size()) {
+        m_passQueries.resize(passIndex + 1);
+    }
+    PassQueryRing& r = m_passQueries[passIndex];
+
+    // Lazy-allocate the query pair on first touch.
+    if (r.queries[0] == 0u) {
+        glGenQueries(2, r.queries);
+    }
+
+    // Toggle slots so this frame writes to a different query than the
+    // previous frame. The previous slot has had one full frame to
+    // complete, which is enough to avoid stalling the CPU on read-back.
+    r.currentSlot = (r.currentSlot < 0) ? 0 : (r.currentSlot ^ 1);
+
+    const int otherSlot = r.currentSlot ^ 1;
+    if (r.issued[otherSlot]) {
+        GLint available = 0;
+        glGetQueryObjectiv(r.queries[otherSlot], GL_QUERY_RESULT_AVAILABLE, &available);
+        if (available) {
+            GLuint64 ns = 0;
+            glGetQueryObjectui64v(r.queries[otherSlot], GL_QUERY_RESULT, &ns);
+            r.issued[otherSlot] = false;
+            GpuTimingPool::get().recordSample(passIndex,
+                static_cast<double>(ns) / 1.0e6);  // ns -> ms
+        }
+    }
+
+    glBeginQuery(GL_TIME_ELAPSED, r.queries[r.currentSlot]);
+}
+
+void GLBackend::endPassTimer(std::size_t passIndex) {
+    if (passIndex >= m_passQueries.size()) return;
+    PassQueryRing& r = m_passQueries[passIndex];
+    if (r.currentSlot < 0) return;
+    glEndQuery(GL_TIME_ELAPSED);
+    r.issued[r.currentSlot] = true;
+}
+
+void GLBackend::destroyPassTimers() {
+    for (auto& r : m_passQueries) {
+        if (r.queries[0] != 0u) {
+            glDeleteQueries(2, r.queries);
+            r.queries[0] = r.queries[1] = 0u;
+        }
+    }
+    m_passQueries.clear();
+}
+
+GLBackend::~GLBackend() {
+    // Releasing query objects requires the GL context to still be live.
+    // GLBackend is destructed before the window in main.cpp (Engine
+    // ::shutdown order), so the context is still current here.
+    destroyPassTimers();
 }
 
 GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL), m_context() {

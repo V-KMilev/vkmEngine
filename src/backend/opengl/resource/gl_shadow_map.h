@@ -44,6 +44,15 @@ class GLShadowAtlas {
         GLShadowAtlas& operator=(GLShadowAtlas && other) = delete;
 
     public:
+        /// Reallocate the depth textures at @p res2D / @p resCube if either
+        /// differs from the current size. Caster counts are preserved.
+        /// Safe to call every frame: no-op when sizes match.
+        ///
+        /// Re-allocation invalidates any sampler binding into the old
+        /// textures, so the next frame's read-side bind picks up the new
+        /// id; passes that cache the texture id need to refresh it.
+        void ensureResolution(uint32_t res2D, uint32_t resCube);
+
         /// Bind FBO, point depth attachment at 2D-array layer, set viewport, clear depth.
         void bind2DLayerForWriting(uint32_t layer) const;
 
