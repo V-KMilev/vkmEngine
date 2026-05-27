@@ -163,6 +163,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     // future refinement when binding cost is no longer the bottleneck.
     const GLIBL* activeIBL = &ibl;
     float activeProbeIntensity = view.environment.ibl.intensity;
+    int    activeProbeIndex = -1;  // -1 = no probe (slot 0 holds global)
     {
         const auto& probes = view.probes;
         const auto& pool   = gl.getView().getProbeIBLs();
@@ -177,6 +178,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
                 bestDist = dist;
                 activeIBL = pool[i].get();
                 activeProbeIntensity = p.intensity;
+                activeProbeIndex = static_cast<int>(i);
             }
         }
     }
@@ -190,6 +192,37 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         // prefilter's mip-0 GGX blur.
         activeIBL->bindEnvCube(GLConfig::TextureSlots::EnvCube);
     }
+
+    // Global skybox bake always lands in the fallback slot set. The PBR
+    // shader blends the primary (active probe or global) against this
+    // fallback by a per-fragment weight derived from the probe's influence
+    // sphere - so a probe-lit fragment smoothly fades back to the global
+    // IBL at the edges of its radius instead of cutting off hard.
+    // When no probe is selected, primary == fallback (both are the global)
+    // and the blend collapses to a single sample - the same one the
+    // pre-blend code path used. When the global isn't baked but a probe is,
+    // fall back to the probe so the slots aren't sampled uninitialised - the
+    // blend then samples the probe in both lobes which is the same as no
+    // blend at all.
+    const GLIBL* fallbackIBL = ibl.isReady() ? &ibl : activeIBL;
+    if (fallbackIBL && fallbackIBL->isReady()) {
+        fallbackIBL->bindIrradiance(GLConfig::TextureSlots::IrradianceMap2);
+        fallbackIBL->bindPrefilter(GLConfig::TextureSlots::PrefilterMap2);
+        fallbackIBL->bindEnvCube(GLConfig::TextureSlots::EnvCube2);
+    }
+
+    // Primary-probe metadata for the per-fragment blend. Only meaningful
+    // when activeProbeIndex >= 0; the shader gates on u_probeValid so the
+    // global-only path uses zero parallax correction and weight = 1.
+    glm::vec3 probeCenter   = glm::vec3(0.0f);
+    float     probeRadius   = 1.0f;
+    float     probeFalloff  = 0.5f;
+    if (activeProbeIndex >= 0 && static_cast<std::size_t>(activeProbeIndex) < view.probes.size()) {
+        const auto& p = view.probes[activeProbeIndex];
+        probeCenter  = p.position;
+        probeRadius  = glm::max(p.radius, 1e-3f);
+        probeFalloff = glm::max(p.falloffRange, 1e-3f);
+    }
     // Screen-space AO from the prepass/GTAO (slot SSAO); enabled when both
     // the G-buffer is live and the environment toggle is on.
     const bool ssaoOn = gbuffer.isReady() && view.environment.ao.enabled;
@@ -202,15 +235,27 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     // bind (locations are cached and missing names resolve to -1 no-op).
     struct PBRFrameUniforms {
         int   hasIBL;
-        float iblIntensity;
+        float iblIntensity;          // Primary IBL intensity (probe or global)
+        float fallbackIBLIntensity;  // Always the global IBL intensity
+        int   probeValid;            // 1 = primary slot is a probe (parallax + weight); 0 = global
         int   ssaoEnabled;
         float screenW;
         float screenH;
         int   hasSceneColor;  // flips 0 -> 1 at the opaque/transparent boundary
     };
+    // When the global skybox bake isn't ready the fallback slots got the
+    // probe's textures (see binding block above) - keep their intensity
+    // matched so the blend collapses to a single weighted sample of the
+    // probe instead of mixing the probe's HDR with the global intensity
+    // configured for an unbaked environment.
+    const float fallbackIntensity = ibl.isReady()
+        ? view.environment.ibl.intensity
+        : activeProbeIntensity;
     PBRFrameUniforms frame{
         iblReady ? 1 : 0,
         activeProbeIntensity,
+        fallbackIntensity,
+        activeProbeIndex >= 0 ? 1 : 0,
         ssaoOn  ? 1 : 0,
         static_cast<float>(view.viewportWidth),
         static_cast<float>(view.viewportHeight),
@@ -222,6 +267,16 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         // we don't spam vkmGL's missing-uniform warning per shader switch.
         sh->setUniform1i("u_hasIBL", frame.hasIBL);
         sh->setUniform1f("u_iblIntensity", frame.iblIntensity);
+        if (sh->hasUniform("u_iblIntensity2"))
+            sh->setUniform1f("u_iblIntensity2", frame.fallbackIBLIntensity);
+        if (sh->hasUniform("u_probeValid"))
+            sh->setUniform1i("u_probeValid", frame.probeValid);
+        if (sh->hasUniform("u_probeCenter"))
+            sh->setUniform3fv("u_probeCenter", probeCenter);
+        if (sh->hasUniform("u_probeRadius"))
+            sh->setUniform1f("u_probeRadius", probeRadius);
+        if (sh->hasUniform("u_probeFalloff"))
+            sh->setUniform1f("u_probeFalloff", probeFalloff);
         sh->setUniform1i("u_ssaoEnabled", frame.ssaoEnabled);
         if (sh->hasUniform("u_shadowSoftness"))
             sh->setUniform1f("u_shadowSoftness", view.environment.shadow.softness);

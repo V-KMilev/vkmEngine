@@ -60,7 +60,16 @@ namespace GLConfig {
         constexpr uint32_t EnvCube              = 16;  ///< Raw environment cubemap (sharp mirror reflection at low roughness)
         constexpr uint32_t SceneColor           = 17;  ///< Resolved opaque scene color (transmissive scene-behind refraction)
 
-        constexpr uint32_t Count = 18;  ///< Total number of texture slots used
+        // Fallback IBL slot set. The PRIMARY IBL (slots 12/13/16) holds the
+        // active reflection probe when one's selected; the FALLBACK set holds
+        // the global skybox bake. The PBR shader blends between the two by
+        // a per-fragment weight derived from probe influence radius + falloff
+        // so the probe-to-global transition is smooth instead of a hard cut.
+        constexpr uint32_t IrradianceMap2       = 18;  ///< Fallback IBL diffuse irradiance (global skybox bake)
+        constexpr uint32_t PrefilterMap2        = 19;  ///< Fallback IBL prefiltered specular
+        constexpr uint32_t EnvCube2             = 20;  ///< Fallback raw env cubemap
+
+        constexpr uint32_t Count = 21;  ///< Total number of texture slots used
     }
 
     /**
@@ -101,12 +110,15 @@ namespace GLConfig {
         constexpr const char* LightSpace    = "u_lightSpace";
 
         // Image-based lighting uniforms
-        constexpr const char* IrradianceMap = "u_irradianceMap";
-        constexpr const char* PrefilterMap  = "u_prefilterMap";
-        constexpr const char* BrdfLUT       = "u_brdfLUT";
-        constexpr const char* EnvCube       = "u_envCube";
-        constexpr const char* SSAO          = "u_ssao";
-        constexpr const char* SceneColor    = "u_sceneColor";
+        constexpr const char* IrradianceMap  = "u_irradianceMap";
+        constexpr const char* PrefilterMap   = "u_prefilterMap";
+        constexpr const char* BrdfLUT        = "u_brdfLUT";
+        constexpr const char* EnvCube        = "u_envCube";
+        constexpr const char* IrradianceMap2 = "u_irradianceMap2";
+        constexpr const char* PrefilterMap2  = "u_prefilterMap2";
+        constexpr const char* EnvCube2       = "u_envCube2";
+        constexpr const char* SSAO           = "u_ssao";
+        constexpr const char* SceneColor     = "u_sceneColor";
     }
 
     /**
