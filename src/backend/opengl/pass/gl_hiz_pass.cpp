@@ -19,9 +19,6 @@
 namespace Engine {
 
 bool GLHiZPass::enabledForView(const RenderView& view) const {
-    // Off by default - the pyramid has no consumer in this commit, so
-    // it would only be wasted GPU work. The user toggles it on once a
-    // future occlusion pass starts reading it.
     return isEnabled()
         && view.environment.occlusion.useHiZ
         && !view.modeConfig.disablePost;
@@ -88,11 +85,11 @@ void GLHiZPass::execute(RenderGraphContext& rg) {
     ctx.setDepthTest(true);
 
     // CPU-side readback of one mid mip so the next frame's visibility
-    // system can AABB-test against it. Synchronous via glReadPixels;
-    // a future commit can swap in a PBO double-buffer to drop the
-    // stall once the consumer ships. Mip 4 is 1/16th the viewport
-    // resolution - coarse enough to fit in a single readback, fine
-    // enough to discriminate object-sized AABBs.
+    // system can AABB-test against it. Synchronous glReadPixels stalls
+    // briefly; a PBO double-buffer would drop the stall but is heavier.
+    // Mip 4 is 1/16th the viewport resolution - coarse enough to fit
+    // in a single readback, fine enough to discriminate object-sized
+    // AABBs.
     constexpr int kReadbackMip = 4;
     const int readbackMip = kReadbackMip < mips ? kReadbackMip : mips - 1;
     const int rw = hiz.mipWidth(readbackMip);

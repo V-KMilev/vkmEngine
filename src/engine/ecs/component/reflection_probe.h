@@ -2,8 +2,6 @@
 
 #include <string>
 
-#include <glm/glm.hpp>
-
 namespace Engine {
 
 /**

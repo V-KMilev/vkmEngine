@@ -17,9 +17,10 @@ namespace Engine {
  * because the engine's Core::Texture2D doesn't model an explicit
  * per-level render-target chain.
  *
- * No consumer ships in this commit; #20 from RENDERER_PLAN.md will
- * read the pyramid to AABB-test candidate occludees on the CPU side
- * one frame late, or to drive a future GPU-indirect cull pass.
+ * The visibility system reads back one mip via OcclusionOracle to
+ * AABB-test candidate occludees on the CPU side one frame late; a
+ * future GPU-indirect cull pass would consume the full pyramid on
+ * the GPU.
  */
 class GLHiZ {
     public:

@@ -20,20 +20,22 @@
 namespace Engine::Screenshot {
 
 namespace {
-    std::string timestamp() {
-        const auto t  = std::chrono::system_clock::now();
-        const auto tt = std::chrono::system_clock::to_time_t(t);
-        std::tm tm{};
+
+std::string timestamp() {
+    const auto t  = std::chrono::system_clock::now();
+    const auto tt = std::chrono::system_clock::to_time_t(t);
+    std::tm tm{};
 #if defined(_WIN32)
-        localtime_s(&tm, &tt);
+    localtime_s(&tm, &tt);
 #else
-        localtime_r(&tt, &tm);
+    localtime_r(&tt, &tm);
 #endif
-        char buf[32];
-        std::strftime(buf, sizeof(buf), "%Y%m%d-%H%M%S", &tm);
-        return buf;
-    }
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y%m%d-%H%M%S", &tm);
+    return buf;
 }
+
+} // namespace
 
 std::string captureRect(RenderBackend& backend,
                         const Rect& rect,
@@ -85,4 +87,4 @@ std::string captureViewport(WindowManager& window, RenderBackend& backend) {
     return captureRect(backend, rect, winH, full.string());
 }
 
-}  // namespace Engine::Screenshot
+} // namespace Engine::Screenshot
