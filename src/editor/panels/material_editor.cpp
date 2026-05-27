@@ -79,6 +79,18 @@ bool MaterialEditorPanel::drawMaterialBody(ResourceManager& resources, MaterialA
             changed |= ImGui::SliderFloat("##AlphaCutoff", &mat.alphaCutoff, 0.0f, 1.0f, "%.2f");
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("0 = off. >0 enables AlphaMask: fragments with albedo.a < cutoff are discarded (foliage/leaves)");
+
+            drawPropertyLabel("Use OIT");
+            changed |= ImGui::Checkbox("##UseOIT", &mat.useOIT);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "Route this material through Weighted-Blended OIT when the\n"
+                    "global Transparency.useOIT toggle is on. Best for foliage,\n"
+                    "particles, smoke, dust - any transparent stack that doesn't\n"
+                    "need a precise back-to-front order.\n\n"
+                    "Auto-disabled for transmissive materials (transmission > 0):\n"
+                    "OIT cannot reproduce screen-space refraction so those keep\n"
+                    "the sorted-blend path regardless.");
         }
         endComponentCard();
 

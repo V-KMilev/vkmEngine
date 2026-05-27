@@ -319,22 +319,50 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         return true;  // All (legacy single pass)
     };
 
+    // Per-batch OIT routing: true means the batch belongs to the OIT sub-loop,
+    // false to the sorted sub-loop. OIT only kicks in when the global toggle
+    // is on, the batch is Transparent, the material opts in, and the material
+    // isn't transmissive (OIT can't reproduce screen-space refraction so
+    // glass / liquid stays on the sorted path regardless of useOIT).
+    auto routeToOIT = [&](const auto& batch) -> bool {
+        if (!oitActive) return false;
+        if (batch.materialType != MaterialType::Transparent) return false;
+        const GLMaterial* m = glView.getMaterial(batch.material);
+        if (!m) return false;
+        if (!m->getUseOIT()) return false;
+        if (m->getFeatureFlags() & toBits(MaterialFeature::Transmission)) return false;
+        return true;
+    };
+
     // Dedicated transparent pass: the opaque geometry AND the skybox have
-    // already been drawn into the HDR target by earlier passes. Snapshot
-    // that as the scene-behind source, then set transparent GL state once
-    // up front (the in-loop type transition below only drives Phase::All).
-    // We don't pre-bind a PBR program here any more - each batch picks its
-    // own variant below and applyFrameUniforms() pushes u_hasSceneColor=1
-    // into that variant when it binds.
-    bool anyTransparent = false;
+    // already been drawn into the HDR target by earlier passes. Two sub-loops
+    // run here when the OIT toggle is on - first the sorted-blend batches
+    // (back-to-front, scene-color snapshot for refraction), then the OIT
+    // batches (additive accum to a separate FBO). With OIT off everything
+    // funnels through the sorted loop, which is the legacy single-loop path.
+    bool anyTransparent      = false;
+    bool anySortedTransparent = false;  // transparent batches NOT routed to OIT
+    bool anyOITTransparent    = false;  // transparent batches routed to OIT
     if (m_phase == Phase::Transparent) {
-        for (const auto& b : batches)
-            if (b.materialType == MaterialType::Transparent) { anyTransparent = true; break; }
+        for (const auto& b : batches) {
+            if (b.materialType != MaterialType::Transparent) continue;
+            anyTransparent = true;
+            if (routeToOIT(b)) anyOITTransparent = true;
+            else               anySortedTransparent = true;
+        }
         // No transparent geometry: still continue if we owe the wireframe
         // overlay draw at the end. The main batch loop's inPhase() filter
         // makes the no-transparent case a zero-iteration loop, so it is safe
         // to fall through; the post-loop overlay block handles the draw.
         if (!anyTransparent && !view.modeConfig.wireframeOverlay) return;
+
+        // OIT resolve pass runs unconditionally when the global toggle is on.
+        // Clear the OIT FBO here so a frame with no OIT-routed batches still
+        // resolves cleanly (accum = 0, revealage = 1 -> no-op composite).
+        if (oitActive && oit && !anyOITTransparent) {
+            oit->bindForRender();
+            hdrT.bindForRender();
+        }
 
         if (anyTransparent && overdraw) {
             // Overdraw blend/depth state is already set above; suppress the
@@ -343,43 +371,23 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
             currentType = MaterialType::Transparent;
         }
 
-        if (anyTransparent && !overdraw) {
-            if (oitActive) {
-                // OIT path: blit the just-rendered opaque depth from the MSAA
-                // HDR FBO into the OIT FBO's single-sample depth so transparents
-                // still depth-test against opaque (no depth-write). Then bind
-                // OIT for MRT writes and set per-attachment blend:
-                //   color 0 (accum):     (ONE, ONE)              - additive
-                //   color 1 (revealage): (ZERO, ONE_MINUS_SRC_COLOR) - multiplicative
-                oit->copyDepthFrom(hdrT.msFboId(), hdrT.width(), hdrT.height());
-                oit->bindForRender();
-                glContext.setDepthTest(true);
-                glContext.setDepthWrite(false);
-                glContext.setBlending(true);
-                // Per-attachment blend funcs - requires GL 4.0+.
-                glBlendFunci(0, GL_ONE, GL_ONE);
-                glBlendFunci(1, GL_ZERO, GL_ONE_MINUS_SRC_COLOR);
-                // Refraction is incompatible with OIT (no scene snapshot to
-                // sample) - leave hasSceneColor at 0 so transmissive paths
-                // fall back to IBL.
-                frame.hasSceneColor = 0;
-                glContext.setFaceCulling(true);
-                glContext.setCullFace(GL_BACK);
-            } else {
-                hdrT.resolve();
-                hdrT.bindForRender();
-                hdrT.bindResolvedColor(GLConfig::TextureSlots::SceneColor);
-                frame.hasSceneColor = 1;
-                glContext.setBlending(true);
-                glContext.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                glContext.setDepthWrite(false);
-                // Cull back faces so a closed transmissive mesh shows only its
-                // front surface (engine default is no culling + depth-write to
-                // hide back faces; depth-write is off here, so without this you
-                // see through to the inside / far faces of glass).
-                glContext.setFaceCulling(true);
-                glContext.setCullFace(GL_BACK);
-            }
+        // Sorted sub-loop setup. Runs whenever there are any sorted (non-OIT)
+        // transparents; OIT-only frames skip this entirely and the OIT setup
+        // below takes over.
+        if (anySortedTransparent && !overdraw) {
+            hdrT.resolve();
+            hdrT.bindForRender();
+            hdrT.bindResolvedColor(GLConfig::TextureSlots::SceneColor);
+            frame.hasSceneColor = 1;
+            glContext.setBlending(true);
+            glContext.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glContext.setDepthWrite(false);
+            // Cull back faces so a closed transmissive mesh shows only its
+            // front surface (engine default is no culling + depth-write to
+            // hide back faces; depth-write is off here, so without this you
+            // see through to the inside / far faces of glass).
+            glContext.setFaceCulling(true);
+            glContext.setCullFace(GL_BACK);
             currentType = MaterialType::Transparent;
         }
     }
@@ -422,6 +430,11 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         const auto& batch = batches[i];
 
         if (!inPhase(batch.materialType)) continue;
+
+        // OIT-routed batches sit out the sorted loop and render in the
+        // dedicated OIT pass below. Only the transparent phase has routing
+        // to consider; opaque batches are unaffected.
+        if (m_phase == Phase::Transparent && routeToOIT(batch)) continue;
 
         // Material-type transition: blend/depth state + the opaque-scene
         // snapshot. Type drives this (not shader identity) because per-
@@ -488,11 +501,12 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
             key.materialFlags    = material ? material->getFeatureFlags() : 0u;
             key.lightCountBucket = lightCountBucket;
             key.shadowKindMask   = shadowKindMask;
-            // OIT_PASS variant only when the transparent phase is rendering
-            // through the OIT MRT; the variant cache discriminates so the
-            // sorted path can still bind the regular FragColor variant for
-            // the same material when OIT is toggled off.
-            key.oitPass = oitActive && batch.materialType == MaterialType::Transparent;
+            // OIT_PASS variant only for batches actually routed to the OIT
+            // sub-loop below; the variant cache discriminates so the sorted
+            // path can still bind the regular FragColor variant for the same
+            // material when OIT isn't routed (global off, transmissive, or
+            // material useOIT = false).
+            key.oitPass = (m_phase == Phase::Transparent) && routeToOIT(batch);
             shader = glView.resolveShaderVariant(baseHandle, key, resources);
         } else {
             shader = glView.resolveShader(baseHandle, resources);
@@ -559,6 +573,94 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
                 hdrT.bindForRender();
             }
         }
+    }
+
+    // OIT sub-loop: batches routed to OIT render here, after the sorted-blend
+    // loop above. Separate FBO + per-attachment blend funcs so the additive
+    // accum + multiplicative revealage outputs land in their own targets;
+    // the OIT resolve pass composites the result onto the HDR scene
+    // (which already contains opaque + sky + the sorted transparents above).
+    if (m_phase == Phase::Transparent && anyOITTransparent && !overdraw && oit) {
+        // Blit opaque-phase depth from the MSAA HDR FBO into the OIT FBO's
+        // single-sample depth buffer so OIT transparents still depth-test
+        // against the opaque scene. Sorted transparents already wrote into
+        // the MSAA depth above; that's fine - the blit grabs the latest
+        // depth state which includes them.
+        oit->copyDepthFrom(hdrT.msFboId(), hdrT.width(), hdrT.height());
+        oit->bindForRender();
+        glContext.setDepthTest(true);
+        glContext.setDepthWrite(false);
+        glContext.setBlending(true);
+        glBlendFunci(0, GL_ONE, GL_ONE);                       // accum:    additive
+        glBlendFunci(1, GL_ZERO, GL_ONE_MINUS_SRC_COLOR);      // revealage: multiplicative
+        frame.hasSceneColor = 0;
+        glContext.setFaceCulling(true);
+        glContext.setCullFace(GL_BACK);
+
+        // Force shader + material rebind so the variant lookup picks the
+        // OIT_PASS variant for the same material a sorted batch may have
+        // already bound. The state we set above is the OIT-buffer state;
+        // the loop below doesn't change it.
+        currentShader   = nullptr;
+        currentMaterial = MaterialHandle{};
+        currentType     = MaterialType::Transparent;
+
+        for (size_t i = 0; i < batches.size(); ++i) {
+            const auto& batch = batches[i];
+            if (!routeToOIT(batch)) continue;
+
+            const GLMaterial* material = glView.getMaterial(batch.material);
+
+            ShaderHandle baseHandle = view.modeConfig.forceUnlit
+                ? m_shaders[static_cast<int>(MaterialType::Unlit)]
+                : m_shaders[static_cast<int>(batch.materialType)];
+            if (!baseHandle) baseHandle = m_shaders[static_cast<int>(MaterialType::Opaque)];
+            const ShaderAsset& shaderAsset = resources.get(baseHandle);
+            GLShader* shader = nullptr;
+            if (shaderAsset.variantAware) {
+                GLView::ShaderVariantKey key;
+                key.materialFlags    = material ? material->getFeatureFlags() : 0u;
+                key.lightCountBucket = lightCountBucket;
+                key.shadowKindMask   = shadowKindMask;
+                key.oitPass          = true;
+                shader = glView.resolveShaderVariant(baseHandle, key, resources);
+            } else {
+                shader = glView.resolveShader(baseHandle, resources);
+            }
+            if (!shader) continue;
+
+            if (shader != currentShader) {
+                shader->bind();
+                applyFrameUniforms(shader);
+                currentShader = shader;
+            }
+
+            if (batch.material && batch.material != currentMaterial) {
+                if (material) {
+                    material->bind(GLConfig::UBOBindingPoints::Material);
+                    material->bindTextures(glView);
+                    currentMaterial = batch.material;
+                } else {
+                    LOG_WARNING("Failed to get material for batch (skipping material bind)");
+                }
+            }
+
+            if (shader->hasUniform("u_batchId"))
+                shader->setUniform1i("u_batchId", static_cast<int>(i));
+
+            GLMesh* mesh = glView.getMutableMesh(batch.mesh);
+            if (mesh) {
+                batcher.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
+                mesh->drawInstancedBaseInstance(GL_TRIANGLES, batch.instanceCount, batch.firstInstance);
+            } else {
+                LOG_WARNING("Failed to get mesh for batch (skipping draw call)");
+            }
+        }
+
+        // Rebind the HDR FBO so any post-loop work (wireframe overlay, the
+        // standard end-of-pass restore) and later passes see the scene target
+        // rather than the OIT FBO.
+        hdrT.bindForRender();
     }
 
     // Restore GL state if we ended in transparent mode (back to the engine

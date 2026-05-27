@@ -117,6 +117,15 @@ struct MaterialAsset : public Resource {
     TextureHandle metallicRoughnessTexture;      ///< Combined metallic (R) + roughness (G) texture
     TextureHandle aoMetallicRoughnessTexture;    ///< Combined AO (R) + metallic (G) + roughness (B)
 
+    // Order-independent transparency opt-in. When true AND the global OIT
+    // toggle is on AND the material isn't transmissive (OIT can't reproduce
+    // screen-space refraction), the renderer routes this material through the
+    // weighted-blended OIT path instead of the sorted back-to-front path.
+    // Default off: artists explicitly mark materials that play well with OIT
+    // (foliage, particles, dust, smoke). Glass / liquids / volumetrics with
+    // refraction must keep the sorted path.
+    bool useOIT = false;
+
     /**
      * @brief Compute the MaterialFeature bitset this material requires.
      *

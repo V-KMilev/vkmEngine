@@ -141,6 +141,7 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     src["attenuationDistance"] = m.attenuationDistance;
     src["attenuationColor"]    = vec3ToJson(m.attenuationColor);
     src["alphaCutoff"]         = m.alphaCutoff;
+    src["useOIT"]              = m.useOIT;
 
     nlohmann::json textures = nlohmann::json::object();
     for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
@@ -180,6 +181,7 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
     m.attenuationDistance = src.value("attenuationDistance", m.attenuationDistance);
     m.attenuationColor    = vec3FromJson(src.value("attenuationColor",    nlohmann::json{}), m.attenuationColor);
     m.alphaCutoff         = src.value("alphaCutoff",         m.alphaCutoff);
+    m.useOIT              = src.value("useOIT",              m.useOIT);
 
     if (src.contains("textures") && src["textures"].is_object()) {
         for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
