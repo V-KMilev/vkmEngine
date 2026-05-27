@@ -347,11 +347,13 @@ void loadBloom(const nlohmann::json& j, BloomConfig& c) {
 
 nlohmann::json saveShadow(const ShadowConfig& c) {
     return {{"atlasRes2D",   c.atlasRes2D},
-            {"atlasResCube", c.atlasResCube}};
+            {"atlasResCube", c.atlasResCube},
+            {"softness",     c.softness}};
 }
 void loadShadow(const nlohmann::json& j, ShadowConfig& c) {
     c.atlasRes2D   = j.value("atlasRes2D",   c.atlasRes2D);
     c.atlasResCube = j.value("atlasResCube", c.atlasResCube);
+    c.softness     = j.value("softness",     c.softness);
 }
 
 nlohmann::json saveExposure(const ExposureConfig& c) {

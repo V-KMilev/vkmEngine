@@ -314,6 +314,11 @@ bool EnvironmentInspector::drawLighting(EditorContext& /*ec*/, EnvironmentConfig
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Per-face resolution of the point-light cube array.");
+
+        changed |= sliderF("Softness", "##ShadowSoft", &env.shadow.softness,
+                0.0f, 1.0f, "%.2f",
+                "PCF kernel-width multiplier for directional/spot shadows.\n"
+                "0 = the default 1.5-texel disk; 1 ~= 5.5-texel disk.");
     }
     return changed;
 }
