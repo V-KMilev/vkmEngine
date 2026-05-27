@@ -146,11 +146,9 @@ void GLShadowAtlas::ensureResolution(uint32_t res2D, uint32_t resCube) {
 }
 
 GLShadowAtlas::~GLShadowAtlas() {
-    if (m_tex2D != 0)   VKM_GL_CHECK(glDeleteTextures(1, &m_tex2D));
-    if (m_texCube != 0) VKM_GL_CHECK(glDeleteTextures(1, &m_texCube));
-    if (m_samplerDepthNoCompare != 0) {
-        VKM_GL_CHECK(glDeleteSamplers(1, &m_samplerDepthNoCompare));
-    }
+    if (m_tex2D != 0)                  VKM_GL_CHECK(glDeleteTextures(1, &m_tex2D));
+    if (m_texCube != 0)                VKM_GL_CHECK(glDeleteTextures(1, &m_texCube));
+    if (m_samplerDepthNoCompare != 0)  VKM_GL_CHECK(glDeleteSamplers(1, &m_samplerDepthNoCompare));
     m_fbo.reset();
     LOG_TRACE("Destructed GLShadowAtlas");
 }

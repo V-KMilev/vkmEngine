@@ -305,11 +305,14 @@ struct RenderModeConfig {
     /// material colour noise. Pushed to the PBR shader as u_forceNeutralMaterial.
     bool forceNeutralMaterial = false;
 
-    /// Forward pass switches to additive blend (GL_ONE, GL_ONE) with depth-test
-    /// off so every shaded fragment accumulates into the HDR target - the
-    /// resulting saturation is a heatmap of overdraw. Used by the Overdraw
-    /// diagnostic; orthogonal to the wireframe / OIT blend paths (those modes
-    /// take precedence in the inspector).
+    /**
+     * @brief Additive-blend mode for the Overdraw diagnostic.
+     *
+     * Forward pass switches to (GL_ONE, GL_ONE) with depth-test off so every
+     * shaded fragment accumulates into the HDR target - the resulting
+     * saturation reads as a heatmap of overdraw. Orthogonal to the wireframe
+     * / OIT blend paths; those modes take precedence in the inspector.
+     */
     bool overdrawBlend = false;
 
     /**

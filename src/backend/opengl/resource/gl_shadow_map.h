@@ -94,10 +94,14 @@ class GLShadowAtlas {
         uint32_t m_tex2D   = 0;
         uint32_t m_texCube = 0;
 
-        /// Sampler object with GL_TEXTURE_COMPARE_MODE = GL_NONE. Bound to
-        /// the depth slots via bind*ForReadingDepth so the shader sees raw
-        /// depth at those units even though the texture is configured for
-        /// hardware PCF on the compare path. Shared across 2D + cube.
+        /**
+         * @brief Compare-off sampler shared by the depth-read bindings.
+         *
+         * GL_TEXTURE_COMPARE_MODE = GL_NONE. Bound to the depth slots via
+         * bind*ForReadingDepth so the shader reads raw depth at those units
+         * even though the texture is configured for hardware PCF on the
+         * compare path. Shared across 2D + cube.
+         */
         uint32_t m_samplerDepthNoCompare = 0;
 
         std::unique_ptr<Core::FrameBuffer> m_fbo;

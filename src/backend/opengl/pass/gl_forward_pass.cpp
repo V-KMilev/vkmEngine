@@ -256,7 +256,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     // future refinement when binding cost is no longer the bottleneck.
     const GLIBL* activeIBL = &ibl;
     float activeProbeIntensity = view.environment.ibl.intensity;
-    int    activeProbeIndex = -1;  // -1 = no probe (slot 0 holds global)
+    int activeProbeIndex = -1;  // -1 = no probe (slot 0 holds global)
     {
         const auto& probes = view.probes;
         const auto& pool   = gl.getView().getProbeIBLs();
