@@ -95,4 +95,82 @@ inline bool rgResourceIsImplicit(RGResource r) {
         || r == RGResource::Overlay;
 }
 
+/**
+ * @brief Coarse-grained descriptor for a render-graph resource.
+ *
+ * Drives the alias-group solver: two resources can share physical storage
+ * only when their lifetimes are disjoint AND their descriptors match. The
+ * fields are intentionally coarse - exact widths/heights depend on the
+ * runtime viewport, so we classify by shape (Viewport / HalfViewport /
+ * Pyramid / Atlas / Custom) instead of pixels. Format is also coarse-grained
+ * by visual channel layout, not exact GL internal format - "RGBA16F" covers
+ * any 4-channel half-float, "MixedHDR" is a stand-in for multi-attachment
+ * wrappers (G-buffer) that don't reduce to a single attachment.
+ *
+ * Used by the alias-group analysis to produce a "could physically share"
+ * grouping; the visualizer surfaces this and a follow-up pool refactor can
+ * consume it directly. Cheap pure function; defined inline.
+ */
+struct RGResourceDescriptor {
+    enum class Shape : uint8_t {
+        None,           ///< No physical resource (Backbuffer, externally owned).
+        Viewport,       ///< Single image at the current viewport size.
+        HalfViewport,   ///< Half resolution (GTAO, future half-res post intermediates).
+        Pyramid,        ///< Viewport-sized mip pyramid (BloomChain, HiZPyramid).
+        Atlas,          ///< Fixed backend-owned atlas (ShadowAtlas, IBL).
+        Tiny,           ///< Sub-pixel-class (1x1 reduction targets, AdaptedLuminance).
+    };
+    enum class Format : uint8_t {
+        None,
+        RGBA16F,
+        RGBA8,
+        R16F,
+        R8,
+        Depth24Stencil8,
+        DepthFloat,
+        MixedHDR,       ///< Multi-attachment HDR wrapper (G-buffer normal + position + AO).
+    };
+    Shape   shape   = Shape::None;
+    Format  format  = Format::None;
+    uint8_t samples = 0;       ///< 1 = single-sample, 4 = 4x MSAA, 0 = N/A.
+
+    bool operator==(const RGResourceDescriptor& o) const {
+        return shape == o.shape && format == o.format && samples == o.samples;
+    }
+    bool operator!=(const RGResourceDescriptor& o) const { return !(*this == o); }
+};
+
+/**
+ * @brief Coarse descriptor for each render-graph resource.
+ *
+ * Used by the alias-group solver to reject lifetime-compatible pairs whose
+ * physical shapes disagree (no point grouping an R8 with an RGBA16F even if
+ * their lifetimes don't overlap). Values are chosen to match what the
+ * OpenGL backend wrappers actually allocate; if a wrapper's shape ever
+ * changes, this table needs to track it.
+ */
+inline RGResourceDescriptor rgResourceDescriptor(RGResource r) {
+    using S = RGResourceDescriptor::Shape;
+    using F = RGResourceDescriptor::Format;
+    switch (r) {
+        case RGResource::SceneHDR:          return {S::Viewport,     F::RGBA16F,         4};
+        case RGResource::SceneHDRResolved:  return {S::Viewport,     F::RGBA16F,         1};
+        case RGResource::PostScratch:       return {S::Viewport,     F::RGBA16F,         1};
+        case RGResource::TAAHistory:        return {S::Viewport,     F::RGBA16F,         1};
+        case RGResource::OITAccum:          return {S::Viewport,     F::RGBA16F,         1};
+        case RGResource::OITRevealage:      return {S::Viewport,     F::R8,              1};
+        case RGResource::Overlay:           return {S::Viewport,     F::RGBA8,           4};
+        case RGResource::AO:                return {S::HalfViewport, F::R16F,            1};
+        case RGResource::BloomChain:        return {S::Pyramid,      F::RGBA16F,         1};
+        case RGResource::HiZPyramid:        return {S::Pyramid,      F::DepthFloat,      1};
+        case RGResource::GBufferNormal:     return {S::Viewport,     F::MixedHDR,        1};
+        case RGResource::GBufferPosition:   return {S::Viewport,     F::MixedHDR,        1};
+        case RGResource::AdaptedLuminance:  return {S::Tiny,         F::R16F,            1};
+        case RGResource::ShadowAtlas:       return {S::Atlas,        F::Depth24Stencil8, 1};
+        case RGResource::IBL:               return {S::Atlas,        F::RGBA16F,         1};
+        case RGResource::Backbuffer:        return {S::None,         F::None,            0};
+        default:                            return {S::None,         F::None,            0};
+    }
+}
+
 } // namespace Engine

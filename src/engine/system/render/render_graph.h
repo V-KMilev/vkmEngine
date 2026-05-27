@@ -58,15 +58,17 @@ struct RGResourceLifetime {
  *   - The GLView and the window backbuffer (still backend-owned, since
  *     they're persistent across previews).
  *
- * Future work (tracked in docs/misc/gaps.md):
- *   - Lifetime-aliasing: resources with disjoint [firstWrite..lastRead]
- *     ranges could share physical storage. The lifetime data is already
- *     computed by compile() for debug telemetry and to keep the door open
- *     for this optimisation. The actual aliasing pool is intentionally
- *     deferred - at the current scale (~15 transient resources) the memory
- *     win does not justify the design + correctness work, and a 4 GiB+
- *     budget is comfortable. Revisit if mobile or memory-constrained
- *     targets land on the roadmap.
+ * Aliasing analysis (descriptor-aware):
+ *   compile() groups resources whose lifetimes are disjoint AND whose
+ *   descriptors (shape, format, samples - see rgResourceDescriptor) match.
+ *   aliasGroup()/aliasGroupCount() expose the result for the visualizer
+ *   and for a future pool refactor. Each member of a group could legally
+ *   point at the same physical GL object; the actual sharing requires
+ *   GLFrameResources to be reworked to allocate by descriptor signature
+ *   instead of one wrapper per RGResource - deferred at the current scale
+ *   (~15 transient resources, ~50-100 MB potential savings, 4 GiB+ budget
+ *   available) per the trade-off in docs/misc/gaps.md. Revisit if mobile
+ *   or memory-constrained targets land on the roadmap.
  */
 class RenderGraph {
     public:
