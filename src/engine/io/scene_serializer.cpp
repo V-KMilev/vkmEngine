@@ -67,6 +67,11 @@ template<> struct SerializerTraits<Light> {
     static json save(const Light& v, const ResourceManager&) { return CS::save(v); }
     static void load(const json& j, Light& v, ResourceManager&) { CS::load(j, v); }
 };
+template<> struct SerializerTraits<ReflectionProbe> {
+    static constexpr const char* key = "ReflectionProbe";
+    static json save(const ReflectionProbe& v, const ResourceManager&) { return CS::save(v); }
+    static void load(const json& j, ReflectionProbe& v, ResourceManager&) { CS::load(j, v); }
+};
 template<> struct SerializerTraits<Mesh> {
     static constexpr const char* key = "Mesh";
     static json save(const Mesh& v, const ResourceManager& r) { return CS::save(v, r); }
@@ -95,7 +100,7 @@ template<> struct SerializerTraits<Hierarchy> {
 /// here. The fold operators below propagate the change to save / load /
 /// known-key checks; no other edits required.
 using SerializedComponents = std::tuple<
-    Name, Transform, Camera, Light, Mesh, Animation, EnvironmentConfig, Hierarchy
+    Name, Transform, Camera, Light, ReflectionProbe, Mesh, Animation, EnvironmentConfig, Hierarchy
 >;
 
 // Detect at compile time which traits expose a `load` static. Hierarchy

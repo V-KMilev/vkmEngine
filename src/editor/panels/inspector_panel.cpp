@@ -8,6 +8,8 @@
 
 #include "framework/editor_common.h"
 #include "framework/editor_commands.h"
+#include "ecs/component/reflection_probe.h"
+#include <cstring>
 #include "system/render/render_view.h"   // EnvironmentConfig
 #include "system/visibility/bounds_utils.h"
 #include "input/editor_actions.h"
@@ -115,6 +117,7 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<Transform>(id))  drawTransformSection(scene, state, id);
     if (scene.has<Mesh>(id))       drawMeshSection(scene, ctx.resources, state, id);
     if (scene.has<Light>(id))      drawLightSection(scene, state, id);
+    if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, state, id);
     if (scene.has<Camera>(id))     drawCameraSection(scene, state, id);
     if (scene.has<Animation>(id))  drawAnimationSection(scene, state, id);
     if (scene.has<Hierarchy>(id))  drawHierarchySection(scene, state, id);
@@ -163,6 +166,13 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
             scene.add(Entity{id}, a);
             state.commands.push(std::make_unique<AddComponentCommand<Animation>>(
                 id, std::move(a), "Add Animation"));
+            state.markSceneDirty();
+        }
+        if (!scene.has<ReflectionProbe>(id) && ImGui::MenuItem("Reflection Probe")) {
+            ReflectionProbe p{};
+            scene.add(Entity{id}, p);
+            state.commands.push(std::make_unique<AddComponentCommand<ReflectionProbe>>(
+                id, p, "Add Reflection Probe"));
             state.markSceneDirty();
         }
         ImGui::EndPopup();
@@ -388,6 +398,58 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
         Light snap = scene.get<Light>(id);
         scene.remove<Light>(Entity{id});
         state.commands.push(std::make_unique<RemoveComponentCommand<Light>>(id, snap, "Remove Light"));
+        state.markSceneDirty();
+    }
+}
+
+void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id) {
+    bool remove = false;
+    const bool open = beginComponentCard("Reflection Probe", ACCENT_LIGHT, true, &remove);
+    if (open) {
+        auto& probe = scene.get<ReflectionProbe>(id);
+        bool changed = false;
+
+        // HDR source path. Bumping bakeVersion when the path changes
+        // signals the backend's IBL bake to re-run for this probe.
+        drawPropertyLabel("HDR Path");
+        char buf[512];
+        std::strncpy(buf, probe.hdrPath.c_str(), sizeof(buf));
+        buf[sizeof(buf) - 1] = '\0';
+        if (ImGui::InputText("##PHdr", buf, sizeof(buf))) {
+            probe.hdrPath = buf;
+            ++probe.bakeVersion;
+            changed = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Path to the equirect HDR (.hdr) that this probe bakes from.\n"
+                              "Empty = falls back to the global IBL bake at this location.");
+
+        drawPropertyLabel("Radius");
+        changed |= ImGui::DragFloat("##PRadius", &probe.radius, 0.1f, 0.1f, 1000.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Sphere of influence in world units. Outside this distance\n"
+                              "the probe contributes nothing.");
+
+        drawPropertyLabel("Falloff");
+        changed |= ImGui::SliderFloat("##PFalloff", &probe.falloffRange, 0.0f, 1.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Inner radius (as fraction of Radius) where the probe is at\n"
+                              "full strength. From there to Radius the weight smooths out.");
+
+        drawPropertyLabel("Intensity");
+        changed |= ImGui::DragFloat("##PIntensity", &probe.intensity, 0.05f, 0.0f, 32.0f, "%.2f");
+
+        ImGui::TextDisabled("Bake version: %d", probe.bakeVersion);
+        ImGui::TextDisabled("Backend bake pipeline lands in a follow-up commit.");
+
+        if (changed) state.markSceneDirty();
+    }
+    endComponentCard();
+    if (remove) {
+        ReflectionProbe snap = scene.get<ReflectionProbe>(id);
+        scene.remove<ReflectionProbe>(Entity{id});
+        state.commands.push(std::make_unique<RemoveComponentCommand<ReflectionProbe>>(
+            id, snap, "Remove Reflection Probe"));
         state.markSceneDirty();
     }
 }

@@ -463,6 +463,20 @@ struct RenderView {
 
     std::vector<LightData> lights;
 
+    /// Per-frame snapshot of a ReflectionProbe component plus the entity's
+    /// world position. Forward pass blends the K nearest probes per
+    /// fragment weighted by distance falloff.
+    struct ProbeData {
+        glm::vec3   position{0.0f};
+        float       radius       = 5.0f;
+        float       falloffRange = 0.7f;
+        float       intensity    = 1.0f;
+        std::string hdrPath;
+        int         bakeVersion  = 0;
+        uint32_t    entityId     = 0;  ///< Stable id (entity index) for bake caching.
+    };
+    std::vector<ProbeData> probes;
+
     uint32_t viewportWidth  = 0;
     uint32_t viewportHeight = 0;
     // Top-left of the scene-render rect inside the GLFW window (ImGui
