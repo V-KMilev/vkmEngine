@@ -758,10 +758,35 @@ vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, v
     vec3 kd = (vec3(1.0) - F) * (1.0 - s.metallic);
     vec3 diffuse = kd * s.albedo / PI;
     float diffNoL = NdotL;
+    // diffTint is a per-channel multiplier applied to the diffuse term in
+    // place of the scalar diffNoL when colored-wrap SSS is active. For the
+    // default (non-SSS) path it stays 1.0 and the scalar diffNoL takes
+    // effect below in baseLit.
+    vec3 diffTint = vec3(1.0);
+    bool sssWrapActive = false;
 #ifdef HAS_SUBSURFACE
     if (u_material.subsurface > 0.001) {
-        float w = u_material.subsurface;
-        diffNoL = clamp((dot(N, L) + w) / ((1.0 + w) * (1.0 + w)), 0.0, 1.0);
+        // Colored wrap: NdotL widens past the terminator (Half-Life 2 trick)
+        // and the wrapped fraction near the terminator picks up the
+        // material's subsurface tint - this is what produces the warm/red
+        // glow on ears, fingers, leaves backlit by the sun. Per-channel
+        // wrap keeps the deepest-penetrating wavelengths bleeding the
+        // farthest (red > green > blue in skin).
+        float rawNoL = dot(N, L);
+        float w      = u_material.subsurface;
+        vec3 wrap    = w * (1.0 + 0.5 * u_material.subsurfaceColor);
+        vec3 wrapped = clamp((vec3(rawNoL) + wrap)
+                             / ((1.0 + wrap) * (1.0 + wrap)),
+                             0.0, 1.0);
+        // Blend factor: 0 well in front of the terminator (use plain NdotL),
+        // 1 near and past it (use the colored wrapped term).
+        float blend  = smoothstep(w, -w, rawNoL);
+        // Tint the wrapped term toward subsurfaceColor only in the
+        // terminator zone so the lit side stays albedo-faithful.
+        vec3 tinted  = mix(wrapped, wrapped * u_material.subsurfaceColor, blend);
+        diffTint     = tinted;
+        diffNoL      = 1.0;
+        sssWrapActive = true;
     }
 #endif
 
@@ -784,7 +809,12 @@ vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, v
     }
 #endif
 
-    vec3 baseLit = diffuse * diffNoL + specular * NdotL;
+    // diffuse * diffNoL is the standard Lambert; when colored-wrap SSS is
+    // on, diffTint replaces the scalar (carrying the per-channel terminator
+    // tint) and diffNoL was set to 1.0 above.
+    vec3 baseLit = (sssWrapActive ? diffuse * diffTint
+                                   : diffuse * diffNoL)
+                 + specular * NdotL;
 
     // Clearcoat: a second, always-dielectric GGX lobe that also attenuates
     // the base layer by its Fresnel.
