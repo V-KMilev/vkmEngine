@@ -355,13 +355,25 @@ void loadShadow(const nlohmann::json& j, ShadowConfig& c) {
 }
 
 nlohmann::json saveExposure(const ExposureConfig& c) {
-    return {{"autoExposure", c.autoExposure}, {"key", c.key},
-            {"speed", c.speed}, {"min", c.min}, {"max", c.max}};
+    return {{"autoExposure",  c.autoExposure},
+            {"key",           c.key},
+            {"speedBrighten", c.speedBrighten},
+            {"speedDarken",   c.speedDarken},
+            {"min",           c.min},
+            {"max",           c.max}};
 }
 void loadExposure(const nlohmann::json& j, ExposureConfig& c) {
     c.autoExposure = j.value("autoExposure", c.autoExposure);
     c.key          = j.value("key",          c.key);
-    c.speed        = j.value("speed",        c.speed);
+    // Backwards compat: scenes saved before the lift/drag split used a
+    // single "speed" field. Map it to both rates so old scenes still work.
+    if (j.contains("speed") && !j.contains("speedBrighten")) {
+        c.speedBrighten = j.value("speed", c.speedBrighten);
+        c.speedDarken   = j.value("speed", c.speedDarken);
+    } else {
+        c.speedBrighten = j.value("speedBrighten", c.speedBrighten);
+        c.speedDarken   = j.value("speedDarken",   c.speedDarken);
+    }
     c.min          = j.value("min",          c.min);
     c.max          = j.value("max",          c.max);
 }

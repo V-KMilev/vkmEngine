@@ -47,8 +47,9 @@ void RuntimeSettingsOverlay::draw(EditorState& state, RenderSystem& renderSystem
         if (ImGui::CollapsingHeader("Exposure", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Checkbox("Auto Exposure", &env.exposure.autoExposure);
             ImGui::BeginDisabled(!env.exposure.autoExposure);
-            ImGui::SliderFloat("Key",   &env.exposure.key,   0.05f, 1.0f, "%.2f");
-            ImGui::SliderFloat("Speed", &env.exposure.speed, 0.1f,  10.0f, "%.2f");
+            ImGui::SliderFloat("Key",      &env.exposure.key,           0.05f, 1.0f,  "%.2f");
+            ImGui::SliderFloat("Brighten", &env.exposure.speedBrighten, 0.1f,  10.0f, "%.2f");
+            ImGui::SliderFloat("Darken",   &env.exposure.speedDarken,   0.1f,  10.0f, "%.2f");
             ImGui::EndDisabled();
         }
     }
