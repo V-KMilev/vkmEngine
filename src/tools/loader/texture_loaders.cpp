@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "LOADER"
+
 #include "texture_loaders.h"
 
 #include <cstdint>

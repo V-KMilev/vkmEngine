@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "EDITOR"
+
 #include "framework/asset_picker.h"
 
 #include <algorithm>

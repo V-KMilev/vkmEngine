@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "VISIBILITY"
+
 #include "system/visibility/visibility_system.h"
 
 #include <algorithm>

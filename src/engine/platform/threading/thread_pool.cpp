@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "THREAD"
+
 #include "platform/threading/thread_pool.h"
 
 #include <exception>

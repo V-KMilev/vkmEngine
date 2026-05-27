@@ -1,4 +1,8 @@
+#define VKM_LOG_CATEGORY "ASSETS"
+
 #include "asset_registration.h"
+
+#include "logger.h"
 
 #include "io/asset_serializer.h"
 #include "resource/resource_manager.h"
@@ -14,6 +18,7 @@ namespace Engine {
 
 void registerBuiltinAssetFactories() {
     auto& factories = AssetFactories::get();
+    LOG_INFO("Registering builtin factories (meshes: generator/model, textures: file/builtin/model-image, materials: folder/default/inline/model, shaders: directory)");
 
     // Meshes: "generator" kind. type selects which procedural shape.
     factories.registerMesh("generator", [](const nlohmann::json& desc) -> MeshAsset {

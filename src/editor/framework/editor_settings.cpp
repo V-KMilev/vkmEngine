@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "EDITOR"
+
 #include "framework/editor_settings.h"
 #include "framework/editor_state.h"
 

@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "WINDOW"
+
 #include "platform/window/window_manager.h"
 
 #include <algorithm>
@@ -58,6 +60,9 @@ void WindowManager::createWindow(const std::string& title) {
     m_frameLimiter = std::make_unique<FrameLimiter>();
 
     m_inputHandle->setupCallbacks(m_window->getWindowContext(), m_window.get());
+    LOG_INFO("Created window '%s' (%dx%d, refresh %dHz)",
+        title.c_str(), m_window->getWidth(), m_window->getHeight(),
+        m_window->getRefreshRate());
 }
 
 bool WindowManager::shouldClose() const {
@@ -65,12 +70,16 @@ bool WindowManager::shouldClose() const {
 }
 
 bool WindowManager::requestClose() {
+    LOG_INFO("Close requested");
     glfwSetWindowShouldClose(m_window->getWindowContext(), GLFW_TRUE);
     return true;
 }
 
 void WindowManager::cancelClose() {
-    if (m_window) glfwSetWindowShouldClose(m_window->getWindowContext(), GLFW_FALSE);
+    if (m_window) {
+        LOG_VERBOSE("Pending close cancelled");
+        glfwSetWindowShouldClose(m_window->getWindowContext(), GLFW_FALSE);
+    }
 }
 
 void WindowManager::setTitle(const std::string& title) {
@@ -135,6 +144,8 @@ bool WindowManager::updateMode(WindowMode windowMode) {
         mode->refreshRate
     );
 
+    LOG_INFO("Mode -> %s (%dx%d @ %dHz)",
+        toString(windowMode), mode->width, mode->height, mode->refreshRate);
     return true;
 }
 
@@ -173,15 +184,22 @@ bool WindowManager::beginFrame() {
 }
 
 void WindowManager::setVSync(bool enabled) {
-    // Disable software limiting when using VSync
-    m_frameLimiter->setUnlimited();
+    // VSync and the software FPS cap are independent knobs. Set only what
+    // the caller asked for; leave the framelimiter alone.
     m_window->setSwapInterval(enabled ? 1 : 0);
+    LOG_INFO("VSync %s", enabled ? "ON" : "OFF");
 }
 
 void WindowManager::setFramerate(int framerate) {
-    // Disable VSync when using software limiting
-    m_window->setSwapInterval(0);
+    // VSync and the software FPS cap are independent. Setting a software
+    // cap does not touch the swap interval; if both are active the lower
+    // effective rate wins, which is the usual expectation.
     m_frameLimiter->setTargetFramerate(framerate);
+    if (framerate > 0) {
+        LOG_INFO("FPS cap = %d", framerate);
+    } else {
+        LOG_INFO("FPS cap removed (unlimited)");
+    }
 }
 
 void WindowManager::setCursorMode(CursorMode mode) {

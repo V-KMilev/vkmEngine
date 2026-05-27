@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "EDITOR"
+
 #include "editor_system.h"
 
 #include <algorithm>
@@ -9,6 +11,8 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
+
+#include "logger.h"
 
 #include "debug/profiler.h"
 #include "framework/editor_context.h"
@@ -57,6 +61,8 @@ EditorSystem::EditorSystem(
     // recent scenes). Missing/invalid file is non-fatal - defaults apply.
     EditorSettings::load(m_state);
 
+    const size_t recentBefore = m_state.recentScenes.size();
+
     // Drop recent-scene entries whose files no longer exist. Without this
     // the Open Recent menu accumulates dead links across sessions.
     m_state.recentScenes.erase(
@@ -66,12 +72,19 @@ EditorSystem::EditorSystem(
                 return !std::filesystem::exists(p, ec);
             }),
         m_state.recentScenes.end());
+    if (recentBefore != m_state.recentScenes.size()) {
+        LOG_INFO("Pruned %zu stale entries from Open Recent",
+            recentBefore - m_state.recentScenes.size());
+    }
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
+    LOG_INFO("Initialized (%zu recent scene(s) restored)",
+        m_state.recentScenes.size());
 }
 
 EditorSystem::~EditorSystem() {
+    LOG_TRACE("Shutting down, saving settings");
     EditorSettings::save(m_state);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();

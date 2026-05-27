@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "MAIN"
+
 #include <string>
 
 #include "logger.h"

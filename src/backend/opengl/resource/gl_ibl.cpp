@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "BACKEND::GL"
+
 #include "gl_ibl.h"
 
 #include "logger.h"
@@ -26,7 +28,7 @@ void GLIBL::createTargets() {
     brdf.generateMipmaps = false;
     m_brdf = std::make_unique<Core::Texture2D>("ibl_brdf_lut", brdf);
 
-    LOG_INFO("GLIBL targets allocated (env %d, irr %d, prefilter %d/%d mips, brdf %d)",
+    LOG_INFO("Targets allocated (env %d, irr %d, prefilter %d/%d mips, brdf %d)",
         ENV_SIZE, IRRADIANCE_SIZE, PREFILTER_SIZE, PREFILTER_MIPS, BRDF_SIZE);
 }
 

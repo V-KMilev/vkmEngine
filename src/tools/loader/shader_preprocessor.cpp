@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "LOADER"
+
 #include "loader/shader_preprocessor.h"
 
 #include <filesystem>

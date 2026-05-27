@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "BACKEND::GL"
+
 #include "gl_taa_pass.h"
 
 #include <GL/glew.h>

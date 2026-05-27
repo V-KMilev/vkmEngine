@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "LOADER"
+
 #include "loader/environment_loaders.h"
 
 #include <cstddef>

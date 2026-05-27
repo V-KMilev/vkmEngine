@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "LOADER"
+
 #include "material_loaders.h"
 
 #include <filesystem>
@@ -270,7 +272,7 @@ MaterialHandle loadMaterialFromDesc(
         blackTex  // Flat surface (no displacement)
     );
 
-    LOG_INFO("Material created: albedo=%s, normal=%s, metallic=%s, roughness=%s, ao=%s, emission=%s, height=%s",
+    LOG_VERBOSE("Material created: albedo=%s, normal=%s, metallic=%s, roughness=%s, ao=%s, emission=%s, height=%s",
         !desc.albedoPath.empty() ? "custom" : "fallback",
         !desc.normalPath.empty() ? "custom" : "fallback",
         !desc.metallicPath.empty() ? "custom" : "fallback",
