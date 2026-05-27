@@ -335,10 +335,14 @@ void loadLensDirt(const nlohmann::json& j, LensDirtConfig& c) {
 }
 
 nlohmann::json saveBloom(const BloomConfig& c) {
-    return {{"strength", c.strength}};
+    return {{"strength",  c.strength},
+            {"threshold", c.threshold},
+            {"knee",      c.knee}};
 }
 void loadBloom(const nlohmann::json& j, BloomConfig& c) {
-    c.strength = j.value("strength", c.strength);
+    c.strength  = j.value("strength",  c.strength);
+    c.threshold = j.value("threshold", c.threshold);
+    c.knee      = j.value("knee",      c.knee);
 }
 
 nlohmann::json saveExposure(const ExposureConfig& c) {

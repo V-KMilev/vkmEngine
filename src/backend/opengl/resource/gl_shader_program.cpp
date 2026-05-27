@@ -6,6 +6,7 @@
 
 #include "logger.h"
 
+#include "debug/shader_error_log.h"
 #include "loader/shader_preprocessor.h"
 
 namespace Engine {
@@ -37,9 +38,11 @@ void GLShader::update(const ShaderAsset& asset) {
         recompile();
         applySamplerBindings(asset);
         LOG_INFO("Recompiled '%s'", getName().c_str());
+        ShaderErrorLog::get().clearFor(getName());
     } catch (const std::exception& e) {
         LOG_ERROR("Recompile '%s' failed: %s",
             getName().c_str(), e.what());
+        ShaderErrorLog::get().push(getName(), /*defines=*/{}, e.what());
     }
 }
 

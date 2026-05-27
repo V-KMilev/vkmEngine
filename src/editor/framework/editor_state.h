@@ -57,6 +57,7 @@ struct EditorState {
     bool viewportHovered = false;    ///< Whether mouse is over viewport
     bool hierarchyDirty  = true;     ///< Set by entity ops, consumed by HierarchyPanel
     bool editorVisible   = true;     ///< Toggle entire editor UI (F5)
+    bool runtimeSettingsVisible = false;  ///< Toggle player-facing graphics settings overlay (F10)
     bool requestModelImport = false;  ///< Set by the Import Model menu item, consumed by the menu-bar dialog
 
     // Scene I/O state
