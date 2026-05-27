@@ -14,6 +14,7 @@
 #include "system/visibility/visibility.h"
 #include "ecs/component/mesh.h"
 #include "ecs/component/light.h"
+#include "ecs/component/reflection_probe.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/world_transform.h"
 #include "resource/resource_manager.h"
@@ -302,6 +303,29 @@ void RenderView::build(
             if (taken2D < Config::MaxShadowCasters2D) light.shadowSlot = static_cast<int>(taken2D++);
         }
     }
+
+    // Reflection probes: snapshot every probe entity plus its world position.
+    // The forward pass blends the K nearest by distance falloff. Ordering
+    // here is iteration order; the backend / pass picks K = 4 nearest for
+    // each fragment so absolute ordering doesn't matter.
+    probes.clear();
+    probes.reserve(scene.count<ReflectionProbe>());
+    scene.forEach<ReflectionProbe, Transform>([&](EntityId id,
+            const ReflectionProbe& probe, const Transform& transform) {
+        ProbeData pd;
+        if (scene.has<WorldTransform>(id)) {
+            pd.position = glm::vec3(scene.get<WorldTransform>(id).model[3]);
+        } else {
+            pd.position = transform.position;
+        }
+        pd.radius       = probe.radius;
+        pd.falloffRange = probe.falloffRange;
+        pd.intensity    = probe.intensity;
+        pd.hdrPath      = probe.hdrPath;
+        pd.bakeVersion  = probe.bakeVersion;
+        pd.entityId     = id.index;
+        probes.emplace_back(std::move(pd));
+    });
 }
 
 } // namespace Engine

@@ -5,6 +5,7 @@
 #include "ecs/component/mesh.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/light.h"
+#include "ecs/component/reflection_probe.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/world_transform.h"
 #include "ecs/component/name.h"

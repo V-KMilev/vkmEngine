@@ -113,6 +113,24 @@ nlohmann::json save(const Light& l) {
         {"enabled",        l.enabled},
     };
 }
+nlohmann::json save(const ReflectionProbe& p) {
+    return {
+        {"hdrPath",      p.hdrPath},
+        {"radius",       p.radius},
+        {"falloffRange", p.falloffRange},
+        {"intensity",    p.intensity},
+    };
+}
+
+void load(const nlohmann::json& j, ReflectionProbe& p) {
+    p.hdrPath      = j.value("hdrPath",      p.hdrPath);
+    p.radius       = j.value("radius",       p.radius);
+    p.falloffRange = j.value("falloffRange", p.falloffRange);
+    p.intensity    = j.value("intensity",    p.intensity);
+    // bakeVersion is intentionally not persisted - the backend re-bakes
+    // on load and the counter starts at 0 again.
+}
+
 void load(const nlohmann::json& j, Light& l) {
     l.type           = lightTypeFromName(j.value("type", std::string{"Directional"}));
     l.color          = j.contains("color") ? vec3FromJson(j["color"]) : l.color;

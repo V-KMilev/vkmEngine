@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "ecs/scene.h"
+#include "ecs/component/reflection_probe.h"
 #include "framework/editor_state.h"
 #include "system/hierarchy/hierarchy_operations.h"
 
@@ -78,12 +79,14 @@ void RemoveComponentCommand<T>::undo(Scene& scene, EditorState& state) {
 // machinery for each component type the editor mutates through commands.
 template class AddComponentCommand<Mesh>;
 template class AddComponentCommand<Light>;
+template class AddComponentCommand<ReflectionProbe>;
 template class AddComponentCommand<Camera>;
 template class AddComponentCommand<Animation>;
 template class AddComponentCommand<Name>;
 
 template class RemoveComponentCommand<Mesh>;
 template class RemoveComponentCommand<Light>;
+template class RemoveComponentCommand<ReflectionProbe>;
 template class RemoveComponentCommand<Camera>;
 template class RemoveComponentCommand<Animation>;
 
