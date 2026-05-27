@@ -21,6 +21,13 @@ namespace Engine {
  */
 class GpuTimingPool {
     public:
+        GpuTimingPool(const GpuTimingPool& other) = delete;
+        GpuTimingPool& operator=(const GpuTimingPool& other) = delete;
+
+        GpuTimingPool(GpuTimingPool && other) = delete;
+        GpuTimingPool& operator=(GpuTimingPool && other) = delete;
+
+    public:
         static constexpr std::size_t kRingSize = 120;
 
         struct PassStats {

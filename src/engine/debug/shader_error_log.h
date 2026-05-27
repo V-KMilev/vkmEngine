@@ -21,6 +21,13 @@ namespace Engine {
  */
 class ShaderErrorLog {
     public:
+        ShaderErrorLog(const ShaderErrorLog& other) = delete;
+        ShaderErrorLog& operator=(const ShaderErrorLog& other) = delete;
+
+        ShaderErrorLog(ShaderErrorLog && other) = delete;
+        ShaderErrorLog& operator=(ShaderErrorLog && other) = delete;
+
+    public:
         struct Entry {
             std::chrono::system_clock::time_point timestamp;
             std::string  shaderName;

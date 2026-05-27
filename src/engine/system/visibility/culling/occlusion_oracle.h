@@ -29,6 +29,13 @@ namespace Engine {
  */
 class OcclusionOracle {
     public:
+        OcclusionOracle(const OcclusionOracle& other) = delete;
+        OcclusionOracle& operator=(const OcclusionOracle& other) = delete;
+
+        OcclusionOracle(OcclusionOracle && other) = delete;
+        OcclusionOracle& operator=(OcclusionOracle && other) = delete;
+
+    public:
         static OcclusionOracle& get();
 
         struct Frame {

@@ -77,6 +77,8 @@ class GLBackend : public RenderBackend {
         void beginPassTimer(std::size_t passIndex) override;
         void endPassTimer  (std::size_t passIndex) override;
 
+        std::vector<ShaderVariantStat> shaderVariantStats() const override;
+
         uint32_t snapshotToTexture(uint32_t srcTextureId, uint64_t key,
                                    uint32_t size) override;
         uint32_t cachedThumbnail(uint64_t key) const override;
