@@ -39,6 +39,7 @@ enum class RGResource : uint8_t {
     Overlay,             ///< HDR FBO overlay attachment; debug passes write, composite reads.
     OITAccum,            ///< Weighted-Blended OIT accumulation (RGBA16F).
     OITRevealage,        ///< Weighted-Blended OIT revealage (R8).
+    HiZPyramid,          ///< Max-Z depth pyramid for future occlusion culling.
     Backbuffer,          ///< Externally owned (window).
 
     Count
@@ -62,6 +63,7 @@ inline const char* rgResourceName(RGResource r) {
         case RGResource::Overlay:           return "Overlay";
         case RGResource::OITAccum:          return "OITAccum";
         case RGResource::OITRevealage:      return "OITRevealage";
+        case RGResource::HiZPyramid:        return "HiZPyramid";
         case RGResource::Backbuffer:        return "Backbuffer";
         default:                            return "Unknown";
     }
