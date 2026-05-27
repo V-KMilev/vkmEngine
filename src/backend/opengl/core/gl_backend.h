@@ -70,10 +70,14 @@ class GLBackend : public RenderBackend {
         /// at the end of every frame; no-op when VKM_PROFILER is off.
         void endFrame() override;
 
-        /// Per-pass GPU timer scope, double-buffered with GL_TIME_ELAPSED
-        /// queries. Reads of the "other" slot before issuing this frame's
-        /// query give the driver one full frame to make results available,
-        /// avoiding the stall that a same-frame readback would cause.
+        /**
+         * @brief Per-pass GPU timer scope.
+         *
+         * Double-buffered with GL_TIME_ELAPSED queries; reading the "other"
+         * slot before issuing this frame's query gives the driver a full
+         * frame to make results available, avoiding the stall a same-frame
+         * readback would cause.
+         */
         void beginPassTimer(std::size_t passIndex) override;
         void endPassTimer  (std::size_t passIndex) override;
 
@@ -167,11 +171,14 @@ class GLBackend : public RenderBackend {
         /// owns the GL textures themselves.
         std::unordered_map<uint64_t, std::unique_ptr<Core::Texture2D>> m_thumbCache;
 
-        /// Per-pass GL_TIME_ELAPSED queries. Two slots per pass so a frame
-        /// can issue the new query while the older slot's result completes
-        /// asynchronously. queries[]=0 means "not yet allocated"; lazy-
-        /// generated on first beginPassTimer(passIndex) and freed in the
-        /// dtor.
+        /**
+         * @brief Per-pass GL_TIME_ELAPSED queries (two slots per pass).
+         *
+         * A frame issues the new query while the older slot's result
+         * completes asynchronously. queries[] == 0 means "not yet
+         * allocated"; the slot is lazy-generated on first beginPassTimer
+         * and freed in the dtor.
+         */
         struct PassQueryRing {
             unsigned int queries[2] = {0u, 0u};
             bool         issued[2]  = {false, false};

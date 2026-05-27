@@ -57,11 +57,14 @@ class GLIBLBakePass : public RenderPass {
         }
 
     private:
-        /// Bake one IBL set (env + irradiance + prefilter + BRDF) from an
-        /// HDR equirect into the supplied @p ibl. Returns true if work
-        /// happened; false if @p path was empty / already-baked / failed
-        /// to load. Used once for the global IBL and once per reflection
-        /// probe per frame.
+        /**
+         * @brief Bake one IBL set (env + irradiance + prefilter + BRDF).
+         *
+         * Reads the HDR equirect at @p path and produces all four targets
+         * inside @p ibl. Returns true if work happened; false if @p path
+         * was empty, already-baked, or failed to load. Called once for
+         * the global IBL and once per reflection probe per frame.
+         */
         bool bakeOne(GLBackend& gl, GLIBL& ibl, const std::string& path,
                      class GLShader* eq, class GLShader* irr,
                      class GLShader* pf, class GLShader* br);

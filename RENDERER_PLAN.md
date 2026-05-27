@@ -585,3 +585,33 @@ These five surface up across the most features and are the highest-leverage to k
 - `/data2/vkm/vkm_code/vkmEngine/src/backend/opengl/core/gl_view.h`
 - `/data2/vkm/vkm_code/vkmEngine/src/backend/opengl/pass/gl_forward_pass.cpp`
 - `/data2/vkm/vkm_code/vkmEngine/shaders/pbr/fragment.shader`
+
+---
+
+## Status
+
+| #  | Feature                                  | Phase | Status                                         | Commit(s)                                |
+|----|------------------------------------------|-------|------------------------------------------------|------------------------------------------|
+| 1  | Bloom soft-knee threshold                | 1     | Shipped                                        | `a5339bc`                                |
+| 2  | Shader error history                     | 1     | Shipped                                        | `a5339bc`                                |
+| 3  | Expand debug visualizations              | 1     | Partial (7 new modes; no overdraw/batch-id/light-complexity/lightmap-UV) | `a5339bc` |
+| 4  | Screenshot API outside editor            | 1     | Shipped                                        | `a5339bc`                                |
+| 5  | Shader hot-reload include dependency graph | 1   | Shipped                                        | `a5339bc`                                |
+| 6  | Runtime graphics settings UI             | 1     | Shipped                                        | `a5339bc` (+ `cf07df5` overlay expansion)|
+| 7  | Per-pass GPU timing UI                   | 2     | Shipped (+ variant cache stats in `c64aec6`)   | `5d9bff2`                                |
+| 8  | Render-graph visualizer                  | 2     | Shipped                                        | `5d9bff2`                                |
+| 9  | Auto-exposure with lift/drag + outlier reject | 2 | Shipped (histogram metering deferred - needs GL 4.3) | `5fba9b9`                          |
+| 10 | Shader variant flag expansion            | 2     | Shipped (key + define emission; shader gates land per-feature) | `5d9bff2`                |
+| 11 | Shadow atlas dynamic sizing              | 2     | Shipped (+ softness for 2D and cube in `682b2aa`/`580fb55`) | `5d9bff2`                   |
+| 12 | Render-pass plugin/factory               | 2     | Shipped (string registry; JSON pipeline config deferred) | `5d9bff2`                      |
+| 13 | Per-probe IBL blending                   | 3     | Shipped (per-frame nearest-probe selection; per-fragment weighted blend deferred) | `f5a08a9` + `adf4823` |
+| 14 | POM self-shadowing                       | 3     | Shipped                                        | `5fba9b9`                                |
+| 15 | Weighted-Blended OIT                     | 4     | Shipped (global toggle; per-material opt-in deferred) | `83fef57`                          |
+| 16 | CSM / PCSS for spot+point lights         | 4     | Partial (shadow-softness PCF kernel for 2D + cube; proper PCSS blocker search + per-face cube res deferred) | `682b2aa` + `580fb55` |
+| 17 | Render graph resource aliasing           | 4     | Partial (analysis + visualizer color grouping; actual physical aliasing deferred - needs backend descriptor metadata) | `dbc404f` |
+| 18 | LTC area light specular (Phase 2C)       | 4     | Not shipped (needs Heitz pre-computed LUT data) | -                                       |
+| 19 | Thickness-aware subsurface scattering    | 4     | Partial (per-channel colored-wrap; pre-integrated LUT path deferred) | `5056fe7`                |
+| 20 | Hi-Z occlusion culling                   | 5     | Shipped (pyramid + CPU-side AABB-vs-pyramid test, one-frame latent) | `1c4e1fa` + `cd73d17` + `b9f6cea` + `46f3e42` |
+| 21 | Real-time GI / light probes              | 5     | Not shipped (depends on #13 + DDGI infrastructure) | -                                    |
+
+**Tally:** 13/21 fully shipped, 5/21 partial, 3/21 not shipped (one of the three needs external LUT data; the other two are week-plus features in their own right).

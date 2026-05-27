@@ -12,11 +12,12 @@ namespace Engine {
 /**
  * @brief CPU-side mirror of the Hi-Z (max-Z) pyramid for occlusion testing.
  *
- * The render graph builds the GPU pyramid each frame in GLHiZPass. The
- * backend reads back ONE mip level at end-of-frame and pushes the result
- * here so the next frame's visibility system can AABB-test against it
- * (one-frame-latent occlusion - the safest first step per #20 in
- * RENDERER_PLAN.md).
+ * The render graph builds the GPU pyramid each frame in GLHiZPass.
+ * The backend reads back one mip level at end-of-frame and pushes the
+ * result here so the next frame's visibility system can AABB-test
+ * against it. One-frame-latent occlusion: testing against the previous
+ * frame's depth avoids the sync stall a same-frame readback would cost
+ * and is accurate enough whenever camera motion is continuous.
  *
  * Stores positive view-space distance-from-camera per cell. The
  * companion @ref viewProj is the view-projection matrix the pyramid
