@@ -174,6 +174,8 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         sh->setUniform1i("u_hasIBL", frame.hasIBL);
         sh->setUniform1f("u_iblIntensity", frame.iblIntensity);
         sh->setUniform1i("u_ssaoEnabled", frame.ssaoEnabled);
+        if (sh->hasUniform("u_shadowSoftness"))
+            sh->setUniform1f("u_shadowSoftness", view.environment.shadow.softness);
         if (sh->hasUniform("u_screenSize"))
             sh->setUniform2f("u_screenSize", frame.screenW, frame.screenH);
         if (sh->hasUniform("u_hasSceneColor"))

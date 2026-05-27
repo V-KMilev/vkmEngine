@@ -184,6 +184,11 @@ uniform vec2      u_screenSize;   // full viewport pixels
 uniform int u_debugMode;
 uniform int u_forceNeutralMaterial;
 
+// Shadow softness knob for the 2D array PCF path (directional + spot).
+// 0 = the engine default 1.5-texel disk; 1 ~= 5.5-texel disk. Pushed from
+// EnvironmentConfig::shadow.softness each frame.
+uniform float u_shadowSoftness;
+
 // Camera clip range, pushed by the forward pass from the active Camera
 // component. Only read by the Depth diagnostic (u_debugMode == 2).
 uniform float u_zNear;
@@ -383,8 +388,11 @@ float sample2DShadow(int slot, vec3 worldPos, float NdotL) {
 
     vec2 texel = 1.0 / vec2(textureSize(u_shadowMap2D, 0).xy);
     // ~1.5-texel disk radius - matches the visual softness of the old 3x3
-    // box but without the gridded screen-door pattern. Cheap to widen later.
-    vec2 kernel = texel * 1.5;
+    // box but without the gridded screen-door pattern. u_shadowSoftness
+    // widens the kernel for an artistic soft-shadow look; the 12 Poisson
+    // taps stay constant so cost is unchanged.
+    float kernelScale = 1.5 + 4.0 * max(u_shadowSoftness, 0.0);
+    vec2 kernel = texel * kernelScale;
 
     // Per-fragment disk rotation. Without this, the Poisson points cluster
     // identically on every fragment and produce visible noise patterns; with
