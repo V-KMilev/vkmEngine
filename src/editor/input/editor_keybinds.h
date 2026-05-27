@@ -38,6 +38,7 @@ struct EditorKeybinds {
     KeyBind toggleInspector  = { ImGuiKey_2,      KeyMod_Ctrl };
     KeyBind toggleBottom     = { ImGuiKey_3,      KeyMod_Ctrl };
     KeyBind toggleEditor     = { ImGuiKey_F5,     KeyMod_None };
+    KeyBind runtimeSettings  = { ImGuiKey_F10,    KeyMod_None };
     KeyBind openPreferences  = { ImGuiKey_Comma,  KeyMod_Ctrl };
 
     // Entity operations

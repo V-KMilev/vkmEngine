@@ -1,7 +1,7 @@
 #include "overlays/viewport_toolbar.h"
 
 #include "framework/editor_common.h"
-#include "framework/screenshot.h"
+#include "io/screenshot.h"
 #include "input/editor_actions.h"
 #include "platform/window/window_manager.h"
 #include "system/render/render_system.h"
@@ -94,7 +94,7 @@ void ViewportToolbar::draw(EditorContext& ec) {
         ImGui::SameLine();
         if (iconButton("shot", EditorIcon::Screenshot, false, true,
                        "Save viewport screenshot to APP_ROOT_DIR/screenshots/", BTN)) {
-            captureViewportScreenshot(ctx.window, ec.renderSystem.getBackend());
+            Screenshot::captureViewport(ctx.window, ec.renderSystem.getBackend());
         }
 
         m_hovered = ImGui::IsWindowHovered(

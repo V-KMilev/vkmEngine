@@ -76,11 +76,15 @@ void GLBloomPass::execute(RenderGraphContext& rg) {
 
     // Progressive downsample: resolved HDR -> mip 0 -> ... -> mip N-1.
     down->bind();
+    const float threshold = rg.view.environment.bloom.threshold;
+    const float knee      = rg.view.environment.bloom.knee;
     for (int mip = 0; mip < mips; ++mip) {
         if (mip == 0) {
             hdr.bindResolvedColor(0);
             down->setUniform1f("u_srcLod", 0.0f);
             down->setUniform1i("u_karis", 1);
+            down->setUniform1f("u_threshold", threshold);
+            down->setUniform1f("u_knee",      knee);
         } else {
             bloom.bind(0);
             down->setUniform1f("u_srcLod", static_cast<float>(mip - 1));

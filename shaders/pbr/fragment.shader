@@ -1094,6 +1094,27 @@ void main() {
             ao = texture(u_ssao, gl_FragCoord.xy / u_screenSize).r;
         }
         color = vec3(ao);
+    } else if (u_debugMode == 4) {
+        // Perceptual roughness as grayscale (black = mirror, white = matte).
+        color = vec3(s.roughness);
+    } else if (u_debugMode == 5) {
+        // Metallic factor as grayscale.
+        color = vec3(s.metallic);
+    } else if (u_debugMode == 6) {
+        // Raw emission (linear HDR); display-bypass keeps the value intact.
+        color = s.emission;
+    } else if (u_debugMode == 7) {
+        // Tangent vector (world-space) remapped to [0, 1] for display.
+        color = normalize(vTangent) * 0.5 + 0.5;
+    } else if (u_debugMode == 8) {
+        // Unlit albedo - the sampled base colour with no lighting applied.
+        color = s.albedo;
+    } else if (u_debugMode == 9) {
+        // fract(worldPos) for spatial sanity (visible 1m grid in RGB).
+        color = fract(vWorldPos);
+    } else if (u_debugMode == 10) {
+        // UV channel 0 as RG (B unused) for texturing inspection.
+        color = vec3(fract(vUV.x), fract(vUV.y), 0.0);
     }
 
     FragColor = vec4(color, u_material.albedo.a * u_material.alpha);

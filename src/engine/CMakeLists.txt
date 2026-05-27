@@ -26,9 +26,11 @@ target_include_directories(EngineCore PUBLIC
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine>
 )
 
-# GLEW/GLFW include dirs for window.cpp (glew target uses old-style include_directories)
+# GLEW/GLFW include dirs for window.cpp (glew target uses old-style include_directories).
+# stb_image_write for io/screenshot.cpp - that TU defines STB_IMAGE_WRITE_IMPLEMENTATION.
 target_include_directories(EngineCore PRIVATE
     ${PROJECT_SOURCE_DIR}/modules/vkmGL/modules/glew/include
+    ${PROJECT_SOURCE_DIR}/modules/vkmGL/modules/stb
 )
 
 target_link_libraries(EngineCore PUBLIC

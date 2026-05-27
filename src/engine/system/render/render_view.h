@@ -155,7 +155,9 @@ struct LensDirtConfig {
 };
 
 struct BloomConfig {
-    float strength = 0.01f;          ///< Linear-HDR blend before exposure + tonemap.
+    float strength  = 0.01f;         ///< Linear-HDR blend before exposure + tonemap.
+    float threshold = 0.0f;          ///< Brightness below which a pixel contributes nothing.
+    float knee      = 0.0f;          ///< Half-width of the soft-knee transition around threshold.
 };
 
 struct ExposureConfig {
@@ -203,6 +205,13 @@ enum class RenderMode : uint8_t {
     Depth,                   ///< Linearised camera-space depth as grayscale.
     AOOnly,                  ///< GTAO factor as grayscale (white = fully lit).
     LightingOnly,            ///< PBR with material forced to neutral (0.5 albedo, 0 metal, 0.5 rough).
+    Roughness,               ///< Surface roughness as grayscale (after texture sample).
+    Metallic,                ///< Surface metallic factor as grayscale.
+    Emission,                ///< Raw emission (linear HDR, no display transform).
+    TangentSpace,            ///< Tangent vector as RGB.
+    AlbedoOnly,              ///< Sampled base color with no lighting.
+    WorldPosition,           ///< fract(worldPos) as RGB (1m grid).
+    UV,                      ///< UV channel 0 as red/green.
 };
 
 /**
@@ -247,9 +256,11 @@ struct RenderModeConfig {
     /// material colour noise. Pushed to the PBR shader as u_forceNeutralMaterial.
     bool forceNeutralMaterial = false;
 
-    /// PBR fragment-shader diagnostic selector. 0 = normal output, 1 = Normals,
-    /// 2 = Depth, 3 = AO. Pushed as u_debugMode; the shader's main() branches
-    /// just before FragColor is written so the diagnostic value lands in the
+    /// PBR fragment-shader diagnostic selector. 0 = normal output;
+    /// 1 = Normals, 2 = Depth, 3 = AO, 4 = Roughness, 5 = Metallic,
+    /// 6 = Emission, 7 = TangentSpace, 8 = AlbedoOnly, 9 = WorldPosition,
+    /// 10 = UV. Pushed as u_debugMode; the shader's main() branches just
+    /// before FragColor is written so the diagnostic value lands in the
     /// HDR target and bypassDisplayXform carries it through composite.
     int debugMode = 0;
 };
@@ -333,6 +344,48 @@ inline RenderModeConfig resolveModeConfig(RenderMode mode) {
             c.disablePost        = true;
             c.bypassDisplayXform = true;
             c.forceNeutralMaterial = true;
+            break;
+        case RenderMode::Roughness:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.debugMode          = 4;
+            break;
+        case RenderMode::Metallic:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.debugMode          = 5;
+            break;
+        case RenderMode::Emission:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.debugMode          = 6;
+            break;
+        case RenderMode::TangentSpace:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.debugMode          = 7;
+            break;
+        case RenderMode::AlbedoOnly:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.debugMode          = 8;
+            break;
+        case RenderMode::WorldPosition:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.debugMode          = 9;
+            break;
+        case RenderMode::UV:
+            c.disablePost        = true;
+            c.disableSSAO        = true;
+            c.bypassDisplayXform = true;
+            c.debugMode          = 10;
             break;
         case RenderMode::Default:
             break;
