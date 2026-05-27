@@ -63,38 +63,15 @@ void GLIBLBakePass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uin
     // IBL targets are fixed-size and independent of the window.
 }
 
-void GLIBLBakePass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
-    const RenderView& view = rg.view;
-    const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLIBLBakePass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
-
-    auto& gl     = static_cast<GLBackend&>(backend);
-    auto& glView = gl.getView();
-    auto& ibl    = *rg.resource<GLIBL>(RGResource::IBL);
-
-    const std::string& path = view.environment.ibl.path;
-    if (path.empty() || path == m_skipPath) return;
-    if (!ibl.needsBake(path)) return;
+bool GLIBLBakePass::bakeOne(GLBackend& gl, GLIBL& ibl, const std::string& path,
+                            GLShader* eq, GLShader* irr, GLShader* pf, GLShader* br) {
+    if (path.empty()) return false;
+    if (!ibl.needsBake(path)) return false;
 
     HDRImage img = loadHDRImage(path);
     if (!img.valid()) {
         LOG_ERROR("GLIBLBakePass: could not load '%s' - IBL stays off", path.c_str());
-        m_skipPath = path;
-        return;
-    }
-
-    GLShader* eq  = glView.resolveShader(m_equirectShader,   resources);
-    GLShader* irr = glView.resolveShader(m_irradianceShader, resources);
-    GLShader* pf  = glView.resolveShader(m_prefilterShader,  resources);
-    GLShader* br  = glView.resolveShader(m_brdfShader,       resources);
-    if (!eq || !irr || !pf || !br) {
-        LOG_ERROR("GLIBLBakePass: an IBL bake shader failed to resolve - skipping");
-        return;
+        return false;
     }
 
     ibl.createTargets();
@@ -158,12 +135,76 @@ void GLIBLBakePass::execute(RenderGraphContext& rg) {
     ctx.setDepthTest(prevDepth);
     ctx.setFaceCulling(prevCull);
     ctx.setDepthFunc(prevDFunc);
-    ctx.setViewport(0, 0,
-        static_cast<int32_t>(view.viewportWidth),
-        static_cast<int32_t>(view.viewportHeight));
 
     ibl.markBaked(path);
     LOG_INFO("IBL baked from '%s'", path.c_str());
+    return true;
+}
+
+void GLIBLBakePass::execute(RenderGraphContext& rg) {
+    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
+    RenderBackend& backend = rg.backend;
+    const RenderView& view = rg.view;
+    const ResourceManager& resources = rg.resources;
+    if (backend.getType() != RenderBackendType::OpenGL) {
+        LOG_ERROR("GLIBLBakePass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
+        return;
+    }
+
+    auto& gl     = static_cast<GLBackend&>(backend);
+    auto& glView = gl.getView();
+    auto& ibl    = *rg.resource<GLIBL>(RGResource::IBL);
+
+    GLShader* eq  = glView.resolveShader(m_equirectShader,   resources);
+    GLShader* irr = glView.resolveShader(m_irradianceShader, resources);
+    GLShader* pf  = glView.resolveShader(m_prefilterShader,  resources);
+    GLShader* br  = glView.resolveShader(m_brdfShader,       resources);
+    if (!eq || !irr || !pf || !br) {
+        LOG_ERROR("GLIBLBakePass: an IBL bake shader failed to resolve - skipping");
+        return;
+    }
+
+    // Global IBL (the env-map path on EnvironmentConfig::ibl). Same as before.
+    const std::string& globalPath = view.environment.ibl.path;
+    if (!globalPath.empty() && globalPath != m_skipPath) {
+        if (!bakeOne(gl, ibl, globalPath, eq, irr, pf, br) && ibl.needsBake(globalPath)) {
+            // bakeOne reported a load failure - record so we don't retry.
+            m_skipPath = globalPath;
+        }
+    }
+
+    // Per-probe bakes. One GLIBL per probe; grow the pool as needed.
+    // Each probe's path is independent so two probes can reference the
+    // same HDR (the cache key is the path, not a global signature).
+    auto& pool = glView.getProbeIBLs();
+    if (pool.size() < view.probes.size()) {
+        pool.resize(view.probes.size());
+    }
+    // Shrink when probes are removed; freed GLIBLs release their cubemaps.
+    if (pool.size() > view.probes.size()) {
+        pool.resize(view.probes.size());
+    }
+    for (std::size_t i = 0; i < view.probes.size(); ++i) {
+        const auto& probe = view.probes[i];
+        if (probe.hdrPath.empty()) {
+            // Probe with no HDR - keep the slot empty (forward pass falls
+            // back to the global IBL for fragments in its radius).
+            pool[i].reset();
+            continue;
+        }
+        if (!pool[i]) pool[i] = std::make_unique<GLIBL>();
+        auto& skip = m_probeSkipPaths[probe.entityId];
+        if (probe.hdrPath == skip) continue;
+        if (!bakeOne(gl, *pool[i], probe.hdrPath, eq, irr, pf, br)
+            && pool[i]->needsBake(probe.hdrPath)) {
+            skip = probe.hdrPath;
+        }
+    }
+
+    auto& ctx = gl.getContext();
+    ctx.setViewport(0, 0,
+        static_cast<int32_t>(view.viewportWidth),
+        static_cast<int32_t>(view.viewportHeight));
 }
 
 } // namespace Engine
