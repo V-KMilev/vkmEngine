@@ -89,8 +89,13 @@ int main() {
             {Engine::GLConfig::UniformNames::IrradianceMap,              Engine::GLConfig::TextureSlots::IrradianceMap},
             {Engine::GLConfig::UniformNames::PrefilterMap,               Engine::GLConfig::TextureSlots::PrefilterMap},
             {Engine::GLConfig::UniformNames::BrdfLUT,                    Engine::GLConfig::TextureSlots::BrdfLUT},
-            {Engine::GLConfig::UniformNames::SSAO,                       Engine::GLConfig::TextureSlots::SSAO},
             {Engine::GLConfig::UniformNames::EnvCube,                    Engine::GLConfig::TextureSlots::EnvCube},
+            // Fallback IBL set - the global skybox bake the PBR shader blends
+            // against the active reflection probe at probe-influence edges.
+            {Engine::GLConfig::UniformNames::IrradianceMap2,             Engine::GLConfig::TextureSlots::IrradianceMap2},
+            {Engine::GLConfig::UniformNames::PrefilterMap2,              Engine::GLConfig::TextureSlots::PrefilterMap2},
+            {Engine::GLConfig::UniformNames::EnvCube2,                   Engine::GLConfig::TextureSlots::EnvCube2},
+            {Engine::GLConfig::UniformNames::SSAO,                       Engine::GLConfig::TextureSlots::SSAO},
             {Engine::GLConfig::UniformNames::SceneColor,                 Engine::GLConfig::TextureSlots::SceneColor},
         };
         const std::unordered_map<std::string, int> unlitSamplers = {

@@ -604,7 +604,7 @@ These five surface up across the most features and are the highest-leverage to k
 | 10 | Shader variant flag expansion            | 2     | Shipped (key + define emission; shader gates land per-feature) | `5d9bff2`                |
 | 11 | Shadow atlas dynamic sizing              | 2     | Shipped (+ softness for 2D and cube in `682b2aa`/`580fb55`) | `5d9bff2`                   |
 | 12 | Render-pass plugin/factory               | 2     | Shipped (string registry; JSON pipeline config deferred) | `5d9bff2`                      |
-| 13 | Per-probe IBL blending                   | 3     | Shipped (per-frame nearest-probe selection; per-fragment weighted blend deferred) | `f5a08a9` + `adf4823` |
+| 13 | Per-probe IBL blending                   | 3     | Shipped (per-fragment weighted probe-vs-global blend + sphere parallax correction) | `f5a08a9` + `adf4823` + this branch |
 | 14 | POM self-shadowing                       | 3     | Shipped                                        | `5fba9b9`                                |
 | 15 | Weighted-Blended OIT                     | 4     | Shipped (global toggle; per-material opt-in deferred) | `83fef57`                          |
 | 16 | CSM / PCSS for spot+point lights         | 4     | Partial (shadow-softness PCF kernel for 2D + cube; proper PCSS blocker search + per-face cube res deferred) | `682b2aa` + `580fb55` |
