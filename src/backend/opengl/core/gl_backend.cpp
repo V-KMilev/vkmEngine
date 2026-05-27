@@ -84,6 +84,16 @@ void GLBackend::endFrame() {
     PROFILE_GPU_COLLECT();
 }
 
+std::vector<RenderBackend::ShaderVariantStat> GLBackend::shaderVariantStats() const {
+    std::vector<ShaderVariantStat> out;
+    const auto gl = m_view.getVariantCacheStats();
+    out.reserve(gl.size());
+    for (const auto& s : gl) {
+        out.push_back({s.shaderId, s.name, s.variants});
+    }
+    return out;
+}
+
 void GLBackend::beginPassTimer(std::size_t passIndex) {
     if (passIndex >= m_passQueries.size()) {
         m_passQueries.resize(passIndex + 1);

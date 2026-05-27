@@ -160,34 +160,43 @@ struct BloomConfig {
     float knee      = 0.0f;          ///< Half-width of the soft-knee transition around threshold.
 };
 
+/**
+ * @brief Hi-Z pyramid build + visibility-time occlusion test.
+ *
+ * @p useHiZ builds the max-Z depth pyramid each frame and uses the
+ * previous frame's pyramid as the visibility-time occlusion oracle.
+ * 1-frame stale, conservative (visible on miss). Off by default so
+ * pop-in regressions on fast camera motion are opt-in.
+ */
 struct OcclusionConfig {
-    /// Build the Hi-Z (max-Z) depth pyramid each frame AND use the
-    /// previous frame's pyramid as the visibility-time occlusion
-    /// oracle. 1-frame stale, conservative (visible on miss). Off by
-    /// default so pop-in regressions on fast camera motion are opt-in.
     bool useHiZ = false;
 };
 
+/**
+ * @brief Order-independent transparency mode.
+ *
+ * When @p useOIT is true the transparent forward phase writes to a
+ * Weighted-Blended OIT pair (accum + revealage) and a resolve pass
+ * composites the result on top of the opaque+sky scene (McGuire-Bavoil
+ * 2013). Off by default; the sorted back-to-front path is required for
+ * refractive (transmissive) materials, which OIT cannot reproduce.
+ */
 struct TransparencyConfig {
-    /// When true the transparent forward phase writes to a Weighted-Blended
-    /// OIT pair (accum + revealage) instead of alpha-blending into the HDR
-    /// scene. A subsequent resolve pass composites the OIT result on top
-    /// of the opaque+sky scene. McGuire-Bavoil 2013.
-    ///
-    /// Off by default. The sorted back-to-front path is required for
-    /// refractive (transmissive) materials - OIT accumulates without
-    /// knowledge of what's behind it, so refraction won't work.
     bool useOIT = false;
 };
 
+/**
+ * @brief Shadow atlas sizing + PCF kernel width.
+ *
+ * Atlas resolutions retune at runtime via GLShadowAtlas::ensureResolution.
+ * @p softness multiplies the 12-tap Poisson kernel: the 2D array path
+ * widens the 1.5-texel disk, the cube path jitters sample direction in
+ * the plane perpendicular to the light with offsets that scale with
+ * distance so closer fragments get a wider penumbra.
+ */
 struct ShadowConfig {
-    uint32_t atlasRes2D   = 2048;    ///< Per-layer resolution of the 2D array (directional/spot).
-    uint32_t atlasResCube = 512;     ///< Per-face resolution of the cube array (point).
-    /// PCF kernel width multiplier. 0 = sharp/single-tap; 1 = wide kernel.
-    /// 2D array path (directional/spot): widens the 1.5-texel base disk.
-    /// Cube path (point): jitters the sample direction in the plane
-    /// perpendicular to the light, with offsets that scale with distance
-    /// so closer fragments get a wider penumbra (area-light-like falloff).
+    uint32_t atlasRes2D   = 2048;
+    uint32_t atlasResCube = 512;
     float    softness     = 0.0f;
 };
 
@@ -292,12 +301,16 @@ struct RenderModeConfig {
     /// material colour noise. Pushed to the PBR shader as u_forceNeutralMaterial.
     bool forceNeutralMaterial = false;
 
-    /// PBR fragment-shader diagnostic selector. 0 = normal output;
-    /// 1 = Normals, 2 = Depth, 3 = AO, 4 = Roughness, 5 = Metallic,
-    /// 6 = Emission, 7 = TangentSpace, 8 = AlbedoOnly, 9 = WorldPosition,
-    /// 10 = UV. Pushed as u_debugMode; the shader's main() branches just
-    /// before FragColor is written so the diagnostic value lands in the
-    /// HDR target and bypassDisplayXform carries it through composite.
+    /**
+     * @brief PBR fragment-shader diagnostic selector.
+     *
+     * 0 = normal output; 1 = Normals, 2 = Depth, 3 = AO, 4 = Roughness,
+     * 5 = Metallic, 6 = Emission, 7 = TangentSpace, 8 = AlbedoOnly,
+     * 9 = WorldPosition, 10 = UV. Pushed as u_debugMode; the shader's
+     * main() branches just before FragColor is written so the diagnostic
+     * value lands in the HDR target and bypassDisplayXform carries it
+     * through composite.
+     */
     int debugMode = 0;
 };
 

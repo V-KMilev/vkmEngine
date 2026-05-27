@@ -149,6 +149,20 @@ class RenderBackend {
         virtual void endPassTimer(std::size_t /*passIndex*/) {}
 
         /**
+         * @brief Snapshot of the backend's shader variant cache.
+         *
+         * Surfaced in the editor's GPU panel so users can spot variant
+         * explosion. Empty default keeps backends without a variant cache
+         * (or backends where the cache isn't worth surfacing) quiet.
+         */
+        struct ShaderVariantStat {
+            std::uint32_t shaderId = 0;
+            std::string   name;
+            std::size_t   variants = 0;
+        };
+        virtual std::vector<ShaderVariantStat> shaderVariantStats() const { return {}; }
+
+        /**
          * @brief Construct a backend-specific FrameResources pool.
          *
          * The graph holds the returned pool via unique_ptr<FrameResources>

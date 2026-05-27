@@ -194,14 +194,16 @@ class RenderGraph {
         const std::vector<RGResource>& passReads(size_t index)  const { return m_reads[index]; }
         const std::vector<RGResource>& passWrites(size_t index) const { return m_writes[index]; }
 
-        /// Alias group id for a resource (0..N-1). Resources sharing a
-        /// group have disjoint lifetimes and could in principle share
-        /// physical storage. Computed by compile(). -1 = resource never
-        /// used this frame; persistent resources get a unique group of
-        /// their own and never alias. Backend metadata (size, format)
-        /// is not consulted - the groups are an upper bound on what
-        /// could alias, not a guarantee they should. Surfaced in the
-        /// editor's render-graph visualizer.
+        /**
+         * @brief Alias-group id for a resource (0..N-1).
+         *
+         * Resources sharing a group have disjoint lifetimes and could in
+         * principle share physical storage. Computed by compile(); -1 means
+         * the resource was never used this frame. Persistent resources get
+         * a unique group of their own and never alias. Backend descriptor
+         * metadata is not consulted - the groups are an upper bound on what
+         * could alias. Surfaced in the editor's render-graph visualizer.
+         */
         int aliasGroup(RGResource r) const {
             return m_aliasGroups[static_cast<uint32_t>(r)];
         }
