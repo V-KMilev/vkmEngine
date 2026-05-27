@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -130,6 +131,22 @@ class RenderBackend {
          * needs to include backend headers.
          */
         virtual void endFrame() {}
+
+        /**
+         * @brief Per-pass GPU timer scope - backend-provided primitive used
+         *        by the render graph to feed @ref GpuTimingPool.
+         *
+         * Wraps a single pass's GPU work. Implementations are expected to
+         * issue a GPU-side begin/end timer (e.g. GL_TIME_ELAPSED) and to
+         * drain completed measurements into the timing pool from their
+         * own @ref endFrame() hook, with whatever frame-lag the API
+         * requires to avoid CPU stalls on the read-back.
+         *
+         * Default: no-op (a backend without GPU timer support quietly
+         * shows zeros in the editor).
+         */
+        virtual void beginPassTimer(std::size_t /*passIndex*/) {}
+        virtual void endPassTimer(std::size_t /*passIndex*/) {}
 
         /**
          * @brief Construct a backend-specific FrameResources pool.

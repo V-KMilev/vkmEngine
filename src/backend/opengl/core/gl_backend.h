@@ -1,8 +1,10 @@
 #pragma once
 
 #include <memory>
+#include <cstddef>
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
 
 #include "system/render/render_backend.h"
 
@@ -29,7 +31,7 @@ class FrameResources;
 class GLBackend : public RenderBackend {
     public:
         GLBackend();
-        ~GLBackend() override = default;
+        ~GLBackend() override;
 
         GLBackend(const GLBackend& other) = delete;
         GLBackend& operator=(const GLBackend& other) = delete;
@@ -67,6 +69,13 @@ class GLBackend : public RenderBackend {
         /// Drain completed Tracy GPU timer queries. Called by RenderGraph
         /// at the end of every frame; no-op when VKM_PROFILER is off.
         void endFrame() override;
+
+        /// Per-pass GPU timer scope, double-buffered with GL_TIME_ELAPSED
+        /// queries. Reads of the "other" slot before issuing this frame's
+        /// query give the driver one full frame to make results available,
+        /// avoiding the stall that a same-frame readback would cause.
+        void beginPassTimer(std::size_t passIndex) override;
+        void endPassTimer  (std::size_t passIndex) override;
 
         uint32_t snapshotToTexture(uint32_t srcTextureId, uint64_t key,
                                    uint32_t size) override;
@@ -155,6 +164,20 @@ class GLBackend : public RenderBackend {
         /// Material Editor). The graph keeps a key->id index; the backend
         /// owns the GL textures themselves.
         std::unordered_map<uint64_t, std::unique_ptr<Core::Texture2D>> m_thumbCache;
+
+        /// Per-pass GL_TIME_ELAPSED queries. Two slots per pass so a frame
+        /// can issue the new query while the older slot's result completes
+        /// asynchronously. queries[]=0 means "not yet allocated"; lazy-
+        /// generated on first beginPassTimer(passIndex) and freed in the
+        /// dtor.
+        struct PassQueryRing {
+            unsigned int queries[2] = {0u, 0u};
+            bool         issued[2]  = {false, false};
+            int          currentSlot = -1;   ///< Slot of the in-flight (this-frame) query.
+        };
+        std::vector<PassQueryRing> m_passQueries;
+
+        void destroyPassTimers();
 };
 
 } // namespace Engine

@@ -4,8 +4,13 @@
 #include <cstdio>
 #include <ctime>
 
+#include "debug/gpu_timing.h"
 #include "debug/shader_error_log.h"
 #include "framework/editor_common.h"
+#include "system/render/render_graph.h"
+#include "system/render/render_graph_resource.h"
+#include "system/render/render_pass.h"
+#include "system/render/render_system.h"
 #include "ui/editor_style.h"
 
 namespace Engine {
@@ -16,9 +21,17 @@ void BottomPanel::draw(EditorContext& ec) {
             drawAnimationSection(ec);
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("GPU")) {
+            drawGpuProfilerSection();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Render Graph")) {
+            drawRenderGraphSection(ec);
+            ImGui::EndTabItem();
+        }
         // Append (N) to the tab label when there are pending errors so
         // the operator notices without leaving the Animation tab.
-        char shaderLabel[48];
+        char shaderLabel[64];
         const std::size_t errCount = ShaderErrorLog::get().size();
         if (errCount > 0) {
             std::snprintf(shaderLabel, sizeof(shaderLabel), "Shader Errors (%zu)###bp_shaders", errCount);
@@ -30,6 +43,192 @@ void BottomPanel::draw(EditorContext& ec) {
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
+    }
+}
+
+void BottomPanel::drawRenderGraphSection(EditorContext& ec) {
+    const RenderGraph& graph = ec.renderSystem.getGraph();
+    const std::size_t n = graph.passCount();
+
+    if (n == 0) {
+        ImGui::TextDisabled("Graph empty - no passes registered.");
+        return;
+    }
+
+    // Per-resource use counter: number of active passes that touch it.
+    std::size_t resourcesUsed = 0;
+    for (std::uint32_t r = 0; r < RG_RESOURCE_COUNT; ++r) {
+        if (graph.lifetime(static_cast<RGResource>(r)).used()) ++resourcesUsed;
+    }
+
+    ImGui::Text("%zu passes, %zu transient resources in use",
+                n, resourcesUsed);
+    ImGui::TextDisabled("R = read, W = write, RW = both. Faint = within [firstWrite, lastRead].");
+    ImGui::Separator();
+
+    constexpr ImU32 kCellWrite = IM_COL32(200,  60,  60, 100);  // red-ish
+    constexpr ImU32 kCellRead  = IM_COL32( 70, 140, 220, 100);  // cyan-ish
+    constexpr ImU32 kCellBoth  = IM_COL32(180,  80, 200, 130);  // magenta-ish
+    constexpr ImU32 kCellSpan  = IM_COL32(120, 120, 120,  35);  // dim in-lifetime
+    constexpr int   kPassColPx = 38;
+
+    const int totalCols = 2 + static_cast<int>(n);
+
+    if (ImGui::BeginTable("##rg_matrix", totalCols,
+            ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
+            ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
+            ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupScrollFreeze(2, 1);
+        ImGui::TableSetupColumn("Resource", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+        ImGui::TableSetupColumn("Range",    ImGuiTableColumnFlags_WidthFixed, 70.0f);
+        for (std::size_t i = 0; i < n; ++i) {
+            char buf[24];
+            std::snprintf(buf, sizeof(buf), "%zu", i);
+            ImGui::TableSetupColumn(buf, ImGuiTableColumnFlags_WidthFixed,
+                                    static_cast<float>(kPassColPx));
+        }
+        ImGui::TableHeadersRow();
+
+        // Hover-tooltip the pass-index column headers with their names so the
+        // narrow columns stay readable. ImGui doesn't expose a per-header
+        // tooltip hook directly so we walk the header row a second time.
+        for (std::size_t i = 0; i < n; ++i) {
+            ImGui::TableSetColumnIndex(2 + static_cast<int>(i));
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Pass %zu\n%s",
+                    i, graph.getPass(i).getName().c_str());
+            }
+        }
+
+        for (std::uint32_t r = 0; r < RG_RESOURCE_COUNT; ++r) {
+            const auto rid = static_cast<RGResource>(r);
+            const auto& lt = graph.lifetime(rid);
+            const bool used = lt.used();
+
+            // Hide rows that nothing references this frame to keep the matrix tight.
+            if (!used) continue;
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(rgResourceName(rid));
+
+            ImGui::TableSetColumnIndex(1);
+            if (lt.firstWrite >= 0 && lt.lastRead >= 0) {
+                ImGui::Text("[%d..%d]", lt.firstWrite, lt.lastRead);
+            } else if (lt.firstWrite >= 0) {
+                ImGui::Text("W@%d",  lt.firstWrite);
+            } else {
+                ImGui::Text("R@%d",  lt.lastRead);
+            }
+
+            for (std::size_t i = 0; i < n; ++i) {
+                ImGui::TableSetColumnIndex(2 + static_cast<int>(i));
+
+                bool reads = false, writes = false;
+                for (RGResource rd : graph.passReads(i))  if (rd == rid) { reads  = true; break; }
+                for (RGResource wr : graph.passWrites(i)) if (wr == rid) { writes = true; break; }
+
+                ImU32 bg = 0;
+                const char* label = "";
+                if (reads && writes) { bg = kCellBoth;  label = "RW"; }
+                else if (writes)     { bg = kCellWrite; label = "W";  }
+                else if (reads)      { bg = kCellRead;  label = "R";  }
+                else {
+                    const int pi = static_cast<int>(i);
+                    if (lt.firstWrite >= 0 && lt.lastRead >= 0
+                        && pi >= lt.firstWrite && pi <= lt.lastRead) {
+                        bg = kCellSpan;
+                    }
+                }
+                if (bg) ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, bg);
+                if (*label) ImGui::TextUnformatted(label);
+            }
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::Spacing();
+    if (ImGui::CollapsingHeader("Pass declarations")) {
+        for (std::size_t i = 0; i < n; ++i) {
+            ImGui::Text("[%zu] %s", i, graph.getPass(i).getName().c_str());
+            const auto& reads  = graph.passReads(i);
+            const auto& writes = graph.passWrites(i);
+            if (!writes.empty()) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("  writes:");
+                for (std::size_t k = 0; k < writes.size(); ++k) {
+                    ImGui::SameLine();
+                    ImGui::TextUnformatted(rgResourceName(writes[k]));
+                }
+            }
+            if (!reads.empty()) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("  reads:");
+                for (std::size_t k = 0; k < reads.size(); ++k) {
+                    ImGui::SameLine();
+                    ImGui::TextUnformatted(rgResourceName(reads[k]));
+                }
+            }
+        }
+    }
+}
+
+void BottomPanel::drawGpuProfilerSection() {
+    const auto passes = GpuTimingPool::get().snapshot();
+    if (passes.empty()) {
+        ImGui::TextDisabled("No passes registered yet - the first frame will populate this.");
+        return;
+    }
+
+    double totalLast = 0.0;
+    double totalAvg  = 0.0;
+    for (const auto& p : passes) { totalLast += p.last; totalAvg += p.avg; }
+
+    ImGui::Text("Total: %.3f ms last, %.3f ms avg (%zu passes)",
+                totalLast, totalAvg, passes.size());
+    ImGui::TextDisabled("Per-pass GL_TIME_ELAPSED, double-buffered (1-frame lag).");
+    ImGui::Separator();
+
+    if (ImGui::BeginTable("##gpu_passes", 5,
+            ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+            ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY)) {
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn("Pass",   ImGuiTableColumnFlags_WidthStretch, 1.6f);
+        ImGui::TableSetupColumn("Last ms", ImGuiTableColumnFlags_WidthFixed,  70.0f);
+        ImGui::TableSetupColumn("Avg ms",  ImGuiTableColumnFlags_WidthFixed,  70.0f);
+        ImGui::TableSetupColumn("p99 ms",  ImGuiTableColumnFlags_WidthFixed,  70.0f);
+        ImGui::TableSetupColumn("History", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableHeadersRow();
+
+        for (std::size_t i = 0; i < passes.size(); ++i) {
+            const auto& p = passes[i];
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(p.name.empty() ? "?" : p.name.c_str());
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%.3f", p.last);
+            ImGui::TableSetColumnIndex(2);
+            ImGui::Text("%.3f", p.avg);
+            ImGui::TableSetColumnIndex(3);
+            ImGui::Text("%.3f", p.p99);
+            ImGui::TableSetColumnIndex(4);
+            // PlotLines wants a contiguous float array - PassStats keeps the
+            // ring un-rotated, which is fine: the visible squiggle wraps but
+            // the relative shape is still readable, and rotating each frame
+            // would be wasted work.
+            const float scaleMin = 0.0f;
+            const float scaleMax = static_cast<float>(p.maxV > 0.0 ? p.maxV : 1.0);
+            char overlay[16];
+            std::snprintf(overlay, sizeof(overlay), "%.2f ms", p.maxV);
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::PlotLines("##plot", p.ring.data(),
+                static_cast<int>(p.ring.size()),
+                /*offset=*/static_cast<int>(p.cursor),
+                overlay, scaleMin, scaleMax,
+                ImVec2(-1.0f, ImGui::GetTextLineHeight() * 1.5f));
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
     }
 }
 

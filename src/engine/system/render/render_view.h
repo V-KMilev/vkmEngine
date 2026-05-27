@@ -160,6 +160,11 @@ struct BloomConfig {
     float knee      = 0.0f;          ///< Half-width of the soft-knee transition around threshold.
 };
 
+struct ShadowConfig {
+    uint32_t atlasRes2D   = 2048;    ///< Per-layer resolution of the 2D array (directional/spot).
+    uint32_t atlasResCube = 512;     ///< Per-face resolution of the cube array (point).
+};
+
 struct ExposureConfig {
     bool  autoExposure = false;      ///< Off by default - matches glTF reference viewers.
     float key          = 0.18f;      ///< Target middle-gray.
@@ -276,6 +281,7 @@ struct RenderModeConfig {
 struct EnvironmentConfig {
     AmbientConfig    ambient;
     IBLConfig        ibl;
+    ShadowConfig     shadow;
 
     AOConfig         ao;
     SSRConfig        ssr;
