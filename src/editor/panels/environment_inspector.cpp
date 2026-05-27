@@ -369,6 +369,10 @@ bool EnvironmentInspector::drawPost(EditorContext& /*ec*/, EnvironmentConfig& en
             if (env.bloom.strength > 0.0001f) m_bloomStrengthMemo = env.bloom.strength;
             changed = true;
         }
+        changed |= sliderF("Threshold", "##BloomThr", &env.bloom.threshold, 0.0f, 4.0f, "%.2f",
+                "Brightness below which a pixel contributes nothing. 0 = all light blooms.");
+        changed |= sliderF("Knee", "##BloomKnee", &env.bloom.knee, 0.0f, 1.0f, "%.2f",
+                "Soft-knee half-width around threshold. 0 = hard cutoff.");
         ImGui::EndDisabled();
     }
 
@@ -504,6 +508,13 @@ bool EnvironmentInspector::drawScene(EditorContext& /*ec*/, EnvironmentConfig& e
             "Depth",
             "AO Only",
             "Lighting Only",
+            "Roughness",
+            "Metallic",
+            "Emission",
+            "Tangent Space",
+            "Albedo Only",
+            "World Position",
+            "UV",
         };
         int modeIdx = static_cast<int>(env.renderMode);
         if (ImGui::Combo("##RenderMode", &modeIdx, MODE_NAMES, IM_ARRAYSIZE(MODE_NAMES))) {
@@ -520,7 +531,14 @@ bool EnvironmentInspector::drawScene(EditorContext& /*ec*/, EnvironmentConfig& e
                 "  Normals              world-space normal as RGB\n"
                 "  Depth                distance from camera (white=far)\n"
                 "  AO Only              GTAO factor as grayscale\n"
-                "  Lighting Only        PBR with neutral material");
+                "  Lighting Only        PBR with neutral material\n"
+                "  Roughness            sampled roughness as grayscale\n"
+                "  Metallic             sampled metallic factor\n"
+                "  Emission             raw emission (linear HDR)\n"
+                "  Tangent Space        world-space tangent as RGB\n"
+                "  Albedo Only          base colour with no lighting\n"
+                "  World Position       fract(worldPos) (1m grid)\n"
+                "  UV                   UV channel 0 as red/green");
         }
         ImGui::Spacing();
     }

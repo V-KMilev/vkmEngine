@@ -15,10 +15,25 @@ out vec4 FragColor;
 uniform sampler2D u_src;
 uniform float u_srcLod;
 uniform int   u_karis;
+uniform float u_threshold;
+uniform float u_knee;
 
 float karisWeight(vec3 c) {
     float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
     return 1.0 / (1.0 + luma);
+}
+
+// Karis/COD/Jimenez soft-knee prefilter. Returns a [0,1] multiplier for
+// the input color. With knee = 0 and threshold = 0 the result is 1.0 for
+// any non-negative input (the path matches the original no-gate behavior).
+vec3 softKnee(vec3 c) {
+    float brightness = max(c.r, max(c.g, c.b));
+    float knee = max(u_knee, 1e-4);
+    vec3  curve = vec3(u_threshold - knee, 2.0 * knee, 0.25 / knee);
+    float soft  = max(brightness - curve.x, 0.0);
+    soft = clamp((soft * soft) * curve.z, 0.0, soft * curve.y * 0.5);
+    float contribution = max(soft, brightness - u_threshold) / max(brightness, 1e-4);
+    return c * contribution;
 }
 
 void main() {
@@ -45,11 +60,11 @@ void main() {
 
     vec3 result;
     if (u_karis == 1) {
-        vec3 g0 = (a + b + d + e) * 0.25;
-        vec3 g1 = (b + c + e + f) * 0.25;
-        vec3 g2 = (d + e + g + h) * 0.25;
-        vec3 g3 = (e + f + h + i) * 0.25;
-        vec3 g4 = (j + k + l + m) * 0.25;
+        vec3 g0 = softKnee((a + b + d + e) * 0.25);
+        vec3 g1 = softKnee((b + c + e + f) * 0.25);
+        vec3 g2 = softKnee((d + e + g + h) * 0.25);
+        vec3 g3 = softKnee((e + f + h + i) * 0.25);
+        vec3 g4 = softKnee((j + k + l + m) * 0.25);
 
         float w0 = karisWeight(g0);
         float w1 = karisWeight(g1);

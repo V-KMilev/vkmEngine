@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace Engine {
@@ -32,5 +33,22 @@ namespace Engine {
  */
 std::string preprocessShaderFile(const std::string& filePath,
                                  const std::vector<std::string>& defines = {});
+
+/**
+ * @brief Same as preprocessShaderFile, but also reports the parent
+ *        directories of every `#include`d file traversed.
+ *
+ * Used by the hot-reload plumbing (`watchShader`) to extend the
+ * FileWatcher across every directory that contributes to the compiled
+ * source: an edit to a shared `_helpers/lighting.glsl` should bump
+ * every consumer's asset version, not just the helper's own dir.
+ *
+ * @p outIncludedDirs is populated with canonical directory strings
+ * for every file pulled in via `#include`. The top-level file's own
+ * directory is NOT included (callers already watch it).
+ */
+std::string preprocessShaderFile(const std::string& filePath,
+                                 const std::vector<std::string>& defines,
+                                 std::unordered_set<std::string>& outIncludedDirs);
 
 } // namespace Engine

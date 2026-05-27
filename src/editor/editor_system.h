@@ -14,6 +14,7 @@
 #include "overlays/gizmo_overlay.h"
 #include "overlays/viewport_toolbar.h"
 #include "overlays/playback_bar.h"
+#include "overlays/runtime_settings_overlay.h"
 #include "panels/hierarchy_panel.h"
 #include "panels/inspector_panel.h"
 #include "panels/bottom_panel.h"
@@ -96,6 +97,7 @@ class EditorSystem : public System {
         GizmoOverlay     m_gizmoOverlay;
         ViewportToolbar  m_viewportToolbar;
         ViewportPlaybar  m_playbar;
+        RuntimeSettingsOverlay m_runtimeSettings;
         PreferencesPanel m_preferences;
         MaterialEditorPanel m_materialEditor;
         AssetBrowserPanel m_assetBrowser;

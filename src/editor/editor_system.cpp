@@ -190,6 +190,11 @@ void EditorSystem::update(FrameContext& ctx) {
         // from continuing while the editor isn't drawing.
         if (!m_state.editorVisible) m_panelResize.resetDragState();
     }
+    // Runtime graphics-settings overlay (F10) is reachable in both the
+    // visible and hidden editor branches - it's intentionally player-facing.
+    if (isPressed(m_state.keybinds.runtimeSettings)) {
+        m_state.runtimeSettingsVisible = !m_state.runtimeSettingsVisible;
+    }
 
     // Save-on-quit modal: top-priority, drawn before anything else so it's
     // visible whether the editor is shown or hidden. Reachable only via
@@ -259,6 +264,9 @@ void EditorSystem::update(FrameContext& ctx) {
             ImGui::PopStyleVar();
             ImGui::PopStyleColor();
         }
+        // Runtime graphics settings overlay remains reachable while the
+        // editor is hidden - it's intentionally player-facing.
+        m_runtimeSettings.draw(m_state, m_renderSystem);
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         return;
@@ -327,6 +335,10 @@ void EditorSystem::update(FrameContext& ctx) {
         PROFILE_SCOPE("Panel/AssetBrowser");
         m_assetBrowser.draw(ec);
     }
+
+    // Runtime graphics settings overlay - intentionally drawn last so it
+    // floats over the editor workspace and isn't clipped by any panel.
+    m_runtimeSettings.draw(m_state, m_renderSystem);
 
     {
         PROFILE_SCOPE("Editor/ImGuiRender");

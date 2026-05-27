@@ -8,6 +8,7 @@
 #include "logger.h"
 
 #include "debug/profiler.h"
+#include "debug/shader_error_log.h"
 #include "config/gl_texture_mapping.h"
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"
@@ -276,12 +277,20 @@ GLShader* GLView::resolveShaderVariant(
     }
 
     VariantEntry entry;
+    const auto defines = featureFlagsToDefines(featureFlags);
     try {
-        entry.program = std::make_unique<GLShader>(asset, featureFlagsToDefines(featureFlags));
+        entry.program = std::make_unique<GLShader>(asset, defines);
         entry.assetVersion = asset.version;
     } catch (const std::exception& e) {
         LOG_ERROR("Shader variant compile failed (shader '%s', flags 0x%x): %s",
             asset.name.c_str(), featureFlags, e.what());
+
+        std::string definesSummary;
+        for (const auto& d : defines) {
+            if (!definesSummary.empty()) definesSummary += ' ';
+            definesSummary += d;
+        }
+        ShaderErrorLog::get().push(asset.name, std::move(definesSummary), e.what());
         return nullptr;
     }
     LOG_INFO("Compiled shader variant '%s' flags=0x%x", asset.name.c_str(), featureFlags);
