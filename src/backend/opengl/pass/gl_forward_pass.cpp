@@ -414,20 +414,15 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         return true;  // All (legacy single pass)
     };
 
-    // Per-batch OIT routing: true means the batch belongs to the OIT sub-loop,
-    // false to the sorted sub-loop. OIT only kicks in when the global toggle
-    // is on, the batch is Transparent, the material opts in, and the material
-    // isn't transmissive (OIT can't reproduce screen-space refraction so
-    // glass / liquid stays on the sorted path regardless of useOIT).
-    auto routeToOIT = [&](const auto& batch) -> bool {
-        if (!oitActive) return false;
-        if (batch.materialType != MaterialType::Transparent) return false;
-        const GLMaterial* m = glView.getMaterial(batch.material);
-        if (!m) return false;
-        if (!m->getUseOIT()) return false;
-        if (m->getFeatureFlags() & toBits(MaterialFeature::Transmission)) return false;
-        return true;
-    };
+    // Per-batch OIT routing precomputed once per frame: true means the batch
+    // belongs to the OIT sub-loop, false to the sorted sub-loop. OIT only
+    // kicks in when the global toggle is on, the batch is Transparent, the
+    // material opts in, and the material isn't transmissive (OIT can't
+    // reproduce screen-space refraction so glass / liquid stays on the
+    // sorted path regardless of useOIT). Both sub-loops index by batch
+    // position so the route lookup is O(1) and the GLMaterial hashmap query
+    // happens once per batch instead of three times.
+    std::vector<bool> oitRoute(batches.size(), false);
 
     // Dedicated transparent pass: the opaque geometry AND the skybox have
     // already been drawn into the HDR target by earlier passes. Two sub-loops
@@ -439,11 +434,20 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     bool anySortedTransparent = false;  // transparent batches NOT routed to OIT
     bool anyOITTransparent    = false;  // transparent batches routed to OIT
     if (m_phase == Phase::Transparent) {
-        for (const auto& b : batches) {
+        for (size_t i = 0; i < batches.size(); ++i) {
+            const auto& b = batches[i];
             if (b.materialType != MaterialType::Transparent) continue;
             anyTransparent = true;
-            if (routeToOIT(b)) anyOITTransparent = true;
-            else               anySortedTransparent = true;
+            bool toOIT = false;
+            if (oitActive) {
+                const GLMaterial* mm = glView.getMaterial(b.material);
+                toOIT = mm
+                     && mm->getUseOIT()
+                     && !(mm->getFeatureFlags() & toBits(MaterialFeature::Transmission));
+            }
+            oitRoute[i] = toOIT;
+            if (toOIT) anyOITTransparent = true;
+            else       anySortedTransparent = true;
         }
         // No transparent geometry: still continue if we owe the wireframe
         // overlay draw at the end. The main batch loop's inPhase() filter
@@ -529,7 +533,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         // OIT-routed batches sit out the sorted loop and render in the
         // dedicated OIT pass below. Only the transparent phase has routing
         // to consider; opaque batches are unaffected.
-        if (m_phase == Phase::Transparent && routeToOIT(batch)) continue;
+        if (m_phase == Phase::Transparent && oitRoute[i]) continue;
 
         // Material-type transition: blend/depth state + the opaque-scene
         // snapshot. Type drives this (not shader identity) because per-
@@ -601,7 +605,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
             // path can still bind the regular FragColor variant for the same
             // material when OIT isn't routed (global off, transmissive, or
             // material useOIT = false).
-            key.oitPass = (m_phase == Phase::Transparent) && routeToOIT(batch);
+            key.oitPass = (m_phase == Phase::Transparent) && oitRoute[i];
             shader = glView.resolveShaderVariant(baseHandle, key, resources);
         } else {
             shader = glView.resolveShader(baseHandle, resources);
@@ -702,7 +706,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
 
         for (size_t i = 0; i < batches.size(); ++i) {
             const auto& batch = batches[i];
-            if (!routeToOIT(batch)) continue;
+            if (!oitRoute[i]) continue;
 
             const GLMaterial* material = glView.getMaterial(batch.material);
 
