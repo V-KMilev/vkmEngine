@@ -2,12 +2,15 @@
 
 #include "gl_forward_pass.h"
 
+#include <cmath>
 #include <limits>
 #include <string>
+#include <vector>
 
 #include <GL/glew.h>
 
 #include "logger.h"
+#include "texture/gl_texture.h"
 
 #include "core/gl_backend.h"
 #include "core/gl_instance_batcher.h"
@@ -41,6 +44,89 @@ struct PolygonModeGuard {
     ~PolygonModeGuard() { if (ctx) ctx->setPolygonMode(GL_FRONT_AND_BACK, GL_FILL); }
 };
 
+/**
+ * @brief Pre-integrated subsurface LUT (Penner GPU Gems 3 ch. 14).
+ *
+ * Builds a 2D table indexed by:
+ *   X (64 taps) - NdotL remapped from [-1, 1] to [0, 1]
+ *   Y (16 taps) - curvature in [0, 1] (driven at the call site by
+ *                 length(fwidth(N)) * subsurface)
+ *
+ * Each texel stores the per-channel diffuse response from convolving
+ * max(cos(theta), 0) along the surface with a Gaussian profile whose
+ * sigma is per-channel: red penetrates deepest, blue shallowest. With
+ * curvature -> 0 the convolution collapses to plain Lambert (clamped
+ * cos(theta)); with curvature -> 1 the result widens noticeably past
+ * the terminator and the red channel bleeds the farthest, which is
+ * the characteristic "warm ear glow" of skin.
+ *
+ * Numerical integration over 65 samples is enough at this LUT
+ * resolution to be artifact-free; ran once at startup so the cost is
+ * irrelevant.
+ */
+std::unique_ptr<Core::Texture2D> makeSSSLUT() {
+    constexpr int W = 64;
+    constexpr int H = 16;
+
+    // Per-channel diffusion widths, modelled on Burley / Penner skin
+    // params: red ~0.45, green ~0.20, blue ~0.08 in normalised surface
+    // units. Coefficients shaped so curvature = 0 collapses to Lambert.
+    constexpr float sigmaR = 0.45f;
+    constexpr float sigmaG = 0.20f;
+    constexpr float sigmaB = 0.08f;
+
+    std::vector<float> pixels(static_cast<size_t>(W) * H * 4);
+
+    for (int y = 0; y < H; ++y) {
+        // Curvature 0..1 driven by the V axis. Floor at 0.05 so the
+        // bottom row still gives the lit side a slight wrap without
+        // collapsing all bleed at low curvature.
+        const float curvature = std::max((static_cast<float>(y) + 0.5f) / H, 0.05f);
+        for (int x = 0; x < W; ++x) {
+            const float ndotl = (static_cast<float>(x) + 0.5f) / W * 2.0f - 1.0f;
+
+            // Convolve Lambert with a per-channel Gaussian in angular
+            // space around the surface point. The Gaussian's effective
+            // width is (sigma * curvature) so a sharp surface gets a
+            // narrow kernel (plain Lambert), a smooth/curved surface a
+            // wide one (bleed past the terminator).
+            float numR = 0.0f, numG = 0.0f, numB = 0.0f;
+            float denR = 0.0f, denG = 0.0f, denB = 0.0f;
+            constexpr int STEPS = 32;  // half-range; 65 taps total
+            const float base = std::acos(std::clamp(ndotl, -1.0f, 1.0f));
+            for (int i = -STEPS; i <= STEPS; ++i) {
+                const float t = static_cast<float>(i) / STEPS * 3.14159265f;
+                const float lambert = std::max(0.0f, std::cos(base + t));
+                const float wR = std::exp(-t * t / (2.0f * (sigmaR * curvature) * (sigmaR * curvature)));
+                const float wG = std::exp(-t * t / (2.0f * (sigmaG * curvature) * (sigmaG * curvature)));
+                const float wB = std::exp(-t * t / (2.0f * (sigmaB * curvature) * (sigmaB * curvature)));
+                numR += lambert * wR; denR += wR;
+                numG += lambert * wG; denG += wG;
+                numB += lambert * wB; denB += wB;
+            }
+            const int idx = (y * W + x) * 4;
+            pixels[idx + 0] = numR / std::max(denR, 1e-6f);
+            pixels[idx + 1] = numG / std::max(denG, 1e-6f);
+            pixels[idx + 2] = numB / std::max(denB, 1e-6f);
+            pixels[idx + 3] = 1.0f;
+        }
+    }
+
+    Core::Texture2DParams p;
+    p.width           = W;
+    p.height          = H;
+    p.internalFormat  = GL_RGBA32F;
+    p.format          = GL_RGBA;
+    p.type            = GL_FLOAT;
+    p.wrapS           = Core::TextureWrap::ClampToEdge;
+    p.wrapT           = Core::TextureWrap::ClampToEdge;
+    p.minFilter       = Core::TextureMinFilter::Linear;
+    p.magFilter       = Core::TextureMagFilter::Linear;
+    p.generateMipmaps = false;
+    p.data            = pixels.data();
+    return std::make_unique<Core::Texture2D>("sss_preintegrated", p);
+}
+
 } // namespace
 
 namespace {
@@ -61,6 +147,8 @@ GLForwardPass::GLForwardPass(ShaderHandle pbrShader, Phase phase)
     m_shaders[static_cast<int>(MaterialType::AlphaMask)]   = pbrShader;
     // Unlit stays empty until setShader() is called
 }
+
+GLForwardPass::~GLForwardPass() = default;
 
 void GLForwardPass::setShader(MaterialType type, ShaderHandle shader) {
     m_shaders[static_cast<int>(type)] = shader;
@@ -232,6 +320,13 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     // the G-buffer is live and the environment toggle is on.
     const bool ssaoOn = gbuffer.isReady() && view.environment.ao.enabled;
     gbuffer.bindOcclusion(GLConfig::TextureSlots::SSAO);
+
+    // Pre-integrated subsurface LUT. One-shot build the first frame the
+    // pass runs; bound every frame so a HAS_SUBSURFACE shader variant can
+    // sample it. Variants compiled without HAS_SUBSURFACE never reference
+    // the sampler so the bind cost is just the one glActiveTexture call.
+    if (!m_sssLUT) m_sssLUT = makeSSSLUT();
+    if (m_sssLUT) m_sssLUT->bindSlot(GLConfig::TextureSlots::SssLUT);
 
     // Per-material shader variants mean we no longer have a single PBR
     // program to set frame-wide uniforms on up front. Capture them in a

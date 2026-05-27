@@ -610,8 +610,8 @@ These five surface up across the most features and are the highest-leverage to k
 | 16 | CSM / PCSS for spot+point lights         | 4     | Partial (true PCSS blocker search + dynamic-kernel PCF for 2D + cube; per-face cube resolution scaling deferred) | `682b2aa` + `580fb55` + this branch |
 | 17 | Render graph resource aliasing           | 4     | Partial (descriptor-aware analysis + visualizer; physical pool sharing deferred by design - see render_graph.h note, ~50-100 MB savings doesn't justify wrapper refactor at desktop scale) | `dbc404f` + this branch |
 | 18 | LTC area light specular (Phase 2C)       | 4     | Not shipped (needs Heitz pre-computed LUT data) | -                                       |
-| 19 | Thickness-aware subsurface scattering    | 4     | Partial (per-channel colored-wrap; pre-integrated LUT path deferred) | `5056fe7`                |
+| 19 | Thickness-aware subsurface scattering    | 4     | Shipped (Penner pre-integrated LUT generated at startup; per-channel RGB bleed driven by fwidth(N)-based curvature) | `5056fe7` + this branch |
 | 20 | Hi-Z occlusion culling                   | 5     | Shipped (pyramid + CPU-side AABB-vs-pyramid test, one-frame latent) | `1c4e1fa` + `cd73d17` + `b9f6cea` + `46f3e42` |
 | 21 | Real-time GI / light probes              | 5     | Not shipped (depends on #13 + DDGI infrastructure) | -                                    |
 
-**Tally:** 16/21 fully shipped, 3/21 partial, 2/21 not shipped (one needs external LUT data; the other is a multi-week feature in its own right).
+**Tally:** 17/21 fully shipped, 2/21 partial, 2/21 not shipped (one needs external LUT data; the other is a multi-week feature in its own right).

@@ -188,6 +188,7 @@ uniform samplerCube u_irradianceMap2;    // fallback diffuse irradiance (global)
 uniform samplerCube u_prefilterMap2;     // fallback prefiltered specular (global)
 uniform samplerCube u_envCube2;          // fallback raw env (global)
 uniform sampler2D   u_brdfLUT;           // shared split-sum LUT
+uniform sampler2D   u_sssLUT;            // pre-integrated subsurface LUT (Penner)
 uniform int   u_hasIBL;
 uniform float u_iblIntensity;            // primary intensity (probe or global)
 uniform float u_iblIntensity2;           // fallback intensity (global)
@@ -893,26 +894,33 @@ vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, v
     bool sssWrapActive = false;
 #ifdef HAS_SUBSURFACE
     if (u_material.subsurface > 0.001) {
-        // Colored wrap: NdotL widens past the terminator (Half-Life 2 trick)
-        // and the wrapped fraction near the terminator picks up the
-        // material's subsurface tint - this is what produces the warm/red
-        // glow on ears, fingers, leaves backlit by the sun. Per-channel
-        // wrap keeps the deepest-penetrating wavelengths bleeding the
-        // farthest (red > green > blue in skin).
+        // Penner pre-integrated subsurface. u_sssLUT is a 64x16 RGBA
+        // table built once at startup (see makeSSSLUT in gl_forward_pass)
+        // that stores per-channel diffuse-with-bleed against (NdotL,
+        // curvature). Per channel, red penetrates deepest so the LUT's
+        // red value bleeds past the terminator the most, green less,
+        // blue barely - matching the canonical skin/wax look without a
+        // hand-tuned wrap term.
+        //
+        // Curvature estimated from the screen-space normal derivative:
+        // length(fwidth(N)) is the per-pixel angular change in the
+        // surface normal, which approximates 1/r along the view ray.
+        // u_material.subsurface scales that into the LUT's [0, 1]
+        // curvature axis so authors get an artist-friendly intensity
+        // knob without exposing the raw fwidth value.
         float rawNoL = dot(N, L);
-        float w      = u_material.subsurface;
-        vec3 wrap    = w * (1.0 + 0.5 * u_material.subsurfaceColor);
-        vec3 wrapped = clamp((vec3(rawNoL) + wrap)
-                             / ((1.0 + wrap) * (1.0 + wrap)),
+        float curv   = clamp(length(fwidth(N)) * u_material.subsurface * 4.0,
                              0.0, 1.0);
-        // Blend factor: 0 well in front of the terminator (use plain NdotL),
-        // 1 near and past it (use the colored wrapped term).
-        float blend  = smoothstep(w, -w, rawNoL);
-        // Tint the wrapped term toward subsurfaceColor only in the
-        // terminator zone so the lit side stays albedo-faithful.
-        vec3 tinted  = mix(wrapped, wrapped * u_material.subsurfaceColor, blend);
-        diffTint     = tinted;
-        diffNoL      = 1.0;
+        vec2 lutUV   = vec2(rawNoL * 0.5 + 0.5, curv);
+        vec3 wrapped = texture(u_sssLUT, lutUV).rgb;
+
+        // Tint the LUT response toward subsurfaceColor in the terminator
+        // zone only, so the lit hemisphere stays faithful to the albedo
+        // and the bleed picks up the material's authored tint.
+        float w     = u_material.subsurface;
+        float blend = smoothstep(w, -w, rawNoL);
+        diffTint    = mix(wrapped, wrapped * u_material.subsurfaceColor, blend);
+        diffNoL     = 1.0;
         sssWrapActive = true;
     }
 #endif
