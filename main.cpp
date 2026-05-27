@@ -52,7 +52,7 @@ int main() {
         const std::string rootDir = APP_ROOT_DIR;
         const std::string logFile = rootDir + "/logs/log.log";
 
-        if (!Logger::init(logFile, "ENGINE", LogLevel::TRACE)) {
+        if (!Logger::init(logFile, "VKM-ENGINE", LogLevel::TRACE)) {
             return -1;
         }
 

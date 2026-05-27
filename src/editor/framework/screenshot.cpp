@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "EDITOR"
+
 #include "framework/screenshot.h"
 
 #include <chrono>
@@ -9,6 +11,8 @@
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+
+#include "logger.h"
 
 #include "platform/window/window_manager.h"
 #include "system/render/render_backend.h"
@@ -50,7 +54,10 @@ std::string captureViewportScreenshot(WindowManager& window, RenderBackend& back
     if (w == 0 || h == 0) return {};
 
     std::vector<uint8_t> pixels;
-    if (!backend.readbackPixels(vpX, vpY, w, h, winH, pixels)) return {};
+    if (!backend.readbackPixels(vpX, vpY, w, h, winH, pixels)) {
+        LOG_ERROR("Screenshot: backend readback failed (rect %ux%u at %u,%u)", w, h, vpX, vpY);
+        return {};
+    }
 
     std::error_code ec;
     const std::filesystem::path dir = std::filesystem::path(APP_ROOT_DIR) / "screenshots";
@@ -62,8 +69,10 @@ std::string captureViewportScreenshot(WindowManager& window, RenderBackend& back
     if (!stbi_write_png(full.string().c_str(),
                         static_cast<int>(w), static_cast<int>(h), 3,
                         pixels.data(), stride)) {
+        LOG_ERROR("Screenshot: stbi_write_png failed for '%s'", full.string().c_str());
         return {};
     }
+    LOG_INFO("Screenshot saved to '%s' (%ux%u)", full.string().c_str(), w, h);
     return full.string();
 }
 
