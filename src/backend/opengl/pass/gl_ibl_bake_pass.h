@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 #include "resource/shader_asset.h"
 #include "system/render/render_pass.h"
@@ -12,6 +14,9 @@ namespace Core {
 
 namespace Engine {
     class GLMesh;
+    class GLBackend;
+    class GLIBL;
+    class GLShader;
 }
 
 namespace Engine {
@@ -52,6 +57,15 @@ class GLIBLBakePass : public RenderPass {
         }
 
     private:
+        /// Bake one IBL set (env + irradiance + prefilter + BRDF) from an
+        /// HDR equirect into the supplied @p ibl. Returns true if work
+        /// happened; false if @p path was empty / already-baked / failed
+        /// to load. Used once for the global IBL and once per reflection
+        /// probe per frame.
+        bool bakeOne(GLBackend& gl, GLIBL& ibl, const std::string& path,
+                     class GLShader* eq, class GLShader* irr,
+                     class GLShader* pf, class GLShader* br);
+
         ShaderHandle m_equirectShader;
         ShaderHandle m_irradianceShader;
         ShaderHandle m_prefilterShader;
@@ -60,7 +74,8 @@ class GLIBLBakePass : public RenderPass {
         std::unique_ptr<GLMesh>            m_cube;     ///< Unit cube for the six face captures
         std::unique_ptr<Core::ScreenTriangle> m_brdfScreenTri;  ///< Attribute-less fullscreen triangle for the BRDF LUT
 
-        std::string m_skipPath;  ///< A path that failed to load; do not retry until it changes
+        std::string m_skipPath;  ///< Global path that failed to load; do not retry until it changes
+        std::unordered_map<std::uint32_t /*entityId*/, std::string> m_probeSkipPaths;
 };
 
 } // namespace Engine

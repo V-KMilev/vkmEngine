@@ -2,6 +2,7 @@
 
 #include "gl_forward_pass.h"
 
+#include <limits>
 #include <string>
 
 #include <GL/glew.h>
@@ -141,15 +142,39 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
 
     // Bind the baked IBL set (irradiance / prefilter / BRDF LUT) and tell the
     // PBR shader whether to use it. Falls back to flat ambient when no bake.
-    const bool iblReady = ibl.isReady();
+    // Pick the active IBL for the frame. Reflection probes override the
+    // global IBL when the CAMERA is inside their radius; the nearest such
+    // probe (by centre distance) wins. The forward pass binds one set of
+    // IBL textures for all draws this frame - per-batch selection is a
+    // future refinement when binding cost is no longer the bottleneck.
+    const GLIBL* activeIBL = &ibl;
+    float activeProbeIntensity = view.environment.ibl.intensity;
+    {
+        const auto& probes = view.probes;
+        const auto& pool   = gl.getView().getProbeIBLs();
+        const glm::vec3 cam = view.camera.position;
+        float bestDist = std::numeric_limits<float>::infinity();
+        for (std::size_t i = 0; i < probes.size() && i < pool.size(); ++i) {
+            const auto& p = probes[i];
+            if (!pool[i] || !pool[i]->isReady()) continue;
+            const float dist = glm::length(cam - p.position);
+            if (dist > p.radius) continue;
+            if (dist < bestDist) {
+                bestDist = dist;
+                activeIBL = pool[i].get();
+                activeProbeIntensity = p.intensity;
+            }
+        }
+    }
+    const bool iblReady = activeIBL && activeIBL->isReady();
     if (iblReady) {
-        ibl.bindIrradiance(GLConfig::TextureSlots::IrradianceMap);
-        ibl.bindPrefilter(GLConfig::TextureSlots::PrefilterMap);
-        ibl.bindBrdf(GLConfig::TextureSlots::BrdfLUT);
+        activeIBL->bindIrradiance(GLConfig::TextureSlots::IrradianceMap);
+        activeIBL->bindPrefilter(GLConfig::TextureSlots::PrefilterMap);
+        activeIBL->bindBrdf(GLConfig::TextureSlots::BrdfLUT);
         // Raw env cube too: the PBR shader blends a sharp env reflection in
         // at low roughness so polished metal reads as a true mirror, not the
         // prefilter's mip-0 GGX blur.
-        ibl.bindEnvCube(GLConfig::TextureSlots::EnvCube);
+        activeIBL->bindEnvCube(GLConfig::TextureSlots::EnvCube);
     }
     // Screen-space AO from the prepass/GTAO (slot SSAO); enabled when both
     // the G-buffer is live and the environment toggle is on.
@@ -171,7 +196,7 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     };
     PBRFrameUniforms frame{
         iblReady ? 1 : 0,
-        view.environment.ibl.intensity,
+        activeProbeIntensity,
         ssaoOn  ? 1 : 0,
         static_cast<float>(view.viewportWidth),
         static_cast<float>(view.viewportHeight),
