@@ -606,7 +606,7 @@ These five surface up across the most features and are the highest-leverage to k
 | 12 | Render-pass plugin/factory               | 2     | Shipped (string registry; JSON pipeline config deferred) | `5d9bff2`                      |
 | 13 | Per-probe IBL blending                   | 3     | Shipped (per-fragment weighted probe-vs-global blend + sphere parallax correction) | `f5a08a9` + `adf4823` + this branch |
 | 14 | POM self-shadowing                       | 3     | Shipped                                        | `5fba9b9`                                |
-| 15 | Weighted-Blended OIT                     | 4     | Shipped (global toggle; per-material opt-in deferred) | `83fef57`                          |
+| 15 | Weighted-Blended OIT                     | 4     | Shipped (global toggle + per-material opt-in with transmission auto-override) | `83fef57` + this branch |
 | 16 | CSM / PCSS for spot+point lights         | 4     | Partial (true PCSS blocker search + dynamic-kernel PCF for 2D + cube; per-face cube resolution scaling deferred) | `682b2aa` + `580fb55` + this branch |
 | 17 | Render graph resource aliasing           | 4     | Partial (analysis + visualizer color grouping; actual physical aliasing deferred - needs backend descriptor metadata) | `dbc404f` |
 | 18 | LTC area light specular (Phase 2C)       | 4     | Not shipped (needs Heitz pre-computed LUT data) | -                                       |
@@ -614,4 +614,4 @@ These five surface up across the most features and are the highest-leverage to k
 | 20 | Hi-Z occlusion culling                   | 5     | Shipped (pyramid + CPU-side AABB-vs-pyramid test, one-frame latent) | `1c4e1fa` + `cd73d17` + `b9f6cea` + `46f3e42` |
 | 21 | Real-time GI / light probes              | 5     | Not shipped (depends on #13 + DDGI infrastructure) | -                                    |
 
-**Tally:** 14/21 fully shipped, 5/21 partial, 2/21 not shipped (one needs external LUT data; the other is a multi-week feature in its own right).
+**Tally:** 16/21 fully shipped, 3/21 partial, 2/21 not shipped (one needs external LUT data; the other is a multi-week feature in its own right).
