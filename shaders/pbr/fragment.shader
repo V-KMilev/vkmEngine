@@ -170,12 +170,31 @@ uniform sampler2D u_roughnessTexture;
 
 // Image-based lighting (split-sum). u_hasIBL gates between IBL and the flat
 // ambient fallback; the maps are bound by the forward pass when a bake exists.
-uniform samplerCube u_irradianceMap;
-uniform samplerCube u_prefilterMap;
-uniform samplerCube u_envCube;       // raw env radiance - sharp mirror at low roughness
-uniform sampler2D   u_brdfLUT;
+// PRIMARY IBL = the active reflection probe (when one's selected) or the
+// global skybox bake (otherwise). FALLBACK IBL = always the global skybox.
+// When a probe is active, the shader blends the primary against the
+// fallback by a per-fragment weight so the probe's influence fades out
+// smoothly at the edges of its radius instead of cutting off hard.
+uniform samplerCube u_irradianceMap;     // primary diffuse irradiance
+uniform samplerCube u_prefilterMap;      // primary prefiltered specular
+uniform samplerCube u_envCube;           // primary raw env (sharp mirror)
+uniform samplerCube u_irradianceMap2;    // fallback diffuse irradiance (global)
+uniform samplerCube u_prefilterMap2;     // fallback prefiltered specular (global)
+uniform samplerCube u_envCube2;          // fallback raw env (global)
+uniform sampler2D   u_brdfLUT;           // shared split-sum LUT
 uniform int   u_hasIBL;
-uniform float u_iblIntensity;
+uniform float u_iblIntensity;            // primary intensity (probe or global)
+uniform float u_iblIntensity2;           // fallback intensity (global)
+
+// Per-fragment probe blend. u_probeValid=1 means the PRIMARY slot is a
+// reflection probe (apply parallax correction + distance weight); 0 means
+// it's the global IBL (no parallax, weight = 1). Probe center/radius/
+// falloff define a sphere of influence: weight = saturate((radius - dist)
+// / falloff). Pushed by the forward pass once per frame.
+uniform int   u_probeValid;
+uniform vec3  u_probeCenter;
+uniform float u_probeRadius;
+uniform float u_probeFalloff;
 
 // Screen-space AO (GTAO). u_ssao is HALF resolution, so it is sampled by
 // normalized screen UV (fragcoord / full viewport) - independent of the AO
@@ -371,6 +390,34 @@ float visSmithAniso(float at, float ab,
 vec3 fresnelSchlick(float u, vec3 f0) {
     float f = pow(clamp(1.0 - u, 0.0, 1.0), 5.0);
     return f0 + (vec3(1.0) - f0) * f;
+}
+
+// Sphere-bounded parallax correction (Lazarov / "Local Image-Based Lighting").
+// The reflection probe was baked from a single point (probeCenter) but the
+// fragment sampling it lives elsewhere - sampling the cubemap in raw R skews
+// reflections off-axis, especially for surfaces near probe walls. Find where
+// the ray (worldPos + t * R) exits the bounding sphere, then re-aim the
+// cubemap lookup as "direction from probe centre to that exit point". For
+// fragments outside the sphere or when the ray misses, returns R unchanged.
+vec3 parallaxCorrectSphere(vec3 R, vec3 worldPos, vec3 center, float radius) {
+    vec3 d = worldPos - center;
+    float b = dot(R, d);  // R is normalised so the a-term is 1
+    float c = dot(d, d) - radius * radius;
+    float disc = b * b - c;
+    if (disc < 0.0) return R;
+    float t = -b + sqrt(disc);
+    if (t <= 0.0) return R;
+    return normalize(worldPos + t * R - center);
+}
+
+// Per-fragment weight of the primary probe's influence. saturate() at both
+// ends gives a smooth ring of width `falloff` at the radius boundary; the
+// probe wins inside (radius - falloff), the fallback wins outside `radius`,
+// the band in between mixes linearly. Driven by len(worldPos - probeCenter)
+// so each fragment computes its own weight independently of the camera.
+float probeBlendWeight(vec3 worldPos, vec3 center, float radius, float falloff) {
+    float d = length(worldPos - center);
+    return clamp((radius - d) / max(falloff, 1e-4), 0.0, 1.0);
 }
 
 // 12-tap Poisson disk. Pre-normalized to a unit disk so the per-cascade
@@ -1105,15 +1152,42 @@ void main() {
         // Roughness-aware Fresnel (Sebastien Lagarde).
         vec3 F = f0 + (max(vec3(1.0 - s.roughness), f0) - f0) * pow(1.0 - NdotV, 5.0);
 
-        vec3 irradiance  = texture(u_irradianceMap, N).rgb;
-        vec3 prefiltered = textureLod(u_prefilterMap, R, s.roughness * MAX_PREFILTER_LOD).rgb;
+        // Per-fragment probe-vs-global blend. When no probe is active
+        // (u_probeValid == 0) the weight is 1, the parallax-corrected R
+        // collapses to R, and the fallback samples are scaled to zero -
+        // so the global-IBL-only path performs the same single sample the
+        // pre-blend code did. When a probe IS active, fragments inside its
+        // sphere of influence get the parallax-corrected probe sample;
+        // those near the boundary mix in the global. Sum is always 1 so
+        // there's no energy bias.
+        float w0 = (u_probeValid == 1)
+            ? probeBlendWeight(vWorldPos, u_probeCenter, u_probeRadius, u_probeFalloff)
+            : 1.0;
+        float w1 = (u_probeValid == 1) ? (1.0 - w0) : 0.0;
+
+        // Parallax correction is specular-only: the diffuse irradiance is
+        // low-frequency enough that sampling at N from the probe centre is
+        // visually indistinguishable, and that's the standard split-sum
+        // approximation. Specular DOES benefit from parallax - a probe
+        // baked at the room centre reflects walls into a mirror at the
+        // wrong angle without it.
+        vec3 Rprobe = (u_probeValid == 1)
+            ? parallaxCorrectSphere(R, vWorldPos, u_probeCenter, u_probeRadius)
+            : R;
+
+        float mipLOD = s.roughness * MAX_PREFILTER_LOD;
+        vec3 irradiance  = texture(u_irradianceMap, N).rgb * (w0 * u_iblIntensity)
+                         + texture(u_irradianceMap2, N).rgb * (w1 * u_iblIntensity2);
+        vec3 prefiltered = textureLod(u_prefilterMap,  Rprobe, mipLOD).rgb * (w0 * u_iblIntensity)
+                         + textureLod(u_prefilterMap2, R,      mipLOD).rgb * (w1 * u_iblIntensity2);
 
         // Polished metal: the prefilter (even at 512) is GGX-convolved at
         // mip 0, so a perfect mirror still reads slightly soft. Blend in the
         // raw environment cube at very low roughness for a true reflection.
         // smoothstep keeps the transition seamless into the prefiltered set.
         if (s.roughness < 0.2) {
-            vec3 sharp = textureLod(u_envCube, R, 0.0).rgb;
+            vec3 sharp = textureLod(u_envCube,  Rprobe, 0.0).rgb * (w0 * u_iblIntensity)
+                       + textureLod(u_envCube2, R,      0.0).rgb * (w1 * u_iblIntensity2);
             prefiltered = mix(sharp, prefiltered, smoothstep(0.0, 0.2, s.roughness));
         }
 
@@ -1135,20 +1209,26 @@ void main() {
                                     exp2(-16.0 * s.roughness - 1.0))
                                 - 1.0 + diffuseAO, 0.0, 1.0);
 
+        // u_iblIntensity is already folded into the per-sample blend above so
+        // the final composite no longer applies it.
         vec3 specularIBL = FssEss * prefiltered * specOcc;
         vec3 diffuseIBL  = (Fms * Ems + kD) * irradiance * s.albedo * diffuseAO;
 
-        ambient = (diffuseIBL + specularIBL) * u_iblIntensity;
+        ambient = diffuseIBL + specularIBL;
 
         // Clearcoat IBL: a dielectric specular lobe over the base ambient.
+        // Uses the same probe-vs-global blend so the cc reflection lines up
+        // with the base specular at probe boundaries.
 #ifdef HAS_CLEARCOAT
         if (u_material.clearcoat > 0.001) {
             float ccRough = clamp(u_material.clearcoatRoughness, 0.045, 1.0);
             float ccFr = (0.04 + 0.96 * pow(1.0 - NdotV, 5.0)) * u_material.clearcoat;
-            vec3  ccPref = textureLod(u_prefilterMap, R, ccRough * MAX_PREFILTER_LOD).rgb;
+            float ccMipLOD = ccRough * MAX_PREFILTER_LOD;
+            vec3  ccPref = textureLod(u_prefilterMap,  Rprobe, ccMipLOD).rgb * (w0 * u_iblIntensity)
+                         + textureLod(u_prefilterMap2, R,      ccMipLOD).rgb * (w1 * u_iblIntensity2);
             vec2  ccDfg  = texture(u_brdfLUT, vec2(NdotV, ccRough)).rg;
             vec3  ccSpecIBL = ccPref * (0.04 * ccDfg.x + ccDfg.y);
-            ambient = ambient * (1.0 - ccFr) + ccSpecIBL * ccFr * s.ao * u_iblIntensity;
+            ambient = ambient * (1.0 - ccFr) + ccSpecIBL * ccFr * s.ao;
         }
 #endif
     } else {
