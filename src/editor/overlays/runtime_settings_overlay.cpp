@@ -52,6 +52,45 @@ void RuntimeSettingsOverlay::draw(EditorState& state, RenderSystem& renderSystem
             ImGui::SliderFloat("Darken",   &env.exposure.speedDarken,   0.1f,  10.0f, "%.2f");
             ImGui::EndDisabled();
         }
+
+        if (ImGui::CollapsingHeader("Shadows", ImGuiTreeNodeFlags_DefaultOpen)) {
+            // Match the inspector's resolution combo - common values only,
+            // free-form input would just invite GL_OUT_OF_MEMORY on a typo.
+            static const std::uint32_t kRes2D[]  = { 512, 1024, 2048, 4096, 8192 };
+            static const char*  k2DNames        = "512\0" "1024\0" "2048\0" "4096\0" "8192\0";
+            static const std::uint32_t kResCube[] = { 128, 256, 512, 1024, 2048 };
+            static const char*  kCubeNames       = "128\0" "256\0" "512\0" "1024\0" "2048\0";
+
+            auto pickIndex = [&](std::uint32_t current, const std::uint32_t* arr, int count) {
+                int idx = 0;
+                int bestDelta = (current > arr[0])
+                    ? static_cast<int>(current - arr[0]) : static_cast<int>(arr[0] - current);
+                for (int i = 1; i < count; ++i) {
+                    int d = (current > arr[i])
+                        ? static_cast<int>(current - arr[i]) : static_cast<int>(arr[i] - current);
+                    if (d < bestDelta) { bestDelta = d; idx = i; }
+                }
+                return idx;
+            };
+
+            int idx2D = pickIndex(env.shadow.atlasRes2D, kRes2D, 5);
+            if (ImGui::Combo("Atlas 2D", &idx2D, k2DNames)) {
+                env.shadow.atlasRes2D = kRes2D[idx2D];
+            }
+            int idxCube = pickIndex(env.shadow.atlasResCube, kResCube, 5);
+            if (ImGui::Combo("Atlas Cube", &idxCube, kCubeNames)) {
+                env.shadow.atlasResCube = kResCube[idxCube];
+            }
+            ImGui::SliderFloat("Softness", &env.shadow.softness, 0.0f, 1.0f, "%.2f");
+        }
+
+        if (ImGui::CollapsingHeader("Transparency")) {
+            ImGui::Checkbox("Weighted-Blended OIT", &env.transparency.useOIT);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("On: correct for intersecting transparents.\n"
+                                  "Off: sorted alpha-blend, supports refraction.");
+            }
+        }
     }
     ImGui::End();
 
