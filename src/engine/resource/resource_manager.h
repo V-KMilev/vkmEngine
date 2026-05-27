@@ -310,6 +310,8 @@ class ResourceManager {
          * scene first so no entity is still pointing at a freed handle.
          */
         void clear() {
+            LOG_INFO_C("RESOURCE", "Clear (dropping %zu asset type(s), bumping global version to %llu)",
+                m_slots.size(), static_cast<unsigned long long>(m_globalVersion + 1));
             m_slots.clear();
             ++m_globalVersion;
         }
@@ -340,6 +342,9 @@ class ResourceManager {
             swap(m_globalVersion, other.m_globalVersion);
             ++m_globalVersion;
             ++other.m_globalVersion;
+            LOG_INFO_C("RESOURCE", "Swap committed (global versions now %llu / %llu)",
+                static_cast<unsigned long long>(m_globalVersion),
+                static_cast<unsigned long long>(other.m_globalVersion));
         }
 
         /**

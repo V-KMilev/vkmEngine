@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "FILEWATCH"
+
 #include "system/io/file_watcher.h"
 
 #include <system_error>
@@ -28,6 +30,8 @@ void FileWatcher::watch(std::string dirPath, OnChange onChange) {
         entry.mtimes[file.path().filename().string()] = file.last_write_time(ec);
     }
 
+    LOG_TRACE("Watching '%s' (%zu file(s) seeded)",
+        entry.path.c_str(), entry.mtimes.size());
     m_entries.push_back(std::move(entry));
 }
 
@@ -67,7 +71,7 @@ void FileWatcher::checkOne(Entry& entry) {
     }
 
     if (changed && entry.onChange) {
-        LOG_INFO("FileWatcher: change detected in '%s'", entry.path.c_str());
+        LOG_INFO("Change detected in '%s'", entry.path.c_str());
         entry.onChange();
     }
 }

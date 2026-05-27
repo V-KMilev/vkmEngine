@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "HIERARCHY"
+
 #include "system/hierarchy/hierarchy_operations.h"
 
 #include <array>
@@ -113,13 +115,13 @@ void removeFromParent(Scene& scene, EntityId entity) {
         if (scene.isAlive(prevSibling) && scene.has<Hierarchy>(prevSibling)) {
             scene.get<Hierarchy>(prevSibling).nextSibling = nextSibling;
         } else {
-            LOG_WARNING("removeFromParent: prevSibling %u of entity %u has no Hierarchy (link corruption)",
+            LOG_WARNING("RemoveFromParent: prevSibling %u of entity %u has no Hierarchy (link corruption)",
                 prevSibling.index, entity.index);
         }
     } else if (scene.isAlive(parent) && scene.has<Hierarchy>(parent)) {
         scene.get<Hierarchy>(parent).firstChild = nextSibling;
     } else {
-        LOG_WARNING("removeFromParent: parent %u of entity %u has no Hierarchy (link corruption)",
+        LOG_WARNING("RemoveFromParent: parent %u of entity %u has no Hierarchy (link corruption)",
             parent.index, entity.index);
     }
 
@@ -127,7 +129,7 @@ void removeFromParent(Scene& scene, EntityId entity) {
         if (scene.isAlive(nextSibling) && scene.has<Hierarchy>(nextSibling)) {
             scene.get<Hierarchy>(nextSibling).prevSibling = prevSibling;
         } else {
-            LOG_WARNING("removeFromParent: nextSibling %u of entity %u has no Hierarchy (link corruption)",
+            LOG_WARNING("RemoveFromParent: nextSibling %u of entity %u has no Hierarchy (link corruption)",
                 nextSibling.index, entity.index);
         }
     }
@@ -182,7 +184,7 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity) {
         // a partial root; surface it once so misimports are loud.
         static bool warned = false;
         if (!warned) {
-            LOG_WARNING("computeWorldMatrix: hierarchy depth exceeds %u; deeper ancestors ignored",
+            LOG_WARNING("ComputeWorldMatrix: hierarchy depth exceeds %u; deeper ancestors ignored",
                 MAX_DEPTH);
             warned = true;
         }
@@ -238,7 +240,7 @@ void resolveWorldTransforms(Scene& scene) {
         if (depth >= MAX_DEPTH) {
             static bool warned = false;
             if (!warned) {
-                LOG_WARNING("resolveWorldTransforms: hierarchy depth exceeds %u; entity %u skipped (and any descendants)",
+                LOG_WARNING("ResolveWorldTransforms: hierarchy depth exceeds %u; entity %u skipped (and any descendants)",
                     MAX_DEPTH, id.index);
                 warned = true;
             }

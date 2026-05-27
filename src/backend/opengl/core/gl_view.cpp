@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "BACKEND::GL"
+
 #include "gl_view.h"
 
 #include <algorithm>
@@ -278,11 +280,11 @@ GLShader* GLView::resolveShaderVariant(
         entry.program = std::make_unique<GLShader>(asset, featureFlagsToDefines(featureFlags));
         entry.assetVersion = asset.version;
     } catch (const std::exception& e) {
-        LOG_ERROR("GLView: shader variant compile failed (shader '%s', flags 0x%x): %s",
+        LOG_ERROR("Shader variant compile failed (shader '%s', flags 0x%x): %s",
             asset.name.c_str(), featureFlags, e.what());
         return nullptr;
     }
-    LOG_INFO("GLView: compiled shader variant '%s' flags=0x%x", asset.name.c_str(), featureFlags);
+    LOG_INFO("Compiled shader variant '%s' flags=0x%x", asset.name.c_str(), featureFlags);
     GLShader* raw = entry.program.get();
     bucket.emplace(subkey, std::move(entry));
     return raw;

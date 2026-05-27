@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "BACKEND::GL"
+
 #include "gl_ibl_bake_pass.h"
 
 #include <GL/glew.h>

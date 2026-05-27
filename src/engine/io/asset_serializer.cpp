@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "IO"
+
 #include "io/asset_serializer.h"
 
 #include <array>
@@ -37,7 +39,7 @@ MeshAsset AssetFactories::createMesh(const nlohmann::json& source) const {
     const std::string kind = source.value("kind", std::string{});
     auto it = m_meshFactories.find(kind);
     if (it == m_meshFactories.end()) {
-        LOG_ERROR("AssetFactories: no mesh factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
+        LOG_ERROR("No mesh factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
         return {};
     }
     return it->second(source);
@@ -47,7 +49,7 @@ TextureHandle AssetFactories::createTexture(const nlohmann::json& source, Resour
     const std::string kind = source.value("kind", std::string{});
     auto it = m_textureFactories.find(kind);
     if (it == m_textureFactories.end()) {
-        LOG_ERROR("AssetFactories: no texture factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
+        LOG_ERROR("No texture factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
         return {};
     }
     return it->second(source, resources);
@@ -57,7 +59,7 @@ MaterialHandle AssetFactories::createMaterial(const nlohmann::json& source, Reso
     const std::string kind = source.value("kind", std::string{});
     auto it = m_materialFactories.find(kind);
     if (it == m_materialFactories.end()) {
-        LOG_ERROR("AssetFactories: no material factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
+        LOG_ERROR("No material factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
         return {};
     }
     return it->second(source, resources);
@@ -67,7 +69,7 @@ ShaderAsset AssetFactories::createShader(const nlohmann::json& source) const {
     const std::string kind = source.value("kind", std::string{});
     auto it = m_shaderFactories.find(kind);
     if (it == m_shaderFactories.end()) {
-        LOG_ERROR("AssetFactories: no shader factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
+        LOG_ERROR("No shader factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
         return {};
     }
     return it->second(source);
@@ -190,7 +192,7 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
                 // current asset graph (typo, dependency not loaded yet, or a
                 // texture deleted under us). Silently dropping to null would
                 // give the material a transparent-black map at draw time.
-                LOG_WARNING("AssetSerializer: material texture ref '%s' (%s) unresolved; keeping previous slot value",
+                LOG_WARNING("Material texture ref '%s' (%s) unresolved; keeping previous slot value",
                     f.key, texName.c_str());
                 continue;
             }
@@ -204,7 +206,7 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
 /// be null (asset's source pointer wasn't populated) and is logged + skipped.
 void emitDescriptor(nlohmann::json& target, const std::string& name, const nlohmann::json* source) {
     if (!source || source->is_null()) {
-        LOG_WARNING("AssetSerializer: asset '%s' has no source; skipping in save", name.c_str());
+        LOG_WARNING("Asset '%s' has no source; skipping in save", name.c_str());
         return;
     }
     target.push_back({{"name", name}, {"source", *source}});
@@ -258,11 +260,15 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
 
 bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
     if (!assetsJson.is_object()) {
-        LOG_WARNING("AssetSerializer::loadAssets: assets block is not an object - skipping");
+        LOG_WARNING("Assets block is not an object - skipping");
         return false;
     }
 
     const auto& factories = AssetFactories::get();
+
+    size_t texturesCreated = 0, texturesSkipped = 0;
+    size_t materialsCreated = 0, materialsSkipped = 0;
+    size_t meshesCreated = 0, meshesSkipped = 0;
 
     auto loadGroup = [&](const char* sectionName, auto&& createOne) {
         if (!assetsJson.contains(sectionName) || !assetsJson[sectionName].is_array()) return;
@@ -278,42 +284,48 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
     // important: textures -> materials -> meshes. Meshes don't depend on the
     // others; they're last only for output stability.
     loadGroup("textures", [&](const std::string& name, const nlohmann::json& source) {
-        if (resources.findByName<TextureAsset>(name)) return;
+        if (resources.findByName<TextureAsset>(name)) { ++texturesSkipped; return; }
         TextureHandle h = factories.createTexture(source, resources);
         if (!h) {
-            LOG_WARNING("AssetSerializer: texture '%s' could not be recreated - skipping", name.c_str());
+            LOG_WARNING("Texture '%s' could not be recreated - skipping", name.c_str());
             return;
         }
         // Texture loaders set name + source themselves; we don't overwrite.
         // (If a custom loader didn't, the asset is still findable until next
         // session - log so we notice.)
         if (resources.get(h).name != name) {
-            LOG_WARNING("AssetSerializer: texture loader did not set name '%s' (got '%s')",
+            LOG_WARNING("Texture loader did not set name '%s' (got '%s')",
                 name.c_str(), resources.get(h).name.c_str());
         }
+        ++texturesCreated;
     });
 
     loadGroup("materials", [&](const std::string& name, const nlohmann::json& source) {
-        if (resources.findByName<MaterialAsset>(name)) return;
+        if (resources.findByName<MaterialAsset>(name)) { ++materialsSkipped; return; }
         MaterialHandle h = factories.createMaterial(source, resources);
         if (!h) {
-            LOG_WARNING("AssetSerializer: material '%s' could not be recreated - skipping", name.c_str());
+            LOG_WARNING("Material '%s' could not be recreated - skipping", name.c_str());
             return;
         }
         resources.rename(h, name);
+        ++materialsCreated;
     });
 
     loadGroup("meshes", [&](const std::string& name, const nlohmann::json& source) {
-        if (resources.findByName<MeshAsset>(name)) return;
+        if (resources.findByName<MeshAsset>(name)) { ++meshesSkipped; return; }
         MeshAsset mesh = factories.createMesh(source);
         if (mesh.vertices.empty()) {
-            LOG_WARNING("AssetSerializer: mesh '%s' recreated empty - skipping", name.c_str());
+            LOG_WARNING("Mesh '%s' recreated empty - skipping", name.c_str());
             return;
         }
         mesh.sourceJson() = source;
         resources.add(std::move(mesh), name);
+        ++meshesCreated;
     });
 
+    LOG_INFO("%zu texture(s), %zu material(s), %zu mesh(es) created; %zu+%zu+%zu skipped (already loaded)",
+        texturesCreated, materialsCreated, meshesCreated,
+        texturesSkipped, materialsSkipped, meshesSkipped);
     return true;
 }
 

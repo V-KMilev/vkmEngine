@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "LOADER"
+
 #include "model_loader.h"
 
 #include <algorithm>
@@ -95,7 +97,7 @@ namespace {
                     // Log here while we still have the Importer that holds
                     // the real error string. Callers would otherwise see a
                     // null shared_ptr with no way to recover the cause.
-                    LOG_ERROR("model load failed '%s': %s", path.c_str(),
+                    LOG_ERROR("Model load failed '%s': %s", path.c_str(),
                         importer->GetErrorString());
                     return nullptr;
                 }
@@ -300,7 +302,7 @@ namespace {
         int w = 0, hh = 0, n = 0;
         unsigned char* px = stbi_load(abs.c_str(), &w, &hh, &n, 4);
         if (!px) {
-            LOG_WARNING("model texture not found: %s", abs.c_str());
+            LOG_WARNING("Model texture not found: %s", abs.c_str());
             cache[key] = {};
             return {};
         }
@@ -484,7 +486,7 @@ TextureHandle loadModelEmbeddedTexture(const std::string& path,
     if (!scene) return {};
     const aiTexture* emb = scene->GetEmbeddedTexture(ref.c_str());
     if (!emb) {
-        LOG_WARNING("model-image: embedded texture '%s' not found in '%s'",
+        LOG_WARNING("Model-image: embedded texture '%s' not found in '%s'",
             ref.c_str(), path.c_str());
         return {};
     }
@@ -500,7 +502,7 @@ EntityId importModelIntoScene(const std::string& path, ResourceManager& resource
     Assimp::Importer importer;
     const aiScene* aScene = importer.ReadFile(path, POST_PROCESS_FLAGS);
     if (!aScene || aScene->mNumMeshes == 0) {
-        LOG_ERROR("model import failed '%s': %s", path.c_str(),
+        LOG_ERROR("Model import failed '%s': %s", path.c_str(),
             importer.GetErrorString());
         return {};
     }

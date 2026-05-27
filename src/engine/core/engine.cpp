@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "CORE"
+
 #include "core/engine.h"
 
 #include <algorithm>
@@ -62,6 +64,8 @@ bool conflicts(const SystemAccess& a, const SystemAccess& b) {
 void Engine::run() {
     float accumulator = 0.0f;
 
+    LOG_TRACE("Entering main loop");
+
     while (m_window.beginFrame()) {
         const float deltaTime = m_frameTracker.getFrameRateInfo().frameTime / 1000.0f;
 
@@ -102,10 +106,10 @@ void Engine::run() {
             const auto now = std::chrono::steady_clock::now();
             if (now - m_lastAccumClampWarn >= std::chrono::seconds(1)) {
                 if (m_accumClampSuppressed > 0) {
-                    LOG_WARNING("Engine: frame accumulator clamped (%.3fs > %.3fs cap, +%d similar in the last second) - spiral-of-death guard fired; some fixed ticks dropped",
+                    LOG_WARNING("Frame accumulator clamped (%.3fs > %.3fs cap, +%d similar in the last second) - spiral-of-death guard fired; some fixed ticks dropped",
                         beforeClamp, Config::MaxFrameAccumulator, m_accumClampSuppressed);
                 } else {
-                    LOG_WARNING("Engine: frame accumulator clamped (%.3fs > %.3fs cap) - spiral-of-death guard fired; some fixed ticks dropped",
+                    LOG_WARNING("Frame accumulator clamped (%.3fs > %.3fs cap) - spiral-of-death guard fired; some fixed ticks dropped",
                         beforeClamp, Config::MaxFrameAccumulator);
                 }
                 m_accumClampSuppressed = 0;
@@ -134,6 +138,7 @@ void Engine::run() {
         PROFILE_FRAME_MARK();
     }
 
+    LOG_TRACE("Main loop exited, running shutdown");
     shutdownSystems();
 }
 
@@ -147,13 +152,17 @@ void Engine::initSystems(FrameContext& ctx) {
     // While we're at it, collect the systems that opt into fixedUpdate so
     // the per-tick loop only visits them instead of every registered system.
     m_fixedUpdaters.clear();
+    size_t totalSystems = 0;
     for (auto& stage : m_systemsByStage) {
         for (auto& system : stage) {
             system->init(ctx);
             if (system->hasFixedUpdate()) m_fixedUpdaters.push_back(system.get());
+            ++totalSystems;
         }
     }
     m_initialized = true;
+    LOG_INFO("Initialized %zu system(s) across %zu stage(s); %zu opted into fixedUpdate",
+        totalSystems, m_systemsByStage.size(), m_fixedUpdaters.size());
 }
 
 void Engine::buildSchedule() {
@@ -196,7 +205,7 @@ void Engine::buildSchedule() {
             for (const auto& layer : plan.layers) {
                 if (layer.size() > maxLayer) maxLayer = layer.size();
             }
-            LOG_INFO("Schedule[%s]: %zu system(s), %zu layer(s), max layer width %zu",
+            LOG_VERBOSE("Schedule[%s]: %zu system(s), %zu layer(s), max layer width %zu",
                 STAGE_NAMES[s], stage.size(), plan.layers.size(), maxLayer);
         }
     }
@@ -239,6 +248,7 @@ void Engine::updateStage(SystemStage stage, FrameContext& ctx) {
 }
 
 void Engine::shutdownSystems() {
+    LOG_TRACE("Shutting down systems (reverse registration order)");
     // Reverse stage order, then reverse within each stage.
     for (auto stageIt = m_systemsByStage.rbegin(); stageIt != m_systemsByStage.rend(); ++stageIt) {
         for (auto it = stageIt->rbegin(); it != stageIt->rend(); ++it) {

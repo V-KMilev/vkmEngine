@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "IO"
+
 #include "io/scene_serializer.h"
 
 #include <fstream>
@@ -161,11 +163,16 @@ bool save(const Scene& scene, const ResourceManager& resources, const std::strin
 
     std::ofstream out(path);
     if (!out) {
-        LOG_ERROR("SceneSerializer::save failed to open '%s' for writing", path.c_str());
+        LOG_ERROR("Failed to open '%s' for writing", path.c_str());
         return false;
     }
     out << doc.dump(2);
-    LOG_INFO("Saved scene to '%s' (%zu entities)", path.c_str(), doc["entities"].size());
+    const auto& assets = doc["assets"];
+    const size_t numTex = assets.contains("textures")  ? assets["textures"].size()  : 0;
+    const size_t numMat = assets.contains("materials") ? assets["materials"].size() : 0;
+    const size_t numMsh = assets.contains("meshes")    ? assets["meshes"].size()    : 0;
+    LOG_INFO("Saved scene to '%s' (%zu entities, %zu texture(s) + %zu material(s) + %zu mesh(es) referenced)",
+        path.c_str(), doc["entities"].size(), numTex, numMat, numMsh);
     return true;
 }
 
@@ -187,11 +194,11 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
 
     const int version = doc.value("version", 0);
     if (version <= 0) {
-        LOG_ERROR("SceneSerializer::load: missing/invalid 'version' field");
+        LOG_ERROR("Missing/invalid 'version' field");
         return false;
     }
     if (version > FILE_FORMAT_VERSION) {
-        LOG_ERROR("SceneSerializer::load: file version %d is newer than this build (%d); refusing to load",
+        LOG_ERROR("File version %d is newer than this build (%d); refusing to load",
             version, FILE_FORMAT_VERSION);
         return false;
     }
@@ -200,11 +207,11 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
         // uses json.value("key", fallback) so missing fields keep their
         // struct defaults. Migrations live here when fields are renamed or
         // their meaning changes (no schema migrations needed at v1).
-        LOG_INFO("SceneSerializer::load: file version %d, current is %d (loading with defaults for missing fields)",
+        LOG_INFO("File version %d, current is %d (loading with defaults for missing fields)",
             version, FILE_FORMAT_VERSION);
     }
     if (!doc.contains("entities") || !doc["entities"].is_array()) {
-        LOG_ERROR("SceneSerializer::load: missing or invalid 'entities' array");
+        LOG_ERROR("Missing or invalid 'entities' array");
         return false;
     }
 
@@ -231,7 +238,7 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
         for (const auto& entry : doc["entities"]) {
             const uint32_t id = entry.value("id", 0u);
             if (id == 0) {
-                LOG_WARNING("SceneSerializer::load: entity with id=0 skipped (slot 0 reserved)");
+                LOG_WARNING("Entity with id=0 skipped (slot 0 reserved)");
                 continue;
             }
             const Entity entity = staging.createEntityAt(id);
@@ -265,7 +272,7 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
         // prevSibling on both sides and marks WorldTransform dirty.
         for (const auto& [childIdx, parentIdx] : parentLinks) {
             if (!staging.isAliveAtIndex(parentIdx)) {
-                LOG_WARNING("SceneSerializer::load: parent slot %u not found in file; entity %u left as root",
+                LOG_WARNING("Parent slot %u not found in file; entity %u left as root",
                     parentIdx, childIdx);
                 continue;
             }
@@ -274,13 +281,13 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
             HierarchyOperations::setParent(staging, childId, parentId);
         }
     } catch (const std::exception& e) {
-        LOG_ERROR("SceneSerializer::load: aborted while reading '%s': %s (live scene unchanged)",
+        LOG_ERROR("Aborted while reading '%s': %s (live scene unchanged)",
             path.c_str(), e.what());
         return false;
     }
 
     for (const std::string& k : unknownKeys) {
-        LOG_WARNING("SceneSerializer::load: unknown component key '%s' in '%s' (schema drift; dropped)",
+        LOG_WARNING("Unknown component key '%s' in '%s' (schema drift; dropped)",
             k.c_str(), path.c_str());
     }
 

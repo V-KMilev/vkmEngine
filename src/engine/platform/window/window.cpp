@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "WINDOW"
+
 #include "platform/window/window.h"
 
 #include <algorithm>

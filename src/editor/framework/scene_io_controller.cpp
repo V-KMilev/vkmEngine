@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "EDITOR"
+
 #include "framework/scene_io_controller.h"
 #include "framework/editor_state.h"
 
