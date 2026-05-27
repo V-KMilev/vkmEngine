@@ -321,6 +321,20 @@ bool EnvironmentInspector::drawLighting(EditorContext& /*ec*/, EnvironmentConfig
                 "Directional/spot: widens the 1.5-texel base disk.\n"
                 "Point (cube): distance-scaled angular jitter.");
     }
+
+    ImGui::Spacing();
+    if (cardHeader("oit", "Transparency", nullptr)) {
+        changed |= ImGui::Checkbox("Weighted-Blended OIT", &env.transparency.useOIT);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "Order-independent transparency (McGuire-Bavoil 2013).\n"
+                "Off (default): back-to-front sorted alpha-blend.\n"
+                "  - supports glass refraction via the scene snapshot.\n"
+                "  - sorts wrong for intersecting/overlapping transparents.\n"
+                "On: weighted accumulation into MRT, resolved over the scene.\n"
+                "  - correct for intersection / particle volumes.\n"
+                "  - refraction is bypassed (no behind-snapshot to sample).");
+    }
     return changed;
 }
 

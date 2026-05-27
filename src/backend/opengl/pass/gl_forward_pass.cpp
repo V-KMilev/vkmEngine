@@ -17,6 +17,7 @@
 #include "resource/gl_ibl.h"
 #include "resource/gl_material.h"
 #include "resource/gl_mesh.h"
+#include "resource/gl_oit.h"
 #include "resource/gl_shader_program.h"
 #include "resource/gl_shadow_map.h"
 #include "resource/resource_manager.h"
@@ -87,6 +88,15 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     auto& gbuffer    = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
     auto& ibl        = *rg.resource<GLIBL>(RGResource::IBL);
     auto& shadowAtlas = *rg.resource<GLShadowAtlas>(RGResource::ShadowAtlas);
+    GLOIT* oit       = rg.resource<GLOIT>(RGResource::OITAccum);
+
+    // Weighted-Blended OIT routes the transparent phase to a separate
+    // single-sample MRT (accum, revealage). Off by default; falls back to
+    // the sorted-with-refraction path when disabled or when no OIT target
+    // is available.
+    const bool oitActive = (m_phase == Phase::Transparent)
+        && view.environment.transparency.useOIT
+        && oit && oit->isReady();
 
     // The scene renders into the offscreen linear-HDR target so light is
     // never clamped before tone mapping. The composite pass resolves this
@@ -228,19 +238,42 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         if (!anyTransparent && !view.modeConfig.wireframeOverlay) return;
 
         if (anyTransparent) {
-            hdrT.resolve();
-            hdrT.bindForRender();
-            hdrT.bindResolvedColor(GLConfig::TextureSlots::SceneColor);
-            frame.hasSceneColor = 1;
-            glContext.setBlending(true);
-            glContext.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glContext.setDepthWrite(false);
-            // Cull back faces so a closed transmissive mesh shows only its
-            // front surface (engine default is no culling + depth-write to
-            // hide back faces; depth-write is off here, so without this you
-            // see through to the inside / far faces of glass).
-            glContext.setFaceCulling(true);
-            glContext.setCullFace(GL_BACK);
+            if (oitActive) {
+                // OIT path: blit the just-rendered opaque depth from the MSAA
+                // HDR FBO into the OIT FBO's single-sample depth so transparents
+                // still depth-test against opaque (no depth-write). Then bind
+                // OIT for MRT writes and set per-attachment blend:
+                //   color 0 (accum):     (ONE, ONE)              - additive
+                //   color 1 (revealage): (ZERO, ONE_MINUS_SRC_COLOR) - multiplicative
+                oit->copyDepthFrom(hdrT.msFboId(), hdrT.width(), hdrT.height());
+                oit->bindForRender();
+                glContext.setDepthTest(true);
+                glContext.setDepthWrite(false);
+                glContext.setBlending(true);
+                // Per-attachment blend funcs - requires GL 4.0+.
+                glBlendFunci(0, GL_ONE, GL_ONE);
+                glBlendFunci(1, GL_ZERO, GL_ONE_MINUS_SRC_COLOR);
+                // Refraction is incompatible with OIT (no scene snapshot to
+                // sample) - leave hasSceneColor at 0 so transmissive paths
+                // fall back to IBL.
+                frame.hasSceneColor = 0;
+                glContext.setFaceCulling(true);
+                glContext.setCullFace(GL_BACK);
+            } else {
+                hdrT.resolve();
+                hdrT.bindForRender();
+                hdrT.bindResolvedColor(GLConfig::TextureSlots::SceneColor);
+                frame.hasSceneColor = 1;
+                glContext.setBlending(true);
+                glContext.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glContext.setDepthWrite(false);
+                // Cull back faces so a closed transmissive mesh shows only its
+                // front surface (engine default is no culling + depth-write to
+                // hide back faces; depth-write is off here, so without this you
+                // see through to the inside / far faces of glass).
+                glContext.setFaceCulling(true);
+                glContext.setCullFace(GL_BACK);
+            }
             currentType = MaterialType::Transparent;
         }
     }
@@ -347,6 +380,11 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
             key.materialFlags    = material ? material->getFeatureFlags() : 0u;
             key.lightCountBucket = lightCountBucket;
             key.shadowKindMask   = shadowKindMask;
+            // OIT_PASS variant only when the transparent phase is rendering
+            // through the OIT MRT; the variant cache discriminates so the
+            // sorted path can still bind the regular FragColor variant for
+            // the same material when OIT is toggled off.
+            key.oitPass = oitActive && batch.materialType == MaterialType::Transparent;
             shader = glView.resolveShaderVariant(baseHandle, key, resources);
         } else {
             shader = glView.resolveShader(baseHandle, resources);

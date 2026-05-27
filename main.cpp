@@ -168,6 +168,15 @@ int main() {
         };
         const auto lensFlareShader = Engine::loadShader(resources, shaderDir + "/post/lens_flare", "shader:lens_flare", lensFlareSamplers);
 
+        // OIT resolve: composites Weighted-Blended OIT (accum, revealage)
+        // into the HDR scene. Only active when env.transparency.useOIT is on.
+        const std::unordered_map<std::string, int> oitResolveSamplers = {
+            {"u_oitAccum", 0}, {"u_oitRevealage", 1}
+        };
+        const auto oitResolveShader = Engine::loadShader(
+            resources, shaderDir + "/post/oit_resolve",
+            "shader:oit_resolve", oitResolveSamplers);
+
         // Render passes - shadow runs first so the forward pass can sample its result.
         renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
 
@@ -190,6 +199,7 @@ int main() {
             "GLForwardPass.Opaque",
             "GLSkyboxPass",
             "GLForwardPass.Transparent",
+            "GLOITResolvePass",
             "GLAABBDebugPass",
             "GLGridPass",
             "GLSSRPass",
@@ -234,6 +244,7 @@ int main() {
         Engine::watchShader(fileWatcher, resources, dofShader);
         Engine::watchShader(fileWatcher, resources, mbShader);
         Engine::watchShader(fileWatcher, resources, lensFlareShader);
+        Engine::watchShader(fileWatcher, resources, oitResolveShader);
 
         // Default scene: a single cube at the origin under a directional
         // light. Scene/asset round-trip happy: every asset has a source
