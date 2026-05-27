@@ -40,6 +40,9 @@ inline bool isVisible(
     const glm::vec3& boundsMax,
     const VisibilityContext& /*context*/
 ) {
+    // Gated by oracle.ready - env.occlusion.useHiZ controls whether the
+    // pyramid is built each frame, which controls whether the oracle
+    // publishes. No second toggle needed; the data presence is the gate.
     const auto frame = OcclusionOracle::get().snapshot();
     if (!frame.ready) return true;
 
