@@ -69,6 +69,14 @@ class GLShadowAtlas {
         /// Bind the cube array depth texture to a texture slot for sampling.
         void bindCubeForReading(uint32_t slot) const;
 
+        /// Bind the 2D array to @p slot with a sampler-object override that
+        /// disables texture comparison - the shader reads raw depth instead
+        /// of hardware PCF. Used by PCSS's blocker search.
+        void bind2DForReadingDepth(uint32_t slot) const;
+
+        /// Bind the cube array to @p slot with the same compare-off sampler.
+        void bindCubeForReadingDepth(uint32_t slot) const;
+
         uint32_t getResolution2D()   const { return m_res2D; }
         uint32_t getResolutionCube() const { return m_resCube; }
         uint32_t getMax2DCasters()   const { return m_max2D; }
@@ -85,6 +93,12 @@ class GLShadowAtlas {
 
         uint32_t m_tex2D   = 0;
         uint32_t m_texCube = 0;
+
+        /// Sampler object with GL_TEXTURE_COMPARE_MODE = GL_NONE. Bound to
+        /// the depth slots via bind*ForReadingDepth so the shader sees raw
+        /// depth at those units even though the texture is configured for
+        /// hardware PCF on the compare path. Shared across 2D + cube.
+        uint32_t m_samplerDepthNoCompare = 0;
 
         std::unique_ptr<Core::FrameBuffer> m_fbo;
 };

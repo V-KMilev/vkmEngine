@@ -150,9 +150,14 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
     auto& batcher = glView.getInstanceBatcher();
     const auto& batches = batcher.getBatches();
 
-    // Bind both shadow atlases for the PBR shader to sample.
+    // Bind both shadow atlases for the PBR shader to sample. The compare path
+    // (slots 10/11) feeds the hardware-PCF samplers via sampler*Shadow types;
+    // the raw-depth path (slots 21/22) binds the same textures with a
+    // compare-off sampler object for PCSS's blocker search.
     shadowAtlas.bind2DForReading(GLConfig::TextureSlots::ShadowMap2D);
     shadowAtlas.bindCubeForReading(GLConfig::TextureSlots::ShadowMapCube);
+    shadowAtlas.bind2DForReadingDepth(GLConfig::TextureSlots::ShadowMap2DDepth);
+    shadowAtlas.bindCubeForReadingDepth(GLConfig::TextureSlots::ShadowMapCubeDepth);
 
     // Bind the baked IBL set (irradiance / prefilter / BRDF LUT) and tell the
     // PBR shader whether to use it. Falls back to flat ambient when no bake.

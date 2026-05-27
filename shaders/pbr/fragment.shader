@@ -158,6 +158,12 @@ layout(std140, binding = 3) uniform ShadowBlock {
 uniform sampler2DArrayShadow   u_shadowMap2D;
 uniform samplerCubeArrayShadow u_shadowMapCube;
 
+// Raw-depth views of the same textures, bound at compare-off slots so PCSS's
+// blocker-search pass can read average blocker depth. The compare path above
+// stays unchanged - it's the one doing the final dynamic-kernel PCF.
+uniform sampler2DArray   u_shadowMap2D_depth;
+uniform samplerCubeArray u_shadowMapCube_depth;
+
 uniform sampler2D u_albedoTexture;
 uniform sampler2D u_normalTexture;
 uniform sampler2D u_metallicRoughnessTexture;
@@ -437,6 +443,26 @@ float ign(vec2 p) {
     return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
 }
 
+// PCSS blocker search: sample N taps around the projected receiver position
+// in light-space depth and average the taps that are CLOSER to the light than
+// the receiver (i.e. would cast a shadow on it). Returns -1 when zero blockers
+// are found (caller short-circuits to "fully lit"). The depth read uses the
+// raw-depth sampler so the value is the actual stored depth and not the
+// hardware PCF comparison result.
+float pcssBlockerSearch2D(int slot, vec2 projXY, float ref, float searchRadius) {
+    float blockerSum = 0.0;
+    int   blockerCount = 0;
+    for (int i = 0; i < 12; ++i) {
+        vec2 off = kPoissonDisk12[i] * searchRadius;
+        float d = texture(u_shadowMap2D_depth, vec3(projXY + off, float(slot))).r;
+        if (d < ref) {
+            blockerSum += d;
+            blockerCount += 1;
+        }
+    }
+    return blockerCount > 0 ? blockerSum / float(blockerCount) : -1.0;
+}
+
 float sample2DShadow(int slot, vec3 worldPos, float NdotL) {
     Shadow2DCaster c = u_shadow.casters2D[slot];
 
@@ -450,12 +476,6 @@ float sample2DShadow(int slot, vec3 worldPos, float NdotL) {
     float ref = proj.z - bias;
 
     vec2 texel = 1.0 / vec2(textureSize(u_shadowMap2D, 0).xy);
-    // ~1.5-texel disk radius - matches the visual softness of the old 3x3
-    // box but without the gridded screen-door pattern. u_shadowSoftness
-    // widens the kernel for an artistic soft-shadow look; the 12 Poisson
-    // taps stay constant so cost is unchanged.
-    float kernelScale = 1.5 + 4.0 * max(u_shadowSoftness, 0.0);
-    vec2 kernel = texel * kernelScale;
 
     // Per-fragment disk rotation. Without this, the Poisson points cluster
     // identically on every fragment and produce visible noise patterns; with
@@ -464,12 +484,60 @@ float sample2DShadow(int slot, vec3 worldPos, float NdotL) {
     float sa = sin(a), ca = cos(a);
     mat2 rot = mat2(ca, -sa, sa, ca);
 
+    // Hard / fixed-kernel path: when softness is at the default the PCSS
+    // search adds no visual benefit, so the same 12-tap Poisson PCF as
+    // before keeps cost constant for the common case.
+    if (u_shadowSoftness <= 0.0) {
+        vec2 kernel = texel * 1.5;
+        float sum = 0.0;
+        for (int i = 0; i < 12; ++i) {
+            vec2 off = rot * kPoissonDisk12[i] * kernel;
+            sum += texture(u_shadowMap2D, vec4(proj.xy + off, float(slot), ref));
+        }
+        return sum / 12.0;
+    }
+
+    // PCSS path. Stage 1: blocker search across a kernel proportional to the
+    // configured light size (artistically driven by u_shadowSoftness).
+    // Stage 2: penumbra = (receiver - avgBlocker) / avgBlocker * lightSize -
+    // standard PCSS formula. Big depth gap (far blocker) -> wide penumbra.
+    // Small gap (contact) -> narrow penumbra. Floored at the hard-PCF kernel
+    // so contact still gets a single-texel-wide AA edge.
+    // Stage 3: dynamic-kernel PCF with the same 12-tap Poisson rotated per
+    // fragment.
+    float lightSizeUV = u_shadowSoftness * 0.04;  // ~5% of frustum max
+    float avgBlocker  = pcssBlockerSearch2D(slot, proj.xy, ref, lightSizeUV);
+    if (avgBlocker < 0.0) return 1.0;
+
+    float penumbra = (ref - avgBlocker) / max(avgBlocker, 1e-4) * lightSizeUV;
+    penumbra       = clamp(penumbra, texel.x * 1.5, lightSizeUV);
+
     float sum = 0.0;
     for (int i = 0; i < 12; ++i) {
-        vec2 off = rot * kPoissonDisk12[i] * kernel;
+        vec2 off = rot * kPoissonDisk12[i] * penumbra;
         sum += texture(u_shadowMap2D, vec4(proj.xy + off, float(slot), ref));
     }
     return sum / 12.0;
+}
+
+// Cube counterpart of pcssBlockerSearch2D. The Poisson disk lives in the
+// tangent plane perpendicular to the light direction (tx/ty form an
+// orthonormal basis), and the depth read uses the compare-off cube sampler
+// so the value is the raw stored depth in [0, 1].
+float pcssBlockerSearchCube(int slot, vec3 toFrag, vec3 tx, vec3 ty,
+                            float ref, float searchRadius) {
+    float blockerSum = 0.0;
+    int   blockerCount = 0;
+    for (int i = 0; i < 12; ++i) {
+        vec2 r = kPoissonDisk12[i] * searchRadius;
+        vec3 sampleDir = toFrag + tx * r.x + ty * r.y;
+        float d = texture(u_shadowMapCube_depth, vec4(sampleDir, float(slot))).r;
+        if (d < ref) {
+            blockerSum += d;
+            blockerCount += 1;
+        }
+    }
+    return blockerCount > 0 ? blockerSum / float(blockerCount) : -1.0;
 }
 
 float samplePointShadow(int slot, vec3 worldPos, vec3 lightPos) {
@@ -495,28 +563,35 @@ float samplePointShadow(int slot, vec3 worldPos, vec3 lightPos) {
         return texture(u_shadowMapCube, vec4(toFrag, float(slot)), ref);
     }
 
-    // Soft tap: jitter the sample direction in the plane perpendicular
-    // to toFrag with a Poisson disk. The depth reference is held fixed
-    // (the alternative would re-project per-tap, but the visual cost of
-    // a small ref bias on a softened shadow is much smaller than the
-    // cost of computing it 12 times per fragment).
+    // Tangent frame around toFrag for the Poisson disk in the plane
+    // perpendicular to the light direction.
     vec3 dir = toFrag / max(dist, 1e-4);
-    // Build a tangent frame around dir without picking a degenerate axis.
     vec3 up = abs(dir.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
     vec3 tx = normalize(cross(up, dir));
     vec3 ty = cross(dir, tx);
 
-    // Angular kernel - the offset is in world units so it scales with
-    // distance: closer fragments get larger angular spread, matching how
-    // a real area light's penumbra widens.
+    // PCSS path. Light size scales with distance from the light so a closer
+    // surface gets a wider angular search - mimicking how a real area
+    // emitter's penumbra widens with proximity, and matching what the
+    // pre-PCSS distance-aware PCF was already doing.
+    float lightSize = dist * 0.02 * u_shadowSoftness;
+    float avgBlocker = pcssBlockerSearchCube(slot, toFrag, tx, ty, ref, lightSize);
+    if (avgBlocker < 0.0) return 1.0;
+
+    // Penumbra scales with the relative depth gap (receiver vs avg blocker)
+    // and the light size, matching the canonical PCSS formula. Floored at
+    // a single-texel kernel so contact edges stay sharp instead of dilating.
+    float penumbra = (ref - avgBlocker) / max(avgBlocker, 1e-4) * lightSize;
+    penumbra = clamp(penumbra, lightSize * 0.05, lightSize);
+
+    // Final dynamic-kernel PCF in the tangent plane.
     float angle = ign(gl_FragCoord.xy) * 6.2831853;
     float sa = sin(angle), ca = cos(angle);
     mat2 rot = mat2(ca, -sa, sa, ca);
-    float kernel = dist * 0.02 * u_shadowSoftness;
 
     float sum = 0.0;
     for (int i = 0; i < 12; ++i) {
-        vec2 r = rot * kPoissonDisk12[i] * kernel;
+        vec2 r = rot * kPoissonDisk12[i] * penumbra;
         vec3 sampleDir = toFrag + tx * r.x + ty * r.y;
         sum += texture(u_shadowMapCube, vec4(sampleDir, float(slot)), ref);
     }
