@@ -126,19 +126,22 @@ void RenderGraph::compile(const RenderView* view) {
     }
 
     // Alias-group analysis. Sort resources by firstWrite and greedily
-    // assign each to the earliest existing group whose last-read ended
-    // before this resource's first-write (i.e. lifetimes are disjoint).
-    // Persistent resources opt out and get their own singleton group.
-    // This is a "could share storage" upper bound only - actual aliasing
-    // needs the backend to compare physical descriptors (size, format,
-    // sample count) before swapping bindings.
+    // assign each to the earliest existing group that's BOTH (a) disjoint
+    // in lifetime (group's largest lastRead < this resource's firstWrite)
+    // AND (b) descriptor-compatible (same shape, format, samples). The
+    // descriptor check is the load-bearing part: lifetime-only grouping
+    // overstates "could share storage" because an R8 single-sample target
+    // can never alias an RGBA16F MSAA target regardless of when they
+    // execute. Persistent resources opt out entirely and get singleton
+    // groups so the visualizer can still colour them.
     {
         for (uint32_t i = 0; i < RG_RESOURCE_COUNT; ++i) m_aliasGroups[i] = -1;
 
         struct OrderedResource {
-            uint32_t id;
-            int      firstWrite;
-            int      lastRead;
+            uint32_t              id;
+            int                   firstWrite;
+            int                   lastRead;
+            RGResourceDescriptor  descriptor;
         };
         std::vector<OrderedResource> ordered;
         ordered.reserve(RG_RESOURCE_COUNT);
@@ -150,19 +153,24 @@ void RenderGraph::compile(const RenderView* view) {
             const int fw = lt.firstWrite >= 0 ? lt.firstWrite : lt.lastRead;
             const int lr = lt.lastRead   >= 0 ? lt.lastRead   : lt.firstWrite;
             if (fw < 0 || lr < 0) continue;
-            ordered.push_back({i, fw, lr});
+            ordered.push_back({i, fw, lr,
+                rgResourceDescriptor(static_cast<RGResource>(i))});
         }
         std::sort(ordered.begin(), ordered.end(),
             [](const OrderedResource& a, const OrderedResource& b) {
                 return a.firstWrite < b.firstWrite;
             });
 
-        // Per-group running tail: the largest lastRead assigned so far.
-        std::vector<int> groupTail;
+        // Per-group running state: the largest lastRead assigned so far and
+        // the descriptor of the first resource placed in the group (all
+        // subsequent placements must match it).
+        std::vector<int>                  groupTail;
+        std::vector<RGResourceDescriptor> groupDescriptor;
         for (const auto& r : ordered) {
             int picked = -1;
             for (std::size_t g = 0; g < groupTail.size(); ++g) {
-                if (groupTail[g] < r.firstWrite) {
+                if (groupTail[g] < r.firstWrite
+                    && groupDescriptor[g] == r.descriptor) {
                     picked = static_cast<int>(g);
                     break;
                 }
@@ -170,6 +178,7 @@ void RenderGraph::compile(const RenderView* view) {
             if (picked < 0) {
                 picked = static_cast<int>(groupTail.size());
                 groupTail.push_back(r.lastRead);
+                groupDescriptor.push_back(r.descriptor);
             } else {
                 if (r.lastRead > groupTail[picked]) groupTail[picked] = r.lastRead;
             }
