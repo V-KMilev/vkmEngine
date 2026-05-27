@@ -76,7 +76,12 @@ namespace GLConfig {
         constexpr uint32_t ShadowMap2DDepth     = 21;  ///< Raw 2D-array depth (compare-off sampler)
         constexpr uint32_t ShadowMapCubeDepth   = 22;  ///< Raw cube-array depth (compare-off sampler)
 
-        constexpr uint32_t Count = 23;  ///< Total number of texture slots used
+        // Pre-integrated subsurface LUT. Built once at startup, indexed by
+        // (NdotL, curvature) - sampled by the PBR shader's HAS_SUBSURFACE
+        // branch to drive per-channel diffuse bleed at the terminator.
+        constexpr uint32_t SssLUT               = 23;  ///< 64x16 RGBA32F LUT, owned by GLForwardPass
+
+        constexpr uint32_t Count = 24;  ///< Total number of texture slots used
     }
 
     /**
@@ -126,6 +131,7 @@ namespace GLConfig {
         constexpr const char* IrradianceMap2 = "u_irradianceMap2";
         constexpr const char* PrefilterMap2  = "u_prefilterMap2";
         constexpr const char* EnvCube2       = "u_envCube2";
+        constexpr const char* SssLUT         = "u_sssLUT";
         constexpr const char* SSAO           = "u_ssao";
         constexpr const char* SceneColor     = "u_sceneColor";
     }

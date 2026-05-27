@@ -99,6 +99,7 @@ int main() {
             {Engine::GLConfig::UniformNames::IrradianceMap2,             Engine::GLConfig::TextureSlots::IrradianceMap2},
             {Engine::GLConfig::UniformNames::PrefilterMap2,              Engine::GLConfig::TextureSlots::PrefilterMap2},
             {Engine::GLConfig::UniformNames::EnvCube2,                   Engine::GLConfig::TextureSlots::EnvCube2},
+            {Engine::GLConfig::UniformNames::SssLUT,                     Engine::GLConfig::TextureSlots::SssLUT},
             {Engine::GLConfig::UniformNames::SSAO,                       Engine::GLConfig::TextureSlots::SSAO},
             {Engine::GLConfig::UniformNames::SceneColor,                 Engine::GLConfig::TextureSlots::SceneColor},
         };

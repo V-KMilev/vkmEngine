@@ -1,8 +1,12 @@
 #pragma once
 
+#include <memory>
+
 #include "system/render/render_pass.h"
 #include "resource/material_asset.h"
 #include "resource/shader_asset.h"
+
+namespace Core { class Texture2D; }
 
 namespace Engine {
 
@@ -16,7 +20,7 @@ namespace Engine {
 class GLForwardPass : public RenderPass {
     public:
         GLForwardPass() = delete;
-        ~GLForwardPass() override = default;
+        ~GLForwardPass() override;
 
         GLForwardPass(const GLForwardPass& other) = delete;
         GLForwardPass& operator=(const GLForwardPass& other) = delete;
@@ -77,6 +81,11 @@ class GLForwardPass : public RenderPass {
     private:
         ShaderHandle m_shaders[4] = {};  ///< Indexed by MaterialType (Opaque, Transparent, Unlit, AlphaMask)
         Phase        m_phase = Phase::All;
+
+        /// Pre-integrated subsurface LUT, lazily built on first execute(). 64x16
+        /// RGBA32F indexed by (NdotL, curvature); the PBR shader's HAS_SUBSURFACE
+        /// branch samples it instead of the colored-wrap analytic form.
+        std::unique_ptr<Core::Texture2D> m_sssLUT;
 };
 
 } // namespace Engine
