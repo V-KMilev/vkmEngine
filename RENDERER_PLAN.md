@@ -607,7 +607,7 @@ These five surface up across the most features and are the highest-leverage to k
 | 13 | Per-probe IBL blending                   | 3     | Shipped (per-fragment weighted probe-vs-global blend + sphere parallax correction) | `f5a08a9` + `adf4823` + this branch |
 | 14 | POM self-shadowing                       | 3     | Shipped                                        | `5fba9b9`                                |
 | 15 | Weighted-Blended OIT                     | 4     | Shipped (global toggle; per-material opt-in deferred) | `83fef57`                          |
-| 16 | CSM / PCSS for spot+point lights         | 4     | Partial (shadow-softness PCF kernel for 2D + cube; proper PCSS blocker search + per-face cube res deferred) | `682b2aa` + `580fb55` |
+| 16 | CSM / PCSS for spot+point lights         | 4     | Partial (true PCSS blocker search + dynamic-kernel PCF for 2D + cube; per-face cube resolution scaling deferred) | `682b2aa` + `580fb55` + this branch |
 | 17 | Render graph resource aliasing           | 4     | Partial (analysis + visualizer color grouping; actual physical aliasing deferred - needs backend descriptor metadata) | `dbc404f` |
 | 18 | LTC area light specular (Phase 2C)       | 4     | Not shipped (needs Heitz pre-computed LUT data) | -                                       |
 | 19 | Thickness-aware subsurface scattering    | 4     | Partial (per-channel colored-wrap; pre-integrated LUT path deferred) | `5056fe7`                |

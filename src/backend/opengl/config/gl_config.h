@@ -69,7 +69,14 @@ namespace GLConfig {
         constexpr uint32_t PrefilterMap2        = 19;  ///< Fallback IBL prefiltered specular
         constexpr uint32_t EnvCube2             = 20;  ///< Fallback raw env cubemap
 
-        constexpr uint32_t Count = 21;  ///< Total number of texture slots used
+        // Raw-depth shadow bindings for PCSS. Same physical textures as
+        // ShadowMap2D / ShadowMapCube, but bound with a compare-off sampler
+        // object so the shader can read average blocker depth in the PCSS
+        // search before doing the dynamic-kernel PCF pass.
+        constexpr uint32_t ShadowMap2DDepth     = 21;  ///< Raw 2D-array depth (compare-off sampler)
+        constexpr uint32_t ShadowMapCubeDepth   = 22;  ///< Raw cube-array depth (compare-off sampler)
+
+        constexpr uint32_t Count = 23;  ///< Total number of texture slots used
     }
 
     /**
@@ -105,9 +112,11 @@ namespace GLConfig {
         constexpr const char* Color = "u_color";
 
         // Shadow uniforms
-        constexpr const char* ShadowMap2D   = "u_shadowMap2D";
-        constexpr const char* ShadowMapCube = "u_shadowMapCube";
-        constexpr const char* LightSpace    = "u_lightSpace";
+        constexpr const char* ShadowMap2D        = "u_shadowMap2D";
+        constexpr const char* ShadowMapCube      = "u_shadowMapCube";
+        constexpr const char* ShadowMap2DDepth   = "u_shadowMap2D_depth";
+        constexpr const char* ShadowMapCubeDepth = "u_shadowMapCube_depth";
+        constexpr const char* LightSpace         = "u_lightSpace";
 
         // Image-based lighting uniforms
         constexpr const char* IrradianceMap  = "u_irradianceMap";
