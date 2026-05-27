@@ -335,6 +335,17 @@ bool EnvironmentInspector::drawLighting(EditorContext& /*ec*/, EnvironmentConfig
                 "  - correct for intersection / particle volumes.\n"
                 "  - refraction is bypassed (no behind-snapshot to sample).");
     }
+
+    ImGui::Spacing();
+    if (cardHeader("occlusion", "Occlusion", nullptr)) {
+        changed |= ImGui::Checkbox("Build Hi-Z pyramid", &env.occlusion.useHiZ);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "Build a max-Z depth pyramid from the prepass each frame.\n"
+                "No consumer yet (#20 in RENDERER_PLAN.md); enable to\n"
+                "exercise the pass timing/cost. The pyramid is read in a\n"
+                "future occlusion-culling pass that will land separately.");
+    }
     return changed;
 }
 
