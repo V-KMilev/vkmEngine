@@ -105,6 +105,19 @@ class GLAutoExposure {
             glViewport(0, 0, 1, 1);
         }
 
+        /// Blocking CPU readback of the freshly-adapted 1x1 R16F luminance.
+        /// Call after swap() so m_adapt[m_cur] is the latest value. ~10us on
+        /// desktop (1 pixel + a sync); only worth paying for the editor's
+        /// adapted-EV readout, not the runtime path.
+        float readAdapted() const {
+            if (!m_ready) return 0.18f;
+            float v = 0.0f;
+            glBindTexture(GL_TEXTURE_2D, m_adapt[m_cur]);
+            glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_FLOAT, &v);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            return v;
+        }
+
     private:
         void releaseAll() noexcept {
             if (m_fbo) glDeleteFramebuffers(1, &m_fbo);

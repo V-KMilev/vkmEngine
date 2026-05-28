@@ -6,6 +6,7 @@
 #include "system/visibility/visibility.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
+#include "system/render/render_backend.h"       // getAdaptedLuminance() for the EV readout
 #include "system/render/render_graph.h"
 #include "system/render/render_pass.h"
 #include "loader/environment_loaders.h"         // loadColorLUT for thumbnail
@@ -13,6 +14,8 @@
 
 #include <GL/glew.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -398,6 +401,16 @@ bool EnvironmentInspector::drawCameraFX(EditorContext& ec, EnvironmentConfig& en
             ? ctx.visibility->cameraExposure : 1.0f;
         ImGui::TextDisabled("Manual camera exposure: %.2f (edit on the Camera entity)",
             camExp);
+
+        // Live readout from the auto-exposure pass. Lum is the linear
+        // average scene luminance the eye adaptation has converged to; EV
+        // is the photographic stop the scene is sitting at (log2(L / 0.18),
+        // 0 EV = middle grey). Lets the artist see whether auto-exposure
+        // is actually doing anything when toggled on.
+        const float lum = ec.renderSystem.getBackend().getAdaptedLuminance();
+        const float ev  = std::log2(std::max(lum / 0.18f, 1e-4f));
+        ImGui::TextDisabled("Adapted: %.3f lum  (%+0.2f EV)", lum, ev);
+
         changed |= ImGui::Checkbox("Auto Exposure (eye adaptation)", &env.exposure.autoExposure);
         ImGui::BeginDisabled(!env.exposure.autoExposure);
         changed |= sliderF("Key", "##ExpKey", &env.exposure.key, 0.01f, 1.0f, "%.3f",
