@@ -11,17 +11,17 @@
 namespace Engine {
 
 namespace {
-    /// True if @p maybeAncestor is @p node itself or anywhere up its parent
-    /// chain. Used to reject drag-reparenting that would create a cycle.
-    bool isSelfOrAncestor(const Scene& scene, EntityId node, EntityId maybeAncestor) {
-        EntityId cur = node;
-        for (int guard = 0; cur && guard < 64; ++guard) {
-            if (cur == maybeAncestor) return true;
-            if (!scene.has<Hierarchy>(cur)) break;
-            cur = scene.get<Hierarchy>(cur).parent;
-        }
-        return false;
+/// True if @p maybeAncestor is @p node itself or anywhere up its parent
+/// chain. Used to reject drag-reparenting that would create a cycle.
+bool isSelfOrAncestor(const Scene& scene, EntityId node, EntityId maybeAncestor) {
+    EntityId cur = node;
+    for (int guard = 0; cur && guard < 64; ++guard) {
+        if (cur == maybeAncestor) return true;
+        if (!scene.has<Hierarchy>(cur)) break;
+        cur = scene.get<Hierarchy>(cur).parent;
     }
+    return false;
+}
 }
 
 void HierarchyPanel::draw(EditorContext& ec) {

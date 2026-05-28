@@ -11,41 +11,41 @@
 namespace Engine {
 
 namespace {
-    // Distinct cache-key spaces. 0 is reserved for the live Material Editor.
-    inline uint64_t materialKey(uint32_t id) { return static_cast<uint64_t>(id) + 1ull; }
-    inline uint64_t meshKey(uint32_t id)     { return (1ull << 40) | id; }
+// Distinct cache-key spaces. 0 is reserved for the live Material Editor.
+inline uint64_t materialKey(uint32_t id) { return static_cast<uint64_t>(id) + 1ull; }
+inline uint64_t meshKey(uint32_t id)     { return (1ull << 40) | id; }
 
-    ImTextureID asTex(uint32_t gl) {
-        return static_cast<ImTextureID>(static_cast<intptr_t>(gl));
-    }
+ImTextureID asTex(uint32_t gl) {
+    return static_cast<ImTextureID>(static_cast<intptr_t>(gl));
+}
 
-    // Total footprint of one cell (image + its frame padding), so the column
-    // count and the not-yet-baked placeholder line up exactly.
-    float cellWidth(float cell) {
-        return cell + ImGui::GetStyle().FramePadding.x * 2.0f;
-    }
+// Total footprint of one cell (image + its frame padding), so the column
+// count and the not-yet-baked placeholder line up exactly.
+float cellWidth(float cell) {
+    return cell + ImGui::GetStyle().FramePadding.x * 2.0f;
+}
 
-    // The thumbnail image-button (or an equal-size placeholder while it waits
-    // for its bake turn). Leaves itself as the "last item" so the caller can
-    // attach a context menu to it. Returns true on left-click.
-    bool thumbButton(uint32_t tex, float cell) {
-        if (tex) {
-            return ImGui::ImageButton("##img", asTex(tex), ImVec2(cell, cell),
-                                      ImVec2(0, 1), ImVec2(1, 0));
-        }
-        const float w = cellWidth(cell);
-        ImGui::Button("...", ImVec2(w, w));
-        return false;
+// The thumbnail image-button (or an equal-size placeholder while it waits
+// for its bake turn). Leaves itself as the "last item" so the caller can
+// attach a context menu to it. Returns true on left-click.
+bool thumbButton(uint32_t tex, float cell) {
+    if (tex) {
+        return ImGui::ImageButton("##img", asTex(tex), ImVec2(cell, cell),
+                                  ImVec2(0, 1), ImVec2(1, 0));
     }
+    const float w = cellWidth(cell);
+    ImGui::Button("...", ImVec2(w, w));
+    return false;
+}
 
-    // One clipped name line under a thumbnail (uniform cell height).
-    void thumbName(const char* name, float cell) {
-        char buf[24];
-        snprintf(buf, sizeof(buf), "%.20s", (name && name[0]) ? name : "(unnamed)");
-        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + cellWidth(cell));
-        ImGui::TextUnformatted(buf);
-        ImGui::PopTextWrapPos();
-    }
+// One clipped name line under a thumbnail (uniform cell height).
+void thumbName(const char* name, float cell) {
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%.20s", (name && name[0]) ? name : "(unnamed)");
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + cellWidth(cell));
+    ImGui::TextUnformatted(buf);
+    ImGui::PopTextWrapPos();
+}
 }  // namespace
 
 void AssetBrowserPanel::ensureAssets(ResourceManager& resources) {

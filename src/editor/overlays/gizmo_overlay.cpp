@@ -152,31 +152,31 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
 }
 
 namespace {
-    // Project a world point through the viewport's view+projection into
-    // screen coordinates inside the viewport child rect. Returns false when
-    // the point is behind the camera. The 3D pass renders at viewport size
-    // and the viewport child sits at vpMin onscreen, so NDC maps to
-    // (vpMin + (0..vpSize)) directly.
-    bool projectToViewport(
-        const glm::mat4& vp,
-        const glm::vec3& p,
-        ImVec2 vpMin,
-        ImVec2 vpSize,
-        ImVec2& out
-    ) {
-        const glm::vec4 clip = vp * glm::vec4(p, 1.0f);
-        if (clip.w <= 1e-5f) return false;
-        const glm::vec3 ndc = glm::vec3(clip) / clip.w;
-        out = ImVec2(vpMin.x + (ndc.x * 0.5f + 0.5f) * vpSize.x,
-                     vpMin.y + (1.0f - (ndc.y * 0.5f + 0.5f)) * vpSize.y);
-        return true;
-    }
+// Project a world point through the viewport's view+projection into
+// screen coordinates inside the viewport child rect. Returns false when
+// the point is behind the camera. The 3D pass renders at viewport size
+// and the viewport child sits at vpMin onscreen, so NDC maps to
+// (vpMin + (0..vpSize)) directly.
+bool projectToViewport(
+    const glm::mat4& vp,
+    const glm::vec3& p,
+    ImVec2 vpMin,
+    ImVec2 vpSize,
+    ImVec2& out
+) {
+    const glm::vec4 clip = vp * glm::vec4(p, 1.0f);
+    if (clip.w <= 1e-5f) return false;
+    const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    out = ImVec2(vpMin.x + (ndc.x * 0.5f + 0.5f) * vpSize.x,
+                 vpMin.y + (1.0f - (ndc.y * 0.5f + 0.5f)) * vpSize.y);
+    return true;
+}
 
-    glm::vec3 lightWorldPos(const Scene& scene, EntityId id, const Transform& tf) {
-        if (scene.has<WorldTransform>(id))
-            return glm::vec3(scene.get<WorldTransform>(id).model[3]);
-        return tf.position;
-    }
+glm::vec3 lightWorldPos(const Scene& scene, EntityId id, const Transform& tf) {
+    if (scene.has<WorldTransform>(id))
+        return glm::vec3(scene.get<WorldTransform>(id).model[3]);
+    return tf.position;
+}
 }
 
 void GizmoOverlay::drawLightGizmos(EditorContext& ec) {

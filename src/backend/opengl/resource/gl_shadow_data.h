@@ -52,8 +52,8 @@ struct alignas(16) ShadowUBOData {
     int countCube   = 0;
     int csmBaseSlot = -1;   ///< First 2D layer of cascade 0 (-1 = no CSM); was _pad0
     int csmCount    = 0;    ///< Active cascade count for the sun;        was _pad1
-    Shadow2DCasterGPU   casters2D  [Config::MaxShadowCasters2D]{};
-    ShadowCubeCasterGPU castersCube[Config::MaxShadowCastersCube]{};
+    Shadow2DCasterGPU   casters2D  [Config::MAX_SHADOW_CASTERS_2D]{};
+    ShadowCubeCasterGPU castersCube[Config::MAX_SHADOW_CASTERS_CUBE]{};
 };
 
 /**

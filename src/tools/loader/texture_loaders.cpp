@@ -19,38 +19,38 @@
 namespace Engine {
 
 namespace {
-    /**
-     * @brief Helper to infer texture internal format from channel count and sRGB flag.
-     */
-    TextureInternalFormat inferInternalFormat(int channels, bool srgb) {
-        if (srgb) {
-            switch (channels) {
-                case 3: return TextureInternalFormat::SRGB8;
-                case 4: return TextureInternalFormat::SRGBA8;
-                default: return TextureInternalFormat::SRGBA8;
-            }
-        }
+/**
+ * @brief Helper to infer texture internal format from channel count and sRGB flag.
+ */
+TextureInternalFormat inferInternalFormat(int channels, bool srgb) {
+    if (srgb) {
         switch (channels) {
-            case 1: return TextureInternalFormat::R8;
-            case 2: return TextureInternalFormat::RG8;
-            case 3: return TextureInternalFormat::RGB8;
-            case 4: return TextureInternalFormat::RGBA8;
-            default: return TextureInternalFormat::RGBA8;
+            case 3: return TextureInternalFormat::SRGB8;
+            case 4: return TextureInternalFormat::SRGBA8;
+            default: return TextureInternalFormat::SRGBA8;
         }
     }
+    switch (channels) {
+        case 1: return TextureInternalFormat::R8;
+        case 2: return TextureInternalFormat::RG8;
+        case 3: return TextureInternalFormat::RGB8;
+        case 4: return TextureInternalFormat::RGBA8;
+        default: return TextureInternalFormat::RGBA8;
+    }
+}
 
-    /**
-     * @brief Helper to infer texture pixel format from channel count.
-     */
-    TexturePixelFormat inferFormat(int channels) {
-        switch (channels) {
-            case 1: return TexturePixelFormat::R;
-            case 2: return TexturePixelFormat::RG;
-            case 3: return TexturePixelFormat::RGB;
-            case 4: return TexturePixelFormat::RGBA;
-            default: return TexturePixelFormat::RGBA;
-        }
+/**
+ * @brief Helper to infer texture pixel format from channel count.
+ */
+TexturePixelFormat inferFormat(int channels) {
+    switch (channels) {
+        case 1: return TexturePixelFormat::R;
+        case 2: return TexturePixelFormat::RG;
+        case 3: return TexturePixelFormat::RGB;
+        case 4: return TexturePixelFormat::RGBA;
+        default: return TexturePixelFormat::RGBA;
     }
+}
 }
 
 TextureHandle loadTexture(

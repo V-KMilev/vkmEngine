@@ -33,14 +33,12 @@ struct ShaderAsset : public Resource {
     std::unordered_map<std::string, int> samplerBindings;
 
     /**
-     * @brief Whether this shader's source uses material-feature #defines and
+     * @brief Whether this shader compiles per-material through the variant cache.
      *
-     * should therefore be compiled per-material through the variant
-     * cache. Default false: the shader is a single program reused by
-     * every material that references it (the right choice for unlit,
-     * depth-only, and every post-processing pass). Set to true for
-     * shaders whose source has `#ifdef HAS_TRANSMISSION` / `_CLEARCOAT`
-     * / ... blocks (today: pbr).
+     * Default false: the shader is a single program reused by every material
+     * that references it (the right choice for unlit, depth-only, and every
+     * post-processing pass). Set to true for shaders whose source has
+     * `#ifdef HAS_TRANSMISSION` / `_CLEARCOAT` / ... blocks (today: pbr).
      */
     bool variantAware = false;
 };

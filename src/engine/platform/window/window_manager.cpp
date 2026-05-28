@@ -18,34 +18,34 @@ namespace Engine {
 WindowManager::WindowManager() = default;
 
 namespace {
-    GLFWmonitor* getCurrentMonitor(GLFWwindow* window) {
-        int windowX, windowY, windowWidth, windowHeight;
-        glfwGetWindowPos(window, &windowX, &windowY);
-        glfwGetWindowSize(window, &windowWidth, &windowHeight);
+GLFWmonitor* getCurrentMonitor(GLFWwindow* window) {
+    int windowX, windowY, windowWidth, windowHeight;
+    glfwGetWindowPos(window, &windowX, &windowY);
+    glfwGetWindowSize(window, &windowWidth, &windowHeight);
 
-        int monitorCount;
-        GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
+    int monitorCount;
+    GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
 
-        GLFWmonitor* bestMonitor = nullptr;
-        int bestOverlap = 0;
+    GLFWmonitor* bestMonitor = nullptr;
+    int bestOverlap = 0;
 
-        for (int i = 0; i < monitorCount; i++) {
-            const GLFWvidmode* mode = glfwGetVideoMode(monitors[i]);
-            int monitorX, monitorY;
-            glfwGetMonitorPos(monitors[i], &monitorX, &monitorY);
+    for (int i = 0; i < monitorCount; i++) {
+        const GLFWvidmode* mode = glfwGetVideoMode(monitors[i]);
+        int monitorX, monitorY;
+        glfwGetMonitorPos(monitors[i], &monitorX, &monitorY);
 
-            int overlapX = std::max(0, std::min(windowX + windowWidth, monitorX + mode->width) - std::max(windowX, monitorX));
-            int overlapY = std::max(0, std::min(windowY + windowHeight, monitorY + mode->height) - std::max(windowY, monitorY));
-            int overlap = overlapX * overlapY;
+        int overlapX = std::max(0, std::min(windowX + windowWidth, monitorX + mode->width) - std::max(windowX, monitorX));
+        int overlapY = std::max(0, std::min(windowY + windowHeight, monitorY + mode->height) - std::max(windowY, monitorY));
+        int overlap = overlapX * overlapY;
 
-            if (overlap > bestOverlap) {
-                bestOverlap = overlap;
-                bestMonitor = monitors[i];
-            }
+        if (overlap > bestOverlap) {
+            bestOverlap = overlap;
+            bestMonitor = monitors[i];
         }
-        
-        return bestMonitor ? bestMonitor : glfwGetPrimaryMonitor();
     }
+        
+    return bestMonitor ? bestMonitor : glfwGetPrimaryMonitor();
+}
 }  // anonymous namespace
 
 WindowManager::~WindowManager() {
@@ -123,9 +123,9 @@ bool WindowManager::updateMode(WindowMode windowMode) {
     }
 
     switch(windowMode) {
-        case WindowMode::FULLSCREEN:
+        case WindowMode::Fullscreen:
             break;
-        case WindowMode::WINDOWED:
+        case WindowMode::Windowed:
             monitor = nullptr;
             break;
         default:
@@ -211,16 +211,16 @@ void WindowManager::setCursorMode(CursorMode mode) {
 
     auto glfwmode = GLFW_CURSOR_NORMAL;
     switch (mode) {
-        case CursorMode::NORMAL:
+        case CursorMode::Normal:
             glfwmode = GLFW_CURSOR_NORMAL;
             break;
-        case CursorMode::HIDDEN:
+        case CursorMode::Hidden:
             glfwmode = GLFW_CURSOR_HIDDEN;
             break;
-        case CursorMode::DISABLED:
+        case CursorMode::Disabled:
             glfwmode = GLFW_CURSOR_DISABLED;
             break;
-        case CursorMode::CAPTURED:
+        case CursorMode::Captured:
             glfwmode = GLFW_CURSOR_CAPTURED;
             break;
         default:

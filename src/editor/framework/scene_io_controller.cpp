@@ -1,22 +1,22 @@
 #define VKM_LOG_CATEGORY "EDITOR"
 
 #include "framework/scene_io_controller.h"
-#include "framework/editor_state.h"
-
-#include <imgui.h>
 
 #include <algorithm>
 #include <filesystem>
-#include <system_error>
 #include <string>
+#include <system_error>
 #include <vector>
+
+#include <imgui.h>
 
 #include "logger.h"
 
 #include "core/system.h"
-#include "ecs/scene.h"
 #include "ecs/component/camera.h"
 #include "ecs/component/name.h"
+#include "ecs/scene.h"
+#include "framework/editor_state.h"
 #include "io/scene_serializer.h"
 #include "system/camera/camera_controller.h"
 #include "system/event/event_system.h"

@@ -32,141 +32,141 @@ EnvironmentInspector::~EnvironmentInspector() = default;
 
 namespace {
 
-    // Per-group accent rail colors - same palette the Inspector uses for
-    // Transform/Light/Camera so the Environment reads as part of the editor,
-    // not a bolted-on panel. Seven cards now (was five): split World out of
-    // Lighting, split Screen-Space FX out of Post, give each card a distinct
-    // hue so the user can scan-locate by colour.
-    const ImVec4 ACCENT_WORLD    = ImVec4(0.95f, 0.62f, 0.30f, 1.0f);  // warm sun
-    const ImVec4 ACCENT_LIGHTING = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);  // gold
-    const ImVec4 ACCENT_CAMERA   = ImVec4(0.30f, 0.78f, 0.80f, 1.0f);  // cyan
-    const ImVec4 ACCENT_POST     = EditorStyle::ACCENT;                // blue (image-finishing)
-    const ImVec4 ACCENT_SSFX     = ImVec4(0.45f, 0.80f, 0.55f, 1.0f);  // green (screen-space FX)
-    const ImVec4 ACCENT_DIAG     = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);  // gray
-    const ImVec4 ACCENT_PERF     = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);  // purple
+// Per-group accent rail colors - same palette the Inspector uses for
+// Transform/Light/Camera so the Environment reads as part of the editor,
+// not a bolted-on panel. Seven cards now (was five): split World out of
+// Lighting, split Screen-Space FX out of Post, give each card a distinct
+// hue so the user can scan-locate by colour.
+const ImVec4 ACCENT_WORLD    = ImVec4(0.95f, 0.62f, 0.30f, 1.0f);  // warm sun
+const ImVec4 ACCENT_LIGHTING = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);  // gold
+const ImVec4 ACCENT_CAMERA   = ImVec4(0.30f, 0.78f, 0.80f, 1.0f);  // cyan
+const ImVec4 ACCENT_POST     = EditorStyle::ACCENT;                // blue (image-finishing)
+const ImVec4 ACCENT_SSFX     = ImVec4(0.45f, 0.80f, 0.55f, 1.0f);  // green (screen-space FX)
+const ImVec4 ACCENT_DIAG     = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);  // gray
+const ImVec4 ACCENT_PERF     = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);  // purple
 
-    // An effect sub-block inside a group card: a hairline divider, an
-    // optional enable checkbox, then the title in header text. Body is
-    // always laid out (the caller wraps it in BeginDisabled when off) so
-    // nothing jumps - the Unreal/Unity "greyed override" pattern. Returns
-    // true so existing `if (cardHeader(...)) { ... }` call sites still read.
-    bool cardHeader(const char* id, const char* title, bool* enabled) {
-        ImGui::PushID(id);
-        ImGui::Dummy(ImVec2(0.0f, 3.0f));
-        const ImVec2 p = ImGui::GetCursorScreenPos();
-        const float  w = ImGui::GetContentRegionAvail().x;
-        ImGui::GetWindowDrawList()->AddLine(
-            ImVec2(p.x, p.y), ImVec2(p.x + w, p.y),
-            ImGui::GetColorU32(ImGuiCol_Separator), 1.0f);
-        ImGui::Dummy(ImVec2(0.0f, 5.0f));
+// An effect sub-block inside a group card: a hairline divider, an
+// optional enable checkbox, then the title in header text. Body is
+// always laid out (the caller wraps it in BeginDisabled when off) so
+// nothing jumps - the Unreal/Unity "greyed override" pattern. Returns
+// true so existing `if (cardHeader(...)) { ... }` call sites still read.
+bool cardHeader(const char* id, const char* title, bool* enabled) {
+    ImGui::PushID(id);
+    ImGui::Dummy(ImVec2(0.0f, 3.0f));
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    const float  w = ImGui::GetContentRegionAvail().x;
+    ImGui::GetWindowDrawList()->AddLine(
+        ImVec2(p.x, p.y), ImVec2(p.x + w, p.y),
+        ImGui::GetColorU32(ImGuiCol_Separator), 1.0f);
+    ImGui::Dummy(ImVec2(0.0f, 5.0f));
 
-        if (enabled) {
-            ImGui::Checkbox("##en", enabled);
-            ImGui::SameLine(0.0f, 8.0f);
-        }
-        ImGui::AlignTextToFramePadding();
-        ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
-        ImGui::TextUnformatted(title);
-        ImGui::PopStyleColor();
-        ImGui::PopID();
-        ImGui::Spacing();
-        return true;
+    if (enabled) {
+        ImGui::Checkbox("##en", enabled);
+        ImGui::SameLine(0.0f, 8.0f);
     }
+    ImGui::AlignTextToFramePadding();
+    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
+    ImGui::TextUnformatted(title);
+    ImGui::PopStyleColor();
+    ImGui::PopID();
+    ImGui::Spacing();
+    return true;
+}
 
-    // Labelled bounded slider with a hover tooltip. Returns true on change.
-    bool sliderF(
-        const char* label,
-        const char* id,
-        float* v,
-        float lo,
-        float hi,
-        const char* fmt,
-        const char* tip,
-        bool logarithmic = false
-    ) {
-        drawPropertyLabel(label);
-        ImGui::SetNextItemWidth(-1.0f);
-        bool ch = ImGui::SliderFloat(id, v, lo, hi, fmt,
-            logarithmic ? ImGuiSliderFlags_Logarithmic : 0);
-        if (tip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
-        return ch;
+// Labelled bounded slider with a hover tooltip. Returns true on change.
+bool sliderF(
+    const char* label,
+    const char* id,
+    float* v,
+    float lo,
+    float hi,
+    const char* fmt,
+    const char* tip,
+    bool logarithmic = false
+) {
+    drawPropertyLabel(label);
+    ImGui::SetNextItemWidth(-1.0f);
+    bool ch = ImGui::SliderFloat(id, v, lo, hi, fmt,
+        logarithmic ? ImGuiSliderFlags_Logarithmic : 0);
+    if (tip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
+    return ch;
+}
+
+// "Browse" button + AssetPicker modal. Picker is owned by the panel
+// (one per slot) so its on-open scan cache outlives a single draw.
+void browseButton(
+    const char* btnLabel,
+    AssetPicker& picker,
+    const char* subdir,
+    std::initializer_list<const char*> exts,
+    std::string& target
+) {
+    if (ImGui::Button(btnLabel)) {
+        const std::filesystem::path appRoot = APP_ROOT_DIR;
+        picker.options.popupId    = btnLabel;
+        picker.options.title      = "Browse";
+        picker.options.root       = appRoot / subdir;
+        picker.options.recursive  = false;
+        picker.options.kind       = AssetPicker::Kind::Files;
+        picker.options.extensions.clear();
+        for (const char* x : exts) picker.options.extensions.emplace_back(x);
+        picker.options.relativeTo = appRoot;
+        picker.open();
     }
+    std::string picked;
+    if (picker.draw(picked)) target = picked;
+}
 
-    // "Browse" button + AssetPicker modal. Picker is owned by the panel
-    // (one per slot) so its on-open scan cache outlives a single draw.
-    void browseButton(
-        const char* btnLabel,
-        AssetPicker& picker,
-        const char* subdir,
-        std::initializer_list<const char*> exts,
-        std::string& target
-    ) {
-        if (ImGui::Button(btnLabel)) {
-            const std::filesystem::path appRoot = APP_ROOT_DIR;
-            picker.options.popupId    = btnLabel;
-            picker.options.title      = "Browse";
-            picker.options.root       = appRoot / subdir;
-            picker.options.recursive  = false;
-            picker.options.kind       = AssetPicker::Kind::Files;
-            picker.options.extensions.clear();
-            for (const char* x : exts) picker.options.extensions.emplace_back(x);
-            picker.options.relativeTo = appRoot;
-            picker.open();
-        }
-        std::string picked;
-        if (picker.draw(picked)) target = picked;
+enum class Preset { Low, Medium, High, Cinematic };
+
+// Presets flip effect enables + bloom amount + auto-exposure (predictable;
+// they do not clobber paths, colours, grid or exposure tuning). Auto
+// exposure is on for the higher tiers (Low/Medium stay reference-faithful).
+void applyPreset(EnvironmentConfig& env, Preset p) {
+    switch (p) {
+        case Preset::Low:
+            env.ao.enabled = false; env.ssr.enabled = false; env.taa.enabled = false;
+            env.dof.enabled = false; env.motionBlur.enabled = false;
+            env.bloom.strength = 0.0f;
+            env.exposure.autoExposure = false;
+            break;
+        case Preset::Medium:
+            env.ao.enabled = true;  env.ssr.enabled = false; env.taa.enabled = false;
+            env.dof.enabled = false; env.motionBlur.enabled = false;
+            env.bloom.strength = 0.03f;
+            env.exposure.autoExposure = false;
+            break;
+        case Preset::High:
+            env.ao.enabled = true;  env.ssr.enabled = true;  env.taa.enabled = false;
+            env.dof.enabled = false; env.motionBlur.enabled = false;
+            env.bloom.strength = 0.04f;
+            env.exposure.autoExposure = true;
+            break;
+        case Preset::Cinematic:
+            env.ao.enabled = true;  env.ssr.enabled = true;  env.taa.enabled = true;
+            env.dof.enabled = true; env.motionBlur.enabled = true;
+            env.bloom.strength = 0.06f;
+            env.exposure.autoExposure = true;
+            break;
     }
+}
 
-    enum class Preset { Low, Medium, High, Cinematic };
-
-    // Presets flip effect enables + bloom amount + auto-exposure (predictable;
-    // they do not clobber paths, colours, grid or exposure tuning). Auto
-    // exposure is on for the higher tiers (Low/Medium stay reference-faithful).
-    void applyPreset(EnvironmentConfig& env, Preset p) {
-        switch (p) {
-            case Preset::Low:
-                env.ao.enabled = false; env.ssr.enabled = false; env.taa.enabled = false;
-                env.dof.enabled = false; env.motionBlur.enabled = false;
-                env.bloom.strength = 0.0f;
-                env.exposure.autoExposure = false;
-                break;
-            case Preset::Medium:
-                env.ao.enabled = true;  env.ssr.enabled = false; env.taa.enabled = false;
-                env.dof.enabled = false; env.motionBlur.enabled = false;
-                env.bloom.strength = 0.03f;
-                env.exposure.autoExposure = false;
-                break;
-            case Preset::High:
-                env.ao.enabled = true;  env.ssr.enabled = true;  env.taa.enabled = false;
-                env.dof.enabled = false; env.motionBlur.enabled = false;
-                env.bloom.strength = 0.04f;
-                env.exposure.autoExposure = true;
-                break;
-            case Preset::Cinematic:
-                env.ao.enabled = true;  env.ssr.enabled = true;  env.taa.enabled = true;
-                env.dof.enabled = true; env.motionBlur.enabled = true;
-                env.bloom.strength = 0.06f;
-                env.exposure.autoExposure = true;
-                break;
-        }
-    }
-
-    // Which preset (if any) the current env exactly matches. -1 = Custom.
-    int detectPreset(const EnvironmentConfig& env) {
-        auto matches = [&](bool ao, bool ssr, bool taa, bool dof,
-                           bool mb, float bloom, bool ae) {
-            float d = env.bloom.strength - bloom;
-            if (d < 0.0f) d = -d;
-            return env.ao.enabled == ao && env.ssr.enabled == ssr && env.taa.enabled == taa &&
-                   env.dof.enabled == dof && env.motionBlur.enabled == mb &&
-                   env.exposure.autoExposure == ae && d < 5e-4f;
-        };
-        if (matches(false, false, false, false, false, 0.00f, false)) return 0; // Low
-        if (matches(true,  false, false, false, false, 0.03f, false)) return 1; // Medium
-        if (matches(true,  true,  false, false, false, 0.04f, true )) return 2; // High
-        if (matches(true,  true,  true,  true,  true,  0.06f, true )) return 3; // Cinematic
-        return -1;
-    }
+// Which preset (if any) the current env exactly matches. -1 = Custom.
+int detectPreset(const EnvironmentConfig& env) {
+    auto matches = [&](bool ao, bool ssr, bool taa, bool dof,
+                       bool mb, float bloom, bool ae) {
+        float d = env.bloom.strength - bloom;
+        if (d < 0.0f) d = -d;
+        return env.ao.enabled == ao && env.ssr.enabled == ssr && env.taa.enabled == taa &&
+               env.dof.enabled == dof && env.motionBlur.enabled == mb &&
+               env.exposure.autoExposure == ae && d < 5e-4f;
+    };
+    if (matches(false, false, false, false, false, 0.00f, false)) return 0; // Low
+    if (matches(true,  false, false, false, false, 0.03f, false)) return 1; // Medium
+    if (matches(true,  true,  false, false, false, 0.04f, true )) return 2; // High
+    if (matches(true,  true,  true,  true,  true,  0.06f, true )) return 3; // Cinematic
+    return -1;
+}
 
 } // namespace
 

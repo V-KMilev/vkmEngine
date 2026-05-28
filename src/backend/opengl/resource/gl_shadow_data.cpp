@@ -32,12 +32,12 @@ void GLShadowData::clear() {
 }
 
 void GLShadowData::setCaster2D(uint32_t slot, const Shadow2DCasterGPU& caster) {
-    if (slot >= Config::MaxShadowCasters2D) return;
+    if (slot >= Config::MAX_SHADOW_CASTERS_2D) return;
     m_data.casters2D[slot] = caster;
 }
 
 void GLShadowData::setCasterCube(uint32_t slot, const ShadowCubeCasterGPU& caster) {
-    if (slot >= Config::MaxShadowCastersCube) return;
+    if (slot >= Config::MAX_SHADOW_CASTERS_CUBE) return;
     m_data.castersCube[slot] = caster;
 }
 

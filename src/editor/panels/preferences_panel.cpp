@@ -1,10 +1,11 @@
 #include "panels/preferences_panel.h"
+
 #include "framework/editor_common.h"
 #include "ui/editor_style.h"
 
-#include "system/camera/camera_controller.h"
-#include "platform/window/window_manager.h"
 #include "platform/threading/thread_pool.h"
+#include "platform/window/window_manager.h"
+#include "system/camera/camera_controller.h"
 
 namespace Engine {
 
@@ -88,9 +89,9 @@ void PreferencesPanel::drawDisplaySection(FrameContext& ctx) {
 
     ImGui::Spacing();
     ImGui::SeparatorText("Window Mode");
-    if (ImGui::Button("Fullscreen", ImVec2(110, 0))) window.updateMode(WindowMode::FULLSCREEN);
+    if (ImGui::Button("Fullscreen", ImVec2(110, 0))) window.updateMode(WindowMode::Fullscreen);
     ImGui::SameLine();
-    if (ImGui::Button("Windowed", ImVec2(110, 0))) window.updateMode(WindowMode::WINDOWED);
+    if (ImGui::Button("Windowed", ImVec2(110, 0))) window.updateMode(WindowMode::Windowed);
 
     ImGui::Spacing();
     ImGui::SeparatorText("VSync");

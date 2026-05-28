@@ -12,19 +12,19 @@
 namespace Engine {
 
 namespace {
-    constexpr float BTN = 26.0f;   ///< Icon button side length
-    constexpr float SEP = 10.0f;   ///< Spacing between groups
-    constexpr float PAD = 5.0f;    ///< Toolbar inner padding
+constexpr float BTN = 26.0f;   ///< Icon button side length
+constexpr float SEP = 10.0f;   ///< Spacing between groups
+constexpr float PAD = 5.0f;    ///< Toolbar inner padding
 
-    void tipFor(char* buf, size_t n, const char* name, const KeyBind* bind) {
-        if (bind) {
-            char key[24];
-            getKeyBindLabel(*bind, key, sizeof(key));
-            snprintf(buf, n, "%s  (%s)", name, key);
-        } else {
-            snprintf(buf, n, "%s", name);
-        }
+void tipFor(char* buf, size_t n, const char* name, const KeyBind* bind) {
+    if (bind) {
+        char key[24];
+        getKeyBindLabel(*bind, key, sizeof(key));
+        snprintf(buf, n, "%s  (%s)", name, key);
+    } else {
+        snprintf(buf, n, "%s", name);
     }
+}
 }
 
 void ViewportToolbar::draw(EditorContext& ec) {

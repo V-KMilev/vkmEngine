@@ -32,9 +32,9 @@ namespace Engine {
 
 namespace {
 
-// Mirror of Config::ShadowCubeNear; the GLSL side gets it through
+// Mirror of Config::SHADOW_CUBE_NEAR; the GLSL side gets it through
 // shaders/_generated/engine_config.glsl extracted from engine_config.h.
-constexpr float CUBE_NEAR = Config::ShadowCubeNear;
+constexpr float CUBE_NEAR = Config::SHADOW_CUBE_NEAR;
 
 // FNV-1a over the only inputs that change shadow-map content: the camera
 // (CSM cascades are fit to its frustum), every shadow-casting light's
@@ -89,7 +89,7 @@ void computeCascades(
     const glm::vec3& lightDir,
     float maxShadowDist,
     uint32_t resolution,
-    glm::mat4 out[Config::NumCascades]
+    glm::mat4 out[Config::NUM_CASCADES]
 ) {
     const float p00 = camProj[0][0];
     const float p11 = camProj[1][1];
@@ -104,9 +104,9 @@ void computeCascades(
     const float csmFar = std::min(farZ, std::max(maxShadowDist, nearZ + 1.0f));
 
     const float lambda = 0.6f;
-    float splits[Config::NumCascades];
-    for (uint32_t i = 0; i < Config::NumCascades; ++i) {
-        const float p    = static_cast<float>(i + 1) / static_cast<float>(Config::NumCascades);
+    float splits[Config::NUM_CASCADES];
+    for (uint32_t i = 0; i < Config::NUM_CASCADES; ++i) {
+        const float p    = static_cast<float>(i + 1) / static_cast<float>(Config::NUM_CASCADES);
         const float logS = nearZ * std::pow(csmFar / nearZ, p);
         const float linS = nearZ + (csmFar - nearZ) * p;
         splits[i] = lambda * logS + (1.0f - lambda) * linS;
@@ -116,7 +116,7 @@ void computeCascades(
     const glm::vec3 up = (std::abs(ld.y) > 0.99f) ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
 
     float prev = nearZ;
-    for (uint32_t c = 0; c < Config::NumCascades; ++c) {
+    for (uint32_t c = 0; c < Config::NUM_CASCADES; ++c) {
         const float zn = prev;
         const float zf = splits[c];
         prev = zf;
@@ -291,13 +291,13 @@ void GLShadowPass::execute(RenderGraphContext& rg) {
                 drawShadowBatches();
             }
         } else if (light.type == LightType::Directional) {
-            glm::mat4 cascades[Config::NumCascades];
+            glm::mat4 cascades[Config::NUM_CASCADES];
             computeCascades(view.camera.view, view.camera.projection,
                             Math::computeForward(light.rotation),
                             light.shadowExtent, GLConfig::Limits::ShadowResolution2D,
                             cascades);
 
-            for (uint32_t c = 0; c < Config::NumCascades; ++c) {
+            for (uint32_t c = 0; c < Config::NUM_CASCADES; ++c) {
                 const uint32_t layer = slot + c;
 
                 Shadow2DCasterGPU entry;
@@ -309,8 +309,8 @@ void GLShadowPass::execute(RenderGraphContext& rg) {
                 shader->setUniformMatrix4fv(GLConfig::UniformNames::LightSpace, cascades[c]);
                 drawShadowBatches();
             }
-            shadowData.setCSM(static_cast<int>(slot), static_cast<int>(Config::NumCascades));
-            count2D += Config::NumCascades;
+            shadowData.setCSM(static_cast<int>(slot), static_cast<int>(Config::NUM_CASCADES));
+            count2D += Config::NUM_CASCADES;
         } else {
             // Spot + area (Rect/Disk) - all use a perspective shadow from the
             // light's position along its forward direction. Area lights borrow

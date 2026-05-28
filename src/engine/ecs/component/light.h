@@ -37,20 +37,16 @@ struct Light {
     glm::vec3 color = {1.0f, 1.0f, 1.0f};      ///< Light color (RGB)
     float intensity = 1.0f;                    ///< Light intensity multiplier
 
-    // Point, Spot & area light parameters
     float radius = 10.0f;                      ///< Attenuation radius (point/spot/area cutoff distance)
 
-    // Spot light parameters
-    float innerConeAngle = 0.5f;               ///< Inner cone angle in radians (full brightness)
-    float outerConeAngle = 0.785f;             ///< Outer cone angle in radians (45 degrees default)
+    float innerConeAngle = 0.5f;               ///< Spot: inner cone in radians (full brightness)
+    float outerConeAngle = 0.785f;             ///< Spot: outer cone in radians (45 degrees default)
 
-    // Area light parameters (Rect, Disk)
     float areaWidth  = 1.0f;                   ///< Rect width along the local X axis
     float areaHeight = 1.0f;                   ///< Rect height along the local Y axis
     float areaRadius = 0.5f;                   ///< Disk radius
     bool  twoSided   = false;                  ///< Area lights: emit from both faces
 
-    // Shadow parameters
     bool  castShadows  = true;                 ///< Should this light cast shadows?
     float shadowBias   = 0.005f;               ///< Depth comparison bias (slope-scaled for 2D, constant for cube)
     float shadowExtent = 50.0f;                ///< Directional only: ortho half-size in world units. Ignored for spot/point/area (uses radius).

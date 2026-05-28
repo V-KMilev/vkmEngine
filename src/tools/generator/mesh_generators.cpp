@@ -13,34 +13,34 @@
 namespace Engine {
 
 namespace {
-    /// Build a JSON source descriptor for a procedural mesh. Stored on the
-    /// MeshAsset so SceneSerializer can recreate it on cold-start load.
-    nlohmann::json meshGeneratorSource(const char* type, nlohmann::json params = nlohmann::json::object()) {
-        nlohmann::json j;
-        j["kind"] = "generator";
-        j["type"] = type;
-        if (!params.empty()) j["params"] = std::move(params);
-        return j;
-    }
+/// Build a JSON source descriptor for a procedural mesh. Stored on the
+/// MeshAsset so SceneSerializer can recreate it on cold-start load.
+nlohmann::json meshGeneratorSource(const char* type, nlohmann::json params = nlohmann::json::object()) {
+    nlohmann::json j;
+    j["kind"] = "generator";
+    j["type"] = type;
+    if (!params.empty()) j["params"] = std::move(params);
+    return j;
+}
 
-    /**
-     * @brief Stamp source + AssetId on a freshly-generated mesh in one call.
-     *
-     * The AssetDatabase key is "mesh:generator:<type>:<param>:<param>..."
-     * derived deterministically from the same params so identical generator
-     * calls map to the same GUID across runs.
-     */
-    void stampGenerated(MeshAsset& mesh, const char* type, const nlohmann::json& params = {}) {
-        mesh.sourceJson() = meshGeneratorSource(type, params);
-        std::string key = std::string("mesh:generator:") + type;
-        if (params.is_object()) {
-            for (auto it = params.begin(); it != params.end(); ++it) {
-                key += ':';
-                key += it.value().dump();
-            }
+/**
+ * @brief Stamp source + AssetId on a freshly-generated mesh in one call.
+ *
+ * The AssetDatabase key is "mesh:generator:<type>:<param>:<param>..."
+ * derived deterministically from the same params so identical generator
+ * calls map to the same GUID across runs.
+ */
+void stampGenerated(MeshAsset& mesh, const char* type, const nlohmann::json& params = {}) {
+    mesh.sourceJson() = meshGeneratorSource(type, params);
+    std::string key = std::string("mesh:generator:") + type;
+    if (params.is_object()) {
+        for (auto it = params.begin(); it != params.end(); ++it) {
+            key += ':';
+            key += it.value().dump();
         }
-        mesh.assetId = AssetDatabase::get().registerOrGet(key, AssetKind::Mesh);
     }
+    mesh.assetId = AssetDatabase::get().registerOrGet(key, AssetKind::Mesh);
+}
 }
 
 MeshAsset generateTriangle(float size) {

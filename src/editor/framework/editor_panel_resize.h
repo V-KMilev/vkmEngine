@@ -20,7 +20,6 @@ class EditorPanelResize {
         /**
          * @brief Apply hover cursors and drag deltas; mutates state's panel sizes.
          *
-         *
          * @param state        Editor state - read for panel visibility, mutated
          *                     for panel sizes on drag.
          * @param areaStart    Top-left of the panel row in screen space.

@@ -66,20 +66,20 @@ MaterialHandle duplicateMaterial(
 }
 
 namespace {
-    const char* defaultName(EntityKind k) {
-        switch (k) {
-            case EntityKind::Empty:            return "Empty";
-            case EntityKind::Cube:             return "Cube";
-            case EntityKind::Sphere:           return "Sphere";
-            case EntityKind::PointLight:       return "Point Light";
-            case EntityKind::SpotLight:        return "Spot Light";
-            case EntityKind::DirectionalLight: return "Directional Light";
-            case EntityKind::RectLight:        return "Rect Light";
-            case EntityKind::DiskLight:        return "Disk Light";
-            case EntityKind::Camera:           return "Camera";
-        }
-        return "Entity";
+const char* defaultName(EntityKind k) {
+    switch (k) {
+        case EntityKind::Empty:            return "Empty";
+        case EntityKind::Cube:             return "Cube";
+        case EntityKind::Sphere:           return "Sphere";
+        case EntityKind::PointLight:       return "Point Light";
+        case EntityKind::SpotLight:        return "Spot Light";
+        case EntityKind::DirectionalLight: return "Directional Light";
+        case EntityKind::RectLight:        return "Rect Light";
+        case EntityKind::DiskLight:        return "Disk Light";
+        case EntityKind::Camera:           return "Camera";
     }
+    return "Entity";
+}
 }
 
 EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& state, EntityKind kind) {

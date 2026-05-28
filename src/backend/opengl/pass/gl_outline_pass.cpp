@@ -30,7 +30,7 @@ GLOutlinePass::GLOutlinePass(ShaderHandle shader)
     , m_shader(shader)
 {}
 
-void GLOutlinePass::onResize(RenderBackend&, uint32_t, uint32_t) {}
+void GLOutlinePass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {}
 
 void GLOutlinePass::execute(RenderGraphContext& rg) {
     PROFILE_GPU_SCOPE_NAMED(getName().c_str());

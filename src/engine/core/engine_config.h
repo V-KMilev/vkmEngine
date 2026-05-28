@@ -19,24 +19,24 @@ namespace Config {
 
     /// Maximum number of lights uploaded per frame.
     /// MUST match MAX_LIGHTS in shaders/pbr/fragment.shader.
-    constexpr uint32_t MaxLights = 32;
+    constexpr uint32_t MAX_LIGHTS = 32;
 
     /// Shadow caster budget for the 2D atlas (directional + spot).
     /// MUST match SHADOW_MAX_CASTERS_2D in shaders/pbr/fragment.shader.
-    constexpr uint32_t MaxShadowCasters2D = 6;
+    constexpr uint32_t MAX_SHADOW_CASTERS_2D = 6;
 
     /// Shadow caster budget for the cube atlas (point lights).
     /// MUST match SHADOW_MAX_CASTERS_CUBE in shaders/pbr/fragment.shader.
-    constexpr uint32_t MaxShadowCastersCube = 2;
+    constexpr uint32_t MAX_SHADOW_CASTERS_CUBE = 2;
 
     /**
      * @brief Cascade count for the directional (sun) shadow.
      *
      * The first directional shadow caster reserves this many consecutive 2D
-     * atlas layers; remaining layers (MaxShadowCasters2D - NumCascades) serve
+     * atlas layers; remaining layers (MAX_SHADOW_CASTERS_2D - NUM_CASCADES) serve
      * spot lights. MUST match NUM_CASCADES in shaders/pbr/fragment.shader.
      */
-    constexpr uint32_t NumCascades = 4;
+    constexpr uint32_t NUM_CASCADES = 4;
 
     /**
      * @brief Near plane used when rasterising and sampling point-light cube shadows.
@@ -47,15 +47,15 @@ namespace Config {
      * time and emits it as SHADOW_CUBE_NEAR into
      * shaders/_generated/engine_config.glsl - single source of truth.
      */
-    constexpr float ShadowCubeNear = 0.1f;
+    constexpr float SHADOW_CUBE_NEAR = 0.1f;
 
     /// Fixed simulation step (60 Hz). Cadence at which fixedUpdate runs.
-    constexpr float FixedTimeStep = 1.0f / 60.0f;
+    constexpr float FIXED_TIME_STEP = 1.0f / 60.0f;
 
     /// Cap on the simulation-time accumulator. Prevents a frame hitch from
     /// queuing enough fixedUpdate ticks to outpace the next frame ("spiral
-    /// of death"). 0.25s ~= 15 ticks max per render frame at FixedTimeStep.
-    constexpr float MaxFrameAccumulator = 0.25f;
+    /// of death"). 0.25s ~= 15 ticks max per render frame at FIXED_TIME_STEP.
+    constexpr float MAX_FRAME_ACCUMULATOR = 0.25f;
 
     // Per-system tunables (cull distance, camera sensitivity, etc.) live as
     // nested Settings structs on the owning system - NOT here. This config

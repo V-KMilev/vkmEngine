@@ -28,7 +28,7 @@ class GpuTimingPool {
         GpuTimingPool& operator=(GpuTimingPool && other) = delete;
 
     public:
-        static constexpr std::size_t kRingSize = 120;
+        static constexpr std::size_t RING_SIZE = 120;
 
         struct PassStats {
             std::string name;
@@ -36,8 +36,8 @@ class GpuTimingPool {
             double      avg  = 0.0;            ///< Average over the ring, ms.
             double      p99  = 0.0;            ///< 99th percentile, ms.
             double      maxV = 0.0;            ///< Ring-wide maximum, ms.
-            std::size_t sampleCount = 0;       ///< Total samples seen this session (clamped to kRingSize for averaging).
-            std::array<float, kRingSize> ring{};  ///< Most recent samples (float for ImGui plot consumption).
+            std::size_t sampleCount = 0;       ///< Total samples seen this session (clamped to RING_SIZE for averaging).
+            std::array<float, RING_SIZE> ring{};  ///< Most recent samples (float for ImGui plot consumption).
             std::size_t cursor = 0;            ///< Index of the next write slot.
         };
 

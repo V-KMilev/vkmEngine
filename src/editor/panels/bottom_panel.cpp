@@ -320,7 +320,7 @@ void BottomPanel::drawShaderErrorsSection() {
     auto entries = ShaderErrorLog::get().snapshot();
     ImGui::Text("%zu entr%s (newest first, cap %zu)",
                 entries.size(), entries.size() == 1 ? "y" : "ies",
-                ShaderErrorLog::kCapacity);
+                ShaderErrorLog::CAPACITY);
     ImGui::SameLine();
     if (ImGui::Button("Clear")) ShaderErrorLog::get().clearAll();
     ImGui::Separator();

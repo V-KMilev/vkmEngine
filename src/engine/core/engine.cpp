@@ -49,7 +49,7 @@ void Engine::run() {
         FrameContext ctx{
             m_scene, m_resources, m_window, m_frameTracker,
             deltaTime,
-            Config::FixedTimeStep,
+            Config::FIXED_TIME_STEP,
             vpSet ? m_window.sceneViewportX() : 0u,
             vpSet ? m_window.sceneViewportY() : 0u,
             vpSet ? vpW : winW,
@@ -62,8 +62,8 @@ void Engine::run() {
         }
 
         const float beforeClamp = accumulator + deltaTime;
-        accumulator = std::min(beforeClamp, Config::MaxFrameAccumulator);
-        if (beforeClamp > Config::MaxFrameAccumulator) {
+        accumulator = std::min(beforeClamp, Config::MAX_FRAME_ACCUMULATOR);
+        if (beforeClamp > Config::MAX_FRAME_ACCUMULATOR) {
             // Sustained slow frames would spam this every tick. Rate-limit
             // to one warning per second of wall clock; on the throttled
             // frames just bump a counter and emit a summary on the next
@@ -72,10 +72,10 @@ void Engine::run() {
             if (now - m_lastAccumClampWarn >= std::chrono::seconds(1)) {
                 if (m_accumClampSuppressed > 0) {
                     LOG_WARNING("Frame accumulator clamped (%.3fs > %.3fs cap, +%d similar in the last second) - spiral-of-death guard fired; some fixed ticks dropped",
-                        beforeClamp, Config::MaxFrameAccumulator, m_accumClampSuppressed);
+                        beforeClamp, Config::MAX_FRAME_ACCUMULATOR, m_accumClampSuppressed);
                 } else {
                     LOG_WARNING("Frame accumulator clamped (%.3fs > %.3fs cap) - spiral-of-death guard fired; some fixed ticks dropped",
-                        beforeClamp, Config::MaxFrameAccumulator);
+                        beforeClamp, Config::MAX_FRAME_ACCUMULATOR);
                 }
                 m_accumClampSuppressed = 0;
                 m_lastAccumClampWarn = now;
@@ -83,14 +83,14 @@ void Engine::run() {
                 ++m_accumClampSuppressed;
             }
         }
-        while (accumulator >= Config::FixedTimeStep) {
+        while (accumulator >= Config::FIXED_TIME_STEP) {
             PROFILE_SCOPE("FixedUpdate");
             for (System* system : m_fixedUpdaters) {
                 if (system->isEnabled()) {
                     system->fixedUpdate(ctx);
                 }
             }
-            accumulator -= Config::FixedTimeStep;
+            accumulator -= Config::FIXED_TIME_STEP;
         }
 
         // First frame after init: migrate the backend context to a

@@ -91,12 +91,13 @@ class GLInstanceBatcher {
         Core::InstanceBuffer m_buffer;
 
         /**
-         * @brief Cross-batcher VAO arbitration. Meshes share one VAO across the
+         * @brief Cross-batcher VAO arbitration.
          *
-         * camera and shadow batchers, but the VAO's instanced attributes can
-         * only point at one buffer at a time; this map records the most
-         * recent owner so attachToVAO is a no-op while we still own it and a
-         * real rebind when another batcher used the VAO since.
+         * Meshes share one VAO across the camera and shadow batchers, but the
+         * VAO's instanced attributes can only point at one buffer at a time;
+         * this map records the most recent owner so attachToVAO is a no-op
+         * while we still own it and a real rebind when another batcher used
+         * the VAO since.
          *
          * Lives on the class (rather than as a file-local global) so the
          * arbitration state is reachable for inspection / tests if needed.

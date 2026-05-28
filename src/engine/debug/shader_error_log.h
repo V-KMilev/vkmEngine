@@ -55,7 +55,7 @@ class ShaderErrorLog {
 
         std::size_t size() const;
 
-        static constexpr std::size_t kCapacity = 64;
+        static constexpr std::size_t CAPACITY = 64;
 
     private:
         ShaderErrorLog() = default;

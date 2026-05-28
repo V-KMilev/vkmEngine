@@ -1,14 +1,14 @@
 #include "framework/editor_status_bar.h"
-#include "framework/editor_context.h"
-#include "framework/editor_common.h"
-#include "ui/editor_widgets.h"
-
-#include <imgui.h>
 
 #include <cstdio>
 #include <cstring>
 
+#include <imgui.h>
+
 #include "core/system.h"
+#include "framework/editor_common.h"
+#include "framework/editor_context.h"
+#include "ui/editor_widgets.h"
 
 namespace Engine {
 

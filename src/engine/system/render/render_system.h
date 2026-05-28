@@ -96,9 +96,12 @@ class RenderSystem : public System {
          */
         void update(FrameContext& ctx) override;
 
-        /// Only reads ResourceManager (and only inside the render thread's
-        /// graph execute, when run with overlap). update() itself reads but
-        /// never writes Resources.
+        /**
+         * @brief Reads ResourceManager only; never writes.
+         *
+         * The graph executes on the render thread when overlap is on, but
+         * update() itself never writes Resources.
+         */
         bool mutatesResources() const override { return false; }
 
         /**

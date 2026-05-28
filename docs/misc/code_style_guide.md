@@ -992,6 +992,12 @@ A non-exhaustive list of things reviewers ask people to fix:
     move a file, move all its callers. Half-done is worse than not-done.
 14. **Plain `mkdir`-style nesting:** `if (a) { if (b) { if (c) { ... } } }`.
     Use early-returns.
+15. **Commenting out unused parameter names** (`void foo(int /*count*/)`).
+    Keep the name so the signature still reads as documentation; the
+    project compiles with `-Wno-unused-parameter`, so no warning is
+    silenced by hiding the name. Either write `void foo(int count)` or,
+    if the parameter is truly meaningless to the reader, leave it
+    unnamed: `void foo(int)`.
 
 ---
 
@@ -1029,6 +1035,32 @@ Decorative separators are forbidden in source comments but allowed inside
 **runtime log strings** (boot banner, build info dump). They are visible
 output, not code structure.
 
+### 13.4 `#define VKM_LOG_CATEGORY` precedes the own-header
+
+§4 says the corresponding header is always the first include. The single
+exception is `#define VKM_LOG_CATEGORY "..."`, which must come BEFORE the
+own-header include because the own-header transitively pulls in
+`logger.h`, and `logger.h` sets `VKM_LOG_CATEGORY = nullptr` if no value
+is already defined. Setting the category after the own-header triggers a
+`-Wmacro-redefined` warning.
+
+Canonical layout:
+
+```cpp
+#define VKM_LOG_CATEGORY "RENDER"
+
+#include "system/render/render_system.h"   // own header (pulls logger.h)
+
+#include <algorithm>
+...
+#include "logger.h"
+...
+```
+
+This is the only `#define` that precedes the own-header. Other
+configuration macros stay in their natural position (between own-header
+and the include they configure).
+
 ---
 
 ## Appendix A — Quick checklist before pushing
@@ -1048,6 +1080,7 @@ output, not code structure.
 - [ ] Struct members are bare; class members have `m_`.
 - [ ] No multi-paragraph `///` blocks.
 - [ ] No `// Increment the counter`-style what-comments.
+- [ ] No `/*name*/`-commented unused parameter names — keep the name or omit it.
 - [ ] Hot-path code uses early-continue, `reserve()`, `clear()` for reuse.
 - [ ] Each public class / method has either `/** @brief */` or no doc — no
       half-finished `///` blobs.

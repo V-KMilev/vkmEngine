@@ -29,9 +29,7 @@ GLGridPass::GLGridPass(ShaderHandle shader)
     initialize();
 }
 
-void GLGridPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
-    // Nothing to do for grid pass
-}
+void GLGridPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {}
 
 
 void GLGridPass::execute(RenderGraphContext& rg) {

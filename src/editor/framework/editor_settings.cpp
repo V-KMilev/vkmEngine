@@ -18,20 +18,20 @@ namespace Engine {
 namespace EditorSettings {
 
 namespace {
-    using nlohmann::json;
+using nlohmann::json;
 
-    /// Bumped when a load-incompatible change is made to the schema.
-    /// Loaders with a lower version fall back to defaults rather than
-    /// guessing at fields that no longer exist or have different meanings.
-    constexpr int kFileVersion = 1;
+/// Bumped when a load-incompatible change is made to the schema.
+/// Loaders with a lower version fall back to defaults rather than
+/// guessing at fields that no longer exist or have different meanings.
+constexpr int kFileVersion = 1;
 
-    json keybindToJson(const KeyBind& k) {
-        return json{ {"key", static_cast<int>(k.key)}, {"mods", k.mods} };
-    }
-    void keybindFromJson(const json& j, KeyBind& k) {
-        k.key  = static_cast<ImGuiKey>(j.value("key",  static_cast<int>(ImGuiKey_None)));
-        k.mods = static_cast<uint8_t>(j.value("mods", 0));
-    }
+json keybindToJson(const KeyBind& k) {
+    return json{ {"key", static_cast<int>(k.key)}, {"mods", k.mods} };
+}
+void keybindFromJson(const json& j, KeyBind& k) {
+    k.key  = static_cast<ImGuiKey>(j.value("key",  static_cast<int>(ImGuiKey_None)));
+    k.mods = static_cast<uint8_t>(j.value("mods", 0));
+}
 }
 
 std::string path() {
