@@ -8,6 +8,10 @@
 #include "system/render/render_system.h"
 #include "system/render/render_graph.h"
 #include "system/render/render_pass.h"
+#include "loader/environment_loaders.h"         // loadColorLUT for thumbnail
+#include "texture/gl_texture.h"                 // Core::Texture2D for thumbnail
+
+#include <GL/glew.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -20,6 +24,9 @@
 #include <glm/gtc/type_ptr.hpp>
 
 namespace Engine {
+
+EnvironmentInspector::EnvironmentInspector()  = default;
+EnvironmentInspector::~EnvironmentInspector() = default;
 
 namespace {
 
@@ -535,14 +542,54 @@ bool EnvironmentInspector::drawImagePost(EditorContext& /*ec*/, EnvironmentConfi
         {
             const std::string prev = env.colorGrade.lutPath;
             browseButton("Browse##LUT", m_lutPicker, "assets/lut",
-                         {".png", ".PNG"}, env.colorGrade.lutPath);
+                         {".png", ".PNG", ".cube", ".CUBE"}, env.colorGrade.lutPath);
             if (env.colorGrade.lutPath != prev) changed = true;
         }
         changed |= sliderF("Intensity", "##LutInt", &env.colorGrade.intensity, 0.0f, 1.0f, "%.2f",
                 "Blend toward the graded look");
-        if (!env.colorGrade.lutPath.empty())
-            ImGui::TextDisabled("%s",
+
+        // Lazy-load the thumbnail when the active path changes. The composite
+        // pass loads its own copy for sampling; this is a separate, smaller
+        // one that lives on the panel so the artist can confirm at a glance
+        // that they picked the right strip without flipping back to the
+        // viewport. m_lutThumbPath is recorded on failure too so a bad path
+        // doesn't re-attempt the read every frame.
+        if (env.colorGrade.lutPath != m_lutThumbPath) {
+            m_lutThumb.reset();
+            if (!env.colorGrade.lutPath.empty()) {
+                LDRImage img = loadColorLUT(env.colorGrade.lutPath);
+                if (img.valid()) {
+                    Core::Texture2DParams p;
+                    p.width           = img.width;
+                    p.height          = img.height;
+                    p.internalFormat  = GL_RGBA8;
+                    p.format          = GL_RGBA;
+                    p.type            = GL_UNSIGNED_BYTE;
+                    p.wrapS           = Core::TextureWrap::ClampToEdge;
+                    p.wrapT           = Core::TextureWrap::ClampToEdge;
+                    p.minFilter       = Core::TextureMinFilter::Linear;
+                    p.magFilter       = Core::TextureMagFilter::Linear;
+                    p.generateMipmaps = false;
+                    p.data            = img.pixels.data();
+                    m_lutThumb = std::make_unique<Core::Texture2D>("lut_thumb", p);
+                }
+            }
+            m_lutThumbPath = env.colorGrade.lutPath;
+        }
+        if (m_lutThumb) {
+            // LUT strips are very wide (typically 1024x32). Display at the
+            // available width with proportional height so the strip reads as
+            // a colour bar; the user verifies the LUT is what they think it
+            // is from the dominant hues + the gradient shape.
+            const float w = ImGui::GetContentRegionAvail().x;
+            const float h = w * static_cast<float>(m_lutThumb->getHeight())
+                              / static_cast<float>(std::max(m_lutThumb->getWidth(), 1u));
+            ImGui::Image(static_cast<ImTextureID>(static_cast<intptr_t>(m_lutThumb->getID())),
+                         ImVec2(w, h));
+        } else if (!env.colorGrade.lutPath.empty()) {
+            ImGui::TextDisabled("Could not load %s",
                 std::filesystem::path(env.colorGrade.lutPath).filename().string().c_str());
+        }
         ImGui::EndDisabled();
     }
     return changed;
