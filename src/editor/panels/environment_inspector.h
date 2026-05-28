@@ -1,8 +1,11 @@
 #pragma once
 
+#include <memory>
 #include <string>
 
 #include "framework/asset_picker.h"
+
+namespace Core { class Texture2D; }
 
 namespace Engine {
 
@@ -31,8 +34,8 @@ struct EnvironmentConfig;
  */
 class EnvironmentInspector {
     public:
-        EnvironmentInspector() = default;
-        ~EnvironmentInspector() = default;
+        EnvironmentInspector();
+        ~EnvironmentInspector();
 
         EnvironmentInspector(const EnvironmentInspector& other) = delete;
         EnvironmentInspector& operator=(const EnvironmentInspector& other) = delete;
@@ -78,6 +81,15 @@ class EnvironmentInspector {
         // survive open-close cycles.
         AssetPicker m_iblPicker;
         AssetPicker m_lutPicker;
+
+        /// Loaded thumbnail of the active color-grading LUT. Built lazily
+        /// when env.colorGrade.lutPath changes; rendered via ImGui::Image
+        /// next to the path field so the artist can see they picked the
+        /// right strip without flipping back to the viewport. Lifetime
+        /// tied to the panel (forward-declared, so the destructor needs
+        /// to be defined in the .cpp where Core::Texture2D is complete).
+        std::unique_ptr<Core::Texture2D> m_lutThumb;
+        std::string                      m_lutThumbPath;
 };
 
 } // namespace Engine
