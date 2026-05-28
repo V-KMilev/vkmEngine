@@ -95,9 +95,12 @@ namespace {
             return fallback;
         }
 
-        auto handle = loadTexture(texturePath, resourceManager, srgb, generateMipmaps);
+        // Folder-loaded materials no longer block on each texture decode.
+        // requestTextureAsync returns immediately; GLMaterial::bindTextures
+        // shows the 1x1 gray placeholder until pixels land 1-3 frames out.
+        auto handle = requestTextureAsync(texturePath, resourceManager, srgb, generateMipmaps);
         if (!handle) {
-            LOG_WARNING("Failed to load texture: '%s', using fallback", texturePath.c_str());
+            LOG_WARNING("Failed to request texture: '%s', using fallback", texturePath.c_str());
             return fallback;
         }
 

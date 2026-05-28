@@ -6,6 +6,7 @@
 
 #include "core/system.h"
 #include "debug/profiler.h"
+#include "resource/mesh_asset.h"
 #include "resource/resource_manager.h"
 #include "resource/texture_asset.h"
 #include "resource/texture_format.h"
@@ -47,12 +48,10 @@ TexturePixelFormat inferFormat(int channels) {
 void AsyncLoaderSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("AsyncLoaderSystem");
 
-    auto completions = AsyncLoadQueue::get().drainTextures();
-    if (completions.empty()) return;
-
     ResourceManager& rm = ctx.resources;
 
-    for (auto& c : completions) {
+    // Textures: pixel data + format inferred from channel count.
+    for (auto& c : AsyncLoadQueue::get().drainTextures()) {
         if (!c.handle) continue;
 
         // The asset may have been destroyed between push and drain (scene
@@ -79,6 +78,33 @@ void AsyncLoaderSystem::update(FrameContext& ctx) {
         asset.params.type           = TexturePixelType::UnsignedByte;
         asset.pixelData             = std::move(c.pixelData);
         asset.loading               = false;
+        rm.commit(c.handle);
+    }
+
+    // Meshes: vertex/index buffers + precomputed bounds. The worker did
+    // the bounds computation alongside the vertex extraction so this loop
+    // is pure move + commit.
+    for (auto& c : AsyncLoadQueue::get().drainMeshes()) {
+        if (!c.handle) continue;
+        if (!rm.isAlive(c.handle)) {
+            LOG_VERBOSE("Mesh handle %u dead before completion landed - dropping", c.handle.id());
+            continue;
+        }
+
+        MeshAsset& asset = rm.edit(c.handle);
+
+        if (!c.success || c.vertices.empty()) {
+            LOG_WARNING("Async mesh decode failed for '%s' - leaving asset empty",
+                asset.name.c_str());
+            asset.loading = false;
+            continue;
+        }
+
+        asset.vertices  = std::move(c.vertices);
+        asset.indices   = std::move(c.indices);
+        asset.boundsMin = c.boundsMin;
+        asset.boundsMax = c.boundsMax;
+        asset.loading   = false;
         rm.commit(c.handle);
     }
 }

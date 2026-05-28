@@ -21,31 +21,43 @@ void registerBuiltinAssetFactories() {
     LOG_INFO("Registering builtin factories (meshes: generator/model, textures: file/builtin/model-image, materials: folder/default/inline/model, shaders: directory)");
 
     // Meshes: "generator" kind. type selects which procedural shape.
-    factories.registerMesh("generator", [](const nlohmann::json& desc) -> MeshAsset {
+    // Synchronous: generators are cheap, no benefit to async.
+    factories.registerMesh("generator", [](const nlohmann::json& desc,
+                                           ResourceManager& resources) -> MeshHandle
+    {
         const std::string type = desc.value("type", std::string{});
         const auto& p = desc.contains("params") ? desc["params"] : nlohmann::json::object();
 
-        if (type == "cube")     return generateCube();
-        if (type == "sphere")   return generateSphere(p.value("xSegments", 32u),
-                                                      p.value("ySegments", 16u));
-        if (type == "cone")     return generateCone(p.value("radius",   0.5f),
-                                                    p.value("height",   1.0f),
-                                                    p.value("segments", 16u));
-        if (type == "pyramid")  return generatePyramid(p.value("baseSize", 2.0f),
-                                                       p.value("height",   2.0f));
-        if (type == "plane")    return generatePlane(p.value("width",          1.0f),
-                                                     p.value("height",         1.0f),
-                                                     p.value("widthSegments",  1u),
-                                                     p.value("heightSegments", 1u));
-        if (type == "triangle") return generateTriangle(p.value("size", 2.0f));
+        MeshAsset mesh;
+        if      (type == "cube")     mesh = generateCube();
+        else if (type == "sphere")   mesh = generateSphere(p.value("xSegments", 32u),
+                                                           p.value("ySegments", 16u));
+        else if (type == "cone")     mesh = generateCone(p.value("radius",   0.5f),
+                                                         p.value("height",   1.0f),
+                                                         p.value("segments", 16u));
+        else if (type == "pyramid")  mesh = generatePyramid(p.value("baseSize", 2.0f),
+                                                            p.value("height",   2.0f));
+        else if (type == "plane")    mesh = generatePlane(p.value("width",          1.0f),
+                                                          p.value("height",         1.0f),
+                                                          p.value("widthSegments",  1u),
+                                                          p.value("heightSegments", 1u));
+        else if (type == "triangle") mesh = generateTriangle(p.value("size", 2.0f));
+        else return {};
 
-        return {};
+        if (mesh.vertices.empty()) return {};
+        return resources.add(std::move(mesh));
     });
 
     // Meshes: "model" kind. One aiMesh re-imported via Assimp.
-    factories.registerMesh("model", [](const nlohmann::json& desc) -> MeshAsset {
-        return loadModelMesh(desc.value("path", std::string{}),
-                             desc.value("mesh", -1));
+    // Async: Assimp parsing is the slow path - return a stub immediately,
+    // worker decodes off-thread, AsyncLoaderSystem patches the live asset
+    // with vertices + bounds 1+ frames out.
+    factories.registerMesh("model", [](const nlohmann::json& desc,
+                                       ResourceManager& resources) -> MeshHandle
+    {
+        return requestModelMeshAsync(desc.value("path", std::string{}),
+                                     desc.value("mesh", -1),
+                                     resources);
     });
 
     // Textures: "file" kind. Loaded via stb_image.

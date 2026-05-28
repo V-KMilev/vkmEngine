@@ -37,14 +37,14 @@ void AssetFactories::registerShader(std::string kind, ShaderFactory factory) {
     m_shaderFactories[std::move(kind)] = std::move(factory);
 }
 
-MeshAsset AssetFactories::createMesh(const nlohmann::json& source) const {
+MeshHandle AssetFactories::createMesh(const nlohmann::json& source, ResourceManager& resources) const {
     const std::string kind = source.value("kind", std::string{});
     auto it = m_meshFactories.find(kind);
     if (it == m_meshFactories.end()) {
         LOG_ERROR("No mesh factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
         return {};
     }
-    return it->second(source);
+    return it->second(source, resources);
 }
 
 TextureHandle AssetFactories::createTexture(const nlohmann::json& source, ResourceManager& resources) const {
@@ -395,15 +395,17 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
                 continue;
             }
             if (resources.findById<MeshAsset>(id)) { ++meshesSkipped; continue; }
-            MeshAsset mesh = factories.createMesh(source);
-            if (mesh.vertices.empty()) {
-                LOG_WARNING("Mesh %s recreated empty - skipping", id.toString().c_str());
+            MeshHandle h = factories.createMesh(source, resources);
+            if (!h) {
+                LOG_WARNING("Mesh %s could not be recreated - skipping", id.toString().c_str());
                 continue;
             }
-            mesh.sourceJson() = source;
-            mesh.assetId      = id;
-            mesh.name         = name;
-            resources.add(std::move(mesh));
+            // For the "model" factory the GUID is already correct (stamped
+            // from the seeded DB). For "generator" the stamp came from the
+            // canonical generator key, which may not match the scene id -
+            // reconcileId patches both.
+            reconcileId(h, id);
+            if (!name.empty()) resources.rename(h, name);
             ++meshesCreated;
         }
     }

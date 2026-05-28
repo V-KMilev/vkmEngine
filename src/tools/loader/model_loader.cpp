@@ -40,12 +40,14 @@
 
 #include "logger.h"
 #include "debug/profiler.h"
+#include "platform/threading/thread_pool.h"
 #include "resource/asset_database.h"
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/name.h"
 #include "ecs/component/mesh.h"
+#include "system/async/async_load_queue.h"
 #include "system/hierarchy/hierarchy_operations.h"
 
 namespace Engine {
@@ -473,6 +475,43 @@ MeshAsset loadModelMesh(const std::string& path, int meshIndex) {
     const aiScene* scene = importer->GetScene();
     if (!scene) return {};
     return buildMesh(scene, path, meshIndex);
+}
+
+MeshHandle requestModelMeshAsync(const std::string& path, int meshIndex,
+                                 ResourceManager& resources) {
+    const std::string name = meshName(path, meshIndex);
+
+    // (path, meshIndex) is the stable identity. Idempotent: a second
+    // request with the same identity returns the already-registered
+    // handle, even if its decode is still in flight.
+    const AssetId id = AssetDatabase::get().registerOrGet(name, AssetKind::Mesh);
+    if (auto existing = resources.findById<MeshAsset>(id)) return existing;
+
+    // Stub: bounds left zero so VisibilitySystem keeps it culled until
+    // the worker fills in real vertex data.
+    MeshAsset stub;
+    stub.name    = name;
+    stub.assetId = id;
+    stub.loading = true;
+    stub.sourceJson() = { {"kind", "model"}, {"path", path}, {"mesh", meshIndex} };
+    const MeshHandle handle = resources.add(std::move(stub));
+
+    ThreadPool::get().addTask(Task([handle, path, meshIndex]() {
+        // ImporterCache is mutex-guarded, so concurrent callers from
+        // different workers are safe.
+        MeshAsset decoded = loadModelMesh(path, meshIndex);
+
+        MeshLoadCompletion completion;
+        completion.handle    = handle;
+        completion.vertices  = std::move(decoded.vertices);
+        completion.indices   = std::move(decoded.indices);
+        completion.boundsMin = decoded.boundsMin;
+        completion.boundsMax = decoded.boundsMax;
+        completion.success   = !completion.vertices.empty();
+        AsyncLoadQueue::get().pushMesh(std::move(completion));
+    }));
+
+    return handle;
 }
 
 MaterialHandle loadModelMaterial(const std::string& path, int materialIndex,

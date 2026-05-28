@@ -5,6 +5,9 @@
 #include <utility>
 #include <vector>
 
+#include <glm/glm.hpp>
+
+#include "resource/mesh_asset.h"
 #include "resource/texture_asset.h"
 
 namespace Engine {
@@ -24,6 +27,24 @@ struct TextureLoadCompletion {
     uint32_t height   = 0;
     int      channels = 0;
     bool     success  = false;   ///< False if stb_image_load failed; finaliser will warn and leave the asset empty.
+};
+
+/**
+ * @brief One completed asynchronous mesh decode (Assimp + vertex extraction).
+ *
+ * Same shape as the texture variant: worker fills it after parsing
+ * finishes, main-thread AsyncLoaderSystem patches the live MeshAsset
+ * (created in a loading state by requestModelMeshAsync). Verts/indices
+ * move into the asset; bounds are already computed on the worker so the
+ * finaliser is a pure copy.
+ */
+struct MeshLoadCompletion {
+    MeshHandle handle;
+    std::vector<Vertex>   vertices;
+    std::vector<uint32_t> indices;
+    glm::vec3 boundsMin{0};
+    glm::vec3 boundsMax{0};
+    bool      success = false;   ///< False if Assimp failed; finaliser warns and leaves the asset empty.
 };
 
 /**
@@ -47,17 +68,20 @@ class AsyncLoadQueue {
         static AsyncLoadQueue& get();
 
         void pushTexture(TextureLoadCompletion completion);
+        void pushMesh   (MeshLoadCompletion    completion);
 
         /// Move every pending completion out under one lock and return them.
         /// Empty if there's nothing pending. Called once per frame by
         /// AsyncLoaderSystem on the main thread.
         std::vector<TextureLoadCompletion> drainTextures();
+        std::vector<MeshLoadCompletion>    drainMeshes();
 
     private:
         AsyncLoadQueue() = default;
 
         std::mutex                          m_mutex;
         std::vector<TextureLoadCompletion>  m_textures;
+        std::vector<MeshLoadCompletion>     m_meshes;
 };
 
 } // namespace Engine
