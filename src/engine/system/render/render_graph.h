@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <cstdint>
@@ -41,22 +40,18 @@ struct RGResourceLifetime {
  *   - The pass list and their execution order.
  *   - The compile-time validation of resource ordering + per-resource
  *     lifetime intervals (firstWrite -> lastRead).
- *   - The transient resource pool (FrameResources). The active pool gets
- *     re-registered every execute() so the editor's offscreen preview
- *     path (which uses a private pool sized for the preview) is just a
- *     temporary swap, not a graph rebuild.
- *   - The editor's offscreen preview lifecycle: target + pool + the
- *     per-key thumbnail cache. RenderSystem orchestrates the editor flow
- *     through graph.beginPreview/endPreview rather than through backend
- *     methods, so the backend interface stays narrow (factories + low-
- *     level primitives).
+ *   - The default transient resource pool (FrameResources). External
+ *     callers can temporarily override the active pool + target via
+ *     pushFrameResources / popFrameResources so they can render the
+ *     same graph against their own offscreen target (editor previews,
+ *     future capture / reflection-probe baking, etc.) without forcing
+ *     the graph to know about those use cases.
  *
  * Doesn't own:
  *   - The concrete GL objects inside the pool (GLFrameResources allocates
  *     them; the graph just holds the abstract handle and forwards
  *     resize / registerWith / resolveSceneColor).
- *   - The GLView and the window backbuffer (still backend-owned, since
- *     they're persistent across previews).
+ *   - The GLView and the window backbuffer (still backend-owned).
  *
  * Aliasing analysis (descriptor-aware):
  *   compile() groups resources whose lifetimes are disjoint AND whose
@@ -122,61 +117,19 @@ class RenderGraph {
         void compile(const RenderView* view = nullptr);
 
         /**
-         * @brief Open an offscreen material preview session at (size, size).
+         * @brief Temporarily override the pool + backbuffer for the
+         *        next execute().
          *
-         * Lazily allocates a private FrameResources sized for the preview
-         * (separate from the default viewport pool) plus an offscreen
-         * RenderTarget that RGResource::Backbuffer routes to while the
-         * preview is active. Editor-facing: RenderSystem orchestrates the
-         * Material Editor + Asset Browser flow through here.
+         * Callers that need to drive the same graph against their own
+         * offscreen target (editor preview, capture path, ...) push a
+         * pre-sized FrameResources + RenderTarget here, run execute(),
+         * then pop. While pushed, execute() routes RGResource::Backbuffer
+         * to @p target and uses @p pool instead of the lazy default.
          *
-         * Paired with @ref endPreview(). Idempotent across re-opens at
-         * the same size (preserves the pool / target).
+         * Pushes do not nest - one outstanding push at a time.
          */
-        void beginPreview(RenderBackend& backend, uint32_t size);
-
-        /** @brief Close the preview session. The default pool becomes active again. */
-        void endPreview();
-
-        /// True while a preview session is open (between beginPreview / endPreview).
-        bool isPreviewActive() const { return m_previewActive; }
-
-        /**
-         * @brief Backend-typed texture id of the active preview's composited
-         *        color output, usable as an ImGui ImTextureID. 0 outside a
-         *        preview session.
-         */
-        uint32_t previewColorTexture() const;
-
-        /**
-         * @brief Copy the just-rendered preview into a stable per-key
-         *        thumbnail texture and return its backend-typed id.
-         *
-         * The single preview target is overwritten by the next render, so
-         * the Asset Browser grid and the live Material Editor each call
-         * here to own a persistent copy keyed by their asset.
-         */
-        uint32_t snapshotPreviewToCache(RenderBackend& backend,
-                                        uint64_t key, uint32_t size);
-
-        /** @brief Cached thumbnail id for @p key, or 0 if never snapshotted. */
-        uint32_t cachedPreview(RenderBackend& backend, uint64_t key) const;
-
-        /**
-         * @brief Drop a single thumbnail from both the graph-side id map
-         *        and the backend's underlying texture cache.
-         *
-         * Call this when the source asset has been destroyed; otherwise
-         * long editing sessions leak textures for assets the user has
-         * already removed.
-         *
-         * @param backend The render backend whose cache also holds @p key.
-         * @param key Thumbnail cache key (asset-derived; see asset_browser).
-         */
-        void evictThumbnail(RenderBackend& backend, uint64_t key);
-
-        /** @brief Drop every cached thumbnail (graph + backend). */
-        void clearThumbnailCache(RenderBackend& backend);
+        void pushFrameResources(FrameResources& pool, RenderTarget& target);
+        void popFrameResources();
 
         /**
          * @brief Invalidate the active FrameResources' temporal history
@@ -287,17 +240,10 @@ class RenderGraph {
         uint32_t                           m_width  = 0;
         uint32_t                           m_height = 0;
 
-        /// Preview-session state. m_previewFrame matches m_previewSize and
-        /// is held across endPreview so a repeat beginPreview at the same
-        /// size is allocation-free.
-        std::unique_ptr<FrameResources>    m_previewFrame;
-        std::unique_ptr<RenderTarget>      m_previewTarget;
-        uint32_t                           m_previewSize   = 0;
-        bool                               m_previewActive = false;
-
-        /// Per-key thumbnail snapshot cache. Held by id (backends own the
-        /// concrete texture; we only remember which ids we've handed out).
-        std::unordered_map<uint64_t, uint32_t> m_thumbCache;
+        /// Currently pushed pool + target, or null when execute() should
+        /// use the default. Set by pushFrameResources, cleared by pop.
+        FrameResources*                    m_pushedFrame  = nullptr;
+        RenderTarget*                      m_pushedTarget = nullptr;
 };
 
 } // namespace Engine

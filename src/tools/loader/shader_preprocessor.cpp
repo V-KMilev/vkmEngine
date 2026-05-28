@@ -15,15 +15,21 @@ namespace {
 
 namespace fs = std::filesystem;
 
-/// Recursive worker. visited holds the canonical paths already included so
-/// a cyclic include (#include "a.glsl" -> "b.glsl" -> "a.glsl") just drops
-/// to a comment instead of looping forever. includedDirs receives the
-/// parent directory of every file pulled in via #include (excluding the
-/// top-level shader's own directory, which is the caller's concern).
-std::string processFile(const fs::path& filePath,
-                        std::unordered_set<std::string>& visited,
-                        std::unordered_set<std::string>* includedDirs,
-                        int depth) {
+/**
+ * @brief Recursive worker for the shader include resolver.
+ *
+ * visited holds the canonical paths already included so a cyclic include
+ * (#include "a.glsl" -> "b.glsl" -> "a.glsl") just drops to a comment
+ * instead of looping forever. includedDirs receives the parent directory
+ * of every file pulled in via #include (excluding the top-level shader's
+ * own directory, which is the caller's concern).
+ */
+std::string processFile(
+    const fs::path& filePath,
+    std::unordered_set<std::string>& visited,
+    std::unordered_set<std::string>* includedDirs,
+    int depth
+) {
     std::error_code ec;
     const fs::path canonical = fs::weakly_canonical(filePath, ec);
     const std::string key = ec ? filePath.string() : canonical.string();
@@ -111,16 +117,20 @@ std::string injectDefines(const std::string& src,
 
 } // namespace
 
-std::string preprocessShaderFile(const std::string& filePath,
-                                 const std::vector<std::string>& defines) {
+std::string preprocessShaderFile(
+    const std::string& filePath,
+    const std::vector<std::string>& defines
+) {
     std::unordered_set<std::string> visited;
     std::string src = processFile(fs::path(filePath), visited, nullptr, 0);
     return injectDefines(src, defines);
 }
 
-std::string preprocessShaderFile(const std::string& filePath,
-                                 const std::vector<std::string>& defines,
-                                 std::unordered_set<std::string>& outIncludedDirs) {
+std::string preprocessShaderFile(
+    const std::string& filePath,
+    const std::vector<std::string>& defines,
+    std::unordered_set<std::string>& outIncludedDirs
+) {
     std::unordered_set<std::string> visited;
     std::string src = processFile(fs::path(filePath), visited, &outIncludedDirs, 0);
     return injectDefines(src, defines);

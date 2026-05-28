@@ -384,8 +384,14 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
     }
 }
 
-bool iconButton(const char* idStr, EditorIcon icon, bool active,
-                bool enabled, const char* tooltip, float size) {
+bool iconButton(
+    const char* idStr,
+    EditorIcon icon,
+    bool active,
+    bool enabled,
+    const char* tooltip,
+    float size
+) {
     if (!enabled) ImGui::BeginDisabled();
     if (active) {
         ImGui::PushStyleColor(ImGuiCol_Button, EditorStyle::ACCENT);

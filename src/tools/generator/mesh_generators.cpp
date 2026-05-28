@@ -23,10 +23,13 @@ namespace {
         return j;
     }
 
-    /// Stamp source + AssetId on a freshly-generated mesh in one call.
-    /// The AssetDatabase key is "mesh:generator:<type>:<param>:<param>..."
-    /// derived deterministically from the same params so identical generator
-    /// calls map to the same GUID across runs.
+    /**
+     * @brief Stamp source + AssetId on a freshly-generated mesh in one call.
+     *
+     * The AssetDatabase key is "mesh:generator:<type>:<param>:<param>..."
+     * derived deterministically from the same params so identical generator
+     * calls map to the same GUID across runs.
+     */
     void stampGenerated(MeshAsset& mesh, const char* type, const nlohmann::json& params = {}) {
         mesh.sourceJson() = meshGeneratorSource(type, params);
         std::string key = std::string("mesh:generator:") + type;

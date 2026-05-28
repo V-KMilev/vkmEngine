@@ -28,10 +28,14 @@ struct MeshAsset : public Resource {
     glm::vec3 boundsMin{0};           ///< Minimum AABB point in local space
     glm::vec3 boundsMax{0};           ///< Maximum AABB point in local space
 
-    /// True while an async decode is in flight; flipped false once
-    /// AsyncLoaderSystem finalises the upload. VisibilitySystem already
-    /// skips meshes with zero-extent bounds, so a loading mesh stays
-    /// invisible until its data arrives - no fallback needed.
+    /**
+     * @brief True while an async decode is in flight.
+     *
+     * Flipped false once AsyncLoaderSystem finalises the upload.
+     * VisibilitySystem already skips meshes with zero-extent bounds, so
+     * a loading mesh stays invisible until its data arrives - no
+     * fallback needed.
+     */
     bool loading = false;
 
     /**

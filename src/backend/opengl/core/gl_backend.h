@@ -3,7 +3,6 @@
 #include <memory>
 #include <cstddef>
 #include <cstdint>
-#include <unordered_map>
 #include <vector>
 
 #include "system/render/render_backend.h"
@@ -51,16 +50,18 @@ class GLBackend : public RenderBackend {
          */
         void resize(uint32_t width, uint32_t height) override;
         RenderTarget& getDefaultTarget() override {
-            // Backend always returns the window backbuffer. The graph routes
-            // RGResource::Backbuffer at the offscreen preview target when a
-            // preview session is open - that swap lives in RenderGraph, not
-            // here, so the backend stays narrow.
+            // Backend always returns the window backbuffer. The graph
+            // routes RGResource::Backbuffer at a caller-pushed offscreen
+            // target when one is active - that swap lives in RenderGraph,
+            // not here, so the backend stays narrow.
             return m_defaultTarget;
         }
         void syncResources(const RenderView& view, const ResourceManager& resources) override;
 
-        void ensurePreviewResourceTables(const RenderView& view,
-                                          const ResourceManager& resources) override;
+        void ensureResourcesResident(
+            const RenderView& view,
+            const ResourceManager& resources
+        ) override;
 
         std::unique_ptr<FrameResources>  createFrameResources() override;
         std::unique_ptr<RenderTarget>    createOffscreenTarget(uint32_t size) override;
@@ -89,40 +90,20 @@ class GLBackend : public RenderBackend {
         float getAdaptedLuminance() const override { return m_adaptedLuminance; }
         void  setAdaptedLuminance(float v)         { m_adaptedLuminance = v; }
 
-        uint32_t snapshotToTexture(uint32_t srcTextureId, uint64_t key,
-                                   uint32_t size) override;
-        uint32_t cachedThumbnail(uint64_t key) const override;
-
-        /**
-         * @brief Drop a single cached thumbnail. Wire to asset-destruction events
-         *
-         * so a long editor session doesn't accumulate textures for assets
-         * the user has already removed. The cache key is the same uint64_t
-         * the asset browser passes through snapshotToTexture (materialKey /
-         * meshKey in asset_browser.cpp encode the asset handle id).
-         */
-        void evictThumbnail(uint64_t key) override;
-
-        /// Drop every cached thumbnail. Use on scene swap or wholesale
-        /// asset-graph reset; cheaper than a per-key sweep when most
-        /// entries are going away anyway.
-        void clearThumbnailCache() override;
-
         /// Read a rectangle of the GL_BACK buffer as RGB8, top-down.
         /// Saves and restores GL_PACK_ALIGNMENT and GL_READ_BUFFER.
-        bool readbackPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                             uint32_t windowHeight,
-                             std::vector<uint8_t>& outRGB) override;
+        bool readbackPixels(
+            uint32_t x,
+            uint32_t y,
+            uint32_t w,
+            uint32_t h,
+            uint32_t windowHeight,
+            std::vector<uint8_t>& outRGB
+        ) override;
 
         const char* apiName()    const override { return "OpenGL"; }
         std::string apiVersion() const override;
         std::string deviceName() const override;
-
-        // Editor preview rebinds the backbuffer after a preview session
-        // since the composite pass left the offscreen FBO bound; without
-        // this ImGui (which renders into the currently bound FBO) would
-        // draw the whole editor into the preview texture.
-        void rebindDefaultTarget() { m_defaultTarget.bind(); }
 
         /**
          * @brief Get the OpenGL rendering context.
@@ -177,11 +158,6 @@ class GLBackend : public RenderBackend {
         /// (0.18) so the editor's readout shows something sensible before
         /// the exposure pass runs the first time.
         float m_adaptedLuminance = 0.18f;
-
-        /// Per-key thumbnail snapshots (Asset Browser grid + the live
-        /// Material Editor). The graph keeps a key->id index; the backend
-        /// owns the GL textures themselves.
-        std::unordered_map<uint64_t, std::unique_ptr<Core::Texture2D>> m_thumbCache;
 
         /**
          * @brief Per-pass GL_TIME_ELAPSED queries (two slots per pass).

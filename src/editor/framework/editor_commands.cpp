@@ -11,10 +11,12 @@ namespace Engine {
 
 // TransformChangeCommand
 
-TransformChangeCommand::TransformChangeCommand(EntityId e,
-                                               const Transform& before,
-                                               const Transform& after,
-                                               const char* label)
+TransformChangeCommand::TransformChangeCommand(
+    EntityId e,
+    const Transform& before,
+    const Transform& after,
+    const char* label
+)
     : m_entity(e), m_before(before), m_after(after), m_label(label) {}
 
 void TransformChangeCommand::redo(Scene& scene, EditorState&) {

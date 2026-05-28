@@ -7,11 +7,13 @@ OcclusionOracle& OcclusionOracle::get() {
     return instance;
 }
 
-void OcclusionOracle::publish(std::vector<float> pyramid,
-                              std::uint32_t      width,
-                              std::uint32_t      height,
-                              const glm::mat4&   view,
-                              const glm::mat4&   viewProj) {
+void OcclusionOracle::publish(
+    std::vector<float> pyramid,
+    std::uint32_t      width,
+    std::uint32_t      height,
+    const glm::mat4&   view,
+    const glm::mat4&   viewProj
+) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_current.pyramid  = std::move(pyramid);
     m_current.width    = width;

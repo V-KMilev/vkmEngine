@@ -37,10 +37,12 @@ std::string timestamp() {
 
 } // namespace
 
-std::string captureRect(RenderBackend& backend,
-                        const Rect& rect,
-                        uint32_t windowHeight,
-                        const std::string& outPath) {
+std::string captureRect(
+    RenderBackend& backend,
+    const Rect& rect,
+    uint32_t windowHeight,
+    const std::string& outPath
+) {
     if (rect.width == 0 || rect.height == 0) return {};
 
     std::vector<uint8_t> pixels;

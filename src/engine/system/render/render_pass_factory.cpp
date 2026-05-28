@@ -23,8 +23,10 @@ void RenderPassFactory::registerPass(std::string name, Builder builder) {
     m_builders[std::move(name)] = std::move(builder);
 }
 
-std::unique_ptr<RenderPass> RenderPassFactory::create(const std::string& name,
-                                                     ResourceManager& resources) const {
+std::unique_ptr<RenderPass> RenderPassFactory::create(
+    const std::string& name,
+    ResourceManager& resources
+) const {
     auto it = m_builders.find(name);
     if (it == m_builders.end()) {
         LOG_ERROR("RenderPassFactory: no builder registered for pass '%s'", name.c_str());

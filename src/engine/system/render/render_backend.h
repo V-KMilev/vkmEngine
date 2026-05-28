@@ -98,13 +98,13 @@ class RenderBackend {
          * @brief Force every mesh/material/texture in @p view resident on
          *        the GPU before the next syncResources.
          *
-         * Editor previews construct a tiny hand-built RenderView (one
-         * preview shape + one preview material) that can slip past sync's
-         * version-gating heuristics. RenderSystem calls this on the
-         * preview path before syncResources to force those handles to
-         * upload. Default no-op for backends that don't need it.
+         * syncResources gates GPU-table uploads on version + drawable-count
+         * deltas. A hand-built RenderView (editor previews, future capture
+         * paths) can slip past that heuristic, so callers in that situation
+         * call this first to force the referenced handles to upload.
+         * Default no-op for backends that don't need it.
          */
-        virtual void ensurePreviewResourceTables(
+        virtual void ensureResourcesResident(
             const RenderView& view,
             const ResourceManager& resources
         ) {
@@ -189,59 +189,16 @@ class RenderBackend {
 
         /**
          * @brief Construct a backend-specific offscreen RenderTarget at
-         *        (size, size) for an editor material preview.
+         *        (size, size).
          *
-         * Returned via unique_ptr<RenderTarget>; the graph owns it for the
-         * lifetime of the preview session and routes RGResource::Backbuffer
-         * to it while the preview is active. Default: nullptr (backend
-         * doesn't support previews).
+         * The caller owns the returned target and routes whatever drawing
+         * path it controls (push it onto the render graph, render once for
+         * a screenshot, etc.) at it. Default: nullptr (backend doesn't
+         * support offscreen targets).
          */
         virtual std::unique_ptr<RenderTarget> createOffscreenTarget(uint32_t size) {
             (void)size; return nullptr;
         }
-
-        /**
-         * @brief Backend-specific stable thumbnail copy.
-         *
-         * The graph's offscreen preview target gets overwritten by the next
-         * preview, so editor surfaces that need a persistent texture
-         * (Asset Browser grid, Material Editor live frame) ask the graph
-         * to snapshot per-key. The graph delegates the GL-level copy here.
-         *
-         * Implementations should be idempotent on @p key (reuse the
-         * existing storage when present); the graph maintains the cache.
-         *
-         * @param srcTextureId  Backend-typed texture id to copy from
-         *                      (the preview target's color attachment).
-         * @param size          Square thumbnail size in pixels.
-         * @return Backend-typed texture id of the cached snapshot. 0 on
-         *         failure or when the backend doesn't support thumbnails.
-         */
-        virtual uint32_t snapshotToTexture(
-            uint32_t srcTextureId,
-            uint64_t key,
-            uint32_t size
-        ) {
-            (void)srcTextureId; (void)key; (void)size; return 0;
-        }
-
-        /** @brief Cached thumbnail id for @p key, or 0 if never snapshotted. */
-        virtual uint32_t cachedThumbnail(uint64_t key) const { (void)key; return 0; }
-
-        /**
-         * @brief Drop a single cached thumbnail.
-         *
-         * Backends that don't keep a cache (or haven't snapshotted @p key
-         * yet) treat this as a no-op.
-         */
-        virtual void evictThumbnail(uint64_t key) { (void)key; }
-
-        /**
-         * @brief Drop every cached thumbnail.
-         *
-         * Same no-op semantics on backends without a cache.
-         */
-        virtual void clearThumbnailCache() {}
 
         /**
          * @brief Read a sub-rect of the swapchain into RGB8 pixels.

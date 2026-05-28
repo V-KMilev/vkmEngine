@@ -73,7 +73,7 @@ FrameResources& RenderGraph::ensureFrame(RenderBackend& backend) {
 }
 
 FrameResources& RenderGraph::activeFrame() const {
-    return m_previewActive && m_previewFrame ? *m_previewFrame : *m_frame;
+    return m_pushedFrame ? *m_pushedFrame : *m_frame;
 }
 
 void RenderGraph::compile(const RenderView* view) {
@@ -246,24 +246,24 @@ void RenderGraph::execute(
     }
 
     // Refresh the resource pool from the active FrameResources (default or
-    // preview). registerWith() re-publishes every sub-resource into the
-    // typed pool, so a preview swap just needs an extra call into this path.
-    FrameResources& f = m_previewActive && m_previewFrame
-        ? *m_previewFrame : ensureFrame(backend);
+    // pushed). registerWith() re-publishes every sub-resource into the
+    // typed pool, so a temporary push just needs an extra call into this
+    // path.
+    FrameResources& f = m_pushedFrame ? *m_pushedFrame : ensureFrame(backend);
     f.registerWith(*this);
 
     // Persistent resources (ShadowAtlas, IBL) are published once - they
-    // outlive the frame and don't change across previews.
+    // outlive the frame and don't change across pushed pools.
     if (!m_persistentRegistered) {
         backend.registerPersistentResources(*this);
         m_persistentRegistered = true;
     }
 
-    // Backbuffer routes through the typed pool too. Preview sessions point
-    // it at the offscreen target the graph owns; otherwise it's the window
+    // Backbuffer routes through the typed pool too. Push sessions route
+    // it at the caller's offscreen target; otherwise it's the window
     // backbuffer the backend hands us.
-    RenderTarget* target = (m_previewActive && m_previewTarget)
-        ? m_previewTarget.get()
+    RenderTarget* target = m_pushedTarget
+        ? m_pushedTarget
         : &backend.getDefaultTarget();
     registerResource(RGResource::Backbuffer, target);
 
@@ -370,62 +370,18 @@ void RenderGraph::checkPassAccess(size_t passIndex, uint32_t accessedMask) {
 }
 #endif
 
-void RenderGraph::beginPreview(RenderBackend& backend, uint32_t size) {
-    if (size == 0) return;
-    if (!m_previewFrame || m_previewSize != size) {
-        m_previewFrame = backend.createFrameResources();
-        m_previewTarget = backend.createOffscreenTarget(size);
-        m_previewSize = size;
-    }
-    if (m_previewFrame) m_previewFrame->resize(size, size);
-    m_previewActive = true;
+void RenderGraph::pushFrameResources(FrameResources& pool, RenderTarget& target) {
+    m_pushedFrame  = &pool;
+    m_pushedTarget = &target;
 }
 
-void RenderGraph::endPreview() {
-    m_previewActive = false;
-    // Keep the preview pool + target around for reuse on the next session.
-    // Note: the composite pass left the offscreen FBO bound. Callers (e.g.
-    // RenderSystem.renderMaterialPreview) need to rebind the backbuffer
-    // before subsequent UI rendering, or ImGui draws into the preview FBO.
-}
-
-uint32_t RenderGraph::previewColorTexture() const {
-    if (!m_previewTarget) return 0u;
-    return m_previewTarget->getColorTexture();
-}
-
-uint32_t RenderGraph::snapshotPreviewToCache(RenderBackend& backend,
-                                             uint64_t key, uint32_t size) {
-    if (!m_previewTarget) return 0u;
-    const uint32_t srcId = m_previewTarget->getColorTexture();
-    if (srcId == 0u) return 0u;
-    const uint32_t id = backend.snapshotToTexture(srcId, key, size);
-    if (id != 0u) m_thumbCache[key] = id;
-    return id;
-}
-
-uint32_t RenderGraph::cachedPreview(RenderBackend& backend, uint64_t key) const {
-    auto it = m_thumbCache.find(key);
-    if (it != m_thumbCache.end()) return it->second;
-    return backend.cachedThumbnail(key);
-}
-
-void RenderGraph::evictThumbnail(RenderBackend& backend, uint64_t key) {
-    m_thumbCache.erase(key);
-    backend.evictThumbnail(key);
-}
-
-void RenderGraph::clearThumbnailCache(RenderBackend& backend) {
-    m_thumbCache.clear();
-    backend.clearThumbnailCache();
+void RenderGraph::popFrameResources() {
+    m_pushedFrame  = nullptr;
+    m_pushedTarget = nullptr;
 }
 
 void RenderGraph::invalidateTemporalHistory() {
-    // Both default and preview pools need flagging - whichever is active
-    // when the next frame runs will re-prime. Skipping the inactive one
-    // would leave a stale primed flag the next time the preview opens.
-    if (m_frame)        m_frame->invalidateTemporalHistory();
-    if (m_previewFrame) m_previewFrame->invalidateTemporalHistory();
+    if (m_frame) m_frame->invalidateTemporalHistory();
 }
 
 } // namespace Engine

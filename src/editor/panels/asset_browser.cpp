@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "framework/editor_common.h"
+#include "framework/material_preview_session.h"
 #include "system/render/render_system.h"
 #include "generator/mesh_generators.h"
 
@@ -54,7 +55,7 @@ void AssetBrowserPanel::ensureAssets(ResourceManager& resources) {
     // pair into the now-discarded manager. findByName is O(1) (per-type
     // name index in ResourceManager), so the cost is negligible.
     m_sphere = resources.findByName<MeshAsset>("mesh:preview_sphere");
-    if (!m_sphere) m_sphere = resources.addInternal(generateSphere(), "mesh:preview_sphere");
+    if (!m_sphere) m_sphere = resources.addPrivate(generateSphere(), "mesh:preview_sphere");
 
     m_neutral = resources.findByName<MaterialAsset>("mat:thumb_neutral");
     if (!m_neutral) {
@@ -62,7 +63,7 @@ void AssetBrowserPanel::ensureAssets(ResourceManager& resources) {
         m.albedo    = glm::vec4(0.78f, 0.78f, 0.80f, 1.0f);
         m.metallic  = 0.0f;
         m.roughness = 0.55f;
-        m_neutral = resources.addInternal(std::move(m), "mat:thumb_neutral");
+        m_neutral = resources.addPrivate(std::move(m), "mat:thumb_neutral");
     }
 }
 
@@ -122,10 +123,10 @@ void AssetBrowserPanel::drawMaterials(EditorContext& ec) {
 
     int i = 0;
     resources.forEachOfType<MaterialAsset>([&](MaterialHandle h, const MaterialAsset& a) {
-        if (a.editorOnly) return;  // editor helpers (e.g. thumbnail neutral) are not user-facing
+        if (a.hidden) return;  // editor helpers (e.g. thumbnail neutral) are not user-facing
 
         const uint64_t key = materialKey(h.id());
-        const uint32_t tex = ec.renderSystem.materialPreviewTexture(
+        const uint32_t tex = ec.materialPreviews.texture(
             resources, h, m_sphere, 30.0f, 18.0f, 2.6f,
             key, a.version, /*live*/ false);
 
@@ -180,10 +181,10 @@ void AssetBrowserPanel::drawMeshes(EditorContext& ec) {
 
     int i = 0;
     resources.forEachOfType<MeshAsset>([&](MeshHandle h, const MeshAsset& a) {
-        if (a.editorOnly) return;  // editor preview primitives are not user-facing
+        if (a.hidden) return;  // editor preview primitives are not user-facing
 
         const uint64_t key = meshKey(h.id());
-        const uint32_t tex = ec.renderSystem.materialPreviewTexture(
+        const uint32_t tex = ec.materialPreviews.texture(
             resources, m_neutral, h, 25.0f, 15.0f, 2.6f,
             key, a.version, /*live*/ false);
 

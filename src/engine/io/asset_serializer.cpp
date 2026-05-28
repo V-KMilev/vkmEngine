@@ -213,11 +213,18 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
     }
 }
 
-/// Emit one asset descriptor. Skips assets with no AssetId - those can't
-/// be referenced by the scene anyway. @p sourceOverride lets materials
-/// substitute their derived `inline` form for the asset's runtime source.
-void emitDescriptor(nlohmann::json& target, const Resource& asset,
-                    const nlohmann::json* sourceOverride = nullptr) {
+/**
+ * @brief Emit one asset descriptor into @p target.
+ *
+ * Skips assets with no AssetId - those can't be referenced by the scene
+ * anyway. @p sourceOverride lets materials substitute their derived
+ * `inline` form for the asset's runtime source.
+ */
+void emitDescriptor(
+    nlohmann::json& target,
+    const Resource& asset,
+    const nlohmann::json* sourceOverride = nullptr
+) {
     if (!asset.assetId) {
         LOG_WARNING("Asset '%s' has no AssetId; skipping in save", asset.name.c_str());
         return;
@@ -254,13 +261,13 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
     scene.forEach<Mesh>([&](EntityId, const Mesh& m) {
         if (m.mesh && seenMeshes.insert(m.mesh.id()).second) {
             const auto& asset = resources.get(m.mesh);
-            // Editor-only assets (preview primitives etc.) never serialize:
+            // Hidden assets (editor preview primitives etc.) never serialize:
             // they belong to the running editor, not to the user's scene.
-            if (!asset.editorOnly) emitDescriptor(meshes, asset);
+            if (!asset.hidden) emitDescriptor(meshes, asset);
         }
         if (m.material && seenMaterials.insert(m.material.id()).second) {
             const auto& asset = resources.get(m.material);
-            if (asset.editorOnly) return;
+            if (asset.hidden) return;
             // Materials always save as `inline` - captures the actual runtime
             // state (including editor scalar tweaks) regardless of how the
             // material was originally created.
@@ -281,11 +288,19 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
 
 namespace {
 
-/// Pull the per-section identifying tuple (id, name, source) from a single
-/// JSON entry. Returns false if id/source are missing/malformed - the
-/// caller logs + skips. name is non-load-bearing (a human hint).
-bool unpackEntry(const nlohmann::json& entry,
-                 AssetId& outId, std::string& outName, nlohmann::json& outSource) {
+/**
+ * @brief Pull the per-section identifying tuple (id, name, source) from
+ *        a single JSON entry.
+ *
+ * Returns false if id/source are missing/malformed - the caller logs +
+ * skips. name is non-load-bearing (a human hint).
+ */
+bool unpackEntry(
+    const nlohmann::json& entry,
+    AssetId& outId,
+    std::string& outName,
+    nlohmann::json& outSource
+) {
     outId = AssetId::fromString(entry.value("id", std::string{}));
     if (!outId) return false;
     outName = entry.value("name", std::string{});

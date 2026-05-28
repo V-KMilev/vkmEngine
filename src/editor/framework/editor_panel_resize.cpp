@@ -8,8 +8,13 @@
 
 namespace Engine {
 
-void EditorPanelResize::process(EditorState& state, ImVec2 areaStart, float mainH,
-                                 float workW, bool blockNew) {
+void EditorPanelResize::process(
+    EditorState& state,
+    ImVec2 areaStart,
+    float mainH,
+    float workW,
+    bool blockNew
+) {
     constexpr float RESIZE_ZONE = 4.0f;
 
     const ImVec2 mpos      = ImGui::GetMousePos();

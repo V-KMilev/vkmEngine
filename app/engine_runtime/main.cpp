@@ -37,13 +37,6 @@ int main() {
         // shipped game executable and contains no editor code at all.
         Engine::setupEngineApp(engine);
 
-        // Migrate the rendering backend's context to a dedicated render
-        // thread once boot finishes. The main thread runs input,
-        // simulation, animation, culling, and the next frame's view
-        // build while the render thread is still drawing the previous
-        // frame; the mutator phase waits before any resource write.
-        engine.enableRenderThread(true);
-
         engine.run();
 
     } catch (const std::exception& e) {

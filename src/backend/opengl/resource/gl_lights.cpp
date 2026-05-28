@@ -71,7 +71,7 @@ void GLLights::update(const std::vector<LightData>& lights) {
         //   p_i = position +/- axisU.xyz +/- axisV.xyz
         // Disk shares the same encoding (axisU and axisV both have magnitude
         // areaRadius); the shader treats the disk as a 4-vertex polygon
-        // inscribed in the disk in Phase 2C step 1.
+        // inscribed in the disk.
         glm::vec3 halfRight(0.0f);
         glm::vec3 halfUp(0.0f);
         if (lightData.type == LightType::Rect) {

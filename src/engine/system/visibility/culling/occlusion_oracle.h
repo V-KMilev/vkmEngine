@@ -49,11 +49,13 @@ class OcclusionOracle {
         };
 
         /// Producer side - called by the backend after Hi-Z is built.
-        void publish(std::vector<float> pyramid,
-                     std::uint32_t      width,
-                     std::uint32_t      height,
-                     const glm::mat4&   view,
-                     const glm::mat4&   viewProj);
+        void publish(
+            std::vector<float> pyramid,
+            std::uint32_t      width,
+            std::uint32_t      height,
+            const glm::mat4&   view,
+            const glm::mat4&   viewProj
+        );
 
         /// Consumer side - returns the most recent snapshot. Empty when
         /// the producer hasn't published yet.

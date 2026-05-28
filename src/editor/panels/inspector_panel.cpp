@@ -251,7 +251,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
             std::vector<std::pair<Handle, const Asset*>> rows;
             resources.template forEachOfType<Asset>(
                 [&](Handle h, const Asset& a) {
-                    if (a.editorOnly) return;
+                    if (a.hidden) return;
                     rows.emplace_back(h, &a);
                 });
 

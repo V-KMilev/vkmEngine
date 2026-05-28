@@ -9,9 +9,11 @@ ShaderErrorLog& ShaderErrorLog::get() {
     return instance;
 }
 
-void ShaderErrorLog::push(std::string shaderName,
-                          std::string definesSummary,
-                          std::string message) {
+void ShaderErrorLog::push(
+    std::string shaderName,
+    std::string definesSummary,
+    std::string message
+) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     if (!m_entries.empty()) {

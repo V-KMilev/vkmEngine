@@ -24,8 +24,11 @@
 
 namespace Engine {
 
-SceneIOController::SceneIOController(EventSystem& events, CameraController& cameraController,
-                                     RenderSystem& renderSystem)
+SceneIOController::SceneIOController(
+    EventSystem& events,
+    CameraController& cameraController,
+    RenderSystem& renderSystem
+)
     : m_events(events)
     , m_cameraController(cameraController)
     , m_renderSystem(renderSystem)

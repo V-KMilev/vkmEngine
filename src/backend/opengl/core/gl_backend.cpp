@@ -29,53 +29,11 @@ std::unique_ptr<RenderTarget> GLBackend::createOffscreenTarget(uint32_t size) {
     return std::make_unique<GLFramebufferTarget>(size, size);
 }
 
-uint32_t GLBackend::snapshotToTexture(uint32_t srcTextureId, uint64_t key,
-                                      uint32_t size) {
-    if (srcTextureId == 0 || size == 0) return 0;
-
-    auto& slot = m_thumbCache[key];
-    if (!slot) {
-        Core::Texture2DParams p;
-        p.width           = size;
-        p.height          = size;
-        p.internalFormat  = GL_RGBA8;
-        p.format          = GL_RGBA;
-        p.type            = GL_UNSIGNED_BYTE;
-        p.wrapS           = Core::TextureWrap::ClampToEdge;
-        p.wrapT           = Core::TextureWrap::ClampToEdge;
-        p.minFilter       = Core::TextureMinFilter::Linear;
-        p.magFilter       = Core::TextureMagFilter::Linear;
-        p.generateMipmaps = false;
-        slot = std::make_unique<Core::Texture2D>("thumb", p);
-    }
-
-    // Both textures are RGBA8 at the same size, so a straight image copy
-    // is the cheapest stable snapshot.
-    glCopyImageSubData(srcTextureId,  GL_TEXTURE_2D, 0, 0, 0, 0,
-                       slot->getID(), GL_TEXTURE_2D, 0, 0, 0, 0,
-                       static_cast<GLsizei>(size),
-                       static_cast<GLsizei>(size), 1);
-    return slot->getID();
-}
-
-uint32_t GLBackend::cachedThumbnail(uint64_t key) const {
-    auto it = m_thumbCache.find(key);
-    return (it != m_thumbCache.end() && it->second) ? it->second->getID() : 0u;
-}
-
-void GLBackend::evictThumbnail(uint64_t key) {
-    m_thumbCache.erase(key);
-}
-
-void GLBackend::clearThumbnailCache() {
-    m_thumbCache.clear();
-}
-
 void GLBackend::registerPersistentResources(RenderGraph& graph) {
-    // Resources whose lifetime exceeds a frame and which don't swap on
-    // preview - the shadow atlas + the IBL set both live on GLView and are
-    // created once at construction. Registered after FrameResources so the
-    // graph can call this lazily on first execute().
+    // Resources whose lifetime exceeds a frame - the shadow atlas + the
+    // IBL set both live on GLView and are created once at construction.
+    // Registered after FrameResources so the graph can call this lazily
+    // on first execute().
     graph.registerResource(RGResource::ShadowAtlas, &m_view.getShadowAtlas());
     graph.registerResource(RGResource::IBL,         &m_view.getIBL());
 }
@@ -190,9 +148,14 @@ void GLBackend::syncResources(const RenderView& view, const ResourceManager& res
     m_view.sync(view, resources);
 }
 
-bool GLBackend::readbackPixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                                uint32_t windowHeight,
-                                std::vector<uint8_t>& outRGB) {
+bool GLBackend::readbackPixels(
+    uint32_t x,
+    uint32_t y,
+    uint32_t w,
+    uint32_t h,
+    uint32_t windowHeight,
+    std::vector<uint8_t>& outRGB
+) {
     if (w == 0 || h == 0) return false;
     if (y + h > windowHeight) return false;
 
@@ -236,12 +199,14 @@ std::string GLBackend::deviceName() const {
     return v ? reinterpret_cast<const char*>(v) : std::string{};
 }
 
-void GLBackend::ensurePreviewResourceTables(const RenderView& view,
-                                             const ResourceManager& resources) {
+void GLBackend::ensureResourcesResident(
+    const RenderView& view,
+    const ResourceManager& resources
+) {
     // GLView::sync gates GPU-table uploads on type-version / drawable-count
-    // deltas. A preview's tiny hand-built view (a freshly registered
-    // primitive, a not-in-scene material) can slip past that heuristic, so
-    // editor previews call this before syncResources to force its
+    // deltas. A hand-built view (a freshly registered primitive, a
+    // not-in-scene material) can slip past that heuristic, so callers in
+    // that situation call this before syncResources to force the referenced
     // mesh/material/textures resident before the unconditional batcher/UBO
     // rebuild inside sync().
     for (const auto& d : view.drawables) {

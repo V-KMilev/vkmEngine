@@ -79,20 +79,6 @@ class Engine {
         }
 
         /**
-         * @brief Move the Render + UI stages and swapBuffers onto a dedicated
-         *        render thread.
-         *
-         * Must be called before run() to take effect. Once enabled, the
-         * rendering backend's context migrates off the main thread after
-         * engine boot completes; only the render thread may issue backend
-         * calls thereafter. The main thread continues to drive input,
-         * simulation, animation and culling, with the render thread
-         * overlapping the previous frame's draws against the current
-         * frame's mutator phase.
-         */
-        void enableRenderThread(bool enable) { m_renderThreadEnabled = enable; }
-
-        /**
          * @brief Run the main loop (blocks until the window is closed).
          */
         void run();
@@ -100,7 +86,6 @@ class Engine {
     private:
         void initSystems(FrameContext& ctx);
         void shutdownSystems();
-        void updateStage(SystemStage stage, FrameContext& ctx);
 
     private:
         Scene m_scene;
@@ -125,27 +110,34 @@ class Engine {
 
         bool m_initialized = false;
 
-        /// Set via enableRenderThread() before run(); honoured at the first
-        /// frame after engine boot. Default false keeps the single-threaded
-        /// behaviour for embedders that haven't opted in.
-        bool m_renderThreadEnabled = false;
-
-        /// Lazily constructed in run() once boot is complete. Owns the
-        /// rendering backend's context for its lifetime; destroyed at
-        /// run() exit so any GL teardown in shutdown finds the context
-        /// on main again.
+        /**
+         * @brief Owns the rendering backend's context for the duration
+         *        of the main loop.
+         *
+         * Lazily constructed in run() once boot is complete (so the
+         * single-thread bring-up phase can still touch the backend), and
+         * destroyed at run() exit so any backend teardown in shutdown
+         * finds the context on main again.
+         */
         std::unique_ptr<RenderThread> m_renderThread;
 
-        /// Cached pointer to the registered RenderSystem (if any). Used
-        /// by the overlap loop to call buildView() on main + executeFrame()
-        /// on the render thread independently. Filled lazily on the first
-        /// frame after initSystems; nullptr until then.
+        /**
+         * @brief Cached pointer to the registered RenderSystem (if any).
+         *
+         * Used by the overlap loop to call buildView() on main +
+         * executeFrame() on the render thread independently. Filled
+         * lazily on the first frame after initSystems; nullptr until then.
+         */
         RenderSystem* m_renderSystem = nullptr;
 
-        /// Cached list of UI-stage systems that report hasBackendWork()==true.
-        /// Their executeBackend() runs inside the render-thread lambda after
-        /// RenderSystem::executeFrame, so the UI lands on top of the
-        /// rendered scene. Filled lazily alongside m_renderSystem.
+        /**
+         * @brief Cached list of UI-stage systems that report
+         *        hasBackendWork()==true.
+         *
+         * Their executeBackend() runs inside the render-thread lambda
+         * after RenderSystem::executeFrame, so the UI lands on top of
+         * the rendered scene. Filled lazily alongside m_renderSystem.
+         */
         std::vector<System*> m_backendWorkSystems;
 
         /// Monotonic per-frame counter; drives RenderView buffer parity
