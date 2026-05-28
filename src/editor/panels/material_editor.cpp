@@ -195,17 +195,33 @@ bool MaterialEditorPanel::drawMaterialBody(ResourceManager& resources, MaterialA
         endComponentCard();
 
         if (beginComponentCard("Textures", ACC_TEX, false)) {
+            // PBR Core: the maps every PBR material is likely to set.
+            ImGui::TextDisabled("PBR Core");
+            ImGui::Spacing();
             changed |= slot("Albedo",    mat.albedoTexture,    true);
             changed |= slot("Normal",    mat.normalTexture,    false);
             changed |= slot("Roughness", mat.roughnessTexture, false);
             changed |= slot("Metallic",  mat.metallicTexture,  false);
             changed |= slot("AO",        mat.aoTexture,        false);
             changed |= slot("Emission",  mat.emissionTexture,  true);
-            changed |= slot("Height",    mat.heightTexture,    false);
-            changed |= slot("Clearcoat", mat.clearcoatTexture, false);
-            changed |= slot("Transmission",        mat.transmissionTexture,        false);
-            changed |= slot("Metallic+Roughness",  mat.metallicRoughnessTexture,   false);
-            changed |= slot("AO+Metallic+Roughness", mat.aoMetallicRoughnessTexture, false);
+
+            // Packed combinations - the loader auto-uses these when present
+            // and disregards the separate-channel rows above.
+            ImGui::Spacing();
+            ImGui::TextDisabled("Packed");
+            ImGui::Spacing();
+            changed |= slot("Metallic+Roughness",     mat.metallicRoughnessTexture,   false);
+            changed |= slot("AO+Metallic+Roughness",  mat.aoMetallicRoughnessTexture, false);
+
+            // Less common: parallax / clearcoat / glass. Pair with the
+            // matching scalar in Surface / Clearcoat / Volume cards to take
+            // effect.
+            ImGui::Spacing();
+            ImGui::TextDisabled("Advanced");
+            ImGui::Spacing();
+            changed |= slot("Height",       mat.heightTexture,       false);
+            changed |= slot("Clearcoat",    mat.clearcoatTexture,    false);
+            changed |= slot("Transmission", mat.transmissionTexture, false);
         }
         endComponentCard();
 
