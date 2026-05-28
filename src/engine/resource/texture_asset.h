@@ -19,6 +19,7 @@ struct TextureAsset : public Resource {
     TextureParams params;                          ///< Backend-agnostic texture parameters.
     std::vector<uint8_t> pixelData = {};           ///< Pixel data for the texture.
     bool srgb                      = false;        ///< Whether to use sRGB color space.
+    bool loading                   = false;        ///< True while an async decode is in flight; flipped false when the AsyncLoader finalises the upload.
     std::string filePath           = "";           ///< Optional file path if loaded from disk.
 };
 
