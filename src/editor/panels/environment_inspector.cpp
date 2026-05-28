@@ -599,92 +599,10 @@ bool EnvironmentInspector::drawDiagnostics(EditorContext& /*ec*/, EnvironmentCon
     // write a diagnostic value (Normals, Depth, AOOnly). Most modes bypass
     // the post chain + display transform so what you see is what the shader
     // wrote.
-    {
-        // Render mode picker. The flat list grew to 19 entries; group by
-        // category in a BeginCombo block so the diagnostic modes (Overdraw,
-        // BatchId, ...) don't sit at the bottom of a scrolling combo and
-        // the structure tells the user what they do.
-        struct ModeEntry {
-            RenderMode  mode;
-            const char* label;
-            const char* hint;
-        };
-        struct ModeGroup {
-            const char* title;
-            const ModeEntry* entries;
-            int count;
-        };
-        static constexpr ModeEntry SHADING[] = {
-            {RenderMode::Default,             "Default",               "full PBR pipeline"},
-            {RenderMode::Unlit,                "Unlit",                "albedo + emission only"},
-            {RenderMode::Wireframe,            "Wireframe",            "unlit lines, no fill"},
-            {RenderMode::WireframeOverShaded,  "Wireframe Over Shaded","shaded scene + line overlay"},
-        };
-        static constexpr ModeEntry MATERIAL[] = {
-            {RenderMode::AlbedoOnly,           "Albedo Only",          "base colour with no lighting"},
-            {RenderMode::Roughness,            "Roughness",            "sampled roughness as grayscale"},
-            {RenderMode::Metallic,             "Metallic",             "sampled metallic factor"},
-            {RenderMode::Emission,             "Emission",             "raw emission (linear HDR)"},
-            {RenderMode::Normals,              "Normals",              "world-space normal as RGB"},
-            {RenderMode::TangentSpace,         "Tangent Space",        "world-space tangent as RGB"},
-        };
-        static constexpr ModeEntry LIGHTING[] = {
-            {RenderMode::LightingOnly,         "Lighting Only",        "PBR with neutral material"},
-            {RenderMode::AOOnly,               "AO Only",              "GTAO factor as grayscale"},
-        };
-        static constexpr ModeEntry GEOMETRY[] = {
-            {RenderMode::Depth,                "Depth",                "distance from camera (white = far)"},
-            {RenderMode::WorldPosition,        "World Position",       "fract(worldPos) (1m grid)"},
-            {RenderMode::UV,                   "UV",                   "UV channel 0 as red/green"},
-            {RenderMode::LightmapUV,           "Lightmap UV",          "stand-in (no UV1 channel today)"},
-        };
-        static constexpr ModeEntry DIAGNOSTIC[] = {
-            {RenderMode::Overdraw,             "Overdraw",             "additive heatmap of shaded fragments"},
-            {RenderMode::BatchId,              "Batch ID",             "hashed RGB per draw batch"},
-            {RenderMode::LightComplexity,      "Light Complexity",     "count of contributing lights (cold -> hot)"},
-        };
-        static constexpr ModeGroup GROUPS[] = {
-            {"Shading",     SHADING,    IM_ARRAYSIZE(SHADING)},
-            {"Material",    MATERIAL,   IM_ARRAYSIZE(MATERIAL)},
-            {"Lighting",    LIGHTING,   IM_ARRAYSIZE(LIGHTING)},
-            {"Geometry",    GEOMETRY,   IM_ARRAYSIZE(GEOMETRY)},
-            {"Diagnostic",  DIAGNOSTIC, IM_ARRAYSIZE(DIAGNOSTIC)},
-        };
-        auto findEntry = [](RenderMode m) -> const ModeEntry* {
-            for (const auto& g : GROUPS) {
-                for (int i = 0; i < g.count; ++i) {
-                    if (g.entries[i].mode == m) return &g.entries[i];
-                }
-            }
-            return &SHADING[0];  // Default
-        };
-
-        drawPropertyLabel("Render Mode");
-        ImGui::SetNextItemWidth(-1.0f);
-        const ModeEntry* current = findEntry(env.renderMode);
-        if (ImGui::BeginCombo("##RenderMode", current->label)) {
-            for (size_t gi = 0; gi < IM_ARRAYSIZE(GROUPS); ++gi) {
-                const auto& g = GROUPS[gi];
-                if (gi > 0) ImGui::Separator();
-                ImGui::TextDisabled("%s", g.title);
-                for (int i = 0; i < g.count; ++i) {
-                    const auto& e = g.entries[i];
-                    const bool selected = (env.renderMode == e.mode);
-                    if (ImGui::Selectable(e.label, selected)) {
-                        env.renderMode = e.mode;
-                        changed = true;
-                    }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s", e.hint);
-                    if (selected) ImGui::SetItemDefaultFocus();
-                }
-            }
-            ImGui::EndCombo();
-        }
-        if (ImGui::IsItemHovered() && !ImGui::IsPopupOpen("##RenderMode"))
-            ImGui::SetTooltip("%s - %s", current->label, current->hint);
-        ImGui::Spacing();
-    }
+    drawPropertyLabel("Render Mode");
+    ImGui::SetNextItemWidth(-1.0f);
+    changed |= drawRenderModeCombo("##RenderMode", env.renderMode);
+    ImGui::Spacing();
 
     if (cardWithEnable("grid", "Grid", &env.grid.enabled)) {
         ImGui::BeginDisabled(!env.grid.enabled);

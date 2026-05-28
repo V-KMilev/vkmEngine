@@ -236,6 +236,104 @@ bool drawEasingCombo(const char* id, EasingFunction& easing) {
     return false;
 }
 
+namespace {
+    // Shared RenderMode catalogue. Both the Environment Inspector picker
+    // and the viewport toolbar's quick-toggle popup read from this table;
+    // adding a new mode is one place. Items grouped by user intent so the
+    // diagnostic visualisations don't sit at the bottom of a flat list.
+    struct ModeEntry {
+        RenderMode  mode;
+        const char* label;
+        const char* hint;
+    };
+    struct ModeGroup {
+        const char* title;
+        const ModeEntry* entries;
+        int count;
+    };
+    constexpr ModeEntry MODE_SHADING[] = {
+        {RenderMode::Default,             "Shaded",                "full PBR pipeline"},
+        {RenderMode::Unlit,                "Unlit",                "albedo + emission only"},
+        {RenderMode::Wireframe,            "Wireframe",            "unlit lines, no fill"},
+        {RenderMode::WireframeOverShaded,  "Wireframe Over Shaded","shaded scene + line overlay"},
+    };
+    constexpr ModeEntry MODE_MATERIAL[] = {
+        {RenderMode::AlbedoOnly,           "Albedo Only",          "base colour with no lighting"},
+        {RenderMode::Roughness,            "Roughness",            "sampled roughness as grayscale"},
+        {RenderMode::Metallic,             "Metallic",             "sampled metallic factor"},
+        {RenderMode::Emission,             "Emission",             "raw emission (linear HDR)"},
+        {RenderMode::Normals,              "Normals",              "world-space normal as RGB"},
+        {RenderMode::TangentSpace,         "Tangent Space",        "world-space tangent as RGB"},
+    };
+    constexpr ModeEntry MODE_LIGHTING[] = {
+        {RenderMode::LightingOnly,         "Lighting Only",        "PBR with neutral material"},
+        {RenderMode::AOOnly,               "AO Only",              "GTAO factor as grayscale"},
+    };
+    constexpr ModeEntry MODE_GEOMETRY[] = {
+        {RenderMode::Depth,                "Depth",                "distance from camera (white = far)"},
+        {RenderMode::WorldPosition,        "World Position",       "fract(worldPos) (1m grid)"},
+        {RenderMode::UV,                   "UV",                   "UV channel 0 as red/green"},
+        {RenderMode::LightmapUV,           "Lightmap UV",          "stand-in (no UV1 channel today)"},
+    };
+    constexpr ModeEntry MODE_DIAGNOSTIC[] = {
+        {RenderMode::Overdraw,             "Overdraw",             "additive heatmap of shaded fragments"},
+        {RenderMode::BatchId,              "Batch ID",             "hashed RGB per draw batch"},
+        {RenderMode::LightComplexity,      "Light Complexity",     "count of contributing lights (cold -> hot)"},
+    };
+    constexpr ModeGroup MODE_GROUPS[] = {
+        {"Shading",     MODE_SHADING,    IM_ARRAYSIZE(MODE_SHADING)},
+        {"Material",    MODE_MATERIAL,   IM_ARRAYSIZE(MODE_MATERIAL)},
+        {"Lighting",    MODE_LIGHTING,   IM_ARRAYSIZE(MODE_LIGHTING)},
+        {"Geometry",    MODE_GEOMETRY,   IM_ARRAYSIZE(MODE_GEOMETRY)},
+        {"Diagnostic",  MODE_DIAGNOSTIC, IM_ARRAYSIZE(MODE_DIAGNOSTIC)},
+    };
+    const ModeEntry* findModeEntry(RenderMode m) {
+        for (const auto& g : MODE_GROUPS) {
+            for (int i = 0; i < g.count; ++i) {
+                if (g.entries[i].mode == m) return &g.entries[i];
+            }
+        }
+        return &MODE_SHADING[0];  // Default
+    }
+} // namespace
+
+const char* renderModeLabel(RenderMode mode) {
+    return findModeEntry(mode)->label;
+}
+
+bool drawRenderModeMenuBody(RenderMode& mode) {
+    bool changed = false;
+    for (size_t gi = 0; gi < IM_ARRAYSIZE(MODE_GROUPS); ++gi) {
+        const auto& g = MODE_GROUPS[gi];
+        if (gi > 0) ImGui::Separator();
+        ImGui::TextDisabled("%s", g.title);
+        for (int i = 0; i < g.count; ++i) {
+            const auto& e = g.entries[i];
+            const bool selected = (mode == e.mode);
+            if (ImGui::Selectable(e.label, selected)) {
+                mode = e.mode;
+                changed = true;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", e.hint);
+            if (selected) ImGui::SetItemDefaultFocus();
+        }
+    }
+    return changed;
+}
+
+bool drawRenderModeCombo(const char* id, RenderMode& mode) {
+    bool changed = false;
+    const ModeEntry* current = findModeEntry(mode);
+    if (ImGui::BeginCombo(id, current->label)) {
+        changed = drawRenderModeMenuBody(mode);
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered() && !ImGui::IsPopupOpen(id))
+        ImGui::SetTooltip("%s - %s", current->label, current->hint);
+    return changed;
+}
+
 bool matchesFilter(const char* text, const char* filter) {
     for (const char* p = text; *p; ++p) {
         const char* s = filter;

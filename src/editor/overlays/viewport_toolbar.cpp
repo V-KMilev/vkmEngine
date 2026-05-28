@@ -1,10 +1,13 @@
 #include "overlays/viewport_toolbar.h"
 
+#include "ecs/scene.h"
 #include "framework/editor_common.h"
 #include "io/screenshot.h"
 #include "input/editor_actions.h"
 #include "platform/window/window_manager.h"
 #include "system/render/render_system.h"
+#include "system/render/render_view.h"
+#include "ui/editor_widgets.h"
 
 namespace Engine {
 
@@ -39,6 +42,55 @@ void ViewportToolbar::draw(EditorContext& ec) {
             state.gizmoOperation = op;
         ImGui::SameLine();
     };
+
+    // Top-left: standalone render-mode button. Sits alone in the corner so
+    // it's the first thing the eye lands on when something looks wrong in
+    // the viewport (e.g. the user left Overdraw on). Click opens a popup
+    // with the same grouped picker the Environment Inspector uses.
+    {
+        ImGui::SetCursorPos(ImVec2(8.0f, 8.0f));
+        EnvironmentConfig& env = ec.renderSystem.getEnvironment();
+        const bool nonDefault = env.renderMode != RenderMode::Default;
+        char modeBtnLabel[48];
+        snprintf(modeBtnLabel, sizeof(modeBtnLabel), "%s###RenderModeBtn",
+                 renderModeLabel(env.renderMode));
+        if (nonDefault) {
+            // Tint the button when not in Shaded mode so accidental
+            // diagnostic-left-on is obvious - the viewport doesn't look
+            // right and the corner badge tells you why.
+            ImGui::PushStyleColor(ImGuiCol_Button,        EditorStyle::ACCENT);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, EditorStyle::ACCENT_HOV);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  EditorStyle::ACCENT);
+        }
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::OVERLAY_BG);
+        if (ImGui::Button(modeBtnLabel, ImVec2(0, BTN)))
+            ImGui::OpenPopup("##RenderModePopup");
+        ImGui::PopStyleColor();
+        if (nonDefault) ImGui::PopStyleColor(3);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "Render Mode  -  also in View > Render Settings > Diagnostics.\n"
+                "Highlighted when not in Shaded.");
+
+        if (ImGui::BeginPopup("##RenderModePopup")) {
+            // Find the Environment-entity component so the change persists
+            // (RenderSystem mirrors it each frame; the scene component is
+            // the source of truth).
+            EnvironmentConfig* sceneEnv = nullptr;
+            ctx.scene.forEach<EnvironmentConfig>(
+                [&](EntityId, EnvironmentConfig& e) { if (!sceneEnv) sceneEnv = &e; });
+            if (sceneEnv) {
+                RenderMode m = sceneEnv->renderMode;
+                if (drawRenderModeMenuBody(m)) {
+                    sceneEnv->renderMode = m;
+                    ec.state.markSceneDirty();
+                }
+            } else {
+                ImGui::TextDisabled("No Environment entity in scene.");
+            }
+            ImGui::EndPopup();
+        }
+    }
 
     constexpr float toolbarH = BTN + PAD * 2.0f + 2.0f;
     ImVec2 ws = ImGui::GetWindowSize();
