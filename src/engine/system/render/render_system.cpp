@@ -112,6 +112,23 @@ void RenderSystem::executeFrame(FrameContext& ctx, uint32_t frameIndex) {
         m_graph.onResize(*m_backend, m_width, m_height);
     }
 
+    // Drain any GL jobs queued from main this frame (material previews
+    // from editor panels, future screenshot capture, etc.). They run on
+    // the GL thread before the scene render + ImGui draw so any textures
+    // they touch contain fresh content by the time ImGui samples them.
+    // Swap under the lock, then run outside it so a job can re-queue
+    // safely without deadlocking.
+    {
+        PROFILE_SCOPE("Render/GLJobs");
+        thread_local std::vector<std::function<void()>> scratch;
+        scratch.clear();
+        {
+            std::lock_guard<std::mutex> lock(m_pendingGLJobsMutex);
+            scratch.swap(m_pendingGLJobs);
+        }
+        for (auto& job : scratch) job();
+    }
+
     RenderView& view = m_views[frameIndex & 1u];
 
     {
@@ -272,9 +289,26 @@ uint32_t RenderSystem::materialPreviewTexture(
         --m_thumbBudget;
     }
 
-    // One fixed offscreen resolution for every preview so switching between
-    // the 512 Material Editor and small grid thumbnails never reallocates
-    // the preview targets mid-frame.
+    // Deferred path: render thread owns the GL context. Queue a GL job
+    // that does the actual render + cache snapshot, return whatever's
+    // currently cached (0 the very first frame; a stable per-key texture
+    // id thereafter). The generic GL-job queue is drained at the top of
+    // executeFrame() before the scene + ImGui draw, so ImGui samples the
+    // freshly-rendered content in the same frame the request was made.
+    if (m_deferPreviewRender) {
+        queueGLJob([this, &resources, material, mesh, yawDeg, pitchDeg, distance, key]() {
+            const uint32_t live = renderMaterialPreview(
+                resources, material, mesh, yawDeg, pitchDeg, distance, PREVIEW_RES);
+            if (!live) return;
+            m_graph.snapshotPreviewToCache(*m_backend, key, PREVIEW_RES);
+        });
+        if (!live) m_thumbVersion[key] = version;  // recorded as "requested at version V"
+        return m_graph.cachedPreview(*m_backend, key);
+    }
+
+    // Inline path (single-threaded mode): same fixed offscreen resolution
+    // for every preview so switching between the 512 Material Editor and
+    // small grid thumbnails never reallocates the preview targets mid-frame.
     const uint32_t liveTex =
         renderMaterialPreview(resources, material, mesh,
                               yawDeg, pitchDeg, distance, PREVIEW_RES);
@@ -283,6 +317,12 @@ uint32_t RenderSystem::materialPreviewTexture(
     const uint32_t snap = m_graph.snapshotPreviewToCache(*m_backend, key, PREVIEW_RES);
     if (!live) m_thumbVersion[key] = version;
     return snap ? snap : liveTex;
+}
+
+void RenderSystem::queueGLJob(std::function<void()> job) {
+    if (!job) return;
+    std::lock_guard<std::mutex> lock(m_pendingGLJobsMutex);
+    m_pendingGLJobs.push_back(std::move(job));
 }
 
 

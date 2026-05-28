@@ -1,7 +1,9 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <cstdint>
+#include <mutex>
 #include <string_view>
 #include <vector>
 #include <utility>
@@ -188,6 +190,37 @@ class RenderSystem : public System {
                 float yawDeg, float pitchDeg, float distance,
                 uint64_t key, uint64_t version, bool live);
 
+        /**
+         * @brief Queue a callable to run on the GL thread inside the next
+         *        executeFrame(), before the scene render.
+         *
+         * Generic mechanism for any code path that needs GL work but
+         * doesn't itself hold the GL context. In single-threaded mode the
+         * caller IS the GL thread, so an immediate inline call would be
+         * equivalent and faster - prefer that. This API exists for the
+         * render-thread case: editor panels rendering previews, future
+         * screenshot capture, IBL re-bake from a menu, etc.
+         *
+         * Thread-safe; jobs run in queue order. Lifetime: jobs are
+         * one-shot and dropped after execution. Callers capture any
+         * dependencies they need; references must outlive the job
+         * (typically Engine-owned state which lives forever).
+         */
+        void queueGLJob(std::function<void()> job);
+
+        /**
+         * @brief Switch material-preview rendering to the deferred path.
+         *
+         * Set true when Engine starts the render thread: materialPreviewTexture()
+         * queues a GL job via queueGLJob() instead of rendering inline.
+         * The returned texture ID is the cached preview slot, stable per
+         * key, so ImGui's per-frame draw data references the right texture
+         * even when its contents land later in the same frame (the render
+         * thread drains the queue at the top of executeFrame, before
+         * EditorSystem::executeGL samples the textures).
+         */
+        void setDeferPreviewRender(bool defer) { m_deferPreviewRender = defer; }
+
     private:
         std::unique_ptr<RenderBackend> m_backend;
         RenderGraph m_graph;
@@ -209,6 +242,17 @@ class RenderSystem : public System {
         static constexpr uint32_t PREVIEW_RES            = 512;  ///< One fixed offscreen res for all previews (no target thrash)
         uint32_t m_thumbBudget = 0;
         std::unordered_map<uint64_t, uint64_t> m_thumbVersion;  ///< key -> last baked asset version
+
+        /// Set by Engine when the render thread is enabled. Switches
+        /// materialPreviewTexture() from inline render to queue-and-defer.
+        bool m_deferPreviewRender = false;
+
+        /// Thread-safe queue of one-shot GL jobs. Producers (panels,
+        /// editor commands) call queueGLJob() from any thread; the render
+        /// thread drains and runs them at the top of executeFrame(),
+        /// before the scene render and ImGui draw step.
+        std::vector<std::function<void()>> m_pendingGLJobs;
+        std::mutex                         m_pendingGLJobsMutex;
 
         EnvironmentConfig m_environment;
 
