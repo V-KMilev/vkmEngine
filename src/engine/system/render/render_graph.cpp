@@ -5,6 +5,7 @@
 #include <algorithm>
 
 #include "l_assert.h"
+
 #include "logger.h"
 #include "debug/gpu_timing.h"
 #include "debug/profiler.h"
@@ -29,9 +30,9 @@ const RenderPass& RenderGraph::getPass(size_t index) const {
 }
 
 namespace {
-    bool contains(const std::vector<RGResource>& list, RGResource r) {
-        return std::find(list.begin(), list.end(), r) != list.end();
-    }
+bool contains(const std::vector<RGResource>& list, RGResource r) {
+    return std::find(list.begin(), list.end(), r) != list.end();
+}
 }
 
 void RenderGraph::addPass(std::unique_ptr<RenderPass> pass) {

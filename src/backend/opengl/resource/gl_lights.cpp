@@ -18,8 +18,7 @@ static_assert(sizeof(LightsUBOData) % 16 == 0, "LightsUBOData must be 16-byte al
 static_assert(offsetof(LightsUBOData, lightCount) == 0, "lightCount offset mismatch");
 static_assert(offsetof(LightsUBOData, lights) == 16, "lights array offset mismatch");
 
-GLLights::GLLights() {
-}
+GLLights::GLLights() = default;
 
 GLLights::~GLLights() {
     m_ubo.reset();
@@ -32,11 +31,11 @@ void GLLights::update(const std::vector<LightData>& lights) {
     std::memset(&data, 0, sizeof(LightsUBOData));
 
     // Clamp to maximum light count
-    uint32_t lightCount = std::min(static_cast<uint32_t>(lights.size()), static_cast<uint32_t>(Config::MaxLights));
+    uint32_t lightCount = std::min(static_cast<uint32_t>(lights.size()), static_cast<uint32_t>(Config::MAX_LIGHTS));
 
-    if (lights.size() > Config::MaxLights) {
+    if (lights.size() > Config::MAX_LIGHTS) {
         LOG_WARNING("Scene has %d lights, but only %d are supported. Excess lights will be ignored.", 
-                 lights.size(), Config::MaxLights);
+                 lights.size(), Config::MAX_LIGHTS);
     }
 
     // Convert each light to GPU format

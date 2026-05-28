@@ -35,9 +35,9 @@ void ShaderErrorLog::push(
     entry.repeatCount     = 1;
     m_entries.push_back(std::move(entry));
 
-    if (m_entries.size() > kCapacity) {
+    if (m_entries.size() > CAPACITY) {
         m_entries.erase(m_entries.begin(),
-                        m_entries.begin() + (m_entries.size() - kCapacity));
+                        m_entries.begin() + (m_entries.size() - CAPACITY));
     }
 }
 

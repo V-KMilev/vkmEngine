@@ -26,19 +26,19 @@
 namespace Engine {
 
 namespace {
-    glm::mat4 captureProjection() {
-        return glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
-    }
+glm::mat4 captureProjection() {
+    return glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
+}
 
-    void captureViews(glm::mat4 out[6]) {
-        const glm::vec3 o(0.0f);
-        out[0] = glm::lookAt(o, glm::vec3( 1, 0, 0), glm::vec3(0, -1,  0));
-        out[1] = glm::lookAt(o, glm::vec3(-1, 0, 0), glm::vec3(0, -1,  0));
-        out[2] = glm::lookAt(o, glm::vec3( 0, 1, 0), glm::vec3(0,  0,  1));
-        out[3] = glm::lookAt(o, glm::vec3( 0,-1, 0), glm::vec3(0,  0, -1));
-        out[4] = glm::lookAt(o, glm::vec3( 0, 0, 1), glm::vec3(0, -1,  0));
-        out[5] = glm::lookAt(o, glm::vec3( 0, 0,-1), glm::vec3(0, -1,  0));
-    }
+void captureViews(glm::mat4 out[6]) {
+    const glm::vec3 o(0.0f);
+    out[0] = glm::lookAt(o, glm::vec3( 1, 0, 0), glm::vec3(0, -1,  0));
+    out[1] = glm::lookAt(o, glm::vec3(-1, 0, 0), glm::vec3(0, -1,  0));
+    out[2] = glm::lookAt(o, glm::vec3( 0, 1, 0), glm::vec3(0,  0,  1));
+    out[3] = glm::lookAt(o, glm::vec3( 0,-1, 0), glm::vec3(0,  0, -1));
+    out[4] = glm::lookAt(o, glm::vec3( 0, 0, 1), glm::vec3(0, -1,  0));
+    out[5] = glm::lookAt(o, glm::vec3( 0, 0,-1), glm::vec3(0, -1,  0));
+}
 }
 
 GLIBLBakePass::GLIBLBakePass(

@@ -19,7 +19,7 @@
 namespace Engine {
 
 namespace {
-    constexpr float UPSAMPLE_RADIUS = 0.005f;  // tent filter radius in UV space
+constexpr float UPSAMPLE_RADIUS = 0.005f;  // tent filter radius in UV space
 }
 
 bool GLBloomPass::enabledForView(const RenderView& view) const {

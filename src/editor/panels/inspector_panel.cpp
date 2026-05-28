@@ -7,25 +7,25 @@
 #include <utility>
 #include <vector>
 
-#include "framework/editor_common.h"
-#include "framework/editor_commands.h"
 #include "ecs/component/reflection_probe.h"
+#include "framework/editor_commands.h"
+#include "framework/editor_common.h"
+#include "generator/light_generators.h"
+#include "input/editor_actions.h"
 #include "system/render/render_view.h"   // EnvironmentConfig
 #include "system/visibility/bounds_utils.h"
-#include "input/editor_actions.h"
-#include "generator/light_generators.h"
 
 namespace Engine {
 
 namespace {
-    // Per-component accent colors - the left strip / guide line that lets the
-    // eye group a card at a glance (Transform blue, Mesh green, ...).
-    const ImVec4 ACCENT_TRANSFORM = EditorStyle::AXIS_Z;
-    const ImVec4 ACCENT_MESH      = EditorStyle::AXIS_Y;
-    const ImVec4 ACCENT_LIGHT     = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);
-    const ImVec4 ACCENT_CAMERA    = ImVec4(0.30f, 0.78f, 0.80f, 1.0f);
-    const ImVec4 ACCENT_ANIM      = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);
-    const ImVec4 ACCENT_HIERARCHY = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);
+// Per-component accent colors - the left strip / guide line that lets the
+// eye group a card at a glance (Transform blue, Mesh green, ...).
+const ImVec4 ACCENT_TRANSFORM = EditorStyle::AXIS_Z;
+const ImVec4 ACCENT_MESH      = EditorStyle::AXIS_Y;
+const ImVec4 ACCENT_LIGHT     = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);
+const ImVec4 ACCENT_CAMERA    = ImVec4(0.30f, 0.78f, 0.80f, 1.0f);
+const ImVec4 ACCENT_ANIM      = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);
+const ImVec4 ACCENT_HIERARCHY = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);
 }
 
 void InspectorPanel::draw(EditorContext& ec) {

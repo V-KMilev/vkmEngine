@@ -5,7 +5,6 @@
 #include "logger.h"
 
 #include "config/gl_format_conversion.h"
-#include "gl_texture.h"  // Core::Texture2D
 #include "resource/texture_asset.h"
 
 namespace Engine {

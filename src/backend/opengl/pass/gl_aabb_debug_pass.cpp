@@ -29,9 +29,7 @@ GLAABBDebugPass::GLAABBDebugPass(ShaderHandle shader)
     initialize();
 }
 
-void GLAABBDebugPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) { 
-    // Nothing to do for AABB debug pass
-}
+void GLAABBDebugPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {}
 
 void GLAABBDebugPass::initialize() {
     // Create a wireframe cube mesh (8 corners, 12 edges)

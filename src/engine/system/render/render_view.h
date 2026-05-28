@@ -506,22 +506,22 @@ struct RenderView {
     EnvironmentConfig environment;
 
     /**
-     * @brief Pre-resolved facts for the current frame's render mode. Cheap to
+     * @brief Pre-resolved facts for the current frame's render mode.
      *
-     * derive (a switch on env.renderMode); passes read this instead of
-     * branching on the enum directly so a new mode is one place to
-     * update (resolveModeConfig).
+     * Cheap to derive (a switch on env.renderMode); passes read this instead
+     * of branching on the enum directly so a new mode is one place to update
+     * (resolveModeConfig).
      */
     RenderModeConfig modeConfig;
 
     std::vector<DrawableData> drawables;
 
     /**
-     * @brief Shadow-casting geometry for the shadow pass. Built from the WHOLE
+     * @brief Shadow-casting geometry for the shadow pass.
      *
-     * scene (not the camera frustum) so occluders behind / beside the
-     * camera still cast shadows into view - camera-frustum culling here is
-     * what made shadows pop and flicker as the view moved.
+     * Built from the WHOLE scene (not the camera frustum) so occluders behind /
+     * beside the camera still cast shadows into view - camera-frustum culling
+     * here is what made shadows pop and flicker as the view moved.
      */
     std::vector<DrawableData> shadowCasters;
 

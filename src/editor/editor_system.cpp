@@ -14,10 +14,10 @@
 
 #include "logger.h"
 
-#include "debug/profiler.h"
 #include "core/system.h"
-#include "ecs/scene.h"
+#include "debug/profiler.h"
 #include "ecs/component/selected.h"
+#include "ecs/scene.h"
 #include "framework/editor_context.h"
 #include "framework/editor_settings.h"
 #include "input/editor_keybinds.h"
@@ -97,57 +97,57 @@ EditorSystem::~EditorSystem() {
 }
 
 namespace {
-    void drawToast(EditorState& state, float deltaTime) {
-        if (state.toastTimeRemaining <= 0.0f) return;
-        state.toastTimeRemaining -= deltaTime;
-        if (state.toastTimeRemaining <= 0.0f) {
-            state.toastTimeRemaining = 0.0f;
-            return;
-        }
-
-        // Fade the last 0.4s so the toast doesn't pop out.
-        const float alpha = std::min(1.0f, state.toastTimeRemaining / 0.4f);
-
-        ImVec4 bg;
-        switch (state.toastKind) {
-            case EditorState::ToastKind::Error:   bg = ImVec4(0.55f, 0.18f, 0.18f, 0.95f * alpha); break;
-            case EditorState::ToastKind::Warning: bg = ImVec4(0.55f, 0.42f, 0.10f, 0.95f * alpha); break;
-            default:                              bg = ImVec4(0.16f, 0.16f, 0.19f, 0.95f * alpha); break;
-        }
-
-        const ImGuiViewport* vp = ImGui::GetMainViewport();
-        const float pad = 12.0f;
-        ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + pad,
-                                        vp->WorkPos.y + vp->WorkSize.y - pad),
-                                ImGuiCond_Always, ImVec2(0.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, bg);
-        ImGui::PushStyleColor(ImGuiCol_Text,     ImVec4(1.0f, 1.0f, 1.0f, alpha));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
-        ImGui::Begin("##Toast", nullptr,
-            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoInputs     | ImGuiWindowFlags_NoFocusOnAppearing |
-            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
-        ImGui::TextUnformatted(state.toastMessage.c_str());
-        ImGui::End();
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor(2);
+void drawToast(EditorState& state, float deltaTime) {
+    if (state.toastTimeRemaining <= 0.0f) return;
+    state.toastTimeRemaining -= deltaTime;
+    if (state.toastTimeRemaining <= 0.0f) {
+        state.toastTimeRemaining = 0.0f;
+        return;
     }
 
-    // Keep the window title in sync with the scene state: "<file> [*] - VKM Engine".
-    // Updates only when the title content actually changes to avoid OS churn.
-    void syncWindowTitle(WindowManager& window, const std::string& path, bool dirty) {
-        static std::string s_last;
-        std::string fname = "untitled";
-        if (!path.empty()) {
-            const size_t s = path.find_last_of("/\\");
-            fname = (s == std::string::npos) ? path : path.substr(s + 1);
-        }
-        std::string title = fname + (dirty ? " *" : "") + " - VKM Engine";
-        if (title != s_last) {
-            window.setTitle(title);
-            s_last = std::move(title);
-        }
+    // Fade the last 0.4s so the toast doesn't pop out.
+    const float alpha = std::min(1.0f, state.toastTimeRemaining / 0.4f);
+
+    ImVec4 bg;
+    switch (state.toastKind) {
+        case EditorState::ToastKind::Error:   bg = ImVec4(0.55f, 0.18f, 0.18f, 0.95f * alpha); break;
+        case EditorState::ToastKind::Warning: bg = ImVec4(0.55f, 0.42f, 0.10f, 0.95f * alpha); break;
+        default:                              bg = ImVec4(0.16f, 0.16f, 0.19f, 0.95f * alpha); break;
     }
+
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    const float pad = 12.0f;
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + pad,
+                                    vp->WorkPos.y + vp->WorkSize.y - pad),
+                            ImGuiCond_Always, ImVec2(0.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, bg);
+    ImGui::PushStyleColor(ImGuiCol_Text,     ImVec4(1.0f, 1.0f, 1.0f, alpha));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+    ImGui::Begin("##Toast", nullptr,
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoInputs     | ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::TextUnformatted(state.toastMessage.c_str());
+    ImGui::End();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(2);
+}
+
+// Keep the window title in sync with the scene state: "<file> [*] - VKM Engine".
+// Updates only when the title content actually changes to avoid OS churn.
+void syncWindowTitle(WindowManager& window, const std::string& path, bool dirty) {
+    static std::string s_last;
+    std::string fname = "untitled";
+    if (!path.empty()) {
+        const size_t s = path.find_last_of("/\\");
+        fname = (s == std::string::npos) ? path : path.substr(s + 1);
+    }
+    std::string title = fname + (dirty ? " *" : "") + " - VKM Engine";
+    if (title != s_last) {
+        window.setTitle(title);
+        s_last = std::move(title);
+    }
+}
 }
 
 void EditorSystem::update(FrameContext& ctx) {

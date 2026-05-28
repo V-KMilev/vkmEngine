@@ -16,96 +16,96 @@
 namespace Engine {
 
 namespace {
-    /**
-     * @brief Convert string to lowercase for case-insensitive comparison.
-     */
-    std::string toLower(const std::string& str) {
-        std::string result = str;
-        std::transform(result.begin(), result.end(), result.begin(), 
-            [](unsigned char c) { return std::tolower(c); });
-        return result;
-    }
+/**
+ * @brief Convert string to lowercase for case-insensitive comparison.
+ */
+std::string toLower(const std::string& str) {
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(), 
+        [](unsigned char c) { return std::tolower(c); });
+    return result;
+}
 
-    /**
-     * @brief Search for a texture file matching common naming patterns.
-     * 
-     * Scans all files in the folder with the specified extensions and checks
-     * if any filename contains one of the patterns (case-insensitive).
-     * 
-     * Example: Pattern "Color" matches "PavingStones_Color.jpg", "brick_color.png", etc.
-     */
-    std::optional<std::string> findTexture(
-        const std::string& folderPath,
-        const std::vector<std::string>& patterns,
-        const std::vector<std::string>& extensions = {".jpg", ".jpeg", ".png", ".tga", ".bmp"}
-    ) {
-        // Check if folder exists
-        if (!std::filesystem::exists(folderPath) || !std::filesystem::is_directory(folderPath)) {
-            return std::nullopt;
-        }
-
-        // Iterate through all files in the folder
-        for (const auto& entry : std::filesystem::directory_iterator(folderPath)) {
-            if (!entry.is_regular_file()) continue;
-
-            std::string filename = entry.path().filename().string();
-            std::string extension = entry.path().extension().string();
-
-            // Check if file has one of the target extensions (case-insensitive)
-            std::string extensionLower = toLower(extension);
-            bool hasValidExtension = false;
-            for (const auto& ext : extensions) {
-                if (extensionLower == toLower(ext)) {
-                    hasValidExtension = true;
-                    break;
-                }
-            }
-            if (!hasValidExtension) continue;
-
-            // Check if filename contains any of the patterns (case-insensitive)
-            std::string filenameLower = toLower(filename);
-            for (const auto& pattern : patterns) {
-                std::string patternLower = toLower(pattern);
-                
-                if (filenameLower.find(patternLower) != std::string::npos) {
-                    return entry.path().string();
-                }
-            }
-        }
-
+/**
+ * @brief Search for a texture file matching common naming patterns.
+ * 
+ * Scans all files in the folder with the specified extensions and checks
+ * if any filename contains one of the patterns (case-insensitive).
+ * 
+ * Example: Pattern "Color" matches "PavingStones_Color.jpg", "brick_color.png", etc.
+ */
+std::optional<std::string> findTexture(
+    const std::string& folderPath,
+    const std::vector<std::string>& patterns,
+    const std::vector<std::string>& extensions = {".jpg", ".jpeg", ".png", ".tga", ".bmp"}
+) {
+    // Check if folder exists
+    if (!std::filesystem::exists(folderPath) || !std::filesystem::is_directory(folderPath)) {
         return std::nullopt;
     }
 
-    /**
-     * @brief Load a texture if path is provided, otherwise return fallback.
-     */
-    TextureHandle loadOrFallback(
-        const std::string& texturePath,
-        ResourceManager& resourceManager,
-        bool srgb,
-        bool generateMipmaps,
-        TextureHandle fallback
-    ) {
-        if (texturePath.empty()) {
-            return fallback;
-        }
+    // Iterate through all files in the folder
+    for (const auto& entry : std::filesystem::directory_iterator(folderPath)) {
+        if (!entry.is_regular_file()) continue;
 
-        if (!std::filesystem::exists(texturePath)) {
-            LOG_WARNING("Texture file not found: '%s', using fallback", texturePath.c_str());
-            return fallback;
-        }
+        std::string filename = entry.path().filename().string();
+        std::string extension = entry.path().extension().string();
 
-        // Folder-loaded materials no longer block on each texture decode.
-        // requestTextureAsync returns immediately; GLMaterial::bindTextures
-        // shows the 1x1 gray placeholder until pixels land 1-3 frames out.
-        auto handle = requestTextureAsync(texturePath, resourceManager, srgb, generateMipmaps);
-        if (!handle) {
-            LOG_WARNING("Failed to request texture: '%s', using fallback", texturePath.c_str());
-            return fallback;
+        // Check if file has one of the target extensions (case-insensitive)
+        std::string extensionLower = toLower(extension);
+        bool hasValidExtension = false;
+        for (const auto& ext : extensions) {
+            if (extensionLower == toLower(ext)) {
+                hasValidExtension = true;
+                break;
+            }
         }
+        if (!hasValidExtension) continue;
 
-        return handle;
+        // Check if filename contains any of the patterns (case-insensitive)
+        std::string filenameLower = toLower(filename);
+        for (const auto& pattern : patterns) {
+            std::string patternLower = toLower(pattern);
+                
+            if (filenameLower.find(patternLower) != std::string::npos) {
+                return entry.path().string();
+            }
+        }
     }
+
+    return std::nullopt;
+}
+
+/**
+ * @brief Load a texture if path is provided, otherwise return fallback.
+ */
+TextureHandle loadOrFallback(
+    const std::string& texturePath,
+    ResourceManager& resourceManager,
+    bool srgb,
+    bool generateMipmaps,
+    TextureHandle fallback
+) {
+    if (texturePath.empty()) {
+        return fallback;
+    }
+
+    if (!std::filesystem::exists(texturePath)) {
+        LOG_WARNING("Texture file not found: '%s', using fallback", texturePath.c_str());
+        return fallback;
+    }
+
+    // Folder-loaded materials no longer block on each texture decode.
+    // requestTextureAsync returns immediately; GLMaterial::bindTextures
+    // shows the 1x1 gray placeholder until pixels land 1-3 frames out.
+    auto handle = requestTextureAsync(texturePath, resourceManager, srgb, generateMipmaps);
+    if (!handle) {
+        LOG_WARNING("Failed to request texture: '%s', using fallback", texturePath.c_str());
+        return fallback;
+    }
+
+    return handle;
+}
 }
 
 MaterialHandle loadMaterialFromFolder(

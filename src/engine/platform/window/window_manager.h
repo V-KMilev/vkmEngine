@@ -25,9 +25,9 @@ class FrameLimiter;
  *               desktop with other applications; contains standard OS borders and controls.
  */
 enum class WindowMode {
-    NONE       = 0,    ///< No active window mode or undefined.
-    FULLSCREEN = 1,    ///< Window occupies the entire screen.
-    WINDOWED   = 2     ///< Window is in windowed mode.
+    None       = 0,    ///< No active window mode or undefined.
+    Fullscreen = 1,    ///< Window occupies the entire screen.
+    Windowed   = 2     ///< Window is in windowed mode.
 };
 
 /**
@@ -39,10 +39,10 @@ enum class WindowMode {
  * - CAPTURED: Cursor is captured and not visible, often for raw input scenarios.
  */
 enum class CursorMode {
-    NORMAL   = 0,    ///< Cursor visible, standard mode.
-    HIDDEN   = 1,    ///< Cursor hidden.
-    DISABLED = 2,    ///< Cursor disabled and locked to window.
-    CAPTURED = 3     ///< Cursor captured for raw input.
+    Normal   = 0,    ///< Cursor visible, standard mode.
+    Hidden   = 1,    ///< Cursor hidden.
+    Disabled = 2,    ///< Cursor disabled and locked to window.
+    Captured = 3     ///< Cursor captured for raw input.
 };
 
 /**
@@ -53,9 +53,9 @@ enum class CursorMode {
  */
 constexpr const char* toString(WindowMode type) {
     switch (type) {
-        case WindowMode::NONE:       return "NONE";
-        case WindowMode::FULLSCREEN: return "FULLSCREEN";
-        case WindowMode::WINDOWED:   return "WINDOWED";
+        case WindowMode::None:       return "None";
+        case WindowMode::Fullscreen: return "Fullscreen";
+        case WindowMode::Windowed:   return "Windowed";
         default: return "UNKNOWN";
     }
 }

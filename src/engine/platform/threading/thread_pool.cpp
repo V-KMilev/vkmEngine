@@ -9,9 +9,9 @@
 namespace Engine {
 
 namespace {
-    // Set inside process() so parallelFor can detect re-entry from a worker
-    // and fall back to a serial sweep instead of deadlocking on its own slot.
-    thread_local bool t_isWorker = false;
+// Set inside process() so parallelFor can detect re-entry from a worker
+// and fall back to a serial sweep instead of deadlocking on its own slot.
+thread_local bool t_isWorker = false;
 }
 
 bool ThreadPool::isWorkerThread() {

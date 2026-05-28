@@ -11,32 +11,32 @@
 namespace Engine {
 
 namespace {
-    std::string lowerExt(const std::filesystem::path& p) {
-        std::string ext = p.extension().string();
-        for (char& c : ext)
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        return ext;
-    }
+std::string lowerExt(const std::filesystem::path& p) {
+    std::string ext = p.extension().string();
+    for (char& c : ext)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return ext;
+}
 
-    bool extMatches(const std::vector<std::string>& exts, const std::filesystem::path& p) {
-        if (exts.empty()) return true;
-        const std::string e = lowerExt(p);
-        for (const std::string& ex : exts) if (e == ex) return true;
-        return false;
-    }
+bool extMatches(const std::vector<std::string>& exts, const std::filesystem::path& p) {
+    if (exts.empty()) return true;
+    const std::string e = lowerExt(p);
+    for (const std::string& ex : exts) if (e == ex) return true;
+    return false;
+}
 
-    std::string displayName(
-        const std::filesystem::path& p,
-        const std::filesystem::path& relativeTo,
-        bool recursive
-    ) {
-        if (!relativeTo.empty()) {
-            std::error_code ec;
-            const std::string rel = std::filesystem::relative(p, relativeTo, ec).generic_string();
-            return ec ? p.string() : rel;
-        }
-        return recursive ? p.string() : p.filename().string();
+std::string displayName(
+    const std::filesystem::path& p,
+    const std::filesystem::path& relativeTo,
+    bool recursive
+) {
+    if (!relativeTo.empty()) {
+        std::error_code ec;
+        const std::string rel = std::filesystem::relative(p, relativeTo, ec).generic_string();
+        return ec ? p.string() : rel;
     }
+    return recursive ? p.string() : p.filename().string();
+}
 }
 
 void AssetPicker::open() {
