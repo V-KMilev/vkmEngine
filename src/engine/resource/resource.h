@@ -47,15 +47,16 @@ struct Resource {
         uint64_t    version    = 1;
         std::string name;
         AssetId     assetId{};            ///< Stable GUID from AssetDatabase. Loaders stamp this on import; serialised references use this instead of `name`.
-        bool        editorOnly = false;   ///< Filtered from pickers / Asset Browser / scene save. See ResourceManager::addInternal.
+        bool        hidden     = false;   ///< Filtered from pickers / Asset Browser / scene save. See ResourceManager::addPrivate.
 
         /**
-         * @brief Origin descriptor JSON, lazy-allocated. Stored behind a
+         * @brief Origin descriptor JSON, lazy-allocated.
          *
-         * unique_ptr so this header only forward-declares nlohmann::json -
-         * every TU that includes a Resource subclass (MeshAsset, ...)
-         * avoids the ~10k-line json template tax. Callers that read or
-         * write it must #include <nlohmann/json.hpp> in their .cpp.
+         * Stored behind a unique_ptr so this header only forward-declares
+         * nlohmann::json - every TU that includes a Resource subclass
+         * (MeshAsset, ...) avoids the ~10k-line json template tax.
+         * Callers that read or write it must #include <nlohmann/json.hpp>
+         * in their .cpp.
          *
          * Shape is loader-specific. Examples:
          *   {"kind":"generator","type":"sphere","segments":48,"rings":24}

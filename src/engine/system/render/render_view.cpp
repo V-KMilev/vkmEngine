@@ -108,8 +108,10 @@ namespace {
      * good enough for non-degenerate transparents (intersecting / huge
      * transparents are an inherent limit of per-object sorting).
      */
-    void sortTransparentsByDepth(std::vector<DrawableData>& drawables,
-                                 const glm::vec3& camPos) {
+    void sortTransparentsByDepth(
+        std::vector<DrawableData>& drawables,
+        const glm::vec3& camPos
+    ) {
         const size_t n = drawables.size();
 
         size_t lo = 0;
@@ -301,7 +303,7 @@ void RenderView::build(
             }
         } else { // Spot, Rect, Disk - 2D atlas shadow
             // Area lights (Rect/Disk) cast point-style shadows from their
-            // centre in Phase 2A; soft penumbra lands in Phase 2C with LTC.
+            // centre; soft penumbra will arrive with LTC shading.
             if (taken2D < Config::MaxShadowCasters2D) light.shadowSlot = static_cast<int>(taken2D++);
         }
     }

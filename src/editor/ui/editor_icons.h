@@ -39,7 +39,13 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
  * @param size    Button side length in pixels.
  * @return true on the frame the button is pressed.
  */
-bool iconButton(const char* idStr, EditorIcon icon, bool active,
-                bool enabled, const char* tooltip, float size = 26.0f);
+bool iconButton(
+    const char* idStr,
+    EditorIcon icon,
+    bool active,
+    bool enabled,
+    const char* tooltip,
+    float size = 26.0f
+);
 
 } // namespace Engine

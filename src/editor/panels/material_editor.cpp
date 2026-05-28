@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "framework/editor_common.h"
+#include "framework/material_preview_session.h"
 #include "input/editor_actions.h"
 #include "loader/texture_loaders.h"
 #include "loader/material_loaders.h"
@@ -33,8 +34,11 @@ namespace {
 
 }  // namespace
 
-bool MaterialEditorPanel::drawMaterialBody(ResourceManager& resources, MaterialAsset& mat,
-                                           bool globalOIT) {
+bool MaterialEditorPanel::drawMaterialBody(
+    ResourceManager& resources,
+    MaterialAsset& mat,
+    bool globalOIT
+) {
     bool changed = false;
     auto slot = [&](const char* label, TextureHandle& s, bool srgb) {
         return textureSlot(resources, label, s, srgb);
@@ -228,18 +232,20 @@ bool MaterialEditorPanel::drawMaterialBody(ResourceManager& resources, MaterialA
     return changed;
 }
 
-MeshHandle MaterialEditorPanel::previewMesh(ResourceManager& resources,
-                                            const MeshHandle& entityMesh) {
+MeshHandle MaterialEditorPanel::previewMesh(
+    ResourceManager& resources,
+    const MeshHandle& entityMesh
+) {
     if (m_primitive == 3 && entityMesh) return entityMesh;
 
     // Look up each preview every call (findByName is O(1)). Caching the
     // handles in a flag-gated block would leave them stale across a scene
     // load - SceneSerializer swaps the whole ResourceManager, dropping
-    // every editor-internal asset along with it. Lazy lookup re-registers
+    // every hidden asset along with it. Lazy lookup re-registers
     // automatically on the next preview after a load.
     auto getOrAdd = [&](const char* name, auto&& make) {
         MeshHandle h = resources.findByName<MeshAsset>(name);
-        if (!h) h = resources.addInternal(make(), name);
+        if (!h) h = resources.addPrivate(make(), name);
         return h;
     };
     switch (m_primitive) {
@@ -249,8 +255,12 @@ MeshHandle MaterialEditorPanel::previewMesh(ResourceManager& resources,
     }
 }
 
-bool MaterialEditorPanel::textureSlot(ResourceManager& res, const char* label,
-                                      TextureHandle& slot, bool srgb) {
+bool MaterialEditorPanel::textureSlot(
+    ResourceManager& res,
+    const char* label,
+    TextureHandle& slot,
+    bool srgb
+) {
     ImGui::PushID(label);
     drawPropertyLabel(label);
 
@@ -386,7 +396,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         // it survives the Asset Browser baking thumbnails into the shared
         // target later this same frame (ImGui samples textures at Render).
         uint32_t tex = shape
-            ? ec.renderSystem.materialPreviewTexture(
+            ? ec.materialPreviews.texture(
                   resources, target, shape, m_yaw, m_pitch, m_distance,
                   /*key*/ 0ull, /*version*/ 0ull, /*live*/ true)
             : 0u;

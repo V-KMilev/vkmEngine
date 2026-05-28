@@ -32,7 +32,7 @@ namespace detail {
         const glm::vec3 f = glm::normalize(forward);
         glm::vec3 r = glm::cross(worldUp, f);
         if (glm::length2(r) < 1e-6f) {
-            // forward parallel to worldUp — pick any orthogonal axis.
+            // forward parallel to worldUp - pick any orthogonal axis.
             r = glm::cross(Engine::Math::WORLD_AXIS_X_RIGHT, f);
         }
         r = glm::normalize(r);

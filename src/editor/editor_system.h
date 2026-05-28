@@ -4,6 +4,7 @@
 
 #include "core/system.h"
 #include "framework/editor_state.h"
+#include "framework/material_preview_session.h"
 #include "framework/scene_io_controller.h"
 #include "framework/editor_menu_bar.h"
 #include "framework/editor_status_bar.h"
@@ -74,12 +75,15 @@ class EditorSystem : public System {
         void executeBackend(FrameContext& ctx) override;
 
     private:
-        /// ImDrawData* stashed by update() for executeBackend() to consume.
-        /// Pointer is into ImGui's internal allocator and is valid until
-        /// the next ImGui::NewFrame on main - the engine guarantees
-        /// executeBackend runs (and finishes) before the next NewFrame
-        /// via waitForFrame at the top of the next iteration's mutator
-        /// phase.
+        /**
+         * @brief ImDrawData* stashed by update() for executeBackend() to consume.
+         *
+         * Pointer is into ImGui's internal allocator and is valid until
+         * the next ImGui::NewFrame on main - the engine guarantees
+         * executeBackend runs (and finishes) before the next NewFrame
+         * via waitForFrame at the top of the next iteration's mutator
+         * phase.
+         */
         struct ImDrawData* m_pendingDrawData = nullptr;
 
         /**
@@ -108,6 +112,8 @@ class EditorSystem : public System {
         VisibilitySystem& m_visibilitySystem;
         EventSystem&      m_events;
 
+        MaterialPreviewSession m_materialPreviews;
+
         SceneIOController m_sceneIO;
         EditorMenuBar     m_menuBar;
         EditorStatusBar   m_statusBar;
@@ -128,11 +134,15 @@ class EditorSystem : public System {
         MaterialEditorPanel m_materialEditor;
         AssetBrowserPanel m_assetBrowser;
 
-        /// Standalone floating Render Settings window. Same EnvironmentInspector
-        /// the right-side Inspector uses when the Environment entity is
-        /// selected; this one is opened from View -> Render Settings so the
-        /// user can edit world-level rendering config without first hunting
-        /// the Environment entity in the hierarchy.
+        /**
+         * @brief Standalone floating Render Settings window.
+         *
+         * Same EnvironmentInspector the right-side Inspector uses when the
+         * Environment entity is selected; this one is opened from View ->
+         * Render Settings so the user can edit world-level rendering
+         * config without first hunting the Environment entity in the
+         * hierarchy.
+         */
         EnvironmentInspector m_renderSettingsUI;
 };
 

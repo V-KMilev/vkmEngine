@@ -25,9 +25,11 @@ namespace {
         return false;
     }
 
-    std::string displayName(const std::filesystem::path& p,
-                            const std::filesystem::path& relativeTo,
-                            bool recursive) {
+    std::string displayName(
+        const std::filesystem::path& p,
+        const std::filesystem::path& relativeTo,
+        bool recursive
+    ) {
         if (!relativeTo.empty()) {
             std::error_code ec;
             const std::string rel = std::filesystem::relative(p, relativeTo, ec).generic_string();

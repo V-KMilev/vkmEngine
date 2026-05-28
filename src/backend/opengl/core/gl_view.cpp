@@ -397,8 +397,10 @@ GLMesh* GLView::ensureMesh(const MeshHandle& handle, const ResourceManager& reso
     return m_meshTable.entries[handle.id()].get();
 }
 
-void GLView::ensureMaterialTextures(const MaterialHandle& handle,
-                                    const ResourceManager& resources) {
+void GLView::ensureMaterialTextures(
+    const MaterialHandle& handle,
+    const ResourceManager& resources
+) {
     if (!handle) return;
     const auto& material = resources.get(handle);
 

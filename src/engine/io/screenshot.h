@@ -26,10 +26,12 @@ struct Rect {
  * @param outPath       Destination PNG path. Parent directories are created.
  * @return The absolute path written on success, empty string on failure.
  */
-std::string captureRect(RenderBackend& backend,
-                        const Rect& rect,
-                        uint32_t windowHeight,
-                        const std::string& outPath);
+std::string captureRect(
+    RenderBackend& backend,
+    const Rect& rect,
+    uint32_t windowHeight,
+    const std::string& outPath
+);
 
 /**
  * @brief Capture the window's scene viewport rect into APP_ROOT_DIR/screenshots.

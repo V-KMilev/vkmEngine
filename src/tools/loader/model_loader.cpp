@@ -209,9 +209,15 @@ namespace {
     // Decode raw RGBA8 bytes into a (cached, idempotent) TextureAsset.
     // @p source is stamped onto the asset so cold-start load can recreate
     // the same texture via AssetFactories.
-    TextureHandle addTexture(ResourceManager& res, const std::string& name,
-                             int w, int h, const unsigned char* rgba, bool srgb,
-                             nlohmann::json source) {
+    TextureHandle addTexture(
+        ResourceManager& res,
+        const std::string& name,
+        int w,
+        int h,
+        const unsigned char* rgba,
+        bool srgb,
+        nlohmann::json source
+    ) {
         if (TextureHandle e = res.findByName<TextureAsset>(name)) return e;
         TextureAsset tex;
         tex.params.width          = static_cast<uint32_t>(w);
@@ -237,12 +243,14 @@ namespace {
     // Decode one embedded aiTexture into RGBA8 bytes and register it under
     // @p name. Shared between the live importer (textureFor) and the
     // model-image factory (loadModelEmbeddedTexture).
-    TextureHandle decodeEmbedded(const aiTexture* emb,
-                                 ResourceManager& res,
-                                 const std::string& name,
-                                 const std::string& modelPath,
-                                 const std::string& ref,
-                                 bool srgb) {
+    TextureHandle decodeEmbedded(
+        const aiTexture* emb,
+        ResourceManager& res,
+        const std::string& name,
+        const std::string& modelPath,
+        const std::string& ref,
+        bool srgb
+    ) {
         if (emb->mHeight == 0) {  // compressed blob (PNG/JPG/...)
             int w = 0, hh = 0, n = 0;
             unsigned char* px = stbi_load_from_memory(
@@ -280,10 +288,15 @@ namespace {
 
     // Resolve one material texture slot (embedded or external file) to a
     // TextureHandle, decoded with the engine's flip convention (see below).
-    TextureHandle textureFor(const aiScene* scene, const aiMaterial* mat,
-                             aiTextureType type, bool srgb,
-                             const std::string& modelPath, ResourceManager& res,
-                             std::unordered_map<std::string, TextureHandle>& cache) {
+    TextureHandle textureFor(
+        const aiScene* scene,
+        const aiMaterial* mat,
+        aiTextureType type,
+        bool srgb,
+        const std::string& modelPath,
+        ResourceManager& res,
+        std::unordered_map<std::string, TextureHandle>& cache
+    ) {
         if (mat->GetTextureCount(type) == 0) return {};
         aiString ref;
         if (mat->GetTexture(type, 0, &ref) != AI_SUCCESS) return {};
@@ -327,8 +340,12 @@ namespace {
         return h;
     }
 
-    MaterialHandle buildMaterial(const aiScene* scene, const std::string& path,
-                                 int matIdx, ResourceManager& res) {
+    MaterialHandle buildMaterial(
+        const aiScene* scene,
+        const std::string& path,
+        int matIdx,
+        ResourceManager& res
+    ) {
         const std::string nm = materialName(path, matIdx);
         if (MaterialHandle e = res.findByName<MaterialAsset>(nm)) return e;
 
