@@ -248,6 +248,33 @@ class System {
          */
         virtual bool mutatesResources() const { return true; }
 
+        /**
+         * @brief Does this system have a GL-issuing companion step that
+         *        must run on the GL thread (the render thread, under
+         *        Phase 2B)?
+         *
+         * Defaults to false. Override true if executeGL() does real
+         * work; the Engine routes those calls to the render thread when
+         * Phase 2B is active, and runs them inline on main otherwise.
+         *
+         * Today only EditorSystem opts in: ImGui's build phase
+         * (NewFrame + panel draws + Render) runs on main during update(),
+         * but the actual GL submission (ImGui_ImplOpenGL3_RenderDrawData)
+         * must happen wherever the GL context lives.
+         */
+        virtual bool hasGLWork() const { return false; }
+
+        /**
+         * @brief GL-side companion to update(). See hasGLWork() for when
+         *        it's called. Runs AFTER RenderSystem::executeFrame inside
+         *        the render thread's per-frame lambda (so the system's
+         *        GL work overlays the rendered scene), and on main in
+         *        single-threaded mode (right after update()).
+         *
+         * Default no-op.
+         */
+        virtual void executeGL(FrameContext& /*ctx*/) {}
+
         bool isEnabled() const { return m_enabled; }
         void setEnabled(bool enabled) { m_enabled = enabled; }
 

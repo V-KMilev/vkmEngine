@@ -151,6 +151,14 @@ void Engine::run() {
                 LOG_ERROR("Render thread enabled but no RenderSystem registered; falling back to single-threaded mode");
                 m_renderThreadEnabled = false;
             } else {
+                // Cache UI-stage systems with GL-side companion work
+                // (currently just EditorSystem). Their executeGL() runs
+                // on the render thread after the scene render finishes,
+                // so the UI overlays the rendered scene.
+                const size_t uiIdx = static_cast<size_t>(SystemStage::UI);
+                for (auto& system : m_systemsByStage[uiIdx]) {
+                    if (system->hasGLWork()) m_glWorkSystems.push_back(system.get());
+                }
                 m_renderThread = std::make_unique<RenderThread>(m_window.getWindowContext());
             }
         }
@@ -166,11 +174,13 @@ void Engine::run() {
             // the buffer index it was posted with - main has already moved
             // on to writing the OTHER buffer for frame K+1, so no race.
             constexpr size_t RENDER_IDX = static_cast<size_t>(SystemStage::Render);
-            constexpr size_t UI_IDX     = static_cast<size_t>(SystemStage::UI);
 
+            // UI stage IS included in runPhase. Systems with hasGLWork()
+            // (EditorSystem) do their build on main here; their executeGL()
+            // is appended to the render-thread lambda below.
             auto runPhase = [&](bool mutators) {
                 for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
-                    if (s == RENDER_IDX || s == UI_IDX) continue;  // routed via the lambda below
+                    if (s == RENDER_IDX) continue;  // RenderSystem is routed manually
                     PROFILE_SCOPE_NAMED(STAGE_NAMES[s]);
                     for (auto& sys : m_systemsByStage[s]) {
                         if (!sys->isEnabled()) continue;
@@ -194,10 +204,13 @@ void Engine::run() {
 
             // 5. Post render K. ctx is copied by value into the lambda so
             //    the next loop iteration can mutate the local ctx without
-            //    affecting the render thread's snapshot.
+            //    affecting the render thread's snapshot. UI-stage GL-work
+            //    systems run AFTER executeFrame so the UI overlays the
+            //    rendered scene.
             const uint32_t frameIdx = m_renderFrameIndex;
             m_renderThread->postFrame([this, ctx, frameIdx]() mutable {
                 m_renderSystem->executeFrame(ctx, frameIdx);
+                for (System* sys : m_glWorkSystems) sys->executeGL(ctx);
                 m_window.swapBuffers();
             });
             ++m_renderFrameIndex;
@@ -308,7 +321,15 @@ void Engine::updateStage(SystemStage stage, FrameContext& ctx) {
         // opt-in (off by default) AND a layer with more than one entry.
         if (layer.size() == 1 || !plan.parallelDispatch) {
             for (const auto& entry : layer) {
-                if (entry.system->isEnabled()) entry.system->update(ctx);
+                if (!entry.system->isEnabled()) continue;
+                entry.system->update(ctx);
+                // Single-threaded path: GL companion runs inline here
+                // (we're on the GL thread; no render-thread split active).
+                // Skipped when render thread is enabled - the run loop
+                // handles routing into the render-thread lambda instead.
+                if (!m_renderThread && entry.system->hasGLWork()) {
+                    entry.system->executeGL(ctx);
+                }
             }
             continue;
         }
@@ -321,6 +342,15 @@ void Engine::updateStage(SystemStage stage, FrameContext& ctx) {
             const auto& entry = layer[i];
             if (entry.system->isEnabled()) entry.system->update(ctx);
         });
+        // GL-work systems can't be safely fanned out (GL context is single-
+        // threaded); call them serially on main after the parallel layer.
+        if (!m_renderThread) {
+            for (const auto& entry : layer) {
+                if (entry.system->isEnabled() && entry.system->hasGLWork()) {
+                    entry.system->executeGL(ctx);
+                }
+            }
+        }
     }
 }
 

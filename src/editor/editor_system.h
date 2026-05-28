@@ -67,7 +67,20 @@ class EditorSystem : public System {
 
         void update(FrameContext& ctx) override;
 
+        /// ImGui's panel draws + ImGui::Render() happen on main in update();
+        /// the GL-submission step (ImGui_ImplOpenGL3_RenderDrawData) waits
+        /// here so it can run on the GL thread under Phase 2B.
+        bool hasGLWork() const override { return true; }
+        void executeGL(FrameContext& ctx) override;
+
     private:
+        /// ImDrawData* stashed by update() for executeGL() to consume.
+        /// Pointer is into ImGui's internal allocator and is valid until
+        /// the next ImGui::NewFrame on main - the engine guarantees
+        /// executeGL runs (and finishes) before the next NewFrame via
+        /// waitForFrame at the top of the next iteration's mutator phase.
+        struct ImDrawData* m_pendingDrawData = nullptr;
+
         /**
          * @brief The root-window panel arrangement: the docked panels, the viewport
          *

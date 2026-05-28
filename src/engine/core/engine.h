@@ -206,6 +206,12 @@ class Engine {
         /// frame after initSystems; nullptr until then.
         RenderSystem* m_renderSystem = nullptr;
 
+        /// Cached list of UI-stage systems that report hasGLWork()==true.
+        /// Their executeGL() runs inside the render-thread lambda after
+        /// RenderSystem::executeFrame, so the UI lands on top of the
+        /// rendered scene. Filled lazily alongside m_renderSystem.
+        std::vector<System*> m_glWorkSystems;
+
         /// Monotonic per-frame counter; drives RenderView buffer parity
         /// in the overlap loop (m_views[frameIndex & 1]). Incremented
         /// after each frame is posted.
