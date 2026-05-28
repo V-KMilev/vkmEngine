@@ -76,21 +76,22 @@ class ResourceManager {
         }
 
         /**
-         * @brief Insert an editor-internal asset (preview primitives,
-         *        neutral thumbnail materials, etc.).
+         * @brief Insert a private asset hidden from user-facing surfaces.
          *
-         * Pickers, the Asset Browser and the scene saver all filter on
-         * Resource::internal so these never surface to the user or get
-         * serialized into a scene save.
+         * Pickers, the Asset Browser and the scene saver filter on
+         * Resource::hidden so these never surface to the user or get
+         * serialized into a scene save. Today's only caller is the editor
+         * (preview primitives, neutral thumbnail materials); the flag is
+         * named for the visibility intent, not the consumer.
          *
          * @tparam ResourceType The resource type (must inherit from Resource).
          * @param resource The resource instance to add (will be moved).
          * @param name Stable name to stamp onto the asset.
-         * @return Handle for the newly inserted internal asset.
+         * @return Handle for the newly inserted private asset.
          */
         template<typename ResourceType>
-        auto addInternal(ResourceType && resource, std::string name) {
-            resource.editorOnly = true;
+        auto addPrivate(ResourceType && resource, std::string name) {
+            resource.hidden = true;
             resource.name = std::move(name);
             return add(std::forward<ResourceType>(resource));
         }
@@ -121,11 +122,15 @@ class ResourceManager {
             slot.allocator->free(handle.key);
         }
 
-        /// @brief Liveness check: true when @p handle still names a valid
-        /// resource of its type. Use this before get/edit on handles that
-        /// might have been freed since you captured them - chiefly async
-        /// completions whose source code path is separated from the
-        /// resource lifetime by a worker hop.
+        /**
+         * @brief Liveness check: true when @p handle still names a valid
+         *        resource of its type.
+         *
+         * Use this before get/edit on handles that might have been freed
+         * since you captured them - chiefly async completions whose
+         * source code path is separated from the resource lifetime by a
+         * worker hop.
+         */
         template<typename HandleType>
         bool isAlive(const HandleType& handle) const {
             using T = typename HandleType::resource_t;
@@ -307,7 +312,7 @@ class ResourceManager {
          * return-skip-only flow:
          *
          *   for (auto [h, asset] : resources.assetsOfType<MaterialAsset>()) {
-         *       if (asset->editorOnly) continue;
+         *       if (asset->hidden) continue;
          *       ...
          *   }
          *
@@ -400,9 +405,9 @@ class ResourceManager {
          *
          * NOTE: outstanding handles from before the swap are stale - their
          * (index, generation) keys point at slots in the OTHER manager.
-         * Editor panels that cache handles to editor-only assets must
+         * Editor panels that cache handles to hidden assets must
          * re-acquire on next use; the standard pattern is findByName-then-
-         * addInternal, which works because findByName is O(1) now.
+         * addPrivate, which works because findByName is O(1) now.
          */
         void swap(ResourceManager& other) noexcept {
             using std::swap;

@@ -41,6 +41,7 @@ EditorSystem::EditorSystem(
     , m_renderSystem(renderSystem)
     , m_visibilitySystem(visibilitySystem)
     , m_events(events)
+    , m_materialPreviews(renderSystem, 512u)
     , m_sceneIO(events, cameraController, renderSystem)
 {
     IMGUI_CHECKVERSION();
@@ -152,6 +153,8 @@ namespace {
 void EditorSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("EditorSystem");
     syncWindowTitle(ctx.window, m_sceneIO.path(), m_state.sceneDirty);
+
+    m_materialPreviews.onFrameBegin();
 
     // Intercept window-close while the scene is dirty: clear shouldClose,
     // open the save-on-quit modal next frame. A clean scene closes through
@@ -291,8 +294,17 @@ void EditorSystem::update(FrameContext& ctx) {
         m_cameraController.setEditorInputCapture(blockMouse, ImGui::GetIO().WantTextInput);
     }
 
-    EditorContext ec{ ctx, m_state, m_cameraController, m_renderSystem,
-                      m_visibilitySystem, m_events, {}, {} };
+    EditorContext ec{
+        ctx,
+        m_state,
+        m_cameraController,
+        m_renderSystem,
+        m_visibilitySystem,
+        m_events,
+        m_materialPreviews,
+        {},
+        {}
+    };
 
     m_shortcuts.process(ec, m_sceneIO);
 

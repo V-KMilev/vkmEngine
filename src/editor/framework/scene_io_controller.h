@@ -27,8 +27,11 @@ class RenderSystem;
  */
 class SceneIOController {
     public:
-        SceneIOController(EventSystem& events, CameraController& cameraController,
-                          RenderSystem& renderSystem);
+        SceneIOController(
+            EventSystem& events,
+            CameraController& cameraController,
+            RenderSystem& renderSystem
+        );
         ~SceneIOController();
 
         SceneIOController(const SceneIOController& other) = delete;

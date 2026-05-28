@@ -38,9 +38,11 @@ class ShaderErrorLog {
 
         static ShaderErrorLog& get();
 
-        void push(std::string shaderName,
-                  std::string definesSummary,
-                  std::string message);
+        void push(
+            std::string shaderName,
+            std::string definesSummary,
+            std::string message
+        );
 
         /// Drop all entries whose @p shaderName matches. Called after a
         /// successful recompile so stale errors don't linger in the UI.

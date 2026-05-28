@@ -7,6 +7,7 @@ namespace Engine {
 struct FrameContext;
 struct EditorState;
 class CameraController;
+class MaterialPreviewSession;
 class RenderSystem;
 class VisibilitySystem;
 class EventSystem;
@@ -28,10 +29,11 @@ struct EditorContext {
     FrameContext& frame;
     EditorState&  state;
 
-    CameraController& cameraController;
-    RenderSystem&     renderSystem;
-    VisibilitySystem& visibilitySystem;
-    EventSystem&      events;
+    CameraController&       cameraController;
+    RenderSystem&           renderSystem;
+    VisibilitySystem&       visibilitySystem;
+    EventSystem&            events;
+    MaterialPreviewSession& materialPreviews;
 
     // Viewport child rect in screen space. Set by EditorSystem each frame
     // just before the in-viewport overlays are drawn.

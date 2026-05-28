@@ -44,8 +44,10 @@ class RenderPassFactory {
 
         /// Construct a pass by name. Returns nullptr if @p name is not
         /// registered or the builder itself returned nullptr.
-        std::unique_ptr<RenderPass> create(const std::string& name,
-                                           ResourceManager& resources) const;
+        std::unique_ptr<RenderPass> create(
+            const std::string& name,
+            ResourceManager& resources
+        ) const;
 
         /// Snapshot of every registered name. Used by editor introspection.
         std::vector<std::string> registeredNames() const;

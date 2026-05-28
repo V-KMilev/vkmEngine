@@ -31,8 +31,10 @@ namespace Engine {
  * @param defines  Optional list of `#define X` tokens to inject.
  * @return Fully expanded source string. Empty on read failure (logged).
  */
-std::string preprocessShaderFile(const std::string& filePath,
-                                 const std::vector<std::string>& defines = {});
+std::string preprocessShaderFile(
+    const std::string& filePath,
+    const std::vector<std::string>& defines = {}
+);
 
 /**
  * @brief Same as preprocessShaderFile, but also reports the parent
@@ -47,8 +49,10 @@ std::string preprocessShaderFile(const std::string& filePath,
  * for every file pulled in via `#include`. The top-level file's own
  * directory is NOT included (callers already watch it).
  */
-std::string preprocessShaderFile(const std::string& filePath,
-                                 const std::vector<std::string>& defines,
-                                 std::unordered_set<std::string>& outIncludedDirs);
+std::string preprocessShaderFile(
+    const std::string& filePath,
+    const std::vector<std::string>& defines,
+    std::unordered_set<std::string>& outIncludedDirs
+);
 
 } // namespace Engine

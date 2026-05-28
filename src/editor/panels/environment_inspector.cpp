@@ -74,9 +74,16 @@ namespace {
     }
 
     // Labelled bounded slider with a hover tooltip. Returns true on change.
-    bool sliderF(const char* label, const char* id, float* v,
-                 float lo, float hi, const char* fmt, const char* tip,
-                 bool logarithmic = false) {
+    bool sliderF(
+        const char* label,
+        const char* id,
+        float* v,
+        float lo,
+        float hi,
+        const char* fmt,
+        const char* tip,
+        bool logarithmic = false
+    ) {
         drawPropertyLabel(label);
         ImGui::SetNextItemWidth(-1.0f);
         bool ch = ImGui::SliderFloat(id, v, lo, hi, fmt,
@@ -87,10 +94,13 @@ namespace {
 
     // "Browse" button + AssetPicker modal. Picker is owned by the panel
     // (one per slot) so its on-open scan cache outlives a single draw.
-    void browseButton(const char* btnLabel, AssetPicker& picker,
-                      const char* subdir,
-                      std::initializer_list<const char*> exts,
-                      std::string& target) {
+    void browseButton(
+        const char* btnLabel,
+        AssetPicker& picker,
+        const char* subdir,
+        std::initializer_list<const char*> exts,
+        std::string& target
+    ) {
         if (ImGui::Button(btnLabel)) {
             const std::filesystem::path appRoot = APP_ROOT_DIR;
             picker.options.popupId    = btnLabel;

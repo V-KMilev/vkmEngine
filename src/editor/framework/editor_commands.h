@@ -30,8 +30,12 @@ struct EditorState;
  */
 class TransformChangeCommand : public Command {
     public:
-        TransformChangeCommand(EntityId e, const Transform& before, const Transform& after,
-                               const char* label);
+        TransformChangeCommand(
+            EntityId e,
+            const Transform& before,
+            const Transform& after,
+            const char* label
+        );
 
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;

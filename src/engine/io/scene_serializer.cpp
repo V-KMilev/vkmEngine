@@ -295,9 +295,9 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
     // capacity that grew/shrunk during the staging build.
     //
     // Outstanding handles into `resources` from before this call are
-    // stale - editor panels that cached handles to editor-only previews
+    // stale - editor panels that cached handles to hidden previews
     // (MaterialEditor preview meshes, AssetBrowser neutral material)
-    // re-acquire on next use via findByName-or-addInternal (O(1) now).
+    // re-acquire on next use via findByName-or-addPrivate (O(1) now).
     //
     // Shaders are engine-owned (loaded once in main()) and never enter the
     // scene file, so the staging RM has no ShaderAsset slot. Swap shaders

@@ -157,8 +157,13 @@ namespace {
     // the point is behind the camera. The 3D pass renders at viewport size
     // and the viewport child sits at vpMin onscreen, so NDC maps to
     // (vpMin + (0..vpSize)) directly.
-    bool projectToViewport(const glm::mat4& vp, const glm::vec3& p,
-                           ImVec2 vpMin, ImVec2 vpSize, ImVec2& out) {
+    bool projectToViewport(
+        const glm::mat4& vp,
+        const glm::vec3& p,
+        ImVec2 vpMin,
+        ImVec2 vpSize,
+        ImVec2& out
+    ) {
         const glm::vec4 clip = vp * glm::vec4(p, 1.0f);
         if (clip.w <= 1e-5f) return false;
         const glm::vec3 ndc = glm::vec3(clip) / clip.w;

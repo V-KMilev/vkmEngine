@@ -46,12 +46,6 @@ int main() {
             sys.events
         );
 
-        // Editor + render thread. ImGui's build phase (NewFrame + panels
-        // + Render) stays on main inside EditorSystem::update; the draw
-        // submission runs on the render thread via
-        // EditorSystem::executeBackend inside the per-frame lambda.
-        engine.enableRenderThread(true);
-
         engine.run();
 
     } catch (const std::exception& e) {

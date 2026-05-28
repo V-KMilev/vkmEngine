@@ -14,18 +14,18 @@ Resource::~Resource() = default;
 Resource::Resource(const Resource& other)
     : version(other.version)
     , name(other.name)
-    , editorOnly(other.editorOnly)
+    , hidden(other.hidden)
     , source(other.source ? std::make_unique<nlohmann::json>(*other.source)
                           : nullptr)
 {}
 
 Resource& Resource::operator=(const Resource& other) {
     if (this == &other) return *this;
-    version    = other.version;
-    name       = other.name;
-    editorOnly = other.editorOnly;
-    source     = other.source ? std::make_unique<nlohmann::json>(*other.source)
-                              : nullptr;
+    version = other.version;
+    name    = other.name;
+    hidden  = other.hidden;
+    source  = other.source ? std::make_unique<nlohmann::json>(*other.source)
+                           : nullptr;
     return *this;
 }
 
