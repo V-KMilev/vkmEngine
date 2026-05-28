@@ -33,14 +33,12 @@ glm::quat quatFromJson(const nlohmann::json& j) {
                      static_cast<float>(j[2]), static_cast<float>(j[3]));
 }
 
-// ----------------------------------------------------------------------------
 // toJson / fromJson overload set. The reflection-driven save/load templates
 // (saveReflected / loadReflected) iterate a type's fields and forward each
 // to these helpers; adding a new field type means adding a new pair here.
 // No ADL is required: the templates live in this anon namespace and so do
 // every overload, so unqualified lookup at the saveReflected definition
 // already covers everything.
-// ----------------------------------------------------------------------------
 
 // Primitives.
 inline nlohmann::json toJson(bool        v) { return v; }
@@ -107,7 +105,6 @@ inline void fromJson(const nlohmann::json& j, RenderMode& m) {
     m = static_cast<RenderMode>(j.get<int>());
 }
 
-// ----------------------------------------------------------------------------
 // Forward declarations for nested-config bridge overloads. These have to
 // be VISIBLE at the saveReflected / loadReflected definition site - the
 // templates do unqualified lookup of toJson / fromJson at first phase, and
@@ -115,7 +112,6 @@ inline void fromJson(const nlohmann::json& j, RenderMode& m) {
 // type's associated namespaces (i.e. ::Engine, not this anon namespace).
 // So every overload that participates in reflected iteration must be
 // declared above the templates.
-// ----------------------------------------------------------------------------
 
 inline nlohmann::json toJson(const AmbientConfig& c);
 inline void fromJson(const nlohmann::json& j, AmbientConfig& c);
@@ -156,12 +152,10 @@ inline void fromJson(const nlohmann::json& j, AABBDebugConfig& c);
 inline nlohmann::json toJson(const SelectionOutlineConfig& c);
 inline void fromJson(const nlohmann::json& j, SelectionOutlineConfig& c);
 
-// ----------------------------------------------------------------------------
 // Reflection driver. Iterates a type's reflected fields and forwards each
 // (name, value) through the toJson / fromJson overload set. Phase-1
 // unqualified lookup at this definition site picks up everything declared
 // above; new field types only need a matching overload, no template tweak.
-// ----------------------------------------------------------------------------
 
 template<typename T>
 nlohmann::json saveReflected(const T& obj) {
@@ -180,13 +174,11 @@ void loadReflected(const nlohmann::json& j, T& obj) {
     });
 }
 
-// ----------------------------------------------------------------------------
 // Bridge definitions - each nested config is a one-line re-entry into the
 // reflection driver, so a parent struct can embed it as a reflected field
 // with no per-effect plumbing. ExposureConfig and EnvironmentConfig
 // override fromJson because they carry small back-compat fixups around
 // fields renamed in earlier refactors.
-// ----------------------------------------------------------------------------
 
 inline nlohmann::json toJson(const AmbientConfig& c)             { return saveReflected(c); }
 inline void fromJson(const nlohmann::json& j, AmbientConfig& c)             { loadReflected(j, c); }
@@ -255,7 +247,6 @@ inline void fromJson(const nlohmann::json& j, SelectionOutlineConfig& c)    { lo
 
 } // namespace
 
-// ----------------------------------------------------------------------------
 // Component save / load. Reflectable components are one-line passthroughs
 // into the reflection driver. The exceptions are intentional:
 //   - Mesh:      ResourceManager handle lookup (cross-asset reference).
@@ -264,7 +255,6 @@ inline void fromJson(const nlohmann::json& j, SelectionOutlineConfig& c)    { lo
 //   - Animation: AnimationTrack<T> exposes only addKeyframe / getTimes
 //                (private storage) and updateDuration() must be re-derived
 //                post load - no clean fit for the generic field iteration.
-// ----------------------------------------------------------------------------
 
 nlohmann::json save(const Name& n)         { return saveReflected(n); }
 void load(const nlohmann::json& j, Name& n) { loadReflected(j, n); }
@@ -393,13 +383,11 @@ void load(const nlohmann::json& j, EnvironmentConfig& e) {
 
 } // namespace Engine::ComponentSerializer
 
-// ----------------------------------------------------------------------------
 // Reflection markups. Listed at file scope so the VKM_REFLECT_BEGIN macro
 // can re-open Engine::Reflect and specialise Traits<T> there without
 // fighting the surrounding namespace. Each entry lists the JSON-persisted
 // fields; fields omitted here are NOT serialised (e.g. ReflectionProbe::
 // bakeVersion, see save(ReflectionProbe) above).
-// ----------------------------------------------------------------------------
 
 VKM_REFLECT_BEGIN(Engine::Name)
     VKM_F(value)
@@ -447,7 +435,7 @@ VKM_REFLECT_BEGIN(Engine::ReflectionProbe)
     // bakeVersion is intentionally absent - see save(ReflectionProbe).
 VKM_REFLECT_END()
 
-// --- EnvironmentConfig sub-configs ------------------------------------------
+// EnvironmentConfig sub-configs.
 
 VKM_REFLECT_BEGIN(Engine::AmbientConfig)
     VKM_F(color),

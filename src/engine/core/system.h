@@ -1,9 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
 
-#include "core/memory/types.h"
 #include "system/visibility/visibility.h"
 
 namespace Engine {
@@ -49,8 +47,9 @@ enum class SystemStage : uint8_t {
  * @brief Per-frame state bundle passed to all systems.
  *
  * Provides a uniform interface for systems to access shared per-frame data.
- * visibility is a non-owning pointer to persistent storage (owned by VisibilitySystem)
- * to avoid per-frame vector allocation/deallocation.
+ * visibility is a non-owning pointer to persistent storage (owned by
+ * VisibilitySystem) so systems can read culling results without forcing
+ * a per-frame vector allocation.
  *
  * Two deltas:
  *   - deltaTime: variable, real elapsed time since last render frame. Read in update().
@@ -73,11 +72,11 @@ struct FrameContext {
     uint32_t viewportHeight;
 
     /**
-     * @brief Per-frame visibility snapshot - reads from VisibilitySystem, which
+     * @brief Per-frame visibility snapshot populated by VisibilitySystem.
      *
-     * populates it in SystemStage::Visibility. Lifecycle:
+     * Lifecycle:
      *   - null on the very first frame (no stage has run yet)
-     *   - null in updates that run before Visibility stage (Input,
+     *   - null in updates that run before the Visibility stage (Input,
      *     Simulation, Transform) - those stages don't have data yet
      *   - non-null in Visibility, Render, UI from frame 2 onward
      * Editor overlays guard with `if (ctx.visibility)` so they degrade
@@ -87,80 +86,12 @@ struct FrameContext {
 };
 
 /**
- * @brief Declares which component types a system reads and writes.
- *
- * Drives the per-stage layer scheduler in Engine. Engine::buildSchedule()
- * partitions each stage's systems into layers using a greedy assignment:
- * a system goes into the earliest layer where its (reads + writes) don't
- * overlap any other system's writes, and its writes don't overlap any
- * other system's reads. With parallel dispatch enabled for a stage (via
- * Engine::setParallelDispatch), systems within a layer fan out across
- * the ThreadPool; otherwise the layer runs sequentially.
- *
- * Default returned by System::declareAccess() is empty (no reads, no
- * writes). The scheduler treats that as "conservative": the system
- * conflicts with every other system in the stage and always ends up in
- * its own dedicated layer. The safe default - a system that hasn't
- * declared, or whose work is genuinely unpredictable (EventSystem
- * flushing user callbacks, EditorSystem reacting to user input), never
- * gets parallel-dispatched.
- *
- * Systems that DO declare access are committing to a contract:
- *   - They touch only the listed component TypeIds.
- *   - They don't call scene.add / scene.remove / scene.destroyEntity
- *     (structural SparseSet mutations are not thread-safe and would
- *     race with other parallel-dispatched systems).
- *   - They don't write shared external state (ResourceManager versions,
- *     Window state, GPU state, ...) outside what other parallel-safe
- *     systems can tolerate.
- */
-struct SystemAccess {
-    std::vector<TypeId> reads;   ///< Component TypeIds this system reads from
-    std::vector<TypeId> writes;  ///< Component TypeIds this system writes to
-
-    /**
-     * @brief True when the system explicitly declared it touches no
-     *        component state.
-     *
-     * Default-constructed / list-initialised SystemAccess leaves this
-     * false; the scheduler treats those as "conservative" (writes
-     * everything) and serialises the system on its own layer. An
-     * explicit-empty declaration (returned by SystemAccess::none()) is
-     * parallel-safe with any other system.
-     *
-     * This split matters for "trivial" systems whose work doesn't touch
-     * the ECS at all (debug overlays, frame stat printers): without
-     * SystemAccess::none() they get a dedicated layer they don't need.
-     */
-    bool noAccessDeclared = false;
-
-    /**
-     * @brief Factory for the explicit "I touch no component state"
-     *        declaration.
-     *
-     * Use this in declareAccess() overrides on systems whose update body
-     * has no reads, no writes, no scene mutation, and no external state
-     * changes that other parallel-safe systems care about.
-     *
-     * @return SystemAccess with noAccessDeclared = true.
-     */
-    static SystemAccess none() {
-        SystemAccess a;
-        a.noAccessDeclared = true;
-        return a;
-    }
-};
-
-/**
  * @brief Abstract base class for per-frame systems.
  *
  * Systems are scheduled per SystemStage and executed in stage order each
- * frame. Within a stage, the default is registration order; Engine's layer
- * scheduler can run independent systems concurrently when their
- * SystemAccess declarations don't conflict and the stage has parallel
- * dispatch enabled. Systems read from and/or write to a shared
- * FrameContext and support init/update/fixedUpdate/shutdown hooks plus
- * runtime enable/disable.
+ * frame, in registration order within a stage. They read from and/or write
+ * to a shared FrameContext and support init/update/fixedUpdate/shutdown
+ * hooks plus runtime enable/disable.
  */
 class System {
     public:
@@ -215,65 +146,43 @@ class System {
         virtual void shutdown() {}
 
         /**
-         * @brief Declare which component types this system reads and writes.
-         *
-         * Drives Engine's per-stage layer scheduler (see SystemAccess for the
-         * full contract). Default returns an empty access, which the scheduler
-         * treats conservatively (the system conflicts with everything in its
-         * stage and runs on its own layer). Systems that genuinely touch no
-         * shared component state should return SystemAccess::none() instead -
-         * that's explicitly "no access" and lets the scheduler pack them
-         * concurrently with anyone else.
-         */
-        virtual SystemAccess declareAccess() const { return {}; }
-
-        /**
          * @brief Does this system mutate ResourceManager during update()?
          *
-         * Used by Engine::run() when the render thread is enabled to split
-         * systems into a "pre-wait" phase (overlaps with previous frame's
-         * render) and a "post-wait" phase (runs after render finishes,
-         * safe to mutate resources). Mutating ResourceManager while the
-         * render thread is reading it is a data race.
+         * When the engine runs the rendering backend on a separate thread,
+         * systems are split into a "pre-wait" phase (overlaps with the
+         * previous frame's render) and a "post-wait" phase (runs after
+         * render finishes, safe to mutate resources). Mutating
+         * ResourceManager while the render thread is reading it is a race.
          *
          * Defaults to TRUE (conservative): forgetting to override means
          * "no overlap", not "race condition". Override to false in
          * systems verified to only read ResourceManager during update.
-         *
-         * Examples:
-         *  - CameraController: writes Camera component, not Resources -> false
-         *  - VisibilitySystem: reads mesh bounds, no writes -> false
-         *  - AsyncLoaderSystem: patches texture/mesh pixel data -> true (default)
-         *  - FileWatcher: bumps shader version on file change -> true (default)
          */
         virtual bool mutatesResources() const { return true; }
 
         /**
-         * @brief Does this system have a GL-issuing companion step that
-         *        must run on the GL thread (the render thread, under
-         *        Phase 2B)?
+         * @brief Does this system have a follow-up step that must run on
+         *        the thread holding the rendering backend's context?
          *
-         * Defaults to false. Override true if executeGL() does real
-         * work; the Engine routes those calls to the render thread when
-         * Phase 2B is active, and runs them inline on main otherwise.
+         * Defaults to false. Override true if executeBackend() does real
+         * work; the engine routes those calls to the render thread when
+         * one is active, and runs them inline on the main thread otherwise.
          *
          * Today only EditorSystem opts in: ImGui's build phase
-         * (NewFrame + panel draws + Render) runs on main during update(),
-         * but the actual GL submission (ImGui_ImplOpenGL3_RenderDrawData)
-         * must happen wherever the GL context lives.
+         * (NewFrame + panel draws + Render) runs on the main thread during
+         * update(), but the actual draw submission must happen wherever
+         * the rendering API context lives.
          */
-        virtual bool hasGLWork() const { return false; }
+        virtual bool hasBackendWork() const { return false; }
 
         /**
-         * @brief GL-side companion to update(). See hasGLWork() for when
-         *        it's called. Runs AFTER RenderSystem::executeFrame inside
-         *        the render thread's per-frame lambda (so the system's
-         *        GL work overlays the rendered scene), and on main in
+         * @brief Backend-thread companion to update(). See hasBackendWork()
+         *        for when it's called. Runs after RenderSystem::executeFrame
+         *        inside the render thread's per-frame lambda (so the system's
+         *        work overlays the rendered scene), and on main in
          *        single-threaded mode (right after update()).
-         *
-         * Default no-op.
          */
-        virtual void executeGL(FrameContext& /*ctx*/) {}
+        virtual void executeBackend(FrameContext& /*ctx*/) {}
 
         bool isEnabled() const { return m_enabled; }
         void setEnabled(bool enabled) { m_enabled = enabled; }

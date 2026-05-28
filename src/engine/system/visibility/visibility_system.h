@@ -28,13 +28,6 @@ class VisibilitySystem : public System {
     public:
         void update(FrameContext& ctx) override;
 
-        /**
-         * @brief Read-only on Scene: reads Camera, Transform, WorldTransform,
-         *        Mesh. Writes to its own internal Visibility buffer, not to
-         *        any component. No structural Scene changes.
-         */
-        SystemAccess declareAccess() const override;
-
         /// Reads ResourceManager (mesh bounds); never mutates. Safe to
         /// overlap with the render thread.
         bool mutatesResources() const override { return false; }

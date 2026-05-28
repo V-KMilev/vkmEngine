@@ -76,8 +76,7 @@ void RenderThread::workerMain() {
         }
 
         // Execute outside the lock so the main thread can post the next
-        // frame's job while this one runs - relevant once Phase 2B lifts
-        // the wait in executeFrame.
+        // frame's job while this one runs.
         job();
 
         {

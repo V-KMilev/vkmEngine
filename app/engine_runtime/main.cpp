@@ -37,10 +37,11 @@ int main() {
         // shipped game executable and contains no editor code at all.
         Engine::setupEngineApp(engine);
 
-        // Phase 2A render-thread split: GL context moves off the main
-        // thread after boot. Currently sequential (main waits each frame)
-        // so no FPS win - but the architecture is proven. Editor binary
-        // doesn't opt in until ImGui draw-data handoff lands.
+        // Migrate the rendering backend's context to a dedicated render
+        // thread once boot finishes. The main thread runs input,
+        // simulation, animation, culling, and the next frame's view
+        // build while the render thread is still drawing the previous
+        // frame; the mutator phase waits before any resource write.
         engine.enableRenderThread(true);
 
         engine.run();
