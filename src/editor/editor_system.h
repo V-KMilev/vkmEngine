@@ -21,6 +21,7 @@
 #include "panels/preferences_panel.h"
 #include "panels/material_editor.h"
 #include "panels/asset_browser.h"
+#include "panels/environment_inspector.h"
 
 struct GLFWwindow;
 
@@ -101,6 +102,13 @@ class EditorSystem : public System {
         PreferencesPanel m_preferences;
         MaterialEditorPanel m_materialEditor;
         AssetBrowserPanel m_assetBrowser;
+
+        /// Standalone floating Render Settings window. Same EnvironmentInspector
+        /// the right-side Inspector uses when the Environment entity is
+        /// selected; this one is opened from View -> Render Settings so the
+        /// user can edit world-level rendering config without first hunting
+        /// the Environment entity in the hierarchy.
+        EnvironmentInspector m_renderSettingsUI;
 };
 
 } // namespace Engine
