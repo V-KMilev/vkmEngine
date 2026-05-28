@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <vector>
 
+namespace Core { class Texture2D; }
+
 #include "resource/material_asset.h"
 #include "resource/mesh_asset.h"
 #include "resource/shader_asset.h"
@@ -167,6 +169,19 @@ class GLView {
         const GLTexture*  getTexture(const TextureHandle& handle) const;
         GLMesh*           getMutableMesh(const MeshHandle& handle);
 
+        /**
+         * @brief Like getTexture(), but substitutes a 1x1 gray placeholder
+         *        when the entry is missing (typical cause: the asset is
+         *        still in flight on the async loader and has no pixel
+         *        data yet). The fallback Core::Texture2D is lazy-built
+         *        on first call and shared across all loading slots, so a
+         *        scene with N in-flight textures still binds one GPU
+         *        object during the gap. Materials should call this
+         *        instead of getTexture() so they don't punch holes in
+         *        the bound slot during async pop-in.
+         */
+        const Core::Texture2D* getTextureOrFallback(const TextureHandle& handle) const;
+
         const GLLights& getLights() const { return m_lights; }
 
         GLShadowAtlas&        getShadowAtlas()        { return m_shadowAtlas; }
@@ -242,6 +257,13 @@ class GLView {
         GLResourceTable<GLMaterial> m_materialTable;
         GLResourceTable<GLTexture>  m_textureTable;
         GLResourceTable<GLShader>   m_shaderTable;
+
+        /// 1x1 gray Core::Texture2D returned by getTextureOrFallback when a
+        /// real GLTexture is missing for the requested handle (the common
+        /// case is "async load still in flight"). Lazy-built on first use.
+        /// Mutable because getTextureOrFallback is const but constructs on
+        /// demand - users see the fallback as an immutable placeholder.
+        mutable std::unique_ptr<Core::Texture2D> m_fallbackTexture;
 
         /**
          * @brief Per-material shader-variant cache. Outer key is shaderId; inner
