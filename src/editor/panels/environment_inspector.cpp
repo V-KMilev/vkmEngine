@@ -686,6 +686,19 @@ bool EnvironmentInspector::drawDiagnostics(EditorContext& /*ec*/, EnvironmentCon
             ImGuiColorEditFlags_Float);
         ImGui::EndDisabled();
     }
+
+    ImGui::Spacing();
+    if (cardWithEnable("selection", "Selection Outline", &env.selection.enabled)) {
+        ImGui::BeginDisabled(!env.selection.enabled);
+        drawPropertyLabel("Color");
+        ImGui::SetNextItemWidth(-1.0f);
+        changed |= ImGui::ColorEdit3("##SelCol", glm::value_ptr(env.selection.color),
+            ImGuiColorEditFlags_Float);
+        changed |= sliderF("Thickness", "##SelThk", &env.selection.thickness,
+            0.5f, 8.0f, "%.1f px",
+            "Silhouette outline width in screen pixels");
+        ImGui::EndDisabled();
+    }
     return changed;
 }
 

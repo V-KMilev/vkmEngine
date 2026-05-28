@@ -54,6 +54,10 @@ struct DrawableData {
     /// passes (AABB visualization, picking) don't re-run localToWorldAABB.
     glm::vec3 worldMin = {0.0f, 0.0f, 0.0f};
     glm::vec3 worldMax = {0.0f, 0.0f, 0.0f};
+
+    /// True when the source entity carries the `Selected` tag component.
+    /// Drives the outline pass; ignored by every other pass.
+    bool selected = false;
 };
 
 /**
@@ -232,6 +236,12 @@ struct AABBDebugConfig {
     glm::vec3 color   = glm::vec3(1.0f, 0.0f, 0.0f);
 };
 
+struct SelectionOutlineConfig {
+    bool      enabled   = true;
+    glm::vec3 color     = glm::vec3(0.29f, 0.62f, 1.0f);  ///< Editor accent blue.
+    float     thickness = 2.5f;                            ///< Outline width in screen pixels.
+};
+
 /**
  * @brief Top-level rendering mode.
  *
@@ -357,6 +367,7 @@ struct EnvironmentConfig {
 
     GridConfig       grid;
     AABBDebugConfig  aabbDebug;
+    SelectionOutlineConfig selection;
 
     /// Display transform / tone-mapping curve owned by the composite pass.
     /// 0 = AgX, 1 = Khronos PBR Neutral (default), 2 = ACES, 3 = Reinhard.
