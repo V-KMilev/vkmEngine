@@ -37,56 +37,45 @@ constexpr int FILE_FORMAT_VERSION = 1;
 /**
  * @brief Per-component serialization recipe.
  *
- * Adding a new component is a single specialization: the JSON key, a `save`
- * static, and a `load` static (or omit `load` for hierarchy-style two-pass
- * components - the SaveLoadFor<T>::hasLoad fold will skip them in pass 1).
+ * Each saveable component has a SerializerTraits specialisation providing
+ * a JSON key + save / load statics. The two macros below stamp out the
+ * common shapes so this file stays a flat list of component names:
  *
- * For "uses ResourceManager" components (just Mesh today), the static
- * signatures take a `const ResourceManager&` / `ResourceManager&`. For all
- * others the parameter is ignored; the trait fold passes it unconditionally.
+ *   VKM_SERIALIZER_TRAITS(Type, "Key")        - default shape; CS::save(v)
+ *   VKM_SERIALIZER_TRAITS_R(Type, "Key")      - takes ResourceManager&;
+ *                                               used by components that
+ *                                               reference assets by handle
+ *                                               (Mesh, today)
+ *
+ * Save-only types (Hierarchy: collects parent links in pass 1, wires them
+ * up in pass 2) declare the specialisation by hand without a `load` static;
+ * the HasLoad<T> detector in this file skips them during pass 1.
  */
 template<typename T> struct SerializerTraits;  // primary; defined via specialisations below.
 
-template<> struct SerializerTraits<Name> {
-    static constexpr const char* key = "Name";
-    static json save(const Name& v, const ResourceManager&) { return CS::save(v); }
-    static void load(const json& j, Name& v, ResourceManager&) { CS::load(j, v); }
-};
-template<> struct SerializerTraits<Transform> {
-    static constexpr const char* key = "Transform";
-    static json save(const Transform& v, const ResourceManager&) { return CS::save(v); }
-    static void load(const json& j, Transform& v, ResourceManager&) { CS::load(j, v); }
-};
-template<> struct SerializerTraits<Camera> {
-    static constexpr const char* key = "Camera";
-    static json save(const Camera& v, const ResourceManager&) { return CS::save(v); }
-    static void load(const json& j, Camera& v, ResourceManager&) { CS::load(j, v); }
-};
-template<> struct SerializerTraits<Light> {
-    static constexpr const char* key = "Light";
-    static json save(const Light& v, const ResourceManager&) { return CS::save(v); }
-    static void load(const json& j, Light& v, ResourceManager&) { CS::load(j, v); }
-};
-template<> struct SerializerTraits<ReflectionProbe> {
-    static constexpr const char* key = "ReflectionProbe";
-    static json save(const ReflectionProbe& v, const ResourceManager&) { return CS::save(v); }
-    static void load(const json& j, ReflectionProbe& v, ResourceManager&) { CS::load(j, v); }
-};
-template<> struct SerializerTraits<Mesh> {
-    static constexpr const char* key = "Mesh";
-    static json save(const Mesh& v, const ResourceManager& r) { return CS::save(v, r); }
-    static void load(const json& j, Mesh& v, ResourceManager& r) { CS::load(j, v, r); }
-};
-template<> struct SerializerTraits<Animation> {
-    static constexpr const char* key = "Animation";
-    static json save(const Animation& v, const ResourceManager&) { return CS::save(v); }
-    static void load(const json& j, Animation& v, ResourceManager&) { CS::load(j, v); }
-};
-template<> struct SerializerTraits<EnvironmentConfig> {
-    static constexpr const char* key = "Environment";
-    static json save(const EnvironmentConfig& v, const ResourceManager&) { return CS::save(v); }
-    static void load(const json& j, EnvironmentConfig& v, ResourceManager&) { CS::load(j, v); }
-};
+#define VKM_SERIALIZER_TRAITS(Type, JsonKey)                                                  \
+    template<> struct SerializerTraits<Type> {                                                \
+        static constexpr const char* key = JsonKey;                                           \
+        static json save(const Type& v, const ResourceManager&) { return CS::save(v); }       \
+        static void load(const json& j, Type& v, ResourceManager&) { CS::load(j, v); }        \
+    }
+
+#define VKM_SERIALIZER_TRAITS_R(Type, JsonKey)                                                \
+    template<> struct SerializerTraits<Type> {                                                \
+        static constexpr const char* key = JsonKey;                                           \
+        static json save(const Type& v, const ResourceManager& r) { return CS::save(v, r); }  \
+        static void load(const json& j, Type& v, ResourceManager& r) { CS::load(j, v, r); }   \
+    }
+
+VKM_SERIALIZER_TRAITS  (Name,              "Name");
+VKM_SERIALIZER_TRAITS  (Transform,         "Transform");
+VKM_SERIALIZER_TRAITS  (Camera,            "Camera");
+VKM_SERIALIZER_TRAITS  (Light,             "Light");
+VKM_SERIALIZER_TRAITS  (ReflectionProbe,   "ReflectionProbe");
+VKM_SERIALIZER_TRAITS_R(Mesh,              "Mesh");
+VKM_SERIALIZER_TRAITS  (Animation,         "Animation");
+VKM_SERIALIZER_TRAITS  (EnvironmentConfig, "Environment");
+
 template<> struct SerializerTraits<Hierarchy> {
     static constexpr const char* key = "Hierarchy";
     static json save(const Hierarchy& v, const ResourceManager&) { return CS::save(v); }
@@ -94,6 +83,9 @@ template<> struct SerializerTraits<Hierarchy> {
     // up in pass 2 via HierarchyOperations::setParent; the entity has to
     // exist before its parent slot can be resolved.
 };
+
+#undef VKM_SERIALIZER_TRAITS
+#undef VKM_SERIALIZER_TRAITS_R
 
 /// Compile-time list of every component type that serializes. Adding a
 /// component = add a SerializerTraits specialisation above and add the type
