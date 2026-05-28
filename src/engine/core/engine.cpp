@@ -10,9 +10,13 @@
 
 #include "core/engine_config.h"
 #include "debug/profiler.h"
+#include "platform/threading/render_thread.h"
 #include "platform/threading/thread_pool.h"
 
 namespace Engine {
+
+Engine::Engine()  = default;
+Engine::~Engine() = default;
 
 namespace {
 
@@ -128,17 +132,45 @@ void Engine::run() {
             accumulator -= Config::FixedTimeStep;
         }
 
-        for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
-            updateStage(static_cast<SystemStage>(s), ctx);
+        // First frame after init: optionally migrate the GL context to a
+        // dedicated render thread. Done here rather than before the loop
+        // so initSystems (and any GL work it triggers, like the IBL bake's
+        // first execute) still sees the context on the main thread.
+        if (m_renderThreadEnabled && !m_renderThread) {
+            m_renderThread = std::make_unique<RenderThread>(m_window.getWindowContext());
         }
 
-        if (!m_window.swapBuffers()) break;
+        if (m_renderThread) {
+            constexpr size_t RENDER_IDX = static_cast<size_t>(SystemStage::Render);
+            constexpr size_t UI_IDX     = static_cast<size_t>(SystemStage::UI);
+            for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
+                if (s == RENDER_IDX || s == UI_IDX) continue;   // run on render thread
+                updateStage(static_cast<SystemStage>(s), ctx);
+            }
+            // Render thread does the GL work + swap. Sequential model:
+            // we block here until the frame is on the screen. Phase 2B
+            // drops the wait and lets the next frame's game stages run
+            // in parallel with this frame's render.
+            m_renderThread->executeFrame([this, &ctx]() {
+                updateStage(SystemStage::Render, ctx);
+                updateStage(SystemStage::UI,     ctx);
+                m_window.swapBuffers();
+            });
+        } else {
+            for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
+                updateStage(static_cast<SystemStage>(s), ctx);
+            }
+            if (!m_window.swapBuffers()) break;
+        }
 
         m_frameTracker.update();
         PROFILE_FRAME_MARK();
     }
 
     LOG_TRACE("Main loop exited, running shutdown");
+    // Tear the render thread down before shutdownSystems so any GL
+    // teardown in destructors finds the context current on main again.
+    m_renderThread.reset();
     shutdownSystems();
 }
 

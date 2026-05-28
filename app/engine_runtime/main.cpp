@@ -37,6 +37,12 @@ int main() {
         // shipped game executable and contains no editor code at all.
         Engine::setupEngineApp(engine);
 
+        // Phase 2A render-thread split: GL context moves off the main
+        // thread after boot. Currently sequential (main waits each frame)
+        // so no FPS win - but the architecture is proven. Editor binary
+        // doesn't opt in until ImGui draw-data handoff lands.
+        engine.enableRenderThread(true);
+
         engine.run();
 
     } catch (const std::exception& e) {
