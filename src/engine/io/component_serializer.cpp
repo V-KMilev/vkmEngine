@@ -4,9 +4,14 @@
 
 #include <cstring>
 #include <limits>
+#include <string>
 
 #include "logger.h"
 
+#include "ecs/component/camera.h"
+#include "ecs/component/transform.h"
+#include "ecs/component/reflection_probe.h"
+#include "io/reflect.h"
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"   // EnvironmentConfig
 
@@ -27,6 +32,66 @@ glm::quat quatFromJson(const nlohmann::json& j) {
                      static_cast<float>(j[2]), static_cast<float>(j[3]));
 }
 
+// ---- Generic field <-> JSON converters used by the reflection-driven
+// save/load templates. Overload set; ADL is not used (call site qualifies
+// nothing), so adding a new type means adding a new overload here.
+// Reference parameters where the field is being mutated, by-value for
+// trivial inputs.
+inline nlohmann::json toJson(bool        v) { return v; }
+inline nlohmann::json toJson(int         v) { return v; }
+inline nlohmann::json toJson(uint32_t    v) { return v; }
+inline nlohmann::json toJson(float       v) { return v; }
+inline nlohmann::json toJson(const std::string& s) { return s; }
+inline nlohmann::json toJson(const glm::vec2& v) { return vec2ToJson(v); }
+inline nlohmann::json toJson(const glm::vec3& v) { return vec3ToJson(v); }
+inline nlohmann::json toJson(const glm::vec4& v) { return vec4ToJson(v); }
+inline nlohmann::json toJson(const glm::quat& q) { return quatToJson(q); }
+
+// Enums get a per-type overload further down (ProjectionType, ...).
+
+inline void fromJson(const nlohmann::json& j, bool&     v) { v = j.get<bool>(); }
+inline void fromJson(const nlohmann::json& j, int&      v) { v = j.get<int>(); }
+inline void fromJson(const nlohmann::json& j, uint32_t& v) { v = j.get<uint32_t>(); }
+inline void fromJson(const nlohmann::json& j, float&    v) { v = j.get<float>(); }
+inline void fromJson(const nlohmann::json& j, std::string& s) { s = j.get<std::string>(); }
+inline void fromJson(const nlohmann::json& j, glm::vec2& v) { if (j.is_array() && j.size() >= 2) v = vec2FromJson(j); }
+inline void fromJson(const nlohmann::json& j, glm::vec3& v) { if (j.is_array() && j.size() >= 3) v = vec3FromJson(j); }
+inline void fromJson(const nlohmann::json& j, glm::vec4& v) { if (j.is_array() && j.size() >= 4) v = vec4FromJson(j); }
+inline void fromJson(const nlohmann::json& j, glm::quat& q) { if (j.is_array() && j.size() >= 4) q = quatFromJson(j); }
+
+// Enum support — same overload pattern. ProjectionType is the only one
+// currently driven through the reflection path; LightType still has a
+// hand-written save/load until the Light component is migrated.
+inline nlohmann::json toJson(ProjectionType v) {
+    return v == ProjectionType::Perspective ? "Perspective" : "Orthographic";
+}
+inline void fromJson(const nlohmann::json& j, ProjectionType& v) {
+    v = (j.get<std::string>() == "Orthographic")
+        ? ProjectionType::Orthographic
+        : ProjectionType::Perspective;
+}
+
+/// Reflection-driven save: emit one JSON key per declared field.
+template<typename T>
+nlohmann::json saveReflected(const T& obj) {
+    nlohmann::json out = nlohmann::json::object();
+    ::Engine::Reflect::forEachField(obj, [&](std::string_view name, const auto& val) {
+        out[std::string(name)] = toJson(val);
+    });
+    return out;
+}
+
+/// Reflection-driven load: for each declared field, patch from JSON if
+/// present. Missing keys keep the field's current value - that's the
+/// forward-compat path when a saved scene predates a new field.
+template<typename T>
+void loadReflected(const nlohmann::json& j, T& obj) {
+    ::Engine::Reflect::forEachField(obj, [&](std::string_view name, auto& val) {
+        auto it = j.find(std::string(name));
+        if (it != j.end()) fromJson(*it, val);
+    });
+}
+
 } // namespace
 
 nlohmann::json save(const Name& n) {
@@ -38,42 +103,18 @@ void load(const nlohmann::json& j, Name& n) {
     n.value[sizeof(n.value) - 1] = '\0';
 }
 
-nlohmann::json save(const Transform& t) {
-    return {
-        {"position", vec3ToJson(t.position)},
-        {"rotation", quatToJson(t.rotation)},
-        {"scale",    vec3ToJson(t.scale)},
-    };
-}
-void load(const nlohmann::json& j, Transform& t) {
-    if (j.contains("position")) t.position = vec3FromJson(j["position"]);
-    if (j.contains("rotation")) t.rotation = quatFromJson(j["rotation"]);
-    if (j.contains("scale"))    t.scale    = vec3FromJson(j["scale"]);
-}
+// Transform / Camera bodies are now driven by the reflection markup
+// (see VKM_REFLECT_* blocks at the bottom of this file). Reflection
+// covers the common case: bag-of-fields data structs with primitive,
+// glm or enum members. Components with non-trivial shape (Mesh with
+// ResourceManager refs, Hierarchy with parent EntityId, Name's fixed
+// char buffer, Animation's track vector) keep their hand-written
+// save/load below.
+nlohmann::json save(const Transform& t) { return saveReflected(t); }
+void load(const nlohmann::json& j, Transform& t) { loadReflected(j, t); }
 
-nlohmann::json save(const Camera& c) {
-    return {
-        {"projection",   c.projection == ProjectionType::Perspective ? "Perspective" : "Orthographic"},
-        {"fovY",         c.fovY},
-        {"orthoHeight",  c.orthoHeight},
-        {"aspect",       c.aspect},
-        {"zNear",        c.zNear},
-        {"zFar",         c.zFar},
-        {"exposure",     c.exposure},
-        {"active",       c.active},
-    };
-}
-void load(const nlohmann::json& j, Camera& c) {
-    const std::string proj = j.value("projection", std::string{"Perspective"});
-    c.projection  = (proj == "Orthographic") ? ProjectionType::Orthographic : ProjectionType::Perspective;
-    c.fovY        = j.value("fovY",        c.fovY);
-    c.orthoHeight = j.value("orthoHeight", c.orthoHeight);
-    c.aspect      = j.value("aspect",      c.aspect);
-    c.zNear       = j.value("zNear",       c.zNear);
-    c.zFar        = j.value("zFar",        c.zFar);
-    c.exposure    = j.value("exposure",    c.exposure);
-    c.active      = j.value("active",      c.active);
-}
+nlohmann::json save(const Camera& c) { return saveReflected(c); }
+void load(const nlohmann::json& j, Camera& c) { loadReflected(j, c); }
 
 namespace {
 const char* lightTypeName(LightType t) {
@@ -113,23 +154,12 @@ nlohmann::json save(const Light& l) {
         {"enabled",        l.enabled},
     };
 }
-nlohmann::json save(const ReflectionProbe& p) {
-    return {
-        {"hdrPath",      p.hdrPath},
-        {"radius",       p.radius},
-        {"falloffRange", p.falloffRange},
-        {"intensity",    p.intensity},
-    };
-}
-
-void load(const nlohmann::json& j, ReflectionProbe& p) {
-    p.hdrPath      = j.value("hdrPath",      p.hdrPath);
-    p.radius       = j.value("radius",       p.radius);
-    p.falloffRange = j.value("falloffRange", p.falloffRange);
-    p.intensity    = j.value("intensity",    p.intensity);
-    // bakeVersion is intentionally not persisted - the backend re-bakes
-    // on load and the counter starts at 0 again.
-}
+// bakeVersion is intentionally NOT in the reflection markup, so the
+// generic save/load skip it - the backend re-bakes on load and the
+// counter starts at 0 again. Fields outside the markup are the
+// idiomatic "internal only" path.
+nlohmann::json save(const ReflectionProbe& p) { return saveReflected(p); }
+void load(const nlohmann::json& j, ReflectionProbe& p) { loadReflected(j, p); }
 
 void load(const nlohmann::json& j, Light& l) {
     l.type           = lightTypeFromName(j.value("type", std::string{"Directional"}));
@@ -517,3 +547,36 @@ void load(const nlohmann::json& j, EnvironmentConfig& e) {
 }
 
 } // namespace Engine::ComponentSerializer
+
+// ----------------------------------------------------------------------------
+// Reflection markups. Listed at file scope so the VKM_REFLECT_BEGIN macro
+// can re-open Engine::Reflect and specialise Traits<T> there without
+// fighting the surrounding namespace. Each entry names the JSON-persisted
+// fields; fields omitted here are NOT serialised (the bakeVersion pattern
+// in ReflectionProbe relies on this).
+// ----------------------------------------------------------------------------
+
+VKM_REFLECT_BEGIN(Engine::Transform)
+    VKM_F(position),
+    VKM_F(rotation),
+    VKM_F(scale)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::Camera)
+    VKM_F(projection),
+    VKM_F(fovY),
+    VKM_F(orthoHeight),
+    VKM_F(aspect),
+    VKM_F(zNear),
+    VKM_F(zFar),
+    VKM_F(exposure),
+    VKM_F(active)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::ReflectionProbe)
+    VKM_F(hdrPath),
+    VKM_F(radius),
+    VKM_F(falloffRange),
+    VKM_F(intensity)
+    // bakeVersion is intentionally absent - see save(ReflectionProbe).
+VKM_REFLECT_END()
