@@ -25,12 +25,16 @@ namespace {
 
     // Per-group accent rail colors - same palette the Inspector uses for
     // Transform/Light/Camera so the Environment reads as part of the editor,
-    // not a bolted-on panel.
+    // not a bolted-on panel. Seven cards now (was five): split World out of
+    // Lighting, split Screen-Space FX out of Post, give each card a distinct
+    // hue so the user can scan-locate by colour.
+    const ImVec4 ACCENT_WORLD    = ImVec4(0.95f, 0.62f, 0.30f, 1.0f);  // warm sun
     const ImVec4 ACCENT_LIGHTING = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);  // gold
     const ImVec4 ACCENT_CAMERA   = ImVec4(0.30f, 0.78f, 0.80f, 1.0f);  // cyan
-    const ImVec4 ACCENT_POST     = EditorStyle::ACCENT;                // blue
-    const ImVec4 ACCENT_SCENE    = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);  // gray
-    const ImVec4 ACCENT_PIPE     = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);  // purple
+    const ImVec4 ACCENT_POST     = EditorStyle::ACCENT;                // blue (image-finishing)
+    const ImVec4 ACCENT_SSFX     = ImVec4(0.45f, 0.80f, 0.55f, 1.0f);  // green (screen-space FX)
+    const ImVec4 ACCENT_DIAG     = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);  // gray
+    const ImVec4 ACCENT_PERF     = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);  // purple
 
     // An effect sub-block inside a group card: a hairline divider, an
     // optional enable checkbox, then the title in header text. Body is
@@ -204,8 +208,9 @@ bool EnvironmentInspector::drawPresetBar(EnvironmentConfig& env) {
     return changed;
 }
 
-bool EnvironmentInspector::drawLighting(EditorContext& /*ec*/, EnvironmentConfig& env) {
+bool EnvironmentInspector::drawWorld(EditorContext& /*ec*/, EnvironmentConfig& env) {
     bool changed = false;
+
     bool       iblOn   = !env.ibl.path.empty();
     const bool iblPrev = iblOn;
     const bool iblOpen = cardHeader("ibl", "Environment Map (IBL)", &iblOn);
@@ -275,6 +280,24 @@ bool EnvironmentInspector::drawLighting(EditorContext& /*ec*/, EnvironmentConfig
     }
 
     ImGui::Spacing();
+    if (cardHeader("tonemap", "Tone Mapping", nullptr)) {
+        drawPropertyLabel("Curve");
+        ImGui::SetNextItemWidth(-1.0f);
+        changed |= ImGui::Combo("##Tonemap", &env.tonemap,
+            "AgX (filmic)\0PBR Neutral (albedo-faithful)\0ACES\0Reinhard\0");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "Display transform applied at composite. PBR Neutral preserves\n"
+                "material colour (matches online glTF viewers); AgX is a\n"
+                "desaturating film look.");
+    }
+
+    return changed;
+}
+
+bool EnvironmentInspector::drawLightingShadows(EditorContext& /*ec*/, EnvironmentConfig& env) {
+    bool changed = false;
+
     if (cardHeader("shadow", "Shadow Quality", nullptr)) {
         static const uint32_t kRes2D[]   = { 512, 1024, 2048, 4096, 8192 };
         static const char*    kRes2DNames = "512\0" "1024\0" "2048\0" "4096\0" "8192\0";
@@ -349,7 +372,7 @@ bool EnvironmentInspector::drawLighting(EditorContext& /*ec*/, EnvironmentConfig
     return changed;
 }
 
-bool EnvironmentInspector::drawCamera(EditorContext& ec, EnvironmentConfig& env) {
+bool EnvironmentInspector::drawCameraFX(EditorContext& ec, EnvironmentConfig& env) {
     FrameContext& ctx = ec.frame;
     bool changed = false;
 
@@ -364,15 +387,6 @@ bool EnvironmentInspector::drawCamera(EditorContext& ec, EnvironmentConfig& env)
     };
 
     if (cardHeader("exp", "Exposure", nullptr)) {
-        drawPropertyLabel("Tone Mapping");
-        ImGui::SetNextItemWidth(-1.0f);
-        changed |= ImGui::Combo("##Tonemap", &env.tonemap,
-            "AgX (filmic)\0PBR Neutral (albedo-faithful)\0ACES\0Reinhard\0");
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(
-                "Display transform. PBR Neutral preserves material color\n"
-                "(matches online glTF viewers); AgX is a desaturating film look.");
-
         const float camExp = (ctx.visibility && ctx.visibility->hasCamera)
             ? ctx.visibility->cameraExposure : 1.0f;
         ImGui::TextDisabled("Manual camera exposure: %.2f (edit on the Camera entity)",
@@ -415,10 +429,18 @@ bool EnvironmentInspector::drawCamera(EditorContext& ec, EnvironmentConfig& env)
                 "Camera reprojection blur amount");
         ImGui::EndDisabled();
     }
+
+    ImGui::Spacing();
+    if (cardWithEnable("taa", "Temporal AA", &env.taa.enabled)) {
+        ImGui::BeginDisabled(!env.taa.enabled);
+        changed |= sliderF("History Blend", "##TaaBlend", &env.taa.blend, 0.0f, 0.98f, "%.3f",
+                "History weight (MSAA already does spatial edge AA)");
+        ImGui::EndDisabled();
+    }
     return changed;
 }
 
-bool EnvironmentInspector::drawPost(EditorContext& /*ec*/, EnvironmentConfig& env) {
+bool EnvironmentInspector::drawImagePost(EditorContext& /*ec*/, EnvironmentConfig& env) {
     bool changed = false;
     auto cardWithEnable = [&](const char* id, const char* title, bool* enabled) {
         const bool prev = *enabled;
@@ -489,36 +511,6 @@ bool EnvironmentInspector::drawPost(EditorContext& /*ec*/, EnvironmentConfig& en
     }
 
     ImGui::Spacing();
-    if (cardWithEnable("ssao", "Ambient Occlusion (GTAO)", &env.ao.enabled)) {
-        ImGui::BeginDisabled(!env.ao.enabled);
-        changed |= sliderF("Radius", "##AoRad", &env.ao.radius, 0.05f, 5.0f, "%.2f",
-                "View-space sampling radius");
-        changed |= sliderF("Intensity", "##AoInt", &env.ao.intensity, 0.0f, 4.0f, "%.2f",
-                "Occlusion darkening strength");
-        ImGui::EndDisabled();
-    }
-
-    ImGui::Spacing();
-    if (cardWithEnable("ssr", "Screen-Space Reflections", &env.ssr.enabled)) {
-        ImGui::BeginDisabled(!env.ssr.enabled);
-        changed |= sliderF("Intensity", "##SsrInt", &env.ssr.intensity, 0.0f, 2.0f, "%.2f",
-                "Reflection blend strength");
-        changed |= sliderF("Max Distance", "##SsrDist", &env.ssr.maxDistance, 0.5f, 50.0f, "%.1f",
-                "View-space ray length");
-        changed |= sliderF("Thickness", "##SsrThick", &env.ssr.thickness, 0.02f, 4.0f, "%.2f",
-                "Depth hit tolerance");
-        ImGui::EndDisabled();
-    }
-
-    ImGui::Spacing();
-    if (cardWithEnable("taa", "Temporal AA", &env.taa.enabled)) {
-        ImGui::BeginDisabled(!env.taa.enabled);
-        changed |= sliderF("History Blend", "##TaaBlend", &env.taa.blend, 0.0f, 0.98f, "%.3f",
-                "History weight (MSAA already does spatial edge AA)");
-        ImGui::EndDisabled();
-    }
-
-    ImGui::Spacing();
     if (cardWithEnable("cg", "Color Grading (LUT)", &env.colorGrade.enabled)) {
         ImGui::BeginDisabled(!env.colorGrade.enabled);
         if (env.colorGrade.lutPath != m_lutPathLastSync) {
@@ -556,7 +548,40 @@ bool EnvironmentInspector::drawPost(EditorContext& /*ec*/, EnvironmentConfig& en
     return changed;
 }
 
-bool EnvironmentInspector::drawScene(EditorContext& /*ec*/, EnvironmentConfig& env) {
+bool EnvironmentInspector::drawScreenSpaceFX(EditorContext& /*ec*/, EnvironmentConfig& env) {
+    bool changed = false;
+    auto cardWithEnable = [&](const char* id, const char* title, bool* enabled) {
+        const bool prev = *enabled;
+        const bool open = cardHeader(id, title, enabled);
+        if (*enabled != prev) changed = true;
+        return open;
+    };
+
+    if (cardWithEnable("ssao", "Ambient Occlusion (GTAO)", &env.ao.enabled)) {
+        ImGui::BeginDisabled(!env.ao.enabled);
+        changed |= sliderF("Radius", "##AoRad", &env.ao.radius, 0.05f, 5.0f, "%.2f",
+                "View-space sampling radius");
+        changed |= sliderF("Intensity", "##AoInt", &env.ao.intensity, 0.0f, 4.0f, "%.2f",
+                "Occlusion darkening strength");
+        ImGui::EndDisabled();
+    }
+
+    ImGui::Spacing();
+    if (cardWithEnable("ssr", "Screen-Space Reflections", &env.ssr.enabled)) {
+        ImGui::BeginDisabled(!env.ssr.enabled);
+        changed |= sliderF("Intensity", "##SsrInt", &env.ssr.intensity, 0.0f, 2.0f, "%.2f",
+                "Reflection blend strength");
+        changed |= sliderF("Max Distance", "##SsrDist", &env.ssr.maxDistance, 0.5f, 50.0f, "%.1f",
+                "View-space ray length");
+        changed |= sliderF("Thickness", "##SsrThick", &env.ssr.thickness, 0.02f, 4.0f, "%.2f",
+                "Depth hit tolerance");
+        ImGui::EndDisabled();
+    }
+
+    return changed;
+}
+
+bool EnvironmentInspector::drawDiagnostics(EditorContext& /*ec*/, EnvironmentConfig& env) {
     bool changed = false;
     auto cardWithEnable = [&](const char* id, const char* title, bool* enabled) {
         const bool prev = *enabled;
@@ -687,29 +712,30 @@ bool EnvironmentInspector::drawScene(EditorContext& /*ec*/, EnvironmentConfig& e
     return changed;
 }
 
-bool EnvironmentInspector::drawPipeline(EditorContext& ec) {
+bool EnvironmentInspector::drawPerformance(EditorContext& ec) {
     FrameContext& ctx = ec.frame;
     bool changed = false;
 
-    ImGui::TextDisabled("Toggle individual graph passes (advanced).");
-    ImGui::Spacing();
-    // Narrow API on RenderSystem - the panel doesn't include render_graph.h
-    // or know about the pass class hierarchy.
-    for (size_t i = 0; i < ec.renderSystem.passCount(); ++i) {
-        bool enabled = ec.renderSystem.isPassEnabled(i);
-        const std::string_view name = ec.renderSystem.passName(i);
-        // ImGui::Checkbox needs a C string; passName is null-terminated
-        // (RenderPass::getName returns const std::string&) so .data()
-        // is safe here.
-        if (ImGui::Checkbox(name.data(), &enabled)) {
-            ec.renderSystem.setPassEnabled(i, enabled);
-            changed = true;
+    if (cardHeader("passes", "Render Passes", nullptr)) {
+        ImGui::TextDisabled("Per-pass enable/disable (advanced).");
+        ImGui::Spacing();
+        // Narrow API on RenderSystem - the panel doesn't include render_graph.h
+        // or know about the pass class hierarchy.
+        for (size_t i = 0; i < ec.renderSystem.passCount(); ++i) {
+            bool enabled = ec.renderSystem.isPassEnabled(i);
+            const std::string_view name = ec.renderSystem.passName(i);
+            // ImGui::Checkbox needs a C string; passName is null-terminated
+            // (RenderPass::getName returns const std::string&) so .data()
+            // is safe here.
+            if (ImGui::Checkbox(name.data(), &enabled)) {
+                ec.renderSystem.setPassEnabled(i, enabled);
+                changed = true;
+            }
         }
     }
 
     ImGui::Spacing();
-    ImGui::SeparatorText("Visibility Culling");
-    {
+    if (cardHeader("vis", "Visibility Culling", nullptr)) {
         auto& settings = ec.visibilitySystem.getSettings();
         changed |= sliderF("Min Pixels", "##MinPx", &settings.minPixels, 0.0f, 100.0f, "%.1f",
                 "Skip objects smaller than this on screen");
@@ -739,7 +765,12 @@ void EnvironmentInspector::draw(EditorContext& ec, EnvironmentConfig& env) {
     const bool filtering = m_filter[0] != '\0';
 
     // Each group is a real Inspector component card (colored accent rail +
-    // guide line). When searching, matching cards are force-opened.
+    // guide line). When searching, matching cards are force-opened. Card
+    // order intentionally moves outward: World (background of the scene) ->
+    // Lighting & Shadows (geometric light setup) -> Camera FX (what the
+    // camera does to incoming light) -> Image Post / Screen-Space FX
+    // (image-finishing) -> Diagnostics (debug overlays) -> Performance
+    // (perf-only knobs, advanced + collapsed).
     auto card = [&](const char* title, const ImVec4& accent, bool openByDefault,
                     bool (EnvironmentInspector::*body)(EditorContext&, EnvironmentConfig&)) {
         if (filtering) {
@@ -751,16 +782,18 @@ void EnvironmentInspector::draw(EditorContext& ec, EnvironmentConfig& env) {
         endComponentCard();
     };
 
-    card("Lighting",          ACCENT_LIGHTING, true, &EnvironmentInspector::drawLighting);
-    card("Camera & Exposure", ACCENT_CAMERA,   true, &EnvironmentInspector::drawCamera);
-    card("Post-Processing",   ACCENT_POST,     true, &EnvironmentInspector::drawPost);
-    card("Scene & Debug",     ACCENT_SCENE,    true, &EnvironmentInspector::drawScene);
+    card("World",              ACCENT_WORLD,    true,  &EnvironmentInspector::drawWorld);
+    card("Lighting & Shadows", ACCENT_LIGHTING, true,  &EnvironmentInspector::drawLightingShadows);
+    card("Camera FX",          ACCENT_CAMERA,   true,  &EnvironmentInspector::drawCameraFX);
+    card("Image Post",         ACCENT_POST,     true,  &EnvironmentInspector::drawImagePost);
+    card("Screen-Space FX",    ACCENT_SSFX,     true,  &EnvironmentInspector::drawScreenSpaceFX);
+    card("Diagnostics",        ACCENT_DIAG,     false, &EnvironmentInspector::drawDiagnostics);
 
-    // Pipeline takes only the context; advanced, collapsed by default.
-    if (!filtering || matchesFilter("Pipeline (advanced)", m_filter)) {
+    // Performance takes only the context; advanced, collapsed by default.
+    if (!filtering || matchesFilter("Performance (advanced)", m_filter)) {
         if (filtering) ImGui::SetNextItemOpen(true, ImGuiCond_Always);
-        if (beginComponentCard("Pipeline (advanced)", ACCENT_PIPE, false))
-            changed |= drawPipeline(ec);
+        if (beginComponentCard("Performance (advanced)", ACCENT_PERF, false))
+            changed |= drawPerformance(ec);
         endComponentCard();
     }
 
