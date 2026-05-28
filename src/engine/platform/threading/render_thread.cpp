@@ -2,9 +2,11 @@
 
 #include "platform/threading/render_thread.h"
 
+#include <GL/glew.h>     // Pulled BEFORE profiler_gl so the Tracy GPU macros see glQueryCounter etc.
 #include <GLFW/glfw3.h>
 
 #include "logger.h"
+#include "debug/profiler_gl.h"
 
 namespace Engine {
 
@@ -49,6 +51,13 @@ void RenderThread::executeFrame(std::function<void()> renderJob) {
 
 void RenderThread::workerMain() {
     glfwMakeContextCurrent(m_window);
+
+    // Tracy's GPU context is thread-local; the one GLBackend created on
+    // main when the backend was constructed isn't visible from here, so
+    // PROFILE_GPU_COLLECT (called by GLBackend::endFrame on this thread)
+    // would dereference null. Re-init for this thread now that the GL
+    // context is current. No-op when VKM_PROFILER is off.
+    PROFILE_GPU_CONTEXT();
 
     while (true) {
         std::function<void()> job;
