@@ -51,10 +51,13 @@ class MaterialPreviewSession {
         /**
          * @brief Live preview / cached thumbnail in one call.
          *
-         * @p live = true forces an immediate render this frame (Material
-         * Editor's main panel - always up to date). @p live = false uses
-         * the per-frame bake budget + the @p version check so the
-         * Asset Browser grid amortises rebuilds across many frames.
+         * Both paths are change-detected against @p version: a render is only
+         * queued when @p version differs from the last one baked for @p key.
+         * Callers fold every input that affects the image (material edit
+         * version, orbit camera, preview shape) into @p version. @p live skips
+         * only the per-frame bake budget so the Material Editor's pane updates
+         * the instant something changes; @p live = false additionally
+         * amortises first-time bakes across frames for the Asset Browser grid.
          *
          * Returns the texture id of the most-recent render for @p key,
          * or 0 if nothing has been rendered yet.
@@ -117,9 +120,9 @@ class MaterialPreviewSession {
         std::unordered_map<uint64_t, std::unique_ptr<RenderTarget>> m_targets;
         std::unordered_map<uint64_t, uint32_t>                      m_textureIds;
 
-        /// Last @p version we baked for each key (only tracked when
-        /// live == false; the live path bakes every frame). Touched on
-        /// the main thread alongside the texture() lookup.
+        /// Last @p version baked for each key. Both the live and thumbnail
+        /// paths consult this to skip an unchanged re-render. Touched on the
+        /// main thread alongside the texture() lookup.
         std::unordered_map<uint64_t, uint64_t> m_versions;
 
         /// Scratch RenderView reused across renders - keeps drawables /

@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -31,6 +32,27 @@ const ImVec4 ACC_SSS    = ImVec4(0.88f, 0.45f, 0.55f, 1.0f);  // pink
 const ImVec4 ACC_SHEEN  = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);  // gold
 const ImVec4 ACC_VOL    = ImVec4(0.55f, 0.85f, 0.65f, 1.0f);  // mint - glass volume
 const ImVec4 ACC_TEX    = EditorStyle::AXIS_Y;                 // green
+
+// Fold everything that changes the live preview image into one version stamp
+// so MaterialPreviewSession re-bakes only when something actually changed,
+// instead of re-running the whole render graph every idle frame. (Environment
+// edits aren't captured - the preview refreshes on the next material or orbit
+// change; matching how thumbnails behave.)
+uint64_t previewVersion(uint64_t materialVersion, uint32_t shapeId,
+                        int primitive, float yaw, float pitch, float distance) {
+    auto floatBits = [](float f) {
+        uint32_t b;
+        std::memcpy(&b, &f, sizeof(b));
+        return static_cast<uint64_t>(b);
+    };
+    uint64_t h = 1469598103934665603ull;  // FNV-1a offset basis
+    for (uint64_t v : { materialVersion, static_cast<uint64_t>(shapeId),
+                        static_cast<uint64_t>(primitive),
+                        floatBits(yaw), floatBits(pitch), floatBits(distance) }) {
+        h = (h ^ v) * 1099511628211ull;
+    }
+    return h;
+}
 
 }  // namespace
 
@@ -392,13 +414,19 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
             (selMesh && selMesh->mesh) ? selMesh->mesh : MeshHandle{};
         const MeshHandle shape = previewMesh(resources, entityMesh);
 
-        // live=true: re-render every frame and snapshot to a dedicated key so
-        // it survives the Asset Browser baking thumbnails into the shared
-        // target later this same frame (ImGui samples textures at Render).
+        // live=true uses a dedicated key so the pane survives the Asset
+        // Browser baking thumbnails into the shared target later this same
+        // frame (ImGui samples textures at Render). The version stamp gates
+        // re-rendering on actual change so an idle Material Editor doesn't
+        // re-run the render graph every frame.
+        const uint64_t version = shape
+            ? previewVersion(resources.get(target).version, shape.id(),
+                             m_primitive, m_yaw, m_pitch, m_distance)
+            : 0ull;
         uint32_t tex = shape
             ? ec.materialPreviews.texture(
                   resources, target, shape, m_yaw, m_pitch, m_distance,
-                  /*key*/ 0ull, /*version*/ 0ull, /*live*/ true)
+                  /*key*/ 0ull, version, /*live*/ true)
             : 0u;
 
         if (tex) {
