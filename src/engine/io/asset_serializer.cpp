@@ -10,6 +10,8 @@
 
 #include "ecs/component/mesh.h"
 #include "ecs/scene.h"
+#include "resource/asset_database.h"
+#include "resource/asset_id.h"
 #include "resource/resource_manager.h"
 
 namespace Engine {
@@ -146,7 +148,14 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     nlohmann::json textures = nlohmann::json::object();
     for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
         const TextureHandle& h = m.*f.member;
-        if (h) textures[f.key] = resources.get(h).name;
+        if (!h) continue;
+        const AssetId id = resources.get(h).assetId;
+        if (!id) {
+            LOG_WARNING("Material texture slot '%s' has no AssetId (%s) - dropping ref",
+                f.key, resources.get(h).name.c_str());
+            continue;
+        }
+        textures[f.key] = id.toString();
     }
     if (!textures.empty()) src["textures"] = std::move(textures);
     return src;
@@ -186,16 +195,17 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
     if (src.contains("textures") && src["textures"].is_object()) {
         for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
             if (!src["textures"].contains(f.key)) continue;
-            const std::string texName = src["textures"][f.key].get<std::string>();
-            const TextureHandle h = resources.findByName<TextureAsset>(texName);
+            const AssetId id = AssetId::fromString(src["textures"][f.key].get<std::string>());
+            if (!id) continue;
+            const TextureHandle h = resources.findById<TextureAsset>(id);
             if (!h) {
                 // Keep whatever was already in the slot rather than zeroing
-                // it: the file referenced a name that didn't resolve in the
+                // it: the file referenced a GUID that didn't resolve in the
                 // current asset graph (typo, dependency not loaded yet, or a
                 // texture deleted under us). Silently dropping to null would
                 // give the material a transparent-black map at draw time.
                 LOG_WARNING("Material texture ref '%s' (%s) unresolved; keeping previous slot value",
-                    f.key, texName.c_str());
+                    f.key, id.toString().c_str());
                 continue;
             }
             m.*f.member = h;
@@ -203,15 +213,25 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
     }
 }
 
-/// Emit one asset descriptor. Skips assets with no source - they can't be
-/// recreated at load time and would round-trip into nothing. @p source may
-/// be null (asset's source pointer wasn't populated) and is logged + skipped.
-void emitDescriptor(nlohmann::json& target, const std::string& name, const nlohmann::json* source) {
-    if (!source || source->is_null()) {
-        LOG_WARNING("Asset '%s' has no source; skipping in save", name.c_str());
+/// Emit one asset descriptor. Skips assets with no AssetId - those can't
+/// be referenced by the scene anyway. @p sourceOverride lets materials
+/// substitute their derived `inline` form for the asset's runtime source.
+void emitDescriptor(nlohmann::json& target, const Resource& asset,
+                    const nlohmann::json* sourceOverride = nullptr) {
+    if (!asset.assetId) {
+        LOG_WARNING("Asset '%s' has no AssetId; skipping in save", asset.name.c_str());
         return;
     }
-    target.push_back({{"name", name}, {"source", *source}});
+    const nlohmann::json* source = sourceOverride ? sourceOverride : asset.source.get();
+    if (!source || source->is_null()) {
+        LOG_WARNING("Asset '%s' has no source descriptor; skipping in save", asset.name.c_str());
+        return;
+    }
+    target.push_back({
+        {"id",     asset.assetId.toString()},
+        {"name",   asset.name},          // Human-readable hint; not load-bearing.
+        {"source", *source},
+    });
 }
 
 } // namespace
@@ -228,8 +248,7 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
     auto emitTexture = [&](const TextureHandle& h) {
         if (!h) return;
         if (!seenTextures.insert(h.id()).second) return;
-        const auto& asset = resources.get(h);
-        emitDescriptor(textures, asset.name, asset.source.get());
+        emitDescriptor(textures, resources.get(h));
     };
 
     scene.forEach<Mesh>([&](EntityId, const Mesh& m) {
@@ -237,7 +256,7 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
             const auto& asset = resources.get(m.mesh);
             // Editor-only assets (preview primitives etc.) never serialize:
             // they belong to the running editor, not to the user's scene.
-            if (!asset.editorOnly) emitDescriptor(meshes, asset.name, asset.source.get());
+            if (!asset.editorOnly) emitDescriptor(meshes, asset);
         }
         if (m.material && seenMaterials.insert(m.material.id()).second) {
             const auto& asset = resources.get(m.material);
@@ -246,7 +265,7 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
             // state (including editor scalar tweaks) regardless of how the
             // material was originally created.
             nlohmann::json inlineDesc = materialToInline(asset, resources);
-            emitDescriptor(materials, asset.name, &inlineDesc);
+            emitDescriptor(materials, asset, &inlineDesc);
             // Pull every texture this material references into the texture
             // descriptor pool too.
             for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
@@ -260,11 +279,55 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
     return out;
 }
 
+namespace {
+
+/// Pull the per-section identifying tuple (id, name, source) from a single
+/// JSON entry. Returns false if id/source are missing/malformed - the
+/// caller logs + skips. name is non-load-bearing (a human hint).
+bool unpackEntry(const nlohmann::json& entry,
+                 AssetId& outId, std::string& outName, nlohmann::json& outSource) {
+    outId = AssetId::fromString(entry.value("id", std::string{}));
+    if (!outId) return false;
+    outName = entry.value("name", std::string{});
+    outSource = entry.contains("source") ? entry["source"] : nlohmann::json{};
+    return true;
+}
+
+/// Seed AssetDatabase with the scene's recorded ids so the factory-created
+/// assets (which call AssetDatabase::registerOrGet on the descriptor path)
+/// land under the same ids the scene already references. Without this,
+/// loading on a machine whose DB doesn't yet know these paths would mint
+/// fresh ids and break every component reference in the scene.
+void seedDatabase(const nlohmann::json& section, AssetKind kind, const char* pathField = "path") {
+    if (!section.is_array()) return;
+    for (const auto& entry : section) {
+        const AssetId id = AssetId::fromString(entry.value("id", std::string{}));
+        if (!id) continue;
+        if (!entry.contains("source") || !entry["source"].is_object()) continue;
+        const auto& src = entry["source"];
+        if (!src.contains(pathField) || !src[pathField].is_string()) continue;
+        AssetDatabase::get().registerWithId(src[pathField].get<std::string>(), id, kind);
+    }
+}
+
+} // namespace
+
 bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
     if (!assetsJson.is_object()) {
         LOG_WARNING("Assets block is not an object - skipping");
         return false;
     }
+
+    // Seed the database before any factory runs. Materials use "folder"
+    // descriptors with a `path` field; textures use "file" descriptors
+    // also keyed `path`; meshes use procedural ("generator"/"model")
+    // descriptors whose path field varies - seedDatabase ignores entries
+    // without a path field, so non-file-backed meshes are simply minted
+    // a fresh GUID later. That mismatch is captured by the inline
+    // fallback path below.
+    if (assetsJson.contains("textures"))  seedDatabase(assetsJson["textures"],  AssetKind::Texture);
+    if (assetsJson.contains("materials")) seedDatabase(assetsJson["materials"], AssetKind::Material);
+    if (assetsJson.contains("meshes"))    seedDatabase(assetsJson["meshes"],    AssetKind::Mesh);
 
     const auto& factories = AssetFactories::get();
 
@@ -272,58 +335,78 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
     size_t materialsCreated = 0, materialsSkipped = 0;
     size_t meshesCreated = 0, meshesSkipped = 0;
 
-    auto loadGroup = [&](const char* sectionName, auto&& createOne) {
-        if (!assetsJson.contains(sectionName) || !assetsJson[sectionName].is_array()) return;
-        for (const auto& entry : assetsJson[sectionName]) {
-            const std::string name = entry.value("name", std::string{});
-            if (name.empty()) continue;
-            const nlohmann::json source = entry.contains("source") ? entry["source"] : nlohmann::json{};
-            createOne(name, source);
-        }
+    // Helper: ensure the freshly-created asset's assetId matches the scene's
+    // recorded one. The loader usually stamps the correct GUID (seeded DB +
+    // path-based register), but procedural assets (no on-disk path) get a
+    // fresh GUID instead - patch + reindex so scene refs still resolve.
+    auto reconcileId = [&resources](auto handle, AssetId expected) {
+        if (!handle) return;
+        auto& asset = resources.edit(handle);
+        if (asset.assetId == expected) return;
+        asset.assetId = expected;
+        resources.reindexAssetId(handle);
     };
 
-    // Textures first - materials may reference them by name. Order is
-    // important: textures -> materials -> meshes. Meshes don't depend on the
-    // others; they're last only for output stability.
-    loadGroup("textures", [&](const std::string& name, const nlohmann::json& source) {
-        if (resources.findByName<TextureAsset>(name)) { ++texturesSkipped; return; }
-        TextureHandle h = factories.createTexture(source, resources);
-        if (!h) {
-            LOG_WARNING("Texture '%s' could not be recreated - skipping", name.c_str());
-            return;
+    // Textures first - materials reference them by id. Order matters:
+    // textures -> materials -> meshes. Meshes don't depend on the others;
+    // they're last only for output stability.
+    if (assetsJson.contains("textures") && assetsJson["textures"].is_array()) {
+        for (const auto& entry : assetsJson["textures"]) {
+            AssetId id; std::string name; nlohmann::json source;
+            if (!unpackEntry(entry, id, name, source)) {
+                LOG_WARNING("Texture entry missing 'id' - skipping");
+                continue;
+            }
+            if (resources.findById<TextureAsset>(id)) { ++texturesSkipped; continue; }
+            TextureHandle h = factories.createTexture(source, resources);
+            if (!h) {
+                LOG_WARNING("Texture %s could not be recreated - skipping", id.toString().c_str());
+                continue;
+            }
+            reconcileId(h, id);
+            ++texturesCreated;
         }
-        // Texture loaders set name + source themselves; we don't overwrite.
-        // (If a custom loader didn't, the asset is still findable until next
-        // session - log so we notice.)
-        if (resources.get(h).name != name) {
-            LOG_WARNING("Texture loader did not set name '%s' (got '%s')",
-                name.c_str(), resources.get(h).name.c_str());
-        }
-        ++texturesCreated;
-    });
+    }
 
-    loadGroup("materials", [&](const std::string& name, const nlohmann::json& source) {
-        if (resources.findByName<MaterialAsset>(name)) { ++materialsSkipped; return; }
-        MaterialHandle h = factories.createMaterial(source, resources);
-        if (!h) {
-            LOG_WARNING("Material '%s' could not be recreated - skipping", name.c_str());
-            return;
+    if (assetsJson.contains("materials") && assetsJson["materials"].is_array()) {
+        for (const auto& entry : assetsJson["materials"]) {
+            AssetId id; std::string name; nlohmann::json source;
+            if (!unpackEntry(entry, id, name, source)) {
+                LOG_WARNING("Material entry missing 'id' - skipping");
+                continue;
+            }
+            if (resources.findById<MaterialAsset>(id)) { ++materialsSkipped; continue; }
+            MaterialHandle h = factories.createMaterial(source, resources);
+            if (!h) {
+                LOG_WARNING("Material %s could not be recreated - skipping", id.toString().c_str());
+                continue;
+            }
+            if (!name.empty()) resources.rename(h, name);
+            reconcileId(h, id);
+            ++materialsCreated;
         }
-        resources.rename(h, name);
-        ++materialsCreated;
-    });
+    }
 
-    loadGroup("meshes", [&](const std::string& name, const nlohmann::json& source) {
-        if (resources.findByName<MeshAsset>(name)) { ++meshesSkipped; return; }
-        MeshAsset mesh = factories.createMesh(source);
-        if (mesh.vertices.empty()) {
-            LOG_WARNING("Mesh '%s' recreated empty - skipping", name.c_str());
-            return;
+    if (assetsJson.contains("meshes") && assetsJson["meshes"].is_array()) {
+        for (const auto& entry : assetsJson["meshes"]) {
+            AssetId id; std::string name; nlohmann::json source;
+            if (!unpackEntry(entry, id, name, source)) {
+                LOG_WARNING("Mesh entry missing 'id' - skipping");
+                continue;
+            }
+            if (resources.findById<MeshAsset>(id)) { ++meshesSkipped; continue; }
+            MeshAsset mesh = factories.createMesh(source);
+            if (mesh.vertices.empty()) {
+                LOG_WARNING("Mesh %s recreated empty - skipping", id.toString().c_str());
+                continue;
+            }
+            mesh.sourceJson() = source;
+            mesh.assetId      = id;
+            mesh.name         = name;
+            resources.add(std::move(mesh));
+            ++meshesCreated;
         }
-        mesh.sourceJson() = source;
-        resources.add(std::move(mesh), name);
-        ++meshesCreated;
-    });
+    }
 
     LOG_INFO("%zu texture(s), %zu material(s), %zu mesh(es) created; %zu+%zu+%zu skipped (already loaded)",
         texturesCreated, materialsCreated, meshesCreated,

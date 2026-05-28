@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include "loader/shader_preprocessor.h"
+#include "resource/asset_database.h"
 #include "resource/resource_manager.h"
 #include "resource/shader_asset.h"
 #include "system/io/file_watcher.h"
@@ -34,6 +35,7 @@ inline ShaderHandle loadShader(
     asset.path            = path;
     asset.samplerBindings = std::move(samplerBindings);
     asset.variantAware    = variantAware;
+    asset.assetId         = AssetDatabase::get().registerOrGet(path, AssetKind::Shader);
     asset.sourceJson() = {{"kind", "directory"}, {"path", path}};
     if (!asset.samplerBindings.empty()) {
         asset.sourceJson()["samplerBindings"] = asset.samplerBindings;

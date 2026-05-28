@@ -9,6 +9,7 @@
 #include "logger.h"
 
 #include "core/engine.h"
+#include "resource/asset_database.h"
 #include "system/animation/animation_system.h"
 #include "system/event/event_system.h"
 #include "system/hierarchy/hierarchy_system.h"
@@ -31,6 +32,12 @@
 namespace Engine {
 
 EngineAppSystems setupEngineApp(Engine& engine) {
+    // AssetDatabase must be bound before any loader runs - loaders stamp
+    // each asset's GUID into it on import. First-run creates an empty
+    // file; subsequent runs reuse the recorded GUIDs.
+    AssetDatabase::get().initFromDisk(
+        std::string(APP_ROOT_DIR) + "/assets/_database.json");
+
     auto& cameraController = engine.addSystem<CameraController>(SystemStage::Input);
     auto& eventSystem      = engine.addSystem<EventSystem>     (SystemStage::Simulation);
     engine.addSystem<AnimationSystem> (SystemStage::Simulation);

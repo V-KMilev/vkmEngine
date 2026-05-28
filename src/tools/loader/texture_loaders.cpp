@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
+#include "resource/asset_database.h"
 #include "resource/resource_manager.h"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -91,9 +92,12 @@ TextureHandle loadTexture(
     LOG_VERBOSE("Loaded texture '%s' (%dx%d, %d channels, sRGB: %s)",
         filePath.c_str(), width, height, channels, srgb ? "yes" : "no");
 
-    // Stamp serialization metadata. The file path is the texture's stable
-    // identity - materials reference textures by name on load.
+    // Stamp serialization metadata. The AssetId is the texture's stable
+    // identity - downstream references (materials, scenes) use it instead
+    // of the path so a file rename no longer silently breaks them. The
+    // path stays on the asset for human-readable lookup + reloading.
     texture.name         = filePath;
+    texture.assetId      = AssetDatabase::get().registerOrGet(filePath, AssetKind::Texture);
     texture.sourceJson() = {
         {"kind",           "file"},
         {"path",           filePath},

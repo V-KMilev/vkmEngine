@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
+#include "resource/asset_database.h"
 #include "resource/resource_manager.h"
 
 namespace Engine {
@@ -18,8 +19,9 @@ namespace {
                                    TextureAsset texture)
     {
         if (auto existing = rm.findByName<TextureAsset>(name)) return existing;
-        texture.name           = name;
-        texture.sourceJson()   = source;
+        texture.name         = name;
+        texture.assetId      = AssetDatabase::get().registerOrGet(name, AssetKind::Texture);
+        texture.sourceJson() = source;
         return rm.add(std::move(texture));
     }
 

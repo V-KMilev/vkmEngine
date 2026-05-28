@@ -8,6 +8,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "resource/asset_database.h"
+
 namespace Engine {
 
 namespace {
@@ -19,6 +21,22 @@ namespace {
         j["type"] = type;
         if (!params.empty()) j["params"] = std::move(params);
         return j;
+    }
+
+    /// Stamp source + AssetId on a freshly-generated mesh in one call.
+    /// The AssetDatabase key is "mesh:generator:<type>:<param>:<param>..."
+    /// derived deterministically from the same params so identical generator
+    /// calls map to the same GUID across runs.
+    void stampGenerated(MeshAsset& mesh, const char* type, const nlohmann::json& params = {}) {
+        mesh.sourceJson() = meshGeneratorSource(type, params);
+        std::string key = std::string("mesh:generator:") + type;
+        if (params.is_object()) {
+            for (auto it = params.begin(); it != params.end(); ++it) {
+                key += ':';
+                key += it.value().dump();
+            }
+        }
+        mesh.assetId = AssetDatabase::get().registerOrGet(key, AssetKind::Mesh);
     }
 }
 
@@ -36,7 +54,7 @@ MeshAsset generateTriangle(float size) {
 
     mesh.indices = { 0, 1, 2 };
     mesh.computeAndSetBounds();
-    mesh.sourceJson() = meshGeneratorSource("triangle", {{"size", size}});
+    stampGenerated(mesh, "triangle", {{"size", size}});
     return mesh;
 }
 
@@ -56,7 +74,7 @@ MeshAsset generatePlane(float width, float height, uint32_t widthSegments, uint3
 
     mesh.indices = { 0, 1, 2,  2, 3, 0 };
     mesh.computeAndSetBounds();
-    mesh.sourceJson() = meshGeneratorSource("plane", {
+    stampGenerated(mesh, "plane", {
         {"width", width}, {"height", height},
         {"widthSegments", widthSegments}, {"heightSegments", heightSegments}
     });
@@ -127,7 +145,7 @@ MeshAsset generateCube() {
     };
 
     mesh.computeAndSetBounds();
-    mesh.sourceJson() = meshGeneratorSource("cube");
+    stampGenerated(mesh, "cube");
     return mesh;
 }
 
@@ -180,7 +198,7 @@ MeshAsset generateSphere(uint32_t xSegments, uint32_t ySegments) {
     }
 
     mesh.computeAndSetBounds();
-    mesh.sourceJson() = meshGeneratorSource("sphere", {{"xSegments", xSegments}, {"ySegments", ySegments}});
+    stampGenerated(mesh, "sphere", {{"xSegments", xSegments}, {"ySegments", ySegments}});
     return mesh;
 }
 
@@ -232,7 +250,7 @@ MeshAsset generatePyramid(float baseSize, float height) {
     };
 
     mesh.computeAndSetBounds();
-    mesh.sourceJson() = meshGeneratorSource("pyramid", {{"baseSize", baseSize}, {"height", height}});
+    stampGenerated(mesh, "pyramid", {{"baseSize", baseSize}, {"height", height}});
     return mesh;
 }
 
@@ -289,7 +307,7 @@ MeshAsset generateCone(
     }
 
     mesh.computeAndSetBounds();
-    mesh.sourceJson() = meshGeneratorSource("cone", {
+    stampGenerated(mesh, "cone", {
         {"radius", radius}, {"height", height}, {"segments", segments}
     });
     return mesh;

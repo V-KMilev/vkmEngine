@@ -149,29 +149,31 @@ void load(const nlohmann::json& j, Light& l) {
 }
 
 nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
-    const std::string meshName     = m.mesh     ? resources.get(m.mesh).name     : "";
-    const std::string materialName = m.material ? resources.get(m.material).name : "";
+    const AssetId meshId     = m.mesh     ? resources.get(m.mesh).assetId     : AssetId{};
+    const AssetId materialId = m.material ? resources.get(m.material).assetId : AssetId{};
     return {
-        {"mesh",        meshName},
-        {"material",    materialName},
+        {"mesh",        meshId.toString()},
+        {"material",    materialId.toString()},
         {"visible",     m.visible},
         {"castShadows", m.castShadows},
     };
 }
 void load(const nlohmann::json& j, Mesh& m, const ResourceManager& resources) {
-    const std::string meshName     = j.value("mesh",     std::string{});
-    const std::string materialName = j.value("material", std::string{});
+    const AssetId meshId     = AssetId::fromString(j.value("mesh",     std::string{}));
+    const AssetId materialId = AssetId::fromString(j.value("material", std::string{}));
 
-    if (!meshName.empty()) {
-        m.mesh = resources.findByName<MeshAsset>(meshName);
+    if (meshId) {
+        m.mesh = resources.findById<MeshAsset>(meshId);
         if (!m.mesh) {
-            LOG_WARNING("SceneLoad: mesh asset '%s' not found - Mesh component left unresolved", meshName.c_str());
+            LOG_WARNING("SceneLoad: mesh asset %s not found - Mesh component left unresolved",
+                        meshId.toString().c_str());
         }
     }
-    if (!materialName.empty()) {
-        m.material = resources.findByName<MaterialAsset>(materialName);
+    if (materialId) {
+        m.material = resources.findById<MaterialAsset>(materialId);
         if (!m.material) {
-            LOG_WARNING("SceneLoad: material asset '%s' not found - Mesh component left unresolved", materialName.c_str());
+            LOG_WARNING("SceneLoad: material asset %s not found - Mesh component left unresolved",
+                        materialId.toString().c_str());
         }
     }
 
