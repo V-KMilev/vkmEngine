@@ -45,6 +45,7 @@ struct EditorState {
     bool showMaterialEditor = false;            ///< Material Editor window
     MaterialHandle materialEditorTarget{};      ///< Which material it edits (else: selected entity's)
     bool showAssetBrowser   = false;            ///< Asset Browser window (material/mesh thumbnail grid)
+    bool showRenderSettings = false;            ///< Render Settings window (world-level rendering config)
 
     // Layout dimensions (pixels)
     float leftPanelWidth    = 260.0f;
