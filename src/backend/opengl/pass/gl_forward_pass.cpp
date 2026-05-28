@@ -32,12 +32,12 @@ namespace Engine {
 namespace {
 
 /**
- * @brief RAII guard: restore GL_FILL polygon mode on destruction. Used to wrap
+ * @brief RAII guard: restore GL_FILL polygon mode on destruction.
  *
- * the wireframe set/restore around the body of execute() so every return
- * path (including the transparent-phase "no transparent batches" early
- * exit) leaves polygon mode back at GL_FILL - otherwise post passes
- * rasterize as line segments and ImGui draws as outlines.
+ * Used to wrap the wireframe set/restore around the body of execute() so every
+ * return path (including the transparent-phase "no transparent batches" early
+ * exit) leaves polygon mode back at GL_FILL - otherwise post passes rasterize
+ * as line segments and ImGui draws as outlines.
  */
 struct PolygonModeGuard {
     Core::Context* ctx;
@@ -47,14 +47,14 @@ struct PolygonModeGuard {
 } // namespace
 
 namespace {
-    const char* phaseSuffix(GLForwardPass::Phase p) {
-        switch (p) {
-            case GLForwardPass::Phase::Opaque:      return " (Opaque)";
-            case GLForwardPass::Phase::Transparent: return " (Transparent)";
-            case GLForwardPass::Phase::All:         return "";
-        }
-        return "";
+const char* phaseSuffix(GLForwardPass::Phase p) {
+    switch (p) {
+        case GLForwardPass::Phase::Opaque:      return " (Opaque)";
+        case GLForwardPass::Phase::Transparent: return " (Transparent)";
+        case GLForwardPass::Phase::All:         return "";
     }
+    return "";
+}
 }
 
 GLForwardPass::GLForwardPass(ShaderHandle pbrShader, Phase phase)

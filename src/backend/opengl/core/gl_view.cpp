@@ -8,7 +8,7 @@
 
 #include "logger.h"
 
-#include "gl_texture.h"  // Core::Texture2D for the fallback placeholder
+#include "texture/gl_texture.h"  // vkmGL Core::Texture2D for the fallback placeholder
 
 #include "debug/profiler.h"
 #include "debug/shader_error_log.h"

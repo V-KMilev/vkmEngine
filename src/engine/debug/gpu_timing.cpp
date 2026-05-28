@@ -29,8 +29,8 @@ void GpuTimingPool::recordSample(std::size_t passIndex, double ms) {
     if (passIndex >= m_passes.size()) return;
     PassStats& p = m_passes[passIndex];
     p.ring[p.cursor] = static_cast<float>(ms);
-    p.cursor = (p.cursor + 1) % kRingSize;
-    p.sampleCount = std::min(p.sampleCount + 1, kRingSize);
+    p.cursor = (p.cursor + 1) % RING_SIZE;
+    p.sampleCount = std::min(p.sampleCount + 1, RING_SIZE);
     p.last = ms;
     recomputeDerived(p);
 }
@@ -51,7 +51,7 @@ void GpuTimingPool::recomputeDerived(PassStats& p) const {
         return;
     }
     // Walk the valid-prefix only - the ring is zeroed at construction
-    // but we don't want zeros pulling the average down before kRingSize
+    // but we don't want zeros pulling the average down before RING_SIZE
     // samples have landed.
     std::size_t n = p.sampleCount;
     double sum = 0.0;
@@ -64,9 +64,9 @@ void GpuTimingPool::recomputeDerived(PassStats& p) const {
     p.avg  = sum / static_cast<double>(n);
     p.maxV = maxV;
 
-    // Cheap p99: sort a stack-bounded scratch copy. n <= kRingSize = 120
+    // Cheap p99: sort a stack-bounded scratch copy. n <= RING_SIZE = 120
     // so allocating on the stack is fine.
-    float scratch[kRingSize];
+    float scratch[RING_SIZE];
     for (std::size_t i = 0; i < n; ++i) scratch[i] = p.ring[i];
     std::sort(scratch, scratch + n);
     const std::size_t idx = (n * 99) / 100;

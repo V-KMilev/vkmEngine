@@ -5,9 +5,9 @@
 namespace Engine {
 
 namespace {
-    constexpr float BTN = 26.0f;
-    constexpr float GAP = 4.0f;
-    constexpr float PAD = 5.0f;
+constexpr float BTN = 26.0f;
+constexpr float GAP = 4.0f;
+constexpr float PAD = 5.0f;
 }
 
 void ViewportPlaybar::draw(EditorContext& ec) {

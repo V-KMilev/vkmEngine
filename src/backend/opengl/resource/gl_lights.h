@@ -56,14 +56,14 @@ struct alignas(16) LightGPUData {
  *
  * Layout:
  * - lightCount: offset 0, 4 bytes (12 bytes padding to next array element)
- * - lights:     offset 16, 96 * Config::MaxLights bytes
+ * - lights:     offset 16, 96 * Config::MAX_LIGHTS bytes
  *
- * Total size: 16 + (96 * Config::MaxLights) = 16 + (96 * 32) = 16 + 3072 = 3088 bytes
+ * Total size: 16 + (96 * Config::MAX_LIGHTS) = 16 + (96 * 32) = 16 + 3072 = 3088 bytes
  */
 struct alignas(16) LightsUBOData {
     int lightCount;                              // offset 0, 4 bytes
     char _padding[12];                           // offset 4, 12 bytes (explicit padding to offset 16)
-    LightGPUData lights[Config::MaxLights];      // offset 16, 96 bytes per light
+    LightGPUData lights[Config::MAX_LIGHTS];      // offset 16, 96 bytes per light
 };
 
 /**

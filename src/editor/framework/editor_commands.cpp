@@ -9,8 +9,6 @@
 
 namespace Engine {
 
-// TransformChangeCommand
-
 TransformChangeCommand::TransformChangeCommand(
     EntityId e,
     const Transform& before,
@@ -41,8 +39,6 @@ bool TransformChangeCommand::tryMerge(Command& incoming) {
     return true;
 }
 
-// AddComponentCommand<T>
-
 template <typename T>
 void AddComponentCommand<T>::redo(Scene& scene, EditorState& state) {
     if (!scene.isAlive(m_entity) || scene.has<T>(m_entity)) return;
@@ -60,8 +56,6 @@ void AddComponentCommand<T>::undo(Scene& scene, EditorState& state) {
     state.hierarchyDirty = true;
 }
 
-// RemoveComponentCommand<T>
-
 template <typename T>
 void RemoveComponentCommand<T>::redo(Scene& scene, EditorState& state) {
     if (!scene.isAlive(m_entity) || !scene.has<T>(m_entity)) return;
@@ -77,8 +71,8 @@ void RemoveComponentCommand<T>::undo(Scene& scene, EditorState& state) {
     state.hierarchyDirty = true;
 }
 
-// Explicit instantiations - single TU emits the AddComponent / RemoveComponent
-// machinery for each component type the editor mutates through commands.
+// Single TU emits the AddComponent / RemoveComponent machinery for each
+// component type the editor mutates through commands.
 template class AddComponentCommand<Mesh>;
 template class AddComponentCommand<Light>;
 template class AddComponentCommand<ReflectionProbe>;
@@ -91,8 +85,6 @@ template class RemoveComponentCommand<Light>;
 template class RemoveComponentCommand<ReflectionProbe>;
 template class RemoveComponentCommand<Camera>;
 template class RemoveComponentCommand<Animation>;
-
-// EntitySnapshot
 
 EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
     EntitySnapshot s;
@@ -118,8 +110,6 @@ void EntitySnapshot::apply(Scene& scene, EntityId id) const {
     if (name      && !scene.has<Name>(id))      { Name      v = *name;      scene.add(e, std::move(v)); }
 }
 
-// CreateEntityCommand
-
 void CreateEntityCommand::redo(Scene& scene, EditorState& state) {
     Entity e = scene.createEntityAt(m_snap.slotIndex);
     m_snap.apply(scene, e.getID());
@@ -134,8 +124,6 @@ void CreateEntityCommand::undo(Scene& scene, EditorState& state) {
     state.hierarchyDirty = true;
     if (state.selectedEntity == id) state.selectedEntity = {};
 }
-
-// SubtreeSnapshot
 
 SubtreeSnapshot SubtreeSnapshot::capture(const Scene& scene, EntityId root) {
     SubtreeSnapshot s;
@@ -203,8 +191,6 @@ void SubtreeSnapshot::apply(Scene& scene) const {
     }
 }
 
-// DestroySubtreeCommand
-
 void DestroySubtreeCommand::redo(Scene& scene, EditorState& state) {
     if (m_snap.nodes.empty()) return;
     const uint32_t rootSlot = m_snap.nodes.front().snap.slotIndex;
@@ -230,8 +216,6 @@ void DestroySubtreeCommand::undo(Scene& scene, EditorState& state) {
         }
     }
 }
-
-// ReparentCommand
 
 void ReparentCommand::redo(Scene& scene, EditorState& state) {
     if (!scene.isAlive(m_child)) return;

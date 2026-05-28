@@ -86,7 +86,7 @@ void CameraController::updateFlyMode(WindowManager& windowManager, glm::vec3& po
 
     // Only update cursor mode when state changes
     if (isRightMousePressed != m_isRightMousePressed) {
-        windowManager.setCursorMode(isRightMousePressed ? CursorMode::DISABLED : CursorMode::NORMAL);
+        windowManager.setCursorMode(isRightMousePressed ? CursorMode::Disabled : CursorMode::Normal);
         m_isRightMousePressed = isRightMousePressed;
     }
 

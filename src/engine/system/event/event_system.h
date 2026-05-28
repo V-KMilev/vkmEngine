@@ -53,15 +53,19 @@ class EventSystem : public System {
 
         using ListenerId = uint32_t;
 
-        /// Register a callback for events of type EventT.
-        /// @return ListenerId for later unsubscribe.
+        /**
+         * @brief Register a callback for events of type EventT.
+         * @return ListenerId for later unsubscribe.
+         */
         template<typename EventT>
         ListenerId subscribe(std::function<void(const EventT&)> callback) {
             return bus<EventT>().subscribe(std::move(callback));
         }
 
-        /// Remove a previously-registered listener.
-        /// @return true if found and removed, false otherwise.
+        /**
+         * @brief Remove a previously-registered listener.
+         * @return true if found and removed, false otherwise.
+         */
         template<typename EventT>
         bool unsubscribe(ListenerId id) {
             auto* b = findBus<EventT>();

@@ -5,18 +5,18 @@
 namespace Engine {
 
 struct Task {
-    Task() : m_function(nullptr) {}
-    Task(std::function<void()> && function) : m_function(std::move(function)) {}
+    std::function<void()> function = nullptr;
+
+    Task() = default;
+    Task(std::function<void()> && fn) : function(std::move(fn)) {}
 
     operator bool() const {
-        return m_function != nullptr;
+        return function != nullptr;
     }
 
     void execute() {
-        m_function();
+        function();
     }
-
-    std::function<void()> m_function = nullptr;
 };
 
 } // namespace Engine
