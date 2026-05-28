@@ -1,6 +1,7 @@
 .vscode/
+.claude/
 
-build/
+build*/
 cache/
 
 logs/
