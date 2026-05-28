@@ -15,12 +15,15 @@
 #include "logger.h"
 
 #include "debug/profiler.h"
+#include "core/system.h"
+#include "ecs/scene.h"
 #include "framework/editor_context.h"
 #include "framework/editor_settings.h"
 #include "input/editor_keybinds.h"
 #include "platform/window/window_manager.h"
 #include "system/camera/camera_controller.h"
 #include "system/render/render_system.h"
+#include "system/render/render_view.h"
 #include "ui/editor_theme.h"
 
 namespace Engine {
@@ -334,6 +337,27 @@ void EditorSystem::update(FrameContext& ctx) {
     if (m_state.showAssetBrowser) {
         PROFILE_SCOPE("Panel/AssetBrowser");
         m_assetBrowser.draw(ec);
+    }
+    if (m_state.showRenderSettings) {
+        PROFILE_SCOPE("Panel/RenderSettings");
+        // Find the singleton Environment entity's config component. The
+        // RenderSystem mirrors it each frame, but the source of truth is
+        // the scene component - edit that so changes persist across the
+        // mirror copy.
+        EnvironmentConfig* env = nullptr;
+        ec.frame.scene.forEach<EnvironmentConfig>(
+            [&](EntityId, EnvironmentConfig& e) { if (!env) env = &e; });
+        ImGui::SetNextWindowSize(ImVec2(380, 720), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Render Settings", &m_state.showRenderSettings)) {
+            if (env) {
+                m_renderSettingsUI.draw(ec, *env);
+            } else {
+                ImGui::TextDisabled(
+                    "No Environment entity in the scene.\n"
+                    "Create one via Entity > Create Entity > Environment.");
+            }
+        }
+        ImGui::End();
     }
 
     // Runtime graphics settings overlay - intentionally drawn last so it
