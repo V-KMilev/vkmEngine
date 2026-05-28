@@ -35,6 +35,10 @@ class VisibilitySystem : public System {
          */
         SystemAccess declareAccess() const override;
 
+        /// Reads ResourceManager (mesh bounds); never mutates. Safe to
+        /// overlap with the render thread.
+        bool mutatesResources() const override { return false; }
+
         Settings&       getSettings()       { return m_settings; }
         const Settings& getSettings() const { return m_settings; }
         void setSettings(const Settings& s) { m_settings = s; }

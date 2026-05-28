@@ -12,6 +12,7 @@
 #include "debug/profiler.h"
 #include "platform/threading/render_thread.h"
 #include "platform/threading/thread_pool.h"
+#include "system/render/render_system.h"
 
 namespace Engine {
 
@@ -133,29 +134,73 @@ void Engine::run() {
         }
 
         // First frame after init: optionally migrate the GL context to a
-        // dedicated render thread. Done here rather than before the loop
-        // so initSystems (and any GL work it triggers, like the IBL bake's
-        // first execute) still sees the context on the main thread.
+        // dedicated render thread + locate the RenderSystem so the overlap
+        // loop can split its buildView / executeFrame phases. Done here
+        // rather than before the loop so initSystems (and any GL work it
+        // triggers, like the IBL bake's first execute) still sees the
+        // context on the main thread.
         if (m_renderThreadEnabled && !m_renderThread) {
-            m_renderThread = std::make_unique<RenderThread>(m_window.getWindowContext());
+            const size_t renderIdx = static_cast<size_t>(SystemStage::Render);
+            for (auto& system : m_systemsByStage[renderIdx]) {
+                if (auto* rs = dynamic_cast<RenderSystem*>(system.get())) {
+                    m_renderSystem = rs;
+                    break;
+                }
+            }
+            if (!m_renderSystem) {
+                LOG_ERROR("Render thread enabled but no RenderSystem registered; falling back to single-threaded mode");
+                m_renderThreadEnabled = false;
+            } else {
+                m_renderThread = std::make_unique<RenderThread>(m_window.getWindowContext());
+            }
         }
 
         if (m_renderThread) {
+            // Phase 2B overlap. Frame K layout (overlapping with render K-1):
+            //   pre-wait phase  (non-mutator systems, all stages)   <- overlaps
+            //   buildView K     (RenderSystem; writes m_views[K&1]) <- overlaps
+            //   waitForFrame    (block until render K-1 is done)    <-- sync point
+            //   post-wait phase (mutator systems, all stages)
+            //   postFrame K     (render thread reads m_views[K&1])
+            // The render thread runs RenderSystem::executeFrame against
+            // the buffer index it was posted with - main has already moved
+            // on to writing the OTHER buffer for frame K+1, so no race.
             constexpr size_t RENDER_IDX = static_cast<size_t>(SystemStage::Render);
             constexpr size_t UI_IDX     = static_cast<size_t>(SystemStage::UI);
-            for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
-                if (s == RENDER_IDX || s == UI_IDX) continue;   // run on render thread
-                updateStage(static_cast<SystemStage>(s), ctx);
-            }
-            // Render thread does the GL work + swap. Sequential model:
-            // we block here until the frame is on the screen. Phase 2B
-            // drops the wait and lets the next frame's game stages run
-            // in parallel with this frame's render.
-            m_renderThread->executeFrame([this, &ctx]() {
-                updateStage(SystemStage::Render, ctx);
-                updateStage(SystemStage::UI,     ctx);
+
+            auto runPhase = [&](bool mutators) {
+                for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
+                    if (s == RENDER_IDX || s == UI_IDX) continue;  // routed via the lambda below
+                    PROFILE_SCOPE_NAMED(STAGE_NAMES[s]);
+                    for (auto& sys : m_systemsByStage[s]) {
+                        if (!sys->isEnabled()) continue;
+                        if (sys->mutatesResources() != mutators) continue;
+                        sys->update(ctx);
+                    }
+                }
+            };
+
+            // 1. Pre-wait: non-mutator systems. Reads only; overlap with render K-1.
+            runPhase(/*mutators=*/false);
+
+            // 2. Build the RenderView for frame K on main (still overlapping with render K-1).
+            m_renderSystem->buildView(ctx, m_renderFrameIndex);
+
+            // 3. Wait for render K-1 to finish before any resource mutation.
+            m_renderThread->waitForFrame();
+
+            // 4. Post-wait: mutator systems. Render thread is idle; safe to mutate.
+            runPhase(/*mutators=*/true);
+
+            // 5. Post render K. ctx is copied by value into the lambda so
+            //    the next loop iteration can mutate the local ctx without
+            //    affecting the render thread's snapshot.
+            const uint32_t frameIdx = m_renderFrameIndex;
+            m_renderThread->postFrame([this, ctx, frameIdx]() mutable {
+                m_renderSystem->executeFrame(ctx, frameIdx);
                 m_window.swapBuffers();
             });
+            ++m_renderFrameIndex;
         } else {
             for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
                 updateStage(static_cast<SystemStage>(s), ctx);

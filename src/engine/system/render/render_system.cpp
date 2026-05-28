@@ -47,63 +47,81 @@ void RenderSystem::resize(uint32_t width, uint32_t height) {
 }
 
 void RenderSystem::update(FrameContext& ctx) {
-    PROFILE_SCOPE("RenderSystem");
+    // Single-threaded path: build then execute against the same buffer.
+    // Frame index 0 picks m_views[0]; the buffer isn't shared with any
+    // other thread so parity doesn't matter here.
+    buildView(ctx, 0);
+    executeFrame(ctx, 0);
+}
+
+void RenderSystem::buildView(FrameContext& ctx, uint32_t frameIndex) {
+    PROFILE_SCOPE("RenderSystem/BuildView");
 
     if (!m_backend) {
-        LOG_WARNING("No backend set, skipping render frame");
+        LOG_WARNING("No backend set, skipping view build");
         return;
     }
 
-    // Keep internal size in sync
-    if (ctx.viewportWidth != m_width || ctx.viewportHeight != m_height) {
-        resize(ctx.viewportWidth, ctx.viewportHeight);
-    }
+    // m_width / m_height are the LAST sizes the backend was resized to.
+    // We do not call resize() here: it touches GL (FBO reallocation), so
+    // it must run on the GL thread - which is the render thread under
+    // Phase 2B. executeFrame() picks up the desired size from ctx and
+    // resizes there if needed.
 
     // Refill the editor thumbnail bake budget for this frame (consumed during
     // the later UI stage by the Asset Browser).
     m_thumbBudget = THUMB_BUDGET_PER_FRAME;
 
+    RenderView& view = m_views[frameIndex & 1u];
+
     // Environment lives as a singleton component on a scene entity (editable
     // in the Inspector). Pull it each frame; mirror into m_environment so
     // getEnvironment() returns a stable reference between frames.
-    m_environment = sceneEnvironment(ctx.scene);
-    m_renderView.environment = m_environment;
-    m_renderView.modeConfig  = resolveModeConfig(m_environment.renderMode);
-    m_renderView.deltaTime   = ctx.deltaTime;
+    m_environment      = sceneEnvironment(ctx.scene);
+    view.environment   = m_environment;
+    view.modeConfig    = resolveModeConfig(m_environment.renderMode);
+    view.deltaTime     = ctx.deltaTime;
 
-    // Build snapshot for this frame (reuses vector capacity from previous frame)
     {
         PROFILE_SCOPE("Render/BuildView");
-        m_renderView.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight);
-    }
-    // The viewport rect on the GLFW window - composite uses it to glViewport
-    // its fullscreen triangle into the editor's viewport child rather than
-    // smearing the full backbuffer. Window size carries through too so the
-    // composite can flip the y-axis from ImGui-style to GL-style.
-    m_renderView.viewportX    = ctx.viewportX;
-    m_renderView.viewportY    = ctx.viewportY;
-    m_renderView.windowWidth  = static_cast<uint32_t>(ctx.window.getWidth());
-    m_renderView.windowHeight = static_cast<uint32_t>(ctx.window.getHeight());
-
-    // Render-mode-driven env tweaks live alongside the mode resolution
-    // since they're conceptually part of the mode. The PBR shader's AO
-    // sample uses filled-triangle gbuffer AO at every fragment; in
-    // diagnostic views where the geometry isn't actually solid that's a
-    // lie - force AO off so the unlit path skips the sample cleanly.
-    if (m_renderView.modeConfig.disableSSAO) {
-        m_renderView.environment.ao.enabled = false;
+        view.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight);
     }
 
-    // Backend-owned GPU sync (no-op for backends that don't need it).
+    view.viewportX    = ctx.viewportX;
+    view.viewportY    = ctx.viewportY;
+    view.windowWidth  = static_cast<uint32_t>(ctx.window.getWidth());
+    view.windowHeight = static_cast<uint32_t>(ctx.window.getHeight());
+
+    if (view.modeConfig.disableSSAO) {
+        view.environment.ao.enabled = false;
+    }
+}
+
+void RenderSystem::executeFrame(FrameContext& ctx, uint32_t frameIndex) {
+    PROFILE_SCOPE("RenderSystem/ExecuteFrame");
+
+    if (!m_backend) return;
+
+    // GL-side resize is allowed here because we're on the GL thread.
+    // m_width/m_height track the last-applied backend size; ctx carries
+    // this frame's request.
+    if (ctx.viewportWidth != m_width || ctx.viewportHeight != m_height) {
+        m_width  = ctx.viewportWidth;
+        m_height = ctx.viewportHeight;
+        m_backend->resize(m_width, m_height);
+        m_graph.onResize(*m_backend, m_width, m_height);
+    }
+
+    RenderView& view = m_views[frameIndex & 1u];
+
     {
         PROFILE_SCOPE("Render/SyncResources");
-        m_backend->syncResources(m_renderView, ctx.resources);
+        m_backend->syncResources(view, ctx.resources);
     }
 
-    // Execute passes
     {
         PROFILE_SCOPE("Render/ExecuteGraph");
-        m_graph.execute(*m_backend, m_renderView, ctx.resources);
+        m_graph.execute(*m_backend, view, ctx.resources);
     }
 }
 
