@@ -136,8 +136,16 @@ class RenderSystem : public System {
         void             setPassEnabled(size_t index, bool enabled);
 
         /// Read-only graph accessor for editor tools (render-graph
-        /// visualizer). Stays const so panels can't mutate the schedule.
+        /// visualizer). Const so panels can't mutate the schedule; to
+        /// toggle a pass use setPassEnabled().
         const RenderGraph& getGraph() const { return m_graph; }
+
+        /// Mutable graph access for driving an offscreen render through the
+        /// engine pipeline - the Material Editor / Asset Browser previews
+        /// push their own FrameResources + target, execute, then pop. Not a
+        /// license to edit the schedule; pass toggles go through
+        /// setPassEnabled() or the view's environment flags.
+        RenderGraph& getGraph() { return m_graph; }
 
         EnvironmentConfig& getEnvironment() { return m_environment; }
         const EnvironmentConfig& getEnvironment() const { return m_environment; }
