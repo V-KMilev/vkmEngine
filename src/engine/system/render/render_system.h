@@ -96,6 +96,29 @@ class RenderSystem : public System {
          */
         void update(FrameContext& ctx) override;
 
+        /// Only reads ResourceManager (and only inside the render thread's
+        /// graph execute, when run with overlap). update() itself reads but
+        /// never writes Resources.
+        bool mutatesResources() const override { return false; }
+
+        /**
+         * @brief Phase 2B: split update() so the view-build happens on the
+         *        main thread while the previous frame's render is still in
+         *        flight on the render thread.
+         *
+         * buildView() fills m_views[frameIndex & 1] from the live Scene,
+         * ResourceManager, and Visibility. Must be called on the main
+         * thread between waitForFrame() of frame K-1 and postFrame() of
+         * frame K. executeFrame() reads the same buffer index, runs the
+         * render graph + GL sync; it is the body of the lambda posted to
+         * RenderThread.
+         *
+         * When the render thread is disabled, update() calls both in
+         * sequence on the main thread, indexed 0.
+         */
+        void buildView(FrameContext& ctx, uint32_t frameIndex);
+        void executeFrame(FrameContext& ctx, uint32_t frameIndex);
+
         /**
          * @brief Narrow pass introspection for editor / debug tooling.
          *
@@ -169,7 +192,12 @@ class RenderSystem : public System {
         std::unique_ptr<RenderBackend> m_backend;
         RenderGraph m_graph;
 
-        RenderView m_renderView;  ///< Persistent - vectors reuse capacity across frames.
+        /// Double-buffered RenderView for the Phase 2B overlap. Main writes
+        /// m_views[frameIndex & 1] in buildView(); render thread reads the
+        /// same buffer in executeFrame(). Next frame uses the OTHER buffer,
+        /// so main's buildView never touches the buffer the render thread
+        /// is currently reading. Vectors keep their capacity across frames.
+        RenderView m_views[2];
 
         // Material-preview scratch (editor): persistent view to reuse capacity.
         RenderView m_previewView;

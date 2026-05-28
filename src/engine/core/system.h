@@ -227,6 +227,27 @@ class System {
          */
         virtual SystemAccess declareAccess() const { return {}; }
 
+        /**
+         * @brief Does this system mutate ResourceManager during update()?
+         *
+         * Used by Engine::run() when the render thread is enabled to split
+         * systems into a "pre-wait" phase (overlaps with previous frame's
+         * render) and a "post-wait" phase (runs after render finishes,
+         * safe to mutate resources). Mutating ResourceManager while the
+         * render thread is reading it is a data race.
+         *
+         * Defaults to TRUE (conservative): forgetting to override means
+         * "no overlap", not "race condition". Override to false in
+         * systems verified to only read ResourceManager during update.
+         *
+         * Examples:
+         *  - CameraController: writes Camera component, not Resources -> false
+         *  - VisibilitySystem: reads mesh bounds, no writes -> false
+         *  - AsyncLoaderSystem: patches texture/mesh pixel data -> true (default)
+         *  - FileWatcher: bumps shader version on file change -> true (default)
+         */
+        virtual bool mutatesResources() const { return true; }
+
         bool isEnabled() const { return m_enabled; }
         void setEnabled(bool enabled) { m_enabled = enabled; }
 

@@ -53,10 +53,23 @@ class RenderThread {
 
     public:
         /**
-         * @brief Run @p renderJob on the worker thread and wait for it
-         *        to finish. Job may issue any GL calls; nothing else may.
+         * @brief Post @p renderJob to the worker WITHOUT blocking.
+         *
+         * Returns immediately. The caller must call waitForFrame() before
+         * mutating any data the job depends on (the engine does this at
+         * the start of the next frame's mutator phase). Posting another
+         * job while one is in flight will block until the in-flight one
+         * completes - this is the natural backpressure for the sequential
+         * pipeline.
          */
-        void executeFrame(std::function<void()> renderJob);
+        void postFrame(std::function<void()> renderJob);
+
+        /**
+         * @brief Block until the last posted job (if any) has completed.
+         *        Safe to call from the main thread at any time; no-op if
+         *        no job has ever been posted.
+         */
+        void waitForFrame();
 
     private:
         void workerMain();

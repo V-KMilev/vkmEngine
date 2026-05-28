@@ -13,6 +13,7 @@
 
 namespace Engine {
 
+class RenderSystem;
 class RenderThread;
 
 /**
@@ -198,6 +199,17 @@ class Engine {
         /// Lazily constructed in run() once boot is complete. Owns the
         /// GL context for its lifetime; destroyed at run() exit.
         std::unique_ptr<RenderThread> m_renderThread;
+
+        /// Cached pointer to the registered RenderSystem (if any). Used
+        /// by the overlap loop to call buildView() on main + executeFrame()
+        /// on the render thread independently. Filled lazily on the first
+        /// frame after initSystems; nullptr until then.
+        RenderSystem* m_renderSystem = nullptr;
+
+        /// Monotonic per-frame counter; drives RenderView buffer parity
+        /// in the overlap loop (m_views[frameIndex & 1]). Incremented
+        /// after each frame is posted.
+        uint32_t m_renderFrameIndex = 0;
 
         /// Throttle state for accumulator-clamp warnings (one per second).
         /// Per-instance so headless tools / tests with multiple Engine

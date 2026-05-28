@@ -49,6 +49,10 @@ class AnimationSystem : public System {
          */
         SystemAccess declareAccess() const override;
 
+        /// Writes only Animation + Transform components; never mutates
+        /// ResourceManager. Safe to overlap with the render thread.
+        bool mutatesResources() const override { return false; }
+
     private:
 
         /**

@@ -34,19 +34,24 @@ RenderThread::~RenderThread() {
     LOG_INFO("Render thread stopped; GL context returned to main");
 }
 
-void RenderThread::executeFrame(std::function<void()> renderJob) {
+void RenderThread::postFrame(std::function<void()> renderJob) {
+    // If a previous job is still in flight, block until it finishes so
+    // we never overwrite m_pendingJob mid-execution. The engine normally
+    // calls waitForFrame() before postFrame() anyway, so this is a
+    // safety net rather than the primary sync.
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        std::unique_lock<std::mutex> lock(m_mutex);
+        m_cv.wait(lock, [this]() { return m_jobDone; });
         m_pendingJob = std::move(renderJob);
         m_jobReady   = true;
         m_jobDone    = false;
     }
     m_cv.notify_one();
+}
 
-    {
-        std::unique_lock<std::mutex> lock(m_mutex);
-        m_cv.wait(lock, [this]() { return m_jobDone; });
-    }
+void RenderThread::waitForFrame() {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_cv.wait(lock, [this]() { return m_jobDone; });
 }
 
 void RenderThread::workerMain() {
