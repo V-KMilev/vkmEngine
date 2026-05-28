@@ -159,6 +159,10 @@ void Engine::run() {
                 for (auto& system : m_systemsByStage[uiIdx]) {
                     if (system->hasGLWork()) m_glWorkSystems.push_back(system.get());
                 }
+                // Editor panels can no longer render previews inline (GL
+                // context moves off main); RenderSystem will queue requests
+                // instead and the render thread drains them in executeFrame.
+                m_renderSystem->setDeferPreviewRender(true);
                 m_renderThread = std::make_unique<RenderThread>(m_window.getWindowContext());
             }
         }
