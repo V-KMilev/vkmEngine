@@ -40,6 +40,7 @@
 
 #include "logger.h"
 #include "debug/profiler.h"
+#include "resource/asset_database.h"
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
@@ -196,6 +197,7 @@ namespace {
         }
 
         out.name           = meshName(path, meshIdx);
+        out.assetId        = AssetDatabase::get().registerOrGet(out.name, AssetKind::Mesh);
         out.sourceJson()   = { {"kind", "model"}, {"path", path}, {"mesh", meshIdx} };
         out.computeAndSetBounds();
         return out;
@@ -223,6 +225,7 @@ namespace {
         tex.params.generateMipmaps = true;
         tex.srgb     = srgb;
         tex.name     = name;
+        tex.assetId  = AssetDatabase::get().registerOrGet(name, AssetKind::Texture);
         tex.pixelData.assign(rgba, rgba + static_cast<size_t>(w) * h * 4);
         tex.sourceJson() = std::move(source);
         return res.add(std::move(tex));
@@ -328,6 +331,7 @@ namespace {
 
         MaterialAsset out;
         out.name           = nm;
+        out.assetId        = AssetDatabase::get().registerOrGet(nm, AssetKind::Material);
         out.sourceJson()   = { {"kind", "model"}, {"path", path}, {"material", matIdx} };
 
         if (scene && matIdx >= 0 && matIdx < static_cast<int>(scene->mNumMaterials)) {
