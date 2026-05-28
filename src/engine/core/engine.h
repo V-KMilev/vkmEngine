@@ -13,6 +13,8 @@
 
 namespace Engine {
 
+class RenderThread;
+
 /**
  * @brief Engine context: owns core state and runs the main loop.
  *
@@ -33,8 +35,11 @@ namespace Engine {
  */
 class Engine {
     public:
-        Engine() = default;
-        ~Engine() = default;
+        // Default ctor + dtor out-of-line so the unique_ptr<RenderThread>'s
+        // default deleter sees the full RenderThread type (forward-declared
+        // at the top of this header).
+        Engine();
+        ~Engine();
 
         Engine(const Engine& other) = delete;
         Engine& operator=(const Engine& other) = delete;
@@ -71,6 +76,21 @@ class Engine {
             m_systemsByStage[static_cast<size_t>(stage)].push_back(std::move(system));
             return ref;
         }
+
+        /**
+         * @brief Move the Render + UI stages and swapBuffers onto a
+         *        dedicated GL thread.
+         *
+         * Must be called before run() to take effect. Once enabled the
+         * GL context migrates off the main thread after engine boot
+         * completes; only the render thread may issue GL calls thereafter.
+         *
+         * Sequential mode today: main thread waits for the render thread
+         * each frame, so no FPS win - the win is the architectural
+         * isolation. ImGui-using builds (the editor) should leave this
+         * OFF until the ImGui draw-data handoff is wired up.
+         */
+        void enableRenderThread(bool enable) { m_renderThreadEnabled = enable; }
 
         /**
          * @brief Run the main loop (blocks until the window is closed).
@@ -169,6 +189,15 @@ class Engine {
         std::vector<System*> m_fixedUpdaters;
 
         bool m_initialized = false;
+
+        /// Set via enableRenderThread() before run(); honoured at the
+        /// first frame after engine boot. Default false keeps the
+        /// existing single-threaded behaviour for the editor binary.
+        bool m_renderThreadEnabled = false;
+
+        /// Lazily constructed in run() once boot is complete. Owns the
+        /// GL context for its lifetime; destroyed at run() exit.
+        std::unique_ptr<RenderThread> m_renderThread;
 
         /// Throttle state for accumulator-clamp warnings (one per second).
         /// Per-instance so headless tools / tests with multiple Engine
