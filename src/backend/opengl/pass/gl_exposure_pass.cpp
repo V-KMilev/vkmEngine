@@ -94,6 +94,12 @@ void GLExposurePass::execute(RenderGraphContext& rg) {
 
     ae.swap();
 
+    // Mirror the freshly-adapted 1x1 luminance back to the CPU so the
+    // editor's Exposure card can display the value the auto-exposure path
+    // is converging to. Cheap (~10us / frame); only worth the sync because
+    // the editor wants to surface it - the runtime path never reads back.
+    gl.setAdaptedLuminance(ae.readAdapted());
+
     m_screenTri->unbind();
     ae.unbindFbo();
 
