@@ -160,6 +160,14 @@ void MaterialPreviewSession::renderOnBackendThread(
     v.environment.taa.enabled           = false;
     v.environment.dof.enabled           = false;
     v.environment.motionBlur.enabled    = false;
+    // World-grid and AABB-debug make no sense around a single preview shape.
+    // Suppress them through THIS view's environment flags - GLGridPass and
+    // GLAABBDebugPass gate enabledForView() on these - rather than poking the
+    // shared graph's global pass-enable state (which the main viewport then
+    // had to recompile back, and which left passes disabled if the render
+    // threw mid-way).
+    v.environment.grid.enabled      = false;
+    v.environment.aabbDebug.enabled = false;
 
     v.viewportWidth  = m_size;
     v.viewportHeight = m_size;
@@ -185,18 +193,7 @@ void MaterialPreviewSession::renderOnBackendThread(
     lightKey.shadowSlot  = -1;
     v.lights.emplace_back(lightKey);
 
-    // World-grid and AABB-debug make no sense around a single preview shape;
-    // suppress just those two, leave the rest of the pipeline intact.
-    RenderGraph& graph = const_cast<RenderGraph&>(m_renderSystem.getGraph());
-    m_passWasEnabled.clear();
-    for (size_t i = 0, n = graph.passCount(); i < n; ++i) {
-        RenderPass& p = graph.getPass(i);
-        const std::string& name = p.getName();
-        if (name == "GLGridPass" || name == "GLAABBDebugPass") {
-            m_passWasEnabled.push_back({ i, p.isEnabled() });
-            p.setEnabled(false);
-        }
-    }
+    RenderGraph& graph = m_renderSystem.getGraph();
 
     // Hand-built RenderView can slip past sync's version-gating heuristics;
     // force every mesh/material/texture in @p view resident first.
@@ -211,11 +208,6 @@ void MaterialPreviewSession::renderOnBackendThread(
     // target so any subsequent backend work this frame (ImGui submit)
     // doesn't render into the preview texture.
     backend.getDefaultTarget().bind();
-
-    for (const auto& s : m_passWasEnabled) {
-        graph.getPass(s.first).setEnabled(s.second);
-    }
-    m_passWasEnabled.clear();
 
     (void)key;
 }

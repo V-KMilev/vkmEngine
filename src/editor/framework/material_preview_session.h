@@ -129,11 +129,6 @@ class MaterialPreviewSession {
         /// lights vector capacity.
         RenderView m_view;
 
-        /// Passes we forcibly disabled around a preview (grid, AABB)
-        /// and their prior enabled state. Restored after the render so
-        /// the main viewport's pipeline is unchanged.
-        std::vector<std::pair<size_t, bool>> m_passWasEnabled;
-
         /// Thumbnail throttle: at most BUDGET_PER_FRAME fresh
         /// (non-live) bakes per frame so an Asset Browser grid spreads
         /// its work out.
