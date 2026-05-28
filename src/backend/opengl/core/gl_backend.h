@@ -83,6 +83,12 @@ class GLBackend : public RenderBackend {
 
         std::vector<ShaderVariantStat> shaderVariantStats() const override;
 
+        /// CPU mirror of the auto-exposure adapted luminance; written each
+        /// frame by GLExposurePass via setAdaptedLuminance(), read by the
+        /// editor's Exposure card for the adapted-EV readout.
+        float getAdaptedLuminance() const override { return m_adaptedLuminance; }
+        void  setAdaptedLuminance(float v)         { m_adaptedLuminance = v; }
+
         uint32_t snapshotToTexture(uint32_t srcTextureId, uint64_t key,
                                    uint32_t size) override;
         uint32_t cachedThumbnail(uint64_t key) const override;
@@ -165,6 +171,12 @@ class GLBackend : public RenderBackend {
         Core::Context m_context;
         GLView m_view;
         GLDefaultRenderTarget m_defaultTarget;
+
+        /// Last CPU readback of the auto-exposure adapted luminance. Seeded
+        /// at the same value GLAutoExposure seeds its 1x1 ping-pong with
+        /// (0.18) so the editor's readout shows something sensible before
+        /// the exposure pass runs the first time.
+        float m_adaptedLuminance = 0.18f;
 
         /// Per-key thumbnail snapshots (Asset Browser grid + the live
         /// Material Editor). The graph keeps a key->id index; the backend

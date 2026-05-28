@@ -163,6 +163,16 @@ class RenderBackend {
         virtual std::vector<ShaderVariantStat> shaderVariantStats() const { return {}; }
 
         /**
+         * @brief Latest CPU-side mirror of the auto-exposure adapted luminance.
+         *
+         * The exposure pass reads back the 1x1 R16F target after each frame
+         * and parks it here so the editor's Exposure card can display the
+         * adapted EV without doing its own GPU sync. Returns the seed value
+         * (0.18) on backends that haven't implemented auto-exposure.
+         */
+        virtual float getAdaptedLuminance() const { return 0.18f; }
+
+        /**
          * @brief Construct a backend-specific FrameResources pool.
          *
          * The graph holds the returned pool via unique_ptr<FrameResources>
