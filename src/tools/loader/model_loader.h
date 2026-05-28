@@ -32,6 +32,20 @@ class Scene;
 /// Sets name + source so the asset round-trips through scene save/load.
 MeshAsset loadModelMesh(const std::string& path, int meshIndex);
 
+/**
+ * @brief Non-blocking variant: register a stub MeshAsset with loading=true,
+ *        post the Assimp parse + vertex extraction to ThreadPool, return the
+ *        handle immediately. AsyncLoaderSystem patches the live asset with
+ *        the decoded vertices, indices and bounds 1+ frames out.
+ *
+ * Idempotent by AssetId: a second request for the same (path, meshIndex)
+ * returns the existing handle even while the first is still in flight.
+ * VisibilitySystem already skips meshes with zero-extent bounds, so a
+ * loading mesh stays invisible (no fallback geometry needed).
+ */
+MeshHandle requestModelMeshAsync(const std::string& path, int meshIndex,
+                                 ResourceManager& resources);
+
 /// Build + register one material (loading its textures). @p materialIndex
 /// < 0 yields a default material. Idempotent by name.
 MaterialHandle loadModelMaterial(const std::string& path, int materialIndex,

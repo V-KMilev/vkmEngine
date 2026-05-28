@@ -30,7 +30,7 @@ class Scene;
  */
 class AssetFactories {
     public:
-        using MeshFactory     = std::function<MeshAsset     (const nlohmann::json& desc)>;
+        using MeshFactory     = std::function<MeshHandle    (const nlohmann::json& desc, ResourceManager& resources)>;
         using TextureFactory  = std::function<TextureHandle (const nlohmann::json& desc, ResourceManager& resources)>;
         using MaterialFactory = std::function<MaterialHandle(const nlohmann::json& desc, ResourceManager& resources)>;
         using ShaderFactory   = std::function<ShaderAsset   (const nlohmann::json& desc)>;
@@ -42,9 +42,8 @@ class AssetFactories {
         void registerMaterial(std::string kind, MaterialFactory factory);
         void registerShader  (std::string kind, ShaderFactory   factory);
 
-        /// Look up and invoke. Returns an empty MeshAsset if `kind` is unknown.
-        MeshAsset      createMesh    (const nlohmann::json& source) const;
         /// Returns an invalid handle if `kind` is unknown.
+        MeshHandle     createMesh    (const nlohmann::json& source, ResourceManager& resources) const;
         TextureHandle  createTexture (const nlohmann::json& source, ResourceManager& resources) const;
         MaterialHandle createMaterial(const nlohmann::json& source, ResourceManager& resources) const;
         ShaderAsset    createShader  (const nlohmann::json& source) const;
