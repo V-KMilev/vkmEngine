@@ -2,6 +2,7 @@
 
 #include "io/component_serializer.h"
 
+#include <cstddef>
 #include <cstring>
 #include <limits>
 #include <string>
@@ -9,11 +10,11 @@
 #include "logger.h"
 
 #include "ecs/component/camera.h"
-#include "ecs/component/transform.h"
 #include "ecs/component/reflection_probe.h"
+#include "ecs/component/transform.h"
 #include "io/reflect.h"
 #include "resource/resource_manager.h"
-#include "system/render/render_view.h"   // EnvironmentConfig
+#include "system/render/render_view.h"   // EnvironmentConfig + every sub-config
 
 namespace Engine::ComponentSerializer {
 
@@ -32,11 +33,16 @@ glm::quat quatFromJson(const nlohmann::json& j) {
                      static_cast<float>(j[2]), static_cast<float>(j[3]));
 }
 
-// ---- Generic field <-> JSON converters used by the reflection-driven
-// save/load templates. Overload set; ADL is not used (call site qualifies
-// nothing), so adding a new type means adding a new overload here.
-// Reference parameters where the field is being mutated, by-value for
-// trivial inputs.
+// ----------------------------------------------------------------------------
+// toJson / fromJson overload set. The reflection-driven save/load templates
+// (saveReflected / loadReflected) iterate a type's fields and forward each
+// to these helpers; adding a new field type means adding a new pair here.
+// No ADL is required: the templates live in this anon namespace and so do
+// every overload, so unqualified lookup at the saveReflected definition
+// already covers everything.
+// ----------------------------------------------------------------------------
+
+// Primitives.
 inline nlohmann::json toJson(bool        v) { return v; }
 inline nlohmann::json toJson(int         v) { return v; }
 inline nlohmann::json toJson(uint32_t    v) { return v; }
@@ -46,8 +52,6 @@ inline nlohmann::json toJson(const glm::vec2& v) { return vec2ToJson(v); }
 inline nlohmann::json toJson(const glm::vec3& v) { return vec3ToJson(v); }
 inline nlohmann::json toJson(const glm::vec4& v) { return vec4ToJson(v); }
 inline nlohmann::json toJson(const glm::quat& q) { return quatToJson(q); }
-
-// Enums get a per-type overload further down (ProjectionType, ...).
 
 inline void fromJson(const nlohmann::json& j, bool&     v) { v = j.get<bool>(); }
 inline void fromJson(const nlohmann::json& j, int&      v) { v = j.get<int>(); }
@@ -59,9 +63,17 @@ inline void fromJson(const nlohmann::json& j, glm::vec3& v) { if (j.is_array() &
 inline void fromJson(const nlohmann::json& j, glm::vec4& v) { if (j.is_array() && j.size() >= 4) v = vec4FromJson(j); }
 inline void fromJson(const nlohmann::json& j, glm::quat& q) { if (j.is_array() && j.size() >= 4) q = quatFromJson(j); }
 
-// Enum support — same overload pattern. ProjectionType is the only one
-// currently driven through the reflection path; LightType still has a
-// hand-written save/load until the Light component is migrated.
+// Fixed-size character buffers (e.g. Name::value is char[64]).
+template<std::size_t N>
+inline nlohmann::json toJson(const char (&v)[N]) { return std::string(v); }
+template<std::size_t N>
+inline void fromJson(const nlohmann::json& j, char (&v)[N]) {
+    const std::string s = j.get<std::string>();
+    std::strncpy(v, s.c_str(), N - 1);
+    v[N - 1] = '\0';
+}
+
+// Enums.
 inline nlohmann::json toJson(ProjectionType v) {
     return v == ProjectionType::Perspective ? "Perspective" : "Orthographic";
 }
@@ -71,53 +83,7 @@ inline void fromJson(const nlohmann::json& j, ProjectionType& v) {
         : ProjectionType::Perspective;
 }
 
-/// Reflection-driven save: emit one JSON key per declared field.
-template<typename T>
-nlohmann::json saveReflected(const T& obj) {
-    nlohmann::json out = nlohmann::json::object();
-    ::Engine::Reflect::forEachField(obj, [&](std::string_view name, const auto& val) {
-        out[std::string(name)] = toJson(val);
-    });
-    return out;
-}
-
-/// Reflection-driven load: for each declared field, patch from JSON if
-/// present. Missing keys keep the field's current value - that's the
-/// forward-compat path when a saved scene predates a new field.
-template<typename T>
-void loadReflected(const nlohmann::json& j, T& obj) {
-    ::Engine::Reflect::forEachField(obj, [&](std::string_view name, auto& val) {
-        auto it = j.find(std::string(name));
-        if (it != j.end()) fromJson(*it, val);
-    });
-}
-
-} // namespace
-
-nlohmann::json save(const Name& n) {
-    return nlohmann::json{{"value", std::string(n.value)}};
-}
-void load(const nlohmann::json& j, Name& n) {
-    const std::string s = j.value("value", std::string{});
-    std::strncpy(n.value, s.c_str(), sizeof(n.value) - 1);
-    n.value[sizeof(n.value) - 1] = '\0';
-}
-
-// Transform / Camera bodies are now driven by the reflection markup
-// (see VKM_REFLECT_* blocks at the bottom of this file). Reflection
-// covers the common case: bag-of-fields data structs with primitive,
-// glm or enum members. Components with non-trivial shape (Mesh with
-// ResourceManager refs, Hierarchy with parent EntityId, Name's fixed
-// char buffer, Animation's track vector) keep their hand-written
-// save/load below.
-nlohmann::json save(const Transform& t) { return saveReflected(t); }
-void load(const nlohmann::json& j, Transform& t) { loadReflected(j, t); }
-
-nlohmann::json save(const Camera& c) { return saveReflected(c); }
-void load(const nlohmann::json& j, Camera& c) { loadReflected(j, c); }
-
-namespace {
-const char* lightTypeName(LightType t) {
+inline nlohmann::json toJson(LightType t) {
     switch (t) {
         case LightType::Directional: return "Directional";
         case LightType::Point:       return "Point";
@@ -127,56 +93,196 @@ const char* lightTypeName(LightType t) {
     }
     return "Directional";
 }
-LightType lightTypeFromName(const std::string& s) {
-    if (s == "Point") return LightType::Point;
-    if (s == "Spot")  return LightType::Spot;
-    if (s == "Rect")  return LightType::Rect;
-    if (s == "Disk")  return LightType::Disk;
-    return LightType::Directional;
+inline void fromJson(const nlohmann::json& j, LightType& v) {
+    const std::string s = j.get<std::string>();
+    if      (s == "Point") v = LightType::Point;
+    else if (s == "Spot")  v = LightType::Spot;
+    else if (s == "Rect")  v = LightType::Rect;
+    else if (s == "Disk")  v = LightType::Disk;
+    else                   v = LightType::Directional;
 }
+
+inline nlohmann::json toJson(RenderMode m) { return static_cast<int>(m); }
+inline void fromJson(const nlohmann::json& j, RenderMode& m) {
+    m = static_cast<RenderMode>(j.get<int>());
+}
+
+// ----------------------------------------------------------------------------
+// Forward declarations for nested-config bridge overloads. These have to
+// be VISIBLE at the saveReflected / loadReflected definition site - the
+// templates do unqualified lookup of toJson / fromJson at first phase, and
+// ADL at the point of instantiation can only find names in the argument
+// type's associated namespaces (i.e. ::Engine, not this anon namespace).
+// So every overload that participates in reflected iteration must be
+// declared above the templates.
+// ----------------------------------------------------------------------------
+
+inline nlohmann::json toJson(const AmbientConfig& c);
+inline void fromJson(const nlohmann::json& j, AmbientConfig& c);
+inline nlohmann::json toJson(const IBLConfig& c);
+inline void fromJson(const nlohmann::json& j, IBLConfig& c);
+inline nlohmann::json toJson(const AOConfig& c);
+inline void fromJson(const nlohmann::json& j, AOConfig& c);
+inline nlohmann::json toJson(const SSRConfig& c);
+inline void fromJson(const nlohmann::json& j, SSRConfig& c);
+inline nlohmann::json toJson(const TAAConfig& c);
+inline void fromJson(const nlohmann::json& j, TAAConfig& c);
+inline nlohmann::json toJson(const DofConfig& c);
+inline void fromJson(const nlohmann::json& j, DofConfig& c);
+inline nlohmann::json toJson(const MotionBlurConfig& c);
+inline void fromJson(const nlohmann::json& j, MotionBlurConfig& c);
+inline nlohmann::json toJson(const StarburstConfig& c);
+inline void fromJson(const nlohmann::json& j, StarburstConfig& c);
+inline nlohmann::json toJson(const LensFlareConfig& c);
+inline void fromJson(const nlohmann::json& j, LensFlareConfig& c);
+inline nlohmann::json toJson(const LensDirtConfig& c);
+inline void fromJson(const nlohmann::json& j, LensDirtConfig& c);
+inline nlohmann::json toJson(const BloomConfig& c);
+inline void fromJson(const nlohmann::json& j, BloomConfig& c);
+inline nlohmann::json toJson(const ShadowConfig& c);
+inline void fromJson(const nlohmann::json& j, ShadowConfig& c);
+inline nlohmann::json toJson(const TransparencyConfig& c);
+inline void fromJson(const nlohmann::json& j, TransparencyConfig& c);
+inline nlohmann::json toJson(const OcclusionConfig& c);
+inline void fromJson(const nlohmann::json& j, OcclusionConfig& c);
+inline nlohmann::json toJson(const ExposureConfig& c);
+inline void fromJson(const nlohmann::json& j, ExposureConfig& c);
+inline nlohmann::json toJson(const ColorGradeConfig& c);
+inline void fromJson(const nlohmann::json& j, ColorGradeConfig& c);
+inline nlohmann::json toJson(const GridConfig& c);
+inline void fromJson(const nlohmann::json& j, GridConfig& c);
+inline nlohmann::json toJson(const AABBDebugConfig& c);
+inline void fromJson(const nlohmann::json& j, AABBDebugConfig& c);
+inline nlohmann::json toJson(const SelectionOutlineConfig& c);
+inline void fromJson(const nlohmann::json& j, SelectionOutlineConfig& c);
+
+// ----------------------------------------------------------------------------
+// Reflection driver. Iterates a type's reflected fields and forwards each
+// (name, value) through the toJson / fromJson overload set. Phase-1
+// unqualified lookup at this definition site picks up everything declared
+// above; new field types only need a matching overload, no template tweak.
+// ----------------------------------------------------------------------------
+
+template<typename T>
+nlohmann::json saveReflected(const T& obj) {
+    nlohmann::json out = nlohmann::json::object();
+    ::Engine::Reflect::forEachField(obj, [&](std::string_view name, const auto& val) {
+        out[std::string(name)] = toJson(val);
+    });
+    return out;
+}
+
+template<typename T>
+void loadReflected(const nlohmann::json& j, T& obj) {
+    ::Engine::Reflect::forEachField(obj, [&](std::string_view name, auto& val) {
+        auto it = j.find(std::string(name));
+        if (it != j.end()) fromJson(*it, val);
+    });
+}
+
+// ----------------------------------------------------------------------------
+// Bridge definitions - each nested config is a one-line re-entry into the
+// reflection driver, so a parent struct can embed it as a reflected field
+// with no per-effect plumbing. ExposureConfig and EnvironmentConfig
+// override fromJson because they carry small back-compat fixups around
+// fields renamed in earlier refactors.
+// ----------------------------------------------------------------------------
+
+inline nlohmann::json toJson(const AmbientConfig& c)             { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, AmbientConfig& c)             { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const IBLConfig& c)                 { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, IBLConfig& c)                 { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const AOConfig& c)                  { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, AOConfig& c)                  { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const SSRConfig& c)                 { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, SSRConfig& c)                 { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const TAAConfig& c)                 { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, TAAConfig& c)                 { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const DofConfig& c)                 { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, DofConfig& c)                 { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const MotionBlurConfig& c)          { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, MotionBlurConfig& c)          { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const StarburstConfig& c)           { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, StarburstConfig& c)           { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const LensFlareConfig& c)           { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, LensFlareConfig& c)           { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const LensDirtConfig& c)            { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, LensDirtConfig& c)            { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const BloomConfig& c)               { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, BloomConfig& c)               { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const ShadowConfig& c)              { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, ShadowConfig& c)              { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const TransparencyConfig& c)        { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, TransparencyConfig& c)        { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const OcclusionConfig& c)           { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, OcclusionConfig& c)           { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const ExposureConfig& c)            { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, ExposureConfig& c) {
+    loadReflected(j, c);
+    // Back-compat: scenes saved before the brighten/darken split used a
+    // single "speed" field. Map it to both rates.
+    if (j.contains("speed") && !j.contains("speedBrighten") && !j.contains("speedDarken")) {
+        c.speedBrighten = j["speed"].get<float>();
+        c.speedDarken   = j["speed"].get<float>();
+    }
+}
+
+inline nlohmann::json toJson(const ColorGradeConfig& c)          { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, ColorGradeConfig& c)          { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const GridConfig& c)                { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, GridConfig& c)                { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const AABBDebugConfig& c)           { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, AABBDebugConfig& c)           { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const SelectionOutlineConfig& c)    { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, SelectionOutlineConfig& c)    { loadReflected(j, c); }
+
 } // namespace
 
-nlohmann::json save(const Light& l) {
-    return {
-        {"type",           lightTypeName(l.type)},
-        {"color",          vec3ToJson(l.color)},
-        {"intensity",      l.intensity},
-        {"radius",         l.radius},
-        {"innerConeAngle", l.innerConeAngle},
-        {"outerConeAngle", l.outerConeAngle},
-        {"areaWidth",      l.areaWidth},
-        {"areaHeight",     l.areaHeight},
-        {"areaRadius",     l.areaRadius},
-        {"twoSided",       l.twoSided},
-        {"castShadows",    l.castShadows},
-        {"shadowBias",     l.shadowBias},
-        {"shadowExtent",   l.shadowExtent},
-        {"enabled",        l.enabled},
-    };
-}
-// bakeVersion is intentionally NOT in the reflection markup, so the
-// generic save/load skip it - the backend re-bakes on load and the
-// counter starts at 0 again. Fields outside the markup are the
-// idiomatic "internal only" path.
-nlohmann::json save(const ReflectionProbe& p) { return saveReflected(p); }
-void load(const nlohmann::json& j, ReflectionProbe& p) { loadReflected(j, p); }
+// ----------------------------------------------------------------------------
+// Component save / load. Reflectable components are one-line passthroughs
+// into the reflection driver. The exceptions are intentional:
+//   - Mesh:      ResourceManager handle lookup (cross-asset reference).
+//   - Hierarchy: parent stored as raw scene-table index, resolved by
+//                SceneSerializer after the entity table is loaded.
+//   - Animation: AnimationTrack<T> exposes only addKeyframe / getTimes
+//                (private storage) and updateDuration() must be re-derived
+//                post load - no clean fit for the generic field iteration.
+// ----------------------------------------------------------------------------
 
-void load(const nlohmann::json& j, Light& l) {
-    l.type           = lightTypeFromName(j.value("type", std::string{"Directional"}));
-    l.color          = j.contains("color") ? vec3FromJson(j["color"]) : l.color;
-    l.intensity      = j.value("intensity",      l.intensity);
-    l.radius         = j.value("radius",         l.radius);
-    l.innerConeAngle = j.value("innerConeAngle", l.innerConeAngle);
-    l.outerConeAngle = j.value("outerConeAngle", l.outerConeAngle);
-    l.areaWidth      = j.value("areaWidth",      l.areaWidth);
-    l.areaHeight     = j.value("areaHeight",     l.areaHeight);
-    l.areaRadius     = j.value("areaRadius",     l.areaRadius);
-    l.twoSided       = j.value("twoSided",       l.twoSided);
-    l.castShadows    = j.value("castShadows",    l.castShadows);
-    l.shadowBias     = j.value("shadowBias",     l.shadowBias);
-    l.shadowExtent   = j.value("shadowExtent",   l.shadowExtent);
-    l.enabled        = j.value("enabled",        l.enabled);
-}
+nlohmann::json save(const Name& n)         { return saveReflected(n); }
+void load(const nlohmann::json& j, Name& n) { loadReflected(j, n); }
+
+nlohmann::json save(const Transform& t)         { return saveReflected(t); }
+void load(const nlohmann::json& j, Transform& t) { loadReflected(j, t); }
+
+nlohmann::json save(const Camera& c)         { return saveReflected(c); }
+void load(const nlohmann::json& j, Camera& c) { loadReflected(j, c); }
+
+nlohmann::json save(const Light& l)         { return saveReflected(l); }
+void load(const nlohmann::json& j, Light& l) { loadReflected(j, l); }
+
+// ReflectionProbe::bakeVersion is intentionally absent from the markup so
+// the backend re-bakes on load and the counter restarts at 0. That's the
+// idiomatic "internal only" pattern: omit the field from VKM_REFLECT.
+nlohmann::json save(const ReflectionProbe& p)         { return saveReflected(p); }
+void load(const nlohmann::json& j, ReflectionProbe& p) { loadReflected(j, p); }
 
 nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
     const AssetId meshId     = m.mesh     ? resources.get(m.mesh).assetId     : AssetId{};
@@ -274,274 +380,13 @@ void load(const nlohmann::json& j, Animation& a) {
     a.updateDuration();
 }
 
-// The singleton "Environment" entity's whole rendering/post stack. Every
-// field is a JSON primitive; load uses .value() fallbacks so older saves
-// (missing keys) keep the struct defaults and stay forward-compatible.
-// EnvironmentConfig is composed of per-effect sub-structs; serialize each
-// as its own JSON object so future per-effect versioning (deprecating a
-// field in one config) doesn't need to touch unrelated effects' layout.
-namespace {
-
-nlohmann::json saveAmbient(const AmbientConfig& c) {
-    return {{"color", vec3ToJson(c.color)}, {"intensity", c.intensity}};
-}
-void loadAmbient(const nlohmann::json& j, AmbientConfig& c) {
-    if (j.contains("color")) c.color = vec3FromJson(j["color"]);
-    c.intensity = j.value("intensity", c.intensity);
-}
-
-nlohmann::json saveIBL(const IBLConfig& c) {
-    return {{"path", c.path}, {"intensity", c.intensity}};
-}
-void loadIBL(const nlohmann::json& j, IBLConfig& c) {
-    c.path      = j.value("path",      c.path);
-    c.intensity = j.value("intensity", c.intensity);
-}
-
-nlohmann::json saveAO(const AOConfig& c) {
-    return {{"enabled", c.enabled}, {"radius", c.radius}, {"intensity", c.intensity}};
-}
-void loadAO(const nlohmann::json& j, AOConfig& c) {
-    c.enabled   = j.value("enabled",   c.enabled);
-    c.radius    = j.value("radius",    c.radius);
-    c.intensity = j.value("intensity", c.intensity);
-}
-
-nlohmann::json saveSSR(const SSRConfig& c) {
-    return {{"enabled", c.enabled}, {"intensity", c.intensity},
-            {"maxDistance", c.maxDistance}, {"thickness", c.thickness}};
-}
-void loadSSR(const nlohmann::json& j, SSRConfig& c) {
-    c.enabled     = j.value("enabled",     c.enabled);
-    c.intensity   = j.value("intensity",   c.intensity);
-    c.maxDistance = j.value("maxDistance", c.maxDistance);
-    c.thickness   = j.value("thickness",   c.thickness);
-}
-
-nlohmann::json saveTAA(const TAAConfig& c) {
-    return {{"enabled", c.enabled}, {"blend", c.blend}};
-}
-void loadTAA(const nlohmann::json& j, TAAConfig& c) {
-    c.enabled = j.value("enabled", c.enabled);
-    c.blend   = j.value("blend",   c.blend);
-}
-
-nlohmann::json saveDof(const DofConfig& c) {
-    return {{"enabled", c.enabled}, {"focusDistance", c.focusDistance},
-            {"focusRange", c.focusRange}, {"maxBlur", c.maxBlur}};
-}
-void loadDof(const nlohmann::json& j, DofConfig& c) {
-    c.enabled       = j.value("enabled",       c.enabled);
-    c.focusDistance = j.value("focusDistance", c.focusDistance);
-    c.focusRange    = j.value("focusRange",    c.focusRange);
-    c.maxBlur       = j.value("maxBlur",       c.maxBlur);
-}
-
-nlohmann::json saveMotionBlur(const MotionBlurConfig& c) {
-    return {{"enabled", c.enabled}, {"strength", c.strength}};
-}
-void loadMotionBlur(const nlohmann::json& j, MotionBlurConfig& c) {
-    c.enabled  = j.value("enabled",  c.enabled);
-    c.strength = j.value("strength", c.strength);
-}
-
-nlohmann::json saveStarburst(const StarburstConfig& c) {
-    return {{"enabled", c.enabled}, {"intensity", c.intensity}};
-}
-void loadStarburst(const nlohmann::json& j, StarburstConfig& c) {
-    c.enabled   = j.value("enabled",   c.enabled);
-    c.intensity = j.value("intensity", c.intensity);
-}
-
-nlohmann::json saveLensFlare(const LensFlareConfig& c) {
-    return {
-        {"enabled",      c.enabled},
-        {"intensity",    c.intensity},
-        {"threshold",    c.threshold},
-        {"ghostCount",   c.ghostCount},
-        {"ghostSpacing", c.ghostSpacing},
-        {"haloRadius",   c.haloRadius},
-        {"chromatic",    c.chromatic},
-        {"starburst",    saveStarburst(c.starburst)},
-    };
-}
-void loadLensFlare(const nlohmann::json& j, LensFlareConfig& c) {
-    c.enabled      = j.value("enabled",      c.enabled);
-    c.intensity    = j.value("intensity",    c.intensity);
-    c.threshold    = j.value("threshold",    c.threshold);
-    c.ghostCount   = j.value("ghostCount",   c.ghostCount);
-    c.ghostSpacing = j.value("ghostSpacing", c.ghostSpacing);
-    c.haloRadius   = j.value("haloRadius",   c.haloRadius);
-    c.chromatic    = j.value("chromatic",    c.chromatic);
-    if (j.contains("starburst")) loadStarburst(j["starburst"], c.starburst);
-}
-
-nlohmann::json saveLensDirt(const LensDirtConfig& c) {
-    return {{"enabled", c.enabled}, {"intensity", c.intensity}};
-}
-void loadLensDirt(const nlohmann::json& j, LensDirtConfig& c) {
-    c.enabled   = j.value("enabled",   c.enabled);
-    c.intensity = j.value("intensity", c.intensity);
-}
-
-nlohmann::json saveBloom(const BloomConfig& c) {
-    return {{"strength",  c.strength},
-            {"threshold", c.threshold},
-            {"knee",      c.knee}};
-}
-void loadBloom(const nlohmann::json& j, BloomConfig& c) {
-    c.strength  = j.value("strength",  c.strength);
-    c.threshold = j.value("threshold", c.threshold);
-    c.knee      = j.value("knee",      c.knee);
-}
-
-nlohmann::json saveShadow(const ShadowConfig& c) {
-    return {{"atlasRes2D",   c.atlasRes2D},
-            {"atlasResCube", c.atlasResCube},
-            {"softness",     c.softness}};
-}
-void loadShadow(const nlohmann::json& j, ShadowConfig& c) {
-    c.atlasRes2D   = j.value("atlasRes2D",   c.atlasRes2D);
-    c.atlasResCube = j.value("atlasResCube", c.atlasResCube);
-    c.softness     = j.value("softness",     c.softness);
-}
-
-nlohmann::json saveTransparency(const TransparencyConfig& c) {
-    return {{"useOIT", c.useOIT}};
-}
-void loadTransparency(const nlohmann::json& j, TransparencyConfig& c) {
-    c.useOIT = j.value("useOIT", c.useOIT);
-}
-
-nlohmann::json saveOcclusion(const OcclusionConfig& c) {
-    return {{"useHiZ", c.useHiZ}};
-}
-void loadOcclusion(const nlohmann::json& j, OcclusionConfig& c) {
-    c.useHiZ = j.value("useHiZ", c.useHiZ);
-}
-
-nlohmann::json saveExposure(const ExposureConfig& c) {
-    return {{"autoExposure",  c.autoExposure},
-            {"key",           c.key},
-            {"speedBrighten", c.speedBrighten},
-            {"speedDarken",   c.speedDarken},
-            {"min",           c.min},
-            {"max",           c.max}};
-}
-void loadExposure(const nlohmann::json& j, ExposureConfig& c) {
-    c.autoExposure = j.value("autoExposure", c.autoExposure);
-    c.key          = j.value("key",          c.key);
-    // Backwards compat: scenes saved before the lift/drag split used a
-    // single "speed" field. Map it to both rates so old scenes still work.
-    if (j.contains("speed") && !j.contains("speedBrighten")) {
-        c.speedBrighten = j.value("speed", c.speedBrighten);
-        c.speedDarken   = j.value("speed", c.speedDarken);
-    } else {
-        c.speedBrighten = j.value("speedBrighten", c.speedBrighten);
-        c.speedDarken   = j.value("speedDarken",   c.speedDarken);
-    }
-    c.min          = j.value("min",          c.min);
-    c.max          = j.value("max",          c.max);
-}
-
-nlohmann::json saveColorGrade(const ColorGradeConfig& c) {
-    return {{"enabled", c.enabled}, {"lutPath", c.lutPath}, {"intensity", c.intensity}};
-}
-void loadColorGrade(const nlohmann::json& j, ColorGradeConfig& c) {
-    c.enabled   = j.value("enabled",   c.enabled);
-    c.lutPath   = j.value("lutPath",   c.lutPath);
-    c.intensity = j.value("intensity", c.intensity);
-}
-
-nlohmann::json saveGrid(const GridConfig& c) {
-    return {{"enabled", c.enabled}, {"size", c.size}, {"scale", c.scale},
-            {"fadeStart", c.fadeStart}, {"fadeEnd", c.fadeEnd}};
-}
-void loadGrid(const nlohmann::json& j, GridConfig& c) {
-    c.enabled   = j.value("enabled",   c.enabled);
-    c.size      = j.value("size",      c.size);
-    c.scale     = j.value("scale",     c.scale);
-    c.fadeStart = j.value("fadeStart", c.fadeStart);
-    c.fadeEnd   = j.value("fadeEnd",   c.fadeEnd);
-}
-
-nlohmann::json saveAABBDebug(const AABBDebugConfig& c) {
-    return {{"enabled", c.enabled}, {"color", vec3ToJson(c.color)}};
-}
-void loadAABBDebug(const nlohmann::json& j, AABBDebugConfig& c) {
-    c.enabled = j.value("enabled", c.enabled);
-    if (j.contains("color")) c.color = vec3FromJson(j["color"]);
-}
-
-nlohmann::json saveSelection(const SelectionOutlineConfig& c) {
-    return {{"enabled", c.enabled},
-            {"color", vec3ToJson(c.color)},
-            {"thickness", c.thickness}};
-}
-void loadSelection(const nlohmann::json& j, SelectionOutlineConfig& c) {
-    c.enabled   = j.value("enabled", c.enabled);
-    c.thickness = j.value("thickness", c.thickness);
-    if (j.contains("color")) c.color = vec3FromJson(j["color"]);
-}
-
-} // namespace
-
-nlohmann::json save(const EnvironmentConfig& e) {
-    return {
-        {"ambient",    saveAmbient(e.ambient)},
-        {"ibl",        saveIBL(e.ibl)},
-        {"ao",         saveAO(e.ao)},
-        {"ssr",        saveSSR(e.ssr)},
-        {"taa",        saveTAA(e.taa)},
-        {"dof",        saveDof(e.dof)},
-        {"motionBlur", saveMotionBlur(e.motionBlur)},
-        {"lensFlare",  saveLensFlare(e.lensFlare)},
-        {"lensDirt",   saveLensDirt(e.lensDirt)},
-        {"bloom",      saveBloom(e.bloom)},
-        {"shadow",     saveShadow(e.shadow)},
-        {"transparency", saveTransparency(e.transparency)},
-        {"occlusion",  saveOcclusion(e.occlusion)},
-        {"exposure",   saveExposure(e.exposure)},
-        {"colorGrade", saveColorGrade(e.colorGrade)},
-        {"grid",       saveGrid(e.grid)},
-        {"aabbDebug",  saveAABBDebug(e.aabbDebug)},
-        {"selection",  saveSelection(e.selection)},
-
-        {"tonemap",    e.tonemap},
-        {"clearColor", vec4ToJson(e.clearColor)},
-        {"renderMode", static_cast<int>(e.renderMode)},
-    };
-}
-
+// EnvironmentConfig and every sub-config flow through reflection now; the
+// only piece that escapes the generic load path is the legacy "wireframe"
+// bool from pre-RenderMode scenes.
+nlohmann::json save(const EnvironmentConfig& e) { return saveReflected(e); }
 void load(const nlohmann::json& j, EnvironmentConfig& e) {
-    if (j.contains("ambient"))    loadAmbient(j["ambient"],       e.ambient);
-    if (j.contains("ibl"))        loadIBL(j["ibl"],               e.ibl);
-    if (j.contains("ao"))         loadAO(j["ao"],                 e.ao);
-    if (j.contains("ssr"))        loadSSR(j["ssr"],               e.ssr);
-    if (j.contains("taa"))        loadTAA(j["taa"],               e.taa);
-    if (j.contains("dof"))        loadDof(j["dof"],               e.dof);
-    if (j.contains("motionBlur")) loadMotionBlur(j["motionBlur"], e.motionBlur);
-    if (j.contains("lensFlare"))  loadLensFlare(j["lensFlare"],   e.lensFlare);
-    if (j.contains("lensDirt"))   loadLensDirt(j["lensDirt"],     e.lensDirt);
-    if (j.contains("bloom"))      loadBloom(j["bloom"],           e.bloom);
-    if (j.contains("shadow"))     loadShadow(j["shadow"],         e.shadow);
-    if (j.contains("transparency")) loadTransparency(j["transparency"], e.transparency);
-    if (j.contains("occlusion"))  loadOcclusion(j["occlusion"],   e.occlusion);
-    if (j.contains("exposure"))   loadExposure(j["exposure"],     e.exposure);
-    if (j.contains("colorGrade")) loadColorGrade(j["colorGrade"], e.colorGrade);
-    if (j.contains("grid"))       loadGrid(j["grid"],             e.grid);
-    if (j.contains("aabbDebug"))  loadAABBDebug(j["aabbDebug"],   e.aabbDebug);
-    if (j.contains("selection"))  loadSelection(j["selection"],   e.selection);
-
-    e.tonemap   = j.value("tonemap",   e.tonemap);
-    if (j.contains("clearColor")) e.clearColor = vec4FromJson(j["clearColor"]);
-
-    // RenderMode replaced the old `wireframe` bool. Read the new int form
-    // first; fall back to the legacy bool so scenes saved before the
-    // refactor still load with their diagnostic view intact.
-    if (j.contains("renderMode")) {
-        e.renderMode = static_cast<RenderMode>(j["renderMode"].get<int>());
-    } else if (j.value("wireframe", false)) {
+    loadReflected(j, e);
+    if (!j.contains("renderMode") && j.value("wireframe", false)) {
         e.renderMode = RenderMode::Wireframe;
     }
 }
@@ -551,10 +396,14 @@ void load(const nlohmann::json& j, EnvironmentConfig& e) {
 // ----------------------------------------------------------------------------
 // Reflection markups. Listed at file scope so the VKM_REFLECT_BEGIN macro
 // can re-open Engine::Reflect and specialise Traits<T> there without
-// fighting the surrounding namespace. Each entry names the JSON-persisted
-// fields; fields omitted here are NOT serialised (the bakeVersion pattern
-// in ReflectionProbe relies on this).
+// fighting the surrounding namespace. Each entry lists the JSON-persisted
+// fields; fields omitted here are NOT serialised (e.g. ReflectionProbe::
+// bakeVersion, see save(ReflectionProbe) above).
 // ----------------------------------------------------------------------------
+
+VKM_REFLECT_BEGIN(Engine::Name)
+    VKM_F(value)
+VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(Engine::Transform)
     VKM_F(position),
@@ -573,10 +422,168 @@ VKM_REFLECT_BEGIN(Engine::Camera)
     VKM_F(active)
 VKM_REFLECT_END()
 
+VKM_REFLECT_BEGIN(Engine::Light)
+    VKM_F(type),
+    VKM_F(color),
+    VKM_F(intensity),
+    VKM_F(radius),
+    VKM_F(innerConeAngle),
+    VKM_F(outerConeAngle),
+    VKM_F(areaWidth),
+    VKM_F(areaHeight),
+    VKM_F(areaRadius),
+    VKM_F(twoSided),
+    VKM_F(castShadows),
+    VKM_F(shadowBias),
+    VKM_F(shadowExtent),
+    VKM_F(enabled)
+VKM_REFLECT_END()
+
 VKM_REFLECT_BEGIN(Engine::ReflectionProbe)
     VKM_F(hdrPath),
     VKM_F(radius),
     VKM_F(falloffRange),
     VKM_F(intensity)
     // bakeVersion is intentionally absent - see save(ReflectionProbe).
+VKM_REFLECT_END()
+
+// --- EnvironmentConfig sub-configs ------------------------------------------
+
+VKM_REFLECT_BEGIN(Engine::AmbientConfig)
+    VKM_F(color),
+    VKM_F(intensity)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::IBLConfig)
+    VKM_F(path),
+    VKM_F(intensity)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::AOConfig)
+    VKM_F(enabled),
+    VKM_F(radius),
+    VKM_F(intensity)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::SSRConfig)
+    VKM_F(enabled),
+    VKM_F(intensity),
+    VKM_F(maxDistance),
+    VKM_F(thickness)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::TAAConfig)
+    VKM_F(enabled),
+    VKM_F(blend)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::DofConfig)
+    VKM_F(enabled),
+    VKM_F(focusDistance),
+    VKM_F(focusRange),
+    VKM_F(maxBlur)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::MotionBlurConfig)
+    VKM_F(enabled),
+    VKM_F(strength)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::StarburstConfig)
+    VKM_F(enabled),
+    VKM_F(intensity)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::LensFlareConfig)
+    VKM_F(enabled),
+    VKM_F(intensity),
+    VKM_F(threshold),
+    VKM_F(ghostCount),
+    VKM_F(ghostSpacing),
+    VKM_F(haloRadius),
+    VKM_F(chromatic),
+    VKM_F(starburst)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::LensDirtConfig)
+    VKM_F(enabled),
+    VKM_F(intensity)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::BloomConfig)
+    VKM_F(strength),
+    VKM_F(threshold),
+    VKM_F(knee)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::ShadowConfig)
+    VKM_F(atlasRes2D),
+    VKM_F(atlasResCube),
+    VKM_F(softness)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::TransparencyConfig)
+    VKM_F(useOIT)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::OcclusionConfig)
+    VKM_F(useHiZ)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::ExposureConfig)
+    VKM_F(autoExposure),
+    VKM_F(key),
+    VKM_F(speedBrighten),
+    VKM_F(speedDarken),
+    VKM_F(min),
+    VKM_F(max)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::ColorGradeConfig)
+    VKM_F(enabled),
+    VKM_F(lutPath),
+    VKM_F(intensity)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::GridConfig)
+    VKM_F(enabled),
+    VKM_F(size),
+    VKM_F(scale),
+    VKM_F(fadeStart),
+    VKM_F(fadeEnd)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::AABBDebugConfig)
+    VKM_F(enabled),
+    VKM_F(color)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::SelectionOutlineConfig)
+    VKM_F(enabled),
+    VKM_F(color),
+    VKM_F(thickness)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::EnvironmentConfig)
+    VKM_F(ambient),
+    VKM_F(ibl),
+    VKM_F(shadow),
+    VKM_F(transparency),
+    VKM_F(occlusion),
+    VKM_F(ao),
+    VKM_F(ssr),
+    VKM_F(taa),
+    VKM_F(dof),
+    VKM_F(motionBlur),
+    VKM_F(lensFlare),
+    VKM_F(lensDirt),
+    VKM_F(bloom),
+    VKM_F(exposure),
+    VKM_F(colorGrade),
+    VKM_F(grid),
+    VKM_F(aabbDebug),
+    VKM_F(selection),
+    VKM_F(tonemap),
+    VKM_F(clearColor),
+    VKM_F(renderMode)
 VKM_REFLECT_END()
