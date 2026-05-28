@@ -104,16 +104,16 @@ class RenderSystem : public System {
         bool mutatesResources() const override { return false; }
 
         /**
-         * @brief Phase 2B: split update() so the view-build happens on the
-         *        main thread while the previous frame's render is still in
+         * @brief Split update() so the view-build happens on the main
+         *        thread while the previous frame's render is still in
          *        flight on the render thread.
          *
          * buildView() fills m_views[frameIndex & 1] from the live Scene,
          * ResourceManager, and Visibility. Must be called on the main
          * thread between waitForFrame() of frame K-1 and postFrame() of
          * frame K. executeFrame() reads the same buffer index, runs the
-         * render graph + GL sync; it is the body of the lambda posted to
-         * RenderThread.
+         * render graph + backend sync; it is the body of the lambda
+         * posted to RenderThread.
          *
          * When the render thread is disabled, update() calls both in
          * sequence on the main thread, indexed 0.
@@ -166,9 +166,15 @@ class RenderSystem : public System {
          *             selected entity's mesh - the caller decides; this layer
          *             stays free of the mesh generators).
          */
-        uint32_t renderMaterialPreview(ResourceManager& resources,
-                const MaterialHandle& material, const MeshHandle& mesh,
-                float yawDeg, float pitchDeg, float distance, uint32_t size);
+        uint32_t renderMaterialPreview(
+            ResourceManager& resources,
+            const MaterialHandle& material,
+            const MeshHandle& mesh,
+            float yawDeg,
+            float pitchDeg,
+            float distance,
+            uint32_t size
+        );
 
         /**
          * @brief Stable preview/thumbnail texture for one material on a shape.
@@ -185,51 +191,61 @@ class RenderSystem : public System {
          *             false = budgeted lazy bake (thumbnail grid); returns the
          *             last snapshot (or 0) until its turn comes.
          */
-        uint32_t materialPreviewTexture(ResourceManager& resources,
-                const MaterialHandle& material, const MeshHandle& mesh,
-                float yawDeg, float pitchDeg, float distance,
-                uint64_t key, uint64_t version, bool live);
+        uint32_t materialPreviewTexture(
+            ResourceManager& resources,
+            const MaterialHandle& material,
+            const MeshHandle& mesh,
+            float yawDeg,
+            float pitchDeg,
+            float distance,
+            uint64_t key,
+            uint64_t version,
+            bool live
+        );
 
         /**
-         * @brief Queue a callable to run on the GL thread inside the next
-         *        executeFrame(), before the scene render.
+         * @brief Queue a callable to run on the backend's thread inside
+         *        the next executeFrame(), before the scene render.
          *
-         * Generic mechanism for any code path that needs GL work but
-         * doesn't itself hold the GL context. In single-threaded mode the
-         * caller IS the GL thread, so an immediate inline call would be
-         * equivalent and faster - prefer that. This API exists for the
-         * render-thread case: editor panels rendering previews, future
-         * screenshot capture, IBL re-bake from a menu, etc.
+         * Generic mechanism for any code path that needs backend work but
+         * doesn't itself hold the backend's context. In single-threaded
+         * mode the caller IS the backend thread, so an immediate inline
+         * call would be equivalent and faster - prefer that. This API
+         * exists for the render-thread case: editor panels rendering
+         * previews, future screenshot capture, IBL re-bake from a menu.
          *
          * Thread-safe; jobs run in queue order. Lifetime: jobs are
          * one-shot and dropped after execution. Callers capture any
          * dependencies they need; references must outlive the job
          * (typically Engine-owned state which lives forever).
          */
-        void queueGLJob(std::function<void()> job);
+        void queueBackendJob(std::function<void()> job);
 
         /**
-         * @brief Switch material-preview rendering to the deferred path.
+         * @brief Tell RenderSystem the rendering backend's context is held
+         *        by a thread other than the caller's.
          *
-         * Set true when Engine starts the render thread: materialPreviewTexture()
-         * queues a GL job via queueGLJob() instead of rendering inline.
+         * Set true when Engine starts the render thread: callers of
+         * materialPreviewTexture() get a deferred path that queues a
+         * backend job via queueBackendJob() instead of rendering inline.
          * The returned texture ID is the cached preview slot, stable per
-         * key, so ImGui's per-frame draw data references the right texture
-         * even when its contents land later in the same frame (the render
-         * thread drains the queue at the top of executeFrame, before
-         * EditorSystem::executeGL samples the textures).
+         * key, so ImGui's per-frame draw data references the right
+         * texture even when its contents land later in the same frame
+         * (the render thread drains the queue at the top of executeFrame,
+         * before EditorSystem::executeBackend samples the textures).
          */
-        void setDeferPreviewRender(bool defer) { m_deferPreviewRender = defer; }
+        void setBackendOnSeparateThread(bool yes) { m_backendOnSeparateThread = yes; }
 
     private:
         std::unique_ptr<RenderBackend> m_backend;
         RenderGraph m_graph;
 
-        /// Double-buffered RenderView for the Phase 2B overlap. Main writes
-        /// m_views[frameIndex & 1] in buildView(); render thread reads the
-        /// same buffer in executeFrame(). Next frame uses the OTHER buffer,
-        /// so main's buildView never touches the buffer the render thread
-        /// is currently reading. Vectors keep their capacity across frames.
+        /// Double-buffered RenderView for the render-thread overlap. Main
+        /// writes m_views[frameIndex & 1] in buildView(); the render
+        /// thread reads the same buffer in executeFrame(). The next frame
+        /// uses the OTHER buffer, so main's buildView never touches the
+        /// buffer the render thread is currently reading. Vectors keep
+        /// their capacity across frames.
         RenderView m_views[2];
 
         // Material-preview scratch (editor): persistent view to reuse capacity.
@@ -245,14 +261,14 @@ class RenderSystem : public System {
 
         /// Set by Engine when the render thread is enabled. Switches
         /// materialPreviewTexture() from inline render to queue-and-defer.
-        bool m_deferPreviewRender = false;
+        bool m_backendOnSeparateThread = false;
 
-        /// Thread-safe queue of one-shot GL jobs. Producers (panels,
-        /// editor commands) call queueGLJob() from any thread; the render
-        /// thread drains and runs them at the top of executeFrame(),
+        /// Thread-safe queue of one-shot backend jobs. Producers (panels,
+        /// editor commands) call queueBackendJob() from any thread; the
+        /// render thread drains and runs them at the top of executeFrame(),
         /// before the scene render and ImGui draw step.
-        std::vector<std::function<void()>> m_pendingGLJobs;
-        std::mutex                         m_pendingGLJobsMutex;
+        std::vector<std::function<void()>> m_pendingBackendJobs;
+        std::mutex                         m_pendingBackendJobsMutex;
 
         EnvironmentConfig m_environment;
 

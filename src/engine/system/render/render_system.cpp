@@ -63,10 +63,10 @@ void RenderSystem::buildView(FrameContext& ctx, uint32_t frameIndex) {
     }
 
     // m_width / m_height are the LAST sizes the backend was resized to.
-    // We do not call resize() here: it touches GL (FBO reallocation), so
-    // it must run on the GL thread - which is the render thread under
-    // Phase 2B. executeFrame() picks up the desired size from ctx and
-    // resizes there if needed.
+    // We do not call resize() here: it touches backend state (FBO
+    // reallocation), so it must run on the thread holding the backend's
+    // context - the render thread under the overlap loop. executeFrame()
+    // picks up the desired size from ctx and resizes there if needed.
 
     // Refill the editor thumbnail bake budget for this frame (consumed during
     // the later UI stage by the Asset Browser).
@@ -102,9 +102,9 @@ void RenderSystem::executeFrame(FrameContext& ctx, uint32_t frameIndex) {
 
     if (!m_backend) return;
 
-    // GL-side resize is allowed here because we're on the GL thread.
-    // m_width/m_height track the last-applied backend size; ctx carries
-    // this frame's request.
+    // Backend-side resize is allowed here because we're on the thread
+    // holding the backend's context. m_width/m_height track the last-
+    // applied backend size; ctx carries this frame's request.
     if (ctx.viewportWidth != m_width || ctx.viewportHeight != m_height) {
         m_width  = ctx.viewportWidth;
         m_height = ctx.viewportHeight;
@@ -112,19 +112,19 @@ void RenderSystem::executeFrame(FrameContext& ctx, uint32_t frameIndex) {
         m_graph.onResize(*m_backend, m_width, m_height);
     }
 
-    // Drain any GL jobs queued from main this frame (material previews
-    // from editor panels, future screenshot capture, etc.). They run on
-    // the GL thread before the scene render + ImGui draw so any textures
+    // Drain any backend jobs queued from main this frame (material
+    // previews from editor panels, future screenshot capture, etc.). They
+    // run here, before the scene render + ImGui draw, so any textures
     // they touch contain fresh content by the time ImGui samples them.
     // Swap under the lock, then run outside it so a job can re-queue
     // safely without deadlocking.
     {
-        PROFILE_SCOPE("Render/GLJobs");
+        PROFILE_SCOPE("Render/BackendJobs");
         thread_local std::vector<std::function<void()>> scratch;
         scratch.clear();
         {
-            std::lock_guard<std::mutex> lock(m_pendingGLJobsMutex);
-            scratch.swap(m_pendingGLJobs);
+            std::lock_guard<std::mutex> lock(m_pendingBackendJobsMutex);
+            scratch.swap(m_pendingBackendJobs);
         }
         for (auto& job : scratch) job();
     }
@@ -176,7 +176,9 @@ uint32_t RenderSystem::renderMaterialPreview(
     ResourceManager& resources,
     const MaterialHandle& material,
     const MeshHandle& mesh,
-    float yawDeg, float pitchDeg, float distance,
+    float yawDeg,
+    float pitchDeg,
+    float distance,
     uint32_t size
 ) {
     PROFILE_SCOPE("RenderSystem::renderMaterialPreview");
@@ -275,8 +277,12 @@ uint32_t RenderSystem::materialPreviewTexture(
     ResourceManager& resources,
     const MaterialHandle& material,
     const MeshHandle& mesh,
-    float yawDeg, float pitchDeg, float distance,
-    uint64_t key, uint64_t version, bool live
+    float yawDeg,
+    float pitchDeg,
+    float distance,
+    uint64_t key,
+    uint64_t version,
+    bool live
 ) {
     if (!m_backend) return 0;
 
@@ -289,14 +295,15 @@ uint32_t RenderSystem::materialPreviewTexture(
         --m_thumbBudget;
     }
 
-    // Deferred path: render thread owns the GL context. Queue a GL job
-    // that does the actual render + cache snapshot, return whatever's
-    // currently cached (0 the very first frame; a stable per-key texture
-    // id thereafter). The generic GL-job queue is drained at the top of
-    // executeFrame() before the scene + ImGui draw, so ImGui samples the
-    // freshly-rendered content in the same frame the request was made.
-    if (m_deferPreviewRender) {
-        queueGLJob([this, &resources, material, mesh, yawDeg, pitchDeg, distance, key]() {
+    // Deferred path: the render thread owns the backend context. Queue a
+    // backend job that does the actual render + cache snapshot, return
+    // whatever's currently cached (0 the very first frame; a stable
+    // per-key texture id thereafter). The generic backend-job queue is
+    // drained at the top of executeFrame() before the scene + ImGui
+    // draw, so ImGui samples the freshly-rendered content in the same
+    // frame the request was made.
+    if (m_backendOnSeparateThread) {
+        queueBackendJob([this, &resources, material, mesh, yawDeg, pitchDeg, distance, key]() {
             const uint32_t live = renderMaterialPreview(
                 resources, material, mesh, yawDeg, pitchDeg, distance, PREVIEW_RES);
             if (!live) return;
@@ -319,11 +326,10 @@ uint32_t RenderSystem::materialPreviewTexture(
     return snap ? snap : liveTex;
 }
 
-void RenderSystem::queueGLJob(std::function<void()> job) {
+void RenderSystem::queueBackendJob(std::function<void()> job) {
     if (!job) return;
-    std::lock_guard<std::mutex> lock(m_pendingGLJobsMutex);
-    m_pendingGLJobs.push_back(std::move(job));
+    std::lock_guard<std::mutex> lock(m_pendingBackendJobsMutex);
+    m_pendingBackendJobs.push_back(std::move(job));
 }
-
 
 } // namespace Engine

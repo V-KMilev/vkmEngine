@@ -10,13 +10,6 @@
 
 namespace Engine {
 
-SystemAccess HierarchySystem::declareAccess() const {
-    return SystemAccess{
-        /*reads*/  { typeId<Transform>(), typeId<Hierarchy>() },
-        /*writes*/ { typeId<WorldTransform>() },
-    };
-}
-
 void HierarchySystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("HierarchySystem");
     HierarchyOperations::resolveWorldTransforms(ctx.scene);

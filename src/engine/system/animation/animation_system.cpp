@@ -17,13 +17,6 @@ namespace Engine {
 
 AnimationSystem::AnimationSystem() = default;
 
-SystemAccess AnimationSystem::declareAccess() const {
-    return SystemAccess{
-        /*reads*/  { typeId<Animation>() },
-        /*writes*/ { typeId<Transform>() },
-    };
-}
-
 void AnimationSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("AnimationSystem");
 

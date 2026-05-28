@@ -65,13 +65,14 @@ namespace {
         aiProcess_ImproveCacheLocality;
 
     /**
-     * @brief LRU cache of parsed Assimp scenes keyed by canonical path. The
+     * @brief LRU cache of parsed Assimp scenes keyed by canonical path.
      *
-     * AssetSerializer loadGroup loop calls loadModelMesh / loadModelMaterial
-     * once per asset, so a glTF with N meshes + M materials previously
-     * triggered N+M full re-parses of the same file. The Importer owns the
-     * aiScene; we hand callers a shared_ptr so a concurrent eviction can't
-     * destroy the scene out from under them mid-build.
+     * The AssetSerializer loadGroup loop calls loadModelMesh /
+     * loadModelMaterial once per asset, so a glTF with N meshes + M
+     * materials previously triggered N+M full re-parses of the same
+     * file. The Importer owns the aiScene; we hand callers a shared_ptr
+     * so a concurrent eviction can't destroy the scene out from under
+     * them mid-build.
      */
     class ImporterCache {
         public:
@@ -477,8 +478,11 @@ MeshAsset loadModelMesh(const std::string& path, int meshIndex) {
     return buildMesh(scene, path, meshIndex);
 }
 
-MeshHandle requestModelMeshAsync(const std::string& path, int meshIndex,
-                                 ResourceManager& resources) {
+MeshHandle requestModelMeshAsync(
+    const std::string& path,
+    int meshIndex,
+    ResourceManager& resources
+) {
     const std::string name = meshName(path, meshIndex);
 
     // (path, meshIndex) is the stable identity. Idempotent: a second
@@ -514,8 +518,11 @@ MeshHandle requestModelMeshAsync(const std::string& path, int meshIndex,
     return handle;
 }
 
-MaterialHandle loadModelMaterial(const std::string& path, int materialIndex,
-                                 ResourceManager& resources) {
+MaterialHandle loadModelMaterial(
+    const std::string& path,
+    int materialIndex,
+    ResourceManager& resources
+) {
     auto importer = importerCache().get(path);
     if (!importer) return {};
     const aiScene* scene = importer->GetScene();
@@ -523,10 +530,12 @@ MaterialHandle loadModelMaterial(const std::string& path, int materialIndex,
     return buildMaterial(scene, path, materialIndex, resources);
 }
 
-TextureHandle loadModelEmbeddedTexture(const std::string& path,
-                                       const std::string& ref,
-                                       bool srgb,
-                                       ResourceManager& resources) {
+TextureHandle loadModelEmbeddedTexture(
+    const std::string& path,
+    const std::string& ref,
+    bool srgb,
+    ResourceManager& resources
+) {
     auto importer = importerCache().get(path);
     if (!importer) return {};
     const aiScene* scene = importer->GetScene();
@@ -543,8 +552,11 @@ TextureHandle loadModelEmbeddedTexture(const std::string& path,
     return decodeEmbedded(emb, resources, name, path, ref, srgb);
 }
 
-EntityId importModelIntoScene(const std::string& path, ResourceManager& resources,
-                              Scene& scene) {
+EntityId importModelIntoScene(
+    const std::string& path,
+    ResourceManager& resources,
+    Scene& scene
+) {
     PROFILE_SCOPE("ModelImport");
     Assimp::Importer importer;
     const aiScene* aScene = importer.ReadFile(path, POST_PROCESS_FLAGS);
