@@ -17,6 +17,7 @@
 #include "debug/profiler.h"
 #include "core/system.h"
 #include "ecs/scene.h"
+#include "ecs/component/selected.h"
 #include "framework/editor_context.h"
 #include "framework/editor_settings.h"
 #include "input/editor_keybinds.h"
@@ -270,6 +271,7 @@ void EditorSystem::update(FrameContext& ctx) {
         // Runtime graphics settings overlay remains reachable while the
         // editor is hidden - it's intentionally player-facing.
         m_runtimeSettings.draw(m_state, m_renderSystem);
+        syncSelectionTag(ctx.scene);
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         return;
@@ -364,10 +366,34 @@ void EditorSystem::update(FrameContext& ctx) {
     // floats over the editor workspace and isn't clipped by any panel.
     m_runtimeSettings.draw(m_state, m_renderSystem);
 
+    syncSelectionTag(ctx.scene);
+
     {
         PROFILE_SCOPE("Editor/ImGuiRender");
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    }
+}
+
+void EditorSystem::syncSelectionTag(Scene& scene) {
+    PROFILE_SCOPE("Editor/SyncSelectionTag");
+    EntityId target = m_state.selectedEntity;
+    const bool targetAlive = static_cast<bool>(target) && scene.isAlive(target);
+
+    // Drop the tag from anyone who shouldn't have it. Collect first so the
+    // SparseSet iterator isn't invalidated mid-walk by remove(). Single-
+    // select today, but the loop handles a future set just as well.
+    static thread_local std::vector<EntityId> stale;
+    stale.clear();
+    scene.forEach<Selected>([&](EntityId id, Selected&) {
+        if (!targetAlive || id != target) stale.push_back(id);
+    });
+    for (EntityId id : stale) {
+        if (scene.isAlive(id)) scene.remove<Selected>(Entity{id});
+    }
+
+    if (targetAlive && !scene.has<Selected>(target)) {
+        scene.add(Entity{target}, Selected{});
     }
 }
 

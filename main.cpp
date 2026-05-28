@@ -110,11 +110,12 @@ int main() {
         // pbr is variantAware: per-material feature flags drive an
         // #ifdef HAS_X variant cache. unlit and every other shader share
         // a single compiled program.
-        const auto pbrShader    = Engine::loadShader(resources, shaderDir + "/pbr",        "shader:pbr",        pbrSamplers, /*variantAware=*/true);
-        const auto unlitShader  = Engine::loadShader(resources, shaderDir + "/unlit",      "shader:unlit",      unlitSamplers);
-        const auto aabbShader   = Engine::loadShader(resources, shaderDir + "/aabb_debug", "shader:aabb_debug");
-        const auto gridShader   = Engine::loadShader(resources, shaderDir + "/grid",       "shader:grid");
-        const auto shadowShader = Engine::loadShader(resources, shaderDir + "/shadow",     "shader:shadow");
+        const auto pbrShader     = Engine::loadShader(resources, shaderDir + "/pbr",        "shader:pbr",        pbrSamplers, /*variantAware=*/true);
+        const auto unlitShader   = Engine::loadShader(resources, shaderDir + "/unlit",      "shader:unlit",      unlitSamplers);
+        const auto aabbShader    = Engine::loadShader(resources, shaderDir + "/aabb_debug", "shader:aabb_debug");
+        const auto outlineShader = Engine::loadShader(resources, shaderDir + "/outline",    "shader:outline");
+        const auto gridShader    = Engine::loadShader(resources, shaderDir + "/grid",       "shader:grid");
+        const auto shadowShader  = Engine::loadShader(resources, shaderDir + "/shadow",     "shader:shadow");
 
         // Composite/AgX post pass: u_hdr samples the resolved HDR scene target.
         const std::unordered_map<std::string, int> compositeSamplers = {
@@ -223,6 +224,7 @@ int main() {
             "GLForwardPass.Transparent",
             "GLOITResolvePass",
             "GLAABBDebugPass",
+            "GLOutlinePass",
             "GLGridPass",
             "GLSSRPass",
             "GLLensFlarePass",
@@ -247,6 +249,7 @@ int main() {
         Engine::watchShader(fileWatcher, resources, pbrShader);
         Engine::watchShader(fileWatcher, resources, unlitShader);
         Engine::watchShader(fileWatcher, resources, aabbShader);
+        Engine::watchShader(fileWatcher, resources, outlineShader);
         Engine::watchShader(fileWatcher, resources, gridShader);
         Engine::watchShader(fileWatcher, resources, shadowShader);
         Engine::watchShader(fileWatcher, resources, compositeShader);
