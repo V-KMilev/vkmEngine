@@ -71,12 +71,6 @@ class CameraController : public System {
          */
         void update(FrameContext& ctx) override;
 
-        /**
-         * @brief Reads Camera, writes Transform (only the camera entity's).
-         * No structural Scene changes.
-         */
-        SystemAccess declareAccess() const override;
-
         /// Writes the camera entity's Transform only; never touches
         /// ResourceManager. Safe to overlap with the render thread.
         bool mutatesResources() const override { return false; }

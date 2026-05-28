@@ -33,23 +33,31 @@ class Scene;
 MeshAsset loadModelMesh(const std::string& path, int meshIndex);
 
 /**
- * @brief Non-blocking variant: register a stub MeshAsset with loading=true,
- *        post the Assimp parse + vertex extraction to ThreadPool, return the
- *        handle immediately. AsyncLoaderSystem patches the live asset with
- *        the decoded vertices, indices and bounds 1+ frames out.
+ * @brief Non-blocking variant of loadModelMesh.
+ *
+ * Registers a stub MeshAsset with loading=true, posts the Assimp parse +
+ * vertex extraction to ThreadPool, and returns the handle immediately.
+ * AsyncLoaderSystem patches the live asset with the decoded vertices,
+ * indices and bounds 1+ frames out.
  *
  * Idempotent by AssetId: a second request for the same (path, meshIndex)
  * returns the existing handle even while the first is still in flight.
  * VisibilitySystem already skips meshes with zero-extent bounds, so a
  * loading mesh stays invisible (no fallback geometry needed).
  */
-MeshHandle requestModelMeshAsync(const std::string& path, int meshIndex,
-                                 ResourceManager& resources);
+MeshHandle requestModelMeshAsync(
+    const std::string& path,
+    int meshIndex,
+    ResourceManager& resources
+);
 
 /// Build + register one material (loading its textures). @p materialIndex
 /// < 0 yields a default material. Idempotent by name.
-MaterialHandle loadModelMaterial(const std::string& path, int materialIndex,
-                                 ResourceManager& resources);
+MaterialHandle loadModelMaterial(
+    const std::string& path,
+    int materialIndex,
+    ResourceManager& resources
+);
 
 /**
  * @brief Re-extract one embedded texture from a model file by Assimp ref.
@@ -59,10 +67,12 @@ MaterialHandle loadModelMaterial(const std::string& path, int materialIndex,
  * factory to round-trip embedded textures through scene save/load - the
  * pixels live in the model file, not in the scene JSON.
  */
-TextureHandle loadModelEmbeddedTexture(const std::string& path,
-                                       const std::string& ref,
-                                       bool srgb,
-                                       ResourceManager& resources);
+TextureHandle loadModelEmbeddedTexture(
+    const std::string& path,
+    const std::string& ref,
+    bool srgb,
+    ResourceManager& resources
+);
 
 /**
  * @brief Import a whole model file into @p scene.
@@ -74,7 +84,10 @@ TextureHandle loadModelEmbeddedTexture(const std::string& path,
  *
  * @return the root EntityId, or an invalid id on failure.
  */
-EntityId importModelIntoScene(const std::string& path,
-                              ResourceManager& resources, Scene& scene);
+EntityId importModelIntoScene(
+    const std::string& path,
+    ResourceManager& resources,
+    Scene& scene
+);
 
 } // namespace Engine

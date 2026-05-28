@@ -41,14 +41,6 @@ class AnimationSystem : public System {
          */
         void update(FrameContext& ctx) override;
 
-        /**
-         * @brief Reads Animation; writes Transform.
-         *
-         * No structural Scene changes (only mutates fields of existing
-         * Transforms that the animated entity already owns).
-         */
-        SystemAccess declareAccess() const override;
-
         /// Writes only Animation + Transform components; never mutates
         /// ResourceManager. Safe to overlap with the render thread.
         bool mutatesResources() const override { return false; }

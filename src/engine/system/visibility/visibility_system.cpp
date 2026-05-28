@@ -27,14 +27,6 @@
 
 namespace Engine {
 
-SystemAccess VisibilitySystem::declareAccess() const {
-    return SystemAccess{
-        /*reads*/  { typeId<Camera>(), typeId<Transform>(),
-                     typeId<WorldTransform>(), typeId<Mesh>() },
-        /*writes*/ {},  // m_result is internal, not a Scene component.
-    };
-}
-
 void VisibilitySystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("VisibilitySystem");
 

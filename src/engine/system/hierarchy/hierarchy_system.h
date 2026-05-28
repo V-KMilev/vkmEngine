@@ -29,16 +29,6 @@ class HierarchySystem : public System {
     public:
         void update(FrameContext& ctx) override;
 
-        /**
-         * @brief Resolve hierarchical transforms into per-entity WorldTransform.
-         *
-         * Reads the local Transform and the Hierarchy parent link; writes only
-         * the resolved WorldTransform (pre-seeded at setParent time, so this
-         * loop never adds storage). Safe to share a parallel layer with anything
-         * else that reads Transform/Hierarchy and doesn't touch WorldTransform.
-         */
-        SystemAccess declareAccess() const override;
-
         /// Writes WorldTransform components only; never touches ResourceManager.
         /// Safe to overlap with the render thread.
         bool mutatesResources() const override { return false; }
