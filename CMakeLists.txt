@@ -21,6 +21,12 @@ if(NOT DEFINED VKM_PROFILER)
     endif()
 endif()
 
+# Editor toggle. ON (default) = build both engine_editor and engine_runtime
+# executables. OFF = build only engine_runtime, and src/editor/ is skipped
+# entirely - proves the engine has no hidden dependency on editor code and
+# matches the layout a shipped game binary would use.
+option(VKM_WITH_EDITOR "Build the engine_editor executable + EngineEditor library" ON)
+
 # Git metadata
 include(cmake/git_metadata.cmake)
 
@@ -55,12 +61,18 @@ set_property(TARGET glew PROPERTY INTERFACE_INCLUDE_DIRECTORIES
 
 add_subdirectory(src/engine)
 add_subdirectory(src/tools)
-add_subdirectory(src/editor)
+if(VKM_WITH_EDITOR)
+    add_subdirectory(src/editor)
+endif()
 add_subdirectory(src/backend/opengl)
+add_subdirectory(src/engine_app)
 
 add_library(BuildInfo INTERFACE)
 target_compile_definitions(BuildInfo INTERFACE
     APP_VERSION="${PROJECT_VERSION}"
+    APP_VERSION_MAJOR="${PROJECT_VERSION_MAJOR}"
+    APP_VERSION_MINOR="${PROJECT_VERSION_MINOR}"
+    APP_VERSION_PATCH="${PROJECT_VERSION_PATCH}"
     APP_NAME="${PROJECT_NAME}"
     APP_BRANCH="${PROJECT_BRANCH}"
     APP_COMMIT_HASH="${PROJECT_COMMIT_HASH}"
@@ -68,7 +80,9 @@ target_compile_definitions(BuildInfo INTERFACE
     APP_ROOT_DIR="${PROJECT_ROOT_DIR}"
 )
 
-target_link_libraries(EngineEditor PRIVATE BuildInfo)
+if(VKM_WITH_EDITOR)
+    target_link_libraries(EngineEditor PRIVATE BuildInfo)
+endif()
 
 # EngineCore's io/screenshot.cpp writes into APP_ROOT_DIR/screenshots.
 target_link_libraries(EngineCore PRIVATE BuildInfo)
@@ -77,26 +91,20 @@ target_link_libraries(EngineCore PRIVATE BuildInfo)
 # APP_ROOT_DIR, so it needs the same build-info definitions.
 target_link_libraries(EngineTools PRIVATE BuildInfo)
 
-add_executable(${PROJECT_NAME}
-    main.cpp
-)
+# Two thin executable targets, each defined under app/. engine_runtime is
+# the bare engine (no editor at all). engine_editor adds EngineEditor and
+# instantiates EditorSystem on top of the shared bootstrap. Both pull the
+# rest of the engine in through EngineApp.
+add_subdirectory(app/engine_runtime)
+if(VKM_WITH_EDITOR)
+    add_subdirectory(app/engine_editor)
+endif()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    EngineCore
-    EngineRendering
-    BackendOpenGL
-    EngineTools
-    EngineEditor
-    BuildInfo
-)
-
-target_compile_definitions(${PROJECT_NAME} PRIVATE
-    APP_VERSION_MAJOR="${PROJECT_VERSION_MAJOR}"
-    APP_VERSION_MINOR="${PROJECT_VERSION_MINOR}"
-    APP_VERSION_PATCH="${PROJECT_VERSION_PATCH}"
-)
-
-foreach(_target EngineCore EngineRendering EngineTools EngineEditor BackendOpenGL ${PROJECT_NAME})
+set(_vkm_engine_targets EngineCore EngineRendering EngineTools BackendOpenGL EngineApp engine_runtime)
+if(VKM_WITH_EDITOR)
+    list(APPEND _vkm_engine_targets EngineEditor engine_editor)
+endif()
+foreach(_target ${_vkm_engine_targets})
     set_target_properties(${_target} PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED ON
@@ -113,8 +121,12 @@ endforeach()
 
 include(GNUInstallDirs)
 
-install(TARGETS EngineCore EngineRendering BackendOpenGL EngineTools EngineEditor
-                imgui vkmLog vkmGL glm glm-header-only glfw glew BuildInfo nlohmann_json
+set(_vkm_install_targets EngineCore EngineRendering BackendOpenGL EngineTools EngineApp
+                          imgui vkmLog vkmGL glm glm-header-only glfw glew BuildInfo nlohmann_json)
+if(VKM_WITH_EDITOR)
+    list(APPEND _vkm_install_targets EngineEditor)
+endif()
+install(TARGETS ${_vkm_install_targets}
     EXPORT vkmEngineTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -128,8 +140,12 @@ install(DIRECTORY src/backend/opengl/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vk
     FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY src/tools/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine/tools
     FILES_MATCHING PATTERN "*.h")
-install(DIRECTORY src/editor/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine/editor
+install(DIRECTORY src/engine_app/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine/engine_app
     FILES_MATCHING PATTERN "*.h")
+if(VKM_WITH_EDITOR)
+    install(DIRECTORY src/editor/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine/editor
+        FILES_MATCHING PATTERN "*.h")
+endif()
 install(DIRECTORY modules/vkmLog/src/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmLog
     FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY modules/vkmGL/src/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/vkmGL
