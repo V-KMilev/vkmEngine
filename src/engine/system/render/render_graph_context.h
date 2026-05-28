@@ -29,6 +29,19 @@ class ResourceManager;
  * the pass's declared reads/writes after the pass returns and warns
  * about drift in either direction (declared but not accessed, or
  * accessed but not declared). Release builds skip the tracking entirely.
+ *
+ * Threading contract (load-bearing for a future render-thread split):
+ *   - A pass MUST NOT touch Scene, ECS components, or any process
+ *     singleton (Engine::get, ThreadPool::get, AssetDatabase::get).
+ *     `view` is the frame's complete snapshot; if a pass needs new
+ *     data from the scene, surface it through RenderView first.
+ *   - A pass MUST NOT mutate `resources`: the field is `const` and
+ *     other systems on the game thread may be editing it on the next
+ *     frame's build.
+ *   - A pass MAY mutate backend-owned state via `backend` (GL state,
+ *     GLView caches, transient graph resources). That state is render-
+ *     thread-local once the split lands.
+ * Audited 2026-05-28: every existing pass already obeys these rules.
  */
 struct RenderGraphContext {
     RenderBackend&          backend;
