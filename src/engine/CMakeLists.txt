@@ -9,6 +9,7 @@ file(GLOB_RECURSE ENGINECORE_SOURCES CONFIGURE_DEPENDS
     io/*.cpp
     resource/*.cpp
     system/animation/*.cpp
+    system/async/*.cpp
     system/camera/*.cpp
     system/visibility/*.cpp
     system/event/*.cpp

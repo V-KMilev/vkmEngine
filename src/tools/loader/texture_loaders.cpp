@@ -8,8 +8,10 @@
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
+#include "platform/threading/thread_pool.h"
 #include "resource/asset_database.h"
 #include "resource/resource_manager.h"
+#include "system/async/async_load_queue.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -105,6 +107,69 @@ TextureHandle loadTexture(
         {"generateMipmaps", generateMipmaps},
     };
     return resourceManager.add(std::move(texture));
+}
+
+TextureHandle requestTextureAsync(
+    const std::string& filePath,
+    ResourceManager& resourceManager,
+    bool srgb,
+    bool generateMipmaps
+) {
+    // Path is the stable identity. If we've already requested this exact
+    // path before, return the same handle - even if the prior request is
+    // still in flight. Caller is free to bind/use the handle immediately;
+    // the asset just won't have pixels yet.
+    const AssetId id = AssetDatabase::get().registerOrGet(filePath, AssetKind::Texture);
+    if (auto existing = resourceManager.findById<TextureAsset>(id)) return existing;
+
+    // Stub asset: dimensions filled in by the finaliser once decode is done.
+    // The mipmap + sRGB flags do need to be set up-front since the asset
+    // serializer round-trips them.
+    TextureAsset stub;
+    stub.params.generateMipmaps = generateMipmaps;
+    stub.srgb                   = srgb;
+    stub.loading                = true;
+    stub.filePath               = filePath;
+    stub.name                   = filePath;
+    stub.assetId                = id;
+    stub.sourceJson() = {
+        {"kind",            "file"},
+        {"path",            filePath},
+        {"sRGB",            srgb},
+        {"generateMipmaps", generateMipmaps},
+    };
+    const TextureHandle handle = resourceManager.add(std::move(stub));
+
+    // Spawn the decode on a worker. We capture only the path + handle +
+    // flip flag - everything ResourceManager-touching happens on the main
+    // thread in AsyncLoaderSystem when the completion is drained.
+    ThreadPool::get().addTask(Task([handle, filePath]() {
+        stbi_set_flip_vertically_on_load(true);
+        int w = 0, h = 0, channels = 0;
+        unsigned char* data = stbi_load(filePath.c_str(), &w, &h, &channels, 0);
+
+        TextureLoadCompletion completion;
+        completion.handle = handle;
+        if (!data) {
+            LOG_ERROR("Async texture decode failed for '%s': %s",
+                filePath.c_str(), stbi_failure_reason());
+            completion.success = false;
+            AsyncLoadQueue::get().pushTexture(std::move(completion));
+            return;
+        }
+
+        const size_t dataSize = static_cast<size_t>(w) * static_cast<size_t>(h) * channels;
+        completion.width    = static_cast<uint32_t>(w);
+        completion.height   = static_cast<uint32_t>(h);
+        completion.channels = channels;
+        completion.pixelData.assign(data, data + dataSize);
+        completion.success  = true;
+        stbi_image_free(data);
+
+        AsyncLoadQueue::get().pushTexture(std::move(completion));
+    }));
+
+    return handle;
 }
 
 } // namespace Engine

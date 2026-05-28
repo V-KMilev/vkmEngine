@@ -121,6 +121,20 @@ class ResourceManager {
             slot.allocator->free(handle.key);
         }
 
+        /// @brief Liveness check: true when @p handle still names a valid
+        /// resource of its type. Use this before get/edit on handles that
+        /// might have been freed since you captured them - chiefly async
+        /// completions whose source code path is separated from the
+        /// resource lifetime by a worker hop.
+        template<typename HandleType>
+        bool isAlive(const HandleType& handle) const {
+            using T = typename HandleType::resource_t;
+            TypeId id = typeId<T>();
+            if (id >= m_slots.size() || !m_slots[id]) return false;
+            const auto& slot = *m_slots[id];
+            return slot.allocator->has(handle.key);
+        }
+
         /// @brief Get const access to a resource by handle.
         template<typename HandleType>
         const auto& get(const HandleType& handle) const {
