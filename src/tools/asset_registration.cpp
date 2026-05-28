@@ -56,7 +56,11 @@ void registerBuiltinAssetFactories() {
         if (path.empty()) return {};
         const bool sRGB         = desc.value("sRGB", false);
         const bool genMipmaps   = desc.value("generateMipmaps", true);
-        return loadTexture(path, resources, sRGB, genMipmaps);
+        // Scene-load file textures take the async path: returns immediately
+        // with a stub handle, ThreadPool decodes the pixels off the main
+        // thread, AsyncLoaderSystem finalises the asset 1-3 frames later.
+        // Material binding shows a 1x1 gray fallback in the gap.
+        return requestTextureAsync(path, resources, sRGB, genMipmaps);
     });
 
     // Textures: "builtin" kind. 1x1 default textures (white/black/normal/gray).
