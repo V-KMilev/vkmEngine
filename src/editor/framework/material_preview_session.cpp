@@ -63,13 +63,21 @@ uint32_t MaterialPreviewSession::texture(
 ) {
     if (!material || !mesh || m_size == 0) return 0;
 
+    // Change-detection for BOTH paths: when the cached image already matches
+    // this version, skip the render entirely. This is what keeps an open
+    // Material Editor from re-running the whole render graph every idle frame -
+    // the live preview only re-bakes when the inputs the caller folded into
+    // `version` (material edit, orbit camera, preview shape) actually change.
+    auto vIt = m_versions.find(key);
+    const uint32_t cached = cachedTextureId(key);
+    const bool fresh = vIt != m_versions.end()
+        && vIt->second == version
+        && cached != 0;
+    if (fresh) return cached;
+
+    // Non-live thumbnails additionally amortise first-time bakes across frames
+    // via a per-frame budget; the live preview renders as soon as it changes.
     if (!live) {
-        auto vIt = m_versions.find(key);
-        const uint32_t cached = cachedTextureId(key);
-        const bool fresh = vIt != m_versions.end()
-            && vIt->second == version
-            && cached != 0;
-        if (fresh) return cached;
         if (m_budget == 0) return cached;
         --m_budget;
     }
@@ -84,7 +92,7 @@ uint32_t MaterialPreviewSession::texture(
             renderOnBackendThread(resources, material, mesh,
                                   yawDeg, pitchDeg, distance, key);
         });
-    if (!live) m_versions[key] = version;
+    m_versions[key] = version;
     return cachedTextureId(key);
 }
 
