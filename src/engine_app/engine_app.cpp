@@ -11,6 +11,7 @@
 #include "core/engine.h"
 #include "resource/asset_database.h"
 #include "system/animation/animation_system.h"
+#include "system/async/async_loader_system.h"
 #include "system/event/event_system.h"
 #include "system/hierarchy/hierarchy_system.h"
 #include "system/visibility/visibility_system.h"
@@ -40,6 +41,10 @@ EngineAppSystems setupEngineApp(Engine& engine) {
 
     auto& cameraController = engine.addSystem<CameraController>(SystemStage::Input);
     auto& eventSystem      = engine.addSystem<EventSystem>     (SystemStage::Simulation);
+    // AsyncLoaderSystem drains the ThreadPool's completed-load queue
+    // before the per-frame visibility + render sweep, so freshly decoded
+    // textures reach the GPU upload step in the same frame they finished.
+    engine.addSystem<AsyncLoaderSystem>(SystemStage::Simulation);
     engine.addSystem<AnimationSystem> (SystemStage::Simulation);
     engine.addSystem<HierarchySystem> (SystemStage::Transform);
     auto& visibilitySystem = engine.addSystem<VisibilitySystem>(SystemStage::Visibility);

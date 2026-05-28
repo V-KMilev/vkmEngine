@@ -28,4 +28,27 @@ TextureHandle loadTexture(
     bool generateMipmaps = true
 );
 
+/**
+ * @brief Non-blocking texture import. Returns immediately with a valid
+ *        handle; the asset starts in a `loading` state with no pixel
+ *        data and is finalised by AsyncLoaderSystem on a later frame
+ *        (typically 1-3 frames out, depending on decode time).
+ *
+ * Until finalised the texture renders as undefined contents (the GL
+ * backend allocates storage at first sync but doesn't fill it). For
+ * critical visuals where a pop-in is unacceptable, use synchronous
+ * loadTexture(); for streaming / large-scene workloads, async is the
+ * point.
+ *
+ * Idempotent: requesting the same path twice (within a session)
+ * returns the same handle - AssetDatabase + findById dedup at the
+ * resource layer.
+ */
+TextureHandle requestTextureAsync(
+    const std::string& filePath,
+    ResourceManager& resourceManager,
+    bool srgb = false,
+    bool generateMipmaps = true
+);
+
 } // namespace Engine
