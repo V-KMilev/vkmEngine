@@ -59,6 +59,12 @@ class ResourceManager {
             if (!indexName.empty()) {
                 slot.nameIndex.emplace(std::move(indexName), key.index);
             }
+            // Same shape for the AssetId index - loaders stamp the GUID on
+            // import, scene serializer reads it back via findById<T>.
+            const T& inserted = storageOf<T>(slot).get(key.index);
+            if (inserted.assetId) {
+                slot.idIndex.emplace(inserted.assetId, key.index);
+            }
             return Handle<T>{key};
         }
 
@@ -103,6 +109,12 @@ class ResourceManager {
                 auto it = slot.nameIndex.find(res.name);
                 if (it != slot.nameIndex.end() && it->second == handle.key.index) {
                     slot.nameIndex.erase(it);
+                }
+            }
+            if (res.assetId) {
+                auto idIt = slot.idIndex.find(res.assetId);
+                if (idIt != slot.idIndex.end() && idIt->second == handle.key.index) {
+                    slot.idIndex.erase(idIt);
                 }
             }
             storageOf<T>(slot).remove(handle.key.index);
@@ -203,6 +215,48 @@ class ResourceManager {
             // Defensive: if the entry was removed (shouldn't happen because
             // remove() erases the mapping, but guards against rename-after-
             // add drift), fall back to invalid.
+            if (!storageOfConst<T>(slot).contains(index)) return {};
+            return Handle<T>{StorageIndex{index, slot.allocator->generationOf(index)}};
+        }
+
+        /**
+         * @brief Update the idIndex after a caller stamped a fresh AssetId
+         *        on an asset that was already add()'d.
+         *
+         * Loaders that only know the asset's stable identity *after*
+         * insertion (folder-loaded materials, where the folder path drives
+         * the GUID but the desc-only loadMaterialFromDesc shouldn't depend
+         * on it) call this once they've assigned `assetId`. No-op if the
+         * asset's assetId is invalid.
+         */
+        template<typename HandleType>
+        void reindexAssetId(const HandleType& handle) {
+            using T = typename HandleType::resource_t;
+            auto& slot = getSlot<T>();
+            VKM_ASSERT(slot.allocator->has(handle.key), "ResourceManager::reindexAssetId invalid handle");
+            const T& res = storageOfConst<T>(slot).get(handle.key.index);
+            if (!res.assetId) return;
+            slot.idIndex[res.assetId] = handle.key.index;
+        }
+
+        /**
+         * @brief Find a resource by its `assetId` field.
+         *
+         * The serialised-identity counterpart to findByName: loaders stamp
+         * each on-disk asset with a stable AssetId at import (via the
+         * AssetDatabase), and scene files reference assets by GUID. O(1)
+         * via a per-type idIndex maintained on add/remove.
+         */
+        template<typename T>
+        Handle<T> findById(AssetId assetId) const {
+            if (!assetId) return {};
+            TypeId id = typeId<T>();
+            if (id >= m_slots.size() || !m_slots[id]) return {};
+            const auto& slot = *m_slots[id];
+
+            auto it = slot.idIndex.find(assetId);
+            if (it == slot.idIndex.end()) return {};
+            const uint32_t index = it->second;
             if (!storageOfConst<T>(slot).contains(index)) return {};
             return Handle<T>{StorageIndex{index, slot.allocator->generationOf(index)}};
         }
@@ -385,6 +439,9 @@ class ResourceManager {
             /// name -> storage index. O(1) findByName backing. Populated
             /// from Resource::name on add(), erased on remove().
             std::unordered_map<std::string, uint32_t> nameIndex;
+            /// assetId -> storage index. O(1) findById backing. Populated
+            /// from Resource::assetId on add() when valid.
+            std::unordered_map<AssetId, uint32_t> idIndex;
         };
 
         template<typename T>
