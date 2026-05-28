@@ -3,9 +3,12 @@
 #include "gl_view.h"
 
 #include <algorithm>
+#include <type_traits>
 #include <vector>
 
 #include "logger.h"
+
+#include "gl_texture.h"  // Core::Texture2D for the fallback placeholder
 
 #include "debug/profiler.h"
 #include "debug/shader_error_log.h"
@@ -85,6 +88,14 @@ void GLView::syncTable(
         const uint32_t id = h.id();
         const auto& asset = resources.get(h);
         const uint64_t v = asset.version;
+
+        // Textures still being decoded asynchronously have no pixel data yet;
+        // skip the GL upload entirely so we don't allocate an empty texture
+        // that draws as undefined contents. The async loader bumps the
+        // version once data arrives, and the next sync picks it up.
+        if constexpr (std::is_same_v<AssetT, TextureAsset>) {
+            if (asset.loading) continue;
+        }
 
         if (id >= table.entries.size()) {
             table.entries.resize(id + 1);
@@ -192,10 +203,37 @@ const GLMaterial* GLView::getMaterial(const MaterialHandle& handle) const {
 const GLTexture* GLView::getTexture(const TextureHandle& handle) const {
     const uint32_t id = handle.id();
     if (id >= m_textureTable.entries.size() || !m_textureTable.entries[id]) {
-        LOG_WARNING("GLTexture not found for handle %u (not synced or invalid)", id);
+        // No warning here: a missing entry is a normal transient state
+        // when an async texture load is in flight. Callers that need a
+        // bind site every frame should use getTextureOrFallback() and
+        // get a 1x1 gray placeholder until the upload lands.
         return nullptr;
     }
     return m_textureTable.entries[id].get();
+}
+
+const Core::Texture2D* GLView::getTextureOrFallback(const TextureHandle& handle) const {
+    const uint32_t id = handle.id();
+    if (id < m_textureTable.entries.size() && m_textureTable.entries[id]) {
+        return &m_textureTable.entries[id]->getTexture();
+    }
+    if (!m_fallbackTexture) {
+        // 1x1 gray RGBA8. Cheap to upload, neutral against any shader
+        // expectation - normal maps render flat (no detail), albedo
+        // renders mid-gray (no colour cast), metallic/roughness end up
+        // at sane mid values. Built once per GLView lifetime.
+        static const uint8_t gray[4] = {128, 128, 128, 255};
+        Core::Texture2DParams params;
+        params.width           = 1;
+        params.height          = 1;
+        params.internalFormat  = GL_RGBA8;
+        params.format          = GL_RGBA;
+        params.type            = GL_UNSIGNED_BYTE;
+        params.generateMipmaps = false;
+        params.data            = gray;
+        m_fallbackTexture = std::make_unique<Core::Texture2D>("async_fallback", params);
+    }
+    return m_fallbackTexture.get();
 }
 
 GLMesh* GLView::getMutableMesh(const MeshHandle& handle) {

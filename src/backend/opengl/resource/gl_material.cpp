@@ -135,10 +135,13 @@ void GLMaterial::bind(uint32_t bindingPoint) const {
 }
 
 void GLMaterial::bindTextures(const GLView& view) const {
+    // Bind every slot every frame - leaving a slot stale would let a prior
+    // material's texture bleed through. getTextureOrFallback substitutes a
+    // shared 1x1 gray for in-flight async loads so the slot is always
+    // populated with *something* that respects the binding contract.
     for (const auto& binding : m_textureBindings) {
-        const GLTexture* texture = view.getTexture(binding.handle);
-        if (texture) {
-            texture->bind(binding.slot);
+        if (const Core::Texture2D* texture = view.getTextureOrFallback(binding.handle)) {
+            texture->bindSlot(binding.slot);
         }
     }
 }
