@@ -15,6 +15,7 @@
 #include "ecs/component/mesh.h"
 #include "ecs/component/light.h"
 #include "ecs/component/reflection_probe.h"
+#include "ecs/component/selected.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/world_transform.h"
 #include "resource/resource_manager.h"
@@ -193,6 +194,7 @@ void RenderView::build(
         drawable.model        = entry.model;
         drawable.worldMin     = entry.worldMin;
         drawable.worldMax     = entry.worldMax;
+        drawable.selected     = scene.has<Selected>(entry.id);
         drawables.emplace_back(drawable);
     }
 

@@ -441,6 +441,17 @@ void loadAABBDebug(const nlohmann::json& j, AABBDebugConfig& c) {
     if (j.contains("color")) c.color = vec3FromJson(j["color"]);
 }
 
+nlohmann::json saveSelection(const SelectionOutlineConfig& c) {
+    return {{"enabled", c.enabled},
+            {"color", vec3ToJson(c.color)},
+            {"thickness", c.thickness}};
+}
+void loadSelection(const nlohmann::json& j, SelectionOutlineConfig& c) {
+    c.enabled   = j.value("enabled", c.enabled);
+    c.thickness = j.value("thickness", c.thickness);
+    if (j.contains("color")) c.color = vec3FromJson(j["color"]);
+}
+
 } // namespace
 
 nlohmann::json save(const EnvironmentConfig& e) {
@@ -462,6 +473,7 @@ nlohmann::json save(const EnvironmentConfig& e) {
         {"colorGrade", saveColorGrade(e.colorGrade)},
         {"grid",       saveGrid(e.grid)},
         {"aabbDebug",  saveAABBDebug(e.aabbDebug)},
+        {"selection",  saveSelection(e.selection)},
 
         {"tonemap",    e.tonemap},
         {"clearColor", vec4ToJson(e.clearColor)},
@@ -487,6 +499,7 @@ void load(const nlohmann::json& j, EnvironmentConfig& e) {
     if (j.contains("colorGrade")) loadColorGrade(j["colorGrade"], e.colorGrade);
     if (j.contains("grid"))       loadGrid(j["grid"],             e.grid);
     if (j.contains("aabbDebug"))  loadAABBDebug(j["aabbDebug"],   e.aabbDebug);
+    if (j.contains("selection"))  loadSelection(j["selection"],   e.selection);
 
     e.tonemap   = j.value("tonemap",   e.tonemap);
     if (j.contains("clearColor")) e.clearColor = vec4FromJson(j["clearColor"]);

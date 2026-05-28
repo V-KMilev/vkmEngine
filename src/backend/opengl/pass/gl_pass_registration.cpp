@@ -22,6 +22,7 @@
 #include "gl_lens_flare_pass.h"
 #include "gl_motion_blur_pass.h"
 #include "gl_oit_resolve_pass.h"
+#include "gl_outline_pass.h"
 #include "gl_prepass.h"
 #include "gl_shadow_pass.h"
 #include "gl_skybox_pass.h"
@@ -85,6 +86,10 @@ void registerBuiltinGLPasses() {
 
     f.registerPass("GLAABBDebugPass", [](ResourceManager& r) -> std::unique_ptr<RenderPass> {
         return std::make_unique<GLAABBDebugPass>(requireShader(r, "shader:aabb_debug"));
+    });
+
+    f.registerPass("GLOutlinePass", [](ResourceManager& r) -> std::unique_ptr<RenderPass> {
+        return std::make_unique<GLOutlinePass>(requireShader(r, "shader:outline"));
     });
 
     f.registerPass("GLGridPass", [](ResourceManager& r) -> std::unique_ptr<RenderPass> {

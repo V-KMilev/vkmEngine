@@ -30,6 +30,7 @@ namespace Engine {
 struct EditorContext;
 class CameraController;
 class EventSystem;
+class Scene;
 class VisibilitySystem;
 class RenderSystem;
 
@@ -75,6 +76,15 @@ class EditorSystem : public System {
          * rather than a unit that would need every panel passed back in.
          */
         void drawWorkspace(EditorContext& ec);
+
+        /**
+         * @brief Mirror m_state.selectedEntity into a Selected tag component.
+         *
+         * Runs once per frame after panels settle so RenderView::build can
+         * flag drawables without taking an editor dependency. Single-select
+         * today; the loop already handles a future multi-select cleanly.
+         */
+        void syncSelectionTag(Scene& scene);
 
     private:
         GLFWwindow*       m_window;
