@@ -1,7 +1,7 @@
 #include "overlays/viewport_overlay.h"
+
 #include "framework/editor_common.h"
 #include "ui/editor_style.h"
-
 #include "core/math/axes.h"
 #include "system/visibility/visibility.h"
 #include "system/camera/camera_controller.h"

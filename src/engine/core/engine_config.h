@@ -30,21 +30,21 @@ namespace Config {
     constexpr uint32_t MaxShadowCastersCube = 2;
 
     /**
-     * @brief Cascade count for the directional (sun) shadow. The first directional
+     * @brief Cascade count for the directional (sun) shadow.
      *
-     * shadow caster reserves this many consecutive 2D atlas layers; remaining
-     * layers (MaxShadowCasters2D - NumCascades) serve spot lights.
-     * MUST match NUM_CASCADES in shaders/pbr/fragment.shader.
+     * The first directional shadow caster reserves this many consecutive 2D
+     * atlas layers; remaining layers (MaxShadowCasters2D - NumCascades) serve
+     * spot lights. MUST match NUM_CASCADES in shaders/pbr/fragment.shader.
      */
     constexpr uint32_t NumCascades = 4;
 
     /**
-     * @brief Near plane used when rasterising and sampling point-light cube
+     * @brief Near plane used when rasterising and sampling point-light cube shadows.
      *
-     * shadows. Pinned to a small but non-zero value so depth values keep
-     * resolution at typical occluder distances without losing fragments
-     * inside very small lights. cmake/generate_shader_config.cmake reads
-     * this value at build time and emits it as SHADOW_CUBE_NEAR into
+     * Pinned to a small but non-zero value so depth values keep resolution at
+     * typical occluder distances without losing fragments inside very small
+     * lights. cmake/generate_shader_config.cmake reads this value at build
+     * time and emits it as SHADOW_CUBE_NEAR into
      * shaders/_generated/engine_config.glsl - single source of truth.
      */
     constexpr float ShadowCubeNear = 0.1f;
