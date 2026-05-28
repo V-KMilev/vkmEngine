@@ -1,5 +1,6 @@
 #include "panels/inspector_panel.h"
 
+#include <cstring>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -9,7 +10,6 @@
 #include "framework/editor_common.h"
 #include "framework/editor_commands.h"
 #include "ecs/component/reflection_probe.h"
-#include <cstring>
 #include "system/render/render_view.h"   // EnvironmentConfig
 #include "system/visibility/bounds_utils.h"
 #include "input/editor_actions.h"

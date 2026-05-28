@@ -1,4 +1,5 @@
 #include "overlays/playback_bar.h"
+
 #include "framework/editor_common.h"
 
 namespace Engine {

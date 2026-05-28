@@ -1,7 +1,20 @@
 #include "panels/environment_inspector.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <initializer_list>
+#include <string>
+#include <system_error>
+
+#include <GL/glew.h>
+#include <glm/gtc/type_ptr.hpp>
+
 #include "framework/editor_common.h"
 #include "ui/editor_style.h"
-
 #include "system/render/render_view.h"          // EnvironmentConfig
 #include "system/visibility/visibility.h"
 #include "system/visibility/visibility_system.h"
@@ -11,20 +24,6 @@
 #include "system/render/render_pass.h"
 #include "loader/environment_loaders.h"         // loadColorLUT for thumbnail
 #include "texture/gl_texture.h"                 // Core::Texture2D for thumbnail
-
-#include <GL/glew.h>
-
-#include <algorithm>
-#include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <string>
-#include <filesystem>
-#include <system_error>
-#include <initializer_list>
-
-#include <glm/gtc/type_ptr.hpp>
 
 namespace Engine {
 
