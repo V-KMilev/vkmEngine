@@ -41,6 +41,12 @@ int main() {
             window.getWindowContext(),
             sys.camera, sys.visibility, sys.render, sys.events);
 
+        // Phase 2C: editor on the render thread. ImGui's build phase
+        // (NewFrame + panels + Render) stays on main inside EditorSystem::
+        // update; the GL-submission step runs on the render thread via
+        // EditorSystem::executeGL inside the per-frame lambda.
+        engine.enableRenderThread(true);
+
         engine.run();
 
     } catch (const std::exception& e) {
