@@ -215,7 +215,12 @@ void resolveWorldTransforms(Scene& scene) {
     // WorldTransform (pre-seeded by setParent) - no structural mutation
     // happens inside the parallel section.
     static constexpr uint32_t MAX_DEPTH = 32;
-    std::array<std::vector<EntityId>, MAX_DEPTH> buckets;
+    // Persist the bucket array across frames (cleared, not freed) so we don't
+    // construct 32 std::vectors and reallocate their storage every frame -
+    // resolveWorldTransforms runs once per frame on the main thread, so a
+    // function-static thread_local is safe and keeps the per-depth capacity.
+    static thread_local std::array<std::vector<EntityId>, MAX_DEPTH> buckets;
+    for (auto& b : buckets) b.clear();
 
     const uint32_t count = static_cast<uint32_t>(hierarchyStorage->size());
     for (uint32_t i = 0; i < count; ++i) {
