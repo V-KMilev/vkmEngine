@@ -326,9 +326,8 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
         bool changed = false;
 
         drawPropertyLabel("Type");
-        const char* typeNames[] = {"Directional", "Point", "Spot", "Rect", "Disk"};
         int typeIdx = static_cast<int>(light.type);
-        if (ImGui::Combo("##LType", &typeIdx, typeNames, IM_ARRAYSIZE(typeNames))) {
+        if (ImGui::Combo("##LType", &typeIdx, LIGHT_TYPE_NAMES, IM_ARRAYSIZE(LIGHT_TYPE_NAMES))) {
             light.type = static_cast<LightType>(typeIdx);
             changed = true;
         }
@@ -462,9 +461,8 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
         bool changed = false;
 
         drawPropertyLabel("Projection");
-        const char* projNames[] = {"Perspective", "Orthographic"};
         int projIdx = static_cast<int>(cam.projection);
-        if (ImGui::Combo("##CProj", &projIdx, projNames, IM_ARRAYSIZE(projNames))) {
+        if (ImGui::Combo("##CProj", &projIdx, PROJECTION_TYPE_NAMES, IM_ARRAYSIZE(PROJECTION_TYPE_NAMES))) {
             cam.projection = static_cast<ProjectionType>(projIdx);
             changed = true;
         }
