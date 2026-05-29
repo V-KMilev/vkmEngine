@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -52,6 +53,31 @@ constexpr void forEachField(T& obj, Fn&& fn) {
     std::apply([&](auto&&... f) {
         ((fn(f.name, obj.*(f.ptr))), ...);
     }, tup);
+}
+
+/**
+ * @brief Enum value -> its serialized / display name.
+ *
+ * @p names lists the names in enum-value order (the value is the index); an
+ * out-of-range value falls back to the first name. Pairing this with one
+ * names[] array declared next to the enum gives serialization and editor
+ * combos a single source of truth that cannot drift.
+ */
+template<typename Enum, std::size_t N>
+constexpr const char* enumName(Enum value, const char* const (&names)[N]) {
+    const auto index = static_cast<std::size_t>(value);
+    return index < N ? names[index] : names[0];
+}
+
+/**
+ * @brief Parse an enum from a name, falling back to value 0 when unknown.
+ */
+template<typename Enum, std::size_t N>
+Enum enumFromName(std::string_view name, const char* const (&names)[N]) {
+    for (std::size_t i = 0; i < N; ++i) {
+        if (name == names[i]) return static_cast<Enum>(i);
+    }
+    return static_cast<Enum>(0);
 }
 
 } // namespace Engine::Reflect

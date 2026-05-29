@@ -18,6 +18,12 @@ enum class MaterialType : uint8_t {
     AlphaMask   = 3   ///< glTF alphaMode = MASK; alpha-tested, writes depth, no blending
 };
 
+/// Names in MaterialType order - the single source for JSON (de)serialization
+/// and the editor's type combo, so the two cannot drift out of enum order.
+inline constexpr const char* const MATERIAL_TYPE_NAMES[] = {
+    "Opaque", "Transparent", "Unlit", "AlphaMask"
+};
+
 /**
  * @brief Bitset of optional PBR lobes / features a material actually uses.
  *
