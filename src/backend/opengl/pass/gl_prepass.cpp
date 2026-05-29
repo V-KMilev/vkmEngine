@@ -28,6 +28,32 @@ GLPrepass::GLPrepass(ShaderHandle shader)
 {
 }
 
+bool GLPrepass::enabledForView(const RenderView& view) const {
+    if (!isEnabled()) return false;
+
+    // Run iff at least one G-buffer consumer will read the normal/position
+    // targets this frame. Each clause mirrors that consumer's own
+    // enabledForView so the prepass is never the lone producer of an
+    // unread resource (which would also trip the graph's read-before-write
+    // check) and never skipped while a consumer still needs it:
+    //   GTAO   -> ao.enabled            (also feeds the forward pass AO read)
+    //   SSR    -> ssr.enabled        && !disablePost
+    //   TAA    -> taa.enabled        && !disablePost
+    //   MBlur  -> motionBlur.enabled && !disablePost
+    //   DoF    -> dof.enabled        && !disablePost
+    //   HiZ    -> occlusion.useHiZ   && !disablePost
+    // If a new G-buffer consumer is added, extend this list (or, better,
+    // replace it with graph-level dead-pass elimination - see CODE_REVIEW.md #12).
+    const auto& env = view.environment;
+    const bool postOn = !view.modeConfig.disablePost;
+    return env.ao.enabled
+        || (postOn && (env.ssr.enabled
+                    || env.taa.enabled
+                    || env.motionBlur.enabled
+                    || env.dof.enabled
+                    || env.occlusion.useHiZ));
+}
+
 void GLPrepass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
     // GLGBuffer is owned and resized by GLBackend.
 }

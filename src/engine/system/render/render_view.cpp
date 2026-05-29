@@ -207,42 +207,12 @@ void RenderView::build(
     sortDrawables(drawables);
     sortTransparentsByDepth(drawables, camera.position);
 
-    // Shadow casters: every shadow-casting mesh in the scene, independent of
-    // the camera frustum. The shadow pass needs occluders that are off-screen
-    // (behind/beside the camera, or only their shadow is in view); culling
-    // these to the camera frustum is what made Sponza's shadows flicker and
-    // vanish on view changes. Use the hierarchy's world matrix when present.
+    // Gather lights (dense iteration, no holes).
     //
-    // Two perf wins over the previous version:
-    //   - forEach<Mesh, Transform> intersects the two SparseSets in the inner
-    //     loop, so the has<Transform> branch becomes a SparseSet membership
-    //     check on the dense side (no second lookup, no fall-through).
-    //   - materialTypeOf is the same memo used for the drawables loop, so we
-    //     pay one ResourceManager::get per unique material across both lists
-    //     instead of once per entity.
-    // We also drop non-Opaque casters at gather time: the shadow pass already
-    // filters them out, but emplace + matrix copy + sort still cost us.
-    shadowCasters.reserve(drawables.size());
-    scene.forEach<Mesh, Transform>([&](EntityId id, const Mesh& mesh, const Transform& transform) {
-        if (!mesh.visible || !mesh.castShadows) return;
-        if (!mesh.mesh || !mesh.material) return;  // unresolved slot - skip
-
-        const MaterialType mt = materialTypeOf(mesh.material);
-        if (mt != MaterialType::Opaque) return;
-
-        DrawableData caster;
-        caster.mesh         = mesh.mesh;
-        caster.material     = mesh.material;
-        caster.materialType = mt;
-        caster.castShadows  = true;
-        caster.model        = scene.has<WorldTransform>(id)
-            ? scene.get<WorldTransform>(id).model
-            : Transform::computeModelMatrix(transform);
-        shadowCasters.emplace_back(caster);
-    });
-    sortDrawables(shadowCasters);
-
-    // Gather lights (dense iteration, no holes)
+    // Done BEFORE the shadow-caster gather (it used to follow it) so the slot
+    // pass below tells us whether any light actually casts a shadow this
+    // frame. When none does, the full-scene shadow-caster walk + sort is
+    // skipped entirely - see the gather block further down.
     lights.reserve(scene.count<Light>());
 
     scene.forEach<Light, Transform>([&](EntityId id, const Light& light, const Transform& transform) {
@@ -306,6 +276,46 @@ void RenderView::build(
             // centre; soft penumbra will arrive with LTC shading.
             if (taken2D < Config::MAX_SHADOW_CASTERS_2D) light.shadowSlot = static_cast<int>(taken2D++);
         }
+    }
+
+    // Shadow casters: every shadow-casting mesh in the scene, independent of
+    // the camera frustum. The shadow pass needs occluders that are off-screen
+    // (behind/beside the camera, or only their shadow is in view); culling
+    // these to the camera frustum is what made Sponza's shadows flicker and
+    // vanish on view changes. Use the hierarchy's world matrix when present.
+    //
+    // Gated on a shadow slot having actually been assigned above: a scene with
+    // no shadow-casting light (taken2D == takenCube == 0) skips this full-scene
+    // walk + sort entirely instead of building a list nothing consumes
+    // (CODE_REVIEW.md #23; per-frame caching for the with-shadow case is the
+    // follow-up - it needs a scene transform/structure version this engine
+    // doesn't expose yet).
+    //
+    // forEach<Mesh, Transform> intersects the two SparseSets in the inner loop,
+    // and materialTypeOf reuses the drawables-loop memo so we pay one
+    // ResourceManager::get per unique material across both lists. Non-Opaque
+    // casters are dropped at gather time (the shadow pass filters them anyway).
+    const bool anyShadowSlot = (taken2D > 0u) || (takenCube > 0u);
+    if (anyShadowSlot) {
+        shadowCasters.reserve(drawables.size());
+        scene.forEach<Mesh, Transform>([&](EntityId id, const Mesh& mesh, const Transform& transform) {
+            if (!mesh.visible || !mesh.castShadows) return;
+            if (!mesh.mesh || !mesh.material) return;  // unresolved slot - skip
+
+            const MaterialType mt = materialTypeOf(mesh.material);
+            if (mt != MaterialType::Opaque) return;
+
+            DrawableData caster;
+            caster.mesh         = mesh.mesh;
+            caster.material     = mesh.material;
+            caster.materialType = mt;
+            caster.castShadows  = true;
+            caster.model        = scene.has<WorldTransform>(id)
+                ? scene.get<WorldTransform>(id).model
+                : Transform::computeModelMatrix(transform);
+            shadowCasters.emplace_back(caster);
+        });
+        sortDrawables(shadowCasters);
     }
 
     // Reflection probes: snapshot every probe entity plus its world position.
