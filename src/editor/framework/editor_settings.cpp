@@ -12,7 +12,7 @@
 
 #include "logger.h"
 
-#include "core/system.h"   // APP_ROOT_DIR (via compile_definitions, actually)
+#include "io/project_paths.h"
 
 namespace Engine {
 namespace EditorSettings {
@@ -35,7 +35,7 @@ void keybindFromJson(const json& j, KeyBind& k) {
 }
 
 std::string path() {
-    return std::string(APP_ROOT_DIR) + "/editor_settings.json";
+    return (ProjectPaths::root() / "editor_settings.json").string();
 }
 
 bool load(EditorState& state) {

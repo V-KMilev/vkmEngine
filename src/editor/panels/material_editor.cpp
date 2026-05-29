@@ -18,6 +18,7 @@
 #include "loader/material_loaders.h"
 #include "system/render/render_system.h"
 #include "generator/mesh_generators.h"
+#include "io/project_paths.h"
 
 namespace Engine {
 
@@ -310,7 +311,7 @@ bool MaterialEditorPanel::textureSlot(
     if (ImGui::SmallButton("Set")) {
         // Configure the panel-owned picker for this slot, then open it.
         // Only one slot's picker is active at a time (single popup).
-        const std::filesystem::path appRoot = APP_ROOT_DIR;
+        const std::filesystem::path appRoot = ProjectPaths::root();
         m_texturePicker.options.popupId    = "PickTexture";
         m_texturePicker.options.title      = "Pick Texture";
         m_texturePicker.options.root       = appRoot / "assets";
@@ -339,7 +340,7 @@ bool MaterialEditorPanel::textureSlot(
 
 bool MaterialEditorPanel::pbrFolderBrowse(std::string& outFolder) {
     if (ImGui::SmallButton("Load PBR Folder...")) {
-        const std::filesystem::path appRoot = APP_ROOT_DIR;
+        const std::filesystem::path appRoot = ProjectPaths::root();
         m_pbrFolderPicker.options.popupId   = "PBRFolder";
         m_pbrFolderPicker.options.title     = "Load PBR Folder";
         m_pbrFolderPicker.options.root      = appRoot / "assets";
@@ -519,7 +520,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         // the slot's PushID scope and matches the slot's pending target.
         std::string pickedTex;
         if (m_texturePicker.draw(pickedTex) && m_pendingTexture) {
-            const std::string abs = (std::filesystem::path(APP_ROOT_DIR) / pickedTex).string();
+            const std::string abs = (ProjectPaths::root() / pickedTex).string();
             TextureHandle h = loadTexture(abs, resources, m_pendingTextureSrgb, true);
             if (h) {
                 *m_pendingTexture = h;

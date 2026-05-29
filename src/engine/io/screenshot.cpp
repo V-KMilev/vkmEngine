@@ -16,6 +16,7 @@
 
 #include "platform/window/window_manager.h"
 #include "system/render/render_backend.h"
+#include "io/project_paths.h"
 
 namespace Engine::Screenshot {
 
@@ -84,7 +85,7 @@ std::string captureViewport(WindowManager& window, RenderBackend& backend) {
         rect.height = winH;
     }
 
-    const std::filesystem::path dir = std::filesystem::path(APP_ROOT_DIR) / "screenshots";
+    const std::filesystem::path dir = ProjectPaths::screenshots();
     const std::filesystem::path full = dir / ("screenshot-" + timestamp() + ".png");
     return captureRect(backend, rect, winH, full.string());
 }

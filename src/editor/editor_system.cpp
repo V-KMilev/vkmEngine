@@ -26,6 +26,7 @@
 #include "system/render/render_system.h"
 #include "system/render/render_view.h"
 #include "ui/editor_theme.h"
+#include "io/project_paths.h"
 
 namespace Engine {
 
@@ -57,7 +58,7 @@ EditorSystem::EditorSystem(
     // ImGui ini lives next to the engine so floating-window positions and
     // table column widths persist alongside our own editor_settings.json.
     // Static so the c_str pointer stays valid for ImGui's lifetime.
-    static std::string s_iniPath = std::string(APP_ROOT_DIR) + "/imgui.ini";
+    static std::string s_iniPath = (ProjectPaths::root() / "imgui.ini").string();
     io.IniFilename = s_iniPath.c_str();
 
     applyEditorTheme();
