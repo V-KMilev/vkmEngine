@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "core/memory/types.h"
 #include "system/render/render_graph.h"
 #include "system/render/render_graph_resource.h"
 
@@ -73,8 +74,10 @@ struct RenderGraphContext {
     T* resource(RGResource id) const {
 #ifndef NDEBUG
         accessedResources |= (1u << static_cast<uint32_t>(id));
-#endif
+        return static_cast<T*>(graph.getResourceChecked(id, typeId<T>()));
+#else
         return static_cast<T*>(graph.getResource(id));
+#endif
     }
 };
 
