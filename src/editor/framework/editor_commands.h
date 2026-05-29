@@ -12,6 +12,7 @@
 #include "ecs/component/camera.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/hierarchy.h"
+#include "ecs/component/mesh_lod.h"
 #include "ecs/component/name.h"
 
 #include "framework/command.h"
@@ -114,6 +115,7 @@ struct EntitySnapshot {
     std::optional<Camera>    camera;
     std::optional<Animation> animation;
     std::optional<Name>      name;
+    std::optional<MeshLOD>   meshLod;
 
     static EntitySnapshot capture(const Scene& scene, EntityId id);
     void apply(Scene& scene, EntityId id) const;
@@ -222,5 +224,8 @@ extern template class RemoveComponentCommand<Mesh>;
 extern template class RemoveComponentCommand<Light>;
 extern template class RemoveComponentCommand<Camera>;
 extern template class RemoveComponentCommand<Animation>;
+
+extern template class AddComponentCommand<MeshLOD>;
+extern template class RemoveComponentCommand<MeshLOD>;
 
 } // namespace Engine
