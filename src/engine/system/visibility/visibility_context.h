@@ -3,6 +3,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_access.hpp>
 
+#include "system/visibility/culling/occlusion_oracle.h"
+
 namespace Engine {
 
 /**
@@ -34,6 +36,13 @@ struct VisibilityContext {
     float maxDistance;           ///< Max distance from camera; beyond this, distance culling rejects. <= 0 disables.
     float maxDistanceSquared;    ///< Pre-computed maxDistance^2 for squared-distance comparisons.
     float screenSizeThresholdSq; ///< Pre-computed (minPixels / (projScaleY * viewportHeight))^2 for sqrt-free screen-size test.
+
+    /// One-frame-stale Hi-Z occlusion pyramid, snapshotted ONCE per frame by
+    /// VisibilitySystem and shared read-only across every cull worker. Null
+    /// when occlusion is inactive. Replaces the previous per-entity
+    /// OcclusionOracle::snapshot() that deep-copied the whole pyramid under a
+    /// mutex for every AABB tested (CODE_REVIEW.md #24).
+    const OcclusionOracle::Frame* occlusion = nullptr;
 };
 
 /**

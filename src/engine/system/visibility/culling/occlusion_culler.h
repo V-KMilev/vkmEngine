@@ -38,12 +38,18 @@ namespace OcclusionCuller {
 inline bool isVisible(
     const glm::vec3& boundsMin,
     const glm::vec3& boundsMax,
-    const VisibilityContext& /*context*/
+    const VisibilityContext& context
 ) {
-    // Gated by oracle.ready - env.occlusion.useHiZ controls whether the
+    // Gated by frame.ready - env.occlusion.useHiZ controls whether the
     // pyramid is built each frame, which controls whether the oracle
     // publishes. No second toggle needed; the data presence is the gate.
-    const auto frame = OcclusionOracle::get().snapshot();
+    //
+    // The snapshot is taken once per frame by VisibilitySystem and handed in
+    // through the context (read-only, shared across all cull workers). This
+    // function used to call OcclusionOracle::snapshot() itself, which
+    // deep-copied the entire pyramid under a mutex for EVERY entity tested.
+    if (!context.occlusion) return true;
+    const OcclusionOracle::Frame& frame = *context.occlusion;
     if (!frame.ready) return true;
 
     const glm::vec3 c[8] = {

@@ -92,7 +92,15 @@ inline bool rgResourceIsImplicit(RGResource r) {
         // ordering bug. Marks as implicit so disabling the debug passes
         // (e.g. during material preview) does not spam read-before-write
         // warnings.
-        || r == RGResource::Overlay;
+        || r == RGResource::Overlay
+        // AO is the occlusion attachment on the always-allocated gbuffer FBO.
+        // GTAO is its only writer and is now skipped when ao.enabled is false
+        // (wireframe / diagnostic modes, or AO toggled off). The forward pass
+        // still declares read(AO) unconditionally for bookkeeping but only
+        // SAMPLES it when ssaoOn (== ao.enabled); the attachment itself always
+        // exists, so "GTAO didn't write it this frame" is a valid state, not
+        // an ordering bug. Same rationale as Overlay above.
+        || r == RGResource::AO;
 }
 
 /**

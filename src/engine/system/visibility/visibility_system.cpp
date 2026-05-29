@@ -104,6 +104,13 @@ void VisibilitySystem::update(FrameContext& ctx) {
         ? (m_settings.minPixels * m_settings.minPixels) / (denom * denom)
         : 0.0f;
 
+    // Snapshot the Hi-Z occlusion pyramid ONCE per frame (it used to be
+    // copied per-entity, under a mutex, inside OcclusionCuller::isVisible).
+    // The local outlives the parallel cull below and every worker reads it
+    // lock-free via context.occlusion. Cheap when occlusion is inactive: the
+    // oracle hasn't published, so this is an empty, not-ready Frame.
+    const OcclusionOracle::Frame occlusionFrame = OcclusionOracle::get().snapshot();
+
     VisibilityContext context{
         .frustum        = extractFrustum(viewProjection),
         .cameraPosition = cameraPosition,
@@ -115,7 +122,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
         .minPixels      = m_settings.minPixels,
         .maxDistance    = m_settings.maxDistance,
         .maxDistanceSquared = m_settings.maxDistance * m_settings.maxDistance,
-        .screenSizeThresholdSq = screenThresholdSq
+        .screenSizeThresholdSq = screenThresholdSq,
+        .occlusion      = &occlusionFrame
     };
 
     // Get direct access to sparse sets for index-based parallel iteration

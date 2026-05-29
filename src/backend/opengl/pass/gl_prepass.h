@@ -29,6 +29,11 @@ class GLPrepass : public RenderPass {
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
         void execute(RenderGraphContext& ctx) override;
 
+        /// The prepass only exists to fill the view-space G-buffer for
+        /// downstream consumers (GTAO/SSR/TAA/DoF/MotionBlur/HiZ). Skip the
+        /// full opaque re-draw entirely when none of them will run this frame.
+        bool enabledForView(const RenderView& view) const override;
+
         void declareResources(RenderGraphBuilder& builder) const override {
             builder.write(RGResource::GBufferNormal);
             builder.write(RGResource::GBufferPosition);
