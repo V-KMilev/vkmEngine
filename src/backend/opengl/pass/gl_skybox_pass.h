@@ -32,6 +32,11 @@ class GLSkyboxPass : public RenderPass {
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
         void execute(RenderGraphContext& ctx) override;
 
+        /// Skip the background draw when the user hides the skybox
+        /// (EnvironmentConfig::skybox.enabled) - IBL lighting still applies.
+        /// Composes with the explicit per-pass enable.
+        bool enabledForView(const RenderView& view) const override;
+
         void declareResources(RenderGraphBuilder& builder) const override {
             builder.read(RGResource::IBL);
             builder.write(RGResource::SceneHDR);

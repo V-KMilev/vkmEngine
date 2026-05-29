@@ -94,6 +94,10 @@ class GLBackend : public RenderBackend {
         float getAdaptedLuminance() const override { return m_adaptedLuminance.load(); }
         void  setAdaptedLuminance(float v)         { m_adaptedLuminance.store(v); }
 
+        /// Invalidate the global IBL bake so it re-runs next frame. Called on
+        /// the render thread via RenderSystem::requestIBLRebake's backend job.
+        void requestIBLRebake() override { m_view.getIBL().invalidateBake(); }
+
         /// Publish the Hi-Z occlusion pyramid (built by GLHiZPass) for next
         /// frame's visibility cull. Centralises the OcclusionOracle (a process
         /// singleton) touch in the backend so passes stay pure - they reach

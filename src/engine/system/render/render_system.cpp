@@ -172,4 +172,11 @@ void RenderSystem::queueBackendJob(std::function<void()> job) {
     m_pendingBackendJobs.push_back(std::move(job));
 }
 
+void RenderSystem::requestIBLRebake() {
+    // Touch the backend's IBL state on the render thread (where the bake
+    // pass reads it), not from the editor's UI thread. The job runs at the
+    // top of the next executeFrame, before the IBL bake pass.
+    queueBackendJob([this]() { getBackend().requestIBLRebake(); });
+}
+
 } // namespace Engine

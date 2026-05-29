@@ -56,7 +56,7 @@ class EnvironmentInspector {
         bool drawImagePost(EditorContext& ec, EnvironmentConfig& env);
         bool drawScreenSpaceFX(EditorContext& ec, EnvironmentConfig& env);
         bool drawDiagnostics(EditorContext& ec, EnvironmentConfig& env);
-        bool drawPerformance(EditorContext& ec);
+        bool drawPerformance(EditorContext& ec, EnvironmentConfig& env);
         bool drawPresetBar(EnvironmentConfig& env);
 
         char m_filter[64] = {};

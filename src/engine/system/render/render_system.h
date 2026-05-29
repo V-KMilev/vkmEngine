@@ -161,6 +161,16 @@ class RenderSystem : public System {
         void invalidateTemporalHistory();
 
         /**
+         * @brief Re-bake the image-based-lighting environment next frame.
+         *
+         * Editor-facing "Rebake IBL": queues a backend job (runs on the
+         * render thread before the IBL bake pass) that invalidates the cached
+         * bake so it re-runs from the current EnvironmentConfig::ibl.path.
+         * Use after the .hdr changed on disk, or to force a refresh.
+         */
+        void requestIBLRebake();
+
+        /**
          * @brief Queue a callable to run on the backend's thread inside
          *        the next executeFrame(), before the scene render.
          *

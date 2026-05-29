@@ -108,6 +108,18 @@ struct IBLConfig {
     float       intensity = 1.0f;
 };
 
+/**
+ * @brief Visibility of the baked-environment skybox background.
+ *
+ * Independent of the IBL bake itself: turning the skybox off hides the
+ * background cubemap draw (GLSkyboxPass) while image-based lighting keeps
+ * contributing. On by default. Composes with the per-pass enable in the
+ * advanced pipeline list (both must be on to draw).
+ */
+struct SkyboxConfig {
+    bool enabled = true;
+};
+
 struct AOConfig {
     bool  enabled   = true;
     float radius    = 0.5f;
@@ -244,6 +256,18 @@ struct SelectionOutlineConfig {
 };
 
 /**
+ * @brief Multisample anti-aliasing of the offscreen scene target.
+ *
+ * @p samples is the requested MSAA sample count for the HDR scene render
+ * target (1 = off, then 2/4/8). Applied by reallocating GLSceneTarget when
+ * the value changes (GLSceneTarget::ensureSamples), clamped to GL_MAX_SAMPLES
+ * at allocation. 4 by default - the historical hardcoded value.
+ */
+struct MSAAConfig {
+    int samples = 4;
+};
+
+/**
  * @brief Top-level rendering mode.
  *
  * Default is the photoreal pipeline. Other entries are diagnostic views
@@ -351,6 +375,7 @@ struct RenderModeConfig {
 struct EnvironmentConfig {
     AmbientConfig    ambient;
     IBLConfig        ibl;
+    SkyboxConfig     skybox;
     ShadowConfig     shadow;
     TransparencyConfig transparency;
     OcclusionConfig  occlusion;
@@ -369,6 +394,7 @@ struct EnvironmentConfig {
     GridConfig       grid;
     AABBDebugConfig  aabbDebug;
     SelectionOutlineConfig selection;
+    MSAAConfig       msaa;
 
     /// Display transform / tone-mapping curve owned by the composite pass.
     /// 0 = AgX, 1 = Khronos PBR Neutral (default), 2 = ACES, 3 = Reinhard.

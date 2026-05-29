@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "framework/editor_common.h"
+#include "framework/editor_actions.h"
 #include "framework/material_preview_session.h"
 #include "system/render/render_system.h"
 #include "generator/mesh_generators.h"
@@ -80,6 +81,15 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
     ensureAssets(resources);
 
     if (ImGui::Button("Import Model...")) state.requestModelImport = true;
+    ImGui::SameLine();
+    if (ImGui::Button("New Material")) {
+        if (MaterialHandle h = EditorActions::createNewMaterial(resources, state)) {
+            state.materialEditorTarget = h;
+            state.showMaterialEditor   = true;
+        }
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Create a blank PBR material and open it in the Material Editor");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(170.0f);
     ImGui::SliderFloat("##cell", &m_cell, 64.0f, 256.0f, "thumb %.0f");

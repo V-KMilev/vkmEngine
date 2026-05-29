@@ -18,6 +18,7 @@
 #include "loader/material_loaders.h"
 #include "system/render/render_system.h"
 #include "generator/mesh_generators.h"
+#include "generator/texture_generators.h"
 #include "io/project_paths.h"
 
 namespace Engine {
@@ -294,17 +295,43 @@ bool MaterialEditorPanel::textureSlot(
 
     bool changed = false;
 
-    // File name only, frame-aligned, with Set/Clear pinned to the right so
+    // File name only, frame-aligned, with Gen/Set/Clear pinned to the right so
     // a long path can never shove them off or overlap them.
     const ImGuiStyle& st = ImGui::GetStyle();
+    const float genW  = ImGui::CalcTextSize("Gen").x   + st.FramePadding.x * 2.0f;
     const float setW  = ImGui::CalcTextSize("Set").x   + st.FramePadding.x * 2.0f;
     const float clrW  = ImGui::CalcTextSize("Clear").x + st.FramePadding.x * 2.0f;
-    const float btnsX = ImGui::GetContentRegionMax().x - setW - clrW - st.ItemSpacing.x;
+    const float btnsX = ImGui::GetContentRegionMax().x - genW - setW - clrW
+                      - st.ItemSpacing.x * 2.0f;
 
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(cur.c_str());
     ImGui::SameLine();
     if (ImGui::GetCursorPosX() < btnsX) ImGui::SetCursorPosX(btnsX);
+    // Generate a procedural texture (built-in flats or a solid color) for this
+    // slot - the half of the texture pipeline that had no editor surface.
+    if (ImGui::SmallButton("Gen")) ImGui::OpenPopup("##genTex");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Generate a procedural texture for this slot");
+    if (ImGui::BeginPopup("##genTex")) {
+        ImGui::TextDisabled("Procedural");
+        if (ImGui::MenuItem("White"))  { slot = generateWhiteTexture(res);  changed = true; }
+        if (ImGui::MenuItem("Black"))  { slot = generateBlackTexture(res);  changed = true; }
+        if (ImGui::MenuItem("Normal")) { slot = generateNormalTexture(res); changed = true; }
+        if (ImGui::MenuItem("Gray"))   { slot = generateGrayTexture(res);   changed = true; }
+        ImGui::Separator();
+        ImGui::TextDisabled("Solid color");
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::ColorEdit4("##genCol", glm::value_ptr(m_genColor),
+            ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaPreviewHalf);
+        if (ImGui::Button("Create Solid")) {
+            slot = createSolidColorTexture(m_genColor, res, srgb);
+            changed = true;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
     if (ImGui::SmallButton("Set")) {
         // Configure the panel-owned picker for this slot, then open it.
         // Only one slot's picker is active at a time (single popup).
@@ -477,6 +504,16 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         ImGui::TextUnformatted(cur.name.empty() ? "(unnamed material)"
                                                 : cur.name.c_str());
         ImGui::PopStyleColor();
+
+        if (ImGui::SmallButton("New")) {
+            if (MaterialHandle nh = EditorActions::createNewMaterial(resources, state)) {
+                state.materialEditorTarget = nh;
+                target = nh;
+            }
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Create a blank PBR material and edit it here");
+        ImGui::SameLine();
 
         if (ImGui::SmallButton("Duplicate")) {
             if (MaterialHandle nh = EditorActions::duplicateMaterial(resources, state, target, selMesh)) {

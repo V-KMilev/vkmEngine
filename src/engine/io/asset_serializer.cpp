@@ -9,6 +9,7 @@
 #include "logger.h"
 
 #include "ecs/component/mesh.h"
+#include "ecs/component/mesh_lod.h"
 #include "ecs/scene.h"
 #include "resource/asset_database.h"
 #include "resource/asset_id.h"
@@ -271,6 +272,22 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
             // Pull every texture this material references into the texture
             // descriptor pool too.
             for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
+        }
+    });
+
+    // LOD level meshes (levels 1..count-1) are referenced only by MeshLOD, not
+    // by any Mesh component, so they would otherwise never be emitted. Walk
+    // them here. Level 0 is conventionally the entity's Mesh::mesh and is
+    // already in seenMeshes, so the dedup skips it. Decimated levels carry a
+    // "decimate" source (see decimateMeshTracked) and re-decimate on load; the
+    // Mesh-loop above always emits their base level first, so the base is
+    // present in the array before the factory needs it.
+    scene.forEach<MeshLOD>([&](EntityId, const MeshLOD& lod) {
+        for (int i = 0; i < lod.count && i < MeshLOD::MAX_LEVELS; ++i) {
+            if (lod.levels[i] && seenMeshes.insert(lod.levels[i].id()).second) {
+                const auto& asset = resources.get(lod.levels[i]);
+                if (!asset.hidden) emitDescriptor(meshes, asset);
+            }
         }
     });
 

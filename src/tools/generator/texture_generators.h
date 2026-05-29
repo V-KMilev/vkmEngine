@@ -27,6 +27,27 @@ TextureHandle generateSolidColorTexture(
 );
 
 /**
+ * @brief Create a persistent solid-color texture (serializes into the scene).
+ *
+ * Like @ref generateSolidColorTexture, but stamps a `{"kind":"solid",
+ * "color":[r,g,b,a],"srgb":bool}` source descriptor and a deterministic
+ * AssetId so the texture round-trips through save/load (re-created by the
+ * "solid" AssetFactory). Use this for user-authored procedural textures (the
+ * Material Editor's "Generate texture" action); generateSolidColorTexture
+ * stays the unstamped, transient runtime-fallback path.
+ *
+ * @param color RGBA color (0-1 range).
+ * @param resourceManager Resource manager to add the texture to.
+ * @param srgb Whether to treat the color as sRGB.
+ * @return Handle to the generated texture.
+ */
+TextureHandle createSolidColorTexture(
+    glm::vec4 color,
+    ResourceManager& resourceManager,
+    bool srgb = false
+);
+
+/**
  * @brief Generate a white texture (1,1,1,1).
  * 
  * @param resourceManager Resource manager to add the texture to.
