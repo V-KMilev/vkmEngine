@@ -190,6 +190,13 @@ class RenderSystem : public System {
         /// their capacity across frames.
         RenderView m_views[2];
 
+        /// Persistent shadow-caster cache (sorted caster identities + a
+        /// structural fingerprint). Single instance - deliberately NOT inside
+        /// RenderView, which is double-buffered. Written only on the main
+        /// thread in buildView() (the render thread reads view.shadowCasters,
+        /// never this), so it needs no locking. See ShadowCasterCache.
+        ShadowCasterCache m_shadowCache;
+
         /// Thread-safe queue of one-shot backend jobs. Producers (panels,
         /// editor commands) call queueBackendJob() from any thread; the
         /// render thread drains and runs them at the top of executeFrame(),
