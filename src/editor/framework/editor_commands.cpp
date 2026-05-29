@@ -86,6 +86,9 @@ template class RemoveComponentCommand<ReflectionProbe>;
 template class RemoveComponentCommand<Camera>;
 template class RemoveComponentCommand<Animation>;
 
+template class AddComponentCommand<MeshLOD>;
+template class RemoveComponentCommand<MeshLOD>;
+
 EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
     EntitySnapshot s;
     s.slotIndex = id.index;
@@ -95,6 +98,7 @@ EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
     if (scene.has<Camera>(id))    s.camera    = scene.get<Camera>(id);
     if (scene.has<Animation>(id)) s.animation = scene.get<Animation>(id);
     if (scene.has<Name>(id))      s.name      = scene.get<Name>(id);
+    if (scene.has<MeshLOD>(id))   s.meshLod   = scene.get<MeshLOD>(id);
     return s;
 }
 
@@ -108,6 +112,7 @@ void EntitySnapshot::apply(Scene& scene, EntityId id) const {
     if (camera    && !scene.has<Camera>(id))    { Camera    v = *camera;    scene.add(e, std::move(v)); }
     if (animation && !scene.has<Animation>(id)) { Animation v = *animation; scene.add(e, std::move(v)); }
     if (name      && !scene.has<Name>(id))      { Name      v = *name;      scene.add(e, std::move(v)); }
+    if (meshLod   && !scene.has<MeshLOD>(id))   { MeshLOD   v = *meshLod;   scene.add(e, std::move(v)); }
 }
 
 void CreateEntityCommand::redo(Scene& scene, EditorState& state) {

@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 
 #include "ecs/entity.h"
+#include "ecs/component/mesh_lod.h"  // MeshLOD::MAX_LEVELS for the decimate-grid cache
 
 #include "panels/environment_inspector.h"
 #include "ui/editor_widgets.h"  // EulerCache
@@ -40,6 +41,7 @@ class InspectorPanel {
         // when the user edits anything. Centralizing this avoids missing edits.
         void drawTransformSection(Scene& scene, EditorState& state, EntityId id);
         void drawMeshSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawMeshLODSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawLightSection(Scene& scene, EditorState& state, EntityId id);
         void drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id);
         void drawCameraSection(Scene& scene, EditorState& state, EntityId id);
@@ -54,6 +56,10 @@ class InspectorPanel {
         // Euler-angle edit cache for the Transform Rotation field, keyed by
         // entity. See EulerCache for the gimbal-lock rationale.
         EulerCache<EntityId> m_eulerCache;
+
+        // Per-level grid resolution for the LOD section's "Decimate" button
+        // (index 0 unused - level 0 is the base mesh, never decimated).
+        int m_lodDecimateGrid[MeshLOD::MAX_LEVELS] = {16, 12, 8, 5};
 };
 
 } // namespace Engine
