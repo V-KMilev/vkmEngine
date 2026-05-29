@@ -63,8 +63,7 @@ void BottomPanel::drawRenderGraphSection(EditorContext& ec) {
         if (graph.lifetime(static_cast<RGResource>(r)).used()) ++resourcesUsed;
     }
 
-    ImGui::Text("%zu passes, %zu transient resources in use, %zu alias group(s)",
-                n, resourcesUsed, graph.aliasGroupCount());
+    ImGui::Text("%zu passes, %zu transient resources in use", n, resourcesUsed);
 
     constexpr ImU32 kCellWrite = IM_COL32(200,  60,  60, 100);  // red-ish
     constexpr ImU32 kCellRead  = IM_COL32( 70, 140, 220, 100);  // cyan-ish
@@ -73,9 +72,8 @@ void BottomPanel::drawRenderGraphSection(EditorContext& ec) {
     constexpr int   kPassColPx = 38;
 
     // Permanent legend (collapsed by default). The matrix is dense enough
-    // that first-time readers need a swatch key for the cell colours and
-    // the alias-group hue scheme; veterans collapse it and never see it
-    // again. The four-swatch row + paragraph fits in ~40 px when open.
+    // that first-time readers need a swatch key for the cell colours;
+    // veterans collapse it and never see it again.
     if (ImGui::CollapsingHeader("Legend")) {
         auto swatch = [](ImU32 color, const char* label) {
             ImVec2 cursor = ImGui::GetCursorScreenPos();
@@ -90,11 +88,6 @@ void BottomPanel::drawRenderGraphSection(EditorContext& ec) {
         swatch(kCellRead,  "Read");       ImGui::SameLine(0.0f, 16.0f);
         swatch(kCellBoth,  "Read+Write"); ImGui::SameLine(0.0f, 16.0f);
         swatch(kCellSpan,  "In lifetime [firstWrite..lastRead]");
-        ImGui::TextDisabled(
-            "Resource-name color = alias group: same hue means disjoint\n"
-            "lifetime AND matching descriptor (shape / format / samples),\n"
-            "so the resources could share physical storage. Hues spread by\n"
-            "golden ratio so adjacent groups stay visually distinct.");
         ImGui::Spacing();
     }
     ImGui::Separator();
@@ -137,31 +130,7 @@ void BottomPanel::drawRenderGraphSection(EditorContext& ec) {
 
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            // Tint the resource name by alias-group id so resources that
-            // share a group read as visually-related at a glance. Cheap
-            // hash to spread colors over the hue circle - golden-ratio
-            // increments give well-separated hues even for small N.
-            const int group = graph.aliasGroup(rid);
-            if (group >= 0) {
-                const float hue = std::fmod(group * 0.61803398875f, 1.0f);
-                float h = hue * 6.0f;
-                float c = 0.55f;  // saturation
-                float v = 0.95f;  // value
-                float x = c * (1.0f - std::fabs(std::fmod(h, 2.0f) - 1.0f));
-                float r = 0, g = 0, b = 0;
-                if      (h < 1) { r = c; g = x; }
-                else if (h < 2) { r = x; g = c; }
-                else if (h < 3) { g = c; b = x; }
-                else if (h < 4) { g = x; b = c; }
-                else if (h < 5) { r = x; b = c; }
-                else            { r = c; b = x; }
-                const float m = v - c;
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(r + m, g + m, b + m, 1.0f));
-                ImGui::TextUnformatted(rgResourceName(rid));
-                ImGui::PopStyleColor();
-            } else {
-                ImGui::TextUnformatted(rgResourceName(rid));
-            }
+            ImGui::TextUnformatted(rgResourceName(rid));
 
             ImGui::TableSetColumnIndex(1);
             if (lt.firstWrite >= 0 && lt.lastRead >= 0) {

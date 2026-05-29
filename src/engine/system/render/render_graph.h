@@ -25,8 +25,8 @@ namespace Engine {
 /**
  * @brief First write / last read pass indices for a transient resource.
  *
- * Drives future pool aliasing (two resources with disjoint lifetimes can
- * share storage) and the editor debug view. -1 means never written / read.
+ * Feeds the editor's render-graph debug view (the read / write / lifespan
+ * matrix). -1 means never written / read.
  */
 struct RGResourceLifetime {
     int firstWrite = -1;
@@ -55,18 +55,6 @@ struct RGResourceLifetime {
  *     them; the graph just holds the abstract handle and forwards
  *     resize / registerWith / resolveSceneColor).
  *   - The GLView and the window backbuffer (still backend-owned).
- *
- * Aliasing analysis (descriptor-aware):
- *   compile() groups resources whose lifetimes are disjoint AND whose
- *   descriptors (shape, format, samples - see rgResourceDescriptor) match.
- *   aliasGroup()/aliasGroupCount() expose the result for the visualizer
- *   and for a future pool refactor. Each member of a group could legally
- *   point at the same physical GL object; the actual sharing requires
- *   GLFrameResources to be reworked to allocate by descriptor signature
- *   instead of one wrapper per RGResource - deferred at the current scale
- *   (~15 transient resources, ~50-100 MB potential savings, 4 GiB+ budget
- *   available) per the trade-off in docs/misc/gaps.md. Revisit if mobile
- *   or memory-constrained targets land on the roadmap.
  */
 class RenderGraph {
     public:
@@ -153,23 +141,6 @@ class RenderGraph {
         const std::vector<RGResource>& passWrites(size_t index) const { return m_writes[index]; }
 
         /**
-         * @brief Alias-group id for a resource (0..N-1).
-         *
-         * Resources sharing a group have disjoint lifetimes AND matching
-         * descriptors (shape, format, samples - see rgResourceDescriptor),
-         * so any member of a group could legally point at the same physical
-         * GL object. Computed by compile(); -1 means the resource was never
-         * used this frame. Persistent resources get a unique group of their
-         * own and never alias. Surfaced in the editor's render-graph
-         * visualizer; physical pool sharing that consumes the analysis is
-         * deferred (see the class-level docstring).
-         */
-        int aliasGroup(RGResource r) const {
-            return m_aliasGroups[static_cast<uint32_t>(r)];
-        }
-        std::size_t aliasGroupCount() const { return m_aliasGroupCount; }
-
-        /**
          * @brief Register the concrete backend object backing a logical resource id.
          *
          * The backend calls this from
@@ -233,8 +204,6 @@ class RenderGraph {
         std::vector<std::vector<RGResource>>     m_reads;
         std::vector<std::vector<RGResource>>     m_writes;
         RGResourceLifetime                       m_lifetimes[RG_RESOURCE_COUNT];
-        int                                      m_aliasGroups[RG_RESOURCE_COUNT] = {};
-        std::size_t                              m_aliasGroupCount = 0;
         void*                                    m_resources[RG_RESOURCE_COUNT] = {};
 #ifndef NDEBUG
         TypeId                                   m_resourceTypes[RG_RESOURCE_COUNT] = {};  ///< Registered type per slot, for resource<T>() assert.
