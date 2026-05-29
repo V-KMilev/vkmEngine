@@ -13,7 +13,7 @@
 
 #include "framework/editor_common.h"
 #include "framework/material_preview_session.h"
-#include "input/editor_actions.h"
+#include "framework/editor_actions.h"
 #include "loader/texture_loaders.h"
 #include "loader/material_loaders.h"
 #include "system/render/render_system.h"

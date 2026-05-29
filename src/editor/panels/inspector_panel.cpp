@@ -11,7 +11,7 @@
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
 #include "generator/light_generators.h"
-#include "input/editor_actions.h"
+#include "framework/editor_actions.h"
 #include "system/render/render_view.h"   // EnvironmentConfig
 #include "system/visibility/bounds_utils.h"
 
