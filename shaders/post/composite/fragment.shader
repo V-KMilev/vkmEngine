@@ -54,6 +54,10 @@ uniform int u_wireframe;
 // so debug overlays show their exact colours regardless of the rest of
 // the post chain.
 uniform sampler2D u_overlay;
+// 0 when no diagnostic pass wrote the overlay this frame. The composite then
+// skips the full-res MSAA overlay resolve on the CPU side; this gate stops the
+// shader from sampling the now-stale resolved texture.
+uniform int u_overlayEnabled;
 
 layout(std140, binding = 2) uniform CameraBlock {
     mat4 viewProjection;
@@ -165,8 +169,10 @@ void main() {
     // the overlay, so we blend that on top with the same sRGB-only treatment.
     if (u_wireframe == 1) {
         vec3 wf = sRGBEncode(clamp(hdr, 0.0, 1.0));
-        vec4 ov = texture(u_overlay, vUV);
-        if (ov.a > 0.0) wf = mix(wf, sRGBEncode(clamp(ov.rgb, 0.0, 1.0)), ov.a);
+        if (u_overlayEnabled == 1) {
+            vec4 ov = texture(u_overlay, vUV);
+            if (ov.a > 0.0) wf = mix(wf, sRGBEncode(clamp(ov.rgb, 0.0, 1.0)), ov.a);
+        }
         FragColor = vec4(wf, 1.0);
         return;
     }
@@ -212,10 +218,13 @@ void main() {
 
     // Diagnostic overlay on top, after the display transform. Overlay rgb
     // is in linear; encode to sRGB and alpha-blend over the tonemapped
-    // result so AABB / Grid show their authored colours exactly.
-    vec4 ov = texture(u_overlay, vUV);
-    if (ov.a > 0.0) {
-        color = mix(color, sRGBEncode(clamp(ov.rgb, 0.0, 1.0)), ov.a);
+    // result so AABB / Grid show their authored colours exactly. Skipped
+    // wholesale when no overlay pass drew this frame (u_overlayEnabled == 0).
+    if (u_overlayEnabled == 1) {
+        vec4 ov = texture(u_overlay, vUV);
+        if (ov.a > 0.0) {
+            color = mix(color, sRGBEncode(clamp(ov.rgb, 0.0, 1.0)), ov.a);
+        }
     }
 
     FragColor = vec4(color, 1.0);
