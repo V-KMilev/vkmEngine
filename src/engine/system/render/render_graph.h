@@ -5,6 +5,9 @@
 #include <vector>
 #include <cstdint>
 
+#include "l_assert.h"
+
+#include "core/memory/types.h"
 #include "system/render/render_graph_resource.h"
 
 namespace Engine {
@@ -176,10 +179,15 @@ class RenderGraph {
          * repoint without recompiling the graph.
          *
          * Storage is type-erased; passes downcast via the typed accessor
-         * `RenderGraphContext::resource<T>(id)`.
+         * `RenderGraphContext::resource<T>(id)`. The template captures the
+         * registered type so that accessor can assert it in debug builds.
          */
-        void registerResource(RGResource id, void* ptr) {
+        template<typename T>
+        void registerResource(RGResource id, T* ptr) {
             m_resources[static_cast<uint32_t>(id)] = ptr;
+#ifndef NDEBUG
+            m_resourceTypes[static_cast<uint32_t>(id)] = typeId<T>();
+#endif
         }
 
         /// Raw resource pointer. Prefer `RenderGraphContext::resource<T>()`
@@ -187,6 +195,19 @@ class RenderGraph {
         void* getResource(RGResource id) const {
             return m_resources[static_cast<uint32_t>(id)];
         }
+
+#ifndef NDEBUG
+        /// Debug-only typed fetch: asserts the registered type matches the
+        /// caller's @p expected, catching a resource<T>() with the wrong T
+        /// (otherwise a silent void* downcast to the wrong type). A null slot
+        /// is allowed - a resource may legitimately be unpublished this frame.
+        void* getResourceChecked(RGResource id, TypeId expected) const {
+            const auto i = static_cast<uint32_t>(id);
+            VKM_ASSERT(m_resources[i] == nullptr || m_resourceTypes[i] == expected,
+                "RenderGraph: resource<T>() type mismatch for %s", rgResourceName(id));
+            return m_resources[i];
+        }
+#endif
 
     private:
         /// Lazily build m_frame on first need. Picks the active backend.
@@ -215,6 +236,9 @@ class RenderGraph {
         int                                      m_aliasGroups[RG_RESOURCE_COUNT] = {};
         std::size_t                              m_aliasGroupCount = 0;
         void*                                    m_resources[RG_RESOURCE_COUNT] = {};
+#ifndef NDEBUG
+        TypeId                                   m_resourceTypes[RG_RESOURCE_COUNT] = {};  ///< Registered type per slot, for resource<T>() assert.
+#endif
         bool                                     m_compiled = false;        ///< compile() has run against the current pass set
         bool                                     m_persistentRegistered = false;
 
