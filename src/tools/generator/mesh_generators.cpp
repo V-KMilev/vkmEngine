@@ -2,6 +2,9 @@
 
 #include <cmath>
 #include <algorithm>
+#include <cstdint>
+#include <unordered_map>
+#include <vector>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
@@ -314,6 +317,92 @@ MeshAsset generateCone(
         {"radius", radius}, {"height", height}, {"segments", segments}
     });
     return mesh;
+}
+
+MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution) {
+    if (src.vertices.empty() || src.indices.size() < 3 || gridResolution < 1) {
+        return src;
+    }
+
+    // Mesh AABB from positions (don't rely on stored bounds - the source may be
+    // freshly built and not have them set yet).
+    glm::vec3 lo = src.vertices[0].position;
+    glm::vec3 hi = lo;
+    for (const Vertex& v : src.vertices) {
+        lo = glm::min(lo, v.position);
+        hi = glm::max(hi, v.position);
+    }
+    const glm::vec3 extent = glm::max(hi - lo, glm::vec3(1e-6f));
+    const float res = static_cast<float>(gridResolution);
+
+    auto cellOf = [&](const glm::vec3& p) -> uint64_t {
+        const glm::vec3 c = (p - lo) / extent * res;
+        const auto cx = static_cast<uint64_t>(glm::clamp(c.x, 0.0f, res - 1.0f));
+        const auto cy = static_cast<uint64_t>(glm::clamp(c.y, 0.0f, res - 1.0f));
+        const auto cz = static_cast<uint64_t>(glm::clamp(c.z, 0.0f, res - 1.0f));
+        return (cz * gridResolution + cy) * gridResolution + cx;
+    };
+
+    // Accumulate each occupied cell's averaged attributes into one representative.
+    struct Cell {
+        glm::vec3 position{0.0f};
+        glm::vec3 normal{0.0f};
+        glm::vec2 uv{0.0f};
+        glm::vec4 tangent{0.0f};
+        uint32_t  count    = 0;
+        uint32_t  outIndex = 0;
+    };
+    std::unordered_map<uint64_t, Cell> cells;
+    cells.reserve(src.vertices.size());
+
+    std::vector<uint64_t> vertexCell(src.vertices.size());
+    for (std::size_t i = 0; i < src.vertices.size(); ++i) {
+        const Vertex& v = src.vertices[i];
+        const uint64_t key = cellOf(v.position);
+        vertexCell[i] = key;
+        Cell& cell = cells[key];
+        cell.position += v.position;
+        cell.normal   += v.normal;
+        cell.uv       += v.uv;
+        cell.tangent  += v.tangent;
+        ++cell.count;
+    }
+
+    MeshAsset out;
+    out.vertices.reserve(cells.size());
+    for (auto& [key, cell] : cells) {
+        (void)key;
+        cell.outIndex = static_cast<uint32_t>(out.vertices.size());
+        const float inv = 1.0f / static_cast<float>(cell.count);
+        Vertex v;
+        v.position = cell.position * inv;
+        v.normal   = glm::length(cell.normal) > 1e-6f ? glm::normalize(cell.normal) : glm::vec3(0.0f, 1.0f, 0.0f);
+        v.uv       = cell.uv * inv;
+        const glm::vec3 t3 = glm::vec3(cell.tangent);
+        v.tangent  = glm::vec4(glm::length(t3) > 1e-6f ? glm::normalize(t3) : glm::vec3(1.0f, 0.0f, 0.0f),
+                               cell.tangent.w >= 0.0f ? 1.0f : -1.0f);
+        out.vertices.push_back(v);
+    }
+
+    // Remap triangles to the representatives; drop any whose corners collapsed
+    // into the same cell (now a degenerate sliver).
+    out.indices.reserve(src.indices.size());
+    for (std::size_t i = 0; i + 2 < src.indices.size(); i += 3) {
+        const uint64_t k0 = vertexCell[src.indices[i]];
+        const uint64_t k1 = vertexCell[src.indices[i + 1]];
+        const uint64_t k2 = vertexCell[src.indices[i + 2]];
+        if (k0 == k1 || k1 == k2 || k0 == k2) continue;
+        out.indices.push_back(cells[k0].outIndex);
+        out.indices.push_back(cells[k1].outIndex);
+        out.indices.push_back(cells[k2].outIndex);
+    }
+
+    // If clustering collapsed the whole mesh the coarse level is useless - hand
+    // back the source so the LOD simply doesn't get coarser at this level.
+    if (out.indices.empty()) return src;
+
+    out.computeAndSetBounds();
+    return out;
 }
 
 } // namespace Engine
