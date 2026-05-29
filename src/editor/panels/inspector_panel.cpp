@@ -1,19 +1,26 @@
 #include "panels/inspector_panel.h"
 
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+#include "ecs/component/animation.h"
 #include "ecs/component/mesh_lod.h"
 #include "ecs/component/reflection_probe.h"
+#include "ecs/component/transform.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
 #include "generator/light_generators.h"
 #include "generator/mesh_generators.h"   // decimateMesh for the LOD section
 #include "framework/editor_actions.h"
+#include "io/project_paths.h"            // ProjectPaths::root for the probe HDR browse
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"   // EnvironmentConfig
 #include "system/visibility/bounds_utils.h"
@@ -384,8 +391,13 @@ void InspectorPanel::drawMeshLODSection(Scene& scene, ResourceManager& resources
                     ImGui::DragInt("##LODGrid", &m_lodDecimateGrid[i], 0.2f, 2, 128, "grid %d");
                     ImGui::SameLine();
                     if (ImGui::Button("Decimate", ImVec2(btnW, 0.0f))) {
-                        MeshAsset dec = decimateMesh(resources.get(baseHandle),
-                                                     static_cast<uint32_t>(m_lodDecimateGrid[i]));
+                        // Stamp a "decimate" source + AssetId so the level
+                        // serializes (re-decimates on load) instead of being
+                        // dropped. The base is level 0's mesh, already emitted
+                        // into the scene's asset block.
+                        const AssetId baseId = resources.get(baseHandle).assetId;
+                        MeshAsset dec = decimateMeshTracked(resources.get(baseHandle), baseId,
+                                                            static_cast<uint32_t>(m_lodDecimateGrid[i]));
                         const std::string nm = "lod_e" + std::to_string(id.index)
                                              + "_l" + std::to_string(i);
                         lod.levels[i] = resources.add(std::move(dec), nm);
@@ -505,6 +517,7 @@ void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state
         char buf[512];
         std::strncpy(buf, probe.hdrPath.c_str(), sizeof(buf));
         buf[sizeof(buf) - 1] = '\0';
+        ImGui::SetNextItemWidth(-80.0f);
         if (ImGui::InputText("##PHdr", buf, sizeof(buf))) {
             probe.hdrPath = buf;
             ++probe.bakeVersion;
@@ -514,6 +527,30 @@ void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state
             ImGui::SetTooltip("Path to the equirect HDR (.hdr) that this probe bakes from.\n"
                               "Empty = this probe contributes nothing; the global IBL bake\n"
                               "is used inside its radius instead.");
+
+        // Browse button - mirrors the IBL slot's file picker so a probe HDR is
+        // pickable, not just typeable. Picker is rooted at assets/envs and
+        // returns a path relative to the project root (what the loader expects).
+        ImGui::SameLine();
+        if (ImGui::Button("Browse##Probe")) {
+            const std::filesystem::path appRoot = ProjectPaths::root();
+            m_probeHdrPicker.options.popupId    = "ProbeHdr";
+            m_probeHdrPicker.options.title      = "Browse";
+            m_probeHdrPicker.options.root       = appRoot / "assets" / "envs";
+            m_probeHdrPicker.options.recursive  = false;
+            m_probeHdrPicker.options.kind       = AssetPicker::Kind::Files;
+            m_probeHdrPicker.options.extensions = {".hdr", ".HDR"};
+            m_probeHdrPicker.options.relativeTo = appRoot;
+            m_probeHdrPicker.open();
+        }
+        {
+            std::string picked;
+            if (m_probeHdrPicker.draw(picked)) {
+                probe.hdrPath = picked;
+                ++probe.bakeVersion;
+                changed = true;
+            }
+        }
 
         drawPropertyLabel("Radius");
         changed |= ImGui::DragFloat("##PRadius", &probe.radius, 0.1f, 0.1f, 1000.0f, "%.2f");
@@ -615,6 +652,19 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
         ImGui::SetNextItemWidth(-1);
         ImGui::DragFloat("##ASpeed", &anim.speed, 0.005f, 0.0f, 10.0f, "Speed %.2fx");
 
+        bool changed = false;
+
+        // Explicit minimum length holds the clip open past the last keyframe
+        // (0 = auto, derived from the keyframes). Folds into `duration` via
+        // updateDuration() so the scrubber and playback see it immediately.
+        drawPropertyLabel("Length");
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::DragFloat("##ALength", &anim.length, 0.02f, 0.0f, 100000.0f, "%.2f s  (0 = auto)")) {
+            if (anim.length < 0.0f) anim.length = 0.0f;
+            anim.updateDuration();
+            changed = true;
+        }
+
         if (anim.duration > 0.0f) {
             ImGui::SetNextItemWidth(-1);
             char timeFmt[32];
@@ -629,6 +679,108 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
             anim.positionTrack.keyframeCount(),
             anim.rotationTrack.keyframeCount(),
             anim.scaleTrack.keyframeCount());
+
+        // --- Keyframe authoring -------------------------------------------
+        // "+ Key" snapshots the entity's current Transform value at the
+        // current scrub time; each row edits a keyframe's time/value or
+        // deletes it. Structural edits (time move / delete) shift indices, so
+        // we break and redraw next frame. Rotation keys edit as Euler degrees
+        // (re-derived each frame - fine for authoring, no gimbal cache).
+        glm::vec3 curPos(0.0f), curScale(1.0f);
+        glm::quat curRot(1.0f, 0.0f, 0.0f, 0.0f);
+        if (scene.has<Transform>(id)) {
+            const Transform& tr = scene.get<Transform>(id);
+            curPos = tr.position; curRot = tr.rotation; curScale = tr.scale;
+        }
+
+        auto vec3Track = [&](const char* label, AnimationTrack<glm::vec3>& track,
+                             const glm::vec3& current) -> bool {
+            bool ch = false;
+            ImGui::PushID(label);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(label);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+ Key")) { track.setKeyframe(anim.time, current); ch = true; }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Key the current value at t = %.2fs", anim.time);
+            EasingFunction e = track.getEasing();
+            if (drawEasingCombo("##ease", e)) { track.setEasing(e); ch = true; }
+
+            const std::vector<float>     times = track.getTimes();   // copies: safe to mutate track in-loop
+            const std::vector<glm::vec3> vals  = track.getValues();
+            for (size_t i = 0; i < times.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                bool structural = false;
+                float t = times[i];
+                ImGui::SetNextItemWidth(64.0f);
+                if (ImGui::DragFloat("##t", &t, 0.02f, 0.0f, 100000.0f, "%.2fs")) {
+                    track.setKeyframeTime(i, t); ch = true; structural = true;
+                }
+                ImGui::SameLine();
+                glm::vec3 v = vals[i];
+                ImGui::SetNextItemWidth(-28.0f);
+                if (!structural && ImGui::DragFloat3("##v", glm::value_ptr(v), 0.02f)) {
+                    track.setKeyframeValue(i, v); ch = true;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("x")) { track.removeKeyframe(i); ch = true; structural = true; }
+                ImGui::PopID();
+                if (structural) break;  // indices shifted - redraw next frame
+            }
+            ImGui::PopID();
+            return ch;
+        };
+
+        auto quatTrack = [&](const char* label, AnimationTrack<glm::quat>& track,
+                             const glm::quat& current) -> bool {
+            bool ch = false;
+            ImGui::PushID(label);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(label);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+ Key")) { track.setKeyframe(anim.time, current); ch = true; }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Key the current rotation at t = %.2fs", anim.time);
+            EasingFunction e = track.getEasing();
+            if (drawEasingCombo("##ease", e)) { track.setEasing(e); ch = true; }
+
+            const std::vector<float>     times = track.getTimes();
+            const std::vector<glm::quat> vals  = track.getValues();
+            for (size_t i = 0; i < times.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                bool structural = false;
+                float t = times[i];
+                ImGui::SetNextItemWidth(64.0f);
+                if (ImGui::DragFloat("##t", &t, 0.02f, 0.0f, 100000.0f, "%.2fs")) {
+                    track.setKeyframeTime(i, t); ch = true; structural = true;
+                }
+                ImGui::SameLine();
+                glm::vec3 deg = glm::degrees(glm::eulerAngles(vals[i]));
+                ImGui::SetNextItemWidth(-28.0f);
+                if (!structural && ImGui::DragFloat3("##v", glm::value_ptr(deg), 0.5f, 0.0f, 0.0f, "%.0f")) {
+                    track.setKeyframeValue(i, glm::normalize(glm::quat(glm::radians(deg)))); ch = true;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("x")) { track.removeKeyframe(i); ch = true; structural = true; }
+                ImGui::PopID();
+                if (structural) break;
+            }
+            ImGui::PopID();
+            return ch;
+        };
+
+        if (ImGui::TreeNode("Keyframes")) {
+            bool kch = false;
+            kch |= vec3Track("Position", anim.positionTrack, curPos);
+            ImGui::Separator();
+            kch |= quatTrack("Rotation", anim.rotationTrack, curRot);
+            ImGui::Separator();
+            kch |= vec3Track("Scale", anim.scaleTrack, curScale);
+            if (kch) { anim.updateDuration(); changed = true; }
+            ImGui::TreePop();
+        }
+
+        if (changed) state.markSceneDirty();
     }
     endComponentCard();
     if (remove) {

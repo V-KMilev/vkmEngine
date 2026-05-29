@@ -173,6 +173,17 @@ class RenderBackend {
         virtual float getAdaptedLuminance() const { return 0.18f; }
 
         /**
+         * @brief Force the image-based-lighting environment to re-bake next frame.
+         *
+         * Invalidates the cached bake so the IBL bake pass re-runs from the
+         * current EnvironmentConfig::ibl.path (e.g. the artist edited the .hdr
+         * on disk, or hit "Rebake IBL"). Must be invoked on the backend thread
+         * - editor code routes through RenderSystem::requestIBLRebake(), which
+         * queues a backend job. Default no-op for backends without IBL.
+         */
+        virtual void requestIBLRebake() {}
+
+        /**
          * @brief Construct a backend-specific FrameResources pool.
          *
          * The graph holds the returned pool via unique_ptr<FrameResources>

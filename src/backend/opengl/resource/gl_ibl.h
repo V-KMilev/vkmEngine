@@ -54,6 +54,13 @@ class GLIBL {
         /// Record a successful bake of @p path so needsBake() goes quiet.
         void markBaked(const std::string& path);
 
+        /// Force the next frame to re-bake the current source (manual "Rebake
+        /// IBL" from the editor, or after the .hdr changed on disk). Clears the
+        /// last-baked path so needsBake() fires again; the existing baked
+        /// cubemaps stay live until the new bake finishes, so there is no
+        /// one-frame flash to black. No-op in effect when no source is set.
+        void invalidateBake() { m_bakedPath.clear(); }
+
         bool isReady() const { return m_ready; }
 
         /// Allocate every GL texture + the capture FBO. Idempotent.

@@ -104,6 +104,14 @@ void GLForwardPass::execute(RenderGraphContext& rg) {
         && view.environment.transparency.useOIT
         && oit && oit->isReady();
 
+    // Honor runtime MSAA-sample edits (env.msaa.samples) before anything
+    // binds the target this frame. Idempotent - reallocates the scene target
+    // only when the count actually changed. The opaque phase is the first
+    // pass to touch the HDR target each frame, so doing it here is safe.
+    if (m_phase != Phase::Transparent) {
+        hdrT.ensureSamples(view.environment.msaa.samples);
+    }
+
     // The scene renders into the offscreen linear-HDR target so light is
     // never clamped before tone mapping. The composite pass resolves this
     // and applies exposure + AgX to the backbuffer.

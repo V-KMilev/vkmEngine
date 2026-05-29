@@ -28,6 +28,10 @@ enum class EntityKind {
     Empty,
     Cube,
     Sphere,
+    Plane,
+    Triangle,
+    Pyramid,
+    Cone,
     PointLight,
     SpotLight,
     DirectionalLight,
@@ -74,6 +78,17 @@ MaterialHandle duplicateMaterial(
     MaterialHandle source,
     Mesh* assignTo
 );
+
+/**
+ * @brief Create a fresh standalone PBR material from scratch.
+ *
+ * Wraps generateDefaultMaterial, then gives the result a unique name
+ * ("Material", "Material 1", ...) and a unique AssetId so distinct new
+ * materials don't collapse onto the shared "material:default" id on
+ * save/load. Marks the scene dirty. Returns the new handle (null on failure).
+ * Does not assign it to any entity - the caller decides what to do with it.
+ */
+MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state);
 
 /// Frame the entire visible scene: union the world-space AABBs of every
 /// visible mesh entity, then focus the camera so the union fits in view.

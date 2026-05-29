@@ -60,6 +60,34 @@ void registerBuiltinAssetFactories() {
                                      resources);
     });
 
+    // Meshes: "decimate" kind. A LOD level produced by vertex-clustering its
+    // base mesh. The base ({base AssetId}) is emitted earlier in the meshes
+    // block (it is the entity's Mesh::mesh), so it is already resident when
+    // this factory runs. Re-decimating on load keeps decimated levels out of
+    // the scene file (only the recipe is stored), matching how procedural
+    // generator meshes work.
+    factories.registerMesh("decimate", [](const nlohmann::json& desc,
+                                          ResourceManager& resources) -> MeshHandle
+    {
+        const AssetId baseId = AssetId::fromString(desc.value("base", std::string{}));
+        const uint32_t grid  = desc.value("grid", 8u);
+        const MeshHandle baseH = baseId ? resources.findById<MeshAsset>(baseId) : MeshHandle{};
+        if (!baseH) {
+            LOG_ERROR("decimate: base mesh %s not loaded (LOD level dropped)", baseId.toString().c_str());
+            return {};
+        }
+        MeshAsset dec = decimateMesh(resources.get(baseH), grid);
+        if (dec.vertices.empty()) return {};
+        // Keep the source so a subsequent save re-emits the recipe cleanly
+        // (loadAssets::reconcileId patches the assetId to the scene's GUID).
+        nlohmann::json src;
+        src["kind"] = "decimate";
+        src["base"] = baseId.toString();
+        src["grid"] = grid;
+        dec.sourceJson() = std::move(src);
+        return resources.add(std::move(dec));
+    });
+
     // Textures: "file" kind. Loaded via stb_image.
     factories.registerTexture("file", [](const nlohmann::json& desc,
                                          ResourceManager& resources) -> TextureHandle
@@ -85,6 +113,21 @@ void registerBuiltinAssetFactories() {
         if (type == "normal") return generateNormalTexture(resources);
         if (type == "gray")   return generateGrayTexture(resources);
         return {};
+    });
+
+    // Textures: "solid" kind. A user-authored solid-color texture (Material
+    // Editor "Generate texture"). Re-created from the stored RGBA + colorspace.
+    factories.registerTexture("solid", [](const nlohmann::json& desc,
+                                          ResourceManager& resources) -> TextureHandle
+    {
+        glm::vec4 color(1.0f);
+        if (desc.contains("color") && desc["color"].is_array() && desc["color"].size() >= 4) {
+            const auto& c = desc["color"];
+            color = glm::vec4(c[0].get<float>(), c[1].get<float>(),
+                              c[2].get<float>(), c[3].get<float>());
+        }
+        const bool srgb = desc.value("srgb", false);
+        return createSolidColorTexture(color, resources, srgb);
     });
 
     // Textures: "model-image" kind. Re-extract an embedded image from the
