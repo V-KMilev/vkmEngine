@@ -5,7 +5,7 @@
 
 #include "framework/editor_common.h"
 #include "framework/editor_commands.h"
-#include "input/editor_actions.h"
+#include "framework/editor_actions.h"
 #include "system/render/render_view.h"   // EnvironmentConfig (singleton row)
 
 namespace Engine {
