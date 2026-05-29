@@ -269,20 +269,35 @@ void RenderView::build(
     // Gather drawables - reserve only grows, never shrinks
     drawables.reserve(visibility.entries.size());
 
-    // Lazy MaterialType memo: ResourceManager::get walks a slot table +
-    // SparseSet per call. On a 13k-entity scene with ~100 unique materials
-    // that's two orders of magnitude of redundant work per frame. Linear
-    // scan over a thread_local vector beats unordered_map's hashing +
-    // allocator traffic for the small-N case we actually see in practice.
-    static thread_local std::vector<std::pair<uint32_t, MaterialType>> matTypeMemo;
-    matTypeMemo.clear();
+    // Persistent MaterialType cache, indexed by material id (0 = unknown,
+    // else type + 1). materialTypeOf is called once per drawable AND once per
+    // mesh in the shadow-caster fingerprint walk, so at 13k entities the old
+    // per-frame-cleared linear-scan memo cost up to O(visible + meshes) x
+    // O(unique materials) comparisons every frame. This cache is rebuilt only
+    // when materials are edited (MaterialAsset type-version bumps on commit -
+    // covers any .type change) or the ResourceManager is swapped (global
+    // version bumps on scene load); otherwise lookup is O(1). A material added
+    // at a fresh id reads 0 (unknown) and is fetched on first use even without
+    // a version bump.
+    static thread_local std::vector<uint8_t> matTypeCache;
+    static thread_local uint64_t matTypeCacheGlobal = ~0ull;
+    static thread_local uint64_t matTypeCacheType   = ~0ull;
+    {
+        const uint64_t gv = resources.getGlobalVersion();
+        const uint64_t tv = resources.getTypeVersion<MaterialAsset>();
+        if (gv != matTypeCacheGlobal || tv != matTypeCacheType) {
+            matTypeCache.clear();
+            matTypeCacheGlobal = gv;
+            matTypeCacheType   = tv;
+        }
+    }
     auto materialTypeOf = [&](MaterialHandle h) -> MaterialType {
         if (!h) return MaterialType::Opaque;
         const uint32_t id = h.id();
-        for (const auto& kv : matTypeMemo) if (kv.first == id) return kv.second;
-        const MaterialType t = resources.get(h).type;
-        matTypeMemo.emplace_back(id, t);
-        return t;
+        if (id >= matTypeCache.size()) matTypeCache.resize(id + 1, 0);
+        uint8_t& slot = matTypeCache[id];
+        if (slot == 0) slot = static_cast<uint8_t>(resources.get(h).type) + 1u;
+        return static_cast<MaterialType>(slot - 1u);
     };
 
     // Guard against stale EntityIds (entity deleted between visibility and render).
