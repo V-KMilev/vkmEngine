@@ -305,7 +305,7 @@ class GLView {
         uint64_t m_lastMeshTypeVersion     = 0;
         uint64_t m_lastMaterialTypeVersion = 0;
         uint64_t m_lastTextureTypeVersion  = 0;
-        size_t   m_lastDrawableCount       = 0;
+        uint64_t m_lastDrawableHash        = 0;
 
         /**
          * @brief Last seen ResourceManager global version (bumped by swap).
