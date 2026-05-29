@@ -13,6 +13,7 @@
 #include "ecs/scene.h"
 #include "system/visibility/visibility.h"
 #include "ecs/component/mesh.h"
+#include "ecs/component/mesh_lod.h"
 #include "ecs/component/light.h"
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/selected.h"
@@ -129,6 +130,36 @@ void sortTransparentsByDepth(
         [&](const DrawableData& a, const DrawableData& b) {
             return distSq(a) > distSq(b);  // farthest first
         });
+}
+
+// Pick a renderable's LOD level from its projected screen size: the coarsest
+// level whose switch-height threshold the bounding sphere's pixel height falls
+// under. Returns that level's mesh handle.
+inline MeshHandle selectLOD(
+    const MeshLOD& lod,
+    const glm::vec3& worldMin,
+    const glm::vec3& worldMax,
+    const CameraData& camera,
+    uint32_t viewportHeight
+) {
+    if (lod.count <= 1) return lod.levels[0];
+
+    const glm::vec3 center = (worldMin + worldMax) * 0.5f;
+    const float radius = 0.5f * glm::length(worldMax - worldMin);
+    const float dist   = glm::length(center - camera.position);
+    // Projected pixel height of the bounding sphere. NDC height
+    // 2*radius*projScaleY/dist spans the [-1,1] range = viewportHeight pixels,
+    // so the 2 and the /2 cancel.
+    const float projScaleY = camera.projection[1][1];
+    const float pixelHeight = (dist > 1.0e-4f)
+        ? (radius * projScaleY / dist) * static_cast<float>(viewportHeight)
+        : 1.0e9f;
+
+    int level = 0;
+    for (int i = 1; i < lod.count; ++i) {
+        if (pixelHeight < lod.switchHeights[i]) level = i;
+    }
+    return lod.levels[level];
 }
 
 // Fold a 64-bit value into a running hash (boost::hash_combine mix).
@@ -300,6 +331,10 @@ void RenderView::build(
         return static_cast<MaterialType>(slot - 1u);
     };
 
+    // Per-instance LOD reads an optional MeshLOD; hoist the storage once (most
+    // entities have none, so this is a single contains() probe each).
+    const auto* lodStorage = scene.storage<MeshLOD>();
+
     // Guard against stale EntityIds (entity deleted between visibility and render).
     for (const auto& entry : visibility.entries) {
         if (!scene.isAlive(entry.id)) continue;
@@ -307,7 +342,13 @@ void RenderView::build(
         if (!mesh.mesh || !mesh.material) continue;  // unresolved slot - skip
 
         DrawableData drawable;
-        drawable.mesh         = mesh.mesh;
+        // LOD: an entity with a MeshLOD renders the level matching its
+        // on-screen size; otherwise the single Mesh::mesh. Shadow casters
+        // (gathered below) keep Mesh::mesh regardless, so their cache is stable.
+        drawable.mesh = (lodStorage && lodStorage->contains(entry.id.index))
+            ? selectLOD(lodStorage->get(entry.id.index), entry.worldMin, entry.worldMax,
+                        camera, viewportHeight)
+            : mesh.mesh;
         drawable.material     = mesh.material;
         drawable.materialType = materialTypeOf(mesh.material);
         drawable.castShadows  = mesh.castShadows;
