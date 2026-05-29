@@ -17,16 +17,19 @@ namespace Engine {
  */
 namespace Config {
 
+    // The four constants below are the single source of truth for both C++ and
+    // GLSL: cmake/generate_shader_config.cmake mirrors them into
+    // shaders/_generated/engine_config.glsl (as MAX_LIGHTS / SHADOW_MAX_CASTERS_2D
+    // / SHADOW_MAX_CASTERS_CUBE / NUM_CASCADES), which shaders/pbr/fragment.shader
+    // #includes - so the shaders no longer hand-copy these values.
+
     /// Maximum number of lights uploaded per frame.
-    /// MUST match MAX_LIGHTS in shaders/pbr/fragment.shader.
     constexpr uint32_t MAX_LIGHTS = 32;
 
     /// Shadow caster budget for the 2D atlas (directional + spot).
-    /// MUST match SHADOW_MAX_CASTERS_2D in shaders/pbr/fragment.shader.
     constexpr uint32_t MAX_SHADOW_CASTERS_2D = 6;
 
     /// Shadow caster budget for the cube atlas (point lights).
-    /// MUST match SHADOW_MAX_CASTERS_CUBE in shaders/pbr/fragment.shader.
     constexpr uint32_t MAX_SHADOW_CASTERS_CUBE = 2;
 
     /**
@@ -34,7 +37,7 @@ namespace Config {
      *
      * The first directional shadow caster reserves this many consecutive 2D
      * atlas layers; remaining layers (MAX_SHADOW_CASTERS_2D - NUM_CASCADES) serve
-     * spot lights. MUST match NUM_CASCADES in shaders/pbr/fragment.shader.
+     * spot lights.
      */
     constexpr uint32_t NUM_CASCADES = 4;
 

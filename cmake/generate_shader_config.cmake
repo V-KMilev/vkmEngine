@@ -2,10 +2,9 @@
 # emit them as a GLSL header at shaders/_generated/engine_config.glsl.
 #
 # This makes engine_config.h the single source of truth for cross-language
-# constants (MAX_LIGHTS et al) that today are duplicated by hand in the
-# shaders. Shaders can keep their explicit `const int MAX_LIGHTS = 32;`
-# lines for now; once vkmGL gains shader-include support they should be
-# replaced by `#include "_generated/engine_config.glsl"`.
+# constants (MAX_LIGHTS et al). The engine's shader preprocessor inlines the
+# generated header, so shaders `#include "_generated/engine_config.glsl"`
+# instead of hand-copying the values.
 #
 # Inputs:  src/engine/core/engine_config.h
 # Outputs: shaders/_generated/engine_config.glsl
@@ -43,9 +42,8 @@ set(_glsl
 // Source of truth: src/engine/core/engine_config.h
 //
 // Do not edit by hand - any change will be overwritten next configure.
-// Once vkmGL supports shader-side #include, the inline `const int MAX_LIGHTS`
-// declarations in shaders/pbr/fragment.shader can be deleted and this
-// file included instead.
+// Shaders #include this file (via the engine's shader preprocessor) instead
+// of hand-copying these values.
 
 const int   MAX_LIGHTS              = ${_max_lights};
 const int   SHADOW_MAX_CASTERS_2D   = ${_max_shadow_2d};
