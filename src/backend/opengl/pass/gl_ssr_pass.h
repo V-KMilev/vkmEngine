@@ -12,12 +12,14 @@ namespace Core {
 namespace Engine {
 
 /**
- * @brief Screen-space reflections, additively blended into the HDR scene.
+ * @brief Screen-space reflections over the resolved HDR scene.
  *
  * Reuses the prepass G-buffer (view normal/position) and the resolved HDR
- * color. Runs after opaque + skybox + grid and before bloom, so reflections
- * are tone-mapped together with the scene. No-ops when disabled or when the
- * G-buffer is not ready.
+ * color. Renders scene + reflections into the shared post scratch, then blits
+ * back into the HDR resolve target (the same single-sample pattern as DoF) so
+ * the post chain stays off the 4x MSAA target and the graph resolves once.
+ * Runs after opaque + skybox + grid and before bloom. No-ops when disabled or
+ * when the G-buffer is not ready.
  */
 class GLSSRPass : public RenderPass {
     public:
@@ -37,10 +39,14 @@ class GLSSRPass : public RenderPass {
         void execute(RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
+            // Render into PostScratch, blit back into SceneHDRResolved so the
+            // downstream chain reads the result in the resource it always reads
+            // and the graph does not re-resolve (DoF / motion-blur pattern).
             builder.read(RGResource::SceneHDRResolved);
             builder.read(RGResource::GBufferNormal);
             builder.read(RGResource::GBufferPosition);
-            builder.write(RGResource::SceneHDR);
+            builder.write(RGResource::PostScratch);
+            builder.write(RGResource::SceneHDRResolved);
         }
 
         bool enabledForView(const RenderView& view) const override;
