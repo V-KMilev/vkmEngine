@@ -60,6 +60,14 @@ class GLSceneTarget {
 
         bool isReady() const { return m_ready; }
 
+        /// True when something drew into the overlay attachment since the last
+        /// clearOverlay() this frame. The composite uses this to skip the
+        /// full-res MSAA overlay resolve (and the overlay blend) on the common
+        /// case where no AABB/Grid/Outline/wireframe pass ran. Set by
+        /// bindForOverlay(), reset by clearOverlay(); both are called only on
+        /// the render thread, in pass order, so no synchronization is needed.
+        bool overlayDirty() const { return m_overlayDirty; }
+
         /**
          * @brief Bind the multisampled FBO and set the viewport for rendering.
          *        Color attachment 0 (HDR) is the only draw target so non-AABB,
@@ -82,6 +90,12 @@ class GLSceneTarget {
          */
         void bindForOverlay() const {
             if (!m_ready) return;
+            // A caller binding the overlay attachment is about to draw into it
+            // (no caller binds it speculatively); mark it dirty so composite
+            // resolves + blends it this frame. Over-approximation is safe: a
+            // false positive only costs an unnecessary resolve, never a
+            // dropped overlay.
+            m_overlayDirty = true;
             m_msFbo->bind();
             const GLenum bufs[2] = { GL_NONE, GL_COLOR_ATTACHMENT1 };
             glDrawBuffers(2, bufs);
@@ -94,6 +108,9 @@ class GLSceneTarget {
          *        pass drew. Idempotent.
          */
         void clearOverlay() const {
+            // Reset the per-frame dirty flag here (the forward opaque phase
+            // clears the overlay once per frame, before any overlay pass runs).
+            m_overlayDirty = false;
             if (!m_ready) return;
             m_msFbo->bind();
             const GLenum bufs[2] = { GL_NONE, GL_COLOR_ATTACHMENT1 };
@@ -253,6 +270,10 @@ class GLSceneTarget {
         uint32_t m_width  = 0;
         uint32_t m_height = 0;
         bool     m_ready  = false;
+
+        /// Did any pass draw into the overlay attachment this frame? See
+        /// overlayDirty(). Mutable: toggled from const bind/clear helpers.
+        mutable bool m_overlayDirty = false;
 };
 
 } // namespace Engine
