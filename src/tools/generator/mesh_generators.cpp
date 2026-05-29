@@ -3,6 +3,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -402,6 +403,22 @@ MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution) {
     if (out.indices.empty()) return src;
 
     out.computeAndSetBounds();
+    return out;
+}
+
+MeshAsset decimateMeshTracked(const MeshAsset& base, const AssetId& baseId, uint32_t gridResolution) {
+    MeshAsset out = decimateMesh(base, gridResolution);
+    // Stamp the reload recipe so the level re-decimates on cold-start load.
+    nlohmann::json src;
+    src["kind"] = "decimate";
+    src["base"] = baseId.toString();
+    src["grid"] = gridResolution;
+    out.sourceJson() = std::move(src);
+    // Deterministic id keyed on (base, grid) so identical decimations map to
+    // the same GUID across runs (mirrors stampGenerated).
+    const std::string key = "mesh:decimate:" + baseId.toString() + ":"
+                          + std::to_string(gridResolution);
+    out.assetId = AssetDatabase::get().registerOrGet(key, AssetKind::Mesh);
     return out;
 }
 

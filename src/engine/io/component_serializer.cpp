@@ -103,6 +103,8 @@ inline nlohmann::json toJson(const AmbientConfig& c);
 inline void fromJson(const nlohmann::json& j, AmbientConfig& c);
 inline nlohmann::json toJson(const IBLConfig& c);
 inline void fromJson(const nlohmann::json& j, IBLConfig& c);
+inline nlohmann::json toJson(const SkyboxConfig& c);
+inline void fromJson(const nlohmann::json& j, SkyboxConfig& c);
 inline nlohmann::json toJson(const AOConfig& c);
 inline void fromJson(const nlohmann::json& j, AOConfig& c);
 inline nlohmann::json toJson(const SSRConfig& c);
@@ -137,6 +139,8 @@ inline nlohmann::json toJson(const AABBDebugConfig& c);
 inline void fromJson(const nlohmann::json& j, AABBDebugConfig& c);
 inline nlohmann::json toJson(const SelectionOutlineConfig& c);
 inline void fromJson(const nlohmann::json& j, SelectionOutlineConfig& c);
+inline nlohmann::json toJson(const MSAAConfig& c);
+inline void fromJson(const nlohmann::json& j, MSAAConfig& c);
 
 // Reflection driver. Iterates a type's reflected fields and forwards each
 // (name, value) through the toJson / fromJson overload set. Phase-1
@@ -171,6 +175,9 @@ inline void fromJson(const nlohmann::json& j, AmbientConfig& c)             { lo
 
 inline nlohmann::json toJson(const IBLConfig& c)                 { return saveReflected(c); }
 inline void fromJson(const nlohmann::json& j, IBLConfig& c)                 { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const SkyboxConfig& c)              { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, SkyboxConfig& c)              { loadReflected(j, c); }
 
 inline nlohmann::json toJson(const AOConfig& c)                  { return saveReflected(c); }
 inline void fromJson(const nlohmann::json& j, AOConfig& c)                  { loadReflected(j, c); }
@@ -230,6 +237,9 @@ inline void fromJson(const nlohmann::json& j, AABBDebugConfig& c)           { lo
 
 inline nlohmann::json toJson(const SelectionOutlineConfig& c)    { return saveReflected(c); }
 inline void fromJson(const nlohmann::json& j, SelectionOutlineConfig& c)    { loadReflected(j, c); }
+
+inline nlohmann::json toJson(const MSAAConfig& c)                { return saveReflected(c); }
+inline void fromJson(const nlohmann::json& j, MSAAConfig& c)                { loadReflected(j, c); }
 
 } // namespace
 
@@ -291,6 +301,44 @@ void load(const nlohmann::json& j, Mesh& m, const ResourceManager& resources) {
 
     m.visible     = j.value("visible",     m.visible);
     m.castShadows = j.value("castShadows", m.castShadows);
+}
+
+nlohmann::json save(const MeshLOD& lod, const ResourceManager& resources) {
+    nlohmann::json levels = nlohmann::json::array();
+    for (int i = 0; i < lod.count && i < MeshLOD::MAX_LEVELS; ++i) {
+        const AssetId id = lod.levels[i] ? resources.get(lod.levels[i]).assetId : AssetId{};
+        levels.push_back({
+            {"mesh",         id.toString()},
+            {"switchHeight", lod.switchHeights[i]},  // index 0 unused; round-trips for alignment.
+        });
+    }
+    return {
+        {"count",  lod.count},
+        {"levels", std::move(levels)},
+    };
+}
+void load(const nlohmann::json& j, MeshLOD& lod, const ResourceManager& resources) {
+    lod = MeshLOD{};  // reset to a clean single-level default before filling.
+    if (j.contains("levels") && j["levels"].is_array()) {
+        const auto& levels = j["levels"];
+        int n = static_cast<int>(levels.size());
+        if (n > MeshLOD::MAX_LEVELS) n = MeshLOD::MAX_LEVELS;
+        for (int i = 0; i < n; ++i) {
+            const AssetId id = AssetId::fromString(levels[i].value("mesh", std::string{}));
+            if (id) {
+                lod.levels[i] = resources.findById<MeshAsset>(id);
+                if (!lod.levels[i]) {
+                    LOG_WARNING("SceneLoad: LOD level %d mesh asset %s not found - left unresolved",
+                                i, id.toString().c_str());
+                }
+            }
+            lod.switchHeights[i] = levels[i].value("switchHeight", 0.0f);
+        }
+    }
+    int count = j.value("count", 0);
+    if (count < 0)                    count = 0;
+    if (count > MeshLOD::MAX_LEVELS)  count = MeshLOD::MAX_LEVELS;
+    lod.count = static_cast<uint8_t>(count);
 }
 
 nlohmann::json save(const Hierarchy& h) {
@@ -433,6 +481,10 @@ VKM_REFLECT_BEGIN(Engine::IBLConfig)
     VKM_F(intensity)
 VKM_REFLECT_END()
 
+VKM_REFLECT_BEGIN(Engine::SkyboxConfig)
+    VKM_F(enabled)
+VKM_REFLECT_END()
+
 VKM_REFLECT_BEGIN(Engine::AOConfig)
     VKM_F(enabled),
     VKM_F(radius),
@@ -538,9 +590,14 @@ VKM_REFLECT_BEGIN(Engine::SelectionOutlineConfig)
     VKM_F(thickness)
 VKM_REFLECT_END()
 
+VKM_REFLECT_BEGIN(Engine::MSAAConfig)
+    VKM_F(samples)
+VKM_REFLECT_END()
+
 VKM_REFLECT_BEGIN(Engine::EnvironmentConfig)
     VKM_F(ambient),
     VKM_F(ibl),
+    VKM_F(skybox),
     VKM_F(shadow),
     VKM_F(transparency),
     VKM_F(occlusion),
@@ -557,6 +614,7 @@ VKM_REFLECT_BEGIN(Engine::EnvironmentConfig)
     VKM_F(grid),
     VKM_F(aabbDebug),
     VKM_F(selection),
+    VKM_F(msaa),
     VKM_F(tonemap),
     VKM_F(clearColor),
     VKM_F(renderMode)

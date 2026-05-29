@@ -228,7 +228,7 @@ bool EnvironmentInspector::drawPresetBar(EnvironmentConfig& env) {
     return changed;
 }
 
-bool EnvironmentInspector::drawWorld(EditorContext& /*ec*/, EnvironmentConfig& env) {
+bool EnvironmentInspector::drawWorld(EditorContext& ec, EnvironmentConfig& env) {
     bool changed = false;
 
     bool       iblOn   = !env.ibl.path.empty();
@@ -278,6 +278,26 @@ bool EnvironmentInspector::drawWorld(EditorContext& /*ec*/, EnvironmentConfig& e
         else
             ImGui::TextDisabled("%s",
                 std::filesystem::path(env.ibl.path).filename().string().c_str());
+
+        // Skybox visibility is independent of IBL lighting: hiding the skybox
+        // keeps image-based ambient/specular but drops the background draw.
+        ImGui::Spacing();
+        drawPropertyLabel("Show Skybox");
+        changed |= ImGui::Checkbox("##SkyboxOn", &env.skybox.enabled);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Draw the baked environment cubemap as the background.\n"
+                              "Off keeps IBL lighting but hides the backdrop.");
+
+        // Manual rebake - the bake is otherwise automatic on path change.
+        // Useful after editing the .hdr on disk. Disabled with no source.
+        drawPropertyLabel("Rebake");
+        ImGui::BeginDisabled(env.ibl.path.empty());
+        if (ImGui::Button("Rebake IBL"))
+            ec.renderSystem.requestIBLRebake();
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Re-run the IBL bake from the current HDR\n"
+                              "(e.g. after editing the file on disk).");
         ImGui::EndDisabled();
     }
 
@@ -295,8 +315,13 @@ bool EnvironmentInspector::drawWorld(EditorContext& /*ec*/, EnvironmentConfig& e
     if (cardHeader("bg", "Background", nullptr)) {
         drawPropertyLabel("Clear Color");
         ImGui::SetNextItemWidth(-1.0f);
-        changed |= ImGui::ColorEdit3("##ClearCol", glm::value_ptr(env.clearColor),
-            ImGuiColorEditFlags_Float);
+        // RGBA: alpha is the backbuffer clear alpha (matters for screenshots /
+        // compositing the viewport over a transparent surface).
+        changed |= ImGui::ColorEdit4("##ClearCol", glm::value_ptr(env.clearColor),
+            ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaPreviewHalf);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Background clear color (linear HDR). Alpha is the\n"
+                              "clear alpha used for screenshots / transparent capture.");
     }
 
     ImGui::Spacing();
@@ -713,9 +738,29 @@ bool EnvironmentInspector::drawDiagnostics(EditorContext& /*ec*/, EnvironmentCon
     return changed;
 }
 
-bool EnvironmentInspector::drawPerformance(EditorContext& ec) {
+bool EnvironmentInspector::drawPerformance(EditorContext& ec, EnvironmentConfig& env) {
     FrameContext& ctx = ec.frame;
     bool changed = false;
+
+    if (cardHeader("msaa", "Anti-Aliasing (MSAA)", nullptr)) {
+        static const int   kSamples[4]   = {1, 2, 4, 8};
+        static const char* kSampleNames  = "Off\0" "2x\0" "4x\0" "8x\0";
+        int idx = 2;  // default to 4x; snap to the matching entry if present.
+        for (int i = 0; i < 4; ++i) if (env.msaa.samples == kSamples[i]) idx = i;
+        drawPropertyLabel("Samples");
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::Combo("##MSAA", &idx, kSampleNames)) {
+            env.msaa.samples = kSamples[idx];
+            changed = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Multisample anti-aliasing on the HDR scene target.\n"
+                              "Higher = smoother edges, more GPU memory + bandwidth.\n"
+                              "Reallocates the scene target on change (clamped to the\n"
+                              "GPU's GL_MAX_SAMPLES).");
+    }
+
+    ImGui::Spacing();
 
     if (cardHeader("passes", "Render Passes", nullptr)) {
         ImGui::TextDisabled("Per-pass enable/disable (advanced).");
@@ -794,7 +839,7 @@ void EnvironmentInspector::draw(EditorContext& ec, EnvironmentConfig& env) {
     if (!filtering || matchesFilter("Performance (advanced)", m_filter)) {
         if (filtering) ImGui::SetNextItemOpen(true, ImGuiCond_Always);
         if (beginComponentCard("Performance (advanced)", ACCENT_PERF, false))
-            changed |= drawPerformance(ec);
+            changed |= drawPerformance(ec, env);
         endComponentCard();
     }
 

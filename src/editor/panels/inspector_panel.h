@@ -5,6 +5,7 @@
 #include "ecs/entity.h"
 #include "ecs/component/mesh_lod.h"  // MeshLOD::MAX_LEVELS for the decimate-grid cache
 
+#include "framework/asset_picker.h"  // ReflectionProbe HDR Browse picker
 #include "panels/environment_inspector.h"
 #include "ui/editor_widgets.h"  // EulerCache
 
@@ -60,6 +61,10 @@ class InspectorPanel {
         // Per-level grid resolution for the LOD section's "Decimate" button
         // (index 0 unused - level 0 is the base mesh, never decimated).
         int m_lodDecimateGrid[MeshLOD::MAX_LEVELS] = {16, 12, 8, 5};
+
+        // File picker for the Reflection Probe HDR path Browse button. One
+        // per panel so its on-open scan cache survives across frames.
+        AssetPicker m_probeHdrPicker;
 };
 
 } // namespace Engine

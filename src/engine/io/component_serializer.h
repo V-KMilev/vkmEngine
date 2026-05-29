@@ -7,6 +7,7 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/light.h"
 #include "ecs/component/mesh.h"
+#include "ecs/component/mesh_lod.h"
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/name.h"
 #include "ecs/component/transform.h"
@@ -49,6 +50,15 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const Mesh&, const ResourceManager&);
     void load(const nlohmann::json&, Mesh&, const ResourceManager&);
+
+    /// MeshLOD: the per-level mesh handles serialize as AssetId references
+    /// (resolved through ResourceManager, like Mesh), plus each level's
+    /// switch-height threshold and the valid level count. The level meshes
+    /// themselves are emitted into the scene's asset block by
+    /// AssetSerializer::saveAssetsForScene (decimated levels via a
+    /// "decimate" asset source).
+    nlohmann::json save(const MeshLOD&, const ResourceManager&);
+    void load(const nlohmann::json&, MeshLOD&, const ResourceManager&);
 
     /// Hierarchy: only `parent` is serialized; sibling pointers are rebuilt
     /// on load by re-running HierarchyOperations::setParent. The returned

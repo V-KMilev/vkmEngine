@@ -32,6 +32,10 @@ void GLSkyboxPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint
     // Nothing to do for the skybox pass.
 }
 
+bool GLSkyboxPass::enabledForView(const RenderView& view) const {
+    return isEnabled() && view.environment.skybox.enabled;
+}
+
 void GLSkyboxPass::execute(RenderGraphContext& rg) {
     PROFILE_GPU_SCOPE_NAMED(getName().c_str());
     RenderBackend& backend = rg.backend;

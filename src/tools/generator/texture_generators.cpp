@@ -1,7 +1,9 @@
 #include "texture_generators.h"
 
 #include <cstdint>
+#include <cstdio>
 
+#include <glm/common.hpp>
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
@@ -95,6 +97,27 @@ TextureHandle generateGrayTexture(ResourceManager& rm) {
     return getOrCreateNamed(rm, "builtin:gray",
         {{"kind", "builtin"}, {"type", "gray"}},
         makeSolidColorAsset(glm::vec4(0.5f, 0.5f, 0.5f, 1.0f), false));
+}
+
+TextureHandle createSolidColorTexture(glm::vec4 color, ResourceManager& rm, bool srgb) {
+    auto u8 = [](float c) { return static_cast<int>(glm::clamp(c, 0.0f, 1.0f) * 255.0f + 0.5f); };
+    // Deterministic id/name keyed on the quantised color + colorspace, so two
+    // requests for the same solid dedup to one asset across the session/runs.
+    char key[64];
+    std::snprintf(key, sizeof(key), "texture:solid:%02X%02X%02X%02X:%d",
+                  u8(color.r), u8(color.g), u8(color.b), u8(color.a), srgb ? 1 : 0);
+
+    if (auto existing = rm.findByName<TextureAsset>(key)) return existing;
+
+    TextureAsset tex = makeSolidColorAsset(color, srgb);
+    tex.name         = key;  // stable, unique per color - also the findByName dedup key.
+    tex.assetId      = AssetDatabase::get().registerOrGet(key, AssetKind::Texture);
+    nlohmann::json src;
+    src["kind"]  = "solid";
+    src["color"] = {color.r, color.g, color.b, color.a};
+    src["srgb"]  = srgb;
+    tex.sourceJson() = std::move(src);
+    return rm.add(std::move(tex));
 }
 
 } // namespace Engine

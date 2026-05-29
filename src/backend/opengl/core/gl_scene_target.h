@@ -58,6 +58,23 @@ class GLSceneTarget {
             createAttachments();
         }
 
+        /**
+         * @brief Set the MSAA sample count, reallocating attachments if it changed.
+         *
+         * Called once per frame from the forward (opaque) pass with
+         * EnvironmentConfig::msaa.samples, before anything binds the target.
+         * Idempotent: a no-op when the count is unchanged, so the common path
+         * costs one comparison. @p samples is clamped to at least 1 here and
+         * to GL_MAX_SAMPLES inside createAttachments(). Skips reallocation
+         * until the target has a valid size (the next resize() picks it up).
+         */
+        void ensureSamples(int samples) {
+            if (samples < 1) samples = 1;
+            if (samples == m_samples) return;
+            m_samples = samples;
+            if (m_ready) createAttachments();
+        }
+
         bool isReady() const { return m_ready; }
 
         /// Did any pass draw into the overlay this frame? Lets the composite
@@ -190,7 +207,7 @@ class GLSceneTarget {
         void createAttachments() {
             GLint maxSamples = 1;
             glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
-            const int samples = std::clamp(MSAA_SAMPLES, 1, static_cast<int>(maxSamples));
+            const int samples = std::clamp(m_samples, 1, static_cast<int>(maxSamples));
 
             // Multisampled scene target: float color + packed depth/stencil
             // + RGBA8 overlay (diagnostic colour, written by AABB/Grid only).
@@ -251,7 +268,7 @@ class GLSceneTarget {
         }
 
     private:
-        static constexpr int MSAA_SAMPLES = 4;  ///< Requested MSAA samples (clamped to GL_MAX_SAMPLES)
+        int m_samples = 4;  ///< Requested MSAA samples (1=off; clamped to GL_MAX_SAMPLES on allocation). Set via ensureSamples().
 
         std::unique_ptr<Core::RenderBuffer> m_msColor;
         std::unique_ptr<Core::RenderBuffer> m_msOverlay;

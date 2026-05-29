@@ -20,6 +20,7 @@
 #include "ecs/component/name.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
+#include "resource/asset_database.h"
 #include "resource/material_asset.h"
 #include "system/visibility/visibility.h"
 #include "system/visibility/bounds_utils.h"
@@ -67,12 +68,38 @@ MaterialHandle duplicateMaterial(
     return nh;
 }
 
+MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state) {
+    MaterialHandle h = generateDefaultMaterial(resources);
+    if (!h) return MaterialHandle{};
+
+    // Unique, human-readable name: "Material", then "Material 1", "Material 2"...
+    std::string name = "Material";
+    for (int n = 1; resources.findByName<MaterialAsset>(name); ++n) {
+        name = "Material " + std::to_string(n);
+    }
+    resources.rename(h, name);
+
+    // generateDefaultMaterial stamps the shared "material:default" AssetId;
+    // give each new material a unique id (keyed on its unique name) so two
+    // new materials don't merge into one on save/load.
+    auto& asset   = resources.edit(h);
+    asset.assetId = AssetDatabase::get().registerOrGet("material:" + name, AssetKind::Material);
+    resources.reindexAssetId(h);
+
+    state.markSceneDirty();
+    return h;
+}
+
 namespace {
 const char* defaultName(EntityKind k) {
     switch (k) {
         case EntityKind::Empty:            return "Empty";
         case EntityKind::Cube:             return "Cube";
         case EntityKind::Sphere:           return "Sphere";
+        case EntityKind::Plane:            return "Plane";
+        case EntityKind::Triangle:         return "Triangle";
+        case EntityKind::Pyramid:          return "Pyramid";
+        case EntityKind::Cone:             return "Cone";
         case EntityKind::PointLight:       return "Point Light";
         case EntityKind::SpotLight:        return "Spot Light";
         case EntityKind::DirectionalLight: return "Directional Light";
@@ -117,6 +144,30 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         }
         case EntityKind::Sphere: {
             auto meshHandle = resources.add(generateSphere());
+            auto matHandle  = generateDefaultMaterial(resources);
+            scene.add(entity, Mesh{meshHandle, matHandle});
+            break;
+        }
+        case EntityKind::Plane: {
+            auto meshHandle = resources.add(generatePlane());
+            auto matHandle  = generateDefaultMaterial(resources);
+            scene.add(entity, Mesh{meshHandle, matHandle});
+            break;
+        }
+        case EntityKind::Triangle: {
+            auto meshHandle = resources.add(generateTriangle());
+            auto matHandle  = generateDefaultMaterial(resources);
+            scene.add(entity, Mesh{meshHandle, matHandle});
+            break;
+        }
+        case EntityKind::Pyramid: {
+            auto meshHandle = resources.add(generatePyramid());
+            auto matHandle  = generateDefaultMaterial(resources);
+            scene.add(entity, Mesh{meshHandle, matHandle});
+            break;
+        }
+        case EntityKind::Cone: {
+            auto meshHandle = resources.add(generateCone());
             auto matHandle  = generateDefaultMaterial(resources);
             scene.add(entity, Mesh{meshHandle, matHandle});
             break;
@@ -277,8 +328,12 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
         };
         item("Empty Entity", EntityKind::Empty);
         ImGui::Separator();
-        item("Cube",   EntityKind::Cube);
-        item("Sphere", EntityKind::Sphere);
+        item("Cube",     EntityKind::Cube);
+        item("Sphere",   EntityKind::Sphere);
+        item("Plane",    EntityKind::Plane);
+        item("Triangle", EntityKind::Triangle);
+        item("Pyramid",  EntityKind::Pyramid);
+        item("Cone",     EntityKind::Cone);
         ImGui::Separator();
         item("Point Light",       EntityKind::PointLight);
         item("Spot Light",        EntityKind::SpotLight);

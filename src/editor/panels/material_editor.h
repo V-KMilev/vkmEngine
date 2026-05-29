@@ -1,5 +1,7 @@
 #pragma once
 
+#include <glm/glm.hpp>
+
 #include "resource/mesh_asset.h"
 #include "resource/texture_asset.h"   // TextureHandle
 #include "framework/asset_picker.h"
@@ -78,6 +80,9 @@ class MaterialEditorPanel {
         /// Null when no picker is active.
         TextureHandle* m_pendingTexture = nullptr;
         bool          m_pendingTextureSrgb = false;
+
+        /// Color edited in the per-slot "Gen" popup's solid-color generator.
+        glm::vec4 m_genColor{1.0f, 1.0f, 1.0f, 1.0f};
 };
 
 } // namespace Engine
