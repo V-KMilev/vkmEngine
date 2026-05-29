@@ -17,6 +17,7 @@
 #include "gl_texture.h"
 #include "system/render/render_graph.h"
 #include "system/render/render_view.h"
+#include "system/visibility/culling/occlusion_oracle.h"
 
 namespace Engine {
 
@@ -27,6 +28,11 @@ std::unique_ptr<FrameResources> GLBackend::createFrameResources() {
 std::unique_ptr<RenderTarget> GLBackend::createOffscreenTarget(uint32_t size) {
     if (size == 0) return nullptr;
     return std::make_unique<GLFramebufferTarget>(size, size);
+}
+
+void GLBackend::publishOcclusion(std::vector<float> pyramid, uint32_t width, uint32_t height,
+                                 const glm::mat4& view, const glm::mat4& viewProj) {
+    OcclusionOracle::get().publish(std::move(pyramid), width, height, view, viewProj);
 }
 
 void GLBackend::registerPersistentResources(RenderGraph& graph) {
