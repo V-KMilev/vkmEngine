@@ -9,7 +9,7 @@
 #include "framework/editor_common.h"
 #include "framework/editor_context.h"
 #include "framework/scene_io_controller.h"
-#include "input/editor_actions.h"
+#include "framework/editor_actions.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_system.h"
 #include "ui/editor_widgets.h"
