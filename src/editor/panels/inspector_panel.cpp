@@ -7,11 +7,14 @@
 #include <utility>
 #include <vector>
 
+#include "ecs/component/mesh_lod.h"
 #include "ecs/component/reflection_probe.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
 #include "generator/light_generators.h"
+#include "generator/mesh_generators.h"   // decimateMesh for the LOD section
 #include "framework/editor_actions.h"
+#include "resource/resource_manager.h"
 #include "system/render/render_view.h"   // EnvironmentConfig
 #include "system/visibility/bounds_utils.h"
 
@@ -22,10 +25,48 @@ namespace {
 // eye group a card at a glance (Transform blue, Mesh green, ...).
 const ImVec4 ACCENT_TRANSFORM = EditorStyle::AXIS_Z;
 const ImVec4 ACCENT_MESH      = EditorStyle::AXIS_Y;
+const ImVec4 ACCENT_LOD       = ImVec4(0.90f, 0.49f, 0.13f, 1.0f);
 const ImVec4 ACCENT_LIGHT     = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);
 const ImVec4 ACCENT_CAMERA    = ImVec4(0.30f, 0.78f, 0.80f, 1.0f);
 const ImVec4 ACCENT_ANIM      = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);
 const ImVec4 ACCENT_HIERARCHY = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);
+
+// Asset-reference combo: pick which loaded asset of type Asset a handle points
+// at. Snapshots the asset list so ImGuiListClipper can window thousands of rows
+// fluidly. Returns true if the selection changed. Shared by the Mesh + LOD cards.
+template <typename Asset, typename Handle>
+bool pickAsset(const char* comboId, const char* label, ResourceManager& resources, Handle& currentHandle) {
+    const std::string cur = currentHandle
+        ? resources.get(currentHandle).name : std::string("(none)");
+    drawPropertyLabel(label);
+    ImGui::SetNextItemWidth(-1.0f);
+    if (!ImGui::BeginCombo(comboId, cur.empty() ? "(unnamed)" : cur.c_str()))
+        return false;
+
+    std::vector<std::pair<Handle, const Asset*>> rows;
+    resources.forEachOfType<Asset>([&](Handle h, const Asset& a) {
+        if (a.hidden) return;
+        rows.emplace_back(h, &a);
+    });
+
+    bool picked = false;
+    ImGuiListClipper clipper;
+    clipper.Begin(static_cast<int>(rows.size()));
+    while (clipper.Step()) {
+        for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+            const auto& [h, a] = rows[i];
+            ImGui::PushID(static_cast<int>(h.id()));
+            const bool sel = currentHandle && currentHandle.id() == h.id();
+            if (ImGui::Selectable(a->name.empty() ? "(unnamed)" : a->name.c_str(), sel)) {
+                currentHandle = h;
+                picked = true;
+            }
+            ImGui::PopID();
+        }
+    }
+    ImGui::EndCombo();
+    return picked;
+}
 }
 
 void InspectorPanel::draw(EditorContext& ec) {
@@ -116,6 +157,7 @@ void InspectorPanel::draw(EditorContext& ec) {
 
     if (scene.has<Transform>(id))  drawTransformSection(scene, state, id);
     if (scene.has<Mesh>(id))       drawMeshSection(scene, ctx.resources, state, id);
+    if (scene.has<MeshLOD>(id))    drawMeshLODSection(scene, ctx.resources, state, id);
     if (scene.has<Light>(id))      drawLightSection(scene, state, id);
     if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, state, id);
     if (scene.has<Camera>(id))     drawCameraSection(scene, state, id);
@@ -146,6 +188,17 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
             Mesh m{};
             scene.add(Entity{id}, m);
             state.commands.push(std::make_unique<AddComponentCommand<Mesh>>(id, m, "Add Mesh"));
+            state.markSceneDirty();
+        }
+        // LOD borrows the Mesh's material + base geometry, so only offer it once
+        // a Mesh exists. Seed level 0 with that mesh: a single-level chain is a
+        // no-op until the user adds coarser levels.
+        if (scene.has<Mesh>(id) && !scene.has<MeshLOD>(id) && ImGui::MenuItem("Level of Detail")) {
+            MeshLOD lod{};
+            lod.levels[0] = scene.get<Mesh>(id).mesh;
+            lod.count = 1;
+            scene.add(Entity{id}, lod);
+            state.commands.push(std::make_unique<AddComponentCommand<MeshLOD>>(id, lod, "Add LOD"));
             state.markSceneDirty();
         }
         if (!scene.has<Light>(id) && ImGui::MenuItem("Light")) {
@@ -234,48 +287,9 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
         ImGui::Spacing();
 
         // Asset pickers: swap which loaded mesh / material this component uses.
-        // Combos snapshot the asset list into a local vector so ImGuiListClipper
-        // can window the visible rows - keeps the combo fluid even with
-        // thousands of materials.
-        auto pickAsset = [](const char* id, const char* label, auto& resources,
-                            auto& currentHandle, auto* tag) -> bool {
-            using Asset = std::remove_pointer_t<decltype(tag)>;
-            using Handle = std::remove_reference_t<decltype(currentHandle)>;
-            const std::string cur = currentHandle
-                ? resources.template get(currentHandle).name : std::string("(none)");
-            drawPropertyLabel(label);
-            ImGui::SetNextItemWidth(-1.0f);
-            if (!ImGui::BeginCombo(id, cur.empty() ? "(unnamed)" : cur.c_str()))
-                return false;
-
-            std::vector<std::pair<Handle, const Asset*>> rows;
-            resources.template forEachOfType<Asset>(
-                [&](Handle h, const Asset& a) {
-                    if (a.hidden) return;
-                    rows.emplace_back(h, &a);
-                });
-
-            bool picked = false;
-            ImGuiListClipper clipper;
-            clipper.Begin(static_cast<int>(rows.size()));
-            while (clipper.Step()) {
-                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
-                    const auto& [h, a] = rows[i];
-                    ImGui::PushID(static_cast<int>(h.id()));
-                    const bool sel = currentHandle && currentHandle.id() == h.id();
-                    if (ImGui::Selectable(a->name.empty() ? "(unnamed)" : a->name.c_str(), sel)) {
-                        currentHandle = h;
-                        picked = true;
-                    }
-                    ImGui::PopID();
-                }
-            }
-            ImGui::EndCombo();
-            return picked;
-        };
-
-        changed |= pickAsset("##MeshPick", "Mesh Asset",     resources, mesh.mesh,     (MeshAsset*)nullptr);
-        changed |= pickAsset("##MatPick",  "Material Asset", resources, mesh.material, (MaterialAsset*)nullptr);
+        // pickAsset (anon namespace) is shared with the LOD section.
+        changed |= pickAsset<MeshAsset>    ("##MeshPick", "Mesh Asset",     resources, mesh.mesh);
+        changed |= pickAsset<MaterialAsset>("##MatPick",  "Material Asset", resources, mesh.material);
 
         ImGui::Spacing();
 
@@ -314,6 +328,83 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
         Mesh snap = scene.get<Mesh>(id);
         scene.remove<Mesh>(Entity{id});
         state.commands.push(std::make_unique<RemoveComponentCommand<Mesh>>(id, snap, "Remove Mesh"));
+        state.markSceneDirty();
+    }
+}
+
+void InspectorPanel::drawMeshLODSection(Scene& scene, ResourceManager& resources,
+                                        EditorState& state, EntityId id) {
+    bool remove = false;
+    const bool open = beginComponentCard("Level of Detail", ACCENT_LOD, true, &remove);
+    if (open) {
+        auto& lod = scene.get<MeshLOD>(id);
+        bool changed = false;
+
+        ImGui::TextDisabled("Renders a coarser mesh as the object shrinks on");
+        ImGui::TextDisabled("screen. Level 0 = finest; shadows always use the");
+        ImGui::TextDisabled("Mesh component's mesh.");
+        ImGui::Spacing();
+
+        int count = lod.count;
+        drawPropertyLabel("Levels");
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::SliderInt("##LODCount", &count, 1, MeshLOD::MAX_LEVELS)) {
+            lod.count = static_cast<uint8_t>(count);
+            changed = true;
+        }
+
+        // Mesh the Decimate button clusters from: level 0, falling back to the
+        // entity's Mesh so a fresh chain can still generate coarser levels.
+        MeshHandle baseHandle = lod.levels[0];
+        if (!baseHandle && scene.has<Mesh>(id)) baseHandle = scene.get<Mesh>(id).mesh;
+
+        for (int i = 0; i < lod.count; ++i) {
+            ImGui::PushID(i);
+            ImGui::Separator();
+            ImGui::Text("Level %d%s", i, i == 0 ? "  (finest)" : "");
+
+            changed |= pickAsset<MeshAsset>("##LODMesh", "Mesh", resources, lod.levels[i]);
+            if (lod.levels[i]) {
+                const MeshAsset& a = resources.get(lod.levels[i]);
+                ImGui::TextDisabled("%zu verts, %zu tris", a.vertices.size(), a.indices.size() / 3);
+            }
+
+            if (i >= 1) {
+                drawPropertyLabel("Switch below");
+                ImGui::SetNextItemWidth(-1.0f);
+                changed |= ImGui::DragFloat("##LODSwitch", &lod.switchHeights[i],
+                                            1.0f, 0.0f, 8000.0f, "%.0f px");
+
+                // Generate this level by vertex-clustering the base mesh.
+                if (baseHandle) {
+                    drawPropertyLabel("Decimate");
+                    const float btnW = 92.0f;
+                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - btnW
+                                            - ImGui::GetStyle().ItemSpacing.x);
+                    ImGui::DragInt("##LODGrid", &m_lodDecimateGrid[i], 0.2f, 2, 128, "grid %d");
+                    ImGui::SameLine();
+                    if (ImGui::Button("Decimate", ImVec2(btnW, 0.0f))) {
+                        MeshAsset dec = decimateMesh(resources.get(baseHandle),
+                                                     static_cast<uint32_t>(m_lodDecimateGrid[i]));
+                        const std::string nm = "lod_e" + std::to_string(id.index)
+                                             + "_l" + std::to_string(i);
+                        lod.levels[i] = resources.add(std::move(dec), nm);
+                        changed = true;
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Vertex-cluster the base mesh into a coarser level");
+                }
+            }
+            ImGui::PopID();
+        }
+
+        if (changed) state.markSceneDirty();
+    }
+    endComponentCard();
+    if (remove) {
+        MeshLOD snap = scene.get<MeshLOD>(id);
+        scene.remove<MeshLOD>(Entity{id});
+        state.commands.push(std::make_unique<RemoveComponentCommand<MeshLOD>>(id, snap, "Remove LOD"));
         state.markSceneDirty();
     }
 }

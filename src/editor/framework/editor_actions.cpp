@@ -16,6 +16,7 @@
 #include "ecs/component/camera.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/hierarchy.h"
+#include "ecs/component/mesh_lod.h"
 #include "ecs/component/name.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
@@ -166,6 +167,9 @@ void duplicateEntity(Scene& scene, EditorState& state, EntityId source) {
         Animation anim = scene.get<Animation>(source);
         anim.playing   = false;
         scene.add(entity, std::move(anim));
+    }
+    if (scene.has<MeshLOD>(source)) {
+        scene.add(entity, scene.get<MeshLOD>(source));
     }
 
     // Same path as createEntity: snapshot the result so undo destroys it.
