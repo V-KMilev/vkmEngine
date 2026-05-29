@@ -78,7 +78,7 @@ void RenderSystem::buildView(FrameContext& ctx, uint32_t frameIndex) {
 
     {
         PROFILE_SCOPE("Render/BuildView");
-        view.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight);
+        view.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight, m_shadowCache);
     }
 
     view.viewportX    = ctx.viewportX;
