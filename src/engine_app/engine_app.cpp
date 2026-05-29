@@ -56,6 +56,19 @@ EngineAppSystems setupEngineApp(Engine& engine) {
     const std::string shaderDir = std::string(APP_ROOT_DIR) + "/shaders";
     auto& resources = engine.getResources();
 
+    // Load + hot-reload-watch every shader from one list. load() records each
+    // handle so the watch loop at the end cannot drift out of sync with the
+    // loads - adding a shader is one load() call, watched automatically. (The
+    // previous code kept a parallel hand-maintained watchShader() list; a
+    // forgotten line there silently dropped a shader's hot reload.)
+    std::vector<ShaderHandle> shaderHandles;
+    auto load = [&](const std::string& subPath, const std::string& name,
+                    const std::unordered_map<std::string, int>& samplers = {},
+                    bool variantAware = false) {
+        shaderHandles.push_back(
+            loadShader(resources, shaderDir + subPath, name, samplers, variantAware));
+    };
+
     const std::unordered_map<std::string, int> pbrSamplers = {
         {GLConfig::UniformNames::AlbedoTexture,              GLConfig::TextureSlots::Albedo},
         {GLConfig::UniformNames::NormalTexture,              GLConfig::TextureSlots::Normal},
@@ -93,12 +106,12 @@ EngineAppSystems setupEngineApp(Engine& engine) {
     // pbr is variantAware: per-material feature flags drive an
     // #ifdef HAS_X variant cache. unlit and every other shader share
     // a single compiled program.
-    const auto pbrShader     = loadShader(resources, shaderDir + "/pbr",        "shader:pbr",        pbrSamplers, /*variantAware=*/true);
-    const auto unlitShader   = loadShader(resources, shaderDir + "/unlit",      "shader:unlit",      unlitSamplers);
-    const auto aabbShader    = loadShader(resources, shaderDir + "/aabb_debug", "shader:aabb_debug");
-    const auto outlineShader = loadShader(resources, shaderDir + "/outline",    "shader:outline");
-    const auto gridShader    = loadShader(resources, shaderDir + "/grid",       "shader:grid");
-    const auto shadowShader  = loadShader(resources, shaderDir + "/shadow",     "shader:shadow");
+    load("/pbr",        "shader:pbr",        pbrSamplers, /*variantAware=*/true);
+    load("/unlit",      "shader:unlit",      unlitSamplers);
+    load("/aabb_debug", "shader:aabb_debug");
+    load("/outline",    "shader:outline");
+    load("/grid",       "shader:grid");
+    load("/shadow",     "shader:shadow");
 
     // Composite/AgX post pass: u_hdr samples the resolved HDR scene target.
     const std::unordered_map<std::string, int> compositeSamplers = {
@@ -109,78 +122,72 @@ EngineAppSystems setupEngineApp(Engine& engine) {
         {"u_dirt", 4},
         {"u_overlay", 5},
     };
-    const auto compositeShader = loadShader(resources, shaderDir + "/post/composite", "shader:composite", compositeSamplers);
+    load("/post/composite", "shader:composite", compositeSamplers);
 
     // IBL bake + skybox. Bake sampler 0 = source (equirect / env cube).
     const std::unordered_map<std::string, int> equirectSamplers = { {"u_equirect", 0} };
     const std::unordered_map<std::string, int> envCubeSamplers   = { {"u_envCube", 0} };
-    const auto equirectShader   = loadShader(resources, shaderDir + "/ibl/equirect",   "shader:ibl_equirect",   equirectSamplers);
-    const auto irradianceShader = loadShader(resources, shaderDir + "/ibl/irradiance", "shader:ibl_irradiance", envCubeSamplers);
-    const auto prefilterShader  = loadShader(resources, shaderDir + "/ibl/prefilter",  "shader:ibl_prefilter",  envCubeSamplers);
-    const auto brdfShader       = loadShader(resources, shaderDir + "/ibl/brdf",       "shader:ibl_brdf");
-    const auto skyboxShader     = loadShader(resources, shaderDir + "/skybox",         "shader:skybox",         envCubeSamplers);
+    load("/ibl/equirect",   "shader:ibl_equirect",   equirectSamplers);
+    load("/ibl/irradiance", "shader:ibl_irradiance", envCubeSamplers);
+    load("/ibl/prefilter",  "shader:ibl_prefilter",  envCubeSamplers);
+    load("/ibl/brdf",       "shader:ibl_brdf");
+    load("/skybox",         "shader:skybox",         envCubeSamplers);
 
     // Bloom (COD/Jimenez): both passes sample one source mip at slot 0.
     const std::unordered_map<std::string, int> bloomSamplers = { {"u_src", 0} };
-    const auto bloomDownShader = loadShader(resources, shaderDir + "/post/bloom_down", "shader:bloom_down", bloomSamplers);
-    const auto bloomUpShader   = loadShader(resources, shaderDir + "/post/bloom_up",   "shader:bloom_up",   bloomSamplers);
+    load("/post/bloom_down", "shader:bloom_down", bloomSamplers);
+    load("/post/bloom_up",   "shader:bloom_up",   bloomSamplers);
 
     // Auto-exposure: lum shader reads the scene; adapt reads lum + history.
     const std::unordered_map<std::string, int> lumSamplers   = { {"u_hdr", 0} };
     const std::unordered_map<std::string, int> adaptSamplers = { {"u_lumTex", 0}, {"u_prevAdapt", 1} };
-    const auto lumShader      = loadShader(resources, shaderDir + "/post/lum",      "shader:lum",      lumSamplers);
-    const auto exposureShader = loadShader(resources, shaderDir + "/post/exposure", "shader:exposure", adaptSamplers);
+    load("/post/lum",      "shader:lum",      lumSamplers);
+    load("/post/exposure", "shader:exposure", adaptSamplers);
 
     // Depth/normal prepass + GTAO. GTAO reads the view-space MRT.
     const std::unordered_map<std::string, int> gtaoSamplers = { {"u_normalTex", 0}, {"u_posTex", 1} };
-    const auto prepassShader = loadShader(resources, shaderDir + "/prepass",   "shader:prepass");
-    const auto gtaoShader    = loadShader(resources, shaderDir + "/post/gtao", "shader:gtao", gtaoSamplers);
+    load("/prepass",   "shader:prepass");
+    load("/post/gtao", "shader:gtao", gtaoSamplers);
 
     // SSR reuses the prepass G-buffer + resolved HDR (slots 0/1/2).
     const std::unordered_map<std::string, int> ssrSamplers = {
         {"u_sceneColor", 0}, {"u_viewNormal", 1}, {"u_viewPos", 2}
     };
-    const auto ssrShader = loadShader(resources, shaderDir + "/post/ssr", "shader:ssr", ssrSamplers);
+    load("/post/ssr", "shader:ssr", ssrSamplers);
 
     // TAA reprojects history (slots: current/history/viewPos = 0/1/2).
     const std::unordered_map<std::string, int> taaSamplers = {
         {"u_current", 0}, {"u_history", 1}, {"u_viewPos", 2}
     };
-    const auto taaShader = loadShader(resources, shaderDir + "/post/taa", "shader:taa", taaSamplers);
+    load("/post/taa", "shader:taa", taaSamplers);
 
     // DoF + motion blur read scene/viewPos (slots 0/1) into the scratch.
     const std::unordered_map<std::string, int> postGeomSamplers = {
         {"u_scene", 0}, {"u_viewPos", 1}
     };
-    const auto dofShader = loadShader(resources, shaderDir + "/post/dof",         "shader:dof",         postGeomSamplers);
-    const auto mbShader  = loadShader(resources, shaderDir + "/post/motion_blur", "shader:motion_blur", postGeomSamplers);
+    load("/post/dof",         "shader:dof",         postGeomSamplers);
+    load("/post/motion_blur", "shader:motion_blur", postGeomSamplers);
 
     // Lens flare reads the resolved HDR scene at slot 0; the procedural
     // starburst mask is bound to slot 1 by the pass.
     const std::unordered_map<std::string, int> lensFlareSamplers = {
         {"u_hdr", 0}, {"u_starburst", 1}
     };
-    const auto lensFlareShader = loadShader(resources, shaderDir + "/post/lens_flare", "shader:lens_flare", lensFlareSamplers);
+    load("/post/lens_flare", "shader:lens_flare", lensFlareSamplers);
 
     // OIT resolve: composites Weighted-Blended OIT (accum, revealage)
     // into the HDR scene. Only active when env.transparency.useOIT is on.
     const std::unordered_map<std::string, int> oitResolveSamplers = {
         {"u_oitAccum", 0}, {"u_oitRevealage", 1}
     };
-    const auto oitResolveShader = loadShader(
-        resources, shaderDir + "/post/oit_resolve",
-        "shader:oit_resolve", oitResolveSamplers);
+    load("/post/oit_resolve", "shader:oit_resolve", oitResolveSamplers);
 
     // Hi-Z pyramid: init samples the view-space position MRT; reduce
     // samples the pyramid itself one mip below. No consumer yet (#20).
     const std::unordered_map<std::string, int> hizInitSamplers   = { {"u_viewPos", 0} };
     const std::unordered_map<std::string, int> hizReduceSamplers = { {"u_src",     0} };
-    const auto hizInitShader   = loadShader(
-        resources, shaderDir + "/post/hiz_init",
-        "shader:hiz_init", hizInitSamplers);
-    const auto hizReduceShader = loadShader(
-        resources, shaderDir + "/post/hiz_reduce",
-        "shader:hiz_reduce", hizReduceSamplers);
+    load("/post/hiz_init",   "shader:hiz_init",   hizInitSamplers);
+    load("/post/hiz_reduce", "shader:hiz_reduce", hizReduceSamplers);
 
     // Render passes - shadow runs first so the forward pass can sample its result.
     renderSystem.setBackend(std::make_unique<GLBackend>());
@@ -227,34 +234,13 @@ EngineAppSystems setupEngineApp(Engine& engine) {
         }
     }
 
-    // Hot reload: file change -> asset version bump -> backend resyncs.
+    // Hot reload: file change -> asset version bump -> backend resyncs. Every
+    // shader load() above recorded its handle, so this watches all of them
+    // with no hand-maintained parallel list to fall out of sync.
     auto& fileWatcher = engine.addSystem<FileWatcher>(SystemStage::Input);
-    watchShader(fileWatcher, resources, pbrShader);
-    watchShader(fileWatcher, resources, unlitShader);
-    watchShader(fileWatcher, resources, aabbShader);
-    watchShader(fileWatcher, resources, outlineShader);
-    watchShader(fileWatcher, resources, gridShader);
-    watchShader(fileWatcher, resources, shadowShader);
-    watchShader(fileWatcher, resources, compositeShader);
-    watchShader(fileWatcher, resources, equirectShader);
-    watchShader(fileWatcher, resources, irradianceShader);
-    watchShader(fileWatcher, resources, prefilterShader);
-    watchShader(fileWatcher, resources, brdfShader);
-    watchShader(fileWatcher, resources, skyboxShader);
-    watchShader(fileWatcher, resources, bloomDownShader);
-    watchShader(fileWatcher, resources, bloomUpShader);
-    watchShader(fileWatcher, resources, lumShader);
-    watchShader(fileWatcher, resources, exposureShader);
-    watchShader(fileWatcher, resources, prepassShader);
-    watchShader(fileWatcher, resources, gtaoShader);
-    watchShader(fileWatcher, resources, ssrShader);
-    watchShader(fileWatcher, resources, taaShader);
-    watchShader(fileWatcher, resources, dofShader);
-    watchShader(fileWatcher, resources, mbShader);
-    watchShader(fileWatcher, resources, lensFlareShader);
-    watchShader(fileWatcher, resources, oitResolveShader);
-    watchShader(fileWatcher, resources, hizInitShader);
-    watchShader(fileWatcher, resources, hizReduceShader);
+    for (const ShaderHandle handle : shaderHandles) {
+        watchShader(fileWatcher, resources, handle);
+    }
 
     // Default scene: a single cube at the origin under a directional
     // light. Scene/asset round-trip happy: every asset has a source
