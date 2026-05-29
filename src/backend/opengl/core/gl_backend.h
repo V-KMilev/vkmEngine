@@ -1,9 +1,12 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
+#include <glm/glm.hpp>
 
 #include "system/render/render_backend.h"
 
@@ -84,11 +87,20 @@ class GLBackend : public RenderBackend {
 
         std::vector<ShaderVariantStat> shaderVariantStats() const override;
 
-        /// CPU mirror of the auto-exposure adapted luminance; written each
-        /// frame by GLExposurePass via setAdaptedLuminance(), read by the
-        /// editor's Exposure card for the adapted-EV readout.
-        float getAdaptedLuminance() const override { return m_adaptedLuminance; }
-        void  setAdaptedLuminance(float v)         { m_adaptedLuminance = v; }
+        /// CPU mirror of the auto-exposure adapted luminance; written on the
+        /// render thread by GLExposurePass, read by the editor's Exposure card
+        /// on the UI thread. Atomic so that cross-thread read is well-defined
+        /// (cosmetic EV readout - ordering doesn't matter beyond no torn read).
+        float getAdaptedLuminance() const override { return m_adaptedLuminance.load(); }
+        void  setAdaptedLuminance(float v)         { m_adaptedLuminance.store(v); }
+
+        /// Publish the Hi-Z occlusion pyramid (built by GLHiZPass) for next
+        /// frame's visibility cull. Centralises the OcclusionOracle (a process
+        /// singleton) touch in the backend so passes stay pure - they reach
+        /// backend-owned state through `backend`, never a global, per the
+        /// render_graph_context.h threading contract.
+        void publishOcclusion(std::vector<float> pyramid, uint32_t width, uint32_t height,
+                              const glm::mat4& view, const glm::mat4& viewProj);
 
         /// Read a rectangle of the GL_BACK buffer as RGB8, top-down.
         /// Saves and restores GL_PACK_ALIGNMENT and GL_READ_BUFFER.
@@ -157,7 +169,7 @@ class GLBackend : public RenderBackend {
         /// at the same value GLAutoExposure seeds its 1x1 ping-pong with
         /// (0.18) so the editor's readout shows something sensible before
         /// the exposure pass runs the first time.
-        float m_adaptedLuminance = 0.18f;
+        std::atomic<float> m_adaptedLuminance{0.18f};
 
         /**
          * @brief Per-pass GL_TIME_ELAPSED queries (two slots per pass).

@@ -14,7 +14,6 @@
 #include "resource/gl_shader_program.h"
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"
-#include "system/visibility/culling/occlusion_oracle.h"
 
 namespace Engine {
 
@@ -113,7 +112,7 @@ void GLHiZPass::execute(RenderGraphContext& rg) {
     // alongside so the AABB test can compute distance-from-camera without
     // a separate projection-inverse.
     const glm::mat4 viewProj = rg.view.camera.projection * rg.view.camera.view;
-    OcclusionOracle::get().publish(std::move(cpu),
+    gl.publishOcclusion(std::move(cpu),
         static_cast<std::uint32_t>(rw),
         static_cast<std::uint32_t>(rh),
         rg.view.camera.view,
