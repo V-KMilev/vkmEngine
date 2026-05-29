@@ -94,11 +94,16 @@ void GLExposurePass::execute(RenderGraphContext& rg) {
 
     ae.swap();
 
-    // Mirror the freshly-adapted 1x1 luminance back to the CPU so the
-    // editor's Exposure card can display the value the auto-exposure path
-    // is converging to. Cheap (~10us / frame); only worth the sync because
-    // the editor wants to surface it - the runtime path never reads back.
-    gl.setAdaptedLuminance(ae.readAdapted());
+    // Mirror the adapted 1x1 luminance back to the CPU for the editor's
+    // Exposure EV readout only - no rendering path reads it (the composite
+    // samples the adapted-luminance texture on the GPU). readAdapted() is a
+    // blocking glGetTexImage, so throttle it instead of stalling the pipeline
+    // every frame at max settings; eye adaptation is slow, so a few-Hz editor
+    // readout is imperceptible.
+    constexpr uint64_t ADAPTED_READBACK_INTERVAL = 8;
+    if (rg.frameIndex % ADAPTED_READBACK_INTERVAL == 0) {
+        gl.setAdaptedLuminance(ae.readAdapted());
+    }
 
     m_screenTri->unbind();
     ae.unbindFbo();
