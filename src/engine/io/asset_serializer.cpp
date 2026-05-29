@@ -13,6 +13,7 @@
 #include "resource/asset_database.h"
 #include "resource/asset_id.h"
 #include "resource/resource_manager.h"
+#include "io/reflect.h"
 
 namespace Engine {
 
@@ -119,10 +120,7 @@ glm::vec4 vec4FromJson(const nlohmann::json& j, const glm::vec4& fallback) {
 nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& resources) {
     nlohmann::json src;
     src["kind"]  = "inline";
-    src["type"]  = (m.type == MaterialType::Transparent) ? "Transparent"
-                 : (m.type == MaterialType::Unlit)       ? "Unlit"
-                 : (m.type == MaterialType::AlphaMask)   ? "AlphaMask"
-                                                         : "Opaque";
+    src["type"]  = Reflect::enumName(m.type, MATERIAL_TYPE_NAMES);
     src["albedo"]              = vec4ToJson(m.albedo);
     src["emission"]            = vec3ToJson(m.emission);
     src["metallic"]            = m.metallic;
@@ -165,10 +163,7 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
 /// resolving texture refs via findByName.
 void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const ResourceManager& resources) {
     const std::string typeStr = src.value("type", std::string{"Opaque"});
-    m.type = (typeStr == "Transparent") ? MaterialType::Transparent
-           : (typeStr == "Unlit")       ? MaterialType::Unlit
-           : (typeStr == "AlphaMask")   ? MaterialType::AlphaMask
-                                        : MaterialType::Opaque;
+    m.type = Reflect::enumFromName<MaterialType>(typeStr, MATERIAL_TYPE_NAMES);
 
     m.albedo              = vec4FromJson(src.value("albedo",              nlohmann::json{}), m.albedo);
     m.emission            = vec3FromJson(src.value("emission",            nlohmann::json{}), m.emission);

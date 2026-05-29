@@ -15,6 +15,11 @@ enum class ProjectionType {
     Orthographic = 1    ///< Orthographic (parallel) projection
 };
 
+/// Names in ProjectionType order - single source for serialization + editor combo.
+inline constexpr const char* const PROJECTION_TYPE_NAMES[] = {
+    "Perspective", "Orthographic"
+};
+
 /**
  * @brief Component representing a camera, containing projection and view parameters.
  *

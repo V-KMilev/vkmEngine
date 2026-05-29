@@ -73,31 +73,17 @@ inline void fromJson(const nlohmann::json& j, char (&v)[N]) {
 
 // Enums.
 inline nlohmann::json toJson(ProjectionType v) {
-    return v == ProjectionType::Perspective ? "Perspective" : "Orthographic";
+    return Reflect::enumName(v, PROJECTION_TYPE_NAMES);
 }
 inline void fromJson(const nlohmann::json& j, ProjectionType& v) {
-    v = (j.get<std::string>() == "Orthographic")
-        ? ProjectionType::Orthographic
-        : ProjectionType::Perspective;
+    v = Reflect::enumFromName<ProjectionType>(j.get<std::string>(), PROJECTION_TYPE_NAMES);
 }
 
 inline nlohmann::json toJson(LightType t) {
-    switch (t) {
-        case LightType::Directional: return "Directional";
-        case LightType::Point:       return "Point";
-        case LightType::Spot:        return "Spot";
-        case LightType::Rect:        return "Rect";
-        case LightType::Disk:        return "Disk";
-    }
-    return "Directional";
+    return Reflect::enumName(t, LIGHT_TYPE_NAMES);
 }
 inline void fromJson(const nlohmann::json& j, LightType& v) {
-    const std::string s = j.get<std::string>();
-    if      (s == "Point") v = LightType::Point;
-    else if (s == "Spot")  v = LightType::Spot;
-    else if (s == "Rect")  v = LightType::Rect;
-    else if (s == "Disk")  v = LightType::Disk;
-    else                   v = LightType::Directional;
+    v = Reflect::enumFromName<LightType>(j.get<std::string>(), LIGHT_TYPE_NAMES);
 }
 
 inline nlohmann::json toJson(RenderMode m) { return static_cast<int>(m); }

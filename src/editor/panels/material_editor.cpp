@@ -77,11 +77,8 @@ bool MaterialEditorPanel::drawMaterialBody(
 
         if (beginComponentCard("Base", ACC_BASE, true)) {
             drawPropertyLabel("Type");
-            // Order must match the MaterialType enum value (Opaque=0,
-            // Transparent=1, Unlit=2, AlphaMask=3).
-            const char* matTypes[] = {"Opaque", "Transparent", "Unlit", "AlphaMask"};
             int matTypeIdx = static_cast<int>(mat.type);
-            if (ImGui::Combo("##MatType", &matTypeIdx, matTypes, IM_ARRAYSIZE(matTypes))) {
+            if (ImGui::Combo("##MatType", &matTypeIdx, MATERIAL_TYPE_NAMES, IM_ARRAYSIZE(MATERIAL_TYPE_NAMES))) {
                 mat.type = static_cast<MaterialType>(matTypeIdx);
                 // Picking AlphaMask in the editor should turn on the discard
                 // path even if the asset shipped with cutoff = 0 (off).

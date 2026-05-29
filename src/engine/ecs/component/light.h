@@ -21,6 +21,11 @@ enum class LightType {
     Disk        = 4     ///< Disk area light (areaRadius, faces -direction)
 };
 
+/// Names in LightType order - single source for serialization + editor combo.
+inline constexpr const char* const LIGHT_TYPE_NAMES[] = {
+    "Directional", "Point", "Spot", "Rect", "Disk"
+};
+
 /**
  * @brief Component representing a light source in the scene.
  *
