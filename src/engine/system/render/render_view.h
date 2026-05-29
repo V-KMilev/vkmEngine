@@ -9,6 +9,7 @@
 #include "resource/mesh_asset.h"
 #include "resource/material_asset.h"
 #include "ecs/component/light.h"
+#include "ecs/entity.h"
 
 namespace Engine {
 
@@ -497,6 +498,36 @@ inline RenderModeConfig resolveModeConfig(RenderMode mode) {
 }
 
 /**
+ * @brief Persistent cache of the sorted shadow-caster set.
+ *
+ * The shadow casters are every visible, shadow-casting, opaque mesh in the
+ * scene, sorted by (material.id, mesh.id) - a key that does NOT depend on the
+ * world matrix. So the SET and its sort order change only on *structural*
+ * edits (entity/Mesh add/remove, Mesh.{visible,castShadows,mesh,material}
+ * edits, MaterialAsset.type flips, scene load) - never on movement. This cache
+ * keeps the sorted caster identities across frames; RenderView::build rebuilds
+ * them only when a cheap per-frame structural fingerprint changes, and
+ * refreshes their matrices live every frame, so transform changes (animation,
+ * gizmo, hierarchy) need no invalidation.
+ *
+ * MUST live on RenderSystem (single instance), NOT inside RenderView - the
+ * views are double-buffered, so a cache there would alternate buffers and
+ * never hit. Touched only on the main thread in buildView(), so no locking.
+ */
+struct ShadowCasterCache {
+    struct Entry {
+        EntityId       entity;    ///< Source entity (for the live matrix refresh).
+        MeshHandle     mesh;
+        MaterialHandle material;
+    };
+    std::vector<Entry> sorted;          ///< Caster identities, sorted by (material.id, mesh.id).
+    uint64_t fingerprint   = 0;         ///< Hash over the caster set's identity + sort-key fields.
+    uint32_t count         = 0;         ///< Exact caster count (guards the hash against add/remove collisions).
+    uint64_t globalVersion = ~0ull;     ///< ResourceManager global version the cache was built against (scene-load guard).
+    bool     valid         = false;     ///< False until first build / after a forced reset.
+};
+
+/**
  * @brief Collection of scene data needed for a rendering pass.
  *
  * Encapsulates camera info, all visible drawables, and active lights required for rendering.
@@ -570,7 +601,8 @@ struct RenderView {
         const ResourceManager& resources,
         const Visibility& visibility,
         uint32_t viewportWidth,
-        uint32_t viewportHeight
+        uint32_t viewportHeight,
+        ShadowCasterCache& shadowCache
     );
 
 };

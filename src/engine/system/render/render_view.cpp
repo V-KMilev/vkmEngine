@@ -130,6 +130,108 @@ void sortTransparentsByDepth(
             return distSq(a) > distSq(b);  // farthest first
         });
 }
+
+// Fold a 64-bit value into a running hash (boost::hash_combine mix).
+inline uint64_t hashCombine(uint64_t h, uint64_t v) {
+    h ^= v + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
+    return h;
+}
+
+/**
+ * @brief Build the sorted shadow-caster list into @p out, reusing the cached
+ *        structure when nothing relevant changed.
+ *
+ * Pass 1 walks every (Mesh, Transform) entity and folds each caster's identity
+ * + sort-key fields into a fingerprint. Because the caster filter reads the
+ * material type live, a material flipping Opaque<->non-Opaque changes the
+ * membership and therefore the fingerprint - no separate material-version
+ * check is needed; the global version guards a whole-ResourceManager swap
+ * (scene load) where ids could otherwise coincidentally collide.
+ *
+ * On a fingerprint match the cached sorted identities are reused as-is; only
+ * the matrices are refreshed (pass 3), so movement never triggers a rebuild.
+ * On a mismatch the identities are re-collected and re-sorted (pass 2).
+ */
+template <typename MaterialTypeFn>
+void buildShadowCasters(
+    std::vector<DrawableData>& out,
+    ShadowCasterCache&         cache,
+    const Scene&               scene,
+    const ResourceManager&     resources,
+    MaterialTypeFn&&           materialTypeOf
+) {
+    auto isCaster = [&](const Mesh& mesh) -> bool {
+        return mesh.visible && mesh.castShadows && mesh.mesh && mesh.material
+            && materialTypeOf(mesh.material) == MaterialType::Opaque;
+    };
+
+    // Pass 1: structural fingerprint over the caster set.
+    const uint64_t globalVersion = resources.getGlobalVersion();
+    uint64_t fp    = 0;
+    uint32_t count = 0;
+    scene.forEach<Mesh, Transform>([&](EntityId id, const Mesh& mesh, const Transform&) {
+        if (!isCaster(mesh)) return;
+        fp = hashCombine(fp, (static_cast<uint64_t>(id.index) << 32) ^ id.generation);
+        // Fold the FULL resource handles (index AND generation), not just .id()
+        // (= slot index). Resource slots never recycle today (nothing frees a
+        // mesh/material), but if a single-asset delete/recreate path is ever
+        // added, a recycled slot index with a bumped generation must change the
+        // fingerprint - otherwise the cache would serve a stale handle. Free:
+        // generations are constant while no slot is freed.
+        fp = hashCombine(fp, (static_cast<uint64_t>(mesh.mesh.key.index) << 32) ^ mesh.mesh.key.generation);
+        fp = hashCombine(fp, (static_cast<uint64_t>(mesh.material.key.index) << 32) ^ mesh.material.key.generation);
+        ++count;
+    });
+
+    const bool unchanged = cache.valid
+        && globalVersion == cache.globalVersion
+        && count == cache.count
+        && fp == cache.fingerprint;
+
+    // Pass 2 (only on a structural change): re-collect + re-sort the caster
+    // identities. Sort by (material.id, mesh.id) so identical (material, mesh)
+    // casters are contiguous for the shadow instance batcher - matches the
+    // effective sortDrawables key for an all-Opaque, all-castShadows set.
+    if (!unchanged) {
+        cache.sorted.clear();
+        cache.sorted.reserve(count);
+        scene.forEach<Mesh, Transform>([&](EntityId id, const Mesh& mesh, const Transform&) {
+            if (!isCaster(mesh)) return;
+            cache.sorted.push_back({id, mesh.mesh, mesh.material});
+        });
+        std::sort(cache.sorted.begin(), cache.sorted.end(),
+            [](const ShadowCasterCache::Entry& a, const ShadowCasterCache::Entry& b) {
+                if (a.material.id() != b.material.id()) return a.material.id() < b.material.id();
+                return a.mesh.id() < b.mesh.id();
+            });
+        cache.fingerprint   = fp;
+        cache.count         = count;
+        cache.globalVersion = globalVersion;
+        cache.valid         = true;
+    }
+
+    // Pass 3: refresh matrices live from the current world transform (or the
+    // local transform fallback) - mirrors the old gather's matrix source.
+    // Storages hoisted once instead of a has()+get() probe pair per caster.
+    const auto* worldStorage     = scene.storage<WorldTransform>();
+    const auto* transformStorage = scene.storage<Transform>();
+    out.resize(cache.sorted.size());
+    for (std::size_t i = 0; i < cache.sorted.size(); ++i) {
+        const ShadowCasterCache::Entry& e = cache.sorted[i];
+        DrawableData& d = out[i];
+        d.mesh         = e.mesh;
+        d.material     = e.material;
+        d.materialType = MaterialType::Opaque;
+        d.castShadows  = true;
+        if (worldStorage && worldStorage->contains(e.entity.index)) {
+            d.model = worldStorage->get(e.entity.index).model;
+        } else if (transformStorage && transformStorage->contains(e.entity.index)) {
+            d.model = Transform::computeModelMatrix(transformStorage->get(e.entity.index));
+        } else {
+            d.model = glm::mat4(1.0f);
+        }
+    }
+}
 }
 
 void RenderView::build(
@@ -137,7 +239,8 @@ void RenderView::build(
     const ResourceManager& resources,
     const Visibility& visibility,
     uint32_t viewportWidth,
-    uint32_t viewportHeight
+    uint32_t viewportHeight,
+    ShadowCasterCache& shadowCache
 ) {
     PROFILE_SCOPE("RenderView::build");
 
@@ -278,44 +381,23 @@ void RenderView::build(
         }
     }
 
-    // Shadow casters: every shadow-casting mesh in the scene, independent of
-    // the camera frustum. The shadow pass needs occluders that are off-screen
-    // (behind/beside the camera, or only their shadow is in view); culling
-    // these to the camera frustum is what made Sponza's shadows flicker and
-    // vanish on view changes. Use the hierarchy's world matrix when present.
+    // Shadow casters: every visible, shadow-casting, opaque mesh in the scene,
+    // independent of the camera frustum (off-screen occluders still cast into
+    // view - frustum-culling these is what made Sponza's shadows flicker on
+    // view changes). The caster SET and its sort order are matrix-independent,
+    // so they change only on structural edits; buildShadowCasters keeps the
+    // sorted set in a persistent cache and rebuilds it only when a cheap
+    // per-frame fingerprint changes, refreshing matrices live each frame
+    // (CODE_REVIEW.md #23).
     //
-    // Gated on a shadow slot having actually been assigned above: a scene with
-    // no shadow-casting light (taken2D == takenCube == 0) skips this full-scene
-    // walk + sort entirely instead of building a list nothing consumes
-    // (CODE_REVIEW.md #23; per-frame caching for the with-shadow case is the
-    // follow-up - it needs a scene transform/structure version this engine
-    // doesn't expose yet).
-    //
-    // forEach<Mesh, Transform> intersects the two SparseSets in the inner loop,
-    // and materialTypeOf reuses the drawables-loop memo so we pay one
-    // ResourceManager::get per unique material across both lists. Non-Opaque
-    // casters are dropped at gather time (the shadow pass filters them anyway).
+    // Gated on a shadow slot having actually been assigned above: with no
+    // shadow-casting light, shadowCasters stays empty (cleared at the top of
+    // build). The cache is deliberately left intact in that case - the
+    // fingerprint re-check catches any edit made while shadows were off the
+    // next frame a slot is assigned.
     const bool anyShadowSlot = (taken2D > 0u) || (takenCube > 0u);
     if (anyShadowSlot) {
-        shadowCasters.reserve(drawables.size());
-        scene.forEach<Mesh, Transform>([&](EntityId id, const Mesh& mesh, const Transform& transform) {
-            if (!mesh.visible || !mesh.castShadows) return;
-            if (!mesh.mesh || !mesh.material) return;  // unresolved slot - skip
-
-            const MaterialType mt = materialTypeOf(mesh.material);
-            if (mt != MaterialType::Opaque) return;
-
-            DrawableData caster;
-            caster.mesh         = mesh.mesh;
-            caster.material     = mesh.material;
-            caster.materialType = mt;
-            caster.castShadows  = true;
-            caster.model        = scene.has<WorldTransform>(id)
-                ? scene.get<WorldTransform>(id).model
-                : Transform::computeModelMatrix(transform);
-            shadowCasters.emplace_back(caster);
-        });
-        sortDrawables(shadowCasters);
+        buildShadowCasters(shadowCasters, shadowCache, scene, resources, materialTypeOf);
     }
 
     // Reflection probes: snapshot every probe entity plus its world position.
