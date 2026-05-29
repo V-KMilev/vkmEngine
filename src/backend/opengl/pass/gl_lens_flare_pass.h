@@ -17,9 +17,11 @@ namespace Engine {
  *
  * For any bright pixel in the resolved HDR scene, generates a chain of
  * mirror-around-center "ghost" reflections plus a soft halo at a fixed
- * radius, additively blended back into the HDR target. Works on any
- * brightness source (sun, emissives, bright specular, SSR returns) -
- * occlusion is implicit because hidden lights leave no bright pixel.
+ * radius, added onto the scene. The pass renders scene + flare into the post
+ * scratch and blits back into the resolved HDR (DoF pattern - off the MSAA
+ * target, so the graph resolves once). Works on any brightness source (sun,
+ * emissives, bright specular, SSR returns) - occlusion is implicit because
+ * hidden lights leave no bright pixel.
  *
  * Runs after SSR and before TAA so reflections cause flare and TAA can
  * temporally stabilise the result. No-op when env.lensFlare.enabled is off.
@@ -42,8 +44,12 @@ class GLLensFlarePass : public RenderPass {
         void execute(RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
+            // Render into PostScratch, blit back into SceneHDRResolved (DoF /
+            // motion-blur pattern) so the post chain reads the result where it
+            // always reads and the graph does not re-resolve.
             builder.read(RGResource::SceneHDRResolved);
-            builder.write(RGResource::SceneHDR);
+            builder.write(RGResource::PostScratch);
+            builder.write(RGResource::SceneHDRResolved);
         }
 
         bool enabledForView(const RenderView& view) const override;

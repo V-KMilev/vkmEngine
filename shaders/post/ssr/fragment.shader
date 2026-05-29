@@ -4,10 +4,12 @@
  * Reuses the GTAO G-buffer (view normal + view position) and the resolved
  * HDR scene color. Marches the reflection ray in view space, projecting each
  * step to screen to test against stored geometry, then binary-refines the
- * hit. Output is additively blended into the HDR target (composite tone-maps
- * it with the scene). Per-material: Fresnel F0 from packed metalness, and a
- * roughness fade (no roughness-mip blur yet, so rough surfaces drop the
- * sharp screen reflection rather than smearing it).
+ * hit. Outputs the resolved scene color plus the reflection contribution
+ * (the pass renders into the post-scratch target and blits back into the
+ * resolved HDR, so it must pass the scene through, not just emit the add).
+ * Per-material: Fresnel F0 from packed metalness, and a roughness fade (no
+ * roughness-mip blur yet, so rough surfaces drop the sharp screen reflection
+ * rather than smearing it).
  */
 #version 420 core
 
@@ -39,9 +41,13 @@ bool toUV(vec3 viewPos, out vec2 uv) {
 }
 
 void main() {
+    // Scene color at this pixel - passed through on every path so the pass
+    // can render into a fresh scratch target (replace, not additive blend).
+    vec3 sceneColor = texture(u_sceneColor, vUV).rgb;
+
     vec3 P = texture(u_viewPos, vUV).xyz;
     if (isBackground(P)) {
-        FragColor = vec4(0.0);
+        FragColor = vec4(sceneColor, 1.0);
         return;
     }
 
@@ -51,7 +57,7 @@ void main() {
 
     // Reflections going back toward the camera rarely have screen data.
     if (R.z > 0.0) {
-        FragColor = vec4(0.0);
+        FragColor = vec4(sceneColor, 1.0);
         return;
     }
 
@@ -89,7 +95,7 @@ void main() {
     }
 
     if (!hit) {
-        FragColor = vec4(0.0);
+        FragColor = vec4(sceneColor, 1.0);
         return;
     }
 
@@ -111,5 +117,5 @@ void main() {
     vec3 reflected = texture(u_sceneColor, hitUV).rgb;
     vec3 result = reflected * fresnel * roughFade * u_intensity * edgeFade;
 
-    FragColor = vec4(max(result, vec3(0.0)), 1.0);
+    FragColor = vec4(sceneColor + max(result, vec3(0.0)), 1.0);
 }

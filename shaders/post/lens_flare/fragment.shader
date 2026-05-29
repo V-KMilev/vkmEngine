@@ -7,8 +7,10 @@
  * source. Inputs are the resolved HDR scene and a brightness threshold so
  * only the sun / emissives / bright specular contribute.
  *
- * Output is additive into the HDR scene - black where no flare is present,
- * so the result composites cleanly with GL_ONE, GL_ONE.
+ * Outputs the resolved scene color plus the flare contribution (black where
+ * no flare is present): the pass renders into a fresh post-scratch target and
+ * blits back into the resolved HDR, so it passes the scene through rather than
+ * relying on an additive blend.
  */
 #version 420 core
 
@@ -104,5 +106,7 @@ void main() {
         result += halo;
     }
 
-    FragColor = vec4(result * u_intensity, 1.0);
+    // Pass the resolved scene through and add the flare on top - the pass
+    // renders into a fresh scratch target, so this is a replace, not a blend.
+    FragColor = vec4(texture(u_hdr, vUV).rgb + result * u_intensity, 1.0);
 }

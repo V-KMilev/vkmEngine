@@ -16,9 +16,11 @@
 #include "core/gl_backend.h"
 #include "core/gl_scene_target.h"
 #include "resource/gl_shader_program.h"
+#include "resource/gl_post_scratch.h"
 
 #include "texture/gl_texture.h"
 #include "gl_screen_triangle.h"
+#include "gl_blit.h"
 
 #include "system/render/render_view.h"
 #include "resource/resource_manager.h"
@@ -96,25 +98,26 @@ void GLLensFlarePass::execute(RenderGraphContext& rg) {
         LOG_ERROR("GLLensFlarePass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
         return;
     }
-    auto& gl  = static_cast<GLBackend&>(backend);
-    auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
-    if (!hdr.isReady()) return;
+    auto& gl      = static_cast<GLBackend&>(backend);
+    auto& hdr     = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
+    auto& scratch = *rg.resource<GLPostScratch>(RGResource::PostScratch);
+    if (!hdr.isReady() || !scratch.isReady()) return;
 
     GLShader* shader = gl.getView().resolveShader(m_shader, resources);
     if (!shader) return;
 
-    // Same trick as SSR: bind the MSAA HDR target for write, sample the
-    // resolved single-sample texture for read. They are distinct GL objects
-    // so the feedback loop is avoided. The graph's auto-resolve produced
-    // the resolved input before this pass ran.
-    hdr.bindForRender();
-
     auto& ctx = gl.getContext();
     ctx.setDepthTest(false);
     ctx.setDepthWrite(false);
+    ctx.setBlending(false);
     ctx.setFaceCulling(false);
-    ctx.setBlending(true);
-    ctx.setBlendFunc(GL_ONE, GL_ONE);   // additive: flare adds onto the scene
+
+    // Render scene + flare into the scratch target, then blit back into the
+    // resolved HDR (DoF pattern) - keeps the pass off the 4x MSAA target so
+    // the graph resolves once. The shader passes the resolved scene through
+    // and adds the flare on top, so no blend is needed. The graph resolved
+    // SceneHDRResolved (the sample source) before this pass ran.
+    scratch.bindForRender();
 
     shader->bind();
     shader->setUniform1f("u_threshold",    view.environment.lensFlare.threshold);
@@ -141,7 +144,10 @@ void GLLensFlarePass::execute(RenderGraphContext& rg) {
 
     m_screenTri->draw();
 
-    ctx.setBlending(false);
+    Core::blitColor(scratch.fboId(), hdr.resolveFboId(),
+        static_cast<int>(scratch.width()), static_cast<int>(scratch.height()),
+        static_cast<int>(hdr.width()),     static_cast<int>(hdr.height()), GL_NEAREST);
+
     ctx.setDepthTest(true);
     ctx.setDepthWrite(true);
 }
