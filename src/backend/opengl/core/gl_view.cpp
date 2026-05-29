@@ -130,22 +130,35 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         m_lastMeshTypeVersion     = 0;
         m_lastMaterialTypeVersion = 0;
         m_lastTextureTypeVersion  = 0;
-        m_lastDrawableCount       = 0;
+        m_lastDrawableHash        = 0;
         m_lastGlobalVersion       = globalVersion;
     }
 
     // Drawable-driven sync (meshes/materials/textures): early-out when neither
-    // resource versions nor drawable count have changed.
+    // resource versions nor the referenced-resource set have changed.
     const uint64_t meshTypeVersion     = resources.getTypeVersion<MeshAsset>();
     const uint64_t materialTypeVersion = resources.getTypeVersion<MaterialAsset>();
     const uint64_t textureTypeVersion  = resources.getTypeVersion<TextureAsset>();
-    const size_t drawableCount = view.drawables.size();
+
+    // Content fingerprint of the mesh/material handles the drawables reference.
+    // A drawable-count proxy misses set changes that keep the count fixed -
+    // notably an LOD switch swapping a drawable's mesh as the camera moves -
+    // which would leave the newly-referenced mesh unsynced and its batch
+    // skipped ("Failed to get mesh for batch"). Drawables are pre-sorted, so a
+    // stable set yields a stable hash.
+    uint64_t drawableHash = 1469598103934665603ull;  // FNV-1a offset basis
+    for (const auto& d : view.drawables) {
+        const uint64_t mesh = (static_cast<uint64_t>(d.mesh.key.index) << 32) ^ d.mesh.key.generation;
+        const uint64_t mat  = (static_cast<uint64_t>(d.material.key.index) << 32) ^ d.material.key.generation;
+        drawableHash ^= mesh + 0x9e3779b97f4a7c15ull + (drawableHash << 6) + (drawableHash >> 2);
+        drawableHash ^= mat  + 0x9e3779b97f4a7c15ull + (drawableHash << 6) + (drawableHash >> 2);
+    }
 
     const bool resourcesDirty =
            meshTypeVersion     != m_lastMeshTypeVersion
         || materialTypeVersion != m_lastMaterialTypeVersion
         || textureTypeVersion  != m_lastTextureTypeVersion
-        || drawableCount       != m_lastDrawableCount;
+        || drawableHash        != m_lastDrawableHash;
 
     thread_local std::vector<MeshHandle>     meshHandles;
     thread_local std::vector<MaterialHandle> materialHandles;
@@ -164,7 +177,7 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         m_lastMeshTypeVersion     = meshTypeVersion;
         m_lastMaterialTypeVersion = materialTypeVersion;
         m_lastTextureTypeVersion  = textureTypeVersion;
-        m_lastDrawableCount       = drawableCount;
+        m_lastDrawableHash        = drawableHash;
     }
 
     // Per-frame UBOs owned by GLView. Shadow UBO is bound by GLShadowPass
