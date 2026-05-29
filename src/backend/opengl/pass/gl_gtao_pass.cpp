@@ -28,6 +28,13 @@ GLGTAOPass::GLGTAOPass(ShaderHandle shader)
 
 GLGTAOPass::~GLGTAOPass() = default;
 
+bool GLGTAOPass::enabledForView(const RenderView& view) const {
+    // Skip the fullscreen AO pass (and, via the prepass gate, the G-buffer
+    // fill it feeds on) whenever AO is off. ao.enabled is already forced
+    // false for wireframe / diagnostic frames in RenderSystem::buildView.
+    return isEnabled() && view.environment.ao.enabled;
+}
+
 void GLGTAOPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
     // GLGBuffer is owned and resized by GLBackend.
 }
