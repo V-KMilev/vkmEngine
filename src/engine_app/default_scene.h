@@ -10,6 +10,7 @@
 #include "ecs/component/camera.h"
 #include "ecs/component/light.h"
 #include "ecs/component/mesh.h"
+#include "ecs/component/mesh_lod.h"
 #include "ecs/component/name.h"
 #include "ecs/component/transform.h"
 
@@ -88,6 +89,35 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
         glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
         glm::vec3(1.0f)
     });
+
+    // LOD demo: a sphere with three procedural detail levels (32x16 / 16x8 /
+    // 8x4 segments). RenderView picks a level by projected screen size, so
+    // dollying away visibly drops its tessellation while the silhouette holds.
+    // levels[0] is the same handle as the Mesh, so shadows and the no-LOD path
+    // use the finest sphere.
+    {
+        const auto sphere0 = resources.add(Engine::generateSphere(32, 16), "sphere_lod0");
+        const auto sphere1 = resources.add(Engine::generateSphere(16, 8),  "sphere_lod1");
+        const auto sphere2 = resources.add(Engine::generateSphere(8, 4),   "sphere_lod2");
+
+        Engine::MeshLOD lod{};
+        lod.levels[0] = sphere0;
+        lod.levels[1] = sphere1;
+        lod.levels[2] = sphere2;
+        lod.switchHeights[1] = 220.0f;  // below ~220 px tall -> level 1
+        lod.switchHeights[2] = 70.0f;   // below ~70 px tall  -> level 2
+        lod.count = 3;
+
+        auto sphere = scene.createEntity();
+        scene.add(sphere, Engine::Name{"LOD Sphere"});
+        scene.add(sphere, Engine::Mesh{sphere0, material});
+        scene.add(sphere, lod);
+        scene.add(sphere, Engine::Transform{
+            glm::vec3(3.0f, 0.0f, 0.0f),
+            glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+            glm::vec3(1.0f)
+        });
+    }
 
     // Return the active camera entity (the only one in the scene).
     Engine::Entity result{};
