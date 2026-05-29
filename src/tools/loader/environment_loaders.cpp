@@ -17,6 +17,8 @@
 // texture_loaders.cpp (same EngineTools target), so include declarations only.
 #include "stb_image.h"
 
+#include "io/project_paths.h"
+
 namespace Engine {
 
 namespace {
@@ -27,13 +29,10 @@ namespace {
     // convention - matches scene IO / model import). Absolute paths (the
     // main.cpp default) pass through unchanged.
     std::string resolveAssetPath(const std::string& p) {
-#ifdef APP_ROOT_DIR
         std::filesystem::path fp(p);
         if (fp.is_relative()) {
-            return (std::filesystem::path(APP_ROOT_DIR) / fp)
-                       .lexically_normal().string();
+            return (ProjectPaths::root() / fp).lexically_normal().string();
         }
-#endif
         return p;
     }
 

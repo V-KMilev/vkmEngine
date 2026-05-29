@@ -21,6 +21,7 @@
 #include "system/render/environment.h"
 #include "system/camera/camera_controller.h"
 #include "system/io/file_watcher.h"
+#include "io/project_paths.h"
 
 #include "core/gl_backend.h"
 #include "config/gl_config.h"
@@ -37,7 +38,7 @@ EngineAppSystems setupEngineApp(Engine& engine) {
     // each asset's GUID into it on import. First-run creates an empty
     // file; subsequent runs reuse the recorded GUIDs.
     AssetDatabase::get().initFromDisk(
-        std::string(APP_ROOT_DIR) + "/assets/_database.json");
+        (ProjectPaths::assets() / "_database.json").string());
 
     auto& cameraController = engine.addSystem<CameraController>(SystemStage::Input);
     auto& eventSystem      = engine.addSystem<EventSystem>     (SystemStage::Simulation);
@@ -53,7 +54,7 @@ EngineAppSystems setupEngineApp(Engine& engine) {
     // Shaders are first-class assets. Sampler->slot bindings live on the
     // asset and get re-applied automatically every time the backend
     // (re)compiles them - which includes hot reload.
-    const std::string shaderDir = std::string(APP_ROOT_DIR) + "/shaders";
+    const std::string shaderDir = ProjectPaths::shaders().string();
     auto& resources = engine.getResources();
 
     // Load + hot-reload-watch every shader from one list. load() records each
@@ -252,7 +253,7 @@ EngineAppSystems setupEngineApp(Engine& engine) {
     // (Hierarchy "Environment" row -> Inspector). Create it now and seed
     // the default IBL map.
     sceneEnvironment(engine.getScene()).ibl.path =
-        std::string(APP_ROOT_DIR) + "/assets/envs/environment.hdr";
+        (ProjectPaths::envs() / "environment.hdr").string();
 
     return EngineAppSystems{ cameraController, eventSystem, visibilitySystem, renderSystem };
 }

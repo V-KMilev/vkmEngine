@@ -18,6 +18,7 @@
 #include "ecs/scene.h"
 #include "framework/editor_state.h"
 #include "io/scene_serializer.h"
+#include "io/project_paths.h"
 #include "system/camera/camera_controller.h"
 #include "system/event/event_system.h"
 #include "system/render/render_system.h"
@@ -78,7 +79,7 @@ bool SceneIOController::isSaveDialogActive() const {
 
 void SceneIOController::load(FrameContext& ctx, EditorState& state) {
     if (m_currentScenePath.empty()) {
-        m_currentScenePath = std::string(APP_ROOT_DIR) + "/scenes/scene.json";
+        m_currentScenePath = (ProjectPaths::scenes() / "scene.json").string();
     }
 
     // Cache the selection's Name (if any) BEFORE attempting the load -
@@ -162,7 +163,8 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
         m_openSaveAsPopup = false;
     }
     if (ImGui::BeginPopupModal("Save Scene As", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextDisabled("Saved into %s/scenes/ (.json appended automatically)", APP_ROOT_DIR);
+        ImGui::TextDisabled("Saved into %s (.json appended automatically)",
+                            ProjectPaths::scenes().string().c_str());
         ImGui::SetNextItemWidth(360.0f);
         ImGui::InputText("##SaveAsName", m_saveAsBuffer, sizeof(m_saveAsBuffer));
 
@@ -180,7 +182,7 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
             const std::filesystem::path p(finalName);
             if (p.extension() != ".json") finalName += ".json";
         }
-        const std::string finalPath = std::string(APP_ROOT_DIR) + "/scenes/" + finalName;
+        const std::string finalPath = (ProjectPaths::scenes() / finalName).string();
         const bool empty = finalName.empty();
         const bool collides = !empty && std::filesystem::exists(finalPath);
         if (!empty && name != finalName) {
@@ -196,7 +198,7 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
             // First-time save: the scenes/ directory may not exist yet.
             std::error_code mkdirEc;
             std::filesystem::create_directories(
-                std::filesystem::path(APP_ROOT_DIR) / "scenes", mkdirEc);
+                ProjectPaths::scenes(), mkdirEc);
             m_currentScenePath = finalPath;
             if (SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath)) {
                 state.sceneDirty = false;
@@ -215,7 +217,7 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
         ImGui::EndPopup();
     }
 
-    const std::filesystem::path scenesDir = std::filesystem::path(APP_ROOT_DIR) / "scenes";
+    const std::filesystem::path scenesDir = ProjectPaths::scenes();
     if (m_openLoadPopup) {
         // Refresh the cached listing once per open. The popup may stay up for
         // many frames; re-listing the directory each one is wasted work.

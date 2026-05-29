@@ -24,6 +24,7 @@
 #include "system/render/render_pass.h"
 #include "loader/environment_loaders.h"         // loadColorLUT for thumbnail
 #include "texture/gl_texture.h"                 // Core::Texture2D for thumbnail
+#include "io/project_paths.h"
 
 namespace Engine {
 
@@ -102,7 +103,7 @@ void browseButton(
     std::string& target
 ) {
     if (ImGui::Button(btnLabel)) {
-        const std::filesystem::path appRoot = APP_ROOT_DIR;
+        const std::filesystem::path appRoot = ProjectPaths::root();
         picker.options.popupId    = btnLabel;
         picker.options.title      = "Browse";
         picker.options.root       = appRoot / subdir;

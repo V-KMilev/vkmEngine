@@ -27,6 +27,7 @@
 #include "generator/mesh_generators.h"
 #include "generator/material_generators.h"
 #include "loader/model_loader.h"
+#include "io/project_paths.h"
 
 namespace Engine {
 namespace EditorActions {
@@ -292,7 +293,7 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
 
 void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorState& state) {
     if (state.requestModelImport) {
-        const std::filesystem::path appRoot = APP_ROOT_DIR;
+        const std::filesystem::path appRoot = ProjectPaths::root();
         m_picker.options.popupId    = "Import Model";
         m_picker.options.title      = "Import Model";
         m_picker.options.root       = appRoot / "assets";
@@ -310,7 +311,7 @@ void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
     std::string picked;
     if (m_picker.draw(picked)) {
         EntityId rootId = importModelIntoScene(
-            (std::filesystem::path(APP_ROOT_DIR) / picked).string(),
+            (ProjectPaths::root() / picked).string(),
             resources, scene);
         if (rootId) {
             state.selectedEntity = rootId;
