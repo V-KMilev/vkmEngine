@@ -35,11 +35,9 @@ class GLGTAOPass : public RenderPass {
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
         void execute(RenderGraphContext& ctx) override;
 
-        /// AO is the only consumer-gated geometry effect with no explicit
-        /// toggle of its own: it runs whenever the environment's AO is on.
-        /// `ao.enabled` is pre-patched to false for diagnostic/wireframe
-        /// frames in RenderSystem::buildView, so no disablePost check here
-        /// (the AOOnly view mode keeps ao.enabled true on purpose).
+        /// AO has no explicit pass toggle; it runs whenever ao.enabled is set.
+        /// ao.enabled is pre-patched false for diagnostic/wireframe frames, so
+        /// no disablePost check here (AOOnly keeps ao.enabled true on purpose).
         bool enabledForView(const RenderView& view) const override;
 
         void declareResources(RenderGraphBuilder& builder) const override {

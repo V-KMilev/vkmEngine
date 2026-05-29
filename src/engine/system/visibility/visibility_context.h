@@ -37,11 +37,9 @@ struct VisibilityContext {
     float maxDistanceSquared;    ///< Pre-computed maxDistance^2 for squared-distance comparisons.
     float screenSizeThresholdSq; ///< Pre-computed (minPixels / (projScaleY * viewportHeight))^2 for sqrt-free screen-size test.
 
-    /// One-frame-stale Hi-Z occlusion pyramid, snapshotted ONCE per frame by
-    /// VisibilitySystem and shared read-only across every cull worker. Null
-    /// when occlusion is inactive. Replaces the previous per-entity
-    /// OcclusionOracle::snapshot() that deep-copied the whole pyramid under a
-    /// mutex for every AABB tested (CODE_REVIEW.md #24).
+    /// Hi-Z occlusion pyramid, snapshotted once per frame and shared read-only
+    /// across cull workers; null when inactive. Was a per-entity locked deep
+    /// copy of the whole pyramid (CODE_REVIEW.md #24).
     const OcclusionOracle::Frame* occlusion = nullptr;
 };
 

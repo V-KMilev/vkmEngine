@@ -60,12 +60,9 @@ class GLSceneTarget {
 
         bool isReady() const { return m_ready; }
 
-        /// True when something drew into the overlay attachment since the last
-        /// clearOverlay() this frame. The composite uses this to skip the
-        /// full-res MSAA overlay resolve (and the overlay blend) on the common
-        /// case where no AABB/Grid/Outline/wireframe pass ran. Set by
-        /// bindForOverlay(), reset by clearOverlay(); both are called only on
-        /// the render thread, in pass order, so no synchronization is needed.
+        /// Did any pass draw into the overlay this frame? Lets the composite
+        /// skip the full-res MSAA overlay resolve when no AABB/Grid/Outline/
+        /// wireframe pass ran. Set by bindForOverlay(), reset by clearOverlay().
         bool overlayDirty() const { return m_overlayDirty; }
 
         /**
