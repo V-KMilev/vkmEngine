@@ -57,4 +57,22 @@ MeshAsset generatePyramid(float baseSize = 2.0f, float height = 2.0f);
  */
 MeshAsset generateCone(float radius = 0.5f, float height = 1.0f, uint32_t segments = 16);
 
+/**
+ * @brief Decimate a mesh by vertex clustering.
+ *
+ * Snaps vertices to a uniform grid over the mesh AABB, averages each occupied
+ * cell to one vertex, and drops triangles whose corners collapsed into the same
+ * cell. A cheap, general LOD source for arbitrary geometry (where you can't just
+ * re-tessellate at a lower resolution). Coarser than edge-collapse / QEM
+ * simplification - it can shift the silhouette - but that's invisible at the
+ * screen sizes where the coarse LOD levels are selected. Lower @p gridResolution
+ * = fewer cells = coarser result. Returns the source unchanged if decimation
+ * would collapse the whole mesh or the inputs are degenerate.
+ *
+ * @param src Source mesh.
+ * @param gridResolution Cells per axis across the AABB (e.g. 16 = mild, 6 = aggressive).
+ * @return The decimated MeshAsset (bounds recomputed).
+ */
+MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution);
+
 } // namespace Engine

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -114,6 +116,38 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
         scene.add(sphere, lod);
         scene.add(sphere, Engine::Transform{
             glm::vec3(3.0f, 0.0f, 0.0f),
+            glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+            glm::vec3(1.0f)
+        });
+    }
+
+    // Decimation demo: a sphere whose coarse LOD levels come from vertex-
+    // clustering decimation (decimateMesh) instead of re-tessellation - the
+    // path arbitrary / loaded models take, since they can't be regenerated at
+    // lower detail. Cruder than the procedural sphere above, but that crudeness
+    // is invisible at the screen sizes where the coarse levels switch in.
+    {
+        Engine::MeshAsset base = Engine::generateSphere(48, 24);
+        // decimateMesh reads the base by const ref; then base itself is moved
+        // in as the finest level (the resource manager takes resources by value).
+        const auto dec1 = resources.add(Engine::decimateMesh(base, 12), "sphere_dec1");
+        const auto dec2 = resources.add(Engine::decimateMesh(base, 6),  "sphere_dec2");
+        const auto dec0 = resources.add(std::move(base),                "sphere_dec0");
+
+        Engine::MeshLOD lod{};
+        lod.levels[0] = dec0;
+        lod.levels[1] = dec1;
+        lod.levels[2] = dec2;
+        lod.switchHeights[1] = 220.0f;
+        lod.switchHeights[2] = 70.0f;
+        lod.count = 3;
+
+        auto sphere = scene.createEntity();
+        scene.add(sphere, Engine::Name{"Decimated LOD Sphere"});
+        scene.add(sphere, Engine::Mesh{dec0, material});
+        scene.add(sphere, lod);
+        scene.add(sphere, Engine::Transform{
+            glm::vec3(-3.0f, 0.0f, 0.0f),
             glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
             glm::vec3(1.0f)
         });
