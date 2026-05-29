@@ -223,19 +223,33 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     shader->setUniform1i("u_lutEnabled", lutOn ? 1 : 0);
     shader->setUniform1f("u_lutIntensity", view.environment.colorGrade.intensity);
 
-    // Diagnostic overlay (slot 5): AABB/Grid (and any future debug pass)
-    // write to the HDR FBO's overlay attachment instead of HDR colour, so
-    // their pixels skip the tonemap chain. Resolve the MSAA overlay to its
-    // single-sample texture and bind it here; the shader blends it on top
-    // of the tonemapped result based on overlay alpha.
-    hdr.resolveOverlay();
-    hdr.bindResolvedOverlay(5);
-    // Restore previous bindings disturbed by the overlay resolve blits.
-    hdr.bindResolvedColor(0);
-    if (backbuffer) backbuffer->bind();
-    else backend.getDefaultTarget().bind();
-    // bind() reset the viewport - apply the editor-viewport override again.
-    applyEditorViewport(glContext, view);
+    // Diagnostic overlay (slot 5): AABB/Grid/Outline (and forward's
+    // wireframe-overlay) write to the HDR FBO's overlay attachment instead of
+    // HDR colour, so their pixels skip the tonemap chain. The shader blends it
+    // on top of the tonemapped result based on overlay alpha.
+    //
+    // Only resolve + blend when a pass actually drew into the overlay this
+    // frame (overlayDirty). The common case - no debug pass active - skips the
+    // full-res MSAA->RGBA8 resolve blit entirely; u_overlayEnabled then tells
+    // the shader not to sample the (now-stale) resolved texture. The slot is
+    // still bound so the sampler is valid even on the gated-off path.
+    const bool overlayOn = hdr.overlayDirty();
+    shader->setUniform1i("u_overlayEnabled", overlayOn ? 1 : 0);
+    if (overlayOn) {
+        hdr.resolveOverlay();
+        hdr.bindResolvedOverlay(5);
+        // Restore previous bindings disturbed by the overlay resolve blits.
+        hdr.bindResolvedColor(0);
+        if (backbuffer) backbuffer->bind();
+        else backend.getDefaultTarget().bind();
+        // bind() reset the viewport - apply the editor-viewport override again.
+        applyEditorViewport(glContext, view);
+    } else {
+        // No resolve this frame: bind the (stale) resolved overlay so slot 5
+        // is a valid sampler binding. The resolve blit and the FBO/viewport
+        // rebind dance above are both skipped - nothing disturbed them.
+        hdr.bindResolvedOverlay(5);
+    }
 
     // Lens dirt (slot 4): procedurally generated on first enable, then kept
     // resident. Off when env.lensDirt.enabled is false; the shader gates the multiply.
