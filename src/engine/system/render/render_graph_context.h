@@ -33,7 +33,7 @@ class ResourceManager;
  *
  * Threading contract (load-bearing for a future render-thread split):
  *   - A pass MUST NOT touch Scene, ECS components, or any process
- *     singleton (Engine::get, ThreadPool::get, AssetDatabase::get).
+ *     singleton (ThreadPool::get, AssetDatabase::get).
  *     `view` is the frame's complete snapshot; if a pass needs new
  *     data from the scene, surface it through RenderView first.
  *   - A pass MUST NOT mutate `resources`: the field is `const` and
