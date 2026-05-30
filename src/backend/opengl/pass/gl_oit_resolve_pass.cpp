@@ -33,7 +33,7 @@ GLOITResolvePass::GLOITResolvePass(ShaderHandle shader)
 
 GLOITResolvePass::~GLOITResolvePass() = default;
 
-void GLOITResolvePass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLOITResolvePass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // No viewport-sized state of our own; the OIT target lives in
     // FrameResources and is resized by the graph.
 }

@@ -38,7 +38,7 @@ GLTAAPass::GLTAAPass(ShaderHandle shader)
 
 GLTAAPass::~GLTAAPass() = default;
 
-void GLTAAPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLTAAPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // GLTAA history is owned and resized by GLBackend's FrameResources.
 }
 

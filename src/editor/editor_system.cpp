@@ -394,7 +394,7 @@ void EditorSystem::update(FrameContext& ctx) {
     }
 }
 
-void EditorSystem::executeBackend(FrameContext& /*ctx*/) {
+void EditorSystem::executeBackend(FrameContext& ctx) {
     // Runs on the render thread AFTER RenderSystem::executeFrame, so the
     // UI lands on top of the rendered scene. In single-threaded mode the
     // engine calls this on main right after update().

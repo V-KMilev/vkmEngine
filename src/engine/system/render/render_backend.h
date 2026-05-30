@@ -119,7 +119,7 @@ class RenderBackend {
          * Called once by the graph the first time it executes. The default
          * is a no-op; backends override to register what they expose.
          */
-        virtual void registerPersistentResources(RenderGraph& /*graph*/) {}
+        virtual void registerPersistentResources(RenderGraph& graph) {}
 
         /**
          * @brief Per-frame backend tail. Called by RenderGraph::execute after
@@ -145,8 +145,8 @@ class RenderBackend {
          * Default: no-op (a backend without GPU timer support quietly
          * shows zeros in the editor).
          */
-        virtual void beginPassTimer(std::size_t /*passIndex*/) {}
-        virtual void endPassTimer(std::size_t /*passIndex*/) {}
+        virtual void beginPassTimer(std::size_t passIndex) {}
+        virtual void endPassTimer(std::size_t passIndex) {}
 
         /**
          * @brief Snapshot of the backend's shader variant cache.

@@ -340,7 +340,7 @@ bool EnvironmentInspector::drawWorld(EditorContext& ec, EnvironmentConfig& env) 
     return changed;
 }
 
-bool EnvironmentInspector::drawLightingShadows(EditorContext& /*ec*/, EnvironmentConfig& env) {
+bool EnvironmentInspector::drawLightingShadows(EditorContext& ec, EnvironmentConfig& env) {
     bool changed = false;
 
     if (cardHeader("shadow", "Shadow Quality", nullptr)) {
@@ -495,7 +495,7 @@ bool EnvironmentInspector::drawCameraFX(EditorContext& ec, EnvironmentConfig& en
     return changed;
 }
 
-bool EnvironmentInspector::drawImagePost(EditorContext& /*ec*/, EnvironmentConfig& env) {
+bool EnvironmentInspector::drawImagePost(EditorContext& ec, EnvironmentConfig& env) {
     bool changed = false;
     auto cardWithEnable = [&](const char* id, const char* title, bool* enabled) {
         const bool prev = *enabled;
@@ -643,7 +643,7 @@ bool EnvironmentInspector::drawImagePost(EditorContext& /*ec*/, EnvironmentConfi
     return changed;
 }
 
-bool EnvironmentInspector::drawScreenSpaceFX(EditorContext& /*ec*/, EnvironmentConfig& env) {
+bool EnvironmentInspector::drawScreenSpaceFX(EditorContext& ec, EnvironmentConfig& env) {
     bool changed = false;
     auto cardWithEnable = [&](const char* id, const char* title, bool* enabled) {
         const bool prev = *enabled;
@@ -676,7 +676,7 @@ bool EnvironmentInspector::drawScreenSpaceFX(EditorContext& /*ec*/, EnvironmentC
     return changed;
 }
 
-bool EnvironmentInspector::drawDiagnostics(EditorContext& /*ec*/, EnvironmentConfig& env) {
+bool EnvironmentInspector::drawDiagnostics(EditorContext& ec, EnvironmentConfig& env) {
     bool changed = false;
     auto cardWithEnable = [&](const char* id, const char* title, bool* enabled) {
         const bool prev = *enabled;

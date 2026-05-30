@@ -71,7 +71,7 @@ class SceneIOController {
         /// SceneLoadedEvent (camera rebind handled by our own subscriber).
         void load(FrameContext& ctx, EditorState& state);
         /// Push a saved/loaded scene path to the top of the recent-scenes
-        /// MRU list, deduplicating and trimming to MaxRecentScenes.
+        /// MRU list, deduplicating and trimming to MAX_RECENT_SCENES.
         static void pushRecent(EditorState& state, const std::string& path);
 
         EventSystem&      m_events;

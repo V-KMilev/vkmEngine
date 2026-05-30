@@ -35,7 +35,7 @@ bool GLGTAOPass::enabledForView(const RenderView& view) const {
     return isEnabled() && view.environment.ao.enabled;
 }
 
-void GLGTAOPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLGTAOPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // GLGBuffer is owned and resized by GLBackend.
 }
 

@@ -54,7 +54,7 @@ bool GLPrepass::enabledForView(const RenderView& view) const {
                     || env.occlusion.useHiZ));
 }
 
-void GLPrepass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLPrepass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // GLGBuffer is owned and resized by GLBackend.
 }
 

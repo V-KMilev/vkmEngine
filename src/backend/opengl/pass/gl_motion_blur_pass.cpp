@@ -38,7 +38,7 @@ GLMotionBlurPass::GLMotionBlurPass(ShaderHandle shader)
 
 GLMotionBlurPass::~GLMotionBlurPass() = default;
 
-void GLMotionBlurPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLMotionBlurPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // Scratch / HDR / G-buffer are owned and resized by GLBackend.
 }
 

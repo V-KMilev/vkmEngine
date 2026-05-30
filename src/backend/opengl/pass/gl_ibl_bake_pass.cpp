@@ -59,7 +59,7 @@ GLIBLBakePass::GLIBLBakePass(
 
 GLIBLBakePass::~GLIBLBakePass() = default;
 
-void GLIBLBakePass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLIBLBakePass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // IBL targets are fixed-size and independent of the window.
 }
 

@@ -124,7 +124,7 @@ GLCompositePass::GLCompositePass(ShaderHandle shader)
 
 GLCompositePass::~GLCompositePass() = default;
 
-void GLCompositePass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLCompositePass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // The HDR target is owned and resized by GLBackend; nothing to do here.
 }
 

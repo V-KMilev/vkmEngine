@@ -37,7 +37,7 @@ GLExposurePass::GLExposurePass(ShaderHandle lumShader, ShaderHandle adaptShader)
 
 GLExposurePass::~GLExposurePass() = default;
 
-void GLExposurePass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLExposurePass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // GLAutoExposure targets are fixed-size and viewport-independent.
 }
 

@@ -46,7 +46,7 @@ void RenderSystem::resize(uint32_t width, uint32_t height) {
     m_graph.onResize(*m_backend, width, height);
 }
 
-void RenderSystem::update(FrameContext& /*ctx*/) {
+void RenderSystem::update(FrameContext& ctx) {
     // Engine drives buildView() + executeFrame() separately around the
     // render-thread sync point. This override exists because System::
     // update is pure virtual; it is intentionally never called.
