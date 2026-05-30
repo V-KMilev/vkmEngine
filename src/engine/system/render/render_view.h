@@ -295,7 +295,6 @@ enum class RenderMode : uint8_t {
     Overdraw,                ///< Heatmap of per-pixel shaded-fragment count (additive blend).
     BatchId,                 ///< Hashed RGB per InstanceBatcher batch index.
     LightComplexity,         ///< Per-fragment count of contributing lights (turbo ramp).
-    LightmapUV,              ///< Reserved for UV channel 1 - stand-in pattern (no UV1 today).
 };
 
 /**
@@ -356,7 +355,7 @@ struct RenderModeConfig {
      * 0 = normal output; 1 = Normals, 2 = Depth, 3 = AO, 4 = Roughness,
      * 5 = Metallic, 6 = Emission, 7 = TangentSpace, 8 = AlbedoOnly,
      * 9 = WorldPosition, 10 = UV, 11 = Overdraw, 12 = BatchId,
-     * 13 = LightComplexity, 14 = LightmapUV. Pushed as u_debugMode; the
+     * 13 = LightComplexity. Pushed as u_debugMode; the
      * shader's main() branches just before FragColor is written so the
      * diagnostic value lands in the HDR target and bypassDisplayXform
      * carries it through composite.
@@ -434,7 +433,6 @@ inline RenderModeConfig resolveModeConfig(RenderMode mode) {
         case RenderMode::UV:              diagnostic(10); break;
         case RenderMode::BatchId:         diagnostic(12); break;
         case RenderMode::LightComplexity: diagnostic(13); break;
-        case RenderMode::LightmapUV:      diagnostic(14); break;
 
         case RenderMode::Overdraw:
             diagnostic(11);

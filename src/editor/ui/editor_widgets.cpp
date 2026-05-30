@@ -249,7 +249,6 @@ constexpr ModeEntry MODE_GEOMETRY[] = {
     {RenderMode::Depth,                "Depth",                "distance from camera (white = far)"},
     {RenderMode::WorldPosition,        "World Position",       "fract(worldPos) (1m grid)"},
     {RenderMode::UV,                   "UV",                   "UV channel 0 as red/green"},
-    {RenderMode::LightmapUV,           "Lightmap UV",          "stand-in (no UV1 channel today)"},
 };
 constexpr ModeEntry MODE_DIAGNOSTIC[] = {
     {RenderMode::Overdraw,             "Overdraw",             "additive heatmap of shaded fragments"},
