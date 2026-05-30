@@ -5,34 +5,24 @@
 
 #include <GL/glew.h>
 
+#include "gl_mip_chain_target.h"
+
 namespace Engine {
 
 /**
  * @brief Hi-Z (max-Z) depth pyramid built from the prepass G-buffer.
  *
- * One R32F texture with an explicit mip chain plus a reusable FBO.
- * Mip 0 stores view-space distance (-pos.z) from the prepass position
- * target; subsequent mips are max(2x2) reductions of the level below.
- * Following the same pattern as GLBloom - raw GL kept encapsulated
- * because the engine's Core::Texture2D doesn't model an explicit
- * per-level render-target chain.
+ * An R32F explicit mip chain (lifecycle in GLMipChainTarget). Mip 0 stores
+ * view-space distance (-pos.z) from the prepass position target; subsequent
+ * mips are max(2x2) reductions of the level below. NEAREST filtering keeps the
+ * max-reduce bit-exact - a linear filter would average the 4 texels and break
+ * the conservative max property the occlusion test depends on.
  *
- * The visibility system reads back one mip via OcclusionOracle to
- * AABB-test candidate occludees on the CPU side one frame late; a
- * future GPU-indirect cull pass would consume the full pyramid on
- * the GPU.
+ * The visibility system reads back one mip via OcclusionOracle to AABB-test
+ * candidate occludees on the CPU side one frame late; a future GPU-indirect
+ * cull pass would consume the full pyramid on the GPU.
  */
-class GLHiZ {
-    public:
-        GLHiZ() = default;
-        ~GLHiZ() { releaseAll(); }
-
-        GLHiZ(const GLHiZ& other) = delete;
-        GLHiZ& operator=(const GLHiZ& other) = delete;
-
-        GLHiZ(GLHiZ && other) = delete;
-        GLHiZ& operator=(GLHiZ && other) = delete;
-
+class GLHiZ : public GLMipChainTarget {
     public:
         static constexpr int MAX_MIPS = 12;  // 4096+ viewport upper bound
 
@@ -46,38 +36,7 @@ class GLHiZ {
             createChain();
         }
 
-        bool isReady()  const { return m_ready; }
-        int  mipCount() const { return m_mips; }
-        GLuint textureId() const { return m_tex; }
-
-        int mipWidth (int mip) const { return std::max(m_baseW >> mip, 1); }
-        int mipHeight(int mip) const { return std::max(m_baseH >> mip, 1); }
-
-        /// Bind the pyramid for sampling. The shader picks a level via
-        /// textureLod - Nearest filtering keeps the max-reduce bit-exact.
-        void bind(uint32_t slot) const {
-            glActiveTexture(GL_TEXTURE0 + slot);
-            glBindTexture(GL_TEXTURE_2D, m_tex);
-        }
-
-        void bindFbo()   const { glBindFramebuffer(GL_FRAMEBUFFER, m_fbo); }
-        void unbindFbo() const { glBindFramebuffer(GL_FRAMEBUFFER, 0); }
-
-        /// Point COLOR_ATTACHMENT0 at one chain mip and size the viewport to it.
-        void attachMip(int mip) const {
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                GL_TEXTURE_2D, m_tex, mip);
-            glViewport(0, 0, mipWidth(mip), mipHeight(mip));
-        }
-
     private:
-        void releaseAll() noexcept {
-            if (m_fbo) glDeleteFramebuffers(1, &m_fbo);
-            if (m_tex) glDeleteTextures(1, &m_tex);
-            m_fbo = 0;
-            m_tex = 0;
-        }
-
         void createChain() {
             releaseAll();
 
@@ -93,9 +52,6 @@ class GLHiZ {
             }
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            // Nearest on both axes - the max-reduce must read 4 unfiltered
-            // texels exactly; a linear filter would average them and break
-            // the conservative max property the occlusion test depends on.
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
@@ -105,14 +61,6 @@ class GLHiZ {
             glGenFramebuffers(1, &m_fbo);
             m_ready = true;
         }
-
-    private:
-        GLuint m_tex = 0;
-        GLuint m_fbo = 0;
-        int    m_baseW = 0;
-        int    m_baseH = 0;
-        int    m_mips  = 1;
-        bool   m_ready = false;
 };
 
 } // namespace Engine
