@@ -164,11 +164,19 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
         const bool cancelled = ImGui::IsKeyPressed(ImGuiKey_Escape);
 
         if (committed && m_renameBuf[0] != '\0') {
-            if (!scene.has<Name>(entity)) scene.add(Entity{entity}, Name(m_renameBuf));
-            else {
+            if (!scene.has<Name>(entity)) {
+                scene.add(Entity{entity}, Name(m_renameBuf));
+                // Adding a Name where none existed: undo removes it (reverts to
+                // the default display name).
+                state.commands.push(std::make_unique<AddComponentCommand<Name>>(
+                    entity, Name(m_renameBuf), "Rename"));
+            } else {
                 auto& n = scene.get<Name>(entity);
+                const Name before = n;
                 std::strncpy(n.value, m_renameBuf, sizeof(n.value) - 1);
                 n.value[sizeof(n.value) - 1] = '\0';
+                state.commands.push(std::make_unique<ComponentEditCommand<Name>>(
+                    entity, before, n, "Rename"));
             }
             state.markSceneDirty();
             m_renameTarget = {};
@@ -268,7 +276,10 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
 
     if (scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).parent) {
         if (ImGui::MenuItem("Unparent")) {
+            const EntityId oldParent = scene.get<Hierarchy>(entity).parent;
             HierarchyOperations::removeFromParent(scene, entity);
+            state.commands.push(std::make_unique<ReparentCommand>(
+                entity, oldParent, EntityId{}, "Unparent"));
             EditorActions::commitHierarchyMutation(scene, state, entity);
         }
     }
@@ -277,9 +288,12 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
         ImGui::Separator();
         if (ImGui::MenuItem("Reset Transform")) {
             auto& t = scene.get<Transform>(entity);
+            const Transform before = t;
             t.position = glm::vec3(0.0f);
             t.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
             t.scale    = glm::vec3(1.0f);
+            state.commands.push(std::make_unique<TransformChangeCommand>(
+                entity, before, t, "Reset Transform"));
             EditorActions::commitHierarchyMutation(scene, state, entity);
         }
     }
@@ -287,7 +301,10 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
     if (scene.has<Light>(entity)) {
         auto& light = scene.get<Light>(entity);
         if (ImGui::MenuItem(light.enabled ? "Disable Light" : "Enable Light")) {
+            const Light before = light;
             light.enabled = !light.enabled;
+            state.commands.push(std::make_unique<ComponentEditCommand<Light>>(
+                entity, before, light, "Toggle Light"));
             state.markSceneDirty();
         }
     }
@@ -295,7 +312,10 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
     if (scene.has<Mesh>(entity)) {
         auto& mesh = scene.get<Mesh>(entity);
         if (ImGui::MenuItem(mesh.visible ? "Hide" : "Show")) {
+            const Mesh before = mesh;
             mesh.visible = !mesh.visible;
+            state.commands.push(std::make_unique<ComponentEditCommand<Mesh>>(
+                entity, before, mesh, "Toggle Mesh Visibility"));
             state.markSceneDirty();
         }
     }

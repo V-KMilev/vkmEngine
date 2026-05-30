@@ -10,6 +10,7 @@
 #include "ecs/component/mesh.h"
 #include "ecs/component/light.h"
 #include "ecs/component/camera.h"
+#include "ecs/component/reflection_probe.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/mesh_lod.h"
@@ -96,6 +97,34 @@ class RemoveComponentCommand : public Command {
 };
 
 /**
+ * @brief Undoable edit of a whole component's value (before -> after).
+ *
+ * For inspector field edits on pure-data components. redo/undo assign the
+ * stored value back; tryMerge coalesces a stream of same-entity, same-type
+ * edits (the inspector pushes one per changed frame during a drag) into one
+ * undo step, mirroring TransformChangeCommand. Use only for components whose
+ * edit has no cross-entity or re-bake side effect (Transform has its own
+ * command for the hierarchy-dirty side effect).
+ */
+template <typename T>
+class ComponentEditCommand : public Command {
+    public:
+        ComponentEditCommand(EntityId e, const T& before, const T& after, const char* label)
+            : m_entity(e), m_before(before), m_after(after), m_label(label) {}
+
+        void redo(Scene&, EditorState&) override;
+        void undo(Scene&, EditorState&) override;
+        const char* label() const override { return m_label; }
+        bool tryMerge(Command& incoming) override;
+
+    private:
+        EntityId    m_entity;
+        T           m_before;
+        T           m_after;
+        const char* m_label;
+};
+
+/**
  * @brief Snapshot of every editor-visible component on a single entity.
  *
  * Used by Create / Destroy commands so an undo can resurrect an entity
@@ -109,13 +138,14 @@ class RemoveComponentCommand : public Command {
  */
 struct EntitySnapshot {
     uint32_t slotIndex = 0;
-    std::optional<Transform> transform;
-    std::optional<Mesh>      mesh;
-    std::optional<Light>     light;
-    std::optional<Camera>    camera;
-    std::optional<Animation> animation;
-    std::optional<Name>      name;
-    std::optional<MeshLOD>   meshLod;
+    std::optional<Transform>       transform;
+    std::optional<Mesh>            mesh;
+    std::optional<Light>           light;
+    std::optional<Camera>          camera;
+    std::optional<ReflectionProbe> reflectionProbe;
+    std::optional<Animation>       animation;
+    std::optional<Name>            name;
+    std::optional<MeshLOD>         meshLod;
 
     static EntitySnapshot capture(const Scene& scene, EntityId id);
     void apply(Scene& scene, EntityId id) const;
@@ -216,16 +246,25 @@ class ReparentCommand : public Command {
 // translation unit doesn't need the full bodies.
 extern template class AddComponentCommand<Mesh>;
 extern template class AddComponentCommand<Light>;
+extern template class AddComponentCommand<ReflectionProbe>;
 extern template class AddComponentCommand<Camera>;
 extern template class AddComponentCommand<Animation>;
 extern template class AddComponentCommand<Name>;
 
 extern template class RemoveComponentCommand<Mesh>;
 extern template class RemoveComponentCommand<Light>;
+extern template class RemoveComponentCommand<ReflectionProbe>;
 extern template class RemoveComponentCommand<Camera>;
 extern template class RemoveComponentCommand<Animation>;
 
 extern template class AddComponentCommand<MeshLOD>;
 extern template class RemoveComponentCommand<MeshLOD>;
+
+extern template class ComponentEditCommand<Light>;
+extern template class ComponentEditCommand<Camera>;
+extern template class ComponentEditCommand<ReflectionProbe>;
+extern template class ComponentEditCommand<Mesh>;
+extern template class ComponentEditCommand<Name>;
+extern template class ComponentEditCommand<Animation>;
 
 } // namespace Engine
