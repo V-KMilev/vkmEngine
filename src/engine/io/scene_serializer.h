@@ -17,11 +17,10 @@ class ResourceManager;
  * material texture refs) resolve by `name` through ResourceManager - the
  * stable identity across save/load.
  *
- * Load is transactional at the scene level: entities deserialise into a
- * staging Scene first and are committed via Scene::swap only on full
- * success, so a malformed file leaves the live scene untouched. Asset
- * state is not transactional today (the asset graph is mutated before
- * the swap; documented inline in the .cpp).
+ * Load is transactional for BOTH entities and assets: entities deserialise
+ * into a staging Scene and assets into a staging ResourceManager, and both
+ * commit via swap only on full success - so a malformed file leaves the live
+ * scene AND the live asset graph untouched (documented inline in the .cpp).
  *
  * Slot indices survive a save -> load round trip - the loader recreates
  * each entity at the same slot via Scene::createEntityAt, so cross-entity
@@ -55,12 +54,10 @@ namespace SceneSerializer {
     /**
      * @brief Load a scene from @p path, replacing the live @p scene atomically.
      *
-     * Assets are loaded first (idempotent: skips assets already present by
-     * name) into the provided ResourceManager. Entities deserialise into a
-     * staging Scene and only commit via swap on full success - a failure
-     * leaves @p scene unchanged. Assets newly loaded along the way are
-     * NOT rolled back on failure (the orphans persist until a manual
-     * cleanup; documented in the .cpp).
+     * Assets and entities both deserialise into staging containers (a staging
+     * ResourceManager + a staging Scene) and commit via swap only on full
+     * success - a failure leaves @p scene and the live asset graph unchanged,
+     * with no orphaned assets (documented in the .cpp).
      *
      * @return true on success; false (and a logged error) on failure, with
      *         the live scene untouched.
