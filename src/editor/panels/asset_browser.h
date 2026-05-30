@@ -46,6 +46,13 @@ class AssetBrowserPanel {
         // ResourceManager swap (scene load) doesn't leave stale handles.
         MeshHandle     m_sphere;             ///< Shape for material thumbnails
         MaterialHandle m_neutral;            ///< Material for mesh thumbnails
+
+        // Rename modal state - materials and meshes share one popup; exactly
+        // one target handle is set while the modal is open.
+        char           m_renameBuf[128] = {};
+        MaterialHandle m_renameMat;
+        MeshHandle     m_renameMesh;
+        bool           m_renameOpen = false;
 };
 
 } // namespace Engine
