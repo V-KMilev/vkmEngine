@@ -25,7 +25,7 @@ bool GLOITResolvePass::enabledForView(const RenderView& view) const {
 }
 
 GLOITResolvePass::GLOITResolvePass(ShaderHandle shader)
-    : RenderPass("GLOITResolvePass")
+    : GLRenderPass("GLOITResolvePass")
     , m_shader(shader)
     , m_screenTri(std::make_unique<Core::ScreenTriangle>())
 {
@@ -38,16 +38,8 @@ void GLOITResolvePass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, 
     // FrameResources and is resized by the graph.
 }
 
-void GLOITResolvePass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLOITResolvePass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLOITResolvePass requires OpenGL backend - skipping");
-        return;
-    }
-
-    auto& gl  = static_cast<GLBackend&>(backend);
     auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     GLOIT* oit = rg.resource<GLOIT>(RGResource::OITAccum);
     // OITRevealage shares the same GLOIT object - access for graph tracking.

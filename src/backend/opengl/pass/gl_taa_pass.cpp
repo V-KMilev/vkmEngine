@@ -18,6 +18,7 @@
 
 #include "gl_screen_triangle.h"
 #include "gl_blit.h"
+#include "gl_fullscreen_post.h"
 
 #include "system/render/render_view.h"
 #include "resource/resource_manager.h"
@@ -29,7 +30,7 @@ bool GLTAAPass::enabledForView(const RenderView& view) const {
 }
 
 GLTAAPass::GLTAAPass(ShaderHandle shader)
-    : RenderPass("GLTAAPass")
+    : GLRenderPass("GLTAAPass")
     , m_shader(shader)
     , m_screenTri(std::make_unique<Core::ScreenTriangle>())
 {
@@ -41,17 +42,9 @@ void GLTAAPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_
     // GLTAA history is owned and resized by GLBackend's FrameResources.
 }
 
-void GLTAAPass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLTAAPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLTAAPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
-    auto& gl      = static_cast<GLBackend&>(backend);
     auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
     auto& taa = *rg.resource<GLTAA>(RGResource::TAAHistory);
@@ -60,11 +53,7 @@ void GLTAAPass::execute(RenderGraphContext& rg) {
     GLShader* shader = gl.getView().resolveShader(m_shader, resources);
     if (!shader) return;
 
-    auto& ctx = gl.getContext();
-    ctx.setDepthTest(false);
-    ctx.setDepthWrite(false);
-    ctx.setBlending(false);
-    ctx.setFaceCulling(false);
+    beginFullscreenPost(gl.getContext());
 
     // Accumulate into the write history texture.
     taa.bindWrite();
@@ -83,17 +72,14 @@ void GLTAAPass::execute(RenderGraphContext& rg) {
     m_screenTri->draw();
 
     // Substitute the stabilised image for the downstream post chain.
-    Core::blitColor(taa.fboId(), hdr.resolveFboId(),
-        static_cast<int>(taa.width()), static_cast<int>(taa.height()),
-        static_cast<int>(hdr.width()), static_cast<int>(hdr.height()), GL_NEAREST);
+    endFullscreenPost(gl.getContext(),
+        taa.fboId(), static_cast<int>(taa.width()), static_cast<int>(taa.height()),
+        hdr.resolveFboId(), static_cast<int>(hdr.width()), static_cast<int>(hdr.height()));
 
     taa.swap();
     taa.markPrimed();
     m_prevViewProj = view.camera.viewProjection;
     m_havePrev = true;
-
-    ctx.setDepthTest(true);
-    ctx.setDepthWrite(true);
 }
 
 } // namespace Engine

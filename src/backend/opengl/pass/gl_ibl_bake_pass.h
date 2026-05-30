@@ -6,7 +6,7 @@
 #include <unordered_map>
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 
 namespace Core {
     class ScreenTriangle;
@@ -30,7 +30,7 @@ namespace Engine {
  * the BRDF/DFG LUT. Results live in GLView's GLIBL and are sampled by the
  * forward and skybox passes.
  */
-class GLIBLBakePass : public RenderPass {
+class GLIBLBakePass : public GLRenderPass {
     public:
         GLIBLBakePass() = delete;
         ~GLIBLBakePass() override;
@@ -50,7 +50,7 @@ class GLIBLBakePass : public RenderPass {
 
     public:
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
             builder.write(RGResource::IBL);

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 #include "resource/gl_mesh.h"
 
 #include <memory>
@@ -18,7 +18,7 @@ namespace Engine {
  * The grid is typically rendered in the XZ-plane. It can be used for editor or debugging views
  * to help with orientation and spatial awareness in the 3D scene.
  */
-class GLGridPass : public RenderPass {
+class GLGridPass : public GLRenderPass {
     public:
         GLGridPass() = delete;
         ~GLGridPass() override = default;
@@ -55,7 +55,7 @@ class GLGridPass : public RenderPass {
          * @param view      Render view/camera information
          * @param resources Resource manager for the scene
          */
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
             // Writes the HDR FBO overlay attachment, not SceneHDR colour;

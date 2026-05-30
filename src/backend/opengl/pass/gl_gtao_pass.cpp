@@ -20,7 +20,7 @@
 namespace Engine {
 
 GLGTAOPass::GLGTAOPass(ShaderHandle shader)
-    : RenderPass("GLGTAOPass")
+    : GLRenderPass("GLGTAOPass")
     , m_shader(shader)
     , m_screenTri(std::make_unique<Core::ScreenTriangle>())
 {
@@ -39,17 +39,9 @@ void GLGTAOPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32
     // GLGBuffer is owned and resized by GLBackend.
 }
 
-void GLGTAOPass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLGTAOPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLGTAOPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
-
-    auto& gl      = static_cast<GLBackend&>(backend);
     auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
     if (!gbuffer.isReady()) return;
 

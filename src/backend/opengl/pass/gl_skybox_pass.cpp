@@ -22,7 +22,7 @@
 namespace Engine {
 
 GLSkyboxPass::GLSkyboxPass(ShaderHandle shader)
-    : RenderPass("GLSkyboxPass")
+    : GLRenderPass("GLSkyboxPass")
     , m_shader(shader)
     , m_cube(std::make_unique<GLMesh>(generateCube()))
 {
@@ -36,17 +36,9 @@ bool GLSkyboxPass::enabledForView(const RenderView& view) const {
     return isEnabled() && view.environment.skybox.enabled;
 }
 
-void GLSkyboxPass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLSkyboxPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLSkyboxPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
-
-    auto& gl     = static_cast<GLBackend&>(backend);
     auto& glView = gl.getView();
     auto& ibl    = *rg.resource<GLIBL>(RGResource::IBL);
     auto& hdrT   = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);

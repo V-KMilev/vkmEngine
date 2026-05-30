@@ -23,7 +23,7 @@ bool GLGridPass::enabledForView(const RenderView& view) const {
 }
 
 GLGridPass::GLGridPass(ShaderHandle shader)
-    : RenderPass("GLGridPass")
+    : GLRenderPass("GLGridPass")
     , m_shader(shader)
 {
     initialize();
@@ -32,20 +32,11 @@ GLGridPass::GLGridPass(ShaderHandle shader)
 void GLGridPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {}
 
 
-void GLGridPass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLGridPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-    // Validate backend type
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLGridPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
 
     if (!view.environment.grid.enabled) return;
-
-    auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
     auto& glView    = gl.getView();
 

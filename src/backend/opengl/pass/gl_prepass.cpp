@@ -23,7 +23,7 @@
 namespace Engine {
 
 GLPrepass::GLPrepass(ShaderHandle shader)
-    : RenderPass("GLPrepass")
+    : GLRenderPass("GLPrepass")
     , m_shader(shader)
 {
 }
@@ -58,17 +58,9 @@ void GLPrepass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_
     // GLGBuffer is owned and resized by GLBackend.
 }
 
-void GLPrepass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLPrepass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLPrepass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
-
-    auto& gl      = static_cast<GLBackend&>(backend);
     auto& glView  = gl.getView();
     auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
     if (!gbuffer.isReady() || view.drawables.empty()) return;

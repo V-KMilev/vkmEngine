@@ -16,6 +16,7 @@
 
 #include "gl_screen_triangle.h"
 #include "gl_blit.h"
+#include "gl_fullscreen_post.h"
 
 #include "system/render/render_view.h"
 #include "resource/resource_manager.h"
@@ -29,7 +30,7 @@ bool GLSSRPass::enabledForView(const RenderView& view) const {
 }
 
 GLSSRPass::GLSSRPass(ShaderHandle shader)
-    : RenderPass("GLSSRPass")
+    : GLRenderPass("GLSSRPass")
     , m_shader(shader)
     , m_screenTri(std::make_unique<Core::ScreenTriangle>())
 {
@@ -41,16 +42,9 @@ void GLSSRPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_
     // Reuses GLGBuffer / GLSceneTarget, both owned and resized by GLBackend.
 }
 
-void GLSSRPass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLSSRPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLSSRPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
-    auto& gl      = static_cast<GLBackend&>(backend);
     auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
     auto& hdr     = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     auto& scratch = *rg.resource<GLPostScratch>(RGResource::PostScratch);
@@ -59,11 +53,7 @@ void GLSSRPass::execute(RenderGraphContext& rg) {
     GLShader* shader = gl.getView().resolveShader(m_shader, resources);
     if (!shader) return;
 
-    auto& ctx = gl.getContext();
-    ctx.setDepthTest(false);
-    ctx.setDepthWrite(false);
-    ctx.setBlending(false);
-    ctx.setFaceCulling(false);
+    beginFullscreenPost(gl.getContext());
 
     // Render scene + reflections into the scratch target, then blit back into
     // the resolved HDR (DoF / motion-blur pattern). This keeps SSR off the 4x
@@ -85,12 +75,9 @@ void GLSSRPass::execute(RenderGraphContext& rg) {
 
     m_screenTri->draw();
 
-    Core::blitColor(scratch.fboId(), hdr.resolveFboId(),
-        static_cast<int>(scratch.width()), static_cast<int>(scratch.height()),
-        static_cast<int>(hdr.width()),     static_cast<int>(hdr.height()), GL_NEAREST);
-
-    ctx.setDepthTest(true);
-    ctx.setDepthWrite(true);
+    endFullscreenPost(gl.getContext(),
+        scratch.fboId(), static_cast<int>(scratch.width()), static_cast<int>(scratch.height()),
+        hdr.resolveFboId(), static_cast<int>(hdr.width()), static_cast<int>(hdr.height()));
 }
 
 } // namespace Engine

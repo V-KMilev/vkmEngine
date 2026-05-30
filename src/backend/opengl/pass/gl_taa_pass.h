@@ -5,7 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 
 namespace Core {
     class ScreenTriangle;
@@ -23,7 +23,7 @@ namespace Engine {
  * (EnvironmentConfig::taa) - a no-op pass when off, so the verified pipeline
  * is unchanged until opted in.
  */
-class GLTAAPass : public RenderPass {
+class GLTAAPass : public GLRenderPass {
     public:
         GLTAAPass() = delete;
         ~GLTAAPass() override;
@@ -38,7 +38,7 @@ class GLTAAPass : public RenderPass {
 
     public:
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
             builder.read(RGResource::SceneHDRResolved);
