@@ -7,6 +7,7 @@
 #include "logger.h"
 
 #include "gl_uniform_buffer.h"
+#include "gl_ubo_util.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
@@ -28,25 +29,11 @@ void GLCamera::update(const CameraData& camera, const EnvironmentConfig& environ
     data.cameraPosition = glm::vec4(camera.position, camera.exposure);
     data.ambient        = glm::vec4(environment.ambient.color, environment.ambient.intensity);
 
-    const bool firstUpload = !m_ubo;
-    const bool changed = firstUpload
-        || std::memcmp(&data, &m_lastData, sizeof(CameraUBOData)) != 0;
-
-    if (!changed) return;
-
-    if (firstUpload) {
-        m_ubo = std::make_unique<Core::UniformBuffer>(
-            &data, sizeof(CameraUBOData), GL_DYNAMIC_DRAW);
-    } else {
-        m_ubo->update(&data, sizeof(CameraUBOData));
-    }
-    m_lastData = data;
+    uploadUBOIfChanged(m_ubo, m_lastData, data, GL_DYNAMIC_DRAW);
 }
 
 void GLCamera::bind(uint32_t bindingPoint) const {
-    if (m_ubo) {
-        m_ubo->bindBase(bindingPoint);
-    }
+    bindUBO(m_ubo, bindingPoint);
 }
 
 } // namespace Engine

@@ -8,6 +8,7 @@
 #include "logger.h"
 
 #include "gl_uniform_buffer.h"
+#include "gl_ubo_util.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
@@ -91,24 +92,14 @@ void GLLights::update(const std::vector<LightData>& lights) {
     data.lightCount = static_cast<int>(lightCount);
     m_lightCount = lightCount;
 
-    const bool firstUpload = !m_ubo;
-    const bool changed = firstUpload
-        || std::memcmp(&data, &m_lastData, sizeof(LightsUBOData)) != 0;
-
-    if (!changed) return;
-
-    if (firstUpload) {
-        m_ubo = std::make_unique<Core::UniformBuffer>(&data, sizeof(LightsUBOData));
-    } else {
-        m_ubo->update(&data, sizeof(LightsUBOData));
-    }
-    m_lastData = data;
+    // GL_STATIC_DRAW preserves the historical ctor default (this UBO is
+    // rewritten per frame, so DYNAMIC would arguably fit better - left as-is
+    // to keep this a pure dedup).
+    uploadUBOIfChanged(m_ubo, m_lastData, data, GL_STATIC_DRAW);
 }
 
 void GLLights::bind(uint32_t bindingPoint) const {
-    if (m_ubo) {
-        m_ubo->bindBase(bindingPoint);
-    }
+    bindUBO(m_ubo, bindingPoint);
 }
 
 } // namespace Engine

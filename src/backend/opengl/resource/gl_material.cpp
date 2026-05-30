@@ -12,6 +12,7 @@
 #include "core/gl_view.h"
 #include "gl_texture.h"
 #include "gl_uniform_buffer.h"
+#include "gl_ubo_util.h"
 #include "resource/material_asset.h"
 
 namespace Engine {
@@ -129,9 +130,7 @@ void GLMaterial::update(const MaterialAsset& material) {
 }
 
 void GLMaterial::bind(uint32_t bindingPoint) const {
-    if (m_ubo) {
-        m_ubo->bindBase(bindingPoint);
-    }
+    bindUBO(m_ubo, bindingPoint);
 }
 
 void GLMaterial::bindTextures(const GLView& view) const {
