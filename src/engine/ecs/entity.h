@@ -14,9 +14,9 @@ namespace Engine {
  * enjoy.
  *
  * Conceptually distinct from StorageIndex (cross-entity reference vs raw ECS
- * slot handle) but currently the same type. A newtype split is tracked in
- * docs/misc/gaps.md - deferred until a real second consumer of StorageIndex
- * appears outside this alias and Handle<T>.
+ * slot handle) but currently the same type. A newtype split is deferred until
+ * a real second consumer of StorageIndex appears outside this alias and
+ * Handle<T>.
  */
 using EntityId = StorageIndex;
 
