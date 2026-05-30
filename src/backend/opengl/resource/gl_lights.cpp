@@ -92,10 +92,8 @@ void GLLights::update(const std::vector<LightData>& lights) {
     data.lightCount = static_cast<int>(lightCount);
     m_lightCount = lightCount;
 
-    // GL_STATIC_DRAW preserves the historical ctor default (this UBO is
-    // rewritten per frame, so DYNAMIC would arguably fit better - left as-is
-    // to keep this a pure dedup).
-    uploadUBOIfChanged(m_ubo, m_lastData, data, GL_STATIC_DRAW);
+    // Rewritten every frame, so DYNAMIC_DRAW is the correct usage hint.
+    uploadUBOIfChanged(m_ubo, m_lastData, data, GL_DYNAMIC_DRAW);
 }
 
 void GLLights::bind(uint32_t bindingPoint) const {
