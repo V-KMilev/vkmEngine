@@ -89,6 +89,35 @@ template class RemoveComponentCommand<Animation>;
 template class AddComponentCommand<MeshLOD>;
 template class RemoveComponentCommand<MeshLOD>;
 
+template <typename T>
+void ComponentEditCommand<T>::redo(Scene& scene, EditorState&) {
+    if (!scene.isAlive(m_entity) || !scene.has<T>(m_entity)) return;
+    scene.get<T>(m_entity) = m_after;
+}
+
+template <typename T>
+void ComponentEditCommand<T>::undo(Scene& scene, EditorState&) {
+    if (!scene.isAlive(m_entity) || !scene.has<T>(m_entity)) return;
+    scene.get<T>(m_entity) = m_before;
+}
+
+template <typename T>
+bool ComponentEditCommand<T>::tryMerge(Command& incoming) {
+    // Coalesce only with another edit of the same component type on the same
+    // entity. The chain start (m_before) stays; only m_after slides forward.
+    auto* p = dynamic_cast<ComponentEditCommand<T>*>(&incoming);
+    if (!p || p->m_entity != m_entity) return false;
+    m_after = p->m_after;
+    return true;
+}
+
+template class ComponentEditCommand<Light>;
+template class ComponentEditCommand<Camera>;
+template class ComponentEditCommand<ReflectionProbe>;
+template class ComponentEditCommand<Mesh>;
+template class ComponentEditCommand<Name>;
+template class ComponentEditCommand<Animation>;
+
 EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
     EntitySnapshot s;
     s.slotIndex = id.index;
@@ -96,6 +125,7 @@ EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
     if (scene.has<Mesh>(id))      s.mesh      = scene.get<Mesh>(id);
     if (scene.has<Light>(id))     s.light     = scene.get<Light>(id);
     if (scene.has<Camera>(id))    s.camera    = scene.get<Camera>(id);
+    if (scene.has<ReflectionProbe>(id)) s.reflectionProbe = scene.get<ReflectionProbe>(id);
     if (scene.has<Animation>(id)) s.animation = scene.get<Animation>(id);
     if (scene.has<Name>(id))      s.name      = scene.get<Name>(id);
     if (scene.has<MeshLOD>(id))   s.meshLod   = scene.get<MeshLOD>(id);
@@ -110,6 +140,7 @@ void EntitySnapshot::apply(Scene& scene, EntityId id) const {
     if (mesh      && !scene.has<Mesh>(id))      { Mesh      v = *mesh;      scene.add(e, std::move(v)); }
     if (light     && !scene.has<Light>(id))     { Light     v = *light;     scene.add(e, std::move(v)); }
     if (camera    && !scene.has<Camera>(id))    { Camera    v = *camera;    scene.add(e, std::move(v)); }
+    if (reflectionProbe && !scene.has<ReflectionProbe>(id)) { ReflectionProbe v = *reflectionProbe; scene.add(e, std::move(v)); }
     if (animation && !scene.has<Animation>(id)) { Animation v = *animation; scene.add(e, std::move(v)); }
     if (name      && !scene.has<Name>(id))      { Name      v = *name;      scene.add(e, std::move(v)); }
     if (meshLod   && !scene.has<MeshLOD>(id))   { MeshLOD   v = *meshLod;   scene.add(e, std::move(v)); }

@@ -244,6 +244,7 @@ void InspectorPanel::drawTransformSection(Scene& scene, EditorState& state, Enti
     const bool open = beginComponentCard("Transform", ACCENT_TRANSFORM, true);
     if (open) {
         auto& t = scene.get<Transform>(id);
+        const Transform before = t;  // pre-edit value for the coalescing undo command
         bool changed = false;
         changed |= drawVec3Control("Position", glm::value_ptr(t.position), 0.0f, 0.1f);
 
@@ -256,6 +257,9 @@ void InspectorPanel::drawTransformSection(Scene& scene, EditorState& state, Enti
         changed |= drawVec3Control("Scale", glm::value_ptr(t.scale), 1.0f, 0.01f);
 
         if (changed) {
+            // Coalescing command - tryMerge collapses the per-frame drag stream
+            // into one undo step, mirroring the gizmo's drag-end push.
+            state.commands.push(std::make_unique<TransformChangeCommand>(id, before, t, "Transform"));
             HierarchyOperations::markDirty(scene, id);
             state.markSceneDirty();
         }
@@ -276,6 +280,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
     const bool open = beginComponentCard("Mesh", ACCENT_MESH, true, &remove);
     if (open) {
         auto& mesh = scene.get<Mesh>(id);
+        const Mesh before = mesh;  // pre-edit value for the undo command
         bool changed = false;
 
         drawPropertyLabel("Visible");      changed |= ImGui::Checkbox("##MeshVis", &mesh.visible);
@@ -327,7 +332,10 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
             ImGui::TextDisabled("No material assigned");
         }
 
-        if (changed) state.markSceneDirty();
+        if (changed) {
+            state.commands.push(std::make_unique<ComponentEditCommand<Mesh>>(id, before, mesh, "Edit Mesh"));
+            state.markSceneDirty();
+        }
     }
     endComponentCard();
     if (remove) {
@@ -426,6 +434,7 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
     const bool open = beginComponentCard("Light", ACCENT_LIGHT, true, &remove);
     if (open) {
         auto& light = scene.get<Light>(id);
+        const Light before = light;  // pre-edit value for the coalescing undo command
         bool changed = false;
 
         drawPropertyLabel("Type");
@@ -493,7 +502,10 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
         }
         drawPropertyLabel("Enabled");  changed |= ImGui::Checkbox("##LEn", &light.enabled);
 
-        if (changed) state.markSceneDirty();
+        if (changed) {
+            state.commands.push(std::make_unique<ComponentEditCommand<Light>>(id, before, light, "Edit Light"));
+            state.markSceneDirty();
+        }
     }
     endComponentCard();
     if (remove) {
@@ -509,6 +521,7 @@ void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state
     const bool open = beginComponentCard("Reflection Probe", ACCENT_LIGHT, true, &remove);
     if (open) {
         auto& probe = scene.get<ReflectionProbe>(id);
+        const ReflectionProbe before = probe;  // pre-edit value for the undo command
         bool changed = false;
 
         // HDR source path. Bumping bakeVersion when the path changes
@@ -569,7 +582,10 @@ void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state
 
         ImGui::TextDisabled("Bake version: %d", probe.bakeVersion);
 
-        if (changed) state.markSceneDirty();
+        if (changed) {
+            state.commands.push(std::make_unique<ComponentEditCommand<ReflectionProbe>>(id, before, probe, "Edit Reflection Probe"));
+            state.markSceneDirty();
+        }
     }
     endComponentCard();
     if (remove) {
@@ -586,6 +602,7 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
     const bool open = beginComponentCard("Camera", ACCENT_CAMERA, true, &remove);
     if (open) {
         auto& cam = scene.get<Camera>(id);
+        const Camera before = cam;  // pre-edit value for the undo command
         bool changed = false;
 
         drawPropertyLabel("Projection");
@@ -612,14 +629,20 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
         drawPropertyLabel("Exposure");  changed |= ImGui::DragFloat("##CExp", &cam.exposure, 0.01f, 0.0f, 10.0f, "%.2f");
         drawPropertyLabel("Active");    changed |= ImGui::Checkbox("##CAct", &cam.active);
 
+        // "Set as Main" flips active across every camera, so a single-entity
+        // ComponentEditCommand can't capture it; left non-undoable for now
+        // (a multi-camera command is a future slice).
         if (ImGui::Button("Set as Main Camera", ImVec2(-1, 0))) {
             scene.forEach<Camera>([&](EntityId other, Camera& c) {
                 c.active = (other == id);
             });
-            changed = true;
+            state.markSceneDirty();
         }
 
-        if (changed) state.markSceneDirty();
+        if (changed) {
+            state.commands.push(std::make_unique<ComponentEditCommand<Camera>>(id, before, cam, "Edit Camera"));
+            state.markSceneDirty();
+        }
     }
     endComponentCard();
     if (remove) {
@@ -635,6 +658,12 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
     const bool open = beginComponentCard("Animation", ACCENT_ANIM, true, &remove);
     if (open) {
         auto& anim = scene.get<Animation>(id);
+        // Undo snapshot. Only authoring edits (length, keyframes) push a command;
+        // play/pause/stop/scrub never set `changed`, so they stay non-undoable.
+        // The snapshot does include time/playing, so undoing an authoring edit
+        // also restores the scrub position - acceptable since edits are normally
+        // made while paused.
+        const Animation before = anim;
 
         const float GAP = 8.0f;
         float ih = ImGui::GetFrameHeight();
@@ -780,7 +809,10 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
             ImGui::TreePop();
         }
 
-        if (changed) state.markSceneDirty();
+        if (changed) {
+            state.commands.push(std::make_unique<ComponentEditCommand<Animation>>(id, before, anim, "Edit Animation"));
+            state.markSceneDirty();
+        }
     }
     endComponentCard();
     if (remove) {
