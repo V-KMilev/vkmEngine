@@ -10,31 +10,12 @@ namespace Engine {
 class ResourceManager;
 
 /**
- * @brief Generate a solid color texture.
- * 
- * Creates a 1x1 texture with the specified color.
- * Useful for procedural materials or testing.
- * 
- * @param color RGBA color (0-1 range).
- * @param resourceManager Resource manager to add the texture to.
- * @param srgb Whether to use sRGB color space.
- * @return Handle to the generated texture.
- */
-TextureHandle generateSolidColorTexture(
-    glm::vec4 color,
-    ResourceManager& resourceManager,
-    bool srgb = false
-);
-
-/**
  * @brief Create a persistent solid-color texture (serializes into the scene).
  *
- * Like @ref generateSolidColorTexture, but stamps a `{"kind":"solid",
- * "color":[r,g,b,a],"srgb":bool}` source descriptor and a deterministic
- * AssetId so the texture round-trips through save/load (re-created by the
- * "solid" AssetFactory). Use this for user-authored procedural textures (the
- * Material Editor's "Generate texture" action); generateSolidColorTexture
- * stays the unstamped, transient runtime-fallback path.
+ * Stamps a `{"kind":"solid","color":[r,g,b,a],"srgb":bool}` source descriptor
+ * and a deterministic AssetId so the texture round-trips through save/load
+ * (re-created by the "solid" AssetFactory). Use for user-authored procedural
+ * textures (the Material Editor's "Generate texture" action).
  *
  * @param color RGBA color (0-1 range).
  * @param resourceManager Resource manager to add the texture to.

@@ -19,9 +19,7 @@ class ResourceManager;
  * Adding a new pass touches the backend's registration file only - the
  * application's pass-list code stays generic.
  *
- * Lookup is by string name and matches RenderPass::getName() so the
- * editor's pass introspection (Pipeline tab, Render Graph visualizer)
- * shows the same identifier the factory uses.
+ * Lookup is by string name and matches RenderPass::getName().
  *
  * Registration runs once at backend init, before any frame; no mutex.
  */
@@ -48,15 +46,6 @@ class RenderPassFactory {
             const std::string& name,
             ResourceManager& resources
         ) const;
-
-        /// Snapshot of every registered name. Used by editor introspection.
-        std::vector<std::string> registeredNames() const;
-
-        /// True when @p name has a registered builder.
-        bool has(const std::string& name) const;
-
-        /// Drop all registrations.
-        void clear();
 
     private:
         RenderPassFactory() = default;

@@ -318,16 +318,6 @@ std::vector<std::string> variantKeyToDefines(const GLView::ShaderVariantKey& key
 
 GLShader* GLView::resolveShaderVariant(
     const ShaderHandle& handle,
-    uint32_t featureFlags,
-    const ResourceManager& resources)
-{
-    ShaderVariantKey key;
-    key.materialFlags = featureFlags;
-    return resolveShaderVariant(handle, key, resources);
-}
-
-GLShader* GLView::resolveShaderVariant(
-    const ShaderHandle& handle,
     const ShaderVariantKey& key,
     const ResourceManager& resources)
 {

@@ -2,8 +2,6 @@
 
 #include "platform/window/window.h"
 
-#include <algorithm>
-
 #include "logger.h"
 #include "debug/print_helper.h"
 

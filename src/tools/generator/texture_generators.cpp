@@ -65,16 +65,6 @@ TextureAsset makeDefaultNormalAsset() {
 }
 }
 
-TextureHandle generateSolidColorTexture(
-    glm::vec4 color,
-    ResourceManager& resourceManager,
-    bool srgb
-) {
-    // Anonymous solid-color textures aren't deduped or stamped with a
-    // builtin source - they're only suitable for transient runtime use.
-    return resourceManager.add(makeSolidColorAsset(color, srgb));
-}
-
 TextureHandle generateWhiteTexture(ResourceManager& rm) {
     return getOrCreateNamed(rm, "builtin:white",
         {{"kind", "builtin"}, {"type", "white"}},

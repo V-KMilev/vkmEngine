@@ -35,19 +35,4 @@ std::unique_ptr<RenderPass> RenderPassFactory::create(
     return it->second(resources);
 }
 
-std::vector<std::string> RenderPassFactory::registeredNames() const {
-    std::vector<std::string> names;
-    names.reserve(m_builders.size());
-    for (const auto& [k, _] : m_builders) names.push_back(k);
-    return names;
-}
-
-bool RenderPassFactory::has(const std::string& name) const {
-    return m_builders.find(name) != m_builders.end();
-}
-
-void RenderPassFactory::clear() {
-    m_builders.clear();
-}
-
 } // namespace Engine
