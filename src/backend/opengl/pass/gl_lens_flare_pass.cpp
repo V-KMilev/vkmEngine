@@ -86,7 +86,7 @@ GLLensFlarePass::GLLensFlarePass(ShaderHandle shader)
 
 GLLensFlarePass::~GLLensFlarePass() = default;
 
-void GLLensFlarePass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLLensFlarePass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // Reuses GLSceneTarget, which is owned and resized by GLBackend.
 }
 

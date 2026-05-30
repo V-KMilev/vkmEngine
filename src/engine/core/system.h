@@ -182,7 +182,7 @@ class System {
          *        work overlays the rendered scene), and on main in
          *        single-threaded mode (right after update()).
          */
-        virtual void executeBackend(FrameContext& /*ctx*/) {}
+        virtual void executeBackend(FrameContext& ctx) {}
 
         bool isEnabled() const { return m_enabled; }
         void setEnabled(bool enabled) { m_enabled = enabled; }

@@ -197,7 +197,7 @@ GLShadowPass::GLShadowPass(ShaderHandle depthShader)
 {
 }
 
-void GLShadowPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLShadowPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // Shadow map resolution is fixed and independent of the window size.
 }
 

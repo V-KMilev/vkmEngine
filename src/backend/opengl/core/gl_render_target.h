@@ -98,7 +98,7 @@ class GLFramebufferTarget : public RenderTarget {
         uint32_t getHeight() const override { return m_height; }
 
         /** @brief Get the color attachment texture ID for sampling. */
-        GLuint getColorTexture() const { return m_colorTexture ? m_colorTexture->getID() : 0; }
+        GLuint getColorTexture() const override { return m_colorTexture ? m_colorTexture->getID() : 0; }
 
     private:
         void createAttachments() {

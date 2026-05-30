@@ -28,11 +28,11 @@ void CommandStack::push(std::unique_ptr<Command> cmd) {
     m_undo.push_back(std::move(cmd));
 
     // Bound the history. Drop oldest entries when the cap is exceeded.
-    if (m_undo.size() > kHistoryLimit) {
-        const size_t dropped = m_undo.size() - kHistoryLimit;
+    if (m_undo.size() > HISTORY_LIMIT) {
+        const size_t dropped = m_undo.size() - HISTORY_LIMIT;
         m_undo.erase(m_undo.begin(), m_undo.begin() + dropped);
         LOG_WARNING("History limit %zu reached; dropped %zu oldest command(s)",
-            kHistoryLimit, dropped);
+            HISTORY_LIMIT, dropped);
     }
     LOG_VERBOSE("Pushed '%s' (undo size %zu)", label, m_undo.size());
 }
