@@ -3,7 +3,7 @@
 #include <memory>
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 
 namespace Core {
     class ScreenTriangle;
@@ -21,7 +21,7 @@ namespace Engine {
  * Runs after opaque + skybox + grid and before bloom. No-ops when disabled or
  * when the G-buffer is not ready.
  */
-class GLSSRPass : public RenderPass {
+class GLSSRPass : public GLRenderPass {
     public:
         GLSSRPass() = delete;
         ~GLSSRPass() override;
@@ -36,7 +36,7 @@ class GLSSRPass : public RenderPass {
 
     public:
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
             // Render into PostScratch, blit back into SceneHDRResolved so the

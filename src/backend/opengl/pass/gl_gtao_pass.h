@@ -3,7 +3,7 @@
 #include <memory>
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 
 namespace Core {
     class ScreenTriangle;
@@ -18,7 +18,7 @@ namespace Engine {
  * single-channel AO factor the forward PBR pass multiplies into the ambient
  * term. Runs after the prepass and before the forward pass.
  */
-class GLGTAOPass : public RenderPass {
+class GLGTAOPass : public GLRenderPass {
     public:
         GLGTAOPass() = delete;
         ~GLGTAOPass() override;
@@ -33,7 +33,7 @@ class GLGTAOPass : public RenderPass {
 
     public:
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         /// AO has no explicit pass toggle; it runs whenever ao.enabled is set.
         /// ao.enabled is pre-patched false for diagnostic/wireframe frames, so

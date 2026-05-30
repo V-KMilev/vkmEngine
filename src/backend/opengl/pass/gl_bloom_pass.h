@@ -3,7 +3,7 @@
 #include <memory>
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 
 namespace Core {
     class ScreenTriangle;
@@ -20,7 +20,7 @@ namespace Engine {
  * the composite pass blends in before exposure + AgX. Runs after the scene
  * passes and before composite.
  */
-class GLBloomPass : public RenderPass {
+class GLBloomPass : public GLRenderPass {
     public:
         GLBloomPass() = delete;
         ~GLBloomPass() override;
@@ -35,7 +35,7 @@ class GLBloomPass : public RenderPass {
 
     public:
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
             builder.read(RGResource::SceneHDRResolved);

@@ -3,7 +3,7 @@
 #include <memory>
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 #include "resource/gl_mesh.h"
 
 namespace Engine {
@@ -15,7 +15,7 @@ namespace Engine {
  * func LEQUAL, no depth write). Outputs linear radiance - the composite pass
  * tone-maps it together with lit geometry. No-ops until the IBL bake is ready.
  */
-class GLSkyboxPass : public RenderPass {
+class GLSkyboxPass : public GLRenderPass {
     public:
         GLSkyboxPass() = delete;
         ~GLSkyboxPass() override = default;
@@ -30,7 +30,7 @@ class GLSkyboxPass : public RenderPass {
 
     public:
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         /// Skip the background draw when the user hides the skybox
         /// (EnvironmentConfig::skybox.enabled) - IBL lighting still applies.

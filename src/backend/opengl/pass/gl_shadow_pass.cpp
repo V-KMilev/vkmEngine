@@ -192,7 +192,7 @@ void buildCubeFaceMatrices(const glm::vec3& pos, float range, glm::mat4 out[6]) 
 } // namespace
 
 GLShadowPass::GLShadowPass(ShaderHandle depthShader)
-    : RenderPass("GLShadowPass")
+    : GLRenderPass("GLShadowPass")
     , m_depthShader(depthShader)
 {
 }
@@ -201,15 +201,9 @@ void GLShadowPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint
     // Shadow map resolution is fixed and independent of the window size.
 }
 
-void GLShadowPass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLShadowPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLShadowPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
 
     // Skip the whole pass when nothing that changes a shadow map moved. The
     // first frame (m_havePrev == false) always renders so the atlas + UBO are
@@ -217,7 +211,6 @@ void GLShadowPass::execute(RenderGraphContext& rg) {
     const uint64_t sig = shadowSignature(view);
     if (m_havePrev && sig == m_lastSig) return;
 
-    auto& gl         = static_cast<GLBackend&>(backend);
     auto& glView     = gl.getView();
     auto& atlas      = *rg.resource<GLShadowAtlas>(RGResource::ShadowAtlas);
     auto& shadowData = glView.getShadowData();

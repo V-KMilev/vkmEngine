@@ -3,7 +3,7 @@
 #include <memory>
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 
 namespace Core {
     class ScreenTriangle;
@@ -19,7 +19,7 @@ namespace Engine {
  * (EnvironmentConfig::dof) - a no-op when off, so the verified pipeline is
  * unchanged until opted in.
  */
-class GLDofPass : public RenderPass {
+class GLDofPass : public GLRenderPass {
     public:
         GLDofPass() = delete;
         ~GLDofPass() override;
@@ -34,7 +34,7 @@ class GLDofPass : public RenderPass {
 
     public:
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
             // Three-target dance: render into PostScratch, then blit back into

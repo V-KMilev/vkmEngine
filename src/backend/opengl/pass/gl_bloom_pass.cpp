@@ -30,7 +30,7 @@ bool GLBloomPass::enabledForView(const RenderView& view) const {
 }
 
 GLBloomPass::GLBloomPass(ShaderHandle downsampleShader, ShaderHandle upsampleShader)
-    : RenderPass("GLBloomPass")
+    : GLRenderPass("GLBloomPass")
     , m_downShader(downsampleShader)
     , m_upShader(upsampleShader)
     , m_screenTri(std::make_unique<Core::ScreenTriangle>())
@@ -43,16 +43,8 @@ void GLBloomPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint3
     // GLBloom is owned and resized by GLBackend.
 }
 
-void GLBloomPass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLBloomPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLBloomPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
-
-    auto& gl    = static_cast<GLBackend&>(backend);
     auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     auto& bloom = *rg.resource<GLBloom>(RGResource::BloomChain);
     if (!hdr.isReady() || !bloom.isReady()) return;

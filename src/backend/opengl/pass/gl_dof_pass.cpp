@@ -16,6 +16,7 @@
 
 #include "gl_screen_triangle.h"
 #include "gl_blit.h"
+#include "gl_fullscreen_post.h"
 
 #include "system/render/render_view.h"
 #include "resource/resource_manager.h"
@@ -27,7 +28,7 @@ bool GLDofPass::enabledForView(const RenderView& view) const {
 }
 
 GLDofPass::GLDofPass(ShaderHandle shader)
-    : RenderPass("GLDofPass")
+    : GLRenderPass("GLDofPass")
     , m_shader(shader)
     , m_screenTri(std::make_unique<Core::ScreenTriangle>())
 {
@@ -39,17 +40,9 @@ void GLDofPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_
     // Scratch / HDR / G-buffer are owned and resized by GLBackend.
 }
 
-void GLDofPass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLDofPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLDofPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
-    auto& gl      = static_cast<GLBackend&>(backend);
     auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     auto& gbuffer = *rg.resource<GLGBuffer>(RGResource::GBufferNormal);
     auto& scratch = *rg.resource<GLPostScratch>(RGResource::PostScratch);
@@ -58,11 +51,7 @@ void GLDofPass::execute(RenderGraphContext& rg) {
     GLShader* shader = gl.getView().resolveShader(m_shader, resources);
     if (!shader) return;
 
-    auto& ctx = gl.getContext();
-    ctx.setDepthTest(false);
-    ctx.setDepthWrite(false);
-    ctx.setBlending(false);
-    ctx.setFaceCulling(false);
+    beginFullscreenPost(gl.getContext());
 
     scratch.bindForRender();
 
@@ -76,12 +65,9 @@ void GLDofPass::execute(RenderGraphContext& rg) {
 
     m_screenTri->draw();
 
-    Core::blitColor(scratch.fboId(), hdr.resolveFboId(),
-        static_cast<int>(scratch.width()), static_cast<int>(scratch.height()),
-        static_cast<int>(hdr.width()),     static_cast<int>(hdr.height()), GL_NEAREST);
-
-    ctx.setDepthTest(true);
-    ctx.setDepthWrite(true);
+    endFullscreenPost(gl.getContext(),
+        scratch.fboId(), static_cast<int>(scratch.width()), static_cast<int>(scratch.height()),
+        hdr.resolveFboId(), static_cast<int>(hdr.width()), static_cast<int>(hdr.height()));
 }
 
 } // namespace Engine

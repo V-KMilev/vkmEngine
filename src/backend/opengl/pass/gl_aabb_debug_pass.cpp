@@ -23,7 +23,7 @@ bool GLAABBDebugPass::enabledForView(const RenderView& view) const {
 
 
 GLAABBDebugPass::GLAABBDebugPass(ShaderHandle shader)
-    : RenderPass("GLAABBDebugPass")
+    : GLRenderPass("GLAABBDebugPass")
     , m_shader(shader)
 {
     initialize();
@@ -71,15 +71,9 @@ void GLAABBDebugPass::initialize() {
     m_aabb = std::make_unique<GLMesh>(wireframeMesh);
 }
 
-void GLAABBDebugPass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLAABBDebugPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLAABBDebugPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
 
     if (!view.environment.aabbDebug.enabled) return;
 
@@ -109,7 +103,7 @@ void GLAABBDebugPass::execute(RenderGraphContext& rg) {
     if (!hdr.isReady()) return;
     hdr.bindForOverlay();
 
-    auto& glView = static_cast<GLBackend&>(backend).getView();
+    auto& glView = gl.getView();
     GLShader* shader = glView.resolveShader(m_shader, resources);
     if (!shader) return;
 

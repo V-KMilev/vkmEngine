@@ -28,7 +28,7 @@ bool GLExposurePass::enabledForView(const RenderView& view) const {
 }
 
 GLExposurePass::GLExposurePass(ShaderHandle lumShader, ShaderHandle adaptShader)
-    : RenderPass("GLExposurePass")
+    : GLRenderPass("GLExposurePass")
     , m_lumShader(lumShader)
     , m_adaptShader(adaptShader)
     , m_screenTri(std::make_unique<Core::ScreenTriangle>())
@@ -41,17 +41,9 @@ void GLExposurePass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, ui
     // GLAutoExposure targets are fixed-size and viewport-independent.
 }
 
-void GLExposurePass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLExposurePass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLExposurePass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
-
-    auto& gl  = static_cast<GLBackend&>(backend);
     auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     auto& ae = *rg.resource<GLAutoExposure>(RGResource::AdaptedLuminance);
     if (!hdr.isReady()) return;

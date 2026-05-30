@@ -3,7 +3,7 @@
 #include <memory>
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 
 namespace Core {
     class ScreenTriangle;
@@ -21,7 +21,7 @@ namespace Engine {
  * one mip via OcclusionOracle to AABB-test occluders one frame late.
  * Gated by env.occlusion.useHiZ; off by default.
  */
-class GLHiZPass : public RenderPass {
+class GLHiZPass : public GLRenderPass {
     public:
         GLHiZPass() = delete;
         ~GLHiZPass() override;
@@ -38,7 +38,7 @@ class GLHiZPass : public RenderPass {
         bool enabledForView(const RenderView& view) const override;
 
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
             builder.read(RGResource::GBufferPosition);

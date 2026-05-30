@@ -116,7 +116,7 @@ std::unique_ptr<Core::Texture2D> makeDirtTexture() {
 } // namespace
 
 GLCompositePass::GLCompositePass(ShaderHandle shader)
-    : RenderPass("GLCompositePass")
+    : GLRenderPass("GLCompositePass")
     , m_shader(shader)
     , m_screenTri(std::make_unique<Core::ScreenTriangle>())
 {
@@ -128,17 +128,9 @@ void GLCompositePass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, u
     // The HDR target is owned and resized by GLBackend; nothing to do here.
 }
 
-void GLCompositePass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLCompositePass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLCompositePass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
-
-    auto& gl  = static_cast<GLBackend&>(backend);
     auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     if (!hdr.isReady()) return;
 
@@ -156,7 +148,7 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
     // the unchanged graph render into either destination cleanly.
     auto* backbuffer = rg.resource<RenderTarget>(RGResource::Backbuffer);
     if (backbuffer) backbuffer->bind();
-    else backend.getDefaultTarget().bind();
+    else gl.getDefaultTarget().bind();
 
     applyEditorViewport(glContext, view);
 
@@ -241,7 +233,7 @@ void GLCompositePass::execute(RenderGraphContext& rg) {
         // Restore previous bindings disturbed by the overlay resolve blits.
         hdr.bindResolvedColor(0);
         if (backbuffer) backbuffer->bind();
-        else backend.getDefaultTarget().bind();
+        else gl.getDefaultTarget().bind();
         // bind() reset the viewport - apply the editor-viewport override again.
         applyEditorViewport(glContext, view);
     } else {
