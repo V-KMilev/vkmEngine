@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <unordered_set>
 
+#include "ecs/component/mesh_lod.h"
 #include "framework/editor_common.h"
 #include "framework/editor_actions.h"
 #include "framework/material_preview_session.h"
@@ -116,6 +118,30 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
         ImGui::EndTabBar();
     }
 
+    // Shared rename modal, opened from either tab's context menu. Rendered at
+    // panel scope (not inside the tab child) so the popup id resolves cleanly.
+    if (m_renameOpen) {
+        ImGui::OpenPopup("Rename Asset");
+        m_renameOpen = false;
+    }
+    if (ImGui::BeginPopupModal("Rename Asset", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::SetNextItemWidth(280.0f);
+        const bool commit = ImGui::InputText("##rnbuf", m_renameBuf, sizeof(m_renameBuf),
+                                              ImGuiInputTextFlags_EnterReturnsTrue);
+        const bool ok     = ImGui::Button("Rename") || commit;
+        ImGui::SameLine();
+        const bool cancel = ImGui::Button("Cancel");
+        if (ok && m_renameBuf[0] != '\0') {
+            if      (m_renameMat)  resources.rename(m_renameMat,  m_renameBuf);
+            else if (m_renameMesh) resources.rename(m_renameMesh, m_renameBuf);
+            state.markSceneDirty();
+            m_renameMat = {}; m_renameMesh = {};
+            ImGui::CloseCurrentPopup();
+        }
+        if (cancel) { m_renameMat = {}; m_renameMesh = {}; ImGui::CloseCurrentPopup(); }
+        ImGui::EndPopup();
+    }
+
     ImGui::End();
 }
 
@@ -130,6 +156,13 @@ void AssetBrowserPanel::drawMaterials(EditorContext& ec) {
     const float step = cellWidth(m_cell) + ImGui::GetStyle().ItemSpacing.x;
     const int   cols = (std::max)(1, static_cast<int>(
                             ImGui::GetContentRegionAvail().x / step));
+
+    // Materials referenced by any entity - delete is disabled for these so we
+    // never leave a Mesh component pointing at a freed handle (the render path
+    // get()s the material with no liveness guard).
+    std::unordered_set<uint32_t> usedMats;
+    scene.forEach<Mesh>([&](EntityId, const Mesh& m) { if (m.material) usedMats.insert(m.material.id()); });
+    MaterialHandle toDelete{};
 
     int i = 0;
     resources.forEachOfType<MaterialAsset>([&](MaterialHandle h, const MaterialAsset& a) {
@@ -159,6 +192,19 @@ void AssetBrowserPanel::drawMaterials(EditorContext& ec) {
             }
             ImGui::EndDisabled();
             if (!canAssign) ImGui::TextDisabled("(select a mesh entity to assign)");
+
+            ImGui::Separator();
+            if (ImGui::MenuItem("Rename...")) {
+                snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", a.name.c_str());
+                m_renameMat  = h;
+                m_renameMesh = {};
+                m_renameOpen = true;
+            }
+            const bool inUse = usedMats.count(h.id()) != 0;
+            ImGui::BeginDisabled(inUse);
+            if (ImGui::MenuItem("Delete")) toDelete = h;
+            ImGui::EndDisabled();
+            if (inUse) ImGui::TextDisabled("(in use - reassign before deleting)");
             ImGui::EndPopup();
         }
 
@@ -174,6 +220,12 @@ void AssetBrowserPanel::drawMaterials(EditorContext& ec) {
         if (++i % cols != 0) ImGui::SameLine();
     });
 
+    if (toDelete) {
+        ec.materialPreviews.evict(materialKey(toDelete.id()));
+        resources.remove(toDelete);
+        state.markSceneDirty();
+    }
+
     if (i == 0) ImGui::TextDisabled("No materials. Import a model or duplicate one.");
 }
 
@@ -188,6 +240,16 @@ void AssetBrowserPanel::drawMeshes(EditorContext& ec) {
     const float step = cellWidth(m_cell) + ImGui::GetStyle().ItemSpacing.x;
     const int   cols = (std::max)(1, static_cast<int>(
                             ImGui::GetContentRegionAvail().x / step));
+
+    // Meshes referenced by any entity (Mesh.mesh or any MeshLOD level) - delete
+    // is disabled for these so the render path never get()s a freed handle.
+    std::unordered_set<uint32_t> usedMeshes;
+    scene.forEach<Mesh>([&](EntityId, const Mesh& m) { if (m.mesh) usedMeshes.insert(m.mesh.id()); });
+    scene.forEach<MeshLOD>([&](EntityId, const MeshLOD& lod) {
+        for (int j = 0; j < lod.count && j < MeshLOD::MAX_LEVELS; ++j)
+            if (lod.levels[j]) usedMeshes.insert(lod.levels[j].id());
+    });
+    MeshHandle toDelete{};
 
     int i = 0;
     resources.forEachOfType<MeshAsset>([&](MeshHandle h, const MeshAsset& a) {
@@ -213,6 +275,19 @@ void AssetBrowserPanel::drawMeshes(EditorContext& ec) {
             }
             ImGui::EndDisabled();
             if (!canAssign) ImGui::TextDisabled("(select a mesh entity to assign)");
+
+            ImGui::Separator();
+            if (ImGui::MenuItem("Rename...")) {
+                snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", a.name.c_str());
+                m_renameMesh = h;
+                m_renameMat  = {};
+                m_renameOpen = true;
+            }
+            const bool inUse = usedMeshes.count(h.id()) != 0;
+            ImGui::BeginDisabled(inUse);
+            if (ImGui::MenuItem("Delete")) toDelete = h;
+            ImGui::EndDisabled();
+            if (inUse) ImGui::TextDisabled("(in use - reassign before deleting)");
             ImGui::EndPopup();
         }
 
@@ -222,6 +297,12 @@ void AssetBrowserPanel::drawMeshes(EditorContext& ec) {
 
         if (++i % cols != 0) ImGui::SameLine();
     });
+
+    if (toDelete) {
+        ec.materialPreviews.evict(meshKey(toDelete.id()));
+        resources.remove(toDelete);
+        state.markSceneDirty();
+    }
 
     if (i == 0) ImGui::TextDisabled("No meshes loaded. Use Import Model...");
 }
