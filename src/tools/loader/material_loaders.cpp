@@ -300,19 +300,4 @@ MaterialHandle loadMaterialFromDesc(
     return resourceManager.add(std::move(material));
 }
 
-MaterialHandle loadSimpleMaterial(
-    const std::string& albedoPath,
-    ResourceManager& resourceManager,
-    float roughness,
-    bool generateMipmaps
-) {
-    MaterialLoadDesc desc;
-    desc.albedoPath = albedoPath;
-    desc.roughness = roughness;
-    desc.metallic = 0.0f;  // Non-metallic by default
-    desc.generateMipmaps = generateMipmaps;
-
-    return loadMaterialFromDesc(desc, resourceManager);
-}
-
 } // namespace Engine

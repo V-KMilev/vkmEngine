@@ -26,7 +26,6 @@ class ThreadPool {
         static ThreadPool& get();
 
         size_t threadCount() const { return m_threads.size(); }
-        size_t taskCount() const { return m_tasks.size(); }
 
         void addTask(Task && task);
         void addTasks(std::vector<Task>&& tasks);

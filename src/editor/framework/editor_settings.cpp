@@ -3,7 +3,6 @@
 #include "framework/editor_settings.h"
 #include "framework/editor_state.h"
 
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <system_error>

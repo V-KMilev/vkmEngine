@@ -133,13 +133,6 @@ class GLView {
             }
         };
 
-        /// Backwards-compatible shorthand for callers that only need material
-        /// flags (no light/shadow gating yet). Wraps the key into a default-
-        /// bucket variant.
-        GLShader* resolveShaderVariant(const ShaderHandle& handle,
-                                       uint32_t featureFlags,
-                                       const ResourceManager& resources);
-
         /// Full-key variant resolve. Compiles a fresh program with the
         /// appropriate #defines on first lookup; cached thereafter.
         GLShader* resolveShaderVariant(const ShaderHandle& handle,
