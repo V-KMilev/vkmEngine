@@ -58,14 +58,15 @@ class AssetFactories {
 /**
  * @brief Serialize / deserialize the asset graph referenced by a Scene.
  *
- * Saves emit only the meshes + materials actually referenced by Mesh
- * components in the scene. Loads recreate them by dispatching each
+ * Saves emit the meshes, materials, and textures actually referenced by the
+ * scene (plus MeshLOD level meshes). Loads recreate them by dispatching each
  * descriptor through AssetFactories; assets with no source are skipped on
- * save (silently - they can't be recreated anyway), and same-named assets
- * already in ResourceManager are skipped on load (idempotent re-loads).
+ * save (silently - they can't be recreated anyway), and assets already in
+ * ResourceManager (by AssetId) are skipped on load (idempotent re-loads).
  *
- * Textures aren't a top-level concept here: the material `folder` loader
- * rediscovers and loads them from disk.
+ * Textures are their own top-level section: saveAssetsForScene emits a
+ * `textures` array of every map a material references, and loadAssets
+ * recreates them via the texture factory before materials resolve their refs.
  */
 namespace AssetSerializer {
 

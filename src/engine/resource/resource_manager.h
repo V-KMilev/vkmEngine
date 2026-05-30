@@ -372,7 +372,9 @@ class ResourceManager {
             return AssetRange<T>{ &storageOfConst<T>(slot), slot.allocator.get() };
         }
 
-        /// @brief Global version counter, incremented on every commit().
+        /// @brief Global version counter. Bumped on handle-invalidating events
+        /// (clear / swap / swapSlot) - NOT on commit(), which bumps only the
+        /// per-resource + per-type versions. Backends key whole-cache drops on it.
         uint64_t getGlobalVersion() const { return m_globalVersion; }
 
         /**
