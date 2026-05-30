@@ -5,31 +5,21 @@
 
 #include <GL/glew.h>
 
+#include "gl_mip_chain_target.h"
+
 namespace Engine {
 
 /**
  * @brief Mip-chain render target for energy-conserving bloom (COD/Jimenez).
  *
- * One RGBA16F texture with an explicit mip chain plus a reusable FBO. The
- * bloom pass progressively downsamples the resolved HDR scene into the
- * chain, then additively upsamples back up; mip 0 holds the final bloom the
- * composite pass blends in. A per-level render-target mip chain is outside
- * what Core::Texture2D models, so the raw GL is deliberately kept
- * encapsulated here behind intention-revealing ops (bind / bindFbo /
- * attachMip) - passes never touch GL directly. Sized to half the viewport,
- * rebuilt on resize.
+ * An RGBA16F explicit mip chain (lifecycle in GLMipChainTarget). The bloom
+ * pass progressively downsamples the resolved HDR scene into the chain, then
+ * additively upsamples back up; mip 0 holds the final bloom the composite pass
+ * blends in (binds 0 when not ready - a harmless no-op since the composite
+ * zeroes bloom strength in that case). Sized to half the viewport, rebuilt on
+ * resize.
  */
-class GLBloom {
-    public:
-        GLBloom() = default;
-        ~GLBloom() { releaseAll(); }
-
-        GLBloom(const GLBloom& other) = delete;
-        GLBloom& operator=(const GLBloom& other) = delete;
-
-        GLBloom(GLBloom && other) = delete;
-        GLBloom& operator=(GLBloom && other) = delete;
-
+class GLBloom : public GLMipChainTarget {
     public:
         static constexpr int MAX_MIPS = 6;
 
@@ -44,44 +34,7 @@ class GLBloom {
             createChain();
         }
 
-        bool isReady()  const { return m_ready; }
-        int  mipCount() const { return m_mips; }
-
-        int mipWidth(int mip)  const { return std::max(m_baseW >> mip, 1); }
-        int mipHeight(int mip) const { return std::max(m_baseH >> mip, 1); }
-
-        /**
-         * @brief Bind the bloom mip chain as a sampler input.
-         *
-         * The shader selects a level via its u_srcLod uniform; mip 0 is the
-         * final bloom that the composite samples (binds 0 when not ready, a
-         * harmless no-op since the composite zeroes bloom strength in that case).
-         */
-        void bind(uint32_t slot) const {
-            glActiveTexture(GL_TEXTURE0 + slot);
-            glBindTexture(GL_TEXTURE_2D, m_tex);
-        }
-
-        /// Bind / unbind the chain's framebuffer for the down/upsample loop.
-        void bindFbo()   const { glBindFramebuffer(GL_FRAMEBUFFER, m_fbo); }
-        void unbindFbo() const { glBindFramebuffer(GL_FRAMEBUFFER, 0); }
-
-        /// Point COLOR_ATTACHMENT0 at one chain mip and size the viewport to
-        /// it - the render target for that down/upsample step.
-        void attachMip(int mip) const {
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                GL_TEXTURE_2D, m_tex, mip);
-            glViewport(0, 0, mipWidth(mip), mipHeight(mip));
-        }
-
     private:
-        void releaseAll() noexcept {
-            if (m_fbo) glDeleteFramebuffers(1, &m_fbo);
-            if (m_tex) glDeleteTextures(1, &m_tex);
-            m_fbo = 0;
-            m_tex = 0;
-        }
-
         void createChain() {
             releaseAll();
 
@@ -106,14 +59,6 @@ class GLBloom {
             glGenFramebuffers(1, &m_fbo);
             m_ready = true;
         }
-
-    private:
-        GLuint m_tex = 0;
-        GLuint m_fbo = 0;
-        int    m_baseW = 0;
-        int    m_baseH = 0;
-        int    m_mips  = 1;
-        bool   m_ready = false;
 };
 
 } // namespace Engine
