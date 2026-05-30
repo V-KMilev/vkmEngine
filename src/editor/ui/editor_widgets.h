@@ -48,16 +48,6 @@ bool beginComponentCard(const char* title, const ImVec4& accent,
                         bool defaultOpen, bool* removeClicked = nullptr);
 void endComponentCard();
 
-/**
- * @brief Tinted, accent-stripped CollapsingHeader without a body wrapper.
- *
- * Drop-in for ImGui::CollapsingHeader (no end pairing, no body indent) - used
- * so dense panels (Bottom, etc.) read in the same visual language as the
- * Inspector without restructuring.
- */
-bool styledCollapsingHeader(const char* title, const ImVec4& accent,
-                            bool defaultOpen = false);
-
 /// Consistent panel title: header-tinted text with a full-width accent rule.
 /// Replaces the old "TextUnformatted + Separator + Spacing" boilerplate.
 void drawPanelTitle(const char* title);
