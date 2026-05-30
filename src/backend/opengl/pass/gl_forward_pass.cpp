@@ -2,6 +2,7 @@
 
 #include "gl_forward_pass.h"
 
+#include <functional>
 #include <limits>
 #include <string>
 #include <vector>
@@ -54,6 +55,120 @@ const char* phaseSuffix(GLForwardPass::Phase p) {
         case GLForwardPass::Phase::All:         return "";
     }
     return "";
+}
+
+/**
+ * @brief The IBL chosen for this frame. A reflection probe overrides the global
+ * IBL when the camera is inside its radius (nearest such probe by centre
+ * distance wins). The forward pass binds one set per frame; per-batch selection
+ * is a future refinement.
+ */
+struct ActiveIBL {
+    const GLIBL* ibl        = nullptr;
+    float        intensity  = 1.0f;
+    int          probeIndex = -1;  ///< -1 = global (no probe)
+};
+
+ActiveIBL selectActiveIBL(const RenderView& view, GLView& glView, const GLIBL& globalIBL) {
+    ActiveIBL sel{ &globalIBL, view.environment.ibl.intensity, -1 };
+    const auto& probes = view.probes;
+    const auto& pool   = glView.getProbeIBLs();
+    const glm::vec3 cam = view.camera.position;
+    float bestDist = std::numeric_limits<float>::infinity();
+    for (std::size_t i = 0; i < probes.size() && i < pool.size(); ++i) {
+        const auto& p = probes[i];
+        if (!pool[i] || !pool[i]->isReady()) continue;
+        const float dist = glm::length(cam - p.position);
+        if (dist > p.radius) continue;
+        if (dist < bestDist) {
+            bestDist       = dist;
+            sel.ibl        = pool[i].get();
+            sel.intensity  = p.intensity;
+            sel.probeIndex = static_cast<int>(i);
+        }
+    }
+    return sel;
+}
+
+/**
+ * @brief Coarse per-frame shader-variant key pieces: a light-count bucket and a
+ * mask of which shadow-casting light kinds are present. Coarse on purpose - a
+ * handful of compile-time paths, not a unique program per scene.
+ */
+struct LightShadowKey {
+    uint8_t lightCountBucket = 0;
+    uint8_t shadowKindMask   = 0;
+};
+
+LightShadowKey computeLightShadowKey(const RenderView& view) {
+    LightShadowKey k;
+    const size_t n = view.lights.size();
+    if (n == 0)      k.lightCountBucket = 0;
+    else if (n == 1) k.lightCountBucket = 1;
+    else if (n <= 4) k.lightCountBucket = 2;
+    else             k.lightCountBucket = 3;
+    for (const auto& l : view.lights) {
+        if (l.shadowSlot < 0) continue;
+        switch (l.type) {
+            case LightType::Directional: k.shadowKindMask |= 0x1u; break;
+            case LightType::Point:       k.shadowKindMask |= 0x2u; break;
+            case LightType::Spot:        k.shadowKindMask |= 0x4u; break;
+            default: break;  // Rect / Disk don't cast shadows yet.
+        }
+    }
+    return k;
+}
+
+/**
+ * @brief WireframeOverShaded overlay: re-draw every opaque batch as line
+ * geometry into the HDR target's overlay attachment (composite blends it over
+ * the tonemapped scene with no display transform). Polygon offset pulls the
+ * wires in front of the fill. Runs in the Transparent phase only (it runs last).
+ */
+void drawWireframeOverlay(GLBackend& gl, GLView& glView, const RenderView& view,
+                          const ResourceManager& resources, GLSceneTarget& hdrT,
+                          ShaderHandle unlitHandle, ShaderHandle opaqueHandle,
+                          const std::function<void(GLShader*)>& applyFrameUniforms) {
+    ShaderHandle unlit = unlitHandle ? unlitHandle : opaqueHandle;
+    GLShader* lineShader = glView.resolveShader(unlit, resources);
+    if (!lineShader) return;
+
+    auto&       glContext = gl.getContext();
+    auto&       batcher   = glView.getInstanceBatcher();
+    const auto& batches   = batcher.getBatches();
+
+    hdrT.bindForOverlay();
+
+    glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glEnable(GL_POLYGON_OFFSET_LINE);
+    glPolygonOffset(-1.0f, -1.0f);
+    glContext.setDepthTest(true);
+    glContext.setDepthWrite(false);
+    glContext.setBlending(false);
+    glContext.setFaceCulling(false);
+
+    lineShader->bind();
+    applyFrameUniforms(lineShader);
+    if (lineShader->hasUniform("u_lineOverlay"))
+        lineShader->setUniform1i("u_lineOverlay", 1);
+
+    for (size_t i = 0; i < batches.size(); ++i) {
+        const auto& batch = batches[i];
+        if (batch.materialType == MaterialType::Transparent) continue;
+        GLMesh* mesh = glView.getMutableMesh(batch.mesh);
+        if (!mesh) continue;
+        batcher.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
+        mesh->drawInstancedBaseInstance(GL_TRIANGLES, batch.instanceCount, batch.firstInstance);
+    }
+
+    glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glDisable(GL_POLYGON_OFFSET_LINE);
+    glContext.setDepthWrite(true);
+    if (lineShader->hasUniform("u_lineOverlay"))
+        lineShader->setUniform1i("u_lineOverlay", 0);
+
+    // Restore HDR-only routing so later passes see color attachment 0.
+    hdrT.bindForRender();
 }
 }
 
@@ -164,34 +279,14 @@ void GLForwardPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     shadowAtlas.bind2DForReadingDepth(GLConfig::TextureSlots::ShadowMap2DDepth);
     shadowAtlas.bindCubeForReadingDepth(GLConfig::TextureSlots::ShadowMapCubeDepth);
 
-    // Bind the baked IBL set (irradiance / prefilter / BRDF LUT) and tell the
-    // PBR shader whether to use it. Falls back to flat ambient when no bake.
-    // Pick the active IBL for the frame. Reflection probes override the
-    // global IBL when the CAMERA is inside their radius; the nearest such
-    // probe (by centre distance) wins. The forward pass binds one set of
-    // IBL textures for all draws this frame - per-batch selection is a
-    // future refinement when binding cost is no longer the bottleneck.
-    const GLIBL* activeIBL = &ibl;
-    float activeProbeIntensity = view.environment.ibl.intensity;
-    int activeProbeIndex = -1;  // -1 = no probe (slot 0 holds global)
-    {
-        const auto& probes = view.probes;
-        const auto& pool   = gl.getView().getProbeIBLs();
-        const glm::vec3 cam = view.camera.position;
-        float bestDist = std::numeric_limits<float>::infinity();
-        for (std::size_t i = 0; i < probes.size() && i < pool.size(); ++i) {
-            const auto& p = probes[i];
-            if (!pool[i] || !pool[i]->isReady()) continue;
-            const float dist = glm::length(cam - p.position);
-            if (dist > p.radius) continue;
-            if (dist < bestDist) {
-                bestDist = dist;
-                activeIBL = pool[i].get();
-                activeProbeIntensity = p.intensity;
-                activeProbeIndex = static_cast<int>(i);
-            }
-        }
-    }
+    // Pick the frame's IBL (a probe overrides the global when the camera is
+    // inside its radius) and bind the baked set below; the PBR shader blends the
+    // primary against the global fallback per fragment.
+    const ActiveIBL sel = selectActiveIBL(view, glView, ibl);
+    const GLIBL* activeIBL            = sel.ibl;
+    const float  activeProbeIntensity = sel.intensity;
+    const int    activeProbeIndex     = sel.probeIndex;
+
     const bool iblReady = activeIBL && activeIBL->isReady();
     if (iblReady) {
         activeIBL->bindIrradiance(GLConfig::TextureSlots::IrradianceMap);
@@ -418,29 +513,11 @@ void GLForwardPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
                 lastTransparentIdx = i;
     }
 
-    // Frame-level shader-variant key pieces: light bucket + shadow-kind mask.
-    // Computed once per frame here and OR'd into the per-batch material flags
-    // when resolving each variant. Buckets are coarse on purpose - the goal
-    // is to give the shader a handful of distinct compile-time paths, not a
-    // unique program per scene.
-    uint8_t lightCountBucket = 0;
-    {
-        const size_t n = view.lights.size();
-        if (n == 0)      lightCountBucket = 0;
-        else if (n == 1) lightCountBucket = 1;
-        else if (n <= 4) lightCountBucket = 2;
-        else             lightCountBucket = 3;
-    }
-    uint8_t shadowKindMask = 0;
-    for (const auto& l : view.lights) {
-        if (l.shadowSlot < 0) continue;
-        switch (l.type) {
-            case LightType::Directional: shadowKindMask |= 0x1u; break;
-            case LightType::Point:       shadowKindMask |= 0x2u; break;
-            case LightType::Spot:        shadowKindMask |= 0x4u; break;
-            default: break;  // Rect / Disk don't cast shadows yet.
-        }
-    }
+    // Coarse per-frame variant key pieces (light-count bucket + shadow-kind
+    // mask), OR'd into per-batch material flags when resolving each variant.
+    const LightShadowKey vkey = computeLightShadowKey(view);
+    const uint8_t lightCountBucket = vkey.lightCountBucket;
+    const uint8_t shadowKindMask   = vkey.shadowKindMask;
 
     // Per-batch render: shader variant resolve, material UBO/texture bind,
     // u_batchId push, draw. Shared between the sorted main loop and the OIT
@@ -657,44 +734,10 @@ void GLForwardPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     // with the HDR shading. The unlit shader is bound with u_lineOverlay = 1
     // so every line writes a fixed light colour regardless of the material.
     if (m_phase == Phase::Transparent && view.modeConfig.wireframeOverlay) {
-        ShaderHandle unlit = m_shaders[static_cast<int>(MaterialType::Unlit)];
-        if (!unlit) unlit = m_shaders[static_cast<int>(MaterialType::Opaque)];
-        GLShader* lineShader = glView.resolveShader(unlit, resources);
-        if (lineShader) {
-            hdrT.bindForOverlay();
-
-            glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            glEnable(GL_POLYGON_OFFSET_LINE);
-            glPolygonOffset(-1.0f, -1.0f);
-            glContext.setDepthTest(true);
-            glContext.setDepthWrite(false);
-            glContext.setBlending(false);
-            glContext.setFaceCulling(false);
-
-            lineShader->bind();
-            applyFrameUniforms(lineShader);
-            if (lineShader->hasUniform("u_lineOverlay"))
-                lineShader->setUniform1i("u_lineOverlay", 1);
-
-            for (size_t i = 0; i < batches.size(); ++i) {
-                const auto& batch = batches[i];
-                if (batch.materialType == MaterialType::Transparent) continue;
-                GLMesh* mesh = glView.getMutableMesh(batch.mesh);
-                if (!mesh) continue;
-                batcher.attachToVAO(*mesh->getVAO(), GLConfig::InstanceAttributes::ModelMatrixStart);
-                mesh->drawInstancedBaseInstance(GL_TRIANGLES, batch.instanceCount, batch.firstInstance);
-            }
-
-            glContext.setPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            glDisable(GL_POLYGON_OFFSET_LINE);
-            glContext.setDepthWrite(true);
-            if (lineShader->hasUniform("u_lineOverlay"))
-                lineShader->setUniform1i("u_lineOverlay", 0);
-
-            // Restore HDR-only routing so any downstream pass that re-uses the
-            // FBO sees the engine default (color attachment 0).
-            hdrT.bindForRender();
-        }
+        drawWireframeOverlay(gl, glView, view, resources, hdrT,
+                             m_shaders[static_cast<int>(MaterialType::Unlit)],
+                             m_shaders[static_cast<int>(MaterialType::Opaque)],
+                             applyFrameUniforms);
     }
 }
 
