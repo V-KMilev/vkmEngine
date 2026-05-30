@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <unordered_set>
 
 #include "ecs/component/mesh_lod.h"
 #include "framework/editor_common.h"
 #include "framework/editor_actions.h"
+#include "framework/editor_commands.h"
 #include "framework/material_preview_session.h"
 #include "system/render/render_system.h"
 #include "generator/mesh_generators.h"
@@ -132,8 +134,18 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
         ImGui::SameLine();
         const bool cancel = ImGui::Button("Cancel");
         if (ok && m_renameBuf[0] != '\0') {
-            if      (m_renameMat)  resources.rename(m_renameMat,  m_renameBuf);
-            else if (m_renameMesh) resources.rename(m_renameMesh, m_renameBuf);
+            // Apply now, then push the reverse (the command captures before/
+            // after names and re-applies on redo). Routed through the stack
+            // so an accidental rename is one Ctrl+Z away.
+            if (m_renameMat) {
+                resources.rename(m_renameMat, m_renameBuf);
+                state.commands.push(std::make_unique<RenameAssetCommand<MaterialHandle>>(
+                    resources, m_renameMat, m_renameOldName, m_renameBuf, "Rename Material"));
+            } else if (m_renameMesh) {
+                resources.rename(m_renameMesh, m_renameBuf);
+                state.commands.push(std::make_unique<RenameAssetCommand<MeshHandle>>(
+                    resources, m_renameMesh, m_renameOldName, m_renameBuf, "Rename Mesh"));
+            }
             state.markSceneDirty();
             m_renameMat = {}; m_renameMesh = {};
             ImGui::CloseCurrentPopup();
@@ -196,6 +208,7 @@ void AssetBrowserPanel::drawMaterials(EditorContext& ec) {
             ImGui::Separator();
             if (ImGui::MenuItem("Rename...")) {
                 snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", a.name.c_str());
+                m_renameOldName = a.name;
                 m_renameMat  = h;
                 m_renameMesh = {};
                 m_renameOpen = true;
@@ -279,6 +292,7 @@ void AssetBrowserPanel::drawMeshes(EditorContext& ec) {
             ImGui::Separator();
             if (ImGui::MenuItem("Rename...")) {
                 snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", a.name.c_str());
+                m_renameOldName = a.name;
                 m_renameMesh = h;
                 m_renameMat  = {};
                 m_renameOpen = true;

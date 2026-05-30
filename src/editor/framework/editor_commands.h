@@ -23,6 +23,7 @@ namespace Engine {
 
 class Scene;
 struct EditorState;
+class ResourceManager;
 
 /**
  * @brief Reverts a Transform's position/rotation/scale.
@@ -268,6 +269,37 @@ class SetActiveCameraCommand : public Command {
         const char* m_label;
 };
 
+/**
+ * @brief Rename a named asset (material or mesh), undoable.
+ *
+ * Records the asset handle plus its before/after names; redo/undo call
+ * ResourceManager::rename (which keeps the per-type findByName index in sync).
+ * Reaches the manager through a pointer captured at construction - there is no
+ * Engine singleton, and the command stack is cleared on scene load, so the
+ * pointer never outlives the manager it was taken from. An isAlive guard makes
+ * the op a no-op if the asset was deleted after the rename (delete is not
+ * itself undoable, so it can strand a rename on the stack).
+ */
+template <typename HandleType>
+class RenameAssetCommand : public Command {
+    public:
+        RenameAssetCommand(ResourceManager& resources, HandleType handle,
+                           std::string before, std::string after, const char* label)
+            : m_resources(&resources), m_handle(handle),
+              m_before(std::move(before)), m_after(std::move(after)), m_label(label) {}
+
+        void redo(Scene&, EditorState&) override;
+        void undo(Scene&, EditorState&) override;
+        const char* label() const override { return m_label; }
+
+    private:
+        ResourceManager* m_resources;
+        HandleType       m_handle;
+        std::string      m_before;
+        std::string      m_after;
+        const char*      m_label;
+};
+
 // Template instantiations are emitted in editor_commands.cpp so each
 // translation unit doesn't need the full bodies.
 extern template class AddComponentCommand<Mesh>;
@@ -292,5 +324,8 @@ extern template class ComponentEditCommand<ReflectionProbe>;
 extern template class ComponentEditCommand<Mesh>;
 extern template class ComponentEditCommand<Name>;
 extern template class ComponentEditCommand<Animation>;
+
+extern template class RenameAssetCommand<MaterialHandle>;
+extern template class RenameAssetCommand<MeshHandle>;
 
 } // namespace Engine
