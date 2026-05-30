@@ -8,7 +8,6 @@
 
 #include "core/gl_backend.h"
 #include "core/gl_scene_target.h"
-#include "debug/print_helper.h"
 #include "debug/profiler_gl.h"
 #include "gl_screen_triangle.h"
 #include "resource/gl_bloom.h"
