@@ -135,15 +135,29 @@ void InspectorPanel::draw(EditorContext& ec) {
 
         if (scene.has<Name>(id)) {
             auto& name = scene.get<Name>(id);
+            const Name before = name;
             ImGui::SetNextItemWidth(-46.0f);
-            ImGui::InputText("##Name", name.value, sizeof(name.value));
+            if (ImGui::InputText("##Name", name.value, sizeof(name.value))) {
+                // Route through the command stack like every other inspector
+                // edit: tryMerge coalesces the keystroke stream into one undo
+                // step, and markSceneDirty stops the rename from being silently
+                // lost on close (it used to do neither).
+                state.commands.push(std::make_unique<ComponentEditCommand<Name>>(
+                    id, before, name, "Rename"));
+                state.markSceneDirty();
+            }
         } else {
             char fallback[64];
             getEntityDisplayName(scene, id, fallback, sizeof(fallback));
             ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted(fallback);
             ImGui::SameLine();
-            if (ImGui::SmallButton("+##addname")) scene.add(Entity{id}, Name(fallback));
+            if (ImGui::SmallButton("+##addname")) {
+                Name n(fallback);
+                scene.add(Entity{id}, n);
+                state.commands.push(std::make_unique<AddComponentCommand<Name>>(id, n, "Add Name"));
+                state.markSceneDirty();
+            }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add a Name component to rename this entity");
             ImGui::SameLine(0.0f, ImGui::GetContentRegionAvail().x - 46.0f);
         }
@@ -843,7 +857,12 @@ void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, Enti
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("Unparent")) {
+                // Capture the parent before the detach so the reparent is
+                // undoable (matches the Hierarchy panel's context-menu action).
+                const EntityId oldParent = h.parent;
                 HierarchyOperations::removeFromParent(scene, id);
+                state.commands.push(std::make_unique<ReparentCommand>(
+                    id, oldParent, EntityId{}, "Unparent"));
                 EditorActions::commitHierarchyMutation(scene, state, id);
                 unparented = true;  // `h` is now stale - skip the rest
             }
