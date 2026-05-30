@@ -7,7 +7,6 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include "logger.h"
-#include "debug/print_helper.h"
 #include "debug/profiler_gl.h"
 
 #include "core/gl_backend.h"
