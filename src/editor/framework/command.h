@@ -38,8 +38,10 @@ class Command {
          *
          * Called when @p incoming is being pushed and the top of the undo
          * stack is @c this. Used to coalesce a stream of related micro-edits
-         * (e.g. consecutive transform tweaks on the same entity within a
-         * short time window) into one undoable step.
+         * (e.g. consecutive transform tweaks on the same entity) into one
+         * undoable step. Implementations merge on identity only - there is no
+         * time gate, so two separate edits of the same target with nothing
+         * pushed between them collapse into a single step.
          *
          * @return true if @p incoming was merged and should be discarded by
          *         the stack; false to keep both as separate entries.
