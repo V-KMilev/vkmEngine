@@ -6,12 +6,14 @@ struct GLFWwindow;
 
 namespace Engine {
 
-// TODO(vkm): Move this into config
-#define OPENGL_MAJOR_VERSION 4 ///< Default OpenGL major version.
-#define OPENGL_MINOR_VERSION 3 ///< Default OpenGL minor version.
-
-#define DEFAULT_WINDOW_WIDTH 1920  ///< Default window width in pixels.
-#define DEFAULT_WINDOW_HEIGHT 1080 ///< Default window height in pixels.
+// Window-creation defaults. Platform/window-layer constants (the Window owns
+// GL-context creation), kept here rather than in engine_config.h - that file
+// is reserved for cross-cutting ECS / engine-loop limits, not backend/window
+// knobs.
+inline constexpr int OPENGL_MAJOR_VERSION  = 4;     ///< Requested GL context major version.
+inline constexpr int OPENGL_MINOR_VERSION  = 3;     ///< Requested GL context minor version.
+inline constexpr int DEFAULT_WINDOW_WIDTH  = 1920;  ///< Initial window width in pixels.
+inline constexpr int DEFAULT_WINDOW_HEIGHT = 1080;  ///< Initial window height in pixels.
 
 /**
  * @class Window
