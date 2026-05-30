@@ -35,13 +35,13 @@ void registerBuiltinAssetFactories() {
         else if (type == "cone")     mesh = generateCone(p.value("radius",   0.5f),
                                                          p.value("height",   1.0f),
                                                          p.value("segments", 16u));
-        else if (type == "pyramid")  mesh = generatePyramid(p.value("baseSize", 2.0f),
-                                                            p.value("height",   2.0f));
+        else if (type == "pyramid")  mesh = generatePyramid(p.value("baseSize", 1.0f),
+                                                            p.value("height",   1.0f));
         else if (type == "plane")    mesh = generatePlane(p.value("width",          1.0f),
                                                           p.value("height",         1.0f),
                                                           p.value("widthSegments",  1u),
                                                           p.value("heightSegments", 1u));
-        else if (type == "triangle") mesh = generateTriangle(p.value("size", 2.0f));
+        else if (type == "triangle") mesh = generateTriangle(p.value("size", 1.0f));
         else return {};
 
         if (mesh.vertices.empty()) return {};

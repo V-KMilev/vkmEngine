@@ -56,15 +56,28 @@ MaterialHandle duplicateMaterial(
 
     MaterialAsset copy = src;  // value copy of params + texture refs
     copy.version = 1;
-    copy.name = (src.name.empty() ? std::string("material") : src.name) + " copy";
+
+    // Unique name: "<src> copy", then "<src> copy 2", ... so repeated
+    // duplicates don't share a name (and therefore a stamped AssetId).
+    const std::string base = (src.name.empty() ? std::string("material") : src.name) + " copy";
+    std::string name = base;
+    for (int n = 2; resources.findByName<MaterialAsset>(name); ++n) {
+        name = base + " " + std::to_string(n);
+    }
+    copy.name = name;
 
     MaterialHandle nh = resources.add(std::move(copy));
     if (!nh) return MaterialHandle{};
 
-    if (assignTo) {
-        assignTo->material = nh;
-        state.markSceneDirty();
-    }
+    // The value copy carried the source's AssetId; give the duplicate its own
+    // unique id (keyed on the unique name) so the two materials don't collapse
+    // onto a single id on save/load. Mirrors createNewMaterial.
+    auto& asset   = resources.edit(nh);
+    asset.assetId = AssetDatabase::get().registerOrGet("material:" + name, AssetKind::Material);
+    resources.reindexAssetId(nh);
+
+    if (assignTo) assignTo->material = nh;
+    state.markSceneDirty();
     return nh;
 }
 

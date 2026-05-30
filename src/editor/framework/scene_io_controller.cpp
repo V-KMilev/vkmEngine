@@ -22,6 +22,7 @@
 #include "system/camera/camera_controller.h"
 #include "system/event/event_system.h"
 #include "system/render/render_system.h"
+#include "system/visibility/culling/occlusion_oracle.h"
 
 namespace Engine {
 
@@ -139,6 +140,12 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
     // history - sampling the old scene's history over the new view
     // smears for several frames after the swap.
     m_renderSystem.invalidateTemporalHistory();
+
+    // Drop the occlusion pyramid too: it holds the previous scene's view /
+    // viewProj, so the next frame would project the new scene's AABBs against
+    // a stale screen mapping and wrongly cull visible geometry until the
+    // oracle republishes.
+    OcclusionOracle::get().invalidate();
 
     // Tell external subscribers (anything that cares about scene swaps)
     // the load happened. The two effects above used to ride this event

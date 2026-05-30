@@ -7,22 +7,22 @@ namespace Engine {
 
 /**
  * @brief Generate a triangle mesh.
- * @param size Size of the triangle (default: 2.0).
+ * @param size Uniform scale of the unit triangle (default: 1.0).
  * @return MeshAsset containing triangle geometry.
  */
-MeshAsset generateTriangle(float sides = 2.0f);
+MeshAsset generateTriangle(float size = 1.0f);
 
 /**
- * @brief Generate a plane mesh (quad).
- * @param width Width of the plane (default: 2.0).
- * @param height Height of the plane (default: 2.0).
- * @param widthSegments Number of segments along width (default: 1).
- * @param heightSegments Number of segments along height (default: 1).
+ * @brief Generate a plane mesh (quad), tessellated into a segment grid.
+ * @param width Full width of the plane along x (default: 1.0).
+ * @param height Full depth of the plane along z (default: 1.0).
+ * @param widthSegments Number of quads along width (default: 1).
+ * @param heightSegments Number of quads along depth (default: 1).
  * @return MeshAsset containing plane geometry.
  */
 MeshAsset generatePlane(
-    float width = 2.0f,
-    float height = 2.0f,
+    float width = 1.0f,
+    float height = 1.0f,
     uint32_t widthSegments = 1,
     uint32_t heightSegments = 1
 );
@@ -42,12 +42,12 @@ MeshAsset generateCube();
 MeshAsset generateSphere(uint32_t xSegments = 32, uint32_t ySegments = 16);
 
 /**
- * @brief Generate a pyramid mesh (square base).
- * @param baseSize Size of the square base (default: 2.0).
- * @param height Height of the pyramid (default: 2.0).
+ * @brief Generate a pyramid mesh (square base on y=0, apex at +height).
+ * @param baseSize Edge length of the square base (default: 1.0).
+ * @param height Apex height above the base (default: 1.0).
  * @return MeshAsset containing pyramid geometry.
  */
-MeshAsset generatePyramid(float baseSize = 2.0f, float height = 2.0f);
+MeshAsset generatePyramid(float baseSize = 1.0f, float height = 1.0f);
 
 /**
  * @brief Generate a cone mesh.

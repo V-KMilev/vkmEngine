@@ -53,10 +53,11 @@ MeshAsset generateTriangle(float size) {
     const glm::vec3 normal(0.0f, 1.0f, 0.0f);
     const glm::vec4 tangent(1.0f, 0.0f, 0.0f, 1.0f);
 
+    // Canonical unit triangle (size 1.0), scaled uniformly by size.
     mesh.vertices = {
-        Vertex{ glm::vec3( 0.0f, 0.0f,  0.433f), normal, glm::vec2(0.5f, 1.0f), tangent },  // Top
-        Vertex{ glm::vec3(-0.5f, 0.0f, -0.25f), normal, glm::vec2(0.0f, 0.0f), tangent },  // Bottom-left
-        Vertex{ glm::vec3( 0.5f, 0.0f, -0.25f), normal, glm::vec2(1.0f, 0.0f), tangent }   // Bottom-right
+        Vertex{ glm::vec3( 0.0f, 0.0f,  0.433f) * size, normal, glm::vec2(0.5f, 1.0f), tangent },  // Top
+        Vertex{ glm::vec3(-0.5f, 0.0f, -0.25f) * size, normal, glm::vec2(0.0f, 0.0f), tangent },  // Bottom-left
+        Vertex{ glm::vec3( 0.5f, 0.0f, -0.25f) * size, normal, glm::vec2(1.0f, 0.0f), tangent }   // Bottom-right
     };
 
     mesh.indices = { 0, 1, 2 };
@@ -71,15 +72,42 @@ MeshAsset generatePlane(float width, float height, uint32_t widthSegments, uint3
     const glm::vec3 normal(0.0f, 1.0f, 0.0f);
     const glm::vec4 tangent(1.0f, 0.0f, 0.0f, 1.0f);
 
-    // Simple quad plane (unit size: -0.5 to 0.5)
-    mesh.vertices = {
-        Vertex{ glm::vec3(-0.5f, 0.0f, -0.5f), normal, glm::vec2(0.0f, 0.0f), tangent },
-        Vertex{ glm::vec3( 0.5f, 0.0f, -0.5f), normal, glm::vec2(1.0f, 0.0f), tangent },
-        Vertex{ glm::vec3( 0.5f, 0.0f,  0.5f), normal, glm::vec2(1.0f, 1.0f), tangent },
-        Vertex{ glm::vec3(-0.5f, 0.0f,  0.5f), normal, glm::vec2(0.0f, 1.0f), tangent }
-    };
+    // Tessellated grid: width x height (full dimensions, centred on origin),
+    // subdivided into widthSegments x heightSegments quads. u runs along x,
+    // v along z; per-cell winding matches the original single-quad plane.
+    const uint32_t nx = widthSegments  > 0 ? widthSegments  : 1;
+    const uint32_t nz = heightSegments > 0 ? heightSegments : 1;
+    const float halfW = width  * 0.5f;
+    const float halfH = height * 0.5f;
 
-    mesh.indices = { 0, 1, 2,  2, 3, 0 };
+    mesh.vertices.reserve((nx + 1) * (nz + 1));
+    for (uint32_t j = 0; j <= nz; ++j) {
+        const float v = static_cast<float>(j) / static_cast<float>(nz);
+        const float z = -halfH + v * height;
+        for (uint32_t i = 0; i <= nx; ++i) {
+            const float u = static_cast<float>(i) / static_cast<float>(nx);
+            const float x = -halfW + u * width;
+            mesh.vertices.push_back(Vertex{ glm::vec3(x, 0.0f, z), normal, glm::vec2(u, v), tangent });
+        }
+    }
+
+    const uint32_t stride = nx + 1;
+    mesh.indices.reserve(nx * nz * 6);
+    for (uint32_t j = 0; j < nz; ++j) {
+        for (uint32_t i = 0; i < nx; ++i) {
+            const uint32_t v00 =  j      * stride + i;
+            const uint32_t v10 =  j      * stride + (i + 1);
+            const uint32_t v11 = (j + 1) * stride + (i + 1);
+            const uint32_t v01 = (j + 1) * stride + i;
+            mesh.indices.push_back(v00);
+            mesh.indices.push_back(v10);
+            mesh.indices.push_back(v11);
+            mesh.indices.push_back(v11);
+            mesh.indices.push_back(v01);
+            mesh.indices.push_back(v00);
+        }
+    }
+
     mesh.computeAndSetBounds();
     stampGenerated(mesh, "plane", {
         {"width", width}, {"height", height},
@@ -212,40 +240,54 @@ MeshAsset generateSphere(uint32_t xSegments, uint32_t ySegments) {
 MeshAsset generatePyramid(float baseSize, float height) {
     MeshAsset mesh;
 
-    const glm::vec3 nDown(0.0f, -1.0f, 0.0f);
-    const glm::vec3 nBack  = glm::normalize(glm::vec3(0.0f, 0.5f, -0.5f));
-    const glm::vec3 nRight = glm::normalize(glm::vec3(0.5f, 0.5f, 0.0f));
-    const glm::vec3 nFront = glm::normalize(glm::vec3(0.0f, 0.5f, 0.5f));
-    const glm::vec3 nLeft  = glm::normalize(glm::vec3(-0.5f, 0.5f, 0.0f));
+    const float h = baseSize * 0.5f;
     const glm::vec4 tangent(1.0f, 0.0f, 0.0f, 1.0f);
 
-    // Unit pyramid (base: -0.5 to 0.5, height: 0.5)
+    // Square base on the y=0 plane (edge = baseSize), apex at y = height.
+    const glm::vec3 bl(-h, 0.0f, -h);
+    const glm::vec3 br( h, 0.0f, -h);
+    const glm::vec3 fr( h, 0.0f,  h);
+    const glm::vec3 fl(-h, 0.0f,  h);
+    const glm::vec3 apex(0.0f, height, 0.0f);
+    const glm::vec3 nDown(0.0f, -1.0f, 0.0f);
+
+    // Side normals derived from the actual slope so they stay correct for any
+    // baseSize/height (a fixed normal would only suit one set of proportions).
+    // cross(c-a, b-a) points outward for the winding used in mesh.indices below.
+    auto faceNormal = [](const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
+        return glm::normalize(glm::cross(c - a, b - a));
+    };
+    const glm::vec3 nBack  = faceNormal(bl, br, apex);
+    const glm::vec3 nRight = faceNormal(br, fr, apex);
+    const glm::vec3 nFront = faceNormal(fr, fl, apex);
+    const glm::vec3 nLeft  = faceNormal(fl, bl, apex);
+
     mesh.vertices = {
         // Base face
-        Vertex{ glm::vec3(-0.5f, 0.0f, -0.5f), nDown, glm::vec2(0.0f, 0.0f), tangent },
-        Vertex{ glm::vec3( 0.5f, 0.0f, -0.5f), nDown, glm::vec2(1.0f, 0.0f), tangent },
-        Vertex{ glm::vec3( 0.5f, 0.0f,  0.5f), nDown, glm::vec2(1.0f, 1.0f), tangent },
-        Vertex{ glm::vec3(-0.5f, 0.0f,  0.5f), nDown, glm::vec2(0.0f, 1.0f), tangent },
+        Vertex{ bl, nDown, glm::vec2(0.0f, 0.0f), tangent },
+        Vertex{ br, nDown, glm::vec2(1.0f, 0.0f), tangent },
+        Vertex{ fr, nDown, glm::vec2(1.0f, 1.0f), tangent },
+        Vertex{ fl, nDown, glm::vec2(0.0f, 1.0f), tangent },
 
         // Back face
-        Vertex{ glm::vec3(-0.5f, 0.0f, -0.5f), nBack, glm::vec2(0.0f, 0.0f), tangent },
-        Vertex{ glm::vec3( 0.5f, 0.0f, -0.5f), nBack, glm::vec2(1.0f, 0.0f), tangent },
-        Vertex{ glm::vec3( 0.0f, 0.5f,  0.0f), nBack, glm::vec2(0.5f, 1.0f), tangent },
+        Vertex{ bl,   nBack, glm::vec2(0.0f, 0.0f), tangent },
+        Vertex{ br,   nBack, glm::vec2(1.0f, 0.0f), tangent },
+        Vertex{ apex, nBack, glm::vec2(0.5f, 1.0f), tangent },
 
         // Right face
-        Vertex{ glm::vec3( 0.5f, 0.0f, -0.5f), nRight, glm::vec2(0.0f, 0.0f), tangent },
-        Vertex{ glm::vec3( 0.5f, 0.0f,  0.5f), nRight, glm::vec2(1.0f, 0.0f), tangent },
-        Vertex{ glm::vec3( 0.0f, 0.5f,  0.0f), nRight, glm::vec2(0.5f, 1.0f), tangent },
+        Vertex{ br,   nRight, glm::vec2(0.0f, 0.0f), tangent },
+        Vertex{ fr,   nRight, glm::vec2(1.0f, 0.0f), tangent },
+        Vertex{ apex, nRight, glm::vec2(0.5f, 1.0f), tangent },
 
         // Front face
-        Vertex{ glm::vec3( 0.5f, 0.0f,  0.5f), nFront, glm::vec2(0.0f, 0.0f), tangent },
-        Vertex{ glm::vec3(-0.5f, 0.0f,  0.5f), nFront, glm::vec2(1.0f, 0.0f), tangent },
-        Vertex{ glm::vec3( 0.0f, 0.5f,  0.0f), nFront, glm::vec2(0.5f, 1.0f), tangent },
+        Vertex{ fr,   nFront, glm::vec2(0.0f, 0.0f), tangent },
+        Vertex{ fl,   nFront, glm::vec2(1.0f, 0.0f), tangent },
+        Vertex{ apex, nFront, glm::vec2(0.5f, 1.0f), tangent },
 
         // Left face
-        Vertex{ glm::vec3(-0.5f, 0.0f,  0.5f), nLeft, glm::vec2(0.0f, 0.0f), tangent },
-        Vertex{ glm::vec3(-0.5f, 0.0f, -0.5f), nLeft, glm::vec2(1.0f, 0.0f), tangent },
-        Vertex{ glm::vec3( 0.0f, 0.5f,  0.0f), nLeft, glm::vec2(0.5f, 1.0f), tangent }
+        Vertex{ fl,   nLeft, glm::vec2(0.0f, 0.0f), tangent },
+        Vertex{ bl,   nLeft, glm::vec2(1.0f, 0.0f), tangent },
+        Vertex{ apex, nLeft, glm::vec2(0.5f, 1.0f), tangent }
     };
 
     mesh.indices = {
