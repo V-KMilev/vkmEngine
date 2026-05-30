@@ -66,7 +66,7 @@ struct EditorState {
     bool confirmingQuit  = false;  ///< Save-on-quit modal is open this frame.
     bool closeAfterSave  = false;  ///< Window-close pending until the next clean save.
     std::vector<std::string> recentScenes;  ///< MRU list (absolute paths), most-recent first.
-    static constexpr size_t MaxRecentScenes = 8;
+    static constexpr size_t MAX_RECENT_SCENES = 8;
 
     // Undo/redo history. Every editor mutation that goes through the
     // command path lands here; Ctrl+Z reverses, Ctrl+Shift+Z re-applies.

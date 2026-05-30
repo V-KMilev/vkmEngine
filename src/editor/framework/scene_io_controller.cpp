@@ -161,7 +161,7 @@ void SceneIOController::pushRecent(EditorState& state, const std::string& path) 
     auto& mru = state.recentScenes;
     mru.erase(std::remove(mru.begin(), mru.end(), path), mru.end());
     mru.insert(mru.begin(), path);
-    if (mru.size() > EditorState::MaxRecentScenes) mru.resize(EditorState::MaxRecentScenes);
+    if (mru.size() > EditorState::MAX_RECENT_SCENES) mru.resize(EditorState::MAX_RECENT_SCENES);
 }
 
 void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {

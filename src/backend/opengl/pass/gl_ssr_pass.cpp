@@ -38,7 +38,7 @@ GLSSRPass::GLSSRPass(ShaderHandle shader)
 
 GLSSRPass::~GLSSRPass() = default;
 
-void GLSSRPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLSSRPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // Reuses GLGBuffer / GLSceneTarget, both owned and resized by GLBackend.
 }
 

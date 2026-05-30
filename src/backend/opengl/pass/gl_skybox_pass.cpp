@@ -28,7 +28,7 @@ GLSkyboxPass::GLSkyboxPass(ShaderHandle shader)
 {
 }
 
-void GLSkyboxPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLSkyboxPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // Nothing to do for the skybox pass.
 }
 

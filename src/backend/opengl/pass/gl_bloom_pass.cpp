@@ -39,7 +39,7 @@ GLBloomPass::GLBloomPass(ShaderHandle downsampleShader, ShaderHandle upsampleSha
 
 GLBloomPass::~GLBloomPass() = default;
 
-void GLBloomPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLBloomPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // GLBloom is owned and resized by GLBackend.
 }
 

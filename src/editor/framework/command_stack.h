@@ -63,7 +63,7 @@ class CommandStack {
 
         /// Cap on the undo history to bound editor memory. Oldest entries
         /// are dropped when the cap is exceeded.
-        static constexpr size_t kHistoryLimit = 200;
+        static constexpr size_t HISTORY_LIMIT = 200;
 };
 
 } // namespace Engine

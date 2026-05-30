@@ -29,7 +29,6 @@ bool TransformGizmo::handleTranslationDrag(glm::mat4& model, const glm::vec3 axe
 }
 
 bool TransformGizmo::handleRotationDrag(glm::mat4& model, const glm::vec3 axes[3]) {
-    (void)axes;
     glm::vec3 rayDir = screenToRay(m_mousePos);
     float t = intersectRayPlane(m_cameraPos, rayDir, m_dragPlanePoint, m_dragPlaneNormal);
     if (t < 0.0f) return false;

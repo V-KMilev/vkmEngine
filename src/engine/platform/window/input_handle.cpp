@@ -75,7 +75,7 @@ void InputHandle::setupCallbacks(GLFWwindow* window, Window* engineWindow) {
     glfwSetWindowUserPointer(window, &m_callbackData);
 
     // Key callback - updates keyboard state directly, no polling needed
-    glfwSetKeyCallback(window, [](GLFWwindow* w, int key, int /*scancode*/, int action, int /*mods*/) {
+    glfwSetKeyCallback(window, [](GLFWwindow* w, int key, int scancode, int action, int mods) {
         auto* data = static_cast<WindowCallbackData*>(glfwGetWindowUserPointer(w));
         if (data && data->input) {
             bool pressed = (action == GLFW_PRESS || action == GLFW_REPEAT);

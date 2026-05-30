@@ -44,7 +44,7 @@ class Command {
          * @return true if @p incoming was merged and should be discarded by
          *         the stack; false to keep both as separate entries.
          */
-        virtual bool tryMerge(Command& /*incoming*/) { return false; }
+        virtual bool tryMerge(Command& incoming) { return false; }
 };
 
 } // namespace Engine

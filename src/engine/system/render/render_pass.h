@@ -61,7 +61,7 @@ class RenderPass {
          * I should run* lives with the pass instead of in a central
          * pass-name switch. Called once per frame by RenderGraph::execute.
          */
-        virtual bool enabledForView(const RenderView& /*view*/) const {
+        virtual bool enabledForView(const RenderView& view) const {
             return m_enabled;
         }
 
@@ -95,7 +95,7 @@ class RenderPass {
          * validation, resource lifetimes, and debug. Default: no declarations
          * (the pass still runs; it just opts out of graph bookkeeping).
          */
-        virtual void declareResources(RenderGraphBuilder& /*builder*/) const {}
+        virtual void declareResources(RenderGraphBuilder& builder) const {}
 
     protected:
         std::string m_name;

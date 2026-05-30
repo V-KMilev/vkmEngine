@@ -33,7 +33,7 @@ GLHiZPass::GLHiZPass(ShaderHandle initShader, ShaderHandle reduceShader)
 
 GLHiZPass::~GLHiZPass() = default;
 
-void GLHiZPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_t /*height*/) {
+void GLHiZPass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {
     // GLHiZ is owned and resized by FrameResources.
 }
 
