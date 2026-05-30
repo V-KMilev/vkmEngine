@@ -411,7 +411,36 @@ struct EnvironmentConfig {
 inline RenderModeConfig resolveModeConfig(RenderMode mode) {
     RenderModeConfig c;
     c.mode = mode;
+
+    // Most diagnostics share this "clean diagnostic" base - no post chain, no
+    // SSAO, raw HDR straight through composite - and differ only in the shader
+    // debugMode selector. The special modes below set their own flags.
+    auto diagnostic = [&](int dbg) {
+        c.disablePost        = true;
+        c.disableSSAO        = true;
+        c.bypassDisplayXform = true;
+        c.debugMode          = dbg;
+    };
+
     switch (mode) {
+        case RenderMode::Normals:         diagnostic(1);  break;
+        case RenderMode::Depth:           diagnostic(2);  break;
+        case RenderMode::Roughness:       diagnostic(4);  break;
+        case RenderMode::Metallic:        diagnostic(5);  break;
+        case RenderMode::Emission:        diagnostic(6);  break;
+        case RenderMode::TangentSpace:    diagnostic(7);  break;
+        case RenderMode::AlbedoOnly:      diagnostic(8);  break;
+        case RenderMode::WorldPosition:   diagnostic(9);  break;
+        case RenderMode::UV:              diagnostic(10); break;
+        case RenderMode::BatchId:         diagnostic(12); break;
+        case RenderMode::LightComplexity: diagnostic(13); break;
+        case RenderMode::LightmapUV:      diagnostic(14); break;
+
+        case RenderMode::Overdraw:
+            diagnostic(11);
+            c.overdrawBlend = true;
+            break;
+
         case RenderMode::Unlit:
             c.disablePost        = true;
             c.disableSSAO        = true;
@@ -428,95 +457,20 @@ inline RenderModeConfig resolveModeConfig(RenderMode mode) {
         case RenderMode::WireframeOverShaded:
             c.wireframeOverlay   = true;
             break;
-        case RenderMode::Normals:
-            c.disablePost        = true;
-            c.disableSSAO        = true;
-            c.bypassDisplayXform = true;
-            c.debugMode          = 1;
-            break;
-        case RenderMode::Depth:
-            c.disablePost        = true;
-            c.disableSSAO        = true;
-            c.bypassDisplayXform = true;
-            c.debugMode          = 2;
-            break;
+
+        // AOOnly keeps SSAO on (it's the thing being visualised); LightingOnly
+        // keeps SSAO too and swaps in a neutral material instead of a debug view.
         case RenderMode::AOOnly:
             c.disablePost        = true;
             c.bypassDisplayXform = true;
             c.debugMode          = 3;
             break;
         case RenderMode::LightingOnly:
-            c.disablePost        = true;
-            c.bypassDisplayXform = true;
+            c.disablePost          = true;
+            c.bypassDisplayXform   = true;
             c.forceNeutralMaterial = true;
             break;
-        case RenderMode::Roughness:
-            c.disablePost        = true;
-            c.disableSSAO        = true;
-            c.bypassDisplayXform = true;
-            c.debugMode          = 4;
-            break;
-        case RenderMode::Metallic:
-            c.disablePost        = true;
-            c.disableSSAO        = true;
-            c.bypassDisplayXform = true;
-            c.debugMode          = 5;
-            break;
-        case RenderMode::Emission:
-            c.disablePost        = true;
-            c.disableSSAO        = true;
-            c.bypassDisplayXform = true;
-            c.debugMode          = 6;
-            break;
-        case RenderMode::TangentSpace:
-            c.disablePost        = true;
-            c.disableSSAO        = true;
-            c.bypassDisplayXform = true;
-            c.debugMode          = 7;
-            break;
-        case RenderMode::AlbedoOnly:
-            c.disablePost        = true;
-            c.disableSSAO        = true;
-            c.bypassDisplayXform = true;
-            c.debugMode          = 8;
-            break;
-        case RenderMode::WorldPosition:
-            c.disablePost        = true;
-            c.disableSSAO        = true;
-            c.bypassDisplayXform = true;
-            c.debugMode          = 9;
-            break;
-        case RenderMode::UV:
-            c.disablePost        = true;
-            c.disableSSAO        = true;
-            c.bypassDisplayXform = true;
-            c.debugMode          = 10;
-            break;
-        case RenderMode::Overdraw:
-            c.disablePost        = true;
-            c.disableSSAO        = true;
-            c.bypassDisplayXform = true;
-            c.overdrawBlend      = true;
-            c.debugMode          = 11;
-            break;
-        case RenderMode::BatchId:
-            c.disablePost        = true;
-            c.disableSSAO        = true;
-            c.bypassDisplayXform = true;
-            c.debugMode          = 12;
-            break;
-        case RenderMode::LightComplexity:
-            c.disablePost        = true;
-            c.disableSSAO        = true;
-            c.bypassDisplayXform = true;
-            c.debugMode          = 13;
-            break;
-        case RenderMode::LightmapUV:
-            c.disablePost        = true;
-            c.disableSSAO        = true;
-            c.bypassDisplayXform = true;
-            c.debugMode          = 14;
-            break;
+
         case RenderMode::Default:
             break;
     }
