@@ -4,6 +4,7 @@
 
 #include "ecs/scene.h"
 #include "ecs/component/reflection_probe.h"
+#include "resource/resource_manager.h"
 #include "framework/editor_state.h"
 #include "system/hierarchy/hierarchy_operations.h"
 
@@ -117,6 +118,23 @@ template class ComponentEditCommand<ReflectionProbe>;
 template class ComponentEditCommand<Mesh>;
 template class ComponentEditCommand<Name>;
 template class ComponentEditCommand<Animation>;
+
+template <typename HandleType>
+void RenameAssetCommand<HandleType>::redo(Scene&, EditorState& state) {
+    if (!m_resources->isAlive(m_handle)) return;  // deleted since - no-op
+    m_resources->rename(m_handle, m_after);
+    state.markSceneDirty();
+}
+
+template <typename HandleType>
+void RenameAssetCommand<HandleType>::undo(Scene&, EditorState& state) {
+    if (!m_resources->isAlive(m_handle)) return;  // deleted since - no-op
+    m_resources->rename(m_handle, m_before);
+    state.markSceneDirty();
+}
+
+template class RenameAssetCommand<MaterialHandle>;
+template class RenameAssetCommand<MeshHandle>;
 
 EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
     EntitySnapshot s;

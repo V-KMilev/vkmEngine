@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "resource/mesh_asset.h"
 #include "resource/material_asset.h"
 
@@ -50,6 +52,7 @@ class AssetBrowserPanel {
         // Rename modal state - materials and meshes share one popup; exactly
         // one target handle is set while the modal is open.
         char           m_renameBuf[128] = {};
+        std::string    m_renameOldName;     ///< name before the edit, for undo
         MaterialHandle m_renameMat;
         MeshHandle     m_renameMesh;
         bool           m_renameOpen = false;
