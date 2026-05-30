@@ -103,8 +103,9 @@ std::vector<CardState>& cardStack() {
     return s;
 }
 constexpr float CARD_INDENT = 14.0f;
-}
 
+// Tinted, accent-stripped CollapsingHeader (no body/end pairing). File-local -
+// only beginComponentCard below uses it.
 bool styledCollapsingHeader(const char* title, const ImVec4& accent,
                             bool defaultOpen) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth
@@ -131,6 +132,7 @@ bool styledCollapsingHeader(const char* title, const ImVec4& accent,
         ImGui::GetColorU32(accent));
     return open;
 }
+}  // namespace
 
 bool beginComponentCard(const char* title, const ImVec4& accent,
                         bool defaultOpen, bool* removeClicked) {
