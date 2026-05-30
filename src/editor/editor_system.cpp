@@ -276,7 +276,7 @@ void EditorSystem::update(FrameContext& ctx) {
         }
         // Runtime graphics settings overlay remains reachable while the
         // editor is hidden - it's intentionally player-facing.
-        m_runtimeSettings.draw(m_state, m_renderSystem);
+        m_runtimeSettings.draw(m_state, ctx.scene, m_renderSystem);
         syncSelectionTag(ctx.scene);
         ImGui::Render();
         // Stash for executeBackend(): draw submission runs on the render
@@ -383,7 +383,7 @@ void EditorSystem::update(FrameContext& ctx) {
 
     // Runtime graphics settings overlay - intentionally drawn last so it
     // floats over the editor workspace and isn't clipped by any panel.
-    m_runtimeSettings.draw(m_state, m_renderSystem);
+    m_runtimeSettings.draw(m_state, ctx.scene, m_renderSystem);
 
     syncSelectionTag(ctx.scene);
 

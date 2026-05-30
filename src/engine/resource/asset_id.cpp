@@ -7,7 +7,10 @@ namespace Engine {
 
 std::string AssetId::toString() const {
     char buf[17];
-    std::snprintf(buf, sizeof(buf), "%016lx", static_cast<unsigned long>(value));
+    // %016llx with unsigned long long, NOT %lx: on LLP64 (MinGW-UCRT64,
+    // MSVC) unsigned long is 32-bit and would truncate the GUID to its low
+    // word, silently colliding distinct ids on save/load.
+    std::snprintf(buf, sizeof(buf), "%016llx", static_cast<unsigned long long>(value));
     return std::string(buf);
 }
 
