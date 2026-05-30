@@ -10,10 +10,6 @@ struct Task {
     Task() = default;
     Task(std::function<void()> && fn) : function(std::move(fn)) {}
 
-    operator bool() const {
-        return function != nullptr;
-    }
-
     void execute() {
         function();
     }

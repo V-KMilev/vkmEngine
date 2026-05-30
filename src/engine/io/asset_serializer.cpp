@@ -325,15 +325,15 @@ bool unpackEntry(
 /// land under the same ids the scene already references. Without this,
 /// loading on a machine whose DB doesn't yet know these paths would mint
 /// fresh ids and break every component reference in the scene.
-void seedDatabase(const nlohmann::json& section, AssetKind kind, const char* pathField = "path") {
+void seedDatabase(const nlohmann::json& section, AssetKind kind) {
     if (!section.is_array()) return;
     for (const auto& entry : section) {
         const AssetId id = AssetId::fromString(entry.value("id", std::string{}));
         if (!id) continue;
         if (!entry.contains("source") || !entry["source"].is_object()) continue;
         const auto& src = entry["source"];
-        if (!src.contains(pathField) || !src[pathField].is_string()) continue;
-        AssetDatabase::get().registerWithId(src[pathField].get<std::string>(), id, kind);
+        if (!src.contains("path") || !src["path"].is_string()) continue;
+        AssetDatabase::get().registerWithId(src["path"].get<std::string>(), id, kind);
     }
 }
 
