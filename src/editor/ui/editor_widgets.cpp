@@ -200,32 +200,6 @@ void drawPanelTitle(const char* title) {
     accentRule();
 }
 
-void drawSectionHeader(const char* title, const char* hint) {
-    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
-    ImGui::TextUnformatted(title);
-    ImGui::PopStyleColor();
-    if (hint && hint[0]) {
-        ImGui::SameLine(0.0f, 10.0f);
-        ImGui::TextDisabled("%s", hint);
-    }
-    accentRule();
-}
-
-bool drawRemoveButton(const char* compLabel, uint32_t entityIdx) {
-    ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 20);
-    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::DANGER);
-    char id[32];
-    snprintf(id, sizeof(id), "x##Rem%s%u", compLabel, entityIdx);
-    bool clicked = ImGui::SmallButton(id);
-    if (ImGui::IsItemHovered()) {
-        ImGui::PopStyleColor();
-        ImGui::SetTooltip("Remove %s", compLabel);
-    } else {
-        ImGui::PopStyleColor();
-    }
-    return clicked;
-}
-
 bool drawEasingCombo(const char* id, EasingFunction& easing) {
     int idx = Easing::indexOf(easing);
     ImGui::SetNextItemWidth(-1);

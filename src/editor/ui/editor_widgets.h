@@ -27,10 +27,6 @@ bool drawVec3Control(const char* label, float* values,
 /// Right-aligned property label with consistent column width across the panel.
 void drawPropertyLabel(const char* label);
 
-/// Component-card remove button (small "x"). @p entityIdx keeps the ImGui id
-/// stable when the same component appears on multiple entities.
-bool drawRemoveButton(const char* compLabel, uint32_t entityIdx);
-
 /// Case-insensitive substring match. Empty @p filter matches every @p text.
 bool matchesFilter(const char* text, const char* filter);
 
@@ -65,9 +61,6 @@ bool styledCollapsingHeader(const char* title, const ImVec4& accent,
 /// Consistent panel title: header-tinted text with a full-width accent rule.
 /// Replaces the old "TextUnformatted + Separator + Spacing" boilerplate.
 void drawPanelTitle(const char* title);
-
-/// Section title with a dim hint to its right and the same accent rule.
-void drawSectionHeader(const char* title, const char* hint);
 
 /// Easing-function dropdown. Lists all named easings; on selection updates
 /// @p easing in place and returns true. @p id must be a unique ImGui id

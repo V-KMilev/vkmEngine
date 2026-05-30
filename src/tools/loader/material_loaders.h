@@ -95,30 +95,4 @@ MaterialHandle loadMaterialFromDesc(
     ResourceManager& resourceManager
 );
 
-/**
- * @brief Quick helper to load a material with just an albedo texture.
- * 
- * Creates a non-metallic material with the specified albedo texture
- * and default properties. Useful for simple materials.
- * 
- * @param albedoPath Path to albedo/color texture
- * @param resourceManager Resource manager to add the material to
- * @param roughness Roughness value (default: 1.0 = fully rough)
- * @param generateMipmaps Whether to generate mipmaps (default: true)
- * @return Handle to the loaded material
- * 
- * @example
- * auto material = loadSimpleMaterial(
- *     "assets/textures/wood_color.jpg",
- *     resources,
- *     0.6f  // slightly glossy
- * );
- */
-MaterialHandle loadSimpleMaterial(
-    const std::string& albedoPath,
-    ResourceManager& resourceManager,
-    float roughness = 1.0f,
-    bool generateMipmaps = true
-);
-
 } // namespace Engine

@@ -45,25 +45,6 @@ class FrameLimiter {
          */
         void setTargetFramerate(int framerate) { m_targetFramerate = framerate > 0 ? framerate : 0;}
 
-        /**
-         * @brief Disables frame limiting (sets to unlimited mode).
-         */
-        void setUnlimited() { m_targetFramerate = 0; }
-
-        /**
-         * @brief Get the current target framerate.
-         *
-         * @return Current target FPS, or 0 if unlimited.
-         */
-        int getTargetFramerate() const { return m_targetFramerate; }
-
-        /**
-         * @brief Checks if frame limiting is disabled (unlimited mode).
-         *
-         * @return true if frame limiting is off.
-         */
-        bool isUnlimited() const { return m_targetFramerate == 0; }
-
     private:
         int m_targetFramerate = 0;
         std::chrono::high_resolution_clock::time_point m_frameStart;
