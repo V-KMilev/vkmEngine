@@ -15,7 +15,6 @@
 #include "core/gl_backend.h"
 #include "core/gl_instance_batcher.h"
 #include "core/gl_scene_target.h"
-#include "debug/print_helper.h"
 #include "debug/profiler_gl.h"
 #include "resource/gl_gbuffer.h"
 #include "resource/gl_ibl.h"

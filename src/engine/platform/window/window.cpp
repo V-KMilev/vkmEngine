@@ -3,7 +3,6 @@
 #include "platform/window/window.h"
 
 #include "logger.h"
-#include "debug/print_helper.h"
 
 #include <GL/glew.h>  // glewInit only - the GL function loader. Backend-agnostic callers don't need this.
 #include "platform/window/glfw_include.h"
