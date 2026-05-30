@@ -275,4 +275,15 @@ void ReparentCommand::undo(Scene& scene, EditorState& state) {
     state.hierarchyDirty = true;
 }
 
+void SetActiveCameraCommand::redo(Scene& scene, EditorState&) {
+    scene.forEach<Camera>([&](EntityId id, Camera& c) { c.active = (id == m_target); });
+}
+
+void SetActiveCameraCommand::undo(Scene& scene, EditorState&) {
+    for (const auto& [slot, wasActive] : m_before) {
+        EntityId id{slot, scene.generationOf(slot)};
+        if (scene.isAlive(id) && scene.has<Camera>(id)) scene.get<Camera>(id).active = wasActive;
+    }
+}
+
 } // namespace Engine

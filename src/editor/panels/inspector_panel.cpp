@@ -629,13 +629,16 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
         drawPropertyLabel("Exposure");  changed |= ImGui::DragFloat("##CExp", &cam.exposure, 0.01f, 0.0f, 10.0f, "%.2f");
         drawPropertyLabel("Active");    changed |= ImGui::Checkbox("##CAct", &cam.active);
 
-        // "Set as Main" flips active across every camera, so a single-entity
-        // ComponentEditCommand can't capture it; left non-undoable for now
-        // (a multi-camera command is a future slice).
+        // "Set as Main" flips active across every camera; record each prior
+        // active flag so the multi-entity change is undoable.
         if (ImGui::Button("Set as Main Camera", ImVec2(-1, 0))) {
+            std::vector<std::pair<uint32_t, bool>> beforeActive;
             scene.forEach<Camera>([&](EntityId other, Camera& c) {
+                beforeActive.emplace_back(other.index, c.active);
                 c.active = (other == id);
             });
+            state.commands.push(std::make_unique<SetActiveCameraCommand>(
+                id, std::move(beforeActive), "Set Main Camera"));
             state.markSceneDirty();
         }
 

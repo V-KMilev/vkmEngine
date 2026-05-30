@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "ecs/entity.h"
@@ -239,6 +240,31 @@ class ReparentCommand : public Command {
         EntityId    m_child;
         EntityId    m_oldParent;
         EntityId    m_newParent;
+        const char* m_label;
+};
+
+/**
+ * @brief Make one camera the active ("main") camera, undoably.
+ *
+ * "Set as Main" / "Look Through" flip the active flag across every camera (one
+ * on, the rest off) - a multi-entity change a single-entity ComponentEditCommand
+ * can't capture. Records each camera's prior active flag (by slot) so undo
+ * restores the exact previous selection.
+ */
+class SetActiveCameraCommand : public Command {
+    public:
+        SetActiveCameraCommand(EntityId target,
+                               std::vector<std::pair<uint32_t, bool>> before,
+                               const char* label)
+            : m_target(target), m_before(std::move(before)), m_label(label) {}
+
+        void redo(Scene&, EditorState&) override;
+        void undo(Scene&, EditorState&) override;
+        const char* label() const override { return m_label; }
+
+    private:
+        EntityId m_target;
+        std::vector<std::pair<uint32_t, bool>> m_before;  ///< (slotIndex, wasActive) per camera
         const char* m_label;
 };
 
