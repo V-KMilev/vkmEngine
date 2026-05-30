@@ -5,7 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 
 namespace Core {
     class ScreenTriangle;
@@ -20,7 +20,7 @@ namespace Engine {
  * target. Disabled by default (EnvironmentConfig::motionBlur) - a no-op when
  * off, so the verified pipeline is unchanged until opted in.
  */
-class GLMotionBlurPass : public RenderPass {
+class GLMotionBlurPass : public GLRenderPass {
     public:
         GLMotionBlurPass() = delete;
         ~GLMotionBlurPass() override;
@@ -35,7 +35,7 @@ class GLMotionBlurPass : public RenderPass {
 
     public:
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
             // Three-target dance: render into PostScratch, then blit back into

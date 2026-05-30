@@ -6,7 +6,7 @@
 #include <glm/glm.hpp>
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 
 #include "resource/gl_mesh.h"
 
@@ -27,7 +27,7 @@ namespace Engine {
  * visible drawables in the scene. This is useful for debugging frustum culling and
  * visualizing the spatial bounds of objects.
  */
-class GLAABBDebugPass : public RenderPass {
+class GLAABBDebugPass : public GLRenderPass {
     public:
         GLAABBDebugPass() = delete;
         ~GLAABBDebugPass() override = default;
@@ -63,7 +63,7 @@ class GLAABBDebugPass : public RenderPass {
          * @param view      Provides scene and camera information.
          * @param resources Access to GPU mesh and material handles for this frame.
          */
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
             // Writes the HDR FBO overlay attachment, not the HDR colour.

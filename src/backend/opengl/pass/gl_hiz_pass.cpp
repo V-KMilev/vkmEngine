@@ -24,7 +24,7 @@ bool GLHiZPass::enabledForView(const RenderView& view) const {
 }
 
 GLHiZPass::GLHiZPass(ShaderHandle initShader, ShaderHandle reduceShader)
-    : RenderPass("GLHiZPass")
+    : GLRenderPass("GLHiZPass")
     , m_initShader(initShader)
     , m_reduceShader(reduceShader)
     , m_screenTri(std::make_unique<Core::ScreenTriangle>())
@@ -37,13 +37,8 @@ void GLHiZPass::onResize(RenderBackend& /*backend*/, uint32_t /*width*/, uint32_
     // GLHiZ is owned and resized by FrameResources.
 }
 
-void GLHiZPass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLHiZPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) return;
-
-    auto& gl       = static_cast<GLBackend&>(backend);
     auto& gbuffer  = *rg.resource<GLGBuffer>(RGResource::GBufferPosition);
     auto& hiz      = *rg.resource<GLHiZ>(RGResource::HiZPyramid);
     if (!gbuffer.isReady() || !hiz.isReady()) return;

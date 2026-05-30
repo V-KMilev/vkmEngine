@@ -26,28 +26,21 @@ bool GLOutlinePass::enabledForView(const RenderView& view) const {
 }
 
 GLOutlinePass::GLOutlinePass(ShaderHandle shader)
-    : RenderPass("GLOutlinePass")
+    : GLRenderPass("GLOutlinePass")
     , m_shader(shader)
 {}
 
 void GLOutlinePass::onResize(RenderBackend& backend, uint32_t width, uint32_t height) {}
 
-void GLOutlinePass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLOutlinePass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLOutlinePass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
 
     if (!view.environment.selection.enabled) return;
 
     auto& hdr = *rg.resource<GLSceneTarget>(RGResource::SceneHDR);
     if (!hdr.isReady()) return;
 
-    auto& gl     = static_cast<GLBackend&>(backend);
     auto& glView = gl.getView();
     auto& ctx    = gl.getContext();
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 
 namespace Engine {
 
@@ -12,7 +12,7 @@ namespace Engine {
  * the GTAO pass has view-space data to work from. Runs after shadows and
  * before the forward pass.
  */
-class GLPrepass : public RenderPass {
+class GLPrepass : public GLRenderPass {
     public:
         GLPrepass() = delete;
         ~GLPrepass() override = default;
@@ -27,7 +27,7 @@ class GLPrepass : public RenderPass {
 
     public:
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         /// The prepass only exists to fill the view-space G-buffer for
         /// downstream consumers (GTAO/SSR/TAA/DoF/MotionBlur/HiZ). Skip the

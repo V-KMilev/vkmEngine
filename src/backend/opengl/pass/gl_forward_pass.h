@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 #include "resource/material_asset.h"
 #include "resource/shader_asset.h"
 
@@ -19,7 +19,7 @@ namespace Engine {
  * - Opaque/Transparent: PBR shader (with blending for transparent)
  * - Unlit: simplified shader without lighting
  */
-class GLForwardPass : public RenderPass {
+class GLForwardPass : public GLRenderPass {
     public:
         GLForwardPass() = delete;
         ~GLForwardPass() override;
@@ -63,7 +63,7 @@ class GLForwardPass : public RenderPass {
         void setShader(MaterialType type, ShaderHandle shader);
 
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
             builder.read(RGResource::ShadowAtlas);

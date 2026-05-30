@@ -3,7 +3,7 @@
 #include <cstdint>
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 
 namespace Engine {
 
@@ -25,7 +25,7 @@ namespace Engine {
  * A single depth shader covers 2D and cube paths - both write standard
  * projected depth (no gl_FragDepth override).
  */
-class GLShadowPass : public RenderPass {
+class GLShadowPass : public GLRenderPass {
     public:
         GLShadowPass() = delete;
         ~GLShadowPass() override = default;
@@ -40,7 +40,7 @@ class GLShadowPass : public RenderPass {
 
     public:
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
             builder.write(RGResource::ShadowAtlas);

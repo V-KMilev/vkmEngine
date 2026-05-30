@@ -3,7 +3,7 @@
 #include <memory>
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 
 namespace Core {
     class ScreenTriangle;
@@ -25,7 +25,7 @@ namespace Engine {
  * No-op pass when OIT is disabled. Sits between the transparent
  * forward pass and the post chain.
  */
-class GLOITResolvePass : public RenderPass {
+class GLOITResolvePass : public GLRenderPass {
     public:
         GLOITResolvePass() = delete;
         ~GLOITResolvePass() override;
@@ -42,7 +42,7 @@ class GLOITResolvePass : public RenderPass {
         bool enabledForView(const RenderView& view) const override;
 
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
             builder.read(RGResource::OITAccum);

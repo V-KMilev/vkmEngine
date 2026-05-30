@@ -1,7 +1,7 @@
 #pragma once
 
 #include "resource/shader_asset.h"
-#include "system/render/render_pass.h"
+#include "gl_render_pass.h"
 
 namespace Engine {
 
@@ -20,7 +20,7 @@ namespace Engine {
  * so the editor (and gameplay code, if it ever wants the effect) can
  * retune it without recompiling.
  */
-class GLOutlinePass : public RenderPass {
+class GLOutlinePass : public GLRenderPass {
     public:
         GLOutlinePass() = delete;
         ~GLOutlinePass() override = default;
@@ -36,7 +36,7 @@ class GLOutlinePass : public RenderPass {
     public:
         void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
 
-        void execute(RenderGraphContext& ctx) override;
+        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
 
         void declareResources(RenderGraphBuilder& builder) const override {
             builder.write(RGResource::Overlay);

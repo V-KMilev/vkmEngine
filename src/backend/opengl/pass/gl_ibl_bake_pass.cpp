@@ -47,7 +47,7 @@ GLIBLBakePass::GLIBLBakePass(
     ShaderHandle prefilterShader,
     ShaderHandle brdfShader
 )
-    : RenderPass("GLIBLBakePass")
+    : GLRenderPass("GLIBLBakePass")
     , m_equirectShader(equirectShader)
     , m_irradianceShader(irradianceShader)
     , m_prefilterShader(prefilterShader)
@@ -141,17 +141,9 @@ bool GLIBLBakePass::bakeOne(GLBackend& gl, GLIBL& ibl, const std::string& path,
     return true;
 }
 
-void GLIBLBakePass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLIBLBakePass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLIBLBakePass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
-
-    auto& gl     = static_cast<GLBackend&>(backend);
     auto& glView = gl.getView();
     auto& ibl    = *rg.resource<GLIBL>(RGResource::IBL);
 

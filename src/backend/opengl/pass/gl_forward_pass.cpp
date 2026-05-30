@@ -58,7 +58,7 @@ const char* phaseSuffix(GLForwardPass::Phase p) {
 }
 
 GLForwardPass::GLForwardPass(ShaderHandle pbrShader, Phase phase)
-    : RenderPass(std::string("GLForwardPass") + phaseSuffix(phase)), m_phase(phase) {
+    : GLRenderPass(std::string("GLForwardPass") + phaseSuffix(phase)), m_phase(phase) {
     m_shaders[static_cast<int>(MaterialType::Opaque)]      = pbrShader;
     m_shaders[static_cast<int>(MaterialType::Transparent)] = pbrShader;
     m_shaders[static_cast<int>(MaterialType::AlphaMask)]   = pbrShader;
@@ -75,17 +75,9 @@ void GLForwardPass::onResize(RenderBackend& backend, uint32_t width, uint32_t he
     // Nothing to do for forward pass
 }
 
-void GLForwardPass::execute(RenderGraphContext& rg) {
-    PROFILE_GPU_SCOPE_NAMED(getName().c_str());
-    RenderBackend& backend = rg.backend;
+void GLForwardPass::executeGL(GLBackend& gl, RenderGraphContext& rg) {
     const RenderView& view = rg.view;
     const ResourceManager& resources = rg.resources;
-    if (backend.getType() != RenderBackendType::OpenGL) {
-        LOG_ERROR("GLForwardPass requires OpenGL backend, got %s - skipping pass", toString(backend.getType()));
-        return;
-    }
-
-    auto& gl = static_cast<GLBackend&>(backend);
     auto& glContext = gl.getContext();
 
     // Graph-registered transient resources. Persistent backend state
