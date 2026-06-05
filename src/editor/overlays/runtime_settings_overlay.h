@@ -27,10 +27,13 @@ class RuntimeSettingsOverlay {
         RuntimeSettingsOverlay& operator=(RuntimeSettingsOverlay && other) = delete;
 
     public:
-        /// Draw the window if the toggle is on. Safe to call every frame.
-        /// Edits the scene's Environment component (the source of truth),
-        /// not RenderSystem's per-frame mirror; pass enable/disable still
-        /// goes through RenderSystem (that state lives on the render graph).
+        /**
+         * @brief Draw the window if the toggle is on; safe to call every frame.
+         *
+         * Edits the scene's Environment component (the source of truth), not
+         * RenderSystem's per-frame mirror; pass enable/disable still goes
+         * through RenderSystem (that state lives on the render graph).
+         */
         void draw(EditorState& state, Scene& scene, RenderSystem& renderSystem);
 };
 
