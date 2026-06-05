@@ -14,6 +14,7 @@
 #include "system/async/async_loader_system.h"
 #include "system/event/event_system.h"
 #include "system/hierarchy/hierarchy_system.h"
+#include "system/physics/physics_system.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
 #include "system/render/render_pass.h"
@@ -47,6 +48,10 @@ EngineAppSystems setupEngineApp(Engine& engine) {
     // textures reach the GPU upload step in the same frame they finished.
     engine.addSystem<AsyncLoaderSystem>(SystemStage::Simulation);
     engine.addSystem<AnimationSystem> (SystemStage::Simulation);
+    // Physics runs after animation and before the Transform stage, so the
+    // hierarchy resolves physics-updated Transforms into WorldTransform the
+    // same frame. fixedUpdate() does the work; update() is a no-op.
+    engine.addSystem<PhysicsSystem>   (SystemStage::Simulation);
     engine.addSystem<HierarchySystem> (SystemStage::Transform);
     auto& visibilitySystem = engine.addSystem<VisibilitySystem>(SystemStage::Visibility);
     auto& renderSystem     = engine.addSystem<RenderSystem>    (SystemStage::Render);

@@ -1,0 +1,385 @@
+#include "system/physics/collision/narrowphase.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <limits>
+#include <vector>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+
+namespace Engine {
+
+namespace {
+
+constexpr float EPS = 1e-6f;
+
+/// Oriented bounding box: centre, three unit world axes, half extents.
+struct OBB {
+    glm::vec3 c;
+    glm::vec3 u[3];
+    glm::vec3 e;
+};
+
+OBB makeOBB(const glm::vec3& center, const glm::quat& rotation, const glm::vec3& halfExtents) {
+    const glm::mat3 r = glm::mat3_cast(rotation);
+    return OBB{center, {r[0], r[1], r[2]}, halfExtents};
+}
+
+void flipNormals(Contact* out, int count) {
+    for (int i = 0; i < count; ++i) out[i].normal = -out[i].normal;
+}
+
+int contactSphereSphere(
+    const glm::vec3& posA, float radiusA,
+    const glm::vec3& posB, float radiusB,
+    Contact* out
+) {
+    const glm::vec3 d = posB - posA;
+    const float dist = glm::length(d);
+    const float sum = radiusA + radiusB;
+    if (dist >= sum) return 0;
+
+    const glm::vec3 normal = dist > EPS ? d / dist : glm::vec3(0.0f, 1.0f, 0.0f);
+    const float penetration = sum - dist;
+    out[0].point = posA + normal * (radiusA - penetration * 0.5f);
+    out[0].normal = normal;
+    out[0].penetration = penetration;
+    return 1;
+}
+
+int contactSpherePlane(
+    const glm::vec3& posS, float radius,
+    const glm::vec3& planeNormal, float planeOffset,
+    Contact* out
+) {
+    const float signedDist = glm::dot(planeNormal, posS) - planeOffset;
+    const float penetration = radius - signedDist;
+    if (penetration <= 0.0f) return 0;
+
+    out[0].point = posS - planeNormal * radius;
+    out[0].normal = -planeNormal;  // sphere (A) -> plane (B)
+    out[0].penetration = penetration;
+    return 1;
+}
+
+int contactBoxPlane(
+    const OBB& box,
+    const glm::vec3& planeNormal, float planeOffset,
+    Contact* out
+) {
+    int count = 0;
+    for (int sx = -1; sx <= 1; sx += 2)
+    for (int sy = -1; sy <= 1; sy += 2)
+    for (int sz = -1; sz <= 1; sz += 2) {
+        const glm::vec3 corner = box.c
+            + box.u[0] * (box.e.x * sx)
+            + box.u[1] * (box.e.y * sy)
+            + box.u[2] * (box.e.z * sz);
+        const float penetration = planeOffset - glm::dot(planeNormal, corner);
+        if (penetration <= 0.0f) continue;
+
+        if (count < MAX_CONTACTS_PER_MANIFOLD) {
+            out[count].point = corner;
+            out[count].normal = -planeNormal;  // box (A) -> plane (B)
+            out[count].penetration = penetration;
+            ++count;
+        } else {
+            // Replace the shallowest kept contact with this deeper one.
+            int shallow = 0;
+            for (int i = 1; i < count; ++i)
+                if (out[i].penetration < out[shallow].penetration) shallow = i;
+            if (penetration > out[shallow].penetration) {
+                out[shallow].point = corner;
+                out[shallow].penetration = penetration;
+            }
+        }
+    }
+    return count;
+}
+
+int contactSphereBox(
+    const glm::vec3& posS, float radius,
+    const OBB& box,
+    Contact* out
+) {
+    const glm::vec3 d = posS - box.c;
+    glm::vec3 local;
+    glm::vec3 clamped;
+    for (int i = 0; i < 3; ++i) {
+        local[i] = glm::dot(d, box.u[i]);
+        clamped[i] = glm::clamp(local[i], -box.e[i], box.e[i]);
+    }
+
+    const bool inside = (local == clamped);
+    glm::vec3 normalOut;     // points from the box surface toward the sphere
+    float penetration;
+
+    if (!inside) {
+        const glm::vec3 closest = box.c
+            + box.u[0] * clamped.x + box.u[1] * clamped.y + box.u[2] * clamped.z;
+        const glm::vec3 delta = posS - closest;
+        const float dist = glm::length(delta);
+        if (dist >= radius) return 0;
+        normalOut = dist > EPS ? delta / dist : box.u[1];
+        penetration = radius - dist;
+        out[0].point = closest;
+    } else {
+        // Sphere centre is inside the box: eject along the least-penetrated axis.
+        int axis = 0;
+        float minPen = box.e[0] - std::fabs(local[0]);
+        for (int i = 1; i < 3; ++i) {
+            const float pen = box.e[i] - std::fabs(local[i]);
+            if (pen < minPen) { minPen = pen; axis = i; }
+        }
+        const float sign = local[axis] >= 0.0f ? 1.0f : -1.0f;
+        normalOut = box.u[axis] * sign;
+        penetration = minPen + radius;
+        out[0].point = posS - normalOut * (minPen);
+    }
+
+    out[0].normal = -normalOut;  // sphere (A) -> box (B)
+    out[0].penetration = penetration;
+    return 1;
+}
+
+float projectRadius(const OBB& box, const glm::vec3& axis) {
+    return box.e.x * std::fabs(glm::dot(box.u[0], axis))
+         + box.e.y * std::fabs(glm::dot(box.u[1], axis))
+         + box.e.z * std::fabs(glm::dot(box.u[2], axis));
+}
+
+/// Overlap of the two boxes projected onto a unit axis. Positive == overlapping.
+float overlapOnAxis(const OBB& a, const OBB& b, const glm::vec3& axis, const glm::vec3& toCentre) {
+    return projectRadius(a, axis) + projectRadius(b, axis) - std::fabs(glm::dot(toCentre, axis));
+}
+
+/// The four world vertices of an OBB face (axis index + outward sign).
+std::array<glm::vec3, 4> faceVertices(const OBB& box, int axis, float sign) {
+    const int a = (axis + 1) % 3;
+    const int b = (axis + 2) % 3;
+    const glm::vec3 center = box.c + box.u[axis] * (box.e[axis] * sign);
+    const glm::vec3 ua = box.u[a] * box.e[a];
+    const glm::vec3 ub = box.u[b] * box.e[b];
+    return {
+        center + ua + ub,
+        center + ua - ub,
+        center - ua - ub,
+        center - ua + ub
+    };
+}
+
+/// Sutherland-Hodgman clip of a polygon against a half-space: keep the side
+/// where dot(v - planePoint, planeNormal) <= 0.
+void clipToPlane(
+    std::vector<glm::vec3>& poly,
+    const glm::vec3& planePoint,
+    const glm::vec3& planeNormal
+) {
+    std::vector<glm::vec3> result;
+    result.reserve(poly.size() + 1);
+    for (size_t i = 0; i < poly.size(); ++i) {
+        const glm::vec3& cur = poly[i];
+        const glm::vec3& nxt = poly[(i + 1) % poly.size()];
+        const float dc = glm::dot(cur - planePoint, planeNormal);
+        const float dn = glm::dot(nxt - planePoint, planeNormal);
+        if (dc <= 0.0f) result.push_back(cur);
+        if ((dc < 0.0f) != (dn < 0.0f)) {
+            const float t = dc / (dc - dn);
+            result.push_back(cur + t * (nxt - cur));
+        }
+    }
+    poly.swap(result);
+}
+
+/// Closest points between two segments (Ericson, Real-Time Collision Detection).
+void closestSegmentSegment(
+    const glm::vec3& p1, const glm::vec3& q1,
+    const glm::vec3& p2, const glm::vec3& q2,
+    glm::vec3& c1, glm::vec3& c2
+) {
+    const glm::vec3 d1 = q1 - p1;
+    const glm::vec3 d2 = q2 - p2;
+    const glm::vec3 r = p1 - p2;
+    const float a = glm::dot(d1, d1);
+    const float e = glm::dot(d2, d2);
+    const float f = glm::dot(d2, r);
+
+    float s = 0.0f;
+    float t = 0.0f;
+    if (a <= EPS && e <= EPS) {
+        c1 = p1; c2 = p2; return;
+    }
+    if (a <= EPS) {
+        t = glm::clamp(f / e, 0.0f, 1.0f);
+    } else {
+        const float c = glm::dot(d1, r);
+        if (e <= EPS) {
+            s = glm::clamp(-c / a, 0.0f, 1.0f);
+        } else {
+            const float b = glm::dot(d1, d2);
+            const float denom = a * e - b * b;
+            if (denom > EPS) s = glm::clamp((b * f - c * e) / denom, 0.0f, 1.0f);
+            t = (b * s + f) / e;
+            if (t < 0.0f)      { t = 0.0f; s = glm::clamp(-c / a, 0.0f, 1.0f); }
+            else if (t > 1.0f) { t = 1.0f; s = glm::clamp((b - c) / a, 0.0f, 1.0f); }
+        }
+    }
+    c1 = p1 + d1 * s;
+    c2 = p2 + d2 * t;
+}
+
+int contactBoxBox(const OBB& a, const OBB& b, Contact* out) {
+    const glm::vec3 toCentre = b.c - a.c;
+
+    float bestOverlap = std::numeric_limits<float>::max();
+    int bestCase = -1;          // 0..2 face A, 3..5 face B, 6..14 edge-edge
+    glm::vec3 bestAxis(0.0f);
+
+    auto tryAxis = [&](glm::vec3 axis, int caseIndex) {
+        const float len2 = glm::dot(axis, axis);
+        if (len2 < EPS) return true;   // degenerate (parallel edges); skip
+        axis /= std::sqrt(len2);
+        const float overlap = overlapOnAxis(a, b, axis, toCentre);
+        if (overlap < 0.0f) return false;  // separating axis found
+        if (overlap < bestOverlap) {
+            bestOverlap = overlap;
+            bestCase = caseIndex;
+            bestAxis = glm::dot(axis, toCentre) < 0.0f ? -axis : axis;  // orient A -> B
+        }
+        return true;
+    };
+
+    for (int i = 0; i < 3; ++i) if (!tryAxis(a.u[i], i)) return 0;
+    for (int i = 0; i < 3; ++i) if (!tryAxis(b.u[i], 3 + i)) return 0;
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            if (!tryAxis(glm::cross(a.u[i], b.u[j]), 6 + i * 3 + j)) return 0;
+
+    if (bestCase < 0) return 0;
+
+    // Edge-edge: one contact at the midpoint of the closest edge pair.
+    if (bestCase >= 6) {
+        const int ia = (bestCase - 6) / 3;
+        const int jb = (bestCase - 6) % 3;
+
+        glm::vec3 pA = a.c;
+        for (int k = 0; k < 3; ++k)
+            if (k != ia) pA += a.u[k] * (glm::dot(a.u[k], bestAxis) > 0.0f ? a.e[k] : -a.e[k]);
+        glm::vec3 pB = b.c;
+        for (int k = 0; k < 3; ++k)
+            if (k != jb) pB += b.u[k] * (glm::dot(b.u[k], bestAxis) > 0.0f ? -b.e[k] : b.e[k]);
+
+        glm::vec3 c1;
+        glm::vec3 c2;
+        closestSegmentSegment(
+            pA - a.u[ia] * a.e[ia], pA + a.u[ia] * a.e[ia],
+            pB - b.u[jb] * b.e[jb], pB + b.u[jb] * b.e[jb],
+            c1, c2);
+
+        out[0].point = (c1 + c2) * 0.5f;
+        out[0].normal = bestAxis;
+        out[0].penetration = bestOverlap;
+        return 1;
+    }
+
+    // Face contact: clip the incident face against the reference face side planes.
+    const bool refIsA = bestCase < 3;
+    const OBB& ref = refIsA ? a : b;
+    const OBB& inc = refIsA ? b : a;
+    const int refAxis = refIsA ? bestCase : bestCase - 3;
+    const glm::vec3 refNormal = refIsA ? bestAxis : -bestAxis;  // outward from ref toward inc
+    const float refSign = glm::dot(ref.u[refAxis], refNormal) >= 0.0f ? 1.0f : -1.0f;
+
+    // Incident face: the face of inc whose outward normal most opposes refNormal.
+    int incAxis = 0;
+    float minDot = glm::dot(inc.u[0], refNormal);
+    for (int i = 1; i < 3; ++i) {
+        const float d = glm::dot(inc.u[i], refNormal);
+        if (std::fabs(d) > std::fabs(minDot)) minDot = d, incAxis = i;
+    }
+    const float incSign = minDot > 0.0f ? -1.0f : 1.0f;
+
+    const auto incFace = faceVertices(inc, incAxis, incSign);
+    std::vector<glm::vec3> poly(incFace.begin(), incFace.end());
+
+    const glm::vec3 refCenter = ref.c + ref.u[refAxis] * (ref.e[refAxis] * refSign);
+    const int t0 = (refAxis + 1) % 3;
+    const int t1 = (refAxis + 2) % 3;
+    const int tangents[2] = {t0, t1};
+    for (int t : tangents) {
+        const glm::vec3 planePt1 = refCenter + ref.u[t] * ref.e[t];
+        clipToPlane(poly, planePt1, ref.u[t]);
+        const glm::vec3 planePt2 = refCenter - ref.u[t] * ref.e[t];
+        clipToPlane(poly, planePt2, -ref.u[t]);
+    }
+
+    int count = 0;
+    for (const glm::vec3& v : poly) {
+        const float dist = glm::dot(v - refCenter, refNormal);
+        if (dist > 0.0f) continue;  // not penetrating the reference face
+        if (count >= MAX_CONTACTS_PER_MANIFOLD) break;
+        out[count].point = v;
+        out[count].normal = bestAxis;  // A -> B regardless of which box is reference
+        out[count].penetration = -dist;
+        ++count;
+    }
+    return count;
+}
+
+} // namespace
+
+int generateContacts(
+    const Collider& a, const glm::vec3& posA, const glm::quat& rotA,
+    const Collider& b, const glm::vec3& posB, const glm::quat& rotB,
+    Contact* out
+) {
+    switch (a.shape) {
+        case ColliderShape::Sphere:
+            switch (b.shape) {
+                case ColliderShape::Sphere:
+                    return contactSphereSphere(posA, a.radius, posB, b.radius, out);
+                case ColliderShape::Box:
+                    return contactSphereBox(posA, a.radius, makeOBB(posB, rotB, b.halfExtents), out);
+                case ColliderShape::Plane:
+                    return contactSpherePlane(posA, a.radius, b.planeNormal, b.planeOffset, out);
+            }
+            break;
+        case ColliderShape::Box:
+            switch (b.shape) {
+                case ColliderShape::Sphere: {
+                    const int n = contactSphereBox(posB, b.radius, makeOBB(posA, rotA, a.halfExtents), out);
+                    flipNormals(out, n);
+                    return n;
+                }
+                case ColliderShape::Box:
+                    return contactBoxBox(makeOBB(posA, rotA, a.halfExtents),
+                                         makeOBB(posB, rotB, b.halfExtents), out);
+                case ColliderShape::Plane:
+                    return contactBoxPlane(makeOBB(posA, rotA, a.halfExtents),
+                                           b.planeNormal, b.planeOffset, out);
+            }
+            break;
+        case ColliderShape::Plane:
+            switch (b.shape) {
+                case ColliderShape::Sphere: {
+                    const int n = contactSpherePlane(posB, b.radius, a.planeNormal, a.planeOffset, out);
+                    flipNormals(out, n);
+                    return n;
+                }
+                case ColliderShape::Box: {
+                    const int n = contactBoxPlane(makeOBB(posB, rotB, b.halfExtents),
+                                                  a.planeNormal, a.planeOffset, out);
+                    flipNormals(out, n);
+                    return n;
+                }
+                case ColliderShape::Plane:
+                    return 0;  // two static planes never collide
+            }
+            break;
+    }
+    return 0;
+}
+
+} // namespace Engine

@@ -12,8 +12,10 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "ecs/component/animation.h"
+#include "ecs/component/collider.h"
 #include "ecs/component/mesh_lod.h"
 #include "ecs/component/reflection_probe.h"
+#include "ecs/component/rigidbody.h"
 #include "ecs/component/transform.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
@@ -37,6 +39,8 @@ const ImVec4 ACCENT_LIGHT     = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);
 const ImVec4 ACCENT_CAMERA    = ImVec4(0.30f, 0.78f, 0.80f, 1.0f);
 const ImVec4 ACCENT_ANIM      = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);
 const ImVec4 ACCENT_HIERARCHY = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);
+const ImVec4 ACCENT_PHYSICS   = ImVec4(0.36f, 0.78f, 0.45f, 1.0f);
+const ImVec4 ACCENT_COLLIDER  = ImVec4(0.25f, 0.65f, 0.40f, 1.0f);
 
 // Asset-reference combo: pick which loaded asset of type Asset a handle points
 // at. Snapshots the asset list so ImGuiListClipper can window thousands of rows
@@ -180,6 +184,8 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<Mesh>(id))       drawMeshSection(scene, ctx.resources, state, id);
     if (scene.has<MeshLOD>(id))    drawMeshLODSection(scene, ctx.resources, state, id);
     if (scene.has<Light>(id))      drawLightSection(scene, state, id);
+    if (scene.has<Rigidbody>(id))  drawRigidbodySection(scene, state, id);
+    if (scene.has<Collider>(id))   drawColliderSection(scene, state, id);
     if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, state, id);
     if (scene.has<Camera>(id))     drawCameraSection(scene, state, id);
     if (scene.has<Animation>(id))  drawAnimationSection(scene, state, id);
@@ -226,6 +232,18 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
             Light l = generatePointLight();
             scene.add(Entity{id}, l);
             state.commands.push(std::make_unique<AddComponentCommand<Light>>(id, l, "Add Light"));
+            state.markSceneDirty();
+        }
+        if (!scene.has<Rigidbody>(id) && ImGui::MenuItem("Rigidbody")) {
+            Rigidbody rb{};
+            scene.add(Entity{id}, rb);
+            state.commands.push(std::make_unique<AddComponentCommand<Rigidbody>>(id, rb, "Add Rigidbody"));
+            state.markSceneDirty();
+        }
+        if (!scene.has<Collider>(id) && ImGui::MenuItem("Collider")) {
+            Collider col{};
+            scene.add(Entity{id}, col);
+            state.commands.push(std::make_unique<AddComponentCommand<Collider>>(id, col, "Add Collider"));
             state.markSceneDirty();
         }
         if (!scene.has<Camera>(id) && ImGui::MenuItem("Camera")) {
@@ -526,6 +544,96 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
         Light snap = scene.get<Light>(id);
         scene.remove<Light>(Entity{id});
         state.commands.push(std::make_unique<RemoveComponentCommand<Light>>(id, snap, "Remove Light"));
+        state.markSceneDirty();
+    }
+}
+
+void InspectorPanel::drawRigidbodySection(Scene& scene, EditorState& state, EntityId id) {
+    bool remove = false;
+    const bool open = beginComponentCard("Rigidbody", ACCENT_PHYSICS, true, &remove);
+    if (open) {
+        auto& rb = scene.get<Rigidbody>(id);
+        const Rigidbody before = rb;
+        bool changed = false;
+
+        drawPropertyLabel("Mass");
+        changed |= ImGui::DragFloat("##RbMass", &rb.mass, 0.1f, 0.0f, 1000.0f, "%.2f");
+        drawPropertyLabel("Static");      changed |= ImGui::Checkbox("##RbStatic", &rb.isStatic);
+        drawPropertyLabel("Kinematic");   changed |= ImGui::Checkbox("##RbKinematic", &rb.isKinematic);
+
+        drawPropertyLabel("Gravity Scale");
+        changed |= ImGui::DragFloat("##RbGrav", &rb.gravityScale, 0.05f, 0.0f, 10.0f, "%.2f");
+        drawPropertyLabel("Restitution");
+        changed |= ImGui::DragFloat("##RbRest", &rb.restitution, 0.01f, 0.0f, 1.0f, "%.2f");
+        drawPropertyLabel("Friction");
+        changed |= ImGui::DragFloat("##RbFric", &rb.friction, 0.01f, 0.0f, 2.0f, "%.2f");
+        drawPropertyLabel("Linear Damping");
+        changed |= ImGui::DragFloat("##RbLinDamp", &rb.linearDamping, 0.005f, 0.0f, 1.0f, "%.3f");
+        drawPropertyLabel("Angular Damping");
+        changed |= ImGui::DragFloat("##RbAngDamp", &rb.angularDamping, 0.005f, 0.0f, 1.0f, "%.3f");
+
+        changed |= drawVec3Control("Velocity", glm::value_ptr(rb.linearVelocity), 0.0f, 0.1f);
+
+        if (changed) {
+            // Wake the body so the edit (especially velocity) survives the next
+            // tick - otherwise PhysicsSystem zeroes a sleeping body's velocity.
+            rb.sleeping = false;
+            rb.sleepTimer = 0.0f;
+            state.commands.push(std::make_unique<ComponentEditCommand<Rigidbody>>(id, before, rb, "Edit Rigidbody"));
+            state.markSceneDirty();
+        }
+    }
+    endComponentCard();
+    if (remove) {
+        Rigidbody snap = scene.get<Rigidbody>(id);
+        scene.remove<Rigidbody>(Entity{id});
+        state.commands.push(std::make_unique<RemoveComponentCommand<Rigidbody>>(id, snap, "Remove Rigidbody"));
+        state.markSceneDirty();
+    }
+}
+
+void InspectorPanel::drawColliderSection(Scene& scene, EditorState& state, EntityId id) {
+    bool remove = false;
+    const bool open = beginComponentCard("Collider", ACCENT_COLLIDER, true, &remove);
+    if (open) {
+        auto& col = scene.get<Collider>(id);
+        const Collider before = col;
+        bool changed = false;
+
+        drawPropertyLabel("Shape");
+        int shapeIdx = static_cast<int>(col.shape);
+        if (ImGui::Combo("##ColShape", &shapeIdx, COLLIDER_SHAPE_NAMES, IM_ARRAYSIZE(COLLIDER_SHAPE_NAMES))) {
+            col.shape = static_cast<ColliderShape>(shapeIdx);
+            changed = true;
+        }
+
+        switch (col.shape) {
+            case ColliderShape::Sphere:
+                drawPropertyLabel("Radius");
+                changed |= ImGui::DragFloat("##ColRadius", &col.radius, 0.05f, 0.01f, 1000.0f, "%.2f");
+                break;
+            case ColliderShape::Box:
+                changed |= drawVec3Control("Half Extents", glm::value_ptr(col.halfExtents), 0.5f, 0.05f);
+                break;
+            case ColliderShape::Plane:
+                changed |= drawVec3Control("Normal", glm::value_ptr(col.planeNormal), 0.0f, 0.05f);
+                drawPropertyLabel("Offset");
+                changed |= ImGui::DragFloat("##ColOffset", &col.planeOffset, 0.05f, -1000.0f, 1000.0f, "%.2f");
+                break;
+        }
+
+        drawPropertyLabel("Trigger");  changed |= ImGui::Checkbox("##ColTrigger", &col.isTrigger);
+
+        if (changed) {
+            state.commands.push(std::make_unique<ComponentEditCommand<Collider>>(id, before, col, "Edit Collider"));
+            state.markSceneDirty();
+        }
+    }
+    endComponentCard();
+    if (remove) {
+        Collider snap = scene.get<Collider>(id);
+        scene.remove<Collider>(Entity{id});
+        state.commands.push(std::make_unique<RemoveComponentCommand<Collider>>(id, snap, "Remove Collider"));
         state.markSceneDirty();
     }
 }

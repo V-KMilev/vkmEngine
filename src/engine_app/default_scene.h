@@ -10,10 +10,12 @@
 #include "core/math/axes.h"
 #include "ecs/scene.h"
 #include "ecs/component/camera.h"
+#include "ecs/component/collider.h"
 #include "ecs/component/light.h"
 #include "ecs/component/mesh.h"
 #include "ecs/component/mesh_lod.h"
 #include "ecs/component/name.h"
+#include "ecs/component/rigidbody.h"
 #include "ecs/component/transform.h"
 
 #include "generator/light_generators.h"
@@ -151,6 +153,70 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
             glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
             glm::vec3(1.0f)
         });
+    }
+
+    // Physics demo: a static ground box with a few dynamic boxes and spheres
+    // dropped above it. PhysicsSystem (fixedUpdate) integrates gravity, resolves
+    // the collisions, and settles them into a resting stack. Every body is a
+    // hierarchy root so its local Transform is its world pose.
+    {
+        const auto physSphere = resources.add(Engine::generateSphere(24, 12), "phys_sphere");
+
+        // Ground: a wide thin box whose top surface sits at y = 0. The cube mesh
+        // spans [-0.5, 0.5], so a Transform scale of (20,1,20) renders a slab
+        // whose collider half-extents match exactly.
+        auto ground = scene.createEntity();
+        scene.add(ground, Engine::Name{"Ground"});
+        scene.add(ground, Engine::Mesh{cubeMesh, material});
+        scene.add(ground, Engine::Transform{
+            glm::vec3(0.0f, -0.5f, 0.0f),
+            glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
+            glm::vec3(20.0f, 1.0f, 20.0f)
+        });
+        Engine::Collider groundCol;
+        groundCol.shape = Engine::ColliderShape::Box;
+        groundCol.halfExtents = glm::vec3(10.0f, 0.5f, 10.0f);
+        scene.add(ground, groundCol);
+        Engine::Rigidbody groundBody;
+        groundBody.isStatic = true;
+        scene.add(ground, groundBody);
+
+        auto dropBox = [&](const char* name, const glm::vec3& pos, const glm::vec3& spin) {
+            auto e = scene.createEntity();
+            scene.add(e, Engine::Name{name});
+            scene.add(e, Engine::Mesh{cubeMesh, material});
+            scene.add(e, Engine::Transform{pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(1.0f)});
+            Engine::Collider col;
+            col.shape = Engine::ColliderShape::Box;
+            col.halfExtents = glm::vec3(0.5f);
+            scene.add(e, col);
+            Engine::Rigidbody body;
+            body.mass = 1.0f;
+            body.restitution = 0.1f;
+            body.angularVelocity = spin;
+            scene.add(e, body);
+        };
+
+        auto dropSphere = [&](const char* name, const glm::vec3& pos) {
+            auto e = scene.createEntity();
+            scene.add(e, Engine::Name{name});
+            scene.add(e, Engine::Mesh{physSphere, material});
+            scene.add(e, Engine::Transform{pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(1.0f)});
+            Engine::Collider col;
+            col.shape = Engine::ColliderShape::Sphere;
+            col.radius = 0.5f;
+            scene.add(e, col);
+            Engine::Rigidbody body;
+            body.mass = 1.0f;
+            body.restitution = 0.4f;
+            scene.add(e, body);
+        };
+
+        dropBox("Box A", glm::vec3(0.0f, 3.0f, 0.0f), glm::vec3(0.0f));
+        dropBox("Box B", glm::vec3(0.25f, 4.4f, 0.15f), glm::vec3(0.0f, 0.0f, 1.5f));
+        dropBox("Box C", glm::vec3(-0.15f, 6.0f, 0.1f), glm::vec3(1.0f, 0.0f, 0.0f));
+        dropSphere("Sphere A", glm::vec3(2.0f, 5.0f, 0.0f));
+        dropSphere("Sphere B", glm::vec3(-1.8f, 7.0f, 0.5f));
     }
 
     // Return the active camera entity (the only one in the scene).
