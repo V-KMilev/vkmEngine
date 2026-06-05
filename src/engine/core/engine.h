@@ -10,6 +10,7 @@
 #include "platform/window/window_manager.h"
 #include "debug/frame_tracker.h"
 #include "core/system.h"
+#include "core/simulation_clock.h"
 
 namespace Engine {
 
@@ -57,6 +58,12 @@ class Engine {
 
         WindowManager& getWindow()             { return m_window; }
         const WindowManager& getWindow() const { return m_window; }
+
+        /// Owns play/pause/step/time-scale for simulation. The main loop feeds
+        /// its sim-delta to FrameContext; the editor drives the play state. The
+        /// runtime never touches it, so it simulates at 1x from boot.
+        SimulationClock& getSimulationClock()             { return m_simClock; }
+        const SimulationClock& getSimulationClock() const { return m_simClock; }
 
         /**
          * @brief Create and register a system at the given execution stage.
@@ -109,6 +116,8 @@ class Engine {
         std::vector<System*> m_fixedUpdaters;
 
         bool m_initialized = false;
+
+        SimulationClock m_simClock;
 
         /**
          * @brief Owns the rendering backend's context for the duration

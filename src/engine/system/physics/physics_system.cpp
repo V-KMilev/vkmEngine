@@ -12,6 +12,7 @@
 #include "ecs/scene.h"
 #include "ecs/component/collider.h"
 #include "ecs/component/hierarchy.h"
+#include "ecs/component/physics_world.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/transform.h"
 #include "system/hierarchy/hierarchy_operations.h"
@@ -86,10 +87,14 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     Scene& scene = ctx.scene;
     const float dt = ctx.fixedDeltaTime;
 
+    // Per-scene physics settings (singleton component); defaults if absent.
+    PhysicsWorld world;
+    scene.forEach<PhysicsWorld>([&](EntityId, const PhysicsWorld& w) { world = w; });
+
     auto* rbStorage = scene.storage<Rigidbody>();
     if (!rbStorage) return;
 
-    // --- Gather: snapshot every live Rigidbody+Transform into solver state. ---
+    // Gather: snapshot every live Rigidbody+Transform into solver state.
     m_bodies.clear();
     m_solverBodies.clear();
 
@@ -143,18 +148,18 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 
     if (m_bodies.empty()) return;
 
-    // --- Integrate forces -> velocities (skip sleeping / immovable). ---
+    // Integrate forces -> velocities (skip sleeping / immovable).
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         Rigidbody& rb = scene.get<Rigidbody>(m_bodies[k]);
         PhysicsBody& pb = m_solverBodies[k];
         if (rb.sleeping || rb.isStatic || rb.isKinematic || rb.inverseMass == 0.0f) continue;
 
-        pb.linearVelocity += m_gravity * rb.gravityScale * dt;
+        pb.linearVelocity += world.gravity * rb.gravityScale * dt;
         pb.linearVelocity *= 1.0f / (1.0f + rb.linearDamping * dt);
         pb.angularVelocity *= 1.0f / (1.0f + rb.angularDamping * dt);
     }
 
-    // --- Broadphase: sort-and-sweep finite bodies on X; planes tested apart. ---
+    // Broadphase: sort-and-sweep finite bodies on X; planes tested apart.
     thread_local std::vector<uint32_t> finite;
     thread_local std::vector<uint32_t> planes;
     thread_local std::vector<std::pair<uint32_t, uint32_t>> pairs;  // proxy index pairs
@@ -185,7 +190,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         }
     }
 
-    // --- Narrowphase: generate contact manifolds. ---
+    // Narrowphase: generate contact manifolds.
     m_manifolds.clear();
     std::vector<bool> hasContact(m_bodies.size(), false);
     Contact scratch[MAX_CONTACTS_PER_MANIFOLD];
@@ -211,7 +216,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         m_manifolds.push_back(manifold);
     }
 
-    // --- Wake sleepers struck by a faster body before solving. ---
+    // Wake sleepers struck by a faster body before solving.
     for (const ContactManifold& manifold : m_manifolds) {
         const uint32_t a = manifold.bodyA;
         const uint32_t b = manifold.bodyB;
@@ -231,13 +236,13 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         if (rbB.sleeping && !rbA.sleeping && speedA > WAKE_SPEED_SQ) wake(b, rbB);
     }
 
-    // --- Solve contacts (sequential impulse + split-impulse correction). ---
+    // Solve contacts (sequential impulse + split-impulse correction).
     SolverParams params;
-    params.iterations = m_solverIterations;
+    params.iterations = world.solverIterations;
     params.dt = dt;
     solveContacts(m_solverBodies, m_manifolds, params);
 
-    // --- Integrate velocities -> pose, write back, update sleep, mark dirty. ---
+    // Integrate velocities -> pose, write back, update sleep, mark dirty.
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         const EntityId id = m_bodies[k];
         Rigidbody& rb = scene.get<Rigidbody>(id);

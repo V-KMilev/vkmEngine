@@ -834,12 +834,12 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
             anim.rotationTrack.keyframeCount(),
             anim.scaleTrack.keyframeCount());
 
-        // --- Keyframe authoring -------------------------------------------
-        // "+ Key" snapshots the entity's current Transform value at the
-        // current scrub time; each row edits a keyframe's time/value or
-        // deletes it. Structural edits (time move / delete) shift indices, so
-        // we break and redraw next frame. Rotation keys edit as Euler degrees
-        // (re-derived each frame - fine for authoring, no gimbal cache).
+        // Keyframe authoring: "+ Key" snapshots the entity's current Transform
+        // value at the current scrub time; each row edits a keyframe's
+        // time/value or deletes it. Structural edits (time move / delete) shift
+        // indices, so we break and redraw next frame. Rotation keys edit as
+        // Euler degrees (re-derived each frame - fine for authoring, no gimbal
+        // cache).
         glm::vec3 curPos(0.0f), curScale(1.0f);
         glm::quat curRot(1.0f, 0.0f, 0.0f, 0.0f);
         if (scene.has<Transform>(id)) {

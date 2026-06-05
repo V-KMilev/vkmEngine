@@ -277,6 +277,9 @@ void load(const nlohmann::json& j, Rigidbody& rb) { loadReflected(j, rb); }
 nlohmann::json save(const Collider& c) { return saveReflected(c); }
 void load(const nlohmann::json& j, Collider& c) { loadReflected(j, c); }
 
+nlohmann::json save(const PhysicsWorld& w) { return saveReflected(w); }
+void load(const nlohmann::json& j, PhysicsWorld& w) { loadReflected(j, w); }
+
 // ReflectionProbe::bakeVersion is intentionally absent from the markup so
 // the backend re-bakes on load and the counter restarts at 0. That's the
 // idiomatic "internal only" pattern: omit the field from VKM_REFLECT.
@@ -487,6 +490,11 @@ VKM_REFLECT_BEGIN(Engine::Rigidbody)
     VKM_F(gravityScale),
     VKM_F(isKinematic),
     VKM_F(isStatic)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::PhysicsWorld)
+    VKM_F(gravity),
+    VKM_F(solverIterations)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(Engine::Collider)

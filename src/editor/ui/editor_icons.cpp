@@ -198,6 +198,12 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
             dl->AddRectFilled(P(-0.52f, -0.52f), P(0.52f, 0.52f), col);
             break;
         }
+        case EditorIcon::Step: {
+            // Step-forward: a play triangle nudged against a bar (>|).
+            dl->AddTriangleFilled(P(-0.55f, -0.55f), P(-0.55f, 0.55f), P(0.22f, 0.0f), col);
+            dl->AddRectFilled(P(0.34f, -0.6f), P(0.58f, 0.6f), col);
+            break;
+        }
         case EditorIcon::Key: {
             ImVec2 d[] = { P(0, -0.7f), P(0.62f, 0), P(0, 0.7f), P(-0.62f, 0) };
             dl->AddConvexPolyFilled(d, 4, col);

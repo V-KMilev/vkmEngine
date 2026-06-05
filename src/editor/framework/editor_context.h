@@ -6,6 +6,7 @@ namespace Engine {
 
 struct FrameContext;
 struct EditorState;
+class Engine;
 class CameraController;
 class MaterialPreviewSession;
 class RenderSystem;
@@ -28,6 +29,11 @@ class EventSystem;
 struct EditorContext {
     FrameContext& frame;
     EditorState&  state;
+
+    // The owning engine, for editor-only controls that reach past one frame's
+    // FrameContext - chiefly the simulation HUD (play/pause/step). Non-owning;
+    // the engine outlives the editor.
+    Engine& engine;
 
     CameraController&       cameraController;
     RenderSystem&           renderSystem;

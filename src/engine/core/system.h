@@ -51,9 +51,16 @@ enum class SystemStage : uint8_t {
  * VisibilitySystem) so systems can read culling results without forcing
  * a per-frame vector allocation.
  *
- * Two deltas:
- *   - deltaTime: variable, real elapsed time since last render frame. Read in update().
- *   - fixedDeltaTime: constant simulation step (1/60 by default). Read in fixedUpdate().
+ * Three deltas:
+ *   - deltaTime: variable, real elapsed time since last render frame. Read in
+ *     update() by anything that must run regardless of simulation state -
+ *     camera, file watching, UI animations.
+ *   - simDeltaTime: simulation time elapsed this frame (deltaTime scaled by the
+ *     SimulationClock; 0 while paused, one step's worth while single-stepping).
+ *     Read in update() by simulation systems instead of deltaTime, so pause,
+ *     time-scale, and step apply uniformly.
+ *   - fixedDeltaTime: constant simulation step (1/60 by default). Read in
+ *     fixedUpdate(); the fixed accumulator is itself fed from simDeltaTime.
  */
 struct FrameContext {
     Scene& scene;
@@ -62,6 +69,7 @@ struct FrameContext {
     FrameTracker& frameTracker;
     float deltaTime;
     float fixedDeltaTime;
+    float simDeltaTime;
     // The scene's render rect within the GLFW window. The editor reports
     // it via WindowManager::setSceneViewport so the 3D pass renders at the
     // viewport's aspect & size, not the full window. With no editor, the

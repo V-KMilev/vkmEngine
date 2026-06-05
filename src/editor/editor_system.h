@@ -29,6 +29,7 @@ struct GLFWwindow;
 namespace Engine {
 
 struct EditorContext;
+class Engine;
 class CameraController;
 class EventSystem;
 class Scene;
@@ -52,6 +53,7 @@ class RenderSystem;
 class EditorSystem : public System {
     public:
         EditorSystem(
+            Engine& engine,
             GLFWwindow* window,
             CameraController& cameraController,
             VisibilitySystem& visibilitySystem,
@@ -106,6 +108,7 @@ class EditorSystem : public System {
         void syncSelectionTag(Scene& scene);
 
     private:
+        Engine&           m_engine;
         GLFWwindow*       m_window;
         CameraController& m_cameraController;
         RenderSystem&     m_renderSystem;
