@@ -6,7 +6,6 @@
 #include "ecs/component/mesh_lod.h"  // MeshLOD::MAX_LEVELS for the decimate-grid cache
 
 #include "framework/asset_picker.h"  // ReflectionProbe HDR Browse picker
-#include "panels/environment_inspector.h"
 #include "ui/editor_widgets.h"  // EulerCache
 
 namespace Engine {
@@ -51,10 +50,6 @@ class InspectorPanel {
         void drawAnimationSection(Scene& scene, EditorState& state, EntityId id);
         void drawHierarchySection(Scene& scene, EditorState& state, EntityId id);
         void drawAddComponentMenu(Scene& scene, EditorState& state, EntityId id);
-
-        // The Environment singleton entity gets the whole rendering/post stack
-        // here instead of the usual component cards.
-        EnvironmentInspector m_environmentUI;
 
         // Euler-angle edit cache for the Transform Rotation field, keyed by
         // entity. See EulerCache for the gimbal-lock rationale.

@@ -94,12 +94,9 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         ImGui::EndMenu();
     }
 
+    // View: camera / viewport commands only.
     if (ImGui::BeginMenu("View")) {
         char lbl[48];
-        ImGui::MenuItem("Scene",         getKeyBindLabel(state.keybinds.toggleHierarchy, lbl, sizeof(lbl)), &state.showHierarchy);
-        ImGui::MenuItem("Inspector",     getKeyBindLabel(state.keybinds.toggleInspector, lbl, sizeof(lbl)), &state.showInspector);
-        ImGui::MenuItem("Bottom Panel",  getKeyBindLabel(state.keybinds.toggleBottom, lbl, sizeof(lbl)), &state.showBottom);
-        ImGui::Separator();
         if (ImGui::MenuItem("Frame Selected", getKeyBindLabel(state.keybinds.focusSelected, lbl, sizeof(lbl)),
                             false, !!state.selectedEntity)) {
             EditorActions::focusOnSelected(ctx, state, ec.cameraController);
@@ -107,11 +104,21 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         if (ImGui::MenuItem("Frame All", "Shift+F")) {
             EditorActions::frameAll(ctx, ec.cameraController);
         }
+        ImGui::EndMenu();
+    }
+
+    // Window: show/hide every panel and tool window. Docked layout panels
+    // first, then the floating tool/settings windows.
+    if (ImGui::BeginMenu("Window")) {
+        char lbl[48];
+        ImGui::MenuItem("Scene",         getKeyBindLabel(state.keybinds.toggleHierarchy, lbl, sizeof(lbl)), &state.showHierarchy);
+        ImGui::MenuItem("Inspector",     getKeyBindLabel(state.keybinds.toggleInspector, lbl, sizeof(lbl)), &state.showInspector);
+        ImGui::MenuItem("Bottom Panel",  getKeyBindLabel(state.keybinds.toggleBottom, lbl, sizeof(lbl)), &state.showBottom);
         ImGui::Separator();
-        ImGui::MenuItem("Render Settings", nullptr, &state.showRenderSettings);
-        ImGui::MenuItem("Physics",         nullptr, &state.showPhysics);
-        ImGui::MenuItem("Material Editor", nullptr, &state.showMaterialEditor);
-        ImGui::MenuItem("Asset Browser",   nullptr, &state.showAssetBrowser);
+        ImGui::MenuItem("Render Settings",  nullptr, &state.showRenderSettings);
+        ImGui::MenuItem("Physics Settings", nullptr, &state.showPhysics);
+        ImGui::MenuItem("Material Editor",  nullptr, &state.showMaterialEditor);
+        ImGui::MenuItem("Asset Browser",    nullptr, &state.showAssetBrowser);
         ImGui::EndMenu();
     }
 
