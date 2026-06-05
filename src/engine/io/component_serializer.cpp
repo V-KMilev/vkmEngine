@@ -86,6 +86,13 @@ inline void fromJson(const nlohmann::json& j, LightType& v) {
     v = Reflect::enumFromName<LightType>(j.get<std::string>(), LIGHT_TYPE_NAMES);
 }
 
+inline nlohmann::json toJson(ColliderShape s) {
+    return Reflect::enumName(s, COLLIDER_SHAPE_NAMES);
+}
+inline void fromJson(const nlohmann::json& j, ColliderShape& v) {
+    v = Reflect::enumFromName<ColliderShape>(j.get<std::string>(), COLLIDER_SHAPE_NAMES);
+}
+
 inline nlohmann::json toJson(RenderMode m) { return static_cast<int>(m); }
 inline void fromJson(const nlohmann::json& j, RenderMode& m) {
     m = static_cast<RenderMode>(j.get<int>());
@@ -263,6 +270,12 @@ void load(const nlohmann::json& j, Camera& c) { loadReflected(j, c); }
 
 nlohmann::json save(const Light& l)         { return saveReflected(l); }
 void load(const nlohmann::json& j, Light& l) { loadReflected(j, l); }
+
+nlohmann::json save(const Rigidbody& rb) { return saveReflected(rb); }
+void load(const nlohmann::json& j, Rigidbody& rb) { loadReflected(j, rb); }
+
+nlohmann::json save(const Collider& c) { return saveReflected(c); }
+void load(const nlohmann::json& j, Collider& c) { loadReflected(j, c); }
 
 // ReflectionProbe::bakeVersion is intentionally absent from the markup so
 // the backend re-bakes on load and the counter restarts at 0. That's the
@@ -459,6 +472,30 @@ VKM_REFLECT_BEGIN(Engine::Light)
     VKM_F(shadowBias),
     VKM_F(shadowExtent),
     VKM_F(enabled)
+VKM_REFLECT_END()
+
+// inverseMass / invInertiaLocal are derived from mass + Collider on load;
+// sleeping / sleepTimer are runtime-only. All are intentionally absent.
+VKM_REFLECT_BEGIN(Engine::Rigidbody)
+    VKM_F(linearVelocity),
+    VKM_F(angularVelocity),
+    VKM_F(mass),
+    VKM_F(linearDamping),
+    VKM_F(angularDamping),
+    VKM_F(restitution),
+    VKM_F(friction),
+    VKM_F(gravityScale),
+    VKM_F(isKinematic),
+    VKM_F(isStatic)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Engine::Collider)
+    VKM_F(shape),
+    VKM_F(radius),
+    VKM_F(halfExtents),
+    VKM_F(planeNormal),
+    VKM_F(planeOffset),
+    VKM_F(isTrigger)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(Engine::ReflectionProbe)

@@ -4,11 +4,13 @@
 
 #include "ecs/component/animation.h"
 #include "ecs/component/camera.h"
+#include "ecs/component/collider.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/light.h"
 #include "ecs/component/mesh.h"
 #include "ecs/component/mesh_lod.h"
 #include "ecs/component/reflection_probe.h"
+#include "ecs/component/rigidbody.h"
 #include "ecs/component/name.h"
 #include "ecs/component/transform.h"
 
@@ -42,6 +44,15 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const Light&);
     void load(const nlohmann::json&, Light&);
+
+    /// Rigidbody: dynamics + material fields. inverseMass / invInertiaLocal
+    /// are derived from mass + Collider on load, and the runtime sleep state
+    /// (sleeping / sleepTimer) is not persisted.
+    nlohmann::json save(const Rigidbody&);
+    void load(const nlohmann::json&, Rigidbody&);
+
+    nlohmann::json save(const Collider&);
+    void load(const nlohmann::json&, Collider&);
 
     /// ReflectionProbe: stores HDR source path + influence radius and
     /// falloff. Bake state is not stored - the backend re-bakes on load

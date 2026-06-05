@@ -13,9 +13,11 @@
 #include "ecs/component/camera.h"
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/animation.h"
+#include "ecs/component/collider.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/mesh_lod.h"
 #include "ecs/component/name.h"
+#include "ecs/component/rigidbody.h"
 
 #include "framework/command.h"
 
@@ -317,6 +319,14 @@ extern template class RemoveComponentCommand<Animation>;
 
 extern template class AddComponentCommand<MeshLOD>;
 extern template class RemoveComponentCommand<MeshLOD>;
+
+extern template class AddComponentCommand<Rigidbody>;
+extern template class RemoveComponentCommand<Rigidbody>;
+extern template class ComponentEditCommand<Rigidbody>;
+
+extern template class AddComponentCommand<Collider>;
+extern template class RemoveComponentCommand<Collider>;
+extern template class ComponentEditCommand<Collider>;
 
 extern template class ComponentEditCommand<Light>;
 extern template class ComponentEditCommand<Camera>;

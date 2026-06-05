@@ -90,6 +90,12 @@ template class RemoveComponentCommand<Animation>;
 template class AddComponentCommand<MeshLOD>;
 template class RemoveComponentCommand<MeshLOD>;
 
+template class AddComponentCommand<Rigidbody>;
+template class RemoveComponentCommand<Rigidbody>;
+
+template class AddComponentCommand<Collider>;
+template class RemoveComponentCommand<Collider>;
+
 template <typename T>
 void ComponentEditCommand<T>::redo(Scene& scene, EditorState&) {
     if (!scene.isAlive(m_entity) || !scene.has<T>(m_entity)) return;
@@ -118,6 +124,8 @@ template class ComponentEditCommand<ReflectionProbe>;
 template class ComponentEditCommand<Mesh>;
 template class ComponentEditCommand<Name>;
 template class ComponentEditCommand<Animation>;
+template class ComponentEditCommand<Rigidbody>;
+template class ComponentEditCommand<Collider>;
 
 template <typename HandleType>
 void RenameAssetCommand<HandleType>::redo(Scene&, EditorState& state) {
