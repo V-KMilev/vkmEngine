@@ -5,11 +5,14 @@ namespace Engine {
 struct EditorContext;
 
 /**
- * @brief Top-centre animation playback bar (Play/Pause + Stop).
+ * @brief Top-centre simulation HUD (Play/Pause, Step, Stop).
  *
  * A small floating icon bar in the viewport (same look as the bottom-left
- * tool box) that drives global animation playback: Play/Pause toggles all
- * Animation components, Stop pauses and rewinds them.
+ * tool box) that drives the engine's global simulation state:
+ *  - Play/Pause toggles the engine's SimulationClock - physics and animation
+ *    freeze/resume together (the editor opens paused, in Edit mode).
+ *  - Step queues one fixed tick of sim time while paused.
+ *  - Stop re-pauses and rewinds every Animation to t=0.
  */
 class ViewportPlaybar {
     public:

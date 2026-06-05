@@ -2,8 +2,6 @@
 
 #include <vector>
 
-#include <glm/glm.hpp>
-
 #include "core/system.h"
 #include "core/memory/types.h"
 #include "system/physics/collision/contact.h"
@@ -42,16 +40,7 @@ class PhysicsSystem : public System {
         bool hasFixedUpdate() const override { return true; }
         bool mutatesResources() const override { return false; }
 
-        void setGravity(const glm::vec3& gravity) { m_gravity = gravity; }
-        glm::vec3 getGravity() const { return m_gravity; }
-
-        void setSolverIterations(int iterations) { m_solverIterations = iterations; }
-        int getSolverIterations() const { return m_solverIterations; }
-
     private:
-        glm::vec3 m_gravity          = {0.0f, -9.81f, 0.0f};
-        int       m_solverIterations = 8;        ///< PGS passes per tick
-
         std::vector<EntityId>        m_bodies;       ///< Live body entities this tick (indexes m_solverBodies)
         std::vector<PhysicsBody>     m_solverBodies; ///< Cached dynamic state, aligned with m_bodies
         std::vector<ContactManifold> m_manifolds;    ///< Reused across ticks; clear() keeps capacity

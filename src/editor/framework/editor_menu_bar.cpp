@@ -109,6 +109,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         }
         ImGui::Separator();
         ImGui::MenuItem("Render Settings", nullptr, &state.showRenderSettings);
+        ImGui::MenuItem("Physics",         nullptr, &state.showPhysics);
         ImGui::MenuItem("Material Editor", nullptr, &state.showMaterialEditor);
         ImGui::MenuItem("Asset Browser",   nullptr, &state.showAssetBrowser);
         ImGui::EndMenu();
