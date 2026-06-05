@@ -399,7 +399,7 @@ void EditorSystem::update(FrameContext& ctx) {
         PhysicsWorld edited = pw ? *pw : PhysicsWorld{};
 
         ImGui::SetNextWindowSize(ImVec2(300, 150), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Physics", &m_state.showPhysics)) {
+        if (ImGui::Begin("Physics Settings", &m_state.showPhysics)) {
             ImGui::TextDisabled("Per-scene physics settings");
             ImGui::Spacing();
 

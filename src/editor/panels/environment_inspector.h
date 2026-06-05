@@ -17,16 +17,17 @@ struct EnvironmentConfig;
  *
  * Renders the whole rendering/post stack the way modern engines edit a
  * Post-Process Volume / WorldEnvironment: a search box, a quality-preset bar,
- * and seven topical sections grouped by user intent rather than feature
+ * and eight topical sections grouped by user intent rather than feature
  * implementation:
  *   1. World            - IBL, ambient, background, tone mapping
- *   2. Lighting & Shadows - shadow atlas, OIT, occlusion
+ *   2. Lighting & Shadows - shadow atlas, OIT
  *   3. Camera FX        - exposure, DoF, motion blur, TAA (temporal +
  *                         camera-bound effects)
  *   4. Image Post       - bloom, lens dirt, lens flare, color grading
  *   5. Screen-Space FX  - GTAO, SSR (screen-space rendering effects)
- *   6. Diagnostics      - render mode, grid, AABB debug
- *   7. Performance      - per-pass toggles, visibility culling (advanced)
+ *   6. Culling          - frustum / distance / screen-size / occlusion
+ *   7. Diagnostics      - render mode, grid, AABB debug
+ *   8. Performance      - MSAA, per-pass toggles (advanced)
  *
  * Owned by InspectorPanel; called when the selected entity has an
  * EnvironmentConfig component. Holds the toggle-memo state so flipping an
@@ -56,6 +57,7 @@ class EnvironmentInspector {
         bool drawImagePost(EditorContext& ec, EnvironmentConfig& env);
         bool drawScreenSpaceFX(EditorContext& ec, EnvironmentConfig& env);
         bool drawDiagnostics(EditorContext& ec, EnvironmentConfig& env);
+        bool drawCulling(EditorContext& ec, EnvironmentConfig& env);
         bool drawPerformance(EditorContext& ec, EnvironmentConfig& env);
         bool drawPresetBar(EnvironmentConfig& env);
 

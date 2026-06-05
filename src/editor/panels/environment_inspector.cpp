@@ -404,16 +404,6 @@ bool EnvironmentInspector::drawLightingShadows(EditorContext& ec, EnvironmentCon
                 "  - refraction is bypassed (no behind-snapshot to sample).");
     }
 
-    ImGui::Spacing();
-    if (cardHeader("occlusion", "Occlusion", nullptr)) {
-        changed |= ImGui::Checkbox("Build Hi-Z pyramid", &env.occlusion.useHiZ);
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(
-                "Build a max-Z depth pyramid from the prepass each frame.\n"
-                "The visibility system reads back one mip into\n"
-                "OcclusionOracle to AABB-test candidate occludees against\n"
-                "the previous frame's depth.");
-    }
     return changed;
 }
 
@@ -738,8 +728,40 @@ bool EnvironmentInspector::drawDiagnostics(EditorContext& ec, EnvironmentConfig&
     return changed;
 }
 
-bool EnvironmentInspector::drawPerformance(EditorContext& ec, EnvironmentConfig& env) {
+bool EnvironmentInspector::drawCulling(EditorContext& ec, EnvironmentConfig& env) {
     FrameContext& ctx = ec.frame;
+    bool changed = false;
+
+    // The visibility pipeline runs these stages in order each frame, so the
+    // whole culling story lives in one card. Frustum has nothing to tune.
+    ImGui::TextDisabled("Frustum: always on");
+    ImGui::Spacing();
+
+    auto& vis = ec.visibilitySystem.getSettings();
+    changed |= sliderF("Min Pixels", "##MinPx", &vis.minPixels, 0.0f, 100.0f, "%.1f",
+            "Skip objects smaller than this on screen (screen-size culling)");
+    drawPropertyLabel("Max Distance");
+    ImGui::SetNextItemWidth(-1.0f);
+    changed |= ImGui::DragFloat("##MaxD", &vis.maxDistance, 1.0f, 10.0f, 10000.0f, "%.0f");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cull objects beyond this distance");
+
+    ImGui::Spacing();
+    changed |= ImGui::Checkbox("Occlusion (Hi-Z)", &env.occlusion.useHiZ);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(
+            "Build a max-Z depth pyramid from the prepass each frame; the\n"
+            "visibility system AABB-tests candidates against the previous\n"
+            "frame's depth (one-frame-stale, conservative).");
+
+    if (ctx.visibility) {
+        const size_t shown = ctx.visibility->entries.size();
+        const size_t tot   = ctx.scene.entityCount();
+        ImGui::TextDisabled("Culled: %zu / %zu", tot > shown ? tot - shown : 0, tot);
+    }
+    return changed;
+}
+
+bool EnvironmentInspector::drawPerformance(EditorContext& ec, EnvironmentConfig& env) {
     bool changed = false;
 
     if (cardHeader("msaa", "Anti-Aliasing (MSAA)", nullptr)) {
@@ -780,20 +802,6 @@ bool EnvironmentInspector::drawPerformance(EditorContext& ec, EnvironmentConfig&
         }
     }
 
-    ImGui::Spacing();
-    if (cardHeader("vis", "Visibility Culling", nullptr)) {
-        auto& settings = ec.visibilitySystem.getSettings();
-        changed |= sliderF("Min Pixels", "##MinPx", &settings.minPixels, 0.0f, 100.0f, "%.1f",
-                "Skip objects smaller than this on screen");
-        drawPropertyLabel("Max Distance");
-        ImGui::SetNextItemWidth(-1.0f);
-        changed |= ImGui::DragFloat("##MaxD", &settings.maxDistance, 1.0f, 10.0f, 10000.0f, "%.0f");
-        if (ctx.visibility) {
-            size_t vis = ctx.visibility->entries.size();
-            size_t tot = ctx.scene.entityCount();
-            ImGui::TextDisabled("Culled: %zu / %zu", tot > vis ? tot - vis : 0, tot);
-        }
-    }
     return changed;
 }
 
@@ -833,6 +841,7 @@ void EnvironmentInspector::draw(EditorContext& ec, EnvironmentConfig& env) {
     card("Camera FX",          ACCENT_CAMERA,   true,  &EnvironmentInspector::drawCameraFX);
     card("Image Post",         ACCENT_POST,     true,  &EnvironmentInspector::drawImagePost);
     card("Screen-Space FX",    ACCENT_SSFX,     true,  &EnvironmentInspector::drawScreenSpaceFX);
+    card("Culling",            ACCENT_PERF,     true,  &EnvironmentInspector::drawCulling);
     card("Diagnostics",        ACCENT_DIAG,     false, &EnvironmentInspector::drawDiagnostics);
 
     // Performance takes only the context; advanced, collapsed by default.

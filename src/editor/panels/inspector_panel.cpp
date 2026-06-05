@@ -24,7 +24,6 @@
 #include "framework/editor_actions.h"
 #include "io/project_paths.h"            // ProjectPaths::root for the probe HDR browse
 #include "resource/resource_manager.h"
-#include "system/render/render_view.h"   // EnvironmentConfig
 #include "system/visibility/bounds_utils.h"
 
 namespace Engine {
@@ -172,13 +171,6 @@ void InspectorPanel::draw(EditorContext& ec) {
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
-
-    // The Environment singleton owns the rendering/post stack - render that
-    // instead of the usual component cards, and skip Add Component.
-    if (scene.has<EnvironmentConfig>(id)) {
-        m_environmentUI.draw(ec, scene.get<EnvironmentConfig>(id));
-        return;
-    }
 
     if (scene.has<Transform>(id))  drawTransformSection(scene, state, id);
     if (scene.has<Mesh>(id))       drawMeshSection(scene, ctx.resources, state, id);
