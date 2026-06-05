@@ -16,6 +16,8 @@
 
 #include "core/system.h"
 #include "debug/profiler.h"
+#include "ecs/component/name.h"
+#include "ecs/component/physics_world.h"
 #include "ecs/component/selected.h"
 #include "ecs/scene.h"
 #include "framework/editor_context.h"
@@ -31,13 +33,15 @@
 namespace Engine {
 
 EditorSystem::EditorSystem(
+    Engine& engine,
     GLFWwindow* window,
     CameraController& cameraController,
     VisibilitySystem& visibilitySystem,
     RenderSystem& renderSystem,
     EventSystem& events
 )
-    : m_window(window)
+    : m_engine(engine)
+    , m_window(window)
     , m_cameraController(cameraController)
     , m_renderSystem(renderSystem)
     , m_visibilitySystem(visibilitySystem)
@@ -298,6 +302,7 @@ void EditorSystem::update(FrameContext& ctx) {
     EditorContext ec{
         ctx,
         m_state,
+        m_engine,
         m_cameraController,
         m_renderSystem,
         m_visibilitySystem,
@@ -376,6 +381,40 @@ void EditorSystem::update(FrameContext& ctx) {
                 ImGui::TextDisabled(
                     "No Environment entity in the scene.\n"
                     "Create one via Entity > Create Entity > Environment.");
+            }
+        }
+        ImGui::End();
+    }
+
+    if (m_state.showPhysics) {
+        PROFILE_SCOPE("Panel/Physics");
+        Scene& scene = ec.frame.scene;
+
+        // The PhysicsWorld singleton is the source of truth (PhysicsSystem
+        // reads it each tick). Edit a copy seeded from it - or from defaults -
+        // and only materialize the component on an actual change, so merely
+        // opening the window doesn't add an entity / dirty the scene.
+        PhysicsWorld* pw = nullptr;
+        scene.forEach<PhysicsWorld>([&](EntityId, PhysicsWorld& w) { if (!pw) pw = &w; });
+        PhysicsWorld edited = pw ? *pw : PhysicsWorld{};
+
+        ImGui::SetNextWindowSize(ImVec2(300, 150), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Physics", &m_state.showPhysics)) {
+            ImGui::TextDisabled("Per-scene physics settings");
+            ImGui::Spacing();
+
+            bool changed = false;
+            changed |= ImGui::DragFloat3("Gravity", &edited.gravity.x, 0.05f, -50.0f, 50.0f, "%.2f");
+            changed |= ImGui::DragInt("Solver Iterations", &edited.solverIterations, 0.1f, 1, 32);
+
+            if (changed) {
+                if (!pw) {
+                    Entity entity = scene.createEntity();
+                    scene.add(entity, Name{"Physics World"});
+                    pw = &scene.add(entity, PhysicsWorld{});
+                }
+                *pw = edited;
+                m_state.markSceneDirty();
             }
         }
         ImGui::End();

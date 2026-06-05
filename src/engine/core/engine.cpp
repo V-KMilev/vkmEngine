@@ -46,10 +46,15 @@ void Engine::run() {
         const uint32_t vpH  = m_window.sceneViewportHeight();
         const bool     vpSet = (vpW > 0 && vpH > 0);
 
+        // Real time drives input/camera/UI; simulation time (paused, scaled, or
+        // single-stepped) drives the sim systems and the fixed accumulator.
+        const float simDelta = m_simClock.advance(deltaTime, Config::FIXED_TIME_STEP);
+
         FrameContext ctx{
             m_scene, m_resources, m_window, m_frameTracker,
             deltaTime,
             Config::FIXED_TIME_STEP,
+            simDelta,
             vpSet ? m_window.sceneViewportX() : 0u,
             vpSet ? m_window.sceneViewportY() : 0u,
             vpSet ? vpW : winW,
@@ -61,7 +66,11 @@ void Engine::run() {
             initSystems(ctx);
         }
 
-        const float beforeClamp = accumulator + deltaTime;
+        // Fixed-step accumulator runs on simulation time, so pause (simDelta 0)
+        // naturally yields zero ticks with no special case, a single-step feeds
+        // exactly one step's worth, and a frozen accumulator never burst-catches
+        // up on resume.
+        const float beforeClamp = accumulator + simDelta;
         accumulator = std::min(beforeClamp, Config::MAX_FRAME_ACCUMULATOR);
         if (beforeClamp > Config::MAX_FRAME_ACCUMULATOR) {
             // Sustained slow frames would spam this every tick. Rate-limit

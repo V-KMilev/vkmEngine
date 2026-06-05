@@ -39,12 +39,18 @@ int main() {
         // shared bootstrap; that's the entire reason for the split.
         engine.addSystem<Engine::EditorSystem>(
             Engine::SystemStage::UI,
+            engine,
             window.getWindowContext(),
             sys.camera,
             sys.visibility,
             sys.render,
             sys.events
         );
+
+        // The editor opens in Edit mode: simulation is frozen until the user
+        // presses Play in the viewport. The runtime binary never does this,
+        // so it simulates immediately. See Engine::getSimulationClock.
+        engine.getSimulationClock().setPaused(true);
 
         engine.run();
 

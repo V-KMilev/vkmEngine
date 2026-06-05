@@ -21,7 +21,12 @@ void AnimationSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("AnimationSystem");
 
     auto& scene = ctx.scene;
-    const float deltaTime = ctx.deltaTime;
+    const float simDelta = ctx.simDeltaTime;
+
+    // No simulation time elapsed (paused, or not stepping this frame): advance
+    // nothing and, crucially, apply nothing - so authoring a Transform while
+    // paused is not overwritten by re-sampling the track at the same time.
+    if (simDelta <= 0.0f) return;
 
     auto* animStorage = scene.storage<Animation>();
     if (!animStorage) return;
@@ -37,7 +42,7 @@ void AnimationSystem::update(FrameContext& ctx) {
         Animation& animation = animStorage->dataAt(static_cast<uint32_t>(i));
         if (!animation.playing) return;
 
-        animation.time += deltaTime * animation.speed;
+        animation.time += simDelta * animation.speed;
 
         if (animation.duration > 0.0f && animation.time >= animation.duration) {
             if (animation.looping) {

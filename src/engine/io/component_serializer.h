@@ -9,6 +9,7 @@
 #include "ecs/component/light.h"
 #include "ecs/component/mesh.h"
 #include "ecs/component/mesh_lod.h"
+#include "ecs/component/physics_world.h"
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/name.h"
@@ -53,6 +54,11 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const Collider&);
     void load(const nlohmann::json&, Collider&);
+
+    /// PhysicsWorld: the scene's singleton physics settings (gravity + solver
+    /// iteration count). Plain JSON primitives; load tolerates missing keys.
+    nlohmann::json save(const PhysicsWorld&);
+    void load(const nlohmann::json&, PhysicsWorld&);
 
     /// ReflectionProbe: stores HDR source path + influence radius and
     /// falloff. Bake state is not stored - the backend re-bakes on load

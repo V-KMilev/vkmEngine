@@ -73,6 +73,7 @@ VKM_SERIALIZER_TRAITS  (Camera,            "Camera");
 VKM_SERIALIZER_TRAITS  (Light,             "Light");
 VKM_SERIALIZER_TRAITS  (Rigidbody,         "Rigidbody");
 VKM_SERIALIZER_TRAITS  (Collider,          "Collider");
+VKM_SERIALIZER_TRAITS  (PhysicsWorld,      "PhysicsWorld");
 VKM_SERIALIZER_TRAITS  (ReflectionProbe,   "ReflectionProbe");
 VKM_SERIALIZER_TRAITS_R(Mesh,              "Mesh");
 VKM_SERIALIZER_TRAITS_R(MeshLOD,           "MeshLOD");
@@ -95,7 +96,7 @@ template<> struct SerializerTraits<Hierarchy> {
 /// here. The fold operators below propagate the change to save / load /
 /// known-key checks; no other edits required.
 using SerializedComponents = std::tuple<
-    Name, Transform, Camera, Light, Rigidbody, Collider, ReflectionProbe, Mesh, MeshLOD, Animation, EnvironmentConfig, Hierarchy
+    Name, Transform, Camera, Light, Rigidbody, Collider, PhysicsWorld, ReflectionProbe, Mesh, MeshLOD, Animation, EnvironmentConfig, Hierarchy
 >;
 
 // Detect at compile time which traits expose a `load` static. Hierarchy
