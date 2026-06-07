@@ -14,8 +14,6 @@ void ShaderErrorLog::push(
     std::string definesSummary,
     std::string message
 ) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-
     if (!m_entries.empty()) {
         Entry& last = m_entries.back();
         if (last.shaderName == shaderName
@@ -41,28 +39,20 @@ void ShaderErrorLog::push(
     }
 }
 
-void ShaderErrorLog::clearFor(const std::string& shaderName) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_entries.erase(
+void ShaderErrorLog::clearFor(const std::string& shaderName) {    m_entries.erase(
         std::remove_if(m_entries.begin(), m_entries.end(),
             [&](const Entry& e) { return e.shaderName == shaderName; }),
         m_entries.end());
 }
 
-void ShaderErrorLog::clearAll() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_entries.clear();
+void ShaderErrorLog::clearAll() {    m_entries.clear();
 }
 
-std::vector<ShaderErrorLog::Entry> ShaderErrorLog::snapshot() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    std::vector<Entry> result(m_entries.rbegin(), m_entries.rend());
+std::vector<ShaderErrorLog::Entry> ShaderErrorLog::snapshot() const {    std::vector<Entry> result(m_entries.rbegin(), m_entries.rend());
     return result;
 }
 
-std::size_t ShaderErrorLog::size() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    return m_entries.size();
+std::size_t ShaderErrorLog::size() const {    return m_entries.size();
 }
 
 } // namespace Engine

@@ -10,23 +10,17 @@ GpuTimingPool& GpuTimingPool::get() {
     return instance;
 }
 
-void GpuTimingPool::resize(std::size_t passCount) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_passes.size() == passCount) return;
+void GpuTimingPool::resize(std::size_t passCount) {    if (m_passes.size() == passCount) return;
     m_passes.resize(passCount);
 }
 
-void GpuTimingPool::setPassName(std::size_t passIndex, std::string name) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (passIndex >= m_passes.size()) return;
+void GpuTimingPool::setPassName(std::size_t passIndex, std::string name) {    if (passIndex >= m_passes.size()) return;
     if (m_passes[passIndex].name != name) {
         m_passes[passIndex].name = std::move(name);
     }
 }
 
-void GpuTimingPool::recordSample(std::size_t passIndex, double ms) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (passIndex >= m_passes.size()) return;
+void GpuTimingPool::recordSample(std::size_t passIndex, double ms) {    if (passIndex >= m_passes.size()) return;
     PassStats& p = m_passes[passIndex];
     p.ring[p.cursor] = static_cast<float>(ms);
     p.cursor = (p.cursor + 1) % RING_SIZE;
@@ -35,14 +29,10 @@ void GpuTimingPool::recordSample(std::size_t passIndex, double ms) {
     recomputeDerived(p);
 }
 
-std::vector<GpuTimingPool::PassStats> GpuTimingPool::snapshot() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    return m_passes;
+std::vector<GpuTimingPool::PassStats> GpuTimingPool::snapshot() const {    return m_passes;
 }
 
-std::size_t GpuTimingPool::passCount() const {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    return m_passes.size();
+std::size_t GpuTimingPool::passCount() const {    return m_passes.size();
 }
 
 void GpuTimingPool::recomputeDerived(PassStats& p) const {

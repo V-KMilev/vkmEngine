@@ -2,7 +2,6 @@
 
 #include <chrono>
 #include <cstddef>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -11,9 +10,9 @@ namespace Engine {
 /**
  * @brief Process-wide ring buffer of shader compile/link errors.
  *
- * Thread-safe. Hot-reloaded shaders failing to compile push entries here
- * (otherwise the previous LOG_ERROR-and-discard meant the editor had no
- * way to inspect a typo after the next keystroke restored a valid file).
+ * Hot-reloaded shaders failing to compile push entries here (otherwise the
+ * previous LOG_ERROR-and-discard meant the editor had no way to inspect a
+ * typo after the next keystroke restored a valid file).
  *
  * Consecutive duplicates (same name + same message) bump a count on the
  * existing entry instead of growing the buffer - rapid-fire editing in
@@ -60,7 +59,6 @@ class ShaderErrorLog {
     private:
         ShaderErrorLog() = default;
 
-        mutable std::mutex m_mutex;
         std::vector<Entry> m_entries;  ///< Ordered oldest-first.
 };
 
