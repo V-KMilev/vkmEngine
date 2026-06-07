@@ -64,13 +64,33 @@ void solveContacts(
     std::vector<ContactManifold>& manifolds,
     const SolverParams& params
 ) {
-    // Velocity resolution: normal impulses (with restitution) plus clamped
-    // Coulomb friction, accumulated across iterations so the passes converge.
+    // Restitution target per contact, computed ONCE from the pre-solve approach
+    // speed. Recomputing it each iteration (the old bug) saw the post-impulse,
+    // already-separating velocity - the bias vanished after pass 1 and the rest
+    // of the passes drove the contact back to a resting vn == 0, cancelling the
+    // bounce so a moving body stopped dead at a wall. A constant target keeps
+    // every pass aiming at the same separation speed.
+    for (ContactManifold& manifold : manifolds) {
+        PhysicsBody& a = bodies[manifold.bodyA];
+        PhysicsBody& b = bodies[manifold.bodyB];
+        const float restitution = combineRestitution(a, b);
+        for (int c = 0; c < manifold.count; ++c) {
+            Contact& contact = manifold.contacts[c];
+            const glm::vec3 rA = contact.point - a.position;
+            const glm::vec3 rB = contact.point - b.position;
+            const glm::vec3 relVel = velocityAt(b, rB) - velocityAt(a, rA);
+            const float vn = glm::dot(relVel, contact.normal);
+            contact.restitutionBias =
+                (-vn > params.restitutionThreshold) ? -restitution * vn : 0.0f;
+        }
+    }
+
+    // Velocity resolution: normal impulses (toward the restitution target) plus
+    // clamped Coulomb friction, accumulated across iterations so they converge.
     for (int iter = 0; iter < params.iterations; ++iter) {
         for (ContactManifold& manifold : manifolds) {
             PhysicsBody& a = bodies[manifold.bodyA];
             PhysicsBody& b = bodies[manifold.bodyB];
-            const float restitution = combineRestitution(a, b);
             const float friction = combineFriction(a, b);
 
             for (int c = 0; c < manifold.count; ++c) {
@@ -81,11 +101,8 @@ void solveContacts(
                 const glm::vec3 relVel = velocityAt(b, rB) - velocityAt(a, rA);
                 const float vn = glm::dot(relVel, contact.normal);
 
-                const float restitutionBias =
-                    (-vn > params.restitutionThreshold) ? restitution * vn : 0.0f;
-
                 const float kn = effectiveMass(a, b, rA, rB, contact.normal);
-                float jn = -kn * (vn + restitutionBias);
+                float jn = -kn * (vn - contact.restitutionBias);
 
                 // Clamp the *accumulated* normal impulse to be non-negative;
                 // apply only the delta needed to reach the new total.
