@@ -133,26 +133,10 @@ class RenderBackend {
         virtual void endFrame() {}
 
         /**
-         * @brief Per-pass GPU timer scope - backend-provided primitive used
-         *        by the render graph to feed @ref GpuTimingPool.
-         *
-         * Wraps a single pass's GPU work. Implementations are expected to
-         * issue a GPU-side begin/end timer (e.g. GL_TIME_ELAPSED) and to
-         * drain completed measurements into the timing pool from their
-         * own @ref endFrame() hook, with whatever frame-lag the API
-         * requires to avoid CPU stalls on the read-back.
-         *
-         * Default: no-op (a backend without GPU timer support quietly
-         * shows zeros in the editor).
-         */
-        virtual void beginPassTimer(std::size_t passIndex) {}
-        virtual void endPassTimer(std::size_t passIndex) {}
-
-        /**
          * @brief Snapshot of the backend's shader variant cache.
          *
-         * Surfaced in the editor's GPU panel so users can spot variant
-         * explosion. Empty default keeps backends without a variant cache
+         * Surfaced in the editor's Variant Cache panel so users can spot
+         * variant explosion. Empty default keeps backends without a variant cache
          * (or backends where the cache isn't worth surfacing) quiet.
          */
         struct ShaderVariantStat {

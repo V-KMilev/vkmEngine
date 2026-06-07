@@ -53,11 +53,23 @@ class Engine {
         WindowManager& getWindow()             { return m_window; }
         const WindowManager& getWindow() const { return m_window; }
 
-        /// Owns play/pause/step/time-scale for simulation. The main loop feeds
-        /// its sim-delta to FrameContext; the editor drives the play state. The
-        /// runtime never touches it, so it simulates at 1x from boot.
+        /**
+         * @brief Owns play/pause/step/time-scale for simulation.
+         *
+         * The main loop feeds its sim-delta to FrameContext; the editor drives
+         * the play state. The runtime never touches it, so it simulates at 1x
+         * from boot.
+         */
         SimulationClock& getSimulationClock()             { return m_simClock; }
         const SimulationClock& getSimulationClock() const { return m_simClock; }
+
+        /**
+         * @brief Log "FPS: N (M ms)" to the console once a second.
+         *
+         * Opt-in and runtime-facing: the editor shows FPS in its status bar, so
+         * it leaves this off to keep the console quiet.
+         */
+        void logFPS(bool enabled = true) { m_fpsLog = enabled; }
 
         /**
          * @brief Create and register a system at the given execution stage.
@@ -112,6 +124,11 @@ class Engine {
         bool m_initialized = false;
 
         SimulationClock m_simClock;
+
+        /// Once-a-second FPS console log. Off by default (the editor uses its
+        /// status bar); the runtime opts in. The timer throttles the log.
+        bool  m_fpsLog      = false;
+        float m_fpsLogTimer = 0.0f;
 
         /// Throttle state for accumulator-clamp warnings (one per second).
         /// Per-instance so headless tools / tests with multiple Engine
