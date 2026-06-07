@@ -191,9 +191,7 @@ void EditorSystem::update(FrameContext& ctx) {
     // hidden and visible branches because the ImGui frame exists in both.
     {
         PROFILE_SCOPE("Editor/ImGuiNewFrame");
-        // ImGui_ImplOpenGL3_NewFrame is backend work and runs on the
-        // render thread in executeBackend(). The GLFW + ImGui parts stay
-        // on main because they read input + drive the ImGui frame state.
+        ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
     }
@@ -283,11 +281,7 @@ void EditorSystem::update(FrameContext& ctx) {
         m_runtimeSettings.draw(m_state, ctx.scene, m_renderSystem);
         syncSelectionTag(ctx.scene);
         ImGui::Render();
-        // Stash for executeBackend(): draw submission runs on the render
-        // thread when one is active. Engine::run guarantees
-        // executeBackend runs before the next iteration's
-        // ImGui::NewFrame (which would invalidate this pointer).
-        m_pendingDrawData = ImGui::GetDrawData();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         return;
     }
 
@@ -428,26 +422,12 @@ void EditorSystem::update(FrameContext& ctx) {
 
     {
         PROFILE_SCOPE("Editor/ImGuiRender");
+        // Runs after RenderSystem (Render stage) drew the scene this frame, so
+        // the UI composites on top. Submit is here rather than a separate
+        // backend hook now that everything is single-threaded.
         ImGui::Render();
-        m_pendingDrawData = ImGui::GetDrawData();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }
-}
-
-void EditorSystem::executeBackend(FrameContext& ctx) {
-    // Runs on the render thread AFTER RenderSystem::executeFrame, so the
-    // UI lands on top of the rendered scene. In single-threaded mode the
-    // engine calls this on main right after update().
-    //
-    // ImGui_ImplOpenGL3_NewFrame is here (not in update()) because it
-    // issues backend calls. ImGui_ImplOpenGL3_Init created its GL
-    // resources on the same context we're about to use; those resources
-    // travel with the context across the thread-migration boundary, so
-    // no re-init is needed.
-    if (!m_pendingDrawData) return;
-    PROFILE_SCOPE("Editor/ImGuiSubmit");
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplOpenGL3_RenderDrawData(m_pendingDrawData);
-    m_pendingDrawData = nullptr;
 }
 
 void EditorSystem::syncSelectionTag(Scene& scene) {

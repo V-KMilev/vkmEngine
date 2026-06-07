@@ -70,24 +70,7 @@ class EditorSystem : public System {
 
         void update(FrameContext& ctx) override;
 
-        /// ImGui's panel draws + ImGui::Render() happen on main in update();
-        /// the draw-submission step waits here so it can run on the thread
-        /// that holds the rendering backend's context.
-        bool hasBackendWork() const override { return true; }
-        void executeBackend(FrameContext& ctx) override;
-
     private:
-        /**
-         * @brief ImDrawData* stashed by update() for executeBackend() to consume.
-         *
-         * Pointer is into ImGui's internal allocator and is valid until
-         * the next ImGui::NewFrame on main - the engine guarantees
-         * executeBackend runs (and finishes) before the next NewFrame
-         * via waitForFrame at the top of the next iteration's mutator
-         * phase.
-         */
-        struct ImDrawData* m_pendingDrawData = nullptr;
-
         /**
          * @brief Lay out the root-window panel arrangement.
          *

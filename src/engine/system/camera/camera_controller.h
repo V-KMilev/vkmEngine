@@ -71,10 +71,6 @@ class CameraController : public System {
          */
         void update(FrameContext& ctx) override;
 
-        /// Writes the camera entity's Transform only; never touches
-        /// ResourceManager. Safe to overlap with the render thread.
-        bool mutatesResources() const override { return false; }
-
         Settings&       getSettings()       { return m_settings; }
         const Settings& getSettings() const { return m_settings; }
         void setSettings(const Settings& s) { m_settings = s; }

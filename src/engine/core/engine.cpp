@@ -4,14 +4,11 @@
 
 #include <algorithm>
 #include <chrono>
-#include <stdexcept>
 
 #include "logger.h"
 
 #include "core/engine_config.h"
 #include "debug/profiler.h"
-#include "platform/threading/render_thread.h"
-#include "system/render/render_system.h"
 
 namespace Engine {
 
@@ -102,86 +99,24 @@ void Engine::run() {
             accumulator -= Config::FIXED_TIME_STEP;
         }
 
-        // First frame after init: migrate the backend context to a
-        // dedicated render thread + locate the RenderSystem so the
-        // overlap loop can split its buildView / executeFrame phases.
-        // Done here rather than before the loop so initSystems (and any
-        // backend work it triggers, like the IBL bake's first execute)
-        // still sees the context on the main thread.
-        if (!m_renderThread) {
-            const size_t renderIdx = static_cast<size_t>(SystemStage::Render);
-            for (auto& system : m_systemsByStage[renderIdx]) {
-                if (auto* rs = dynamic_cast<RenderSystem*>(system.get())) {
-                    m_renderSystem = rs;
-                    break;
-                }
+        // Run every stage in order; each system does its whole job in update().
+        // RenderSystem::update() builds + draws the frame in the Render stage,
+        // and the editor (UI stage, after Render) draws its UI on top - so the
+        // loop needs no special cases or cached system pointers.
+        for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
+            PROFILE_SCOPE_NAMED(STAGE_NAMES[s]);
+            for (auto& sys : m_systemsByStage[s]) {
+                if (sys->isEnabled()) sys->update(ctx);
             }
-            if (!m_renderSystem) {
-                LOG_FATAL("No RenderSystem registered; engine requires one.");
-                throw std::runtime_error("Engine::run: no RenderSystem registered");
-            }
-            // Cache UI-stage systems with backend-side companion work
-            // (currently just EditorSystem). Their executeBackend() runs
-            // on the render thread after the scene render finishes, so
-            // the UI overlays the rendered scene.
-            const size_t uiIdx = static_cast<size_t>(SystemStage::UI);
-            for (auto& system : m_systemsByStage[uiIdx]) {
-                if (system->hasBackendWork()) m_backendWorkSystems.push_back(system.get());
-            }
-            m_renderThread = std::make_unique<RenderThread>(m_window.getWindowContext());
         }
 
-        // Frame K layout (overlapping with render K-1):
-        //   pre-wait phase  (non-mutator systems, all stages)   <- overlaps
-        //   buildView K     (RenderSystem; writes m_views[K&1]) <- overlaps
-        //   waitForFrame    (block until render K-1 is done)    <-- sync point
-        //   post-wait phase (mutator systems, all stages)
-        //   postFrame K     (render thread reads m_views[K&1])
-        // The render thread runs RenderSystem::executeFrame against the
-        // buffer index it was posted with - main has already moved on to
-        // writing the OTHER buffer for frame K+1, so no race.
-        constexpr size_t RENDER_IDX = static_cast<size_t>(SystemStage::Render);
-
-        // UI stage IS included in runPhase. Systems with hasBackendWork()
-        // do their build on main here; their executeBackend() is appended
-        // to the render-thread lambda below.
-        auto runPhase = [&](bool mutators) {
-            for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
-                if (s == RENDER_IDX) continue;  // RenderSystem is routed manually
-                PROFILE_SCOPE_NAMED(STAGE_NAMES[s]);
-                for (auto& sys : m_systemsByStage[s]) {
-                    if (!sys->isEnabled()) continue;
-                    if (sys->mutatesResources() != mutators) continue;
-                    sys->update(ctx);
-                }
-            }
-        };
-
-        runPhase(/*mutators=*/false);
-        m_renderSystem->buildView(ctx, m_renderFrameIndex);
-        m_renderThread->waitForFrame();
-        runPhase(/*mutators=*/true);
-
-        // ctx is copied by value into the lambda so the next loop
-        // iteration can mutate the local ctx without affecting the
-        // render thread's snapshot. UI-stage backend-work systems run
-        // AFTER executeFrame so the UI overlays the rendered scene.
-        const uint32_t frameIdx = m_renderFrameIndex;
-        m_renderThread->postFrame([this, ctx, frameIdx]() mutable {
-            m_renderSystem->executeFrame(ctx, frameIdx);
-            for (System* sys : m_backendWorkSystems) sys->executeBackend(ctx);
-            m_window.swapBuffers();
-        });
-        ++m_renderFrameIndex;
+        m_window.swapBuffers();
 
         m_frameTracker.update();
         PROFILE_FRAME_MARK();
     }
 
     LOG_TRACE("Main loop exited, running shutdown");
-    // Tear the render thread down before shutdownSystems so any backend
-    // teardown in destructors finds the context current on main again.
-    m_renderThread.reset();
     shutdownSystems();
 }
 
