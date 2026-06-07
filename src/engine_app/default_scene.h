@@ -181,8 +181,7 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
             glm::vec3(20.0f, 1.0f, 20.0f)
         });
         Engine::Collider groundCol;
-        groundCol.shape = Engine::ColliderShape::Box;
-        groundCol.halfExtents = glm::vec3(10.0f, 0.5f, 10.0f);
+        groundCol.parts = { { glm::vec3(0.0f), glm::vec3(10.0f, 0.5f, 10.0f) } };
         scene.add(ground, groundCol);
         Engine::Rigidbody groundBody;
         groundBody.isStatic = true;
@@ -194,8 +193,6 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
             scene.add(e, Engine::Mesh{cubeMesh, material});
             scene.add(e, Engine::Transform{pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(1.0f)});
             Engine::Collider col;
-            col.shape = Engine::ColliderShape::Box;
-            col.halfExtents = glm::vec3(0.5f);
             scene.add(e, col);
             Engine::Rigidbody body;
             body.mass = 1.0f;
@@ -210,8 +207,6 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
             scene.add(e, Engine::Mesh{physSphere, material});
             scene.add(e, Engine::Transform{pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(1.0f)});
             Engine::Collider col;
-            col.shape = Engine::ColliderShape::Sphere;
-            col.radius = 0.5f;
             scene.add(e, col);
             Engine::Rigidbody body;
             body.mass = 1.0f;

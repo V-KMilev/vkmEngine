@@ -1,6 +1,5 @@
 #include "system/physics/collision/narrowphase.h"
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -25,123 +24,6 @@ struct OBB {
 OBB makeOBB(const glm::vec3& center, const glm::quat& rotation, const glm::vec3& halfExtents) {
     const glm::mat3 r = glm::mat3_cast(rotation);
     return OBB{center, {r[0], r[1], r[2]}, halfExtents};
-}
-
-void flipNormals(Contact* out, int count) {
-    for (int i = 0; i < count; ++i) out[i].normal = -out[i].normal;
-}
-
-int contactSphereSphere(
-    const glm::vec3& posA, float radiusA,
-    const glm::vec3& posB, float radiusB,
-    Contact* out
-) {
-    const glm::vec3 d = posB - posA;
-    const float dist = glm::length(d);
-    const float sum = radiusA + radiusB;
-    if (dist >= sum) return 0;
-
-    const glm::vec3 normal = dist > EPS ? d / dist : glm::vec3(0.0f, 1.0f, 0.0f);
-    const float penetration = sum - dist;
-    out[0].point = posA + normal * (radiusA - penetration * 0.5f);
-    out[0].normal = normal;
-    out[0].penetration = penetration;
-    return 1;
-}
-
-int contactSpherePlane(
-    const glm::vec3& posS, float radius,
-    const glm::vec3& planeNormal, float planeOffset,
-    Contact* out
-) {
-    const float signedDist = glm::dot(planeNormal, posS) - planeOffset;
-    const float penetration = radius - signedDist;
-    if (penetration <= 0.0f) return 0;
-
-    out[0].point = posS - planeNormal * radius;
-    out[0].normal = -planeNormal;  // sphere (A) -> plane (B)
-    out[0].penetration = penetration;
-    return 1;
-}
-
-int contactBoxPlane(
-    const OBB& box,
-    const glm::vec3& planeNormal, float planeOffset,
-    Contact* out
-) {
-    int count = 0;
-    for (int sx = -1; sx <= 1; sx += 2)
-    for (int sy = -1; sy <= 1; sy += 2)
-    for (int sz = -1; sz <= 1; sz += 2) {
-        const glm::vec3 corner = box.c
-            + box.u[0] * (box.e.x * sx)
-            + box.u[1] * (box.e.y * sy)
-            + box.u[2] * (box.e.z * sz);
-        const float penetration = planeOffset - glm::dot(planeNormal, corner);
-        if (penetration <= 0.0f) continue;
-
-        if (count < MAX_CONTACTS_PER_MANIFOLD) {
-            out[count].point = corner;
-            out[count].normal = -planeNormal;  // box (A) -> plane (B)
-            out[count].penetration = penetration;
-            ++count;
-        } else {
-            // Replace the shallowest kept contact with this deeper one.
-            int shallow = 0;
-            for (int i = 1; i < count; ++i)
-                if (out[i].penetration < out[shallow].penetration) shallow = i;
-            if (penetration > out[shallow].penetration) {
-                out[shallow].point = corner;
-                out[shallow].penetration = penetration;
-            }
-        }
-    }
-    return count;
-}
-
-int contactSphereBox(
-    const glm::vec3& posS, float radius,
-    const OBB& box,
-    Contact* out
-) {
-    const glm::vec3 d = posS - box.c;
-    glm::vec3 local;
-    glm::vec3 clamped;
-    for (int i = 0; i < 3; ++i) {
-        local[i] = glm::dot(d, box.u[i]);
-        clamped[i] = glm::clamp(local[i], -box.e[i], box.e[i]);
-    }
-
-    const bool inside = (local == clamped);
-    glm::vec3 normalOut;     // points from the box surface toward the sphere
-    float penetration;
-
-    if (!inside) {
-        const glm::vec3 closest = box.c
-            + box.u[0] * clamped.x + box.u[1] * clamped.y + box.u[2] * clamped.z;
-        const glm::vec3 delta = posS - closest;
-        const float dist = glm::length(delta);
-        if (dist >= radius) return 0;
-        normalOut = dist > EPS ? delta / dist : box.u[1];
-        penetration = radius - dist;
-        out[0].point = closest;
-    } else {
-        // Sphere centre is inside the box: eject along the least-penetrated axis.
-        int axis = 0;
-        float minPen = box.e[0] - std::fabs(local[0]);
-        for (int i = 1; i < 3; ++i) {
-            const float pen = box.e[i] - std::fabs(local[i]);
-            if (pen < minPen) { minPen = pen; axis = i; }
-        }
-        const float sign = local[axis] >= 0.0f ? 1.0f : -1.0f;
-        normalOut = box.u[axis] * sign;
-        penetration = minPen + radius;
-        out[0].point = posS - normalOut * (minPen);
-    }
-
-    out[0].normal = -normalOut;  // sphere (A) -> box (B)
-    out[0].penetration = penetration;
-    return 1;
 }
 
 float projectRadius(const OBB& box, const glm::vec3& axis) {
@@ -330,56 +212,13 @@ int contactBoxBox(const OBB& a, const OBB& b, Contact* out) {
 
 } // namespace
 
-int generateContacts(
-    const Collider& a, const glm::vec3& posA, const glm::quat& rotA,
-    const Collider& b, const glm::vec3& posB, const glm::quat& rotB,
+int contactBoxes(
+    const glm::vec3& centerA, const glm::quat& rotA, const glm::vec3& halfA,
+    const glm::vec3& centerB, const glm::quat& rotB, const glm::vec3& halfB,
     Contact* out
 ) {
-    switch (a.shape) {
-        case ColliderShape::Sphere:
-            switch (b.shape) {
-                case ColliderShape::Sphere:
-                    return contactSphereSphere(posA, a.radius, posB, b.radius, out);
-                case ColliderShape::Box:
-                    return contactSphereBox(posA, a.radius, makeOBB(posB, rotB, b.halfExtents), out);
-                case ColliderShape::Plane:
-                    return contactSpherePlane(posA, a.radius, b.planeNormal, b.planeOffset, out);
-            }
-            break;
-        case ColliderShape::Box:
-            switch (b.shape) {
-                case ColliderShape::Sphere: {
-                    const int n = contactSphereBox(posB, b.radius, makeOBB(posA, rotA, a.halfExtents), out);
-                    flipNormals(out, n);
-                    return n;
-                }
-                case ColliderShape::Box:
-                    return contactBoxBox(makeOBB(posA, rotA, a.halfExtents),
-                                         makeOBB(posB, rotB, b.halfExtents), out);
-                case ColliderShape::Plane:
-                    return contactBoxPlane(makeOBB(posA, rotA, a.halfExtents),
-                                           b.planeNormal, b.planeOffset, out);
-            }
-            break;
-        case ColliderShape::Plane:
-            switch (b.shape) {
-                case ColliderShape::Sphere: {
-                    const int n = contactSpherePlane(posB, b.radius, a.planeNormal, a.planeOffset, out);
-                    flipNormals(out, n);
-                    return n;
-                }
-                case ColliderShape::Box: {
-                    const int n = contactBoxPlane(makeOBB(posB, rotB, b.halfExtents),
-                                                  a.planeNormal, a.planeOffset, out);
-                    flipNormals(out, n);
-                    return n;
-                }
-                case ColliderShape::Plane:
-                    return 0;  // two static planes never collide
-            }
-            break;
-    }
-    return 0;
+    return contactBoxBox(makeOBB(centerA, rotA, halfA),
+                         makeOBB(centerB, rotB, halfB), out);
 }
 
 } // namespace Engine

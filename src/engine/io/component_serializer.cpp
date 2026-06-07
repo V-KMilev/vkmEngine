@@ -86,13 +86,6 @@ inline void fromJson(const nlohmann::json& j, LightType& v) {
     v = Reflect::enumFromName<LightType>(j.get<std::string>(), LIGHT_TYPE_NAMES);
 }
 
-inline nlohmann::json toJson(ColliderShape s) {
-    return Reflect::enumName(s, COLLIDER_SHAPE_NAMES);
-}
-inline void fromJson(const nlohmann::json& j, ColliderShape& v) {
-    v = Reflect::enumFromName<ColliderShape>(j.get<std::string>(), COLLIDER_SHAPE_NAMES);
-}
-
 inline nlohmann::json toJson(RenderMode m) { return static_cast<int>(m); }
 inline void fromJson(const nlohmann::json& j, RenderMode& m) {
     m = static_cast<RenderMode>(j.get<int>());
@@ -142,8 +135,6 @@ inline nlohmann::json toJson(const ColorGradeConfig& c);
 inline void fromJson(const nlohmann::json& j, ColorGradeConfig& c);
 inline nlohmann::json toJson(const GridConfig& c);
 inline void fromJson(const nlohmann::json& j, GridConfig& c);
-inline nlohmann::json toJson(const AABBDebugConfig& c);
-inline void fromJson(const nlohmann::json& j, AABBDebugConfig& c);
 inline nlohmann::json toJson(const SelectionOutlineConfig& c);
 inline void fromJson(const nlohmann::json& j, SelectionOutlineConfig& c);
 inline nlohmann::json toJson(const MSAAConfig& c);
@@ -239,9 +230,6 @@ inline void fromJson(const nlohmann::json& j, ColorGradeConfig& c)          { lo
 inline nlohmann::json toJson(const GridConfig& c)                { return saveReflected(c); }
 inline void fromJson(const nlohmann::json& j, GridConfig& c)                { loadReflected(j, c); }
 
-inline nlohmann::json toJson(const AABBDebugConfig& c)           { return saveReflected(c); }
-inline void fromJson(const nlohmann::json& j, AABBDebugConfig& c)           { loadReflected(j, c); }
-
 inline nlohmann::json toJson(const SelectionOutlineConfig& c)    { return saveReflected(c); }
 inline void fromJson(const nlohmann::json& j, SelectionOutlineConfig& c)    { loadReflected(j, c); }
 
@@ -274,8 +262,50 @@ void load(const nlohmann::json& j, Light& l) { loadReflected(j, l); }
 nlohmann::json save(const Rigidbody& rb) { return saveReflected(rb); }
 void load(const nlohmann::json& j, Rigidbody& rb) { loadReflected(j, rb); }
 
-nlohmann::json save(const Collider& c) { return saveReflected(c); }
-void load(const nlohmann::json& j, Collider& c) { loadReflected(j, c); }
+nlohmann::json save(const Collider& c) {
+    nlohmann::json j = saveReflected(c);   // isTrigger
+    nlohmann::json arr = nlohmann::json::array();
+    for (const ColliderBox& b : c.parts) {
+        arr.push_back({
+            {"center", {b.center.x, b.center.y, b.center.z}},
+            {"half",   {b.halfExtents.x, b.halfExtents.y, b.halfExtents.z}},
+        });
+    }
+    j["parts"] = std::move(arr);
+    return j;
+}
+void load(const nlohmann::json& j, Collider& c) {
+    loadReflected(j, c);   // isTrigger
+    c.parts.clear();
+
+    if (auto it = j.find("parts"); it != j.end() && it->is_array() && !it->empty()) {
+        c.parts.reserve(it->size());
+        for (const auto& e : *it) {
+            const auto& ctr = e.at("center");
+            const auto& hf  = e.at("half");
+            ColliderBox b;
+            b.center      = {ctr[0].get<float>(), ctr[1].get<float>(), ctr[2].get<float>()};
+            b.halfExtents = {hf[0].get<float>(),  hf[1].get<float>(),  hf[2].get<float>()};
+            c.parts.push_back(b);
+        }
+        return;
+    }
+
+    // Legacy migration: scenes saved before colliders became box lists carried a
+    // primitive "shape" + radius/halfExtents/plane. Collapse each to one box so
+    // they still load (Sphere -> enclosing box, Plane -> a large thin slab).
+    const std::string shape = j.value("shape", std::string("Box"));
+    ColliderBox box;
+    if (shape == "Sphere") {
+        box.halfExtents = glm::vec3(j.value("radius", 0.5f));
+    } else if (shape == "Plane") {
+        box.center      = glm::vec3(0.0f, j.value("planeOffset", 0.0f), 0.0f);
+        box.halfExtents = glm::vec3(1000.0f, 0.01f, 1000.0f);
+    } else if (auto he = j.find("halfExtents"); he != j.end() && he->is_array() && he->size() == 3) {
+        box.halfExtents = {(*he)[0].get<float>(), (*he)[1].get<float>(), (*he)[2].get<float>()};
+    }
+    c.parts = { box };
+}
 
 nlohmann::json save(const PhysicsWorld& w) { return saveReflected(w); }
 void load(const nlohmann::json& j, PhysicsWorld& w) { loadReflected(j, w); }
@@ -498,11 +528,6 @@ VKM_REFLECT_BEGIN(Engine::PhysicsWorld)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(Engine::Collider)
-    VKM_F(shape),
-    VKM_F(radius),
-    VKM_F(halfExtents),
-    VKM_F(planeNormal),
-    VKM_F(planeOffset),
     VKM_F(isTrigger)
 VKM_REFLECT_END()
 
@@ -624,11 +649,6 @@ VKM_REFLECT_BEGIN(Engine::GridConfig)
     VKM_F(fadeEnd)
 VKM_REFLECT_END()
 
-VKM_REFLECT_BEGIN(Engine::AABBDebugConfig)
-    VKM_F(enabled),
-    VKM_F(color)
-VKM_REFLECT_END()
-
 VKM_REFLECT_BEGIN(Engine::SelectionOutlineConfig)
     VKM_F(enabled),
     VKM_F(color),
@@ -657,7 +677,6 @@ VKM_REFLECT_BEGIN(Engine::EnvironmentConfig)
     VKM_F(exposure),
     VKM_F(colorGrade),
     VKM_F(grid),
-    VKM_F(aabbDebug),
     VKM_F(selection),
     VKM_F(msaa),
     VKM_F(tonemap),

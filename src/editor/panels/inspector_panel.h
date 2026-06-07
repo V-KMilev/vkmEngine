@@ -44,7 +44,7 @@ class InspectorPanel {
         void drawMeshLODSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawLightSection(Scene& scene, EditorState& state, EntityId id);
         void drawRigidbodySection(Scene& scene, EditorState& state, EntityId id);
-        void drawColliderSection(Scene& scene, EditorState& state, EntityId id);
+        void drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id);
         void drawCameraSection(Scene& scene, EditorState& state, EntityId id);
         void drawAnimationSection(Scene& scene, EditorState& state, EntityId id);

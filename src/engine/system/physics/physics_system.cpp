@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -51,13 +52,17 @@ float dynamicInverseMass(const Rigidbody& rb) {
 }
 
 glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
-    if (dynamicInverseMass(rb) == 0.0f || !collider) return glm::mat3(0.0f);
-    switch (collider->shape) {
-        case ColliderShape::Sphere: return sphereInverseInertiaLocal(rb.mass, collider->radius);
-        case ColliderShape::Box:    return boxInverseInertiaLocal(rb.mass, collider->halfExtents);
-        case ColliderShape::Plane:  return glm::mat3(0.0f);
+    if (dynamicInverseMass(rb) == 0.0f || !collider || collider->parts.empty())
+        return glm::mat3(0.0f);
+    // Approximate the collider's inertia with a solid box of its overall local
+    // extent - exact per-part inertia isn't worth it for gameplay.
+    glm::vec3 mn(std::numeric_limits<float>::max());
+    glm::vec3 mx(std::numeric_limits<float>::lowest());
+    for (const ColliderBox& part : collider->parts) {
+        mn = glm::min(mn, part.center - part.halfExtents);
+        mx = glm::max(mx, part.center + part.halfExtents);
     }
-    return glm::mat3(0.0f);
+    return boxInverseInertiaLocal(rb.mass, (mx - mn) * 0.5f);
 }
 
 void computeAABB(
@@ -67,21 +72,42 @@ void computeAABB(
     glm::vec3& outMin,
     glm::vec3& outMax
 ) {
-    if (collider.shape == ColliderShape::Sphere) {
-        outMin = pos - glm::vec3(collider.radius);
-        outMax = pos + glm::vec3(collider.radius);
-        return;
+    // Union of every child box's world AABB.
+    if (collider.parts.empty()) { outMin = pos; outMax = pos; return; }
+    outMin = glm::vec3(std::numeric_limits<float>::max());
+    outMax = glm::vec3(std::numeric_limits<float>::lowest());
+    const glm::mat3 r = glm::mat3_cast(rot);
+    for (const ColliderBox& part : collider.parts) {
+        glm::mat4 model = glm::mat4_cast(rot);
+        model[3] = glm::vec4(pos + r * part.center, 1.0f);
+        glm::vec3 mn, mx;
+        localToWorldAABB(model, -part.halfExtents, part.halfExtents, mn, mx);
+        outMin = glm::min(outMin, mn);
+        outMax = glm::max(outMax, mx);
     }
-    // Box: transform the local AABB with Arvo's method.
-    glm::mat4 model = glm::mat4_cast(rot);
-    model[3] = glm::vec4(pos, 1.0f);
-    localToWorldAABB(model, -collider.halfExtents, collider.halfExtents, outMin, outMax);
 }
 
 bool aabbOverlap(const ColliderProxy& a, const ColliderProxy& b) {
     return a.aabbMin.x <= b.aabbMax.x && a.aabbMax.x >= b.aabbMin.x
         && a.aabbMin.y <= b.aabbMax.y && a.aabbMax.y >= b.aabbMin.y
         && a.aabbMin.z <= b.aabbMax.z && a.aabbMax.z >= b.aabbMin.z;
+}
+
+/// A box placed in world space - the unit the box-box narrowphase consumes.
+/// A collider expands into one of these per child box.
+struct SubShape {
+    glm::vec3 center      = {0.0f, 0.0f, 0.0f};
+    glm::quat rotation    = {1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 halfExtents = {0.5f, 0.5f, 0.5f};
+};
+
+void expandSubShapes(const ColliderProxy& p, std::vector<SubShape>& out) {
+    out.clear();
+    out.reserve(p.collider.parts.size());
+    const glm::mat3 r = glm::mat3_cast(p.rotation);
+    for (const ColliderBox& part : p.collider.parts) {
+        out.push_back({p.position + r * part.center, p.rotation, part.halfExtents});
+    }
 }
 
 } // namespace
@@ -116,7 +142,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         const Transform& t = scene.get<Transform>(id);
         const Collider* collider = scene.has<Collider>(id) ? &scene.get<Collider>(id) : nullptr;
 
-        // Defensively re-derive mass properties so editor edits to mass/shape
+        // Defensively re-derive mass properties so editor edits to mass/collider
         // take effect without an explicit "apply" step.
         rb.inverseMass = dynamicInverseMass(rb);
         rb.invInertiaLocal = localInverseInertia(rb, collider);
@@ -144,9 +170,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
             proxy.position = t.position;
             proxy.rotation = t.rotation;
             proxy.cullStatic = rb.isStatic || rb.isKinematic;
-            if (collider->shape != ColliderShape::Plane) {
-                computeAABB(*collider, t.position, t.rotation, proxy.aabbMin, proxy.aabbMax);
-            }
+            computeAABB(*collider, t.position, t.rotation, proxy.aabbMin, proxy.aabbMax);
             proxies.push_back(proxy);
         }
     }
@@ -164,34 +188,25 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         pb.angularVelocity *= 1.0f / (1.0f + rb.angularDamping * dt);
     }
 
-    // Broadphase: sort-and-sweep finite bodies on X; planes tested apart.
-    thread_local std::vector<uint32_t> finite;
-    thread_local std::vector<uint32_t> planes;
+    // Broadphase: sort-and-sweep on the X axis.
+    thread_local std::vector<uint32_t> sorted;
     thread_local std::vector<std::pair<uint32_t, uint32_t>> pairs;  // proxy index pairs
-    finite.clear();
-    planes.clear();
+    sorted.clear();
     pairs.clear();
 
-    for (uint32_t p = 0; p < proxies.size(); ++p) {
-        if (proxies[p].collider.shape == ColliderShape::Plane) planes.push_back(p);
-        else finite.push_back(p);
-    }
+    for (uint32_t p = 0; p < proxies.size(); ++p) sorted.push_back(p);
 
-    std::sort(finite.begin(), finite.end(), [&](uint32_t a, uint32_t b) {
+    std::sort(sorted.begin(), sorted.end(), [&](uint32_t a, uint32_t b) {
         return proxies[a].aabbMin.x < proxies[b].aabbMin.x;
     });
 
-    for (size_t a = 0; a < finite.size(); ++a) {
-        const ColliderProxy& pa = proxies[finite[a]];
-        for (size_t b = a + 1; b < finite.size(); ++b) {
-            const ColliderProxy& pb = proxies[finite[b]];
+    for (size_t a = 0; a < sorted.size(); ++a) {
+        const ColliderProxy& pa = proxies[sorted[a]];
+        for (size_t b = a + 1; b < sorted.size(); ++b) {
+            const ColliderProxy& pb = proxies[sorted[b]];
             if (pb.aabbMin.x > pa.aabbMax.x) break;  // sorted: no further overlap on X
             if (pa.cullStatic && pb.cullStatic) continue;
-            if (aabbOverlap(pa, pb)) pairs.emplace_back(finite[a], finite[b]);
-        }
-        for (uint32_t pl : planes) {
-            if (pa.cullStatic) continue;  // plane is always static
-            pairs.emplace_back(finite[a], pl);  // A = finite, B = plane
+            if (aabbOverlap(pa, pb)) pairs.emplace_back(sorted[a], sorted[b]);
         }
     }
 
@@ -200,25 +215,44 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     std::vector<bool> hasContact(m_bodies.size(), false);
     Contact scratch[MAX_CONTACTS_PER_MANIFOLD];
 
+    // Colliders expand into their child boxes here, so a single body pair can
+    // yield several manifolds (one per child box-pair that touches). The solver
+    // already handles many manifolds per body pair, so this just works - each
+    // manifold carries the same bodyA/bodyB indices.
+    thread_local std::vector<SubShape> subA;
+    thread_local std::vector<SubShape> subB;
+
     for (const auto& pair : pairs) {
         const ColliderProxy& A = proxies[pair.first];
         const ColliderProxy& B = proxies[pair.second];
-        const int n = generateContacts(
-            A.collider, A.position, A.rotation,
-            B.collider, B.position, B.rotation,
-            scratch);
-        if (n == 0) continue;
+        const bool trigger = A.collider.isTrigger || B.collider.isTrigger;
 
-        hasContact[A.body] = true;
-        hasContact[B.body] = true;
-        if (A.collider.isTrigger || B.collider.isTrigger) continue;  // queried, not resolved
+        expandSubShapes(A, subA);
+        expandSubShapes(B, subB);
 
-        ContactManifold manifold;
-        manifold.bodyA = A.body;
-        manifold.bodyB = B.body;
-        manifold.count = std::min(n, MAX_CONTACTS_PER_MANIFOLD);
-        for (int c = 0; c < manifold.count; ++c) manifold.contacts[c] = scratch[c];
-        m_manifolds.push_back(manifold);
+        bool anyContact = false;
+        for (const SubShape& sa : subA) {
+            for (const SubShape& sb : subB) {
+                const int n = contactBoxes(
+                    sa.center, sa.rotation, sa.halfExtents,
+                    sb.center, sb.rotation, sb.halfExtents,
+                    scratch);
+                if (n == 0) continue;
+                anyContact = true;
+                if (trigger) continue;  // queried, not resolved
+
+                ContactManifold manifold;
+                manifold.bodyA = A.body;
+                manifold.bodyB = B.body;
+                manifold.count = std::min(n, MAX_CONTACTS_PER_MANIFOLD);
+                for (int c = 0; c < manifold.count; ++c) manifold.contacts[c] = scratch[c];
+                m_manifolds.push_back(manifold);
+            }
+        }
+        if (anyContact) {
+            hasContact[A.body] = true;
+            hasContact[B.body] = true;
+        }
     }
 
     // Wake sleepers struck by a faster body before solving.
