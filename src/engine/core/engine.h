@@ -14,9 +14,6 @@
 
 namespace Engine {
 
-class RenderSystem;
-class RenderThread;
-
 /**
  * @brief Engine context: owns core state and runs the main loop.
  *
@@ -37,9 +34,6 @@ class RenderThread;
  */
 class Engine {
     public:
-        // Default ctor + dtor out-of-line so the unique_ptr<RenderThread>'s
-        // default deleter sees the full RenderThread type (forward-declared
-        // at the top of this header).
         Engine();
         ~Engine();
 
@@ -118,41 +112,6 @@ class Engine {
         bool m_initialized = false;
 
         SimulationClock m_simClock;
-
-        /**
-         * @brief Owns the rendering backend's context for the duration
-         *        of the main loop.
-         *
-         * Lazily constructed in run() once boot is complete (so the
-         * single-thread bring-up phase can still touch the backend), and
-         * destroyed at run() exit so any backend teardown in shutdown
-         * finds the context on main again.
-         */
-        std::unique_ptr<RenderThread> m_renderThread;
-
-        /**
-         * @brief Cached pointer to the registered RenderSystem (if any).
-         *
-         * Used by the overlap loop to call buildView() on main +
-         * executeFrame() on the render thread independently. Filled
-         * lazily on the first frame after initSystems; nullptr until then.
-         */
-        RenderSystem* m_renderSystem = nullptr;
-
-        /**
-         * @brief Cached list of UI-stage systems that report
-         *        hasBackendWork()==true.
-         *
-         * Their executeBackend() runs inside the render-thread lambda
-         * after RenderSystem::executeFrame, so the UI lands on top of
-         * the rendered scene. Filled lazily alongside m_renderSystem.
-         */
-        std::vector<System*> m_backendWorkSystems;
-
-        /// Monotonic per-frame counter; drives RenderView buffer parity
-        /// in the overlap loop (m_views[frameIndex & 1]). Incremented
-        /// after each frame is posted.
-        uint32_t m_renderFrameIndex = 0;
 
         /// Throttle state for accumulator-clamp warnings (one per second).
         /// Per-instance so headless tools / tests with multiple Engine

@@ -41,10 +41,6 @@ class AnimationSystem : public System {
          */
         void update(FrameContext& ctx) override;
 
-        /// Writes only Animation + Transform components; never mutates
-        /// ResourceManager. Safe to overlap with the render thread.
-        bool mutatesResources() const override { return false; }
-
     private:
 
         /**

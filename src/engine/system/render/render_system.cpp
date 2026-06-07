@@ -47,12 +47,14 @@ void RenderSystem::resize(uint32_t width, uint32_t height) {
 }
 
 void RenderSystem::update(FrameContext& ctx) {
-    // Engine drives buildView() + executeFrame() separately around the
-    // render-thread sync point. This override exists because System::
-    // update is pure virtual; it is intentionally never called.
+    // The whole render: extract a RenderView from the live world, then draw it.
+    // Kept as two methods so a render thread could be reintroduced later by
+    // splitting them across a sync point (build on main, execute on a worker).
+    buildView(ctx);
+    executeFrame(ctx);
 }
 
-void RenderSystem::buildView(FrameContext& ctx, uint32_t frameIndex) {
+void RenderSystem::buildView(FrameContext& ctx) {
     PROFILE_SCOPE("RenderSystem/BuildView");
 
     if (!m_backend) {
@@ -60,13 +62,12 @@ void RenderSystem::buildView(FrameContext& ctx, uint32_t frameIndex) {
         return;
     }
 
-    // m_width / m_height are the LAST sizes the backend was resized to.
-    // We do not call resize() here: it touches backend state (FBO
-    // reallocation), so it must run on the thread holding the backend's
-    // context - the render thread under the overlap loop. executeFrame()
-    // picks up the desired size from ctx and resizes there if needed.
+    // m_width / m_height are the LAST sizes the backend was resized to. We do
+    // not resize here - executeFrame() picks up the desired size from ctx and
+    // does the backend + graph resize, keeping all backend state changes in
+    // one place.
 
-    RenderView& view = m_views[frameIndex & 1u];
+    RenderView& view = m_view;
 
     // Environment lives as a singleton component on a scene entity (editable
     // in the Inspector). Pull it each frame; mirror into m_environment so
@@ -91,7 +92,7 @@ void RenderSystem::buildView(FrameContext& ctx, uint32_t frameIndex) {
     }
 }
 
-void RenderSystem::executeFrame(FrameContext& ctx, uint32_t frameIndex) {
+void RenderSystem::executeFrame(FrameContext& ctx) {
     PROFILE_SCOPE("RenderSystem/ExecuteFrame");
 
     if (!m_backend) return;
@@ -106,24 +107,21 @@ void RenderSystem::executeFrame(FrameContext& ctx, uint32_t frameIndex) {
         m_graph.onResize(*m_backend, m_width, m_height);
     }
 
-    // Drain any backend jobs queued from main this frame (material
-    // previews from editor panels, future screenshot capture, etc.). They
-    // run here, before the scene render + ImGui draw, so any textures
-    // they touch contain fresh content by the time ImGui samples them.
-    // Swap under the lock, then run outside it so a job can re-queue
-    // safely without deadlocking.
+    // Drain any backend jobs queued since last frame (material previews from
+    // editor panels, future screenshot capture, etc.). They run here, before
+    // the scene render, so any textures they touch contain fresh content by the
+    // time the editor's ImGui samples them. Swap into scratch first so a job
+    // that re-queues lands in the now-empty queue for next frame, not the batch
+    // being iterated.
     {
         PROFILE_SCOPE("Render/BackendJobs");
         thread_local std::vector<std::function<void()>> scratch;
         scratch.clear();
-        {
-            std::lock_guard<std::mutex> lock(m_pendingBackendJobsMutex);
-            scratch.swap(m_pendingBackendJobs);
-        }
+        scratch.swap(m_pendingBackendJobs);
         for (auto& job : scratch) job();
     }
 
-    RenderView& view = m_views[frameIndex & 1u];
+    RenderView& view = m_view;
 
     {
         PROFILE_SCOPE("Render/SyncResources");
@@ -168,14 +166,12 @@ void RenderSystem::setPassEnabled(size_t index, bool enabled) {
 
 void RenderSystem::queueBackendJob(std::function<void()> job) {
     if (!job) return;
-    std::lock_guard<std::mutex> lock(m_pendingBackendJobsMutex);
     m_pendingBackendJobs.push_back(std::move(job));
 }
 
 void RenderSystem::requestIBLRebake() {
-    // Touch the backend's IBL state on the render thread (where the bake
-    // pass reads it), not from the editor's UI thread. The job runs at the
-    // top of the next executeFrame, before the IBL bake pass.
+    // Defer via a backend job so the invalidation runs at the top of the next
+    // executeFrame, before the IBL bake pass reads it.
     queueBackendJob([this]() { getBackend().requestIBLRebake(); });
 }
 
