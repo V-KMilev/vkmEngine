@@ -2,6 +2,9 @@
 
 #include <memory>
 
+#include <GL/glew.h>
+#include <glm/glm.hpp>
+
 #include "resource/shader_asset.h"
 #include "gl_render_pass.h"
 
@@ -49,6 +52,20 @@ class GLHiZPass : public GLRenderPass {
         ShaderHandle m_initShader;
         ShaderHandle m_reduceShader;
         std::unique_ptr<Core::ScreenTriangle> m_screenTri;
+
+        // Double-buffered PBO ring for asynchronous Hi-Z readback: glReadPixels
+        // into one buffer returns immediately (no CPU<->GPU sync); the other,
+        // filled last frame, is mapped to publish. Each buffer carries the
+        // view/viewProj its depth was rendered with so the oracle stays in sync
+        // despite the extra frame of latency.
+        static constexpr int PBO_RING = 2;
+        GLuint    m_pbo[PBO_RING]      = {};
+        bool      m_pboValid[PBO_RING] = {};
+        glm::mat4 m_pboView[PBO_RING]{};
+        glm::mat4 m_pboViewProj[PBO_RING]{};
+        int       m_pboIndex = 0;
+        int       m_pboW     = 0;
+        int       m_pboH     = 0;
 };
 
 } // namespace Engine
