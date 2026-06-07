@@ -14,7 +14,7 @@
 #include "ecs/component/camera.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/name.h"
-#include "system/render/render_view.h"   // EnvironmentConfig (singleton glyph)
+#include "system/render/environment_config.h"   // EnvironmentConfig (singleton glyph)
 
 namespace Engine {
 

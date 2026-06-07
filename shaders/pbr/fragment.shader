@@ -1456,14 +1456,6 @@ void main() {
         color = (t < 0.5)
             ? mix(cold, mid, t * 2.0)
             : mix(mid,  hot, (t - 0.5) * 2.0);
-    } else if (u_debugMode == 14) {
-        // Lightmap-UV diagnostic placeholder. The engine doesn't ship a UV1
-        // channel today, so a real lightmap UV display isn't possible -
-        // visualise that fact with a magenta-and-black diagonal stripe so
-        // the user immediately reads "no lightmap UVs" instead of mistaking
-        // black for an unlit lightmap.
-        float stripe = step(0.5, fract((vUV.x + vUV.y) * 4.0));
-        color = mix(vec3(0.0), vec3(1.0, 0.0, 1.0), stripe);
     }
 
     float outAlpha = u_material.albedo.a * u_material.alpha;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "system/render/render_view.h"  // EnvironmentConfig
+#include "system/render/environment_config.h"  // EnvironmentConfig
 
 namespace Engine {
 

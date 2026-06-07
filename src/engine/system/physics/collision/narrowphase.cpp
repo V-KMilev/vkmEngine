@@ -297,7 +297,7 @@ int contactBoxBox(const OBB& a, const OBB& b, Contact* out) {
     float minDot = glm::dot(inc.u[0], refNormal);
     for (int i = 1; i < 3; ++i) {
         const float d = glm::dot(inc.u[i], refNormal);
-        if (std::fabs(d) > std::fabs(minDot)) minDot = d, incAxis = i;
+        if (std::fabs(d) > std::fabs(minDot)) { minDot = d; incAxis = i; }
     }
     const float incSign = minDot > 0.0f ? -1.0f : 1.0f;
 

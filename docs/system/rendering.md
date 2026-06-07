@@ -9,7 +9,8 @@ the final image.
 ## Key Files
 
 - `src/engine/system/render/render_system.h` — RenderSystem (System subclass)
-- `src/engine/system/render/render_view.h` — RenderView + DrawableData + LightData + EnvironmentConfig
+- `src/engine/system/render/render_view.h` — RenderView + DrawableData + LightData
+- `src/engine/system/render/environment_config.h` — EnvironmentConfig + sub-configs + RenderMode
 - `src/engine/system/render/render_graph.h` — RenderGraph (ordered pass list with declared resource flow)
 - `src/engine/system/render/render_graph_resource.h` — RGResource enum (logical transient resources)
 - `src/engine/system/render/render_graph_builder.h` — RenderGraphBuilder (per-pass declare API)
@@ -80,9 +81,10 @@ forward phase contains them.
 ## EnvironmentConfig
 
 Lives on a singleton Environment scene entity (created by
-`Engine::sceneEnvironment(scene)`). Editable in the Inspector via
-`EnvironmentInspector`. Persists through scene save/load via
-`ComponentSerializer`.
+`Engine::sceneEnvironment(scene)`). Edited via the Render Settings window
+(Window > Render Settings), which drives `EnvironmentInspector`; the
+Environment is not listed in the hierarchy or the entity Inspector. Persists
+through scene save/load via `ComponentSerializer`.
 
 Covers: ambient, IBL (path + intensity), SSAO, SSR, TAA, DoF, motion
 blur, color grading, tone-map curve, bloom, auto-exposure, clear
