@@ -110,7 +110,15 @@ class SlotAllocator {
          */
         StorageIndex allocateAt(uint32_t index) {
             VKM_ASSERT(index > 0, "SlotAllocator::allocateAt: slot 0 is reserved");
+
+            // Growing to reach a sparse index (loading entities saved at, say,
+            // 1,2,6,...) creates dead placeholder slots in the gap. Free-list
+            // them so allocate() reuses the gap and size() counts only live
+            // slots - otherwise every gap permanently leaks a slot and
+            // entityCount() over-reports for the life of the scene.
+            const uint32_t oldSize = static_cast<uint32_t>(m_generation.size());
             while (m_generation.size() <= index) m_generation.push_back({});
+            for (uint32_t gap = oldSize; gap < index; ++gap) m_freeList.push_back(gap);
 
             VKM_ASSERT(!m_generation[index].alive(),
                 "SlotAllocator::allocateAt: slot %u already alive", index);

@@ -115,57 +115,30 @@ void GLView::syncTable(
 void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     PROFILE_SCOPE("GLView::sync");
 
-    // A scene load swaps the whole ResourceManager. Cached GL entries keyed
-    // by handle id are now stale: a new asset may sit at an id that previously
-    // held a different asset with a coincidentally-equal per-asset version,
-    // so the version-skip would keep the wrong GL resource alive. Detect via
-    // the bumped global version and drop every cache.
+    // A scene load / asset delete swaps or shrinks the ResourceManager and
+    // recycles slot ids, so cached GL entries keyed by id are stale. Detect via
+    // the bumped global version and drop every table; they refill below.
     const uint64_t globalVersion = resources.getGlobalVersion();
     if (globalVersion != m_lastGlobalVersion) {
         m_meshTable     = {};
         m_materialTable = {};
         m_textureTable  = {};
         m_shaderTable   = {};
-
-        m_lastMeshTypeVersion     = 0;
-        m_lastMaterialTypeVersion = 0;
-        m_lastTextureTypeVersion  = 0;
-        m_lastDrawableHash        = 0;
-        m_lastGlobalVersion       = globalVersion;
+        m_lastGlobalVersion = globalVersion;
     }
 
-    // Drawable-driven sync (meshes/materials/textures): early-out when neither
-    // resource versions nor the referenced-resource set have changed.
-    const uint64_t meshTypeVersion     = resources.getTypeVersion<MeshAsset>();
-    const uint64_t materialTypeVersion = resources.getTypeVersion<MaterialAsset>();
-    const uint64_t textureTypeVersion  = resources.getTypeVersion<TextureAsset>();
-
-    // Content fingerprint of the mesh/material handles the drawables reference.
-    // A drawable-count proxy misses set changes that keep the count fixed -
-    // notably an LOD switch swapping a drawable's mesh as the camera moves -
-    // which would leave the newly-referenced mesh unsynced and its batch
-    // skipped ("Failed to get mesh for batch"). Drawables are pre-sorted, so a
-    // stable set yields a stable hash.
-    uint64_t drawableHash = 1469598103934665603ull;  // FNV-1a offset basis
-    for (const auto& d : view.drawables) {
-        const uint64_t mesh = (static_cast<uint64_t>(d.mesh.key.index) << 32) ^ d.mesh.key.generation;
-        const uint64_t mat  = (static_cast<uint64_t>(d.material.key.index) << 32) ^ d.material.key.generation;
-        drawableHash ^= mesh + 0x9e3779b97f4a7c15ull + (drawableHash << 6) + (drawableHash >> 2);
-        drawableHash ^= mat  + 0x9e3779b97f4a7c15ull + (drawableHash << 6) + (drawableHash >> 2);
-    }
-
-    const bool resourcesDirty =
-           meshTypeVersion     != m_lastMeshTypeVersion
-        || materialTypeVersion != m_lastMaterialTypeVersion
-        || textureTypeVersion  != m_lastTextureTypeVersion
-        || drawableHash        != m_lastDrawableHash;
-
-    thread_local std::vector<MeshHandle>     meshHandles;
-    thread_local std::vector<MaterialHandle> materialHandles;
-    thread_local std::vector<TextureHandle>  textureHandles;
-
-    if (resourcesDirty) {
+    // Upload/refresh the GPU resources this frame references. Collect the
+    // unique mesh/material/texture handles and run syncTable every frame;
+    // syncTable rebuilds an entry only when its asset's per-asset `version`
+    // changed (edit / hot-reload), so a static scene re-uploads nothing. That
+    // per-asset version, plus the global swap epoch above, is the entire GPU
+    // coherence model - no per-type versions or drawable-set fingerprints.
+    {
         PROFILE_SCOPE("GLView/UploadResources");
+        thread_local std::vector<MeshHandle>     meshHandles;
+        thread_local std::vector<MaterialHandle> materialHandles;
+        thread_local std::vector<TextureHandle>  textureHandles;
+
         collectMeshHandles(view, meshHandles);
         collectMaterialHandles(view, materialHandles);
         collectTextureHandles(materialHandles, resources, textureHandles);
@@ -173,11 +146,6 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         syncTable<MeshAsset>    (m_meshTable,     meshHandles,     resources);
         syncTable<MaterialAsset>(m_materialTable, materialHandles, resources);
         syncTable<TextureAsset> (m_textureTable,  textureHandles,  resources);
-
-        m_lastMeshTypeVersion     = meshTypeVersion;
-        m_lastMaterialTypeVersion = materialTypeVersion;
-        m_lastTextureTypeVersion  = textureTypeVersion;
-        m_lastDrawableHash        = drawableHash;
     }
 
     // Per-frame UBOs owned by GLView. Shadow UBO is bound by GLShadowPass
@@ -260,8 +228,8 @@ GLMesh* GLView::getMutableMesh(const MeshHandle& handle) {
 // or rebuild on version bump" path; hot reload threads through here.
 // The single-element scratch lists below are thread_local and reused (clear +
 // push_back, capacity kept) instead of a fresh std::vector per call: these
-// run multiple times per frame from nearly every pass, on the render thread.
-// Same pattern as ensureMaterialTextures.
+// run multiple times per frame from nearly every pass. Same pattern as
+// ensureMaterialTextures.
 GLShader* GLView::resolveShader(const ShaderHandle& handle, const ResourceManager& resources) {
     if (!handle) return nullptr;
     thread_local std::vector<ShaderHandle> one;

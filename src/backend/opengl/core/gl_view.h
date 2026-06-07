@@ -239,11 +239,9 @@ class GLView {
         );
 
     private:
-        // Each new asset type adds four parallel structures here and ~7 touch
-        // points in sync(): a table field, a lastTypeVersion field, a handle
-        // collector, and entries in the resourcesDirty check + sync calls +
-        // global-version drop. Worth a tuple-of-typed-tables + fold-expression
-        // refactor if/when we cross 5 asset types.
+        // Each new asset type adds a table field here plus a handle collector
+        // and a syncTable call in sync(). Worth a tuple-of-typed-tables +
+        // fold-expression refactor if/when we cross 5 asset types.
         GLResourceTable<GLMesh>     m_meshTable;
         GLResourceTable<GLMaterial> m_materialTable;
         GLResourceTable<GLTexture>  m_textureTable;
@@ -295,18 +293,13 @@ class GLView {
         GLInstanceBatcher m_instanceBatcher;
         GLInstanceBatcher m_shadowBatcher;
 
-        uint64_t m_lastMeshTypeVersion     = 0;
-        uint64_t m_lastMaterialTypeVersion = 0;
-        uint64_t m_lastTextureTypeVersion  = 0;
-        uint64_t m_lastDrawableHash        = 0;
-
         /**
-         * @brief Last seen ResourceManager global version (bumped by swap).
+         * @brief Last seen ResourceManager global version (bumped by
+         *        swap / clear / remove).
          *
-         * A change forces every cached GL entry to drop because slot ids
-         * no longer map to the same assets after a scene load - per-type
-         * version checks aren't enough on their own (a new asset can land
-         * at an old id with a coincidentally-matching version).
+         * A change drops every cached GL entry: a recycle means slot ids no
+         * longer map to the same assets, so the per-asset version check alone
+         * can't be trusted (a new asset can land at an old id).
          */
         uint64_t m_lastGlobalVersion       = 0;
 };

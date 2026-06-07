@@ -11,10 +11,16 @@ namespace Engine {
 Resource::Resource() = default;
 Resource::~Resource() = default;
 
+// assetId is deliberately NOT copied (it is on the move ctor, which is =default
+// below). A move relocates the SAME asset, so it keeps its identity; a copy is a
+// DUPLICATE that must get its own GUID before being re-added - two live assets
+// sharing an assetId would collide in ResourceManager's idIndex. The duplicator
+// assigns a fresh AssetId (or leaves it invalid) on the copy.
 Resource::Resource(const Resource& other)
     : version(other.version)
     , name(other.name)
     , hidden(other.hidden)
+    , pinned(other.pinned)
     , source(other.source ? std::make_unique<nlohmann::json>(*other.source)
                           : nullptr)
 {}
@@ -24,6 +30,7 @@ Resource& Resource::operator=(const Resource& other) {
     version = other.version;
     name    = other.name;
     hidden  = other.hidden;
+    pinned  = other.pinned;
     source  = other.source ? std::make_unique<nlohmann::json>(*other.source)
                            : nullptr;
     return *this;

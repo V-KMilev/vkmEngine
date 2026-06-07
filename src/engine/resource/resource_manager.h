@@ -19,11 +19,11 @@
 namespace Engine {
 
 /**
- * @brief Open type-erased resource registry with typed handles and per-type version tracking.
+ * @brief Open type-erased resource registry with typed handles and generational lifetimes.
  *
  * Any type inheriting from Resource can be stored without modifying this class.
- * Mirrors Scene's design: per type we keep a SlotAllocator (handle lifetime),
- * a SparseSet<T> (storage), and a typeVersion counter.
+ * Mirrors Scene's design: per type we keep a SlotAllocator (handle lifetime)
+ * and a SparseSet<T> (storage), plus name/id indices for O(1) lookup.
  */
 class ResourceManager {
     public:
@@ -92,6 +92,10 @@ class ResourceManager {
         template<typename ResourceType>
         auto addPrivate(ResourceType && resource, std::string name) {
             resource.hidden = true;
+            // Editor scaffolding is engine-owned: pin it so a reachability
+            // sweep (purgeUnusedAssets) keeps it even though no scene entity
+            // references it.
+            resource.pinned = true;
             resource.name = std::move(name);
             return add(std::forward<ResourceType>(resource));
         }
@@ -120,6 +124,15 @@ class ResourceManager {
             }
             storageOf<T>(slot).remove(handle.key.index);
             slot.allocator->free(handle.key);
+            // Removing an asset recycles its slot id. Backends key their GPU
+            // caches on that id (GLView's per-type tables), so a removal is a
+            // handle-invalidating event: bump the global version. Without it
+            // the next sync neither frees the removed asset's GPU memory (the
+            // table entry just lingers - a leak on every delete) nor notices
+            // when a future asset reuses the freed slot id, which would serve
+            // the stale GPU resource. Drops + rebuilds the cache once on the
+            // next frame; deletes are rare so the re-upload cost is fine.
+            ++m_globalVersion;
         }
 
         /**
@@ -191,16 +204,14 @@ class ResourceManager {
         }
 
         /**
-         * @brief Commit changes to a resource (bumps the per-resource and
-         *        per-type versions; does NOT bump the global version).
+         * @brief Commit changes to a resource (bumps its per-asset version;
+         *        does NOT bump the global version).
          *
-         * Global version is reserved for handle-invalidating events (swap,
-         * clear, swapSlot) - backends like GLView use a globalVersion delta
-         * to detect "this is a different ResourceManager, drop every cache".
-         * If commit also bumped globalVersion, every per-frame slider drag in
-         * the editor would wipe the GPU cache and re-upload every asset, just
-         * to update one material. The per-resource and per-type versions are
-         * enough to drive incremental sync.
+         * The per-asset `version` is what the backend keys GPU re-uploads on:
+         * GLView's syncTable rebuilds an entry only when this changes. Global
+         * version is reserved for handle-invalidating events (swap / clear /
+         * swapSlot / remove) - if commit bumped it, every per-frame slider drag
+         * would wipe and re-upload the whole GPU cache to update one material.
          */
         template<typename HandleType>
         void commit(const HandleType& handle) {
@@ -209,7 +220,6 @@ class ResourceManager {
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator->has(handle.key), "ResourceManager::commit invalid handle");
             ++storageOf<T>(slot).get(handle.key.index).version;
-            ++slot.typeVersion;
         }
 
         /**
@@ -296,85 +306,14 @@ class ResourceManager {
             });
         }
 
-        /// Pair handed out by AssetRange. Lets callers use range-based for
-        /// AND structured bindings: `for (auto [handle, asset] : ...)`.
-        template<typename T>
-        struct AssetView {
-            Handle<T> handle;
-            const T*  asset;
-        };
-
         /**
-         * @brief Range view over every live asset of type @p T.
+         * @brief Global version counter, bumped on handle-invalidating events
+         *        (clear / swap / swapSlot / remove); never by commit().
          *
-         * Same semantics as forEachOfType but with iterator-based access -
-         * supports early break/continue without the callback's
-         * return-skip-only flow:
-         *
-         *   for (auto [h, asset] : resources.assetsOfType<MaterialAsset>()) {
-         *       if (asset->hidden) continue;
-         *       ...
-         *   }
-         *
-         * Iterators are forward, single-pass, const. They become invalid
-         * if the underlying SparseSet is mutated mid-iteration; the
-         * existing forEachOfType has the same property.
+         * Backends key whole-cache drops on it: a change means slot ids may no
+         * longer map to the same assets, so the per-asset version check can't be
+         * trusted and every cached GPU resource is dropped and rebuilt.
          */
-        template<typename T>
-        class AssetRange {
-            public:
-                AssetRange() = default;
-                AssetRange(const SparseSet<T>* set, const SlotAllocator* alloc)
-                    : m_set(set), m_alloc(alloc) {}
-
-            public:
-                class Iterator {
-                    public:
-                        Iterator(const SparseSet<T>* set, const SlotAllocator* alloc, uint32_t i)
-                            : m_set(set), m_alloc(alloc), m_index(i) {}
-
-                        AssetView<T> operator*() const {
-                            const uint32_t key = m_set->keyAt(m_index);
-                            return AssetView<T>{
-                                Handle<T>{StorageIndex{key, m_alloc->generationOf(key)}},
-                                &m_set->dataAt(m_index)
-                            };
-                        }
-                        Iterator& operator++() { ++m_index; return *this; }
-                        bool operator!=(const Iterator& o) const { return m_index != o.m_index; }
-
-                    private:
-                        const SparseSet<T>*  m_set;
-                        const SlotAllocator* m_alloc;
-                        uint32_t             m_index;
-                };
-
-                Iterator begin() const {
-                    return Iterator(m_set, m_alloc, 0);
-                }
-                Iterator end() const {
-                    return Iterator(m_set, m_alloc,
-                        m_set ? static_cast<uint32_t>(m_set->size()) : 0);
-                }
-
-            private:
-                const SparseSet<T>*  m_set   = nullptr;
-                const SlotAllocator* m_alloc = nullptr;
-        };
-
-        /// Range view over every live asset of type @p T.
-        /// Empty range when the type has no registered slots yet.
-        template<typename T>
-        AssetRange<T> assetsOfType() const {
-            TypeId id = typeId<T>();
-            if (id >= m_slots.size() || !m_slots[id]) return AssetRange<T>{};
-            const auto& slot = *m_slots[id];
-            return AssetRange<T>{ &storageOfConst<T>(slot), slot.allocator.get() };
-        }
-
-        /// @brief Global version counter. Bumped on handle-invalidating events
-        /// (clear / swap / swapSlot) - NOT on commit(), which bumps only the
-        /// per-resource + per-type versions. Backends key whole-cache drops on it.
         uint64_t getGlobalVersion() const { return m_globalVersion; }
 
         /**
@@ -443,20 +382,11 @@ class ResourceManager {
             ++other.m_globalVersion;
         }
 
-        /// @brief Per-type version counter. Bumped only when resources of type T are committed.
-        template<typename T>
-        uint64_t getTypeVersion() const {
-            TypeId id = typeId<T>();
-            if (id >= m_slots.size() || !m_slots[id]) return 0;
-            return m_slots[id]->typeVersion;
-        }
-
     private:
-        /// Per-type bundle: lifetime, storage, version, name index.
+        /// Per-type bundle: lifetime (allocator), storage, name + id indices.
         struct TypedSlot {
             std::unique_ptr<SlotAllocator>  allocator;
             std::unique_ptr<ISparseSet>     storage;
-            uint64_t                        typeVersion = 0;
             /// name -> storage index. O(1) findByName backing. Populated
             /// from Resource::name on add(), erased on remove().
             std::unordered_map<std::string, uint32_t> nameIndex;
