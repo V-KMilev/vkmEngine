@@ -155,14 +155,7 @@ void MaterialPreviewSession::renderPreview(
     v.environment.taa.enabled           = false;
     v.environment.dof.enabled           = false;
     v.environment.motionBlur.enabled    = false;
-    // World-grid and AABB-debug make no sense around a single preview shape.
-    // Suppress them through THIS view's environment flags - GLGridPass and
-    // GLAABBDebugPass gate enabledForView() on these - rather than poking the
-    // shared graph's global pass-enable state (which the main viewport then
-    // had to recompile back, and which left passes disabled if the render
-    // threw mid-way).
     v.environment.grid.enabled      = false;
-    v.environment.aabbDebug.enabled = false;
 
     v.viewportWidth  = m_size;
     v.viewportHeight = m_size;
