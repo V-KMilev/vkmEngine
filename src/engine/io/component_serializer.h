@@ -18,7 +18,7 @@
 namespace Engine {
 
 class ResourceManager;
-struct EnvironmentConfig;  // system/render/render_view.h
+struct EnvironmentConfig;  // system/render/environment_config.h
 
 /**
  * @brief Per-component (de)serialization to JSON.

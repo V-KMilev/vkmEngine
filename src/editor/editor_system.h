@@ -123,11 +123,11 @@ class EditorSystem : public System {
         /**
          * @brief Standalone floating Render Settings window.
          *
-         * Same EnvironmentInspector the right-side Inspector uses when the
-         * Environment entity is selected; this one is opened from View ->
-         * Render Settings so the user can edit world-level rendering
-         * config without first hunting the Environment entity in the
-         * hierarchy.
+         * The sole editor for the scene's world-level rendering/post config:
+         * opened from Window -> Render Settings and bound to the singleton
+         * Environment entity's EnvironmentConfig. The Environment is no longer
+         * listed in the hierarchy nor editable through the right-side Inspector,
+         * so this window owns the whole stack.
          */
         EnvironmentInspector m_renderSettingsUI;
 };

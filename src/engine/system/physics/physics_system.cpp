@@ -60,8 +60,13 @@ glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
     return glm::mat3(0.0f);
 }
 
-void computeAABB(const Collider& collider, const glm::vec3& pos, const glm::quat& rot,
-                 glm::vec3& outMin, glm::vec3& outMax) {
+void computeAABB(
+    const Collider& collider,
+    const glm::vec3& pos,
+    const glm::quat& rot,
+    glm::vec3& outMin,
+    glm::vec3& outMax
+) {
     if (collider.shape == ColliderShape::Sphere) {
         outMin = pos - glm::vec3(collider.radius);
         outMax = pos + glm::vec3(collider.radius);
@@ -249,7 +254,11 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         PhysicsBody& pb = m_solverBodies[k];
 
         if (rb.isStatic) continue;
-        if (rb.sleeping) { rb.linearVelocity = glm::vec3(0.0f); rb.angularVelocity = glm::vec3(0.0f); continue; }
+        if (rb.sleeping) {
+            rb.linearVelocity = glm::vec3(0.0f);
+            rb.angularVelocity = glm::vec3(0.0f);
+            continue;
+        }
 
         rb.linearVelocity = pb.linearVelocity;
         rb.angularVelocity = pb.angularVelocity;

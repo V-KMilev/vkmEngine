@@ -15,7 +15,7 @@
 
 #include "framework/editor_common.h"
 #include "ui/editor_style.h"
-#include "system/render/render_view.h"          // EnvironmentConfig
+#include "system/render/environment_config.h"   // EnvironmentConfig
 #include "system/visibility/visibility.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
@@ -844,7 +844,7 @@ void EnvironmentInspector::draw(EditorContext& ec, EnvironmentConfig& env) {
     card("Culling",            ACCENT_PERF,     true,  &EnvironmentInspector::drawCulling);
     card("Diagnostics",        ACCENT_DIAG,     false, &EnvironmentInspector::drawDiagnostics);
 
-    // Performance takes only the context; advanced, collapsed by default.
+    // Performance: MSAA + per-pass toggles; advanced, collapsed by default.
     if (!filtering || matchesFilter("Performance (advanced)", m_filter)) {
         if (filtering) ImGui::SetNextItemOpen(true, ImGuiCond_Always);
         if (beginComponentCard("Performance (advanced)", ACCENT_PERF, false))

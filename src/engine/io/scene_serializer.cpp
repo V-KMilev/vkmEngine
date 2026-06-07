@@ -22,7 +22,7 @@
 #include "io/component_serializer.h"
 #include "resource/resource_manager.h"
 #include "resource/shader_asset.h"
-#include "system/render/render_view.h"   // EnvironmentConfig
+#include "system/render/environment_config.h"   // EnvironmentConfig
 #include "system/hierarchy/hierarchy_operations.h"
 
 namespace Engine::SceneSerializer {
