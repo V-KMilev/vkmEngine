@@ -6,25 +6,6 @@
 namespace Engine {
 
 /**
- * @brief Inverse inertia tensor of a solid sphere in body-local space.
- *
- * Solid sphere: I = (2/5) m r^2 about every axis, so the inverse is the
- * reciprocal on the diagonal. A non-positive mass or radius yields mat3(0)
- * (no rotational response - the static-body convention).
- */
-inline glm::mat3 sphereInverseInertiaLocal(float mass, float radius) {
-    if (mass <= 0.0f || radius <= 0.0f) return glm::mat3(0.0f);
-
-    const float inertia = 0.4f * mass * radius * radius;
-    const float inv = 1.0f / inertia;
-    return glm::mat3(
-        inv, 0.0f, 0.0f,
-        0.0f, inv, 0.0f,
-        0.0f, 0.0f, inv
-    );
-}
-
-/**
  * @brief Inverse inertia tensor of a solid box in body-local space.
  *
  * Solid box about its centre: I_x = (1/12) m (h_y^2 + h_z^2) using full

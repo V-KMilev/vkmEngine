@@ -24,6 +24,7 @@
 #include "framework/editor_actions.h"
 #include "io/project_paths.h"            // ProjectPaths::root for the probe HDR browse
 #include "resource/resource_manager.h"
+#include "system/physics/collider_fit.h"
 #include "system/visibility/bounds_utils.h"
 
 namespace Engine {
@@ -177,7 +178,7 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<MeshLOD>(id))    drawMeshLODSection(scene, ctx.resources, state, id);
     if (scene.has<Light>(id))      drawLightSection(scene, state, id);
     if (scene.has<Rigidbody>(id))  drawRigidbodySection(scene, state, id);
-    if (scene.has<Collider>(id))   drawColliderSection(scene, state, id);
+    if (scene.has<Collider>(id))   drawColliderSection(scene, ctx.resources, state, id);
     if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, state, id);
     if (scene.has<Camera>(id))     drawCameraSection(scene, state, id);
     if (scene.has<Animation>(id))  drawAnimationSection(scene, state, id);
@@ -584,7 +585,7 @@ void InspectorPanel::drawRigidbodySection(Scene& scene, EditorState& state, Enti
     }
 }
 
-void InspectorPanel::drawColliderSection(Scene& scene, EditorState& state, EntityId id) {
+void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id) {
     bool remove = false;
     const bool open = beginComponentCard("Collider", ACCENT_COLLIDER, true, &remove);
     if (open) {
@@ -592,26 +593,35 @@ void InspectorPanel::drawColliderSection(Scene& scene, EditorState& state, Entit
         const Collider before = col;
         bool changed = false;
 
-        drawPropertyLabel("Shape");
-        int shapeIdx = static_cast<int>(col.shape);
-        if (ImGui::Combo("##ColShape", &shapeIdx, COLLIDER_SHAPE_NAMES, IM_ARRAYSIZE(COLLIDER_SHAPE_NAMES))) {
-            col.shape = static_cast<ColliderShape>(shapeIdx);
-            changed = true;
+        // A collider is a set of boxes. A single box is editable here; a
+        // mesh-fitted compound shows its box count (rebuild it via Fit to Mesh).
+        if (col.parts.size() == 1) {
+            changed |= drawVec3Control("Half Extents",
+                glm::value_ptr(col.parts[0].halfExtents), 0.5f, 0.05f);
+        } else {
+            ImGui::TextDisabled("%zu boxes (mesh-fitted)", col.parts.size());
         }
 
-        switch (col.shape) {
-            case ColliderShape::Sphere:
-                drawPropertyLabel("Radius");
-                changed |= ImGui::DragFloat("##ColRadius", &col.radius, 0.05f, 0.01f, 1000.0f, "%.2f");
-                break;
-            case ColliderShape::Box:
-                changed |= drawVec3Control("Half Extents", glm::value_ptr(col.halfExtents), 0.5f, 0.05f);
-                break;
-            case ColliderShape::Plane:
-                changed |= drawVec3Control("Normal", glm::value_ptr(col.planeNormal), 0.0f, 0.05f);
-                drawPropertyLabel("Offset");
-                changed |= ImGui::DragFloat("##ColOffset", &col.planeOffset, 0.05f, -1000.0f, 1000.0f, "%.2f");
-                break;
+        // Fit to Mesh: rebuild the collider from this entity's mesh. Detail 1 is
+        // a single box (the scaled bounds); higher detail voxelizes the mesh into
+        // a box compound that hugs its shape. The entity scale is baked in - the
+        // solver ignores Transform scale.
+        if (scene.has<Mesh>(id) && scene.get<Mesh>(id).mesh) {
+            const auto& asset = resources.get(scene.get<Mesh>(id).mesh);
+            if (hasValidBounds(asset.boundsMin, asset.boundsMax)) {
+                ImGui::Spacing();
+                drawPropertyLabel("Detail");
+                ImGui::SetNextItemWidth(-1.0f);
+                ImGui::SliderInt("##ColDetail", &state.colliderFitDetail, 1, COLLIDER_FIT_MAX_DETAIL);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("1 = one box; higher = a tighter box compound (more boxes = heavier)");
+                if (ImGui::Button("Fit to Mesh", ImVec2(-1.0f, 0.0f))) {
+                    const glm::vec3 scale = scene.has<Transform>(id)
+                        ? scene.get<Transform>(id).scale : glm::vec3(1.0f);
+                    col.parts = fitBoxesToMesh(asset, state.colliderFitDetail, scale);
+                    changed = true;
+                }
+            }
         }
 
         drawPropertyLabel("Trigger");  changed |= ImGui::Checkbox("##ColTrigger", &col.isTrigger);

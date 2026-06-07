@@ -499,6 +499,8 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
             m_viewportOverlay.drawNavigationGizmo(ec);
             m_gizmoOverlay.drawLightGizmos(ec);
             m_gizmoOverlay.drawCameraGizmos(ec);
+            if (m_state.showColliders) m_gizmoOverlay.drawColliderGizmos(ec);
+            if (m_state.showBounds)    m_gizmoOverlay.drawBoundsGizmos(ec);
             m_gizmoOverlay.drawTransformGizmo(ec);
             m_viewportToolbar.draw(ec);
             m_playbar.draw(ec);
