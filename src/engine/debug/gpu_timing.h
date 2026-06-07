@@ -3,7 +3,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -16,8 +15,6 @@ namespace Engine {
  * timings via @ref recordSample(). The render graph wraps each pass'
  * execute() with backend timer primitives and the backend drains
  * completed queries inside its endFrame() hook.
- *
- * Thread-safe (a future compute-backed thread could push from a worker).
  */
 class GpuTimingPool {
     public:
@@ -65,7 +62,6 @@ class GpuTimingPool {
 
         void recomputeDerived(PassStats& p) const;
 
-        mutable std::mutex     m_mutex;
         std::vector<PassStats> m_passes;
 };
 

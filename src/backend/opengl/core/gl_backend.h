@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <memory>
 #include <cstddef>
 #include <cstdint>
@@ -87,15 +86,14 @@ class GLBackend : public RenderBackend {
 
         std::vector<ShaderVariantStat> shaderVariantStats() const override;
 
-        /// CPU mirror of the auto-exposure adapted luminance; written on the
-        /// render thread by GLExposurePass, read by the editor's Exposure card
-        /// on the UI thread. Atomic so that cross-thread read is well-defined
-        /// (cosmetic EV readout - ordering doesn't matter beyond no torn read).
-        float getAdaptedLuminance() const override { return m_adaptedLuminance.load(); }
-        void  setAdaptedLuminance(float v)         { m_adaptedLuminance.store(v); }
+        /// CPU mirror of the auto-exposure adapted luminance; written by
+        /// GLExposurePass during the render, read by the editor's Exposure card.
+        /// Cosmetic EV readout.
+        float getAdaptedLuminance() const override { return m_adaptedLuminance; }
+        void  setAdaptedLuminance(float v)         { m_adaptedLuminance = v; }
 
-        /// Invalidate the global IBL bake so it re-runs next frame. Called on
-        /// the render thread via RenderSystem::requestIBLRebake's backend job.
+        /// Invalidate the global IBL bake so it re-runs next frame. Called via
+        /// RenderSystem::requestIBLRebake's backend job (runs in executeFrame).
         void requestIBLRebake() override { m_view.getIBL().invalidateBake(); }
 
         /// Publish the Hi-Z occlusion pyramid (built by GLHiZPass) for next
@@ -173,7 +171,7 @@ class GLBackend : public RenderBackend {
         /// at the same value GLAutoExposure seeds its 1x1 ping-pong with
         /// (0.18) so the editor's readout shows something sensible before
         /// the exposure pass runs the first time.
-        std::atomic<float> m_adaptedLuminance{0.18f};
+        float m_adaptedLuminance = 0.18f;
 
         /**
          * @brief Per-pass GL_TIME_ELAPSED queries (two slots per pass).

@@ -2,7 +2,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <mutex>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -68,8 +67,7 @@ class OcclusionOracle {
     private:
         OcclusionOracle() = default;
 
-        mutable std::mutex m_mutex;
-        Frame              m_current;
+        Frame m_current;
 };
 
 } // namespace Engine

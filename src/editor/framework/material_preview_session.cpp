@@ -31,21 +31,18 @@ void MaterialPreviewSession::onFrameBegin() {
 }
 
 void MaterialPreviewSession::evict(uint64_t key) {
-    std::lock_guard<std::mutex> lock(m_targetsMutex);
     m_targets.erase(key);
     m_textureIds.erase(key);
     m_versions.erase(key);
 }
 
 void MaterialPreviewSession::clear() {
-    std::lock_guard<std::mutex> lock(m_targetsMutex);
     m_targets.clear();
     m_textureIds.clear();
     m_versions.clear();
 }
 
 uint32_t MaterialPreviewSession::cachedTextureId(uint64_t key) const {
-    std::lock_guard<std::mutex> lock(m_targetsMutex);
     auto it = m_textureIds.find(key);
     return it != m_textureIds.end() ? it->second : 0u;
 }
@@ -82,21 +79,20 @@ uint32_t MaterialPreviewSession::texture(
         --m_budget;
     }
 
-    // The render thread owns the backend context. Queue the actual
-    // render against the per-key target; the lambda allocates the
-    // target on first touch. The texture id we return for this frame
-    // is whatever's currently cached - 0 on the very first frame for a
-    // key, a stable id thereafter.
+    // Defer the actual render to the top of the next executeFrame (via the
+    // backend-job queue), so it runs before that frame's scene render. The
+    // texture id we return for this frame is whatever's currently cached - 0
+    // on the very first frame for a key, a stable id thereafter.
     m_renderSystem.queueBackendJob(
         [this, &resources, material, mesh, yawDeg, pitchDeg, distance, key]() {
-            renderOnBackendThread(resources, material, mesh,
-                                  yawDeg, pitchDeg, distance, key);
+            renderPreview(resources, material, mesh,
+                          yawDeg, pitchDeg, distance, key);
         });
     m_versions[key] = version;
     return cachedTextureId(key);
 }
 
-void MaterialPreviewSession::renderOnBackendThread(
+void MaterialPreviewSession::renderPreview(
     ResourceManager& resources,
     const MaterialHandle& material,
     const MeshHandle& mesh,
@@ -109,8 +105,8 @@ void MaterialPreviewSession::renderOnBackendThread(
 
     RenderBackend& backend = m_renderSystem.getBackend();
 
-    // Lazy first-touch allocation on the render thread so the backend
-    // context is current when we ask it for resources.
+    // Lazy first-touch allocation; runs inside executeFrame with the GL context
+    // current.
     if (!m_frame) {
         m_frame = backend.createFrameResources();
         if (!m_frame) return;
@@ -119,7 +115,6 @@ void MaterialPreviewSession::renderOnBackendThread(
 
     RenderTarget* target = nullptr;
     {
-        std::lock_guard<std::mutex> lock(m_targetsMutex);
         auto it = m_targets.find(key);
         if (it == m_targets.end()) {
             auto fresh = backend.createOffscreenTarget(m_size);
