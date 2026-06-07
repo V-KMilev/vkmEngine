@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -87,10 +86,10 @@ class MaterialPreviewSession {
         void onFrameBegin();
 
     private:
-        /// Render path. Runs on the render thread only, since it allocates
-        /// GL resources (target) and issues draw calls. Looks up or
-        /// creates the per-key target before driving the graph.
-        void renderOnBackendThread(
+        /// Render path: looks up or creates the per-key target, then drives the
+        /// graph into it. Runs inside executeFrame (via queueBackendJob) so the
+        /// GL context is current when it allocates resources + issues draws.
+        void renderPreview(
             ResourceManager& resources,
             const MaterialHandle& material,
             const MeshHandle& mesh,
@@ -100,23 +99,18 @@ class MaterialPreviewSession {
             uint64_t key
         );
 
-        /// Current texture id for @p key under the targets mutex (0 if
-        /// nothing has been rendered yet). Main thread calls this to
-        /// hand a stable id to ImGui::Image.
+        /// Current texture id for @p key (0 if nothing rendered yet). The editor
+        /// calls this to hand a stable id to ImGui::Image.
         uint32_t cachedTextureId(uint64_t key) const;
 
         RenderSystem& m_renderSystem;
         uint32_t      m_size;
 
-        /// Shared frame resources at the preview's fixed resolution.
-        /// Lazily created on the first render-thread render so allocation
-        /// happens against the backend's actual context, not main.
+        /// Shared frame resources at the preview's fixed resolution. Lazily
+        /// created on the first render so it allocates with the GL context current.
         std::unique_ptr<FrameResources> m_frame;
 
-        /// Per-key offscreen targets + cached color texture ids. The map
-        /// is mutated only on the render thread; the id map is read on
-        /// main (ImGui draw) and written on render - mutex guards both.
-        mutable std::mutex                                          m_targetsMutex;
+        /// Per-key offscreen targets + cached color texture ids.
         std::unordered_map<uint64_t, std::unique_ptr<RenderTarget>> m_targets;
         std::unordered_map<uint64_t, uint32_t>                      m_textureIds;
 
