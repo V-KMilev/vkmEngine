@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <unordered_set>
 
 #include "ecs/component/mesh_lod.h"
@@ -10,6 +11,7 @@
 #include "framework/editor_actions.h"
 #include "framework/editor_commands.h"
 #include "framework/material_preview_session.h"
+#include "resource/asset_gc.h"
 #include "system/render/render_system.h"
 #include "generator/mesh_generators.h"
 
@@ -84,6 +86,10 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
 
     ensureAssets(resources);
 
+    // Deferred so the purge runs after this frame's tabs finish iterating the
+    // asset tables (removing mid-iteration would skip tiles).
+    bool purgeRequested = false;
+
     if (ImGui::Button("Import Model...")) state.requestModelImport = true;
     ImGui::SameLine();
     if (ImGui::Button("New Material")) {
@@ -94,6 +100,12 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
     }
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Create a blank PBR material and open it in the Material Editor");
+    ImGui::SameLine();
+    if (ImGui::Button("Purge Unused")) purgeRequested = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Free meshes / materials / textures no entity uses\n"
+                          "(e.g. after deleting an imported model).\n"
+                          "Clears the undo history.");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(170.0f);
     ImGui::SliderFloat("##cell", &m_cell, 64.0f, 256.0f, "thumb %.0f");
@@ -152,6 +164,17 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
         }
         if (cancel) { m_renameMat = {}; m_renameMesh = {}; ImGui::CloseCurrentPopup(); }
         ImGui::EndPopup();
+    }
+
+    if (purgeRequested) {
+        const auto freed = purgeUnusedAssets(ec.frame.scene, resources);
+        // Freeing assets dangles any earlier undo snapshot that referenced
+        // them (a Delete redo would restore handles to freed slots), so the
+        // purge clears the undo history.
+        state.commands.clear();
+        state.pushToast(EditorState::ToastKind::Info,
+            freed > 0 ? ("Purged " + std::to_string(freed) + " unused asset(s)")
+                      : std::string("No unused assets to purge"));
     }
 
     ImGui::End();

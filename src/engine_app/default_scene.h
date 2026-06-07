@@ -130,11 +130,18 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
     // is invisible at the screen sizes where the coarse levels switch in.
     {
         Engine::MeshAsset base = Engine::generateSphere(48, 24);
-        // decimateMesh reads the base by const ref; then base itself is moved
-        // in as the finest level (the resource manager takes resources by value).
-        const auto dec1 = resources.add(Engine::decimateMesh(base, 12), "sphere_dec1");
-        const auto dec2 = resources.add(Engine::decimateMesh(base, 6),  "sphere_dec2");
-        const auto dec0 = resources.add(std::move(base),                "sphere_dec0");
+        // Capture the base's stamped GUID before decimating. decimateMeshTracked
+        // (NOT plain decimateMesh) records a {base, grid} recipe + AssetId on each
+        // coarse level - without it the level has no AssetId/source and the scene
+        // saver silently drops it, so the LOD object reloads with empty coarse
+        // levels (the bug this fixes). On load the "decimate" factory re-derives
+        // the level from the base, which is emitted first as the entity's Mesh.
+        const Engine::AssetId baseId = base.assetId;
+        // decimate reads the base by const ref; then base itself is moved in as
+        // the finest level (the resource manager takes resources by value).
+        const auto dec1 = resources.add(Engine::decimateMeshTracked(base, baseId, 12), "sphere_dec1");
+        const auto dec2 = resources.add(Engine::decimateMeshTracked(base, baseId, 6),  "sphere_dec2");
+        const auto dec0 = resources.add(std::move(base),                              "sphere_dec0");
 
         Engine::MeshLOD lod{};
         lod.levels[0] = dec0;
