@@ -177,9 +177,10 @@ class RenderBackend {
          *
          * Invalidates the cached bake so the IBL bake pass re-runs from the
          * current EnvironmentConfig::ibl.path (e.g. the artist edited the .hdr
-         * on disk, or hit "Rebake IBL"). Must be invoked on the backend thread
-         * - editor code routes through RenderSystem::requestIBLRebake(), which
-         * queues a backend job. Default no-op for backends without IBL.
+         * on disk, or hit "Rebake IBL"). Must be invoked where the backend's
+         * context is current - editor code routes through
+         * RenderSystem::requestIBLRebake(), which queues a backend job that runs
+         * in executeFrame. Default no-op for backends without IBL.
          */
         virtual void requestIBLRebake() {}
 

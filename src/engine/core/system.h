@@ -153,45 +153,6 @@ class System {
          */
         virtual void shutdown() {}
 
-        /**
-         * @brief Does this system mutate ResourceManager during update()?
-         *
-         * When the engine runs the rendering backend on a separate thread,
-         * systems are split into a "pre-wait" phase (overlaps with the
-         * previous frame's render) and a "post-wait" phase (runs after
-         * render finishes, safe to mutate resources). Mutating
-         * ResourceManager while the render thread is reading it is a race.
-         *
-         * Defaults to TRUE (conservative): forgetting to override means
-         * "no overlap", not "race condition". Override to false in
-         * systems verified to only read ResourceManager during update.
-         */
-        virtual bool mutatesResources() const { return true; }
-
-        /**
-         * @brief Does this system have a follow-up step that must run on
-         *        the thread holding the rendering backend's context?
-         *
-         * Defaults to false. Override true if executeBackend() does real
-         * work; the engine routes those calls to the render thread when
-         * one is active, and runs them inline on the main thread otherwise.
-         *
-         * Today only EditorSystem opts in: ImGui's build phase
-         * (NewFrame + panel draws + Render) runs on the main thread during
-         * update(), but the actual draw submission must happen wherever
-         * the rendering API context lives.
-         */
-        virtual bool hasBackendWork() const { return false; }
-
-        /**
-         * @brief Backend-thread companion to update(). See hasBackendWork()
-         *        for when it's called. Runs after RenderSystem::executeFrame
-         *        inside the render thread's per-frame lambda (so the system's
-         *        work overlays the rendered scene), and on main in
-         *        single-threaded mode (right after update()).
-         */
-        virtual void executeBackend(FrameContext& ctx) {}
-
         bool isEnabled() const { return m_enabled; }
         void setEnabled(bool enabled) { m_enabled = enabled; }
 

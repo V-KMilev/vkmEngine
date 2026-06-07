@@ -28,10 +28,6 @@ class HierarchySystem : public System {
 
     public:
         void update(FrameContext& ctx) override;
-
-        /// Writes WorldTransform components only; never touches ResourceManager.
-        /// Safe to overlap with the render thread.
-        bool mutatesResources() const override { return false; }
 };
 
 } // namespace Engine

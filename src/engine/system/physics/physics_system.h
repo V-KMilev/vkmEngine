@@ -38,7 +38,6 @@ class PhysicsSystem : public System {
         void fixedUpdate(FrameContext& ctx) override;
 
         bool hasFixedUpdate() const override { return true; }
-        bool mutatesResources() const override { return false; }
 
     private:
         std::vector<EntityId>        m_bodies;       ///< Live body entities this tick (indexes m_solverBodies)

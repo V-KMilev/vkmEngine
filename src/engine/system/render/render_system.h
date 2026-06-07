@@ -3,7 +3,6 @@
 #include <functional>
 #include <memory>
 #include <cstdint>
-#include <mutex>
 #include <string_view>
 #include <vector>
 
@@ -97,30 +96,17 @@ class RenderSystem : public System {
         void update(FrameContext& ctx) override;
 
         /**
-         * @brief Reads ResourceManager only; never writes.
+         * @brief Two-step frame: extract a RenderView from the live world,
+         *        then draw it.
          *
-         * The graph executes on the render thread when overlap is on, but
-         * update() itself never writes Resources.
+         * buildView() fills m_view from the live Scene, ResourceManager, and
+         * Visibility. executeFrame() runs the backend sync + render graph
+         * against it. The engine calls them back-to-back on the main thread;
+         * keeping them separate leaves a clean seam if a render thread is
+         * ever reintroduced (build on main, execute on the worker).
          */
-        bool mutatesResources() const override { return false; }
-
-        /**
-         * @brief Split update() so the view-build happens on the main
-         *        thread while the previous frame's render is still in
-         *        flight on the render thread.
-         *
-         * buildView() fills m_views[frameIndex & 1] from the live Scene,
-         * ResourceManager, and Visibility. Must be called on the main
-         * thread between waitForFrame() of frame K-1 and postFrame() of
-         * frame K. executeFrame() reads the same buffer index, runs the
-         * render graph + backend sync; it is the body of the lambda
-         * posted to RenderThread.
-         *
-         * When the render thread is disabled, update() calls both in
-         * sequence on the main thread, indexed 0.
-         */
-        void buildView(FrameContext& ctx, uint32_t frameIndex);
-        void executeFrame(FrameContext& ctx, uint32_t frameIndex);
+        void buildView(FrameContext& ctx);
+        void executeFrame(FrameContext& ctx);
 
         /**
          * @brief Narrow pass introspection for editor / debug tooling.
@@ -163,28 +149,26 @@ class RenderSystem : public System {
         /**
          * @brief Re-bake the image-based-lighting environment next frame.
          *
-         * Editor-facing "Rebake IBL": queues a backend job (runs on the
-         * render thread before the IBL bake pass) that invalidates the cached
-         * bake so it re-runs from the current EnvironmentConfig::ibl.path.
+         * Editor-facing "Rebake IBL": queues a backend job (runs at the top of
+         * the next executeFrame, before the IBL bake pass) that invalidates the
+         * cached bake so it re-runs from the current EnvironmentConfig::ibl.path.
          * Use after the .hdr changed on disk, or to force a refresh.
          */
         void requestIBLRebake();
 
         /**
-         * @brief Queue a callable to run on the backend's thread inside
-         *        the next executeFrame(), before the scene render.
+         * @brief Queue a callable to run at the top of the next executeFrame(),
+         *        before the scene render.
          *
-         * Generic mechanism for any code path that needs backend work but
-         * doesn't itself hold the backend's context. In single-threaded
-         * mode the caller IS the backend thread, so an immediate inline
-         * call would be equivalent and faster - prefer that. This API
-         * exists for the render-thread case: editor panels rendering
-         * previews, future screenshot capture, IBL re-bake from a menu.
+         * Lets code that needs backend (GL) work run at a defined point in the
+         * frame even when invoked from a later stage. The editor uses it for
+         * material previews and IBL re-bake, requested during its UI update
+         * (which runs after the render stage), so the work lands at the start of
+         * the next frame - before that frame's scene render samples the result.
          *
-         * Thread-safe; jobs run in queue order. Lifetime: jobs are
-         * one-shot and dropped after execution. Callers capture any
-         * dependencies they need; references must outlive the job
-         * (typically Engine-owned state which lives forever).
+         * Jobs run in queue order, are one-shot, and are dropped after running.
+         * Callers capture any dependencies they need; references must outlive
+         * the job (typically Engine-owned state which lives forever).
          */
         void queueBackendJob(std::function<void()> job);
 
@@ -192,25 +176,18 @@ class RenderSystem : public System {
         std::unique_ptr<RenderBackend> m_backend;
         RenderGraph m_graph;
 
-        /// Double-buffered RenderView for the render-thread overlap. Main
-        /// writes m_views[frameIndex & 1] in buildView(); the render
-        /// thread reads the same buffer in executeFrame(). The next frame
-        /// uses the OTHER buffer, so main's buildView never touches the
-        /// buffer the render thread is currently reading. Vectors keep
-        /// their capacity across frames.
-        RenderView m_views[2];
+        /// The frame's extracted RenderView. buildView() fills it, executeFrame()
+        /// draws it; both run on the main thread back-to-back, so a single
+        /// buffer suffices. Its vectors keep capacity across frames.
+        RenderView m_view;
 
-        /// Persistent shadow-caster cache; single instance, NOT in the
-        /// double-buffered RenderView. Written only on the main thread in
-        /// buildView() (render thread reads view.shadowCasters), so no locking.
+        /// Persistent shadow-caster cache (the sorted caster set survives across
+        /// frames; only the matrices refresh). Written in buildView().
         ShadowCasterCache m_shadowCache;
 
-        /// Thread-safe queue of one-shot backend jobs. Producers (panels,
-        /// editor commands) call queueBackendJob() from any thread; the
-        /// render thread drains and runs them at the top of executeFrame(),
-        /// before the scene render and ImGui draw step.
+        /// Queue of one-shot backend jobs. queueBackendJob() appends; the top of
+        /// executeFrame() drains and runs them before the scene render.
         std::vector<std::function<void()>> m_pendingBackendJobs;
-        std::mutex                         m_pendingBackendJobsMutex;
 
         EnvironmentConfig m_environment;
 
