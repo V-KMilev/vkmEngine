@@ -126,8 +126,8 @@ void RenderGraph::compile(const RenderView* view) {
     }
 
     // VERBOSE because the editor's material-preview path toggles passes per
-    // frame (disables grid + aabb_debug for the preview, re-enables them for
-    // the main view), so this fires twice every frame the Material Editor or
+    // frame (disables the grid for the preview, re-enables it for the main
+    // view), so this fires twice every frame the Material Editor or
     // Asset Browser is open. The signal is still here for anyone watching
     // verbose logs; INFO would just be spam.
     LOG_VERBOSE("RenderGraph compiled: %zu/%zu passes active, %u transient resources%s",

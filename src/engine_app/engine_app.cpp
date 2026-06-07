@@ -114,7 +114,6 @@ EngineAppSystems setupEngineApp(Engine& engine) {
     // a single compiled program.
     load("/pbr",        "shader:pbr",        pbrSamplers, /*variantAware=*/true);
     load("/unlit",      "shader:unlit",      unlitSamplers);
-    load("/aabb_debug", "shader:aabb_debug");
     load("/outline",    "shader:outline");
     load("/grid",       "shader:grid");
     load("/shadow",     "shader:shadow");
@@ -219,7 +218,6 @@ EngineAppSystems setupEngineApp(Engine& engine) {
         "GLSkyboxPass",
         "GLForwardPass.Transparent",
         "GLOITResolvePass",
-        "GLAABBDebugPass",
         "GLOutlinePass",
         "GLGridPass",
         "GLSSRPass",

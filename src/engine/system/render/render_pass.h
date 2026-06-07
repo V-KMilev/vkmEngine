@@ -56,8 +56,8 @@ class RenderPass {
          *
          * Returns whether the pass should run for the given frame. Default
          * is just `isEnabled()` (the explicit toggle). Passes that key off
-         * environment state (debug pass on `env.aabbDebug`, post pass off
-         * in `env.wireframe`, ...) override this so the knowledge of *when
+         * environment state (grid pass on `env.grid.enabled`, SSR pass on
+         * `env.ssr.enabled`, ...) override this so the knowledge of *when
          * I should run* lives with the pass instead of in a central
          * pass-name switch. Called once per frame by RenderGraph::execute.
          */
