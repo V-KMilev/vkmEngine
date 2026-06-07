@@ -14,7 +14,7 @@
 #include "ecs/component/transform.h"
 #include "io/reflect.h"
 #include "resource/resource_manager.h"
-#include "system/render/render_view.h"   // EnvironmentConfig + every sub-config
+#include "system/render/environment_config.h"   // EnvironmentConfig + every sub-config
 
 namespace Engine::ComponentSerializer {
 

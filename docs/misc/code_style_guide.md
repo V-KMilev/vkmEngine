@@ -345,7 +345,6 @@ Subclasses of `System` add `override` and a destructor override:
 ```cpp
 #pragma once
 
-#include <unordered_map>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -357,6 +356,11 @@ namespace Engine {
 
 class VisibilitySystem : public System {
     public:
+        struct Settings {
+            float minPixels   = 3.0f;    ///< Screen-pixel cull threshold.
+            float maxDistance = 500.0f;  ///< World-space cull distance.
+        };
+
         VisibilitySystem() = default;
         ~VisibilitySystem() override = default;
 
@@ -369,21 +373,21 @@ class VisibilitySystem : public System {
     public:
         void update(FrameContext& ctx) override;
 
-        void setMinPixels(float minPixels)     { m_minPixels = minPixels; }
-        void setMaxDistance(float maxDistance) { m_maxDistance = maxDistance; }
-
-        float getMinPixels() const   { return m_minPixels; }
-        float getMaxDistance() const { return m_maxDistance; }
+        Settings&       getSettings()       { return m_settings; }
+        const Settings& getSettings() const { return m_settings; }
+        void setSettings(const Settings& s) { m_settings = s; }
 
     private:
-        float m_minPixels   = 3.0f;
-        float m_maxDistance = 500.0f;
+        Settings m_settings;
 
         EntityId m_cachedCameraEntity{};
-        Visibility m_result;  ///< Persistent buffer; vectors reuse capacity across frames.
+        Visibility m_result;  ///< Persistent buffer - vectors reuse capacity across frames.
 
-        std::unordered_map<uint32_t, glm::mat4> m_worldMatrixCache;
-        std::vector<std::vector<VisibleEntity>> m_workerResults;
+        /// Persistent buffers for the multithreaded path - reuse capacity across frames.
+        std::vector<uint8_t>   m_visibleFlags;
+        std::vector<glm::mat4> m_modelMatrices;
+        std::vector<glm::vec3> m_worldMins;
+        std::vector<glm::vec3> m_worldMaxs;
 };
 
 } // namespace Engine
@@ -391,10 +395,12 @@ class VisibilitySystem : public System {
 
 Key patterns:
 - `override` on every virtual override (including the destructor).
-- Trivial getters/setters inline in the class body.
+- Tunables grouped into a nested `Settings` data-struct (bare members,
+  default initializers) exposed through one get/set pair, instead of a
+  getter/setter per field.
+- Trivial accessors inline in the class body; align their bodies vertically.
 - `///< trailing` for short member annotations.
-- Align related initializers; align trivial inline bodies vertically when
-  it improves the table-of-getters look.
+- Align related initializers (the `Settings` fields, the accessor column).
 
 ### 3.4 Example: free-function header / namespace block (`frustum_culler.h`)
 

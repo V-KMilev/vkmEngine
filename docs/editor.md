@@ -53,7 +53,7 @@ overlays drawn on top.
 | Hierarchy           | `panels/hierarchy_panel.cpp`          | Entity tree; drag a node onto another to reparent (cycle-safe); context-menu Unparent |
 | Inspector           | `panels/inspector_panel.cpp`          | Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent |
 | Bottom              | `panels/bottom_panel.cpp`             | Per-scene working surface: grouped master-detail browser                    |
-| Environment         | `panels/environment_inspector.cpp`    | Inspector for the singleton Environment entity (IBL, post, grid, debug)     |
+| Render Settings     | `panels/environment_inspector.cpp`    | World-level rendering/post stack for the Environment singleton; opened from Window > Render Settings (IBL, post, culling, diagnostics) |
 | Material Editor     | `panels/material_editor.cpp`          | Per-material PBR inspector with live preview (renders the real pipeline)    |
 | Asset Browser       | `panels/asset_browser.cpp`            | Thumbnail grid of materials / meshes / textures; pickable into the inspector|
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |

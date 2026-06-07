@@ -41,11 +41,11 @@ struct PhysicsBody {
  * @brief Tunables for the sequential-impulse contact solver.
  */
 struct SolverParams {
-    int   iterations = 8;        ///< PGS passes per tick
-    float dt = 1.0f / 60.0f;     ///< Fixed timestep
-    float baumgarte = 0.2f;      ///< Position-correction stiffness [0,1]
-    float penetrationSlop = 0.005f;   ///< Allowed overlap before correction kicks in
-    float restitutionThreshold = 1.0f; ///< Below this approach speed, ignore bounce
+    int   iterations           = 8;            ///< PGS passes per tick
+    float dt                   = 1.0f / 60.0f; ///< Fixed timestep
+    float baumgarte            = 0.2f;         ///< Position-correction stiffness [0,1]
+    float penetrationSlop      = 0.005f;       ///< Allowed overlap before correction kicks in
+    float restitutionThreshold = 1.0f;         ///< Below this approach speed, ignore bounce
 };
 
 /**
