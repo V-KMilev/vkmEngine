@@ -23,8 +23,9 @@ struct Contact {
     glm::vec3 normal = {0.0f, 1.0f, 0.0f};  ///< Unit normal, A -> B
     float penetration = 0.0f;               ///< Positive overlap depth
 
-    float normalImpulse  = 0.0f;            ///< Accumulated normal impulse this tick
-    float tangentImpulse = 0.0f;            ///< Accumulated friction impulse this tick
+    float normalImpulse   = 0.0f;           ///< Accumulated normal impulse this tick
+    float tangentImpulse  = 0.0f;           ///< Accumulated friction impulse this tick
+    float restitutionBias = 0.0f;           ///< Target separation speed (set once, pre-solve)
 };
 
 /**
