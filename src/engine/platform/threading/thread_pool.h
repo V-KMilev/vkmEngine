@@ -125,8 +125,17 @@ template<class Function>
 void parallelFor(size_t count, Function && function) {
     auto& pool = ThreadPool::get();
 
-    // The +1 is for the main thread
-    size_t grain = count / (pool.threadCount() + 1);
+    // Below this many items the pool's dispatch cost (mutex + notify_all wake
+    // of every worker + done-CV round trip) dwarfs the per-item work, so run
+    // the range inline. grain == count makes the call below submit zero tasks
+    // and sweep serially on the calling thread - no parallelism tax for the
+    // small workloads that dominate typical scenes.
+    constexpr size_t MIN_PARALLEL = 2048;
+
+    // The +1 is for the main thread.
+    const size_t grain = (count < MIN_PARALLEL)
+        ? count
+        : count / (pool.threadCount() + 1);
 
     parallelFor(count, grain, function);
 }

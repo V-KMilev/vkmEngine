@@ -21,7 +21,11 @@ int main() {
         }
 
         Engine::printBuildInfo();
-        Core::enableGLDebugLogging(true);
+        // Async GL debug logging: catches and logs GL errors without forcing
+        // GL_DEBUG_OUTPUT_SYNCHRONOUS, which validates every GL call on the
+        // calling thread (a real CPU cost across draw submission). Pass true
+        // only to pin a GL error to its exact callsite.
+        Core::enableGLDebugLogging(false);
 
         // Asset factories must be registered before scene I/O can
         // recreate procedural meshes + folder materials on cold start.
@@ -37,6 +41,7 @@ int main() {
         // shipped game executable and contains no editor code at all.
         Engine::setupEngineApp(engine);
 
+        engine.logFPS(true);
         engine.run();
 
     } catch (const std::exception& e) {
