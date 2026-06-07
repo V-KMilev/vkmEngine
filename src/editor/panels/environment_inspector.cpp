@@ -704,16 +704,6 @@ bool EnvironmentInspector::drawDiagnostics(EditorContext& ec, EnvironmentConfig&
     }
 
     ImGui::Spacing();
-    if (cardWithEnable("aabb", "AABB Debug", &env.aabbDebug.enabled)) {
-        ImGui::BeginDisabled(!env.aabbDebug.enabled);
-        drawPropertyLabel("Box Color");
-        ImGui::SetNextItemWidth(-1.0f);
-        changed |= ImGui::ColorEdit3("##AABBCol", glm::value_ptr(env.aabbDebug.color),
-            ImGuiColorEditFlags_Float);
-        ImGui::EndDisabled();
-    }
-
-    ImGui::Spacing();
     if (cardWithEnable("selection", "Selection Outline", &env.selection.enabled)) {
         ImGui::BeginDisabled(!env.selection.enabled);
         drawPropertyLabel("Color");

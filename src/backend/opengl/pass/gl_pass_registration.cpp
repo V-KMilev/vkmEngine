@@ -9,7 +9,6 @@
 #include "resource/shader_asset.h"
 #include "system/render/render_pass_factory.h"
 
-#include "gl_aabb_debug_pass.h"
 #include "gl_bloom_pass.h"
 #include "gl_composite_pass.h"
 #include "gl_dof_pass.h"
@@ -82,10 +81,6 @@ void registerBuiltinGLPasses() {
             requireShader(r, "shader:pbr"), GLForwardPass::Phase::Transparent);
         pass->setShader(MaterialType::Unlit, requireShader(r, "shader:unlit"));
         return pass;
-    });
-
-    f.registerPass("GLAABBDebugPass", [](ResourceManager& r) -> std::unique_ptr<RenderPass> {
-        return std::make_unique<GLAABBDebugPass>(requireShader(r, "shader:aabb_debug"));
     });
 
     f.registerPass("GLOutlinePass", [](ResourceManager& r) -> std::unique_ptr<RenderPass> {
