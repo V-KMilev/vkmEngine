@@ -1,6 +1,7 @@
 #include "overlays/gizmo_overlay.h"
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 
 #include <glm/gtc/quaternion.hpp>
@@ -11,6 +12,7 @@
 #include "system/visibility/bounds_utils.h"
 #include "system/camera/camera_controller.h"
 #include "resource/resource_manager.h"
+#include "ecs/component/collider.h"
 #include "ecs/component/world_transform.h"
 #include "core/math/rotation.h"
 
@@ -152,6 +154,10 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
 }
 
 namespace {
+
+constexpr ImU32 COLLIDER_COL = IM_COL32(80, 220, 120, 200);  // physics green
+constexpr ImU32 BOUNDS_COL   = IM_COL32(230, 200, 60, 160);  // mesh-bounds amber
+
 // Project a world point through the viewport's view+projection into
 // screen coordinates inside the viewport child rect. Returns false when
 // the point is behind the camera. The 3D pass renders at viewport size
@@ -176,6 +182,48 @@ glm::vec3 lightWorldPos(const Scene& scene, EntityId id, const Transform& tf) {
     if (scene.has<WorldTransform>(id))
         return glm::vec3(scene.get<WorldTransform>(id).model[3]);
     return tf.position;
+}
+
+// Draw a world-space segment as a viewport line, dropping it when either end
+// is behind the camera (same near-plane handling as the gizmo wireframes -
+// good enough for a debug overlay).
+void wireSegment(
+    ImDrawList* dl, const glm::mat4& vp,
+    const glm::vec3& a, const glm::vec3& b,
+    ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness
+) {
+    ImVec2 sa, sb;
+    if (projectToViewport(vp, a, vpMin, vpSize, sa)
+     && projectToViewport(vp, b, vpMin, vpSize, sb))
+        dl->AddLine(sa, sb, col, thickness);
+}
+
+// Box collider: 8 oriented corners, 12 edges. halfExtents are the physics
+// extents - Transform scale is intentionally NOT applied because the solver
+// ignores it too, so a collider that disagrees with the rendered mesh is
+// visible here rather than hidden.
+void wireBox(
+    ImDrawList* dl, const glm::mat4& vp,
+    const glm::vec3& pos, const glm::quat& rot, const glm::vec3& he,
+    ImVec2 vpMin, ImVec2 vpSize, ImU32 col
+) {
+    const glm::mat3 r = glm::mat3_cast(rot);
+    glm::vec3 c[8];
+    int k = 0;
+    for (int sx = -1; sx <= 1; sx += 2)
+    for (int sy = -1; sy <= 1; sy += 2)
+    for (int sz = -1; sz <= 1; sz += 2)
+        c[k++] = pos + r * glm::vec3(he.x * sx, he.y * sy, he.z * sz);
+
+    // Corner index bits: bit2 = x, bit1 = y, bit0 = z. An edge joins two
+    // corners that differ in exactly one bit.
+    static const int edges[12][2] = {
+        {0,1}, {2,3}, {4,5}, {6,7},   // along z
+        {0,2}, {1,3}, {4,6}, {5,7},   // along y
+        {0,4}, {1,5}, {2,6}, {3,7},   // along x
+    };
+    for (const auto& e : edges)
+        wireSegment(dl, vp, c[e[0]], c[e[1]], vpMin, vpSize, col, 1.5f);
 }
 }
 
@@ -599,6 +647,56 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
             drawEditorIcon(dl, EditorIcon::Camera, apexSp, r * 0.85f, col);
         }
     });
+
+    dl->PopClipRect();
+}
+
+void GizmoOverlay::drawColliderGizmos(EditorContext& ec) {
+    FrameContext& ctx = ec.frame;
+    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+
+    const glm::mat4 vp     = ctx.visibility->projection * ctx.visibility->view;
+    const ImVec2    vpMin  = ec.viewportPos;
+    const ImVec2    vpSize = ec.viewportSize;
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->PushClipRect(vpMin, ImVec2(vpMin.x + vpSize.x, vpMin.y + vpSize.y), true);
+
+    // Physics evaluates a collider in the entity's Transform frame - position +
+    // rotation, no scale (see PhysicsSystem). Draw it the same way so the
+    // wireframe is exactly what the solver collides against.
+    ctx.scene.forEach<Collider, Transform>([&](EntityId id, const Collider& col, const Transform& tf) {
+        const bool   selected = (ec.state.selectedEntity == id);
+        const ImU32  color    = selected ? EditorStyle::HIGHLIGHT_U32 : COLLIDER_COL;
+        const glm::mat3 r = glm::mat3_cast(tf.rotation);
+        for (const ColliderBox& part : col.parts)
+            wireBox(dl, vp, tf.position + r * part.center, tf.rotation,
+                    part.halfExtents, vpMin, vpSize, color);
+    });
+
+    dl->PopClipRect();
+}
+
+void GizmoOverlay::drawBoundsGizmos(EditorContext& ec) {
+    FrameContext& ctx = ec.frame;
+    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+
+    const glm::mat4 vp     = ctx.visibility->projection * ctx.visibility->view;
+    const ImVec2    vpMin  = ec.viewportPos;
+    const ImVec2    vpSize = ec.viewportSize;
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->PushClipRect(vpMin, ImVec2(vpMin.x + vpSize.x, vpMin.y + vpSize.y), true);
+
+    // World-space AABB of every visible entity, already computed by the
+    // visibility pass. This used to be an engine render pass; it's an editor
+    // overlay now (an axis-aligned box is wireBox with no rotation).
+    for (const VisibleEntity& e : ctx.visibility->entries) {
+        if (e.worldMin == e.worldMax) continue;
+        const glm::vec3 center = (e.worldMin + e.worldMax) * 0.5f;
+        const glm::vec3 he     = (e.worldMax - e.worldMin) * 0.5f;
+        wireBox(dl, vp, center, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), he, vpMin, vpSize, BOUNDS_COL);
+    }
 
     dl->PopClipRect();
 }

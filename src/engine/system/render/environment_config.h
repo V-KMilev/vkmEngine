@@ -160,11 +160,6 @@ struct GridConfig {
     float fadeEnd   = 550.0f;
 };
 
-struct AABBDebugConfig {
-    bool      enabled = false;
-    glm::vec3 color   = glm::vec3(1.0f, 0.0f, 0.0f);
-};
-
 struct SelectionOutlineConfig {
     bool      enabled   = true;
     glm::vec3 color     = glm::vec3(0.29f, 0.62f, 1.0f);  ///< Editor accent blue.
@@ -307,7 +302,6 @@ struct EnvironmentConfig {
     ColorGradeConfig colorGrade;
 
     GridConfig       grid;
-    AABBDebugConfig  aabbDebug;
     SelectionOutlineConfig selection;
     MSAAConfig       msaa;
 

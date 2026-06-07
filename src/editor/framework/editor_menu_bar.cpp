@@ -104,6 +104,9 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         if (ImGui::MenuItem("Frame All", "Shift+F")) {
             EditorActions::frameAll(ctx, ec.cameraController);
         }
+        ImGui::Separator();
+        ImGui::MenuItem("Show Colliders", nullptr, &state.showColliders);
+        ImGui::MenuItem("Show Bounds",    nullptr, &state.showBounds);
         ImGui::EndMenu();
     }
 
