@@ -113,6 +113,19 @@ void Engine::run() {
         m_window.swapBuffers();
 
         m_frameTracker.update();
+
+        // Optional FPS log to the console (opt-in via logFPS; the editor
+        // leaves it off since it shows FPS in its status bar). Throttled to once
+        // a second so it does not flood the log at thousands of frames a second.
+        if (m_fpsLog) {
+            m_fpsLogTimer += deltaTime;
+            if (m_fpsLogTimer >= 1.0f) {
+                m_fpsLogTimer = 0.0f;
+                const FrameRateInfo& fr = m_frameTracker.getFrameRateInfo();
+                LOG_INFO("FPS: %.0f (%.2f ms)", fr.frameRate, fr.frameTime);
+            }
+        }
+
         PROFILE_FRAME_MARK();
     }
 

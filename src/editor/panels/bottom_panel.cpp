@@ -5,7 +5,6 @@
 #include <cstdio>
 #include <ctime>
 
-#include "debug/gpu_timing.h"
 #include "debug/shader_error_log.h"
 #include "framework/editor_common.h"
 #include "system/render/render_backend.h"
@@ -23,25 +22,19 @@ void BottomPanel::draw(EditorContext& ec) {
             drawAnimationSection(ec);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("GPU")) {
-            drawGpuProfilerSection(ec);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Render Graph")) {
-            drawRenderGraphSection(ec);
-            ImGui::EndTabItem();
-        }
-        // Append (N) to the tab label when there are pending errors so
-        // the operator notices without leaving the Animation tab.
-        char shaderLabel[64];
-        const std::size_t errCount = ShaderErrorLog::get().size();
-        if (errCount > 0) {
-            std::snprintf(shaderLabel, sizeof(shaderLabel), "Shader Errors (%zu)###bp_shaders", errCount);
+        // Carry any pending shader-error count onto the tab label so a failed
+        // hot-reload is noticed from any tab (the Shader Errors section now
+        // lives inside this tab). Stable ### id keeps tab state across renames.
+        char rgLabel[64];
+        const std::size_t shaderErrCount = ShaderErrorLog::get().size();
+        if (shaderErrCount > 0) {
+            std::snprintf(rgLabel, sizeof(rgLabel),
+                          "Render Graph (%zu err)###bp_rendergraph", shaderErrCount);
         } else {
-            std::snprintf(shaderLabel, sizeof(shaderLabel), "Shader Errors###bp_shaders");
+            std::snprintf(rgLabel, sizeof(rgLabel), "Render Graph###bp_rendergraph");
         }
-        if (ImGui::BeginTabItem(shaderLabel)) {
-            drawShaderErrorsSection();
+        if (ImGui::BeginTabItem(rgLabel)) {
+            drawRenderGraphSection(ec);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -191,95 +184,59 @@ void BottomPanel::drawRenderGraphSection(EditorContext& ec) {
             }
         }
     }
+
+    ImGui::Spacing();
+    if (ImGui::CollapsingHeader("Variant Cache")) {
+        drawVariantCacheSection(ec);
+    }
+
+    ImGui::Spacing();
+    const std::size_t shaderErrCount = ShaderErrorLog::get().size();
+    char shaderErrHeader[64];
+    if (shaderErrCount > 0) {
+        std::snprintf(shaderErrHeader, sizeof(shaderErrHeader),
+                      "Shader Errors (%zu)###rg_shader_errors", shaderErrCount);
+    } else {
+        std::snprintf(shaderErrHeader, sizeof(shaderErrHeader),
+                      "Shader Errors###rg_shader_errors");
+    }
+    // Auto-open when errors are pending so a failed hot-reload is visible the
+    // moment this tab is shown; collapsed under the matrix otherwise.
+    if (ImGui::CollapsingHeader(shaderErrHeader,
+            shaderErrCount > 0 ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
+        drawShaderErrorsSection();
+    }
 }
 
-void BottomPanel::drawGpuProfilerSection(EditorContext& ec) {
-    const auto passes = GpuTimingPool::get().snapshot();
-    if (passes.empty()) {
-        ImGui::TextDisabled("No passes registered yet - the first frame will populate this.");
+void BottomPanel::drawVariantCacheSection(EditorContext& ec) {
+    // Per-shader compiled-variant counts, surfaced so a #define-combination
+    // explosion (one program per material-feature permutation) is visible.
+    // Backends without a variant cache return empty.
+    const auto stats = ec.renderSystem.getBackend().shaderVariantStats();
+    if (stats.empty()) {
+        ImGui::TextDisabled("Variant cache stats not available on this backend.");
         return;
     }
 
-    // Variant cache stats. Pulled through the backend-agnostic virtual on
-    // RenderBackend; backends without a variant cache return an empty
-    // vector and the panel shows a disabled hint.
-    if (ImGui::CollapsingHeader("Variant Cache")) {
-        const auto stats = ec.renderSystem.getBackend().shaderVariantStats();
-        if (stats.empty()) {
-            ImGui::TextDisabled("Variant cache stats not available on this backend.");
-        } else {
-            std::size_t total = 0;
-            for (const auto& s : stats) total += s.variants;
-            ImGui::Text("%zu compiled program(s) across %zu shader asset(s)",
-                        total, stats.size());
-            if (ImGui::BeginTable("##variant_cache", 3,
-                    ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
-                ImGui::TableSetupColumn("Shader",   ImGuiTableColumnFlags_WidthStretch, 1.6f);
-                ImGui::TableSetupColumn("ID",       ImGuiTableColumnFlags_WidthFixed, 50.0f);
-                ImGui::TableSetupColumn("Variants", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-                ImGui::TableHeadersRow();
-                for (const auto& s : stats) {
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::TextUnformatted(s.name.empty() ? "?" : s.name.c_str());
-                    ImGui::TableSetColumnIndex(1);
-                    ImGui::Text("%u", s.shaderId);
-                    ImGui::TableSetColumnIndex(2);
-                    ImGui::Text("%zu", s.variants);
-                }
-                ImGui::EndTable();
-            }
-        }
-        ImGui::Separator();
-    }
+    std::size_t total = 0;
+    for (const auto& s : stats) total += s.variants;
+    ImGui::Text("%zu compiled program(s) across %zu shader asset(s)",
+                total, stats.size());
 
-    double totalLast = 0.0;
-    double totalAvg  = 0.0;
-    for (const auto& p : passes) { totalLast += p.last; totalAvg += p.avg; }
-
-    ImGui::Text("Total: %.3f ms last, %.3f ms avg (%zu passes)",
-                totalLast, totalAvg, passes.size());
-    ImGui::TextDisabled("Per-pass GL_TIME_ELAPSED, double-buffered (1-frame lag).");
-    ImGui::Separator();
-
-    if (ImGui::BeginTable("##gpu_passes", 5,
-            ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
-            ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY)) {
-        ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Pass",   ImGuiTableColumnFlags_WidthStretch, 1.6f);
-        ImGui::TableSetupColumn("Last ms", ImGuiTableColumnFlags_WidthFixed,  70.0f);
-        ImGui::TableSetupColumn("Avg ms",  ImGuiTableColumnFlags_WidthFixed,  70.0f);
-        ImGui::TableSetupColumn("p99 ms",  ImGuiTableColumnFlags_WidthFixed,  70.0f);
-        ImGui::TableSetupColumn("History", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+    if (ImGui::BeginTable("##variant_cache", 3,
+            ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
+        ImGui::TableSetupColumn("Shader",   ImGuiTableColumnFlags_WidthStretch, 1.6f);
+        ImGui::TableSetupColumn("ID",       ImGuiTableColumnFlags_WidthFixed, 50.0f);
+        ImGui::TableSetupColumn("Variants", ImGuiTableColumnFlags_WidthFixed, 80.0f);
         ImGui::TableHeadersRow();
-
-        for (std::size_t i = 0; i < passes.size(); ++i) {
-            const auto& p = passes[i];
+        for (const auto& s : stats) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            ImGui::TextUnformatted(p.name.empty() ? "?" : p.name.c_str());
+            ImGui::TextUnformatted(s.name.empty() ? "?" : s.name.c_str());
             ImGui::TableSetColumnIndex(1);
-            ImGui::Text("%.3f", p.last);
+            ImGui::Text("%u", s.shaderId);
             ImGui::TableSetColumnIndex(2);
-            ImGui::Text("%.3f", p.avg);
-            ImGui::TableSetColumnIndex(3);
-            ImGui::Text("%.3f", p.p99);
-            ImGui::TableSetColumnIndex(4);
-            // PlotLines wants a contiguous float array - PassStats keeps the
-            // ring un-rotated, which is fine: the visible squiggle wraps but
-            // the relative shape is still readable, and rotating each frame
-            // would be wasted work.
-            const float scaleMin = 0.0f;
-            const float scaleMax = static_cast<float>(p.maxV > 0.0 ? p.maxV : 1.0);
-            char overlay[16];
-            std::snprintf(overlay, sizeof(overlay), "%.2f ms", p.maxV);
-            ImGui::PushID(static_cast<int>(i));
-            ImGui::PlotLines("##plot", p.ring.data(),
-                static_cast<int>(p.ring.size()),
-                /*offset=*/static_cast<int>(p.cursor),
-                overlay, scaleMin, scaleMax,
-                ImVec2(-1.0f, ImGui::GetTextLineHeight() * 1.5f));
-            ImGui::PopID();
+            ImGui::Text("%zu", s.variants);
         }
         ImGui::EndTable();
     }
@@ -299,7 +256,10 @@ void BottomPanel::drawShaderErrorsSection() {
         return;
     }
 
-    if (ImGui::BeginChild("##shader_err_list", ImVec2(0, 0), false,
+    // Bounded height with its own scroll: nested under the Render Graph tab
+    // now, so it must not claim all the remaining panel height.
+    if (ImGui::BeginChild("##shader_err_list",
+                          ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 10), false,
                           ImGuiWindowFlags_HorizontalScrollbar)) {
         for (const auto& e : entries) {
             const auto tt = std::chrono::system_clock::to_time_t(e.timestamp);

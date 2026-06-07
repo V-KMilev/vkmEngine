@@ -32,7 +32,7 @@ class FrameResources;
 class GLBackend : public RenderBackend {
     public:
         GLBackend();
-        ~GLBackend() override;
+        ~GLBackend() override = default;
 
         GLBackend(const GLBackend& other) = delete;
         GLBackend& operator=(const GLBackend& other) = delete;
@@ -72,17 +72,6 @@ class GLBackend : public RenderBackend {
         /// Drain completed Tracy GPU timer queries. Called by RenderGraph
         /// at the end of every frame; no-op when VKM_PROFILER is off.
         void endFrame() override;
-
-        /**
-         * @brief Per-pass GPU timer scope.
-         *
-         * Double-buffered with GL_TIME_ELAPSED queries; reading the "other"
-         * slot before issuing this frame's query gives the driver a full
-         * frame to make results available, avoiding the stall a same-frame
-         * readback would cause.
-         */
-        void beginPassTimer(std::size_t passIndex) override;
-        void endPassTimer  (std::size_t passIndex) override;
 
         std::vector<ShaderVariantStat> shaderVariantStats() const override;
 
@@ -172,23 +161,6 @@ class GLBackend : public RenderBackend {
         /// (0.18) so the editor's readout shows something sensible before
         /// the exposure pass runs the first time.
         float m_adaptedLuminance = 0.18f;
-
-        /**
-         * @brief Per-pass GL_TIME_ELAPSED queries (two slots per pass).
-         *
-         * A frame issues the new query while the older slot's result
-         * completes asynchronously. queries[] == 0 means "not yet
-         * allocated"; the slot is lazy-generated on first beginPassTimer
-         * and freed in the dtor.
-         */
-        struct PassQueryRing {
-            unsigned int queries[2] = {0u, 0u};
-            bool         issued[2]  = {false, false};
-            int          currentSlot = -1;   ///< Slot of the in-flight (this-frame) query.
-        };
-        std::vector<PassQueryRing> m_passQueries;
-
-        void destroyPassTimers();
 };
 
 } // namespace Engine
