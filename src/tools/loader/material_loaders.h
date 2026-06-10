@@ -5,7 +5,7 @@
 
 #include <glm/glm.hpp>
 
-#include "resource/material_asset.h"
+#include "resource/asset/material_asset.h"
 #include "resource/resource_handle.h"
 
 namespace Engine {

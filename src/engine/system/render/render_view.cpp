@@ -52,9 +52,10 @@ void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility
         if (!mesh.mesh || !mesh.material) continue;  // unresolved slot
 
         DrawableData drawable;
-        drawable.mesh     = mesh.mesh;
-        drawable.material = mesh.material;
-        drawable.model    = entry.model;
+        drawable.mesh        = mesh.mesh;
+        drawable.material    = mesh.material;
+        drawable.model       = entry.model;
+        drawable.castShadows = mesh.castShadows;
         drawables.push_back(drawable);
     }
 }
@@ -93,6 +94,10 @@ void RenderView::buildLights(const Scene& scene) {
         data.radius         = light.radius;
         data.innerConeAngle = light.innerConeAngle;
         data.outerConeAngle = light.outerConeAngle;
+
+        data.castShadows  = light.castShadows;
+        data.shadowBias   = light.shadowBias;
+        data.shadowExtent = light.shadowExtent;
 
         // Area lights: fold rotation + size into world-space half-extent
         // axes. Disk uses areaRadius on both so cross(U, V) stays a clean

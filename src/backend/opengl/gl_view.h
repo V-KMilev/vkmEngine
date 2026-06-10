@@ -4,13 +4,13 @@
 #include <memory>
 #include <vector>
 
-#include "resource/mesh_asset.h"      // MeshHandle
-#include "resource/material_asset.h"  // MaterialHandle
-#include "resource/texture_asset.h"   // TextureHandle
+#include "resource/asset/mesh_asset.h"      // MeshHandle
+#include "resource/asset/material_asset.h"  // MaterialHandle
+#include "resource/asset/texture_asset.h"   // TextureHandle
 
-#include "resource/gl_mesh.h"
-#include "resource/gl_material.h"
-#include "resource/gl_texture.h"
+#include "data/gl_mesh.h"
+#include "data/gl_material.h"
+#include "data/gl_texture.h"
 
 namespace Core {
     class Texture2D;
@@ -69,7 +69,7 @@ class GLView {
     private:
         /**
          * @brief Upload / refresh every mesh, material and texture `view` references.
-         * 
+         *
          * Upload `handle`'s asset into `table` on first sight, or update it when
          * the asset's version has moved on since the cached copy.
          *

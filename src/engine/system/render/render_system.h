@@ -3,7 +3,7 @@
 #include <memory>
 
 #include "core/system.h"
-#include "system/render/render_backend.h"  // BackendInfo
+#include "system/render/render_backend.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
@@ -28,6 +28,13 @@ class RenderSystem : public System {
         RenderSystem& operator=(RenderSystem && other) = delete;
 
     public:
+        /**
+         * @brief Run one frame of rendering.
+         *
+         * Applies any pending backend swap, snapshots the visible scene into the
+         * RenderView (reused across frames for its capacity), and hands that to
+         * the active backend to draw. A no-op until a backend is installed.
+         */
         void update(FrameContext& ctx) override;
 
         /**
@@ -41,18 +48,28 @@ class RenderSystem : public System {
          */
         void setBackend(std::unique_ptr<RenderBackend> backend);
 
-        /// Identity of the active backend for the editor's status displays.
-        /// Empty strings until a backend is installed.
+        /**
+         * @brief Identity of the active backend for the editor's status displays.
+         *
+         * Empty strings until a backend is installed.
+         */
         BackendInfo backendInfo() const { return m_backend ? m_backend->info() : BackendInfo{}; }
 
-        /// The active backend, or nullptr before the first install. Non-owning;
-        /// editor-side consumers (screenshot capture) only.
+        /**
+         * @brief The active backend, or nullptr before the first install.
+         *
+         * Non-owning; editor-side consumers (screenshot capture) only.
+         */
         RenderBackend* backend() const { return m_backend.get(); }
 
     private:
-        // If a backend is queued, init it against the window and, on success,
-        // make it current (destroying the previous one). Runs at the top of
-        // update() so a swap from setup or the editor lands on the next frame.
+        /**
+         * @brief Apply a queued backend swap, if one is pending.
+         *
+         * Inits the queued backend against the window and, on success, makes it
+         * current (destroying the previous one). Runs at the top of update() so
+         * a swap from setup or the editor lands on the next frame.
+         */
         void installPending(FrameContext& ctx);
 
     private:

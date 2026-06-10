@@ -2,7 +2,6 @@
 
 #include "ecs/scene.h"
 #include "framework/editor_common.h"
-#include "io/screenshot.h"
 #include "framework/editor_actions.h"
 #include "platform/window/window_manager.h"
 #include "system/render/render_backend.h"
@@ -95,13 +94,6 @@ void ViewportToolbar::draw(EditorContext& ec) {
         if (iconButton("frameAll", EditorIcon::FrameAll, false, true,
                        "Frame All  (Shift+F)", BTN))
             EditorActions::frameAll(ctx, camera);
-        ImGui::SameLine();
-        if (iconButton("shot", EditorIcon::Screenshot, false, true,
-                       "Save viewport screenshot to APP_ROOT_DIR/screenshots/", BTN)) {
-            if (RenderBackend* backend = ec.renderSystem.backend()) {
-                Screenshot::captureViewport(ctx.window, *backend);
-            }
-        }
 
         m_hovered = ImGui::IsWindowHovered(
             ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);

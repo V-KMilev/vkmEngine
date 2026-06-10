@@ -5,9 +5,9 @@
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"
 
-#include "resource/gl_mesh.h"
-#include "resource/gl_material.h"
-#include "resource/gl_texture.h"
+#include "data/gl_mesh.h"
+#include "data/gl_material.h"
+#include "data/gl_texture.h"
 
 namespace Engine {
 

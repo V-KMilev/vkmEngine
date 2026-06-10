@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-#include "ecs/component/light.h"  // LightType
+#include "ecs/component/light.h"
 
 namespace Engine {
 
@@ -19,16 +19,21 @@ struct LightData {
     glm::vec3 color;
     float     intensity;
     glm::vec3 position;
-    glm::vec3 direction;
 
-    float radius = 10.0f;          ///< Attenuation radius (point/spot/area)
+    glm::vec3 direction;    ///< Direction of the light (Directional, Spot)
 
-    float innerConeAngle = 0.0f;   ///< Spot: full-brightness cone (radians)
-    float outerConeAngle = 0.0f;   ///< Spot: falloff edge (radians)
+    float radius;           ///< Attenuation radius (point/spot/area)
 
-    glm::vec3 axisU = {0,0,0};     ///< Rect/Disk: half-right world axis (rotation * +X * halfWidth | areaRadius)
-    glm::vec3 axisV = {0,0,0};     ///< Rect/Disk: half-up    world axis (rotation * +Y * halfHeight | areaRadius)
-    bool      twoSided = false;    ///< Rect/Disk: emit from both faces
+    float innerConeAngle;   ///< Spot: full-brightness cone (radians)
+    float outerConeAngle;   ///< Spot: falloff edge (radians)
+
+    glm::vec3 axisU;        ///< Rect/Disk: half-right world axis (rotation * +X * halfWidth | areaRadius)
+    glm::vec3 axisV;        ///< Rect/Disk: half-up    world axis (rotation * +Y * halfHeight | areaRadius)
+    bool      twoSided;     ///< Rect/Disk: emit from both faces
+
+    bool  castShadows;
+    float shadowBias;
+    float shadowExtent;
 };
 
 } // namespace Engine

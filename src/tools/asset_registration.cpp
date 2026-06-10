@@ -6,7 +6,7 @@
 
 #include "io/asset_serializer.h"
 #include "resource/resource_manager.h"
-#include "resource/shader_asset.h"
+#include "resource/asset/shader_asset.h"
 #include "generator/material_generators.h"
 #include "generator/mesh_generators.h"
 #include "generator/texture_generators.h"

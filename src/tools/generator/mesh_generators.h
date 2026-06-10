@@ -1,6 +1,6 @@
 #pragma once
 
-#include "resource/mesh_asset.h"
+#include "resource/asset/mesh_asset.h"
 #include "resource/asset_id.h"
 
 namespace Engine {

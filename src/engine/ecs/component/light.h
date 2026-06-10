@@ -55,7 +55,7 @@ struct Light {
 
     bool  castShadows  = true;                 ///< Should this light cast shadows?
     float shadowBias   = 0.005f;               ///< Depth comparison bias (slope-scaled for 2D, constant for cube)
-    float shadowExtent = 50.0f;                ///< Directional only: ortho half-size in world units. Ignored for spot/point/area (uses radius).
+    float shadowExtent = 150.0f;               ///< Directional only: ortho half-size in world units. Ignored for spot/point/area (uses radius).
 
     bool enabled = true;                       ///< Is this light enabled?
 };
