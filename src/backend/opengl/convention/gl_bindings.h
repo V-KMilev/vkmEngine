@@ -37,6 +37,11 @@ namespace GLBindings {
         constexpr uint32_t EnvCube    = 17;  ///< Sharp environment cubemap (skybox; samplerCube).
     }
 
+    // Post-process inputs above the IBL slots.
+    namespace PostTextureSlots {
+        constexpr uint32_t SceneColor = 18;  ///< Copy of the opaque+sky scene (transmission refraction).
+    }
+
     // Texture unit slots for material maps - match the sampler bindings in the
     // fragment shader. A material binds only the maps it actually has. The
     // slot number doubles as the map's bit position in MaterialUBO.textureFlags.

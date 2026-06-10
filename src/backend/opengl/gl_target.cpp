@@ -54,4 +54,16 @@ void GLTarget::bindColor(uint32_t slot) const {
     if (m_color) m_color->bindSlot(slot);
 }
 
+void GLTarget::blitColorFrom(const GLTarget& src) const {
+    // Read/draw-FBO binds have no Core helper, but they belong here (GLTarget
+    // owns the FBOs) rather than leaking into pass code; the blit itself uses
+    // the Core::FrameBuffer wrapper.
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, src.m_fbo.getID());
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_fbo.getID());
+    Core::FrameBuffer::blit(
+        0, 0, static_cast<int32_t>(m_width), static_cast<int32_t>(m_height),
+        0, 0, static_cast<int32_t>(m_width), static_cast<int32_t>(m_height),
+        GL_COLOR_BUFFER_BIT, GL_NEAREST);
+}
+
 } // namespace Engine
