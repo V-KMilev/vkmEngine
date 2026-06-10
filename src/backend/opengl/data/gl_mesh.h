@@ -7,6 +7,7 @@ namespace Core {
     class VertexArray;
     class VertexBuffer;
     class IndexBuffer;
+    class InstanceBuffer;
 }
 
 namespace Engine {
@@ -34,6 +35,15 @@ class GLMesh {
     public:
         void update(const MeshAsset& mesh);
         void draw() const;
+
+        /// Install @p buffer's per-instance attributes onto this mesh's VAO,
+        /// starting at attribute @p startIndex (a mat4 spans startIndex..+3,
+        /// divisor 1). Re-points each call; the caller decides when to re-attach.
+        void attachInstances(Core::InstanceBuffer& buffer, uint32_t startIndex) const;
+
+        /// Draw @p count instances, reading per-instance attributes from
+        /// @p baseInstance onward in the attached instance buffer(s).
+        void drawInstanced(uint32_t count, uint32_t baseInstance) const;
 
     private:
         std::unique_ptr<Core::VertexArray>  m_vao;

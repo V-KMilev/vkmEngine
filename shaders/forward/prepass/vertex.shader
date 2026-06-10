@@ -7,15 +7,15 @@
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aUV;
+layout (location = 4) in mat4 aModel;         // per-instance model matrix (loc 4-7, divisor 1)
+layout (location = 8) in mat4 aNormalMatrix;  // per-instance normal matrix (loc 8-11; mat3 used)
 
 layout(std140, binding = 2) uniform CameraBlock {
     mat4 viewProjection;
     vec4 cameraPosition;
 } u_camera;
 
-uniform mat4 u_model;
-uniform mat4 u_view;          // world -> view, for the G-buffer normal
-uniform mat3 u_normalMatrix;  // transpose(inverse(mat3(model))), computed CPU-side per draw
+uniform mat4 u_view;   // world -> view, for the G-buffer normal
 
 out vec2 vUV;
 out vec3 vViewNormal;
@@ -23,11 +23,11 @@ out vec3 vViewNormal;
 invariant gl_Position;
 
 void main() {
-    vec4 worldPos = u_model * vec4(aPos, 1.0);
+    vec4 worldPos = aModel * vec4(aPos, 1.0);
     vUV = aUV;
 
-    // World normal via the precomputed normal matrix, then into view space for SSR.
-    vec3 worldN = u_normalMatrix * aNormal;
+    // World normal via the per-instance normal matrix, then into view space for SSR.
+    vec3 worldN = mat3(aNormalMatrix) * aNormal;
     vViewNormal = mat3(u_view) * worldN;
 
     gl_Position = u_camera.viewProjection * worldPos;

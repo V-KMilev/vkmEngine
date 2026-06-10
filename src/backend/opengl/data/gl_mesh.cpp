@@ -11,6 +11,7 @@
 #include "gl_vertex_buffer.h"
 #include "gl_vertex_buffer_layout.h"
 #include "gl_index_buffer.h"
+#include "gl_instance_buffer.h"
 
 #include "resource/asset/mesh_asset.h"
 
@@ -50,6 +51,27 @@ void GLMesh::draw() const {
         static_cast<GLsizei>(m_indexCount),
         GL_UNSIGNED_INT,
         nullptr
+    ));
+}
+
+void GLMesh::attachInstances(Core::InstanceBuffer& buffer, uint32_t startIndex) const {
+    if (m_vao) buffer.attachToVAO(*m_vao, startIndex);
+}
+
+void GLMesh::drawInstanced(uint32_t count, uint32_t baseInstance) const {
+    if (!m_vao || m_indexCount == 0 || count == 0) return;
+
+    m_vao->bind();
+    m_ibo->bind();
+    // baseInstance offsets which per-instance attribute element each instance
+    // reads, so all runs can share one uploaded buffer (GL 4.2+ / ARB_base_instance).
+    VKM_GL_CHECK(glDrawElementsInstancedBaseInstance(
+        GL_TRIANGLES,
+        static_cast<GLsizei>(m_indexCount),
+        GL_UNSIGNED_INT,
+        nullptr,
+        static_cast<GLsizei>(count),
+        baseInstance
     ));
 }
 
