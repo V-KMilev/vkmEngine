@@ -65,6 +65,7 @@ void GLDepthPrePass::execute(GLFrameContext& ctx) {
         }
 
         m_shader->setUniformMatrix4fv("u_model", d.model);
+        m_shader->setUniformMatrix3fv("u_normalMatrix", d.normalMatrix);
         mesh->draw();
     }
 

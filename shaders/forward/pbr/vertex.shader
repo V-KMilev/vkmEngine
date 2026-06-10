@@ -11,6 +11,7 @@ layout(std140, binding = 2) uniform CameraBlock {
 } u_camera;
 
 uniform mat4 u_model;
+uniform mat3 u_normalMatrix;  // transpose(inverse(mat3(model))), computed CPU-side per draw
 
 out vec3 vWorldPos;
 out vec3 vNormal;
@@ -26,9 +27,9 @@ void main() {
     vec4 worldPos = u_model * vec4(aPos, 1.0);
     vWorldPos = worldPos.xyz;
 
-    // Inverse-transpose so normals stay correct under non-uniform scale.
-    mat3 normalMatrix = transpose(inverse(mat3(u_model)));
-    vNormal    = normalize(normalMatrix * aNormal);
+    // Normal matrix is the precomputed inverse-transpose - keeps normals correct
+    // under non-uniform scale without a per-vertex matrix inverse.
+    vNormal    = normalize(u_normalMatrix * aNormal);
 
     // Tangent is a surface direction (model matrix); bitangent from the stored
     // handedness. The fragment shader re-normalises and builds the TBN basis.
