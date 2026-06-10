@@ -56,8 +56,6 @@ struct EditorState {
     float bottomPanelHeight = 200.0f;
 
     // Flags
-    // (Render mode lives on EnvironmentConfig::renderMode and round-trips
-    // with the scene; passes read view.modeConfig, derived once per frame.)
     bool viewportHovered = false;    ///< Whether mouse is over viewport
     bool hierarchyDirty  = true;     ///< Set by entity ops, consumed by HierarchyPanel
     bool editorVisible   = true;     ///< Toggle entire editor UI (F5)

@@ -58,7 +58,7 @@ class RenderSystem : public System {
         /**
          * @brief The active backend, or nullptr before the first install.
          *
-         * Non-owning; editor-side consumers (screenshot capture) only.
+         * Non-owning; for editor/tooling that needs backend-specific access.
          */
         RenderBackend* backend() const { return m_backend.get(); }
 

@@ -302,7 +302,7 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
     // Shaders are engine-owned (loaded once in main()) and never enter the
     // scene file, so the staging RM has no ShaderAsset slot. Swap shaders
     // back from the just-displaced live RM so cached shader handles in the
-    // render passes stay valid; without this the next frame's IBL bake
+    // render passes stay valid; without this the next frame's draw
     // dereferences an empty ShaderAsset slot and segfaults.
     scene.swap(staging);
     resources.swap(stagingResources);

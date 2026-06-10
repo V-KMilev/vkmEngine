@@ -21,7 +21,7 @@ namespace Engine {
  * per-stage system pipeline. Profiling is handled via debug/profiler.h
  * (Tracy facade) - the engine emits FrameMark per loop iteration and
  * per-stage CPU zones in updateStage(). GPU collect is the backend's job,
- * fired via RenderBackend::endFrame at the tail of RenderGraph::execute.
+ * done at the tail of each RenderBackend::render() call.
  *
  * Non-copyable, non-movable, but stack-constructible: tests and
  * headless tooling can spin up their own Engine.
