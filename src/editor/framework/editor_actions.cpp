@@ -20,7 +20,7 @@
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
 #include "resource/asset_database.h"
-#include "resource/material_asset.h"
+#include "resource/asset/material_asset.h"
 #include "system/visibility/visibility.h"
 #include "system/visibility/bounds_utils.h"
 #include "system/camera/camera_controller.h"

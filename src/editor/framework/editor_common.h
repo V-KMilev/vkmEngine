@@ -24,7 +24,7 @@
 #include "framework/editor_context.h"
 #include "framework/editor_state.h"
 #include "input/editor_keybinds.h"
-#include "resource/material_asset.h"
+#include "resource/asset/material_asset.h"
 #include "resource/resource_manager.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "ui/editor_icons.h"

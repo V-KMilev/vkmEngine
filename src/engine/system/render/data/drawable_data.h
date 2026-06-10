@@ -2,8 +2,8 @@
 
 #include <glm/glm.hpp>
 
-#include "resource/mesh_asset.h"      // MeshHandle
-#include "resource/material_asset.h"  // MaterialHandle
+#include "resource/asset/mesh_asset.h"
+#include "resource/asset/material_asset.h"
 
 namespace Engine {
 
@@ -18,6 +18,8 @@ struct DrawableData {
     MeshHandle     mesh;
     MaterialHandle material;
     glm::mat4      model;
+
+    bool castShadows;
 };
 
 } // namespace Engine

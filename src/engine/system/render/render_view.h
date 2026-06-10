@@ -25,6 +25,10 @@ struct RenderView {
     uint32_t viewportY      = 0;
     uint32_t viewportWidth  = 0;
     uint32_t viewportHeight = 0;
+    // Full backbuffer height the viewport rect sits within. The rect above is
+    // top-left origin (window/UI convention); a backend whose framebuffer is
+    // bottom-left (OpenGL) flips with surfaceHeight - viewportY - viewportHeight.
+    uint32_t surfaceHeight  = 0;
 
     CameraData camera;
     std::vector<DrawableData> drawables;

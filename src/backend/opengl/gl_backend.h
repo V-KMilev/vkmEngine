@@ -8,8 +8,10 @@
 #include "system/render/render_backend.h"
 #include "gl_view.h"
 #include "gl_target.h"
-#include "resource/gl_camera.h"
-#include "resource/gl_lights.h"
+#include "data/gl_camera.h"
+#include "data/gl_lights.h"
+#include "data/gl_shadow_atlas.h"
+#include "data/gl_shadow_data.h"
 
 namespace Engine {
 
@@ -45,6 +47,8 @@ class GLBackend : public RenderBackend {
         GLCamera      m_camera;
         GLLights      m_lights;
         GLTarget      m_sceneHDR;
+        GLShadowAtlas m_shadowAtlas;
+        GLShadowData  m_shadowData;
 
         std::vector<std::unique_ptr<GLPass>> m_passes;
 };

@@ -102,6 +102,83 @@ layout(std140, binding = 2) uniform CameraBlock {
     vec4 cameraPosition;
 } u_camera;
 
+// Shadows: atlas + cube depth maps from the shadow pass. The ShadowBlock UBO
+// mirrors GLShadowData (std140); the counts must match engine_config.h.
+#define SHADOW_MAX_2D   6
+#define SHADOW_MAX_CUBE 2
+
+struct Shadow2D {
+    mat4 lightVP;   // world -> light clip space
+    vec4 atlas;     // xy = tile UV offset, zw = tile UV scale
+    vec4 params;    // x = depth-compare bias
+};
+struct ShadowCube {
+    vec4 posRange;  // xyz = light world pos, w = range
+    vec4 params;    // x = bias
+};
+
+layout(std140, binding = 3) uniform ShadowBlock {
+    vec4 camForward;     // xyz = camera forward (cascade selection)
+    vec4 cascadeSplits;  // view-space far depth per cascade
+    int  csmBase;        // first 2D slot of the sun's cascade run (-1 = no sun)
+    int  csmCount;       // active cascades
+    int  _sp0;
+    int  _sp1;
+    Shadow2D   s2d[SHADOW_MAX_2D];
+    ShadowCube scube[SHADOW_MAX_CUBE];
+} u_shadow;
+
+layout(binding = 11) uniform sampler2D   u_shadowAtlas;
+layout(binding = 12) uniform samplerCube u_shadowCube[SHADOW_MAX_CUBE];
+
+// 3x3 PCF sample of one 2D atlas tile. Returns 1 (lit) .. 0 (shadowed); off-map
+// or beyond-far reads as lit so geometry outside the map is never darkened.
+float sample2DSlot(int slot, vec3 worldPos, float ndotl) {
+    Shadow2D sm = u_shadow.s2d[slot];
+    vec4 lc = sm.lightVP * vec4(worldPos, 1.0);
+    if (lc.w <= 0.0) return 1.0;
+    vec3 proj = lc.xyz / lc.w * 0.5 + 0.5;
+    if (proj.z > 1.0 ||
+        proj.x < 0.0 || proj.x > 1.0 ||
+        proj.y < 0.0 || proj.y > 1.0) {
+        return 1.0;
+    }
+
+    float bias    = max(sm.params.x * (1.0 - ndotl), sm.params.x * 0.2);
+    vec2  atlasUV = sm.atlas.xy + proj.xy * sm.atlas.zw;
+    vec2  texel   = 1.0 / vec2(textureSize(u_shadowAtlas, 0));
+    float lit     = 0.0;
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            float d = texture(u_shadowAtlas, atlasUV + vec2(x, y) * texel).r;
+            lit += (proj.z - bias > d) ? 0.0 : 1.0;
+        }
+    }
+    return lit / 9.0;
+}
+
+// Directional sun: pick the tightest cascade containing the fragment by view
+// depth, then PCF-sample that cascade's tile.
+float sampleCSM(vec3 worldPos, float ndotl) {
+    float vd = dot(worldPos - u_camera.cameraPosition.xyz, u_shadow.camForward.xyz);
+    int   ci = u_shadow.csmCount - 1;
+    for (int i = 0; i < u_shadow.csmCount; ++i) {
+        if (vd <= u_shadow.cascadeSplits[i]) { ci = i; break; }
+    }
+    return sample2DSlot(u_shadow.csmBase + ci, worldPos, ndotl);
+}
+
+// Point light: compare normalised distance-to-light against the cube depth.
+float sampleCube(int slot, vec3 worldPos, float ndotl) {
+    ShadowCube sc = u_shadow.scube[slot];
+    vec3  toFrag = worldPos - sc.posRange.xyz;
+    float dist   = length(toFrag) / sc.posRange.w;
+    if (dist > 1.0) return 1.0;
+    float bias   = max(sc.params.x * (1.0 - ndotl), sc.params.x * 0.2) * 2.0;
+    float stored = texture(u_shadowCube[slot], toFrag).r;
+    return (dist - bias > stored) ? 0.0 : 1.0;
+}
+
 layout(binding = 0)  uniform sampler2D u_albedoTexture;
 layout(binding = 1)  uniform sampler2D u_normalTexture;
 layout(binding = 2)  uniform sampler2D u_metallicRoughnessTexture;
@@ -755,8 +832,18 @@ void main() {
 
         if (atten <= 0.0) continue;
 
-        // Shadow sampling lands here with the shadow pass.
+        // Shadow sampling lands here with the shadow pass. Each shadow-casting
+        // light carries its atlas slot in spot.w (-1 = none); the type picks the
+        // sampling path (directional cascades / spot map / point cube).
         float visibility = 1.0;
+
+        int sslot = int(light.spot.w);
+        if (sslot >= 0) {
+            float ndotl = dot(N, L);
+            if (type == LIGHT_DIRECTIONAL) visibility *= sampleCSM(vWorldPos, ndotl);
+            else if (type == LIGHT_SPOT)   visibility *= sample2DSlot(sslot, vWorldPos, ndotl);
+            else if (type == LIGHT_POINT)  visibility *= sampleCube(sslot, vWorldPos, ndotl);
+        }
 
         // POM self-shadowing: only for the directional sun so the
         // per-fragment trace cost stays bounded.

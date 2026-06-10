@@ -9,6 +9,8 @@ namespace Engine {
 struct RenderView;
 class GLView;
 class GLTarget;
+class GLShadowAtlas;
+class GLShadowData;
 
 /**
  * @brief Everything a GLPass needs for one frame.
@@ -22,7 +24,9 @@ struct GLFrameContext {
     const RenderView& view;       ///< This frame's scene snapshot.
     const GLView&     resources;  ///< GPU mirror of the assets the frame uses.
     Core::Context&    gl;         ///< GL state manager (viewport / depth / clear).
-    GLTarget&         sceneHDR;   ///< HDR target the forward pass draws into.
+    GLTarget&         sceneHDR;    ///< HDR target the forward pass draws into.
+    GLShadowAtlas&    shadowAtlas; ///< Depth atlas: written by shadow pass, sampled by forward.
+    const GLShadowData& shadowData; ///< This frame's shadow plan (matrices + slots).
 };
 
 } // namespace Engine
