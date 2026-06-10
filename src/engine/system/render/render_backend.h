@@ -17,9 +17,9 @@ namespace Engine {
  * Drives the runtime "switch backend" menu and is reported back through info().
  */
 enum class RenderBackendType {
-    OpenGL,
-    Optix,
-    CPU,
+    OpenGL,    ///< OpenGL-based rendering backend.
+    Optix,     ///< NVIDIA Optix ray tracing rendering backend.
+    CPU,       ///< CPU/software-based raytracing backend.
 };
 
 /**

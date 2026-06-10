@@ -11,10 +11,12 @@
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
+#include "data/gl_shadow_atlas.h"
 #include "gl_view.h"
+#include "core/engine_config.h"
 #include "convention/gl_bindings.h"
-#include "resource/gl_material.h"
-#include "resource/gl_mesh.h"
+#include "data/gl_material.h"
+#include "data/gl_mesh.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
@@ -40,6 +42,14 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     ctx.gl.clear(true, true, false);
 
     m_shader->bind();
+
+    // Shadows: the ShadowBlock UBO (binding 3) carries the matrices + slots; here
+    // we only bind the depth textures. The light loop samples per light type via
+    // each light's shadowSlot (GpuLight.spot.w).
+    ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
+    for (uint32_t s = 0; s < Config::MAX_SHADOW_CASTERS_CUBE; ++s) {
+        ctx.shadowAtlas.bindCube(s, GLBindings::ShadowTextureSlots::CubeBase + s);
+    }
 
     // Partition by material type. Opaque / AlphaMask / Unlit keep the view's
     // order (sorted upstream by material+mesh); Transparent is pulled aside

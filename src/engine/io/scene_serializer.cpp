@@ -21,7 +21,7 @@
 #include "io/asset_serializer.h"
 #include "io/component_serializer.h"
 #include "resource/resource_manager.h"
-#include "resource/shader_asset.h"
+#include "resource/asset/shader_asset.h"
 #include "system/hierarchy/hierarchy_operations.h"
 
 namespace Engine::SceneSerializer {

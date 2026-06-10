@@ -25,10 +25,16 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
 
     // Back to the backbuffer, into the window's viewport rect. The default
     // framebuffer is not a GL object, so this one bind stays raw.
+    // viewportY arrives top-left origin (window/UI convention); GL's default
+    // framebuffer is bottom-left, so flip against the full surface height or the
+    // blit lands mirrored off the editor's viewport panel.
+    const int32_t glY = static_cast<int32_t>(view.surfaceHeight)
+                      - static_cast<int32_t>(view.viewportY)
+                      - static_cast<int32_t>(view.viewportHeight);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     ctx.gl.setViewport(
         static_cast<int32_t>(view.viewportX),
-        static_cast<int32_t>(view.viewportY),
+        glY,
         static_cast<int32_t>(view.viewportWidth),
         static_cast<int32_t>(view.viewportHeight)
     );

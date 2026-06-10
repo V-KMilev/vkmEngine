@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-#include "resource/texture_asset.h"
+#include "resource/asset/texture_asset.h"
 #include "resource/resource_handle.h"
 
 namespace Engine {

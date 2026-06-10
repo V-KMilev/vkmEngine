@@ -40,8 +40,14 @@ class GLForwardPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        /// Draw a list of drawables, rebinding material UBO/textures and the
-        /// cull state only when the material changes between consecutive draws.
+        /**
+         * @brief Draw a list of drawables in order.
+         *
+         * Rebinds the material UBO, textures and cull state only when the
+         * material changes between consecutive draws; sets u_model per draw.
+         *
+         * @param list Drawables to render, pre-sorted by the caller.
+         */
         void drawList(GLFrameContext& ctx, const std::vector<const DrawableData*>& list);
 
     private:

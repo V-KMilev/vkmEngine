@@ -11,7 +11,7 @@
 #include "loader/shader_preprocessor.h"
 #include "resource/asset_database.h"
 #include "resource/resource_manager.h"
-#include "resource/shader_asset.h"
+#include "resource/asset/shader_asset.h"
 #include "system/io/file_watcher.h"
 
 namespace Engine {

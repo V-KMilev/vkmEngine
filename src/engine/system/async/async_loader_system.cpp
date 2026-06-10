@@ -6,9 +6,9 @@
 
 #include "core/system.h"
 #include "debug/profiler.h"
-#include "resource/mesh_asset.h"
+#include "resource/asset/mesh_asset.h"
 #include "resource/resource_manager.h"
-#include "resource/texture_asset.h"
+#include "resource/asset/texture_asset.h"
 #include "resource/texture_format.h"
 #include "system/async/async_load_queue.h"
 

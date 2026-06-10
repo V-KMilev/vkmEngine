@@ -4,6 +4,7 @@
 
 #include "logger.h"
 
+#include "platform/window/window_manager.h"
 #include "system/render/render_backend.h"
 
 namespace Engine {
@@ -25,6 +26,11 @@ void RenderSystem::update(FrameContext& ctx) {
         m_backend->resize(m_view.viewportX, m_view.viewportY,
                           m_view.viewportWidth, m_view.viewportHeight);
     }
+
+    // The full backbuffer height lets a bottom-left backend flip the top-left
+    // viewport rect. Refreshed every frame so a window resize that leaves the
+    // rect unchanged still lands the blit correctly.
+    m_view.surfaceHeight = static_cast<uint32_t>(ctx.window.getHeight());
 
     m_view.build(ctx.scene, *ctx.visibility);
     m_backend->render(m_view, ctx.resources);

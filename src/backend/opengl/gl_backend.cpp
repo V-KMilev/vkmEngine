@@ -10,6 +10,7 @@
 
 #include "gl_frame_context.h"
 #include "gl_pass.h"
+#include "pass/gl_shadow_pass.h"
 #include "pass/gl_forward_pass.h"
 #include "pass/gl_composite_pass.h"
 #include "system/render/render_view.h"
@@ -30,8 +31,11 @@ bool GLBackend::init(WindowManager& window) {
     m_context.setDepthTest(true);
     m_context.setFaceCulling(false);
 
-    // Build the pass list. The forward pass compiles its shader, so this must
-    // run after the context exists.
+    // Build the pass list. Passes compile their shaders, so this must run
+    // after the context exists. Shadow runs first (its depth maps feed the
+    // forward pass), then the lit forward draw, then the composite to screen.
+    m_shadowAtlas.init();
+    m_passes.push_back(std::make_unique<GLShadowPass>());
     m_passes.push_back(std::make_unique<GLForwardPass>());
     m_passes.push_back(std::make_unique<GLCompositePass>());
 
@@ -57,13 +61,19 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     m_view.sync(view, resources);
     m_sceneHDR.resize(view.viewportWidth, view.viewportHeight);
 
+    // Plan the frame's shadows first: it assigns each light an atlas slot, which
+    // the lights UBO then carries (spot.w), and uploads the ShadowBlock UBO.
+    m_shadowData.build(view);
+
     // Per-frame UBOs: uploaded and bound once here, visible to every pass.
     m_camera.update(view.camera);
-    m_lights.update(view.lights);
+    m_lights.update(view.lights, m_shadowData);
+    m_shadowData.uploadAndBind();
 
-    // Each pass binds and clears its own target: the forward pass renders the
-    // scene into m_sceneHDR; the composite pass tonemaps it to the backbuffer.
-    GLFrameContext ctx{view, m_view, m_context, m_sceneHDR};
+    // Each pass binds and clears its own target: the shadow pass fills the depth
+    // atlas, the forward pass renders the lit scene into m_sceneHDR sampling it,
+    // and the composite pass tonemaps that to the backbuffer.
+    GLFrameContext ctx{view, m_view, m_context, m_sceneHDR, m_shadowAtlas, m_shadowData};
     for (const auto& pass : m_passes) {
         pass->execute(ctx);
     }

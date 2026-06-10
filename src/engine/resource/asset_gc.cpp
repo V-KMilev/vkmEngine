@@ -12,9 +12,9 @@
 #include "ecs/scene.h"
 #include "ecs/component/mesh.h"
 #include "resource/resource_manager.h"
-#include "resource/mesh_asset.h"
-#include "resource/material_asset.h"
-#include "resource/texture_asset.h"
+#include "resource/asset/mesh_asset.h"
+#include "resource/asset/material_asset.h"
+#include "resource/asset/texture_asset.h"
 
 namespace Engine {
 

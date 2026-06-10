@@ -7,7 +7,7 @@
 #include "framework/command_stack.h"
 #include "input/editor_keybinds.h"
 #include "gizmo/transform_gizmo.h"
-#include "resource/material_asset.h"  // MaterialHandle (Material Editor target)
+#include "resource/asset/material_asset.h"  // MaterialHandle (Material Editor target)
 
 namespace Engine {
 

@@ -18,6 +18,14 @@ namespace GLBindings {
         constexpr uint32_t Material = 0;  ///< Per-material PBR properties.
         constexpr uint32_t Lights   = 1;  ///< Scene light list.
         constexpr uint32_t Camera   = 2;  ///< Per-frame camera (viewProjection, position).
+        constexpr uint32_t Shadow   = 3;  ///< Shadow casters (cascades / spot / cube).
+    }
+
+    // Texture units above the material maps (0-10), for the shadow pass outputs.
+    // The cube samplers occupy ShadowCubeBase .. ShadowCubeBase+MAX_CUBE-1.
+    namespace ShadowTextureSlots {
+        constexpr uint32_t Atlas2D  = 11;  ///< Tiled 2D depth atlas (sampler2D).
+        constexpr uint32_t CubeBase = 12;  ///< First point-light depth cube (samplerCube[]).
     }
 
     // Texture unit slots for material maps - match the sampler bindings in the
