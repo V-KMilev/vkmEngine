@@ -31,9 +31,9 @@ struct LightData {
     glm::vec3 axisV;        ///< Rect/Disk: half-up    world axis (rotation * +Y * halfHeight | areaRadius)
     bool      twoSided;     ///< Rect/Disk: emit from both faces
 
-    bool  castShadows;
-    float shadowBias;
-    float shadowExtent;
+    bool  castShadows;      ///< Whether the light casts shadows.
+    float shadowBias;       ///< Depth comparison bias (slope-scaled for 2D, constant for cube)
+    float shadowDistance;   ///< Directional only: max world distance the cascades cover.
 };
 
 } // namespace Engine

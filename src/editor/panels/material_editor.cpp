@@ -102,10 +102,6 @@ bool MaterialEditorPanel::drawMaterialBody(
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("HDR multiplier on emission (drives bloom once it returns)");
 
-            drawPropertyLabel("Double Sided");
-            changed |= ImGui::Checkbox("##DoubleSided", &mat.doubleSided);
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Disable backface culling; back faces shade with the flipped normal");
 
             drawPropertyLabel("Alpha Cutoff");
             changed |= ImGui::SliderFloat("##AlphaCutoff", &mat.alphaCutoff, 0.0f, 1.0f, "%.2f");

@@ -81,7 +81,6 @@ constexpr uint32_t MATERIAL_ALL_FEATURES =
 struct MaterialAsset : public Resource {
     // Render path
     MaterialType type = MaterialType::Opaque;
-    bool  doubleSided = false;                   ///< Disable backface culling and flip the normal on back faces
     float alphaCutoff = 0.5f;                    ///< AlphaMask: discard below this albedo alpha (glTF default 0.5)
 
     // Base layer - the microfacet core

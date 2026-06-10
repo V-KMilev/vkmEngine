@@ -319,7 +319,7 @@ VKM_REFLECT_BEGIN(Engine::Light)
     VKM_F(twoSided),
     VKM_F(castShadows),
     VKM_F(shadowBias),
-    VKM_F(shadowExtent),
+    VKM_F(shadowDistance),
     VKM_F(enabled)
 VKM_REFLECT_END()
 

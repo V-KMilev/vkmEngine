@@ -15,11 +15,11 @@ namespace Engine {
  * API-specific concern, so it lives below the interface, not here.
  */
 struct DrawableData {
-    MeshHandle     mesh;
-    MaterialHandle material;
-    glm::mat4      model;
+    MeshHandle     mesh;      ///< The mesh to render.
+    MaterialHandle material;  ///< The material to render.
+    glm::mat4      model;     ///< The model matrix to render the mesh with.
 
-    bool castShadows;
+    bool castShadows;          ///< Whether the drawable casts shadows.
 };
 
 } // namespace Engine

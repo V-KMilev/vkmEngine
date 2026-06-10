@@ -18,6 +18,10 @@ out vec2 vUV;
 out vec3 vTangent;
 out vec3 vBitangent;
 
+// Bit-exact position across programs so the depth prepass and this pass agree
+// under LEQUAL early-Z (the prepass declares gl_Position invariant too).
+invariant gl_Position;
+
 void main() {
     vec4 worldPos = u_model * vec4(aPos, 1.0);
     vWorldPos = worldPos.xyz;

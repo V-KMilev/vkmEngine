@@ -121,7 +121,6 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     nlohmann::json src;
     src["kind"]  = "inline";
     src["type"]  = Reflect::enumName(m.type, MATERIAL_TYPE_NAMES);
-    src["doubleSided"]         = m.doubleSided;
     src["albedo"]              = vec4ToJson(m.albedo);
     src["emission"]            = vec3ToJson(m.emission);
     src["emissiveStrength"]    = m.emissiveStrength;
@@ -165,7 +164,6 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
     const std::string typeStr = src.value("type", std::string{"Opaque"});
     m.type = Reflect::enumFromName<MaterialType>(typeStr, MATERIAL_TYPE_NAMES);
 
-    m.doubleSided         = src.value("doubleSided",         m.doubleSided);
     m.albedo              = vec4FromJson(src.value("albedo",              nlohmann::json{}), m.albedo);
     m.emission            = vec3FromJson(src.value("emission",            nlohmann::json{}), m.emission);
     m.emissiveStrength    = src.value("emissiveStrength",    m.emissiveStrength);

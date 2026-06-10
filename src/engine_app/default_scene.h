@@ -74,7 +74,6 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
     {
         auto light = Engine::generateDirectionalLight(
             glm::vec3(1.0f, 0.96f, 0.9f), 3.0f, true);
-        light.shadowExtent = 10.0f;
         scene.add(sun, light);
     }
     scene.add(sun, Engine::Transform{

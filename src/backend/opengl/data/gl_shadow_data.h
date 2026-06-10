@@ -25,7 +25,7 @@ static constexpr uint32_t SHADOW_MAX_TRACKED_LIGHTS = 64;
  *
  *   lightVP : world -> light clip space
  *   atlas   : xy = tile UV offset, zw = tile UV scale (sample = offset + uv*scale)
- *   params  : x = depth-compare bias
+ *   params  : x = depth-compare bias, y = world size of one shadow texel
  */
 struct alignas(16) Shadow2DGPU {
     glm::mat4 lightVP = glm::mat4(1.0f);
@@ -67,18 +67,18 @@ struct alignas(16) ShadowUBOData {
  * @brief A 2D depth render job: rasterise shadow casters into atlas tile `slot`.
  */
 struct Shadow2DJob {
-    glm::mat4 lightVP;
-    uint32_t  slot;
+    glm::mat4 lightVP; ///< The light view-projection matrix.
+    uint32_t  slot;    ///< The atlas tile slot.
 };
 
 /**
  * @brief A cube depth render job: six face matrices for the point light at `slot`.
  */
 struct ShadowCubeJob {
-    glm::mat4 faceVP[6];
-    glm::vec3 pos;
-    float     range;
-    uint32_t  slot;
+    glm::mat4 faceVP[6]; ///< The six face view-projection matrices.
+    glm::vec3 pos;       ///< The position of the point light.
+    float     range;     ///< The range of the point light.
+    uint32_t  slot;      ///< The atlas tile slot.
 };
 
 /**
