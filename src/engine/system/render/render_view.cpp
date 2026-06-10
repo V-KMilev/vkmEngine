@@ -56,10 +56,12 @@ void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility
         if (!mesh.mesh || !mesh.material) continue;
 
         DrawableData drawable;
-        drawable.mesh        = mesh.mesh;
-        drawable.material    = mesh.material;
-        drawable.model       = entry.model;
-        drawable.castShadows = mesh.castShadows;
+        drawable.mesh         = mesh.mesh;
+        drawable.material     = mesh.material;
+        drawable.model        = entry.model;
+        // Inverse-transpose once per drawable here, not per vertex in two shaders.
+        drawable.normalMatrix = glm::transpose(glm::inverse(glm::mat3(entry.model)));
+        drawable.castShadows  = mesh.castShadows;
         drawables.push_back(drawable);
     }
 }

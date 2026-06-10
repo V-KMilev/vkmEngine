@@ -154,6 +154,7 @@ void GLForwardPass::drawList(GLFrameContext& ctx, const std::vector<const Drawab
         }
 
         m_shader->setUniformMatrix4fv("u_model", d->model);
+        m_shader->setUniformMatrix3fv("u_normalMatrix", d->normalMatrix);
         mesh->draw();
     }
 }

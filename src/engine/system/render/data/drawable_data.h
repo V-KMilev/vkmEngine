@@ -15,11 +15,12 @@ namespace Engine {
  * API-specific concern, so it lives below the interface, not here.
  */
 struct DrawableData {
-    MeshHandle     mesh;      ///< The mesh to render.
-    MaterialHandle material;  ///< The material to render.
-    glm::mat4      model;     ///< The model matrix to render the mesh with.
+    MeshHandle     mesh;         ///< The mesh to render.
+    MaterialHandle material;     ///< The material to render.
+    glm::mat4      model;        ///< The model matrix to render the mesh with.
+    glm::mat3      normalMatrix; ///< transpose(inverse(mat3(model))): correct normals under non-uniform scale. Precomputed so the vertex shader skips a per-vertex matrix inverse.
 
-    bool castShadows;          ///< Whether the drawable casts shadows.
+    bool castShadows;            ///< Whether the drawable casts shadows.
 };
 
 } // namespace Engine
