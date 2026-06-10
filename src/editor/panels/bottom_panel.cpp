@@ -7,8 +7,6 @@
 
 #include "debug/shader_error_log.h"
 #include "framework/editor_common.h"
-#include "system/render/render_backend.h"
-#include "system/render/render_system.h"
 #include "ui/editor_style.h"
 
 namespace Engine {
@@ -17,6 +15,10 @@ void BottomPanel::draw(EditorContext& ec) {
     if (ImGui::BeginTabBar("##BottomTabs")) {
         if (ImGui::BeginTabItem("Animation")) {
             drawAnimationSection(ec);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Shader Errors")) {
+            drawShaderErrorsSection();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -37,8 +39,8 @@ void BottomPanel::drawShaderErrorsSection() {
         return;
     }
 
-    // Bounded height with its own scroll: nested under the Render Graph tab
-    // now, so it must not claim all the remaining panel height.
+    // Bounded height with its own scroll so the list doesn't claim all the
+    // remaining panel height.
     if (ImGui::BeginChild("##shader_err_list",
                           ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 10), false,
                           ImGuiWindowFlags_HorizontalScrollbar)) {

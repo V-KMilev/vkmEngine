@@ -13,9 +13,10 @@ class ResourceManager;
 /**
  * @brief Floating Asset Browser: a live thumbnail grid of materials & meshes.
  *
- * Opened from View > Asset Browser. Each cell is a real-pipeline preview
- * (RenderSystem::materialPreviewTexture, budgeted so a big grid spreads its
- * bakes over several frames). Click a material to edit it (opens the Material
+ * Opened from Window > Asset Browser. Each cell is a material/mesh preview via
+ * MaterialPreviewSession, budgeted so a big grid spreads its bakes over several
+ * frames. (The offscreen preview path is stubbed after the render refactor, so
+ * cells currently show no image.) Click a material to edit it (opens the Material
  * Editor); "Assign" applies a material/mesh to the selected entity's Mesh.
  * "Import Model..." reuses the existing model-import dialog.
  *

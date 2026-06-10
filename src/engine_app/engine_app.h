@@ -25,11 +25,11 @@ struct EngineAppSystems {
 /**
  * @brief Wire up the standard engine application against @p engine.
  *
- * Registers all engine-tier systems (camera, event, animation, hierarchy,
- * visibility, render, file-watcher), loads every pipeline shader, builds
- * the default forward pipeline, then seeds the default scene + IBL
- * environment. The editor is NOT touched here; the editor binary adds
- * EditorSystem from main() after this returns.
+ * Registers the engine-tier systems (camera, event, async loader, animation,
+ * physics, hierarchy, visibility, render), installs the OpenGL backend
+ * (which compiles its own shaders), then seeds the default scene. The editor
+ * is NOT touched here; the editor binary adds EditorSystem from main() after
+ * this returns.
  *
  * @param engine Engine instance the caller owns (already constructed with
  *               its window created).

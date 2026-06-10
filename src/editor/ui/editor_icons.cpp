@@ -365,28 +365,6 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
             dl->AddRect(P(-0.20f, -0.20f), P(0.20f, 0.20f), col, 0.0f, 0, th);
             break;
         }
-        case EditorIcon::Screenshot: {
-            // Stylised camera body with a lens circle.
-            dl->AddRect(P(-0.78f, -0.34f), P(0.78f, 0.58f), col, r * 0.16f, 0, th);
-            // Top viewfinder bump
-            dl->AddRect(P(-0.22f, -0.56f), P(0.22f, -0.34f), col, r * 0.10f, 0, th);
-            dl->AddCircle(c, r * 0.32f, col, 24, th);
-            dl->AddCircleFilled(P(0.50f, -0.10f), r * 0.06f, col);  // flash dot
-            break;
-        }
-        case EditorIcon::Environment: {
-            // Globe: outer circle + equator + meridian + a tilted equator
-            // that reads as a hemisphere when stacked. All concentric, all
-            // centred on a pixel-snapped origin.
-            const float cx = std::round(c.x);
-            const float cy = std::round(c.y);
-            const ImVec2 cc(cx, cy);
-            const float R = std::round(r * 0.80f);
-            dl->AddCircle(cc, R, col, 32, th);
-            dl->AddEllipse(cc, ImVec2(R,         R * 0.36f), col, 0.0f, 32, th);
-            dl->AddEllipse(cc, ImVec2(R * 0.36f, R),         col, 0.0f, 32, th);
-            break;
-        }
     }
 }
 

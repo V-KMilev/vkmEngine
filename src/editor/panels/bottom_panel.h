@@ -9,17 +9,16 @@ namespace Engine {
 struct EditorContext;
 
 /**
- * @brief Editor bottom panel: the Animation editor.
+ * @brief Editor bottom panel: tabbed Animation editor + shader-error log.
  *
- * Drives keyframe editing for the selected entity's Animation component:
- * the timeline, keyframe table per track, easing pickers, and the live
- * preview of the resulting pose.
+ * The Animation tab drives keyframe editing for the selected entity's
+ * Animation component: the timeline, keyframe table per track, easing
+ * pickers, and the live preview of the resulting pose. The Shader Errors
+ * tab lists shader hot-reload compile failures (see ShaderErrorLog).
  *
- * Rendering/environment settings are NOT here: they live on the singleton
- * "Environment" entity and are edited in the Inspector (select it via the
- * Hierarchy's pinned Environment row). Editor/application preferences are in
- * the Preferences window (see PreferencesPanel). Frame timing and per-pass
- * profiling are surfaced via the viewport overlay and Tracy respectively.
+ * Editor/application preferences live in the Preferences window (see
+ * PreferencesPanel). Frame timing and per-pass profiling are surfaced via
+ * the viewport overlay and Tracy respectively.
  */
 class BottomPanel {
     public:

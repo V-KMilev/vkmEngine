@@ -20,10 +20,11 @@ class ResourceManager;
  * preview and everywhere the material is used (materials are shared by
  * handle). "Duplicate" forks the material so a copy can be tweaked safely.
  *
- * The 3D preview is rendered by the backend (RenderBackend::
- * renderMaterialPreview) under a fixed studio camera + key light + the
- * scene's baked IBL, and shown via ImGui::Image - the editor never touches
- * GL itself.
+ * The 3D preview goes through MaterialPreviewSession and is shown via
+ * ImGui::Image - the editor never touches GL itself. The offscreen preview
+ * path is currently stubbed (no image) after the render refactor; the panel
+ * still drives the session so it lights up once the backend regrows an
+ * offscreen-preview path.
  */
 class MaterialEditorPanel {
     public:

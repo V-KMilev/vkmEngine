@@ -37,9 +37,7 @@ const ImVec4 ACC_TEX    = EditorStyle::AXIS_Y;                 // green
 
 // Fold everything that changes the live preview image into one version stamp
 // so MaterialPreviewSession re-bakes only when something actually changed,
-// instead of re-running the whole render graph every idle frame. (Environment
-// edits aren't captured - the preview refreshes on the next material or orbit
-// change; matching how thumbnails behave.)
+// instead of re-rendering the preview every idle frame.
 uint64_t previewVersion(uint64_t materialVersion, uint32_t shapeId,
                         int primitive, float yaw, float pitch, float distance) {
     auto floatBits = [](float f) {
@@ -415,7 +413,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         // Browser baking thumbnails into the shared target later this same
         // frame (ImGui samples textures at Render). The version stamp gates
         // re-rendering on actual change so an idle Material Editor doesn't
-        // re-run the render graph every frame.
+        // re-render the preview every frame.
         const uint64_t version = shape
             ? previewVersion(resources.get(target).version, shape.id(),
                              m_primitive, m_yaw, m_pitch, m_distance)
