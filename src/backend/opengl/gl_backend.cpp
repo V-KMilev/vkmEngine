@@ -81,6 +81,7 @@ void GLBackend::resize(uint32_t x, uint32_t y, uint32_t width, uint32_t height) 
 void GLBackend::render(const RenderView& view, const ResourceManager& resources) {
     m_view.sync(view, resources);
     m_sceneHDR.resize(view.viewportWidth, view.viewportHeight);
+    m_sceneColor.resize(view.viewportWidth, view.viewportHeight);
     m_bloom.resize(view.viewportWidth, view.viewportHeight);
 
     // Plan the frame's shadows first: it assigns each light an atlas slot, which
@@ -95,7 +96,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // Each pass binds and clears its own target: the shadow pass fills the depth
     // atlas, the forward pass renders the lit scene into m_sceneHDR sampling it,
     // and the composite pass tonemaps that to the backbuffer.
-    GLFrameContext ctx{view, m_view, m_context, m_sceneHDR, m_shadowAtlas, m_shadowData, m_ibl, m_bloom};
+    GLFrameContext ctx{view, m_view, m_context, m_sceneHDR, m_sceneColor, m_shadowAtlas, m_shadowData, m_ibl, m_bloom};
     for (const auto& pass : m_passes) {
         pass->execute(ctx);
     }
