@@ -43,13 +43,16 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     ctx.gl.setCullFace(GL_BACK);
 
     if (ctx.depthPrimed) {
-        // The prepass already laid down opaque depth: match it with LEQUAL and
-        // leave depth writes off so hidden fragments early-Z out. Color only.
+        // The prepass cleared the target and primed opaque depth, and the skybox
+        // filled the background before this pass. Match the primed depth with
+        // LEQUAL and leave writes off for early-Z. Do NOT clear here - that would
+        // wipe the skybox and leave transparents nothing to blend over.
         ctx.gl.setDepthFunc(GL_LEQUAL);
         ctx.gl.setDepthWrite(false);
-        ctx.gl.clear(true, false, false);
     } else {
-        // No prepass: classic single-pass forward owns its depth + clear.
+        // No prepass (fallback): single-pass forward owns its depth + colour
+        // clear. The standard pipeline always runs the prepass, so this path is
+        // not normally taken (and a skybox, if present, would be cleared here).
         ctx.gl.setDepthFunc(GL_LESS);
         ctx.gl.setDepthWrite(true);
         ctx.gl.clear(true, true, false);
