@@ -104,7 +104,7 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         }
     }
 
-    drawList(ctx, m_opaque);
+    drawRuns(ctx, m_batcher.buildGrouped(m_opaque, glView));
 
     if (!m_transparent.empty()) {
         std::sort(m_transparent.begin(), m_transparent.end(),
@@ -127,7 +127,7 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         ctx.gl.setDepthWrite(false);
 
-        drawList(ctx, m_transparentSorted);
+        drawRuns(ctx, m_batcher.buildSequential(m_transparentSorted, glView));
 
         ctx.gl.setBlending(false);
         ctx.gl.setDepthWrite(true);
@@ -136,26 +136,20 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     ctx.gl.setFaceCulling(false);
 }
 
-void GLForwardPass::drawList(GLFrameContext& ctx, const std::vector<const DrawableData*>& list) {
+void GLForwardPass::drawRuns(GLFrameContext& ctx, const std::vector<InstanceRun>& runs) {
     const GLView& glView = ctx.resources;
 
-    // Re-bind material state only when it differs from the last drawable's.
+    // Re-bind material state only when it differs from the last run's.
     const GLMaterial* boundMaterial = nullptr;
 
-    for (const DrawableData* d : list) {
-        const GLMesh* mesh = glView.getMesh(d->mesh);
-        if (!mesh) continue;
-
-        const GLMaterial* material = glView.getMaterial(d->material);
+    for (const InstanceRun& run : runs) {
+        const GLMaterial* material = glView.getMaterial(run.material);
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::Material);
             material->bindTextures(glView);
             boundMaterial = material;
         }
-
-        m_shader->setUniformMatrix4fv("u_model", d->model);
-        m_shader->setUniformMatrix3fv("u_normalMatrix", d->normalMatrix);
-        mesh->draw();
+        m_batcher.drawRun(run);
     }
 }
 

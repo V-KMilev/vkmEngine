@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "gl_pass.h"
+#include "data/gl_instance_batcher.h"
 
 namespace Core {
     class Shader;
@@ -41,17 +42,16 @@ class GLForwardPass : public GLPass {
 
     private:
         /**
-         * @brief Draw a list of drawables in order.
+         * @brief Draw a list of instanced runs.
          *
-         * Rebinds the material UBO, textures and cull state only when the
-         * material changes between consecutive draws; sets u_model per draw.
-         *
-         * @param list Drawables to render, pre-sorted by the caller.
+         * Rebinds the material UBO + textures only when the material changes
+         * between consecutive runs; each run is one instanced draw.
          */
-        void drawList(GLFrameContext& ctx, const std::vector<const DrawableData*>& list);
+        void drawRuns(GLFrameContext& ctx, const std::vector<InstanceRun>& runs);
 
     private:
         std::unique_ptr<Core::Shader> m_shader;
+        GLInstanceBatcher             m_batcher;
 
         // Per-frame buckets - cleared and refilled each frame, capacity kept.
         std::vector<const DrawableData*>                    m_opaque;
