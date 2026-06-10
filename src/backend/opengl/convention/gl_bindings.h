@@ -39,7 +39,9 @@ namespace GLBindings {
 
     // Post-process inputs above the IBL slots.
     namespace PostTextureSlots {
-        constexpr uint32_t SceneColor = 18;  ///< Copy of the opaque+sky scene (transmission refraction).
+        constexpr uint32_t SceneColor = 18;  ///< Scene colour (refraction + SSR source).
+        constexpr uint32_t SceneDepth = 19;  ///< Scene depth texture (SSR ray-march).
+        constexpr uint32_t SceneGBuffer = 20; ///< Scene G-buffer: oct view-normal + roughness + metalness (SSR).
     }
 
     // Texture unit slots for material maps - match the sampler bindings in the
