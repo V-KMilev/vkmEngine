@@ -28,6 +28,15 @@ namespace GLBindings {
         constexpr uint32_t CubeBase = 12;  ///< First point-light depth cube (samplerCube[]).
     }
 
+    // Image-based lighting textures, above the shadow slots (11-13). Bound by
+    // the forward pass (ambient) and the skybox pass (EnvCube).
+    namespace IBLTextureSlots {
+        constexpr uint32_t Irradiance = 14;  ///< Diffuse irradiance cubemap (samplerCube).
+        constexpr uint32_t Prefilter  = 15;  ///< Roughness-prefiltered specular cubemap (samplerCube).
+        constexpr uint32_t BrdfLUT    = 16;  ///< Split-sum BRDF/DFG LUT (sampler2D).
+        constexpr uint32_t EnvCube    = 17;  ///< Sharp environment cubemap (skybox; samplerCube).
+    }
+
     // Texture unit slots for material maps - match the sampler bindings in the
     // fragment shader. A material binds only the maps it actually has. The
     // slot number doubles as the map's bit position in MaterialUBO.textureFlags.

@@ -13,7 +13,9 @@
 #include "pass/gl_shadow_pass.h"
 #include "pass/gl_depth_prepass.h"
 #include "pass/gl_forward_pass.h"
+#include "pass/gl_skybox_pass.h"
 #include "pass/gl_composite_pass.h"
+#include "data/gl_ibl_baker.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
@@ -32,14 +34,26 @@ bool GLBackend::init(WindowManager& window) {
     m_context.setDepthTest(true);
     m_context.setFaceCulling(false);
 
+    m_shadowAtlas.init();
+
+    // Bake the image-based lighting product set once from the default
+    // environment HDR (split-sum: env cube -> irradiance + prefilter + BRDF
+    // LUT). The forward pass samples it for ambient and the skybox pass draws
+    // the environment. A load failure leaves IBL off (forward falls back to
+    // flat ambient). The baker's bake-only programs/meshes are transient.
+    {
+        GLIBLBaker baker;
+        baker.bake(m_context, m_ibl, "assets/envs/environment.hdr");
+    }
+
     // Build the pass list. Passes compile their shaders, so this must run
     // after the context exists. Order: shadow depth maps, a depth prepass
-    // (early-Z for the forward draw), the lit forward draw, then the composite
-    // to screen.
-    m_shadowAtlas.init();
+    // (early-Z for the forward draw), the lit forward draw, the skybox at the
+    // far plane, then the composite (tonemap + FXAA) to screen.
     m_passes.push_back(std::make_unique<GLShadowPass>());
     m_passes.push_back(std::make_unique<GLDepthPrePass>());
     m_passes.push_back(std::make_unique<GLForwardPass>());
+    m_passes.push_back(std::make_unique<GLSkyboxPass>());
     m_passes.push_back(std::make_unique<GLCompositePass>());
 
     const GLubyte* version = glGetString(GL_VERSION);
@@ -76,7 +90,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // Each pass binds and clears its own target: the shadow pass fills the depth
     // atlas, the forward pass renders the lit scene into m_sceneHDR sampling it,
     // and the composite pass tonemaps that to the backbuffer.
-    GLFrameContext ctx{view, m_view, m_context, m_sceneHDR, m_shadowAtlas, m_shadowData};
+    GLFrameContext ctx{view, m_view, m_context, m_sceneHDR, m_shadowAtlas, m_shadowData, m_ibl};
     for (const auto& pass : m_passes) {
         pass->execute(ctx);
     }
