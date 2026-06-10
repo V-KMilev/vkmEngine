@@ -14,7 +14,8 @@ layout(std140, binding = 2) uniform CameraBlock {
 } u_camera;
 
 uniform mat4 u_model;
-uniform mat4 u_view;   // world -> view, for the G-buffer normal
+uniform mat4 u_view;          // world -> view, for the G-buffer normal
+uniform mat3 u_normalMatrix;  // transpose(inverse(mat3(model))), computed CPU-side per draw
 
 out vec2 vUV;
 out vec3 vViewNormal;
@@ -25,8 +26,8 @@ void main() {
     vec4 worldPos = u_model * vec4(aPos, 1.0);
     vUV = aUV;
 
-    // World normal via the model's normal matrix, then into view space for SSR.
-    vec3 worldN = mat3(transpose(inverse(u_model))) * aNormal;
+    // World normal via the precomputed normal matrix, then into view space for SSR.
+    vec3 worldN = u_normalMatrix * aNormal;
     vViewNormal = mat3(u_view) * worldN;
 
     gl_Position = u_camera.viewProjection * worldPos;
