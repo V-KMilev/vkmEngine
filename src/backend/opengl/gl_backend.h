@@ -8,6 +8,7 @@
 #include "system/render/render_backend.h"
 #include "gl_view.h"
 #include "gl_target.h"
+#include "gl_ao_target.h"
 #include "data/gl_camera.h"
 #include "data/gl_lights.h"
 #include "data/gl_shadow_atlas.h"
@@ -48,6 +49,7 @@ class GLBackend : public RenderBackend {
         GLView        m_view;
         GLTarget      m_sceneHDR;
         GLTarget      m_sceneColor;
+        GLAOTarget    m_ao;
 
         GLCamera      m_camera;
         GLLights      m_lights;

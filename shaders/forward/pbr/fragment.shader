@@ -13,9 +13,7 @@
  * for all materials. The MaterialFeature variant cache narrows these to
  * compile-time #ifdefs when it returns.
  *
- * Intentionally absent until their systems return: IBL, reflection probes,
- * SSAO, shadows (the visibility hook in the light loop is where they land),
- * scene-color refraction for transmission.
+ * Intentionally absent until their systems return: reflection probes.
  */
 
 #define MAX_LIGHTS 16
@@ -215,6 +213,11 @@ const float MAX_REFLECTION_LOD = 6.0;
 layout(binding = 18) uniform sampler2D u_sceneColor;
 uniform int  u_hasSceneColor;
 uniform vec2 u_screenSize;
+
+// Screen-space ambient occlusion (GTAO). Bound by the forward pass when the
+// GTAO pass ran this frame; u_hasSSAO gates it. Modulates the indirect term.
+layout(binding = 21) uniform sampler2D u_ssao;
+uniform int u_hasSSAO;
 
 const float PI = 3.14159265359;
 
@@ -906,6 +909,13 @@ void main() {
         // Flat ambient fallback (no baked environment). Diffuse-only.
         ambient = vec3(0.03) * s.albedo * s.ao;
     }
+
+    // Screen-space AO (GTAO) modulates the indirect term on top of the material
+    // AO map. Sampled by screen UV; 1.0 (no occlusion) when the pass is off.
+    if (u_hasSSAO == 1) {
+        ambient *= texture(u_ssao, gl_FragCoord.xy / u_screenSize).r;
+    }
+
     vec3 color = ambient + Lo + s.emission;
 
     // Screen-space transmission refraction: sample the copied scene behind the

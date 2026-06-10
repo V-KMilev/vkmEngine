@@ -9,6 +9,7 @@ namespace Engine {
 struct RenderView;
 class GLView;
 class GLTarget;
+class GLAOTarget;
 class GLShadowAtlas;
 class GLShadowData;
 class GLIBL;
@@ -32,10 +33,15 @@ struct GLFrameContext {
     const GLShadowData& shadowData;   ///< This frame's shadow plan (matrices + slots).
     const GLIBL&      ibl;            ///< Baked IBL product set: sampled by forward (ambient) + skybox.
     GLBloom&          bloom;          ///< Bloom mip chain: written by the bloom pass, blended in composite.
+    GLAOTarget&       ao;             ///< GTAO factor: written by the GTAO pass, sampled by forward (ambient).
 
     /// Set by the depth prepass when it lays down opaque depth. The forward pass
     /// then early-Zs (LEQUAL, no depth writes/clear) instead of clearing depth.
     bool depthPrimed = false;
+
+    /// Set by the GTAO pass when it fills the AO target. The forward pass then
+    /// binds + samples it; otherwise the indirect term uses no screen-space AO.
+    bool aoReady = false;
 };
 
 } // namespace Engine
