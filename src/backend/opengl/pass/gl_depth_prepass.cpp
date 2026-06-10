@@ -28,20 +28,22 @@ void GLDepthPrePass::execute(GLFrameContext& ctx) {
     const RenderView& view   = ctx.view;
     const GLView&     glView = ctx.resources;
 
-    // Fill the scene target's depth with all opaque geometry. This is the first
-    // pass to bind the HDR target, so it also clears colour for the frame: the
-    // skybox and forward run after and never clear, so a transparent surface is
-    // never wiped by a later background fill.
-    ctx.sceneHDR.bind(ctx.gl);
+    // First pass to touch the HDR target: clear all of its attachments (colour,
+    // G-buffer, depth) for the frame, then render the opaque G-buffer (view
+    // normal + roughness + metalness) into colour attachment 1 while priming
+    // depth. The skybox + forward run after and never clear colour, so a
+    // transparent surface is never wiped by a later background fill.
+    ctx.sceneHDR.clearForFrame(ctx.gl);
     ctx.gl.setDepthTest(true);
     ctx.gl.setDepthWrite(true);
     ctx.gl.setDepthFunc(GL_LESS);
     ctx.gl.setBlending(false);
     ctx.gl.setFaceCulling(true);
     ctx.gl.setCullFace(GL_BACK);
-    ctx.gl.clear(true, true, false);
+    ctx.sceneHDR.bindGBufferPass(ctx.gl);
 
     m_shader->bind();
+    m_shader->setUniformMatrix4fv("u_view", view.camera.view);
 
     const GLMaterial* boundMaterial = nullptr;
     for (const DrawableData& d : view.drawables) {
