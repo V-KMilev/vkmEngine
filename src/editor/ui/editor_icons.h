@@ -19,10 +19,8 @@ enum class EditorIcon {
     // Entity-type glyphs (Hierarchy / Inspector identity) - replace the old
     // [C]/[M]/[D] ASCII badges.
     Entity, Mesh, Camera, LightDir, LightPoint, LightSpot, Anim,
-    // Singleton scene Environment (globe).
-    Environment,
     // Viewport actions
-    FrameAll, Screenshot
+    FrameAll
 };
 
 /// Draw @p icon centered at @p c with half-extent @p r in color @p col.

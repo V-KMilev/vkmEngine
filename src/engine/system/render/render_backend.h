@@ -13,8 +13,8 @@ namespace Engine {
 
 /**
  * @brief Which graphics API a backend speaks.
- * 
- * Drives the runtime "switch backend" menu and is reported back through info().
+ *
+ * Tags the active backend; the human-readable identity is reported through info().
  */
 enum class RenderBackendType {
     OpenGL,    ///< OpenGL-based rendering backend.

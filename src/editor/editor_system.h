@@ -79,14 +79,6 @@ class EditorSystem : public System {
          */
         void drawWorkspace(EditorContext& ec);
 
-        /**
-         * @brief Mirror m_state.selectedEntity into a Selected tag component.
-         *
-         * Runs once per frame after panels settle so RenderView::build can
-         * flag drawables without taking an editor dependency. Single-select
-         * today; the loop already handles a future multi-select cleanly.
-         */
-
     private:
         Engine&           m_engine;
         GLFWwindow*       m_window;
@@ -115,16 +107,6 @@ class EditorSystem : public System {
         PreferencesPanel m_preferences;
         MaterialEditorPanel m_materialEditor;
         AssetBrowserPanel m_assetBrowser;
-
-        /**
-         * @brief Standalone floating Render Settings window.
-         *
-         * The sole editor for the scene's world-level rendering/post config:
-         * opened from Window -> Render Settings and bound to the singleton
-         * Environment entity's EnvironmentConfig. The Environment is no longer
-         * listed in the hierarchy nor editable through the right-side Inspector,
-         * so this window owns the whole stack.
-         */
 };
 
 } // namespace Engine

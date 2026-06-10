@@ -282,8 +282,8 @@ void load(const nlohmann::json& j, Animation& a) {
 // Reflection markups. Listed at file scope so the VKM_REFLECT_BEGIN macro
 // can re-open Engine::Reflect and specialise Traits<T> there without
 // fighting the surrounding namespace. Each entry lists the JSON-persisted
-// fields; fields omitted here are NOT serialised (e.g. ReflectionProbe::
-// bakeVersion, see save(ReflectionProbe) above).
+// fields; fields omitted here are NOT serialised (e.g. a Rigidbody's
+// derived inverseMass and runtime sleep state, see Rigidbody below).
 
 VKM_REFLECT_BEGIN(Engine::Name)
     VKM_F(value)
