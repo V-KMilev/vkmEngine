@@ -3,13 +3,16 @@
 in vec2 vUV;
 out vec4 FragColor;
 
-layout(binding = 0) uniform sampler2D u_hdr;  // linear HDR scene
+layout(binding = 0) uniform sampler2D u_hdr;    // linear HDR scene
+layout(binding = 1) uniform sampler2D u_bloom;  // bloom mip 0 (energy-conserving chain)
+uniform float u_bloomStrength;                  // 0 when bloom is unavailable
 
-// Tonemap + gamma a linear HDR sample to perceptual LDR. FXAA runs on this
-// (edge detection wants perceptual luma, not linear radiance), so every tap
-// goes through here.
+// Bloom-blend + tonemap + gamma a linear HDR sample to perceptual LDR. FXAA
+// runs on this (edge detection wants perceptual luma, not linear radiance), so
+// every tap goes through here.
 vec3 resolve(vec2 uv) {
     vec3 c = texture(u_hdr, uv).rgb;
+    c = mix(c, texture(u_bloom, uv).rgb, u_bloomStrength);  // bloom in linear HDR
     c = c / (c + vec3(1.0));        // Reinhard tonemap
     return pow(c, vec3(1.0 / 2.2)); // gamma to the LDR backbuffer
 }
