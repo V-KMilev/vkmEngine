@@ -17,6 +17,7 @@
 #include "convention/gl_bindings.h"
 #include "data/gl_material.h"
 #include "data/gl_mesh.h"
+#include "data/gl_ibl.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
@@ -63,6 +64,16 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     for (uint32_t s = 0; s < Config::MAX_SHADOW_CASTERS_CUBE; ++s) {
         ctx.shadowAtlas.bindCube(s, GLBindings::ShadowTextureSlots::CubeBase + s);
     }
+
+    // IBL: bind the baked product set when present; u_hasIBL gates the split-sum
+    // ambient in the shader (flat-ambient fallback when no environment baked).
+    const bool hasIBL = ctx.ibl.isReady();
+    if (hasIBL) {
+        ctx.ibl.bindIrradiance(GLBindings::IBLTextureSlots::Irradiance);
+        ctx.ibl.bindPrefilter(GLBindings::IBLTextureSlots::Prefilter);
+        ctx.ibl.bindBrdf(GLBindings::IBLTextureSlots::BrdfLUT);
+    }
+    m_shader->setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
 
     // Partition by material type. Opaque / AlphaMask / Unlit keep the view's
     // order (sorted upstream by material+mesh); Transparent is pulled aside
