@@ -9,9 +9,15 @@
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
+#include "data/gl_bloom.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
+
+namespace {
+// How much of the bloom chain to blend into the scene (linear HDR, pre-tonemap).
+constexpr float BLOOM_STRENGTH = 0.06f;
+}
 
 GLCompositePass::GLCompositePass()
     : m_shader(std::make_unique<Core::Shader>("shaders/composite")) {}
@@ -42,6 +48,8 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
 
     m_shader->bind();
     ctx.sceneHDR.bindColor(0);
+    ctx.bloom.bind(1);
+    m_shader->setUniform1f("u_bloomStrength", ctx.bloom.isReady() ? BLOOM_STRENGTH : 0.0f);
     m_triangle.draw();
 }
 

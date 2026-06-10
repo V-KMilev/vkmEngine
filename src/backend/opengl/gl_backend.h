@@ -13,6 +13,7 @@
 #include "data/gl_shadow_atlas.h"
 #include "data/gl_shadow_data.h"
 #include "data/gl_ibl.h"
+#include "data/gl_bloom.h"
 
 namespace Engine {
 
@@ -54,6 +55,7 @@ class GLBackend : public RenderBackend {
         GLShadowData  m_shadowData;
 
         GLIBL         m_ibl;
+        GLBloom       m_bloom;
 
         std::vector<std::unique_ptr<GLPass>> m_passes;
 };
