@@ -19,7 +19,6 @@ layout(binding = 19) uniform sampler2D u_depth;  // scene depth
 
 uniform mat4  u_invViewProj;   // current frame: NDC -> world
 uniform mat4  u_prevViewProj;  // previous frame: world -> clip
-uniform vec2  u_screenSize;
 uniform float u_intensity;     // velocity scale
 uniform float u_maxVelocity;   // clamp on the smear length (UV)
 uniform int   u_samples;       // taps along the velocity
