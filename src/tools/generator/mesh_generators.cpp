@@ -186,51 +186,74 @@ MeshAsset generateCube() {
 
 MeshAsset generateSphere(uint32_t xSegments, uint32_t ySegments) {
     MeshAsset mesh;
-    const float PI = glm::pi<float>();
     const float radius = 0.5f;  // Unit sphere (-0.5 to 0.5)
 
-    for (uint32_t y = 0; y <= ySegments; ++y) {
-        for (uint32_t x = 0; x <= xSegments; ++x) {
-            float u = static_cast<float>(x) / static_cast<float>(xSegments);
-            float v = static_cast<float>(y) / static_cast<float>(ySegments);
-            
-            float theta = u * 2.0f * PI;
-            float phi = v * PI;
-            
-            float xPos = std::cos(theta) * std::sin(phi) * radius;
-            float yPos = std::cos(phi) * radius;
-            float zPos = std::sin(theta) * std::sin(phi) * radius;
+    // Cube-sphere (quad-sphere): six subdivided cube faces pushed onto the
+    // sphere. Unlike a lat-long sphere it has NO poles, so there is no vertex
+    // collapse, no degenerate (zero) tangent -> NaN, and no texture pinching at
+    // the top/bottom (the old "bald spot"). Each face maps its own [0,1] UVs.
+    const uint32_t res = std::max(2u, std::max(xSegments, ySegments) / 2u);  // per-face grid
 
-            glm::vec3 position(xPos, yPos, zPos);
-            glm::vec3 normal = glm::normalize(position);
-            glm::vec2 uv(u, v);
+    // Emit one triangle oriented outward: flip it if its geometric normal
+    // disagrees with the outward surface direction. Keeps winding correct
+    // regardless of each face basis's handedness, so back-face culling holds.
+    auto emitTri = [&mesh](uint32_t a, uint32_t b, uint32_t c) {
+        const glm::vec3& pa = mesh.vertices[a].position;
+        const glm::vec3  gn = glm::cross(mesh.vertices[b].position - pa,
+                                         mesh.vertices[c].position - pa);
+        if (glm::dot(gn, pa) < 0.0f) std::swap(b, c);
+        mesh.indices.push_back(a);
+        mesh.indices.push_back(b);
+        mesh.indices.push_back(c);
+    };
 
-            glm::vec4 tangent;
-            tangent.x = -std::sin(theta) * std::sin(phi);
-            tangent.y = 0.0f;
-            tangent.z = std::cos(theta) * std::sin(phi);
-            tangent.w = 1.0f;
-            tangent = glm::normalize(tangent);
+    const glm::vec3 faceN[6] = {
+        { 1, 0, 0}, {-1, 0, 0},
+        { 0, 1, 0}, { 0,-1, 0},
+        { 0, 0, 1}, { 0, 0,-1},
+    };
 
-            mesh.vertices.push_back(Vertex{ position, normal, uv, tangent });
+    for (int f = 0; f < 6; ++f) {
+        const glm::vec3 n = faceN[f];
+        // Any orthonormal in-plane basis for this face.
+        const glm::vec3 helper = (std::abs(n.y) < 0.99f) ? glm::vec3(0, 1, 0)
+                                                         : glm::vec3(1, 0, 0);
+        const glm::vec3 uAxis = glm::normalize(glm::cross(helper, n));
+        const glm::vec3 vAxis = glm::cross(n, uAxis);
+
+        const uint32_t base   = static_cast<uint32_t>(mesh.vertices.size());
+        const uint32_t stride = res + 1;
+
+        for (uint32_t j = 0; j <= res; ++j) {
+            for (uint32_t i = 0; i <= res; ++i) {
+                const float s = static_cast<float>(i) / static_cast<float>(res) * 2.0f - 1.0f;
+                const float t = static_cast<float>(j) / static_cast<float>(res) * 2.0f - 1.0f;
+
+                const glm::vec3 dir      = glm::normalize(n + uAxis * s + vAxis * t);
+                const glm::vec3 position = dir * radius;
+                const glm::vec3 normal   = dir;
+                const glm::vec2 uv(static_cast<float>(i) / static_cast<float>(res),
+                                   static_cast<float>(j) / static_cast<float>(res));
+
+                // Tangent = face u-axis projected into the surface tangent plane.
+                // uAxis is never parallel to dir (dir always keeps a +n
+                // component), so this never degenerates to a zero vector.
+                const glm::vec3 tDir = glm::normalize(uAxis - dir * glm::dot(uAxis, dir));
+                const glm::vec4 tangent(tDir, 1.0f);
+
+                mesh.vertices.push_back(Vertex{ position, normal, uv, tangent });
+            }
         }
-    }
 
-    for (uint32_t y = 0; y < ySegments; ++y) {
-        for (uint32_t x = 0; x < xSegments; ++x) {
-            uint32_t i0 = y * (xSegments + 1) + x;
-            uint32_t i1 = (y + 1) * (xSegments + 1) + x;
-            uint32_t i2 = (y + 1) * (xSegments + 1) + (x + 1);
-            uint32_t i3 = y * (xSegments + 1) + (x + 1);
-
-            // CCW winding viewed from outside (so back-face culling keeps the
-            // near hemisphere). Normals are normalize(position) = outward.
-            mesh.indices.push_back(i0);
-            mesh.indices.push_back(i2);
-            mesh.indices.push_back(i1);
-            mesh.indices.push_back(i2);
-            mesh.indices.push_back(i0);
-            mesh.indices.push_back(i3);
+        for (uint32_t j = 0; j < res; ++j) {
+            for (uint32_t i = 0; i < res; ++i) {
+                const uint32_t i0 = base + j * stride + i;
+                const uint32_t i1 = base + j * stride + (i + 1);
+                const uint32_t i2 = base + (j + 1) * stride + (i + 1);
+                const uint32_t i3 = base + (j + 1) * stride + i;
+                emitTri(i0, i1, i2);
+                emitTri(i0, i2, i3);
+            }
         }
     }
 
