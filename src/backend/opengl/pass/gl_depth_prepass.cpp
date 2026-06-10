@@ -28,8 +28,10 @@ void GLDepthPrePass::execute(GLFrameContext& ctx) {
     const RenderView& view   = ctx.view;
     const GLView&     glView = ctx.resources;
 
-    // Fill the scene target's depth with all opaque geometry. Depth only - the
-    // forward pass clears color and early-Zs against this.
+    // Fill the scene target's depth with all opaque geometry. This is the first
+    // pass to bind the HDR target, so it also clears colour for the frame: the
+    // skybox and forward run after and never clear, so a transparent surface is
+    // never wiped by a later background fill.
     ctx.sceneHDR.bind(ctx.gl);
     ctx.gl.setDepthTest(true);
     ctx.gl.setDepthWrite(true);
@@ -37,7 +39,7 @@ void GLDepthPrePass::execute(GLFrameContext& ctx) {
     ctx.gl.setBlending(false);
     ctx.gl.setFaceCulling(true);
     ctx.gl.setCullFace(GL_BACK);
-    ctx.gl.clear(false, true, false);
+    ctx.gl.clear(true, true, false);
 
     m_shader->bind();
 
