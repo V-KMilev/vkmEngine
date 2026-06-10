@@ -46,14 +46,16 @@ bool GLBackend::init(WindowManager& window) {
         baker.bake(m_context, m_ibl, "assets/envs/environment.hdr");
     }
 
-    // Build the pass list. Passes compile their shaders, so this must run
-    // after the context exists. Order: shadow depth maps, a depth prepass
-    // (early-Z for the forward draw), the lit forward draw, the skybox at the
-    // far plane, then the composite (tonemap + FXAA) to screen.
+    // Build the pass list. Passes compile their shaders, so this must run after
+    // the context exists. Order: shadow depth maps; a depth prepass (early-Z,
+    // and it clears the HDR target for the frame); the skybox fills the
+    // background BEFORE geometry, so sorted transparents blend over it instead
+    // of being overwritten; the lit forward draw (opaque then transparent);
+    // then composite (tonemap + FXAA) to screen.
     m_passes.push_back(std::make_unique<GLShadowPass>());
     m_passes.push_back(std::make_unique<GLDepthPrePass>());
-    m_passes.push_back(std::make_unique<GLForwardPass>());
     m_passes.push_back(std::make_unique<GLSkyboxPass>());
+    m_passes.push_back(std::make_unique<GLForwardPass>());
     m_passes.push_back(std::make_unique<GLCompositePass>());
 
     const GLubyte* version = glGetString(GL_VERSION);
