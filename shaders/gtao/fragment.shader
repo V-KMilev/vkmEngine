@@ -21,9 +21,7 @@ out float FragColor;
 layout(binding = 19) uniform sampler2D u_depth;     // scene depth
 layout(binding = 20) uniform sampler2D u_gbuffer;   // oct view-normal.xy, roughness, metalness
 
-uniform mat4  u_projection;
 uniform mat4  u_invProjection;
-uniform vec2  u_screenSize;
 uniform float u_proj11;     // projection[1][1]: world radius -> screen
 uniform float u_radius;     // world-space sample radius
 uniform float u_intensity;  // occlusion strength

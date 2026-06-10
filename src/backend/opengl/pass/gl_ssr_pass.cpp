@@ -41,8 +41,6 @@ void GLSSRPass::execute(GLFrameContext& ctx) {
     const glm::mat4 invProj = glm::inverse(proj);
     m_shader->setUniformMatrix4fv("u_projection",    proj);
     m_shader->setUniformMatrix4fv("u_invProjection", invProj);
-    m_shader->setUniform2f("u_screenSize",
-        static_cast<float>(view.viewportWidth), static_cast<float>(view.viewportHeight));
 
     m_tri.draw();
 
