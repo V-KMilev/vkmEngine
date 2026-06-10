@@ -45,7 +45,6 @@ struct EditorState {
     bool showMaterialEditor = false;            ///< Material Editor window
     MaterialHandle materialEditorTarget{};      ///< Which material it edits (else: selected entity's)
     bool showAssetBrowser   = false;            ///< Asset Browser window (material/mesh thumbnail grid)
-    bool showRenderSettings = false;            ///< Render Settings window (world-level rendering config)
     bool showPhysics        = false;            ///< Physics window (per-scene gravity + solver settings)
     bool showColliders      = false;            ///< Draw physics collider wireframes in the viewport (View menu)
     bool showBounds         = false;            ///< Draw per-entity world AABBs in the viewport (View menu)
@@ -62,7 +61,6 @@ struct EditorState {
     bool viewportHovered = false;    ///< Whether mouse is over viewport
     bool hierarchyDirty  = true;     ///< Set by entity ops, consumed by HierarchyPanel
     bool editorVisible   = true;     ///< Toggle entire editor UI (F5)
-    bool runtimeSettingsVisible = false;  ///< Toggle player-facing graphics settings overlay (F10)
     bool requestModelImport = false;  ///< Set by the Import Model menu item, consumed by the menu-bar dialog
 
     // Scene I/O state

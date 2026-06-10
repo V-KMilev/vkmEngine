@@ -95,7 +95,6 @@ bool load(EditorState& state) {
         bind("toggleInspector",  state.keybinds.toggleInspector);
         bind("toggleBottom",     state.keybinds.toggleBottom);
         bind("toggleEditor",     state.keybinds.toggleEditor);
-        bind("runtimeSettings",  state.keybinds.runtimeSettings);
         bind("openPreferences",  state.keybinds.openPreferences);
         bind("deleteEntity",     state.keybinds.deleteEntity);
         bind("deselect",         state.keybinds.deselect);
@@ -146,7 +145,6 @@ bool save(const EditorState& state) {
     kb["toggleInspector"]  = keybindToJson(state.keybinds.toggleInspector);
     kb["toggleBottom"]     = keybindToJson(state.keybinds.toggleBottom);
     kb["toggleEditor"]     = keybindToJson(state.keybinds.toggleEditor);
-    kb["runtimeSettings"]  = keybindToJson(state.keybinds.runtimeSettings);
     kb["openPreferences"]  = keybindToJson(state.keybinds.openPreferences);
     kb["deleteEntity"]     = keybindToJson(state.keybinds.deleteEntity);
     kb["deselect"]         = keybindToJson(state.keybinds.deselect);

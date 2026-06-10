@@ -60,21 +60,12 @@ uint64_t previewVersion(uint64_t materialVersion, uint32_t shapeId,
 
 bool MaterialEditorPanel::drawMaterialBody(
     ResourceManager& resources,
-    MaterialAsset& mat,
-    bool globalOIT
+    MaterialAsset& mat
 ) {
     bool changed = false;
     auto slot = [&](const char* label, TextureHandle& s, bool srgb) {
         return textureSlot(resources, label, s, srgb);
     };
-
-    // OIT routing is effective only when both global + material flags allow it,
-    // and the material isn't transmissive (which auto-overrides to sorted).
-    // Mirror that in the UI so the checkbox visibly disables when toggling has
-    // no effect - artists shouldn't have to hunt the Environment Inspector to
-    // discover why their checkbox does nothing.
-    const bool oitTransmissive = mat.transmission > 0.001f;
-    const bool oitEffective    = globalOIT && !oitTransmissive;
 
         if (beginComponentCard("Base", ACC_BASE, true)) {
             drawPropertyLabel("Type");
@@ -106,35 +97,20 @@ bool MaterialEditorPanel::drawMaterialBody(
             drawPropertyLabel("AO");
             changed |= ImGui::SliderFloat("##AO", &mat.ao, 0.0f, 1.0f, "%.2f");
 
-            drawPropertyLabel("Alpha");
-            changed |= ImGui::SliderFloat("##Alpha", &mat.alpha, 0.0f, 1.0f, "%.2f");
+            drawPropertyLabel("Emissive Strength");
+            changed |= ImGui::DragFloat("##EmissiveStrength", &mat.emissiveStrength, 0.05f, 0.0f, 64.0f, "%.2f");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("HDR multiplier on emission (drives bloom once it returns)");
+
+            drawPropertyLabel("Double Sided");
+            changed |= ImGui::Checkbox("##DoubleSided", &mat.doubleSided);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Disable backface culling; back faces shade with the flipped normal");
 
             drawPropertyLabel("Alpha Cutoff");
             changed |= ImGui::SliderFloat("##AlphaCutoff", &mat.alphaCutoff, 0.0f, 1.0f, "%.2f");
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("0 = off. >0 enables AlphaMask: fragments with albedo.a < cutoff are discarded (foliage/leaves)");
-
-            drawPropertyLabel("Use OIT");
-            ImGui::BeginDisabled(!oitEffective);
-            changed |= ImGui::Checkbox("##UseOIT", &mat.useOIT);
-            ImGui::EndDisabled();
-            // Inline gating hint when the flag is currently a no-op.
-            if (!globalOIT) {
-                ImGui::SameLine();
-                ImGui::TextDisabled("(enable Environment > Lighting > Transparency)");
-            } else if (oitTransmissive) {
-                ImGui::SameLine();
-                ImGui::TextDisabled("(overridden: transmission > 0)");
-            }
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip(
-                    "Route this material through Weighted-Blended OIT when the\n"
-                    "global Transparency.useOIT toggle is on. Best for foliage,\n"
-                    "particles, smoke, dust - any transparent stack that doesn't\n"
-                    "need a precise back-to-front order.\n\n"
-                    "Auto-disabled for transmissive materials (transmission > 0):\n"
-                    "OIT cannot reproduce screen-space refraction so those keep\n"
-                    "the sorted-blend path regardless.");
+                ImGui::SetTooltip("AlphaMask type only: fragments with albedo.a < cutoff are discarded (foliage/leaves)");
         }
         endComponentCard();
 
@@ -544,8 +520,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         // viewport refresh next frame). Materials are scene assets - any
         // edit is unsaved work.
         auto& mat = resources.edit(target);
-        const bool globalOIT = ec.renderSystem.getEnvironment().transparency.useOIT;
-        if (drawMaterialBody(resources, mat, globalOIT)) {
+        if (drawMaterialBody(resources, mat)) {
             resources.commit(target);
             state.markSceneDirty();
         }

@@ -15,14 +15,12 @@
 #include "overlays/gizmo_overlay.h"
 #include "overlays/viewport_toolbar.h"
 #include "overlays/playback_bar.h"
-#include "overlays/runtime_settings_overlay.h"
 #include "panels/hierarchy_panel.h"
 #include "panels/inspector_panel.h"
 #include "panels/bottom_panel.h"
 #include "panels/preferences_panel.h"
 #include "panels/material_editor.h"
 #include "panels/asset_browser.h"
-#include "panels/environment_inspector.h"
 
 struct GLFWwindow;
 
@@ -88,7 +86,6 @@ class EditorSystem : public System {
          * flag drawables without taking an editor dependency. Single-select
          * today; the loop already handles a future multi-select cleanly.
          */
-        void syncSelectionTag(Scene& scene);
 
     private:
         Engine&           m_engine;
@@ -115,7 +112,6 @@ class EditorSystem : public System {
         GizmoOverlay     m_gizmoOverlay;
         ViewportToolbar  m_viewportToolbar;
         ViewportPlaybar  m_playbar;
-        RuntimeSettingsOverlay m_runtimeSettings;
         PreferencesPanel m_preferences;
         MaterialEditorPanel m_materialEditor;
         AssetBrowserPanel m_assetBrowser;
@@ -129,7 +125,6 @@ class EditorSystem : public System {
          * listed in the hierarchy nor editable through the right-side Inspector,
          * so this window owns the whole stack.
          */
-        EnvironmentInspector m_renderSettingsUI;
 };
 
 } // namespace Engine

@@ -11,11 +11,19 @@
 
 namespace Engine {
 
+/**
+ * @brief How the renderer draws a material - render path, not shading.
+ *
+ * Mirrors glTF alphaMode plus Unlit: Opaque and AlphaMask write depth and
+ * draw in the opaque bucket (AlphaMask discards below alphaCutoff);
+ * Transparent draws in the sorted blended bucket; Unlit skips the BRDF and
+ * outputs albedo + emission directly.
+ */
 enum class MaterialType : uint8_t {
     Opaque      = 0,
     Transparent = 1,
     Unlit       = 2,
-    AlphaMask   = 3   ///< glTF alphaMode = MASK; alpha-tested, writes depth, no blending
+    AlphaMask   = 3
 };
 
 /// Names in MaterialType order - the single source for JSON (de)serialization
@@ -31,7 +39,8 @@ inline constexpr const char* const MATERIAL_TYPE_NAMES[] = {
  * per distinct flag set so a plain opaque-diffuse material doesn't pay the
  * fragment cost of branches for clearcoat / transmission / sheen / etc.
  * MaterialAsset::featureFlags() derives the bitset from the current scalar
- * values and texture presence.
+ * values and texture presence. Dormant until the variant cache returns -
+ * the ubershader branches at runtime for now.
  */
 enum class MaterialFeature : uint32_t {
     None         = 0,
@@ -60,41 +69,46 @@ constexpr uint32_t MATERIAL_ALL_FEATURES =
     toBits(MaterialFeature::AlphaMask);
 
 /**
- * @brief Describes a material asset.
+ * @brief A complete PBR material.
  *
- * Holds PBR material scalar properties and references to associated textures.
- * Supports both rasterization and raytracing rendering pipelines.
+ * The parameter set follows the Disney/glTF principled model: a metal-rough
+ * microfacet base layer, the standard secondary lobes (clearcoat, sheen,
+ * anisotropy, subsurface), transmission + volume for light through the
+ * surface, and per-map texture handles where every scalar acts as a
+ * multiplier on its map when one is bound. This asset is the spec the
+ * renderer implements - fields here and shader support move in lockstep.
  */
 struct MaterialAsset : public Resource {
+    // Render path
     MaterialType type = MaterialType::Opaque;
+    bool  doubleSided = false;                   ///< Disable backface culling and flip the normal on back faces
+    float alphaCutoff = 0.5f;                    ///< AlphaMask: discard below this albedo alpha (glTF default 0.5)
 
-    // Base PBR properties
-    glm::vec4 albedo   = {1,1,1,1};              ///< Base albedo color (RGBA)
-    glm::vec3 emission = {0,0,0};                ///< Emissive color (RGB)
+    // Base layer - the microfacet core
+    glm::vec4 albedo   = {1,1,1,1};              ///< Base color (RGB) + opacity (A; Transparent type blends on it)
     float metallic     = 0.0f;                   ///< Metalness (0: dielectric, 1: metallic)
-    float roughness    = 0.5f;                   ///< Surface roughness (0: smooth, 1: rough)
+    float roughness    = 0.5f;                   ///< Surface roughness (0: smooth, 1: rough); GGX alpha = roughness^2
+    float ior          = 1.5f;                   ///< Index of refraction; dielectric F0 = ((ior-1)/(ior+1))^2
+    float ao           = 1.0f;                   ///< Ambient occlusion factor on indirect light (0: occluded, 1: open)
+    float normalScale  = 1.0f;                   ///< Normal map intensity (0: flat, 1: as authored, >1: exaggerated)
 
-    // Essential for raytracing and advanced PBR
-    float ior          = 1.5f;                   ///< Index of refraction (1.0: air, 1.5: glass, 2.4: diamond)
-    float transmission = 0.0f;                   ///< Transmission factor (0: opaque, 1: fully transparent)
-    float alpha        = 1.0f;                   ///< Alpha/opacity (0: transparent, 1: opaque)
-    float ao           = 1.0f;                   ///< Ambient occlusion factor (0: fully occluded, 1: no occlusion)
-    float alphaCutoff  = 0.0f;                   ///< AlphaMask cutoff (>0 enables discard; glTF default 0.5)
+    glm::vec3 emission     = {0,0,0};            ///< Emissive color (RGB), linear
+    float emissiveStrength = 1.0f;               ///< HDR multiplier on emission (drives bloom once it returns)
 
-    // Advanced PBR properties
-    float clearcoat               = 0.0f;        ///< Clearcoat layer strength (0: none, 1: full)
-    float clearcoatRoughness      = 0.0f;        ///< Clearcoat roughness (0: smooth, 1: rough)
+    // Secondary lobes
+    float clearcoat               = 0.0f;        ///< Clearcoat layer strength (0: none, 1: full); attenuates the base layer
+    float clearcoatRoughness      = 0.0f;        ///< Clearcoat lobe roughness (0: smooth, 1: rough)
     float anisotropy              = 0.0f;        ///< Anisotropy strength (0: isotropic, 1: fully anisotropic)
     glm::vec3 anisotropyDirection = {1,0,0};     ///< Anisotropy direction (tangent space)
 
-    // Subsurface scattering (for skin, wax, etc.)
-    float subsurface          = 0.0f;            ///< Subsurface scattering strength
-    glm::vec3 subsurfaceColor = {1,1,1};         ///< Subsurface color tint
-
-    // Sheen / cloth (Charlie). Default sheenColor 0 = no sheen (no-op).
-    glm::vec3 sheenColor   = {0,0,0};            ///< Sheen tint (0 = disabled)
+    glm::vec3 sheenColor     = {0,0,0};          ///< Sheen tint, Charlie lobe (0 = disabled); cloth / velvet
     float     sheenRoughness = 0.3f;             ///< Sheen lobe roughness
 
+    float subsurface          = 0.0f;            ///< Subsurface scattering strength; skin / wax / leaves
+    glm::vec3 subsurfaceColor = {1,1,1};         ///< Subsurface color tint
+
+    // Transmission + volume - light through the surface
+    float transmission = 0.0f;                   ///< Fraction of light refracted instead of diffused (0: opaque, 1: glass)
     // KHR_materials_volume - Beer-Lambert absorption inside a transmissive
     // medium. thicknessFactor == 0 means "thin-walled" and absorption is
     // disabled (matches the glTF spec default). attenuationColor is the
@@ -104,33 +118,21 @@ struct MaterialAsset : public Resource {
     float     attenuationDistance = 1.0f;        ///< Path length at which radiance reaches attenuationColor (m)
     glm::vec3 attenuationColor    = {1,1,1};     ///< Transmittance after one attenuationDistance (white = no tint)
 
-    // Height/Displacement and Normal mapping
-    float heightScale = 0.0f;                   ///< Height map scale for parallax/displacement mapping (0.02-0.1 typical)
-    float normalScale = 1.0f;                   ///< Normal map intensity (0: flat, 1: normal, >1: exaggerated)
+    // Geometry detail
+    float heightScale = 0.0f;                    ///< Parallax-occlusion depth scale (0: off; 0.02-0.1 typical)
 
-    // Texture handles
-    TextureHandle albedoTexture;                 ///< Albedo (base color) texture (RGBA)
-    TextureHandle emissionTexture;               ///< Emission (self-illumination) texture (RGB or RGBA)
-    TextureHandle roughnessTexture;              ///< Surface roughness texture (G or R channel)
-    TextureHandle metallicTexture;               ///< Surface metalness texture (B or R channel)
-    TextureHandle normalTexture;                 ///< Tangent-space normal map texture (RGB or RGBA)
-    TextureHandle aoTexture;                     ///< Ambient occlusion texture (R channel)
-    TextureHandle heightTexture;                 ///< Height/displacement map texture (R channel)
-    TextureHandle clearcoatTexture;              ///< Clearcoat mask texture (R channel: clearcoat strength)
-    TextureHandle transmissionTexture;           ///< Transmission mask texture (A or R channel: transparency/IOR)
-
-    // Combined texture maps (common optimization)
-    TextureHandle metallicRoughnessTexture;      ///< Combined metallic (R) + roughness (G) texture
-    TextureHandle aoMetallicRoughnessTexture;    ///< Combined AO (R) + metallic (G) + roughness (B)
-
-    // Order-independent transparency opt-in. When true AND the global OIT
-    // toggle is on AND the material isn't transmissive (OIT can't reproduce
-    // screen-space refraction), the renderer routes this material through the
-    // weighted-blended OIT path instead of the sorted back-to-front path.
-    // Default off: artists explicitly mark materials that play well with OIT
-    // (foliage, particles, dust, smoke). Glass / liquids / volumetrics with
-    // refraction must keep the sorted path.
-    bool useOIT = false;
+    // Texture maps - each multiplies its scalar/color factor when bound
+    TextureHandle albedoTexture;                 ///< Base color (RGBA; A feeds AlphaMask / Transparent)
+    TextureHandle normalTexture;                 ///< Tangent-space normal map (RGB)
+    TextureHandle metallicRoughnessTexture;      ///< Combined roughness (G) + metallic (B), glTF layout
+    TextureHandle metallicTexture;               ///< Separate metalness (R channel)
+    TextureHandle roughnessTexture;              ///< Separate roughness (R channel)
+    TextureHandle aoTexture;                     ///< Ambient occlusion (R channel)
+    TextureHandle aoMetallicRoughnessTexture;    ///< Combined AO (R) + roughness (G) + metallic (B)
+    TextureHandle emissionTexture;               ///< Emission (RGB)
+    TextureHandle heightTexture;                 ///< Height field for parallax (R channel)
+    TextureHandle clearcoatTexture;              ///< Clearcoat strength mask (R channel)
+    TextureHandle transmissionTexture;           ///< Transmission mask (R channel)
 
     /**
      * @brief Compute the MaterialFeature bitset this material requires.
@@ -154,7 +156,7 @@ struct MaterialAsset : public Resource {
             sheenColor.y > 0.0f ||
             sheenColor.z > 0.0f)                    f |= toBits(MaterialFeature::Sheen);
         if (heightTexture && heightScale > 0.0f)    f |= toBits(MaterialFeature::Parallax);
-        if (alphaCutoff > 0.0f)                     f |= toBits(MaterialFeature::AlphaMask);
+        if (type == MaterialType::AlphaMask)        f |= toBits(MaterialFeature::AlphaMask);
         return f;
     }
 };

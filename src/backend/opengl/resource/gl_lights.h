@@ -5,9 +5,6 @@
 
 #include <glm/glm.hpp>
 
-#include "config/gl_config.h"
-#include "core/engine_config.h"
-
 namespace Core {
     class UniformBuffer;
 }
@@ -18,63 +15,46 @@ namespace Engine {
 
 namespace Engine {
 
+static constexpr int MAX_LIGHTS = 16;
+
 /**
- * @brief Light data structure matching GLSL std140 layout for uniform buffer.
+ * @brief std140 layout - must match the Light struct in shaders/forward.
  *
- * Each light occupies exactly 96 bytes. Uses vec4 for every slot to avoid
- * drivers that fail to pack a trailing scalar into a vec3's 4-byte tail
- * (spec-legal but unreliable in practice).
+ * Every slot is a vec4 to avoid drivers that fail to pack a trailing scalar
+ * into a vec3's 4-byte tail (spec-legal but unreliable in practice).
  *
- * Slot layout:
- *  - position:   xyz = world position,  w = type (encoded as float, cast in shader)
- *  - color:      xyz = RGB,             w = intensity
- *  - direction:  xyz = world direction (forward / surface normal),
- *                w   = attenuation radius
- *  - spot:       x   = inner cone,      y = outer cone, z = unused, w = shadowSlot (-1 = no shadow)
- *  - axisU:      xyz = half-right world vector (rotation * +X * width/2 for Rect, * areaRadius for Disk),
- *                w   = twoSided (0 or 1, only meaningful for Rect/Disk)
- *  - axisV:      xyz = half-up world vector (rotation * +Y * height/2 for Rect, * areaRadius for Disk),
- *                w   = unused
+ *  - position:  xyz = world position,  w = type (encoded as float)
+ *  - color:     xyz = RGB,             w = intensity
+ *  - direction: xyz = world direction, w = attenuation radius
+ *  - spot:      x = inner cone, y = outer cone (radians),
+ *               z = unused, w = shadowSlot (-1 = no shadow)
+ *  - axisU:     xyz = half-right world axis (Rect/Disk), w = twoSided (0/1)
+ *  - axisV:     xyz = half-up    world axis (Rect/Disk), w = unused
  *
- * For non-area lights (Directional / Point / Spot) axisU/axisV are zero; the
- * shader's area-light branches are gated on `type`.
+ * For punctual lights (Directional / Point / Spot) axisU/axisV are zero; the
+ * shader's area-light branch is gated on type.
  */
-struct alignas(16) LightGPUData {
-    glm::vec4 position;          // offset 0,  16 bytes  (xyz=position, w=type)
-    glm::vec4 color;             // offset 16, 16 bytes  (xyz=color,    w=intensity)
-    glm::vec4 direction;         // offset 32, 16 bytes  (xyz=dir,      w=radius)
-    glm::vec4 spot;              // offset 48, 16 bytes  (x=inner, y=outer, z=unused, w=shadowSlot)
-    glm::vec4 axisU;             // offset 64, 16 bytes  (xyz=half-right, w=twoSided)
-    glm::vec4 axisV;             // offset 80, 16 bytes  (xyz=half-up,    w=unused)
+struct GpuLight {
+    glm::vec4 position;
+    glm::vec4 color;
+    glm::vec4 direction;
+    glm::vec4 spot;
+    glm::vec4 axisU;
+    glm::vec4 axisV;
+};
+
+struct LightsUBO {
+    int      count;
+    int      pad0, pad1, pad2;
+    GpuLight lights[MAX_LIGHTS];
 };
 
 /**
- * @brief Lights uniform block data matching GLSL std140 layout.
+ * @brief GPU mirror of the frame's lights - the LightsBlock UBO.
  *
- * Contains an array of light data and a count of active lights.
- * Must match the LightsBlock uniform block in the shader exactly.
- *
- * Layout:
- * - lightCount: offset 0, 4 bytes (12 bytes padding to next array element)
- * - lights:     offset 16, 96 * Config::MAX_LIGHTS bytes
- *
- * Total size: 16 + (96 * Config::MAX_LIGHTS) = 16 + (96 * 32) = 16 + 3072 = 3088 bytes
- */
-struct alignas(16) LightsUBOData {
-    int lightCount;                              // offset 0, 4 bytes
-    char _padding[12];                           // offset 4, 12 bytes (explicit padding to offset 16)
-    LightGPUData lights[Config::MAX_LIGHTS];      // offset 16, 96 bytes per light
-};
-
-/**
- * @brief Encapsulates OpenGL light management, maintaining a uniform buffer for all scene lights.
- *
- * GLLights collects light data from the scene and uploads it to a single UBO for efficient
- * GPU access. It supports directional, point, and spot lights with proper attenuation and culling.
- * 
- * Usage:
- * 1. Call update() with the RenderView to collect and upload all lights
- * 2. Call bind() before rendering
+ * update() packs each LightData into the std140 array the shaders iterate,
+ * uploads it to the lights binding point, and skips the upload when the set is
+ * unchanged from the previous frame. Lights past the cap are dropped.
  */
 class GLLights {
     public:
@@ -88,32 +68,11 @@ class GLLights {
         GLLights& operator=(GLLights && other) = delete;
 
     public:
-        /**
-         * @brief Update the light buffer from RenderView.
-         * 
-         * Collects all lights from the render view, converts them to GPU format,
-         * and uploads them to the UBO.
-         * 
-         * @param lights Vector of light data from the RenderView.
-         */
         void update(const std::vector<LightData>& lights);
-
-        /**
-         * @brief Bind the lights uniform buffer.
-         *
-         * @param bindingPoint The UBO binding point index.
-         */
-        void bind(uint32_t bindingPoint = GLConfig::UBOBindingPoints::Lights) const;
-
-        /**
-         * @brief Get the current number of lights in the buffer.
-         */
-        uint32_t getLightCount() const { return m_lightCount; }
 
     private:
         std::unique_ptr<Core::UniformBuffer> m_ubo;
-        LightsUBOData m_lastData{};
-        uint32_t m_lightCount = 0;
+        LightsUBO                            m_last{};
 };
 
 } // namespace Engine

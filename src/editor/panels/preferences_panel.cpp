@@ -121,7 +121,7 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
         &state.keybinds.undo, &state.keybinds.redo,
         &state.keybinds.toggleHierarchy,
         &state.keybinds.toggleInspector, &state.keybinds.toggleBottom,
-        &state.keybinds.toggleEditor, &state.keybinds.runtimeSettings,
+        &state.keybinds.toggleEditor,
         &state.keybinds.openPreferences,
         &state.keybinds.deleteEntity, &state.keybinds.deselect,
         &state.keybinds.duplicate, &state.keybinds.focusSelected,
@@ -196,7 +196,6 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
     drawKeybindRow("Toggle Inspector", state.keybinds.toggleInspector);
     drawKeybindRow("Toggle Bottom",    state.keybinds.toggleBottom);
     drawKeybindRow("Toggle Editor",    state.keybinds.toggleEditor);
-    drawKeybindRow("Graphics Settings", state.keybinds.runtimeSettings);
     drawKeybindRow("Preferences",      state.keybinds.openPreferences);
 
     ImGui::Spacing();

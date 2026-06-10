@@ -118,7 +118,6 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         ImGui::MenuItem("Inspector",     getKeyBindLabel(state.keybinds.toggleInspector, lbl, sizeof(lbl)), &state.showInspector);
         ImGui::MenuItem("Bottom Panel",  getKeyBindLabel(state.keybinds.toggleBottom, lbl, sizeof(lbl)), &state.showBottom);
         ImGui::Separator();
-        ImGui::MenuItem("Render Settings",  nullptr, &state.showRenderSettings);
         ImGui::MenuItem("Physics Settings", nullptr, &state.showPhysics);
         ImGui::MenuItem("Material Editor",  nullptr, &state.showMaterialEditor);
         ImGui::MenuItem("Asset Browser",    nullptr, &state.showAssetBrowser);
@@ -148,13 +147,11 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         ImGui::TextDisabled("Built:");    ImGui::SameLine(); ImGui::Text("%s", APP_BUILD_DATE);
         // API + device come from the active render backend so this dialog
         // stays correct if the engine ever ships with a non-OpenGL backend.
-        RenderBackend& backend = ec.renderSystem.getBackend();
-        const std::string ver = backend.apiVersion();
-        const std::string dev = backend.deviceName();
-        ImGui::TextDisabled("%s:", backend.apiName());
-        ImGui::SameLine(); ImGui::Text("%s", ver.empty() ? "(unknown)" : ver.c_str());
+        const BackendInfo backend = ec.renderSystem.backendInfo();
+        ImGui::TextDisabled("API:");
+        ImGui::SameLine(); ImGui::Text("%s", backend.api.empty() ? "(unknown)" : backend.api.c_str());
         ImGui::TextDisabled("Renderer:");
-        ImGui::SameLine(); ImGui::Text("%s", dev.empty() ? "(unknown)" : dev.c_str());
+        ImGui::SameLine(); ImGui::Text("%s", backend.device.empty() ? "(unknown)" : backend.device.c_str());
         ImGui::TextDisabled("ImGui:");    ImGui::SameLine(); ImGui::Text("%s", IMGUI_VERSION);
         ImGui::EndPopup();
     }

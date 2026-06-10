@@ -1,103 +1,40 @@
 #define VKM_LOG_CATEGORY "BACKEND::GL"
 
-#include "gl_lights.h"
+#include "resource/gl_lights.h"
 
 #include <algorithm>
-#include <cstring>
-
-#include "logger.h"
 
 #include "gl_uniform_buffer.h"
-#include "gl_ubo_util.h"
-#include "system/render/render_view.h"
+
+#include "convention/gl_bindings.h"
+#include "resource/gl_ubo_util.h"
+#include "system/render/data/light_data.h"
 
 namespace Engine {
 
-static_assert(sizeof(LightGPUData)  % 16 == 0, "LightGPUData must be 16-byte aligned");
-static_assert(sizeof(LightGPUData) == 96, "LightGPUData must be exactly 96 bytes");
-static_assert(sizeof(LightsUBOData) % 16 == 0, "LightsUBOData must be 16-byte aligned");
-static_assert(offsetof(LightsUBOData, lightCount) == 0, "lightCount offset mismatch");
-static_assert(offsetof(LightsUBOData, lights) == 16, "lights array offset mismatch");
-
-GLLights::GLLights() = default;
-
-GLLights::~GLLights() {
-    m_ubo.reset();
-    LOG_TRACE("Destructed GLLights");
-}
+GLLights::GLLights()  = default;
+GLLights::~GLLights() = default;
 
 void GLLights::update(const std::vector<LightData>& lights) {
-    // Prepare UBO data on stack
-    LightsUBOData data;
-    std::memset(&data, 0, sizeof(LightsUBOData));
+    LightsUBO data{};
 
-    // Clamp to maximum light count
-    uint32_t lightCount = std::min(static_cast<uint32_t>(lights.size()), static_cast<uint32_t>(Config::MAX_LIGHTS));
+    const int count = std::min(static_cast<int>(lights.size()), MAX_LIGHTS);
+    data.count = count;
+    for (int i = 0; i < count; ++i) {
+        const LightData& light = lights[i];
+        GpuLight& gpu = data.lights[i];
 
-    if (lights.size() > Config::MAX_LIGHTS) {
-        LOG_WARNING("Scene has %d lights, but only %d are supported. Excess lights will be ignored.", 
-                 lights.size(), Config::MAX_LIGHTS);
+        gpu.position  = glm::vec4(light.position, static_cast<float>(light.type));
+        gpu.color     = glm::vec4(light.color, light.intensity);
+        gpu.direction = glm::vec4(light.direction, light.radius);
+        // shadowSlot (w) stays -1 until the shadow pass assigns casters.
+        gpu.spot      = glm::vec4(light.innerConeAngle, light.outerConeAngle, 0.0f, -1.0f);
+        gpu.axisU     = glm::vec4(light.axisU, light.twoSided ? 1.0f : 0.0f);
+        gpu.axisV     = glm::vec4(light.axisV, 0.0f);
     }
 
-    // Convert each light to GPU format
-    for (uint32_t i = 0; i < lightCount; ++i) {
-        const LightData& lightData = lights[i];
-        LightGPUData& gpuLight = data.lights[i];
-
-        gpuLight.position = glm::vec4(lightData.position, static_cast<float>(lightData.type));
-        gpuLight.color    = glm::vec4(lightData.color, lightData.intensity);
-
-        // Directional, Spot, and area lights (Rect/Disk) all need a world-
-        // space direction. Point lights leave it zeroed.
-        const bool hasDirection =
-               lightData.type == LightType::Directional
-            || lightData.type == LightType::Spot
-            || lightData.type == LightType::Rect
-            || lightData.type == LightType::Disk;
-        const glm::vec3 dir = hasDirection
-            ? glm::normalize(lightData.rotation * glm::vec3(0.0f, 0.0f, 1.0f))
-            : glm::vec3(0.0f);
-        gpuLight.direction = glm::vec4(dir, lightData.radius);
-
-        gpuLight.spot = glm::vec4(
-            lightData.innerConeAngle,
-            lightData.outerConeAngle,
-            0.0f,
-            static_cast<float>(lightData.shadowSlot)  // -1 = no shadow
-        );
-
-        // Area-light geometry: half-extent world-space axes so the shader can
-        // recover the rectangle's four corners as
-        //   p_i = position +/- axisU.xyz +/- axisV.xyz
-        // Disk shares the same encoding (axisU and axisV both have magnitude
-        // areaRadius); the shader treats the disk as a 4-vertex polygon
-        // inscribed in the disk.
-        glm::vec3 halfRight(0.0f);
-        glm::vec3 halfUp(0.0f);
-        if (lightData.type == LightType::Rect) {
-            const glm::vec3 right = lightData.rotation * glm::vec3(1.0f, 0.0f, 0.0f);
-            const glm::vec3 up    = lightData.rotation * glm::vec3(0.0f, 1.0f, 0.0f);
-            halfRight = right * (lightData.areaWidth  * 0.5f);
-            halfUp    = up    * (lightData.areaHeight * 0.5f);
-        } else if (lightData.type == LightType::Disk) {
-            const glm::vec3 right = lightData.rotation * glm::vec3(1.0f, 0.0f, 0.0f);
-            const glm::vec3 up    = lightData.rotation * glm::vec3(0.0f, 1.0f, 0.0f);
-            halfRight = right * lightData.areaRadius;
-            halfUp    = up    * lightData.areaRadius;
-        }
-        gpuLight.axisU = glm::vec4(halfRight, lightData.twoSided ? 1.0f : 0.0f);
-        gpuLight.axisV = glm::vec4(halfUp,    0.0f);
-    }
-
-    data.lightCount = static_cast<int>(lightCount);
-    m_lightCount = lightCount;
-
-    // Rewritten every frame, so DYNAMIC_DRAW is the correct usage hint.
-    uploadUBOIfChanged(m_ubo, m_lastData, data, GL_DYNAMIC_DRAW);
-}
-
-void GLLights::bind(uint32_t bindingPoint) const {
-    bindUBO(m_ubo, bindingPoint);
+    uploadUBOIfChanged(m_ubo, m_last, data);
+    bindUBO(m_ubo, GLBindings::UBOBindingPoints::Lights);
 }
 
 } // namespace Engine

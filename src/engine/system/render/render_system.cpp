@@ -2,177 +2,61 @@
 
 #include "system/render/render_system.h"
 
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/quaternion.hpp>   // glm::rotation (GLM_ENABLE_EXPERIMENTAL is project-wide)
-
 #include "logger.h"
 
-#include "debug/profiler.h"
-#include "resource/resource_manager.h"
-#include "ecs/scene.h"
-#include "platform/window/window_manager.h"
-#include "system/visibility/visibility.h"
-#include "system/render/environment.h"
-
 #include "system/render/render_backend.h"
-#include "system/render/render_pass.h"
-#include "system/render/render_target.h"
 
 namespace Engine {
 
-RenderSystem::RenderSystem() : m_width(0), m_height(0) {}
+void RenderSystem::update(FrameContext& ctx) {
+    installPending(ctx);
+    if (!m_backend || !ctx.visibility) return;
 
-RenderSystem::~RenderSystem() {
-    m_backend.reset();
+    // Resize the backend's surface only when the viewport actually changes.
+    // m_view holds the size we last rendered at; installPending() zeroes it
+    // after a swap so a freshly installed backend is sized on its first frame.
+    if (ctx.viewportX != m_view.viewportX || ctx.viewportY != m_view.viewportY ||
+        ctx.viewportWidth != m_view.viewportWidth || ctx.viewportHeight != m_view.viewportHeight) {
+        m_view.viewportX      = ctx.viewportX;
+        m_view.viewportY      = ctx.viewportY;
+        m_view.viewportWidth  = ctx.viewportWidth;
+        m_view.viewportHeight = ctx.viewportHeight;
+
+        m_backend->resize(m_view.viewportX, m_view.viewportY,
+                          m_view.viewportWidth, m_view.viewportHeight);
+    }
+
+    m_view.build(ctx.scene, *ctx.visibility);
+    m_backend->render(m_view, ctx.resources);
 }
 
 void RenderSystem::setBackend(std::unique_ptr<RenderBackend> backend) {
-    if (backend) {
-        LOG_INFO("Backend set to '%s'", backend->apiName());
-    } else {
-        LOG_INFO("Backend cleared");
-    }
-    m_backend = std::move(backend);
-}
-
-void RenderSystem::resize(uint32_t width, uint32_t height) {
-    m_width = width;
-    m_height = height;
-
-    if (!m_backend) return;
-
-    m_backend->resize(width, height);
-    m_graph.onResize(*m_backend, width, height);
-}
-
-void RenderSystem::update(FrameContext& ctx) {
-    // The whole render: extract a RenderView from the live world, then draw it.
-    // Kept as two methods so a render thread could be reintroduced later by
-    // splitting them across a sync point (build on main, execute on a worker).
-    buildView(ctx);
-    executeFrame(ctx);
-}
-
-void RenderSystem::buildView(FrameContext& ctx) {
-    PROFILE_SCOPE("RenderSystem/BuildView");
-
-    if (!m_backend) {
-        LOG_WARNING("No backend set, skipping view build");
+    if (!backend) {
+        LOG_WARNING("setBackend called with null backend; ignoring");
         return;
     }
+    // Queue it; the swap happens at the top of the next update(), where we have
+    // the window to bring it up against. Lets startup and a runtime hot-swap
+    // share one code path.
+    m_pending = std::move(backend);
+}
 
-    // m_width / m_height are the LAST sizes the backend was resized to. We do
-    // not resize here - executeFrame() picks up the desired size from ctx and
-    // does the backend + graph resize, keeping all backend state changes in
-    // one place.
+void RenderSystem::installPending(FrameContext& ctx) {
+    if (!m_pending) return;
 
-    RenderView& view = m_view;
-
-    // Environment lives as a singleton component on a scene entity (editable
-    // in the Inspector). Pull it each frame; mirror into m_environment so
-    // getEnvironment() returns a stable reference between frames.
-    m_environment      = sceneEnvironment(ctx.scene);
-    view.environment   = m_environment;
-    view.modeConfig    = resolveModeConfig(m_environment.renderMode);
-    view.deltaTime     = ctx.deltaTime;
-
-    {
-        PROFILE_SCOPE("Render/BuildView");
-        view.build(ctx.scene, ctx.resources, *ctx.visibility, ctx.viewportWidth, ctx.viewportHeight, m_shadowCache);
+    // Bring the incoming backend up first. Only on success do we replace the
+    // current one (whose destructor then frees its GPU state); a backend that
+    // fails to init is dropped and the current one keeps rendering.
+    if (m_pending->init(ctx.window)) {
+        m_backend = std::move(m_pending);
+        // force a resize onto the new backend
+        m_view.viewportWidth  = 0;
+        m_view.viewportHeight = 0;
+        LOG_INFO("Render backend active: %s", m_backend->info().api.c_str());
+    } else {
+        LOG_ERROR("Incoming render backend failed to init; keeping the current one");
+        m_pending.reset();
     }
-
-    view.viewportX    = ctx.viewportX;
-    view.viewportY    = ctx.viewportY;
-    view.windowWidth  = static_cast<uint32_t>(ctx.window.getWidth());
-    view.windowHeight = static_cast<uint32_t>(ctx.window.getHeight());
-
-    if (view.modeConfig.disableSSAO) {
-        view.environment.ao.enabled = false;
-    }
-}
-
-void RenderSystem::executeFrame(FrameContext& ctx) {
-    PROFILE_SCOPE("RenderSystem/ExecuteFrame");
-
-    if (!m_backend) return;
-
-    // Backend-side resize is allowed here because we're on the thread
-    // holding the backend's context. m_width/m_height track the last-
-    // applied backend size; ctx carries this frame's request.
-    if (ctx.viewportWidth != m_width || ctx.viewportHeight != m_height) {
-        m_width  = ctx.viewportWidth;
-        m_height = ctx.viewportHeight;
-        m_backend->resize(m_width, m_height);
-        m_graph.onResize(*m_backend, m_width, m_height);
-    }
-
-    // Drain any backend jobs queued since last frame (material previews from
-    // editor panels, future screenshot capture, etc.). They run here, before
-    // the scene render, so any textures they touch contain fresh content by the
-    // time the editor's ImGui samples them. Swap into scratch first so a job
-    // that re-queues lands in the now-empty queue for next frame, not the batch
-    // being iterated.
-    {
-        PROFILE_SCOPE("Render/BackendJobs");
-        thread_local std::vector<std::function<void()>> scratch;
-        scratch.clear();
-        scratch.swap(m_pendingBackendJobs);
-        for (auto& job : scratch) job();
-    }
-
-    RenderView& view = m_view;
-
-    {
-        PROFILE_SCOPE("Render/SyncResources");
-        m_backend->syncResources(view, ctx.resources);
-    }
-
-    {
-        PROFILE_SCOPE("Render/ExecuteGraph");
-        m_graph.execute(*m_backend, view, ctx.resources);
-    }
-}
-
-void RenderSystem::addPass(std::unique_ptr<RenderPass> pass) {
-    LOG_TRACE("AddPass '%s' (now %zu)",
-        pass ? pass->getName().c_str() : "<null>", m_graph.passCount() + 1);
-    m_graph.addPass(std::move(pass));
-}
-
-void RenderSystem::clearPasses() {
-    m_graph.clear();
-}
-
-void RenderSystem::invalidateTemporalHistory() {
-    m_graph.invalidateTemporalHistory();
-}
-
-size_t RenderSystem::passCount() const {
-    return m_graph.passCount();
-}
-
-std::string_view RenderSystem::passName(size_t index) const {
-    return m_graph.getPass(index).getName();
-}
-
-bool RenderSystem::isPassEnabled(size_t index) const {
-    return m_graph.getPass(index).isEnabled();
-}
-
-void RenderSystem::setPassEnabled(size_t index, bool enabled) {
-    m_graph.getPass(index).setEnabled(enabled);
-}
-
-void RenderSystem::queueBackendJob(std::function<void()> job) {
-    if (!job) return;
-    m_pendingBackendJobs.push_back(std::move(job));
-}
-
-void RenderSystem::requestIBLRebake() {
-    // Defer via a backend job so the invalidation runs at the top of the next
-    // executeFrame, before the IBL bake pass reads it.
-    queueBackendJob([this]() { getBackend().requestIBLRebake(); });
 }
 
 } // namespace Engine
