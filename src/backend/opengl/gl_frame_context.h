@@ -11,6 +11,7 @@ class GLView;
 class GLTarget;
 class GLShadowAtlas;
 class GLShadowData;
+class GLIBL;
 
 /**
  * @brief Everything a GLPass needs for one frame.
@@ -27,6 +28,7 @@ struct GLFrameContext {
     GLTarget&         sceneHDR;       ///< HDR target the forward pass draws into.
     GLShadowAtlas&    shadowAtlas;    ///< Depth atlas: written by shadow pass, sampled by forward.
     const GLShadowData& shadowData;   ///< This frame's shadow plan (matrices + slots).
+    const GLIBL&      ibl;            ///< Baked IBL product set: sampled by forward (ambient) + skybox.
 
     /// Set by the depth prepass when it lays down opaque depth. The forward pass
     /// then early-Zs (LEQUAL, no depth writes/clear) instead of clearing depth.

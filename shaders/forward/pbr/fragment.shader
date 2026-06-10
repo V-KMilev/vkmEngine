@@ -200,6 +200,16 @@ layout(binding = 8)  uniform sampler2D u_metallicTexture;
 layout(binding = 9)  uniform sampler2D u_roughnessTexture;
 layout(binding = 10) uniform sampler2D u_aoMetallicRoughnessTexture;
 
+// Image-based lighting (split-sum). Bound by the forward pass when the backend
+// has a baked environment; u_hasIBL gates the sampling so an unbaked frame
+// falls back to flat ambient. Slots match GLBindings::IBLTextureSlots (C++).
+layout(binding = 14) uniform samplerCube u_irradiance;  // diffuse irradiance
+layout(binding = 15) uniform samplerCube u_prefilter;   // roughness-prefiltered specular
+layout(binding = 16) uniform sampler2D   u_brdfLUT;      // split-sum BRDF/DFG LUT
+uniform int u_hasIBL;
+// Highest prefilter mip index; matches GLIBL::PREFILTER_MIPS - 1 (C++).
+const float MAX_REFLECTION_LOD = 6.0;
+
 const float PI = 3.14159265359;
 
 bool hasTex(int flag) {
@@ -865,10 +875,32 @@ void main() {
         Lo += evaluateLight(N, V, L, T, B, s, f0, radiance);
     }
 
-    // Flat ambient until IBL returns. Diffuse-only, so the AO map applies
-    // directly.
-    vec3 ambient = vec3(0.03) * s.albedo * s.ao;
-    vec3 color   = ambient + Lo + s.emission;
+    // Indirect light. Split-sum IBL when a baked environment is present:
+    // diffuse from the irradiance cube, specular from the roughness-prefiltered
+    // cube weighted by the BRDF/DFG LUT. Falls back to flat ambient otherwise.
+    // The AO map modulates the indirect term either way.
+    vec3 ambient;
+    if (u_hasIBL == 1) {
+        float NdotV = max(dot(N, V), 1e-4);
+        vec3  R     = reflect(-V, N);
+
+        // Roughness-aware Fresnel: keeps grazing reflections from blowing out
+        // on rough surfaces.
+        vec3 F  = f0 + (max(vec3(1.0 - s.roughness), f0) - f0) * pow(1.0 - NdotV, 5.0);
+        vec3 kD = (1.0 - F) * (1.0 - s.metallic);
+
+        vec3 diffuseIBL  = texture(u_irradiance, N).rgb * s.albedo * kD;
+
+        vec3 prefiltered = textureLod(u_prefilter, R, s.roughness * MAX_REFLECTION_LOD).rgb;
+        vec2 dfg         = texture(u_brdfLUT, vec2(NdotV, s.roughness)).rg;
+        vec3 specularIBL = prefiltered * (F * dfg.x + dfg.y);
+
+        ambient = (diffuseIBL + specularIBL) * s.ao;
+    } else {
+        // Flat ambient fallback (no baked environment). Diffuse-only.
+        ambient = vec3(0.03) * s.albedo * s.ao;
+    }
+    vec3 color = ambient + Lo + s.emission;
 
     // Write linear HDR - the composite pass tonemaps + gamma-corrects.
     // Transparent materials carry their opacity; everything else writes 1
