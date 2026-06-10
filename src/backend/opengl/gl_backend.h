@@ -19,6 +19,8 @@
 namespace Engine {
 
 class GLPass;
+class GLProbe;
+class GLProbeBaker;
 
 /**
  * @brief The OpenGL implementation of RenderBackend.
@@ -59,6 +61,9 @@ class GLBackend : public RenderBackend {
 
         GLIBL         m_ibl;
         GLBloom       m_bloom;
+
+        std::unique_ptr<GLProbeBaker>         m_probeBaker;  ///< Created in init(); bakes probes at frame end.
+        std::vector<std::unique_ptr<GLProbe>> m_probes;      ///< GPU probe per scene probe (index-matched).
 
         std::vector<std::unique_ptr<GLPass>> m_passes;
 };

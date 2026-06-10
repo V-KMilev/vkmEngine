@@ -45,6 +45,13 @@ namespace GLBindings {
         constexpr uint32_t SSAO       = 21;  ///< GTAO occlusion factor, sampled by the forward pass.
     }
 
+    // Local reflection-probe products, above the post slots. Bound by the
+    // forward pass when a probe covers the frame; blended over the global IBL.
+    namespace ProbeTextureSlots {
+        constexpr uint32_t Irradiance = 22;  ///< Probe diffuse irradiance (samplerCube).
+        constexpr uint32_t Prefilter  = 23;  ///< Probe prefiltered specular (samplerCube, roughness mips).
+    }
+
     // Texture unit slots for material maps - match the sampler bindings in the
     // fragment shader. A material binds only the maps it actually has. The
     // slot number doubles as the map's bit position in MaterialUBO.textureFlags.

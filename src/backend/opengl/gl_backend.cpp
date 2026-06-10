@@ -3,13 +3,17 @@
 #include "gl_backend.h"
 
 #include <string>
+#include <limits>
 
 #include <GL/glew.h>
+#include <glm/glm.hpp>
 
 #include "logger.h"
 
 #include "gl_frame_context.h"
 #include "gl_pass.h"
+#include "data/gl_probe.h"
+#include "data/gl_probe_baker.h"
 #include "pass/gl_shadow_pass.h"
 #include "pass/gl_depth_prepass.h"
 #include "pass/gl_gtao_pass.h"
@@ -72,6 +76,9 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back(std::make_unique<GLBloomPass>());
     m_passes.push_back(std::make_unique<GLCompositePass>());
 
+    // The probe baker compiles its own shaders, so build it here (context live).
+    m_probeBaker = std::make_unique<GLProbeBaker>();
+
     const GLubyte* version = glGetString(GL_VERSION);
     const GLubyte* device  = glGetString(GL_RENDERER);
     m_info.api    = version ? "OpenGL " + std::string(reinterpret_cast<const char*>(version)) : "OpenGL";
@@ -110,8 +117,36 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // atlas, the forward pass renders the lit scene into m_sceneHDR sampling it,
     // and the composite pass tonemaps that to the backbuffer.
     GLFrameContext ctx{view, m_view, m_context, m_sceneHDR, m_sceneColor, m_shadowAtlas, m_shadowData, m_ibl, m_bloom, m_ao};
+
+    // Pick the nearest already-baked probe for the frame; the forward pass
+    // blends it over the global IBL inside its influence box.
+    float bestDist = std::numeric_limits<float>::max();
+    for (size_t i = 0; i < m_probes.size() && i < view.probes.size(); ++i) {
+        if (!m_probes[i] || !m_probes[i]->isReady()) continue;
+        const float d = glm::distance(view.camera.position, view.probes[i].position);
+        if (d < bestDist) {
+            bestDist           = d;
+            ctx.probe          = m_probes[i].get();
+            ctx.probeCenter    = view.probes[i].position;
+            ctx.probeExtents   = view.probes[i].halfExtents;
+            ctx.probeFalloff   = view.probes[i].falloff;
+            ctx.probeIntensity = view.probes[i].intensity;
+        }
+    }
+
     for (const auto& pass : m_passes) {
         pass->execute(ctx);
+    }
+
+    // Frame end: GPU probes mirror the snapshot; bake any not yet baked. The
+    // baker rebinds the camera / light UBOs, harmless here - the next frame
+    // re-uploads its own, and the probe is ready for that frame.
+    m_probes.resize(view.probes.size());
+    for (size_t i = 0; i < view.probes.size(); ++i) {
+        if (!m_probes[i]) m_probes[i] = std::make_unique<GLProbe>();
+        if (m_probeBaker && !m_probes[i]->isReady()) {
+            m_probeBaker->bake(m_context, *m_probes[i], view.probes[i].position, view, m_view, m_ibl);
+        }
     }
 }
 
