@@ -36,6 +36,10 @@ class GLTarget {
         void bind(const Core::Context& gl) const;
         void bindColor(uint32_t slot) const;
 
+        /// Copy @p src's colour into this target (both are viewport-sized). Used
+        /// to snapshot the scene so transmissive surfaces can refract it.
+        void blitColorFrom(const GLTarget& src) const;
+
     private:
         uint32_t m_width  = 0;
         uint32_t m_height = 0;

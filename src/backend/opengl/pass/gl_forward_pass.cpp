@@ -78,6 +78,11 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     }
     m_shader->setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
 
+    // Refraction is sampled only by the transparent bucket; default it off here
+    // and switch it on after the scene-colour copy below.
+    m_shader->setUniform1i("u_hasSceneColor", 0);
+    m_shader->setUniform2f("u_screenSize", static_cast<float>(view.viewportWidth), static_cast<float>(view.viewportHeight));
+
     // Partition by material type. Opaque / AlphaMask / Unlit keep the view's
     // order (sorted upstream by material+mesh); Transparent is pulled aside
     // and sorted back-to-front so alpha blending composes correctly.
@@ -102,6 +107,13 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         m_transparentSorted.clear();
         m_transparentSorted.reserve(m_transparent.size());
         for (const auto& entry : m_transparent) m_transparentSorted.push_back(entry.second);
+
+        // Copy the opaque + sky scene so transmissive surfaces can refract what
+        // is behind them, then resume rendering into the HDR target.
+        ctx.sceneColor.blitColorFrom(ctx.sceneHDR);
+        ctx.sceneHDR.bind(ctx.gl);
+        ctx.sceneColor.bindColor(GLBindings::PostTextureSlots::SceneColor);
+        m_shader->setUniform1i("u_hasSceneColor", 1);
 
         // Blended, depth-tested against the opaque scene but not written, so
         // transparent surfaces never occlude each other in the depth buffer.

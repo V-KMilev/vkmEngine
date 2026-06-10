@@ -210,6 +210,12 @@ uniform int u_hasIBL;
 // Highest prefilter mip index; matches GLIBL::PREFILTER_MIPS - 1 (C++).
 const float MAX_REFLECTION_LOD = 6.0;
 
+// Scene-color copy (opaque + sky) for screen-space transmission refraction.
+// The forward pass binds it for the transparent bucket; u_hasSceneColor gates it.
+layout(binding = 18) uniform sampler2D u_sceneColor;
+uniform int  u_hasSceneColor;
+uniform vec2 u_screenSize;
+
 const float PI = 3.14159265359;
 
 bool hasTex(int flag) {
@@ -901,6 +907,32 @@ void main() {
         ambient = vec3(0.03) * s.albedo * s.ao;
     }
     vec3 color = ambient + Lo + s.emission;
+
+    // Screen-space transmission refraction: sample the copied scene behind the
+    // surface, offset along the refracted view ray (IOR bend), tinted by the
+    // glass colour + Beer-Lambert volume absorption. Makes transmissive glass
+    // show and bend the background instead of rendering opaque. (Specular in
+    // `color` is attenuated by the blend - a simplification until a Fresnel split.)
+    if (u_hasSceneColor == 1 && u_material.transmission > 0.0) {
+        vec3 rdir = refract(-V, N, 1.0 / max(u_material.ior, 1.0));
+        if (dot(rdir, rdir) > 0.0) {
+            float thickness = (u_material.thicknessFactor > 0.0) ? u_material.thicknessFactor : 0.5;
+            vec4 cs0 = u_camera.viewProjection * vec4(vWorldPos, 1.0);
+            vec4 cs1 = u_camera.viewProjection * vec4(vWorldPos + rdir * thickness, 1.0);
+            vec2 uv0 = cs0.xy / max(cs0.w, 1e-4) * 0.5 + 0.5;
+            vec2 uv1 = cs1.xy / max(cs1.w, 1e-4) * 0.5 + 0.5;
+            vec2 ruv = clamp(gl_FragCoord.xy / u_screenSize + (uv1 - uv0), vec2(0.0), vec2(1.0));
+
+            vec3 transmitted = texture(u_sceneColor, ruv).rgb * s.albedo;
+            // Beer-Lambert absorption through a declared volume (tinted glass).
+            if (u_material.thicknessFactor > 0.0 && u_material.attenuationColor.a > 0.0) {
+                float dist = u_material.thicknessFactor / max(abs(dot(N, rdir)), 0.1);
+                transmitted *= pow(max(u_material.attenuationColor.rgb, vec3(1e-4)),
+                                   vec3(dist / u_material.attenuationColor.a));
+            }
+            color = mix(color, transmitted, u_material.transmission * (1.0 - s.metallic));
+        }
+    }
 
     // Write linear HDR - the composite pass tonemaps + gamma-corrects.
     // Transparent materials carry their opacity; everything else writes 1

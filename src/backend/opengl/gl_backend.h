@@ -47,6 +47,7 @@ class GLBackend : public RenderBackend {
         Core::Context m_context;
         GLView        m_view;
         GLTarget      m_sceneHDR;
+        GLTarget      m_sceneColor;
 
         GLCamera      m_camera;
         GLLights      m_lights;
