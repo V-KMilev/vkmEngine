@@ -31,16 +31,7 @@ inline bool isVisible(
     const glm::vec3& boundsMax,
     const VisibilityContext& context
 ) {
-    const glm::vec3 center     = (boundsMin + boundsMax) * 0.5f;
-    const glm::vec3 halfExtent = (boundsMax - boundsMin) * 0.5f;
-
-    const auto& f = context.frustum;
-    for (int i = 0; i < 6; ++i) {
-        const float dist   = glm::dot(f.normals[i], center) + f.d[i];
-        const float radius = glm::dot(f.absNormals[i], halfExtent);
-        if (dist + radius < 0.0f) return false;
-    }
-    return true;
+    return Math::frustumIntersectsAABB(context.frustum, boundsMin, boundsMax);
 }
 
 } // namespace FrustumCuller

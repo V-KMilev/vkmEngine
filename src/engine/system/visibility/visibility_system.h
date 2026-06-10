@@ -40,6 +40,7 @@ class VisibilitySystem : public System {
 
         /// Persistent buffers for multithreaded path - reuse capacity across frames.
         std::vector<uint8_t>   m_visibleFlags;
+        std::vector<uint8_t>   m_casterFlags;
         std::vector<glm::mat4> m_modelMatrices;
         std::vector<glm::vec3> m_worldMins;
         std::vector<glm::vec3> m_worldMaxs;

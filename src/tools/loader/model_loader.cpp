@@ -436,10 +436,6 @@ MaterialHandle buildMaterial(
         mt->Get(AI_MATKEY_EMISSIVE_INTENSITY, emInt);
         out.emissiveStrength = emInt;
 
-        int twoSided = 0;
-        if (mt->Get(AI_MATKEY_TWOSIDED, twoSided) == AI_SUCCESS)
-            out.doubleSided = (twoSided != 0);
-
         std::unordered_map<std::string, TextureHandle> cache;
         auto pick = [&](std::initializer_list<aiTextureType> types, bool srgb) {
             for (aiTextureType t : types) {

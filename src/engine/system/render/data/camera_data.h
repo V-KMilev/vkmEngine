@@ -10,9 +10,9 @@ namespace Engine {
  * Filled once from the active camera so the backend never searches the scene.
  */
 struct CameraData {
-    glm::mat4 view;
-    glm::mat4 projection;
-    glm::vec3 position;
+    glm::mat4 view;           ///< The view matrix for the camera.
+    glm::mat4 projection;     ///< The projection matrix for the camera.
+    glm::vec3 position;       ///< The position of the camera in world space.
 };
 
 } // namespace Engine

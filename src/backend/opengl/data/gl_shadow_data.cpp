@@ -12,7 +12,7 @@
 #include "convention/gl_bindings.h"
 #include "data/gl_shadow_atlas.h"
 #include "data/gl_ubo_util.h"
-#include "ecs/component/light.h"  // LightType
+#include "ecs/component/light.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
@@ -58,8 +58,8 @@ void GLShadowData::build(const RenderView& view) {
     const glm::vec3 camFwd = glm::normalize(farCenter - nearCenter);
     float nearDepth = glm::dot(nearCenter - camPos, camFwd);
     float farDepth  = glm::dot(farCenter  - camPos, camFwd);
-    if (nearDepth < 0.01f)      nearDepth = 0.01f;
-    if (farDepth  <= nearDepth) farDepth  = nearDepth + 1.0f;
+    if (nearDepth < 0.01f) nearDepth = 0.01f;
+    if (farDepth  <= nearDepth) farDepth = nearDepth + 1.0f;
 
     m_data.camForward = glm::vec4(camFwd, 0.0f);
 
@@ -82,18 +82,24 @@ void GLShadowData::build(const RenderView& view) {
             m_data.csmBase  = static_cast<int>(base);
             m_data.csmCount = static_cast<int>(N);
 
-            // Practical split scheme (blend of logarithmic + uniform), as
-            // fractions of the near->far frustum edge.
+            // Cap this sun's cascades to its shadowDistance so they pack tightly
+            // instead of spreading over the camera's full far plane. Geometry
+            // past sunFar is unshadowed.
+            const float sunFar = std::max(nearDepth + 1.0f, std::min(farDepth, light.shadowDistance));
+
+            // Practical split scheme (blend of logarithmic + uniform), expressed
+            // as fractions of the full near->far edge so they index the frustum
+            // corners directly. The last split caps at sunFar.
             const float lambda = 0.7f;
-            float fr[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+            float fr[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
             for (uint32_t c = 1; c < N; ++c) {
                 const float si   = static_cast<float>(c) / static_cast<float>(N);
-                const float logS = nearDepth * std::pow(farDepth / nearDepth, si);
-                const float uniS = nearDepth + (farDepth - nearDepth) * si;
+                const float logS = nearDepth * std::pow(sunFar / nearDepth, si);
+                const float uniS = nearDepth + (sunFar - nearDepth) * si;
                 const float d    = lambda * logS + (1.0f - lambda) * uniS;
                 fr[c] = (d - nearDepth) / (farDepth - nearDepth);
             }
-            fr[N] = 1.0f;
+            fr[N] = (sunFar - nearDepth) / (farDepth - nearDepth);
 
             const glm::vec3 dir = glm::normalize(light.direction);
             const glm::vec3 up  = stableUp(dir);
@@ -121,11 +127,15 @@ void GLShadowData::build(const RenderView& view) {
                                                      0.0f, 2.0f * radius + zExtend);
                 const glm::mat4 lightVP = lProj * lView;
 
+                // World size of one shadow texel in this cascade - drives the
+                // shader's normal-offset bias so it scales with cascade density.
+                const float worldTexel = (2.0f * radius) / static_cast<float>(SHADOW_ATLAS_TILE_RES);
+
                 const uint32_t slot = base + c;
                 Shadow2DGPU& e = m_data.s2d[slot];
                 e.lightVP = lightVP;
                 e.atlas   = glm::vec4(GLShadowAtlas::tileUVOffset(slot), GLShadowAtlas::tileUVScale());
-                e.params  = glm::vec4(light.shadowBias, 0.0f, 0.0f, 0.0f);
+                e.params  = glm::vec4(light.shadowBias, worldTexel, 0.0f, 0.0f);
                 m_jobs2D.push_back({ lightVP, slot });
 
                 m_data.cascadeSplits[static_cast<int>(c)] =
@@ -150,10 +160,14 @@ void GLShadowData::build(const RenderView& view) {
             const glm::mat4 lProj   = glm::perspective(fov, 1.0f, 0.1f, range);
             const glm::mat4 lightVP = lProj * lView;
 
+            // Approximate world texel size at the cone's far end, for normal-offset bias.
+            const float worldTexel = (2.0f * range * std::tan(fov * 0.5f)) /
+                                     static_cast<float>(SHADOW_ATLAS_TILE_RES);
+
             Shadow2DGPU& e = m_data.s2d[slot];
             e.lightVP = lightVP;
             e.atlas   = glm::vec4(GLShadowAtlas::tileUVOffset(slot), GLShadowAtlas::tileUVScale());
-            e.params  = glm::vec4(light.shadowBias, 0.0f, 0.0f, 0.0f);
+            e.params  = glm::vec4(light.shadowBias, worldTexel, 0.0f, 0.0f);
             m_jobs2D.push_back({ lightVP, slot });
 
             m_lightSlot[i] = static_cast<int>(slot);

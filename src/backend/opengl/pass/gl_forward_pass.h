@@ -21,9 +21,9 @@ namespace Engine {
  *
  * Splits the frame's drawables by material type: Opaque / AlphaMask / Unlit
  * draw front-to-back-agnostic with depth writes, then Transparent draws
- * back-to-front with alpha blending and depth writes off. Per-material cull
- * state honours doubleSided. The camera and light UBOs are uploaded by the
- * backend before this pass runs.
+ * back-to-front with alpha blending and depth writes off. Back faces are
+ * culled (all materials are single-sided). The camera and light UBOs are
+ * uploaded by the backend before this pass runs.
  */
 class GLForwardPass : public GLPass {
     public:

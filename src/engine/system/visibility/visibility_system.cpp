@@ -23,7 +23,6 @@
 #include "system/visibility/culling/frustum_culler.h"
 #include "system/visibility/culling/screen_size_culling.h"
 #include "system/visibility/culling/distance_culling.h"
-#include "system/visibility/culling/occlusion_culler.h"
 
 namespace Engine {
 
@@ -104,15 +103,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
         ? (m_settings.minPixels * m_settings.minPixels) / (denom * denom)
         : 0.0f;
 
-    // Snapshot the Hi-Z occlusion pyramid ONCE per frame (it used to be
-    // copied per-entity, under a mutex, inside OcclusionCuller::isVisible).
-    // The local outlives the parallel cull below and every worker reads it
-    // lock-free via context.occlusion. Cheap when occlusion is inactive: the
-    // oracle hasn't published, so this is an empty, not-ready Frame.
-    const OcclusionOracle::Frame occlusionFrame = OcclusionOracle::get().snapshot();
-
     VisibilityContext context{
-        .frustum        = extractFrustum(viewProjection),
+        .frustum        = Math::extractFrustum(viewProjection),
         .cameraPosition = cameraPosition,
         .view           = view,
         .projection     = projection,
@@ -123,7 +115,6 @@ void VisibilitySystem::update(FrameContext& ctx) {
         .maxDistance    = m_settings.maxDistance,
         .maxDistanceSquared = m_settings.maxDistance * m_settings.maxDistance,
         .screenSizeThresholdSq = screenThresholdSq,
-        .occlusion      = &occlusionFrame
     };
 
     // Get direct access to sparse sets for index-based parallel iteration
@@ -143,61 +134,74 @@ void VisibilitySystem::update(FrameContext& ctx) {
     // Persistent flat arrays - resize reuses capacity (no alloc after first frame).
     // Each thread writes to disjoint indices, so zero contention / zero atomics.
     m_visibleFlags.resize(meshCount);
+    m_casterFlags.resize(meshCount);
     m_modelMatrices.resize(meshCount);
     m_worldMins.resize(meshCount);
     m_worldMaxs.resize(meshCount);
 
     std::memset(m_visibleFlags.data(), 0, meshCount);
+    std::memset(m_casterFlags.data(), 0, meshCount);
 
     {
         PROFILE_SCOPE("Visibility/Cull");
         parallelFor(meshCount, [&](size_t i) {
-        const auto idx = static_cast<uint32_t>(i);
-        const uint32_t entityIdx = meshStorage->keyAt(idx);
-        const Mesh& mesh = meshStorage->dataAt(idx);
+            const auto idx = static_cast<uint32_t>(i);
+            const uint32_t entityIdx = meshStorage->keyAt(idx);
+            const Mesh& mesh = meshStorage->dataAt(idx);
 
-        if (!mesh.visible) return;
-        if (!mesh.mesh) return;  // unresolved Mesh component (empty asset slot)
-        if (!transformStorage->contains(entityIdx)) return;
+            if (!mesh.visible) return;
+            if (!mesh.mesh) return;
+            if (!transformStorage->contains(entityIdx)) return;
 
-        const auto& meshAsset = resources.get(mesh.mesh);
-        if (!hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) return;
+            const auto& meshAsset = resources.get(mesh.mesh);
+            if (!hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) return;
 
-        const Transform& transform = transformStorage->get(entityIdx);
+            const Transform& transform = transformStorage->get(entityIdx);
 
-        const glm::mat4 modelMatrix = (worldTransformStorage && worldTransformStorage->contains(entityIdx))
-            ? worldTransformStorage->get(entityIdx).model
-            : Transform::computeModelMatrix(transform);
+            const glm::mat4 modelMatrix = (worldTransformStorage && worldTransformStorage->contains(entityIdx))
+                ? worldTransformStorage->get(entityIdx).model
+                : Transform::computeModelMatrix(transform);
 
-        glm::vec3 worldMin, worldMax;
-        localToWorldAABB(
-            modelMatrix,
-            meshAsset.boundsMin,
-            meshAsset.boundsMax,
-            worldMin,
-            worldMax
-        );
+            glm::vec3 worldMin, worldMax;
+            localToWorldAABB(
+                modelMatrix,
+                meshAsset.boundsMin,
+                meshAsset.boundsMax,
+                worldMin,
+                worldMax
+            );
 
-        if (!FrustumCuller::isVisible(worldMin, worldMax, context)) return;
-        if (!DistanceCuller::isVisible(worldMin, worldMax, context)) return;
-        if (!ScreenSizeCuller::isVisible(worldMin, worldMax, context)) return;
-        if (!OcclusionCuller::isVisible(worldMin, worldMax, context)) return;
+            // Stored for every valid mesh (not just camera-visible) so the caster
+            // gather below can reach off-screen occluders. castShadows flags it.
+            m_modelMatrices[i] = modelMatrix;
+            m_worldMins[i]     = worldMin;
+            m_worldMaxs[i]     = worldMax;
+            m_casterFlags[i]   = mesh.castShadows ? 1 : 0;
 
-        m_modelMatrices[i] = modelMatrix;
-        m_worldMins[i]     = worldMin;
-        m_worldMaxs[i]     = worldMax;
-        m_visibleFlags[i]  = 1;
+            // The camera-visibility culls only set the visible flag.
+            if (!FrustumCuller::isVisible(worldMin, worldMax, context)) return;
+            if (!DistanceCuller::isVisible(worldMin, worldMax, context)) return;
+            if (!ScreenSizeCuller::isVisible(worldMin, worldMax, context)) return;
+
+            m_visibleFlags[i]  = 1;
         });
     }
 
     // Serial gather - sequential reads, reuses persistent m_result.entries capacity
     PROFILE_SCOPE("Visibility/Gather");
     m_result.entries.clear();
+    m_result.shadowCasters.clear();
     for (uint32_t i = 0; i < meshCount; ++i) {
-        if (!m_visibleFlags[i]) continue;
+        const bool visible = m_visibleFlags[i] != 0;
+        const bool caster  = m_casterFlags[i]  != 0;
+        if (!visible && !caster) continue;
+
         const uint32_t entityIdx = meshStorage->keyAt(i);
         const EntityId eid{entityIdx, ctx.scene.generationOf(entityIdx)};
-        m_result.entries.push_back({eid, m_modelMatrices[i], m_worldMins[i], m_worldMaxs[i]});
+        const VisibleEntity entry{eid, m_modelMatrices[i], m_worldMins[i], m_worldMaxs[i]};
+
+        if (visible) m_result.entries.push_back(entry);
+        if (caster)  m_result.shadowCasters.push_back(entry);
     }
 
     ctx.visibility = &m_result;

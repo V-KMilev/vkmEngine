@@ -2,6 +2,8 @@
 
 #include <memory>
 
+#include <glm/glm.hpp>
+
 #include "gl_pass.h"
 
 namespace Core {
@@ -51,14 +53,17 @@ class GLShadowPass : public GLPass {
         void renderCube(GLFrameContext& ctx);
 
         /**
-         * @brief Draw every castShadows drawable with @p shader.
+         * @brief Draw the scene's shadow casters that fall inside @p lightVP.
          *
-         * Sets u_model per draw. The caller has already bound @p shader and set
-         * its view matrix, so this is shared verbatim by the 2D and cube paths.
+         * Frustum-culls RenderView::shadowCasters against @p lightVP (the
+         * caster set is scene-wide, so off-screen occluders still cast) and
+         * draws the survivors with @p shader, setting u_model per draw. The
+         * caller has already bound @p shader and set its view matrix.
          *
-         * @param shader The bound depth shader to issue the draws against.
+         * @param shader  The bound depth shader to issue the draws against.
+         * @param lightVP The light clip-space matrix to cull and draw against.
          */
-        void renderCasters(GLFrameContext& ctx, Core::Shader& shader);
+        void renderCasters(GLFrameContext& ctx, Core::Shader& shader, const glm::mat4& lightVP);
 
     private:
         std::unique_ptr<Core::Shader> m_depth2D;    ///< Projected depth (cascades + spots).
