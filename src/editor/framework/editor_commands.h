@@ -11,11 +11,9 @@
 #include "ecs/component/mesh.h"
 #include "ecs/component/light.h"
 #include "ecs/component/camera.h"
-#include "ecs/component/reflection_probe.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/collider.h"
 #include "ecs/component/hierarchy.h"
-#include "ecs/component/mesh_lod.h"
 #include "ecs/component/name.h"
 #include "ecs/component/rigidbody.h"
 
@@ -146,10 +144,8 @@ struct EntitySnapshot {
     std::optional<Mesh>            mesh;
     std::optional<Light>           light;
     std::optional<Camera>          camera;
-    std::optional<ReflectionProbe> reflectionProbe;
     std::optional<Animation>       animation;
     std::optional<Name>            name;
-    std::optional<MeshLOD>         meshLod;
 
     static EntitySnapshot capture(const Scene& scene, EntityId id);
     void apply(Scene& scene, EntityId id) const;
@@ -306,19 +302,14 @@ class RenameAssetCommand : public Command {
 // translation unit doesn't need the full bodies.
 extern template class AddComponentCommand<Mesh>;
 extern template class AddComponentCommand<Light>;
-extern template class AddComponentCommand<ReflectionProbe>;
 extern template class AddComponentCommand<Camera>;
 extern template class AddComponentCommand<Animation>;
 extern template class AddComponentCommand<Name>;
 
 extern template class RemoveComponentCommand<Mesh>;
 extern template class RemoveComponentCommand<Light>;
-extern template class RemoveComponentCommand<ReflectionProbe>;
 extern template class RemoveComponentCommand<Camera>;
 extern template class RemoveComponentCommand<Animation>;
-
-extern template class AddComponentCommand<MeshLOD>;
-extern template class RemoveComponentCommand<MeshLOD>;
 
 extern template class AddComponentCommand<Rigidbody>;
 extern template class RemoveComponentCommand<Rigidbody>;
@@ -330,7 +321,6 @@ extern template class ComponentEditCommand<Collider>;
 
 extern template class ComponentEditCommand<Light>;
 extern template class ComponentEditCommand<Camera>;
-extern template class ComponentEditCommand<ReflectionProbe>;
 extern template class ComponentEditCommand<Mesh>;
 extern template class ComponentEditCommand<Name>;
 extern template class ComponentEditCommand<Animation>;

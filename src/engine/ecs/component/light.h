@@ -21,7 +21,8 @@ enum class LightType {
     Disk        = 4     ///< Disk area light (areaRadius, faces -direction)
 };
 
-/// Names in LightType order - single source for serialization + editor combo.
+/// Names in LightType order - the single source for JSON (de)serialization
+/// and editor combos, so the two cannot drift.
 inline constexpr const char* const LIGHT_TYPE_NAMES[] = {
     "Directional", "Point", "Spot", "Rect", "Disk"
 };

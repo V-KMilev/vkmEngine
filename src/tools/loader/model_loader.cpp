@@ -371,10 +371,10 @@ MaterialHandle buildMaterial(
         if (mt->Get(AI_MATKEY_COLOR_EMISSIVE, em) == AI_SUCCESS)
             out.emission = toVec3(em);
 
+        // Opacity folds into albedo.a (the asset's single opacity channel).
         float opacity = 1.0f;
         if (mt->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS)
-            out.alpha = opacity;
-        out.alpha = glm::min(out.alpha, out.albedo.a);
+            out.albedo.a = glm::min(out.albedo.a, opacity);
 
         // Advanced KHR PBR factors. Each is AI_SUCCESS-guarded so a
         // model that does not specify one keeps the MaterialAsset
@@ -403,7 +403,7 @@ MaterialHandle buildMaterial(
         } else if (hasAlphaMode && std::strcmp(alphaMode.C_Str(), "BLEND") == 0) {
             out.type = MaterialType::Transparent;
         } else {
-            out.type = (out.alpha < 0.999f || out.transmission > 0.001f)
+            out.type = (out.albedo.a < 0.999f || out.transmission > 0.001f)
                          ? MaterialType::Transparent
                          : MaterialType::Opaque;
         }
@@ -430,11 +430,15 @@ MaterialHandle buildMaterial(
         aiColor3D atten;
         if (mt->Get(AI_MATKEY_VOLUME_ATTENUATION_COLOR, atten) == AI_SUCCESS)
             out.attenuationColor = toVec3(atten);
-        // KHR_materials_emissive_strength. Captured here, applied AFTER
-        // the emissive-texture fallback below (so a dropped factor does
-        // not zero out the strength too).
+        // KHR_materials_emissive_strength - the HDR multiplier rides its
+        // own asset field instead of being folded into the emission color.
         float emInt = 1.0f;
         mt->Get(AI_MATKEY_EMISSIVE_INTENSITY, emInt);
+        out.emissiveStrength = emInt;
+
+        int twoSided = 0;
+        if (mt->Get(AI_MATKEY_TWOSIDED, twoSided) == AI_SUCCESS)
+            out.doubleSided = (twoSided != 0);
 
         std::unordered_map<std::string, TextureHandle> cache;
         auto pick = [&](std::initializer_list<aiTextureType> types, bool srgb) {
@@ -466,7 +470,6 @@ MaterialHandle buildMaterial(
             out.emission.b < 1e-4f) {
             out.emission = glm::vec3(1.0f);
         }
-        out.emission *= emInt;
         out.clearcoatTexture    = pick({aiTextureType_CLEARCOAT},    false);
         out.transmissionTexture = pick({aiTextureType_TRANSMISSION}, false);
         out.heightTexture       = pick({aiTextureType_DISPLACEMENT}, false);

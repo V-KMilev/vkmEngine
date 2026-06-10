@@ -11,7 +11,6 @@
 
 #include "ecs/scene.h"
 #include "ecs/component/mesh.h"
-#include "ecs/component/mesh_lod.h"
 #include "resource/resource_manager.h"
 #include "resource/mesh_asset.h"
 #include "resource/material_asset.h"
@@ -56,12 +55,6 @@ std::size_t purgeUnusedAssets(Scene& scene, ResourceManager& resources) {
         if (m.mesh)     refMeshes.insert(m.mesh.id());
         if (m.material) refMaterials.insert(m.material.id());
     });
-    scene.forEach<MeshLOD>([&](EntityId, const MeshLOD& lod) {
-        for (int i = 0; i < lod.count && i < MeshLOD::MAX_LEVELS; ++i) {
-            if (lod.levels[i]) refMeshes.insert(lod.levels[i].id());
-        }
-    });
-
     // A texture is reachable only through a material that itself survives
     // (scene-referenced or pinned/hidden). Pull those materials' texture refs
     // into the keep set so we don't sweep a texture still in use.

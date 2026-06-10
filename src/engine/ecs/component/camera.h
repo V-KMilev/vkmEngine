@@ -15,7 +15,8 @@ enum class ProjectionType {
     Orthographic = 1    ///< Orthographic (parallel) projection
 };
 
-/// Names in ProjectionType order - single source for serialization + editor combo.
+/// Names in ProjectionType order - the single source for JSON
+/// (de)serialization and editor combos, so the two cannot drift.
 inline constexpr const char* const PROJECTION_TYPE_NAMES[] = {
     "Perspective", "Orthographic"
 };

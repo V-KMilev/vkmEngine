@@ -10,7 +10,7 @@ class ResourceManager;
 /**
  * @brief Free scene-owned assets no live entity reaches (mark-and-sweep).
  *
- * Walks the scene's asset references (every Mesh::mesh, MeshLOD level,
+ * Walks the scene's asset references (every Mesh::mesh,
  * Mesh::material, and each surviving material's texture handles) to build the
  * reachable set, then removes every mesh / material / texture asset that is
  * neither reachable nor `pinned` (engine-owned: shaders, builtins, editor

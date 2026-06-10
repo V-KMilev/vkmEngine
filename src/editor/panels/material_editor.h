@@ -54,17 +54,10 @@ class MaterialEditorPanel {
         /// "Load PBR Folder" modal entry point; returns true once a folder
         /// is picked, writing the absolute path to @p outFolder.
         bool pbrFolderBrowse(std::string& outFolder);
-        /**
-         * @brief The full PBR + texture editor body. Returns true if anything changed.
-         *
-         * @p globalOIT mirrors EnvironmentConfig::transparency.useOIT -
-         * drives the "Use OIT" checkbox's enabled state so the artist
-         * sees when the per-material flag has any effect.
-         */
+        /// The full PBR + texture editor body. Returns true if anything changed.
         bool drawMaterialBody(
             ResourceManager& resources,
-            class MaterialAsset& mat,
-            bool globalOIT
+            class MaterialAsset& mat
         );
 
         // Orbit/zoom state for the preview camera.

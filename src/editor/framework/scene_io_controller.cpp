@@ -136,11 +136,6 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
         m_cameraController.setCameraEntity(rebound);
     }
 
-    // TAA / other reprojection-based post effects must drop their
-    // history - sampling the old scene's history over the new view
-    // smears for several frames after the swap.
-    m_renderSystem.invalidateTemporalHistory();
-
     // Drop the occlusion pyramid too: it holds the previous scene's view /
     // viewProj, so the next frame would project the new scene's AABBs against
     // a stale screen mapping and wrongly cull visible geometry until the

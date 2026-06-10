@@ -3,9 +3,7 @@
 #include <glm/glm.hpp>
 
 #include "ecs/entity.h"
-#include "ecs/component/mesh_lod.h"  // MeshLOD::MAX_LEVELS for the decimate-grid cache
 
-#include "framework/asset_picker.h"  // ReflectionProbe HDR Browse picker
 #include "ui/editor_widgets.h"  // EulerCache
 
 namespace Engine {
@@ -41,11 +39,9 @@ class InspectorPanel {
         // when the user edits anything. Centralizing this avoids missing edits.
         void drawTransformSection(Scene& scene, EditorState& state, EntityId id);
         void drawMeshSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawMeshLODSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawLightSection(Scene& scene, EditorState& state, EntityId id);
         void drawRigidbodySection(Scene& scene, EditorState& state, EntityId id);
         void drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id);
         void drawCameraSection(Scene& scene, EditorState& state, EntityId id);
         void drawAnimationSection(Scene& scene, EditorState& state, EntityId id);
         void drawHierarchySection(Scene& scene, EditorState& state, EntityId id);
@@ -55,13 +51,6 @@ class InspectorPanel {
         // entity. See EulerCache for the gimbal-lock rationale.
         EulerCache<EntityId> m_eulerCache;
 
-        // Per-level grid resolution for the LOD section's "Decimate" button
-        // (index 0 unused - level 0 is the base mesh, never decimated).
-        int m_lodDecimateGrid[MeshLOD::MAX_LEVELS] = {16, 12, 8, 5};
-
-        // File picker for the Reflection Probe HDR path Browse button. One
-        // per panel so its on-open scan cache survives across frames.
-        AssetPicker m_probeHdrPicker;
 };
 
 } // namespace Engine

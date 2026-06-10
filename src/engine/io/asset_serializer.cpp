@@ -9,7 +9,6 @@
 #include "logger.h"
 
 #include "ecs/component/mesh.h"
-#include "ecs/component/mesh_lod.h"
 #include "ecs/scene.h"
 #include "resource/asset_database.h"
 #include "resource/asset_id.h"
@@ -122,13 +121,14 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     nlohmann::json src;
     src["kind"]  = "inline";
     src["type"]  = Reflect::enumName(m.type, MATERIAL_TYPE_NAMES);
+    src["doubleSided"]         = m.doubleSided;
     src["albedo"]              = vec4ToJson(m.albedo);
     src["emission"]            = vec3ToJson(m.emission);
+    src["emissiveStrength"]    = m.emissiveStrength;
     src["metallic"]            = m.metallic;
     src["roughness"]           = m.roughness;
     src["ior"]                 = m.ior;
     src["transmission"]        = m.transmission;
-    src["alpha"]               = m.alpha;
     src["ao"]                  = m.ao;
     src["clearcoat"]           = m.clearcoat;
     src["clearcoatRoughness"]  = m.clearcoatRoughness;
@@ -142,7 +142,6 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     src["attenuationDistance"] = m.attenuationDistance;
     src["attenuationColor"]    = vec3ToJson(m.attenuationColor);
     src["alphaCutoff"]         = m.alphaCutoff;
-    src["useOIT"]              = m.useOIT;
 
     nlohmann::json textures = nlohmann::json::object();
     for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
@@ -166,13 +165,16 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
     const std::string typeStr = src.value("type", std::string{"Opaque"});
     m.type = Reflect::enumFromName<MaterialType>(typeStr, MATERIAL_TYPE_NAMES);
 
+    m.doubleSided         = src.value("doubleSided",         m.doubleSided);
     m.albedo              = vec4FromJson(src.value("albedo",              nlohmann::json{}), m.albedo);
     m.emission            = vec3FromJson(src.value("emission",            nlohmann::json{}), m.emission);
+    m.emissiveStrength    = src.value("emissiveStrength",    m.emissiveStrength);
     m.metallic            = src.value("metallic",            m.metallic);
     m.roughness           = src.value("roughness",           m.roughness);
     m.ior                 = src.value("ior",                 m.ior);
     m.transmission        = src.value("transmission",        m.transmission);
-    m.alpha               = src.value("alpha",               m.alpha);
+    // Legacy "alpha" scalar folds into albedo.a (older saves carried both).
+    if (src.contains("alpha")) m.albedo.a = src.value("alpha", m.albedo.a);
     m.ao                  = src.value("ao",                  m.ao);
     m.clearcoat           = src.value("clearcoat",           m.clearcoat);
     m.clearcoatRoughness  = src.value("clearcoatRoughness",  m.clearcoatRoughness);
@@ -186,7 +188,6 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
     m.attenuationDistance = src.value("attenuationDistance", m.attenuationDistance);
     m.attenuationColor    = vec3FromJson(src.value("attenuationColor",    nlohmann::json{}), m.attenuationColor);
     m.alphaCutoff         = src.value("alphaCutoff",         m.alphaCutoff);
-    m.useOIT              = src.value("useOIT",              m.useOIT);
 
     if (src.contains("textures") && src["textures"].is_object()) {
         for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
@@ -272,22 +273,6 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
             // Pull every texture this material references into the texture
             // descriptor pool too.
             for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
-        }
-    });
-
-    // LOD level meshes (levels 1..count-1) are referenced only by MeshLOD, not
-    // by any Mesh component, so they would otherwise never be emitted. Walk
-    // them here. Level 0 is conventionally the entity's Mesh::mesh and is
-    // already in seenMeshes, so the dedup skips it. Decimated levels carry a
-    // "decimate" source (see decimateMeshTracked) and re-decimate on load; the
-    // Mesh-loop above always emits their base level first, so the base is
-    // present in the array before the factory needs it.
-    scene.forEach<MeshLOD>([&](EntityId, const MeshLOD& lod) {
-        for (int i = 0; i < lod.count && i < MeshLOD::MAX_LEVELS; ++i) {
-            if (lod.levels[i] && seenMeshes.insert(lod.levels[i].id()).second) {
-                const auto& asset = resources.get(lod.levels[i]);
-                if (!asset.hidden) emitDescriptor(meshes, asset);
-            }
         }
     });
 

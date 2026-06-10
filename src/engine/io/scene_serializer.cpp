@@ -22,7 +22,6 @@
 #include "io/component_serializer.h"
 #include "resource/resource_manager.h"
 #include "resource/shader_asset.h"
-#include "system/render/environment_config.h"   // EnvironmentConfig
 #include "system/hierarchy/hierarchy_operations.h"
 
 namespace Engine::SceneSerializer {
@@ -74,11 +73,8 @@ VKM_SERIALIZER_TRAITS  (Light,             "Light");
 VKM_SERIALIZER_TRAITS  (Rigidbody,         "Rigidbody");
 VKM_SERIALIZER_TRAITS  (Collider,          "Collider");
 VKM_SERIALIZER_TRAITS  (PhysicsWorld,      "PhysicsWorld");
-VKM_SERIALIZER_TRAITS  (ReflectionProbe,   "ReflectionProbe");
 VKM_SERIALIZER_TRAITS_R(Mesh,              "Mesh");
-VKM_SERIALIZER_TRAITS_R(MeshLOD,           "MeshLOD");
 VKM_SERIALIZER_TRAITS  (Animation,         "Animation");
-VKM_SERIALIZER_TRAITS  (EnvironmentConfig, "Environment");
 
 template<> struct SerializerTraits<Hierarchy> {
     static constexpr const char* key = "Hierarchy";
@@ -96,7 +92,7 @@ template<> struct SerializerTraits<Hierarchy> {
 /// here. The fold operators below propagate the change to save / load /
 /// known-key checks; no other edits required.
 using SerializedComponents = std::tuple<
-    Name, Transform, Camera, Light, Rigidbody, Collider, PhysicsWorld, ReflectionProbe, Mesh, MeshLOD, Animation, EnvironmentConfig, Hierarchy
+    Name, Transform, Camera, Light, Rigidbody, Collider, PhysicsWorld, Mesh, Animation, Hierarchy
 >;
 
 // Detect at compile time which traits expose a `load` static. Hierarchy

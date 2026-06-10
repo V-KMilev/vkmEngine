@@ -13,7 +13,6 @@
 #include "ecs/component/collider.h"
 #include "ecs/component/light.h"
 #include "ecs/component/mesh.h"
-#include "ecs/component/mesh_lod.h"
 #include "ecs/component/name.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/transform.h"
@@ -94,69 +93,15 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
         glm::vec3(1.0f)
     });
 
-    // LOD demo: a sphere with three procedural detail levels (32x16 / 16x8 /
-    // 8x4 segments). RenderView picks a level by projected screen size, so
-    // dollying away visibly drops its tessellation while the silhouette holds.
-    // levels[0] is the same handle as the Mesh, so shadows and the no-LOD path
-    // use the finest sphere.
+    // A sphere next to the cube so the default scene shows curvature under
+    // the PBR shading.
     {
-        const auto sphere0 = resources.add(Engine::generateSphere(32, 16), "sphere_lod0");
-        const auto sphere1 = resources.add(Engine::generateSphere(16, 8),  "sphere_lod1");
-        const auto sphere2 = resources.add(Engine::generateSphere(8, 4),   "sphere_lod2");
-
-        Engine::MeshLOD lod{};
-        lod.levels[0] = sphere0;
-        lod.levels[1] = sphere1;
-        lod.levels[2] = sphere2;
-        lod.switchHeights[1] = 220.0f;  // below ~220 px tall -> level 1
-        lod.switchHeights[2] = 70.0f;   // below ~70 px tall  -> level 2
-        lod.count = 3;
-
+        const auto sphereMesh = resources.add(Engine::generateSphere(32, 16), "sphere");
         auto sphere = scene.createEntity();
-        scene.add(sphere, Engine::Name{"LOD Sphere"});
-        scene.add(sphere, Engine::Mesh{sphere0, material});
-        scene.add(sphere, lod);
+        scene.add(sphere, Engine::Name{"Sphere"});
+        scene.add(sphere, Engine::Mesh{sphereMesh, material});
         scene.add(sphere, Engine::Transform{
             glm::vec3(3.0f, 0.0f, 0.0f),
-            glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
-            glm::vec3(1.0f)
-        });
-    }
-
-    // Decimation demo: a sphere whose coarse LOD levels come from vertex-
-    // clustering decimation (decimateMesh) instead of re-tessellation - the
-    // path arbitrary / loaded models take, since they can't be regenerated at
-    // lower detail. Cruder than the procedural sphere above, but that crudeness
-    // is invisible at the screen sizes where the coarse levels switch in.
-    {
-        Engine::MeshAsset base = Engine::generateSphere(48, 24);
-        // Capture the base's stamped GUID before decimating. decimateMeshTracked
-        // (NOT plain decimateMesh) records a {base, grid} recipe + AssetId on each
-        // coarse level - without it the level has no AssetId/source and the scene
-        // saver silently drops it, so the LOD object reloads with empty coarse
-        // levels (the bug this fixes). On load the "decimate" factory re-derives
-        // the level from the base, which is emitted first as the entity's Mesh.
-        const Engine::AssetId baseId = base.assetId;
-        // decimate reads the base by const ref; then base itself is moved in as
-        // the finest level (the resource manager takes resources by value).
-        const auto dec1 = resources.add(Engine::decimateMeshTracked(base, baseId, 12), "sphere_dec1");
-        const auto dec2 = resources.add(Engine::decimateMeshTracked(base, baseId, 6),  "sphere_dec2");
-        const auto dec0 = resources.add(std::move(base),                              "sphere_dec0");
-
-        Engine::MeshLOD lod{};
-        lod.levels[0] = dec0;
-        lod.levels[1] = dec1;
-        lod.levels[2] = dec2;
-        lod.switchHeights[1] = 220.0f;
-        lod.switchHeights[2] = 70.0f;
-        lod.count = 3;
-
-        auto sphere = scene.createEntity();
-        scene.add(sphere, Engine::Name{"Decimated LOD Sphere"});
-        scene.add(sphere, Engine::Mesh{dec0, material});
-        scene.add(sphere, lod);
-        scene.add(sphere, Engine::Transform{
-            glm::vec3(-3.0f, 0.0f, 0.0f),
             glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
             glm::vec3(1.0f)
         });

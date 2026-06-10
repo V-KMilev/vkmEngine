@@ -8,9 +8,7 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/light.h"
 #include "ecs/component/mesh.h"
-#include "ecs/component/mesh_lod.h"
 #include "ecs/component/physics_world.h"
-#include "ecs/component/reflection_probe.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/name.h"
 #include "ecs/component/transform.h"
@@ -18,13 +16,12 @@
 namespace Engine {
 
 class ResourceManager;
-struct EnvironmentConfig;  // system/render/environment_config.h
 
 /**
  * @brief Per-component (de)serialization to JSON.
  *
  * Each component type has a `save` and `load` overload. Add a new component
- * by adding a pair here. Asset handles (in Mesh / MeshLOD) are resolved by
+ * by adding a pair here. Asset handles (in Mesh) are resolved by
  * stable AssetId through ResourceManager::findById; entity references
  * (Hierarchy::parent) are stored as the old-file entity index and remapped
  * in SceneSerializer::load.
@@ -60,23 +57,8 @@ namespace ComponentSerializer {
     nlohmann::json save(const PhysicsWorld&);
     void load(const nlohmann::json&, PhysicsWorld&);
 
-    /// ReflectionProbe: stores HDR source path + influence radius and
-    /// falloff. Bake state is not stored - the backend re-bakes on load
-    /// from the HDR file referenced by @p hdrPath.
-    nlohmann::json save(const ReflectionProbe&);
-    void load(const nlohmann::json&, ReflectionProbe&);
-
     nlohmann::json save(const Mesh&, const ResourceManager&);
     void load(const nlohmann::json&, Mesh&, const ResourceManager&);
-
-    /// MeshLOD: the per-level mesh handles serialize as AssetId references
-    /// (resolved through ResourceManager, like Mesh), plus each level's
-    /// switch-height threshold and the valid level count. The level meshes
-    /// themselves are emitted into the scene's asset block by
-    /// AssetSerializer::saveAssetsForScene (decimated levels via a
-    /// "decimate" asset source).
-    nlohmann::json save(const MeshLOD&, const ResourceManager&);
-    void load(const nlohmann::json&, MeshLOD&, const ResourceManager&);
 
     /// Hierarchy: only `parent` is serialized; sibling pointers are rebuilt
     /// on load by re-running HierarchyOperations::setParent. The returned
@@ -89,11 +71,6 @@ namespace ComponentSerializer {
     /// playback state, and the per-track easing function by stable name.
     nlohmann::json save(const Animation&);
     void load(const nlohmann::json&, Animation&);
-
-    /// EnvironmentConfig: the singleton Environment entity's rendering/post
-    /// stack. All fields are JSON primitives; load tolerates missing keys.
-    nlohmann::json save(const EnvironmentConfig&);
-    void load(const nlohmann::json&, EnvironmentConfig&);
 
 } // namespace ComponentSerializer
 

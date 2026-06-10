@@ -18,7 +18,6 @@
 #include "debug/profiler.h"
 #include "ecs/component/name.h"
 #include "ecs/component/physics_world.h"
-#include "ecs/component/selected.h"
 #include "ecs/scene.h"
 #include "framework/editor_context.h"
 #include "framework/editor_settings.h"
@@ -202,12 +201,6 @@ void EditorSystem::update(FrameContext& ctx) {
         // from continuing while the editor isn't drawing.
         if (!m_state.editorVisible) m_panelResize.resetDragState();
     }
-    // Runtime graphics-settings overlay (F10) is reachable in both the
-    // visible and hidden editor branches - it's intentionally player-facing.
-    if (isPressed(m_state.keybinds.runtimeSettings)) {
-        m_state.runtimeSettingsVisible = !m_state.runtimeSettingsVisible;
-    }
-
     // Save-on-quit modal: top-priority, drawn before anything else so it's
     // visible whether the editor is shown or hidden. Reachable only via
     // the close-intercept above.
@@ -276,10 +269,6 @@ void EditorSystem::update(FrameContext& ctx) {
             ImGui::PopStyleVar();
             ImGui::PopStyleColor();
         }
-        // Runtime graphics settings overlay remains reachable while the
-        // editor is hidden - it's intentionally player-facing.
-        m_runtimeSettings.draw(m_state, ctx.scene, m_renderSystem);
-        syncSelectionTag(ctx.scene);
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         return;
@@ -358,28 +347,6 @@ void EditorSystem::update(FrameContext& ctx) {
         PROFILE_SCOPE("Panel/AssetBrowser");
         m_assetBrowser.draw(ec);
     }
-    if (m_state.showRenderSettings) {
-        PROFILE_SCOPE("Panel/RenderSettings");
-        // Find the singleton Environment entity's config component. The
-        // RenderSystem mirrors it each frame, but the source of truth is
-        // the scene component - edit that so changes persist across the
-        // mirror copy.
-        EnvironmentConfig* env = nullptr;
-        ec.frame.scene.forEach<EnvironmentConfig>(
-            [&](EntityId, EnvironmentConfig& e) { if (!env) env = &e; });
-        ImGui::SetNextWindowSize(ImVec2(380, 720), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Render Settings", &m_state.showRenderSettings)) {
-            if (env) {
-                m_renderSettingsUI.draw(ec, *env);
-            } else {
-                ImGui::TextDisabled(
-                    "No Environment entity in the scene.\n"
-                    "Create one via Entity > Create Entity > Environment.");
-            }
-        }
-        ImGui::End();
-    }
-
     if (m_state.showPhysics) {
         PROFILE_SCOPE("Panel/Physics");
         Scene& scene = ec.frame.scene;
@@ -414,12 +381,6 @@ void EditorSystem::update(FrameContext& ctx) {
         ImGui::End();
     }
 
-    // Runtime graphics settings overlay - intentionally drawn last so it
-    // floats over the editor workspace and isn't clipped by any panel.
-    m_runtimeSettings.draw(m_state, ctx.scene, m_renderSystem);
-
-    syncSelectionTag(ctx.scene);
-
     {
         PROFILE_SCOPE("Editor/ImGuiRender");
         // Runs after RenderSystem (Render stage) drew the scene this frame, so
@@ -427,28 +388,6 @@ void EditorSystem::update(FrameContext& ctx) {
         // backend hook now that everything is single-threaded.
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    }
-}
-
-void EditorSystem::syncSelectionTag(Scene& scene) {
-    PROFILE_SCOPE("Editor/SyncSelectionTag");
-    EntityId target = m_state.selectedEntity;
-    const bool targetAlive = static_cast<bool>(target) && scene.isAlive(target);
-
-    // Drop the tag from anyone who shouldn't have it. Collect first so the
-    // SparseSet iterator isn't invalidated mid-walk by remove(). Single-
-    // select today, but the loop handles a future set just as well.
-    static thread_local std::vector<EntityId> stale;
-    stale.clear();
-    scene.forEach<Selected>([&](EntityId id, Selected&) {
-        if (!targetAlive || id != target) stale.push_back(id);
-    });
-    for (EntityId id : stale) {
-        if (scene.isAlive(id)) scene.remove<Selected>(Entity{id});
-    }
-
-    if (targetAlive && !scene.has<Selected>(target)) {
-        scene.add(Entity{target}, Selected{});
     }
 }
 

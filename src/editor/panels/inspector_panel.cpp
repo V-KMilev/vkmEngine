@@ -13,14 +13,11 @@
 
 #include "ecs/component/animation.h"
 #include "ecs/component/collider.h"
-#include "ecs/component/mesh_lod.h"
-#include "ecs/component/reflection_probe.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/transform.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
 #include "generator/light_generators.h"
-#include "generator/mesh_generators.h"   // decimateMesh for the LOD section
 #include "framework/editor_actions.h"
 #include "io/project_paths.h"            // ProjectPaths::root for the probe HDR browse
 #include "resource/resource_manager.h"
@@ -175,11 +172,9 @@ void InspectorPanel::draw(EditorContext& ec) {
 
     if (scene.has<Transform>(id))  drawTransformSection(scene, state, id);
     if (scene.has<Mesh>(id))       drawMeshSection(scene, ctx.resources, state, id);
-    if (scene.has<MeshLOD>(id))    drawMeshLODSection(scene, ctx.resources, state, id);
     if (scene.has<Light>(id))      drawLightSection(scene, state, id);
     if (scene.has<Rigidbody>(id))  drawRigidbodySection(scene, state, id);
     if (scene.has<Collider>(id))   drawColliderSection(scene, ctx.resources, state, id);
-    if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, state, id);
     if (scene.has<Camera>(id))     drawCameraSection(scene, state, id);
     if (scene.has<Animation>(id))  drawAnimationSection(scene, state, id);
     if (scene.has<Hierarchy>(id))  drawHierarchySection(scene, state, id);
@@ -208,17 +203,6 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
             Mesh m{};
             scene.add(Entity{id}, m);
             state.commands.push(std::make_unique<AddComponentCommand<Mesh>>(id, m, "Add Mesh"));
-            state.markSceneDirty();
-        }
-        // LOD borrows the Mesh's material + base geometry, so only offer it once
-        // a Mesh exists. Seed level 0 with that mesh: a single-level chain is a
-        // no-op until the user adds coarser levels.
-        if (scene.has<Mesh>(id) && !scene.has<MeshLOD>(id) && ImGui::MenuItem("Level of Detail")) {
-            MeshLOD lod{};
-            lod.levels[0] = scene.get<Mesh>(id).mesh;
-            lod.count = 1;
-            scene.add(Entity{id}, lod);
-            state.commands.push(std::make_unique<AddComponentCommand<MeshLOD>>(id, lod, "Add LOD"));
             state.markSceneDirty();
         }
         if (!scene.has<Light>(id) && ImGui::MenuItem("Light")) {
@@ -251,13 +235,6 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
             scene.add(Entity{id}, a);
             state.commands.push(std::make_unique<AddComponentCommand<Animation>>(
                 id, std::move(a), "Add Animation"));
-            state.markSceneDirty();
-        }
-        if (!scene.has<ReflectionProbe>(id) && ImGui::MenuItem("Reflection Probe")) {
-            ReflectionProbe p{};
-            scene.add(Entity{id}, p);
-            state.commands.push(std::make_unique<AddComponentCommand<ReflectionProbe>>(
-                id, p, "Add Reflection Probe"));
             state.markSceneDirty();
         }
         ImGui::EndPopup();
@@ -368,88 +345,6 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
         Mesh snap = scene.get<Mesh>(id);
         scene.remove<Mesh>(Entity{id});
         state.commands.push(std::make_unique<RemoveComponentCommand<Mesh>>(id, snap, "Remove Mesh"));
-        state.markSceneDirty();
-    }
-}
-
-void InspectorPanel::drawMeshLODSection(Scene& scene, ResourceManager& resources,
-                                        EditorState& state, EntityId id) {
-    bool remove = false;
-    const bool open = beginComponentCard("Level of Detail", ACCENT_LOD, true, &remove);
-    if (open) {
-        auto& lod = scene.get<MeshLOD>(id);
-        bool changed = false;
-
-        ImGui::TextDisabled("Renders a coarser mesh as the object shrinks on");
-        ImGui::TextDisabled("screen. Level 0 = finest; shadows always use the");
-        ImGui::TextDisabled("Mesh component's mesh.");
-        ImGui::Spacing();
-
-        int count = lod.count;
-        drawPropertyLabel("Levels");
-        ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::SliderInt("##LODCount", &count, 1, MeshLOD::MAX_LEVELS)) {
-            lod.count = static_cast<uint8_t>(count);
-            changed = true;
-        }
-
-        // Mesh the Decimate button clusters from: level 0, falling back to the
-        // entity's Mesh so a fresh chain can still generate coarser levels.
-        MeshHandle baseHandle = lod.levels[0];
-        if (!baseHandle && scene.has<Mesh>(id)) baseHandle = scene.get<Mesh>(id).mesh;
-
-        for (int i = 0; i < lod.count; ++i) {
-            ImGui::PushID(i);
-            ImGui::Separator();
-            ImGui::Text("Level %d%s", i, i == 0 ? "  (finest)" : "");
-
-            changed |= pickAsset<MeshAsset>("##LODMesh", "Mesh", resources, lod.levels[i]);
-            if (lod.levels[i]) {
-                const MeshAsset& a = resources.get(lod.levels[i]);
-                ImGui::TextDisabled("%zu verts, %zu tris", a.vertices.size(), a.indices.size() / 3);
-            }
-
-            if (i >= 1) {
-                drawPropertyLabel("Switch below");
-                ImGui::SetNextItemWidth(-1.0f);
-                changed |= ImGui::DragFloat("##LODSwitch", &lod.switchHeights[i],
-                                            1.0f, 0.0f, 8000.0f, "%.0f px");
-
-                // Generate this level by vertex-clustering the base mesh.
-                if (baseHandle) {
-                    drawPropertyLabel("Decimate");
-                    const float btnW = 92.0f;
-                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - btnW
-                                            - ImGui::GetStyle().ItemSpacing.x);
-                    ImGui::DragInt("##LODGrid", &m_lodDecimateGrid[i], 0.2f, 2, 128, "grid %d");
-                    ImGui::SameLine();
-                    if (ImGui::Button("Decimate", ImVec2(btnW, 0.0f))) {
-                        // Stamp a "decimate" source + AssetId so the level
-                        // serializes (re-decimates on load) instead of being
-                        // dropped. The base is level 0's mesh, already emitted
-                        // into the scene's asset block.
-                        const AssetId baseId = resources.get(baseHandle).assetId;
-                        MeshAsset dec = decimateMeshTracked(resources.get(baseHandle), baseId,
-                                                            static_cast<uint32_t>(m_lodDecimateGrid[i]));
-                        const std::string nm = "lod_e" + std::to_string(id.index)
-                                             + "_l" + std::to_string(i);
-                        lod.levels[i] = resources.add(std::move(dec), nm);
-                        changed = true;
-                    }
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("Vertex-cluster the base mesh into a coarser level");
-                }
-            }
-            ImGui::PopID();
-        }
-
-        if (changed) state.markSceneDirty();
-    }
-    endComponentCard();
-    if (remove) {
-        MeshLOD snap = scene.get<MeshLOD>(id);
-        scene.remove<MeshLOD>(Entity{id});
-        state.commands.push(std::make_unique<RemoveComponentCommand<MeshLOD>>(id, snap, "Remove LOD"));
         state.markSceneDirty();
     }
 }
@@ -636,87 +531,6 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
         Collider snap = scene.get<Collider>(id);
         scene.remove<Collider>(Entity{id});
         state.commands.push(std::make_unique<RemoveComponentCommand<Collider>>(id, snap, "Remove Collider"));
-        state.markSceneDirty();
-    }
-}
-
-void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id) {
-    bool remove = false;
-    const bool open = beginComponentCard("Reflection Probe", ACCENT_LIGHT, true, &remove);
-    if (open) {
-        auto& probe = scene.get<ReflectionProbe>(id);
-        const ReflectionProbe before = probe;  // pre-edit value for the undo command
-        bool changed = false;
-
-        // HDR source path. Bumping bakeVersion when the path changes
-        // signals the backend's IBL bake to re-run for this probe.
-        drawPropertyLabel("HDR Path");
-        char buf[512];
-        std::strncpy(buf, probe.hdrPath.c_str(), sizeof(buf));
-        buf[sizeof(buf) - 1] = '\0';
-        ImGui::SetNextItemWidth(-80.0f);
-        if (ImGui::InputText("##PHdr", buf, sizeof(buf))) {
-            probe.hdrPath = buf;
-            ++probe.bakeVersion;
-            changed = true;
-        }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Path to the equirect HDR (.hdr) that this probe bakes from.\n"
-                              "Empty = this probe contributes nothing; the global IBL bake\n"
-                              "is used inside its radius instead.");
-
-        // Browse button - mirrors the IBL slot's file picker so a probe HDR is
-        // pickable, not just typeable. Picker is rooted at assets/envs and
-        // returns a path relative to the project root (what the loader expects).
-        ImGui::SameLine();
-        if (ImGui::Button("Browse##Probe")) {
-            const std::filesystem::path appRoot = ProjectPaths::root();
-            m_probeHdrPicker.options.popupId    = "ProbeHdr";
-            m_probeHdrPicker.options.title      = "Browse";
-            m_probeHdrPicker.options.root       = appRoot / "assets" / "envs";
-            m_probeHdrPicker.options.recursive  = false;
-            m_probeHdrPicker.options.kind       = AssetPicker::Kind::Files;
-            m_probeHdrPicker.options.extensions = {".hdr", ".HDR"};
-            m_probeHdrPicker.options.relativeTo = appRoot;
-            m_probeHdrPicker.open();
-        }
-        {
-            std::string picked;
-            if (m_probeHdrPicker.draw(picked)) {
-                probe.hdrPath = picked;
-                ++probe.bakeVersion;
-                changed = true;
-            }
-        }
-
-        drawPropertyLabel("Radius");
-        changed |= ImGui::DragFloat("##PRadius", &probe.radius, 0.1f, 0.1f, 1000.0f, "%.2f");
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Sphere of influence in world units. Outside this distance\n"
-                              "the probe contributes nothing.");
-
-        drawPropertyLabel("Falloff");
-        changed |= ImGui::SliderFloat("##PFalloff", &probe.falloffRange, 0.0f, 1.0f, "%.2f");
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Inner radius (as fraction of Radius) where the probe is at\n"
-                              "full strength. From there to Radius the weight smooths out.");
-
-        drawPropertyLabel("Intensity");
-        changed |= ImGui::DragFloat("##PIntensity", &probe.intensity, 0.05f, 0.0f, 32.0f, "%.2f");
-
-        ImGui::TextDisabled("Bake version: %d", probe.bakeVersion);
-
-        if (changed) {
-            state.commands.push(std::make_unique<ComponentEditCommand<ReflectionProbe>>(id, before, probe, "Edit Reflection Probe"));
-            state.markSceneDirty();
-        }
-    }
-    endComponentCard();
-    if (remove) {
-        ReflectionProbe snap = scene.get<ReflectionProbe>(id);
-        scene.remove<ReflectionProbe>(Entity{id});
-        state.commands.push(std::make_unique<RemoveComponentCommand<ReflectionProbe>>(
-            id, snap, "Remove Reflection Probe"));
         state.markSceneDirty();
     }
 }

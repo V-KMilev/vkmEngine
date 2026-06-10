@@ -97,7 +97,7 @@ Enum enumFromName(std::string_view name, const char* const (&names)[N]) {
  * VKM_REFLECT_BEGIN so each field doesn't have to repeat the type name.
  *
  * Fields omitted from the macro are NOT serialised - that's the
- * mechanism for "internal only" data (e.g. ReflectionProbe::bakeVersion).
+ * mechanism for "internal only" data.
  */
 #define VKM_REFLECT_BEGIN(Type)                                              \
     namespace Engine::Reflect {                                              \
