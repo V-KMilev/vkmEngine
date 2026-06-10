@@ -5,6 +5,7 @@
 #include "ecs/component/mesh.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/light.h"
+#include "ecs/component/reflection_probe.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/collider.h"
 #include "ecs/component/physics_world.h"

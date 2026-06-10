@@ -219,6 +219,39 @@ uniform vec2 u_screenSize;
 layout(binding = 21) uniform sampler2D u_ssao;
 uniform int u_hasSSAO;
 
+// Local reflection probe (parallax-corrected box). Bound by the forward pass
+// when a probe covers the frame; u_hasProbe gates it. Blended over global IBL.
+layout(binding = 22) uniform samplerCube u_probeIrradiance;
+layout(binding = 23) uniform samplerCube u_probePrefilter;
+uniform int   u_hasProbe;
+uniform vec3  u_probeCenter;
+uniform vec3  u_probeExtents;     // box half-extents
+uniform float u_probeFalloff;
+uniform float u_probeIntensity;
+const float MAX_PROBE_LOD = 4.0;  // GLProbe::PREFILTER_MIPS - 1
+
+// Parallax box correction: intersect the reflection ray from worldPos along R
+// with the probe box, then return the direction from the box centre to the hit.
+// Without it, a cube captured from one point reflects as if infinitely far.
+vec3 probeParallax(vec3 R, vec3 worldPos) {
+    vec3  boxMin = u_probeCenter - u_probeExtents;
+    vec3  boxMax = u_probeCenter + u_probeExtents;
+    vec3  invR   = 1.0 / R;
+    vec3  t1     = (boxMin - worldPos) * invR;
+    vec3  t2     = (boxMax - worldPos) * invR;
+    vec3  tFar   = max(t1, t2);
+    float t      = min(min(tFar.x, tFar.y), tFar.z);
+    vec3  hit    = worldPos + R * t;
+    return hit - u_probeCenter;
+}
+
+// 1 deep inside the box, fading to 0 at the box face over u_probeFalloff.
+float probeWeight(vec3 worldPos) {
+    vec3  d = abs(worldPos - u_probeCenter) / max(u_probeExtents, vec3(1e-3));
+    float m = max(max(d.x, d.y), d.z);
+    return 1.0 - smoothstep(1.0 - u_probeFalloff, 1.0, m);
+}
+
 const float PI = 3.14159265359;
 
 bool hasTex(int flag) {
@@ -905,6 +938,19 @@ void main() {
         vec3 specularIBL = prefiltered * (F * dfg.x + dfg.y);
 
         ambient = (diffuseIBL + specularIBL) * s.ao;
+
+        // Local probe: parallax-corrected reflection + local irradiance, blended
+        // over the global IBL by the box-edge weight. Reuses F / kD / dfg above.
+        if (u_hasProbe == 1) {
+            float w = clamp(probeWeight(vWorldPos) * u_probeIntensity, 0.0, 1.0);
+            if (w > 0.0) {
+                vec3 Rp           = probeParallax(R, vWorldPos);
+                vec3 probeDiffuse = texture(u_probeIrradiance, N).rgb * s.albedo * kD;
+                vec3 probeSpec    = textureLod(u_probePrefilter, Rp, s.roughness * MAX_PROBE_LOD).rgb * (F * dfg.x + dfg.y);
+                vec3 probeAmbient = (probeDiffuse + probeSpec) * s.ao;
+                ambient = mix(ambient, probeAmbient, w);
+            }
+        }
     } else {
         // Flat ambient fallback (no baked environment). Diffuse-only.
         ambient = vec3(0.03) * s.albedo * s.ao;

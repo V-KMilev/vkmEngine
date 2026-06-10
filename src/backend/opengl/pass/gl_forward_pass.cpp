@@ -19,6 +19,7 @@
 #include "data/gl_material.h"
 #include "data/gl_mesh.h"
 #include "data/gl_ibl.h"
+#include "data/gl_probe.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
@@ -83,6 +84,21 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     // it into the indirect term (ambient/IBL). Absent (pass disabled) -> 1.0.
     if (ctx.aoReady) ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
     m_shader->setUniform1i("u_hasSSAO", ctx.aoReady ? 1 : 0);
+
+    // Local reflection probe: bind its cubes + influence box, or gate it off.
+    // The shader blends it over the global IBL (parallax-corrected specular +
+    // irradiance), faded out toward the box edge.
+    if (ctx.probe) {
+        ctx.probe->bindIrradiance(GLBindings::ProbeTextureSlots::Irradiance);
+        ctx.probe->bindPrefilter(GLBindings::ProbeTextureSlots::Prefilter);
+        m_shader->setUniform1i("u_hasProbe", 1);
+        m_shader->setUniform3fv("u_probeCenter", ctx.probeCenter);
+        m_shader->setUniform3fv("u_probeExtents", ctx.probeExtents);
+        m_shader->setUniform1f("u_probeFalloff", ctx.probeFalloff);
+        m_shader->setUniform1f("u_probeIntensity", ctx.probeIntensity);
+    } else {
+        m_shader->setUniform1i("u_hasProbe", 0);
+    }
 
     // Refraction is sampled only by the transparent bucket; default it off here
     // and switch it on after the scene-colour copy below.

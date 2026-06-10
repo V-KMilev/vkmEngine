@@ -1,5 +1,7 @@
 #pragma once
 
+#include <glm/glm.hpp>
+
 namespace Core {
     class Context;
 }
@@ -14,6 +16,7 @@ class GLShadowAtlas;
 class GLShadowData;
 class GLIBL;
 class GLBloom;
+class GLProbe;
 
 /**
  * @brief Everything a GLPass needs for one frame.
@@ -34,6 +37,14 @@ struct GLFrameContext {
     const GLIBL&      ibl;            ///< Baked IBL product set: sampled by forward (ambient) + skybox.
     GLBloom&          bloom;          ///< Bloom mip chain: written by the bloom pass, blended in composite.
     GLAOTarget&       ao;             ///< GTAO factor: written by the GTAO pass, sampled by forward (ambient).
+
+    /// Nearest reflection probe covering the frame (null = none). The forward
+    /// pass blends it over the global IBL inside the box below.
+    const GLProbe* probe          = nullptr;
+    glm::vec3      probeCenter     = glm::vec3(0.0f);  ///< Probe box centre (world).
+    glm::vec3      probeExtents    = glm::vec3(1.0f);  ///< Probe box half-extents (world).
+    float          probeFalloff   = 0.2f;             ///< Edge falloff fraction.
+    float          probeIntensity = 1.0f;             ///< Contribution multiplier.
 
     /// Set by the depth prepass when it lays down opaque depth. The forward pass
     /// then early-Zs (LEQUAL, no depth writes/clear) instead of clearing depth.
