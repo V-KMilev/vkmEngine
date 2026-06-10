@@ -44,9 +44,11 @@ class GLBackend : public RenderBackend {
     private:
         Core::Context m_context;
         GLView        m_view;
+        GLTarget      m_sceneHDR;
+
         GLCamera      m_camera;
         GLLights      m_lights;
-        GLTarget      m_sceneHDR;
+
         GLShadowAtlas m_shadowAtlas;
         GLShadowData  m_shadowData;
 

@@ -87,16 +87,14 @@ class GLMaterial {
         void bind(uint32_t bindingPoint) const;
         void bindTextures(const GLView& view) const;
 
-        MaterialType getType() const      { return m_type; }
-        bool         isDoubleSided() const { return m_doubleSided; }
+        MaterialType getType() const { return m_type; }
 
         const std::vector<TextureBinding>& getTextureBindings() const { return m_textureBindings; }
 
     private:
         std::unique_ptr<Core::UniformBuffer> m_ubo;
         std::vector<TextureBinding>          m_textureBindings;
-        MaterialType                         m_type        = MaterialType::Opaque;
-        bool                                 m_doubleSided = false;
+        MaterialType                         m_type = MaterialType::Opaque;
 };
 
 } // namespace Engine

@@ -416,8 +416,8 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
             drawPropertyLabel("Shadow Bias");
             changed |= ImGui::DragFloat("##ShadBias", &light.shadowBias, 0.0005f, 0.0f, 0.1f, "%.4f");
             if (light.type == LightType::Directional) {
-                drawPropertyLabel("Shadow Extent");
-                changed |= ImGui::DragFloat("##ShadExt", &light.shadowExtent, 1.0f, 1.0f, 1000.0f, "%.1f");
+                drawPropertyLabel("Shadow Distance");
+                changed |= ImGui::DragFloat("##ShadDist", &light.shadowDistance, 1.0f, 1.0f, 1000.0f, "%.1f");
             }
         }
         drawPropertyLabel("Enabled");  changed |= ImGui::Checkbox("##LEn", &light.enabled);

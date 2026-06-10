@@ -223,12 +223,14 @@ MeshAsset generateSphere(uint32_t xSegments, uint32_t ySegments) {
             uint32_t i2 = (y + 1) * (xSegments + 1) + (x + 1);
             uint32_t i3 = y * (xSegments + 1) + (x + 1);
 
+            // CCW winding viewed from outside (so back-face culling keeps the
+            // near hemisphere). Normals are normalize(position) = outward.
             mesh.indices.push_back(i0);
+            mesh.indices.push_back(i2);
             mesh.indices.push_back(i1);
             mesh.indices.push_back(i2);
-            mesh.indices.push_back(i2);
-            mesh.indices.push_back(i3);
             mesh.indices.push_back(i0);
+            mesh.indices.push_back(i3);
         }
     }
 

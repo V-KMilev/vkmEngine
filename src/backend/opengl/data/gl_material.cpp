@@ -43,8 +43,7 @@ GLMaterial::GLMaterial(const MaterialAsset& material) {
 GLMaterial::~GLMaterial() = default;
 
 void GLMaterial::update(const MaterialAsset& material) {
-    m_type        = material.type;
-    m_doubleSided = material.doubleSided;
+    m_type = material.type;
 
     m_textureBindings.clear();
 

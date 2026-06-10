@@ -133,9 +133,17 @@ layout(binding = 12) uniform samplerCube u_shadowCube[SHADOW_MAX_CUBE];
 
 // 3x3 PCF sample of one 2D atlas tile. Returns 1 (lit) .. 0 (shadowed); off-map
 // or beyond-far reads as lit so geometry outside the map is never darkened.
-float sample2DSlot(int slot, vec3 worldPos, float ndotl) {
+float sample2DSlot(int slot, vec3 worldPos, vec3 N, float ndotl) {
     Shadow2D sm = u_shadow.s2d[slot];
-    vec4 lc = sm.lightVP * vec4(worldPos, 1.0);
+
+    // Normal-offset bias: shift the sample point along the surface normal by a
+    // few shadow texels (more at grazing angles). params.y is the cascade's
+    // world texel size, so this scales per cascade and kills self-shadow acne
+    // without the peter-panning a large depth bias would cause.
+    float offsetTexels = 1.5 + 3.0 * (1.0 - clamp(ndotl, 0.0, 1.0));
+    vec3  samplePos    = worldPos + N * (sm.params.y * offsetTexels);
+
+    vec4 lc = sm.lightVP * vec4(samplePos, 1.0);
     if (lc.w <= 0.0) return 1.0;
     vec3 proj = lc.xyz / lc.w * 0.5 + 0.5;
     if (proj.z > 1.0 ||
@@ -144,7 +152,8 @@ float sample2DSlot(int slot, vec3 worldPos, float ndotl) {
         return 1.0;
     }
 
-    float bias    = max(sm.params.x * (1.0 - ndotl), sm.params.x * 0.2);
+    // Small constant depth bias on top (params.x = the light's shadowBias knob).
+    float bias    = sm.params.x;
     vec2  atlasUV = sm.atlas.xy + proj.xy * sm.atlas.zw;
     vec2  texel   = 1.0 / vec2(textureSize(u_shadowAtlas, 0));
     float lit     = 0.0;
@@ -159,13 +168,13 @@ float sample2DSlot(int slot, vec3 worldPos, float ndotl) {
 
 // Directional sun: pick the tightest cascade containing the fragment by view
 // depth, then PCF-sample that cascade's tile.
-float sampleCSM(vec3 worldPos, float ndotl) {
+float sampleCSM(vec3 worldPos, vec3 N, float ndotl) {
     float vd = dot(worldPos - u_camera.cameraPosition.xyz, u_shadow.camForward.xyz);
     int   ci = u_shadow.csmCount - 1;
     for (int i = 0; i < u_shadow.csmCount; ++i) {
         if (vd <= u_shadow.cascadeSplits[i]) { ci = i; break; }
     }
-    return sample2DSlot(u_shadow.csmBase + ci, worldPos, ndotl);
+    return sample2DSlot(u_shadow.csmBase + ci, worldPos, N, ndotl);
 }
 
 // Point light: compare normalised distance-to-light against the cube depth.
@@ -658,9 +667,6 @@ void main() {
     vec3 T  = normalize(vTangent);
     vec3 B  = normalize(vBitangent);
     vec3 Ng = normalize(vNormal);
-    // Double-sided surfaces (culling off) shade the back face with the
-    // flipped frame.
-    if (!gl_FrontFacing) { Ng = -Ng; T = -T; B = -B; }
     mat3 TBN = mat3(T, B, Ng);
 
     vec2 uv = vUV;
@@ -840,8 +846,8 @@ void main() {
         int sslot = int(light.spot.w);
         if (sslot >= 0) {
             float ndotl = dot(N, L);
-            if (type == LIGHT_DIRECTIONAL) visibility *= sampleCSM(vWorldPos, ndotl);
-            else if (type == LIGHT_SPOT)   visibility *= sample2DSlot(sslot, vWorldPos, ndotl);
+            if (type == LIGHT_DIRECTIONAL) visibility *= sampleCSM(vWorldPos, N, ndotl);
+            else if (type == LIGHT_SPOT)   visibility *= sample2DSlot(sslot, vWorldPos, N, ndotl);
             else if (type == LIGHT_POINT)  visibility *= sampleCube(sslot, vWorldPos, ndotl);
         }
 

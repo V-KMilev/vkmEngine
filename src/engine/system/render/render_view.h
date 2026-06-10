@@ -6,6 +6,7 @@
 #include "system/render/data/camera_data.h"
 #include "system/render/data/drawable_data.h"
 #include "system/render/data/light_data.h"
+#include "system/render/data/shadow_caster_data.h"
 
 namespace Engine {
 
@@ -21,18 +22,16 @@ struct Visibility;
  * capacity across frames.
  */
 struct RenderView {
-    uint32_t viewportX      = 0;
-    uint32_t viewportY      = 0;
-    uint32_t viewportWidth  = 0;
-    uint32_t viewportHeight = 0;
-    // Full backbuffer height the viewport rect sits within. The rect above is
-    // top-left origin (window/UI convention); a backend whose framebuffer is
-    // bottom-left (OpenGL) flips with surfaceHeight - viewportY - viewportHeight.
-    uint32_t surfaceHeight  = 0;
+    uint32_t viewportX      = 0;      ///< The x-coordinate of the viewport.
+    uint32_t viewportY      = 0;      ///< The y-coordinate of the viewport.
+    uint32_t viewportWidth  = 0;      ///< The width of the viewport.
+    uint32_t viewportHeight = 0;      ///< The height of the viewport.
+    uint32_t surfaceHeight  = 0;      ///< The height of the surface. Full backbuffer height the viewport rect sits within.
 
-    CameraData camera;
-    std::vector<DrawableData> drawables;
-    std::vector<LightData>    lights;
+    CameraData camera;                           ///< The camera data for the view.
+    std::vector<DrawableData> drawables;         ///< The drawables for the view.
+    std::vector<LightData>    lights;            ///< The lights for the view.
+    std::vector<ShadowCasterData> shadowCasters; ///< The shadow casters for the view.
 
     public:
         void build(
@@ -44,6 +43,7 @@ struct RenderView {
         void buildCamera(const Visibility& visibility);
         void buildDrawables(const Scene& scene, const Visibility& visibility);
         void buildLights(const Scene& scene);
+        void buildShadowCasters(const Scene& scene, const Visibility& visibility);
 };
 
 } // namespace Engine

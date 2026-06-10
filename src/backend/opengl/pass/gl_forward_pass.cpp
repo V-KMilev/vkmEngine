@@ -22,7 +22,7 @@
 namespace Engine {
 
 GLForwardPass::GLForwardPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/forward")) {}
+    : m_shader(std::make_unique<Core::Shader>("shaders/forward/pbr")) {}
 
 GLForwardPass::~GLForwardPass() = default;
 
@@ -36,10 +36,23 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     // pass renders the lit geometry into the HDR target.
     ctx.sceneHDR.bind(ctx.gl);
     ctx.gl.setDepthTest(true);
-    ctx.gl.setDepthWrite(true);
     ctx.gl.setBlending(false);
     ctx.gl.setClearColor({0.01f, 0.01f, 0.01f, 1.0f});
-    ctx.gl.clear(true, true, false);
+    ctx.gl.setFaceCulling(true);
+    ctx.gl.setCullFace(GL_BACK);
+
+    if (ctx.depthPrimed) {
+        // The prepass already laid down opaque depth: match it with LEQUAL and
+        // leave depth writes off so hidden fragments early-Z out. Color only.
+        ctx.gl.setDepthFunc(GL_LEQUAL);
+        ctx.gl.setDepthWrite(false);
+        ctx.gl.clear(true, false, false);
+    } else {
+        // No prepass: classic single-pass forward owns its depth + clear.
+        ctx.gl.setDepthFunc(GL_LESS);
+        ctx.gl.setDepthWrite(true);
+        ctx.gl.clear(true, true, false);
+    }
 
     m_shader->bind();
 
@@ -105,12 +118,6 @@ void GLForwardPass::drawList(GLFrameContext& ctx, const std::vector<const Drawab
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::Material);
             material->bindTextures(glView);
-
-            // Single-sided materials cull back faces; doubleSided shades
-            // them (the shader flips the normal via gl_FrontFacing).
-            ctx.gl.setFaceCulling(!material->isDoubleSided());
-            if (!material->isDoubleSided()) ctx.gl.setCullFace(GL_BACK);
-
             boundMaterial = material;
         }
 

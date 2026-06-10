@@ -24,6 +24,7 @@ void RenderView::build(
         // No camera this frame: emit an empty snapshot, not a stale one.
         drawables.clear();
         lights.clear();
+        shadowCasters.clear();
         LOG_ERROR("No active camera; nothing to render this frame");
         return;
     }
@@ -31,6 +32,7 @@ void RenderView::build(
     buildCamera(visibility);
     buildDrawables(scene, visibility);
     buildLights(scene);
+    buildShadowCasters(scene, visibility);
 }
 
 void RenderView::buildCamera(const Visibility& visibility) {
@@ -47,9 +49,11 @@ void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility
     // One drawable per visible entity. Just snapshot handles + matrix - the
     // backend resolves the handles and decides how to sort / batch them.
     for (const auto& entry : visibility.entries) {
-        if (!scene.isAlive(entry.id)) continue;  // deleted between cull and render
+        // deleted between cull and render
+        if (!scene.isAlive(entry.id)) continue;
         const Mesh& mesh = scene.get<Mesh>(entry.id);
-        if (!mesh.mesh || !mesh.material) continue;  // unresolved slot
+        // unresolved slot
+        if (!mesh.mesh || !mesh.material) continue;
 
         DrawableData drawable;
         drawable.mesh        = mesh.mesh;
@@ -95,9 +99,9 @@ void RenderView::buildLights(const Scene& scene) {
         data.innerConeAngle = light.innerConeAngle;
         data.outerConeAngle = light.outerConeAngle;
 
-        data.castShadows  = light.castShadows;
-        data.shadowBias   = light.shadowBias;
-        data.shadowExtent = light.shadowExtent;
+        data.castShadows    = light.castShadows;
+        data.shadowBias     = light.shadowBias;
+        data.shadowDistance = light.shadowDistance;
 
         // Area lights: fold rotation + size into world-space half-extent
         // axes. Disk uses areaRadius on both so cross(U, V) stays a clean
@@ -117,6 +121,24 @@ void RenderView::buildLights(const Scene& scene) {
 
         lights.push_back(data);
     });
+}
+
+void RenderView::buildShadowCasters(const Scene& scene, const Visibility& visibility) {
+    shadowCasters.clear();
+    shadowCasters.reserve(visibility.shadowCasters.size());
+
+    // The caster set is scene-wide (not camera-culled); resolve each entity's
+    // mesh handle and carry its world AABB so the backend can frustum-cull per
+    // light. The model + bounds were already computed by the VisibilitySystem.
+    for (const VisibleEntity& entry : visibility.shadowCasters) {
+        // deleted between cull and render
+        if (!scene.isAlive(entry.id)) continue;
+        const Mesh& mesh = scene.get<Mesh>(entry.id);
+        // unresolved slot
+        if (!mesh.mesh) continue;
+
+        shadowCasters.push_back({ mesh.mesh, entry.model, entry.worldMin, entry.worldMax });
+    }
 }
 
 } // namespace Engine

@@ -11,6 +11,7 @@
 #include "gl_frame_context.h"
 #include "gl_pass.h"
 #include "pass/gl_shadow_pass.h"
+#include "pass/gl_depth_prepass.h"
 #include "pass/gl_forward_pass.h"
 #include "pass/gl_composite_pass.h"
 #include "system/render/render_view.h"
@@ -32,10 +33,12 @@ bool GLBackend::init(WindowManager& window) {
     m_context.setFaceCulling(false);
 
     // Build the pass list. Passes compile their shaders, so this must run
-    // after the context exists. Shadow runs first (its depth maps feed the
-    // forward pass), then the lit forward draw, then the composite to screen.
+    // after the context exists. Order: shadow depth maps, a depth prepass
+    // (early-Z for the forward draw), the lit forward draw, then the composite
+    // to screen.
     m_shadowAtlas.init();
     m_passes.push_back(std::make_unique<GLShadowPass>());
+    m_passes.push_back(std::make_unique<GLDepthPrePass>());
     m_passes.push_back(std::make_unique<GLForwardPass>());
     m_passes.push_back(std::make_unique<GLCompositePass>());
 
