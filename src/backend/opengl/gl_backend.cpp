@@ -15,6 +15,7 @@
 #include "pass/gl_forward_pass.h"
 #include "pass/gl_skybox_pass.h"
 #include "pass/gl_bloom_pass.h"
+#include "pass/gl_ssr_pass.h"
 #include "pass/gl_composite_pass.h"
 #include "data/gl_ibl_baker.h"
 #include "system/render/render_view.h"
@@ -34,6 +35,10 @@ bool GLBackend::init(WindowManager& window) {
     m_context.setDefaultState();
     m_context.setDepthTest(true);
     m_context.setFaceCulling(false);
+
+    // The scene target carries a G-buffer (view normal + roughness + metalness),
+    // written by the depth prepass and read by SSR. Enable before the first resize.
+    m_sceneHDR.enableGBuffer();
 
     m_shadowAtlas.init();
 
@@ -57,6 +62,7 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back(std::make_unique<GLDepthPrePass>());
     m_passes.push_back(std::make_unique<GLSkyboxPass>());
     m_passes.push_back(std::make_unique<GLForwardPass>());
+    m_passes.push_back(std::make_unique<GLSSRPass>());
     m_passes.push_back(std::make_unique<GLBloomPass>());
     m_passes.push_back(std::make_unique<GLCompositePass>());
 
