@@ -59,7 +59,7 @@ class AssetFactories {
  * @brief Serialize / deserialize the asset graph referenced by a Scene.
  *
  * Saves emit the meshes, materials, and textures actually referenced by the
- * scene (plus MeshLOD level meshes). Loads recreate them by dispatching each
+ * scene. Loads recreate them by dispatching each
  * descriptor through AssetFactories; assets with no source are skipped on
  * save (silently - they can't be recreated anyway), and assets already in
  * ResourceManager (by AssetId) are skipped on load (idempotent re-loads).

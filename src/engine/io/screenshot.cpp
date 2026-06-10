@@ -46,28 +46,13 @@ std::string captureRect(
 ) {
     if (rect.width == 0 || rect.height == 0) return {};
 
-    std::vector<uint8_t> pixels;
-    if (!backend.readbackPixels(rect.x, rect.y, rect.width, rect.height, windowHeight, pixels)) {
-        LOG_ERROR("Screenshot: backend readback failed (rect %ux%u at %u,%u)",
-                  rect.width, rect.height, rect.x, rect.y);
-        return {};
-    }
-
-    std::error_code ec;
-    const std::filesystem::path full(outPath);
-    if (full.has_parent_path()) {
-        std::filesystem::create_directories(full.parent_path(), ec);
-    }
-
-    const int stride = static_cast<int>(rect.width) * 3;
-    if (!stbi_write_png(full.string().c_str(),
-                        static_cast<int>(rect.width), static_cast<int>(rect.height), 3,
-                        pixels.data(), stride)) {
-        LOG_ERROR("Screenshot: stbi_write_png failed for '%s'", full.string().c_str());
-        return {};
-    }
-    LOG_INFO("Screenshot saved to '%s' (%ux%u)", full.string().c_str(), rect.width, rect.height);
-    return full.string();
+    // Pixel readback isn't part of the minimal RenderBackend interface yet, so
+    // screenshots are disabled until the backend exposes a readback again.
+    (void)backend;
+    (void)windowHeight;
+    (void)outPath;
+    LOG_WARNING("Screenshot: pixel readback not supported by the current backend yet");
+    return {};
 }
 
 std::string captureViewport(WindowManager& window, RenderBackend& backend) {

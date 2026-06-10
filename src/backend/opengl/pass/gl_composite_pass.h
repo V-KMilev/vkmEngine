@@ -1,32 +1,27 @@
 #pragma once
 
 #include <memory>
-#include <string>
-#include <cstdint>
 
-#include "resource/shader_asset.h"
-#include "gl_render_pass.h"
+#include "gl_screen_triangle.h"  // Core::ScreenTriangle (by-value member)
+
+#include "gl_pass.h"
 
 namespace Core {
-    class ScreenTriangle;
-    class Texture2D;
+    class Shader;
 }
 
 namespace Engine {
 
 /**
- * @brief Final pass: resolve the HDR scene target and tone-map to the screen.
+ * @brief Resolves the HDR scene target to the backbuffer.
  *
- * Resolves the MSAA HDR buffer to a single-sample texture, then draws a
- * full-screen triangle that applies camera exposure, the AgX display
- * transform, and the sRGB OETF, writing into the default framebuffer.
- *
- * This is the only place tone mapping and gamma encoding happen - every
- * object shader emits linear scene-referred radiance into the HDR target.
+ * Runs last: binds the default framebuffer, samples the frame's HDR target, and
+ * tonemaps + gamma-corrects it across a fullscreen triangle. This is where the
+ * pipeline goes from linear HDR back to a displayable image.
  */
-class GLCompositePass : public GLRenderPass {
+class GLCompositePass : public GLPass {
     public:
-        GLCompositePass() = delete;
+        GLCompositePass();
         ~GLCompositePass() override;
 
         GLCompositePass(const GLCompositePass& other) = delete;
@@ -35,33 +30,12 @@ class GLCompositePass : public GLRenderPass {
         GLCompositePass(GLCompositePass && other) = delete;
         GLCompositePass& operator=(GLCompositePass && other) = delete;
 
-        /**
-         * @brief Construct the composite pass.
-         * @param shader Handle to the post/composite shader asset; sampler
-         *               u_hdr is bound to slot 0 via the asset's bindings.
-         */
-        explicit GLCompositePass(ShaderHandle shader);
-
     public:
-        void onResize(RenderBackend& backend, uint32_t width, uint32_t height) override;
-        void executeGL(GLBackend& gl, RenderGraphContext& ctx) override;
-
-        void declareResources(RenderGraphBuilder& builder) const override {
-            builder.read(RGResource::SceneHDRResolved);
-            builder.read(RGResource::BloomChain);
-            builder.read(RGResource::AdaptedLuminance);
-            builder.read(RGResource::Overlay);
-            builder.write(RGResource::Backbuffer);
-        }
+        void execute(GLFrameContext& ctx) override;
 
     private:
-        ShaderHandle m_shader;
-        std::unique_ptr<Core::ScreenTriangle> m_screenTri;  ///< Shared attribute-less fullscreen triangle
-
-        std::unique_ptr<Core::Texture2D> m_lut;  ///< Lazily loaded color-grading LUT
-        std::string m_lutPath;                   ///< Path the LUT was loaded from (reload guard)
-
-        std::unique_ptr<Core::Texture2D> m_dirt; ///< Procedural lens-dirt mask (generated once)
+        std::unique_ptr<Core::Shader> m_shader;
+        Core::ScreenTriangle          m_triangle;
 };
 
 } // namespace Engine

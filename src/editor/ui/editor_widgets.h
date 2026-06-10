@@ -57,32 +57,6 @@ void drawPanelTitle(const char* title);
 /// (e.g. "##easePos"). Sets the next item width to fill the row.
 bool drawEasingCombo(const char* id, EasingFunction& easing);
 
-enum class RenderMode : uint8_t;
-
-/**
- * @brief Grouped RenderMode dropdown.
- *
- * Render the full diagnostic-mode picker as a BeginCombo with category
- * separators (Shading / Material / Lighting / Geometry / Diagnostic) and
- * per-item hover tooltips. Shared by the Environment Inspector's
- * Diagnostics card and the viewport toolbar so both lists stay in sync
- * when new modes are added.
- */
-bool drawRenderModeCombo(const char* id, RenderMode& mode);
-
-/**
- * @brief Render the same grouped Selectable list inside an already-open
- *        ImGui popup (BeginPopup / EndPopup is the caller's job).
- *
- * Lets the viewport toolbar surface the picker as a popup attached to a
- * single button instead of a full-width combo row.
- */
-bool drawRenderModeMenuBody(RenderMode& mode);
-
-/// One-line label for @p mode (e.g. "Wireframe", "Overdraw"). Used by the
-/// toolbar's button face to show the currently-active diagnostic mode.
-const char* renderModeLabel(RenderMode mode);
-
 /**
  * @brief Stable Euler-angle edit cache for quaternion-backed rotations.
  *

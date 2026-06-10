@@ -6,7 +6,6 @@
 #include <string>
 #include <unordered_set>
 
-#include "ecs/component/mesh_lod.h"
 #include "framework/editor_common.h"
 #include "framework/editor_actions.h"
 #include "framework/editor_commands.h"
@@ -277,14 +276,10 @@ void AssetBrowserPanel::drawMeshes(EditorContext& ec) {
     const int   cols = (std::max)(1, static_cast<int>(
                             ImGui::GetContentRegionAvail().x / step));
 
-    // Meshes referenced by any entity (Mesh.mesh or any MeshLOD level) - delete
+    // Meshes referenced by any entity (Mesh.mesh) - delete
     // is disabled for these so the render path never get()s a freed handle.
     std::unordered_set<uint32_t> usedMeshes;
     scene.forEach<Mesh>([&](EntityId, const Mesh& m) { if (m.mesh) usedMeshes.insert(m.mesh.id()); });
-    scene.forEach<MeshLOD>([&](EntityId, const MeshLOD& lod) {
-        for (int j = 0; j < lod.count && j < MeshLOD::MAX_LEVELS; ++j)
-            if (lod.levels[j]) usedMeshes.insert(lod.levels[j].id());
-    });
     MeshHandle toDelete{};
 
     int i = 0;

@@ -3,7 +3,6 @@
 #include <algorithm>
 
 #include "ecs/scene.h"
-#include "ecs/component/reflection_probe.h"
 #include "resource/resource_manager.h"
 #include "framework/editor_state.h"
 #include "system/hierarchy/hierarchy_operations.h"
@@ -76,19 +75,15 @@ void RemoveComponentCommand<T>::undo(Scene& scene, EditorState& state) {
 // component type the editor mutates through commands.
 template class AddComponentCommand<Mesh>;
 template class AddComponentCommand<Light>;
-template class AddComponentCommand<ReflectionProbe>;
 template class AddComponentCommand<Camera>;
 template class AddComponentCommand<Animation>;
 template class AddComponentCommand<Name>;
 
 template class RemoveComponentCommand<Mesh>;
 template class RemoveComponentCommand<Light>;
-template class RemoveComponentCommand<ReflectionProbe>;
 template class RemoveComponentCommand<Camera>;
 template class RemoveComponentCommand<Animation>;
 
-template class AddComponentCommand<MeshLOD>;
-template class RemoveComponentCommand<MeshLOD>;
 
 template class AddComponentCommand<Rigidbody>;
 template class RemoveComponentCommand<Rigidbody>;
@@ -120,7 +115,6 @@ bool ComponentEditCommand<T>::tryMerge(Command& incoming) {
 
 template class ComponentEditCommand<Light>;
 template class ComponentEditCommand<Camera>;
-template class ComponentEditCommand<ReflectionProbe>;
 template class ComponentEditCommand<Mesh>;
 template class ComponentEditCommand<Name>;
 template class ComponentEditCommand<Animation>;
@@ -151,10 +145,8 @@ EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
     if (scene.has<Mesh>(id))      s.mesh      = scene.get<Mesh>(id);
     if (scene.has<Light>(id))     s.light     = scene.get<Light>(id);
     if (scene.has<Camera>(id))    s.camera    = scene.get<Camera>(id);
-    if (scene.has<ReflectionProbe>(id)) s.reflectionProbe = scene.get<ReflectionProbe>(id);
     if (scene.has<Animation>(id)) s.animation = scene.get<Animation>(id);
     if (scene.has<Name>(id))      s.name      = scene.get<Name>(id);
-    if (scene.has<MeshLOD>(id))   s.meshLod   = scene.get<MeshLOD>(id);
     return s;
 }
 
@@ -166,10 +158,8 @@ void EntitySnapshot::apply(Scene& scene, EntityId id) const {
     if (mesh      && !scene.has<Mesh>(id))      { Mesh      v = *mesh;      scene.add(e, std::move(v)); }
     if (light     && !scene.has<Light>(id))     { Light     v = *light;     scene.add(e, std::move(v)); }
     if (camera    && !scene.has<Camera>(id))    { Camera    v = *camera;    scene.add(e, std::move(v)); }
-    if (reflectionProbe && !scene.has<ReflectionProbe>(id)) { ReflectionProbe v = *reflectionProbe; scene.add(e, std::move(v)); }
     if (animation && !scene.has<Animation>(id)) { Animation v = *animation; scene.add(e, std::move(v)); }
     if (name      && !scene.has<Name>(id))      { Name      v = *name;      scene.add(e, std::move(v)); }
-    if (meshLod   && !scene.has<MeshLOD>(id))   { MeshLOD   v = *meshLod;   scene.add(e, std::move(v)); }
 }
 
 void CreateEntityCommand::redo(Scene& scene, EditorState& state) {

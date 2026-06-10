@@ -1,62 +1,50 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <string>
-#include <vector>
 
-#include "resource/material_asset.h"
-#include "resource/mesh_asset.h"
-#include "system/render/render_target.h"  // unique_ptr<RenderTarget> needs complete type
+namespace Engine {
+    struct RenderView;
+    class ResourceManager;
+    class WindowManager;
+}
 
 namespace Engine {
 
-struct RenderView;
-class ResourceManager;
-class RenderGraph;
-class FrameResources;
-
 /**
- * @brief Enumeration of supported rendering backend types.
+ * @brief Which graphics API a backend speaks.
+ * 
+ * Drives the runtime "switch backend" menu and is reported back through info().
  */
 enum class RenderBackendType {
-    NONE    = 0,    ///< No backend specified or uninitialized.
-    OpenGL  = 1,    ///< OpenGL-based rendering backend.
-    Optix   = 2,    ///< NVIDIA Optix ray tracing rendering backend.
-    CPU     = 3,    ///< CPU/software-based raytracing backend.
+    OpenGL,
+    Optix,
+    CPU,
 };
 
 /**
- * @brief Convert a ComponentType enum value to its string representation.
- *
- * @param type The RenderBackendType value to convert.
- * @return const char* String representation of the RenderBackendType.
+ * @brief Human-readable backend identity for the editor status bar.
+ * 
+ * Deliberately generic: swapping backends changes the strings, never the call site.
  */
-constexpr const char* toString(RenderBackendType type) {
-    switch (type) {
-        case RenderBackendType::NONE:    return "NONE";
-        case RenderBackendType::OpenGL:  return "OpenGL";
-        case RenderBackendType::Optix:   return "Optix";
-        case RenderBackendType::CPU:     return "CPU";
-        default: return "UNKNOWN";
-    }
-}
+struct BackendInfo {
+    std::string api;     ///< e.g. "OpenGL 4.6"
+    std::string device;  ///< e.g. "NVIDIA GeForce RTX 3080"
+};
 
 /**
- * @brief Abstract base class for all rendering backends.
+ * @brief The single seam between the engine and the graphics API.
  *
- * Provides the interface all concrete rendering backends (OpenGL, Optix, CPU, etc.)
- * must implement in order to integrate with the rendering system. Prevents
- * copying/moving of instances.
+ * The engine hands the backend one POD RenderView per frame; the backend owns
+ * everything below this line - the API context, GPU resource mirror, passes,
+ * and presentation. Nothing above this interface holds an API object, so
+ * swapping backends is just destroying one implementation and constructing
+ * another: there is no GPU state to migrate, and the new backend re-uploads
+ * what it needs from the handles in the next RenderView.
  */
 class RenderBackend {
     public:
-        /**
-         * @brief Construct a RenderBackend with a specific backend type.
-         * @param type The RenderBackendType associated with the backend.
-         */
-        RenderBackend(RenderBackendType type) : m_type(type) {}
+        explicit RenderBackend(RenderBackendType type) : m_type(type) {}
         virtual ~RenderBackend() = default;
 
         RenderBackend(const RenderBackend& other) = delete;
@@ -66,176 +54,38 @@ class RenderBackend {
         RenderBackend& operator=(RenderBackend && other) = delete;
 
     public:
-        /**
-         * @brief Get the type of the backend.
-         * @return The RenderBackendType of the backend.
-         */
-        RenderBackendType getType() const { return m_type; }
+        RenderBackendType type() const { return m_type; }
+        BackendInfo info() const { return m_info; }
 
         /**
-         * @brief Resize the backend's render targets or framebuffers.
-         * @param width New width in pixels.
-         * @param height New height in pixels.
+         * @brief Bring the backend up against the window.
+         *
+         * Acquires / makes-current the API context or surface and creates any
+         * persistent GPU state. Returns false if the backend cannot run here,
+         * so a failed runtime swap can keep the previous backend instead.
          */
-        virtual void resize(uint32_t width, uint32_t height) = 0;
+        virtual bool init(WindowManager& window) = 0;
 
         /**
-         * @brief Get the default render target (typically the screen framebuffer).
-         * @return Reference to the default RenderTarget.
+         * @brief Set the viewport rect that subsequent frames draw into.
+         *
+         * x/y are the origin inside the window (lets an editor render into a
+         * sub-rect); width/height are its size.
          */
-        virtual RenderTarget& getDefaultTarget() = 0;
+        virtual void resize(uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
 
         /**
-         * @brief Synchronise backend-side GPU resources with the RenderView.
+         * @brief Draw and present one frame.
          *
-         * Called by RenderSystem once per frame, after RenderView::build and
-         * before pipeline.execute. Default no-op for backends that don't need
-         * a separate sync step.
+         * @param view      Backend-agnostic snapshot of what to draw this frame.
+         * @param resources Resolves the view's handles to asset data; the backend
+         *                  mirrors that onto the GPU, uploading only what changed.
          */
-        virtual void syncResources(const RenderView& view, const ResourceManager& resources) {}
-
-        /**
-         * @brief Force every mesh/material/texture in @p view resident on
-         *        the GPU before the next syncResources.
-         *
-         * syncResources gates GPU-table uploads on version + drawable-count
-         * deltas. A hand-built RenderView (editor previews, future capture
-         * paths) can slip past that heuristic, so callers in that situation
-         * call this first to force the referenced handles to upload.
-         * Default no-op for backends that don't need it.
-         */
-        virtual void ensureResourcesResident(
-            const RenderView& view,
-            const ResourceManager& resources
-        ) {
-            (void)view; (void)resources;
-        }
-
-        /**
-         * @brief Publish persistent resources into the graph's pool.
-         *
-         * For resources whose lifetime exceeds a frame and which don't get
-         * swapped by editor previews (e.g. the shadow atlas, the IBL set).
-         * Called once by the graph the first time it executes. The default
-         * is a no-op; backends override to register what they expose.
-         */
-        virtual void registerPersistentResources(RenderGraph& graph) {}
-
-        /**
-         * @brief Per-frame backend tail. Called by RenderGraph::execute after
-         *        every pass has run.
-         *
-         * The OpenGL backend uses this to drain completed Tracy GPU timer
-         * queries from this and prior frames; other backends typically have
-         * nothing to do here. Stays an abstract hook so RenderGraph never
-         * needs to include backend headers.
-         */
-        virtual void endFrame() {}
-
-        /**
-         * @brief Snapshot of the backend's shader variant cache.
-         *
-         * Surfaced in the editor's Variant Cache panel so users can spot
-         * variant explosion. Empty default keeps backends without a variant cache
-         * (or backends where the cache isn't worth surfacing) quiet.
-         */
-        struct ShaderVariantStat {
-            std::uint32_t shaderId = 0;
-            std::string   name;
-            std::size_t   variants = 0;
-        };
-        virtual std::vector<ShaderVariantStat> shaderVariantStats() const { return {}; }
-
-        /**
-         * @brief Latest CPU-side mirror of the auto-exposure adapted luminance.
-         *
-         * The exposure pass reads back the 1x1 R16F target after each frame
-         * and parks it here so the editor's Exposure card can display the
-         * adapted EV without doing its own GPU sync. Returns the seed value
-         * (0.18) on backends that haven't implemented auto-exposure.
-         */
-        virtual float getAdaptedLuminance() const { return 0.18f; }
-
-        /**
-         * @brief Force the image-based-lighting environment to re-bake next frame.
-         *
-         * Invalidates the cached bake so the IBL bake pass re-runs from the
-         * current EnvironmentConfig::ibl.path (e.g. the artist edited the .hdr
-         * on disk, or hit "Rebake IBL"). Must be invoked where the backend's
-         * context is current - editor code routes through
-         * RenderSystem::requestIBLRebake(), which queues a backend job that runs
-         * in executeFrame. Default no-op for backends without IBL.
-         */
-        virtual void requestIBLRebake() {}
-
-        /**
-         * @brief Construct a backend-specific FrameResources pool.
-         *
-         * The graph holds the returned pool via unique_ptr<FrameResources>
-         * and reaches it through the engine-side abstract interface (resize
-         * + registerWith + resolveSceneColor). Backends decide what
-         * concrete sub-resources go in the pool; the graph just publishes
-         * them into its typed lookup via FrameResources::registerWith.
-         *
-         * Called by the graph at first resize/execute and again when the
-         * editor opens an offscreen preview (which needs its own pool at
-         * the preview size).
-         */
-        virtual std::unique_ptr<FrameResources> createFrameResources() = 0;
-
-        /**
-         * @brief Construct a backend-specific offscreen RenderTarget at
-         *        (size, size).
-         *
-         * The caller owns the returned target and routes whatever drawing
-         * path it controls (push it onto the render graph, render once for
-         * a screenshot, etc.) at it. Default: nullptr (backend doesn't
-         * support offscreen targets).
-         */
-        virtual std::unique_ptr<RenderTarget> createOffscreenTarget(uint32_t size) {
-            (void)size; return nullptr;
-        }
-
-        /**
-         * @brief Read a sub-rect of the swapchain into RGB8 pixels.
-         *
-         * Used by the editor for screenshots. Rect is in window-pixel
-         * coords with ImGui's y-down convention; the backend takes care
-         * of any internal flips so @p outRGB is top-down (PNG-friendly).
-         * @p windowHeight is the full window height (needed by backends
-         * whose framebuffer origin differs from ImGui).
-         *
-         * Default returns false (backend doesn't expose readback).
-         *
-         * @param x,y,w,h        Rect in window pixels, ImGui y-down.
-         * @param windowHeight   Full window height in pixels.
-         * @param outRGB         Resized to w*h*3 bytes on success.
-         * @return true on success, false on invalid rect / unsupported.
-         */
-        virtual bool readbackPixels(
-            uint32_t x,
-            uint32_t y,
-            uint32_t w,
-            uint32_t h,
-            uint32_t windowHeight,
-            std::vector<uint8_t>& outRGB
-        ) {
-            (void)x; (void)y; (void)w; (void)h;
-            (void)windowHeight; (void)outRGB;
-            return false;
-        }
-
-        /// Short name of the graphics API ("OpenGL", "Vulkan", "CPU").
-        virtual const char* apiName() const { return toString(m_type); }
-
-        /// Runtime API version string, or "" if unavailable.
-        virtual std::string apiVersion() const { return {}; }
-
-        /// Human-readable device / renderer name, or "" if unavailable.
-        virtual std::string deviceName() const { return {}; }
+        virtual void render(const RenderView& view, const ResourceManager& resources) = 0;
 
     protected:
         RenderBackendType m_type;
+        BackendInfo m_info;
 };
 
 } // namespace Engine

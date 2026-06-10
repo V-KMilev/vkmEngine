@@ -1,14 +1,17 @@
 #define VKM_LOG_CATEGORY "BACKEND::GL"
 
-#include "gl_mesh.h"
+#include "resource/gl_mesh.h"
 
-#include "logger.h"
+#include <cstdint>
+
+#include <GL/glew.h>
 
 #include "gl_error_handle.h"
-#include "gl_index_buffer.h"
 #include "gl_vertex_array.h"
 #include "gl_vertex_buffer.h"
 #include "gl_vertex_buffer_layout.h"
+#include "gl_index_buffer.h"
+
 #include "resource/mesh_asset.h"
 
 namespace Engine {
@@ -17,105 +20,37 @@ GLMesh::GLMesh(const MeshAsset& mesh) {
     update(mesh);
 }
 
-GLMesh::~GLMesh() {
-    m_vao.reset();
-    m_vbo.reset();
-    m_ibo.reset();
-
-    LOG_TRACE("Destructed GLMesh");
-}
+GLMesh::~GLMesh() = default;
 
 void GLMesh::update(const MeshAsset& mesh) {
-    m_vertexCount = mesh.vertices.size();
-    m_indexCount  = mesh.indices.size();
+    m_indexCount = static_cast<uint32_t>(mesh.indices.size());
 
-    const uint32_t vertexDataSize = static_cast<uint32_t>(m_vertexCount * sizeof(Vertex));
-    const uint32_t indexDataSize  = static_cast<uint32_t>(m_indexCount * sizeof(uint32_t));
+    const uint32_t vertexBytes = static_cast<uint32_t>(mesh.vertices.size() * sizeof(Vertex));
+    m_vbo = std::make_unique<Core::VertexBuffer>(mesh.vertices.data(), vertexBytes);
+    m_ibo = std::make_unique<Core::IndexBuffer>(mesh.indices.data(), m_indexCount);
 
-    if (m_vbo && m_vbo->getSize() == vertexDataSize) {
-        m_vbo->update(mesh.vertices.data(), vertexDataSize);
-    } else {
-        m_vbo = std::make_unique<Core::VertexBuffer>(reinterpret_cast<const void*>(mesh.vertices.data()), vertexDataSize);
+    // Interleaved vertex layout - must match the `in` attributes in the shader.
+    Core::VertexBufferLayout layout;
+    layout.push<float>(3);  // position (location 0)
+    layout.push<float>(3);  // normal   (location 1)
+    layout.push<float>(2);  // uv       (location 2)
+    layout.push<float>(4);  // tangent  (location 3)
 
-        // Recreate VAO to reflect new VBO
-        m_vao.reset();
-    }
-
-    if (!m_vao) {
-        m_vao = std::make_unique<Core::VertexArray>();
-
-        Core::VertexBufferLayout layout;
-        layout.push<float>(3);    // position
-        layout.push<float>(3);    // normal
-        layout.push<float>(2);    // uv
-        layout.push<float>(4);    // tangent
-
-        m_vao->addBuffer(*m_vbo, layout);
-    }
-
-    // We need to bind the VAO first to ensure the IBO is associated with it
-    m_vao->bind();
-
-    if (m_ibo && m_ibo->getSize() == indexDataSize) {
-        m_ibo->update(mesh.indices.data(), indexDataSize);
-    } else {
-        m_ibo = std::make_unique<Core::IndexBuffer>(reinterpret_cast<const void*>(mesh.indices.data()), m_indexCount);
-    }
+    m_vao = std::make_unique<Core::VertexArray>();
+    m_vao->addBuffer(*m_vbo, layout);
 }
 
-void GLMesh::bind() const {
-    if (!m_vao || !m_ibo) {
-        LOG_ERROR("Cannot bind mesh: VAO or IBO is null");
-        return;
-    }
+void GLMesh::draw() const {
+    if (!m_vao || m_indexCount == 0) return;
 
     m_vao->bind();
     m_ibo->bind();
-}
-
-void GLMesh::draw(int drawType) const {
-    bind();
-
-    constexpr uintptr_t indicesOffset = 0;
-
     VKM_GL_CHECK(glDrawElements(
-        drawType,
+        GL_TRIANGLES,
         static_cast<GLsizei>(m_indexCount),
-        m_ibo->getType(),
-        reinterpret_cast<const void*>(indicesOffset)
+        GL_UNSIGNED_INT,
+        nullptr
     ));
-
-}
-
-void GLMesh::drawInstanced(int drawType, uint32_t instanceCount) const {
-    bind();
-
-    constexpr uintptr_t indicesOffset = 0;
-
-    VKM_GL_CHECK(glDrawElementsInstanced(
-        drawType,
-        static_cast<GLsizei>(m_indexCount),
-        m_ibo->getType(),
-        reinterpret_cast<const void*>(indicesOffset),
-        static_cast<GLsizei>(instanceCount)
-    ));
-
-}
-
-void GLMesh::drawInstancedBaseInstance(int drawType, uint32_t instanceCount, uint32_t baseInstance) const {
-    bind();
-
-    constexpr uintptr_t indicesOffset = 0;
-
-    VKM_GL_CHECK(glDrawElementsInstancedBaseInstance(
-        drawType,
-        static_cast<GLsizei>(m_indexCount),
-        m_ibo->getType(),
-        reinterpret_cast<const void*>(indicesOffset),
-        static_cast<GLsizei>(instanceCount),
-        baseInstance
-    ));
-
 }
 
 } // namespace Engine
