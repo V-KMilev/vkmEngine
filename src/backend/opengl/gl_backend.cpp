@@ -12,10 +12,12 @@
 #include "gl_pass.h"
 #include "pass/gl_shadow_pass.h"
 #include "pass/gl_depth_prepass.h"
+#include "pass/gl_gtao_pass.h"
 #include "pass/gl_forward_pass.h"
 #include "pass/gl_skybox_pass.h"
 #include "pass/gl_bloom_pass.h"
 #include "pass/gl_ssr_pass.h"
+#include "pass/gl_motion_blur_pass.h"
 #include "pass/gl_composite_pass.h"
 #include "data/gl_ibl_baker.h"
 #include "system/render/render_view.h"
@@ -54,15 +56,19 @@ bool GLBackend::init(WindowManager& window) {
 
     // Build the pass list. Passes compile their shaders, so this must run after
     // the context exists. Order: shadow depth maps; a depth prepass (early-Z,
-    // and it clears the HDR target for the frame); the skybox fills the
-    // background BEFORE geometry, so sorted transparents blend over it instead
-    // of being overwritten; the lit forward draw (opaque then transparent);
-    // then composite (tonemap + FXAA) to screen.
+    // and it clears the HDR target for the frame); GTAO turns the prepass depth +
+    // G-buffer into an occlusion factor the forward pass reads; the skybox fills
+    // the background BEFORE geometry, so sorted transparents blend over it
+    // instead of being overwritten; the lit forward draw (opaque then
+    // transparent); screen-space reflections; camera motion blur over the
+    // resolved scene; bloom; then composite (tonemap + FXAA) to screen.
     m_passes.push_back(std::make_unique<GLShadowPass>());
     m_passes.push_back(std::make_unique<GLDepthPrePass>());
+    m_passes.push_back(std::make_unique<GLGTAOPass>());
     m_passes.push_back(std::make_unique<GLSkyboxPass>());
     m_passes.push_back(std::make_unique<GLForwardPass>());
     m_passes.push_back(std::make_unique<GLSSRPass>());
+    m_passes.push_back(std::make_unique<GLMotionBlurPass>());
     m_passes.push_back(std::make_unique<GLBloomPass>());
     m_passes.push_back(std::make_unique<GLCompositePass>());
 
@@ -88,6 +94,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     m_view.sync(view, resources);
     m_sceneHDR.resize(view.viewportWidth, view.viewportHeight);
     m_sceneColor.resize(view.viewportWidth, view.viewportHeight);
+    m_ao.resize(view.viewportWidth, view.viewportHeight);
     m_bloom.resize(view.viewportWidth, view.viewportHeight);
 
     // Plan the frame's shadows first: it assigns each light an atlas slot, which
@@ -102,7 +109,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // Each pass binds and clears its own target: the shadow pass fills the depth
     // atlas, the forward pass renders the lit scene into m_sceneHDR sampling it,
     // and the composite pass tonemaps that to the backbuffer.
-    GLFrameContext ctx{view, m_view, m_context, m_sceneHDR, m_sceneColor, m_shadowAtlas, m_shadowData, m_ibl, m_bloom};
+    GLFrameContext ctx{view, m_view, m_context, m_sceneHDR, m_sceneColor, m_shadowAtlas, m_shadowData, m_ibl, m_bloom, m_ao};
     for (const auto& pass : m_passes) {
         pass->execute(ctx);
     }

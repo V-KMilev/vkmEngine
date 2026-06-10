@@ -11,6 +11,7 @@
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
+#include "gl_ao_target.h"
 #include "data/gl_shadow_atlas.h"
 #include "gl_view.h"
 #include "core/engine_config.h"
@@ -77,6 +78,11 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.ibl.bindBrdf(GLBindings::IBLTextureSlots::BrdfLUT);
     }
     m_shader->setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
+
+    // Screen-space AO from the GTAO pass: bind + gate it. The shader multiplies
+    // it into the indirect term (ambient/IBL). Absent (pass disabled) -> 1.0.
+    if (ctx.aoReady) ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
+    m_shader->setUniform1i("u_hasSSAO", ctx.aoReady ? 1 : 0);
 
     // Refraction is sampled only by the transparent bucket; default it off here
     // and switch it on after the scene-colour copy below.
