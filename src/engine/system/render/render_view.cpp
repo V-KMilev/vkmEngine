@@ -10,6 +10,7 @@
 #include "ecs/scene.h"
 #include "ecs/component/mesh.h"
 #include "ecs/component/light.h"
+#include "ecs/component/reflection_probe.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/world_transform.h"
 #include "system/visibility/visibility.h"
@@ -25,6 +26,7 @@ void RenderView::build(
         drawables.clear();
         lights.clear();
         shadowCasters.clear();
+        probes.clear();
         LOG_ERROR("No active camera; nothing to render this frame");
         return;
     }
@@ -33,6 +35,7 @@ void RenderView::build(
     buildDrawables(scene, visibility);
     buildLights(scene);
     buildShadowCasters(scene, visibility);
+    buildProbes(scene);
 }
 
 void RenderView::buildCamera(const Visibility& visibility) {
@@ -141,6 +144,21 @@ void RenderView::buildShadowCasters(const Scene& scene, const Visibility& visibi
 
         shadowCasters.push_back({ mesh.mesh, entry.model, entry.worldMin, entry.worldMax });
     }
+}
+
+void RenderView::buildProbes(const Scene& scene) {
+    probes.clear();
+
+    // Every reflection probe, resolved to world space. Position comes from the
+    // WorldTransform when the probe is parented, else its local Transform.
+    scene.forEach<ReflectionProbe, Transform>(
+        [&](EntityId id, const ReflectionProbe& probe, const Transform& transform) {
+            glm::vec3 position = transform.position;
+            if (scene.has<WorldTransform>(id)) {
+                position = glm::vec3(scene.get<WorldTransform>(id).model[3]);
+            }
+            probes.push_back({ position, probe.halfExtents, probe.falloff, probe.intensity });
+        });
 }
 
 } // namespace Engine

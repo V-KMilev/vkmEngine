@@ -7,6 +7,7 @@
 #include "system/render/data/drawable_data.h"
 #include "system/render/data/light_data.h"
 #include "system/render/data/shadow_caster_data.h"
+#include "system/render/data/probe_data.h"
 
 namespace Engine {
 
@@ -32,6 +33,7 @@ struct RenderView {
     std::vector<DrawableData> drawables;         ///< The drawables for the view.
     std::vector<LightData>    lights;            ///< The lights for the view.
     std::vector<ShadowCasterData> shadowCasters; ///< The shadow casters for the view.
+    std::vector<ProbeData>    probes;            ///< The reflection probes in the scene.
 
     public:
         void build(
@@ -44,6 +46,7 @@ struct RenderView {
         void buildDrawables(const Scene& scene, const Visibility& visibility);
         void buildLights(const Scene& scene);
         void buildShadowCasters(const Scene& scene, const Visibility& visibility);
+        void buildProbes(const Scene& scene);
 };
 
 } // namespace Engine

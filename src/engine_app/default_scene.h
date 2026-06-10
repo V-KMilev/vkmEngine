@@ -13,6 +13,7 @@
 #include "ecs/component/light.h"
 #include "ecs/component/mesh.h"
 #include "ecs/component/name.h"
+#include "ecs/component/reflection_probe.h"
 #include "ecs/component/transform.h"
 
 #include "generator/light_generators.h"
@@ -48,8 +49,16 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
     auto& resources = engine.getResources();
 
     const auto cubeMesh = resources.add(Engine::generateCube(), "cube");
-    const auto material = Engine::generateDefaultMaterial(resources);
-    resources.edit(material).name = "default";
+
+    // A reflective centre material + two saturated cubes. The global IBL has
+    // none of these colours, so a coloured reflection on the mirror cube is
+    // unambiguously the reflection probe at work, not the environment map.
+    const auto mirrorMat = Engine::generateDefaultMaterial(resources);
+    { auto& m = resources.edit(mirrorMat); m.name = "mirror"; m.metallic = 1.0f; m.roughness = 0.08f; }
+    const auto redMat = Engine::generateDefaultMaterial(resources);
+    { auto& m = resources.edit(redMat); m.name = "red"; m.albedo = glm::vec4(1.0f, 0.04f, 0.04f, 1.0f); m.roughness = 0.6f; }
+    const auto greenMat = Engine::generateDefaultMaterial(resources);
+    { auto& m = resources.edit(greenMat); m.name = "green"; m.albedo = glm::vec4(0.05f, 1.0f, 0.08f, 1.0f); m.roughness = 0.6f; }
 
     // Camera at an over-the-shoulder spot, looking at the origin.
     {
@@ -80,14 +89,38 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
         glm::vec3(1.0f)
     });
 
-    // The cube at the origin.
+    // Reflective centre cube at the origin.
     auto cube = scene.createEntity();
-    scene.add(cube, Engine::Name{"Cube"});
-    scene.add(cube, Engine::Mesh{cubeMesh, material});
+    scene.add(cube, Engine::Name{"Mirror Cube"});
+    scene.add(cube, Engine::Mesh{cubeMesh, mirrorMat});
     scene.add(cube, Engine::Transform{
         glm::vec3(0.0f, 0.0f, 0.0f),
         glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
         glm::vec3(1.0f)
+    });
+
+    // Saturated cubes flanking it - the local colour the probe captures.
+    auto red = scene.createEntity();
+    scene.add(red, Engine::Name{"Red Cube"});
+    scene.add(red, Engine::Mesh{cubeMesh, redMat});
+    scene.add(red, Engine::Transform{
+        glm::vec3(3.0f, 0.0f, 0.0f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(1.0f)
+    });
+
+    auto green = scene.createEntity();
+    scene.add(green, Engine::Name{"Green Cube"});
+    scene.add(green, Engine::Mesh{cubeMesh, greenMat});
+    scene.add(green, Engine::Transform{
+        glm::vec3(-3.0f, 0.0f, 0.0f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(1.0f)
+    });
+
+    // Reflection probe above the centre cube; its box covers the trio so the
+    // mirror cube samples the local (red / green) reflections inside it.
+    auto probe = scene.createEntity();
+    scene.add(probe, Engine::Name{"Reflection Probe"});
+    scene.add(probe, Engine::ReflectionProbe{ glm::vec3(8.0f, 6.0f, 8.0f), 0.2f, 1.0f, 256 });
+    scene.add(probe, Engine::Transform{
+        glm::vec3(0.0f, 2.0f, 0.0f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(1.0f)
     });
 
     // Return the active camera entity (the only one in the scene).
