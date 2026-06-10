@@ -54,8 +54,6 @@ void GLMotionBlurPass::execute(GLFrameContext& ctx) {
     ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SceneDepth);
     m_shader->setUniformMatrix4fv("u_invViewProj",  invViewProj);
     m_shader->setUniformMatrix4fv("u_prevViewProj", m_prevViewProj);
-    m_shader->setUniform2f("u_screenSize",
-        static_cast<float>(view.viewportWidth), static_cast<float>(view.viewportHeight));
     m_shader->setUniform1f("u_intensity",   MB_INTENSITY);
     m_shader->setUniform1f("u_maxVelocity", MB_MAX_VELOCITY);
     m_shader->setUniform1i("u_samples",     MB_SAMPLES);

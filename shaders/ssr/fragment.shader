@@ -21,7 +21,6 @@ layout(binding = 20) uniform sampler2D u_gbuffer;     // oct view-normal.xy, rou
 
 uniform mat4 u_projection;
 uniform mat4 u_invProjection;
-uniform vec2 u_screenSize;
 
 const int   STEPS        = 48;
 const int   REFINE       = 5;

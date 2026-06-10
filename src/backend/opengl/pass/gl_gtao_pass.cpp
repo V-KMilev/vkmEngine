@@ -47,10 +47,7 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
     ctx.sceneHDR.bindGBuffer(GLBindings::PostTextureSlots::SceneGBuffer);
 
     const glm::mat4 proj = view.camera.projection;
-    m_shader->setUniformMatrix4fv("u_projection",    proj);
     m_shader->setUniformMatrix4fv("u_invProjection", glm::inverse(proj));
-    m_shader->setUniform2f("u_screenSize",
-        static_cast<float>(view.viewportWidth), static_cast<float>(view.viewportHeight));
     m_shader->setUniform1f("u_proj11",    proj[1][1]);
     m_shader->setUniform1f("u_radius",    AO_RADIUS);
     m_shader->setUniform1f("u_intensity", AO_INTENSITY);
