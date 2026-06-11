@@ -1,10 +1,13 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 #include <glm/glm.hpp>
 
 #include "gl_pass.h"
+#include "gl_instance_buffer.h"
 
 namespace Core {
     class Shader;
@@ -55,19 +58,22 @@ class GLShadowPass : public GLPass {
         /**
          * @brief Draw the scene's shadow casters that fall inside @p lightVP.
          *
-         * Frustum-culls RenderView::shadowCasters against @p lightVP (the
-         * caster set is scene-wide, so off-screen occluders still cast) and
-         * draws the survivors with @p shader, setting u_model per draw. The
-         * caller has already bound @p shader and set its view matrix.
+         * Frustum-culls RenderView::shadowCasters against @p lightVP (the caster
+         * set is scene-wide, so off-screen occluders still cast), groups the
+         * survivors by mesh, and issues one instanced depth draw per mesh. The
+         * caller has already bound the depth shader and set its view matrix.
          *
-         * @param shader  The bound depth shader to issue the draws against.
          * @param lightVP The light clip-space matrix to cull and draw against.
          */
-        void renderCasters(GLFrameContext& ctx, Core::Shader& shader, const glm::mat4& lightVP);
+        void renderCasters(GLFrameContext& ctx, const glm::mat4& lightVP);
 
     private:
         std::unique_ptr<Core::Shader> m_depth2D;    ///< Projected depth (cascades + spots).
         std::unique_ptr<Core::Shader> m_depthCube;  ///< Linear distance depth (point faces).
+
+        Core::InstanceBuffer   m_instances;  ///< Per-caster model matrices (loc 4-7).
+        std::vector<uint32_t>  m_order;      ///< Frustum-passing caster indices, mesh-sorted.
+        std::vector<glm::mat4> m_models;     ///< Flattened models for the current mesh run.
 };
 
 } // namespace Engine
