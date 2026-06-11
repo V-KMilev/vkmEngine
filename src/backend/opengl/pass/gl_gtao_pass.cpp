@@ -29,9 +29,7 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
     // Render the AO factor into its own target while sampling the scene depth +
     // G-buffer (a different FBO, so no read-while-write feedback).
     ctx.ao.bind(ctx.gl);
-    ctx.gl.setDepthTest(false);
-    ctx.gl.setBlending(false);
-    ctx.gl.setFaceCulling(false);
+    beginFullscreen(ctx.gl);
 
     m_shader->bind();
     ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SceneDepth);

@@ -27,7 +27,6 @@ class GLTexture {
 
     public:
         void update(const TextureAsset& texture);
-        void bindSlot(uint32_t slot) const;
 
         const Core::Texture2D& getTexture() const { return *m_texture; }
 

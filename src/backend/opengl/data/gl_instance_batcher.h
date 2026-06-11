@@ -50,10 +50,11 @@ class GLInstanceBatcher {
         GLInstanceBatcher()  = default;
         ~GLInstanceBatcher() = default;
 
-        GLInstanceBatcher(const GLInstanceBatcher&) = delete;
-        GLInstanceBatcher& operator=(const GLInstanceBatcher&) = delete;
-        GLInstanceBatcher(GLInstanceBatcher&&) = delete;
-        GLInstanceBatcher& operator=(GLInstanceBatcher&&) = delete;
+        GLInstanceBatcher(const GLInstanceBatcher& other) = delete;
+        GLInstanceBatcher& operator=(const GLInstanceBatcher& other) = delete;
+
+        GLInstanceBatcher(GLInstanceBatcher && other) = delete;
+        GLInstanceBatcher& operator=(GLInstanceBatcher && other) = delete;
 
     public:
         const std::vector<InstanceRun>& buildGrouped(
