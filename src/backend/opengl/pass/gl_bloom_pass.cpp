@@ -14,15 +14,6 @@
 
 namespace Engine {
 
-namespace {
-// Bloom prefilter + upsample tuning. Bright-pass threshold/knee tame fireflies;
-// the tent radius is in UV space. (Kept as constants for now; promote to the
-// scene/engine config if these need authoring.)
-constexpr float BLOOM_THRESHOLD = 1.0f;
-constexpr float BLOOM_KNEE      = 0.5f;
-constexpr float UPSAMPLE_RADIUS = 0.005f;
-}
-
 GLBloomPass::GLBloomPass()
     : m_down(std::make_unique<Core::Shader>("shaders/bloom/down"))
     , m_up(std::make_unique<Core::Shader>("shaders/bloom/up")) {}
@@ -34,6 +25,8 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
 
     GLBloom& bloom = ctx.bloom;
     if (!bloom.isReady()) return;
+
+    const RenderSettings& settings = ctx.view.settings;
 
     ctx.gl.setDepthTest(false);
     ctx.gl.setFaceCulling(false);
@@ -52,8 +45,8 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
             ctx.sceneHDR.bindColor(0);
             m_down->setUniform1f("u_srcLod", 0.0f);
             m_down->setUniform1i("u_karis", 1);
-            m_down->setUniform1f("u_threshold", BLOOM_THRESHOLD);
-            m_down->setUniform1f("u_knee",      BLOOM_KNEE);
+            m_down->setUniform1f("u_threshold", settings.bloomThreshold);
+            m_down->setUniform1f("u_knee",      settings.bloomKnee);
         } else {
             bloom.bind(0);
             m_down->setUniform1f("u_srcLod", static_cast<float>(mip - 1));
@@ -65,7 +58,7 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
 
     // Additive upsample back up the chain (tent filter).
     m_up->bind();
-    m_up->setUniform1f("u_filterRadius", UPSAMPLE_RADIUS);
+    m_up->setUniform1f("u_filterRadius", settings.bloomRadius);
     bloom.bind(0);
     ctx.gl.setBlending(true);
     ctx.gl.setBlendFunc(GL_ONE, GL_ONE);

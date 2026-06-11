@@ -6,6 +6,7 @@
 
 #include "gl_shader.h"
 #include "gl_context.h"
+#include "gl_frame_buffer.h"
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
@@ -24,15 +25,14 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
 
     const RenderView& view = ctx.view;
 
-    // Back to the backbuffer, into the window's viewport rect. The default
-    // framebuffer is not a GL object, so this one bind stays raw.
+    // Back to the backbuffer, into the window's viewport rect.
     // viewportY arrives top-left origin (window/UI convention); GL's default
     // framebuffer is bottom-left, so flip against the full surface height or the
     // blit lands mirrored off the editor's viewport panel.
     const int32_t glY = static_cast<int32_t>(view.surfaceHeight)
                       - static_cast<int32_t>(view.viewportY)
                       - static_cast<int32_t>(view.viewportHeight);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    Core::FrameBuffer::bindDefault();
     ctx.gl.setViewport(
         static_cast<int32_t>(view.viewportX),
         glY,

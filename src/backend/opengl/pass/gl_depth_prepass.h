@@ -43,7 +43,7 @@ class GLDepthPrePass : public GLPass {
     private:
         std::unique_ptr<Core::Shader>    m_shader;
         GLInstanceBatcher                m_batcher;
-        std::vector<const DrawableData*> m_opaque;  ///< non-transparent drawables, refilled per frame
+        std::vector<const DrawableData*> m_opaque;
 };
 
 } // namespace Engine

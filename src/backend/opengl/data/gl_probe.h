@@ -7,7 +7,9 @@
 
 #include "texture/gl_texture.h"  // Core::Texture2D (capture depth)
 #include "gl_frame_buffer.h"
-#include "gl_texture_cube.h"     // Core::TextureCube (transient capture cube)
+#include "gl_context.h"            // Core::Context (per-attach viewport sizing)
+#include "gl_texture_cube.h"        // Core::TextureCube (transient capture cube)
+#include "gl_texture_cube_array.h"  // Core::TextureCubeArray (irradiance + prefilter)
 
 namespace Engine {
 
@@ -22,12 +24,13 @@ namespace Engine {
  * (+ depth) is reused per bake: GLProbeBaker renders the scene into it, then
  * convolves into the target layer of each array.
  *
- * vkmGL has no cube-array wrapper, so the two arrays are managed with raw GL.
+ * Both arrays are Core::TextureCubeArray and the env cube / depth / FBO are RAII,
+ * so this class holds no raw GL handles - only the per-attach viewport sizing.
  */
 class GLProbeArray {
     public:
         GLProbeArray() = default;
-        ~GLProbeArray();
+        ~GLProbeArray() = default;
 
         GLProbeArray(const GLProbeArray&) = delete;
         GLProbeArray& operator=(const GLProbeArray&) = delete;
@@ -50,44 +53,34 @@ class GLProbeArray {
         void unbindCaptureFbo() const { m_fbo->unbind(); }
 
         /// Attach the transient env cube @p face as colour 0 (geometry capture).
-        void attachEnvFace(int face) const {
+        void attachEnvFace(const Core::Context& gl, int face) const {
             m_fbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_env.id(), 0);
-            glViewport(0, 0, ENV_SIZE, ENV_SIZE);
+            gl.setViewport(0, 0, ENV_SIZE, ENV_SIZE);
         }
         void generateEnvMips() const { m_env.generateMipmaps(); }
 
         /// Attach one face of irradiance-array @p layer as colour 0.
-        void attachIrradianceFace(int layer, int face) const {
-            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                m_irradiance, 0, layer * 6 + face);
-            glViewport(0, 0, IRRADIANCE_SIZE, IRRADIANCE_SIZE);
+        void attachIrradianceFace(const Core::Context& gl, int layer, int face) const {
+            m_irradiance.attachFace(GL_COLOR_ATTACHMENT0, layer, face, 0);
+            gl.setViewport(0, 0, IRRADIANCE_SIZE, IRRADIANCE_SIZE);
         }
         /// Attach one face/mip of prefilter-array @p layer as colour 0.
-        void attachPrefilterFace(int layer, int face, int mip) const {
-            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                m_prefilter, mip, layer * 6 + face);
+        void attachPrefilterFace(const Core::Context& gl, int layer, int face, int mip) const {
+            m_prefilter.attachFace(GL_COLOR_ATTACHMENT0, layer, face, mip);
             const int s = PREFILTER_SIZE >> mip;
-            glViewport(0, 0, s, s);
+            gl.setViewport(0, 0, s, s);
         }
 
         // --- sampler binds for the forward pass ---
-        void bindIrradiance(uint32_t slot) const {
-            glActiveTexture(GL_TEXTURE0 + slot);
-            glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, m_irradiance);
-        }
-        void bindPrefilter(uint32_t slot) const {
-            glActiveTexture(GL_TEXTURE0 + slot);
-            glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, m_prefilter);
-        }
-        void bindEnvCube(uint32_t slot) const { m_env.bindSlot(slot); }
+        void bindIrradiance(uint32_t slot) const { m_irradiance.bindSlot(slot); }
+        void bindPrefilter(uint32_t slot)  const { m_prefilter.bindSlot(slot); }
+        void bindEnvCube(uint32_t slot)    const { m_env.bindSlot(slot); }
 
     private:
-        GLuint createCubeArray(int size, int mips) const;
-
-        GLuint m_irradiance = 0;   ///< GL_TEXTURE_CUBE_MAP_ARRAY (1 mip)
-        GLuint m_prefilter  = 0;   ///< GL_TEXTURE_CUBE_MAP_ARRAY (PREFILTER_MIPS)
-        Core::TextureCube m_env;   ///< Transient capture cube (reused per bake)
+        Core::TextureCubeArray m_irradiance;  ///< Diffuse irradiance, 1 mip per cube
+        Core::TextureCubeArray m_prefilter;   ///< GGX specular, PREFILTER_MIPS per cube
+        Core::TextureCube      m_env;         ///< Transient capture cube (reused per bake)
 
         std::unique_ptr<Core::Texture2D>   m_depth;
         std::unique_ptr<Core::FrameBuffer> m_fbo;
