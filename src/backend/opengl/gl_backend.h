@@ -16,10 +16,14 @@
 #include "data/gl_ibl.h"
 #include "data/gl_bloom.h"
 
+namespace Core {
+    class UniformBuffer;
+}
+
 namespace Engine {
 
 class GLPass;
-class GLProbe;
+class GLProbeArray;
 class GLProbeBaker;
 
 /**
@@ -62,8 +66,10 @@ class GLBackend : public RenderBackend {
         GLIBL         m_ibl;
         GLBloom       m_bloom;
 
-        std::unique_ptr<GLProbeBaker>         m_probeBaker;  ///< Created in init(); bakes probes at frame end.
-        std::vector<std::unique_ptr<GLProbe>> m_probes;      ///< GPU probe per scene probe (index-matched).
+        std::unique_ptr<GLProbeBaker>        m_probeBaker;  ///< Created in init(); bakes probes at frame end.
+        std::unique_ptr<GLProbeArray>        m_probeArray;  ///< Shared cube-map arrays (created in init()).
+        std::vector<bool>                    m_probeBaked;  ///< Per scene-probe (= array layer) bake state.
+        std::unique_ptr<Core::UniformBuffer> m_probeUBO;    ///< ProbeBlock: boxes + layers (binding 4).
 
         std::vector<std::unique_ptr<GLPass>> m_passes;
 };
