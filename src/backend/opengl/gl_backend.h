@@ -1,7 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <vector>
+
+#include <glm/glm.hpp>
 
 #include "gl_context.h"  // Core::Context (held by value)
 
@@ -25,6 +28,13 @@ namespace Engine {
 class GLPass;
 class GLProbeArray;
 class GLProbeBaker;
+
+/// Per-layer probe bake state, for change-detected re-baking.
+struct ProbeBakeState {
+    bool      baked    = false;
+    glm::vec3 position = glm::vec3(0.0f);  ///< Position the layer was last baked at.
+    uint32_t  version  = 0;                ///< bakeVersion the layer was last baked at.
+};
 
 /**
  * @brief The OpenGL implementation of RenderBackend.
@@ -68,7 +78,7 @@ class GLBackend : public RenderBackend {
 
         std::unique_ptr<GLProbeBaker>        m_probeBaker;  ///< Created in init(); bakes probes at frame end.
         std::unique_ptr<GLProbeArray>        m_probeArray;  ///< Shared cube-map arrays (created in init()).
-        std::vector<bool>                    m_probeBaked;  ///< Per scene-probe (= array layer) bake state.
+        std::vector<ProbeBakeState>          m_probeState;  ///< Per layer: baked + last-baked position/version (re-bake on change).
         std::unique_ptr<Core::UniformBuffer> m_probeUBO;    ///< ProbeBlock: boxes + layers (binding 4).
 
         std::vector<std::unique_ptr<GLPass>> m_passes;
