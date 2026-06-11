@@ -1,6 +1,7 @@
 #include "framework/editor_menu_bar.h"
 
 #include <cstdio>
+#include <filesystem>
 
 #include <imgui.h>
 
@@ -40,10 +41,9 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         const bool haveRecents = !state.recentScenes.empty();
         if (ImGui::BeginMenu("Open Recent", haveRecents)) {
             for (const auto& p : state.recentScenes) {
-                const size_t s = p.find_last_of("/\\");
-                const char* shortName = (s == std::string::npos) ? p.c_str() : p.c_str() + s + 1;
+                const std::string shortName = std::filesystem::path(p).filename().string();
                 ImGui::PushID(p.c_str());
-                if (ImGui::MenuItem(shortName)) sceneIO.loadPath(ctx, state, p);
+                if (ImGui::MenuItem(shortName.c_str())) sceneIO.loadPath(ctx, state, p);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", p.c_str());
                 ImGui::PopID();
             }
@@ -55,10 +55,8 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         if (haveCurrent) {
             ImGui::Separator();
             // Just the scene file name - the "Current:" prefix was noise.
-            const std::string& p = sceneIO.path();
-            const size_t s = p.find_last_of("/\\");
-            ImGui::TextDisabled("%s%s",
-                s == std::string::npos ? p.c_str() : p.c_str() + s + 1,
+            const std::string fname = std::filesystem::path(sceneIO.path()).filename().string();
+            ImGui::TextDisabled("%s%s", fname.c_str(),
                 state.sceneDirty ? "  (modified)" : "");
         }
         ImGui::EndMenu();

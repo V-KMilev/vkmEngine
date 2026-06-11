@@ -67,9 +67,7 @@ bool MaterialEditorPanel::drawMaterialBody(
 
         if (beginComponentCard("Base", ACC_BASE, true)) {
             drawPropertyLabel("Type");
-            int matTypeIdx = static_cast<int>(mat.type);
-            if (ImGui::Combo("##MatType", &matTypeIdx, MATERIAL_TYPE_NAMES, IM_ARRAYSIZE(MATERIAL_TYPE_NAMES))) {
-                mat.type = static_cast<MaterialType>(matTypeIdx);
+            if (drawEnumCombo("##MatType", mat.type, MATERIAL_TYPE_NAMES, IM_ARRAYSIZE(MATERIAL_TYPE_NAMES))) {
                 // Picking AlphaMask in the editor should turn on the discard
                 // path even if the asset shipped with cutoff = 0 (off).
                 if (mat.type == MaterialType::AlphaMask && mat.alphaCutoff <= 0.0f) {
@@ -379,6 +377,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
             // Snapshot once so ImGuiListClipper can window the visible rows.
             std::vector<std::pair<MaterialHandle, const MaterialAsset*>> rows;
             resources.forEachOfType<MaterialAsset>([&](MaterialHandle h, const MaterialAsset& a) {
+                if (a.hidden) return;  // editor helpers (e.g. thumbnail neutral) are not user-facing
                 rows.emplace_back(h, &a);
             });
             ImGuiListClipper clipper;

@@ -354,14 +354,12 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
         }
         case EditorIcon::FrameAll: {
             // Brackets enclosing a small square - "fit everything in view".
-            dl->AddLine(P(-0.62f, -0.62f), P(-0.32f, -0.62f), col, th);
-            dl->AddLine(P(-0.62f, -0.62f), P(-0.62f, -0.32f), col, th);
-            dl->AddLine(P( 0.62f, -0.62f), P( 0.32f, -0.62f), col, th);
-            dl->AddLine(P( 0.62f, -0.62f), P( 0.62f, -0.32f), col, th);
-            dl->AddLine(P(-0.62f,  0.62f), P(-0.32f,  0.62f), col, th);
-            dl->AddLine(P(-0.62f,  0.62f), P(-0.62f,  0.32f), col, th);
-            dl->AddLine(P( 0.62f,  0.62f), P( 0.32f,  0.62f), col, th);
-            dl->AddLine(P( 0.62f,  0.62f), P( 0.62f,  0.32f), col, th);
+            for (int sx = -1; sx <= 1; sx += 2)
+            for (int sy = -1; sy <= 1; sy += 2) {
+                const ImVec2 corner = P(0.62f * sx, 0.62f * sy);
+                dl->AddLine(corner, P(0.32f * sx, 0.62f * sy), col, th);
+                dl->AddLine(corner, P(0.62f * sx, 0.32f * sy), col, th);
+            }
             dl->AddRect(P(-0.20f, -0.20f), P(0.20f, 0.20f), col, 0.0f, 0, th);
             break;
         }

@@ -18,13 +18,7 @@
 namespace Engine {
 
 namespace {
-const ImVec4& AXIS_RED       = EditorStyle::AXIS_X;
-const ImVec4& AXIS_GREEN     = EditorStyle::AXIS_Y;
-const ImVec4& AXIS_BLUE      = EditorStyle::AXIS_Z;
-const ImVec4& AXIS_RED_HOV   = EditorStyle::AXIS_X_HOV;
-const ImVec4& AXIS_GREEN_HOV = EditorStyle::AXIS_Y_HOV;
-const ImVec4& AXIS_BLUE_HOV  = EditorStyle::AXIS_Z_HOV;
-constexpr float LABEL_WIDTH  = EditorStyle::LABEL_WIDTH;
+constexpr float LABEL_WIDTH = EditorStyle::LABEL_WIDTH;
 }
 
 bool drawVec3Control(const char* label, float* values,
@@ -41,34 +35,28 @@ bool drawVec3Control(const char* label, float* values,
     ImGui::TextUnformatted(label);
     ImGui::SameLine(LABEL_WIDTH);
 
-    ImGui::PushStyleColor(ImGuiCol_Button, AXIS_RED);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, AXIS_RED_HOV);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, AXIS_RED);
-    if (ImGui::Button("X", buttonSize)) { values[0] = resetValue; changed = true; }
-    ImGui::PopStyleColor(3);
-    ImGui::SameLine(0, 2);
-    ImGui::SetNextItemWidth(inputWidth);
-    changed |= ImGui::DragFloat("##X", &values[0], speed, 0.0f, 0.0f, "%.2f");
-    ImGui::SameLine(0, 6);
+    static const struct {
+        const char*   button;
+        const char*   drag;
+        const ImVec4& color;
+        const ImVec4& hover;
+    } axes[3] = {
+        { "X", "##X", EditorStyle::AXIS_X, EditorStyle::AXIS_X_HOV },
+        { "Y", "##Y", EditorStyle::AXIS_Y, EditorStyle::AXIS_Y_HOV },
+        { "Z", "##Z", EditorStyle::AXIS_Z, EditorStyle::AXIS_Z_HOV },
+    };
 
-    ImGui::PushStyleColor(ImGuiCol_Button, AXIS_GREEN);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, AXIS_GREEN_HOV);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, AXIS_GREEN);
-    if (ImGui::Button("Y", buttonSize)) { values[1] = resetValue; changed = true; }
-    ImGui::PopStyleColor(3);
-    ImGui::SameLine(0, 2);
-    ImGui::SetNextItemWidth(inputWidth);
-    changed |= ImGui::DragFloat("##Y", &values[1], speed, 0.0f, 0.0f, "%.2f");
-    ImGui::SameLine(0, 6);
-
-    ImGui::PushStyleColor(ImGuiCol_Button, AXIS_BLUE);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, AXIS_BLUE_HOV);
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, AXIS_BLUE);
-    if (ImGui::Button("Z", buttonSize)) { values[2] = resetValue; changed = true; }
-    ImGui::PopStyleColor(3);
-    ImGui::SameLine(0, 2);
-    ImGui::SetNextItemWidth(inputWidth);
-    changed |= ImGui::DragFloat("##Z", &values[2], speed, 0.0f, 0.0f, "%.2f");
+    for (int i = 0; i < 3; ++i) {
+        ImGui::PushStyleColor(ImGuiCol_Button, axes[i].color);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, axes[i].hover);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, axes[i].color);
+        if (ImGui::Button(axes[i].button, buttonSize)) { values[i] = resetValue; changed = true; }
+        ImGui::PopStyleColor(3);
+        ImGui::SameLine(0, 2);
+        ImGui::SetNextItemWidth(inputWidth);
+        changed |= ImGui::DragFloat(axes[i].drag, &values[i], speed, 0.0f, 0.0f, "%.2f");
+        if (i < 2) ImGui::SameLine(0, 6);
+    }
 
     ImGui::PopID();
     return changed;

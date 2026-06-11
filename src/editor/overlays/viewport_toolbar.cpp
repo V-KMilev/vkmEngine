@@ -3,10 +3,6 @@
 #include "ecs/scene.h"
 #include "framework/editor_common.h"
 #include "framework/editor_actions.h"
-#include "platform/window/window_manager.h"
-#include "system/render/render_backend.h"
-#include "system/render/render_system.h"
-#include "system/render/render_view.h"
 #include "ui/editor_widgets.h"
 
 namespace Engine {

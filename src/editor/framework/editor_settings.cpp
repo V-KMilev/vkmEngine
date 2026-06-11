@@ -31,6 +31,35 @@ void keybindFromJson(const json& j, KeyBind& k) {
     k.key  = static_cast<ImGuiKey>(j.value("key",  static_cast<int>(ImGuiKey_None)));
     k.mods = static_cast<uint8_t>(j.value("mods", 0));
 }
+
+/// One (json name, member) row per configurable keybind. Load and save both
+/// iterate this table, so the two directions can never drift apart - adding
+/// a keybind to EditorKeybinds only needs one new row here.
+struct KeybindField {
+    const char* name;
+    KeyBind EditorKeybinds::* field;
+};
+constexpr KeybindField KEYBIND_FIELDS[] = {
+    { "saveScene",        &EditorKeybinds::saveScene        },
+    { "saveSceneAs",      &EditorKeybinds::saveSceneAs      },
+    { "loadScene",        &EditorKeybinds::loadScene        },
+    { "undo",             &EditorKeybinds::undo             },
+    { "redo",             &EditorKeybinds::redo             },
+    { "toggleHierarchy",  &EditorKeybinds::toggleHierarchy  },
+    { "toggleInspector",  &EditorKeybinds::toggleInspector  },
+    { "toggleBottom",     &EditorKeybinds::toggleBottom     },
+    { "toggleEditor",     &EditorKeybinds::toggleEditor     },
+    { "openPreferences",  &EditorKeybinds::openPreferences  },
+    { "deleteEntity",     &EditorKeybinds::deleteEntity     },
+    { "deselect",         &EditorKeybinds::deselect         },
+    { "duplicate",        &EditorKeybinds::duplicate        },
+    { "focusSelected",    &EditorKeybinds::focusSelected    },
+    { "gizmoSelect",      &EditorKeybinds::gizmoSelect      },
+    { "gizmoTranslate",   &EditorKeybinds::gizmoTranslate   },
+    { "gizmoRotate",      &EditorKeybinds::gizmoRotate      },
+    { "gizmoScale",       &EditorKeybinds::gizmoScale       },
+    { "gizmoToggleSpace", &EditorKeybinds::gizmoToggleSpace },
+};
 }
 
 std::string path() {
@@ -83,28 +112,9 @@ bool load(EditorState& state) {
     // Keybinds (per field; missing keys leave defaults)
     if (j.contains("keybinds")) {
         const auto& kb = j["keybinds"];
-        auto bind = [&](const char* name, KeyBind& out) {
-            if (kb.contains(name)) keybindFromJson(kb[name], out);
-        };
-        bind("saveScene",        state.keybinds.saveScene);
-        bind("saveSceneAs",      state.keybinds.saveSceneAs);
-        bind("loadScene",        state.keybinds.loadScene);
-        bind("undo",             state.keybinds.undo);
-        bind("redo",             state.keybinds.redo);
-        bind("toggleHierarchy",  state.keybinds.toggleHierarchy);
-        bind("toggleInspector",  state.keybinds.toggleInspector);
-        bind("toggleBottom",     state.keybinds.toggleBottom);
-        bind("toggleEditor",     state.keybinds.toggleEditor);
-        bind("openPreferences",  state.keybinds.openPreferences);
-        bind("deleteEntity",     state.keybinds.deleteEntity);
-        bind("deselect",         state.keybinds.deselect);
-        bind("duplicate",        state.keybinds.duplicate);
-        bind("focusSelected",    state.keybinds.focusSelected);
-        bind("gizmoSelect",      state.keybinds.gizmoSelect);
-        bind("gizmoTranslate",   state.keybinds.gizmoTranslate);
-        bind("gizmoRotate",      state.keybinds.gizmoRotate);
-        bind("gizmoScale",       state.keybinds.gizmoScale);
-        bind("gizmoToggleSpace", state.keybinds.gizmoToggleSpace);
+        for (const KeybindField& f : KEYBIND_FIELDS) {
+            if (kb.contains(f.name)) keybindFromJson(kb[f.name], state.keybinds.*f.field);
+        }
     }
 
     // Recent scenes
@@ -136,25 +146,9 @@ bool save(const EditorState& state) {
     j["snapScale"]         = state.snapScale;
 
     json kb;
-    kb["saveScene"]        = keybindToJson(state.keybinds.saveScene);
-    kb["saveSceneAs"]      = keybindToJson(state.keybinds.saveSceneAs);
-    kb["loadScene"]        = keybindToJson(state.keybinds.loadScene);
-    kb["undo"]             = keybindToJson(state.keybinds.undo);
-    kb["redo"]             = keybindToJson(state.keybinds.redo);
-    kb["toggleHierarchy"]  = keybindToJson(state.keybinds.toggleHierarchy);
-    kb["toggleInspector"]  = keybindToJson(state.keybinds.toggleInspector);
-    kb["toggleBottom"]     = keybindToJson(state.keybinds.toggleBottom);
-    kb["toggleEditor"]     = keybindToJson(state.keybinds.toggleEditor);
-    kb["openPreferences"]  = keybindToJson(state.keybinds.openPreferences);
-    kb["deleteEntity"]     = keybindToJson(state.keybinds.deleteEntity);
-    kb["deselect"]         = keybindToJson(state.keybinds.deselect);
-    kb["duplicate"]        = keybindToJson(state.keybinds.duplicate);
-    kb["focusSelected"]    = keybindToJson(state.keybinds.focusSelected);
-    kb["gizmoSelect"]      = keybindToJson(state.keybinds.gizmoSelect);
-    kb["gizmoTranslate"]   = keybindToJson(state.keybinds.gizmoTranslate);
-    kb["gizmoRotate"]      = keybindToJson(state.keybinds.gizmoRotate);
-    kb["gizmoScale"]       = keybindToJson(state.keybinds.gizmoScale);
-    kb["gizmoToggleSpace"] = keybindToJson(state.keybinds.gizmoToggleSpace);
+    for (const KeybindField& f : KEYBIND_FIELDS) {
+        kb[f.name] = keybindToJson(state.keybinds.*f.field);
+    }
     j["keybinds"] = std::move(kb);
 
     j["recentScenes"] = state.recentScenes;

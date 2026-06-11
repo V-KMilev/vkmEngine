@@ -54,6 +54,22 @@ void thumbName(const char* name, float cell) {
 }
 }  // namespace
 
+void AssetBrowserPanel::openRename(MaterialHandle h, const std::string& name) {
+    snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", name.c_str());
+    m_renameOldName = name;
+    m_renameMat  = h;
+    m_renameMesh = {};
+    m_renameOpen = true;
+}
+
+void AssetBrowserPanel::openRename(MeshHandle h, const std::string& name) {
+    snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", name.c_str());
+    m_renameOldName = name;
+    m_renameMesh = h;
+    m_renameMat  = {};
+    m_renameOpen = true;
+}
+
 void AssetBrowserPanel::ensureAssets(ResourceManager& resources) {
     // Re-acquire every call rather than caching with a "ready" flag:
     // SceneSerializer::load swaps the ResourceManager wholesale, so any
@@ -228,13 +244,7 @@ void AssetBrowserPanel::drawMaterials(EditorContext& ec) {
             if (!canAssign) ImGui::TextDisabled("(select a mesh entity to assign)");
 
             ImGui::Separator();
-            if (ImGui::MenuItem("Rename...")) {
-                snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", a.name.c_str());
-                m_renameOldName = a.name;
-                m_renameMat  = h;
-                m_renameMesh = {};
-                m_renameOpen = true;
-            }
+            if (ImGui::MenuItem("Rename...")) openRename(h, a.name);
             const bool inUse = usedMats.count(h.id()) != 0;
             ImGui::BeginDisabled(inUse);
             if (ImGui::MenuItem("Delete")) toDelete = h;
@@ -308,13 +318,7 @@ void AssetBrowserPanel::drawMeshes(EditorContext& ec) {
             if (!canAssign) ImGui::TextDisabled("(select a mesh entity to assign)");
 
             ImGui::Separator();
-            if (ImGui::MenuItem("Rename...")) {
-                snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", a.name.c_str());
-                m_renameOldName = a.name;
-                m_renameMesh = h;
-                m_renameMat  = {};
-                m_renameOpen = true;
-            }
+            if (ImGui::MenuItem("Rename...")) openRename(h, a.name);
             const bool inUse = usedMeshes.count(h.id()) != 0;
             ImGui::BeginDisabled(inUse);
             if (ImGui::MenuItem("Delete")) toDelete = h;

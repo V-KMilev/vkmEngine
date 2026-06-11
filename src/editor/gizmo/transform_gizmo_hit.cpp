@@ -10,50 +10,25 @@ namespace Engine {
 GizmoElement TransformGizmo::hitTestTranslation(const glm::vec3 axes[3], const ImVec2 screenAxes[3]) const {
     // Test plane quads first (they're smaller targets, higher priority)
     for (int i = 0; i < 3; ++i) {
-        int a1 = (i + 1) % 3;
-        int a2 = (i + 2) % 3;
+        ImVec2 qA, qB, qC;
+        planeQuadCorners(i, screenAxes, qA, qB, qC);
 
-        ImVec2 quadCorner(
-            m_originScreen.x + (screenAxes[a1].x - m_originScreen.x) * PLANE_QUAD_FRAC
-                             + (screenAxes[a2].x - m_originScreen.x) * PLANE_QUAD_FRAC,
-            m_originScreen.y + (screenAxes[a1].y - m_originScreen.y) * PLANE_QUAD_FRAC
-                             + (screenAxes[a2].y - m_originScreen.y) * PLANE_QUAD_FRAC
-        );
-        ImVec2 qA(
-            m_originScreen.x + (screenAxes[a1].x - m_originScreen.x) * PLANE_QUAD_FRAC,
-            m_originScreen.y + (screenAxes[a1].y - m_originScreen.y) * PLANE_QUAD_FRAC
-        );
-        ImVec2 qB(
-            m_originScreen.x + (screenAxes[a2].x - m_originScreen.x) * PLANE_QUAD_FRAC,
-            m_originScreen.y + (screenAxes[a2].y - m_originScreen.y) * PLANE_QUAD_FRAC
-        );
-
-        // Point-in-quad test using triangle method
         auto cross2D = [](ImVec2 o, ImVec2 a, ImVec2 b) {
             return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
         };
 
-        // Quad: origin, qA, quadCorner, qB
-        ImVec2 pts[4] = { m_originScreen, qA, quadCorner, qB };
-        bool inside = true;
+        // Point-in-quad: the mouse is inside when every edge cross product
+        // has the same sign (the quad's screen winding flips with the view,
+        // so either all-positive or all-negative counts as inside).
+        ImVec2 pts[4] = { m_originScreen, qA, qC, qB };
+        bool hasNeg = false;
+        bool hasPos = false;
         for (int j = 0; j < 4; ++j) {
-            float c = cross2D(pts[j], pts[(j + 1) % 4], m_mousePos);
-            if (c < 0.0f) { inside = false; break; }
+            const float c = cross2D(pts[j], pts[(j + 1) % 4], m_mousePos);
+            hasNeg |= c < 0.0f;
+            hasPos |= c > 0.0f;
         }
-        if (!inside) {
-            inside = true;
-            for (int j = 0; j < 4; ++j) {
-                float c = cross2D(pts[j], pts[(j + 1) % 4], m_mousePos);
-                if (c > 0.0f) { inside = false; break; }
-            }
-        }
-
-        if (inside) {
-            static constexpr GizmoElement planes[] = {
-                GizmoElement::PlaneYZ, GizmoElement::PlaneXZ, GizmoElement::PlaneXY
-            };
-            return planes[i];
-        }
+        if (!(hasNeg && hasPos)) return GIZMO_PLANES[i];
     }
 
     // Test axis lines
@@ -64,10 +39,7 @@ GizmoElement TransformGizmo::hitTestTranslation(const glm::vec3 axes[3], const I
         float d = distPointToSegment2D(m_mousePos, m_originScreen, screenAxes[i]);
         if (d < (AXIS_HIT_RADIUS * m_uiScale) && d < bestDist) {
             bestDist = d;
-            static constexpr GizmoElement axisElems[] = {
-                GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ
-            };
-            bestElem = axisElems[i];
+            bestElem = GIZMO_AXES[i];
         }
     }
 
@@ -101,10 +73,7 @@ GizmoElement TransformGizmo::hitTestRotation(const glm::vec3 axes[3]) const {
 
         if (pixelDiff < (AXIS_HIT_RADIUS * m_uiScale) && pixelDiff < bestDist) {
             bestDist = pixelDiff;
-            static constexpr GizmoElement axisElems[] = {
-                GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ
-            };
-            bestElem = axisElems[i];
+            bestElem = GIZMO_AXES[i];
         }
     }
 
@@ -123,10 +92,7 @@ GizmoElement TransformGizmo::hitTestScale(const ImVec2 screenAxes[3]) const {
         float boxDist = std::max(std::abs(dx), std::abs(dy));
         if (boxDist < (SCALE_BOX_HALF * m_uiScale) + 4.0f && boxDist < bestDist) {
             bestDist = boxDist;
-            static constexpr GizmoElement axisElems[] = {
-                GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ
-            };
-            bestElem = axisElems[i];
+            bestElem = GIZMO_AXES[i];
             continue;
         }
 
@@ -134,10 +100,7 @@ GizmoElement TransformGizmo::hitTestScale(const ImVec2 screenAxes[3]) const {
         float d = distPointToSegment2D(m_mousePos, m_originScreen, screenAxes[i]);
         if (d < (AXIS_HIT_RADIUS * m_uiScale) && d < bestDist) {
             bestDist = d;
-            static constexpr GizmoElement axisElems[] = {
-                GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ
-            };
-            bestElem = axisElems[i];
+            bestElem = GIZMO_AXES[i];
         }
     }
 

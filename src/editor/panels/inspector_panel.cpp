@@ -43,7 +43,8 @@ const ImVec4 ACCENT_PROBE     = ImVec4(0.30f, 0.62f, 0.92f, 1.0f);  // reflectio
 
 // Asset-reference combo: pick which loaded asset of type Asset a handle points
 // at. Snapshots the asset list so ImGuiListClipper can window thousands of rows
-// fluidly. Returns true if the selection changed. Shared by the Mesh + LOD cards.
+// fluidly. Returns true if the selection changed. Used by the Mesh card's
+// mesh + material pickers.
 template <typename Asset, typename Handle>
 bool pickAsset(const char* comboId, const char* label, ResourceManager& resources, Handle& currentHandle) {
     const std::string cur = currentHandle
@@ -367,11 +368,7 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
         bool changed = false;
 
         drawPropertyLabel("Type");
-        int typeIdx = static_cast<int>(light.type);
-        if (ImGui::Combo("##LType", &typeIdx, LIGHT_TYPE_NAMES, IM_ARRAYSIZE(LIGHT_TYPE_NAMES))) {
-            light.type = static_cast<LightType>(typeIdx);
-            changed = true;
-        }
+        changed |= drawEnumCombo("##LType", light.type, LIGHT_TYPE_NAMES, IM_ARRAYSIZE(LIGHT_TYPE_NAMES));
 
         drawPropertyLabel("Color");
         changed |= ImGui::ColorEdit3("##LColor", glm::value_ptr(light.color), ImGuiColorEditFlags_Float);
@@ -597,11 +594,7 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
         bool changed = false;
 
         drawPropertyLabel("Projection");
-        int projIdx = static_cast<int>(cam.projection);
-        if (ImGui::Combo("##CProj", &projIdx, PROJECTION_TYPE_NAMES, IM_ARRAYSIZE(PROJECTION_TYPE_NAMES))) {
-            cam.projection = static_cast<ProjectionType>(projIdx);
-            changed = true;
-        }
+        changed |= drawEnumCombo("##CProj", cam.projection, PROJECTION_TYPE_NAMES, IM_ARRAYSIZE(PROJECTION_TYPE_NAMES));
 
         if (cam.projection == ProjectionType::Perspective) {
             float fovDeg = glm::degrees(cam.fovY);
@@ -620,17 +613,8 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
         drawPropertyLabel("Exposure");  changed |= ImGui::DragFloat("##CExp", &cam.exposure, 0.01f, 0.0f, 10.0f, "%.2f");
         drawPropertyLabel("Active");    changed |= ImGui::Checkbox("##CAct", &cam.active);
 
-        // "Set as Main" flips active across every camera; record each prior
-        // active flag so the multi-entity change is undoable.
         if (ImGui::Button("Set as Main Camera", ImVec2(-1, 0))) {
-            std::vector<std::pair<uint32_t, bool>> beforeActive;
-            scene.forEach<Camera>([&](EntityId other, Camera& c) {
-                beforeActive.emplace_back(other.index, c.active);
-                c.active = (other == id);
-            });
-            state.commands.push(std::make_unique<SetActiveCameraCommand>(
-                id, std::move(beforeActive), "Set Main Camera"));
-            state.markSceneDirty();
+            EditorActions::setActiveCamera(scene, state, id, "Set Main Camera");
         }
 
         if (changed) {
@@ -683,7 +667,7 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
         drawPropertyLabel("Length");
         ImGui::SetNextItemWidth(-1);
         if (ImGui::DragFloat("##ALength", &anim.length, 0.02f, 0.0f, 100000.0f, "%.2f s  (0 = auto)")) {
-            if (anim.length < 0.0f) anim.length = 0.0f;
+            anim.length = std::max(0.0f, anim.length);  // same clamp as the Bottom panel
             anim.updateDuration();
             changed = true;
         }

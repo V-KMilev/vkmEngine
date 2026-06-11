@@ -57,6 +57,20 @@ void drawPanelTitle(const char* title);
 /// (e.g. "##easePos"). Sets the next item width to fill the row.
 bool drawEasingCombo(const char* id, EasingFunction& easing);
 
+/// Enum dropdown: one row per name, writes the picked index back into
+/// @p value. Returns true on change. Fills the row, so it pairs with
+/// drawPropertyLabel. Replaces the int-cast/Combo/cast-back boilerplate.
+template <typename E>
+bool drawEnumCombo(const char* id, E& value, const char* const names[], int count) {
+    int idx = static_cast<int>(value);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::Combo(id, &idx, names, count)) {
+        value = static_cast<E>(idx);
+        return true;
+    }
+    return false;
+}
+
 /**
  * @brief Stable Euler-angle edit cache for quaternion-backed rotations.
  *
