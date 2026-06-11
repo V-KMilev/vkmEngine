@@ -145,7 +145,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         std::vector<Active> active;
         const int capacity = m_probeArray->capacity();
         for (size_t i = 0; i < view.probes.size() && static_cast<int>(i) < capacity; ++i) {
-            if (i >= m_probeBaked.size() || !m_probeBaked[i]) continue;
+            if (i >= m_probeState.size() || !m_probeState[i].baked) continue;
             active.push_back({ static_cast<uint32_t>(i),
                 glm::distance(view.camera.position, view.probes[i].position) });
         }
@@ -176,17 +176,26 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         pass->execute(ctx);
     }
 
-    // Frame end: bake any probe layer not yet baked. The baker rebinds the
-    // camera / light UBOs, harmless here - the next frame re-uploads its own,
-    // and the layer is ready for that frame.
+    // Frame end: bake probes that are new, moved, or version-bumped. Throttled
+    // so several changing at once don't hitch the frame. The baker rebinds the
+    // camera / light UBOs, harmless here - the next frame re-uploads its own.
     if (m_probeBaker && m_probeArray) {
+        constexpr int MAX_REBAKES_PER_FRAME = 1;
         const int capacity = m_probeArray->capacity();
         const int n = std::min(static_cast<int>(view.probes.size()), capacity);
-        if (static_cast<int>(m_probeBaked.size()) < n) m_probeBaked.resize(n, false);
-        for (int i = 0; i < n; ++i) {
-            if (m_probeBaked[i]) continue;
-            m_probeBaker->bake(m_context, *m_probeArray, i, view.probes[i].position, view, m_view, m_ibl);
-            m_probeBaked[i] = true;
+        if (static_cast<int>(m_probeState.size()) < n) m_probeState.resize(n);
+        int rebakes = 0;
+        for (int i = 0; i < n && rebakes < MAX_REBAKES_PER_FRAME; ++i) {
+            const ProbeData& pd = view.probes[i];
+            ProbeBakeState&  st = m_probeState[i];
+            const bool moved  = glm::distance(st.position, pd.position) > 1e-3f;
+            const bool forced = st.version != pd.bakeVersion;
+            if (st.baked && !moved && !forced) continue;
+            m_probeBaker->bake(m_context, *m_probeArray, i, pd.position, view, m_view, m_ibl);
+            st.baked    = true;
+            st.position = pd.position;
+            st.version  = pd.bakeVersion;
+            ++rebakes;
         }
     }
 }
