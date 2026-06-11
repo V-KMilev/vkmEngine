@@ -61,7 +61,8 @@ bool GLBackend::init(WindowManager& window) {
     // the background BEFORE geometry, so sorted transparents blend over it
     // instead of being overwritten; the lit forward draw (opaque then
     // transparent); screen-space reflections; camera motion blur over the
-    // resolved scene; bloom; then composite (tonemap + FXAA) to screen.
+    // resolved scene; bloom; debug overlays (grid) over
+    // the resolved HDR; then composite (tonemap + FXAA) to screen.
     m_passes.push_back(std::make_unique<GLShadowPass>());
     m_passes.push_back(std::make_unique<GLDepthPrePass>());
     m_passes.push_back(std::make_unique<GLGTAOPass>());

@@ -743,6 +743,33 @@ void GizmoOverlay::drawBoundsGizmos(EditorContext& ec) {
     dl->PopClipRect();
 }
 
+void GizmoOverlay::drawSelectionOutline(EditorContext& ec) {
+    FrameContext& ctx = ec.frame;
+    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+
+    const EntityId sel = ec.state.selectedEntity;
+    if (!sel || !ctx.scene.isAlive(sel)) return;
+
+    const glm::mat4 vp     = ctx.visibility->projection * ctx.visibility->view;
+    const ImVec2    vpMin  = ec.viewportPos;
+    const ImVec2    vpSize = ec.viewportSize;
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->PushClipRect(vpMin, ImVec2(vpMin.x + vpSize.x, vpMin.y + vpSize.y), true);
+
+    // Outline the selected entity's world AABB. Only mesh entities are in the
+    // visible set; lights / probes / cameras highlight their own gizmos instead.
+    for (const VisibleEntity& e : ctx.visibility->entries) {
+        if (e.id != sel || e.worldMin == e.worldMax) continue;
+        const glm::vec3 center = (e.worldMin + e.worldMax) * 0.5f;
+        const glm::vec3 he     = (e.worldMax - e.worldMin) * 0.5f;
+        wireBox(dl, vp, center, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), he, vpMin, vpSize, EditorStyle::HIGHLIGHT_U32);
+        break;
+    }
+
+    dl->PopClipRect();
+}
+
 void GizmoOverlay::handleViewportPick(EditorContext& ec) {
     FrameContext& ctx   = ec.frame;
     EditorState&  state = ec.state;
