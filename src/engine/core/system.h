@@ -67,6 +67,7 @@ struct FrameContext {
     ResourceManager& resources;
     WindowManager& window;
     FrameTracker& frameTracker;
+
     float deltaTime;
     float fixedDeltaTime;
     float simDeltaTime;

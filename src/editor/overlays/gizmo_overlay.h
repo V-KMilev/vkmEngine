@@ -66,6 +66,13 @@ class GizmoOverlay {
          */
         void drawBoundsGizmos(EditorContext& ec);
 
+        /**
+         * @brief Outline the selected entity's world-space AABB as a selection cue.
+         *
+         * Mesh entities only; lights / probes / cameras highlight their own gizmos.
+         */
+        void drawSelectionOutline(EditorContext& ec);
+
         void handleViewportPick(EditorContext& ec);
         bool isGizmoOver() const  { return m_gizmo.isOver(); }
         bool isGizmoUsing() const { return m_gizmo.isUsing(); }
