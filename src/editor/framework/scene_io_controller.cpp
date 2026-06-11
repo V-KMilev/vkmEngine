@@ -21,6 +21,7 @@
 #include "io/project_paths.h"
 #include "system/camera/camera_controller.h"
 #include "system/event/event_system.h"
+#include "system/render/render_backend.h"
 #include "system/render/render_system.h"
 
 namespace Engine {
@@ -103,6 +104,13 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
     // Entity IDs don't carry across scenes - any pending undo would
     // operate on slots that now hold unrelated entities.
     state.commands.clear();
+
+    // The load swapped the ResourceManager wholesale, so preview targets
+    // keyed by the old asset handles are stale. Drop them; the Material
+    // Editor / Asset Browser re-bake lazily on their next draw.
+    if (RenderBackend* backend = m_renderSystem.backend()) {
+        backend->releaseAllPreviews();
+    }
 
     // Selection survives the load only when an entity with the same Name
     // exists in the loaded scene. Anonymous selections (no Name) are

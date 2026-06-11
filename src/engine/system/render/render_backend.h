@@ -3,6 +3,9 @@
 #include <cstdint>
 #include <string>
 
+#include "resource/asset/mesh_asset.h"      // MeshHandle
+#include "resource/asset/material_asset.h"  // MaterialHandle
+
 namespace Engine {
     struct RenderView;
     class ResourceManager;
@@ -30,6 +33,24 @@ enum class RenderBackendType {
 struct BackendInfo {
     std::string api;     ///< e.g. "OpenGL 4.6"
     std::string device;  ///< e.g. "NVIDIA GeForce RTX 3080"
+};
+
+/**
+ * @brief One editor preview render: draw @p mesh with @p material under a
+ *        studio light rig, from an orbit camera, into a per-@p key target.
+ *
+ * The key identifies the cached output texture across frames (the editor
+ * derives it from the asset handle); rendering the same key again overwrites
+ * that target. Sizes are square pixels.
+ */
+struct PreviewRequest {
+    uint64_t       key      = 0;      ///< Identifies the cached target.
+    uint32_t       size     = 256;    ///< Output edge length in pixels.
+    MeshHandle     mesh;              ///< Shape to draw.
+    MaterialHandle material;          ///< Material to draw it with.
+    float          yawDeg   = 35.0f;  ///< Orbit yaw (degrees).
+    float          pitchDeg = 20.0f;  ///< Orbit pitch (degrees).
+    float          distance = 3.0f;   ///< Camera distance, in mesh bounding radii.
 };
 
 /**
@@ -82,6 +103,21 @@ class RenderBackend {
          *                  mirrors that onto the GPU, uploading only what changed.
          */
         virtual void render(const RenderView& view, const ResourceManager& resources) = 0;
+
+        /**
+         * @brief Editor preview hooks - optional.
+         *
+         * renderPreview() draws the request offscreen and returns an opaque
+         * texture id the UI layer can display (for OpenGL: the GL texture
+         * name ImGui samples); previewTexture() returns the last-rendered
+         * texture for a key, or 0 when none exists. A backend without an
+         * offscreen path keeps these no-ops and the editor shows no image.
+         */
+        virtual uint32_t renderPreview(const PreviewRequest& request,
+                                       const ResourceManager& resources) { return 0; }
+        virtual uint32_t previewTexture(uint64_t key) const { return 0; }
+        virtual void releasePreview(uint64_t key) {}
+        virtual void releaseAllPreviews() {}
 
     protected:
         RenderBackendType m_type;
