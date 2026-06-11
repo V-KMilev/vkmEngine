@@ -84,9 +84,9 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     if (ctx.aoReady) ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
     m_shader->setUniform1i("u_hasSSAO", ctx.aoReady ? 1 : 0);
 
-    // Reflection probes: the backend bound the two cube-map arrays + the
-    // ProbeBlock UBO; hand the shader the count for its per-fragment blend loop.
-    m_shader->setUniform1i("u_probeCount", ctx.probeCount);
+    // Reflection probes: the backend bound the cube arrays + ProbeBlock UBO; hand
+    // the shader the active count, or 0 when probes are toggled off.
+    m_shader->setUniform1i("u_probeCount", ctx.view.settings.probes ? ctx.probeCount : 0);
 
     // Refraction is sampled only by the transparent bucket; default it off here
     // and switch it on after the scene-colour copy below.

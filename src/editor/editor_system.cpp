@@ -347,6 +347,10 @@ void EditorSystem::update(FrameContext& ctx) {
         PROFILE_SCOPE("Panel/AssetBrowser");
         m_assetBrowser.draw(ec);
     }
+    if (m_state.showRenderSettings) {
+        PROFILE_SCOPE("Panel/RenderSettings");
+        m_renderSettings.draw(ec);
+    }
     if (m_state.showPhysics) {
         PROFILE_SCOPE("Panel/Physics");
         Scene& scene = ec.frame.scene;
@@ -438,6 +442,7 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
             m_viewportOverlay.drawNavigationGizmo(ec);
             m_gizmoOverlay.drawLightGizmos(ec);
             m_gizmoOverlay.drawCameraGizmos(ec);
+            m_gizmoOverlay.drawProbeGizmos(ec);
             if (m_state.showColliders) m_gizmoOverlay.drawColliderGizmos(ec);
             if (m_state.showBounds)    m_gizmoOverlay.drawBoundsGizmos(ec);
             m_gizmoOverlay.drawTransformGizmo(ec);

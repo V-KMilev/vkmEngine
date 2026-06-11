@@ -13,6 +13,7 @@
 #include "system/camera/camera_controller.h"
 #include "resource/resource_manager.h"
 #include "ecs/component/collider.h"
+#include "ecs/component/reflection_probe.h"
 #include "ecs/component/world_transform.h"
 #include "core/math/rotation.h"
 
@@ -508,6 +509,47 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                 break;
             }
         }
+    });
+
+    dl->PopClipRect();
+}
+
+void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
+    FrameContext& ctx = ec.frame;
+    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+
+    const glm::mat4 vp = ctx.visibility->projection * ctx.visibility->view;
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->PushClipRect(ec.viewportPos,
+        ImVec2(ec.viewportPos.x + ec.viewportSize.x,
+               ec.viewportPos.y + ec.viewportSize.y), true);
+
+    ctx.scene.forEach<ReflectionProbe, Transform>([&](EntityId id, const ReflectionProbe& probe, const Transform& tf) {
+        const bool  selected = (ec.state.selectedEntity == id);
+        const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : IM_COL32(77, 158, 235, 200);
+
+        const glm::vec3 pos = lightWorldPos(ctx.scene, id, tf);  // world position (reuses the helper)
+        const glm::vec3 e   = probe.halfExtents;
+
+        // 8 corners of the world-axis-aligned influence box (bottom 0-3, top 4-7).
+        const glm::vec3 c[8] = {
+            pos + glm::vec3(-e.x, -e.y, -e.z), pos + glm::vec3( e.x, -e.y, -e.z),
+            pos + glm::vec3( e.x,  e.y, -e.z), pos + glm::vec3(-e.x,  e.y, -e.z),
+            pos + glm::vec3(-e.x, -e.y,  e.z), pos + glm::vec3( e.x, -e.y,  e.z),
+            pos + glm::vec3( e.x,  e.y,  e.z), pos + glm::vec3(-e.x,  e.y,  e.z),
+        };
+        static const int edges[12][2] = {
+            {0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4}, {0,4},{1,5},{2,6},{3,7},
+        };
+        const float th = selected ? 2.0f : 1.5f;
+        for (const auto& ed : edges)
+            wireSegment(dl, vp, c[ed[0]], c[ed[1]], ec.viewportPos, ec.viewportSize, col, th);
+
+        // Centre marker: the point the probe captures the scene from.
+        ImVec2 sp;
+        if (projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, sp))
+            dl->AddCircleFilled(sp, selected ? 4.0f : 3.0f, col);
     });
 
     dl->PopClipRect();

@@ -10,6 +10,7 @@
 #include "gl_frame_context.h"
 #include "gl_target.h"
 #include "data/gl_bloom.h"
+#include "system/render/render_view.h"
 
 namespace Engine {
 
@@ -29,7 +30,7 @@ GLBloomPass::GLBloomPass()
 GLBloomPass::~GLBloomPass() = default;
 
 void GLBloomPass::execute(GLFrameContext& ctx) {
-    if (!isEnabled()) return;
+    if (!isEnabled() || !ctx.view.settings.bloom) return;
 
     GLBloom& bloom = ctx.bloom;
     if (!bloom.isReady()) return;

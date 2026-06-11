@@ -8,6 +8,7 @@
 #include "system/render/data/light_data.h"
 #include "system/render/data/shadow_caster_data.h"
 #include "system/render/data/probe_data.h"
+#include "system/render/render_settings.h"
 
 namespace Engine {
 
@@ -34,6 +35,7 @@ struct RenderView {
     std::vector<LightData>    lights;            ///< The lights for the view.
     std::vector<ShadowCasterData> shadowCasters; ///< The shadow casters for the view.
     std::vector<ProbeData>    probes;            ///< The reflection probes in the scene.
+    RenderSettings            settings;          ///< Editable render tuning (copied from the RenderSystem each frame).
 
     public:
         void build(
