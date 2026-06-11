@@ -27,6 +27,7 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         drawPropertyLabel("Radius");    ImGui::DragFloat("##gtaoR", &s.gtaoRadius, 0.01f, 0.05f, 5.0f, "%.2f");
         drawPropertyLabel("Intensity"); ImGui::SliderFloat("##gtaoI", &s.gtaoIntensity, 0.0f, 3.0f, "%.2f");
         drawPropertyLabel("Power");     ImGui::SliderFloat("##gtaoP", &s.gtaoPower, 0.5f, 4.0f, "%.2f");
+        drawPropertyLabel("Bias");      ImGui::SliderFloat("##gtaoB", &s.gtaoBias, 0.0f, 0.2f, "%.3f");
         ImGui::EndDisabled();
     }
 
@@ -41,14 +42,19 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
     if (ImGui::CollapsingHeader("Motion Blur", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Checkbox("Enabled##mb", &s.motionBlur);
         ImGui::BeginDisabled(!s.motionBlur);
-        drawPropertyLabel("Intensity"); ImGui::SliderFloat("##mbI", &s.motionBlurIntensity, 0.0f, 3.0f, "%.2f");
+        drawPropertyLabel("Intensity");    ImGui::SliderFloat("##mbI", &s.motionBlurIntensity, 0.0f, 3.0f, "%.2f");
+        drawPropertyLabel("Max Velocity"); ImGui::SliderFloat("##mbV", &s.motionBlurMaxVelocity, 0.0f, 0.2f, "%.3f");
+        drawPropertyLabel("Samples");      ImGui::SliderInt("##mbN", &s.motionBlurSamples, 1, 32);
         ImGui::EndDisabled();
     }
 
     if (ImGui::CollapsingHeader("Bloom", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Checkbox("Enabled##bloom", &s.bloom);
         ImGui::BeginDisabled(!s.bloom);
-        drawPropertyLabel("Strength"); ImGui::SliderFloat("##bloomS", &s.bloomStrength, 0.0f, 0.5f, "%.3f");
+        drawPropertyLabel("Strength");  ImGui::SliderFloat("##bloomS", &s.bloomStrength, 0.0f, 0.5f, "%.3f");
+        drawPropertyLabel("Threshold"); ImGui::SliderFloat("##bloomT", &s.bloomThreshold, 0.0f, 4.0f, "%.2f");
+        drawPropertyLabel("Knee");      ImGui::SliderFloat("##bloomK", &s.bloomKnee, 0.0f, 1.0f, "%.2f");
+        drawPropertyLabel("Radius");    ImGui::SliderFloat("##bloomR", &s.bloomRadius, 0.001f, 0.02f, "%.4f");
         ImGui::EndDisabled();
     }
 

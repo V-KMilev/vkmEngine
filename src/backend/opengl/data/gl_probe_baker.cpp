@@ -14,6 +14,7 @@
 #include "data/gl_ibl.h"
 #include "data/gl_mesh.h"
 #include "data/gl_material.h"
+#include "data/gl_cubemap.h"
 #include "gl_view.h"
 #include "convention/gl_bindings.h"
 #include "generator/mesh_generators.h"
@@ -25,18 +26,6 @@ namespace Engine {
 namespace {
 constexpr float CAPTURE_NEAR = 0.05f;
 constexpr float CAPTURE_FAR  = 1000.0f;
-
-// Standard cubemap capture basis (matches the env cube convention the forward +
-// skybox already sample). dir = the +face direction, up = its up vector.
-struct FaceBasis { glm::vec3 dir; glm::vec3 up; };
-const FaceBasis FACES[6] = {
-    {{ 1.0f,  0.0f,  0.0f}, {0.0f, -1.0f,  0.0f}},
-    {{-1.0f,  0.0f,  0.0f}, {0.0f, -1.0f,  0.0f}},
-    {{ 0.0f,  1.0f,  0.0f}, {0.0f,  0.0f,  1.0f}},
-    {{ 0.0f, -1.0f,  0.0f}, {0.0f,  0.0f, -1.0f}},
-    {{ 0.0f,  0.0f,  1.0f}, {0.0f, -1.0f,  0.0f}},
-    {{ 0.0f,  0.0f, -1.0f}, {0.0f, -1.0f,  0.0f}},
-};
 }
 
 GLProbeBaker::GLProbeBaker()
@@ -81,9 +70,9 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbeArray& arr, const glm:
     arr.bindCaptureFbo();
 
     for (int face = 0; face < 6; ++face) {
-        const glm::mat4 viewM = glm::lookAt(position, position + FACES[face].dir, FACES[face].up);
+        const glm::mat4 viewM = GLCubemap::faceView(face, position);
 
-        arr.attachEnvFace(face);
+        arr.attachEnvFace(gl, face);
         gl.setDepthTest(true);
         gl.setDepthWrite(true);
         gl.setDepthFunc(GL_LESS);
@@ -155,7 +144,7 @@ void GLProbeBaker::convolve(Core::Context& gl, GLProbeArray& arr, int layer) {
 
     // Direction-only views (the convolution integrates over directions, so the
     // cube is sampled about the origin, not the probe position).
-    const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
+    const glm::mat4 proj = GLCubemap::convolveProjection();
 
     arr.bindCaptureFbo();
 
@@ -164,9 +153,8 @@ void GLProbeBaker::convolve(Core::Context& gl, GLProbeArray& arr, int layer) {
     m_irradiance.setUniformMatrix4fv("u_projection", proj);
     arr.bindEnvCube(0);
     for (int face = 0; face < 6; ++face) {
-        m_irradiance.setUniformMatrix4fv("u_view",
-            glm::lookAt(glm::vec3(0.0f), FACES[face].dir, FACES[face].up));
-        arr.attachIrradianceFace(layer, face);
+        m_irradiance.setUniformMatrix4fv("u_view", GLCubemap::faceView(face, glm::vec3(0.0f)));
+        arr.attachIrradianceFace(gl, layer, face);
         m_cube->draw();
     }
 
@@ -178,9 +166,8 @@ void GLProbeBaker::convolve(Core::Context& gl, GLProbeArray& arr, int layer) {
         const float roughness = static_cast<float>(mip) / static_cast<float>(GLProbeArray::PREFILTER_MIPS - 1);
         m_prefilter.setUniform1f("u_roughness", roughness);
         for (int face = 0; face < 6; ++face) {
-            m_prefilter.setUniformMatrix4fv("u_view",
-                glm::lookAt(glm::vec3(0.0f), FACES[face].dir, FACES[face].up));
-            arr.attachPrefilterFace(layer, face, mip);
+            m_prefilter.setUniformMatrix4fv("u_view", GLCubemap::faceView(face, glm::vec3(0.0f)));
+            arr.attachPrefilterFace(gl, layer, face, mip);
             m_cube->draw();
         }
     }

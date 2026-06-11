@@ -4,9 +4,6 @@
 
 #include <cstdint>
 
-#include <GL/glew.h>
-
-#include "gl_error_handle.h"
 #include "gl_vertex_array.h"
 #include "gl_vertex_buffer.h"
 #include "gl_vertex_buffer_layout.h"
@@ -46,12 +43,7 @@ void GLMesh::draw() const {
 
     m_vao->bind();
     m_ibo->bind();
-    VKM_GL_CHECK(glDrawElements(
-        GL_TRIANGLES,
-        static_cast<GLsizei>(m_indexCount),
-        GL_UNSIGNED_INT,
-        nullptr
-    ));
+    m_ibo->draw();
 }
 
 void GLMesh::attachInstances(Core::InstanceBuffer& buffer, uint32_t startIndex) const {
@@ -65,14 +57,7 @@ void GLMesh::drawInstanced(uint32_t count, uint32_t baseInstance) const {
     m_ibo->bind();
     // baseInstance offsets which per-instance attribute element each instance
     // reads, so all runs can share one uploaded buffer (GL 4.2+ / ARB_base_instance).
-    VKM_GL_CHECK(glDrawElementsInstancedBaseInstance(
-        GL_TRIANGLES,
-        static_cast<GLsizei>(m_indexCount),
-        GL_UNSIGNED_INT,
-        nullptr,
-        static_cast<GLsizei>(count),
-        baseInstance
-    ));
+    m_ibo->drawInstanced(count, baseInstance);
 }
 
 } // namespace Engine

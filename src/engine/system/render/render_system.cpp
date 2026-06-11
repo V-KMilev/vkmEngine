@@ -16,8 +16,10 @@ void RenderSystem::update(FrameContext& ctx) {
     // Resize the backend's surface only when the viewport actually changes.
     // m_view holds the size we last rendered at; installPending() zeroes it
     // after a swap so a freshly installed backend is sized on its first frame.
-    if (ctx.viewportX != m_view.viewportX || ctx.viewportY != m_view.viewportY ||
-        ctx.viewportWidth != m_view.viewportWidth || ctx.viewportHeight != m_view.viewportHeight) {
+    if (
+        ctx.viewportX != m_view.viewportX || ctx.viewportY != m_view.viewportY ||
+        ctx.viewportWidth != m_view.viewportWidth || ctx.viewportHeight != m_view.viewportHeight
+    ) {
         m_view.viewportX      = ctx.viewportX;
         m_view.viewportY      = ctx.viewportY;
         m_view.viewportWidth  = ctx.viewportWidth;
@@ -31,7 +33,7 @@ void RenderSystem::update(FrameContext& ctx) {
     // viewport rect. Refreshed every frame so a window resize that leaves the
     // rect unchanged still lands the blit correctly.
     m_view.surfaceHeight = static_cast<uint32_t>(ctx.window.getHeight());
-    m_view.settings      = m_settings;  // editable tuning rides along to the passes
+    m_view.settings      = m_settings;
 
     m_view.build(ctx.scene, *ctx.visibility);
     m_backend->render(m_view, ctx.resources);

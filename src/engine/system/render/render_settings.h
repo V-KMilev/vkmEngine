@@ -10,27 +10,33 @@ namespace Engine {
  * instead of hardcoded constants. Backend-agnostic - just data.
  */
 struct RenderSettings {
-    // --- pass toggles ---
-    bool gtao       = true;   ///< Ground-truth ambient occlusion.
-    bool ssr        = true;   ///< Screen-space reflections.
-    bool motionBlur = true;   ///< Camera motion blur.
-    bool bloom      = true;   ///< Bloom.
-    bool probes     = true;   ///< Local reflection-probe contribution.
+    // Pass toggles
+    bool gtao       = true;
+    bool ssr        = true;
+    bool motionBlur = true;
+    bool bloom      = true;
+    bool probes     = true;
 
-    // --- GTAO ---
+    // GTAO
     float gtaoRadius    = 0.6f;   ///< World-space sample radius.
     float gtaoIntensity = 1.0f;   ///< Occlusion strength.
     float gtaoPower     = 1.5f;   ///< Contrast curve.
+    float gtaoBias      = 0.03f;  ///< View-space self-occlusion guard.
 
-    // --- SSR ---
+    // SSR
     float ssrIntensity   = 1.0f;   ///< Reflection strength.
     float ssrMaxDistance = 30.0f;  ///< View-space ray length.
 
-    // --- motion blur ---
-    float motionBlurIntensity = 1.0f;  ///< Velocity scale.
+    // Motion blur
+    float motionBlurIntensity   = 1.0f;   ///< Velocity scale.
+    float motionBlurMaxVelocity = 0.05f;  ///< Per-pixel smear clamp (UV space).
+    int   motionBlurSamples     = 8;      ///< Taps along the velocity vector.
 
-    // --- bloom ---
-    float bloomStrength = 0.06f;  ///< Bloom blend amount (linear HDR, pre-tonemap).
+    // Bloom
+    float bloomStrength  = 0.06f;   ///< Bloom blend amount (linear HDR, pre-tonemap).
+    float bloomThreshold = 1.0f;    ///< Bright-pass threshold (HDR luminance).
+    float bloomKnee      = 0.5f;    ///< Soft-knee width around the threshold.
+    float bloomRadius    = 0.005f;  ///< Upsample tent-filter radius (UV space).
 };
 
 } // namespace Engine

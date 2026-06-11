@@ -14,11 +14,6 @@
 
 namespace Engine {
 
-namespace {
-constexpr float MB_MAX_VELOCITY = 0.05f;  ///< Clamp on the per-pixel smear (UV, not exposed).
-constexpr int   MB_SAMPLES      = 8;      ///< Taps along the velocity vector (not exposed).
-}
-
 GLMotionBlurPass::GLMotionBlurPass()
     : m_shader(std::make_unique<Core::Shader>("shaders/motion_blur")) {}
 
@@ -52,8 +47,8 @@ void GLMotionBlurPass::execute(GLFrameContext& ctx) {
     m_shader->setUniformMatrix4fv("u_invViewProj",  invViewProj);
     m_shader->setUniformMatrix4fv("u_prevViewProj", m_prevViewProj);
     m_shader->setUniform1f("u_intensity",   view.settings.motionBlurIntensity);
-    m_shader->setUniform1f("u_maxVelocity", MB_MAX_VELOCITY);
-    m_shader->setUniform1i("u_samples",     MB_SAMPLES);
+    m_shader->setUniform1f("u_maxVelocity", view.settings.motionBlurMaxVelocity);
+    m_shader->setUniform1i("u_samples",     view.settings.motionBlurSamples);
 
     m_tri.draw();
 

@@ -12,27 +12,12 @@
 
 #include "data/gl_ibl.h"
 #include "data/gl_mesh.h"
+#include "data/gl_cubemap.h"
 
 #include "generator/mesh_generators.h"
 #include "loader/environment_loaders.h"
 
 namespace Engine {
-
-namespace {
-glm::mat4 captureProjection() {
-    return glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
-}
-
-void captureViews(glm::mat4 out[6]) {
-    const glm::vec3 o(0.0f);
-    out[0] = glm::lookAt(o, glm::vec3( 1, 0, 0), glm::vec3(0, -1,  0));
-    out[1] = glm::lookAt(o, glm::vec3(-1, 0, 0), glm::vec3(0, -1,  0));
-    out[2] = glm::lookAt(o, glm::vec3( 0, 1, 0), glm::vec3(0,  0,  1));
-    out[3] = glm::lookAt(o, glm::vec3( 0,-1, 0), glm::vec3(0,  0, -1));
-    out[4] = glm::lookAt(o, glm::vec3( 0, 0, 1), glm::vec3(0, -1,  0));
-    out[5] = glm::lookAt(o, glm::vec3( 0, 0,-1), glm::vec3(0, -1,  0));
-}
-}
 
 GLIBLBaker::GLIBLBaker()
     : m_equirect("shaders/ibl/equirect")
@@ -62,9 +47,9 @@ void GLIBLBaker::bake(Core::Context& gl, GLIBL& ibl, const std::string& path) {
 
     ibl.bindCaptureFbo();
 
-    const glm::mat4 proj = captureProjection();
+    const glm::mat4 proj = GLCubemap::convolveProjection();
     glm::mat4 views[6];
-    captureViews(views);
+    for (int face = 0; face < 6; ++face) views[face] = GLCubemap::faceView(face, glm::vec3(0.0f));
 
     // 1. Equirectangular HDR -> environment cubemap.
     m_equirect.bind();
@@ -72,7 +57,7 @@ void GLIBLBaker::bake(Core::Context& gl, GLIBL& ibl, const std::string& path) {
     ibl.bindEquirect(0);
     for (int face = 0; face < 6; ++face) {
         m_equirect.setUniformMatrix4fv("u_view", views[face]);
-        ibl.attachEnvFace(face);
+        ibl.attachEnvFace(gl, face);
         m_cube->draw();
     }
     ibl.generateEnvMips();
@@ -83,7 +68,7 @@ void GLIBLBaker::bake(Core::Context& gl, GLIBL& ibl, const std::string& path) {
     ibl.bindEnvCube(0);
     for (int face = 0; face < 6; ++face) {
         m_irradiance.setUniformMatrix4fv("u_view", views[face]);
-        ibl.attachIrradianceFace(face);
+        ibl.attachIrradianceFace(gl, face);
         m_cube->draw();
     }
 
@@ -96,14 +81,14 @@ void GLIBLBaker::bake(Core::Context& gl, GLIBL& ibl, const std::string& path) {
         m_prefilter.setUniform1f("u_roughness", roughness);
         for (int face = 0; face < 6; ++face) {
             m_prefilter.setUniformMatrix4fv("u_view", views[face]);
-            ibl.attachPrefilterFace(face, mip);
+            ibl.attachPrefilterFace(gl, face, mip);
             m_cube->draw();
         }
     }
 
     // 4. Split-sum BRDF/DFG LUT (fullscreen, once per bake).
     m_brdf.bind();
-    ibl.attachBrdf();
+    ibl.attachBrdf(gl);
     m_brdfTri.draw();
 
     ibl.unbindCaptureFbo();
