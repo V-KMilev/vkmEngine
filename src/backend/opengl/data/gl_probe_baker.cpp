@@ -50,18 +50,15 @@ GLProbeBaker::GLProbeBaker()
 
 GLProbeBaker::~GLProbeBaker() = default;
 
-void GLProbeBaker::bake(Core::Context& gl, GLProbe& probe, const glm::vec3& position,
+void GLProbeBaker::bake(Core::Context& gl, GLProbeArray& arr, int layer, const glm::vec3& position,
                         const RenderView& view, const GLView& glView, const GLIBL& globalIBL) {
-    probe.createTargets();
-
-    captureFaces(gl, probe, position, view, glView, globalIBL);
-    convolve(gl, probe);
-
-    probe.markBaked();
-    LOG_INFO("Reflection probe baked at (%.1f, %.1f, %.1f)", position.x, position.y, position.z);
+    captureFaces(gl, arr, position, view, glView, globalIBL);
+    convolve(gl, arr, layer);
+    LOG_INFO("Reflection probe baked: layer %d at (%.1f, %.1f, %.1f)",
+        layer, position.x, position.y, position.z);
 }
 
-void GLProbeBaker::captureFaces(Core::Context& gl, GLProbe& probe, const glm::vec3& position,
+void GLProbeBaker::captureFaces(Core::Context& gl, GLProbeArray& arr, const glm::vec3& position,
                                 const RenderView& view, const GLView& glView, const GLIBL& globalIBL) {
     const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, CAPTURE_NEAR, CAPTURE_FAR);
 
@@ -81,12 +78,12 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbe& probe, const glm::ve
 
     const bool hasIBL = globalIBL.isReady();
 
-    probe.bindCaptureFbo();
+    arr.bindCaptureFbo();
 
     for (int face = 0; face < 6; ++face) {
         const glm::mat4 viewM = glm::lookAt(position, position + FACES[face].dir, FACES[face].up);
 
-        probe.attachEnvFace(face);
+        arr.attachEnvFace(face);
         gl.setDepthTest(true);
         gl.setDepthWrite(true);
         gl.setDepthFunc(GL_LESS);
@@ -118,7 +115,7 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbe& probe, const glm::ve
         }
 
         // Opaque geometry, full PBR, lit by direct lights + the GLOBAL IBL.
-        // u_hasProbe = 0 is the recursion guard: the bake never samples probes.
+        // u_probeCount = 0 is the recursion guard: the bake never samples probes.
         gl.setFaceCulling(true);
         gl.setCullFace(GL_BACK);
         m_pbr.bind();
@@ -130,9 +127,9 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbe& probe, const glm::ve
         }
         m_pbr.setUniform1i("u_hasSSAO", 0);
         m_pbr.setUniform1i("u_hasSceneColor", 0);
-        m_pbr.setUniform1i("u_hasProbe", 0);
+        m_pbr.setUniform1i("u_probeCount", 0);  // recursion guard: the bake never samples probes
         m_pbr.setUniform2f("u_screenSize",
-            static_cast<float>(GLProbe::ENV_SIZE), static_cast<float>(GLProbe::ENV_SIZE));
+            static_cast<float>(GLProbeArray::ENV_SIZE), static_cast<float>(GLProbeArray::ENV_SIZE));
 
         const GLMaterial* boundMaterial = nullptr;
         for (const InstanceRun& run : runs) {
@@ -146,12 +143,12 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbe& probe, const glm::ve
         }
     }
 
-    probe.generateEnvMips();
-    probe.unbindCaptureFbo();
+    arr.generateEnvMips();
+    arr.unbindCaptureFbo();
     gl.setFaceCulling(false);
 }
 
-void GLProbeBaker::convolve(Core::Context& gl, GLProbe& probe) {
+void GLProbeBaker::convolve(Core::Context& gl, GLProbeArray& arr, int layer) {
     gl.setDepthTest(false);
     gl.setFaceCulling(false);
     gl.setBlending(false);
@@ -160,35 +157,35 @@ void GLProbeBaker::convolve(Core::Context& gl, GLProbe& probe) {
     // cube is sampled about the origin, not the probe position).
     const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
 
-    probe.bindCaptureFbo();
+    arr.bindCaptureFbo();
 
-    // Diffuse irradiance convolution.
+    // Diffuse irradiance convolution -> this probe's irradiance-array layer.
     m_irradiance.bind();
     m_irradiance.setUniformMatrix4fv("u_projection", proj);
-    probe.bindEnvCube(0);
+    arr.bindEnvCube(0);
     for (int face = 0; face < 6; ++face) {
         m_irradiance.setUniformMatrix4fv("u_view",
             glm::lookAt(glm::vec3(0.0f), FACES[face].dir, FACES[face].up));
-        probe.attachIrradianceFace(face);
+        arr.attachIrradianceFace(layer, face);
         m_cube->draw();
     }
 
-    // GGX prefiltered specular, one roughness per mip.
+    // GGX prefiltered specular, one roughness per mip -> prefilter-array layer.
     m_prefilter.bind();
     m_prefilter.setUniformMatrix4fv("u_projection", proj);
-    probe.bindEnvCube(0);
-    for (int mip = 0; mip < GLProbe::PREFILTER_MIPS; ++mip) {
-        const float roughness = static_cast<float>(mip) / static_cast<float>(GLProbe::PREFILTER_MIPS - 1);
+    arr.bindEnvCube(0);
+    for (int mip = 0; mip < GLProbeArray::PREFILTER_MIPS; ++mip) {
+        const float roughness = static_cast<float>(mip) / static_cast<float>(GLProbeArray::PREFILTER_MIPS - 1);
         m_prefilter.setUniform1f("u_roughness", roughness);
         for (int face = 0; face < 6; ++face) {
             m_prefilter.setUniformMatrix4fv("u_view",
                 glm::lookAt(glm::vec3(0.0f), FACES[face].dir, FACES[face].up));
-            probe.attachPrefilterFace(face, mip);
+            arr.attachPrefilterFace(layer, face, mip);
             m_cube->draw();
         }
     }
 
-    probe.unbindCaptureFbo();
+    arr.unbindCaptureFbo();
     gl.setDepthTest(true);
 }
 

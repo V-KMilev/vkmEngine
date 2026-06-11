@@ -19,6 +19,7 @@ namespace GLBindings {
         constexpr uint32_t Lights   = 1;  ///< Scene light list.
         constexpr uint32_t Camera   = 2;  ///< Per-frame camera (viewProjection, position).
         constexpr uint32_t Shadow   = 3;  ///< Shadow casters (cascades / spot / cube).
+        constexpr uint32_t Probes   = 4;  ///< Reflection-probe boxes + layers (ProbeBlock).
     }
 
     // Texture units above the material maps (0-10), for the shadow pass outputs.
@@ -45,11 +46,14 @@ namespace GLBindings {
         constexpr uint32_t SSAO       = 21;  ///< GTAO occlusion factor, sampled by the forward pass.
     }
 
-    // Local reflection-probe products, above the post slots. Bound by the
-    // forward pass when a probe covers the frame; blended over the global IBL.
+    // Reflection-probe cube-map arrays, above the post slots. Two samplers hold
+    // every probe (layer = probe index), so the count is bounded by layers + the
+    // per-fragment loop, not texture units. MAX_PROBES is the array capacity and
+    // must match MAX_PROBES in shaders/forward/pbr.
     namespace ProbeTextureSlots {
-        constexpr uint32_t Irradiance = 22;  ///< Probe diffuse irradiance (samplerCube).
-        constexpr uint32_t Prefilter  = 23;  ///< Probe prefiltered specular (samplerCube, roughness mips).
+        constexpr uint32_t MAX_PROBES = 32;  ///< Probe-array capacity + per-fragment loop cap.
+        constexpr uint32_t Irradiance = 22;  ///< samplerCubeArray (all probes' irradiance).
+        constexpr uint32_t Prefilter  = 23;  ///< samplerCubeArray (all probes' prefilter).
     }
 
     // Texture unit slots for material maps - match the sampler bindings in the

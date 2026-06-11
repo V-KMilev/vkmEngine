@@ -18,7 +18,7 @@ namespace Core {
 
 namespace Engine {
 
-class GLProbe;
+class GLProbeArray;
 class GLView;
 class GLIBL;
 class GLMesh;
@@ -49,13 +49,14 @@ class GLProbeBaker {
         GLProbeBaker(GLProbeBaker&&) = delete;
         GLProbeBaker& operator=(GLProbeBaker&&) = delete;
 
-        void bake(Core::Context& gl, GLProbe& probe, const glm::vec3& position,
+        /// Bake the probe at @p layer of @p arr from @p position.
+        void bake(Core::Context& gl, GLProbeArray& arr, int layer, const glm::vec3& position,
                   const RenderView& view, const GLView& glView, const GLIBL& globalIBL);
 
     private:
-        void captureFaces(Core::Context& gl, GLProbe& probe, const glm::vec3& position,
+        void captureFaces(Core::Context& gl, GLProbeArray& arr, const glm::vec3& position,
                           const RenderView& view, const GLView& glView, const GLIBL& globalIBL);
-        void convolve(Core::Context& gl, GLProbe& probe);
+        void convolve(Core::Context& gl, GLProbeArray& arr, int layer);
 
         Core::Shader m_pbr;         ///< capture geometry (full forward PBR)
         Core::Shader m_skybox;      ///< capture background

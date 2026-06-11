@@ -3,7 +3,7 @@
 #include "gl_backend.h"
 
 #include <string>
-#include <limits>
+#include <algorithm>
 
 #include <GL/glew.h>
 #include <glm/glm.hpp>
@@ -14,6 +14,8 @@
 #include "gl_pass.h"
 #include "data/gl_probe.h"
 #include "data/gl_probe_baker.h"
+#include "convention/gl_bindings.h"
+#include "gl_uniform_buffer.h"
 #include "pass/gl_shadow_pass.h"
 #include "pass/gl_depth_prepass.h"
 #include "pass/gl_gtao_pass.h"
@@ -27,6 +29,18 @@
 #include "system/render/render_view.h"
 
 namespace Engine {
+
+namespace {
+// Matches ProbeBlock in shaders/forward/pbr (std140). One entry per probe.
+struct GpuProbe {
+    glm::vec4 center;    ///< xyz world centre, w pad
+    glm::vec4 extents;   ///< xyz half-extents, w pad
+    glm::vec4 params;    ///< x falloff, y intensity, z layer index, w pad
+};
+struct ProbeBlock {
+    GpuProbe probes[GLBindings::ProbeTextureSlots::MAX_PROBES];
+};
+}
 
 GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL) {}
 
@@ -79,6 +93,10 @@ bool GLBackend::init(WindowManager& window) {
     // The probe baker compiles its own shaders, so build it here (context live).
     m_probeBaker = std::make_unique<GLProbeBaker>();
 
+    // Shared probe cube-map arrays: one cube per layer for irradiance + prefilter.
+    m_probeArray = std::make_unique<GLProbeArray>();
+    m_probeArray->createTargets(static_cast<int>(GLBindings::ProbeTextureSlots::MAX_PROBES));
+
     const GLubyte* version = glGetString(GL_VERSION);
     const GLubyte* device  = glGetString(GL_RENDERER);
     m_info.api    = version ? "OpenGL " + std::string(reinterpret_cast<const char*>(version)) : "OpenGL";
@@ -118,34 +136,57 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // and the composite pass tonemaps that to the backbuffer.
     GLFrameContext ctx{view, m_view, m_context, m_sceneHDR, m_sceneColor, m_shadowAtlas, m_shadowData, m_ibl, m_bloom, m_ao};
 
-    // Pick the nearest already-baked probe for the frame; the forward pass
-    // blends it over the global IBL inside its influence box.
-    float bestDist = std::numeric_limits<float>::max();
-    for (size_t i = 0; i < m_probes.size() && i < view.probes.size(); ++i) {
-        if (!m_probes[i] || !m_probes[i]->isReady()) continue;
-        const float d = glm::distance(view.camera.position, view.probes[i].position);
-        if (d < bestDist) {
-            bestDist           = d;
-            ctx.probe          = m_probes[i].get();
-            ctx.probeCenter    = view.probes[i].position;
-            ctx.probeExtents   = view.probes[i].halfExtents;
-            ctx.probeFalloff   = view.probes[i].falloff;
-            ctx.probeIntensity = view.probes[i].intensity;
+    // Reflection probes: pack the baked probes (nearest MAX_PROBES) into the
+    // ProbeBlock UBO and bind the two cube-map arrays; the forward pass blends
+    // them per fragment over the global IBL.
+    ctx.probeCount = 0;
+    if (m_probeArray) {
+        struct Active { uint32_t index; float dist; };
+        std::vector<Active> active;
+        const int capacity = m_probeArray->capacity();
+        for (size_t i = 0; i < view.probes.size() && static_cast<int>(i) < capacity; ++i) {
+            if (i >= m_probeBaked.size() || !m_probeBaked[i]) continue;
+            active.push_back({ static_cast<uint32_t>(i),
+                glm::distance(view.camera.position, view.probes[i].position) });
         }
+        const size_t maxP = GLBindings::ProbeTextureSlots::MAX_PROBES;
+        if (active.size() > maxP) {
+            std::partial_sort(active.begin(), active.begin() + maxP, active.end(),
+                [](const Active& a, const Active& b) { return a.dist < b.dist; });
+            active.resize(maxP);
+        }
+
+        ProbeBlock block{};
+        for (size_t p = 0; p < active.size(); ++p) {
+            const ProbeData& pd = view.probes[active[p].index];
+            block.probes[p].center  = glm::vec4(pd.position, 0.0f);
+            block.probes[p].extents = glm::vec4(pd.halfExtents, 0.0f);
+            block.probes[p].params  = glm::vec4(pd.falloff, pd.intensity, static_cast<float>(active[p].index), 0.0f);
+        }
+        if (!m_probeUBO) m_probeUBO = std::make_unique<Core::UniformBuffer>(&block, sizeof(block), GL_DYNAMIC_DRAW);
+        else             m_probeUBO->update(&block, sizeof(block));
+        m_probeUBO->bindBase(GLBindings::UBOBindingPoints::Probes);
+
+        m_probeArray->bindIrradiance(GLBindings::ProbeTextureSlots::Irradiance);
+        m_probeArray->bindPrefilter(GLBindings::ProbeTextureSlots::Prefilter);
+        ctx.probeCount = static_cast<int>(active.size());
     }
 
     for (const auto& pass : m_passes) {
         pass->execute(ctx);
     }
 
-    // Frame end: GPU probes mirror the snapshot; bake any not yet baked. The
-    // baker rebinds the camera / light UBOs, harmless here - the next frame
-    // re-uploads its own, and the probe is ready for that frame.
-    m_probes.resize(view.probes.size());
-    for (size_t i = 0; i < view.probes.size(); ++i) {
-        if (!m_probes[i]) m_probes[i] = std::make_unique<GLProbe>();
-        if (m_probeBaker && !m_probes[i]->isReady()) {
-            m_probeBaker->bake(m_context, *m_probes[i], view.probes[i].position, view, m_view, m_ibl);
+    // Frame end: bake any probe layer not yet baked. The baker rebinds the
+    // camera / light UBOs, harmless here - the next frame re-uploads its own,
+    // and the layer is ready for that frame.
+    if (m_probeBaker && m_probeArray) {
+        const int capacity = m_probeArray->capacity();
+        const int n = std::min(static_cast<int>(view.probes.size()), capacity);
+        if (static_cast<int>(m_probeBaked.size()) < n) m_probeBaked.resize(n, false);
+        for (int i = 0; i < n; ++i) {
+            if (m_probeBaked[i]) continue;
+            m_probeBaker->bake(m_context, *m_probeArray, i, view.probes[i].position, view, m_view, m_ibl);
+            m_probeBaked[i] = true;
         }
     }
 }
