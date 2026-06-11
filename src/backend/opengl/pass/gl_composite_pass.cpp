@@ -10,7 +10,10 @@
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
+#include "gl_ao_target.h"
 #include "data/gl_bloom.h"
+#include "data/gl_shadow_atlas.h"
+#include "convention/gl_bindings.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
@@ -47,6 +50,19 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
     const float bloomStrength = (ctx.bloom.isReady() && ctx.view.settings.bloom)
         ? ctx.view.settings.bloomStrength : 0.0f;
     m_shader->setUniform1f("u_bloomStrength", bloomStrength);
+
+    // Debug views: bind the intermediate buffers the shader samples + the
+    // projection for depth linearization. Default path binds nothing extra.
+    const int mode = static_cast<int>(view.settings.renderMode);
+    m_shader->setUniform1i("u_renderMode", mode);
+    if (mode != static_cast<int>(RenderMode::Default)) {
+        ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SceneDepth);
+        ctx.sceneHDR.bindGBuffer(GLBindings::PostTextureSlots::SceneGBuffer);
+        ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
+        ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
+        m_shader->setUniformMatrix4fv("u_projection", view.camera.projection);
+    }
+
     m_tri.draw();
 }
 

@@ -1,6 +1,26 @@
 #pragma once
 
+#include <cstdint>
+
 namespace Engine {
+
+/**
+ * @brief What the composite pass writes to the screen.
+ *
+ * Default is the final tonemapped image; the rest blit an intermediate render
+ * target for debugging. The integer values must match the MODE_* constants in
+ * shaders/composite.
+ */
+enum class RenderMode : uint8_t {
+    Default,
+    Depth,
+    Normals,
+    Roughness,
+    Metalness,
+    AmbientOcclusion,
+    Bloom,
+    ShadowAtlas,
+};
 
 /**
  * @brief Editable render tuning: pass toggles + per-effect parameters.
@@ -10,6 +30,9 @@ namespace Engine {
  * instead of hardcoded constants. Backend-agnostic - just data.
  */
 struct RenderSettings {
+    // Debug
+    RenderMode renderMode = RenderMode::Default;  ///< Composite output: final image or a debug buffer.
+
     // Pass toggles
     bool gtao       = true;
     bool ssr        = true;
