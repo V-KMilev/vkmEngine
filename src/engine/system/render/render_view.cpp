@@ -157,7 +157,7 @@ void RenderView::buildProbes(const Scene& scene) {
             if (scene.has<WorldTransform>(id)) {
                 position = glm::vec3(scene.get<WorldTransform>(id).model[3]);
             }
-            probes.push_back({ position, probe.halfExtents, probe.falloff, probe.intensity });
+            probes.push_back({ position, probe.halfExtents, probe.falloff, probe.intensity, probe.bakeVersion });
         });
 }
 
