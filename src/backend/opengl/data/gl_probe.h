@@ -32,10 +32,11 @@ class GLProbeArray {
         GLProbeArray() = default;
         ~GLProbeArray() = default;
 
-        GLProbeArray(const GLProbeArray&) = delete;
-        GLProbeArray& operator=(const GLProbeArray&) = delete;
-        GLProbeArray(GLProbeArray&&) = delete;
-        GLProbeArray& operator=(GLProbeArray&&) = delete;
+        GLProbeArray(const GLProbeArray& other) = delete;
+        GLProbeArray& operator=(const GLProbeArray& other) = delete;
+
+        GLProbeArray(GLProbeArray && other) = delete;
+        GLProbeArray& operator=(GLProbeArray && other) = delete;
 
         static constexpr int ENV_SIZE        = 256;  ///< Capture env cube face size
         static constexpr int ENV_MIPS        = 5;    ///< Env cube mips (prefilter source)
@@ -48,7 +49,7 @@ class GLProbeArray {
         void createTargets(int capacity);
         int  capacity() const { return m_capacity; }
 
-        // --- bake render-target ops ---
+        // Bake render-target ops: attach a face/layer, sized to its viewport.
         void bindCaptureFbo()   const { m_fbo->bind(); }
         void unbindCaptureFbo() const { m_fbo->unbind(); }
 
@@ -72,7 +73,7 @@ class GLProbeArray {
             gl.setViewport(0, 0, s, s);
         }
 
-        // --- sampler binds for the forward pass ---
+        // Sampler binds for the forward pass.
         void bindIrradiance(uint32_t slot) const { m_irradiance.bindSlot(slot); }
         void bindPrefilter(uint32_t slot)  const { m_prefilter.bindSlot(slot); }
         void bindEnvCube(uint32_t slot)    const { m_env.bindSlot(slot); }

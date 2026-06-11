@@ -24,9 +24,9 @@ namespace Engine {
 namespace Engine {
 
 /**
- * @brief GLResourceTable of GL resources.
+ * @brief Versioned, handle-indexed table of one GL resource kind.
  *
- * @tparam GLT The type of the GL resource.
+ * @tparam GLT The GL resource type stored (GLMesh, GLMaterial, GLTexture).
  */
 template <typename GLT>
 struct GLResourceTable {
@@ -68,7 +68,7 @@ class GLView {
 
     private:
         /**
-         * @brief Upload / refresh every mesh, material and texture `view` references.
+         * @brief Upload or refresh a single asset into its table, version-gated.
          *
          * Upload `handle`'s asset into `table` on first sight, or update it when
          * the asset's version has moved on since the cached copy.

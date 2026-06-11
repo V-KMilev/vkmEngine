@@ -28,9 +28,7 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
 
     const RenderSettings& settings = ctx.view.settings;
 
-    ctx.gl.setDepthTest(false);
-    ctx.gl.setFaceCulling(false);
-    ctx.gl.setBlending(false);
+    beginFullscreen(ctx.gl);
 
     m_tri.bind();
     bloom.bindFbo();
