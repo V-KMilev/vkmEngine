@@ -5,88 +5,93 @@
 
 #include <GL/glew.h>
 
-#include "texture/gl_texture.h"  // Core::Texture2D (depth); qualified - Engine data/gl_texture.h shadows the bare name
+#include "texture/gl_texture.h"  // Core::Texture2D (capture depth)
 #include "gl_frame_buffer.h"
-#include "gl_texture_cube.h"
+#include "gl_texture_cube.h"     // Core::TextureCube (transient capture cube)
 
 namespace Engine {
 
 /**
- * @brief One reflection probe's GPU product set.
+ * @brief Shared GPU storage for every reflection probe: two cube-map arrays.
  *
- * Mirrors the GLIBL cube set minus the equirect source + BRDF LUT (the global
- * IBL owns the shared BRDF). GLProbeBaker renders the scene into the env cube
- * (depth-tested), then convolves it into a diffuse irradiance cube and GGX-
- * prefilters it into a specular mip chain, reusing the ibl/irradiance +
- * ibl/prefilter shaders. The forward pass samples irradiance + prefilter for
- * surfaces inside the probe's influence box.
+ * One GL_TEXTURE_CUBE_MAP_ARRAY holds each probe's diffuse irradiance (one cube
+ * per layer); another holds each probe's roughness-prefiltered specular (mipped).
+ * The forward pass binds just these two samplers regardless of probe count and
+ * samples layer = probe index - so the probe count is bounded by the layer count
+ * + the per-fragment loop, not by texture units. A single transient env cube
+ * (+ depth) is reused per bake: GLProbeBaker renders the scene into it, then
+ * convolves into the target layer of each array.
  *
- * The capture FBO keeps one shared depth texture (sized to the env face) so the
- * six geometry captures depth-test correctly; the convolution passes run with
- * depth off and ignore it.
+ * vkmGL has no cube-array wrapper, so the two arrays are managed with raw GL.
  */
-class GLProbe {
+class GLProbeArray {
     public:
-        GLProbe()  = default;
-        ~GLProbe() = default;
+        GLProbeArray() = default;
+        ~GLProbeArray();
 
-        GLProbe(const GLProbe&) = delete;
-        GLProbe& operator=(const GLProbe&) = delete;
-        GLProbe(GLProbe&&) = delete;
-        GLProbe& operator=(GLProbe&&) = delete;
+        GLProbeArray(const GLProbeArray&) = delete;
+        GLProbeArray& operator=(const GLProbeArray&) = delete;
+        GLProbeArray(GLProbeArray&&) = delete;
+        GLProbeArray& operator=(GLProbeArray&&) = delete;
 
-    public:
-        static constexpr int ENV_SIZE        = 256;  ///< Captured env cube face size
+        static constexpr int ENV_SIZE        = 256;  ///< Capture env cube face size
         static constexpr int ENV_MIPS        = 5;    ///< Env cube mips (prefilter source)
-        static constexpr int IRRADIANCE_SIZE = 32;   ///< Diffuse irradiance face size
-        static constexpr int PREFILTER_SIZE  = 128;  ///< Prefiltered specular base face size
-        static constexpr int PREFILTER_MIPS  = 5;    ///< Roughness mips (128..8); MAX_PROBE_LOD = this - 1
+        static constexpr int IRRADIANCE_SIZE = 32;   ///< Irradiance face size
+        static constexpr int PREFILTER_SIZE  = 128;  ///< Prefilter base face size
+        static constexpr int PREFILTER_MIPS  = 5;    ///< Roughness mips; MAX_PROBE_LOD = this - 1
 
-        bool isReady() const { return m_ready; }
-        void markBaked()     { m_ready = true; }
+        /// Allocate the arrays (@p capacity layers each) + env cube + depth + FBO.
+        /// Idempotent.
+        void createTargets(int capacity);
+        int  capacity() const { return m_capacity; }
 
-        /// Allocate the cubes, shared capture depth, and capture FBO. Idempotent.
-        void createTargets();
+        // --- bake render-target ops ---
+        void bindCaptureFbo()   const { m_fbo->bind(); }
+        void unbindCaptureFbo() const { m_fbo->unbind(); }
 
-        // --- bake render-target ops (capture FBO + per-face/mip attach) ---
-        void bindCaptureFbo()   const { m_captureFbo->bind(); }
-        void unbindCaptureFbo() const { m_captureFbo->unbind(); }
-
-        /// Attach env-cube @p face as colour 0 (depth stays attached from setup).
+        /// Attach the transient env cube @p face as colour 0 (geometry capture).
         void attachEnvFace(int face) const {
-            m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
-                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_envCube.id(), 0);
+            m_fbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
+                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_env.id(), 0);
             glViewport(0, 0, ENV_SIZE, ENV_SIZE);
         }
-        void generateEnvMips() const { m_envCube.generateMipmaps(); }
+        void generateEnvMips() const { m_env.generateMipmaps(); }
 
-        void attachIrradianceFace(int face) const {
-            m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
-                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_irradiance.id(), 0);
+        /// Attach one face of irradiance-array @p layer as colour 0.
+        void attachIrradianceFace(int layer, int face) const {
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                m_irradiance, 0, layer * 6 + face);
             glViewport(0, 0, IRRADIANCE_SIZE, IRRADIANCE_SIZE);
         }
-
-        void attachPrefilterFace(int face, int mip) const {
-            m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
-                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_prefilter.id(), mip);
+        /// Attach one face/mip of prefilter-array @p layer as colour 0.
+        void attachPrefilterFace(int layer, int face, int mip) const {
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                m_prefilter, mip, layer * 6 + face);
             const int s = PREFILTER_SIZE >> mip;
             glViewport(0, 0, s, s);
         }
 
         // --- sampler binds for the forward pass ---
-        void bindIrradiance(uint32_t slot) const { m_irradiance.bindSlot(slot); }
-        void bindPrefilter(uint32_t slot)  const { m_prefilter.bindSlot(slot); }
-        void bindEnvCube(uint32_t slot)    const { m_envCube.bindSlot(slot); }
+        void bindIrradiance(uint32_t slot) const {
+            glActiveTexture(GL_TEXTURE0 + slot);
+            glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, m_irradiance);
+        }
+        void bindPrefilter(uint32_t slot) const {
+            glActiveTexture(GL_TEXTURE0 + slot);
+            glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, m_prefilter);
+        }
+        void bindEnvCube(uint32_t slot) const { m_env.bindSlot(slot); }
 
     private:
-        Core::TextureCube m_envCube;
-        Core::TextureCube m_irradiance;
-        Core::TextureCube m_prefilter;
+        GLuint createCubeArray(int size, int mips) const;
 
-        std::unique_ptr<Core::Texture2D>   m_depth;       ///< Shared capture depth (ENV_SIZE)
-        std::unique_ptr<Core::FrameBuffer> m_captureFbo;
+        GLuint m_irradiance = 0;   ///< GL_TEXTURE_CUBE_MAP_ARRAY (1 mip)
+        GLuint m_prefilter  = 0;   ///< GL_TEXTURE_CUBE_MAP_ARRAY (PREFILTER_MIPS)
+        Core::TextureCube m_env;   ///< Transient capture cube (reused per bake)
 
-        bool m_ready = false;
+        std::unique_ptr<Core::Texture2D>   m_depth;
+        std::unique_ptr<Core::FrameBuffer> m_fbo;
+        int m_capacity = 0;
 };
 
 } // namespace Engine
