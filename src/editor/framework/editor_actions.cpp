@@ -17,6 +17,7 @@
 #include "ecs/component/animation.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/name.h"
+#include "ecs/component/reflection_probe.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
 #include "resource/asset_database.h"
@@ -118,6 +119,7 @@ const char* defaultName(EntityKind k) {
         case EntityKind::RectLight:        return "Rect Light";
         case EntityKind::DiskLight:        return "Disk Light";
         case EntityKind::Camera:           return "Camera";
+        case EntityKind::ReflectionProbe:  return "Reflection Probe";
     }
     return "Entity";
 }
@@ -190,6 +192,9 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
             scene.add(entity, cam);
             break;
         }
+        case EntityKind::ReflectionProbe:
+            scene.add(entity, ReflectionProbe{});
+            break;
     }
 
     // Snapshot the just-created entity so undo can resurrect it intact
@@ -351,6 +356,7 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
         item("Disk Light",        EntityKind::DiskLight);
         ImGui::Separator();
         item("Camera", EntityKind::Camera);
+        item("Reflection Probe", EntityKind::ReflectionProbe);
         ImGui::Separator();
         // The modal can't live here: the menu closes on click and this
         // function stops being called. Defer to drawModelImportDialog().

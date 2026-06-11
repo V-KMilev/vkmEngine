@@ -21,7 +21,7 @@ GLSSRPass::GLSSRPass()
 GLSSRPass::~GLSSRPass() = default;
 
 void GLSSRPass::execute(GLFrameContext& ctx) {
-    if (!isEnabled()) return;
+    if (!isEnabled() || !ctx.view.settings.ssr) return;
 
     const RenderView& view = ctx.view;
 
@@ -41,6 +41,8 @@ void GLSSRPass::execute(GLFrameContext& ctx) {
     const glm::mat4 invProj = glm::inverse(proj);
     m_shader->setUniformMatrix4fv("u_projection",    proj);
     m_shader->setUniformMatrix4fv("u_invProjection", invProj);
+    m_shader->setUniform1f("u_intensity",   view.settings.ssrIntensity);
+    m_shader->setUniform1f("u_maxDistance", view.settings.ssrMaxDistance);
 
     m_tri.draw();
 

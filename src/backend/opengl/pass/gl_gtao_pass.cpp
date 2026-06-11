@@ -17,12 +17,7 @@
 namespace Engine {
 
 namespace {
-// GTAO tuning. Kept as constants (no settings UI on the new pipeline yet);
-// promote to the scene/engine config if these need authoring.
-constexpr float AO_RADIUS    = 0.6f;   ///< World-space sample radius.
-constexpr float AO_INTENSITY = 1.0f;   ///< Occlusion strength (0 = off).
-constexpr float AO_POWER     = 1.5f;   ///< Contrast curve on the AO factor.
-constexpr float AO_BIAS      = 0.03f;  ///< View-space self-occlusion guard.
+constexpr float AO_BIAS = 0.03f;  ///< View-space self-occlusion guard (not exposed).
 }
 
 GLGTAOPass::GLGTAOPass()
@@ -31,7 +26,7 @@ GLGTAOPass::GLGTAOPass()
 GLGTAOPass::~GLGTAOPass() = default;
 
 void GLGTAOPass::execute(GLFrameContext& ctx) {
-    if (!isEnabled()) return;
+    if (!isEnabled() || !ctx.view.settings.gtao) return;
 
     const RenderView& view = ctx.view;
 
@@ -49,9 +44,9 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
     const glm::mat4 proj = view.camera.projection;
     m_shader->setUniformMatrix4fv("u_invProjection", glm::inverse(proj));
     m_shader->setUniform1f("u_proj11",    proj[1][1]);
-    m_shader->setUniform1f("u_radius",    AO_RADIUS);
-    m_shader->setUniform1f("u_intensity", AO_INTENSITY);
-    m_shader->setUniform1f("u_power",     AO_POWER);
+    m_shader->setUniform1f("u_radius",    view.settings.gtaoRadius);
+    m_shader->setUniform1f("u_intensity", view.settings.gtaoIntensity);
+    m_shader->setUniform1f("u_power",     view.settings.gtaoPower);
     m_shader->setUniform1f("u_bias",      AO_BIAS);
 
     m_tri.draw();

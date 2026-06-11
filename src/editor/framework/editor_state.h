@@ -45,6 +45,7 @@ struct EditorState {
     bool showMaterialEditor = false;            ///< Material Editor window
     MaterialHandle materialEditorTarget{};      ///< Which material it edits (else: selected entity's)
     bool showAssetBrowser   = false;            ///< Asset Browser window (material/mesh thumbnail grid)
+    bool showRenderSettings = false;            ///< Render Settings window (pass toggles + per-effect tuning)
     bool showPhysics        = false;            ///< Physics window (per-scene gravity + solver settings)
     bool showColliders      = false;            ///< Draw physics collider wireframes in the viewport (View menu)
     bool showBounds         = false;            ///< Draw per-entity world AABBs in the viewport (View menu)

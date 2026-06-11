@@ -45,6 +45,12 @@ class GizmoOverlay {
         void drawCameraGizmos(EditorContext& ec);
 
         /**
+         * @brief Draw the influence box + a centre marker for every reflection
+         * probe, so probes are placeable and findable in the viewport.
+         */
+        void drawProbeGizmos(EditorContext& ec);
+
+        /**
          * @brief Draw a wireframe of every entity's physics Collider (its set
          * of boxes) so the user sees what the solver collides against.
          *

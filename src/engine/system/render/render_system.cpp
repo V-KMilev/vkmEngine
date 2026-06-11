@@ -31,6 +31,7 @@ void RenderSystem::update(FrameContext& ctx) {
     // viewport rect. Refreshed every frame so a window resize that leaves the
     // rect unchanged still lands the blit correctly.
     m_view.surfaceHeight = static_cast<uint32_t>(ctx.window.getHeight());
+    m_view.settings      = m_settings;  // editable tuning rides along to the passes
 
     m_view.build(ctx.scene, *ctx.visibility);
     m_backend->render(m_view, ctx.resources);

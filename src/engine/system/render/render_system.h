@@ -62,6 +62,11 @@ class RenderSystem : public System {
          */
         RenderBackend* backend() const { return m_backend.get(); }
 
+        /// Editable render tuning (pass toggles + params). The editor's Render
+        /// Settings panel mutates this; it is copied into the RenderView each frame.
+        RenderSettings& settings() { return m_settings; }
+        const RenderSettings& settings() const { return m_settings; }
+
     private:
         /**
          * @brief Apply a queued backend swap, if one is pending.
@@ -76,7 +81,8 @@ class RenderSystem : public System {
         std::unique_ptr<RenderBackend> m_backend;
         std::unique_ptr<RenderBackend> m_pending;
 
-        RenderView m_view;
+        RenderView     m_view;
+        RenderSettings m_settings;
 };
 
 } // namespace Engine

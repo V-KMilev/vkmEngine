@@ -21,6 +21,7 @@
 #include "panels/preferences_panel.h"
 #include "panels/material_editor.h"
 #include "panels/asset_browser.h"
+#include "panels/render_settings_panel.h"
 
 struct GLFWwindow;
 
@@ -107,6 +108,7 @@ class EditorSystem : public System {
         PreferencesPanel m_preferences;
         MaterialEditorPanel m_materialEditor;
         AssetBrowserPanel m_assetBrowser;
+        RenderSettingsPanel m_renderSettings;
 };
 
 } // namespace Engine
