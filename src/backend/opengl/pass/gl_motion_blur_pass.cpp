@@ -15,11 +15,8 @@
 namespace Engine {
 
 namespace {
-// Motion-blur tuning. Kept as constants (no settings UI on the new pipeline
-// yet); promote to the scene/engine config if these need authoring.
-constexpr float MB_INTENSITY    = 1.0f;   ///< Velocity scale (0 = off).
-constexpr float MB_MAX_VELOCITY = 0.05f;  ///< Clamp on the per-pixel smear (UV).
-constexpr int   MB_SAMPLES      = 8;      ///< Taps along the velocity vector.
+constexpr float MB_MAX_VELOCITY = 0.05f;  ///< Clamp on the per-pixel smear (UV, not exposed).
+constexpr int   MB_SAMPLES      = 8;      ///< Taps along the velocity vector (not exposed).
 }
 
 GLMotionBlurPass::GLMotionBlurPass()
@@ -34,9 +31,9 @@ void GLMotionBlurPass::execute(GLFrameContext& ctx) {
     const glm::mat4   viewProj     = view.camera.projection * view.camera.view;
     const glm::mat4   invViewProj  = glm::inverse(viewProj);
 
-    // First frame: no previous camera to reproject against. Seed it and skip the
-    // blur so we never smear against a garbage matrix.
-    if (!m_havePrev) {
+    // First frame, or motion blur disabled: track the camera but skip the blur
+    // (so re-enabling never smears against a stale matrix).
+    if (!m_havePrev || !view.settings.motionBlur) {
         m_prevViewProj = viewProj;
         m_havePrev     = true;
         return;
@@ -54,7 +51,7 @@ void GLMotionBlurPass::execute(GLFrameContext& ctx) {
     ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SceneDepth);
     m_shader->setUniformMatrix4fv("u_invViewProj",  invViewProj);
     m_shader->setUniformMatrix4fv("u_prevViewProj", m_prevViewProj);
-    m_shader->setUniform1f("u_intensity",   MB_INTENSITY);
+    m_shader->setUniform1f("u_intensity",   view.settings.motionBlurIntensity);
     m_shader->setUniform1f("u_maxVelocity", MB_MAX_VELOCITY);
     m_shader->setUniform1i("u_samples",     MB_SAMPLES);
 

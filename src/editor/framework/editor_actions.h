@@ -38,6 +38,7 @@ enum class EntityKind {
     RectLight,
     DiskLight,
     Camera,
+    ReflectionProbe,
 };
 
 EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& state, EntityKind kind);

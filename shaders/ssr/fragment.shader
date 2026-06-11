@@ -23,17 +23,17 @@ layout(binding = 18) uniform sampler2D u_sceneColor;  // live scene colour
 layout(binding = 19) uniform sampler2D u_depth;       // scene depth
 layout(binding = 20) uniform sampler2D u_gbuffer;     // oct view-normal.xy, roughness, metalness
 
-uniform mat4 u_projection;
-uniform mat4 u_invProjection;
+uniform mat4  u_projection;
+uniform mat4  u_invProjection;
+uniform float u_maxDistance;  // view-space ray length
+uniform float u_intensity;    // reflection strength
 
-const float STRIDE       = 2.0;    // pixels advanced per step (1 = exact, >1 = faster)
-const int   MAX_STEPS    = 256;    // hard cap on the DDA walk
-const float MAX_DISTANCE = 30.0;   // view-space ray length
-const float NEAR_Z       = 0.05;   // keep the ray end in front of the camera
-const float THICKNESS    = 1.2;    // view-space surface thickness for the crossing slab
-const float START_BIAS   = 0.05;   // lift the ray off its own surface (anti-acne)
-const float MAX_ROUGH    = 0.6;    // rougher surfaces don't get a sharp reflection
-const float INTENSITY    = 1.0;
+const float STRIDE     = 2.0;    // pixels advanced per step (1 = exact, >1 = faster)
+const int   MAX_STEPS  = 256;    // hard cap on the DDA walk
+const float NEAR_Z     = 0.05;   // keep the ray end in front of the camera
+const float THICKNESS  = 1.2;    // view-space surface thickness for the crossing slab
+const float START_BIAS = 0.05;   // lift the ray off its own surface (anti-acne)
+const float MAX_ROUGH   = 0.6;   // rougher surfaces don't get a sharp reflection
 
 vec2 signNotZero(vec2 v) {
     return vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
@@ -86,9 +86,9 @@ void main() {
     // Ray origin lifted off the surface (anti-acne); clip the end to the near
     // plane so we never project a point behind the camera.
     vec3  rayOrigin = P + N * START_BIAS;
-    float rayLen    = (rayOrigin.z + R.z * MAX_DISTANCE) > -NEAR_Z
+    float rayLen    = (rayOrigin.z + R.z * u_maxDistance) > -NEAR_Z
                       ? (-NEAR_Z - rayOrigin.z) / R.z
-                      : MAX_DISTANCE;
+                      : u_maxDistance;
     vec3  rayEnd    = rayOrigin + R * rayLen;
 
     // Project endpoints to pixel coords. Keep k = 1/w and Q = viewPos * k; both
@@ -158,7 +158,7 @@ void main() {
         float edge      = min(min(hitUV.x, 1.0 - hitUV.x), min(hitUV.y, 1.0 - hitUV.y));
         float edgeFade  = smoothstep(0.0, 0.1, edge);
 
-        refl = texture(u_sceneColor, hitUV).rgb * F * (roughFade * edgeFade * INTENSITY);
+        refl = texture(u_sceneColor, hitUV).rgb * F * (roughFade * edgeFade * u_intensity);
     }
 
     FragColor = vec4(scene + refl, 1.0);

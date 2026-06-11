@@ -43,6 +43,7 @@ class InspectorPanel {
         void drawRigidbodySection(Scene& scene, EditorState& state, EntityId id);
         void drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawCameraSection(Scene& scene, EditorState& state, EntityId id);
+        void drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id);
         void drawAnimationSection(Scene& scene, EditorState& state, EntityId id);
         void drawHierarchySection(Scene& scene, EditorState& state, EntityId id);
         void drawAddComponentMenu(Scene& scene, EditorState& state, EntityId id);

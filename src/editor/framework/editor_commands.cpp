@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "ecs/scene.h"
+#include "ecs/component/reflection_probe.h"
 #include "resource/resource_manager.h"
 #include "framework/editor_state.h"
 #include "system/hierarchy/hierarchy_operations.h"
@@ -91,6 +92,9 @@ template class RemoveComponentCommand<Rigidbody>;
 template class AddComponentCommand<Collider>;
 template class RemoveComponentCommand<Collider>;
 
+template class AddComponentCommand<ReflectionProbe>;
+template class RemoveComponentCommand<ReflectionProbe>;
+
 template <typename T>
 void ComponentEditCommand<T>::redo(Scene& scene, EditorState&) {
     if (!scene.isAlive(m_entity) || !scene.has<T>(m_entity)) return;
@@ -120,6 +124,7 @@ template class ComponentEditCommand<Name>;
 template class ComponentEditCommand<Animation>;
 template class ComponentEditCommand<Rigidbody>;
 template class ComponentEditCommand<Collider>;
+template class ComponentEditCommand<ReflectionProbe>;
 
 template <typename HandleType>
 void RenameAssetCommand<HandleType>::redo(Scene&, EditorState& state) {

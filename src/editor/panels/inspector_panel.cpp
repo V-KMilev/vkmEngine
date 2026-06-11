@@ -13,6 +13,7 @@
 
 #include "ecs/component/animation.h"
 #include "ecs/component/collider.h"
+#include "ecs/component/reflection_probe.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/transform.h"
 #include "framework/editor_commands.h"
@@ -38,6 +39,7 @@ const ImVec4 ACCENT_ANIM      = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);
 const ImVec4 ACCENT_HIERARCHY = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);
 const ImVec4 ACCENT_PHYSICS   = ImVec4(0.36f, 0.78f, 0.45f, 1.0f);
 const ImVec4 ACCENT_COLLIDER  = ImVec4(0.25f, 0.65f, 0.40f, 1.0f);
+const ImVec4 ACCENT_PROBE     = ImVec4(0.30f, 0.62f, 0.92f, 1.0f);  // reflection probe (blue)
 
 // Asset-reference combo: pick which loaded asset of type Asset a handle points
 // at. Snapshots the asset list so ImGuiListClipper can window thousands of rows
@@ -176,6 +178,7 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<Rigidbody>(id))  drawRigidbodySection(scene, state, id);
     if (scene.has<Collider>(id))   drawColliderSection(scene, ctx.resources, state, id);
     if (scene.has<Camera>(id))     drawCameraSection(scene, state, id);
+    if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, state, id);
     if (scene.has<Animation>(id))  drawAnimationSection(scene, state, id);
     if (scene.has<Hierarchy>(id))  drawHierarchySection(scene, state, id);
 
@@ -228,6 +231,12 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
             cam.active = false;
             scene.add(Entity{id}, cam);
             state.commands.push(std::make_unique<AddComponentCommand<Camera>>(id, cam, "Add Camera"));
+            state.markSceneDirty();
+        }
+        if (!scene.has<ReflectionProbe>(id) && ImGui::MenuItem("Reflection Probe")) {
+            ReflectionProbe probe{};
+            scene.add(Entity{id}, probe);
+            state.commands.push(std::make_unique<AddComponentCommand<ReflectionProbe>>(id, probe, "Add Reflection Probe"));
             state.markSceneDirty();
         }
         if (!scene.has<Animation>(id) && ImGui::MenuItem("Animation")) {
@@ -432,6 +441,50 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
         Light snap = scene.get<Light>(id);
         scene.remove<Light>(Entity{id});
         state.commands.push(std::make_unique<RemoveComponentCommand<Light>>(id, snap, "Remove Light"));
+        state.markSceneDirty();
+    }
+}
+
+void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id) {
+    bool remove = false;
+    const bool open = beginComponentCard("Reflection Probe", ACCENT_PROBE, true, &remove);
+    if (open) {
+        auto& probe = scene.get<ReflectionProbe>(id);
+        const ReflectionProbe before = probe;  // pre-edit value for the coalescing undo command
+        bool changed = false;
+
+        // Box half-extents: the influence + parallax-correction box. Should
+        // roughly match the surrounding walls of the region the probe represents.
+        drawPropertyLabel("Box Size");
+        changed |= ImGui::DragFloat3("##ProbeBox", glm::value_ptr(probe.halfExtents), 0.1f, 0.1f, 1000.0f, "%.1f");
+
+        drawPropertyLabel("Falloff");
+        changed |= ImGui::SliderFloat("##ProbeFalloff", &probe.falloff, 0.0f, 1.0f, "%.2f");
+
+        drawPropertyLabel("Intensity");
+        changed |= ImGui::DragFloat("##ProbeIntensity", &probe.intensity, 0.02f, 0.0f, 8.0f, "%.2f");
+
+        ImGui::Spacing();
+        // Box / falloff / intensity are runtime blend params (no re-bake). Moving
+        // the probe re-bakes automatically; Rebake forces it after the scene
+        // changed (sun moved, geometry edited) by bumping the version.
+        if (ImGui::Button("Rebake", ImVec2(-1, 0))) {
+            probe.bakeVersion++;
+            changed = true;
+        }
+        ImGui::TextDisabled("Captures the scene from the entity's Transform position.");
+
+        if (changed) {
+            state.commands.push(std::make_unique<ComponentEditCommand<ReflectionProbe>>(
+                id, before, probe, "Edit Reflection Probe"));
+            state.markSceneDirty();
+        }
+    }
+    endComponentCard();
+    if (remove) {
+        ReflectionProbe snap = scene.get<ReflectionProbe>(id);
+        scene.remove<ReflectionProbe>(Entity{id});
+        state.commands.push(std::make_unique<RemoveComponentCommand<ReflectionProbe>>(id, snap, "Remove Reflection Probe"));
         state.markSceneDirty();
     }
 }
