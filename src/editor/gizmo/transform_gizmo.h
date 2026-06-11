@@ -22,6 +22,15 @@ enum class GizmoElement : int {
     PlaneYZ, PlaneXZ, PlaneXY,
 };
 
+/// Axis / plane elements by index (0 = X, 1 = Y, 2 = Z), shared by the
+/// hit-test and draw loops so they agree on the index -> element mapping.
+inline constexpr GizmoElement GIZMO_AXES[3] = {
+    GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ,
+};
+inline constexpr GizmoElement GIZMO_PLANES[3] = {
+    GizmoElement::PlaneYZ, GizmoElement::PlaneXZ, GizmoElement::PlaneXY,
+};
+
 /// Custom transform gizmo drawn via ImGui DrawList.
 /// Non-copyable, non-movable. Owned by GizmoOverlay.
 class TransformGizmo {
@@ -88,14 +97,23 @@ class TransformGizmo {
         glm::vec3 getDragPlaneNormal(GizmoElement elem, const glm::vec3 axes[3]) const;
         ImU32 colorForElement(GizmoElement elem, GizmoElement highlight) const;
 
+        /**
+         * @brief Screen-space corners of translation plane quad @p i.
+         *
+         * The quad spans the two axes other than i: @p qA / @p qB sit on
+         * those axes at PLANE_QUAD_FRAC, @p qC is the far corner. One source
+         * of truth for the hit test and the draw.
+         */
+        void planeQuadCorners(int i, const ImVec2 screenAxes[3],
+                              ImVec2& qA, ImVec2& qB, ImVec2& qC) const;
+
     private:
         // Per-frame cached state
-        glm::mat4 m_view{1.0f};
-        glm::mat4 m_projection{1.0f};
         glm::mat4 m_viewProj{1.0f};
         glm::mat4 m_invViewProj{1.0f};
         glm::vec3 m_cameraPos{0.0f};
         glm::vec3 m_cameraDir{0.0f};
+        glm::vec3 m_cameraRight{1.0f, 0.0f, 0.0f};
         glm::vec3 m_gizmoOrigin{0.0f};
         float     m_screenFactor = 1.0f;
         float     m_uiScale      = 1.0f;  ///< DPI scale (ImGui font size / 13).

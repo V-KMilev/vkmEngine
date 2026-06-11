@@ -38,11 +38,7 @@ float TransformGizmo::computeScreenFactor(const glm::vec3& gizmoOrigin) const {
     glm::vec4 clipOrigin = m_viewProj * glm::vec4(gizmoOrigin, 1.0f);
     if (clipOrigin.w <= 1e-7f) return 1.0f;
 
-    // Camera right vector from inverse view
-    glm::mat4 invView = glm::inverse(m_view);
-    glm::vec3 cameraRight = glm::normalize(glm::vec3(invView[0]));
-
-    glm::vec4 clipRight = m_viewProj * glm::vec4(gizmoOrigin + cameraRight, 1.0f);
+    glm::vec4 clipRight = m_viewProj * glm::vec4(gizmoOrigin + m_cameraRight, 1.0f);
     if (clipRight.w <= 1e-7f) return 1.0f;
 
     glm::vec2 ndcOrigin = glm::vec2(clipOrigin) / clipOrigin.w;
@@ -108,6 +104,19 @@ glm::vec3 TransformGizmo::getDragPlaneNormal(GizmoElement elem, const glm::vec3 
     }
 }
 
+void TransformGizmo::planeQuadCorners(int i, const ImVec2 screenAxes[3],
+                                      ImVec2& qA, ImVec2& qB, ImVec2& qC) const {
+    const int a1 = (i + 1) % 3;
+    const int a2 = (i + 2) % 3;
+    const ImVec2 dA((screenAxes[a1].x - m_originScreen.x) * PLANE_QUAD_FRAC,
+                    (screenAxes[a1].y - m_originScreen.y) * PLANE_QUAD_FRAC);
+    const ImVec2 dB((screenAxes[a2].x - m_originScreen.x) * PLANE_QUAD_FRAC,
+                    (screenAxes[a2].y - m_originScreen.y) * PLANE_QUAD_FRAC);
+    qA = ImVec2(m_originScreen.x + dA.x,        m_originScreen.y + dA.y);
+    qB = ImVec2(m_originScreen.x + dB.x,        m_originScreen.y + dB.y);
+    qC = ImVec2(m_originScreen.x + dA.x + dB.x, m_originScreen.y + dA.y + dB.y);
+}
+
 ImU32 TransformGizmo::colorForElement(GizmoElement elem, GizmoElement highlight) const {
     if (elem == highlight) return COLOR_HIGHLIGHT;
     switch (elem) {
@@ -131,8 +140,6 @@ bool TransformGizmo::manipulate(
     float vpHeight
 ) {
     // Cache per-frame state
-    m_view = view;
-    m_projection = projection;
     m_viewProj = projection * view;
     m_invViewProj = glm::inverse(m_viewProj);
     m_vpMin = vpMin;
@@ -143,8 +150,9 @@ bool TransformGizmo::manipulate(
     m_uiScale = std::max(1.0f, ImGui::GetFontSize() / 13.0f);
 
     glm::mat4 invView = glm::inverse(view);
-    m_cameraPos = glm::vec3(invView[3]);
-    m_cameraDir = -glm::normalize(glm::vec3(invView[2]));
+    m_cameraPos   = glm::vec3(invView[3]);
+    m_cameraDir   = -glm::normalize(glm::vec3(invView[2]));
+    m_cameraRight = glm::normalize(glm::vec3(invView[0]));
 
     m_gizmoOrigin = glm::vec3(model[3]);
 

@@ -3,7 +3,6 @@
 #include <algorithm>
 
 #include "ecs/scene.h"
-#include "ecs/component/reflection_probe.h"
 #include "resource/resource_manager.h"
 #include "framework/editor_state.h"
 #include "system/hierarchy/hierarchy_operations.h"
@@ -152,6 +151,9 @@ EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
     if (scene.has<Camera>(id))    s.camera    = scene.get<Camera>(id);
     if (scene.has<Animation>(id)) s.animation = scene.get<Animation>(id);
     if (scene.has<Name>(id))      s.name      = scene.get<Name>(id);
+    if (scene.has<Rigidbody>(id)) s.rigidbody = scene.get<Rigidbody>(id);
+    if (scene.has<Collider>(id))  s.collider  = scene.get<Collider>(id);
+    if (scene.has<ReflectionProbe>(id)) s.reflectionProbe = scene.get<ReflectionProbe>(id);
     return s;
 }
 
@@ -165,6 +167,12 @@ void EntitySnapshot::apply(Scene& scene, EntityId id) const {
     if (camera    && !scene.has<Camera>(id))    { Camera    v = *camera;    scene.add(e, std::move(v)); }
     if (animation && !scene.has<Animation>(id)) { Animation v = *animation; scene.add(e, std::move(v)); }
     if (name      && !scene.has<Name>(id))      { Name      v = *name;      scene.add(e, std::move(v)); }
+    if (rigidbody && !scene.has<Rigidbody>(id)) { Rigidbody v = *rigidbody; scene.add(e, std::move(v)); }
+    if (collider  && !scene.has<Collider>(id))  { Collider  v = *collider;  scene.add(e, std::move(v)); }
+    if (reflectionProbe && !scene.has<ReflectionProbe>(id)) {
+        ReflectionProbe v = *reflectionProbe;
+        scene.add(e, std::move(v));
+    }
 }
 
 void CreateEntityCommand::redo(Scene& scene, EditorState& state) {

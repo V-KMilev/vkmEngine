@@ -15,6 +15,7 @@
 #include "ecs/component/collider.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/name.h"
+#include "ecs/component/reflection_probe.h"
 #include "ecs/component/rigidbody.h"
 
 #include "framework/command.h"
@@ -146,6 +147,9 @@ struct EntitySnapshot {
     std::optional<Camera>          camera;
     std::optional<Animation>       animation;
     std::optional<Name>            name;
+    std::optional<Rigidbody>       rigidbody;
+    std::optional<Collider>        collider;
+    std::optional<ReflectionProbe> reflectionProbe;
 
     static EntitySnapshot capture(const Scene& scene, EntityId id);
     void apply(Scene& scene, EntityId id) const;
@@ -318,6 +322,10 @@ extern template class ComponentEditCommand<Rigidbody>;
 extern template class AddComponentCommand<Collider>;
 extern template class RemoveComponentCommand<Collider>;
 extern template class ComponentEditCommand<Collider>;
+
+extern template class AddComponentCommand<ReflectionProbe>;
+extern template class RemoveComponentCommand<ReflectionProbe>;
+extern template class ComponentEditCommand<ReflectionProbe>;
 
 extern template class ComponentEditCommand<Light>;
 extern template class ComponentEditCommand<Camera>;

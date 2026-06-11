@@ -15,10 +15,9 @@ class ResourceManager;
  *
  * Opened from Window > Asset Browser. Each cell is a material/mesh preview via
  * MaterialPreviewSession, budgeted so a big grid spreads its bakes over several
- * frames. (The offscreen preview path is stubbed after the render refactor, so
- * cells currently show no image.) Click a material to edit it (opens the Material
- * Editor); "Assign" applies a material/mesh to the selected entity's Mesh.
- * "Import Model..." reuses the existing model-import dialog.
+ * frames. Click a material to edit it (opens the Material Editor); "Assign"
+ * applies a material/mesh to the selected entity's Mesh. "Import Model..."
+ * reuses the existing model-import dialog.
  *
  * Stateless w.r.t. assets - it reads ResourceManager every frame; only the
  * cell size and the two cached helper assets (a preview sphere for material
@@ -42,6 +41,10 @@ class AssetBrowserPanel {
         void ensureAssets(ResourceManager& resources);
         void drawMaterials(EditorContext& ec);
         void drawMeshes(EditorContext& ec);
+
+        /// Arm the shared rename modal for one asset (the other handle clears).
+        void openRename(MaterialHandle h, const std::string& name);
+        void openRename(MeshHandle h, const std::string& name);
 
         float      m_cell = 104.0f;          ///< Thumbnail edge in px
 
