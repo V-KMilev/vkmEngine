@@ -35,6 +35,7 @@ struct RenderView {
     std::vector<ShadowCasterData> shadowCasters;   ///< The shadow casters for the view.
     std::vector<LightData>        lights;          ///< The lights for the view.
     std::vector<ProbeData>        probes;          ///< The reflection probes in the scene.
+
     RenderSettings                settings;        ///< Editable render tuning (copied from the RenderSystem each frame).
 
     public:

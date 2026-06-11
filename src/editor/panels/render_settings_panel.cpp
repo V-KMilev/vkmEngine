@@ -3,6 +3,8 @@
 #include "framework/editor_common.h"
 #include "framework/editor_context.h"
 
+#include "ecs/scene.h"
+#include "ecs/component/reflection_probe.h"
 #include "system/render/render_system.h"
 
 namespace Engine {
@@ -31,6 +33,7 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
     if (ImGui::Combo("##renderMode", &modeIdx, kRenderModes, IM_ARRAYSIZE(kRenderModes))) {
         s.renderMode = static_cast<RenderMode>(modeIdx);
     }
+    ImGui::Checkbox("World Grid", &s.grid);
     ImGui::Separator();
 
     if (ImGui::CollapsingHeader("Ambient Occlusion (GTAO)", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -73,6 +76,11 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
     if (ImGui::CollapsingHeader("Reflection Probes", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Checkbox("Enabled##probes", &s.probes);
         ImGui::TextDisabled("Local IBL + parallax reflections, blended over the global IBL.");
+        if (ImGui::Button("Bake All Probes", ImVec2(-1, 0))) {
+            ec.frame.scene.forEach<ReflectionProbe>(
+                [](EntityId, ReflectionProbe& probe) { probe.bakeVersion++; });
+            ec.state.markSceneDirty();
+        }
     }
 
     ImGui::Spacing();

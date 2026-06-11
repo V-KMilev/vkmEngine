@@ -60,6 +60,9 @@ struct RenderSettings {
     float bloomThreshold = 1.0f;    ///< Bright-pass threshold (HDR luminance).
     float bloomKnee      = 0.5f;    ///< Soft-knee width around the threshold.
     float bloomRadius    = 0.005f;  ///< Upsample tent-filter radius (UV space).
+
+    // Overlays
+    bool grid = true;   ///< World-space ground grid (drawn by the backend debug pass).
 };
 
 } // namespace Engine

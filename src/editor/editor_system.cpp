@@ -445,6 +445,7 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
             m_gizmoOverlay.drawProbeGizmos(ec);
             if (m_state.showColliders) m_gizmoOverlay.drawColliderGizmos(ec);
             if (m_state.showBounds)    m_gizmoOverlay.drawBoundsGizmos(ec);
+            m_gizmoOverlay.drawSelectionOutline(ec);
             m_gizmoOverlay.drawTransformGizmo(ec);
             m_viewportToolbar.draw(ec);
             m_playbar.draw(ec);
