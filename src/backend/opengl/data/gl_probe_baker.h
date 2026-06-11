@@ -44,10 +44,11 @@ class GLProbeBaker {
         GLProbeBaker();
         ~GLProbeBaker();
 
-        GLProbeBaker(const GLProbeBaker&) = delete;
-        GLProbeBaker& operator=(const GLProbeBaker&) = delete;
-        GLProbeBaker(GLProbeBaker&&) = delete;
-        GLProbeBaker& operator=(GLProbeBaker&&) = delete;
+        GLProbeBaker(const GLProbeBaker& other) = delete;
+        GLProbeBaker& operator=(const GLProbeBaker& other) = delete;
+
+        GLProbeBaker(GLProbeBaker && other) = delete;
+        GLProbeBaker& operator=(GLProbeBaker && other) = delete;
 
         /// Bake the probe at @p layer of @p arr from @p position.
         void bake(Core::Context& gl, GLProbeArray& arr, int layer, const glm::vec3& position,

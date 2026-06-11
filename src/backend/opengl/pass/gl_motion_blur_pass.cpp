@@ -37,9 +37,7 @@ void GLMotionBlurPass::execute(GLFrameContext& ctx) {
     // Read the live HDR scene, write the blur into the scratch target, blit back
     // (same feedback-safe pattern SSR uses).
     ctx.sceneColor.bind(ctx.gl);
-    ctx.gl.setDepthTest(false);
-    ctx.gl.setBlending(false);
-    ctx.gl.setFaceCulling(false);
+    beginFullscreen(ctx.gl);
 
     m_shader->bind();
     ctx.sceneHDR.bindColor(GLBindings::PostTextureSlots::SceneColor);

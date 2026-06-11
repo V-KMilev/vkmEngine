@@ -15,22 +15,26 @@ GLTarget::GLTarget() = default;
 GLTarget::~GLTarget() = default;
 
 namespace {
-std::unique_ptr<Core::Texture2D> makeColor(const char* name, uint32_t w, uint32_t h,
-                                           GLenum internalFormat, GLenum format) {
+// One off-screen target texture: clamped, no mips, GL_FLOAT type. Filter defaults
+// to nearest (depth / G-buffer); the HDR colour target passes linear.
+std::unique_ptr<Core::Texture2D> makeTarget2D(
+    const char* name, uint32_t w, uint32_t h, GLenum internalFormat, GLenum format,
+    Core::TextureMinFilter minFilter = Core::TextureMinFilter::Nearest,
+    Core::TextureMagFilter magFilter = Core::TextureMagFilter::Nearest) {
     Core::Texture2DParams p;
-    p.width          = w;
-    p.height         = h;
-    p.internalFormat = internalFormat;
-    p.format         = format;
-    p.type           = GL_FLOAT;
-    p.minFilter      = Core::TextureMinFilter::Nearest;
-    p.magFilter      = Core::TextureMagFilter::Nearest;
-    p.wrapS          = Core::TextureWrap::ClampToEdge;
-    p.wrapT          = Core::TextureWrap::ClampToEdge;
+    p.width           = w;
+    p.height          = h;
+    p.internalFormat  = internalFormat;
+    p.format          = format;
+    p.type            = GL_FLOAT;
+    p.minFilter       = minFilter;
+    p.magFilter       = magFilter;
+    p.wrapS           = Core::TextureWrap::ClampToEdge;
+    p.wrapT           = Core::TextureWrap::ClampToEdge;
     p.generateMipmaps = false;
     return std::make_unique<Core::Texture2D>(name, p);
 }
-}
+} // namespace
 
 void GLTarget::resize(uint32_t width, uint32_t height) {
     if (width == 0 || height == 0) return;
@@ -39,18 +43,11 @@ void GLTarget::resize(uint32_t width, uint32_t height) {
     m_height = height;
 
     // HDR colour: linear filter for sampling (composite/bloom), clamp, no mips.
-    Core::Texture2DParams color;
-    color.width = width; color.height = height;
-    color.internalFormat = GL_RGBA16F; color.format = GL_RGBA; color.type = GL_FLOAT;
-    color.minFilter = Core::TextureMinFilter::Linear;
-    color.magFilter = Core::TextureMagFilter::Linear;
-    color.wrapS = Core::TextureWrap::ClampToEdge;
-    color.wrapT = Core::TextureWrap::ClampToEdge;
-    color.generateMipmaps = false;
-    m_color = std::make_unique<Core::Texture2D>("scene_hdr", color);
+    m_color = makeTarget2D("scene_hdr", width, height, GL_RGBA16F, GL_RGBA,
+                           Core::TextureMinFilter::Linear, Core::TextureMagFilter::Linear);
 
     // Sampleable depth (24-bit), nearest so SSR reads exact depths.
-    m_depth = makeColor("scene_depth", width, height, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT);
+    m_depth = makeTarget2D("scene_depth", width, height, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT);
 
     m_fbo.bind();
     m_fbo.attachTexture2D(GL_COLOR_ATTACHMENT0, m_color->getID());
@@ -58,7 +55,7 @@ void GLTarget::resize(uint32_t width, uint32_t height) {
 
     if (m_hasGBuffer) {
         // View normal (octahedral) in rg, roughness in b, metalness in a.
-        m_gbuffer = makeColor("scene_gbuffer", width, height, GL_RGBA16F, GL_RGBA);
+        m_gbuffer = makeTarget2D("scene_gbuffer", width, height, GL_RGBA16F, GL_RGBA);
         m_fbo.attachTexture2D(GL_COLOR_ATTACHMENT1, m_gbuffer->getID());
     }
 

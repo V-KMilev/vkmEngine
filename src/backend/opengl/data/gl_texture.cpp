@@ -32,8 +32,4 @@ void GLTexture::update(const TextureAsset& texture) {
     }
 }
 
-void GLTexture::bindSlot(uint32_t slot) const {
-    if (m_texture) m_texture->bindSlot(slot);
-}
-
 } // namespace Engine

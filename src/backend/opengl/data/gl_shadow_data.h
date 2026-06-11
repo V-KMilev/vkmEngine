@@ -14,6 +14,7 @@ namespace Core {
 
 namespace Engine {
     struct RenderView;
+    struct LightData;
 }
 
 namespace Engine {
@@ -131,6 +132,21 @@ class GLShadowData {
         void uploadAndBind();
 
     private:
+        /// Camera frustum corners + view-space depth span, shared by the cascade fit.
+        struct CameraFrustum {
+            glm::vec3 nearCorners[4];
+            glm::vec3 farCorners[4];
+            float nearDepth = 0.0f;
+            float farDepth  = 0.0f;
+        };
+
+        /// Fit one shadow-casting light into the next free atlas slot(s) for its
+        /// type, writing its GPU entry + render job. next2D/nextCube advance.
+        void fitDirectional(const LightData& light, uint32_t lightIndex,
+                            const CameraFrustum& cam, uint32_t& next2D, bool& haveSun);
+        void fitSpot(const LightData& light, uint32_t lightIndex, uint32_t& next2D);
+        void fitPoint(const LightData& light, uint32_t lightIndex, uint32_t& nextCube);
+
         std::unique_ptr<Core::UniformBuffer> m_ubo;
         ShadowUBOData m_data{};
         ShadowUBOData m_last{};

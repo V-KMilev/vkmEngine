@@ -19,8 +19,7 @@ namespace Engine {
 namespace Engine {
 
 /**
- * @brief A binding of a texture to a slot.
- *
+ * @brief A texture handle bound to a sampler slot.
  */
 struct TextureBinding {
     TextureHandle handle;
@@ -78,8 +77,8 @@ class GLMaterial {
         GLMaterial(const GLMaterial& other) = delete;
         GLMaterial& operator=(const GLMaterial& other) = delete;
 
-        GLMaterial(GLMaterial&& other) = delete;
-        GLMaterial& operator=(GLMaterial&& other) = delete;
+        GLMaterial(GLMaterial && other) = delete;
+        GLMaterial& operator=(GLMaterial && other) = delete;
 
     public:
         void update(const MaterialAsset& material);

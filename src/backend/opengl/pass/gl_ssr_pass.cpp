@@ -29,8 +29,7 @@ void GLSSRPass::execute(GLFrameContext& ctx) {
     // live scene's colour, depth, and G-buffer. Drawing into a different FBO
     // than the one we sample avoids any read-while-write feedback.
     ctx.sceneColor.bind(ctx.gl);
-    ctx.gl.setDepthTest(false);
-    ctx.gl.setBlending(false);
+    beginFullscreen(ctx.gl);
 
     m_shader->bind();
     ctx.sceneHDR.bindColor(GLBindings::PostTextureSlots::SceneColor);
