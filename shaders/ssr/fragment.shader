@@ -52,6 +52,14 @@ vec3 viewPos(vec2 uv, float depth) {
     return v.xyz / v.w;
 }
 
+// Positive linear view depth straight from a window-depth sample, using the
+// projection's two depth coefficients. Avoids the inverse-projection matrix
+// multiply on the per-step scene-depth lookup (the hot path of the march).
+float linearDepth(float winDepth) {
+    float ndc = winDepth * 2.0 - 1.0;
+    return u_projection[3][2] / (ndc + u_projection[2][2]);
+}
+
 // Interleaved-gradient noise: jitters the start so any residual stepping reads
 // as fine dither, not a coherent edge.
 float ign(vec2 p) {
@@ -128,7 +136,7 @@ void main() {
         float dCurr = -(Qq.z / kk);                   // ray depth here, positive
         if (sd >= 1.0) { dPrev = dCurr; continue; }   // sky: nothing to hit
 
-        float sceneDepth = -viewPos(uv, sd).z;        // scene depth, positive
+        float sceneDepth = linearDepth(sd);           // scene depth, positive (cheap reconstruct)
 
         // Slab crossing: the step interval [dPrev, dCurr] overlaps the surface's
         // [sceneDepth, sceneDepth + THICKNESS] slab (so the ray entered it this
