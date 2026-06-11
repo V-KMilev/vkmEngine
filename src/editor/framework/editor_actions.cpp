@@ -229,6 +229,15 @@ void duplicateEntity(Scene& scene, EditorState& state, EntityId source) {
         cam.active = false;
         scene.add(entity, cam);
     }
+    if (scene.has<Rigidbody>(source)) {
+        scene.add(entity, scene.get<Rigidbody>(source));
+    }
+    if (scene.has<Collider>(source)) {
+        scene.add(entity, scene.get<Collider>(source));
+    }
+    if (scene.has<ReflectionProbe>(source)) {
+        scene.add(entity, scene.get<ReflectionProbe>(source));
+    }
     if (scene.has<Animation>(source)) {
         // Tracks are now copyable - clone the source animation in full
         // (keyframes and all) so duplicated entities keep their motion.
@@ -260,6 +269,17 @@ void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
     state.commands.push(std::make_unique<DestroySubtreeCommand>(
         std::move(snap), priorSel, label));
     commitStructureChange(state);
+}
+
+void setActiveCamera(Scene& scene, EditorState& state, EntityId target, const char* label) {
+    std::vector<std::pair<uint32_t, bool>> beforeActive;
+    scene.forEach<Camera>([&](EntityId other, Camera& c) {
+        beforeActive.emplace_back(other.index, c.active);
+        c.active = (other == target);
+    });
+    state.commands.push(std::make_unique<SetActiveCameraCommand>(
+        target, std::move(beforeActive), label));
+    state.markSceneDirty();
 }
 
 void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController& camera) {

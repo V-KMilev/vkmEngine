@@ -12,46 +12,21 @@ void TransformGizmo::drawTranslationGizmo(ImDrawList* dl, const ImVec2 screenAxe
 
     // Draw plane quads
     for (int i = 0; i < 3; ++i) {
-        int a1 = (i + 1) % 3;
-        int a2 = (i + 2) % 3;
+        ImVec2 qA, qB, qC;
+        planeQuadCorners(i, screenAxes, qA, qB, qC);
 
-        ImVec2 qA(
-            m_originScreen.x + (screenAxes[a1].x - m_originScreen.x) * PLANE_QUAD_FRAC,
-            m_originScreen.y + (screenAxes[a1].y - m_originScreen.y) * PLANE_QUAD_FRAC
-        );
-        ImVec2 qB(
-            m_originScreen.x + (screenAxes[a2].x - m_originScreen.x) * PLANE_QUAD_FRAC,
-            m_originScreen.y + (screenAxes[a2].y - m_originScreen.y) * PLANE_QUAD_FRAC
-        );
-        ImVec2 qC(
-            m_originScreen.x + (screenAxes[a1].x - m_originScreen.x) * PLANE_QUAD_FRAC
-                             + (screenAxes[a2].x - m_originScreen.x) * PLANE_QUAD_FRAC,
-            m_originScreen.y + (screenAxes[a1].y - m_originScreen.y) * PLANE_QUAD_FRAC
-                             + (screenAxes[a2].y - m_originScreen.y) * PLANE_QUAD_FRAC
-        );
-
-        static constexpr GizmoElement planes[] = {
-            GizmoElement::PlaneYZ, GizmoElement::PlaneXZ, GizmoElement::PlaneXY
-        };
-        ImU32 fillColor = colorForElement(planes[i], hl);
-        // Make fill semi-transparent
-        if (planes[i] != hl) {
-            static constexpr ImU32 planeFills[] = { COLOR_PLANE_X, COLOR_PLANE_Y, COLOR_PLANE_Z };
-            fillColor = planeFills[i];
-        } else {
-            fillColor = IM_COL32(255, 210, 50, 60);
-        }
+        static constexpr ImU32 planeFills[] = { COLOR_PLANE_X, COLOR_PLANE_Y, COLOR_PLANE_Z };
+        const ImU32 fillColor = (GIZMO_PLANES[i] == hl)
+            ? IM_COL32(255, 210, 50, 60)   // highlight, semi-transparent
+            : planeFills[i];
 
         dl->AddQuadFilled(m_originScreen, qA, qC, qB, fillColor);
     }
 
     // Draw axis lines and arrow heads
     for (int i = 0; i < 3; ++i) {
-        static constexpr GizmoElement axisElems[] = {
-            GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ
-        };
-        ImU32 col = colorForElement(axisElems[i], hl);
-        float thick = (axisElems[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS;
+        ImU32 col = colorForElement(GIZMO_AXES[i], hl);
+        float thick = (GIZMO_AXES[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS;
 
         dl->AddLine(m_originScreen, screenAxes[i], col, thick * m_uiScale);
 
@@ -80,12 +55,12 @@ void TransformGizmo::drawRotationGizmo(ImDrawList* dl, const glm::vec3 axes[3]) 
     GizmoElement hl = m_dragging ? m_active : m_hovered;
     float radius = m_screenFactor;
 
+    const float angleStep = 2.0f * glm::pi<float>() / CIRCLE_SEGMENTS;
+    const float halfStep  = angleStep * 0.5f;
+
     for (int i = 0; i < 3; ++i) {
-        static constexpr GizmoElement axisElems[] = {
-            GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ
-        };
-        ImU32 col = colorForElement(axisElems[i], hl);
-        float thick = ((axisElems[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS) * m_uiScale;
+        ImU32 col = colorForElement(GIZMO_AXES[i], hl);
+        float thick = ((GIZMO_AXES[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS) * m_uiScale;
 
         // Generate circle points on the plane perpendicular to this axis
         glm::vec3 normal = axes[i];
@@ -101,27 +76,27 @@ void TransformGizmo::drawRotationGizmo(ImDrawList* dl, const glm::vec3 axes[3]) 
 
         ImVec2 prevPt{};
         for (int s = 0; s <= CIRCLE_SEGMENTS; ++s) {
-            float angle = (static_cast<float>(s) / static_cast<float>(CIRCLE_SEGMENTS)) * 2.0f * glm::pi<float>();
+            float angle = s * angleStep;
             glm::vec3 worldPt = m_gizmoOrigin
                 + (tangent * std::cos(angle) + bitangent * std::sin(angle)) * radius;
             ImVec2 pt = worldToScreen(worldPt);
 
             if (s > 0) {
-                // Only draw segments facing the camera (back-face culling for rings)
+                // Only draw segments facing the camera (back-face culling for
+                // rings); the facing test samples the segment's midpoint.
                 glm::vec3 midWorld = m_gizmoOrigin
-                    + (tangent * std::cos(angle - 0.5f * 2.0f * glm::pi<float>() / CIRCLE_SEGMENTS)
-                       + bitangent * std::sin(angle - 0.5f * 2.0f * glm::pi<float>() / CIRCLE_SEGMENTS))
-                    * radius;
+                    + (tangent * std::cos(angle - halfStep)
+                       + bitangent * std::sin(angle - halfStep)) * radius;
                 glm::vec3 toCamera = glm::normalize(m_cameraPos - midWorld);
                 float faceDot = glm::dot(toCamera, normal);
 
                 // Draw if facing camera (dot > 0) or if this axis is highlighted
-                if (std::abs(faceDot) > 0.05f || axisElems[i] == hl) {
+                if (std::abs(faceDot) > 0.05f || GIZMO_AXES[i] == hl) {
                     float alpha = std::abs(faceDot);
                     alpha = std::clamp(alpha * 3.0f, 0.2f, 1.0f);
                     // Modulate color alpha
                     ImU32 segCol = col;
-                    if (axisElems[i] != hl) {
+                    if (GIZMO_AXES[i] != hl) {
                         uint8_t a = static_cast<uint8_t>(255.0f * alpha);
                         segCol = (col & 0x00FFFFFF) | (static_cast<ImU32>(a) << 24);
                     }
@@ -141,11 +116,8 @@ void TransformGizmo::drawScaleGizmo(ImDrawList* dl, const ImVec2 screenAxes[3]) 
     const float scale = m_uiScale;
 
     for (int i = 0; i < 3; ++i) {
-        static constexpr GizmoElement axisElems[] = {
-            GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ
-        };
-        ImU32 col = colorForElement(axisElems[i], hl);
-        float thick = ((axisElems[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS) * scale;
+        ImU32 col = colorForElement(GIZMO_AXES[i], hl);
+        float thick = ((GIZMO_AXES[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS) * scale;
 
         dl->AddLine(m_originScreen, screenAxes[i], col, thick);
 

@@ -4,8 +4,10 @@
 #include <cmath>
 #include <cstdio>
 #include <ctime>
+#include <memory>
 
 #include "debug/shader_error_log.h"
+#include "framework/editor_commands.h"
 #include "framework/editor_common.h"
 #include "ui/editor_style.h"
 
@@ -99,6 +101,12 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
     Transform& tf = scene.get<Transform>(id);
 
     auto editor = [&](Animation& anim) {
+        // Undo snapshot. Authoring edits (keys, length, loop, speed) push one
+        // coalescing command at the end; play/pause/stop/scrub stay
+        // non-undoable (same policy as the Inspector's Animation card).
+        const Animation before = anim;
+        bool changed = false;
+
         auto previewPose = [&]() {
             if (!anim.positionTrack.isEmpty()) tf.position = anim.positionTrack.getValue(anim.time);
             if (!anim.rotationTrack.isEmpty()) tf.rotation = anim.rotationTrack.getValue(anim.time);
@@ -124,21 +132,20 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             anim.rotationTrack.setKeyframe(anim.time, tf.rotation);
             anim.scaleTrack.setKeyframe(anim.time, tf.scale);
             anim.updateDuration();
-            state.markSceneDirty();
+            changed = true;
         }
         ImGui::SameLine(0, GAP);
-        if (ImGui::Checkbox("Loop", &anim.looping)) state.markSceneDirty();
+        changed |= ImGui::Checkbox("Loop", &anim.looping);
         ImGui::SameLine(0, GAP);
         ImGui::SetNextItemWidth(90);
-        if (ImGui::DragFloat("Speed", &anim.speed, 0.005f, 0.0f, 10.0f, "%.2fx"))
-            state.markSceneDirty();
+        changed |= ImGui::DragFloat("Speed", &anim.speed, 0.005f, 0.0f, 10.0f, "%.2fx");
         ImGui::SameLine(0, GAP);
         ImGui::SetNextItemWidth(110);
         float lengthEdit = anim.length;
         if (ImGui::InputFloat("Length", &lengthEdit, 0.1f, 1.0f, "%.2f s")) {
             anim.length = std::max(0.0f, lengthEdit);
             anim.updateDuration();
-            state.markSceneDirty();
+            changed = true;
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Animation length in seconds (0 = auto from the last keyframe)");
@@ -210,7 +217,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
                 if (m_animDotTrack == 0)      moveDot(anim.positionTrack, m_animDotIdx, mt);
                 else if (m_animDotTrack == 1) moveDot(anim.rotationTrack, m_animDotIdx, mt);
                 else if (m_animDotTrack == 2) moveDot(anim.scaleTrack,    m_animDotIdx, mt);
-                if (m_animDotTrack >= 0) { anim.updateDuration(); state.markSceneDirty(); }
+                if (m_animDotTrack >= 0) { anim.updateDuration(); changed = true; }
                 else { anim.time = mt; anim.playing = false; }
                 previewPose();
             }
@@ -279,7 +286,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
                 track.setKeyframe(anim.time, recordVal());
                 anim.updateDuration();
                 previewPose();
-                state.markSceneDirty();
+                changed = true;
             }
             ImGui::SameLine();
             char clrId[16];
@@ -288,14 +295,14 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
                            "Clear every keyframe on this track", ih2)) {
                 track.clear();
                 anim.updateDuration();
-                state.markSceneDirty();
+                changed = true;
             }
             ImGui::SameLine(0, 12);
             ImGui::SetNextItemWidth(-1);
             char easeId[24];
             snprintf(easeId, sizeof(easeId), "##e%s", tag);
             EasingFunction f = track.getEasing();
-            if (drawEasingCombo(easeId, f)) { track.setEasing(f); state.markSceneDirty(); }
+            if (drawEasingCombo(easeId, f)) { track.setEasing(f); changed = true; }
 
             size_t count = track.keyframeCount();
             if (count == 0) {
@@ -357,16 +364,16 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
                     track.removeKeyframe(static_cast<size_t>(deleteIdx));
                     anim.updateDuration();
                     previewPose();
-                    state.markSceneDirty();
+                    changed = true;
                 } else if (retimeIdx >= 0) {
                     track.setKeyframeTime(static_cast<size_t>(retimeIdx), std::max(0.0f, retimeVal));
                     anim.updateDuration();
                     previewPose();
-                    state.markSceneDirty();
+                    changed = true;
                 } else if (valueIdx >= 0) {
                     track.setKeyframeValue(static_cast<size_t>(valueIdx), newVal);
                     previewPose();
-                    state.markSceneDirty();
+                    changed = true;
                 }
             }
             ImGui::TreePop();
@@ -375,6 +382,14 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
         trackEditor("Position", "P", anim.positionTrack, [&] { return tf.position; }, vec3Editor);
         trackEditor("Rotation", "R", anim.rotationTrack, [&] { return tf.rotation; }, quatEditor);
         trackEditor("Scale", "S", anim.scaleTrack, [&] { return tf.scale; }, vec3Editor);
+
+        if (changed) {
+            // Coalescing command - tryMerge collapses per-frame drag edits
+            // (timeline dots, speed) into one undo step.
+            state.commands.push(std::make_unique<ComponentEditCommand<Animation>>(
+                id, before, anim, "Edit Animation"));
+            state.markSceneDirty();
+        }
     };
 
     if (!scene.has<Animation>(id)) {
@@ -402,6 +417,9 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             Animation& na = scene.get<Animation>(id);
             na.length = 5.0f;
             na.updateDuration();
+            // Same undo path as the Inspector's Add Component menu.
+            state.commands.push(std::make_unique<AddComponentCommand<Animation>>(
+                id, na, "Add Animation"));
             state.markSceneDirty();
         }
         return;

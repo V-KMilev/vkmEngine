@@ -309,16 +309,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
         const auto& cam = scene.get<Camera>(entity);
         const bool isActive = cam.active;
         if (ImGui::MenuItem("Look Through Camera", nullptr, false, !isActive)) {
-            // Activate this camera, deactivate the rest; record prior active
-            // flags so the multi-entity flip is undoable.
-            std::vector<std::pair<uint32_t, bool>> beforeActive;
-            scene.forEach<Camera>([&](EntityId other, Camera& c) {
-                beforeActive.emplace_back(other.index, c.active);
-                c.active = (other == entity);
-            });
-            state.commands.push(std::make_unique<SetActiveCameraCommand>(
-                entity, std::move(beforeActive), "Look Through Camera"));
-            state.markSceneDirty();
+            EditorActions::setActiveCamera(scene, state, entity, "Look Through Camera");
         }
     }
 

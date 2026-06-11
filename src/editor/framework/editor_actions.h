@@ -47,6 +47,15 @@ void deleteEntity(Scene& scene, EditorState& state, EntityId entity);
 void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController& camera);
 
 /**
+ * @brief Make @p target the active ("main") camera.
+ *
+ * Flips the active flag across every Camera and records the prior flags so
+ * the multi-entity change is one undoable step. @p label names the undo
+ * entry ("Set Main Camera" / "Look Through Camera").
+ */
+void setActiveCamera(Scene& scene, EditorState& state, EntityId target, const char* label);
+
+/**
  * @brief Commit a hierarchy mutation: dirty bits, panel rebuild, scene save flag.
  *
  * Cascades ECS dirty bits, requests a hierarchy panel rebuild, and flags the
