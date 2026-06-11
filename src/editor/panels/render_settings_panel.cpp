@@ -21,6 +21,18 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
 
     RenderSettings& s = ec.renderSystem.settings();
 
+    // Order must match RenderMode in render_settings.h.
+    static const char* const kRenderModes[] = {
+        "Default", "Depth", "Normals", "Roughness", "Metalness",
+        "Ambient Occlusion", "Bloom", "Shadow Atlas",
+    };
+    int modeIdx = static_cast<int>(s.renderMode);
+    drawPropertyLabel("Debug View");
+    if (ImGui::Combo("##renderMode", &modeIdx, kRenderModes, IM_ARRAYSIZE(kRenderModes))) {
+        s.renderMode = static_cast<RenderMode>(modeIdx);
+    }
+    ImGui::Separator();
+
     if (ImGui::CollapsingHeader("Ambient Occlusion (GTAO)", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Checkbox("Enabled##gtao", &s.gtao);
         ImGui::BeginDisabled(!s.gtao);

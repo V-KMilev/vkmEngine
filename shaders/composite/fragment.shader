@@ -7,6 +7,59 @@ layout(binding = 0) uniform sampler2D u_hdr;    // linear HDR scene
 layout(binding = 1) uniform sampler2D u_bloom;  // bloom mip 0 (energy-conserving chain)
 uniform float u_bloomStrength;                  // 0 when bloom is unavailable
 
+// Debug-view inputs. Only sampled when u_renderMode != MODE_DEFAULT, so the
+// backend binds them only then; in the default path these stay untouched.
+layout(binding = 19) uniform sampler2D u_sceneDepth;     // scene depth
+layout(binding = 20) uniform sampler2D u_sceneGBuffer;   // oct view-normal.xy, roughness.z, metalness.w
+layout(binding = 21) uniform sampler2D u_ao;             // GTAO factor
+layout(binding = 11) uniform sampler2D u_shadowAtlas;    // tiled 2D shadow depth
+uniform int  u_renderMode;   // 0 = final image, else a debug buffer (see MODE_* below)
+uniform mat4 u_projection;   // camera projection, for depth linearization (debug only)
+
+// Must match RenderMode in src/engine/system/render/render_settings.h.
+const int MODE_DEFAULT   = 0;
+const int MODE_DEPTH     = 1;
+const int MODE_NORMALS   = 2;
+const int MODE_ROUGHNESS = 3;
+const int MODE_METALNESS = 4;
+const int MODE_AO        = 5;
+const int MODE_BLOOM     = 6;
+const int MODE_SHADOW    = 7;
+
+vec2 signNotZero(vec2 v) {
+    return vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
+}
+
+// Octahedral decode - matches octEncode in the depth prepass / octDecode in SSR.
+vec3 octDecode(vec2 e) {
+    e = e * 2.0 - 1.0;
+    vec3 n = vec3(e.xy, 1.0 - abs(e.x) - abs(e.y));
+    if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * signNotZero(n.xy);
+    return normalize(n);
+}
+
+// Visualize one intermediate render target, raw (no tonemap / FXAA).
+vec3 debugColor(vec2 uv) {
+    if (u_renderMode == MODE_NORMALS)   return octDecode(texture(u_sceneGBuffer, uv).rg) * 0.5 + 0.5;
+    if (u_renderMode == MODE_ROUGHNESS) return vec3(texture(u_sceneGBuffer, uv).b);
+    if (u_renderMode == MODE_METALNESS) return vec3(texture(u_sceneGBuffer, uv).a);
+    if (u_renderMode == MODE_AO)        return vec3(texture(u_ao, uv).r);
+    if (u_renderMode == MODE_BLOOM)     return texture(u_bloom, uv).rgb;
+    if (u_renderMode == MODE_SHADOW)    return vec3(texture(u_shadowAtlas, uv).r);
+    if (u_renderMode == MODE_DEPTH) {
+        // Positive linear view depth (same two-coefficient form SSR uses), then
+        // log-mapped between near and far: a plain lin/far divide crushes all
+        // geometry to black when the far plane is large. Near = bright, far = dark.
+        float ndc  = texture(u_sceneDepth, uv).r * 2.0 - 1.0;
+        float lin  = u_projection[3][2] / (ndc + u_projection[2][2]);
+        float near = u_projection[3][2] / (u_projection[2][2] - 1.0);
+        float far  = u_projection[3][2] / (u_projection[2][2] + 1.0);
+        float t    = log2(lin / near) / log2(far / near);
+        return vec3(clamp(1.0 - t, 0.0, 1.0));
+    }
+    return texture(u_hdr, uv).rgb;
+}
+
 // Bloom-blend + tonemap + gamma a linear HDR sample to perceptual LDR. FXAA
 // runs on this (edge detection wants perceptual luma, not linear radiance), so
 // every tap goes through here.
@@ -29,6 +82,12 @@ const float FXAA_REDUCE_MUL = 1.0 / 8.0;
 const float FXAA_REDUCE_MIN = 1.0 / 128.0;
 
 void main() {
+    // Debug views bypass tonemap + FXAA and show the raw buffer.
+    if (u_renderMode != MODE_DEFAULT) {
+        FragColor = vec4(debugColor(vUV), 1.0);
+        return;
+    }
+
     vec2 texel = 1.0 / vec2(textureSize(u_hdr, 0));
 
     vec3 rgbM  = resolve(vUV);
