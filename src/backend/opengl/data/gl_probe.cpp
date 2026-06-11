@@ -6,35 +6,14 @@
 
 namespace Engine {
 
-GLProbeArray::~GLProbeArray() {
-    if (m_irradiance) glDeleteTextures(1, &m_irradiance);
-    if (m_prefilter)  glDeleteTextures(1, &m_prefilter);
-}
-
-GLuint GLProbeArray::createCubeArray(int size, int mips) const {
-    GLuint id = 0;
-    glGenTextures(1, &id);
-    glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, id);
-    // Immutable storage; depth = capacity cubes * 6 faces. RGBA16F is the
-    // guaranteed colour-renderable HDR format (RGB16F render support is optional).
-    glTexStorage3D(GL_TEXTURE_CUBE_MAP_ARRAY, mips, GL_RGBA16F, size, size, m_capacity * 6);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_MIN_FILTER,
-        mips > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_MAX_LEVEL, mips - 1);
-    glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, 0);
-    return id;
-}
-
 void GLProbeArray::createTargets(int capacity) {
     if (m_capacity > 0) return;  // already allocated
     m_capacity = capacity;
 
-    m_irradiance = createCubeArray(IRRADIANCE_SIZE, 1);
-    m_prefilter  = createCubeArray(PREFILTER_SIZE,  PREFILTER_MIPS);
+    // RGBA16F is the guaranteed colour-renderable HDR format (RGB16F render
+    // support is optional). Each array holds m_capacity cubes (capacity * 6 faces).
+    m_irradiance.create(IRRADIANCE_SIZE, 1,             m_capacity, GL_RGBA16F);
+    m_prefilter.create (PREFILTER_SIZE,  PREFILTER_MIPS, m_capacity, GL_RGBA16F);
     m_env.create(ENV_SIZE, ENV_MIPS, GL_RGB16F, GL_RGB, GL_FLOAT, true);
 
     // Shared capture depth for the six geometry captures (convolution runs

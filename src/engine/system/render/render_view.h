@@ -24,18 +24,18 @@ struct Visibility;
  * capacity across frames.
  */
 struct RenderView {
-    uint32_t viewportX      = 0;      ///< The x-coordinate of the viewport.
-    uint32_t viewportY      = 0;      ///< The y-coordinate of the viewport.
-    uint32_t viewportWidth  = 0;      ///< The width of the viewport.
-    uint32_t viewportHeight = 0;      ///< The height of the viewport.
-    uint32_t surfaceHeight  = 0;      ///< The height of the surface. Full backbuffer height the viewport rect sits within.
+    uint32_t viewportX      = 0;                   ///< The x-coordinate of the viewport.
+    uint32_t viewportY      = 0;                   ///< The y-coordinate of the viewport.
+    uint32_t viewportWidth  = 0;                   ///< The width of the viewport.
+    uint32_t viewportHeight = 0;                   ///< The height of the viewport.
+    uint32_t surfaceHeight  = 0;                   ///< The height of the surface. Full backbuffer height the viewport rect sits within.
 
-    CameraData camera;                           ///< The camera data for the view.
-    std::vector<DrawableData> drawables;         ///< The drawables for the view.
-    std::vector<LightData>    lights;            ///< The lights for the view.
-    std::vector<ShadowCasterData> shadowCasters; ///< The shadow casters for the view.
-    std::vector<ProbeData>    probes;            ///< The reflection probes in the scene.
-    RenderSettings            settings;          ///< Editable render tuning (copied from the RenderSystem each frame).
+    CameraData camera;                             ///< The camera data for the view.
+    std::vector<DrawableData>     drawables;       ///< The drawables for the view.
+    std::vector<ShadowCasterData> shadowCasters;   ///< The shadow casters for the view.
+    std::vector<LightData>        lights;          ///< The lights for the view.
+    std::vector<ProbeData>        probes;          ///< The reflection probes in the scene.
+    RenderSettings                settings;        ///< Editable render tuning (copied from the RenderSystem each frame).
 
     public:
         void build(
@@ -45,10 +45,10 @@ struct RenderView {
 
     private:
         void buildCamera(const Visibility& visibility);
-        void buildDrawables(const Scene& scene, const Visibility& visibility);
         void buildLights(const Scene& scene);
-        void buildShadowCasters(const Scene& scene, const Visibility& visibility);
         void buildProbes(const Scene& scene);
+        void buildDrawables(const Scene& scene, const Visibility& visibility);
+        void buildShadowCasters(const Scene& scene, const Visibility& visibility);
 };
 
 } // namespace Engine

@@ -5,19 +5,30 @@
 
 #include <GL/glew.h>
 
-#include "gl_mip_chain_target.h"
+#include "gl_mip_chain_texture.h"  // Core::MipChainTexture
 
 namespace Engine {
 
 /**
  * @brief Mip-chain render target for energy-conserving bloom (COD/Jimenez).
  *
- * An RGBA16F explicit mip chain. The bloom pass progressively downsamples the
- * HDR scene into the chain, then additively upsamples back up; mip 0 holds the
- * final bloom the composite pass blends in. Sized to half the viewport, rebuilt
- * on resize.
+ * An RGBA16F explicit mip chain (Core::MipChainTexture). The bloom pass
+ * progressively downsamples the HDR scene into the chain, then additively
+ * upsamples back up; mip 0 holds the final bloom the composite pass blends in.
+ * Sized to half the viewport, rebuilt on resize. This class owns only the
+ * bloom-specific policy (half-res, mip count, format); the chain owns the GL.
  */
-class GLBloom : public GLMipChainTarget {
+class GLBloom {
+    public:
+        GLBloom() = default;
+        ~GLBloom() = default;
+
+        GLBloom(const GLBloom& other) = delete;
+        GLBloom& operator=(const GLBloom& other) = delete;
+
+        GLBloom(GLBloom && other) = delete;
+        GLBloom& operator=(GLBloom && other) = delete;
+
     public:
         static constexpr int MAX_MIPS = 6;
 
@@ -26,37 +37,33 @@ class GLBloom : public GLMipChainTarget {
             const int w = static_cast<int>(viewportWidth) / 2;
             const int h = static_cast<int>(viewportHeight) / 2;
             if (w <= 0 || h <= 0) return;
-            if (m_ready && w == m_baseW && h == m_baseH) return;
+            if (m_chain.isReady() && w == m_baseW && h == m_baseH) return;
             m_baseW = w;
             m_baseH = h;
-            createChain();
+
+            int minDim = std::min(w, h);
+            int mips = 1;
+            while ((minDim >> mips) >= 2 && mips < MAX_MIPS) ++mips;
+
+            m_chain.create(w, h, mips, GL_RGBA16F, GL_RGBA, GL_FLOAT,
+                GL_LINEAR_MIPMAP_NEAREST, GL_LINEAR);
         }
+
+        bool isReady()  const { return m_chain.isReady(); }
+        int  mipCount() const { return m_chain.mipCount(); }
+
+        /// Bind the chain for sampling; the shader selects a level via textureLod.
+        void bind(uint32_t slot) const { m_chain.bindSlot(slot); }
+
+        /// Per-mip render-target ops for the downsample / upsample loop.
+        void bindFbo()   const { m_chain.bindFbo(); }
+        void unbindFbo() const { m_chain.unbindFbo(); }
+        void attachMip(int mip) const { m_chain.attachMip(mip); }
 
     private:
-        void createChain() {
-            releaseAll();
-
-            int minDim = std::min(m_baseW, m_baseH);
-            m_mips = 1;
-            while ((minDim >> m_mips) >= 2 && m_mips < MAX_MIPS) ++m_mips;
-
-            glGenTextures(1, &m_tex);
-            glBindTexture(GL_TEXTURE_2D, m_tex);
-            for (int mip = 0; mip < m_mips; ++mip) {
-                glTexImage2D(GL_TEXTURE_2D, mip, GL_RGBA16F,
-                    mipWidth(mip), mipHeight(mip), 0, GL_RGBA, GL_FLOAT, nullptr);
-            }
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, m_mips - 1);
-            glBindTexture(GL_TEXTURE_2D, 0);
-
-            glGenFramebuffers(1, &m_fbo);
-            m_ready = true;
-        }
+        Core::MipChainTexture m_chain;
+        int m_baseW = 0;
+        int m_baseH = 0;
 };
 
 } // namespace Engine

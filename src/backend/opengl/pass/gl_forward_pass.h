@@ -55,7 +55,7 @@ class GLForwardPass : public GLPass {
 
         // Per-frame buckets - cleared and refilled each frame, capacity kept.
         std::vector<const DrawableData*>                    m_opaque;
-        std::vector<std::pair<float, const DrawableData*>>  m_transparent;  ///< (view distance^2, drawable)
+        std::vector<std::pair<float, const DrawableData*>>  m_transparent;
         std::vector<const DrawableData*>                    m_transparentSorted;
 };
 

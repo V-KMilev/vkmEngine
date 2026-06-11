@@ -9,6 +9,7 @@
 #include "texture/gl_texture.h"  // qualified: data/gl_texture.h (Engine GLTexture) shadows the bare name
 #include "gl_frame_buffer.h"
 #include "gl_texture_cube.h"
+#include "gl_context.h"          // Core::Context (per-attach viewport sizing)
 
 namespace Engine {
 
@@ -72,30 +73,30 @@ class GLIBL {
             if (m_equirect) m_equirect->bindSlot(slot);
         }
 
-        void attachEnvFace(int face) const {
+        void attachEnvFace(const Core::Context& gl, int face) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_envCube.id(), 0);
-            glViewport(0, 0, ENV_SIZE, ENV_SIZE);
+            gl.setViewport(0, 0, ENV_SIZE, ENV_SIZE);
         }
         void generateEnvMips() const { m_envCube.generateMipmaps(); }
 
-        void attachIrradianceFace(int face) const {
+        void attachIrradianceFace(const Core::Context& gl, int face) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_irradiance.id(), 0);
-            glViewport(0, 0, IRRADIANCE_SIZE, IRRADIANCE_SIZE);
+            gl.setViewport(0, 0, IRRADIANCE_SIZE, IRRADIANCE_SIZE);
         }
 
-        void attachPrefilterFace(int face, int mip) const {
+        void attachPrefilterFace(const Core::Context& gl, int face, int mip) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_prefilter.id(), mip);
             const int s = PREFILTER_SIZE >> mip;
-            glViewport(0, 0, s, s);
+            gl.setViewport(0, 0, s, s);
         }
 
-        void attachBrdf() const {
+        void attachBrdf(const Core::Context& gl) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_2D, m_brdf ? m_brdf->getID() : 0, 0);
-            glViewport(0, 0, BRDF_SIZE, BRDF_SIZE);
+            gl.setViewport(0, 0, BRDF_SIZE, BRDF_SIZE);
         }
 
         /// Sampler binds for the forward + skybox passes.

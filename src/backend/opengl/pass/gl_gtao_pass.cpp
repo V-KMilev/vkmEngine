@@ -16,10 +16,6 @@
 
 namespace Engine {
 
-namespace {
-constexpr float AO_BIAS = 0.03f;  ///< View-space self-occlusion guard (not exposed).
-}
-
 GLGTAOPass::GLGTAOPass()
     : m_shader(std::make_unique<Core::Shader>("shaders/gtao")) {}
 
@@ -47,7 +43,7 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
     m_shader->setUniform1f("u_radius",    view.settings.gtaoRadius);
     m_shader->setUniform1f("u_intensity", view.settings.gtaoIntensity);
     m_shader->setUniform1f("u_power",     view.settings.gtaoPower);
-    m_shader->setUniform1f("u_bias",      AO_BIAS);
+    m_shader->setUniform1f("u_bias",      view.settings.gtaoBias);
 
     m_tri.draw();
 
