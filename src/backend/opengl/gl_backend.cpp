@@ -77,6 +77,10 @@ bool GLBackend::init(WindowManager& window) {
     // build it here (context live).
     m_probes.init();
 
+    // Editor previews: compiles the same forward/composite shaders, so it also
+    // needs the live context.
+    m_preview.init();
+
     const std::string version = m_context.versionString();
     m_info.api    = version.empty() ? "OpenGL" : "OpenGL " + version;
     m_info.device = m_context.rendererString();
@@ -128,6 +132,25 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // rebinds the camera / light UBOs, harmless here - the next frame re-uploads
     // its own.
     m_probes.update(m_context, view, m_view, m_ibl);
+}
+
+uint32_t GLBackend::renderPreview(const PreviewRequest& request,
+                                  const ResourceManager& resources) {
+    // Runs from the editor after the scene render; like the probe baker it
+    // re-binds the camera / lights UBOs, which the next frame re-uploads.
+    return m_preview.render(m_context, m_view, m_ibl, request, resources);
+}
+
+uint32_t GLBackend::previewTexture(uint64_t key) const {
+    return m_preview.texture(key);
+}
+
+void GLBackend::releasePreview(uint64_t key) {
+    m_preview.release(key);
+}
+
+void GLBackend::releaseAllPreviews() {
+    m_preview.releaseAll();
 }
 
 } // namespace Engine

@@ -17,6 +17,7 @@
 #include "data/gl_ibl.h"
 #include "data/gl_bloom.h"
 #include "data/gl_probe_manager.h"
+#include "data/gl_preview.h"
 
 namespace Engine {
 
@@ -46,6 +47,13 @@ class GLBackend : public RenderBackend {
         void resize(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;
         void render(const RenderView& view, const ResourceManager& resources) override;
 
+        // Editor previews: offscreen studio renders, cached per key (GLPreview).
+        uint32_t renderPreview(const PreviewRequest& request,
+                               const ResourceManager& resources) override;
+        uint32_t previewTexture(uint64_t key) const override;
+        void releasePreview(uint64_t key) override;
+        void releaseAllPreviews() override;
+
     private:
         Core::Context m_context;
         GLView        m_view;
@@ -62,7 +70,8 @@ class GLBackend : public RenderBackend {
         GLIBL         m_ibl;
         GLBloom       m_bloom;
 
-        GLProbeManager m_probes;  ///< Reflection-probe arrays, baker, bake state, UBO.
+        GLProbeManager m_probes;   ///< Reflection-probe arrays, baker, bake state, UBO.
+        GLPreview      m_preview;  ///< Editor material/mesh preview renders.
 
         std::vector<std::unique_ptr<GLPass>> m_passes;
 };
