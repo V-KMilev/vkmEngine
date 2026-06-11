@@ -137,7 +137,13 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.gl.setDepthWrite(true);
     }
 
+    // Leave the engine-default depth state so the next pass never inherits our
+    // early-Z setup. depthWrite especially: the early-Z path turns it off and the
+    // transparent block only restores it when transparents were actually drawn,
+    // so without this the exit state would depend on this frame's content.
     ctx.gl.setFaceCulling(false);
+    ctx.gl.setDepthFunc(GL_LEQUAL);
+    ctx.gl.setDepthWrite(true);
 }
 
 void GLForwardPass::drawRuns(GLFrameContext& ctx, const std::vector<InstanceRun>& runs) {
