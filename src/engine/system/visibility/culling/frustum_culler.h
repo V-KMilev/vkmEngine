@@ -17,10 +17,8 @@ namespace FrustumCuller {
 /**
  * @brief True if the world AABB is inside or intersects the frustum.
  *
- * Uses center + half-extent formulation: for each plane, computes the signed
- * distance from center to the plane and the projected AABB radius along the
- * plane normal. The AABB is outside if center_distance + radius < 0.
- * This replaces 18 ternary branches (3 per plane) with 6 branchless dot products.
+ * Thin wrapper over Math::frustumIntersectsAABB (core/math/frustum.h), which
+ * holds the actual center + half-extent half-space test.
  *
  * @param boundsMin World-space AABB minimum.
  * @param boundsMax World-space AABB maximum.

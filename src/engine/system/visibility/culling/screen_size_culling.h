@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 
 #include "system/visibility/visibility_context.h"
 
