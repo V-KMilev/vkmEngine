@@ -7,7 +7,6 @@
 #include "logger.h"
 
 #include "core/engine.h"
-#include "resource/asset_database.h"
 #include "system/animation/animation_system.h"
 #include "system/async/async_loader_system.h"
 #include "system/event/event_system.h"
@@ -25,11 +24,6 @@
 namespace Engine {
 
 EngineAppSystems setupEngineApp(Engine& engine) {
-    // AssetDatabase must be bound before any loader runs - loaders stamp each
-    // asset's GUID into it on import. First run creates an empty file.
-    AssetDatabase::get().initFromDisk(
-        (ProjectPaths::assets() / "_database.json").string());
-
     auto& cameraController = engine.addSystem<CameraController>(SystemStage::Input);
     auto& eventSystem      = engine.addSystem<EventSystem>     (SystemStage::Simulation);
     // AsyncLoaderSystem drains completed asset loads before the visibility +
