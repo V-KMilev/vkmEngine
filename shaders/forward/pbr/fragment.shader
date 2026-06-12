@@ -16,7 +16,7 @@
  * Intentionally absent until their systems return: reflection probes.
  */
 
-#define MAX_LIGHTS 16
+#define MAX_LIGHTS 32  // must match Config::MAX_LIGHTS (engine_config.h / engine_config.glsl)
 
 // Texture-present flags - bit position matches GLBindings::TextureSlots (C++).
 #define TEX_ALBEDO                (1 << 0)
