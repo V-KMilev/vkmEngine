@@ -8,7 +8,6 @@
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
-#include "resource/asset_database.h"
 #include "resource/resource_manager.h"
 #include "loader/texture_loaders.h"
 #include "generator/texture_generators.h"
@@ -169,28 +168,16 @@ MaterialHandle loadMaterialFromFolder(
 
     MaterialHandle handle = loadMaterialFromDesc(desc, resourceManager);
     if (handle) {
-        // Record how this material was created so SceneSerializer can
-        // recreate it on a cold-start load. We deliberately store only
-        // the folder path; texture discovery happens again at reload.
-        // Folder path is the stable identity - stamp a GUID so scenes
-        // reference this material by ID instead of by name string.
+        // Record how this material was created so SceneSerializer can recreate
+        // it on a cold-start load (texture discovery happens again at reload).
         // The folder path is the material's stable identity - it is also the
-        // name scene refs resolve by, so rename to it (keeps the name index
-        // in sync; edit().name would not).
+        // name scene refs resolve by, so rename to it (keeps the name index in
+        // sync; edit().name would not).
         resourceManager.rename(handle, folderPath);
-        auto& mat = resourceManager.edit(handle);
-        mat.assetId = AssetDatabase::get().registerOrGet(folderPath, AssetKind::Material);
-        mat.sourceJson() = {
+        resourceManager.edit(handle).sourceJson() = {
             {"kind", "folder"},
             {"path", folderPath}
         };
-        // ResourceManager's idIndex was populated from the (then-invalid)
-        // assetId at insertion. Re-register the now-valid mapping so
-        // findById<MaterialAsset>(id) resolves this handle. ResourceManager
-        // doesn't expose a "reindex by id" call - this is the one place
-        // we need it because the GUID is only known post-insert (the loader
-        // returns the handle before we can patch the asset).
-        resourceManager.reindexAssetId(handle);
     }
     return handle;
 }

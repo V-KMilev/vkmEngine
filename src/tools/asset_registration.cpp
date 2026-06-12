@@ -61,7 +61,7 @@ void registerBuiltinAssetFactories() {
     });
 
     // Meshes: "decimate" kind. A LOD level produced by vertex-clustering its
-    // base mesh. The base ({base AssetId}) is emitted earlier in the meshes
+    // base mesh. The base (referenced by name) is emitted earlier in the meshes
     // block (it is the entity's Mesh::mesh), so it is already resident when
     // this factory runs. Re-decimating on load keeps decimated levels out of
     // the scene file (only the recipe is stored), matching how procedural
@@ -69,22 +69,22 @@ void registerBuiltinAssetFactories() {
     factories.registerMesh("decimate", [](const nlohmann::json& desc,
                                           ResourceManager& resources) -> MeshHandle
     {
-        const AssetId baseId = AssetId::fromString(desc.value("base", std::string{}));
-        const uint32_t grid  = desc.value("grid", 8u);
-        const MeshHandle baseH = baseId ? resources.findById<MeshAsset>(baseId) : MeshHandle{};
+        const std::string baseName = desc.value("base", std::string{});
+        const uint32_t grid        = desc.value("grid", 8u);
+        const MeshHandle baseH = baseName.empty() ? MeshHandle{}
+                                                  : resources.findByName<MeshAsset>(baseName);
         if (!baseH) {
-            LOG_ERROR("decimate: base mesh %s not loaded (LOD level dropped)", baseId.toString().c_str());
+            LOG_ERROR("decimate: base mesh '%s' not loaded (LOD level dropped)", baseName.c_str());
             return {};
         }
         MeshAsset dec = decimateMesh(resources.get(baseH), grid);
         if (dec.vertices.empty()) return {};
-        // Keep the source so a subsequent save re-emits the recipe cleanly
-        // (loadAssets::reconcileId patches the assetId to the scene's GUID).
-        nlohmann::json src;
-        src["kind"] = "decimate";
-        src["base"] = baseId.toString();
-        src["grid"] = grid;
-        dec.sourceJson() = std::move(src);
+        // Keep the source so a subsequent save re-emits the recipe cleanly.
+        dec.sourceJson() = {
+            {"kind", "decimate"},
+            {"base", baseName},
+            {"grid", grid},
+        };
         return resources.add(std::move(dec));
     });
 

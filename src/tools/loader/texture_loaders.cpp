@@ -9,7 +9,6 @@
 
 #include "logger.h"
 #include "platform/threading/thread_pool.h"
-#include "resource/asset_database.h"
 #include "resource/resource_manager.h"
 #include "system/async/async_load_queue.h"
 
@@ -94,12 +93,9 @@ TextureHandle loadTexture(
     LOG_VERBOSE("Loaded texture '%s' (%dx%d, %d channels, sRGB: %s)",
         filePath.c_str(), width, height, channels, srgb ? "yes" : "no");
 
-    // Stamp serialization metadata. The AssetId is the texture's stable
-    // identity - downstream references (materials, scenes) use it instead
-    // of the path so a file rename no longer silently breaks them. The
-    // path stays on the asset for human-readable lookup + reloading.
+    // The file path is the texture's name: the stable identity scene + material
+    // references resolve by, and the path used to reload it.
     texture.name         = filePath;
-    texture.assetId      = AssetDatabase::get().registerOrGet(filePath, AssetKind::Texture);
     texture.sourceJson() = {
         {"kind",           "file"},
         {"path",           filePath},
@@ -119,8 +115,7 @@ TextureHandle requestTextureAsync(
     // path before, return the same handle - even if the prior request is
     // still in flight. Caller is free to bind/use the handle immediately;
     // the asset just won't have pixels yet.
-    const AssetId id = AssetDatabase::get().registerOrGet(filePath, AssetKind::Texture);
-    if (auto existing = resourceManager.findById<TextureAsset>(id)) return existing;
+    if (auto existing = resourceManager.findByName<TextureAsset>(filePath)) return existing;
 
     // Stub asset: dimensions filled in by the finaliser once decode is done.
     // The mipmap + sRGB flags do need to be set up-front since the asset
@@ -131,7 +126,6 @@ TextureHandle requestTextureAsync(
     stub.loading                = true;
     stub.filePath               = filePath;
     stub.name                   = filePath;
-    stub.assetId                = id;
     stub.sourceJson() = {
         {"kind",            "file"},
         {"path",            filePath},

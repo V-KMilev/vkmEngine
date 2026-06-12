@@ -41,7 +41,6 @@
 #include "logger.h"
 #include "debug/profiler.h"
 #include "platform/threading/thread_pool.h"
-#include "resource/asset_database.h"
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
@@ -200,7 +199,6 @@ MeshAsset buildMesh(const aiScene* scene, const std::string& path, int meshIdx) 
     }
 
     out.name           = meshName(path, meshIdx);
-    out.assetId        = AssetDatabase::get().registerOrGet(out.name, AssetKind::Mesh);
     out.sourceJson()   = { {"kind", "model"}, {"path", path}, {"mesh", meshIdx} };
     out.computeAndSetBounds();
     return out;
@@ -234,7 +232,6 @@ TextureHandle addTexture(
     tex.params.generateMipmaps = true;
     tex.srgb     = srgb;
     tex.name     = name;
-    tex.assetId  = AssetDatabase::get().registerOrGet(name, AssetKind::Texture);
     tex.pixelData.assign(rgba, rgba + static_cast<size_t>(w) * h * 4);
     tex.sourceJson() = std::move(source);
     return res.add(std::move(tex));
@@ -351,7 +348,6 @@ MaterialHandle buildMaterial(
 
     MaterialAsset out;
     out.name           = nm;
-    out.assetId        = AssetDatabase::get().registerOrGet(nm, AssetKind::Material);
     out.sourceJson()   = { {"kind", "model"}, {"path", path}, {"material", matIdx} };
 
     if (scene && matIdx >= 0 && matIdx < static_cast<int>(scene->mNumMaterials)) {
@@ -504,14 +500,12 @@ MeshHandle requestModelMeshAsync(
     // (path, meshIndex) is the stable identity. Idempotent: a second
     // request with the same identity returns the already-registered
     // handle, even if its decode is still in flight.
-    const AssetId id = AssetDatabase::get().registerOrGet(name, AssetKind::Mesh);
-    if (auto existing = resources.findById<MeshAsset>(id)) return existing;
+    if (auto existing = resources.findByName<MeshAsset>(name)) return existing;
 
     // Stub: bounds left zero so VisibilitySystem keeps it culled until
     // the worker fills in real vertex data.
     MeshAsset stub;
     stub.name    = name;
-    stub.assetId = id;
     stub.loading = true;
     stub.sourceJson() = { {"kind", "model"}, {"path", path}, {"mesh", meshIndex} };
     const MeshHandle handle = resources.add(std::move(stub));

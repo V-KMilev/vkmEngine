@@ -7,7 +7,6 @@
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
-#include "resource/asset_database.h"
 #include "resource/resource_manager.h"
 
 namespace Engine {
@@ -22,7 +21,6 @@ TextureHandle getOrCreateNamed(ResourceManager& rm, const char* name,
 {
     if (auto existing = rm.findByName<TextureAsset>(name)) return existing;
     texture.name         = name;
-    texture.assetId      = AssetDatabase::get().registerOrGet(name, AssetKind::Texture);
     texture.sourceJson() = source;
     return rm.add(std::move(texture));
 }
@@ -100,8 +98,7 @@ TextureHandle createSolidColorTexture(glm::vec4 color, ResourceManager& rm, bool
     if (auto existing = rm.findByName<TextureAsset>(key)) return existing;
 
     TextureAsset tex = makeSolidColorAsset(color, srgb);
-    tex.name         = key;  // stable, unique per color - also the findByName dedup key.
-    tex.assetId      = AssetDatabase::get().registerOrGet(key, AssetKind::Texture);
+    tex.name         = key;  // stable, unique per color - the findByName dedup key.
     nlohmann::json src;
     src["kind"]  = "solid";
     src["color"] = {color.r, color.g, color.b, color.a};

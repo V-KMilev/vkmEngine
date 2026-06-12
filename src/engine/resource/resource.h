@@ -6,8 +6,6 @@
 
 #include <nlohmann/json_fwd.hpp>
 
-#include "resource/asset_id.h"
-
 namespace Engine {
 
 /**
@@ -45,8 +43,7 @@ struct Resource {
 
     public:
         uint64_t    version    = 1;
-        std::string name;
-        AssetId     assetId{};            ///< Stable GUID from AssetDatabase. Loaders stamp this on import; serialised references use this instead of `name`.
+        std::string name;                 ///< Serializable identity: scene files reference assets by name, resolved via ResourceManager::findByName. Kept unique within a type by add().
         bool        hidden     = false;   ///< Filtered from pickers / Asset Browser / scene save. See ResourceManager::addPrivate.
 
         /**

@@ -10,8 +10,6 @@
 
 #include "ecs/component/mesh.h"
 #include "ecs/scene.h"
-#include "resource/asset_database.h"
-#include "resource/asset_id.h"
 #include "resource/resource_manager.h"
 #include "io/reflect.h"
 
