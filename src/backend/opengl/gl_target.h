@@ -15,12 +15,13 @@ namespace Engine {
 /**
  * @brief An off-screen render target - an HDR colour texture + sampleable depth
  *        in one FBO, with an optional second colour attachment (a G-buffer of
- *        view normal + roughness + metalness) for screen-space passes (SSR).
+ *        view normal + roughness + metalness) for the screen-space passes.
  *
  * Passes draw into one of these instead of the backbuffer; later passes sample
- * its colour/depth/G-buffer. Call enableGBuffer() once before the first resize()
- * to add the G-buffer attachment. The depth attachment is a sampleable texture
- * so SSR can read it.
+ * its colour/depth/G-buffer (SSR, GTAO, refraction scene-grab, motion blur).
+ * Call enableGBuffer() once before the first resize() to add the G-buffer
+ * attachment. The depth attachment is a sampleable texture so those passes can
+ * reconstruct position from it.
  */
 class GLTarget {
     public:

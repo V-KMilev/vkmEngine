@@ -39,7 +39,6 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     ctx.sceneHDR.bind(ctx.gl);
     ctx.gl.setDepthTest(true);
     ctx.gl.setBlending(false);
-    ctx.gl.setClearColor({0.01f, 0.01f, 0.01f, 1.0f});
     ctx.gl.setFaceCulling(true);
     ctx.gl.setCullFace(GL_BACK);
 
@@ -56,6 +55,7 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         // not normally taken (and a skybox, if present, would be cleared here).
         ctx.gl.setDepthFunc(GL_LESS);
         ctx.gl.setDepthWrite(true);
+        ctx.gl.setClearColor({0.01f, 0.01f, 0.01f, 1.0f});
         ctx.gl.clear(true, true, false);
     }
 

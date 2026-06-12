@@ -69,7 +69,7 @@ void RenderView::buildLights(const Scene& scene) {
             rotation = transform.rotation;
         }
 
-        LightData data;
+        LightData data{};  // zero the snapshot; area-light fields stay unset for punctual lights
         data.type      = light.type;
         data.color     = light.color;
         data.intensity = light.intensity;
