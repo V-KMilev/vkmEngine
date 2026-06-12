@@ -120,15 +120,6 @@ class ResourceManager {
             }
             storageOf<T>(slot).remove(handle.key.index);
             slot.allocator->free(handle.key);
-            // Removing an asset recycles its slot id. Backends key their GPU
-            // caches on that id (GLView's per-type tables), so a removal is a
-            // handle-invalidating event: bump the global version. Without it
-            // the next sync neither frees the removed asset's GPU memory (the
-            // table entry just lingers - a leak on every delete) nor notices
-            // when a future asset reuses the freed slot id, which would serve
-            // the stale GPU resource. Drops + rebuilds the cache once on the
-            // next frame; deletes are rare so the re-upload cost is fine.
-            ++m_globalVersion;
         }
 
         /**
@@ -303,16 +294,6 @@ class ResourceManager {
         }
 
         /**
-         * @brief Global version counter, bumped on handle-invalidating events
-         *        (clear / swap / swapSlot / remove); never by commit().
-         *
-         * Backends key whole-cache drops on it: a change means slot ids may no
-         * longer map to the same assets, so the per-asset version check can't be
-         * trusted and every cached GPU resource is dropped and rebuilt.
-         */
-        uint64_t getGlobalVersion() const { return m_globalVersion; }
-
-        /**
          * @brief Drop every resource of every registered type.
          *
          * Used by scene-load flows that want a true cold-start (and by tests).
@@ -320,10 +301,8 @@ class ResourceManager {
          * scene first so no entity is still pointing at a freed handle.
          */
         void clear() {
-            LOG_INFO_C("RESOURCE", "Clear (dropping %zu asset type(s), bumping global version to %llu)",
-                m_slots.size(), static_cast<unsigned long long>(m_globalVersion + 1));
+            LOG_INFO_C("RESOURCE", "Clear (dropping %zu asset type(s))", m_slots.size());
             m_slots.clear();
-            ++m_globalVersion;
         }
 
         /**
@@ -337,9 +316,6 @@ class ResourceManager {
          * scene file no longer orphans newly-loaded assets in the live
          * graph.
          *
-         * Bumps both managers' global versions so handle-version-keyed
-         * caches in the backend (GLView tables) invalidate cleanly.
-         *
          * NOTE: outstanding handles from before the swap are stale - their
          * (index, generation) keys point at slots in the OTHER manager.
          * Editor panels that cache handles to hidden assets must
@@ -349,12 +325,7 @@ class ResourceManager {
         void swap(ResourceManager& other) noexcept {
             using std::swap;
             swap(m_slots, other.m_slots);
-            swap(m_globalVersion, other.m_globalVersion);
-            ++m_globalVersion;
-            ++other.m_globalVersion;
-            LOG_INFO_C("RESOURCE", "Swap committed (global versions now %llu / %llu)",
-                static_cast<unsigned long long>(m_globalVersion),
-                static_cast<unsigned long long>(other.m_globalVersion));
+            LOG_INFO_C("RESOURCE", "Swap committed");
         }
 
         /**
@@ -374,8 +345,6 @@ class ResourceManager {
             if (m_slots.size() < needed) m_slots.resize(needed);
             if (other.m_slots.size() < needed) other.m_slots.resize(needed);
             swap(m_slots[id], other.m_slots[id]);
-            ++m_globalVersion;
-            ++other.m_globalVersion;
         }
 
     private:
@@ -422,7 +391,6 @@ class ResourceManager {
 
     private:
         std::vector<std::unique_ptr<TypedSlot>> m_slots;
-        uint64_t m_globalVersion = 0;
 };
 
 } // namespace Engine
