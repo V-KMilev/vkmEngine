@@ -12,7 +12,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include "resource/asset_database.h"
 
 namespace Engine {
 
@@ -43,8 +42,7 @@ void stampGenerated(MeshAsset& mesh, const char* type, const nlohmann::json& par
             key += it.value().dump();
         }
     }
-    mesh.name    = key;
-    mesh.assetId = AssetDatabase::get().registerOrGet(key, AssetKind::Mesh);
+    mesh.name = key;
 }
 }
 
@@ -474,20 +472,17 @@ MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution) {
     return out;
 }
 
-MeshAsset decimateMeshTracked(const MeshAsset& base, const AssetId& baseId, uint32_t gridResolution) {
+MeshAsset decimateMeshTracked(const MeshAsset& base, const std::string& baseName, uint32_t gridResolution) {
     MeshAsset out = decimateMesh(base, gridResolution);
-    // Stamp the reload recipe so the level re-decimates on cold-start load.
+    // Stamp the reload recipe so the level re-decimates on cold-start load. The
+    // base mesh is referenced by name (resolved via findByName on load).
     nlohmann::json src;
     src["kind"] = "decimate";
-    src["base"] = baseId.toString();
+    src["base"] = baseName;
     src["grid"] = gridResolution;
     out.sourceJson() = std::move(src);
-    // Deterministic id keyed on (base, grid) so identical decimations map to
-    // the same GUID across runs (mirrors stampGenerated).
-    const std::string key = "mesh:decimate:" + baseId.toString() + ":"
-                          + std::to_string(gridResolution);
-    out.name    = key;
-    out.assetId = AssetDatabase::get().registerOrGet(key, AssetKind::Mesh);
+    // Deterministic name keyed on (base, grid) so identical decimations dedupe.
+    out.name = "mesh:decimate:" + baseName + ":" + std::to_string(gridResolution);
     return out;
 }
 

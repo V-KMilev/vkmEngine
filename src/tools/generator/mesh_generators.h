@@ -1,7 +1,6 @@
 #pragma once
 
 #include "resource/asset/mesh_asset.h"
-#include "resource/asset_id.h"
 
 namespace Engine {
 
@@ -80,16 +79,16 @@ MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution);
  * @brief Decimate @p base and stamp a serializable "decimate" source on the result.
  *
  * Same geometry as @ref decimateMesh, but the returned asset carries a
- * `{"kind":"decimate","base":<baseId>,"grid":<n>}` source descriptor and a
- * deterministic AssetId derived from (baseId, grid). That source is what the
+ * `{"kind":"decimate","base":<baseName>,"grid":<n>}` source descriptor and a
+ * deterministic name derived from (baseName, grid). That source is what the
  * scene saver emits and what the "decimate" AssetFactory re-runs on load, so a
  * decimated LOD level survives save/load instead of being silently dropped.
  *
  * @param base           Source mesh to cluster.
- * @param baseId         AssetId of the source mesh (the level the chain decimates from).
+ * @param baseName       Name of the source mesh (the level the chain decimates from).
  * @param gridResolution Cells per axis across the AABB (see @ref decimateMesh).
- * @return The decimated MeshAsset with source + AssetId stamped.
+ * @return The decimated MeshAsset with source + name stamped.
  */
-MeshAsset decimateMeshTracked(const MeshAsset& base, const AssetId& baseId, uint32_t gridResolution);
+MeshAsset decimateMeshTracked(const MeshAsset& base, const std::string& baseName, uint32_t gridResolution);
 
 } // namespace Engine

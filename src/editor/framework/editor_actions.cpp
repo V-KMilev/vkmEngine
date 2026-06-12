@@ -20,7 +20,6 @@
 #include "ecs/component/reflection_probe.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
-#include "resource/asset_database.h"
 #include "resource/asset/material_asset.h"
 #include "system/visibility/visibility.h"
 #include "system/visibility/bounds_utils.h"
@@ -57,8 +56,8 @@ MaterialHandle duplicateMaterial(
     MaterialAsset copy = src;  // value copy of params + texture refs
     copy.version = 1;
 
-    // Unique name: "<src> copy", then "<src> copy 2", ... so repeated
-    // duplicates don't share a name (and therefore a stamped AssetId).
+    // Unique name: "<src> copy", then "<src> copy 2", ... so the duplicate is a
+    // distinct, separately-referenceable asset (the name is the identity).
     const std::string base = (src.name.empty() ? std::string("material") : src.name) + " copy";
     std::string name = base;
     for (int n = 2; resources.findByName<MaterialAsset>(name); ++n) {
@@ -68,13 +67,6 @@ MaterialHandle duplicateMaterial(
 
     MaterialHandle nh = resources.add(std::move(copy));
     if (!nh) return MaterialHandle{};
-
-    // The value copy carried the source's AssetId; give the duplicate its own
-    // unique id (keyed on the unique name) so the two materials don't collapse
-    // onto a single id on save/load. Mirrors createNewMaterial.
-    auto& asset   = resources.edit(nh);
-    asset.assetId = AssetDatabase::get().registerOrGet("material:" + name, AssetKind::Material);
-    resources.reindexAssetId(nh);
 
     if (assignTo) assignTo->material = nh;
     state.markSceneDirty();
@@ -90,14 +82,10 @@ MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state)
     for (int n = 1; resources.findByName<MaterialAsset>(name); ++n) {
         name = "Material " + std::to_string(n);
     }
+    // The unique name (above) is the material's identity; generateDefaultMaterial
+    // shares the "material:default" name, so the rename is what distinguishes
+    // each new material on save/load.
     resources.rename(h, name);
-
-    // generateDefaultMaterial stamps the shared "material:default" AssetId;
-    // give each new material a unique id (keyed on its unique name) so two
-    // new materials don't merge into one on save/load.
-    auto& asset   = resources.edit(h);
-    asset.assetId = AssetDatabase::get().registerOrGet("material:" + name, AssetKind::Material);
-    resources.reindexAssetId(h);
 
     state.markSceneDirty();
     return h;
