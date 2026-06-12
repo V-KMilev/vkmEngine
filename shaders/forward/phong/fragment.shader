@@ -9,7 +9,7 @@
  * composite pass still tonemaps it.
  */
 
-#define MAX_LIGHTS 16
+#define MAX_LIGHTS 32  // must match Config::MAX_LIGHTS (engine_config.h / engine_config.glsl)
 
 #define LIGHT_DIRECTIONAL 0
 #define LIGHT_POINT       1
