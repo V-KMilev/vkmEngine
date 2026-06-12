@@ -199,6 +199,7 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
     for (const VisibleEntity& v : ctx.visibility->entries) {
         if (!ctx.scene.has<Mesh>(v.id)) continue;
         const Mesh& mesh = ctx.scene.get<Mesh>(v.id);
+        if (!mesh.mesh || !ctx.resources.isAlive(mesh.mesh)) continue;
         const auto& asset = ctx.resources.get(mesh.mesh);
         if (!hasValidBounds(asset.boundsMin, asset.boundsMax)) continue;
 
