@@ -18,6 +18,7 @@
 #include "pass/gl_bloom_pass.h"
 #include "pass/gl_ssr_pass.h"
 #include "pass/gl_motion_blur_pass.h"
+#include "pass/gl_grid_pass.h"
 #include "pass/gl_composite_pass.h"
 #include "data/gl_ibl_baker.h"
 #include "data/gl_material.h"
@@ -72,6 +73,7 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back(std::make_unique<GLSSRPass>());
     m_passes.push_back(std::make_unique<GLMotionBlurPass>());
     m_passes.push_back(std::make_unique<GLBloomPass>());
+    m_passes.push_back(std::make_unique<GLGridPass>());
     m_passes.push_back(std::make_unique<GLCompositePass>());
 
     // Reflection probes: the baker + shared cube-map arrays. Compiles shaders, so
