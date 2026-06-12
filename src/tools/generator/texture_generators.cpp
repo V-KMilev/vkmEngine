@@ -24,9 +24,6 @@ TextureHandle getOrCreateNamed(ResourceManager& rm, const char* name,
     texture.name         = name;
     texture.assetId      = AssetDatabase::get().registerOrGet(name, AssetKind::Texture);
     texture.sourceJson() = source;
-    // Builtins are engine-owned and shared across materials: pin so a
-    // reachability sweep keeps them resident even when momentarily unreferenced.
-    texture.pinned       = true;
     return rm.add(std::move(texture));
 }
 

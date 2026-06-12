@@ -92,10 +92,6 @@ class ResourceManager {
         template<typename ResourceType>
         auto addPrivate(ResourceType && resource, std::string name) {
             resource.hidden = true;
-            // Editor scaffolding is engine-owned: pin it so a reachability
-            // sweep (purgeUnusedAssets) keeps it even though no scene entity
-            // references it.
-            resource.pinned = true;
             resource.name = std::move(name);
             return add(std::forward<ResourceType>(resource));
         }

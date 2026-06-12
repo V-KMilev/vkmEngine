@@ -20,7 +20,6 @@ Resource::Resource(const Resource& other)
     : version(other.version)
     , name(other.name)
     , hidden(other.hidden)
-    , pinned(other.pinned)
     , source(other.source ? std::make_unique<nlohmann::json>(*other.source)
                           : nullptr)
 {}
@@ -30,7 +29,6 @@ Resource& Resource::operator=(const Resource& other) {
     version = other.version;
     name    = other.name;
     hidden  = other.hidden;
-    pinned  = other.pinned;
     source  = other.source ? std::make_unique<nlohmann::json>(*other.source)
                            : nullptr;
     return *this;
