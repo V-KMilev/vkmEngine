@@ -22,6 +22,7 @@
 namespace Engine {
 
 class GLPass;
+struct DrawableData;
 
 /**
  * @brief The OpenGL implementation of RenderBackend.
@@ -55,6 +56,12 @@ class GLBackend : public RenderBackend {
         void releaseAllPreviews() override;
 
     private:
+        // Split the frame's drawables into the opaque + transparent buckets once
+        // (one material resolve each) so the depth prepass and forward pass share
+        // the result instead of re-partitioning the list a pass apiece.
+        void partitionDrawables(const RenderView& view);
+
+    private:
         Core::Context m_context;
         GLView        m_view;
         GLTarget      m_sceneHDR;
@@ -72,6 +79,10 @@ class GLBackend : public RenderBackend {
 
         GLProbeManager m_probes;   ///< Reflection-probe arrays, baker, bake state, UBO.
         GLPreview      m_preview;  ///< Editor material/mesh preview renders.
+
+        // Per-frame draw buckets - cleared + refilled each frame, capacity kept.
+        std::vector<const DrawableData*> m_opaque;
+        std::vector<const DrawableData*> m_transparent;
 
         std::vector<std::unique_ptr<GLPass>> m_passes;
 };

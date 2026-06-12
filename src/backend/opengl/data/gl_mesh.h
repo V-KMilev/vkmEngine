@@ -39,7 +39,11 @@ class GLMesh {
 
         /// Install @p buffer's per-instance attributes onto this mesh's VAO,
         /// starting at attribute @p startIndex (a mat4 spans startIndex..+3,
-        /// divisor 1). Re-points each call; the caller decides when to re-attach.
+        /// divisor 1). No-op when @p buffer is already installed at that
+        /// location: the buffer's GL name is stable across orphan-grows, so the
+        /// recorded VAO binding stays valid. Re-points only when a different
+        /// buffer takes the slot (the shadow + forward passes share this VAO but
+        /// bind different instance buffers at location 4).
         void attachInstances(Core::InstanceBuffer& buffer, uint32_t startIndex) const;
 
         /// Draw @p count instances, reading per-instance attributes from
@@ -51,6 +55,13 @@ class GLMesh {
         std::unique_ptr<Core::VertexBuffer> m_vbo;
         std::unique_ptr<Core::IndexBuffer>  m_ibo;
         size_t m_indexCount = 0;
+
+        /// Which instance buffer is currently bound at each start location, so a
+        /// repeated attach of the same buffer skips re-issuing its attribute
+        /// pointers. Two slots cover the engine convention (model @4, normal @8);
+        /// reset whenever update() recreates the VAO.
+        struct InstanceSlot { const Core::InstanceBuffer* buffer = nullptr; uint32_t start = 0; };
+        mutable InstanceSlot m_instanceSlots[2];
 };
 
 } // namespace Engine

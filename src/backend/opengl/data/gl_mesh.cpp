@@ -36,6 +36,9 @@ void GLMesh::update(const MeshAsset& mesh) {
 
     m_vao = std::make_unique<Core::VertexArray>();
     m_vao->addBuffer(*m_vbo, layout);
+
+    // Fresh VAO: previously-recorded instance attachments no longer apply.
+    for (InstanceSlot& slot : m_instanceSlots) slot = {};
 }
 
 void GLMesh::draw() const {
@@ -47,7 +50,25 @@ void GLMesh::draw() const {
 }
 
 void GLMesh::attachInstances(Core::InstanceBuffer& buffer, uint32_t startIndex) const {
-    if (m_vao) buffer.attachToVAO(*m_vao, startIndex);
+    if (!m_vao) return;
+
+    // Same buffer already installed at this location? The binding is still
+    // valid (stable GL name across grows) - skip the 4 attrib-pointer calls.
+    for (const InstanceSlot& slot : m_instanceSlots) {
+        if (slot.buffer == &buffer && slot.start == startIndex) return;
+    }
+
+    buffer.attachToVAO(*m_vao, startIndex);
+
+    // Record into the slot for this location: reuse the matching-start slot
+    // (a different buffer took it) or the first free one.
+    for (InstanceSlot& slot : m_instanceSlots) {
+        if (slot.buffer == nullptr || slot.start == startIndex) {
+            slot.buffer = &buffer;
+            slot.start  = startIndex;
+            return;
+        }
+    }
 }
 
 void GLMesh::drawInstanced(uint32_t count, uint32_t baseInstance) const {

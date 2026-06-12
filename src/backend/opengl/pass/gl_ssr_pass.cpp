@@ -36,10 +36,8 @@ void GLSSRPass::execute(GLFrameContext& ctx) {
     ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SceneDepth);
     ctx.sceneHDR.bindGBuffer(GLBindings::PostTextureSlots::SceneGBuffer);
 
-    const glm::mat4 proj    = view.camera.projection;
-    const glm::mat4 invProj = glm::inverse(proj);
-    m_shader->setUniformMatrix4fv("u_projection",    proj);
-    m_shader->setUniformMatrix4fv("u_invProjection", invProj);
+    m_shader->setUniformMatrix4fv("u_projection",    view.camera.projection);
+    m_shader->setUniformMatrix4fv("u_invProjection", view.camera.invProjection);
     m_shader->setUniform1f("u_intensity",   view.settings.ssrIntensity);
     m_shader->setUniform1f("u_maxDistance", view.settings.ssrMaxDistance);
 

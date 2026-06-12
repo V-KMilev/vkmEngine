@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 namespace Core {
     class Context;
 }
@@ -7,6 +9,7 @@ namespace Core {
 namespace Engine {
 
 struct RenderView;
+struct DrawableData;
 class GLView;
 class GLTarget;
 class GLAOTarget;
@@ -34,6 +37,13 @@ struct GLFrameContext {
     const GLIBL&      ibl;            ///< Baked IBL product set: sampled by forward (ambient) + skybox.
     GLBloom&          bloom;          ///< Bloom mip chain: written by the bloom pass, blended in composite.
     GLAOTarget&       ao;             ///< GTAO factor: written by the GTAO pass, sampled by forward (ambient).
+
+    /// The frame's drawables split by draw bucket, once per frame by the
+    /// backend (one material resolve each, not one per consuming pass). Opaque
+    /// (incl. AlphaMask / Unlit) is shared by the depth prepass + forward in
+    /// view order; transparent is forward-only, sorted back-to-front there.
+    const std::vector<const DrawableData*>& opaque;
+    const std::vector<const DrawableData*>& transparent;
 
     /// Reflection probes the backend bound this frame: boxes/layers in the
     /// ProbeBlock UBO, cubes in the two probe arrays. The forward pass passes

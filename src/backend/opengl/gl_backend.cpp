@@ -20,6 +20,7 @@
 #include "pass/gl_motion_blur_pass.h"
 #include "pass/gl_composite_pass.h"
 #include "data/gl_ibl_baker.h"
+#include "data/gl_material.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
@@ -114,10 +115,13 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     m_lights.update(view.lights, m_shadowData);
     m_shadowData.uploadAndBind();
 
+    // Bucket the drawables once; the prepass + forward both read the result.
+    partitionDrawables(view);
+
     // Each pass binds and clears its own target: the shadow pass fills the depth
     // atlas, the forward pass renders the lit scene into m_sceneHDR sampling it,
     // and the composite pass tonemaps that to the backbuffer.
-    GLFrameContext ctx{view, m_view, m_context, m_sceneHDR, m_sceneColor, m_shadowAtlas, m_shadowData, m_ibl, m_bloom, m_ao};
+    GLFrameContext ctx{view, m_view, m_context, m_sceneHDR, m_sceneColor, m_shadowAtlas, m_shadowData, m_ibl, m_bloom, m_ao, m_opaque, m_transparent};
 
     // Reflection probes: pack the baked probes (nearest MAX_PROBES) into the
     // ProbeBlock UBO and bind the two cube-map arrays; the forward pass blends
@@ -132,6 +136,24 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // rebinds the camera / light UBOs, harmless here - the next frame re-uploads
     // its own.
     m_probes.update(m_context, view, m_view, m_ibl);
+}
+
+void GLBackend::partitionDrawables(const RenderView& view) {
+    m_opaque.clear();
+    m_transparent.clear();
+    m_opaque.reserve(view.drawables.size());
+
+    // Transparent draws blended back-to-front in the forward pass; everything
+    // else (Opaque / AlphaMask / Unlit) primes depth and draws first. An
+    // unresolved material reads as opaque, matching the forward pass fallback.
+    for (const DrawableData& d : view.drawables) {
+        const GLMaterial* material = m_view.getMaterial(d.material);
+        if (material && material->getType() == MaterialType::Transparent) {
+            m_transparent.push_back(&d);
+        } else {
+            m_opaque.push_back(&d);
+        }
+    }
 }
 
 uint32_t GLBackend::renderPreview(const PreviewRequest& request,

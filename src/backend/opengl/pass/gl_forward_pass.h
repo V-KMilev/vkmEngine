@@ -53,8 +53,8 @@ class GLForwardPass : public GLPass {
         std::unique_ptr<Core::Shader> m_shader;
         GLInstanceBatcher             m_batcher;
 
-        // Per-frame buckets - cleared and refilled each frame, capacity kept.
-        std::vector<const DrawableData*>                    m_opaque;
+        // Transparent bucket sorted back-to-front - cleared + refilled each
+        // frame, capacity kept. The opaque bucket comes from the frame context.
         std::vector<std::pair<float, const DrawableData*>>  m_transparent;
         std::vector<const DrawableData*>                    m_transparentSorted;
 };

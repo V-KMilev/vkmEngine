@@ -33,14 +33,13 @@ void GLView::ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, c
 }
 
 void GLView::sync(const RenderView& view, const ResourceManager& resources) {
-    // Meshes + materials come straight off the drawables.
+    // One walk: ensure each drawable's mesh + material, then discover the
+    // material's textures off the entry we just synced. The material is
+    // guaranteed present before its textures are needed, so no second pass.
     for (const DrawableData& d : view.drawables) {
         ensure(m_meshes, d.mesh, resources);
         ensure(m_materials, d.material, resources);
-    }
 
-    // Textures are discovered through each synced material's binding list.
-    for (const DrawableData& d : view.drawables) {
         const GLMaterial* material = getMaterial(d.material);
         if (!material) continue;
         for (const auto& binding : material->getTextureBindings()) {

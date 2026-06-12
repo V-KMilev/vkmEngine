@@ -12,6 +12,7 @@ namespace Engine {
 struct CameraData {
     glm::mat4 view;           ///< The view matrix for the camera.
     glm::mat4 projection;     ///< The projection matrix for the camera.
+    glm::mat4 invProjection;  ///< inverse(projection), precomputed once.
     glm::vec3 position;       ///< The position of the camera in world space.
 };
 
