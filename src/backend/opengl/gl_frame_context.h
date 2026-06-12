@@ -31,7 +31,7 @@ struct GLFrameContext {
     const GLView&     resources;      ///< GPU mirror of the assets the frame uses.
     Core::Context&    gl;             ///< GL state manager (viewport / depth / clear).
     GLTarget&         sceneHDR;       ///< HDR target the forward pass draws into.
-    GLTarget&         sceneColor;     ///< Copy of the opaque+sky scene for transmission refraction.
+    GLTarget&         sceneColor;     ///< Scratch HDR copy: opaque+sky grab for refraction, and the render-into/blit-back target for SSR + motion blur.
     GLShadowAtlas&    shadowAtlas;    ///< Depth atlas: written by shadow pass, sampled by forward.
     const GLShadowData& shadowData;   ///< This frame's shadow plan (matrices + slots).
     const GLIBL&      ibl;            ///< Baked IBL product set: sampled by forward (ambient) + skybox.

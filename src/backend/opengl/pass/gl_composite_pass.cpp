@@ -42,7 +42,7 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
         static_cast<int32_t>(view.viewportWidth),
         static_cast<int32_t>(view.viewportHeight)
     );
-    ctx.gl.setDepthTest(false);
+    beginFullscreen(ctx.gl);  // depth test / blending / face culling off, like the other post passes
 
     m_shader->bind();
     ctx.sceneHDR.bindColor(0);

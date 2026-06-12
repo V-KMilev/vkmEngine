@@ -58,7 +58,10 @@ void RenderSystem::installPending(FrameContext& ctx) {
     // fails to init is dropped and the current one keeps rendering.
     if (m_pending->init(ctx.window)) {
         m_backend = std::move(m_pending);
-        // force a resize onto the new backend
+        // force a resize onto the new backend: zero the cached viewport so the
+        // next update()'s change check fires.
+        m_view.viewportX      = 0;
+        m_view.viewportY      = 0;
         m_view.viewportWidth  = 0;
         m_view.viewportHeight = 0;
         LOG_INFO("Render backend active: %s", m_backend->info().api.c_str());

@@ -28,7 +28,7 @@ struct RenderView {
     uint32_t viewportY      = 0;                   ///< The y-coordinate of the viewport.
     uint32_t viewportWidth  = 0;                   ///< The width of the viewport.
     uint32_t viewportHeight = 0;                   ///< The height of the viewport.
-    uint32_t surfaceHeight  = 0;                   ///< The height of the surface. Full backbuffer height the viewport rect sits within.
+    uint32_t surfaceHeight  = 0;                   ///< Full backbuffer height the viewport rect sits within (lets a bottom-left backend flip the rect).
 
     CameraData camera;                             ///< The camera data for the view.
     std::vector<DrawableData>     drawables;       ///< The drawables for the view.
