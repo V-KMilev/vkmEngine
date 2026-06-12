@@ -39,13 +39,6 @@ struct Visibility {
     glm::mat4 view           = glm::mat4(1.0f);
     glm::mat4 projection     = glm::mat4(1.0f);
     glm::vec3 cameraPosition = glm::vec3(0.0f);
-    float     cameraExposure = 1.0f;
-
-    /// Near and far clip planes of the active camera. Forwarded from the
-    /// Camera component so downstream consumers (RenderView -> forward pass
-    /// depth diagnostic) don't need to find the camera entity themselves.
-    float     cameraZNear    = 0.1f;
-    float     cameraZFar     = 1000.0f;
 
     bool hasCamera           = false;
 };
