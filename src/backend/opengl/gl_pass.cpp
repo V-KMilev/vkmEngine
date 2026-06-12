@@ -10,4 +10,8 @@ void GLPass::beginFullscreen(Core::Context& gl) const {
     gl.setFaceCulling(false);
 }
 
+void GLPass::endFullscreen(Core::Context& gl) const {
+    gl.setDepthTest(true);
+}
+
 } // namespace Engine

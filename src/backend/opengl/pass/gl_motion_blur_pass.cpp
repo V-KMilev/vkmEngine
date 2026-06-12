@@ -52,7 +52,7 @@ void GLMotionBlurPass::execute(GLFrameContext& ctx) {
 
     ctx.sceneHDR.blitColorFrom(ctx.sceneColor);
 
-    ctx.gl.setDepthTest(true);
+    endFullscreen(ctx.gl);
     m_prevViewProj = viewProj;
 }
 

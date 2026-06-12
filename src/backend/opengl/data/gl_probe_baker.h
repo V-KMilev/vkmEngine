@@ -11,6 +11,7 @@
 #include "data/gl_lights.h"
 #include "data/gl_shadow_data.h"
 #include "data/gl_instance_batcher.h"
+#include "data/gl_cube_convolver.h"
 
 namespace Core {
     class Context;
@@ -21,7 +22,6 @@ namespace Engine {
 class GLProbeArray;
 class GLView;
 class GLIBL;
-class GLMesh;
 struct RenderView;
 
 /**
@@ -61,10 +61,8 @@ class GLProbeBaker {
 
         Core::Shader m_pbr;         ///< capture geometry (full forward PBR)
         Core::Shader m_skybox;      ///< capture background
-        Core::Shader m_irradiance;  ///< env cube -> diffuse irradiance
-        Core::Shader m_prefilter;   ///< env cube -> GGX specular mips
 
-        std::unique_ptr<GLMesh> m_cube;  ///< unit cube for skybox + convolution draws
+        GLCubeConvolver m_convolver;  ///< env cube -> irradiance + prefilter (and the unit cube)
 
         GLCamera          m_camera;    ///< per-face camera UBO (binding 2)
         GLLights          m_lights;    ///< no-shadow lights UBO (binding 1)

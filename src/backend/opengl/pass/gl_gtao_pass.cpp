@@ -44,7 +44,7 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
 
     m_tri.draw();
 
-    ctx.gl.setDepthTest(true);
+    endFullscreen(ctx.gl);
     ctx.aoReady = true;
 }
 

@@ -41,6 +41,11 @@ class GLPass {
         /// drift apart on which states they set.
         void beginFullscreen(Core::Context& gl) const;
 
+        /// Shared fullscreen-pass epilogue: re-enable depth testing so the next
+        /// geometry pass starts from the engine default. Mirrors beginFullscreen
+        /// so the post passes don't each open-code the same restore.
+        void endFullscreen(Core::Context& gl) const;
+
     private:
         bool m_enabled = true;
 };

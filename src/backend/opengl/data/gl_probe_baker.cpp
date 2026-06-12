@@ -17,7 +17,6 @@
 #include "data/gl_cubemap.h"
 #include "gl_view.h"
 #include "convention/gl_bindings.h"
-#include "generator/mesh_generators.h"
 #include "system/render/render_view.h"
 #include "system/render/data/camera_data.h"
 
@@ -31,9 +30,6 @@ constexpr float CAPTURE_FAR  = 1000.0f;
 GLProbeBaker::GLProbeBaker()
     : m_pbr("shaders/forward/pbr")
     , m_skybox("shaders/skybox")
-    , m_irradiance("shaders/ibl/irradiance")
-    , m_prefilter("shaders/ibl/prefilter")
-    , m_cube(std::make_unique<GLMesh>(generateCube()))
 {
 }
 
@@ -69,6 +65,22 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbeArray& arr, const glm:
 
     arr.bindCaptureFbo();
 
+    // The lit PBR uniforms + global-IBL binds are identical for all six faces, so
+    // set them once. Only the camera UBO + skybox view change per face.
+    // u_probeCount = 0 is the recursion guard: the bake never samples probes.
+    m_pbr.bind();
+    m_pbr.setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
+    if (hasIBL) {
+        globalIBL.bindIrradiance(GLBindings::IBLTextureSlots::Irradiance);
+        globalIBL.bindPrefilter(GLBindings::IBLTextureSlots::Prefilter);
+        globalIBL.bindBrdf(GLBindings::IBLTextureSlots::BrdfLUT);
+    }
+    m_pbr.setUniform1i("u_hasSSAO", 0);
+    m_pbr.setUniform1i("u_hasSceneColor", 0);
+    m_pbr.setUniform1i("u_probeCount", 0);
+    m_pbr.setUniform2f("u_screenSize",
+        static_cast<float>(GLProbeArray::ENV_SIZE), static_cast<float>(GLProbeArray::ENV_SIZE));
+
     for (int face = 0; face < 6; ++face) {
         const glm::mat4 viewM = GLCubemap::faceView(face, position);
 
@@ -98,27 +110,16 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbeArray& arr, const glm:
             m_skybox.setUniformMatrix4fv("u_projection", proj);
             m_skybox.setUniform1f("u_iblIntensity", 1.0f);
             globalIBL.bindEnvCube(GLBindings::IBLTextureSlots::EnvCube);
-            m_cube->draw();
+            m_convolver.cube().draw();
             gl.setDepthFunc(GL_LESS);
             gl.setDepthWrite(true);
         }
 
-        // Opaque geometry, full PBR, lit by direct lights + the GLOBAL IBL.
-        // u_probeCount = 0 is the recursion guard: the bake never samples probes.
+        // Opaque geometry, full PBR. The skybox draw rebound the program, so
+        // re-bind m_pbr; the uniforms + IBL binds hoisted above persist.
         gl.setFaceCulling(true);
         gl.setCullFace(GL_BACK);
         m_pbr.bind();
-        m_pbr.setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
-        if (hasIBL) {
-            globalIBL.bindIrradiance(GLBindings::IBLTextureSlots::Irradiance);
-            globalIBL.bindPrefilter(GLBindings::IBLTextureSlots::Prefilter);
-            globalIBL.bindBrdf(GLBindings::IBLTextureSlots::BrdfLUT);
-        }
-        m_pbr.setUniform1i("u_hasSSAO", 0);
-        m_pbr.setUniform1i("u_hasSceneColor", 0);
-        m_pbr.setUniform1i("u_probeCount", 0);  // recursion guard: the bake never samples probes
-        m_pbr.setUniform2f("u_screenSize",
-            static_cast<float>(GLProbeArray::ENV_SIZE), static_cast<float>(GLProbeArray::ENV_SIZE));
 
         const GLMaterial* boundMaterial = nullptr;
         for (const InstanceRun& run : runs) {
@@ -142,35 +143,16 @@ void GLProbeBaker::convolve(Core::Context& gl, GLProbeArray& arr, int layer) {
     gl.setFaceCulling(false);
     gl.setBlending(false);
 
-    // Direction-only views (the convolution integrates over directions, so the
-    // cube is sampled about the origin, not the probe position).
-    const glm::mat4 proj = GLCubemap::convolveProjection();
-
     arr.bindCaptureFbo();
 
-    // Diffuse irradiance convolution -> this probe's irradiance-array layer.
-    m_irradiance.bind();
-    m_irradiance.setUniformMatrix4fv("u_projection", proj);
-    arr.bindEnvCube(0);
-    for (int face = 0; face < 6; ++face) {
-        m_irradiance.setUniformMatrix4fv("u_view", GLCubemap::faceView(face, glm::vec3(0.0f)));
-        arr.attachIrradianceFace(gl, layer, face);
-        m_cube->draw();
-    }
-
-    // GGX prefiltered specular, one roughness per mip -> prefilter-array layer.
-    m_prefilter.bind();
-    m_prefilter.setUniformMatrix4fv("u_projection", proj);
-    arr.bindEnvCube(0);
-    for (int mip = 0; mip < GLProbeArray::PREFILTER_MIPS; ++mip) {
-        const float roughness = static_cast<float>(mip) / static_cast<float>(GLProbeArray::PREFILTER_MIPS - 1);
-        m_prefilter.setUniform1f("u_roughness", roughness);
-        for (int face = 0; face < 6; ++face) {
-            m_prefilter.setUniformMatrix4fv("u_view", GLCubemap::faceView(face, glm::vec3(0.0f)));
-            arr.attachPrefilterFace(gl, layer, face, mip);
-            m_cube->draw();
-        }
-    }
+    // Convolve the env cube into this probe's irradiance + prefilter array layers
+    // (the loops are shared with the global IBL baker; only the attach differs).
+    m_convolver.irradiance(
+        [&] { arr.bindEnvCube(0); },
+        [&](int face) { arr.attachIrradianceFace(gl, layer, face); });
+    m_convolver.prefilter(GLProbeArray::PREFILTER_MIPS,
+        [&] { arr.bindEnvCube(0); },
+        [&](int face, int mip) { arr.attachPrefilterFace(gl, layer, face, mip); });
 
     arr.unbindCaptureFbo();
     gl.setDepthTest(true);
