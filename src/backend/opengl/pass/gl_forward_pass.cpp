@@ -93,24 +93,20 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     m_shader->setUniform1i("u_hasSceneColor", 0);
     m_shader->setUniform2f("u_screenSize", static_cast<float>(view.viewportWidth), static_cast<float>(view.viewportHeight));
 
-    // Partition by material type. Opaque / AlphaMask / Unlit keep the view's
-    // order (sorted upstream by material+mesh); Transparent is pulled aside
-    // and sorted back-to-front so alpha blending composes correctly.
-    m_opaque.clear();
-    m_transparent.clear();
-    for (const DrawableData& d : view.drawables) {
-        const GLMaterial* material = glView.getMaterial(d.material);
-        if (material && material->getType() == MaterialType::Transparent) {
-            const glm::vec3 toCam = view.camera.position - glm::vec3(d.model[3]);
-            m_transparent.emplace_back(glm::dot(toCam, toCam), &d);
-        } else {
-            m_opaque.push_back(&d);
+    // Opaque / AlphaMask / Unlit (already split out by the backend) keep the
+    // view's order - sorted upstream by material+mesh - and merge into instanced
+    // runs grouped by (material, mesh).
+    drawRuns(ctx, m_batcher.buildGrouped(ctx.opaque, glView));
+
+    if (!ctx.transparent.empty()) {
+        // Key the transparent bucket by squared distance and sort back-to-front
+        // so alpha blending composes correctly.
+        m_transparent.clear();
+        m_transparent.reserve(ctx.transparent.size());
+        for (const DrawableData* d : ctx.transparent) {
+            const glm::vec3 toCam = view.camera.position - glm::vec3(d->model[3]);
+            m_transparent.emplace_back(glm::dot(toCam, toCam), d);
         }
-    }
-
-    drawRuns(ctx, m_batcher.buildGrouped(m_opaque, glView));
-
-    if (!m_transparent.empty()) {
         std::sort(m_transparent.begin(), m_transparent.end(),
             [](const auto& a, const auto& b) { return a.first > b.first; });
 

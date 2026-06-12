@@ -1,17 +1,12 @@
 #pragma once
 
 #include <memory>
-#include <vector>
 
 #include "gl_pass.h"
 #include "data/gl_instance_batcher.h"
 
 namespace Core {
     class Shader;
-}
-
-namespace Engine {
-    struct DrawableData;
 }
 
 namespace Engine {
@@ -41,9 +36,8 @@ class GLDepthPrePass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Core::Shader>    m_shader;
-        GLInstanceBatcher                m_batcher;
-        std::vector<const DrawableData*> m_opaque;
+        std::unique_ptr<Core::Shader> m_shader;
+        GLInstanceBatcher             m_batcher;
 };
 
 } // namespace Engine

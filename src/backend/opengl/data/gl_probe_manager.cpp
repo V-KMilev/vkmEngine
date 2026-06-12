@@ -8,21 +8,10 @@
 #include "data/gl_probe_baker.h"
 #include "convention/gl_bindings.h"
 #include "gl_uniform_buffer.h"
+#include "data/gl_ubo_util.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
-
-namespace {
-// Matches ProbeBlock in shaders/forward/pbr (std140). One entry per probe.
-struct GpuProbe {
-    glm::vec4 center;    ///< xyz world centre, w pad
-    glm::vec4 extents;   ///< xyz half-extents, w pad
-    glm::vec4 params;    ///< x falloff, y intensity, z layer index, w pad
-};
-struct ProbeBlock {
-    GpuProbe probes[GLBindings::ProbeTextureSlots::MAX_PROBES];
-};
-}
 
 GLProbeManager::GLProbeManager() = default;
 GLProbeManager::~GLProbeManager() = default;
@@ -38,38 +27,38 @@ int GLProbeManager::bind(const RenderView& view) {
     if (!m_array) return 0;
 
     // Collect the baked probes within array capacity, with their camera distance.
-    struct Active { uint32_t index; float dist; };
-    std::vector<Active> active;
+    m_active.clear();
     const int capacity = m_array->capacity();
     for (size_t i = 0; i < view.probes.size() && static_cast<int>(i) < capacity; ++i) {
         if (i >= m_state.size() || !m_state[i].baked) continue;
-        active.push_back({ static_cast<uint32_t>(i),
+        m_active.push_back({ static_cast<uint32_t>(i),
             glm::distance(view.camera.position, view.probes[i].position) });
     }
 
     // Keep the nearest MAX_PROBES (the shader's per-fragment blend loop bound).
     const size_t maxP = GLBindings::ProbeTextureSlots::MAX_PROBES;
-    if (active.size() > maxP) {
-        std::partial_sort(active.begin(), active.begin() + maxP, active.end(),
+    if (m_active.size() > maxP) {
+        std::partial_sort(m_active.begin(), m_active.begin() + maxP, m_active.end(),
             [](const Active& a, const Active& b) { return a.dist < b.dist; });
-        active.resize(maxP);
+        m_active.resize(maxP);
     }
 
-    // Pack the ProbeBlock UBO; params.z carries the cube-array layer index.
+    // Pack the ProbeBlock UBO; params.z carries the cube-array layer index. The
+    // upload is skipped when the packed block matches last frame (static scene +
+    // still camera), so it costs no GPU write per frame.
     ProbeBlock block{};
-    for (size_t p = 0; p < active.size(); ++p) {
-        const ProbeData& pd = view.probes[active[p].index];
+    for (size_t p = 0; p < m_active.size(); ++p) {
+        const ProbeData& pd = view.probes[m_active[p].index];
         block.probes[p].center  = glm::vec4(pd.position, 0.0f);
         block.probes[p].extents = glm::vec4(pd.halfExtents, 0.0f);
-        block.probes[p].params  = glm::vec4(pd.falloff, pd.intensity, static_cast<float>(active[p].index), 0.0f);
+        block.probes[p].params  = glm::vec4(pd.falloff, pd.intensity, static_cast<float>(m_active[p].index), 0.0f);
     }
-    if (!m_ubo) m_ubo = std::make_unique<Core::UniformBuffer>(&block, sizeof(block), GL_DYNAMIC_DRAW);
-    else        m_ubo->update(&block, sizeof(block));
-    m_ubo->bindBase(GLBindings::UBOBindingPoints::Probes);
+    uploadUBOIfChanged(m_ubo, m_lastBlock, block);
+    bindUBO(m_ubo, GLBindings::UBOBindingPoints::Probes);
 
     m_array->bindIrradiance(GLBindings::ProbeTextureSlots::Irradiance);
     m_array->bindPrefilter(GLBindings::ProbeTextureSlots::Prefilter);
-    return static_cast<int>(active.size());
+    return static_cast<int>(m_active.size());
 }
 
 void GLProbeManager::update(Core::Context& gl, const RenderView& view, const GLView& glView, const GLIBL& ibl) {

@@ -39,9 +39,10 @@ void RenderView::build(
 }
 
 void RenderView::buildCamera(const Visibility& visibility) {
-    camera.view       = visibility.view;
-    camera.projection = visibility.projection;
-    camera.position   = visibility.cameraPosition;
+    camera.view          = visibility.view;
+    camera.projection    = visibility.projection;
+    camera.invProjection = glm::inverse(visibility.projection);
+    camera.position      = visibility.cameraPosition;
 }
 
 void RenderView::buildLights(const Scene& scene) {
