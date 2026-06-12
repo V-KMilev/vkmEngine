@@ -84,27 +84,27 @@ void GLShadowPass::renderCasters(GLFrameContext& ctx, const glm::mat4& lightVP) 
         return casters[a].mesh.id() < casters[b].mesh.id();
     });
 
-    // One instanced depth draw per mesh run. The instance buffer is re-uploaded
-    // per run (depth-only, so the handful of re-uploads is cheap); the shadow
-    // vertex shader reads the model from the per-instance attribute.
+    // Flatten every survivor's model into one buffer and upload it once, then draw
+    // each mesh run from its slice via baseInstance (the forward batcher's single-
+    // upload pattern). Depth-only, so just the model buffer - no normal matrix.
+    m_models.clear();
+    m_models.reserve(m_order.size());
+    for (uint32_t idx : m_order) m_models.push_back(casters[idx].model);
+    m_instances.update(m_models.data(), static_cast<uint32_t>(m_models.size()));
+
     uint32_t i = 0;
     while (i < m_order.size()) {
         const uint32_t meshId = casters[m_order[i]].mesh.id();
         const GLMesh*  mesh   = glView.getMesh(casters[m_order[i]].mesh);
 
-        m_models.clear();
-        uint32_t j = i;
-        while (j < m_order.size() && casters[m_order[j]].mesh.id() == meshId) {
-            m_models.push_back(casters[m_order[j]].model);
-            ++j;
-        }
+        const uint32_t first = i;
+        while (i < m_order.size() && casters[m_order[i]].mesh.id() == meshId) ++i;
+        const uint32_t count = i - first;
 
-        if (mesh && !m_models.empty()) {
-            m_instances.update(m_models.data(), static_cast<uint32_t>(m_models.size()));
+        if (mesh) {
             mesh->attachInstances(m_instances, 4);
-            mesh->drawInstanced(static_cast<uint32_t>(m_models.size()), 0);
+            mesh->drawInstanced(count, first);
         }
-        i = j;
     }
 }
 

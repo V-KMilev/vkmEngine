@@ -69,7 +69,7 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
 
     m_tri.unbind();
     bloom.unbindFbo();
-    ctx.gl.setDepthTest(true);  // leave the default for the next frame's scene passes
+    endFullscreen(ctx.gl);
 }
 
 } // namespace Engine

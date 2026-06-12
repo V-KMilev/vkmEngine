@@ -46,7 +46,7 @@ void GLSSRPass::execute(GLFrameContext& ctx) {
     // Resolve back into the HDR scene so bloom + composite see the reflections.
     ctx.sceneHDR.blitColorFrom(ctx.sceneColor);
 
-    ctx.gl.setDepthTest(true);
+    endFullscreen(ctx.gl);
 }
 
 } // namespace Engine

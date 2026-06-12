@@ -1,10 +1,11 @@
 #pragma once
 
-#include <memory>
 #include <string>
 
 #include "gl_shader.h"
 #include "gl_screen_triangle.h"
+
+#include "data/gl_cube_convolver.h"
 
 namespace Core {
     class Context;
@@ -13,7 +14,6 @@ namespace Core {
 namespace Engine {
 
 class GLIBL;
-class GLMesh;
 
 /**
  * @brief One-shot baker for the IBL product set (split-sum).
@@ -46,12 +46,10 @@ class GLIBLBaker {
 
     private:
         Core::Shader m_equirect;
-        Core::Shader m_irradiance;
-        Core::Shader m_prefilter;
         Core::Shader m_brdf;
 
-        std::unique_ptr<GLMesh>     m_cube;     ///< Unit cube for the six face captures
-        Core::ScreenTriangle        m_brdfTri;  ///< Attribute-less fullscreen triangle for the BRDF LUT
+        GLCubeConvolver      m_convolver;  ///< Shared irradiance + prefilter convolution (and the unit cube)
+        Core::ScreenTriangle m_brdfTri;    ///< Attribute-less fullscreen triangle for the BRDF LUT
 };
 
 } // namespace Engine
