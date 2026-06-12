@@ -45,18 +45,11 @@ void GLDepthPrePass::execute(GLFrameContext& ctx) {
     m_shader->bind();
     m_shader->setUniformMatrix4fv("u_view", view.camera.view);
 
-    // Collect the non-transparent drawables (transparents draw blended in the
-    // forward pass and never prime depth), then draw them instanced, grouped by
-    // (material, mesh).
-    m_opaque.clear();
-    for (const DrawableData& d : view.drawables) {
-        const GLMaterial* material = glView.getMaterial(d.material);
-        if (material && material->getType() == MaterialType::Transparent) continue;  // drawn blended later
-        m_opaque.push_back(&d);
-    }
-
+    // The backend already split out the non-transparent drawables (transparents
+    // draw blended in the forward pass and never prime depth); draw them
+    // instanced, grouped by (material, mesh).
     const GLMaterial* boundMaterial = nullptr;
-    for (const InstanceRun& run : m_batcher.buildGrouped(m_opaque, glView)) {
+    for (const InstanceRun& run : m_batcher.buildGrouped(ctx.opaque, glView)) {
         const GLMaterial* material = glView.getMaterial(run.material);
         if (material && material != boundMaterial) {
             // The UBO carries type/cutoff for the alpha-mask branch; only

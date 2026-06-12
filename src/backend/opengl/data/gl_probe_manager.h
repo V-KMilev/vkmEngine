@@ -6,6 +6,8 @@
 
 #include <glm/glm.hpp>
 
+#include "convention/gl_bindings.h"  // ProbeTextureSlots::MAX_PROBES
+
 namespace Core {
     class Context;
     class UniformBuffer;
@@ -61,10 +63,26 @@ class GLProbeManager {
             uint32_t  version  = 0;                ///< bakeVersion the layer was last baked at.
         };
 
+        /// std140 ProbeBlock layout - must match shaders/forward/pbr.
+        struct GpuProbe {
+            glm::vec4 center;    ///< xyz world centre, w pad
+            glm::vec4 extents;   ///< xyz half-extents, w pad
+            glm::vec4 params;    ///< x falloff, y intensity, z layer index, w pad
+        };
+        struct ProbeBlock {
+            GpuProbe probes[GLBindings::ProbeTextureSlots::MAX_PROBES];
+        };
+
+        /// A baked probe in range this frame, with its camera distance (for the
+        /// nearest-N selection). Reused across frames to avoid a per-frame alloc.
+        struct Active { uint32_t index; float dist; };
+
         std::unique_ptr<GLProbeBaker>        m_baker;  ///< Bakes probes at frame end.
         std::unique_ptr<GLProbeArray>        m_array;  ///< Shared irradiance + prefilter cube arrays.
         std::vector<BakeState>               m_state;  ///< Per layer: baked + last-baked position/version.
+        std::vector<Active>                  m_active; ///< Scratch active-probe set, cleared each bind().
         std::unique_ptr<Core::UniformBuffer> m_ubo;    ///< ProbeBlock: boxes + layers (binding 4).
+        ProbeBlock                           m_lastBlock{};  ///< Last uploaded block, for change-gated upload.
 };
 
 } // namespace Engine

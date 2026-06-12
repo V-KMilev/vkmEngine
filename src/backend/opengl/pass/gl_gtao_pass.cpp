@@ -35,9 +35,8 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
     ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SceneDepth);
     ctx.sceneHDR.bindGBuffer(GLBindings::PostTextureSlots::SceneGBuffer);
 
-    const glm::mat4 proj = view.camera.projection;
-    m_shader->setUniformMatrix4fv("u_invProjection", glm::inverse(proj));
-    m_shader->setUniform1f("u_proj11",    proj[1][1]);
+    m_shader->setUniformMatrix4fv("u_invProjection", view.camera.invProjection);
+    m_shader->setUniform1f("u_proj11",    view.camera.projection[1][1]);
     m_shader->setUniform1f("u_radius",    view.settings.gtaoRadius);
     m_shader->setUniform1f("u_intensity", view.settings.gtaoIntensity);
     m_shader->setUniform1f("u_power",     view.settings.gtaoPower);
