@@ -146,13 +146,12 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
         const TextureHandle& h = m.*f.member;
         if (!h) continue;
-        const AssetId id = resources.get(h).assetId;
-        if (!id) {
-            LOG_WARNING("Material texture slot '%s' has no AssetId (%s) - dropping ref",
-                f.key, resources.get(h).name.c_str());
+        const std::string& texName = resources.get(h).name;
+        if (texName.empty()) {
+            LOG_WARNING("Material texture slot '%s' has no name - dropping ref", f.key);
             continue;
         }
-        textures[f.key] = id.toString();
+        textures[f.key] = texName;
     }
     if (!textures.empty()) src["textures"] = std::move(textures);
     return src;
@@ -190,17 +189,17 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
     if (src.contains("textures") && src["textures"].is_object()) {
         for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
             if (!src["textures"].contains(f.key)) continue;
-            const AssetId id = AssetId::fromString(src["textures"][f.key].get<std::string>());
-            if (!id) continue;
-            const TextureHandle h = resources.findById<TextureAsset>(id);
+            const std::string texName = src["textures"][f.key].get<std::string>();
+            if (texName.empty()) continue;
+            const TextureHandle h = resources.findByName<TextureAsset>(texName);
             if (!h) {
                 // Keep whatever was already in the slot rather than zeroing
-                // it: the file referenced a GUID that didn't resolve in the
+                // it: the file referenced a name that didn't resolve in the
                 // current asset graph (typo, dependency not loaded yet, or a
                 // texture deleted under us). Silently dropping to null would
                 // give the material a transparent-black map at draw time.
-                LOG_WARNING("Material texture ref '%s' (%s) unresolved; keeping previous slot value",
-                    f.key, id.toString().c_str());
+                LOG_WARNING("Material texture ref '%s' ('%s') unresolved; keeping previous slot value",
+                    f.key, texName.c_str());
                 continue;
             }
             m.*f.member = h;
@@ -211,17 +210,17 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
 /**
  * @brief Emit one asset descriptor into @p target.
  *
- * Skips assets with no AssetId - those can't be referenced by the scene
- * anyway. @p sourceOverride lets materials substitute their derived
- * `inline` form for the asset's runtime source.
+ * Keyed by `name` - the scene references assets by name, so an unnamed asset
+ * can't be referenced and is skipped. @p sourceOverride lets materials
+ * substitute their derived `inline` form for the asset's runtime source.
  */
 void emitDescriptor(
     nlohmann::json& target,
     const Resource& asset,
     const nlohmann::json* sourceOverride = nullptr
 ) {
-    if (!asset.assetId) {
-        LOG_WARNING("Asset '%s' has no AssetId; skipping in save", asset.name.c_str());
+    if (asset.name.empty()) {
+        LOG_WARNING("Asset has no name; skipping in save");
         return;
     }
     const nlohmann::json* source = sourceOverride ? sourceOverride : asset.source.get();
@@ -230,8 +229,7 @@ void emitDescriptor(
         return;
     }
     target.push_back({
-        {"id",     asset.assetId.toString()},
-        {"name",   asset.name},          // Human-readable hint; not load-bearing.
+        {"name",   asset.name},
         {"source", *source},
     });
 }
@@ -284,40 +282,21 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
 namespace {
 
 /**
- * @brief Pull the per-section identifying tuple (id, name, source) from
- *        a single JSON entry.
+ * @brief Pull the per-section identifying pair (name, source) from a single
+ *        JSON entry.
  *
- * Returns false if id/source are missing/malformed - the caller logs +
- * skips. name is non-load-bearing (a human hint).
+ * Returns false if name is missing - the caller logs + skips. The name is the
+ * scene's reference key, so an entry without one can't be resolved.
  */
 bool unpackEntry(
     const nlohmann::json& entry,
-    AssetId& outId,
     std::string& outName,
     nlohmann::json& outSource
 ) {
-    outId = AssetId::fromString(entry.value("id", std::string{}));
-    if (!outId) return false;
     outName = entry.value("name", std::string{});
+    if (outName.empty()) return false;
     outSource = entry.contains("source") ? entry["source"] : nlohmann::json{};
     return true;
-}
-
-/// Seed AssetDatabase with the scene's recorded ids so the factory-created
-/// assets (which call AssetDatabase::registerOrGet on the descriptor path)
-/// land under the same ids the scene already references. Without this,
-/// loading on a machine whose DB doesn't yet know these paths would mint
-/// fresh ids and break every component reference in the scene.
-void seedDatabase(const nlohmann::json& section, AssetKind kind) {
-    if (!section.is_array()) return;
-    for (const auto& entry : section) {
-        const AssetId id = AssetId::fromString(entry.value("id", std::string{}));
-        if (!id) continue;
-        if (!entry.contains("source") || !entry["source"].is_object()) continue;
-        const auto& src = entry["source"];
-        if (!src.contains("path") || !src["path"].is_string()) continue;
-        AssetDatabase::get().registerWithId(src["path"].get<std::string>(), id, kind);
-    }
 }
 
 } // namespace
@@ -328,94 +307,65 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
         return false;
     }
 
-    // Seed the database before any factory runs. Materials use "folder"
-    // descriptors with a `path` field; textures use "file" descriptors
-    // also keyed `path`; meshes use procedural ("generator"/"model")
-    // descriptors whose path field varies - seedDatabase ignores entries
-    // without a path field, so non-file-backed meshes are simply minted
-    // a fresh GUID later. That mismatch is captured by the inline
-    // fallback path below.
-    if (assetsJson.contains("textures"))  seedDatabase(assetsJson["textures"],  AssetKind::Texture);
-    if (assetsJson.contains("materials")) seedDatabase(assetsJson["materials"], AssetKind::Material);
-    if (assetsJson.contains("meshes"))    seedDatabase(assetsJson["meshes"],    AssetKind::Mesh);
-
     const auto& factories = AssetFactories::get();
 
     size_t texturesCreated = 0, texturesSkipped = 0;
     size_t materialsCreated = 0, materialsSkipped = 0;
     size_t meshesCreated = 0, meshesSkipped = 0;
 
-    // Helper: ensure the freshly-created asset's assetId matches the scene's
-    // recorded one. The loader usually stamps the correct GUID (seeded DB +
-    // path-based register), but procedural assets (no on-disk path) get a
-    // fresh GUID instead - patch + reindex so scene refs still resolve.
-    auto reconcileId = [&resources](auto handle, AssetId expected) {
-        if (!handle) return;
-        auto& asset = resources.edit(handle);
-        if (asset.assetId == expected) return;
-        asset.assetId = expected;
-        resources.reindexAssetId(handle);
-    };
-
-    // Textures first - materials reference them by id. Order matters:
-    // textures -> materials -> meshes. Meshes don't depend on the others;
-    // they're last only for output stability.
+    // Each created asset is renamed to the scene's recorded name so component
+    // references (which resolve by name) land on it. Order matters: textures ->
+    // materials (resolve their texture refs by name) -> meshes.
     if (assetsJson.contains("textures") && assetsJson["textures"].is_array()) {
         for (const auto& entry : assetsJson["textures"]) {
-            AssetId id; std::string name; nlohmann::json source;
-            if (!unpackEntry(entry, id, name, source)) {
-                LOG_WARNING("Texture entry missing 'id' - skipping");
+            std::string name; nlohmann::json source;
+            if (!unpackEntry(entry, name, source)) {
+                LOG_WARNING("Texture entry missing 'name' - skipping");
                 continue;
             }
-            if (resources.findById<TextureAsset>(id)) { ++texturesSkipped; continue; }
+            if (resources.findByName<TextureAsset>(name)) { ++texturesSkipped; continue; }
             TextureHandle h = factories.createTexture(source, resources);
             if (!h) {
-                LOG_WARNING("Texture %s could not be recreated - skipping", id.toString().c_str());
+                LOG_WARNING("Texture '%s' could not be recreated - skipping", name.c_str());
                 continue;
             }
-            reconcileId(h, id);
+            resources.rename(h, name);
             ++texturesCreated;
         }
     }
 
     if (assetsJson.contains("materials") && assetsJson["materials"].is_array()) {
         for (const auto& entry : assetsJson["materials"]) {
-            AssetId id; std::string name; nlohmann::json source;
-            if (!unpackEntry(entry, id, name, source)) {
-                LOG_WARNING("Material entry missing 'id' - skipping");
+            std::string name; nlohmann::json source;
+            if (!unpackEntry(entry, name, source)) {
+                LOG_WARNING("Material entry missing 'name' - skipping");
                 continue;
             }
-            if (resources.findById<MaterialAsset>(id)) { ++materialsSkipped; continue; }
+            if (resources.findByName<MaterialAsset>(name)) { ++materialsSkipped; continue; }
             MaterialHandle h = factories.createMaterial(source, resources);
             if (!h) {
-                LOG_WARNING("Material %s could not be recreated - skipping", id.toString().c_str());
+                LOG_WARNING("Material '%s' could not be recreated - skipping", name.c_str());
                 continue;
             }
-            if (!name.empty()) resources.rename(h, name);
-            reconcileId(h, id);
+            resources.rename(h, name);
             ++materialsCreated;
         }
     }
 
     if (assetsJson.contains("meshes") && assetsJson["meshes"].is_array()) {
         for (const auto& entry : assetsJson["meshes"]) {
-            AssetId id; std::string name; nlohmann::json source;
-            if (!unpackEntry(entry, id, name, source)) {
-                LOG_WARNING("Mesh entry missing 'id' - skipping");
+            std::string name; nlohmann::json source;
+            if (!unpackEntry(entry, name, source)) {
+                LOG_WARNING("Mesh entry missing 'name' - skipping");
                 continue;
             }
-            if (resources.findById<MeshAsset>(id)) { ++meshesSkipped; continue; }
+            if (resources.findByName<MeshAsset>(name)) { ++meshesSkipped; continue; }
             MeshHandle h = factories.createMesh(source, resources);
             if (!h) {
-                LOG_WARNING("Mesh %s could not be recreated - skipping", id.toString().c_str());
+                LOG_WARNING("Mesh '%s' could not be recreated - skipping", name.c_str());
                 continue;
             }
-            // For the "model" factory the GUID is already correct (stamped
-            // from the seeded DB). For "generator" the stamp came from the
-            // canonical generator key, which may not match the scene id -
-            // reconcileId patches both.
-            reconcileId(h, id);
-            if (!name.empty()) resources.rename(h, name);
+            resources.rename(h, name);
             ++meshesCreated;
         }
     }
