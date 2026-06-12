@@ -50,16 +50,6 @@ struct Resource {
         bool        hidden     = false;   ///< Filtered from pickers / Asset Browser / scene save. See ResourceManager::addPrivate.
 
         /**
-         * @brief Lifetime owner: true = engine-owned (shaders, builtin textures,
-         * editor previews), false (default) = scene-owned.
-         *
-         * Pinned assets survive purgeUnusedAssets() even when no scene entity
-         * references them; scene-owned ones are collected once unreachable.
-         * addPrivate() pins automatically (every hidden asset is engine scaffolding).
-         */
-        bool        pinned     = false;
-
-        /**
          * @brief Origin descriptor JSON, lazy-allocated.
          *
          * Stored behind a unique_ptr so this header only forward-declares
