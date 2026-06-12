@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <deque>
@@ -66,21 +67,6 @@ void parallelFor(size_t count, size_t grain, Function && function) {
 
     grain = std::max(grain, size_t(1));
 
-    // Re-entering parallelFor from inside a worker would deadlock: the
-    // worker's own slot stays in m_taskCount, so waitToFinish() never
-    // returns. Fall back to a serial sweep on the calling worker thread.
-    if (ThreadPool::isWorkerThread()) {
-        auto invokeAt = [&](size_t i) {
-            if constexpr (std::is_invocable_v<Function, size_t>) {
-                function(i);
-            } else {
-                function();
-            }
-        };
-        for (size_t i = 0; i < count; ++i) invokeAt(i);
-        return;
-    }
-
     auto invokeAt = [&](size_t i) {
         if constexpr (std::is_invocable_v<Function, size_t>) {
             function(i);
@@ -88,6 +74,14 @@ void parallelFor(size_t count, size_t grain, Function && function) {
             function();
         }
     };
+
+    // Re-entering parallelFor from inside a worker would deadlock: the
+    // worker's own slot stays in m_taskCount, so waitToFinish() never
+    // returns. Fall back to a serial sweep on the calling worker thread.
+    if (ThreadPool::isWorkerThread()) {
+        for (size_t i = 0; i < count; ++i) invokeAt(i);
+        return;
+    }
 
     auto& pool = ThreadPool::get();
 
