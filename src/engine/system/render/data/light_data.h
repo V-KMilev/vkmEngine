@@ -27,8 +27,11 @@ struct LightData {
     float innerConeAngle;   ///< Spot: full-brightness cone (radians)
     float outerConeAngle;   ///< Spot: falloff edge (radians)
 
-    glm::vec3 axisU;        ///< Rect/Disk: half-right world axis (rotation * +X * halfWidth | areaRadius)
-    glm::vec3 axisV;        ///< Rect/Disk: half-up    world axis (rotation * +Y * halfHeight | areaRadius)
+    // Area-light fields, set only for Rect/Disk; defaulted so punctual lights
+    // (which leave them unset in build) read as zero, matching the backend's
+    // "axisU/axisV are zero for punctual lights" contract.
+    glm::vec3 axisU{0.0f};  ///< Rect/Disk: half-right world axis (rotation * +X * halfWidth | areaRadius)
+    glm::vec3 axisV{0.0f};  ///< Rect/Disk: half-up    world axis (rotation * +Y * halfHeight | areaRadius)
     bool      twoSided;     ///< Rect/Disk: emit from both faces
 
     bool  castShadows;      ///< Whether the light casts shadows.

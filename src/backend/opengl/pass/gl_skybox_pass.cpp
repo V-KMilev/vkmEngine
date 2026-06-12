@@ -48,9 +48,10 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
     ctx.ibl.bindEnvCube(GLBindings::IBLTextureSlots::EnvCube);
     m_cube->draw();
 
-    // The forward/prepass set their own depth state each frame, but restore the
-    // default compare + writes so nothing downstream inherits LEQUAL/no-write.
-    ctx.gl.setDepthFunc(GL_LESS);
+    // Restore the engine-default depth state (LEQUAL compare, writes on) so
+    // nothing downstream inherits this pass's no-write background fill. The
+    // forward/prepass set their own each frame regardless.
+    ctx.gl.setDepthFunc(GL_LEQUAL);
     ctx.gl.setDepthWrite(true);
 }
 

@@ -43,7 +43,7 @@ class GLCamera {
 
     private:
         std::unique_ptr<Core::UniformBuffer> m_ubo;
-        CameraUBO                            m_last;
+        CameraUBO                            m_last{};
 };
 
 } // namespace Engine
