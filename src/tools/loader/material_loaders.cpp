@@ -174,6 +174,10 @@ MaterialHandle loadMaterialFromFolder(
         // the folder path; texture discovery happens again at reload.
         // Folder path is the stable identity - stamp a GUID so scenes
         // reference this material by ID instead of by name string.
+        // The folder path is the material's stable identity - it is also the
+        // name scene refs resolve by, so rename to it (keeps the name index
+        // in sync; edit().name would not).
+        resourceManager.rename(handle, folderPath);
         auto& mat = resourceManager.edit(handle);
         mat.assetId = AssetDatabase::get().registerOrGet(folderPath, AssetKind::Material);
         mat.sourceJson() = {
