@@ -11,7 +11,6 @@
 #include "platform/window/frame_limiter.h"
 
 #include "logger.h"
-#include "debug/print_helper.h"
 
 namespace Engine {
 
@@ -48,11 +47,7 @@ GLFWmonitor* getCurrentMonitor(GLFWwindow* window) {
 }
 }  // anonymous namespace
 
-WindowManager::~WindowManager() {
-    if (m_window) {
-        m_window.reset();
-    }
-}
+WindowManager::~WindowManager() = default;
 
 void WindowManager::createWindow(const std::string& title) {
     m_window = std::make_unique<Window>(title);
@@ -129,7 +124,7 @@ bool WindowManager::updateMode(WindowMode windowMode) {
             monitor = nullptr;
             break;
         default:
-            LOG_ERROR("Invalid window mode: %s", enumToString(windowMode));
+            LOG_ERROR("Invalid window mode: %s", toString(windowMode));
             return false;
     }
 
@@ -161,9 +156,6 @@ bool WindowManager::updateInput() {
         LOG_ERROR("Window is not initialized");
         return false;
     }
-
-    // Snapshot previous keyboard state before new events arrive
-    m_inputHandle->getKeyboard().update();
 
     // Reset scroll delta before polling new events
     m_inputHandle->getMouse().resetScrollDelta();

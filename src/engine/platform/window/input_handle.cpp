@@ -1,15 +1,9 @@
 #include "platform/window/input_handle.h"
 
-#include <cstring>
-
 #include "platform/window/glfw_include.h"
 #include "platform/window/window.h"
 
 namespace Engine {
-
-void KeyboardInputHandle::update() {
-    std::memcpy(m_prevKeyState, m_keyState, sizeof(m_keyState));
-}
 
 void KeyboardInputHandle::onKeyEvent(int key, bool pressed) {
     if (key >= 0 && key <= GLFW_KEY_LAST) {
@@ -22,15 +16,7 @@ bool KeyboardInputHandle::isKeyPressed(int key) const {
     return m_keyState[key];
 }
 
-bool KeyboardInputHandle::isKeyReleased(int key) const {
-    if (key < 0 || key > GLFW_KEY_LAST) return false;
-    return m_prevKeyState[key] && !m_keyState[key];
-}
-
 void MouseInputHandle::update(GLFWwindow* window) {
-    m_prevButtonState[GLFW_MOUSE_BUTTON_LEFT] = m_buttonState[GLFW_MOUSE_BUTTON_LEFT];
-    m_prevButtonState[GLFW_MOUSE_BUTTON_RIGHT] = m_buttonState[GLFW_MOUSE_BUTTON_RIGHT];
-
     for (int button = GLFW_MOUSE_BUTTON_1; button <= GLFW_MOUSE_BUTTON_LAST; ++button) {
         int state = glfwGetMouseButton(window, button);
         m_buttonState[button] = (state == GLFW_PRESS);
@@ -51,18 +37,11 @@ bool MouseInputHandle::isButtonPressed(int button) const {
     return m_buttonState[button];
 }
 
-bool MouseInputHandle::isButtonReleased(int button) const {
-    if (button < 0 || button > GLFW_MOUSE_BUTTON_LAST) return false;
-    return m_prevButtonState[button] && !m_buttonState[button];
-}
-
-void MouseInputHandle::setScrollDelta(double xOffset, double yOffset) {
-    m_scrollX += xOffset;
+void MouseInputHandle::setScrollDelta(double yOffset) {
     m_scrollY += yOffset;
 }
 
 void MouseInputHandle::resetScrollDelta() {
-    m_scrollX = 0.0;
     m_scrollY = 0.0;
 }
 
@@ -85,9 +64,10 @@ void InputHandle::setupCallbacks(GLFWwindow* window, Window* engineWindow) {
 
     // Scroll callback
     glfwSetScrollCallback(window, [](GLFWwindow* w, double xOffset, double yOffset) {
+        (void)xOffset;  // horizontal scroll unused
         auto* data = static_cast<WindowCallbackData*>(glfwGetWindowUserPointer(w));
         if (data && data->input) {
-            data->input->m_mouseHandle.setScrollDelta(xOffset, yOffset);
+            data->input->m_mouseHandle.setScrollDelta(yOffset);
         }
     });
 
@@ -109,12 +89,6 @@ bool InputHandle::isPressed(int key) const {
         return m_keyboardHandle.isKeyPressed(key);
     }
     return m_mouseHandle.isButtonPressed(key);
-}
-bool InputHandle::isReleased(int key) const {
-    if (key >= GLFW_KEY_SPACE && key <= GLFW_KEY_LAST) {
-        return m_keyboardHandle.isKeyReleased(key);
-    }
-    return m_mouseHandle.isButtonReleased(key);
 }
 
 } // namespace Engine
