@@ -20,6 +20,8 @@ namespace {
 constexpr const char* STAGE_NAMES[] = {
     "Input", "Simulation", "Transform", "Visibility", "Render", "UI"
 };
+static_assert(sizeof(STAGE_NAMES) / sizeof(STAGE_NAMES[0]) == static_cast<size_t>(SystemStage::Count),
+              "STAGE_NAMES must stay in sync with SystemStage");
 
 } // namespace
 
