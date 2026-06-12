@@ -36,23 +36,27 @@ constexpr uint32_t SCENE_SIZE = 512;
 
 // Fixed studio rig: key / fill / rim directionals around the default orbit
 // (yaw 35, pitch 20), shadowless. Directions are the light's travel direction.
-std::vector<LightData> studioLights() {
-    auto directional = [](const glm::vec3& dir, const glm::vec3& color, float intensity) {
-        LightData l{};
-        l.type        = LightType::Directional;
-        l.color       = color;
-        l.intensity   = intensity;
-        l.position    = glm::vec3(0.0f);
-        l.direction   = glm::normalize(dir);
-        l.radius      = 0.0f;
-        l.castShadows = false;
-        return l;
-    };
-    return {
-        directional({-0.35f, -0.80f, -0.50f}, {1.00f, 0.98f, 0.95f}, 2.6f),  // key: high front-right
-        directional({ 0.70f, -0.20f,  0.40f}, {0.75f, 0.80f, 1.00f}, 0.8f),  // fill: cool, low left
-        directional({ 0.50f, -0.25f,  0.70f}, {1.00f, 0.95f, 0.85f}, 1.2f),  // rim: from behind
-    };
+// Constant, so build it once and hand back a reference per preview request.
+const std::vector<LightData>& studioLights() {
+    static const std::vector<LightData> lights = [] {
+        auto directional = [](const glm::vec3& dir, const glm::vec3& color, float intensity) {
+            LightData l{};
+            l.type        = LightType::Directional;
+            l.color       = color;
+            l.intensity   = intensity;
+            l.position    = glm::vec3(0.0f);
+            l.direction   = glm::normalize(dir);
+            l.radius      = 0.0f;
+            l.castShadows = false;
+            return l;
+        };
+        return std::vector<LightData>{
+            directional({-0.35f, -0.80f, -0.50f}, {1.00f, 0.98f, 0.95f}, 2.6f),  // key: high front-right
+            directional({ 0.70f, -0.20f,  0.40f}, {0.75f, 0.80f, 1.00f}, 0.8f),  // fill: cool, low left
+            directional({ 0.50f, -0.25f,  0.70f}, {1.00f, 0.95f, 0.85f}, 1.2f),  // rim: from behind
+        };
+    }();
+    return lights;
 }
 
 } // namespace
