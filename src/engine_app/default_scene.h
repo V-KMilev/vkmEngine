@@ -54,11 +54,14 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
     // none of these colours, so a coloured reflection on the mirror cube is
     // unambiguously the reflection probe at work, not the environment map.
     const auto mirrorMat = Engine::generateDefaultMaterial(resources);
-    { auto& m = resources.edit(mirrorMat); m.name = "mirror"; m.metallic = 1.0f; m.roughness = 0.08f; }
+    resources.rename(mirrorMat, "mirror");
+    { auto& m = resources.edit(mirrorMat); m.metallic = 1.0f; m.roughness = 0.08f; }
     const auto redMat = Engine::generateDefaultMaterial(resources);
-    { auto& m = resources.edit(redMat); m.name = "red"; m.albedo = glm::vec4(1.0f, 0.04f, 0.04f, 1.0f); m.roughness = 0.6f; }
+    resources.rename(redMat, "red");
+    { auto& m = resources.edit(redMat); m.albedo = glm::vec4(1.0f, 0.04f, 0.04f, 1.0f); m.roughness = 0.6f; }
     const auto greenMat = Engine::generateDefaultMaterial(resources);
-    { auto& m = resources.edit(greenMat); m.name = "green"; m.albedo = glm::vec4(0.05f, 1.0f, 0.08f, 1.0f); m.roughness = 0.6f; }
+    resources.rename(greenMat, "green");
+    { auto& m = resources.edit(greenMat); m.albedo = glm::vec4(0.05f, 1.0f, 0.08f, 1.0f); m.roughness = 0.6f; }
 
     // Camera at an over-the-shoulder spot, looking at the origin.
     {
