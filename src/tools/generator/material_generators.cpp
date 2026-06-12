@@ -29,6 +29,7 @@ MaterialHandle generateDefaultMaterial(ResourceManager& resourceManager) {
     material.aoTexture = generateWhiteTexture(resourceManager);
     material.emissionTexture = generateBlackTexture(resourceManager);
 
+    material.name = "material:default";
     auto handle = resourceManager.add(std::move(material));
     // Stamp a source so SceneSerializer can recreate this on cold-start load,
     // and a stable AssetId so scene references resolve across runs.

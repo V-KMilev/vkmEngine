@@ -49,16 +49,17 @@ class ResourceManager {
             using T = std::remove_cv_t<std::remove_reference_t<ResourceType>>;
             auto& slot = getSlot<T>();
 
-            StorageIndex key = slot.allocator->allocate();
-            // Capture the name before move (some types are large).
-            std::string indexName = resource.name;
-            storageOf<T>(slot).add(key.index, std::forward<ResourceType>(resource));
+            // The name is the asset's serializable identity, so guarantee it is
+            // non-empty and unique within its type: empty names get a generic
+            // base, collisions get a " (N)" suffix. findByName is then an
+            // unambiguous key and scene files can reference assets by name.
+            ensureUniqueName(slot, resource.name);
 
-            // Maintain the per-type name index for O(1) findByName. Unnamed
-            // assets don't enter the index (no key to look them up by).
-            if (!indexName.empty()) {
-                slot.nameIndex.emplace(std::move(indexName), key.index);
-            }
+            StorageIndex key = slot.allocator->allocate();
+            std::string indexName = resource.name;  // unique + non-empty now
+            storageOf<T>(slot).add(key.index, std::forward<ResourceType>(resource));
+            slot.nameIndex.emplace(std::move(indexName), key.index);
+
             // Same shape for the AssetId index - loaders stamp the GUID on
             // import, scene serializer reads it back via findById<T>.
             const T& inserted = storageOf<T>(slot).get(key.index);
@@ -387,6 +388,22 @@ class ResourceManager {
         template<typename T>
         static const SparseSet<T>& storageOfConst(const TypedSlot& slot) {
             return static_cast<const SparseSet<T>&>(*slot.storage);
+        }
+
+        /// Make @p name non-empty and unique among the names already registered
+        /// in @p slot. Empty -> "asset"; a taken name gets the lowest free
+        /// " (N)" suffix. Called by add() so every asset has a usable key.
+        static void ensureUniqueName(const TypedSlot& slot, std::string& name) {
+            if (name.empty()) name = "asset";
+            if (slot.nameIndex.find(name) == slot.nameIndex.end()) return;
+            const std::string base = name;
+            for (int n = 2; ; ++n) {
+                std::string candidate = base + " (" + std::to_string(n) + ")";
+                if (slot.nameIndex.find(candidate) == slot.nameIndex.end()) {
+                    name = std::move(candidate);
+                    return;
+                }
+            }
         }
 
     private:

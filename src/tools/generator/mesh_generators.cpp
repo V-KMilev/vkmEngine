@@ -43,6 +43,7 @@ void stampGenerated(MeshAsset& mesh, const char* type, const nlohmann::json& par
             key += it.value().dump();
         }
     }
+    mesh.name    = key;
     mesh.assetId = AssetDatabase::get().registerOrGet(key, AssetKind::Mesh);
 }
 }
@@ -485,6 +486,7 @@ MeshAsset decimateMeshTracked(const MeshAsset& base, const AssetId& baseId, uint
     // the same GUID across runs (mirrors stampGenerated).
     const std::string key = "mesh:decimate:" + baseId.toString() + ":"
                           + std::to_string(gridResolution);
+    out.name    = key;
     out.assetId = AssetDatabase::get().registerOrGet(key, AssetKind::Mesh);
     return out;
 }
