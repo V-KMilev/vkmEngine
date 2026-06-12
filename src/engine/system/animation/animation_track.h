@@ -98,14 +98,13 @@ class AnimationTrack {
                 return m_values.back();
             }
 
-            // Binary search on times only (cache-friendly: touches only floats)
+            // Binary search on times only (cache-friendly: touches only floats).
+            // time < m_times.back() here (the >= case returned above), so
+            // upper_bound always lands on an element - never end().
             auto it = std::upper_bound(m_times.begin(), m_times.end(), time);
 
-            size_t nextIndex = (it != m_times.end())
-                ? static_cast<size_t>(it - m_times.begin())
-                : m_times.size() - 1;
-
-            size_t prevIndex = nextIndex - 1;
+            const size_t nextIndex = static_cast<size_t>(it - m_times.begin());
+            const size_t prevIndex = nextIndex - 1;
 
             // Calculate normalized time [0, 1] between the two keyframes
             float segmentDuration = m_times[nextIndex] - m_times[prevIndex];
