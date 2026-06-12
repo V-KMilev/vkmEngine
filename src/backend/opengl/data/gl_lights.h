@@ -5,6 +5,8 @@
 
 #include <glm/glm.hpp>
 
+#include "core/engine_config.h"
+
 namespace Core {
     class UniformBuffer;
 }
@@ -16,7 +18,10 @@ namespace Engine {
 
 namespace Engine {
 
-static constexpr int MAX_LIGHTS = 16;
+// Mirrors Config::MAX_LIGHTS (the single source of truth, also emitted into
+// shaders/_generated/engine_config.glsl) so the UBO array, the shader's light
+// array, and the engine cap can't drift apart.
+static constexpr int MAX_LIGHTS = static_cast<int>(Config::MAX_LIGHTS);
 
 /**
  * @brief std140 layout - must match the Light struct in shaders/forward.
