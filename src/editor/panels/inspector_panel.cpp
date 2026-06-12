@@ -47,7 +47,7 @@ const ImVec4 ACCENT_PROBE     = ImVec4(0.30f, 0.62f, 0.92f, 1.0f);  // reflectio
 // mesh + material pickers.
 template <typename Asset, typename Handle>
 bool pickAsset(const char* comboId, const char* label, ResourceManager& resources, Handle& currentHandle) {
-    const std::string cur = currentHandle
+    const std::string cur = (currentHandle && resources.isAlive(currentHandle))
         ? resources.get(currentHandle).name : std::string("(none)");
     drawPropertyLabel(label);
     ImGui::SetNextItemWidth(-1.0f);
@@ -298,7 +298,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
         drawPropertyLabel("Visible");      changed |= ImGui::Checkbox("##MeshVis", &mesh.visible);
         drawPropertyLabel("Cast Shadow");  changed |= ImGui::Checkbox("##MeshShad", &mesh.castShadows);
 
-        if (mesh.mesh) {
+        if (mesh.mesh && resources.isAlive(mesh.mesh)) {
             const auto& asset = resources.get(mesh.mesh);
             ImGui::TextDisabled("%zu verts, %zu tris",
                 asset.vertices.size(), asset.indices.size() / 3);

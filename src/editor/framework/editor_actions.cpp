@@ -280,8 +280,10 @@ void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController& ca
     glm::vec3 targetPos;
     float focusDistance = 5.0f;
 
-    if (ctx.scene.has<Mesh>(state.selectedEntity)
-        && ctx.scene.get<Mesh>(state.selectedEntity).mesh) {
+    const bool selHasMesh = ctx.scene.has<Mesh>(state.selectedEntity)
+        && ctx.scene.get<Mesh>(state.selectedEntity).mesh
+        && ctx.resources.isAlive(ctx.scene.get<Mesh>(state.selectedEntity).mesh);
+    if (selHasMesh) {
         const auto& mesh = ctx.scene.get<Mesh>(state.selectedEntity);
         const auto& asset = ctx.resources.get(mesh.mesh);
 
@@ -322,6 +324,7 @@ void frameAll(FrameContext& ctx, CameraController& camera) {
     for (const VisibleEntity& v : ctx.visibility->entries) {
         if (!ctx.scene.has<Mesh>(v.id)) continue;
         const auto& mesh = ctx.scene.get<Mesh>(v.id);
+        if (!mesh.mesh || !ctx.resources.isAlive(mesh.mesh)) continue;
         const auto& asset = ctx.resources.get(mesh.mesh);
         if (!hasValidBounds(asset.boundsMin, asset.boundsMax)) continue;
 
