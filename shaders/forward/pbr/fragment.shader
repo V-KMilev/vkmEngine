@@ -205,6 +205,7 @@ layout(binding = 14) uniform samplerCube u_irradiance;  // diffuse irradiance
 layout(binding = 15) uniform samplerCube u_prefilter;   // roughness-prefiltered specular
 layout(binding = 16) uniform sampler2D   u_brdfLUT;      // split-sum BRDF/DFG LUT
 uniform int u_hasIBL;
+uniform float u_iblIntensity;  // environment intensity: scales the indirect (IBL / flat ambient) term
 // Highest prefilter mip index; matches GLIBL::PREFILTER_MIPS - 1 (C++).
 const float MAX_REFLECTION_LOD = 6.0;
 
@@ -977,6 +978,10 @@ void main() {
     if (u_hasSSAO == 1) {
         ambient *= texture(u_ssao, gl_FragCoord.xy / u_screenSize).r;
     }
+
+    // Environment intensity scales the indirect term, so the Environment panel's
+    // brightness control dims/brightens the scene's ambient, not just the sky.
+    ambient *= u_iblIntensity;
 
     vec3 color = ambient + Lo + s.emission;
 

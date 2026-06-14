@@ -244,10 +244,10 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
     // sceneDirty here used to prompt the user to save just for clicking.
     // hierarchyDirty is still raised so the Hierarchy panel re-highlights.
     if (hitEntity) {
-        state.selectedEntity = hitEntity;
+        state.selectEntity(hitEntity);
     } else {
         // Click on empty space deselects
-        state.selectedEntity = {};
+        state.deselect();
     }
     state.hierarchyDirty = true;
 }

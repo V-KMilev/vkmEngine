@@ -44,9 +44,14 @@ class GLShadowAtlas {
 
     public:
         /**
-         * @brief Allocate the 2D atlas, the cube maps, and their FBOs. Idempotent.
+         * @brief Allocate the 2D atlas, the cube maps, and their FBOs.
+         *
+         * Idempotent for a given @p tileRes: a call with the same resolution is a
+         * no-op, but a different one rebuilds the 2D atlas at the new size (the
+         * cube maps are tile-res-independent and built once). Lets the editor
+         * trade shadow sharpness for shadow-pass cost at runtime.
          */
-        void init();
+        void init(uint32_t tileRes = SHADOW_ATLAS_TILE_RES);
 
         /**
          * @brief Bind the 2D atlas FBO and clear its whole depth buffer once.
@@ -80,8 +85,11 @@ class GLShadowAtlas {
         static glm::vec2 tileUVScale();
 
     private:
+        uint32_t m_tileRes;
+
         Core::FrameBuffer m_fbo2D;
         Core::FrameBuffer m_fboCube;
+
         std::unique_ptr<Core::Texture2D>                m_atlas2D;
         std::vector<std::unique_ptr<Core::TextureCube>> m_cubes;
 };

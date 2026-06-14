@@ -153,6 +153,7 @@ class GLShadowData {
 
         int      m_lightSlot[SHADOW_MAX_TRACKED_LIGHTS];
         uint32_t m_lightCount = 0;
+        uint32_t m_shadowRes;
 
         std::vector<Shadow2DJob>   m_jobs2D;
         std::vector<ShadowCubeJob> m_jobsCube;

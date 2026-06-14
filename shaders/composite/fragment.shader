@@ -15,6 +15,7 @@ layout(binding = 21) uniform sampler2D u_ao;             // GTAO factor
 layout(binding = 11) uniform sampler2D u_shadowAtlas;    // tiled 2D shadow depth
 uniform int  u_renderMode;   // 0 = final image, else a debug buffer (see MODE_* below)
 uniform mat4 u_projection;   // camera projection, for depth linearization (debug only)
+uniform bool u_fxaa;         // false = straight tonemapped resolve, no edge blend
 
 // Must match RenderMode in src/engine/system/render/render_settings.h.
 const int MODE_DEFAULT   = 0;
@@ -85,6 +86,12 @@ void main() {
     // Debug views bypass tonemap + FXAA and show the raw buffer.
     if (u_renderMode != MODE_DEFAULT) {
         FragColor = vec4(debugColor(vUV), 1.0);
+        return;
+    }
+
+    // FXAA disabled: tonemapped resolve of this texel only, no edge blend.
+    if (!u_fxaa) {
+        FragColor = vec4(resolve(vUV), 1.0);
         return;
     }
 

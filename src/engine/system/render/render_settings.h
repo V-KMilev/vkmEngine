@@ -39,6 +39,7 @@ struct RenderSettings {
     bool motionBlur = true;
     bool bloom      = true;
     bool probes     = true;
+    bool fxaa       = true;
 
     // GTAO
     float gtaoRadius    = 0.6f;   ///< World-space sample radius.
@@ -60,6 +61,9 @@ struct RenderSettings {
     float bloomThreshold = 1.0f;    ///< Bright-pass threshold (HDR luminance).
     float bloomKnee      = 0.5f;    ///< Soft-knee width around the threshold.
     float bloomRadius    = 0.005f;  ///< Upsample tent-filter radius (UV space).
+
+    // Shadows
+    uint32_t shadowResolution = 4096;  ///< Per-tile shadow-atlas resolution (1024/2048/4096). Higher = crisper but a much heavier shadow pass.
 
     // Overlays
     bool grid = true;   ///< World-space ground grid (drawn by the backend debug pass).

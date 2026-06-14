@@ -23,6 +23,7 @@ namespace Engine {
 struct EditorState {
     // Selection
     EntityId selectedEntity{};
+    bool     worldSelected = false;
 
     // Gizmo config
     GizmoOperation gizmoOperation = GizmoOperation::Translate;
@@ -87,6 +88,13 @@ struct EditorState {
     /// that mutates the live Scene (entity ops, gizmo drags, inspector edits).
     /// Cheap, idempotent.
     void markSceneDirty() { sceneDirty = true; }
+
+    /// Selection helpers - selectedEntity and worldSelected are mutually
+    /// exclusive, so always route selection through these (not raw assignment)
+    /// to keep that invariant without a draw-time fixup.
+    void selectEntity(EntityId id) { selectedEntity = id; worldSelected = false; }
+    void selectWorld()             { selectedEntity = {}; worldSelected = true; }
+    void deselect()                { selectedEntity = {}; worldSelected = false; }
 
     /// Show a transient toast at the corner of the editor. `seconds` <= 0
     /// uses a kind-appropriate default. Replaces any prior toast.
