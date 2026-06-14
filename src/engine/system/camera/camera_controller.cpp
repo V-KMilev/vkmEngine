@@ -2,10 +2,11 @@
 
 #include "system/camera/camera_controller.h"
 
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/quaternion.hpp>
 #include <algorithm>
 #include <cmath>
+
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 #include "logger.h"
 

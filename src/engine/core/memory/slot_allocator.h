@@ -10,13 +10,13 @@
 namespace Engine {
 
 /**
-* @class SlotAllocator
-* @brief Lightweight slot allocator that issues generation-safe handles.
-*
-* Manages a pool of indices with generation counters for stale-handle detection
-* and a free list for O(1) slot recycling. Does not store any per-slot data - only
-* the metadata needed for allocation, deallocation, and validation.
-*/
+ * @class SlotAllocator
+ * @brief Lightweight slot allocator that issues generation-safe handles.
+ *
+ * Manages a pool of indices with generation counters for stale-handle detection
+ * and a free list for O(1) slot recycling. Does not store any per-slot data - only
+ * the metadata needed for allocation, deallocation, and validation.
+ */
 class SlotAllocator {
     public:
         SlotAllocator() : m_generation({GenerationIndex{}}) {}
@@ -39,9 +39,9 @@ class SlotAllocator {
 
     public:
         /**
-        * @brief Allocate a new handle with a unique index and current generation.
-        * @return A StorageIndex handle with index > 0 and a valid generation.
-        */
+         * @brief Allocate a new handle with a unique index and current generation.
+         * @return A StorageIndex handle with index > 0 and a valid generation.
+         */
         StorageIndex allocate() {
             uint32_t idx = allocateSlot();
             m_generation[idx].setAlive(true);
@@ -49,9 +49,9 @@ class SlotAllocator {
         }
 
         /**
-        * @brief Free a handle, bumping its generation and recycling the slot.
-        * @param id The handle to free. Must be alive (asserts).
-        */
+         * @brief Free a handle, bumping its generation and recycling the slot.
+         * @param id The handle to free. Must be alive (asserts).
+         */
         void free(StorageIndex id) {
             VKM_ASSERT(has(id), "SlotAllocator::free called with invalid handle");
             m_generation[id.index].setAlive(false);
@@ -60,10 +60,10 @@ class SlotAllocator {
         }
 
         /**
-        * @brief Test whether a handle is still valid (alive with matching generation).
-        * @param id The handle to validate.
-        * @return True if alive and generation matches.
-        */
+         * @brief Test whether a handle is still valid (alive with matching generation).
+         * @param id The handle to validate.
+         * @return True if alive and generation matches.
+         */
         bool has(StorageIndex id) const {
             return id
                 && id.index < m_generation.size()
@@ -72,17 +72,17 @@ class SlotAllocator {
         }
 
         /**
-        * @brief Number of currently live (allocated and not freed) slots.
-        */
+         * @brief Number of currently live (allocated and not freed) slots.
+         */
         size_t size() const {
             return m_generation.size() - 1 - m_freeList.size();
         }
 
         /**
-        * @brief Get the current generation for a sparse slot index.
-        * @param index The sparse slot index. Must be in bounds.
-        * @return The current generation counter for that slot.
-        */
+         * @brief Get the current generation for a sparse slot index.
+         * @param index The sparse slot index. Must be in bounds.
+         * @return The current generation counter for that slot.
+         */
         uint32_t generationOf(uint32_t index) const {
             VKM_ASSERT(index < m_generation.size(), "SlotAllocator::generationOf out of bounds");
             return m_generation[index].generation();

@@ -6,11 +6,11 @@
 namespace Engine {
 
 /**
-* @brief Opaque handle pairing a sparse-array index with a generation counter.
-*
-* A handle is only valid while its generation matches the slot's current generation,
-* preventing use-after-free and stale-handle bugs. Index 0 is reserved as the null sentinel.
-*/
+ * @brief Opaque handle pairing a sparse-array index with a generation counter.
+ *
+ * A handle is only valid while its generation matches the slot's current generation,
+ * preventing use-after-free and stale-handle bugs. Index 0 is reserved as the null sentinel.
+ */
 struct StorageIndex {
     uint32_t index      = 0; ///< Sparse slot index (0 = null/invalid)
     uint32_t generation = 0; ///< Generation at time of creation, compared against slot to detect staleness
@@ -30,11 +30,11 @@ struct StorageIndex {
 static_assert(sizeof(StorageIndex) == 8, "StorageIndex must be 8 bytes");
 
 /**
-* @brief Bit-packed per-slot metadata: alive flag + generation counter in a single uint32_t.
-*
-* Bit 31 (MSB) stores the alive/dead state. Bits 0-30 store a monotonically
-* increasing generation counter that is bumped on each removal.
-*/
+ * @brief Bit-packed per-slot metadata: alive flag + generation counter in a single uint32_t.
+ *
+ * Bit 31 (MSB) stores the alive/dead state. Bits 0-30 store a monotonically
+ * increasing generation counter that is bumped on each removal.
+ */
 struct GenerationIndex {
     uint32_t value = 0;
 
@@ -55,11 +55,11 @@ struct GenerationIndex {
 static_assert(sizeof(GenerationIndex) == 4, "GenerationIndex must be 4 bytes");
 
 /**
-* @brief Compile-time type-to-integer mapping for type-erased registries.
-*
-* Each unique type T gets a unique TypeId on first call to typeId<T>().
-* IDs are stable within a single program execution but not across runs.
-*/
+ * @brief Compile-time type-to-integer mapping for type-erased registries.
+ *
+ * Each unique type T gets a unique TypeId on first call to typeId<T>().
+ * IDs are stable within a single program execution but not across runs.
+ */
 using TypeId = uint32_t;
 
 namespace detail {
