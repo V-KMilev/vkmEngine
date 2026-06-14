@@ -23,7 +23,7 @@ namespace Engine {
  *
  * Any type inheriting from Resource can be stored without modifying this class.
  * Mirrors Scene's design: per type we keep a SlotAllocator (handle lifetime)
- * and a SparseSet<T> (storage), plus name/id indices for O(1) lookup.
+ * and a SparseSet<T> (storage), plus a name index for O(1) lookup.
  */
 class ResourceManager {
     public:
@@ -295,7 +295,7 @@ class ResourceManager {
         }
 
     private:
-        /// Per-type bundle: lifetime (allocator), storage, name + id indices.
+        /// Per-type bundle: lifetime (allocator), storage, name index.
         struct TypedSlot {
             std::unique_ptr<SlotAllocator>  allocator;
             std::unique_ptr<ISparseSet>     storage;

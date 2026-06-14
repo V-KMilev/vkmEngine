@@ -62,7 +62,7 @@ class AssetFactories {
  * scene. Loads recreate them by dispatching each
  * descriptor through AssetFactories; assets with no source are skipped on
  * save (silently - they can't be recreated anyway), and assets already in
- * ResourceManager (by AssetId) are skipped on load (idempotent re-loads).
+ * ResourceManager (by name) are skipped on load (idempotent re-loads).
  *
  * Textures are their own top-level section: saveAssetsForScene emits a
  * `textures` array of every map a material references, and loadAssets
