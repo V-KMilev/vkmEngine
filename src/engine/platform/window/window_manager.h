@@ -61,11 +61,11 @@ constexpr const char* toString(WindowMode type) {
 }
 
 /**
- * @brief Manages the application's window, input, and frame limiting.
+ * @brief Owns the application's window, input, and frame limiting.
  *
- * This singleton class encapsulates all logic related to window creation,
- * rendering context management, input handling, and frame rate limiting.
- * It ensures only one window exists and centralizes window-related functionality.
+ * Encapsulates window creation, rendering-context management, input handling,
+ * and frame-rate limiting. Constructed and owned by the Engine - not a
+ * singleton; the engine holds the single instance.
  */
 class WindowManager {
     public:

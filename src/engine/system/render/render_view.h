@@ -38,7 +38,7 @@ struct RenderView {
     std::vector<ProbeData>        probes;          ///< The reflection probes in the scene.
 
     RenderSettings                settings;        ///< Editable render tuning (copied from the RenderSystem each frame).
-    Environment                   environment;     ///< Lighting environment (HDR/skybox), copied from the RenderSystem each frame.
+    Environment                   environment;     ///< Lighting environment (HDR/skybox), copied from the Scene each frame in build().
 
     public:
         void build(

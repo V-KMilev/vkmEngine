@@ -69,8 +69,8 @@ struct FrameContext {
     FrameTracker& frameTracker;
 
     float deltaTime;
-    float fixedDeltaTime;
     float simDeltaTime;
+    float fixedDeltaTime;
     // The scene's render rect within the GLFW window. The editor reports
     // it via WindowManager::setSceneViewport so the 3D pass renders at the
     // viewport's aspect & size, not the full window. With no editor, the

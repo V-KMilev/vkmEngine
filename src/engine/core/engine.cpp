@@ -52,8 +52,8 @@ void Engine::run() {
         FrameContext ctx{
             m_scene, m_resources, m_window, m_frameTracker,
             deltaTime,
-            Config::FIXED_TIME_STEP,
             simDelta,
+            Config::FIXED_TIME_STEP,
             vpSet ? m_window.sceneViewportX() : 0u,
             vpSet ? m_window.sceneViewportY() : 0u,
             vpSet ? vpW : winW,
