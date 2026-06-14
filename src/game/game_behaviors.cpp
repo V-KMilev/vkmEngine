@@ -2,8 +2,8 @@
 
 #include "system/script/behavior_registry.h"
 
-#include "behaviors/cube_spinner.h"
-#include "behaviors/player_controller.h"
+#include "cube_spinner.h"
+#include "player_controller.h"
 
 namespace Engine {
 

@@ -80,6 +80,7 @@ if(VKM_WITH_EDITOR)
 endif()
 add_subdirectory(src/backend/opengl)
 add_subdirectory(src/engine_app)
+add_subdirectory(src/game)
 
 # Two thin executables under app/. engine_runtime is the bare engine; engine_editor
 # adds the in-process editor on top of the shared EngineApp bootstrap. Both pull

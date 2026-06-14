@@ -15,14 +15,12 @@
 #include "ecs/component/mesh.h"
 #include "ecs/component/name.h"
 #include "ecs/component/transform.h"
+#include "system/script/behavior_registry.h"
 #include "system/script/script_component.h"
 
 #include "generator/light_generators.h"
 #include "generator/material_generators.h"
 #include "generator/mesh_generators.h"
-
-#include "behaviors/cube_spinner.h"
-#include "behaviors/player_controller.h"
 
 /**
  * @brief Minimal default scene: one camera, one directional light, one cube
@@ -97,13 +95,15 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
         glm::vec3(1.0f)
     });
 
-    // Attach example behaviors: the cube spins on its own (CubeSpinner) and is
-    // drivable with WASD in play mode (PlayerController) - a two-behavior
-    // ScriptComponent showing composition. Both restore on Stop.
+    // Attach example behaviors via the registry (the concrete types live in the
+    // game module, which the caller registered): the cube spins on its own
+    // (CubeSpinner) and is drivable with WASD in play mode (PlayerController) -
+    // a two-behavior ScriptComponent showing composition. Both restore on Stop.
     {
+        auto& registry = Engine::BehaviorRegistry::get();
         Engine::ScriptComponent script;
-        script.behaviors.push_back(std::make_unique<Engine::CubeSpinner>());
-        script.behaviors.push_back(std::make_unique<Engine::PlayerController>());
+        if (auto spinner = registry.create("CubeSpinner"))      script.behaviors.push_back(std::move(spinner));
+        if (auto player  = registry.create("PlayerController")) script.behaviors.push_back(std::move(player));
         scene.add(cube, std::move(script));
     }
 

@@ -1,4 +1,4 @@
-#include "behaviors/cube_spinner.h"
+#include "cube_spinner.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
