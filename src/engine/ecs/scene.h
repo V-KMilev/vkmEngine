@@ -1,7 +1,9 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "l_assert.h"
@@ -98,6 +100,11 @@ class Scene {
          */
         void destroyEntity(Entity entity) {
             EntityId id = entity.getID();
+            // Generic per-entity destroy notification (entity + components still
+            // intact). Scene stays type-agnostic; a system installs the hook -
+            // BehaviorSystem uses it to fire script onDestroy on every destroy
+            // path. Single observer is all any current caller needs.
+            if (m_onEntityDestroy) m_onEntityDestroy(id);
             detachFromHierarchy(*this, id);
 
             for (auto& set : m_components) {
@@ -332,6 +339,19 @@ class Scene {
         template<typename T>
         const SparseSet<T>* storage() const { return findStorage<T>(); }
 
+        /**
+         * @brief Install a single observer invoked (with the EntityId) at the
+         * start of every destroyEntity, before its components are removed.
+         *
+         * Keeps Scene type-agnostic while letting a system react to deletions -
+         * BehaviorSystem uses it to fire script onDestroy on every destroy path.
+         * Belongs to this Scene object, so it persists across swap()/clear()
+         * (not swapped with scene contents).
+         */
+        void setOnEntityDestroy(std::function<void(EntityId)> callback) {
+            m_onEntityDestroy = std::move(callback);
+        }
+
     private:
         /// @brief Get or create the typed SparseSet for component type T.
         template<typename T>
@@ -364,6 +384,10 @@ class Scene {
         SlotAllocator m_entityAllocator;
         std::vector<std::unique_ptr<ISparseSet>> m_components;
         Environment m_environment;
+
+        /// Per-entity destroy observer (see setOnEntityDestroy). Not swapped:
+        /// it belongs to this Scene object, not the contents it holds.
+        std::function<void(EntityId)> m_onEntityDestroy;
 };
 
 } // namespace Engine
