@@ -16,14 +16,19 @@ namespace Engine {
 GLShadowAtlas::GLShadowAtlas()  = default;
 GLShadowAtlas::~GLShadowAtlas() = default;
 
-void GLShadowAtlas::init() {
-    if (m_atlas2D) return;
+void GLShadowAtlas::init(uint32_t tileRes) {
+    // Already built at this resolution - nothing to do. A different resolution
+    // falls through and rebuilds the 2D atlas below.
+    if (m_atlas2D && m_tileRes == tileRes) return;
 
-    const uint32_t atlasW = SHADOW_ATLAS_COLS * SHADOW_ATLAS_TILE_RES;
-    const uint32_t atlasH = SHADOW_ATLAS_ROWS * SHADOW_ATLAS_TILE_RES;
+    m_tileRes = tileRes;
+
+    const uint32_t atlasW = SHADOW_ATLAS_COLS * m_tileRes;
+    const uint32_t atlasH = SHADOW_ATLAS_ROWS * m_tileRes;
 
     // One depth texture for the whole 2D atlas. Nearest filtering - PCF is done
-    // in the shader; clamp so off-tile samples read the edge.
+    // in the shader; clamp so off-tile samples read the edge. Reassigning the
+    // unique_ptr frees any previous atlas, so a resolution change is a rebuild.
     Core::Texture2DParams params;
     params.width          = atlasW;
     params.height         = atlasH;
@@ -46,33 +51,35 @@ void GLShadowAtlas::init() {
     }
     m_fbo2D.unbind();
 
-    // One depth cube per point caster. Faces are attached to m_fboCube on demand.
-    m_cubes.clear();
-    for (uint32_t i = 0; i < Config::MAX_SHADOW_CASTERS_CUBE; ++i) {
-        auto cube = std::make_unique<Core::TextureCube>();
-        cube->create(static_cast<int>(SHADOW_CUBE_RES), 1,
-                     GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_FLOAT, false);
-        m_cubes.push_back(std::move(cube));
-    }
+    // Cube maps are tile-res-independent (they use SHADOW_CUBE_RES), so build the
+    // set and its depth-only FBO once - a 2D resolution change leaves them be.
+    if (m_cubes.empty()) {
+        for (uint32_t i = 0; i < Config::MAX_SHADOW_CASTERS_CUBE; ++i) {
+            auto cube = std::make_unique<Core::TextureCube>();
+            cube->create(static_cast<int>(SHADOW_CUBE_RES), 1,
+                         GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_FLOAT, false);
+            m_cubes.push_back(std::move(cube));
+        }
 
-    // Depth-only cube FBO: no color buffer. Set once; the draw/read buffer state
-    // persists across the per-face attachments done in beginCubeFace.
-    m_fboCube.bind();
-    m_fboCube.setDrawBuffer(GL_NONE);
-    m_fboCube.setReadBuffer(GL_NONE);
-    m_fboCube.unbind();
+        // Depth-only cube FBO: no color buffer. Set once; the draw/read buffer
+        // state persists across the per-face attachments done in beginCubeFace.
+        m_fboCube.bind();
+        m_fboCube.setDrawBuffer(GL_NONE);
+        m_fboCube.setReadBuffer(GL_NONE);
+        m_fboCube.unbind();
+    }
 }
 
 void GLShadowAtlas::begin2D(const Core::Context& gl) const {
     m_fbo2D.bind();
-    const int32_t atlasW = static_cast<int32_t>(SHADOW_ATLAS_COLS * SHADOW_ATLAS_TILE_RES);
-    const int32_t atlasH = static_cast<int32_t>(SHADOW_ATLAS_ROWS * SHADOW_ATLAS_TILE_RES);
+    const int32_t atlasW = static_cast<int32_t>(SHADOW_ATLAS_COLS * m_tileRes);
+    const int32_t atlasH = static_cast<int32_t>(SHADOW_ATLAS_ROWS * m_tileRes);
     gl.setViewport(0, 0, atlasW, atlasH);
     gl.clear(false, true, false);
 }
 
 void GLShadowAtlas::setTileViewport(const Core::Context& gl, uint32_t slot) const {
-    const int32_t tile = static_cast<int32_t>(SHADOW_ATLAS_TILE_RES);
+    const int32_t tile = static_cast<int32_t>(m_tileRes);
     const int32_t x    = static_cast<int32_t>(slot % SHADOW_ATLAS_COLS) * tile;
     const int32_t y    = static_cast<int32_t>(slot / SHADOW_ATLAS_COLS) * tile;
     gl.setViewport(x, y, tile, tile);

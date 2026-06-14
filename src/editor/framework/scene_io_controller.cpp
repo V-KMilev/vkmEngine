@@ -115,11 +115,11 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
     // Selection survives the load only when an entity with the same Name
     // exists in the loaded scene. Anonymous selections (no Name) are
     // dropped rather than potentially landing on the wrong entity.
-    state.selectedEntity = {};
+    state.deselect();
     if (!priorSelectionName.empty()) {
         ctx.scene.forEach<Name>([&](EntityId id, const Name& n) {
             if (!state.selectedEntity && priorSelectionName == n.value) {
-                state.selectedEntity = id;
+                state.selectEntity(id);
             }
         });
     }

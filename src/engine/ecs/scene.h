@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "ecs/component/hierarchy.h"
+#include "ecs/environment.h"
 #include "ecs/entity.h"
 #include "core/memory/slot_allocator.h"
 #include "core/memory/sparse_set.h"
@@ -75,6 +76,14 @@ class Scene {
          * @brief Number of live entities.
          */
         size_t entityCount() const { return m_entityAllocator.size(); }
+
+        /**
+         * @brief The scene's lighting environment (skybox + IBL): scene-global, always
+         * present, round-trips with the scene. Read by RenderView each frame;
+         * edited via the editor's World inspector.
+         */
+        Environment& environment() { return m_environment; }
+        const Environment& environment() const { return m_environment; }
 
         /**
          * @brief Get the generation counter for an entity index (for reconstructing EntityId from dense index).
@@ -272,6 +281,7 @@ class Scene {
                 if (set) set->clear();
             }
             m_entityAllocator.clear();
+            m_environment = Environment{};
         }
 
         /**
@@ -301,6 +311,7 @@ class Scene {
             using std::swap;
             m_entityAllocator.swap(other.m_entityAllocator);  // non-movable, member swap
             swap(m_components, other.m_components);
+            swap(m_environment, other.m_environment);
         }
 
         /**
@@ -350,6 +361,7 @@ class Scene {
     private:
         SlotAllocator m_entityAllocator;
         std::vector<std::unique_ptr<ISparseSet>> m_components;
+        Environment m_environment;
 };
 
 } // namespace Engine

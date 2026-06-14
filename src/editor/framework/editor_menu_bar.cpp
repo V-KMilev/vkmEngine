@@ -128,7 +128,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         ImGui::Separator();
         char deselectLbl[48];
         if (ImGui::MenuItem("Deselect", getKeyBindLabel(state.keybinds.deselect, deselectLbl, sizeof(deselectLbl)))) {
-            state.selectedEntity = {};
+            state.deselect();
         }
         ImGui::EndMenu();
     }

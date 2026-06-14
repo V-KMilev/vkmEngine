@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "gl_context.h"  // Core::Context (held by value)
@@ -67,10 +68,18 @@ class GLBackend : public RenderBackend {
         void releaseAllPreviews() override;
 
     private:
-        // Split the frame's drawables into the opaque + transparent buckets once
-        // (one material resolve each) so the depth prepass and forward pass share
-        // the result instead of re-partitioning the list a pass apiece.
+        /**
+         * @brief Split the frame's drawables into the opaque + transparent buckets once
+         * (one material resolve each) so the depth prepass and forward pass share
+         * the result instead of re-partitioning the list a pass apiece.
+         */
         void partitionDrawables(const RenderView& view);
+
+        /**
+         * @brief (Re)bake the IBL product set (irradiance + prefilter + BRDF LUT) from
+         * an equirectangular HDR. Drives both ambient lighting and the skybox.
+         */
+        void bakeEnvironment(const std::string& path);
 
     private:
         Core::Context m_context;
@@ -96,6 +105,8 @@ class GLBackend : public RenderBackend {
         std::vector<const DrawableData*> m_transparent;
 
         std::vector<PassEntry> m_passes;
+
+        std::string m_bakedEnvPath;  ///< HDR path of the currently baked IBL; empty until the first render() bakes it.
 };
 
 } // namespace Engine

@@ -9,6 +9,7 @@
 #include "system/render/data/shadow_caster_data.h"
 #include "system/render/data/probe_data.h"
 #include "system/render/render_settings.h"
+#include "ecs/environment.h"
 
 namespace Engine {
 
@@ -37,6 +38,7 @@ struct RenderView {
     std::vector<ProbeData>        probes;          ///< The reflection probes in the scene.
 
     RenderSettings                settings;        ///< Editable render tuning (copied from the RenderSystem each frame).
+    Environment                   environment;     ///< Lighting environment (HDR/skybox), copied from the RenderSystem each frame.
 
     public:
         void build(
