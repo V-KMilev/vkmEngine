@@ -50,6 +50,7 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
     const float bloomStrength = (ctx.bloom.isReady() && ctx.view.settings.bloom)
         ? ctx.view.settings.bloomStrength : 0.0f;
     m_shader->setUniform1f("u_bloomStrength", bloomStrength);
+    m_shader->setUniform1i("u_fxaa", view.settings.fxaa ? 1 : 0);
 
     // Debug views: bind the intermediate buffers the shader samples + the
     // projection for depth linearization. Default path binds nothing extra.

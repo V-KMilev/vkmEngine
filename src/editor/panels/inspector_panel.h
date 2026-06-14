@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include <glm/glm.hpp>
 
 #include "ecs/entity.h"
@@ -44,6 +47,7 @@ class InspectorPanel {
         void drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawCameraSection(Scene& scene, EditorState& state, EntityId id);
         void drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id);
+        void drawWorldInspector(EditorContext& ec);
         void drawAnimationSection(Scene& scene, EditorState& state, EntityId id);
         void drawHierarchySection(Scene& scene, EditorState& state, EntityId id);
         void drawAddComponentMenu(Scene& scene, EditorState& state, EntityId id);
@@ -52,6 +56,11 @@ class InspectorPanel {
         // entity. See EulerCache for the gimbal-lock rationale.
         EulerCache<EntityId> m_eulerCache;
 
+        // World inspector's "Skybox HDR" combo: the discovered assets/envs list
+        // is rescanned only on the combo's open transition (m_envComboOpen
+        // tracks the prior state), not every frame the card is visible.
+        std::vector<std::string> m_envCache;
+        bool                     m_envComboOpen = false;
 };
 
 } // namespace Engine

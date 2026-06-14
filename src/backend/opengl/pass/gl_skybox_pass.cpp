@@ -28,6 +28,7 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
     if (!ctx.ibl.isReady()) return;  // no baked environment -> nothing to draw
 
     const RenderView& view = ctx.view;
+    if (!view.environment.showSkybox) return;
 
     // Draw into the same HDR target as the forward pass (no clear). The vertex
     // shader forces z = w so the cube sits at the far plane; depth func LEQUAL
@@ -43,7 +44,7 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
     m_shader->bind();
     m_shader->setUniformMatrix4fv("u_view", view.camera.view);
     m_shader->setUniformMatrix4fv("u_projection", view.camera.projection);
-    m_shader->setUniform1f("u_iblIntensity", 1.0f);
+    m_shader->setUniform1f("u_iblIntensity", view.environment.intensity);
 
     ctx.ibl.bindEnvCube(GLBindings::IBLTextureSlots::EnvCube);
     m_cube->draw();

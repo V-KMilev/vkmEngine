@@ -45,7 +45,7 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
         EditorActions::deleteEntity(ctx.scene, state, state.selectedEntity);
     }
     if (isPressed(kb.deselect)) {
-        state.selectedEntity = {};
+        state.deselect();
     }
     if (isPressed(kb.duplicate) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
         EditorActions::duplicateEntity(ctx.scene, state, state.selectedEntity);

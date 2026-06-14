@@ -34,6 +34,8 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         s.renderMode = static_cast<RenderMode>(modeIdx);
     }
     ImGui::Checkbox("World Grid", &s.grid);
+    ImGui::SameLine();
+    ImGui::Checkbox("FXAA", &s.fxaa);
     ImGui::Separator();
 
     if (ImGui::CollapsingHeader("Ambient Occlusion (GTAO)", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -71,6 +73,21 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         drawPropertyLabel("Knee");      ImGui::SliderFloat("##bloomK", &s.bloomKnee, 0.0f, 1.0f, "%.2f");
         drawPropertyLabel("Radius");    ImGui::SliderFloat("##bloomR", &s.bloomRadius, 0.001f, 0.02f, "%.4f");
         ImGui::EndDisabled();
+    }
+
+    if (ImGui::CollapsingHeader("Shadows", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Per-tile atlas resolution. Higher is crisper but the shadow pass is
+        // usually the frame's dominant GPU cost, so this is the main FPS lever.
+        static const char* const kShadowResLabels[] = { "Low (1024)", "Medium (2048)", "High (4096)" };
+        static const uint32_t    kShadowResValues[] = { 1024u, 2048u, 4096u };
+        int resIdx = 2;
+        for (int i = 0; i < 3; ++i) {
+            if (kShadowResValues[i] == s.shadowResolution) resIdx = i;
+        }
+        drawPropertyLabel("Atlas Resolution");
+        if (ImGui::Combo("##shadowRes", &resIdx, kShadowResLabels, IM_ARRAYSIZE(kShadowResLabels))) {
+            s.shadowResolution = kShadowResValues[resIdx];
+        }
     }
 
     if (ImGui::CollapsingHeader("Reflection Probes", ImGuiTreeNodeFlags_DefaultOpen)) {

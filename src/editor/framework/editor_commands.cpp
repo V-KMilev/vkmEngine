@@ -179,7 +179,7 @@ void CreateEntityCommand::redo(Scene& scene, EditorState& state) {
     Entity e = scene.createEntityAt(m_snap.slotIndex);
     m_snap.apply(scene, e.getID());
     state.hierarchyDirty = true;
-    state.selectedEntity = e.getID();
+    state.selectEntity(e.getID());
 }
 
 void CreateEntityCommand::undo(Scene& scene, EditorState& state) {
@@ -187,7 +187,7 @@ void CreateEntityCommand::undo(Scene& scene, EditorState& state) {
     if (!scene.isAlive(id)) return;
     scene.destroyEntity(Entity{id});
     state.hierarchyDirty = true;
-    if (state.selectedEntity == id) state.selectedEntity = {};
+    if (state.selectedEntity == id) state.deselect();
 }
 
 SubtreeSnapshot SubtreeSnapshot::capture(const Scene& scene, EntityId root) {
@@ -263,7 +263,7 @@ void DestroySubtreeCommand::redo(Scene& scene, EditorState& state) {
     if (!scene.isAlive(root)) return;
     HierarchyOperations::destroyHierarchy(scene, root);
     state.hierarchyDirty = true;
-    if (state.selectedEntity.index == rootSlot) state.selectedEntity = {};
+    if (state.selectedEntity.index == rootSlot) state.deselect();
 }
 
 void DestroySubtreeCommand::undo(Scene& scene, EditorState& state) {
@@ -274,8 +274,8 @@ void DestroySubtreeCommand::undo(Scene& scene, EditorState& state) {
         // resurrected subtree (the common case is the root itself).
         for (const auto& node : m_snap.nodes) {
             if (node.snap.slotIndex == m_priorSelection.index) {
-                state.selectedEntity = EntityId{node.snap.slotIndex,
-                    scene.generationOf(node.snap.slotIndex)};
+                state.selectEntity(EntityId{node.snap.slotIndex,
+                    scene.generationOf(node.snap.slotIndex)});
                 break;
             }
         }

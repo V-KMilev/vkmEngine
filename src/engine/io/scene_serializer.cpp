@@ -158,6 +158,15 @@ bool save(const Scene& scene, const ResourceManager& resources, const std::strin
         doc["entities"].push_back(std::move(entity));
     });
 
+    // Scene-global lighting environment (skybox + IBL): a top-level object, not
+    // a per-entity component.
+    const Environment& env = scene.environment();
+    doc["environment"] = {
+        {"hdrPath",    env.hdrPath},
+        {"intensity",  env.intensity},
+        {"showSkybox", env.showSkybox},
+    };
+
     std::ofstream out(path);
     if (!out) {
         LOG_ERROR("Failed to open '%s' for writing", path.c_str());
@@ -286,6 +295,15 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
     for (const std::string& k : unknownKeys) {
         LOG_WARNING("Unknown component key '%s' in '%s' (schema drift; dropped)",
             k.c_str(), path.c_str());
+    }
+
+    // Scene-global lighting environment (skybox + IBL): a top-level object. A
+    // file saved before it existed just keeps the staging scene's defaults.
+    if (auto it = doc.find("environment"); it != doc.end() && it->is_object()) {
+        Environment& env = staging.environment();
+        env.hdrPath    = it->value("hdrPath",    env.hdrPath);
+        env.intensity  = it->value("intensity",  env.intensity);
+        env.showSkybox = it->value("showSkybox", env.showSkybox);
     }
 
     // Commit phase: both stagings swap into place in one step. Until this

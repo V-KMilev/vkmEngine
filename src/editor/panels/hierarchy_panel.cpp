@@ -82,6 +82,19 @@ void HierarchyPanel::draw(EditorContext& ec) {
             }
         }
 
+        // The scene's World node: not an entity, just the handle for editing
+        // scene-global settings (Environment now; fog/gravity later). Pinned at
+        // the top; selecting it shows those settings in the Inspector.
+        if (!hasFilter) {
+            static char worldNodeId = 0;   // stable address -> a unique ImGui id for this non-entity row
+            ImGuiTreeNodeFlags f = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen
+                                 | ImGuiTreeNodeFlags_SpanAvailWidth;
+            if (state.worldSelected) f |= ImGuiTreeNodeFlags_Selected;
+            entityTreeNode(static_cast<void*>(&worldNodeId), f, EditorIcon::SpaceWorld, "World");
+            if (ImGui::IsItemClicked()) state.selectWorld();
+            ImGui::Separator();
+        }
+
         // ImGuiListClipper: only build/draw the rows actually on screen.
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(displayList.size()));
@@ -96,7 +109,7 @@ void HierarchyPanel::draw(EditorContext& ec) {
                     getEntityDisplayName(scene, id, name, sizeof(name));
                     entityTreeNode(reinterpret_cast<void*>(static_cast<uintptr_t>(id.index)),
                                    f, entityIconKind(scene, id), name);
-                    if (ImGui::IsItemClicked()) state.selectedEntity = id;
+                    if (ImGui::IsItemClicked()) state.selectEntity(id);
                     drawEntityContextMenu(scene, state, id);
                 } else {
                     drawEntityNode(scene, state, id);
@@ -106,7 +119,7 @@ void HierarchyPanel::draw(EditorContext& ec) {
 
         if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
             && !ImGui::IsAnyItemHovered()) {
-            state.selectedEntity = {};
+            state.deselect();
         }
 
         // Right-click on empty space
@@ -234,7 +247,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
         ImGui::EndDragDropTarget();
     }
 
-    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) state.selectedEntity = entity;
+    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) state.selectEntity(entity);
 
     drawEntityContextMenu(scene, state, entity);
 
@@ -254,7 +267,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
     ImGui::TextDisabled("%s", ctxName);
     ImGui::Separator();
 
-    if (ImGui::MenuItem("Select")) state.selectedEntity = entity;
+    if (ImGui::MenuItem("Select")) state.selectEntity(entity);
     if (ImGui::MenuItem("Duplicate", "Ctrl+D")) EditorActions::duplicateEntity(scene, state, entity);
     if (ImGui::MenuItem("Delete", "Del")) EditorActions::deleteEntity(scene, state, entity);
 

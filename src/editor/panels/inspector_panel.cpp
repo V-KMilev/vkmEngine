@@ -1,9 +1,11 @@
 #include "panels/inspector_panel.h"
 
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -16,6 +18,7 @@
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/transform.h"
+#include "ecs/environment.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
 #include "generator/light_generators.h"
@@ -40,6 +43,25 @@ const ImVec4 ACCENT_HIERARCHY = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);
 const ImVec4 ACCENT_PHYSICS   = ImVec4(0.36f, 0.78f, 0.45f, 1.0f);
 const ImVec4 ACCENT_COLLIDER  = ImVec4(0.25f, 0.65f, 0.40f, 1.0f);
 const ImVec4 ACCENT_PROBE     = ImVec4(0.30f, 0.62f, 0.92f, 1.0f);  // reflection probe (blue)
+const ImVec4 ACCENT_ENV       = ImVec4(0.45f, 0.66f, 0.95f, 1.0f);  // environment / skybox (sky blue)
+
+// Equirect HDRs offered by the Environment card, discovered under assets/envs.
+// Paths stay relative (the IBL baker loads them relative to the working dir),
+// so the chosen string drops straight into Environment::hdrPath.
+std::vector<std::string> discoverEnvironments() {
+    std::vector<std::string> out;
+    std::error_code ec;
+    const std::filesystem::path dir = "assets/envs";
+    if (std::filesystem::is_directory(dir, ec)) {
+        for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".hdr") {
+                out.push_back(entry.path().generic_string());
+            }
+        }
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
 
 // Asset-reference combo: pick which loaded asset of type Asset a handle points
 // at. Snapshots the asset list so ImGuiListClipper can window thousands of rows
@@ -86,7 +108,11 @@ void InspectorPanel::draw(EditorContext& ec) {
 
     drawPanelTitle("Inspector");
 
-    if (!state.selectedEntity || !ctx.scene.isAlive(state.selectedEntity)) {
+    const bool haveEntity = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
+    if (!haveEntity) {
+        // The World node (scene-global settings) is selected instead of an entity.
+        if (state.worldSelected) { drawWorldInspector(ec); return; }
+
         // Centered empty-state with a large neutral glyph + two-line hint and
         // a quick "create entity" affordance, so a fresh user has somewhere
         // to go from a blank panel.
@@ -440,6 +466,58 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
         state.commands.push(std::make_unique<RemoveComponentCommand<Light>>(id, snap, "Remove Light"));
         state.markSceneDirty();
     }
+}
+
+void InspectorPanel::drawWorldInspector(EditorContext& ec) {
+    EditorState& state = ec.state;
+    Environment& env   = ec.frame.scene.environment();
+
+    // Identity header for the scene's World node.
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("World");
+    ImGui::SameLine();
+    ImGui::TextDisabled(" Scene-global settings");
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    const bool open = beginComponentCard("Environment", ACCENT_ENV, true);
+    if (open) {
+        bool changed = false;
+
+        drawPropertyLabel("Skybox HDR");
+        const char* current = env.hdrPath.empty() ? "(none)" : env.hdrPath.c_str();
+        const bool comboOpen = ImGui::BeginCombo("##EnvHdr", current);
+        // Walk assets/envs only on the open transition, not every frame the card
+        // is visible - a directory scan per frame would be wasteful.
+        if (comboOpen && !m_envComboOpen) m_envCache = discoverEnvironments();
+        m_envComboOpen = comboOpen;
+        if (comboOpen) {
+            if (m_envCache.empty()) ImGui::TextDisabled("No .hdr files in assets/envs.");
+            for (const std::string& path : m_envCache) {
+                const bool selected = (path == env.hdrPath);
+                if (ImGui::Selectable(path.c_str(), selected) && path != env.hdrPath) {
+                    env.hdrPath = path;
+                    changed = true;
+                }
+                if (selected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+
+        drawPropertyLabel("Show Skybox");
+        changed |= ImGui::Checkbox("##EnvShow", &env.showSkybox);
+
+        drawPropertyLabel("Brightness");
+        changed |= ImGui::SliderFloat("##EnvIntensity", &env.intensity, 0.0f, 3.0f, "%.2f");
+
+        ImGui::TextDisabled("Swapping the HDR re-bakes the IBL (a brief hitch).");
+
+        // Scene-global settings edit live (no per-entity undo command), matching
+        // the Physics Settings flow.
+        if (changed) state.markSceneDirty();
+    }
+    endComponentCard();
 }
 
 void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id) {
@@ -814,7 +892,7 @@ void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, Enti
             char parentName[64];
             getEntityDisplayName(scene, h.parent, parentName, sizeof(parentName));
             if (ImGui::SmallButton(parentName)) {
-                state.selectedEntity = h.parent;
+                state.selectEntity(h.parent);
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("Unparent")) {
@@ -842,7 +920,7 @@ void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, Enti
                     snprintf(cid, sizeof(cid), "%u", child.index);
                     if (entitySelectable(cid, state.selectedEntity == child,
                                          entityIconKind(scene, child), name)) {
-                        state.selectedEntity = child;
+                        state.selectEntity(child);
                     }
                 });
             }

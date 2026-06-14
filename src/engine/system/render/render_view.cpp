@@ -13,6 +13,7 @@
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/world_transform.h"
+#include "ecs/environment.h"
 #include "system/visibility/visibility.h"
 
 #include "debug/profiler.h"
@@ -24,6 +25,9 @@ void RenderView::build(
     const Visibility& visibility
 ) {
     PROFILE_SCOPE("RenderView::build");
+
+    // The scene's lighting environment.
+    environment = scene.environment();
 
     if (!visibility.hasCamera) {
         // No camera this frame: emit an empty snapshot, not a stale one.

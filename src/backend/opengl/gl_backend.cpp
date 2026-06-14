@@ -54,15 +54,6 @@ bool GLBackend::init(WindowManager& window) {
 
     m_shadowAtlas.init();
 
-    // Bake the image-based lighting product set once from the default
-    // environment HDR (split-sum: env cube -> irradiance + prefilter + BRDF
-    // LUT). The forward pass samples it for ambient and the skybox pass draws
-    // the environment. A load failure leaves IBL off (forward falls back to
-    // flat ambient). The baker's bake-only programs/meshes are transient.
-    {
-        GLIBLBaker baker;
-        baker.bake(m_context, m_ibl, "assets/envs/environment.hdr");
-    }
 
     // Build the pass list. Passes compile their shaders, so this must run after
     // the context exists. Order: shadow depth maps; a depth prepass (early-Z,
@@ -119,6 +110,17 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     m_ao.resize(view.viewportWidth, view.viewportHeight);
     m_bloom.resize(view.viewportWidth, view.viewportHeight);
 
+    // Bake the IBL on the first frame (m_bakedEnvPath empty) and re-bake whenever
+    // the environment HDR changes (an editor swap or a scene load). The skybox
+    // samples the baked product, so the background follows too.
+    if (view.environment.hdrPath != m_bakedEnvPath) {
+        bakeEnvironment(view.environment.hdrPath);
+    }
+
+    // Rebuild the shadow atlas if the editor changed its resolution (a no-op when
+    // unchanged). Done before the shadow plan so both agree on the tile size.
+    m_shadowAtlas.init(view.settings.shadowResolution);
+
     // Plan the frame's shadows first: it assigns each light an atlas slot, which
     // the lights UBO then carries (spot.w), and uploads the ShadowBlock UBO.
     m_shadowData.build(view);
@@ -161,6 +163,14 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     m_probes.update(m_context, view, m_view, m_ibl);
 
     PROFILE_GPU_COLLECT();
+}
+
+void GLBackend::bakeEnvironment(const std::string& path) {
+    // The baker's programs/meshes are transient - construct, bake, let it die.
+    // A load failure leaves m_ibl not-ready (forward falls back to flat ambient).
+    GLIBLBaker baker;
+    baker.bake(m_context, m_ibl, path);
+    m_bakedEnvPath = path;
 }
 
 void GLBackend::partitionDrawables(const RenderView& view) {

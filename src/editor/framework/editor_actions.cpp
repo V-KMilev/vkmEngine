@@ -238,12 +238,12 @@ void duplicateEntity(Scene& scene, EditorState& state, EntityId source) {
     state.commands.push(std::make_unique<CreateEntityCommand>(
         EntitySnapshot::capture(scene, newId), "Duplicate Entity"));
     commitStructureChange(state);
-    state.selectedEntity = newId;
+    state.selectEntity(newId);
 }
 
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
     const EntityId priorSel = state.selectedEntity;
-    if (state.selectedEntity == entity) state.selectedEntity = {};
+    if (state.selectedEntity == entity) state.deselect();
 
     // SubtreeSnapshot also covers the single-entity case (nodes.size() == 1)
     // and records the original parent, so undo always restores the entity
@@ -349,7 +349,7 @@ void frameAll(FrameContext& ctx, CameraController& camera) {
 void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState& state) {
     if (ImGui::BeginMenu("Create")) {
         auto item = [&](const char* label, EntityKind k) {
-            if (ImGui::MenuItem(label)) state.selectedEntity = createEntity(scene, resources, state, k);
+            if (ImGui::MenuItem(label)) state.selectEntity(createEntity(scene, resources, state, k));
         };
         item("Empty Entity", EntityKind::Empty);
         ImGui::Separator();
@@ -399,7 +399,7 @@ void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
             (ProjectPaths::root() / picked).string(),
             resources, scene);
         if (rootId) {
-            state.selectedEntity = rootId;
+            state.selectEntity(rootId);
             commitStructureChange(state);
         }
     }

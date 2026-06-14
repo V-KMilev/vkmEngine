@@ -40,6 +40,10 @@ void GLShadowData::build(const RenderView& view) {
     for (int& s : m_lightSlot) s = -1;
     m_lightCount = std::min<uint32_t>(static_cast<uint32_t>(view.lights.size()), SHADOW_MAX_TRACKED_LIGHTS);
 
+    // Mirror the atlas tile resolution the backend rebuilt for this frame, so the
+    // normal-offset bias's world-texel size below matches the actual atlas.
+    m_shadowRes = view.settings.shadowResolution;
+
     // Camera frustum corners in world space, from the inverse view-projection.
     const glm::mat4 invVP = glm::inverse(view.camera.projection * view.camera.view);
     const glm::vec2 ndc[4] = { {-1, -1}, {1, -1}, {1, 1}, {-1, 1} };
@@ -141,7 +145,7 @@ void GLShadowData::fitDirectional(const LightData& light, uint32_t lightIndex,
 
         // World size of one shadow texel in this cascade - drives the shader's
         // normal-offset bias so it scales with cascade density.
-        const float worldTexel = (2.0f * radius) / static_cast<float>(SHADOW_ATLAS_TILE_RES);
+        const float worldTexel = (2.0f * radius) / static_cast<float>(m_shadowRes);
 
         const uint32_t slot = base + c;
         Shadow2DGPU& e = m_data.s2d[slot];
@@ -173,7 +177,7 @@ void GLShadowData::fitSpot(const LightData& light, uint32_t lightIndex, uint32_t
 
     // Approximate world texel size at the cone's far end, for normal-offset bias.
     const float worldTexel = (2.0f * range * std::tan(fov * 0.5f)) /
-                             static_cast<float>(SHADOW_ATLAS_TILE_RES);
+                             static_cast<float>(m_shadowRes);
 
     Shadow2DGPU& e = m_data.s2d[slot];
     e.lightVP = lightVP;
