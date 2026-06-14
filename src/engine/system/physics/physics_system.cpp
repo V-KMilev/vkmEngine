@@ -16,8 +16,10 @@
 #include "ecs/component/physics_world.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/transform.h"
+#include "system/event/event_system.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "system/physics/inertia.h"
+#include "system/physics/physics_events.h"
 #include "system/physics/collision/narrowphase.h"
 #include "system/visibility/bounds_utils.h"
 
@@ -231,6 +233,8 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         expandSubShapes(B, subB);
 
         bool anyContact = false;
+        glm::vec3 contactPoint(0.0f);
+        glm::vec3 contactNormal(0.0f, 1.0f, 0.0f);
         for (const SubShape& sa : subA) {
             for (const SubShape& sb : subB) {
                 const int n = contactBoxes(
@@ -238,6 +242,10 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
                     sb.center, sb.rotation, sb.halfExtents,
                     scratch);
                 if (n == 0) continue;
+                if (!anyContact) {  // keep the first contact as the event's representative
+                    contactPoint  = scratch[0].point;
+                    contactNormal = scratch[0].normal;
+                }
                 anyContact = true;
                 if (trigger) continue;  // queried, not resolved
 
@@ -252,6 +260,18 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         if (anyContact) {
             hasContact[A.body] = true;
             hasContact[B.body] = true;
+
+            // Surface the overlap to gameplay (enqueued: listeners fire on the
+            // next EventSystem flush, never mid-solve). Triggers are queried,
+            // not resolved, so they only produce events.
+            const EntityId entityA = m_bodies[A.body];
+            const EntityId entityB = m_bodies[B.body];
+            if (trigger) {
+                if (A.collider.isTrigger) m_events.enqueue(TriggerEvent{entityA, entityB});
+                if (B.collider.isTrigger) m_events.enqueue(TriggerEvent{entityB, entityA});
+            } else {
+                m_events.enqueue(CollisionEvent{entityA, entityB, contactPoint, contactNormal});
+            }
         }
     }
 

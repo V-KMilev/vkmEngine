@@ -1,16 +1,18 @@
 #pragma once
 
+#include <functional>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "ecs/entity.h"
+#include "system/event/event_system.h"
 
 namespace Engine {
 
 class Scene;
 class ResourceManager;
 class InputHandle;
-class EventSystem;
 class BehaviorSystem;
 class BehaviorFieldVisitor;
 
@@ -26,14 +28,14 @@ class BehaviorFieldVisitor;
  * Non-copyable and non-movable: instances are owned by unique_ptr inside
  * ScriptComponent. Deep-copy for entity duplication goes through clone().
  *
- * Note on events: m_events->emit / enqueue are always safe. If a behavior
- * subscribes, it must unsubscribe in onDestroy - a live subscription whose
- * callback captures `this` would dangle once the instance is destroyed.
+ * Events: emit/enqueue via m_events directly. To listen, use subscribe<E>() -
+ * it auto-unsubscribes when the behavior is destroyed, so there's no manual
+ * cleanup (a raw m_events->subscribe would dangle once this instance dies).
  */
 class Behavior {
     public:
         Behavior() = default;
-        virtual ~Behavior() = default;
+        virtual ~Behavior() { clearSubscriptions(); }
 
         Behavior(const Behavior& other) = delete;
         Behavior& operator=(const Behavior& other) = delete;
@@ -45,6 +47,8 @@ class Behavior {
         virtual void onStart()             {}  ///< First tick this instance runs in play mode.
         virtual void onUpdate(float dt)    {}  ///< Variable step; dt is simulation seconds.
         virtual void onFixedUpdate(float dt) {}  ///< Fixed step; dt = fixedDeltaTime. Opt-in.
+        virtual void onCollision(EntityId other) {}  ///< A non-trigger contact with `other` this tick.
+        virtual void onTrigger(EntityId other)   {}  ///< This entity's trigger overlapped `other` this tick.
         virtual void onDestroy()           {}  ///< Instance torn down (entity removed / play stopped / shutdown).
 
         /**
@@ -87,6 +91,17 @@ class Behavior {
         /// the affected behaviors. Routed through HierarchyOperations.
         void destroy(EntityId entity);
 
+        /// Subscribe to events of type EventT for this behavior's lifetime. The
+        /// subscription is dropped automatically when the behavior is destroyed
+        /// (or the play session ends), so there is nothing to clean up by hand.
+        template<typename EventT>
+        void subscribe(std::function<void(const EventT&)> callback) {
+            if (!m_events) return;
+            EventSystem* events = m_events;
+            const EventSystem::ListenerId id = events->subscribe<EventT>(std::move(callback));
+            m_subscriptions.push_back([events, id]() { events->unsubscribe<EventT>(id); });
+        }
+
         EntityId           m_entity{};
         Scene*             m_scene     = nullptr;
         ResourceManager*   m_resources = nullptr;
@@ -113,7 +128,16 @@ class Behavior {
             m_pendingDestroy = &pendingDestroy;
         }
 
-        std::vector<EntityId>* m_pendingDestroy = nullptr;  ///< BehaviorSystem's deferred-destroy queue.
+        /// Drop all subscribe<E>() listeners. Run from the destructor and, while
+        /// the EventSystem is guaranteed alive, by BehaviorSystem::endSession at
+        /// play stop / shutdown (so it never unsubscribes from a dead bus).
+        void clearSubscriptions() {
+            for (auto& unsubscribe : m_subscriptions) unsubscribe();
+            m_subscriptions.clear();
+        }
+
+        std::vector<std::function<void()>> m_subscriptions;  ///< Auto-unsubscribe thunks.
+        std::vector<EntityId>* m_pendingDestroy = nullptr;   ///< BehaviorSystem's deferred-destroy queue.
         bool m_started  = false;  ///< onStart already fired (managed by BehaviorSystem).
         bool m_disabled = false;  ///< Set after a hook threw; BehaviorSystem then skips it.
 };
