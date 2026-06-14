@@ -18,14 +18,14 @@ namespace Engine::ComponentSerializer {
 
 namespace {
 
-[[maybe_unused]] nlohmann::json vec2ToJson(const glm::vec2& v) { return {v.x, v.y}; }
+nlohmann::json vec2ToJson(const glm::vec2& v) { return {v.x, v.y}; }
 nlohmann::json vec3ToJson(const glm::vec3& v) { return {v.x, v.y, v.z}; }
-[[maybe_unused]] nlohmann::json vec4ToJson(const glm::vec4& v) { return {v.x, v.y, v.z, v.w}; }
+nlohmann::json vec4ToJson(const glm::vec4& v) { return {v.x, v.y, v.z, v.w}; }
 nlohmann::json quatToJson(const glm::quat& q) { return {q.w, q.x, q.y, q.z}; }
 
-[[maybe_unused]] glm::vec2 vec2FromJson(const nlohmann::json& j) { return {j[0], j[1]}; }
+glm::vec2 vec2FromJson(const nlohmann::json& j) { return {j[0], j[1]}; }
 glm::vec3 vec3FromJson(const nlohmann::json& j) { return {j[0], j[1], j[2]}; }
-[[maybe_unused]] glm::vec4 vec4FromJson(const nlohmann::json& j) { return {j[0], j[1], j[2], j[3]}; }
+glm::vec4 vec4FromJson(const nlohmann::json& j) { return {j[0], j[1], j[2], j[3]}; }
 glm::quat quatFromJson(const nlohmann::json& j) {
     return glm::quat(static_cast<float>(j[0]), static_cast<float>(j[1]),
                      static_cast<float>(j[2]), static_cast<float>(j[3]));

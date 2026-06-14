@@ -229,7 +229,7 @@ void WindowManager::setCursorMode(CursorMode mode) {
             glfwmode = GLFW_CURSOR_CAPTURED;
             break;
         default:
-            LOG_ERROR("Invalid cursor mode: %d", mode);
+            LOG_ERROR("Invalid cursor mode: %d", static_cast<int>(mode));
             return;
     }
     glfwSetInputMode(windowContext, GLFW_CURSOR, glfwmode);
