@@ -11,6 +11,7 @@ file(GLOB_RECURSE ENGINECORE_SOURCES CONFIGURE_DEPENDS
     system/camera/*.cpp
     system/visibility/*.cpp
     system/physics/*.cpp
+    system/script/*.cpp
     system/event/*.cpp
     system/hierarchy/*.cpp
     system/io/*.cpp

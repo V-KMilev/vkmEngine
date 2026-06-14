@@ -20,6 +20,7 @@
 #include "io/scene_serializer.h"
 #include "io/project_paths.h"
 #include "system/camera/camera_controller.h"
+#include "system/script/behavior_system.h"
 #include "system/event/event_system.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_system.h"
@@ -87,11 +88,11 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
     // matching by name post-load is more robust than matching by slot
     // index alone, which can silently select a different entity that
     // happens to land in the same slot after the new scene populates it.
-    std::string priorSelectionName;
-    if (state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)
-            && ctx.scene.has<Name>(state.selectedEntity)) {
-        priorSelectionName = ctx.scene.get<Name>(state.selectedEntity).value;
-    }
+    const std::string priorSelectionName = cacheSelectionName(ctx, state);
+
+    // If a play session is somehow active, tear its behaviors down (onDestroy)
+    // before the swap discards them.
+    BehaviorSystem::endSession(ctx.scene);
 
     if (!SceneSerializer::load(ctx.scene, ctx.resources, m_currentScenePath)) {
         LOG_ERROR("SceneIOController::load: failed to load %s - editor state preserved",
@@ -101,20 +102,40 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
         return;
     }
 
+    afterSceneReplace(ctx, state, priorSelectionName, m_currentScenePath);
+
+    state.sceneDirty = false;
+    pushRecent(state, m_currentScenePath);
+}
+
+std::string SceneIOController::cacheSelectionName(FrameContext& ctx, EditorState& state) {
+    if (state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)
+            && ctx.scene.has<Name>(state.selectedEntity)) {
+        return ctx.scene.get<Name>(state.selectedEntity).value;
+    }
+    return {};
+}
+
+void SceneIOController::afterSceneReplace(
+    FrameContext& ctx,
+    EditorState& state,
+    const std::string& priorSelectionName,
+    const std::string& eventPath
+) {
     // Entity IDs don't carry across scenes - any pending undo would
     // operate on slots that now hold unrelated entities.
     state.commands.clear();
 
-    // The load swapped the ResourceManager wholesale, so preview targets
+    // The swap replaced the ResourceManager wholesale, so preview targets
     // keyed by the old asset handles are stale. Drop them; the Material
     // Editor / Asset Browser re-bake lazily on their next draw.
     if (RenderBackend* backend = m_renderSystem.backend()) {
         backend->releaseAllPreviews();
     }
 
-    // Selection survives the load only when an entity with the same Name
-    // exists in the loaded scene. Anonymous selections (no Name) are
-    // dropped rather than potentially landing on the wrong entity.
+    // Selection survives only when an entity with the same Name exists in
+    // the new scene. Anonymous selections (no Name) are dropped rather than
+    // potentially landing on the wrong entity.
     state.deselect();
     if (!priorSelectionName.empty()) {
         ctx.scene.forEach<Name>([&](EntityId id, const Name& n) {
@@ -128,29 +149,58 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
     // multiple cameras claim active (authoring oversight), pick the first
     // by iteration order and warn - silently picking one of several would
     // make the choice look intentional.
-    {
-        Entity rebound{};
-        int activeCount = 0;
-        ctx.scene.forEach<Camera>([&](EntityId id, const Camera& c) {
-            if (!c.active) return;
-            ++activeCount;
-            if (!rebound.getID()) rebound = Entity{id};
-        });
-        if (activeCount > 1) {
-            LOG_WARNING("SceneIOController::load: %d cameras marked active in %s - using the first",
-                activeCount, m_currentScenePath.c_str());
-        }
-        m_cameraController.setCameraEntity(rebound);
+    Entity rebound{};
+    int activeCount = 0;
+    ctx.scene.forEach<Camera>([&](EntityId id, const Camera& c) {
+        if (!c.active) return;
+        ++activeCount;
+        if (!rebound.getID()) rebound = Entity{id};
+    });
+    if (activeCount > 1) {
+        LOG_WARNING("SceneIOController: %d cameras marked active in %s - using the first",
+            activeCount, eventPath.c_str());
+    }
+    m_cameraController.setCameraEntity(rebound);
+
+    // Tell external subscribers (anything that cares about scene swaps) the
+    // scene was replaced. The effects above used to ride this event back to
+    // us via a self-subscribe; we do them directly now that we have ctx.
+    m_events.emit(SceneSerializer::SceneLoadedEvent{eventPath});
+}
+
+void SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {
+    m_playSnapshot = SceneSerializer::saveToString(ctx.scene, ctx.resources);
+    if (m_playSnapshot.empty()) {
+        LOG_ERROR("SceneIOController::captureSnapshot: failed to serialize scene");
+        state.pushToast(EditorState::ToastKind::Error,
+            "Play: could not snapshot scene (Stop will not restore)");
+        return;
+    }
+    // Remember the dirty flag so Stop leaves it exactly as the user left it -
+    // simulation mutates the ECS directly (not via editor commands), so it
+    // never dirties the scene on its own.
+    m_playSnapshotDirty = state.sceneDirty;
+}
+
+void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
+    if (m_playSnapshot.empty()) return;
+
+    const std::string priorSelectionName = cacheSelectionName(ctx, state);
+
+    // Play stop: fire onDestroy on the played scene's running behaviors while
+    // their context is still valid, before the swap restores the snapshot.
+    BehaviorSystem::endSession(ctx.scene);
+
+    if (!SceneSerializer::loadFromString(m_playSnapshot, ctx.scene, ctx.resources)) {
+        LOG_ERROR("SceneIOController::restoreSnapshot: failed to restore play snapshot");
+        state.pushToast(EditorState::ToastKind::Error,
+            "Stop: could not restore scene snapshot");
+        return;  // Keep the snapshot so the live (played) scene is untouched.
     }
 
-    // Tell external subscribers (anything that cares about scene swaps)
-    // the load happened. The two effects above used to ride this event
-    // back to us via a self-subscribe; that needed Engine::get() to fetch
-    // the Scene, so we just do them directly here now that we have ctx.
-    m_events.emit(SceneSerializer::SceneLoadedEvent{m_currentScenePath});
-
-    state.sceneDirty = false;
-    pushRecent(state, m_currentScenePath);
+    m_playSnapshot.clear();
+    afterSceneReplace(ctx, state, priorSelectionName, m_currentScenePath);
+    state.sceneDirty = m_playSnapshotDirty;
 }
 
 void SceneIOController::pushRecent(EditorState& state, const std::string& path) {

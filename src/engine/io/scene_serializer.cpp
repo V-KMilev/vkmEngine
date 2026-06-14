@@ -75,6 +75,7 @@ VKM_SERIALIZER_TRAITS  (Collider,          "Collider");
 VKM_SERIALIZER_TRAITS  (PhysicsWorld,      "PhysicsWorld");
 VKM_SERIALIZER_TRAITS_R(Mesh,              "Mesh");
 VKM_SERIALIZER_TRAITS  (Animation,         "Animation");
+VKM_SERIALIZER_TRAITS  (ScriptComponent,   "Script");
 
 template<> struct SerializerTraits<Hierarchy> {
     static constexpr const char* key = "Hierarchy";
@@ -92,7 +93,7 @@ template<> struct SerializerTraits<Hierarchy> {
 /// here. The fold operators below propagate the change to save / load /
 /// known-key checks; no other edits required.
 using SerializedComponents = std::tuple<
-    Name, Transform, Camera, Light, Rigidbody, Collider, PhysicsWorld, Mesh, Animation, Hierarchy
+    Name, Transform, Camera, Light, Rigidbody, Collider, PhysicsWorld, Mesh, Animation, ScriptComponent, Hierarchy
 >;
 
 // Detect at compile time which traits expose a `load` static. Hierarchy
@@ -136,10 +137,12 @@ bool isKnownComponentKey(const std::string& k) {
     return isKnownKey(k, static_cast<SerializedComponents*>(nullptr));
 }
 
-} // namespace
-
-bool save(const Scene& scene, const ResourceManager& resources, const std::string& path) {
-    PROFILE_SCOPE("SceneSerializer::save");
+/**
+ * @brief Build the full scene document (version + assets + entities +
+ *        environment). Shared by save() (writes a file) and saveToString()
+ *        (keeps it in memory for the play-mode snapshot).
+ */
+json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
     json doc;
     doc["version"]  = FILE_FORMAT_VERSION;
     doc["assets"]   = AssetSerializer::saveAssetsForScene(scene, resources);
@@ -166,46 +169,26 @@ bool save(const Scene& scene, const ResourceManager& resources, const std::strin
         {"intensity",  env.intensity},
         {"showSkybox", env.showSkybox},
     };
-
-    std::ofstream out(path);
-    if (!out) {
-        LOG_ERROR("Failed to open '%s' for writing", path.c_str());
-        return false;
-    }
-    out << doc.dump(2);
-    const auto& assets = doc["assets"];
-    const size_t numTex = assets.contains("textures")  ? assets["textures"].size()  : 0;
-    const size_t numMat = assets.contains("materials") ? assets["materials"].size() : 0;
-    const size_t numMsh = assets.contains("meshes")    ? assets["meshes"].size()    : 0;
-    LOG_INFO("Saved scene to '%s' (%zu entities, %zu texture(s) + %zu material(s) + %zu mesh(es) referenced)",
-        path.c_str(), doc["entities"].size(), numTex, numMat, numMsh);
-    return true;
+    return doc;
 }
 
-bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
-    PROFILE_SCOPE("SceneSerializer::load");
-    std::ifstream in(path);
-    if (!in) {
-        LOG_ERROR("SceneSerializer::load failed to open '%s'", path.c_str());
-        return false;
-    }
-
-    json doc;
-    try {
-        in >> doc;
-    } catch (const std::exception& e) {
-        LOG_ERROR("SceneSerializer::load JSON parse error in '%s': %s", path.c_str(), e.what());
-        return false;
-    }
-
+/**
+ * @brief Validate + deserialize a scene document into @p scene + @p resources,
+ *        committing atomically via swap. Shared by load() (from a file) and
+ *        loadFromString() (from the play-mode snapshot); @p source labels the
+ *        origin in log messages.
+ *
+ * @return true on success; false (and a logged error) leaves both untouched.
+ */
+bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, const char* source) {
     const int version = doc.value("version", 0);
     if (version <= 0) {
-        LOG_ERROR("Missing/invalid 'version' field");
+        LOG_ERROR("Missing/invalid 'version' field in '%s'", source);
         return false;
     }
     if (version > FILE_FORMAT_VERSION) {
-        LOG_ERROR("File version %d is newer than this build (%d); refusing to load",
-            version, FILE_FORMAT_VERSION);
+        LOG_ERROR("'%s' version %d is newer than this build (%d); refusing to load",
+            source, version, FILE_FORMAT_VERSION);
         return false;
     }
     if (version < FILE_FORMAT_VERSION) {
@@ -213,11 +196,11 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
         // uses json.value("key", fallback) so missing fields keep their
         // struct defaults. Migrations live here when fields are renamed or
         // their meaning changes (no schema migrations needed at v1).
-        LOG_INFO("File version %d, current is %d (loading with defaults for missing fields)",
-            version, FILE_FORMAT_VERSION);
+        LOG_INFO("'%s' version %d, current is %d (loading with defaults for missing fields)",
+            source, version, FILE_FORMAT_VERSION);
     }
     if (!doc.contains("entities") || !doc["entities"].is_array()) {
-        LOG_ERROR("Missing or invalid 'entities' array");
+        LOG_ERROR("Missing or invalid 'entities' array in '%s'", source);
         return false;
     }
 
@@ -278,8 +261,8 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
         // prevSibling on both sides and marks WorldTransform dirty.
         for (const auto& [childIdx, parentIdx] : parentLinks) {
             if (!staging.isAliveAtIndex(parentIdx)) {
-                LOG_WARNING("Parent slot %u not found in file; entity %u left as root",
-                    parentIdx, childIdx);
+                LOG_WARNING("Parent slot %u not found in '%s'; entity %u left as root",
+                    parentIdx, source, childIdx);
                 continue;
             }
             const EntityId childId {childIdx,  staging.generationOf(childIdx)};
@@ -288,13 +271,13 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
         }
     } catch (const std::exception& e) {
         LOG_ERROR("Aborted while reading '%s': %s (live scene unchanged)",
-            path.c_str(), e.what());
+            source, e.what());
         return false;
     }
 
     for (const std::string& k : unknownKeys) {
         LOG_WARNING("Unknown component key '%s' in '%s' (schema drift; dropped)",
-            k.c_str(), path.c_str());
+            k.c_str(), source);
     }
 
     // Scene-global lighting environment (skybox + IBL): a top-level object. A
@@ -328,8 +311,66 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
     scene.compact();
 
     LOG_INFO("Loaded scene from '%s' (%zu entities, %zu hierarchy links)",
-        path.c_str(), entityCount, parentLinks.size());
+        source, entityCount, parentLinks.size());
     return true;
+}
+
+} // namespace
+
+bool save(const Scene& scene, const ResourceManager& resources, const std::string& path) {
+    PROFILE_SCOPE("SceneSerializer::save");
+    const json doc = buildSceneJson(scene, resources);
+
+    std::ofstream out(path);
+    if (!out) {
+        LOG_ERROR("Failed to open '%s' for writing", path.c_str());
+        return false;
+    }
+    out << doc.dump(2);
+    const auto& assets = doc["assets"];
+    const size_t numTex = assets.contains("textures")  ? assets["textures"].size()  : 0;
+    const size_t numMat = assets.contains("materials") ? assets["materials"].size() : 0;
+    const size_t numMsh = assets.contains("meshes")    ? assets["meshes"].size()    : 0;
+    LOG_INFO("Saved scene to '%s' (%zu entities, %zu texture(s) + %zu material(s) + %zu mesh(es) referenced)",
+        path.c_str(), doc["entities"].size(), numTex, numMat, numMsh);
+    return true;
+}
+
+bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
+    PROFILE_SCOPE("SceneSerializer::load");
+    std::ifstream in(path);
+    if (!in) {
+        LOG_ERROR("SceneSerializer::load failed to open '%s'", path.c_str());
+        return false;
+    }
+
+    json doc;
+    try {
+        in >> doc;
+    } catch (const std::exception& e) {
+        LOG_ERROR("SceneSerializer::load JSON parse error in '%s': %s", path.c_str(), e.what());
+        return false;
+    }
+
+    return readSceneJson(doc, scene, resources, path.c_str());
+}
+
+std::string saveToString(const Scene& scene, const ResourceManager& resources) {
+    PROFILE_SCOPE("SceneSerializer::saveToString");
+    return buildSceneJson(scene, resources).dump();
+}
+
+bool loadFromString(const std::string& text, Scene& scene, ResourceManager& resources) {
+    PROFILE_SCOPE("SceneSerializer::loadFromString");
+    json doc;
+    try {
+        doc = json::parse(text);
+    } catch (const std::exception& e) {
+        LOG_ERROR("SceneSerializer::loadFromString JSON parse error: %s", e.what());
+        return false;
+    }
+
+    return readSceneJson(doc, scene, resources, "<memory snapshot>");
 }
 
 } // namespace Engine::SceneSerializer

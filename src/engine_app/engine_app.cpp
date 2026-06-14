@@ -12,6 +12,7 @@
 #include "system/event/event_system.h"
 #include "system/hierarchy/hierarchy_system.h"
 #include "system/physics/physics_system.h"
+#include "system/script/behavior_system.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
 #include "system/camera/camera_controller.h"
@@ -20,15 +21,24 @@
 #include "gl_backend.h"
 
 #include "default_scene.h"
+#include "game_behaviors.h"
 
 namespace Engine {
 
 EngineAppSystems setupEngineApp(Engine& engine) {
+    // Gameplay behaviors register by name so scene I/O (load / play-mode
+    // restore) can recreate them; do it before the default scene + any load.
+    registerGameBehaviors();
+
     auto& cameraController = engine.addSystem<CameraController>(SystemStage::Input);
     auto& eventSystem      = engine.addSystem<EventSystem>     (SystemStage::Simulation);
     // AsyncLoaderSystem drains completed asset loads before the visibility +
     // render sweep, so freshly decoded textures reach the GPU the same frame.
     engine.addSystem<AsyncLoaderSystem>(SystemStage::Simulation);
+    // Gameplay scripts run before animation + physics (events -> gameplay ->
+    // animation -> physics), so a behavior can set state the same frame those
+    // integrate it.
+    engine.addSystem<BehaviorSystem>  (SystemStage::Simulation);
     engine.addSystem<AnimationSystem> (SystemStage::Simulation);
     engine.addSystem<PhysicsSystem>   (SystemStage::Simulation);
     engine.addSystem<HierarchySystem> (SystemStage::Transform);
