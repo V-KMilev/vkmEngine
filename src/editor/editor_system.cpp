@@ -386,7 +386,7 @@ void EditorSystem::drawPhysicsSettings(EditorContext& ec) {
         if (changed) {
             if (!pw) {
                 Entity entity = scene.createEntity();
-                scene.add(entity, Name{"Physics World"});
+                scene.add(entity, makeName("Physics World"));
                 pw = &scene.add(entity, PhysicsWorld{});
             }
             *pw = edited;

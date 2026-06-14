@@ -183,7 +183,7 @@ void InspectorPanel::draw(EditorContext& ec) {
             ImGui::TextUnformatted(fallback);
             ImGui::SameLine();
             if (ImGui::SmallButton("+##addname")) {
-                Name n(fallback);
+                Name n = makeName(fallback);
                 scene.add(Entity{id}, n);
                 state.commands.push(std::make_unique<AddComponentCommand<Name>>(id, n, "Add Name"));
                 state.markSceneDirty();

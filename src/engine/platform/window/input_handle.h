@@ -94,6 +94,16 @@ class MouseInputHandle {
         bool isButtonPressed(int button) const;
 
         /**
+         * @brief Returns the absolute cursor X position in window pixels.
+         */
+        double getX() const { return m_x; }
+
+        /**
+         * @brief Returns the absolute cursor Y position in window pixels.
+         */
+        double getY() const { return m_y; }
+
+        /**
          * @brief Returns X movement delta (relative to last update).
          */
         double getDeltaX() const { return m_deltaX; }
@@ -170,13 +180,6 @@ class InputHandle {
          * @param window Pointer to the GLFW window to query input from.
          */
         void update(GLFWwindow* window);
-
-        /**
-         * @brief Query if a key (keyboard or mouse) is pressed.
-         * @param key Key code (interpreted as either keyboard or mouse, depending on context).
-         * @return True if pressed.
-         */
-        bool isPressed(int key) const;
 
         /**
          * @brief Returns const reference to the keyboard input handle.

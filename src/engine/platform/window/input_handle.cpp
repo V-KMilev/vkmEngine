@@ -84,11 +84,4 @@ void InputHandle::update(GLFWwindow* window) {
     m_mouseHandle.update(window);
 }
 
-bool InputHandle::isPressed(int key) const {
-    if (key >= GLFW_KEY_SPACE && key <= GLFW_KEY_LAST) {
-        return m_keyboardHandle.isKeyPressed(key);
-    }
-    return m_mouseHandle.isButtonPressed(key);
-}
-
 } // namespace Engine

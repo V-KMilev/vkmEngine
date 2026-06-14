@@ -40,9 +40,9 @@ struct Hierarchy {
  * unlinks the entity from its parent's child list. Leaves the entity's own Hierarchy
  * component in a disconnected (all-null) state but does NOT remove it.
  *
- * Used by Scene::destroyEntity to prevent dangling sibling/parent/child pointers in
- * surviving entities, and by HierarchyOperations::detachAndReparentChildren which
- * additionally cleans up the component itself.
+ * A Scene-internal helper for Scene::destroyEntity, which splices a doomed
+ * entity out without orphaning its descendants. Scene-graph editing goes
+ * through HierarchyOperations (setParent / removeFromParent) instead.
  */
 void detachFromHierarchy(Scene& scene, EntityId entity);
 
