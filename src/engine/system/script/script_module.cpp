@@ -20,10 +20,36 @@ namespace Engine {
 
 namespace {
 using RegisterFn = void (*)();
+
+// Best-effort sweep of stale "<stem>.loaded.*.<ext>" copies left by previous
+// runs (a clean exit removes its own, but a crash can leave one). A copy still
+// locked by a concurrent editor just fails to delete and is skipped.
+void removeStaleCopies(const std::filesystem::path& src) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const std::string prefix = src.stem().string() + ".loaded.";
+    const std::string ext = src.extension().string();
+    for (fs::directory_iterator it(src.parent_path(), ec), end; it != end; it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        if (name.rfind(prefix, 0) == 0 && it->path().extension() == ext) {
+            fs::remove(it->path(), ec);
+        }
+    }
+}
+} // namespace
+
+ScriptModule::~ScriptModule() {
+    // Unload before deleting so the copy file is no longer locked.
+    m_lib.unload();
+    if (!m_loadedCopyPath.empty()) {
+        std::error_code ec;
+        std::filesystem::remove(m_loadedCopyPath, ec);
+    }
 }
 
 bool ScriptModule::load(const std::string& modulePath) {
     m_modulePath = modulePath;
+    removeStaleCopies(std::filesystem::path(modulePath));
     return loadCopyAndRegister();
 }
 
@@ -38,16 +64,27 @@ bool ScriptModule::loadCopyAndRegister() {
     }
 
     // Best-effort: drop the previous (now-unloaded) copy so they don't pile up.
-    if (!m_loadedCopyPath.empty()) fs::remove(m_loadedCopyPath, ec);
+    if (!m_loadedCopyPath.empty()) {
+        fs::remove(m_loadedCopyPath, ec);
+        m_loadedCopyPath.clear();
+    }
 
     // Load a copy so the original stays writable for rebuilds (Windows locks a
-    // loaded DLL). Unique name per load avoids any lingering lock on the prior.
-    const fs::path copy = src.parent_path() /
-        (src.stem().string() + ".loaded." + std::to_string(m_reloadCounter++) + src.extension().string());
-    fs::copy_file(src, copy, fs::copy_options::overwrite_existing, ec);
-    if (ec) {
-        LOG_ERROR("Failed to copy game module '%s' -> '%s': %s",
-            m_modulePath.c_str(), copy.string().c_str(), ec.message().c_str());
+    // loaded DLL). Try successive names so a leftover/locked prior copy doesn't
+    // block us - clear the target first, then copy.
+    fs::path copy;
+    bool copied = false;
+    for (int attempt = 0; attempt < 16 && !copied; ++attempt) {
+        copy = src.parent_path() /
+            (src.stem().string() + ".loaded." + std::to_string(m_reloadCounter++) + src.extension().string());
+        fs::remove(copy, ec);
+        ec.clear();
+        fs::copy_file(src, copy, fs::copy_options::overwrite_existing, ec);
+        copied = !ec;
+    }
+    if (!copied) {
+        LOG_ERROR("Failed to copy game module '%s': %s",
+            m_modulePath.c_str(), ec.message().c_str());
         return false;
     }
     m_loadedCopyPath = copy.string();
