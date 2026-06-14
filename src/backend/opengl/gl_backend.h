@@ -20,9 +20,20 @@
 #include "data/gl_preview.h"
 
 namespace Engine {
+    class GLPass;
+    struct DrawableData;
+}
 
-class GLPass;
-struct DrawableData;
+namespace Engine {
+/**
+ * @brief An ordered pass plus its profiler/debug label. The label rides with
+ * the pass so the render loop names its CPU + GPU zones without a parallel name
+ * array to keep in sync.
+ */
+struct PassEntry {
+    const char*             name;
+    std::unique_ptr<GLPass> pass;
+};
 
 /**
  * @brief The OpenGL implementation of RenderBackend.
@@ -84,7 +95,7 @@ class GLBackend : public RenderBackend {
         std::vector<const DrawableData*> m_opaque;
         std::vector<const DrawableData*> m_transparent;
 
-        std::vector<std::unique_ptr<GLPass>> m_passes;
+        std::vector<PassEntry> m_passes;
 };
 
 } // namespace Engine

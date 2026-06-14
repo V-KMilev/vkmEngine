@@ -6,10 +6,13 @@
 
 #include "platform/window/window_manager.h"
 #include "system/render/render_backend.h"
+#include "debug/profiler.h"
 
 namespace Engine {
 
 void RenderSystem::update(FrameContext& ctx) {
+    PROFILE_SCOPE("RenderSystem");
+
     installPending(ctx);
     if (!m_backend || !ctx.visibility) return;
 

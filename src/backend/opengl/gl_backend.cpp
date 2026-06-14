@@ -2,6 +2,7 @@
 
 #include "gl_backend.h"
 
+#include <cstdint>
 #include <string>
 
 #include <GL/glew.h>
@@ -24,6 +25,8 @@
 #include "data/gl_material.h"
 #include "system/render/render_view.h"
 
+#include "debug/profiler_gl.h"
+
 namespace Engine {
 
 GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL) {}
@@ -34,6 +37,11 @@ bool GLBackend::init(WindowManager& window) {
     (void)window;  // GLEW + the GL context are created during Window creation;
                    // we draw into the already-current context. Presentation
                    // (buffer swap) stays in the engine loop, so we never swap.
+
+    // Register this GL context with the GPU profiler now that it is live; every
+    // PROFILE_GPU_SCOPE downstream times against it. A backend hot-swap re-runs
+    // init() and registers a second context, which is harmless.
+    PROFILE_GPU_CONTEXT();
 
     m_context.setClearColor({0.1f, 0.1f, 0.1f, 1.0f});
     m_context.setDefaultState();
@@ -65,16 +73,16 @@ bool GLBackend::init(WindowManager& window) {
     // transparent); screen-space reflections; camera motion blur over the
     // resolved scene; bloom; debug overlays (grid) over
     // the resolved HDR; then composite (tonemap + FXAA) to screen.
-    m_passes.push_back(std::make_unique<GLShadowPass>());
-    m_passes.push_back(std::make_unique<GLDepthPrePass>());
-    m_passes.push_back(std::make_unique<GLGTAOPass>());
-    m_passes.push_back(std::make_unique<GLSkyboxPass>());
-    m_passes.push_back(std::make_unique<GLForwardPass>());
-    m_passes.push_back(std::make_unique<GLSSRPass>());
-    m_passes.push_back(std::make_unique<GLMotionBlurPass>());
-    m_passes.push_back(std::make_unique<GLBloomPass>());
-    m_passes.push_back(std::make_unique<GLGridPass>());
-    m_passes.push_back(std::make_unique<GLCompositePass>());
+    m_passes.push_back({"Shadow",       std::make_unique<GLShadowPass>()});
+    m_passes.push_back({"DepthPrepass", std::make_unique<GLDepthPrePass>()});
+    m_passes.push_back({"GTAO",         std::make_unique<GLGTAOPass>()});
+    m_passes.push_back({"Skybox",       std::make_unique<GLSkyboxPass>()});
+    m_passes.push_back({"Forward",      std::make_unique<GLForwardPass>()});
+    m_passes.push_back({"SSR",          std::make_unique<GLSSRPass>()});
+    m_passes.push_back({"MotionBlur",   std::make_unique<GLMotionBlurPass>()});
+    m_passes.push_back({"Bloom",        std::make_unique<GLBloomPass>()});
+    m_passes.push_back({"Grid",         std::make_unique<GLGridPass>()});
+    m_passes.push_back({"Composite",    std::make_unique<GLCompositePass>()});
 
     // Reflection probes: the baker + shared cube-map arrays. Compiles shaders, so
     // build it here (context live).
@@ -102,6 +110,9 @@ void GLBackend::resize(uint32_t x, uint32_t y, uint32_t width, uint32_t height) 
 }
 
 void GLBackend::render(const RenderView& view, const ResourceManager& resources) {
+    PROFILE_SCOPE("GLBackend::render");
+    PROFILE_GPU_SCOPE("GPU.Frame");
+
     m_view.sync(view, resources);
     m_sceneHDR.resize(view.viewportWidth, view.viewportHeight);
     m_sceneColor.resize(view.viewportWidth, view.viewportHeight);
@@ -130,14 +141,26 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // them per fragment over the global IBL.
     ctx.probeCount = m_probes.bind(view);
 
-    for (const auto& pass : m_passes) {
-        pass->execute(ctx);
+    for (const auto& entry : m_passes) {
+        PROFILE_SCOPE_NAMED(entry.name);
+        PROFILE_GPU_SCOPE_NAMED(entry.name);
+        entry.pass->execute(ctx);
     }
+
+    // Per-frame counters for the profiler's plot view: how much the frame asked
+    // the GPU to draw. Watch these alongside the pass zones to correlate spikes.
+    PROFILE_PLOT("Render/Drawables",   static_cast<int64_t>(view.drawables.size()));
+    PROFILE_PLOT("Render/Opaque",      static_cast<int64_t>(m_opaque.size()));
+    PROFILE_PLOT("Render/Transparent", static_cast<int64_t>(m_transparent.size()));
+    PROFILE_PLOT("Render/Lights",      static_cast<int64_t>(view.lights.size()));
+    PROFILE_PLOT("Render/Probes",      static_cast<int64_t>(ctx.probeCount));
 
     // Frame end: re-bake probes that are new, moved, or version-bumped. The baker
     // rebinds the camera / light UBOs, harmless here - the next frame re-uploads
     // its own.
     m_probes.update(m_context, view, m_view, m_ibl);
+
+    PROFILE_GPU_COLLECT();
 }
 
 void GLBackend::partitionDrawables(const RenderView& view) {
