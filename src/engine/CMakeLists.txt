@@ -1,8 +1,6 @@
-# ============================================================================
-# Engine Core Library
-# CONFIGURE_DEPENDS lets the build re-glob on demand; adding/removing a
-# source file no longer needs a manual cmake reconfigure.
-# ============================================================================
+# EngineCore - ECS, resources, IO, platform, and the non-render systems.
+# CONFIGURE_DEPENDS re-globs on demand, so adding/removing a source file does
+# not need a manual reconfigure.
 file(GLOB_RECURSE ENGINECORE_SOURCES CONFIGURE_DEPENDS
     core/*.cpp
     ecs/*.cpp
@@ -23,12 +21,9 @@ file(GLOB_RECURSE ENGINECORE_SOURCES CONFIGURE_DEPENDS
 
 add_library(EngineCore STATIC ${ENGINECORE_SOURCES})
 
-target_include_directories(EngineCore PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine>
-)
+target_include_directories(EngineCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-# GLEW/GLFW include dirs for window.cpp (glew target uses old-style include_directories).
+# GLEW headers for window.cpp's glewInit (glew uses old-style include dirs).
 target_include_directories(EngineCore PRIVATE
     ${PROJECT_SOURCE_DIR}/modules/vkmGL/modules/glew/include
 )
@@ -41,6 +36,8 @@ target_link_libraries(EngineCore PUBLIC
 )
 target_link_libraries(EngineCore PRIVATE
     glew
+    vkm_warnings
+    BuildInfo          # io/screenshot.cpp resolves paths against APP_ROOT_DIR
 )
 
 target_compile_definitions(EngineCore PUBLIC
@@ -49,26 +46,22 @@ target_compile_definitions(EngineCore PUBLIC
 )
 
 # Tracy plumbing. The facade (debug/profiler.h) gates every macro on
-# VKM_PROFILER, so consumers don't need to include Tracy headers themselves.
-# TracyClient stays a PUBLIC link so backend/editor TUs that pull profile
-# macros via the facade get the symbols at link time.
+# VKM_PROFILER, so consumers never include Tracy headers themselves. TracyClient
+# stays a PUBLIC link so backend/editor TUs that pull profile macros via the
+# facade get the symbols at link time.
 if(VKM_PROFILER)
     target_compile_definitions(EngineCore PUBLIC VKM_PROFILER=1)
     target_link_libraries     (EngineCore PUBLIC TracyClient)
 endif()
 
-# ============================================================================
-# Engine Rendering Library
-# ============================================================================
+# EngineRendering - render system, backend-neutral interface, and render view.
 file(GLOB_RECURSE ENGINERENDERING_SOURCES CONFIGURE_DEPENDS system/render/*.cpp)
 
 add_library(EngineRendering STATIC ${ENGINERENDERING_SOURCES})
 
-target_include_directories(EngineRendering PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/vkmEngine>
-)
+target_include_directories(EngineRendering PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-target_link_libraries(EngineRendering PUBLIC
-    EngineCore
+target_link_libraries(EngineRendering
+    PUBLIC  EngineCore
+    PRIVATE vkm_warnings
 )
