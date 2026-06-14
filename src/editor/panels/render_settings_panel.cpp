@@ -6,6 +6,7 @@
 #include "ecs/scene.h"
 #include "ecs/component/reflection_probe.h"
 #include "system/render/render_system.h"
+#include "system/visibility/visibility_system.h"
 
 namespace Engine {
 
@@ -100,8 +101,23 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         }
     }
 
+    if (ImGui::CollapsingHeader("Culling", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // VisibilitySystem thresholds applied before anything reaches the
+        // render pipeline: entities past the distance, or smaller than the
+        // screen-size floor, are skipped. The cheapest FPS lever in a dense scene.
+        VisibilitySystem::Settings& vis = ec.visibilitySystem.getSettings();
+        drawPropertyLabel("Max Distance");
+        ImGui::DragFloat("##cullDist", &vis.maxDistance, 5.0f, 1.0f, 10000.0f, "%.0f");
+        drawPropertyLabel("Min Screen Size");
+        ImGui::SliderFloat("##cullPixels", &vis.minPixels, 0.0f, 32.0f, "%.1f px");
+        ImGui::TextDisabled("Min Screen Size 0 disables screen-size culling.");
+    }
+
     ImGui::Spacing();
-    if (ImGui::Button("Reset to Defaults")) s = RenderSettings{};
+    if (ImGui::Button("Reset to Defaults")) {
+        s = RenderSettings{};
+        ec.visibilitySystem.setSettings({});
+    }
 
     ImGui::End();
 }
