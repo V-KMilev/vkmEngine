@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "ecs/entity.h"
 
@@ -8,6 +9,8 @@ namespace Engine {
 
 class Scene;
 class ResourceManager;
+class InputHandle;
+class EventSystem;
 class BehaviorSystem;
 class BehaviorFieldVisitor;
 
@@ -17,11 +20,15 @@ class BehaviorFieldVisitor;
  * The engine's MonoBehaviour / ActorComponent analogue: subclass it, override
  * the lifecycle hooks, and attach instances to an entity through a
  * ScriptComponent. BehaviorSystem drives the hooks during play mode and injects
- * the engine context (entity, scene, resources) before onStart(), so hooks
- * reach the rest of the engine via m_scene / m_resources / m_entity.
+ * the engine context before onStart(), so hooks reach the engine via
+ * m_scene / m_resources / m_input / m_events and the spawn()/destroy() helpers.
  *
  * Non-copyable and non-movable: instances are owned by unique_ptr inside
  * ScriptComponent. Deep-copy for entity duplication goes through clone().
+ *
+ * Note on events: m_events->emit / enqueue are always safe. If a behavior
+ * subscribes, it must unsubscribe in onDestroy - a live subscription whose
+ * callback captures `this` would dangle once the instance is destroyed.
  */
 class Behavior {
     public:
@@ -62,27 +69,51 @@ class Behavior {
         /**
          * @brief Deep copy for entity duplication.
          *
-         * Copy only authored fields; the engine context (m_entity/m_scene/
-         * m_resources) and the started flag are rebound on the new instance by
-         * BehaviorSystem.
+         * Copy only authored fields; the engine context and started flag are
+         * rebound on the new instance by BehaviorSystem.
          */
         virtual std::unique_ptr<Behavior> clone() const = 0;
 
     protected:
-        EntityId         m_entity{};
-        Scene*           m_scene     = nullptr;
-        ResourceManager* m_resources = nullptr;
+        /// Create a new (empty) entity; add components to it via m_scene. Safe
+        /// to call from a hook, with one caveat: attaching a ScriptComponent to
+        /// the new entity mid-hook can reallocate the behavior storage being
+        /// iterated - do that kind of structural script wiring outside the hot
+        /// loop (e.g. at scene setup), not inline.
+        Entity spawn();
+
+        /// Destroy @p entity (and its subtree) - deferred until after the current
+        /// hook pass, so destroying your own entity is safe. Fires onDestroy on
+        /// the affected behaviors. Routed through HierarchyOperations.
+        void destroy(EntityId entity);
+
+        EntityId           m_entity{};
+        Scene*             m_scene     = nullptr;
+        ResourceManager*   m_resources = nullptr;
+        const InputHandle* m_input     = nullptr;  ///< Keyboard/mouse query (read-only).
+        EventSystem*       m_events    = nullptr;  ///< Gameplay pub/sub (emit/enqueue/subscribe).
 
     private:
         friend class BehaviorSystem;
 
         /// Injected by BehaviorSystem before onStart so hooks can reach the engine.
-        void bindContext(EntityId entity, Scene& scene, ResourceManager& resources) {
-            m_entity    = entity;
-            m_scene     = &scene;
-            m_resources = &resources;
+        void bindContext(
+            EntityId entity,
+            Scene& scene,
+            ResourceManager& resources,
+            const InputHandle& input,
+            EventSystem& events,
+            std::vector<EntityId>& pendingDestroy
+        ) {
+            m_entity         = entity;
+            m_scene          = &scene;
+            m_resources      = &resources;
+            m_input          = &input;
+            m_events         = &events;
+            m_pendingDestroy = &pendingDestroy;
         }
 
+        std::vector<EntityId>* m_pendingDestroy = nullptr;  ///< BehaviorSystem's deferred-destroy queue.
         bool m_started  = false;  ///< onStart already fired (managed by BehaviorSystem).
         bool m_disabled = false;  ///< Set after a hook threw; BehaviorSystem then skips it.
 };

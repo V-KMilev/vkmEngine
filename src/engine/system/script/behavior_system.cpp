@@ -3,21 +3,25 @@
 #include "system/script/behavior_system.h"
 
 #include <exception>
+#include <utility>
 
 #include "logger.h"
 
 #include "debug/behavior_error_log.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
+#include "platform/window/window_manager.h"
+#include "system/hierarchy/hierarchy_operations.h"
 #include "system/script/behavior.h"
 #include "system/script/script_component.h"
 
 namespace Engine {
 
-void BehaviorSystem::ensureStarted(Behavior& behavior, EntityId entity, Scene& scene, ResourceManager& resources) {
+void BehaviorSystem::ensureStarted(Behavior& behavior, EntityId entity, FrameContext& ctx) {
     if (behavior.m_started) return;
     try {
-        behavior.bindContext(entity, scene, resources);
+        behavior.bindContext(entity, ctx.scene, ctx.resources,
+                             ctx.window.getInputHandle(), m_events, m_pendingDestroy);
         behavior.onStart();
         behavior.m_started = true;
     } catch (const std::exception& e) {
@@ -47,6 +51,17 @@ void BehaviorSystem::fireDestroy(Behavior& behavior) {
     }
 }
 
+void BehaviorSystem::drainPendingDestroy(Scene& scene) {
+    if (m_pendingDestroy.empty()) return;
+    // Swap out so destroys requested from within onDestroy land in fresh
+    // storage and drain next pass instead of invalidating this iteration.
+    std::vector<EntityId> pending;
+    pending.swap(m_pendingDestroy);
+    for (EntityId entity : pending) {
+        if (scene.isAlive(entity)) HierarchyOperations::destroyHierarchy(scene, entity);
+    }
+}
+
 void BehaviorSystem::init(FrameContext& ctx) {
     m_scene = &ctx.scene;
 }
@@ -60,18 +75,20 @@ void BehaviorSystem::update(FrameContext& ctx) {
 
     Scene& scene = ctx.scene;
     auto* storage = scene.storage<ScriptComponent>();
-    if (!storage) return;
+    if (storage) {
+        const float dt = ctx.simDeltaTime;
+        storage->forEach([&](uint32_t entityIdx, ScriptComponent& sc) {
+            const EntityId id{entityIdx, scene.generationOf(entityIdx)};
+            for (auto& behavior : sc.behaviors) {
+                if (!behavior || behavior->m_disabled) continue;
+                ensureStarted(*behavior, id, ctx);
+                if (behavior->m_disabled) continue;  // onStart threw
+                invoke(*behavior, "onUpdate", &Behavior::onUpdate, dt);
+            }
+        });
+    }
 
-    const float dt = ctx.simDeltaTime;
-    storage->forEach([&](uint32_t entityIdx, ScriptComponent& sc) {
-        const EntityId id{entityIdx, scene.generationOf(entityIdx)};
-        for (auto& behavior : sc.behaviors) {
-            if (!behavior || behavior->m_disabled) continue;
-            ensureStarted(*behavior, id, scene, ctx.resources);
-            if (behavior->m_disabled) continue;  // onStart threw
-            invoke(*behavior, "onUpdate", &Behavior::onUpdate, dt);
-        }
-    });
+    drainPendingDestroy(scene);
 }
 
 void BehaviorSystem::fixedUpdate(FrameContext& ctx) {
@@ -81,20 +98,22 @@ void BehaviorSystem::fixedUpdate(FrameContext& ctx) {
     // only runs while playing (or per queued step) - no explicit pause gate.
     Scene& scene = ctx.scene;
     auto* storage = scene.storage<ScriptComponent>();
-    if (!storage) return;
+    if (storage) {
+        const float dt = ctx.fixedDeltaTime;
+        storage->forEach([&](uint32_t entityIdx, ScriptComponent& sc) {
+            const EntityId id{entityIdx, scene.generationOf(entityIdx)};
+            for (auto& behavior : sc.behaviors) {
+                if (!behavior || behavior->m_disabled) continue;
+                // fixedUpdate runs before update each frame; onStart fires here
+                // if this is the instance's first tick.
+                ensureStarted(*behavior, id, ctx);
+                if (behavior->m_disabled) continue;
+                invoke(*behavior, "onFixedUpdate", &Behavior::onFixedUpdate, dt);
+            }
+        });
+    }
 
-    const float dt = ctx.fixedDeltaTime;
-    storage->forEach([&](uint32_t entityIdx, ScriptComponent& sc) {
-        const EntityId id{entityIdx, scene.generationOf(entityIdx)};
-        for (auto& behavior : sc.behaviors) {
-            if (!behavior || behavior->m_disabled) continue;
-            // fixedUpdate runs before update each frame; onStart fires here if
-            // this is the instance's first tick.
-            ensureStarted(*behavior, id, scene, ctx.resources);
-            if (behavior->m_disabled) continue;
-            invoke(*behavior, "onFixedUpdate", &Behavior::onFixedUpdate, dt);
-        }
-    });
+    drainPendingDestroy(scene);
 }
 
 void BehaviorSystem::shutdown() {
