@@ -31,9 +31,9 @@ endif()
 # The game module: gameplay behaviors compiled as a shared library the editor
 # dlopen's for hot-reload. Compiles against EngineHeaders (include-only) and
 # resolves engine symbols from this exe.
-file(GLOB_RECURSE GAME_MODULE_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/game/*.cpp)
+file(GLOB_RECURSE GAME_MODULE_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/game/*.cpp)
 add_library(game_module SHARED ${GAME_MODULE_SOURCES})
-target_include_directories(game_module PRIVATE ${CMAKE_SOURCE_DIR}/src/game)
+target_include_directories(game_module PRIVATE ${CMAKE_SOURCE_DIR}/game)
 target_link_libraries(game_module PRIVATE EngineHeaders vkm_warnings)
 if(WIN32)
     target_link_libraries(game_module PRIVATE engine_editor)
