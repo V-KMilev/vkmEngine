@@ -40,7 +40,7 @@ EngineAppSystems setupEngineApp(Engine& engine) {
     // integrate it. Takes the EventSystem to hand behaviors gameplay pub/sub.
     engine.addSystem<BehaviorSystem>  (SystemStage::Simulation, eventSystem);
     engine.addSystem<AnimationSystem> (SystemStage::Simulation);
-    engine.addSystem<PhysicsSystem>   (SystemStage::Simulation);
+    engine.addSystem<PhysicsSystem>   (SystemStage::Simulation, eventSystem);
     engine.addSystem<HierarchySystem> (SystemStage::Transform);
     auto& visibilitySystem = engine.addSystem<VisibilitySystem>(SystemStage::Visibility);
     auto& renderSystem     = engine.addSystem<RenderSystem>    (SystemStage::Render);

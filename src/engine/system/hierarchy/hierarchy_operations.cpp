@@ -11,7 +11,6 @@
 #include "platform/threading/thread_pool.h"
 
 #include "ecs/component/world_transform.h"
-#include "system/script/behavior_system.h"
 
 namespace Engine::HierarchyOperations {
 
@@ -295,11 +294,9 @@ void destroyHierarchy(Scene& scene, EntityId entity) {
     // Detach from parent before destruction
     removeFromParent(scene, entity);
 
-    // Fire onDestroy on any running behaviors before their ScriptComponent is
-    // torn down (this is the chokepoint for entity + subtree deletion).
-    BehaviorSystem::destroyEntityBehaviors(scene, entity);
-
-    // Destroy the entity itself
+    // Destroy the entity itself. Per-entity destroy hooks (e.g. script
+    // onDestroy) fire from Scene::destroyEntity, so every destroy path is
+    // covered without this op knowing about them.
     scene.destroyEntity(Entity(entity));
 }
 

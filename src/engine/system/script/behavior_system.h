@@ -4,7 +4,8 @@
 
 #include "core/system.h"
 #include "ecs/entity.h"
-#include "system/script/behavior.h"  // Behavior (pointer-to-member hook params)
+#include "system/physics/physics_events.h"  // CollisionEvent / TriggerEvent
+#include "system/script/behavior.h"          // Behavior (pointer-to-member hook params)
 
 namespace Engine {
 
@@ -22,13 +23,15 @@ class EventSystem;
  * and calls onStart(), then onUpdate(simDeltaTime) every frame and
  * onFixedUpdate(fixedDeltaTime) every fixed tick.
  *
- * Behaviors reach the engine through the injected context (scene, resources,
- * input, events) and spawn()/destroy() - destroy is deferred and drained here
- * after the hook pass, so a behavior may destroy its own entity safely.
+ * Subscribes to physics CollisionEvent / TriggerEvent and dispatches them to
+ * the involved entities' onCollision / onTrigger hooks during update (after
+ * onStart, before the deferred-destroy drain - so a collision handler may
+ * destroy its own entity safely).
  *
  * Every hook runs under a catch net: a throwing behavior is logged to
  * BehaviorErrorLog and disabled, never fatal. onDestroy fires via endSession()
- * (play stop / shutdown) and destroyEntityBehaviors() (entity deletion).
+ * (play stop / shutdown) and destroyEntityBehaviors() (entity deletion, wired
+ * through Scene::setOnEntityDestroy in init()).
  */
 class BehaviorSystem : public System {
     public:
@@ -49,13 +52,13 @@ class BehaviorSystem : public System {
         void shutdown() override;
 
         /**
-         * @brief Fire onDestroy on every started behavior in @p scene and reset
-         *        their started/disabled flags.
+         * @brief Fire onDestroy on every started behavior in @p scene, drop their
+         *        subscriptions, and reset their started/disabled flags.
          *
          * Tears down a whole scene's running behaviors: on play stop (before the
-         * snapshot swaps the played scene away) and at shutdown. Static because
-         * the editor's stop path has no BehaviorSystem handle - friendship with
-         * Behavior is class-wide, so a static reaches its flags.
+         * snapshot swaps the played scene away) and at shutdown (while the
+         * EventSystem is still alive). Static because the editor's stop path has
+         * no BehaviorSystem handle - friendship with Behavior is class-wide.
          */
         static void endSession(Scene& scene);
 
@@ -63,31 +66,38 @@ class BehaviorSystem : public System {
          * @brief Fire onDestroy on @p entity's started behaviors, just before
          *        its ScriptComponent is destroyed (entity deletion).
          *
-         * Called from HierarchyOperations::destroyHierarchy - the chokepoint for
-         * entity + subtree destruction. A no-op if the entity has no started
-         * behaviors (e.g. deleted in edit mode, where nothing ever started).
+         * Wired to Scene::setOnEntityDestroy() in init(), so it covers every
+         * destroy path (raw Scene::destroyEntity and destroyHierarchy alike). A
+         * no-op if the entity has no started behaviors.
          */
         static void destroyEntityBehaviors(Scene& scene, EntityId entity);
 
     private:
         /// Fire onStart once (binding the full context first), catching + disabling on throw.
         void ensureStarted(Behavior& behavior, EntityId entity, FrameContext& ctx);
+        /// Deliver onCollision/onTrigger (a void(EntityId) hook) to a target entity's started behaviors.
+        void dispatchEntityHook(Scene& scene, EntityId target, EntityId other,
+                                const char* hookName, void (Behavior::*hook)(EntityId));
         /// Apply queued destroy() requests via destroyHierarchy, after the hook pass.
         void drainPendingDestroy(Scene& scene);
-        /// Invoke a per-frame hook (onUpdate / onFixedUpdate), catching + disabling on throw.
-        static void invoke(Behavior& behavior, const char* hookName, void (Behavior::*hook)(float), float dt);
+        /// Run a hook body under the catch net: log + disable the behavior on throw.
+        template<typename Fn>
+        static void guard(Behavior& behavior, const char* hookName, Fn&& fn);
         /// Fire onDestroy on a started behavior, catching (but not disabling - it's going away).
         static void fireDestroy(Behavior& behavior);
 
-        EventSystem& m_events;  ///< Injected into behaviors for gameplay pub/sub.
+        EventSystem& m_events;  ///< Injected into behaviors; also the bus we listen on.
+
+        /// Physics events collected via subscriptions, dispatched to hooks in update().
+        std::vector<CollisionEvent> m_collisions;
+        std::vector<TriggerEvent>   m_triggers;
 
         /// Entities behaviors asked to destroy() this pass; drained after the
         /// hook loop so a self-destroy can't free its ScriptComponent mid-iterate.
         std::vector<EntityId> m_pendingDestroy;
 
         /// Cached in init() so shutdown() (which gets no FrameContext) can still
-        /// walk the scene. The Scene object is stable for the engine's lifetime -
-        /// scene swaps replace its contents, not the object.
+        /// walk the scene. The Scene object is stable for the engine's lifetime.
         Scene* m_scene = nullptr;
 };
 

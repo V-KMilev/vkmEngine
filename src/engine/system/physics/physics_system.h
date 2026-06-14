@@ -9,6 +9,8 @@
 
 namespace Engine {
 
+class EventSystem;
+
 /**
  * @brief Fixed-step rigid-body dynamics: integrates velocities, detects and
  *        resolves pairwise collisions, and writes poses back to Transform.
@@ -18,13 +20,17 @@ namespace Engine {
  * same frame. All work runs in fixedUpdate() against ctx.fixedDeltaTime; update()
  * is a no-op.
  *
+ * Emits CollisionEvent / TriggerEvent (enqueued, so listeners fire next flush,
+ * not mid-solve) for overlapping pairs - gameplay reacts via the EventSystem or
+ * the behavior onCollision/onTrigger hooks.
+ *
  * Bodies are assumed to be hierarchy roots, so an entity's local Transform equals
  * its world pose. Parenting a physics body is unsupported in this pass; children
  * parented *to* a body still follow it (markDirty cascades into the subtree).
  */
 class PhysicsSystem : public System {
     public:
-        PhysicsSystem() = default;
+        explicit PhysicsSystem(EventSystem& events) : m_events(events) {}
         ~PhysicsSystem() override = default;
 
         PhysicsSystem(const PhysicsSystem& other) = delete;
@@ -40,6 +46,8 @@ class PhysicsSystem : public System {
         bool hasFixedUpdate() const override { return true; }
 
     private:
+        EventSystem& m_events;  ///< Collision/trigger events are enqueued here.
+
         std::vector<EntityId>        m_bodies;       ///< Live body entities this tick (indexes m_solverBodies)
         std::vector<PhysicsBody>     m_solverBodies; ///< Cached dynamic state, aligned with m_bodies
         std::vector<ContactManifold> m_manifolds;    ///< Reused across ticks; clear() keeps capacity
