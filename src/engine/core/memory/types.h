@@ -1,7 +1,7 @@
 #pragma once
 
-#include <atomic>
 #include <cstdint>
+#include <typeinfo>
 
 namespace Engine {
 
@@ -55,23 +55,30 @@ struct GenerationIndex {
 static_assert(sizeof(GenerationIndex) == 4, "GenerationIndex must be 4 bytes");
 
 /**
- * @brief Compile-time type-to-integer mapping for type-erased registries.
+ * @brief Type-to-integer mapping for type-erased registries.
  *
- * Each unique type T gets a unique TypeId on first call to typeId<T>().
- * IDs are stable within a single program execution but not across runs.
+ * Each unique type T gets a unique TypeId on first call to typeId<T>(). IDs are
+ * stable within a single program execution but not across runs.
+ *
+ * The id is resolved through a single RTTI-keyed registry (typeIdFromInfo,
+ * defined once in EngineCore) rather than a per-template counter, so the same
+ * type maps to the same id across module boundaries - required so hot-reloaded
+ * game code in a separate DLL agrees with the engine on component / event /
+ * resource type ids.
  */
 using TypeId = uint32_t;
 
 namespace detail {
-    inline TypeId nextTypeId() {
-        static std::atomic<TypeId> counter{0};
-        return counter.fetch_add(1, std::memory_order_relaxed);
-    }
+    /// Stable id for @p info from one process-wide registry (single definition
+    /// in EngineCore - one instance even when EngineCore is a shared library).
+    TypeId typeIdFromInfo(const std::type_info& info);
 }
 
 template<typename T>
 TypeId typeId() {
-    static const TypeId id = detail::nextTypeId();
+    // Cached per (module, T); the value comes from the shared registry, so all
+    // modules agree even though each caches its own local.
+    static const TypeId id = detail::typeIdFromInfo(typeid(T));
     return id;
 }
 
