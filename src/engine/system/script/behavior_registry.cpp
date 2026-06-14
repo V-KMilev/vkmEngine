@@ -41,4 +41,8 @@ std::vector<std::string> BehaviorRegistry::names() const {
     return out;
 }
 
+void BehaviorRegistry::clear() {
+    m_factories.clear();
+}
+
 } // namespace Engine

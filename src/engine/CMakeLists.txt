@@ -17,6 +17,7 @@ file(GLOB_RECURSE ENGINECORE_SOURCES CONFIGURE_DEPENDS
     system/io/*.cpp
     platform/window/*.cpp
     platform/threading/*.cpp
+    platform/library/*.cpp
     debug/*.cpp
 )
 
@@ -53,6 +54,30 @@ target_compile_definitions(EngineCore PUBLIC
 if(VKM_PROFILER)
     target_compile_definitions(EngineCore PUBLIC VKM_PROFILER=1)
     target_link_libraries     (EngineCore PUBLIC TracyClient)
+endif()
+
+# EngineHeaders - an include-only (INTERFACE) view of EngineCore's public API:
+# the engine include root plus the third-party include dirs and compile-defs
+# EngineCore exposes to its consumers. The hot-reloadable game module compiles
+# against this but must NOT link EngineCore's objects - it resolves engine
+# symbols from the host exe at load, and a second EngineCore copy would
+# duplicate the typeId registry / singletons. The GLM_* defs are mandatory:
+# glm types cross the exe/module boundary (e.g. CollisionEvent), so both sides
+# must agree on glm's layout.
+add_library(EngineHeaders INTERFACE)
+target_include_directories(EngineHeaders INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    $<TARGET_PROPERTY:glm,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:vkmLog,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:nlohmann_json,INTERFACE_INCLUDE_DIRECTORIES>
+)
+target_compile_definitions(EngineHeaders INTERFACE
+    GLM_ENABLE_EXPERIMENTAL
+    GLM_FORCE_INTRINSICS
+)
+if(VKM_PROFILER)
+    target_compile_definitions(EngineHeaders INTERFACE VKM_PROFILER=1)
 endif()
 
 # EngineRendering - render system, backend-neutral interface, and render view.

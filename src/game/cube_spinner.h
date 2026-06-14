@@ -7,10 +7,6 @@ namespace Engine {
 /**
  * @brief Example behavior: spins its entity about the world up axis.
  *
- * The vertical-slice script that proves the Behavior lifecycle end to end.
- * onUpdate rotates the entity's Transform every simulation frame, so in play
- * mode the cube spins and Stop restores the authored orientation.
- *
  * typeName / visitFields / clone come from ReflectedBehavior via the
  * VKM_REFLECT markup below - the only authored state is degreesPerSecond.
  */
@@ -26,7 +22,7 @@ class CubeSpinner : public ReflectedBehavior<CubeSpinner> {
 
 } // namespace Engine
 
-// Leading :: is required: this header is included alongside core/engine.h, so
+// Leading :: is required: this header is compiled alongside core/engine.h, so
 // inside the macro's `namespace Engine::Reflect` the bare name `Engine` would
 // bind to the class Engine::Engine, not the namespace. Fully-qualify it.
 VKM_REFLECT_BEGIN(::Engine::CubeSpinner)

@@ -89,6 +89,12 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
                 state.showPreferences)) {
             state.showPreferences = !state.showPreferences;
         }
+        ImGui::Separator();
+        // Hot-reload the gameplay module: rebuild game.dll, then click this to
+        // swap the new code in without restarting (consumed by EditorSystem).
+        if (ImGui::MenuItem("Reload Scripts")) {
+            state.requestScriptReload = true;
+        }
         ImGui::EndMenu();
     }
 

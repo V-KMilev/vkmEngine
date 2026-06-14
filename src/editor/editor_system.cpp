@@ -26,6 +26,7 @@
 #include "platform/window/window_manager.h"
 #include "system/camera/camera_controller.h"
 #include "system/render/render_system.h"
+#include "system/script/script_module.h"
 #include "system/render/render_view.h"
 #include "ui/editor_theme.h"
 #include "io/project_paths.h"
@@ -38,7 +39,8 @@ EditorSystem::EditorSystem(
     CameraController& cameraController,
     VisibilitySystem& visibilitySystem,
     RenderSystem& renderSystem,
-    EventSystem& events
+    EventSystem& events,
+    ScriptModule& scriptModule
 )
     : m_engine(engine)
     , m_window(window)
@@ -46,6 +48,7 @@ EditorSystem::EditorSystem(
     , m_renderSystem(renderSystem)
     , m_visibilitySystem(visibilitySystem)
     , m_events(events)
+    , m_scriptModule(scriptModule)
     , m_materialPreviews(renderSystem)
     , m_sceneIO(events, cameraController, renderSystem)
 {
@@ -170,6 +173,14 @@ void EditorSystem::update(FrameContext& ctx) {
                 "Behavior '" + recent.front().behaviorName +
                 "' threw and was disabled - see Bottom > Behavior Errors");
         }
+    }
+
+    // Hot-reload the gameplay module on request (Edit > Reload Scripts):
+    // serialize behaviors, swap game.dll, recreate them - entities untouched.
+    if (m_state.requestScriptReload) {
+        m_state.requestScriptReload = false;
+        m_scriptModule.reload(ctx.scene);
+        m_state.pushToast(EditorState::ToastKind::Info, "Reloaded scripts");
     }
 
     // Intercept window-close while the scene is dirty: clear shouldClose,
