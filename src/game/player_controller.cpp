@@ -1,4 +1,4 @@
-#include "behaviors/player_controller.h"
+#include "player_controller.h"
 
 #include <glm/glm.hpp>
 

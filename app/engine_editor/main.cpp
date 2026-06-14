@@ -11,6 +11,8 @@
 #include "asset_registration.h"
 #include "engine_app.h"
 #include "editor_system.h"
+#include "platform/library/dynamic_library.h"
+#include "system/script/script_module.h"
 
 int main() {
     try {
@@ -32,6 +34,18 @@ int main() {
         // recreate procedural meshes + folder materials on cold start.
         Engine::registerBuiltinAssetFactories();
 
+        // Load the hot-reloadable gameplay module: it registers behaviors into
+        // the engine's registry (resolved from this exe). Declared before the
+        // Engine so it outlives it - behaviors are destroyed during Engine
+        // teardown and their code must still be loaded then. Must precede
+        // setupEngineApp, whose default scene creates behaviors via the registry.
+        Engine::ScriptModule scriptModule;
+        const std::string modulePath =
+            std::string(GAME_MODULE_DIR) + "/" + Engine::DynamicLibrary::platformName("game");
+        if (!scriptModule.load(modulePath)) {
+            LOG_ERROR("Game module failed to load from '%s' - scripts unavailable", modulePath.c_str());
+        }
+
         Engine::Engine engine;
         auto& window = engine.getWindow();
         window.createWindow("VKM Engine");
@@ -48,7 +62,8 @@ int main() {
             sys.camera,
             sys.visibility,
             sys.render,
-            sys.events
+            sys.events,
+            scriptModule
         );
 
         // The editor opens in Edit mode: simulation is frozen until the user

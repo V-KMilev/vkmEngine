@@ -34,6 +34,7 @@ class EventSystem;
 class Scene;
 class VisibilitySystem;
 class RenderSystem;
+class ScriptModule;
 
 /**
  * @brief Top-level editor System: owns the panel set, the workspace shell,
@@ -57,7 +58,8 @@ class EditorSystem : public System {
             CameraController& cameraController,
             VisibilitySystem& visibilitySystem,
             RenderSystem& renderSystem,
-            EventSystem& events
+            EventSystem& events,
+            ScriptModule& scriptModule
         );
         ~EditorSystem() override;
 
@@ -96,6 +98,7 @@ class EditorSystem : public System {
         RenderSystem&     m_renderSystem;
         VisibilitySystem& m_visibilitySystem;
         EventSystem&      m_events;
+        ScriptModule&     m_scriptModule;
 
         MaterialPreviewSession m_materialPreviews;
 

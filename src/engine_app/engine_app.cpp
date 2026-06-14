@@ -21,14 +21,13 @@
 #include "gl_backend.h"
 
 #include "default_scene.h"
-#include "game_behaviors.h"
 
 namespace Engine {
 
 EngineAppSystems setupEngineApp(Engine& engine) {
-    // Gameplay behaviors register by name so scene I/O (load / play-mode
-    // restore) can recreate them; do it before the default scene + any load.
-    registerGameBehaviors();
+    // Gameplay behaviors must already be registered (by the caller: the runtime
+    // static-links + calls registerGameBehaviors(); the editor loads the game
+    // module first) - the default scene below creates them through the registry.
 
     auto& cameraController = engine.addSystem<CameraController>(SystemStage::Input);
     auto& eventSystem      = engine.addSystem<EventSystem>     (SystemStage::Simulation);

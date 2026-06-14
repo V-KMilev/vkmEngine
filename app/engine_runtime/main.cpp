@@ -10,6 +10,7 @@
 #include "core/engine.h"
 #include "asset_registration.h"
 #include "engine_app.h"
+#include "game_behaviors.h"
 
 int main() {
     try {
@@ -30,6 +31,11 @@ int main() {
         // Asset factories must be registered before scene I/O can
         // recreate procedural meshes + folder materials on cold start.
         Engine::registerBuiltinAssetFactories();
+
+        // The runtime static-links the gameplay module (no hot-reload), so it
+        // registers behaviors directly. Must precede setupEngineApp's default
+        // scene, which creates behaviors through the registry.
+        Engine::registerGameBehaviors();
 
         Engine::Engine engine;
         auto& window = engine.getWindow();

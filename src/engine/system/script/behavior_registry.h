@@ -46,6 +46,10 @@ class BehaviorRegistry {
         /// All registered names, sorted - for the editor's add-behavior menu.
         std::vector<std::string> names() const;
 
+        /// Drop every registered factory. Used before unloading the game module
+        /// on hot-reload, since the factories close over module code.
+        void clear();
+
     private:
         BehaviorRegistry() = default;
 

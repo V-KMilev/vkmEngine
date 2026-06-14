@@ -4,6 +4,7 @@ add_executable(engine_runtime main.cpp)
 
 target_link_libraries(engine_runtime PRIVATE
     EngineApp
+    game
     BuildInfo
     vkm_warnings
 )
