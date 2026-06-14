@@ -25,7 +25,7 @@ class Scene;
 class ScriptModule {
     public:
         ScriptModule() = default;
-        ~ScriptModule() = default;
+        ~ScriptModule();
 
         ScriptModule(const ScriptModule& other) = delete;
         ScriptModule& operator=(const ScriptModule& other) = delete;
