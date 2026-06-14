@@ -1027,7 +1027,20 @@ struct (subclasses are loaded/saved generically by name), but it owns a
 non-trivial unique_ptr. Do not copy this pattern lightly — if your type
 needs Rule-of-5, it's almost always a class.
 
-### 13.2 Backend flat includes
+### 13.2 `ScriptComponent` — move-only component
+
+[`src/engine/system/script/script_component.h`](../../src/engine/system/script/script_component.h)
+holds `std::vector<std::unique_ptr<Behavior>>`, making it **move-only** — the
+one ECS component that is not a trivially-copyable plain aggregate. It stores
+fine because `SparseSet<T>` already uses a `std::move` path for non-trivially-
+copyable types (swap-and-pop), and the serializer's loader moves the staged
+value into the scene. Deep copy goes through `Behavior::clone()`, not the
+deleted implicit copy.
+
+Do not generalise from this: a component should be a plain data struct unless,
+like this one, it must own polymorphic instances with no plainer representation.
+
+### 13.3 Backend flat includes
 
 Files under `src/backend/opengl/` use **flat `gl_`-prefixed includes**
 (`#include "gl_backend.h"`) instead of module-qualified paths. The backend
@@ -1035,13 +1048,13 @@ is a single internal compilation unit; the flat form keeps backend-local
 includes short. Engine code never reaches into the backend — it only sees
 `RenderBackend` and friends through engine headers.
 
-### 13.3 `LOG_INFO("---- ... ----")`
+### 13.4 `LOG_INFO("---- ... ----")`
 
 Decorative separators are forbidden in source comments but allowed inside
 **runtime log strings** (boot banner, build info dump). They are visible
 output, not code structure.
 
-### 13.4 `#define VKM_LOG_CATEGORY` precedes the own-header
+### 13.5 `#define VKM_LOG_CATEGORY` precedes the own-header
 
 §4 says the corresponding header is always the first include. The single
 exception is `#define VKM_LOG_CATEGORY "..."`, which must come BEFORE the

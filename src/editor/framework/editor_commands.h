@@ -150,6 +150,11 @@ struct EntitySnapshot {
     std::optional<Rigidbody>       rigidbody;
     std::optional<Collider>        collider;
     std::optional<ReflectionProbe> reflectionProbe;
+    /// ScriptComponent is move-only, so it can't be stored as a value here -
+    /// it's kept as its serialized JSON (type names + reflected fields) and
+    /// recreated on apply via the registry-backed ComponentSerializer. Keeps
+    /// EntitySnapshot copyable.
+    std::optional<std::string>     scriptJson;
 
     static EntitySnapshot capture(const Scene& scene, EntityId id);
     void apply(Scene& scene, EntityId id) const;

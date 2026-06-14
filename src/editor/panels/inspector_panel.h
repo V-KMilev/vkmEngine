@@ -49,6 +49,7 @@ class InspectorPanel {
         void drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id);
         void drawWorldInspector(EditorContext& ec);
         void drawAnimationSection(Scene& scene, EditorState& state, EntityId id);
+        void drawScriptSection(Scene& scene, EditorState& state, EntityId id);
         void drawHierarchySection(Scene& scene, EditorState& state, EntityId id);
         void drawAddComponentMenu(Scene& scene, EditorState& state, EntityId id);
 

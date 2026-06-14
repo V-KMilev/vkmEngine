@@ -15,6 +15,7 @@
 #include "logger.h"
 
 #include "core/system.h"
+#include "debug/behavior_error_log.h"
 #include "debug/profiler.h"
 #include "ecs/component/name.h"
 #include "ecs/component/physics_world.h"
@@ -156,6 +157,20 @@ void EditorSystem::update(FrameContext& ctx) {
     syncWindowTitle(ctx.window, m_sceneIO.path(), m_state.sceneDirty);
 
     m_materialPreviews.onFrameBegin();
+
+    // Surface newly-thrown behavior errors as a toast (the persistent list is
+    // in Bottom > Behavior Errors). totalPushed ignores repeats, so a behavior
+    // that throws then gets disabled toasts exactly once.
+    if (const unsigned long long total = BehaviorErrorLog::get().totalPushed();
+            total > m_lastBehaviorErrorTotal) {
+        m_lastBehaviorErrorTotal = total;
+        const auto recent = BehaviorErrorLog::get().snapshot();
+        if (!recent.empty()) {
+            m_state.pushToast(EditorState::ToastKind::Error,
+                "Behavior '" + recent.front().behaviorName +
+                "' threw and was disabled - see Bottom > Behavior Errors");
+        }
+    }
 
     // Intercept window-close while the scene is dirty: clear shouldClose,
     // open the save-on-quit modal next frame. A clean scene closes through
@@ -449,7 +464,7 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
             m_gizmoOverlay.drawSelectionOutline(ec);
             m_gizmoOverlay.drawTransformGizmo(ec);
             m_viewportToolbar.draw(ec);
-            m_playbar.draw(ec);
+            m_playbar.draw(ec, m_sceneIO);
             if (!m_viewportToolbar.isHovered() && !m_playbar.isHovered())
                 m_gizmoOverlay.handleViewportPick(ec);
         } else {

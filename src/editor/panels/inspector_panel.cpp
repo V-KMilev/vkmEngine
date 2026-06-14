@@ -26,6 +26,10 @@
 #include "io/project_paths.h"            // ProjectPaths::root for the probe HDR browse
 #include "resource/resource_manager.h"
 #include "system/physics/collider_fit.h"
+#include "system/script/behavior.h"
+#include "system/script/behavior_field_visitor.h"
+#include "system/script/behavior_registry.h"
+#include "system/script/script_component.h"
 #include "system/visibility/bounds_utils.h"
 
 namespace Engine {
@@ -44,6 +48,45 @@ const ImVec4 ACCENT_PHYSICS   = ImVec4(0.36f, 0.78f, 0.45f, 1.0f);
 const ImVec4 ACCENT_COLLIDER  = ImVec4(0.25f, 0.65f, 0.40f, 1.0f);
 const ImVec4 ACCENT_PROBE     = ImVec4(0.30f, 0.62f, 0.92f, 1.0f);  // reflection probe (blue)
 const ImVec4 ACCENT_ENV       = ImVec4(0.45f, 0.66f, 0.95f, 1.0f);  // environment / skybox (sky blue)
+const ImVec4 ACCENT_SCRIPT    = ImVec4(0.85f, 0.45f, 0.58f, 1.0f);  // script / behavior (rose)
+
+// Generic reflected-field -> ImGui inspector. The editor only sees a Behavior*,
+// so a behavior's authored fields are edited through this visitor (the same
+// bridge serialization uses). One DragFloat/Checkbox/etc. per field type;
+// `changed` is set the frame any field is edited.
+class BehaviorFieldInspector : public BehaviorFieldVisitor {
+    public:
+        bool changed = false;
+
+        void field(const char* name, float& v) override {
+            drawPropertyLabel(name);
+            ImGui::SetNextItemWidth(-1.0f);
+            if (ImGui::DragFloat(widgetId(name), &v, 0.1f)) changed = true;
+        }
+        void field(const char* name, int& v) override {
+            drawPropertyLabel(name);
+            ImGui::SetNextItemWidth(-1.0f);
+            if (ImGui::DragInt(widgetId(name), &v)) changed = true;
+        }
+        void field(const char* name, bool& v) override {
+            drawPropertyLabel(name);
+            if (ImGui::Checkbox(widgetId(name), &v)) changed = true;
+        }
+        void field(const char* name, glm::vec3& v) override {
+            drawPropertyLabel(name);
+            ImGui::SetNextItemWidth(-1.0f);
+            if (ImGui::DragFloat3(widgetId(name), glm::value_ptr(v), 0.1f)) changed = true;
+        }
+
+    private:
+        // Hidden-label id for the widget; uniqueness across behaviors comes from
+        // the per-behavior PushID in drawScriptSection.
+        const char* widgetId(const char* name) {
+            snprintf(m_id, sizeof(m_id), "##%s", name);
+            return m_id;
+        }
+        char m_id[80] = {};
+};
 
 // Equirect HDRs offered by the Environment card, discovered under assets/envs.
 // Paths stay relative (the IBL baker loads them relative to the working dir),
@@ -207,6 +250,7 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<Camera>(id))     drawCameraSection(scene, state, id);
     if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, state, id);
     if (scene.has<Animation>(id))  drawAnimationSection(scene, state, id);
+    if (scene.has<ScriptComponent>(id)) drawScriptSection(scene, state, id);
     if (scene.has<Hierarchy>(id))  drawHierarchySection(scene, state, id);
 
     ImGui::Spacing();
@@ -271,6 +315,12 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
             scene.add(Entity{id}, a);
             state.commands.push(std::make_unique<AddComponentCommand<Animation>>(
                 id, std::move(a), "Add Animation"));
+            state.markSceneDirty();
+        }
+        // ScriptComponent is move-only, so it can't ride the (value-copying)
+        // AddComponentCommand - add it live, like the World/Physics edits.
+        if (!scene.has<ScriptComponent>(id) && ImGui::MenuItem("Script")) {
+            scene.add(Entity{id}, ScriptComponent{});
             state.markSceneDirty();
         }
         ImGui::EndPopup();
@@ -876,6 +926,64 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
         scene.remove<Animation>(Entity{id});
         state.commands.push(std::make_unique<RemoveComponentCommand<Animation>>(
             id, std::move(snap), "Remove Animation"));
+        state.markSceneDirty();
+    }
+}
+
+void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityId id) {
+    bool remove = false;
+    const bool open = beginComponentCard("Script", ACCENT_SCRIPT, true, &remove);
+    if (open) {
+        auto& sc = scene.get<ScriptComponent>(id);
+
+        // Script edits are applied live (no undo command): a behavior list is
+        // move-only, so it can't ride the value-copying command stack.
+        int removeIndex = -1;
+        for (size_t i = 0; i < sc.behaviors.size(); ++i) {
+            Behavior* behavior = sc.behaviors[i].get();
+            if (!behavior) continue;
+            ImGui::PushID(static_cast<int>(i));
+
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(behavior->typeName());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("x")) removeIndex = static_cast<int>(i);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove behavior");
+
+            BehaviorFieldInspector inspector;
+            behavior->visitFields(inspector);
+            if (inspector.changed) state.markSceneDirty();
+
+            ImGui::PopID();
+            if (i + 1 < sc.behaviors.size()) ImGui::Separator();
+        }
+
+        if (sc.behaviors.empty()) ImGui::TextDisabled("No behaviors attached.");
+
+        ImGui::Spacing();
+        if (ImGui::Button("+  Add Behavior", ImVec2(-1, 0))) ImGui::OpenPopup("##AddBehavior");
+        if (ImGui::BeginPopup("##AddBehavior")) {
+            const std::vector<std::string> names = BehaviorRegistry::get().names();
+            if (names.empty()) ImGui::TextDisabled("No behaviors registered.");
+            for (const std::string& name : names) {
+                if (ImGui::MenuItem(name.c_str())) {
+                    if (auto behavior = BehaviorRegistry::get().create(name)) {
+                        sc.behaviors.push_back(std::move(behavior));
+                        state.markSceneDirty();
+                    }
+                }
+            }
+            ImGui::EndPopup();
+        }
+
+        if (removeIndex >= 0) {
+            sc.behaviors.erase(sc.behaviors.begin() + removeIndex);
+            state.markSceneDirty();
+        }
+    }
+    endComponentCard();
+    if (remove) {
+        scene.remove<ScriptComponent>(Entity{id});
         state.markSceneDirty();
     }
 }

@@ -12,6 +12,7 @@
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/name.h"
 #include "ecs/component/transform.h"
+#include "system/script/script_component.h"
 
 namespace Engine {
 
@@ -71,6 +72,13 @@ namespace ComponentSerializer {
     /// playback state, and the per-track easing function by stable name.
     nlohmann::json save(const Animation&);
     void load(const nlohmann::json&, Animation&);
+
+    /// ScriptComponent: each behavior is stored by its registered type name
+    /// (BehaviorRegistry key) and recreated through the registry on load.
+    /// Per-behavior tunable fields are not yet serialized (reflection comes
+    /// later); load drops any behavior whose type is not registered.
+    nlohmann::json save(const ScriptComponent&);
+    void load(const nlohmann::json&, ScriptComponent&);
 
 } // namespace ComponentSerializer
 

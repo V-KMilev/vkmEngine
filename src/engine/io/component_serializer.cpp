@@ -6,6 +6,7 @@
 #include <cstring>
 #include <limits>
 #include <string>
+#include <utility>
 
 #include "logger.h"
 
@@ -13,6 +14,9 @@
 #include "ecs/component/transform.h"
 #include "io/reflect.h"
 #include "resource/resource_manager.h"
+#include "system/script/behavior.h"
+#include "system/script/behavior_field_visitor.h"
+#include "system/script/behavior_registry.h"
 
 namespace Engine::ComponentSerializer {
 
@@ -272,6 +276,74 @@ void load(const nlohmann::json& j, Animation& a) {
     a.playing = j.value("playing", a.playing);
     a.looping = j.value("looping", a.looping);
     a.updateDuration();
+}
+
+namespace {
+
+/// Writes each visited reflected field into a JSON object (read-only on the
+/// behavior - see the const_cast note in save()).
+class BehaviorJsonWriter : public BehaviorFieldVisitor {
+    public:
+        explicit BehaviorJsonWriter(nlohmann::json& out) : m_out(out) {}
+
+        void field(const char* name, float& v) override { m_out[name] = v; }
+        void field(const char* name, int& v)   override { m_out[name] = v; }
+        void field(const char* name, bool& v)  override { m_out[name] = v; }
+        void field(const char* name, glm::vec3& v) override { m_out[name] = vec3ToJson(v); }
+
+    private:
+        nlohmann::json& m_out;
+};
+
+/// Reads each visited reflected field from a JSON object, keeping the field's
+/// current value when the key is missing or malformed.
+class BehaviorJsonReader : public BehaviorFieldVisitor {
+    public:
+        explicit BehaviorJsonReader(const nlohmann::json& in) : m_in(in) {}
+
+        void field(const char* name, float& v) override { if (m_in.contains(name)) v = m_in[name].get<float>(); }
+        void field(const char* name, int& v)   override { if (m_in.contains(name)) v = m_in[name].get<int>(); }
+        void field(const char* name, bool& v)  override { if (m_in.contains(name)) v = m_in[name].get<bool>(); }
+        void field(const char* name, glm::vec3& v) override {
+            if (m_in.contains(name) && m_in[name].is_array() && m_in[name].size() == 3) {
+                v = vec3FromJson(m_in[name]);
+            }
+        }
+
+    private:
+        const nlohmann::json& m_in;
+};
+
+} // namespace
+
+nlohmann::json save(const ScriptComponent& sc) {
+    nlohmann::json behaviors = nlohmann::json::array();
+    for (const auto& behavior : sc.behaviors) {
+        if (!behavior) continue;
+        nlohmann::json props = nlohmann::json::object();
+        BehaviorJsonWriter writer(props);
+        // visitFields is non-const (shared with the editor/loader, which mutate);
+        // the writer only reads field values, so this const_cast is safe.
+        const_cast<Behavior&>(*behavior).visitFields(writer);
+        behaviors.push_back({{"type", behavior->typeName()}, {"properties", std::move(props)}});
+    }
+    return {{"behaviors", std::move(behaviors)}};
+}
+
+void load(const nlohmann::json& j, ScriptComponent& sc) {
+    sc.behaviors.clear();
+    if (!j.contains("behaviors") || !j["behaviors"].is_array()) return;
+    for (const auto& entry : j["behaviors"]) {
+        const std::string type = entry.value("type", std::string{});
+        if (type.empty()) continue;
+        auto behavior = BehaviorRegistry::get().create(type);
+        if (!behavior) continue;
+        if (entry.contains("properties") && entry["properties"].is_object()) {
+            BehaviorJsonReader reader(entry["properties"]);
+            behavior->visitFields(reader);
+        }
+        sc.behaviors.push_back(std::move(behavior));
+    }
 }
 
 
