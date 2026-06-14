@@ -11,8 +11,9 @@
 #include "asset_registration.h"
 #include "engine_app.h"
 #include "game_behaviors.h"
+#include "io/scene_serializer.h"
 
-int main() {
+int main(int argc, char** argv) {
     try {
         const std::string rootDir = APP_ROOT_DIR;
         const std::string logFile = rootDir + "/logs/log.log";
@@ -46,6 +47,19 @@ int main() {
         // scene. No editor is added - this binary is the foundation for a
         // shipped game executable and contains no editor code at all.
         Engine::setupEngineApp(engine);
+
+        // Boot a saved scene if one was given (e.g. engine_runtime scenes/level1.json);
+        // otherwise keep the default scene. Assets + behaviors are already
+        // registered above, so the scene's meshes/materials/scripts recreate.
+        // The CameraController re-resolves the active camera after the swap.
+        if (argc > 1) {
+            const char* scenePath = argv[1];
+            if (Engine::SceneSerializer::load(engine.getScene(), engine.getResources(), scenePath)) {
+                LOG_INFO("Booted scene '%s'", scenePath);
+            } else {
+                LOG_ERROR("Failed to load scene '%s'; using the default scene", scenePath);
+            }
+        }
 
         engine.logFPS(true);
         engine.run();
