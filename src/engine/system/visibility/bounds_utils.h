@@ -1,7 +1,8 @@
 #pragma once
 
-#include <glm/glm.hpp>
 #include <limits>
+
+#include <glm/glm.hpp>
 
 namespace Engine {
 

@@ -2,6 +2,8 @@
 
 #include "platform/window/window.h"
 
+#include <stdexcept>
+
 #include "logger.h"
 
 #include <GL/glew.h>  // glewInit only - the GL function loader. Backend-agnostic callers don't need this.

@@ -39,20 +39,24 @@ void ShaderErrorLog::push(
     }
 }
 
-void ShaderErrorLog::clearFor(const std::string& shaderName) {    m_entries.erase(
+void ShaderErrorLog::clearFor(const std::string& shaderName) {
+    m_entries.erase(
         std::remove_if(m_entries.begin(), m_entries.end(),
             [&](const Entry& e) { return e.shaderName == shaderName; }),
         m_entries.end());
 }
 
-void ShaderErrorLog::clearAll() {    m_entries.clear();
+void ShaderErrorLog::clearAll() {
+    m_entries.clear();
 }
 
-std::vector<ShaderErrorLog::Entry> ShaderErrorLog::snapshot() const {    std::vector<Entry> result(m_entries.rbegin(), m_entries.rend());
+std::vector<ShaderErrorLog::Entry> ShaderErrorLog::snapshot() const {
+    std::vector<Entry> result(m_entries.rbegin(), m_entries.rend());
     return result;
 }
 
-std::size_t ShaderErrorLog::size() const {    return m_entries.size();
+std::size_t ShaderErrorLog::size() const {
+    return m_entries.size();
 }
 
 } // namespace Engine
