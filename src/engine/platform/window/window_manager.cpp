@@ -12,6 +12,8 @@
 
 #include "logger.h"
 
+#include "debug/profiler.h"
+
 namespace Engine {
 
 WindowManager::WindowManager() = default;
@@ -89,10 +91,21 @@ bool WindowManager::swapBuffers() {
         return false;
     }
 
-    glfwSwapBuffers(windowContext);
+    {
+        // The actual present. With vsync off and no FPS cap this returns fast,
+        // but when the CPU outruns the GPU the driver blocks here (or in the
+        // next frame's first GL call) until the queue drains - so a fat
+        // SwapBuffers zone is the tell-tale of a GPU-bound frame.
+        PROFILE_SCOPE("SwapBuffers");
+        glfwSwapBuffers(windowContext);
+    }
 
-    // Apply frame limiting after swap
-    m_frameLimiter->endFrame();
+    {
+        // Deliberate cap sleep (only when setFramerate > 0); a separate zone so
+        // a throttle sleep is never mistaken for a GPU-bound swap stall.
+        PROFILE_SCOPE("FrameLimiter");
+        m_frameLimiter->endFrame();
+    }
 
     return true;
 }

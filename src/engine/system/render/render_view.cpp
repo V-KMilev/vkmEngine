@@ -15,12 +15,16 @@
 #include "ecs/component/world_transform.h"
 #include "system/visibility/visibility.h"
 
+#include "debug/profiler.h"
+
 namespace Engine {
 
 void RenderView::build(
     const Scene& scene,
     const Visibility& visibility
 ) {
+    PROFILE_SCOPE("RenderView::build");
+
     if (!visibility.hasCamera) {
         // No camera this frame: emit an empty snapshot, not a stale one.
         drawables.clear();
@@ -121,6 +125,8 @@ void RenderView::buildProbes(const Scene& scene) {
 }
 
 void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility) {
+    PROFILE_SCOPE("RenderView::buildDrawables");
+
     // Reuse capacity from the previous frame; only grows, never shrinks.
     drawables.clear();
     drawables.reserve(visibility.entries.size());
@@ -146,6 +152,8 @@ void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility
 }
 
 void RenderView::buildShadowCasters(const Scene& scene, const Visibility& visibility) {
+    PROFILE_SCOPE("RenderView::buildShadowCasters");
+
     shadowCasters.clear();
     shadowCasters.reserve(visibility.shadowCasters.size());
 
