@@ -118,7 +118,7 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
     EntityId id = entity.getID();
 
     scene.add(entity, Transform{});
-    scene.add(entity, Name(defaultName(kind)));
+    scene.add(entity, makeName(defaultName(kind)));
 
     switch (kind) {
         case EntityKind::Empty:

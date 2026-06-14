@@ -149,15 +149,6 @@ void removeFromParent(Scene& scene, EntityId entity) {
     }
 }
 
-void detachAndReparentChildren(Scene& scene, EntityId entity) {
-    if (!scene.has<Hierarchy>(entity)) return;
-
-    Engine::detachFromHierarchy(scene, entity);
-
-    scene.remove<Hierarchy>(Entity(entity));
-    scene.remove<WorldTransform>(Entity(entity));
-}
-
 glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity) {
     // Collect parent chain (bottom-up) into a fixed-size stack array
     static constexpr uint32_t MAX_DEPTH = 32;
