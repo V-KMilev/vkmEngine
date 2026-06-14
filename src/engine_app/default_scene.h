@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <utility>
 
 #include <glm/glm.hpp>
@@ -14,10 +15,13 @@
 #include "ecs/component/mesh.h"
 #include "ecs/component/name.h"
 #include "ecs/component/transform.h"
+#include "system/script/script_component.h"
 
 #include "generator/light_generators.h"
 #include "generator/material_generators.h"
 #include "generator/mesh_generators.h"
+
+#include "behaviors/cube_spinner.h"
 
 /**
  * @brief Minimal default scene: one camera, one directional light, one cube
@@ -91,6 +95,14 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
         glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
         glm::vec3(1.0f)
     });
+
+    // Attach the example spinner so the cube spins in play mode (Phase 1
+    // vertical slice). Restored to its authored orientation on Stop.
+    {
+        Engine::ScriptComponent script;
+        script.behaviors.push_back(std::make_unique<Engine::CubeSpinner>());
+        scene.add(cube, std::move(script));
+    }
 
     // Return the active camera entity (the only one in the scene).
     Engine::Entity result{};

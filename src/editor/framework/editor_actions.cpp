@@ -19,6 +19,7 @@
 #include "ecs/component/name.h"
 #include "ecs/component/reflection_probe.h"
 #include "system/hierarchy/hierarchy_operations.h"
+#include "system/script/script_component.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
 #include "system/visibility/visibility.h"
@@ -232,6 +233,17 @@ void duplicateEntity(Scene& scene, EditorState& state, EntityId source) {
         Animation anim = scene.get<Animation>(source);
         anim.playing   = false;
         scene.add(entity, std::move(anim));
+    }
+    if (scene.has<ScriptComponent>(source)) {
+        // ScriptComponent is move-only - deep-copy each behavior via clone()
+        // (authored fields carried over; context rebinds on the new entity).
+        const ScriptComponent& src = scene.get<ScriptComponent>(source);
+        ScriptComponent copy;
+        copy.behaviors.reserve(src.behaviors.size());
+        for (const auto& behavior : src.behaviors) {
+            if (behavior) copy.behaviors.push_back(behavior->clone());
+        }
+        scene.add(entity, std::move(copy));
     }
 
     // Same path as createEntity: snapshot the result so undo destroys it.

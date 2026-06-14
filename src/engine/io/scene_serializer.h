@@ -64,6 +64,28 @@ namespace SceneSerializer {
      */
     bool load(Scene& scene, ResourceManager& resources, const std::string& path);
 
+    /**
+     * @brief Serialize @p scene + the assets it references to an in-memory JSON
+     *        string (same content as save(), no file written).
+     *
+     * The editor uses this for the play-mode snapshot, which must stay in
+     * memory so pressing Stop can restore the authored scene without touching
+     * disk. Pairs with loadFromString().
+     *
+     * @return The serialized document, or an empty string on failure.
+     */
+    std::string saveToString(const Scene& scene, const ResourceManager& resources);
+
+    /**
+     * @brief Load a scene from an in-memory JSON string produced by
+     *        saveToString(), replacing @p scene + @p resources atomically.
+     *
+     * Same transactional swap as load(): on failure both are left untouched.
+     *
+     * @return true on success; false (and a logged error) on failure.
+     */
+    bool loadFromString(const std::string& text, Scene& scene, ResourceManager& resources);
+
 } // namespace SceneSerializer
 
 } // namespace Engine

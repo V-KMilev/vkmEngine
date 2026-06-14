@@ -2,10 +2,14 @@
 
 #include <algorithm>
 
+#include <nlohmann/json.hpp>
+
 #include "ecs/scene.h"
+#include "io/component_serializer.h"
 #include "resource/resource_manager.h"
 #include "framework/editor_state.h"
 #include "system/hierarchy/hierarchy_operations.h"
+#include "system/script/script_component.h"
 
 namespace Engine {
 
@@ -154,6 +158,9 @@ EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
     if (scene.has<Rigidbody>(id)) s.rigidbody = scene.get<Rigidbody>(id);
     if (scene.has<Collider>(id))  s.collider  = scene.get<Collider>(id);
     if (scene.has<ReflectionProbe>(id)) s.reflectionProbe = scene.get<ReflectionProbe>(id);
+    if (scene.has<ScriptComponent>(id)) {
+        s.scriptJson = ComponentSerializer::save(scene.get<ScriptComponent>(id)).dump();
+    }
     return s;
 }
 
@@ -172,6 +179,11 @@ void EntitySnapshot::apply(Scene& scene, EntityId id) const {
     if (reflectionProbe && !scene.has<ReflectionProbe>(id)) {
         ReflectionProbe v = *reflectionProbe;
         scene.add(e, std::move(v));
+    }
+    if (scriptJson && !scene.has<ScriptComponent>(id)) {
+        ScriptComponent sc;
+        ComponentSerializer::load(nlohmann::json::parse(*scriptJson), sc);
+        scene.add(e, std::move(sc));
     }
 }
 
