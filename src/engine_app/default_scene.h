@@ -22,6 +22,7 @@
 #include "generator/mesh_generators.h"
 
 #include "behaviors/cube_spinner.h"
+#include "behaviors/player_controller.h"
 
 /**
  * @brief Minimal default scene: one camera, one directional light, one cube
@@ -96,11 +97,13 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
         glm::vec3(1.0f)
     });
 
-    // Attach the example spinner so the cube spins in play mode (Phase 1
-    // vertical slice). Restored to its authored orientation on Stop.
+    // Attach example behaviors: the cube spins on its own (CubeSpinner) and is
+    // drivable with WASD in play mode (PlayerController) - a two-behavior
+    // ScriptComponent showing composition. Both restore on Stop.
     {
         Engine::ScriptComponent script;
         script.behaviors.push_back(std::make_unique<Engine::CubeSpinner>());
+        script.behaviors.push_back(std::make_unique<Engine::PlayerController>());
         scene.add(cube, std::move(script));
     }
 

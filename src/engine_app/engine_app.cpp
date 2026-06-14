@@ -37,8 +37,8 @@ EngineAppSystems setupEngineApp(Engine& engine) {
     engine.addSystem<AsyncLoaderSystem>(SystemStage::Simulation);
     // Gameplay scripts run before animation + physics (events -> gameplay ->
     // animation -> physics), so a behavior can set state the same frame those
-    // integrate it.
-    engine.addSystem<BehaviorSystem>  (SystemStage::Simulation);
+    // integrate it. Takes the EventSystem to hand behaviors gameplay pub/sub.
+    engine.addSystem<BehaviorSystem>  (SystemStage::Simulation, eventSystem);
     engine.addSystem<AnimationSystem> (SystemStage::Simulation);
     engine.addSystem<PhysicsSystem>   (SystemStage::Simulation);
     engine.addSystem<HierarchySystem> (SystemStage::Transform);
