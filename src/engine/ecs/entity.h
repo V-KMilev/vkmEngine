@@ -63,6 +63,15 @@ class Entity {
         }
 
         /**
+         * @brief Inequality comparison; the negation of operator==.
+         * @param other Entity to compare with.
+         * @return True if index or generation differ.
+         */
+        constexpr bool operator!=(const Entity& other) const noexcept {
+            return !(*this == other);
+        }
+
+        /**
          * @brief Get the underlying EntityId.
          * @return The EntityId (StorageIndex) for this entity.
          */

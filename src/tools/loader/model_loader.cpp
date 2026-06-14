@@ -601,13 +601,13 @@ EntityId importModelIntoScene(
 
     Entity root = scene.createEntity();
     scene.add(root, Transform{});
-    scene.add(root, Name(stemOf(path).c_str()));
+    scene.add(root, makeName(stemOf(path).c_str()));
 
     std::function<void(const aiNode*, EntityId)> spawn =
         [&](const aiNode* node, EntityId parent) {
         Entity e = scene.createEntity();
         scene.add(e, transformOf(node->mTransformation));
-        scene.add(e, Name(node->mName.length ? node->mName.C_Str() : "node"));
+        scene.add(e, makeName(node->mName.length ? node->mName.C_Str() : "node"));
         HierarchyOperations::setParent(scene, e.getID(), parent);
 
         for (unsigned i = 0; i < node->mNumMeshes; ++i) {
@@ -621,7 +621,7 @@ EntityId importModelIntoScene(
             } else {
                 Entity sub = scene.createEntity();
                 scene.add(sub, Transform{});
-                scene.add(sub, Name(("mesh" + std::to_string(mi)).c_str()));
+                scene.add(sub, makeName(("mesh" + std::to_string(mi)).c_str()));
                 scene.add(sub, Mesh{mh, mat});
                 HierarchyOperations::setParent(scene, sub.getID(), e.getID());
             }

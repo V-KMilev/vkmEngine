@@ -58,7 +58,7 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
         const glm::vec3 camPos(3.0f, 2.5f, -5.0f);
         const glm::vec3 target(0.0f);
         auto e = scene.createEntity();
-        scene.add(e, Engine::Name{"Camera"});
+        scene.add(e, Engine::makeName("Camera"));
         scene.add(e, Engine::Camera{Engine::ProjectionType::Perspective});
         scene.add(e, Engine::Transform{
             camPos,
@@ -70,7 +70,7 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
     // Directional sun light shining down + forward onto the cube. Forward
     // is the direction the light *travels*, so the Y component is negative.
     auto sun = scene.createEntity();
-    scene.add(sun, Engine::Name{"Sun"});
+    scene.add(sun, Engine::makeName("Sun"));
     {
         auto light = Engine::generateDirectionalLight(
             glm::vec3(1.0f, 0.96f, 0.9f), 3.0f, true);
@@ -84,7 +84,7 @@ inline Engine::Entity generateDefaultScene(Engine::Engine& engine) {
 
     // Cube at the origin.
     auto cube = scene.createEntity();
-    scene.add(cube, Engine::Name{"Cube"});
+    scene.add(cube, Engine::makeName("Cube"));
     scene.add(cube, Engine::Mesh{cubeMesh, cubeMat});
     scene.add(cube, Engine::Transform{
         glm::vec3(0.0f, 0.0f, 0.0f),

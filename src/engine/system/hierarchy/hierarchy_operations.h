@@ -35,18 +35,6 @@ void setParent(Scene& scene, EntityId child, EntityId parent);
 void removeFromParent(Scene& scene, EntityId entity);
 
 /**
- * @brief Detach an entity from its hierarchy, reparenting its children to its parent.
- *
- * Children of @p entity become children of @p entity's parent (root if none),
- * then @p entity itself is unlinked. Used before destroying an entity when you
- * want to preserve its descendants in the tree. Does NOT destroy the entity.
- *
- * @param scene The scene containing the entity.
- * @param entity The entity to detach.
- */
-void detachAndReparentChildren(Scene& scene, EntityId entity);
-
-/**
  * @brief Compute the world-space model matrix for an entity, accounting for hierarchy.
  *
  * Walks up the parent chain and multiplies local matrices top-down.
