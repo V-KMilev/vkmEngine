@@ -4,6 +4,8 @@
 #include <tuple>
 #include <vector>
 
+#include "l_assert.h"
+
 #include "ecs/component/hierarchy.h"
 #include "ecs/environment.h"
 #include "ecs/entity.h"

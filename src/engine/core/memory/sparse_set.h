@@ -11,9 +11,9 @@
 namespace Engine {
 
 /**
-* @class ISparseSet
-* @brief Type-erased interface for SparseSet, enabling heterogeneous storage in registries.
-*/
+ * @class ISparseSet
+ * @brief Type-erased interface for SparseSet, enabling heterogeneous storage in registries.
+ */
 class ISparseSet {
     public:
         virtual ~ISparseSet() = default;
@@ -29,21 +29,21 @@ class ISparseSet {
 };
 
 /**
-* @class SparseSet
-* @brief Dense-packed storage indexed by external uint32_t keys.
-*
-* Maps uint32_t keys to densely packed elements for cache-friendly O(n)
-* iteration. Provides O(1) add, remove, has, and get.
-*
-* SparseSet does not manage slot allocation or generation counters - the
-* caller owns the key lifecycle (Scene pairs this with SlotAllocator for
-* entities; ResourceManager pairs it with a per-type allocator for assets).
-*
-* Removal is swap-and-pop with a memcpy fast path for trivially copyable
-* types.
-*
-* @tparam T Element type to store.
-*/
+ * @class SparseSet
+ * @brief Dense-packed storage indexed by external uint32_t keys.
+ *
+ * Maps uint32_t keys to densely packed elements for cache-friendly O(n)
+ * iteration. Provides O(1) add, remove, has, and get.
+ *
+ * SparseSet does not manage slot allocation or generation counters - the
+ * caller owns the key lifecycle (Scene pairs this with SlotAllocator for
+ * entities; ResourceManager pairs it with a per-type allocator for assets).
+ *
+ * Removal is swap-and-pop with a memcpy fast path for trivially copyable
+ * types.
+ *
+ * @tparam T Element type to store.
+ */
 template<typename T>
 class SparseSet : public ISparseSet {
     public:
@@ -58,18 +58,18 @@ class SparseSet : public ISparseSet {
 
     public:
         /**
-        * @brief Insert an element at the given key.
-        * @param key External sparse key. Must not be 0 or already present.
-        * @param value Element to insert.
-        * @return Reference to the stored element.
-        */
+         * @brief Insert an element at the given key.
+         * @param key External sparse key. Must not be 0 or already present.
+         * @param value Element to insert.
+         * @return Reference to the stored element.
+         */
         T& add(uint32_t key, T && value)     { return addInternal(key, std::move(value)); }
         T& add(uint32_t key, const T& value) { return addInternal(key, value); }
 
         /**
-        * @brief Remove the element at the given key via swap-and-pop.
-        * @param key External sparse key. Must be present (asserts).
-        */
+         * @brief Remove the element at the given key via swap-and-pop.
+         * @param key External sparse key. Must be present (asserts).
+         */
         void remove(uint32_t key) override {
             VKM_ASSERT(has(key), "SparseSet::remove called with invalid key");
 
@@ -94,10 +94,10 @@ class SparseSet : public ISparseSet {
         }
 
         /**
-        * @brief Test whether a key is present (non-virtual, for hot paths).
-        * @param key External sparse key.
-        * @return True if the key maps to a live element.
-        */
+         * @brief Test whether a key is present (non-virtual, for hot paths).
+         * @param key External sparse key.
+         * @return True if the key maps to a live element.
+         */
         bool contains(uint32_t key) const {
             return key < m_dataIndex.size() && m_dataIndex[key] != EMPTY;
         }
@@ -106,21 +106,21 @@ class SparseSet : public ISparseSet {
         bool has(uint32_t key) const override { return contains(key); }
 
         /**
-        * @brief Access the element at the given key.
-        * @param key External sparse key. Must be present (asserts).
-        * @return Reference to the stored element.
-        */
+         * @brief Access the element at the given key.
+         * @param key External sparse key. Must be present (asserts).
+         * @return Reference to the stored element.
+         */
         T&       get(uint32_t key)       { VKM_ASSERT(has(key), "SparseSet::get called with invalid key"); return m_data[m_dataIndex[key]]; }
         const T& get(uint32_t key) const { VKM_ASSERT(has(key), "SparseSet::get called with invalid key"); return m_data[m_dataIndex[key]]; }
 
     public:
         /**
-        * @brief Iterate all live elements densely (no holes).
-        *
-        * Calls fn(uint32_t key, T&) for each element in packed order.
-        *
-        * @param fn Callable with signature void(uint32_t, T&).
-        */
+         * @brief Iterate all live elements densely (no holes).
+         *
+         * Calls fn(uint32_t key, T&) for each element in packed order.
+         *
+         * @param fn Callable with signature void(uint32_t, T&).
+         */
         template<typename Fn>
         void forEach(Fn&& fn) {
             for (uint32_t i = 0; i < m_data.size(); ++i) {
@@ -136,9 +136,9 @@ class SparseSet : public ISparseSet {
         }
 
         /**
-        * @brief Pre-allocate memory for all internal arrays.
-        * @param capacity Expected number of elements. Avoids reallocations during repeated add().
-        */
+         * @brief Pre-allocate memory for all internal arrays.
+         * @param capacity Expected number of elements. Avoids reallocations during repeated add().
+         */
         void reserve(size_t capacity) {
             m_dataIndex.reserve(capacity);
             m_dataId.reserve(capacity);

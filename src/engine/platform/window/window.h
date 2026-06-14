@@ -18,7 +18,7 @@ inline constexpr int DEFAULT_WINDOW_HEIGHT = 1080;  ///< Initial window height i
 /**
  * @class Window
  * @brief Represents an OS window and its context for rendering, input, and event handling.
- * 
+ *
  * Encapsulates window creation, management, and platform-related queries (such as size and refresh rate).
  * Non-copyable and non-movable, guaranteeing a single authoritative ownership of the window.
  */
@@ -35,9 +35,9 @@ class Window {
 
         /**
          * @brief Explicit constructor.
-         * 
+         *
          * Creates a window with the specified title and sets the OpenGL swap interval.
-         * 
+         *
          * @param title        The string displayed in the window's title bar.
          * @param swapInterval The swap interval ("vsync"); 0 disables vsync, >0 enables.
          */
@@ -64,14 +64,14 @@ class Window {
 
         /**
          * @brief Returns the underlying native GLFWwindow pointer.
-         * 
+         *
          * Enables integration with lower-level APIs if direct access is required.
          */
         GLFWwindow* getWindowContext() const;
 
         /**
          * @brief Sets the OpenGL swap interval (controls vsync on/off).
-         * 
+         *
          * @param interval 0 to disable vsync, >0 to enable.
          */
         void setSwapInterval(int interval);

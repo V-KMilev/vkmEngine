@@ -221,8 +221,8 @@ class AnimationTrack {
         }
 
         std::vector<float> m_times;   ///< Keyframe timestamps (sorted ascending)
-        std::vector<T> m_values;       ///< Keyframe values (parallel to m_times)
-        EasingFunction m_easing;
+        std::vector<T>     m_values;  ///< Keyframe values (parallel to m_times)
+        EasingFunction     m_easing;
 };
 
 } // namespace Engine

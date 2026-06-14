@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <vector>
+
 #include <glm/glm.hpp>
 
 #include "resource/resource.h"
@@ -21,8 +24,8 @@ namespace Engine {
 };
 
 struct MeshAsset : public Resource {
-    std::vector<Vertex> vertices  = {};     ///< Vertex buffer (geometry)
-    std::vector<uint32_t> indices = {};    ///< Index buffer (triangle indices)
+    std::vector<Vertex>   vertices = {};  ///< Vertex buffer (geometry)
+    std::vector<uint32_t> indices  = {};  ///< Index buffer (triangle indices)
 
     // Optional metadata
     glm::vec3 boundsMin{0};           ///< Minimum AABB point in local space
