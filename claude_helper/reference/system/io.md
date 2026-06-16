@@ -21,7 +21,7 @@ plus a polling file watcher.
   the textures the materials use. Each asset is stored with its
   `source` descriptor (the original loader/generator JSON), so the
   loader can recreate it without re-reading the engine's runtime state.
-  Assets marked `internal = true` are skipped (editor previews, fallback
+  Assets marked `hidden = true` are skipped (editor previews, fallback
   textures, bundled primitives).
 - `entities`: one record per entity. Entities are stored at their slot
   index, and each component is keyed by its short name (see Component
@@ -55,10 +55,8 @@ After load, the caller should:
   cache across scene swaps.
 - Clear the `CommandStack` (entity IDs and component topology are no
   longer comparable across the swap).
-- Call `RenderSystem::invalidateTemporalHistory()` so TAA doesn't
-  smear across the discontinuity.
 
-`SceneIOController` in the editor handles all three.
+`SceneIOController` in the editor handles these.
 
 ## AssetSerializer and AssetFactories
 
@@ -104,10 +102,9 @@ Today's coverage:
 - `Name`, `Transform`, `Camera`, `Light`, `Mesh`, `Animation`
 - `Hierarchy` (only `parent` is serialized; sibling pointers are
   rebuilt on load by re-running `HierarchyOperations::setParent`).
-- `EnvironmentConfig` (the singleton Environment entity, with all
-  sub-configs: ambient, IBL, AO, SSR, TAA, DoF, motion blur, bloom,
-  exposure, color grade, grid, AABB debug, lens flare, lens dirt,
-  starburst).
+- `Environment` (the scene's lighting environment: HDR path, intensity,
+  skybox toggle). Render tuning (GTAO / SSR / bloom / ...) lives in
+  `RenderSettings` on the RenderSystem, not in a serialized component.
 
 `Mesh` references handles by `name` rather than by `Storage` index;
 that is what makes assets a stable identity across save/load.
@@ -143,8 +140,7 @@ watcher.watch("shaders/pbr", [&]{ resources.commitShader(pbrHandle); });
 
 The typical use is shader hot-reload: when a `.shader` source file
 changes, `commit` on the corresponding `ShaderAsset` bumps its version,
-which evicts every cached shader variant compiled from it, and the
-next material draw recompiles lazily.
+which drops its compiled program, and the next draw recompiles lazily.
 
 It's polling-based, not platform-specific (no `inotify`/`fsnotify`), so
 it works the same on every host. The poll cost is tiny because each
