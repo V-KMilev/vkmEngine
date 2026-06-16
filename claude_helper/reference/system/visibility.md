@@ -32,9 +32,8 @@ VisibilitySystem::update(ctx)
   6. Set FrameContext.visibility to point at the persistent result.
 ```
 
-`Visibility.view`, `projection`, `cameraPosition`, and `cameraExposure`
-are filled from the active camera so downstream consumers do not have
-to look the camera back up.
+`Visibility.view`, `projection`, and `cameraPosition` are filled from the
+active camera so downstream consumers do not have to look the camera back up.
 
 ## Output
 
@@ -48,10 +47,10 @@ struct VisibleEntity {
 
 struct Visibility {
     std::vector<VisibleEntity> entries;
+    std::vector<VisibleEntity> shadowCasters;   // full scene, not camera-culled
     glm::mat4 view           = glm::mat4(1.0f);
     glm::mat4 projection     = glm::mat4(1.0f);
     glm::vec3 cameraPosition = glm::vec3(0.0f);
-    float     cameraExposure = 1.0f;
     bool      hasCamera      = false;
 };
 ```
@@ -60,10 +59,11 @@ struct Visibility {
 Vectors are `clear()`ed but keep their capacity to avoid per-frame
 allocation.
 
-Note: shadow casters are NOT culled here. The shadow pass needs to draw
-geometry that is outside the camera frustum but inside a light's volume,
-so `RenderView::build` gathers `shadowCasters` from the full Mesh storage
-independently. See [Rendering](rendering.md).
+Note: `shadowCasters` are gathered here but **not** camera-culled - the
+shadow pass must draw geometry outside the camera frustum but inside a
+light's volume. `VisibilitySystem` fills `Visibility.shadowCasters` from the
+full Mesh set, and `RenderView::build` copies it into the view. See
+[Rendering](rendering.md).
 
 ## Culling stages
 

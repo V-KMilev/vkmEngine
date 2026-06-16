@@ -53,7 +53,7 @@ overlays drawn on top.
 | Hierarchy           | `panels/hierarchy_panel.cpp`          | Entity tree; drag a node onto another to reparent (cycle-safe); context-menu Unparent |
 | Inspector           | `panels/inspector_panel.cpp`          | Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent |
 | Bottom              | `panels/bottom_panel.cpp`             | Per-scene working surface: grouped master-detail browser                    |
-| Render Settings     | `panels/environment_inspector.cpp`    | World-level rendering/post stack for the Environment singleton; opened from Window > Render Settings (IBL, post, culling, diagnostics) |
+| Render Settings     | `panels/render_settings_panel.cpp`    | World-level render tuning: `RenderSettings` (GTAO / SSR / bloom / motion blur / shadows / grid) plus the `Environment` (IBL / skybox); opened from Window > Render Settings |
 | Material Editor     | `panels/material_editor.cpp`          | Per-material PBR inspector with live preview (renders the real pipeline)    |
 | Asset Browser       | `panels/asset_browser.cpp`            | Thumbnail grid of materials / meshes / textures; pickable into the inspector|
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
@@ -144,32 +144,22 @@ undo stack first; that is where transform drag coalescing happens.
 - Drives the file-picker modals.
 - Hands off to `SceneSerializer::save` / `load` (engine-side; see
   [IO and serialization](system/io.md)).
-- After a successful load it clears the command stack, rebinds the
-  camera if the loaded scene defined one, and calls
-  `RenderSystem::invalidateTemporalHistory()` so TAA doesn't smear
-  across the scene cut.
+- After a successful load it clears the command stack and rebinds the
+  camera if the loaded scene defined one.
 - Maintains a recent-scenes list cached when the Open dialog is opened
   (so re-opening doesn't re-scan disk every frame).
 
 ## Material preview / Asset browser
 
 Both the Material Editor and the Asset Browser show live PBR previews.
-The renderer drives this through
-`RenderSystem::renderMaterialPreview(material, mesh, ...)` and
-`materialPreviewTexture(..., key, version, live)`:
-
-- `renderMaterialPreview` swaps a private preview `FrameResources` set
-  + a small offscreen target into the backend, re-runs the **same**
-  render graph (so the preview gets IBL, SSR, GTAO, bloom, tone mapping
-  for free), then snapshots the result.
-- `materialPreviewTexture` wraps that with a keyed cache (one cached
-  texture per asset) and a per-frame budget of `THUMB_BUDGET_PER_FRAME`
-  (3) bakes for non-`live` callers (the Asset Browser grid). The live
-  caller (the Material Editor) bypasses the budget and re-renders every
-  frame.
-
-Preview resolution is fixed at `PREVIEW_RES = 512` so the offscreen
-target isn't thrashed.
+These are rendered by the backend's dedicated preview path
+(`RenderBackend::renderPreview`, backed by `GLPreview`) - **not** the full
+frame pipeline. It is a minimal forward + composite render of the material on
+a preview mesh into a small offscreen target, kept separate from the main
+10-pass path. Results are cached per asset (keyed by handle + version) with a
+small per-frame bake budget, so the Asset Browser grid amortizes thumbnail
+generation across frames while the Material Editor's live view re-renders each
+frame.
 
 ## CameraController
 
