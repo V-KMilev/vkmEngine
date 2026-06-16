@@ -29,7 +29,6 @@ component writes are not.
 |-------------------------------------------|----------------------------------------------------------------------------------------|
 | `setParent(scene, child, parent)`         | Link `child` under `parent`. Pre-seeds `Hierarchy` + `WorldTransform` on both ends.    |
 | `removeFromParent(scene, entity)`         | Unlink from its current parent; `entity` becomes a root.                               |
-| `detachAndReparentChildren(scene, entity)`| Promote each child to a top-level entity, then leave `entity` itself a root.           |
 | `destroyHierarchy(scene, entity)`         | Destroy `entity` plus every descendant. Used by editor `DestroySubtreeCommand`.        |
 | `forEachChild(scene, entity, fn)`         | Walk the direct children of `entity` and call `fn(childId)`.                           |
 | `computeWorldMatrix(scene, entity)`       | Walk the parent chain and compose the world matrix without writing `WorldTransform`.   |
@@ -64,19 +63,6 @@ they can be resolved concurrently.
 
 For roots (entities without a `Hierarchy` parent), the resolve is a
 no-op: downstream consumers fall back to local `Transform` directly.
-
-`SystemAccess` declared by `HierarchySystem`:
-
-```cpp
-SystemAccess access;
-access.reads  = { typeId<Transform>(), typeId<Hierarchy>() };
-access.writes = { typeId<WorldTransform>() };
-return access;
-```
-
-This lets the scheduler pack `HierarchySystem` on a parallel layer with
-any other system that only reads `Transform`/`Hierarchy` and doesn't
-touch `WorldTransform`.
 
 ## Editor integration
 

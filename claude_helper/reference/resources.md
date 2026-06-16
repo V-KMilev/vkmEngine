@@ -8,10 +8,10 @@ and they sync to the GPU through a per-resource version counter.
 ## Key files
 
 - `src/engine/resource/resource_manager.h` for the manager
-- `src/engine/resource/resource.h` for the `Resource` base (version, name, internal flag, source JSON)
+- `src/engine/resource/resource.h` for the `Resource` base (version, name, hidden flag, source JSON)
 - `src/engine/resource/resource_handle.h` for type-safe `Handle<T>`
-- `src/engine/resource/mesh_asset.h`, `texture_asset.h`, `material_asset.h`, `shader_asset.h` for the four asset kinds
-- `src/engine/core/memory/storage.h` for the generational arena that backs each asset table
+- `src/engine/resource/asset/mesh_asset.h`, `asset/texture_asset.h`, `asset/material_asset.h`, `asset/shader_asset.h` for the four asset kinds
+- `src/engine/core/memory/sparse_set.h` for the `SparseSet<T>` that backs each asset table
 
 ## Handles
 
@@ -44,7 +44,7 @@ const MeshAsset& mesh = rm.get(handle);
 MeshAsset& mut = rm.edit(handle);
 mut.vertices.push_back(...);
 
-// Commit (bumps per-resource version + per-type version + global)
+// Commit (bumps the per-resource version + the per-type version)
 rm.commit(handle);
 
 // Remove
@@ -67,17 +67,19 @@ Every asset inherits `Resource`:
 |----------------|---------------------------------------|---------------------------------------------------------------------------------------------|
 | `name`         | `std::string`                         | Stable identity for serialization and look-up                                               |
 | `version`      | `uint64_t`                            | Bumped on `commit()`; backends compare to skip re-upload                                    |
-| `internal`     | `bool`                                | When true, the asset is editor-only (preview meshes, fallback textures) and is not saved   |
+| `hidden`       | `bool`                                | When true, filtered from pickers / Asset Browser / scene save (previews, fallbacks). Set via `addPrivate()` |
 | `source`       | `std::unique_ptr<nlohmann::json>`     | Captured loader/generator descriptor used by `AssetSerializer` on save                      |
 
 `source` is held by `unique_ptr` against a forward-declared `nlohmann::json`
 so headers don't drag the JSON header in. See the code style guide section
 13.1 for why this is a deliberate exception.
 
-`internal = true` is set by editor-side asset factories on previews,
+`hidden = true` is set (via `ResourceManager::addPrivate`) on previews,
 fallback textures, and bundled primitive meshes; `SceneSerializer` and
 `AssetSerializer` skip those assets entirely so save files contain only
-user-relevant content.
+user-relevant content. Names are guaranteed unique and non-empty per type:
+`add()` runs them through `ensureUniqueName`, and a name must be changed via
+`rename()` (not `edit().name = ...`) so the name index stays consistent.
 
 ## Asset types
 
@@ -119,9 +121,9 @@ emission, height, clearcoat, transmission.
 
 `MaterialAsset::featureFlags()` derives a `MaterialFeature` bit set from
 the active scalars and present textures (`HAS_TRANSMISSION`,
-`HAS_CLEARCOAT`, `HAS_PARALLAX`, ...). The backend uses this bit set as
-the key for the per-material shader variant cache; see
-[Rendering](system/rendering.md).
+`HAS_CLEARCOAT`, `HAS_PARALLAX`, ...). The forward pass reads this bit set
+at runtime to enable the optional lobes per draw - one shared PBR program,
+not per-variant compiled shaders; see [Rendering](system/rendering.md).
 
 `MaterialType` is `Opaque`, `AlphaMask`, `Unlit`, or `Transparent`.
 Sorting in the render view groups by this enum first so the per-batch
@@ -129,30 +131,29 @@ HDR snapshot for refraction sees a complete opaque pass.
 
 ### ShaderAsset
 
-`ShaderAsset` carries the path prefix to a folder under `shaders/` plus
-the per-asset `variantAware` flag. Only the PBR shader is variant-aware
-today: variant compilation injects `#define HAS_X` per feature bit, so
-opaque materials don't pay for transmission/clearcoat branches that
-won't fire. Other shaders go through `GLView::resolveShader` and share
-one compiled program.
+`ShaderAsset` carries the path prefix to a folder under `shaders/`
+(e.g. `forward/pbr`). Each shader compiles to one program shared by every
+material that uses it; optional PBR features are runtime uniform toggles,
+not compiled variants.
 
 ## Versioning
 
-`commit(handle)` bumps three counters:
+`commit(handle)` bumps two counters:
 
 1. The asset's own `version`.
 2. The per-type version (used by `GLView` for early-out: a type that didn't
    change between frames does not even iterate its asset table).
-3. A global version counter (used by the editor for cheap "did anything change?" checks).
 
-`GLView` keeps per-asset cached versions and rebuilds GPU state only when
-the cached value diverges from the asset's `version`. Hot-reloading a
-shader file (via `FileWatcher`) bumps the shader version, which evicts
-every variant compiled from it; the next material draw recompiles lazily.
+(There is no global version counter - that mechanism was removed.) `GLView`
+keeps per-asset cached versions and rebuilds GPU state only when the cached
+value diverges from the asset's `version`. Hot-reloading a shader file (via
+`FileWatcher`) bumps the shader version, which drops its compiled program;
+the next draw recompiles lazily.
 
 ## Storage
 
-Every asset table is a `Storage<T>`, a generational arena (slot map):
+Every asset type gets its own `SparseSet<T>` (created on first use) plus a
+`SlotAllocator` for generational keys and a name index for O(1) lookup:
 
 - O(1) add, remove, look-up.
 - O(n) dense iteration.
@@ -190,7 +191,7 @@ engine-side `AssetSerializer` can recreate any asset by dispatching its
 See [IO and serialization](system/io.md) for the full flow.
 `AssetSerializer::saveAssetsForScene` emits only the assets actually
 referenced by the scene's `Mesh` components (plus their material's
-texture references) and skips any with `internal = true`. On load,
+texture references) and skips any with `hidden = true`. On load,
 assets with the same `name` already in the manager are skipped (loads
 are idempotent), and new assets go through `AssetFactories` dispatch
 by `kind`.

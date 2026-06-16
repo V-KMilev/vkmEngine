@@ -5,9 +5,9 @@ The engine supports five light types: **Directional**, **Point**,
 light). All are data-only ECS components; light evaluation lives in
 the PBR shader. Shadows go through a shared shadow atlas (2D for
 directional and spot) and a cube atlas (point lights). Image-based
-lighting is computed by `GLIBLBakePass` from an environment map and
-sampled by the shader through irradiance, prefilter, and BRDF LUT
-maps.
+lighting is baked by a transient `GLIBLBaker` helper (not a pass) from an
+environment map and sampled by the shader through irradiance, prefilter,
+and BRDF LUT maps.
 
 ## Light component
 
@@ -43,7 +43,7 @@ struct Light {
     // Shadows
     bool      castShadows    = true;
     float     shadowBias     = 0.005f;    // slope-scaled (2D) / constant (cube)
-    float     shadowExtent   = 50.0f;     // directional only: ortho half-size
+    float     shadowDistance = 100.0f;    // directional only: cascade coverage distance (world units)
 
     bool      enabled        = true;
 };
@@ -56,14 +56,15 @@ visible side is the surface in front of the local Z forward).
 
 ## Lighting model
 
-The PBR fragment shader (`shaders/pbr/`) implements:
+The PBR fragment shader (`shaders/forward/pbr/`) implements:
 
 - **Lambertian diffuse** with energy conservation.
 - **Cook-Torrance specular**: GGX (Trowbridge-Reitz) for normal
   distribution, Smith for geometry, Schlick for Fresnel.
-- **Optional lobes** (`HAS_X` define-guarded so opaque-only materials
-  skip the branches): transmission, volume (absorption), clearcoat,
-  anisotropy, subsurface, sheen, parallax/height, alpha test.
+- **Optional lobes**, gated at runtime by each material's feature flags
+  (one shared PBR program, no compiled `#ifdef` variants): transmission,
+  volume (absorption), clearcoat, anisotropy, subsurface, sheen,
+  parallax/height, alpha test.
 - **IBL**: prefiltered specular cube + irradiance cube + split-sum
   BRDF LUT; horizon haze for low-roughness mirrors.
 - **GTAO**: half-res ground-truth ambient occlusion baked by
@@ -76,10 +77,9 @@ The PBR fragment shader (`shaders/pbr/`) implements:
 Rect and Disk are evaluated using two industry-standard tricks:
 
 1. **Diffuse via LTC (Linearly Transformed Cosines).** The integral of
-   a Lambertian BRDF over a polygon is closed-form for a transformed
-   cosine distribution. The shader samples the BRDF LUT for the LTC
-   matrix, transforms the polygon vertices into the cosine space, and
-   evaluates the polygon-form factor analytically.
+   a Lambertian BRDF over a polygon has a closed form for a transformed
+   cosine distribution. The shader evaluates the polygon form factor
+   analytically (Hill's stable edge integral), with no matrix-LUT sampling.
    - Rect uses 4 vertices.
    - Disk is approximated by a 12-vertex polygon. The error is
      negligible for the budget.
@@ -122,35 +122,35 @@ Shadow rendering goes through `GLShadowPass`, which:
   the forward pass samples through `sampler2DArrayShadow` and
   `samplerCubeArrayShadow`.
 
-`shadowExtent` controls the directional ortho-projection half-size in
-world units (effectively the cascade footprint). It is ignored for
-spot, point, and area lights, which use `radius` as their cutoff.
+`shadowDistance` controls how far the directional cascades cover in world
+units (smaller values pack the cascades tighter into the near range). It is
+ignored for spot, point, and area lights, which use `radius` as their cutoff.
 
 ## Image-based lighting (IBL)
 
-`GLIBLBakePass` runs once per environment-map change. Given the
-`EnvironmentConfig.iblPath` (an equirectangular HDR image), it
-produces:
+A transient `GLIBLBaker` runs once per environment-map change (a helper
+invoked from `GLBackend::render`, not a pass). Given the
+`Environment.hdrPath` (an equirectangular HDR image), it produces:
 
 - The **environment cube**: a sharp cubemap for low-roughness mirror
   reflections.
 - The **irradiance cube**: diffuse contribution.
 - The **prefilter cube**: specular contribution, with one roughness
   level per mip.
-- The **BRDF LUT**: split-sum lookup, also reused for the LTC matrices.
+- The **BRDF LUT**: split-sum lookup for the analytic specular term.
 
-These are bound to the dedicated IBL texture slots (see the slot table
-in [Rendering](rendering.md)). The pass is a no-op when the env-map
-path has not changed: a single hash comparison and an early-out.
+These are bound to the dedicated IBL texture slots (see the binding note
+in [Rendering](rendering.md)). The baker is skipped when the env-map path
+has not changed: a single comparison and an early-out.
 
 ## Limits and the must-match-shader contract
 
 | Constant                 | Value | Shader identifier               | Where it lives                                  |
 |--------------------------|-------|---------------------------------|-------------------------------------------------|
-| `Config::MaxLights`      | 32    | `MAX_LIGHTS`                    | `shaders/pbr/fragment.shader`             |
-| `Config::MaxShadowCasters2D` | 6 | `SHADOW_MAX_CASTERS_2D`         | `shaders/pbr/fragment.shader`             |
-| `Config::MaxShadowCastersCube` | 2 | `SHADOW_MAX_CASTERS_CUBE`     | `shaders/pbr/fragment.shader`             |
-| `Config::NumCascades`    | 4     | `NUM_CASCADES`                  | `shaders/pbr/fragment.shader`             |
+| `Config::MaxLights`      | 32    | `MAX_LIGHTS`                    | `shaders/forward/pbr/fragment.shader`             |
+| `Config::MaxShadowCasters2D` | 6 | `SHADOW_MAX_CASTERS_2D`         | `shaders/forward/pbr/fragment.shader`             |
+| `Config::MaxShadowCastersCube` | 2 | `SHADOW_MAX_CASTERS_CUBE`     | `shaders/forward/pbr/fragment.shader`             |
+| `Config::NumCascades`    | 4     | `NUM_CASCADES`                  | `shaders/forward/pbr/fragment.shader`             |
 | `Config::ShadowCubeNear` | 0.1   | `SHADOW_CUBE_NEAR`              | Emitted into `shaders/_generated/engine_config.glsl` at build time |
 
 If you bump one side, you must bump the other. The CMake build
