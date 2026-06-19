@@ -27,10 +27,10 @@ above the backend - passes are an OpenGL implementation detail.
 RenderSystem::update(FrameContext)
   |-- RenderView::build(scene, visibility)        // engine side, backend-agnostic
   |     |-- buildCamera     from the Visibility snapshot
+  |     |-- buildLights / buildProbes
   |     |-- buildDrawables  from the visible set (sorted for batching;
   |     |                   transparent run sub-sorted back-to-front)
   |     |-- buildShadowCasters  from the whole scene (NOT camera-culled)
-  |     |-- buildLights / buildProbes
   |     |-- copy RenderSettings and Environment into the view
   |-- backend.render(view, resources)             // GLBackend
         |-- GLView::sync      upload/refresh changed GPU resources

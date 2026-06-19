@@ -10,11 +10,12 @@ orientation; each subsystem has a deeper doc linked below.
 git submodule update --init --recursive
 cmake -B build -G Ninja
 cmake --build build
-./build/bin/engine
+./build/bin/engine_editor     # engine + editor (or engine_runtime for the bare engine)
 ```
 
-CMake 3.25+, Ninja, C++17, OpenGL 4.3 core. See [building.md](building.md) for
-targets, modules, and flags.
+CMake 3.25+, Ninja, C++17, OpenGL 4.3 core. The build produces two executables -
+`engine_editor` and `engine_runtime` - over a shared `EngineApp` bootstrap. See
+[building.md](building.md) for targets, modules, and flags.
 
 ## Core model
 
@@ -35,16 +36,21 @@ targets, modules, and flags.
 
 Stages run in declaration order; within a stage, systems run **sequentially** in
 registration order (there is no parallel layer scheduler - per-system `parallelFor`
-is the scaling lever).
+is the scaling lever). The default wiring lives in `setupEngineApp`
+(`src/engine_app/`), shared by both executables; `engine_editor` adds
+`EditorSystem` on top.
 
 | Stage | Default systems |
 |-------|-----------------|
-| Input | CameraController, FileWatcher |
+| Input | CameraController |
 | Simulation | EventSystem, AsyncLoaderSystem, BehaviorSystem, AnimationSystem, PhysicsSystem |
 | Transform | HierarchySystem (resolves `WorldTransform` from local `Transform` + hierarchy) |
 | Visibility | VisibilitySystem (frustum / distance / screen-size culling -> `Visibility`) |
 | Render | RenderSystem (builds `RenderView`, hands it to the backend) |
-| UI | EditorSystem |
+| UI | EditorSystem (editor binary only) |
+
+(`FileWatcher` is an Input-stage `System` the engine provides but the default app
+does not register; see [io.md](system/io.md).)
 
 ## Rendering at a glance
 
@@ -86,4 +92,4 @@ Full tree and design patterns: [architecture.md](architecture.md). House style:
 - **Subsystem detail:** [architecture.md](architecture.md), [ecs.md](ecs.md),
   [resources.md](resources.md), [threading.md](threading.md),
   [editor.md](editor.md), and `system/` (rendering, lighting, visibility,
-  hierarchy, animation, events, io).
+  hierarchy, animation, events, io, scripting, physics).

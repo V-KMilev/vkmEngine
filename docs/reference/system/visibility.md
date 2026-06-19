@@ -20,16 +20,17 @@ per-track interpolated values only to visible entities).
 VisibilitySystem::update(ctx)
   1. Find the active camera (cached EntityId; full scan only on miss).
   2. Build VisibilityContext: frustum planes, viewport dims, thresholds.
-  3. Pre-resolve world matrices for parented entities (read WorldTransform if present, else local Transform).
-  4. parallelFor over all Mesh entities, per worker:
+  3. parallelFor over all Mesh entities, per worker:
      - Skip if !visible or no Transform.
+     - Resolve the world matrix inline: read WorldTransform if present, else
+       compute from the local Transform (HierarchySystem already ran this stage).
      - Compute world AABB (Arvo's method, 18 mults).
      - FrustumCuller::isVisible       - reject if fully outside frustum.
      - DistanceCuller::isVisible      - reject if too far from camera.
      - ScreenSizeCuller::isVisible    - reject if projected size below minPixels.
      - Push the survivor into the worker's local buffer.
-  5. Merge per-worker buffers into Visibility.entries.
-  6. Set FrameContext.visibility to point at the persistent result.
+  4. Merge per-worker buffers into Visibility.entries.
+  5. Set FrameContext.visibility to point at the persistent result.
 ```
 
 `Visibility.view`, `projection`, and `cameraPosition` are filled from the
@@ -86,10 +87,9 @@ Projects the bounding sphere radius into screen space using
 smaller than `minPixels` (default 3). Uses a pre-computed squared
 threshold for a sqrt-free comparison.
 
-### Occlusion culling (`occlusion_culler.h`)
-
-Placeholder; always returns `true`. Reserved for a future Hi-Z or
-software-depth implementation.
+There is **no** occlusion-culling stage today (no `occlusion_culler.h`); the
+three cullers above are the whole pipeline. Hi-Z / software-depth occlusion is a
+possible future addition.
 
 ## AABB helpers
 
@@ -105,9 +105,11 @@ software-depth implementation.
 
 ```cpp
 auto& vis = engine.addSystem<VisibilitySystem>(SystemStage::Visibility);
-vis.setMinPixels(3.0f);
-vis.setMaxDistance(500.0f);
+vis.setSettings({ .minPixels = 3.0f, .maxDistance = 500.0f });
 ```
+
+Thresholds live in a nested `Settings` struct read/written through
+`getSettings()` / `setSettings(const Settings&)`.
 
 ## Parallelism
 
