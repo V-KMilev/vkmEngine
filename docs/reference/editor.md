@@ -44,7 +44,7 @@ overlays drawn on top.
 | `src/editor/framework/editor_commands.h`              | Concrete commands: Transform, Add/RemoveComponent, Create/DestroySubtree, Reparent |
 | `src/editor/framework/scene_io_controller.h`          | Save/Save-As/Load modal + file pickers, post-load housekeeping        |
 | `src/engine/system/camera/camera_controller.h`        | FPS fly-cam System used by the editor                                 |
-| `src/editor/gizmo/transform_gizmo.h`                  | Transform gizmo (split into draw/drag/hit translation units)          |
+| `src/editor/gizmo/transform_gizmo.h`                  | Transform gizmo (base `transform_gizmo.cpp` + draw/hit/drag translation units) |
 
 ## Panels
 
@@ -54,6 +54,7 @@ overlays drawn on top.
 | Inspector           | `panels/inspector_panel.cpp`          | Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent |
 | Bottom              | `panels/bottom_panel.cpp`             | Per-scene working surface: grouped master-detail browser                    |
 | Render Settings     | `panels/render_settings_panel.cpp`    | World-level render tuning: `RenderSettings` (GTAO / SSR / bloom / motion blur / shadows / grid) plus the `Environment` (IBL / skybox); opened from Window > Render Settings |
+| Physics Settings    | drawn inline in `editor_system.cpp`   | Edits the scene's `PhysicsWorld` singleton (gravity, solver iterations); opened from the Window menu |
 | Material Editor     | `panels/material_editor.cpp`          | Per-material PBR inspector with live preview (renders the real pipeline)    |
 | Asset Browser       | `panels/asset_browser.cpp`            | Thumbnail grid of materials / meshes / textures; pickable into the inspector|
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
@@ -119,9 +120,12 @@ Available commands (in `framework/editor_commands.h`):
 - `TransformChangeCommand`: position / rotation / scale on an entity.
   Coalesces consecutive edits on the same entity, so a gizmo drag or a
   stream of inspector micro-edits collapses to one undo step.
-- `AddComponentCommand<T>` and `RemoveComponentCommand<T>` for `Mesh`,
-  `Light`, `Camera`, `Animation`, `Name`. Remove snapshots the prior
-  value so undo restores it exactly, not a default-constructed copy.
+- `ComponentEditCommand<T>`: a generic field edit on an existing component
+  (snapshots before/after), the inspector's catch-all undo step.
+- `AddComponentCommand<T>` / `RemoveComponentCommand<T>`, instantiated for
+  `Mesh`, `Light`, `Camera`, `Animation`, `Rigidbody`, `Collider`,
+  `ReflectionProbe` (Add also covers `Name`). Remove snapshots the prior value so
+  undo restores it exactly, not a default-constructed copy.
 - `CreateEntityCommand`: captures the post-create slot so redo
   recreates at the same slot.
 - `DestroySubtreeCommand`: captures the entire subtree (entity plus
@@ -129,6 +133,9 @@ Available commands (in `framework/editor_commands.h`):
   resurrect a non-leaf delete exactly.
 - `ReparentCommand`: (child, oldParent, newParent), inverse via
   `HierarchyOperations::setParent` / `removeFromParent`.
+- `SetActiveCameraCommand`: backs the inspector's "Set as Main" camera action.
+- `RenameAssetCommand<HandleType>`: undoable asset rename (routes through
+  `ResourceManager::rename` so the name index stays consistent).
 
 Templated commands are emitted out of line via `extern template` in the
 header and instantiated once in `editor_commands.cpp` so each
@@ -203,8 +210,10 @@ Viewport-space manipulation handles for translate, rotate, and scale.
 Axis-constrained operations are supported. A fourth mode, **Select**,
 draws no handles (pick-only) so clicks always select rather than drag.
 
-The gizmo is split across three translation units for readability:
+The gizmo is split across four translation units for readability:
 
+- `transform_gizmo.cpp`: the `manipulate()` entry point and shared math
+  (world<->screen projection, ray construction, screen scale).
 - `transform_gizmo_draw.cpp`: the visuals (handles, halos, axis lines).
 - `transform_gizmo_hit.cpp`: ray casts and pick tests.
 - `transform_gizmo_drag.cpp`: the drag state machine and command

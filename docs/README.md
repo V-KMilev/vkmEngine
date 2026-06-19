@@ -1,4 +1,4 @@
-# claude_helper - agent operating manual
+# docs - agent operating manual
 
 This folder is the operating manual for anyone (human or AI agent) working in
 vkmEngine. It exists so you start from the project's actual rules, mental model,
@@ -36,7 +36,7 @@ is whichever subsystem you're about to change.
 5. **The subsystem you're touching** - the matching doc under
    [reference/](reference/) (architecture, ecs, resources, threading, editor, or
    `reference/system/` for rendering, lighting, visibility, hierarchy, animation,
-   events, io).
+   events, io, scripting, physics).
 
 If you only have time for one thing before a small change: skim the relevant
 reference doc and the development guide.
@@ -74,7 +74,7 @@ alone, only from the feature they add.
 ## Map
 
 ```
-claude_helper/
+docs/
   README.md            <- you are here: the pre-flight order + working loop
   guides/
     development.md      how to fit a problem to the engine (read 2nd)
@@ -96,4 +96,6 @@ claude_helper/
       animation.md      tracks, keyframes, easing
       events.md         typed pub/sub
       io.md             scene / asset / component serialization, FileWatcher
+      scripting.md      Behavior lifecycle, ScriptComponent, DLL hot-reload
+      physics.md        fixed-step rigid bodies, box colliders, contact solver
 ```

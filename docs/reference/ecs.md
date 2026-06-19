@@ -57,12 +57,12 @@ scene.remove<Mesh>(entity);
 |------------------|-----------------------------------|-------------------------------------------------------------------------------------------------------|
 | `Transform`      | `component/transform.h`           | `vec3 position`, `quat rotation`, `vec3 scale`                                                        |
 | `WorldTransform` | `component/world_transform.h`     | `mat4 model` (resolved each frame by `HierarchySystem`)                                               |
-| `Camera`         | `component/camera.h`              | `ProjectionType`, `fovY`, `aspect`, `zNear`, `zFar`, `exposure`, `active`                             |
+| `Camera`         | `component/camera.h`              | `projection` (`ProjectionType`), `fovY`, `aspect`, `orthoHeight`, `zNear`, `zFar`, `exposure`, `active` |
 | `Mesh`           | `component/mesh.h`                | `MeshHandle mesh`, `MaterialHandle material`, `bool visible`, `bool castShadows`                      |
 | `Light`          | `component/light.h`               | `LightType` (Directional, Point, Spot, Rect, Disk), color, intensity, attenuation, cone, area, shadow |
 | `Animation`      | `component/animation.h`           | Three tracks (position vec3, rotation quat, scale vec3) plus playback state and explicit `length`     |
 | `Hierarchy`      | `component/hierarchy.h`           | `EntityId parent`, `firstChild`, `nextSibling`, `prevSibling`, `bool dirty`                           |
-| `Name`           | `component/name.h`                | `char name[64]` for editor display and asset look-up by name                                          |
+| `Name`           | `component/name.h`                | `char value[64]` for editor display and asset look-up by name                                         |
 | `Collider`       | `component/collider.h`            | One or more `ColliderBox` parts (`center`, `halfExtents`) + `isTrigger`                               |
 | `Rigidbody`      | `component/rigidbody.h`           | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags |
 | `PhysicsWorld`   | `component/physics_world.h`       | Scene-level physics config: `gravity`, `solverIterations`                                            |
@@ -70,7 +70,14 @@ scene.remove<Mesh>(entity);
 
 Light gets a full breakdown in [Lighting](system/lighting.md), including
 the area-light fields (`areaWidth`, `areaHeight`, `areaRadius`, `twoSided`)
-introduced for Rect and Disk emitters.
+introduced for Rect and Disk emitters. `Rigidbody`, `Collider`, and
+`PhysicsWorld` are covered in [Physics](system/physics.md).
+
+One more component is **not** a plain aggregate: `ScriptComponent`
+(`system/script/script_component.h`) holds
+`std::vector<std::unique_ptr<Behavior>>`, making it move-only - the documented
+exception to the data-struct rule. It attaches native gameplay behaviors to an
+entity; see [Scripting](system/scripting.md).
 
 ### Static helpers
 
@@ -79,7 +86,7 @@ Components are data-only structs with static math helpers when useful:
 ```cpp
 glm::mat4 model = Transform::computeModelMatrix(transform);
 glm::mat4 view  = Transform::computeView(transform);
-glm::mat4 proj  = Camera::computeProjection(camera, aspect);
+glm::mat4 proj  = Camera::computeProjection(camera);   // aspect is read from camera.aspect
 ```
 
 ## Queries

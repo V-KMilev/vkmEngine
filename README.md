@@ -11,39 +11,39 @@ cmake --build build
 ./build/bin/engine
 ```
 
-See [Building](claude_helper/reference/building.md) for prerequisites and CMake targets.
+See [Building](docs/reference/building.md) for prerequisites and CMake targets.
 
 ## Documentation Index
 
-Reference docs and contributor guides live under [claude_helper/](claude_helper/).
+Reference docs and contributor guides live under [docs/](docs/).
 
 ### Core
 
-- [Architecture](claude_helper/reference/architecture.md) - High-level design, per-stage scheduler, FrameContext, directory layout, conventions
-- [Building](claude_helper/reference/building.md) - Prerequisites, build commands, CMake targets, external modules
-- [ECS](claude_helper/reference/ecs.md) - Scene, entities, components, queries, hierarchy
-- [Resources](claude_helper/reference/resources.md) - Resource management, asset types, handles, versioning, internal/external assets
+- [Architecture](docs/reference/architecture.md) - High-level design, per-stage scheduler, FrameContext, directory layout, conventions
+- [Building](docs/reference/building.md) - Prerequisites, build commands, CMake targets, external modules
+- [ECS](docs/reference/ecs.md) - Scene, entities, components, queries, hierarchy
+- [Resources](docs/reference/resources.md) - Resource management, asset types, handles, versioning, internal/external assets
 
 ### Systems
 
-- [Rendering](claude_helper/reference/system/rendering.md) - Backend seam, the fixed 10-pass forward pipeline, RenderView contract, material preview
-- [Lighting](claude_helper/reference/system/lighting.md) - Light types, area lights (Rect/Disk via LTC), shadow atlas + cube shadows, IBL
-- [Visibility](claude_helper/reference/system/visibility.md) - Culling pipeline (frustum / distance / screen-size), parallel dispatch
-- [Hierarchy](claude_helper/reference/system/hierarchy.md) - HierarchySystem, HierarchyOperations, parallel world-transform resolve
-- [Animation](claude_helper/reference/system/animation.md) - Animation tracks, keyframes, easing, two-phase update
-- [Events](claude_helper/reference/system/events.md) - Typed pub/sub, sync emit vs deferred enqueue, listener safety
-- [IO & Serialization](claude_helper/reference/system/io.md) - Scene / asset / component serializers, transactional load, FileWatcher
+- [Rendering](docs/reference/system/rendering.md) - Backend seam, the fixed 10-pass forward pipeline, RenderView contract, material preview
+- [Lighting](docs/reference/system/lighting.md) - Light types, area lights (Rect/Disk via LTC), shadow atlas + cube shadows, IBL
+- [Visibility](docs/reference/system/visibility.md) - Culling pipeline (frustum / distance / screen-size), parallel dispatch
+- [Hierarchy](docs/reference/system/hierarchy.md) - HierarchySystem, HierarchyOperations, parallel world-transform resolve
+- [Animation](docs/reference/system/animation.md) - Animation tracks, keyframes, easing, two-phase update
+- [Events](docs/reference/system/events.md) - Typed pub/sub, sync emit vs deferred enqueue, listener safety
+- [IO & Serialization](docs/reference/system/io.md) - Scene / asset / component serializers, transactional load, FileWatcher
 
 ### Platform
 
-- [Threading](claude_helper/reference/threading.md) - Shared-deque thread pool, parallelFor, main-thread participation
-- [Editor](claude_helper/reference/editor.md) - Panels, gizmos, undo/redo, viewport RTT, material preview, keybinds
+- [Threading](docs/reference/threading.md) - Shared-deque thread pool, parallelFor, main-thread participation
+- [Editor](docs/reference/editor.md) - Panels, gizmos, undo/redo, viewport RTT, material preview, keybinds
 
 ### Contributor guides
 
-- [Code style](claude_helper/guides/code-style.md) - File layout, naming, formatting, comment styles, anti-patterns
-- [Development](claude_helper/guides/development.md) - How to fit a change to the engine's structure and goals
-- [Implementation](claude_helper/guides/implementation.md) - What makes an implementation good: simple, clean, not speculative
+- [Code style](docs/guides/code-style.md) - File layout, naming, formatting, comment styles, anti-patterns
+- [Development](docs/guides/development.md) - How to fit a change to the engine's structure and goals
+- [Implementation](docs/guides/implementation.md) - What makes an implementation good: simple, clean, not speculative
 
 ## Source Layout
 
@@ -63,4 +63,4 @@ assets/            Textures, materials, meshes referenced by scenes
 examples/          Standalone scene generators used at boot
 ```
 
-See [Architecture](claude_helper/reference/architecture.md) for the full per-directory breakdown.
+See [Architecture](docs/reference/architecture.md) for the full per-directory breakdown.

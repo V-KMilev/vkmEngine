@@ -103,9 +103,10 @@ struct MeshAsset : Resource {
 ### TextureAsset
 
 `TextureAsset` extends `Resource` plus the engine-level `TextureParams`
-(width, height, format, filter, wrap). It owns the raw pixel data plus
-an sRGB flag and the original file path; the backend converts the params
-to GL state at upload time.
+(`width`, `height`, `internalFormat` / `format` / `type`, `wrapS` / `wrapT`,
+`minFilter` / `magFilter`, `generateMipmaps`). It owns the raw `pixelData`, an
+`srgb` flag, and the original `filePath`; the backend converts the params to GL
+state at upload time.
 
 ### MaterialAsset
 
@@ -119,15 +120,17 @@ It carries texture handles for albedo, normal, metallic, roughness, a
 combined metallic-roughness slot, AO-metallic-roughness (glTF), AO,
 emission, height, clearcoat, transmission.
 
-`MaterialAsset::featureFlags()` derives a `MaterialFeature` bit set from
-the active scalars and present textures (`HAS_TRANSMISSION`,
-`HAS_CLEARCOAT`, `HAS_PARALLAX`, ...). The forward pass reads this bit set
-at runtime to enable the optional lobes per draw - one shared PBR program,
-not per-variant compiled shaders; see [Rendering](system/rendering.md).
+`MaterialAsset::featureFlags()` derives a `uint32_t` bit set of
+`MaterialFeature` values from the active scalars and present textures
+(`MaterialFeature::Transmission`, `::Clearcoat`, `::Parallax`, `::Volume`,
+`::Anisotropy`, `::Subsurface`, `::Sheen`, `::AlphaMask`). The forward pass reads
+this bit set at runtime to enable the optional lobes per draw - one shared PBR
+program, not per-variant compiled shaders; see [Rendering](system/rendering.md).
 
-`MaterialType` is `Opaque`, `AlphaMask`, `Unlit`, or `Transparent`.
-Sorting in the render view groups by this enum first so the per-batch
-HDR snapshot for refraction sees a complete opaque pass.
+`MaterialType` is `Opaque = 0`, `Transparent = 1`, `Unlit = 2`, or
+`AlphaMask = 3`. Sorting in the render view groups the depth-writing types
+(Opaque/AlphaMask/Unlit) ahead of Transparent so the per-batch HDR snapshot for
+refraction sees a complete opaque pass.
 
 ### ShaderAsset
 
@@ -172,10 +175,14 @@ engine-side `AssetSerializer` can recreate any asset by dispatching its
 
 | File                    | Provides                                                       |
 |-------------------------|----------------------------------------------------------------|
-| `mesh_generators.cpp`   | Triangle, plane, cube, sphere, pyramid, cone, preview shapes   |
+| `mesh_generators.cpp`   | `generateTriangle/Plane/Cube/Sphere/Pyramid/Cone` free functions, plus `decimateMesh` (LOD) |
 | `texture_generators.cpp`| Solid color, white, black, normal, gray (1x1 fallback)         |
 | `material_generators.cpp`| Default PBR material with the fallback texture suite          |
 | `light_generators.cpp`  | Pre-baked directional / point / spot light components          |
+
+The generators are plain free functions; the string dispatch (`"name"` ->
+generator) lives in the `generator`/`decimate` factory lambdas registered in
+`asset_registration.cpp`, not a `byName` API.
 
 ### Loaders (`src/tools/loader/`)
 
@@ -184,7 +191,8 @@ engine-side `AssetSerializer` can recreate any asset by dispatching its
 | `texture_loaders.cpp`   | Load via stb_image, auto-detect channels, sRGB flag handling   |
 | `material_loaders.cpp`  | Folder loader: scans a folder for `*Color*`, `*Normal*`, etc.  |
 | `model_loader.cpp`      | Assimp-backed mesh import; per-load aiScene parse cache        |
-| `shader_loaders.cpp`    | Load a `ShaderAsset` by path prefix; registers with FileWatcher|
+| `environment_loaders.cpp`| HDR equirectangular image loader (`loadHDRImage`) for IBL / skybox |
+| `shader_loaders.h`      | Load a `ShaderAsset` by path prefix (header-only `inline` functions) |
 
 ## Save/load round-trip
 
