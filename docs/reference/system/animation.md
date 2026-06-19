@@ -7,8 +7,7 @@ single-step apply uniformly.
 ## Key files
 
 - `src/engine/system/animation/animation_system.h` - AnimationSystem
-- `src/engine/system/animation/animation_track.h` - AnimationTrack<T>
-- `src/engine/system/animation/keyframe.h` - Keyframe<T>
+- `src/engine/system/animation/animation_track.h` - AnimationTrack<T> (keyframe storage lives here)
 - `src/engine/system/animation/easing.h` - easing functions
 - `src/engine/ecs/component/animation.h` - Animation component
 
@@ -76,22 +75,25 @@ glm::vec3 value = track.getValue(1.0f);  // eased, interpolated
 
 `addKeyframe()` inserts and keeps the sequence sorted by time.
 
-## Keyframe<T>
+## Keyframe storage
+
+There is no `Keyframe<T>` struct. An `AnimationTrack<T>` stores its keyframes as
+two parallel, time-sorted vectors:
 
 ```cpp
-template<typename T>
-struct Keyframe {
-    float time;
-    T     value;
-};
+std::vector<float> m_times;   // keyframe times, ascending
+std::vector<T>     m_values;  // value at each time (vec3 or quat)
 ```
 
-Aliases: `PositionKeyframe` (vec3), `RotationKeyframe` (quat), `ScaleKeyframe` (vec3).
+`addKeyframe(time, value)` inserts into both at the position that keeps `m_times`
+sorted, and `getValue` binary-searches `m_times` for the enclosing interval. The
+parallel-array layout keeps the time lookup cache-friendly and avoids an
+array-of-structs.
 
 ## Easing functions
 
 `using EasingFunction = float(*)(float)` - takes normalized `t` in `[0, 1]`, returns
-the eased value. ~30 functions, the standard In/Out/InOut families:
+the eased value. 31 functions (`linear` plus ten In/Out/InOut families):
 
 | Family | In | Out | InOut |
 |--------|----|-----|-------|

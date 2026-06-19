@@ -27,26 +27,26 @@ plus a polling file watcher.
   index, and each component is keyed by its short name (see Component
   serializer below).
 
-`SceneSerializer::load` is **transactional at the scene level**:
+`SceneSerializer::load` is **transactional for both entities and assets**:
 
 1. Read the file (early-out on parse failure; live scene untouched).
-2. Load assets into the live `ResourceManager`. This step is idempotent
-   assets that already exist by `name` are skipped, so re-loading a
-   scene does not duplicate textures.
+2. Load the assets into a **staging** `ResourceManager` (not the live
+   one). Idempotent: assets already present by `name` are skipped, so
+   re-loading does not duplicate textures.
 3. Deserialise every entity into a **staging** `Scene` (not the live
    one). Failures here also leave the live scene untouched.
-4. On full success, `Scene::swap` exchanges the live scene's storage
-   with the staging scene's storage in a single step.
+4. On full success, swap both staging containers in one step:
+   `Scene::swap` for the scene, and `ResourceManager::swap` (plus
+   `swapSlot<ShaderAsset>`) for the assets.
 
 `Scene::createEntityAt(slotIndex)` is what makes step 3 possible:
 entities recreate at their saved slot, so `Hierarchy::parent` indices
 in the file resolve directly without a remap step.
 
-Note on asset rollback: asset state is **not** transactional. If step 3
-fails after step 2 has loaded several assets, those assets stay in the
-live `ResourceManager`. They are harmless (just orphaned) and a manual
-cleanup pass can remove them later. The .cpp documents this
-trade-off inline.
+Because both the scene and the assets are staged and swapped only on full
+success, a malformed or partial file leaves the live `Scene` **and** the live
+`ResourceManager` untouched - there are no orphaned half-loaded assets. The .cpp
+documents this inline.
 
 After load, the caller should:
 
@@ -70,17 +70,25 @@ keyed by the `kind` field of the descriptor:
 
 | `kind`           | Resolves to                                       |
 |------------------|---------------------------------------------------|
-| `generator`      | A `tools/generator/` factory (triangle, cube, sphere, ...) |
-| `file`           | A loader (texture from path, model via Assimp)    |
+| `generator`      | A `tools/generator/` mesh factory (triangle, cube, sphere, ...) |
+| `decimate`       | A decimated (LOD) copy of another mesh            |
+| `file`           | A texture loaded from a path (stb_image)          |
+| `model`          | A mesh imported from a model file via Assimp (async) |
 | `folder`         | The folder material loader (auto-discovers textures by naming) |
 | `inline`         | A literal `MaterialAsset` written in place        |
+
+(The registry also carries a few internal kinds for built-in/solid/fallback
+assets; the table above is the set scene files use.)
 
 Engine code never reaches into `tools/`. Factories are registered at
 startup in `tools/asset_registration.cpp`:
 
 ```cpp
 AssetFactories::get().registerMesh("generator", [](const json& d) {
-    return MeshGenerators::byName(d.at("name"));
+    const std::string name = d.at("name");
+    if (name == "cube")   return MeshGenerators::generateCube();
+    if (name == "sphere") return MeshGenerators::generateSphere();
+    // ... dispatch the name to the generate* free functions
 });
 AssetFactories::get().registerTexture("file", [](const json& d, ResourceManager& rm) {
     return TextureLoaders::loadFromFile(rm, d.at("path"));
@@ -97,14 +105,22 @@ For every component, there is a `save(const T&) -> json` and a
 `load(const json&, T&)`. They are intentionally mechanical, one pair
 per component.
 
-Today's coverage:
+Today's coverage (the `SerializedComponents` tuple in `scene_serializer.cpp`):
 
 - `Name`, `Transform`, `Camera`, `Light`, `Mesh`, `Animation`
+- `Rigidbody`, `Collider`, `PhysicsWorld` (physics; runtime sleep state and
+  derived mass properties are not persisted - see [Physics](physics.md)).
+- `ScriptComponent` (JSON key `"Script"`): each behavior stored by its registered
+  type name and recreated through `BehaviorRegistry` on load (unknown types are
+  dropped). Per-behavior fields are not yet written to the scene file - see
+  [Scripting](scripting.md).
 - `Hierarchy` (only `parent` is serialized; sibling pointers are
   rebuilt on load by re-running `HierarchyOperations::setParent`).
-- `Environment` (the scene's lighting environment: HDR path, intensity,
-  skybox toggle). Render tuning (GTAO / SSR / bloom / ...) lives in
-  `RenderSettings` on the RenderSystem, not in a serialized component.
+
+`Environment` (the scene's lighting environment: HDR path, intensity, skybox
+toggle) is serialized separately, alongside the entities. Render tuning (GTAO /
+SSR / bloom / ...) lives in `RenderSettings` on the RenderSystem, not in a
+serialized component.
 
 `Mesh` references handles by `name` rather than by `Storage` index;
 that is what makes assets a stable identity across save/load.
@@ -128,14 +144,17 @@ No registry tables, no virtual dispatch, no macros.
 
 ## FileWatcher
 
-`FileWatcher` is a `System` on `SystemStage::Input`. It polls registered
+`FileWatcher` is a `System` for `SystemStage::Input`. It polls registered
 directories on a configurable interval (default 0.5 s), `stat()`s each
 file, and fires the registered `OnChange` callback the next time a
 file's `mtime` differs from the last seen value.
 
+It is provided by the engine but **not** registered by the default
+`setupEngineApp` wiring today; an app opts in explicitly:
+
 ```cpp
 auto& watcher = engine.addSystem<FileWatcher>(SystemStage::Input);
-watcher.watch("shaders/pbr", [&]{ resources.commitShader(pbrHandle); });
+watcher.watch("shaders/forward/pbr", [&]{ resources.commitShader(pbrHandle); });
 ```
 
 The typical use is shader hot-reload: when a `.shader` source file

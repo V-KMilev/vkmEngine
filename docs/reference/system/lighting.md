@@ -104,12 +104,12 @@ shadow source.
 
 The shadow system has two atlases sized by `engine_config.h`:
 
-- **2D atlas** (`Config::MaxShadowCasters2D = 6` layers) holds
+- **2D atlas** (`Config::MAX_SHADOW_CASTERS_2D = 6` layers) holds
   directional and spot shadow maps. The first directional caster
-  reserves `Config::NumCascades = 4` consecutive layers for a CSM
+  reserves `Config::NUM_CASCADES = 4` consecutive layers for a CSM
   (cascaded shadow maps) split; the remaining 2 layers serve spot
   lights.
-- **Cube atlas** (`Config::MaxShadowCastersCube = 2`) holds the six
+- **Cube atlas** (`Config::MAX_SHADOW_CASTERS_CUBE = 2`) holds the six
   faces per point-light shadow.
 
 Shadow rendering goes through `GLShadowPass`, which:
@@ -145,18 +145,24 @@ has not changed: a single comparison and an early-out.
 
 ## Limits and the must-match-shader contract
 
-| Constant                 | Value | Shader identifier               | Where it lives                                  |
-|--------------------------|-------|---------------------------------|-------------------------------------------------|
-| `Config::MaxLights`      | 32    | `MAX_LIGHTS`                    | `shaders/forward/pbr/fragment.shader`             |
-| `Config::MaxShadowCasters2D` | 6 | `SHADOW_MAX_CASTERS_2D`         | `shaders/forward/pbr/fragment.shader`             |
-| `Config::MaxShadowCastersCube` | 2 | `SHADOW_MAX_CASTERS_CUBE`     | `shaders/forward/pbr/fragment.shader`             |
-| `Config::NumCascades`    | 4     | `NUM_CASCADES`                  | `shaders/forward/pbr/fragment.shader`             |
-| `Config::ShadowCubeNear` | 0.1   | `SHADOW_CUBE_NEAR`              | Emitted into `shaders/_generated/engine_config.glsl` at build time |
+| C++ constant (`engine_config.h`) | Value | Shader define (`forward/pbr/fragment.shader`) |
+|----------------------------------|-------|-----------------------------------------------|
+| `Config::MAX_LIGHTS`             | 32    | `MAX_LIGHTS`                                   |
+| `Config::MAX_SHADOW_CASTERS_2D`  | 6     | `SHADOW_MAX_2D`                                |
+| `Config::MAX_SHADOW_CASTERS_CUBE`| 2     | `SHADOW_MAX_CUBE`                              |
+| `Config::NUM_CASCADES`           | 4     | (no shader define; CSM count comes from the shadow UBO `csmCount` / `cascadeSplits`) |
+| `Config::SHADOW_CUBE_NEAR`       | 0.1   | (used only by the shadow pass, not the forward shader) |
 
-If you bump one side, you must bump the other. The CMake build
-generates `engine_config.glsl` from `engine_config.h` for the values
-that only matter to the shader (currently `ShadowCubeNear`), so
-single-source-of-truth is preserved on those.
+If you bump one side, you must bump the other - by hand. The note in
+`engine_config.h` and the shader's `// must match` comments are the only guard:
+**the forward shaders hand-define their own copies**, under different names
+(`SHADOW_MAX_2D` vs the C++ `MAX_SHADOW_CASTERS_2D`).
+
+The build *does* generate `shaders/_generated/engine_config.glsl` from
+`engine_config.h` (with names `MAX_LIGHTS`, `SHADOW_MAX_CASTERS_2D`, ...), the
+intended single source of truth - but no shader `#include`s it yet, so it is
+currently unused. Wiring the forward shaders to include it (and dropping the hand
+defines) is the open follow-up; it needs a render verify.
 
 ## Editor integration
 

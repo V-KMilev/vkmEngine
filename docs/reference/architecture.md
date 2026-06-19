@@ -39,16 +39,21 @@ enum class SystemStage : uint8_t {
 };
 ```
 
-Default wiring (the app entry point):
+Default wiring lives in `setupEngineApp` (`src/engine_app/engine_app.cpp`), the
+shared bootstrap both executables call. `engine_editor` adds `EditorSystem` from
+its own `main()` after that returns; `engine_runtime` never does:
 
 | Stage      | Systems                                                                         |
 |------------|---------------------------------------------------------------------------------|
-| Input      | `CameraController`, `FileWatcher`                                               |
+| Input      | `CameraController`                                                              |
 | Simulation | `EventSystem`, `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `PhysicsSystem` |
 | Transform  | `HierarchySystem`                                                              |
 | Visibility | `VisibilitySystem`                                                            |
 | Render     | `RenderSystem`                                                                |
-| UI         | `EditorSystem`                                                                |
+| UI         | `EditorSystem` (editor binary only)                                           |
+
+`FileWatcher` is an Input-stage `System` the engine provides but `setupEngineApp`
+does not register today (see [system/io.md](system/io.md)).
 
 Place a new system by responsibility and let stage order schedule it - see
 [../guides/development.md](../guides/development.md#4-the-seams-you-must-not-cross).
@@ -94,11 +99,15 @@ uniformly; anything that must advance regardless of play state (camera, UI) read
 ## Engine config constants
 
 Cross-cutting compile-time limits live in `core/engine_config.h` (treat it as the
-source of truth for exact names/values): ~32 max lights; a shadow atlas of 6 2D
-tiles (4 reserved for the first directional light's CSM cascades) + 2 cube slots; 4
-CSM cascades; the 1/60 fixed timestep; and the 0.25 s accumulator cap. The shadow
-constants are emitted into a generated GLSL header so the shader and the C++ stay in
-lockstep. Per-system tunables (cull distance, camera sensitivity) live in a nested
+source of truth for exact names/values): `MAX_LIGHTS = 32`;
+`MAX_SHADOW_CASTERS_2D = 6` 2D atlas tiles (4 reserved for the first directional
+light's CSM cascades via `NUM_CASCADES`) + `MAX_SHADOW_CASTERS_CUBE = 2` cube
+slots; the `FIXED_TIME_STEP` (1/60) and the `MAX_FRAME_ACCUMULATOR` (0.25 s) cap.
+The CMake build generates `shaders/_generated/engine_config.glsl` from this header
+so cross-language constants *can* be single-sourced - though the forward shaders
+still hand-define their copies today (see
+[system/lighting.md](system/lighting.md#limits-and-the-must-match-shader-contract)).
+Per-system tunables (cull distance, camera sensitivity) live in a nested
 `Settings` struct on the owning system, not here.
 
 ## Directory layout
@@ -120,7 +129,7 @@ Engine code, single include root `src/engine/`:
 | `system/io/`               | `FileWatcher` (polling hot-reload)                                       |
 | `system/physics/`          | `PhysicsSystem`, `collision/`                                            |
 | `system/render/`           | `RenderSystem`, `RenderBackend`, `RenderView`, `RenderSettings`, `data/` |
-| `system/script/`           | `BehaviorSystem`, `Behavior`, `BehaviorRegistry`, `ScriptModule`        |
+| `system/script/`           | `BehaviorSystem`, `Behavior`, `ReflectedBehavior`, `BehaviorRegistry`, `ScriptComponent`, `ScriptModule` (see [system/scripting.md](system/scripting.md)) |
 | `system/visibility/`       | `VisibilitySystem`, `Visibility`, `VisibilityContext`, `BoundsUtils`    |
 | `system/visibility/culling/` | `FrustumCuller`, `DistanceCulling`, `ScreenSizeCulling`                |
 | `resource/`                | `ResourceManager`, `Resource`, `Handle`, `texture_format`               |
@@ -128,7 +137,8 @@ Engine code, single include root `src/engine/`:
 | `io/`                      | `SceneSerializer`, `AssetSerializer`, `ComponentSerializer`, `reflect.h`, `project_paths` |
 | `platform/window/`         | `WindowManager`, `Window`, input handles, `FrameLimiter`                |
 | `platform/threading/`      | `ThreadPool`, `Task` (shared-deque pool, see [threading.md](threading.md)) |
-| `debug/`                   | `FrameTracker`, `FrameInfo`, `profiler` (Tracy facade)                  |
+| `platform/library/`        | `DynamicLibrary` (cross-platform `.dll`/`.so` loader for gameplay hot-reload) |
+| `debug/`                   | `FrameTracker`, `FrameInfo`, `profiler` (Tracy facade), error logs       |
 
 OpenGL backend, `src/backend/opengl/` (flat `gl_`-prefixed includes):
 
@@ -143,6 +153,15 @@ Editor (`src/editor/`): `EditorSystem` at the root; `framework/`, `panels/`,
 `overlays/`, `gizmo/`, `input/`, `ui/`. Tools (`src/tools/`): `loader/`,
 `generator/`, and `asset_registration.cpp` (registers factories into
 `AssetFactories` at startup).
+
+Application and gameplay layers sit **outside** the `src/engine/` include root:
+
+| Path                | Contents                                                                  |
+|---------------------|---------------------------------------------------------------------------|
+| `src/engine_app/`   | `EngineApp` (`setupEngineApp`): the shared bootstrap that registers the default systems, installs the GL backend, and seeds the default scene |
+| `app/engine_editor/`| `engine_editor` entry point; loads the gameplay module for hot-reload      |
+| `app/engine_runtime/`| `engine_runtime` entry point; static-links gameplay, can boot a saved scene |
+| `game/`             | concrete gameplay `Behavior`s (the reusable engine is `src/`; `game/` is built on top) |
 
 ## Include conventions
 
