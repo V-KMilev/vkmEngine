@@ -16,3 +16,6 @@
 [submodule "modules/tracy"]
 	path = modules/tracy
 	url = https://github.com/wolfpld/tracy.git
+[submodule "modules/stb"]
+	path = modules/stb
+	url = https://github.com/nothings/stb.git

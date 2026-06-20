@@ -2,8 +2,12 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <memory>
 
 #include <imgui.h>
+
+#include "texture/gl_texture.h"   // Core::Texture2D - the brand mark
+#include "io/project_paths.h"
 
 #include "core/system.h"
 #include "debug/frame_tracker.h"
@@ -17,11 +21,31 @@
 
 namespace Engine {
 
+// Defined here (not =default in the header) so the unique_ptr<Core::Texture2D>
+// member sees the complete type for destruction.
+EditorMenuBar::EditorMenuBar()  = default;
+EditorMenuBar::~EditorMenuBar() = default;
+
 void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     if (!ImGui::BeginMenuBar()) return;
 
     FrameContext& ctx   = ec.frame;
     EditorState&  state = ec.state;
+
+    // Brand mark at the left of the menu bar, before the menus. Lazy-loaded the
+    // first time we draw (the GL context is live by now). Loaded unflipped so
+    // ImGui's top-left UVs render it upright.
+    if (!m_logo) {
+        m_logo = std::make_unique<Core::Texture2D>(
+            (ProjectPaths::assets() / "logo" / "vkm_engine_mark.png").string(),
+            /*flipVertically*/ false);
+    }
+    if (m_logo->getWidth() > 0) {
+        const float sz = ImGui::GetTextLineHeight();
+        ImGui::Image(static_cast<ImTextureID>(static_cast<intptr_t>(m_logo->getID())),
+                     ImVec2(sz * 1.5f, sz * 1.5f));
+        ImGui::SameLine();
+    }
 
     if (ImGui::BeginMenu("File")) {
         char lbl[48];

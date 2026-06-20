@@ -9,9 +9,9 @@
 
 #include "core/engine.h"
 #include "asset_registration.h"
-#include "engine_app.h"
 #include "game_behaviors.h"
 #include "io/scene_serializer.h"
+#include "app/engine_app.h"
 
 int main(int argc, char** argv) {
     try {
@@ -39,19 +39,9 @@ int main(int argc, char** argv) {
         Engine::registerGameBehaviors();
 
         Engine::Engine engine;
-        auto& window = engine.getWindow();
-        window.createWindow("VKM Engine (Runtime)");
-        window.setFramerate(0);
 
-        // Standard engine bootstrap: systems, shaders, pipeline, default
-        // scene. No editor is added - this binary is the foundation for a
-        // shipped game executable and contains no editor code at all.
-        Engine::setupEngineApp(engine);
+        setupEngineApp(engine, AppConfig{"VKM Engine (Runtime)", false, true});
 
-        // Boot a saved scene if one was given (e.g. engine_runtime scenes/level1.json);
-        // otherwise keep the default scene. Assets + behaviors are already
-        // registered above, so the scene's meshes/materials/scripts recreate.
-        // The CameraController re-resolves the active camera after the swap.
         if (argc > 1) {
             const char* scenePath = argv[1];
             if (Engine::SceneSerializer::load(engine.getScene(), engine.getResources(), scenePath)) {
@@ -61,7 +51,6 @@ int main(int argc, char** argv) {
             }
         }
 
-        engine.logFPS(true);
         engine.run();
 
     } catch (const std::exception& e) {

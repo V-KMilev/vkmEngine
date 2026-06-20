@@ -39,6 +39,12 @@ void removeStaleCopies(const std::filesystem::path& src) {
 } // namespace
 
 ScriptModule::~ScriptModule() {
+    // Drop the registry's factories before unloading: they close over this
+    // module's code, so the BehaviorRegistry singleton's own destruction at
+    // process exit would otherwise tear down std::functions whose code has
+    // already been dlclose'd here - a segfault in static teardown. Mirrors the
+    // clear-before-unload ordering in reload().
+    BehaviorRegistry::get().clear();
     // Unload before deleting so the copy file is no longer locked.
     m_lib.unload();
     if (!m_loadedCopyPath.empty()) {
