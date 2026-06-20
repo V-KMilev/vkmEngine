@@ -46,8 +46,8 @@ set(_glsl
 // of hand-copying these values.
 
 const int   MAX_LIGHTS              = ${_max_lights};
-const int   SHADOW_MAX_CASTERS_2D   = ${_max_shadow_2d};
-const int   SHADOW_MAX_CASTERS_CUBE = ${_max_shadow_cube};
+const int   MAX_SHADOW_CASTERS_2D   = ${_max_shadow_2d};
+const int   MAX_SHADOW_CASTERS_CUBE = ${_max_shadow_cube};
 const int   NUM_CASCADES            = ${_num_cascades};
 const float SHADOW_CUBE_NEAR        = ${_cube_near};
 ")

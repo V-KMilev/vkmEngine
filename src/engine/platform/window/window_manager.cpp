@@ -14,6 +14,8 @@
 
 #include "debug/profiler.h"
 
+#include "stb_image.h"
+
 namespace Engine {
 
 WindowManager::WindowManager() = default;
@@ -60,6 +62,24 @@ void WindowManager::createWindow(const std::string& title) {
     LOG_INFO("Created window '%s' (%dx%d, refresh %dHz)",
         title.c_str(), m_window->getWidth(), m_window->getHeight(),
         m_window->getRefreshRate());
+}
+
+void WindowManager::setIcon(const std::string& path) {
+    if (!m_window) {
+        LOG_ERROR("setIcon called before createWindow - ignored");
+        return;
+    }
+    int width, height, channels;
+    // Force 4 channels (RGBA) - GLFWimage expects 32-bit RGBA, top-left origin.
+    unsigned char* pixels = stbi_load(path.c_str(), &width, &height, &channels, 4);
+    if (!pixels) {
+        LOG_ERROR("Window icon failed to load: '%s'", path.c_str());
+        return;
+    }
+    GLFWimage image{ width, height, pixels };
+    glfwSetWindowIcon(m_window->getWindowContext(), 1, &image);
+    stbi_image_free(pixels);
+    LOG_INFO("Window icon set from '%s' (%dx%d)", path.c_str(), width, height);
 }
 
 bool WindowManager::shouldClose() const {

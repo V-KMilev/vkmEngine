@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- VKM Engine logo - small (VKM monogram only), axis-aligned straight-line monogram, red->white gradient. For dark backgrounds. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="334 263 588 562" shape-rendering="geometricPrecision">
+  <defs>
+    <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="628" y1="279" x2="628" y2="809">
+      <stop offset="0" stop-color="#DC2626"/><stop offset="1" stop-color="#FFFFFF"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#g)" fill-rule="evenodd">
+    <path d="M453,491 L453,809 L490,809 L490,600 L632,809 L771,600 L771,809 L811,809 L811,491 L783,520 L632,742 L481,520 Z"/>
+    <path d="M350,279 L632,702 L648,681 L648,520 L695,474 L745,533 L771,502 L722,451 L906,279 L854,279 L648,474 L648,279 L608,279 L608,600 L398,279 Z"/>
+  </g>
+</svg>

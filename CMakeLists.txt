@@ -79,15 +79,15 @@ if(VKM_WITH_EDITOR)
     add_subdirectory(src/editor)
 endif()
 add_subdirectory(src/backend/opengl)
-add_subdirectory(src/engine_app)
 # game/ is the gameplay layer (behaviors), kept outside src/ - src/ is the
 # reusable engine; game/ is what's built on top of it.
 add_subdirectory(game)
 
 # Two thin executables under app/. engine_runtime is the bare engine; engine_editor
-# adds the in-process editor on top of the shared EngineApp bootstrap. Both pull
-# the rest of the engine in through EngineApp.
-add_subdirectory(app/engine_runtime)
+# adds the in-process editor. Both link the engine libs directly and share the
+# header-only bootstrap in example/engine_app.h (setupEngineApp) - the editor's
+# only addition is its EditorSystem.
+add_subdirectory(app/runtime)
 if(VKM_WITH_EDITOR)
-    add_subdirectory(app/engine_editor)
+    add_subdirectory(app/editor)
 endif()

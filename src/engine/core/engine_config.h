@@ -17,12 +17,11 @@ namespace Engine {
  */
 namespace Config {
 
-    // The constants below are the source of truth for both C++ and GLSL:
-    // cmake/generate_shader_config.cmake mirrors them into
-    // shaders/_generated/engine_config.glsl (MAX_LIGHTS, SHADOW_MAX_CASTERS_2D,
-    // SHADOW_MAX_CASTERS_CUBE, NUM_CASCADES, SHADOW_CUBE_NEAR). Shaders still
-    // hand-define their own copies today (e.g. MAX_LIGHTS in forward/pbr); keep
-    // those in sync until they #include the generated file.
+    // The constants below are the single source of truth for both C++ and GLSL:
+    // cmake/generate_shader_config.cmake mirrors them (under the same names) into
+    // shaders/_generated/engine_config.glsl, which the forward shaders #include
+    // via the engine's shader preprocessor (see gl_shader_source.h). Do not
+    // re-define these in a shader - include the generated file instead.
 
     /// Maximum number of lights uploaded per frame.
     constexpr uint32_t MAX_LIGHTS = 32;

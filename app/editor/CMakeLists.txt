@@ -2,12 +2,21 @@
 # dialogs). Built only when VKM_WITH_EDITOR=ON.
 add_executable(engine_editor main.cpp)
 
+# The app drives the engine directly (no EngineApp library), so it links the
+# engine libs - the same set EngineApp used to re-export - plus EngineEditor.
 target_link_libraries(engine_editor PRIVATE
-    EngineApp
+    EngineCore
+    EngineRendering
+    EngineTools
+    BackendOpenGL
     EngineEditor
     BuildInfo
     vkm_warnings
 )
+
+# main.cpp includes the shared bootstrap as "app/engine_app.h" (which pulls in
+# "example/default_scene.h"); the repo root puts both prefixes on the include path.
+target_include_directories(engine_editor PRIVATE ${CMAKE_SOURCE_DIR})
 
 # Where the editor looks for the hot-reloadable game module at runtime (the
 # unified output dir, next to the exe).
@@ -38,8 +47,16 @@ target_link_libraries(game_module PRIVATE EngineHeaders vkm_warnings)
 if(WIN32)
     target_link_libraries(game_module PRIVATE engine_editor)
 endif()
-# Output as game.dll / libgame.so / libgame.dylib (matches DynamicLibrary::platformName).
-set_target_properties(game_module PROPERTIES OUTPUT_NAME game)
+# Output as game.dll / libgame.so / libgame.dylib (matches DynamicLibrary::platformName),
+# placed in the unified binary dir (build/bin) where the editor's GAME_MODULE_DIR looks.
+# On Linux a SHARED lib is a LIBRARY artifact, so CMAKE_RUNTIME_OUTPUT_DIRECTORY
+# alone (it governs exes and Windows DLLs only) would leave libgame.so in the target's
+# own build dir and the editor would not find it.
+set_target_properties(game_module PROPERTIES
+    OUTPUT_NAME game
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
+)
 if(WIN32)
     set_target_properties(game_module PROPERTIES PREFIX "")
 endif()
