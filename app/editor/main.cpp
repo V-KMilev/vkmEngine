@@ -9,12 +9,13 @@
 
 #include "core/engine.h"
 #include "asset_registration.h"
-#include "engine_app.h"
+#include "io/scene_serializer.h"
 #include "editor_system.h"
-#include "platform/library/dynamic_library.h"
 #include "system/script/script_module.h"
+#include "platform/library/dynamic_library.h"
+#include "app/engine_app.h"
 
-int main() {
+int main(int argc, char** argv) {
     try {
         const std::string rootDir = APP_ROOT_DIR;
         const std::string logFile = rootDir + "/logs/log.log";
@@ -47,31 +48,22 @@ int main() {
         }
 
         Engine::Engine engine;
-        auto& window = engine.getWindow();
-        window.createWindow("VKM Engine");
-        window.setFramerate(0);
 
-        auto sys = Engine::setupEngineApp(engine);
+        auto sys = setupEngineApp(engine, AppConfig{"VKM Engine", true, false});
 
-        // Editor system is the only thing this binary adds beyond the
-        // shared bootstrap; that's the entire reason for the split.
-        engine.addSystem<Engine::EditorSystem>(
-            Engine::SystemStage::UI,
-            engine,
-            window.getWindowContext(),
-            sys.camera,
-            sys.visibility,
-            sys.render,
-            sys.events,
-            scriptModule
-        );
+        engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
+            engine, engine.getWindow().getWindowContext(),
+            sys.camera, sys.visibility, sys.render, sys.events, scriptModule);
 
-        // The editor opens in Edit mode: simulation is frozen until the user
-        // presses Play in the viewport. The runtime binary never does this,
-        // so it simulates immediately. See Engine::getSimulationClock.
-        engine.getSimulationClock().setPaused(true);
+        if (argc > 1) {
+            const char* scenePath = argv[1];
+            if (Engine::SceneSerializer::load(engine.getScene(), engine.getResources(), scenePath)) {
+                LOG_INFO("Booted scene '%s'", scenePath);
+            } else {
+                LOG_ERROR("Failed to load scene '%s'; using the default scene", scenePath);
+            }
+        }
 
-        engine.logFPS(false);
         engine.run();
 
     } catch (const std::exception& e) {

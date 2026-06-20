@@ -19,6 +19,19 @@ if(NOT TARGET nlohmann_json)
 endif()
 
 # ============================================================================
+# stb (image decoding). Header-only upstream; we compile the implementation
+# once into a tiny static lib so any engine target (not just the GL backend)
+# can decode images - the window icon is the first user. vkmGL keeps its own
+# file-local copy (STB_IMAGE_STATIC), so there is no duplicate-symbol clash.
+# ============================================================================
+if(NOT TARGET stb)
+    set(_stb_impl ${CMAKE_CURRENT_BINARY_DIR}/stb_image_impl.c)
+    file(WRITE ${_stb_impl} "#define STB_IMAGE_IMPLEMENTATION\n#include \"stb_image.h\"\n")
+    add_library(stb STATIC ${_stb_impl})
+    target_include_directories(stb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/stb)
+endif()
+
+# ============================================================================
 # Assimp (model import: glTF / OBJ / FBX / DAE / STL / PLY / 3DS).
 # Trimmed hard: no tools/tests/samples/exporters, only the importers we use,
 # and the bundled zlib so the build stays self-contained on MSYS2/clang.

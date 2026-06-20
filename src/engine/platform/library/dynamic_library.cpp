@@ -7,7 +7,7 @@
 #if defined(_WIN32)
     #define WIN32_LEAN_AND_MEAN
     #define NOMINMAX
-    #define NOGDI            // exclude wingdi.h, whose ERROR macro clobbers LogLevel::ERROR
+    #define NOGDI
     #include <windows.h>
 #else
     #include <dlfcn.h>
@@ -78,8 +78,6 @@ void* DynamicLibrary::symbol(const char* name) const {
 std::string DynamicLibrary::platformName(const std::string& baseName) {
 #if defined(_WIN32)
     return baseName + ".dll";
-#elif defined(__APPLE__)
-    return "lib" + baseName + ".dylib";
 #else
     return "lib" + baseName + ".so";
 #endif

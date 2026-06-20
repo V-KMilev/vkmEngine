@@ -86,6 +86,17 @@ class WindowManager {
         void createWindow(const std::string& title);
 
         /**
+         * @brief Sets the window/taskbar icon from an image file (PNG, etc.).
+         *
+         * Decoded with stb_image to RGBA and handed to GLFW. No-op (with a log)
+         * if the window is not yet created or the file fails to load. Call after
+         * createWindow().
+         *
+         * @param path Absolute path to the icon image.
+         */
+        void setIcon(const std::string& path);
+
+        /**
          * @brief Checks if the window close event has been triggered.
          * @return true if the window should close, false otherwise.
          */

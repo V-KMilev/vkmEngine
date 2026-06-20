@@ -40,6 +40,7 @@ target_link_libraries(EngineCore PRIVATE
     glew
     vkm_warnings
     BuildInfo          # io/screenshot.cpp resolves paths against APP_ROOT_DIR
+    stb                # platform/window/window_manager.cpp decodes the window icon
 )
 
 target_compile_definitions(EngineCore PUBLIC
