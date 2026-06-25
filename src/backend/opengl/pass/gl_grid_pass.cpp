@@ -29,7 +29,7 @@ GLGridPass::GLGridPass()
 GLGridPass::~GLGridPass() = default;
 
 void GLGridPass::execute(GLFrameContext& ctx) {
-    if (!isEnabled() || !ctx.view.settings.grid) return;
+    if (!ctx.view.settings.grid) return;
 
     const RenderView& view = ctx.view;
     const glm::mat4 viewProj = view.camera.projection * view.camera.view;

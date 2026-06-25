@@ -13,10 +13,6 @@ struct VisibilityContext {
     Math::Frustum frustum;       ///< View frustum planes (from Math::extractFrustum).
     glm::vec3 cameraPosition;    ///< Camera position in world space.
     glm::mat4 view;              ///< View matrix (world -> view space).
-    glm::mat4 projection;        ///< Projection matrix (view -> clip space).
-
-    uint32_t viewportWidth;      ///< Viewport width in pixels.
-    uint32_t viewportHeight;     ///< Viewport height in pixels.
 
     float minPixels;             ///< Min projected size in pixels; below this, screen-size culling rejects. <= 0 disables.
     float maxDistance;           ///< Max distance from camera; beyond this, distance culling rejects. <= 0 disables.

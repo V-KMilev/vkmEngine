@@ -24,8 +24,6 @@ GLCompositePass::GLCompositePass()
 GLCompositePass::~GLCompositePass() = default;
 
 void GLCompositePass::execute(GLFrameContext& ctx) {
-    if (!isEnabled()) return;
-
     const RenderView& view = ctx.view;
 
     // Back to the backbuffer, into the window's viewport rect.

@@ -95,10 +95,6 @@ void VisibilitySystem::update(FrameContext& ctx) {
         .frustum        = Math::extractFrustum(viewProjection),
         .cameraPosition = cameraPosition,
         .view           = view,
-        .projection     = projection,
-
-        .viewportWidth  = ctx.viewportWidth,
-        .viewportHeight = ctx.viewportHeight,
         .minPixels      = m_settings.minPixels,
         .maxDistance    = m_settings.maxDistance,
         .maxDistanceSquared = m_settings.maxDistance * m_settings.maxDistance,
