@@ -11,6 +11,7 @@
 #include "core/engine.h"
 #include "asset_registration.h"
 #include "game_behaviors.h"
+#include "io/asset_library.h"
 #include "io/scene_serializer.h"
 #include "app/engine_app.h"
 
@@ -33,6 +34,10 @@ int main(int argc, char** argv) {
         // The runtime loads only cooked assets, so it registers just the cooked
         // factory set (no Assimp, no image decode). Must precede scene I/O.
         Engine::registerCookedAssetFactories();
+
+        // The cooked asset database manifest resolves scene asset references to
+        // their cooked files on load.
+        Engine::AssetLibrary::get().load();
 
         // The runtime static-links the gameplay module (no hot-reload), so it
         // registers behaviors directly. Must precede setupEngineApp's default

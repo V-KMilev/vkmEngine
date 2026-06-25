@@ -31,7 +31,8 @@ namespace {
 using nlohmann::json;
 namespace CS = ComponentSerializer;
 
-constexpr int FILE_FORMAT_VERSION = 1;
+// Assets are name-only references resolved through the cooked asset library.
+constexpr int FILE_FORMAT_VERSION = 2;
 
 /**
  * @brief Per-component serialization recipe.
@@ -213,7 +214,15 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     ResourceManager stagingResources;
 
     if (doc.contains("assets")) {
-        AssetSerializer::loadAssets(doc["assets"], stagingResources);
+        // Inside a guard: a malformed assets block (bad JSON, missing library
+        // entry) must log and leave the live scene + assets untouched, not throw
+        // out of load(). The staging RM is discarded on the early return.
+        try {
+            AssetSerializer::loadAssets(doc["assets"], stagingResources);
+        } catch (const std::exception& e) {
+            LOG_ERROR("Asset load failed for '%s': %s - scene not loaded", source, e.what());
+            return false;
+        }
     }
 
     // Pass 1: create each entity at its saved slot index and populate

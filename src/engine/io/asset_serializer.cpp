@@ -3,6 +3,8 @@
 #include "io/asset_serializer.h"
 
 #include <array>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <unordered_set>
 
@@ -11,6 +13,8 @@
 #include "ecs/component/mesh.h"
 #include "ecs/scene.h"
 #include "resource/resource_manager.h"
+#include "io/asset_library.h"
+#include "io/project_paths.h"
 #include "io/reflect.h"
 
 namespace Engine {
@@ -212,30 +216,17 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
 }
 
 /**
- * @brief Emit one asset descriptor into @p target.
+ * @brief Emit one name-only asset reference into @p target.
  *
- * Keyed by `name` - the scene references assets by name, so an unnamed asset
- * can't be referenced and is skipped. @p sourceOverride lets materials
- * substitute their derived `inline` form for the asset's runtime source.
+ * The asset's data lives in the cooked library (keyed by name); the scene only
+ * records the reference. An unnamed asset can't be referenced, so it is skipped.
  */
-void emitDescriptor(
-    nlohmann::json& target,
-    const Resource& asset,
-    const nlohmann::json* sourceOverride = nullptr
-) {
+void emitDescriptor(nlohmann::json& target, const Resource& asset) {
     if (asset.name.empty()) {
         LOG_WARNING("Asset has no name; skipping in save");
         return;
     }
-    const nlohmann::json* source = sourceOverride ? sourceOverride : asset.source.get();
-    if (!source || source->is_null()) {
-        LOG_WARNING("Asset '%s' has no source descriptor; skipping in save", asset.name.c_str());
-        return;
-    }
-    target.push_back({
-        {"name",   asset.name},
-        {"source", *source},
-    });
+    target.push_back({{"name", asset.name}});
 }
 
 } // namespace
@@ -265,13 +256,11 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
         if (m.material && seenMaterials.insert(m.material.id()).second) {
             const auto& asset = resources.get(m.material);
             if (asset.hidden) return;
-            // Materials always save as `inline` - captures the actual runtime
-            // state (including editor scalar tweaks) regardless of how the
-            // material was originally created.
-            nlohmann::json inlineDesc = materialToInline(asset, resources);
-            emitDescriptor(materials, asset, &inlineDesc);
+            // Name-only reference; the cooker has already written the material's
+            // canonical inline form to the library under this name.
+            emitDescriptor(materials, asset);
             // Pull every texture this material references into the texture
-            // descriptor pool too.
+            // reference list too, so the loader cooks/loads them first.
             for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
         }
     });
@@ -285,21 +274,45 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
 
 namespace {
 
-/**
- * @brief Pull the per-section identifying pair (name, source) from a single
- *        JSON entry.
- *
- * Returns false if name is missing - the caller logs + skips. The name is the
- * scene's reference key, so an entry without one can't be resolved.
- */
-bool unpackEntry(
-    const nlohmann::json& entry,
-    std::string& outName,
-    nlohmann::json& outSource
-) {
-    outName = entry.value("name", std::string{});
-    if (outName.empty()) return false;
-    outSource = entry.contains("source") ? entry["source"] : nlohmann::json{};
+/// Load the `source` object from a library recipe file (a material's inline
+/// form). Returns false (logging) if the file is missing or malformed.
+bool loadLibrarySource(const AssetLibrary::Record& record, nlohmann::json& outSource) {
+    const std::filesystem::path path = AssetLibrary::get().recipePath(record);
+    std::ifstream in(path);
+    if (!in) {
+        LOG_ERROR("Asset library recipe missing: %s", path.string().c_str());
+        return false;
+    }
+    nlohmann::json doc;
+    try {
+        in >> doc;
+    } catch (const nlohmann::json::exception& e) {
+        LOG_ERROR("Asset library recipe malformed %s: %s", path.string().c_str(), e.what());
+        return false;
+    }
+    if (!doc.contains("source")) {
+        LOG_ERROR("Asset library recipe %s has no 'source'", path.string().c_str());
+        return false;
+    }
+    outSource = doc["source"];
+    return true;
+}
+
+/// Resolve a name-only asset reference to the source its factory needs: meshes
+/// and textures load from the cooked cache by name; materials load their inline
+/// descriptor from the library file. Returns false if the name is not in the
+/// manifest.
+bool resolveCookedSource(AssetType type, const std::string& name, nlohmann::json& outSource) {
+    const AssetLibrary::Record* record = AssetLibrary::get().find(type, name);
+    if (!record) {
+        LOG_ERROR("Asset '%s' (%s) has no entry in the asset library manifest",
+            name.c_str(), AssetLibrary::typeTag(type));
+        return false;
+    }
+    if (type == AssetType::Material) {
+        return loadLibrarySource(*record, outSource);
+    }
+    outSource = nlohmann::json{{"kind", "cooked"}, {"name", name}};
     return true;
 }
 
@@ -322,12 +335,14 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
     // materials (resolve their texture refs by name) -> meshes.
     if (assetsJson.contains("textures") && assetsJson["textures"].is_array()) {
         for (const auto& entry : assetsJson["textures"]) {
-            std::string name; nlohmann::json source;
-            if (!unpackEntry(entry, name, source)) {
+            const std::string name = entry.value("name", std::string{});
+            if (name.empty()) {
                 LOG_WARNING("Texture entry missing 'name' - skipping");
                 continue;
             }
             if (resources.findByName<TextureAsset>(name)) { ++texturesSkipped; continue; }
+            nlohmann::json source;
+            if (!resolveCookedSource(AssetType::Texture, name, source)) continue;
             TextureHandle h = factories.createTexture(source, resources);
             if (!h) {
                 LOG_WARNING("Texture '%s' could not be recreated - skipping", name.c_str());
@@ -340,12 +355,14 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
 
     if (assetsJson.contains("materials") && assetsJson["materials"].is_array()) {
         for (const auto& entry : assetsJson["materials"]) {
-            std::string name; nlohmann::json source;
-            if (!unpackEntry(entry, name, source)) {
+            const std::string name = entry.value("name", std::string{});
+            if (name.empty()) {
                 LOG_WARNING("Material entry missing 'name' - skipping");
                 continue;
             }
             if (resources.findByName<MaterialAsset>(name)) { ++materialsSkipped; continue; }
+            nlohmann::json source;
+            if (!resolveCookedSource(AssetType::Material, name, source)) continue;
             MaterialHandle h = factories.createMaterial(source, resources);
             if (!h) {
                 LOG_WARNING("Material '%s' could not be recreated - skipping", name.c_str());
@@ -358,12 +375,14 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
 
     if (assetsJson.contains("meshes") && assetsJson["meshes"].is_array()) {
         for (const auto& entry : assetsJson["meshes"]) {
-            std::string name; nlohmann::json source;
-            if (!unpackEntry(entry, name, source)) {
+            const std::string name = entry.value("name", std::string{});
+            if (name.empty()) {
                 LOG_WARNING("Mesh entry missing 'name' - skipping");
                 continue;
             }
             if (resources.findByName<MeshAsset>(name)) { ++meshesSkipped; continue; }
+            nlohmann::json source;
+            if (!resolveCookedSource(AssetType::Mesh, name, source)) continue;
             MeshHandle h = factories.createMesh(source, resources);
             if (!h) {
                 LOG_WARNING("Mesh '%s' could not be recreated - skipping", name.c_str());

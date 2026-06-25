@@ -10,6 +10,7 @@
 
 #include "core/engine.h"
 #include "asset_registration.h"
+#include "io/asset_library.h"
 #include "io/scene_serializer.h"
 #include "editor_system.h"
 #include "system/script/script_module.h"
@@ -36,6 +37,10 @@ int main(int argc, char** argv) {
         // it needs to (re)cook assets from their source. Must precede scene I/O.
         Engine::registerCookedAssetFactories();
         Engine::registerRecipeAssetFactories();
+
+        // Load the cooked asset database manifest (empty on a fresh project; the
+        // cooker rebuilds it on save).
+        Engine::AssetLibrary::get().load();
 
         // Load the hot-reloadable gameplay module: it registers behaviors into
         // the engine's registry (resolved from this exe). Declared before the
