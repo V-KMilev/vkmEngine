@@ -22,7 +22,7 @@ GLGTAOPass::GLGTAOPass()
 GLGTAOPass::~GLGTAOPass() = default;
 
 void GLGTAOPass::execute(GLFrameContext& ctx) {
-    if (!isEnabled() || !ctx.view.settings.gtao) return;
+    if (!ctx.view.settings.gtao) return;
 
     const RenderView& view = ctx.view;
 

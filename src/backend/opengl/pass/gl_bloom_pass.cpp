@@ -21,7 +21,7 @@ GLBloomPass::GLBloomPass()
 GLBloomPass::~GLBloomPass() = default;
 
 void GLBloomPass::execute(GLFrameContext& ctx) {
-    if (!isEnabled() || !ctx.view.settings.bloom) return;
+    if (!ctx.view.settings.bloom) return;
 
     GLBloom& bloom = ctx.bloom;
     if (!bloom.isReady()) return;

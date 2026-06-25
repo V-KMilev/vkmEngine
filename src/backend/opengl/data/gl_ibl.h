@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <string>
 
 #include <GL/glew.h>
 
@@ -47,14 +46,8 @@ class GLIBL {
         static constexpr int PREFILTER_MIPS  = 7;    ///< Roughness mip count (512..8). MAX_REFLECTION_LOD in pbr shader = this - 1
         static constexpr int BRDF_SIZE       = 512;  ///< BRDF/DFG LUT size
 
-        /**
-         * @brief True when a (re)bake is required: a non-empty path that differs
-         * from what was last baked, or nothing has been baked yet.
-         */
-        bool needsBake(const std::string& path) const;
-
-        /** @brief Record a successful bake of @p path so needsBake() goes quiet. */
-        void markBaked(const std::string& path);
+        /** @brief Record a successful bake so isReady() reports true. */
+        void markReady() { m_ready = true; }
 
         bool isReady() const { return m_ready; }
 
@@ -117,8 +110,7 @@ class GLIBL {
         std::unique_ptr<Core::Texture2D>   m_brdf;
         std::unique_ptr<Core::FrameBuffer> m_captureFbo;
 
-        std::string m_bakedPath;
-        bool        m_ready = false;
+        bool m_ready = false;
 };
 
 } // namespace Engine

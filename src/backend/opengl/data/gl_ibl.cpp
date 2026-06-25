@@ -48,14 +48,4 @@ void GLIBL::uploadEquirect(uint32_t width, uint32_t height, const float* rgb) {
     m_equirect = std::make_unique<Core::Texture2D>("ibl_equirect", p);
 }
 
-bool GLIBL::needsBake(const std::string& path) const {
-    if (path.empty()) return false;
-    return !m_ready || path != m_bakedPath;
-}
-
-void GLIBL::markBaked(const std::string& path) {
-    m_bakedPath = path;
-    m_ready = true;
-}
-
 } // namespace Engine

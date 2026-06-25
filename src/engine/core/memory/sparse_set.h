@@ -20,7 +20,6 @@ class ISparseSet {
         virtual void remove(uint32_t key) = 0;
         virtual bool has(uint32_t key) const = 0;
         virtual size_t size() const = 0;
-        virtual size_t sparseCapacity() const = 0;
         virtual void compact() = 0;
         /**
          * @brief Drop every element. Used by Scene::clear and shutdown
@@ -137,23 +136,7 @@ class SparseSet : public ISparseSet {
             }
         }
 
-        /**
-         * @brief Pre-allocate memory for all internal arrays.
-         * @param capacity Expected number of elements. Avoids reallocations during repeated add().
-         */
-        // container-parity API; unused today
-        void reserve(size_t capacity) {
-            m_dataIndex.reserve(capacity);
-            m_dataId.reserve(capacity);
-            m_data.reserve(capacity);
-        }
-
         size_t size() const override { return m_data.size(); }  ///< Number of live elements.
-        // container-parity API; unused today
-        bool empty()  const          { return m_data.empty(); } ///< True if size() == 0.
-
-        /** @brief Current capacity of the sparse-to-dense mapping array. */
-        size_t sparseCapacity() const override { return m_dataIndex.size(); }
 
         /**
          * @brief Drop every element. The dense and sparse arrays empty;
@@ -192,16 +175,6 @@ class SparseSet : public ISparseSet {
         /** @brief Access the element at a dense index (for index-based parallel iteration). */
         T&       dataAt(uint32_t denseIndex)       { return m_data[denseIndex]; }
         const T& dataAt(uint32_t denseIndex) const { return m_data[denseIndex]; }
-
-        /**
-         * @name Range-based for loop support (iterates the packed dense array, no holes).
-         * @{
-         */
-        auto begin()       { return m_data.begin(); }
-        auto begin() const { return m_data.begin(); }
-        auto end()         { return m_data.end(); }
-        auto end()   const { return m_data.end(); }
-        /** @} */
 
     private:
         static constexpr uint32_t EMPTY = UINT32_MAX;

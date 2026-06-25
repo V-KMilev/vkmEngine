@@ -30,9 +30,6 @@ class GLPass {
         GLPass& operator=(GLPass && other) = delete;
 
     public:
-        void setEnabled(bool enabled) { m_enabled = enabled; }
-        bool isEnabled() const { return m_enabled; }
-
         virtual void execute(GLFrameContext& ctx) = 0;
 
     protected:
@@ -49,9 +46,6 @@ class GLPass {
          * beginFullscreen so the post passes don't each open-code the restore.
          */
         void endFullscreen(Core::Context& gl) const;
-
-    private:
-        bool m_enabled = true;
 };
 
 } // namespace Engine

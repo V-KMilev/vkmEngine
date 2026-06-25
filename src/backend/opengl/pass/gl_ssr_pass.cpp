@@ -21,7 +21,7 @@ GLSSRPass::GLSSRPass()
 GLSSRPass::~GLSSRPass() = default;
 
 void GLSSRPass::execute(GLFrameContext& ctx) {
-    if (!isEnabled() || !ctx.view.settings.ssr) return;
+    if (!ctx.view.settings.ssr) return;
 
     const RenderView& view = ctx.view;
 

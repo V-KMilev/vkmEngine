@@ -72,7 +72,7 @@ void GLIBLBaker::bake(Core::Context& gl, GLIBL& ibl, const std::string& path) {
     gl.setDepthTest(prevDepth);
     gl.setFaceCulling(prevCull);
 
-    ibl.markBaked(path);
+    ibl.markReady();
     LOG_INFO("IBL baked from '%s'", path.c_str());
 }
 

@@ -26,7 +26,6 @@ GLShadowPass::GLShadowPass()
 GLShadowPass::~GLShadowPass() = default;
 
 void GLShadowPass::execute(GLFrameContext& ctx) {
-    if (!isEnabled()) return;
     if (ctx.shadowData.jobs2D().empty() && ctx.shadowData.jobsCube().empty()) return;
 
     ctx.gl.setDepthTest(true);
