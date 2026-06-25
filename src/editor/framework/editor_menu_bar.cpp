@@ -42,8 +42,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     }
     if (m_logo->getWidth() > 0) {
         const float sz = ImGui::GetTextLineHeight();
-        ImGui::Image(static_cast<ImTextureID>(static_cast<intptr_t>(m_logo->getID())),
-                     ImVec2(sz * 1.5f, sz * 1.5f));
+        ImGui::Image(imTexture(m_logo->getID()), ImVec2(sz * 1.5f, sz * 1.5f));
         ImGui::SameLine();
     }
 

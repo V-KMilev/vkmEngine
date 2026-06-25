@@ -77,64 +77,47 @@ bool MaterialEditorPanel::drawMaterialBody(
                 changed = true;
             }
 
-            drawPropertyLabel("Albedo");
-            changed |= ImGui::ColorEdit4("##Albedo", glm::value_ptr(mat.albedo),
+            changed |= propColor4("Albedo", glm::value_ptr(mat.albedo),
                 ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaPreviewHalf);
 
-            drawPropertyLabel("Metallic");
-            changed |= ImGui::SliderFloat("##Metallic", &mat.metallic, 0.0f, 1.0f, "%.2f");
+            changed |= propSlider("Metallic", &mat.metallic, 0.0f, 1.0f, "%.2f");
 
-            drawPropertyLabel("Roughness");
-            changed |= ImGui::SliderFloat("##Roughness", &mat.roughness, 0.0f, 1.0f, "%.2f");
+            changed |= propSlider("Roughness", &mat.roughness, 0.0f, 1.0f, "%.2f");
 
-            drawPropertyLabel("Emission");
-            changed |= ImGui::ColorEdit3("##Emission", glm::value_ptr(mat.emission),
+            changed |= propColor3("Emission", glm::value_ptr(mat.emission),
                 ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
 
-            drawPropertyLabel("AO");
-            changed |= ImGui::SliderFloat("##AO", &mat.ao, 0.0f, 1.0f, "%.2f");
+            changed |= propSlider("AO", &mat.ao, 0.0f, 1.0f, "%.2f");
 
-            drawPropertyLabel("Emissive Strength");
-            changed |= ImGui::DragFloat("##EmissiveStrength", &mat.emissiveStrength, 0.05f, 0.0f, 64.0f, "%.2f");
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("HDR multiplier on emission (drives bloom)");
+            changed |= propDrag("Emissive Strength", &mat.emissiveStrength, 0.05f, 0.0f, 64.0f, "%.2f",
+                "HDR multiplier on emission (drives bloom)");
 
-
-            drawPropertyLabel("Alpha Cutoff");
-            changed |= ImGui::SliderFloat("##AlphaCutoff", &mat.alphaCutoff, 0.0f, 1.0f, "%.2f");
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("AlphaMask type only: fragments with albedo.a < cutoff are discarded (foliage/leaves)");
+            changed |= propSlider("Alpha Cutoff", &mat.alphaCutoff, 0.0f, 1.0f, "%.2f",
+                "AlphaMask type only: fragments with albedo.a < cutoff are discarded (foliage/leaves)");
         }
         endComponentCard();
 
         if (beginComponentCard("Surface", ACC_SURF, false)) {
-            drawPropertyLabel("IOR");
-            changed |= ImGui::DragFloat("##IOR", &mat.ior, 0.01f, 1.0f, 3.0f, "%.2f");
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("1.0 air, 1.33 water, 1.5 glass, 2.4 diamond");
+            changed |= propDrag("IOR", &mat.ior, 0.01f, 1.0f, 3.0f, "%.2f",
+                "1.0 air, 1.33 water, 1.5 glass, 2.4 diamond");
 
-            drawPropertyLabel("Transmission");
-            changed |= ImGui::SliderFloat("##Trans", &mat.transmission, 0.0f, 1.0f, "%.2f");
+            changed |= propSlider("Transmission", &mat.transmission, 0.0f, 1.0f, "%.2f");
 
-            drawPropertyLabel("Normal Scale");
-            changed |= ImGui::DragFloat("##NScale", &mat.normalScale, 0.01f, 0.0f, 5.0f, "%.2f");
+            changed |= propDrag("Normal Scale", &mat.normalScale, 0.01f, 0.0f, 5.0f, "%.2f");
 
-            drawPropertyLabel("Height Scale");
-            changed |= ImGui::DragFloat("##HScale", &mat.heightScale, 0.001f, 0.0f, 0.5f, "%.3f");
+            changed |= propDrag("Height Scale", &mat.heightScale, 0.001f, 0.0f, 0.5f, "%.3f");
         }
         endComponentCard();
 
         if (beginComponentCard("Clearcoat", ACC_COAT, false)) {
-            drawPropertyLabel("Strength");
-            changed |= ImGui::SliderFloat("##CC", &mat.clearcoat, 0.0f, 1.0f, "%.2f");
+            changed |= propSlider("Strength", &mat.clearcoat, 0.0f, 1.0f, "%.2f");
 
-            drawPropertyLabel("Roughness");
-            changed |= ImGui::SliderFloat("##CCR", &mat.clearcoatRoughness, 0.0f, 1.0f, "%.2f");
+            changed |= propSlider("Roughness", &mat.clearcoatRoughness, 0.0f, 1.0f, "%.2f");
         }
         endComponentCard();
 
         if (beginComponentCard("Anisotropy", ACC_ANISO, false)) {
-            drawPropertyLabel("Strength");
-            changed |= ImGui::SliderFloat("##Aniso", &mat.anisotropy, 0.0f, 1.0f, "%.2f");
+            changed |= propSlider("Strength", &mat.anisotropy, 0.0f, 1.0f, "%.2f");
 
             drawPropertyLabel("Direction");
             changed |= ImGui::DragFloat3("##AnisoDir",
@@ -145,46 +128,31 @@ bool MaterialEditorPanel::drawMaterialBody(
         endComponentCard();
 
         if (beginComponentCard("Subsurface", ACC_SSS, false)) {
-            drawPropertyLabel("Strength");
-            changed |= ImGui::SliderFloat("##SSS", &mat.subsurface, 0.0f, 1.0f, "%.2f");
+            changed |= propSlider("Strength", &mat.subsurface, 0.0f, 1.0f, "%.2f");
 
-            drawPropertyLabel("Color");
-            changed |= ImGui::ColorEdit3("##SSSCol", glm::value_ptr(mat.subsurfaceColor),
+            changed |= propColor3("Color", glm::value_ptr(mat.subsurfaceColor),
                 ImGuiColorEditFlags_Float);
         }
         endComponentCard();
 
         if (beginComponentCard("Sheen", ACC_SHEEN, false)) {
-            drawPropertyLabel("Color");
-            changed |= ImGui::ColorEdit3("##SheenCol", glm::value_ptr(mat.sheenColor),
-                ImGuiColorEditFlags_Float);
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Black = no sheen (fabric / cloth rim term)");
+            changed |= propColor3("Color", glm::value_ptr(mat.sheenColor),
+                ImGuiColorEditFlags_Float, "Black = no sheen (fabric / cloth rim term)");
 
-            drawPropertyLabel("Roughness");
-            changed |= ImGui::SliderFloat("##SheenR", &mat.sheenRoughness,
-                0.0f, 1.0f, "%.2f");
+            changed |= propSlider("Roughness", &mat.sheenRoughness, 0.0f, 1.0f, "%.2f");
         }
         endComponentCard();
 
         if (beginComponentCard("Volume", ACC_VOL, false)) {
-            drawPropertyLabel("Thickness");
-            changed |= ImGui::DragFloat("##Thick", &mat.thicknessFactor,
-                0.01f, 0.0f, 100.0f, "%.3f");
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Volume thickness in metres. 0 = thin-walled (no absorption)");
+            changed |= propDrag("Thickness", &mat.thicknessFactor, 0.01f, 0.0f, 100.0f, "%.3f",
+                "Volume thickness in metres. 0 = thin-walled (no absorption)");
 
-            drawPropertyLabel("Atten. Distance");
-            changed |= ImGui::DragFloat("##AttD", &mat.attenuationDistance,
-                0.01f, 0.0001f, 1000.0f, "%.3f");
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Path length (m) at which white light becomes attenuation color");
+            changed |= propDrag("Atten. Distance", &mat.attenuationDistance, 0.01f, 0.0001f, 1000.0f, "%.3f",
+                "Path length (m) at which white light becomes attenuation color");
 
-            drawPropertyLabel("Atten. Color");
-            changed |= ImGui::ColorEdit3("##AttC", glm::value_ptr(mat.attenuationColor),
-                ImGuiColorEditFlags_Float);
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Transmittance after one attenuation distance (white = clear)");
+            changed |= propColor3("Atten. Color", glm::value_ptr(mat.attenuationColor),
+                ImGuiColorEditFlags_Float,
+                "Transmittance after one attenuation distance (white = clear)");
         }
         endComponentCard();
 
@@ -433,7 +401,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
 
         if (tex) {
             const ImVec2 origin = ImGui::GetCursorScreenPos();
-            ImGui::Image(static_cast<ImTextureID>(static_cast<intptr_t>(tex)),
+            ImGui::Image(imTexture(tex),
                 ImVec2(PREVIEW_SIZE, PREVIEW_SIZE), ImVec2(0, 1), ImVec2(1, 0));
             // Thin frame around the studio render.
             ImGui::GetWindowDrawList()->AddRect(

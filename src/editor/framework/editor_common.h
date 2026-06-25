@@ -30,3 +30,12 @@
 #include "ui/editor_icons.h"
 #include "ui/editor_style.h"
 #include "ui/editor_widgets.h"
+
+namespace Engine {
+
+/** @brief Wrap a GL texture id as an ImGui ImTextureID for Image/ImageButton. */
+inline ImTextureID imTexture(uint32_t glTextureId) {
+    return static_cast<ImTextureID>(static_cast<intptr_t>(glTextureId));
+}
+
+} // namespace Engine
