@@ -1,7 +1,9 @@
 #version 430 core
 
-// Minimal vertex stage for the debug Phong shader. Same attribute layout and
-// camera UBO as the forward shader, so it drops into the forward pass unchanged.
+// Minimal vertex stage for the reference Blinn-Phong shader. Not loaded by the
+// runtime (the forward pass only builds forward/pbr) - kept as a readable, cheap
+// alternative. It uses the same camera UBO and a subset of the forward vertex
+// attributes (position/normal/uv, no tangent), so it could be swapped in.
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aUV;
