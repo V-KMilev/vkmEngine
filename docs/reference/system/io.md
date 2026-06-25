@@ -99,9 +99,9 @@ The runtime registers only the `cooked` / `inline` / `directory` set
 (`registerCookedAssetFactories`), so it links neither Assimp nor the image
 decoders. The editor additionally registers the recipe kinds
 (`registerRecipeAssetFactories`, built into the editor-only `EngineCooker`) to
-(re)cook from source. Engine code never reaches into `tools/`; factories are
-registered at startup in `tools/asset_registration.cpp` (cooked) and
-`tools/cook/recipe_registration.cpp` (recipe).
+(re)cook from source. Engine code never reaches into `src/tools/`; factories are
+registered at startup in `src/tools/asset_registration.cpp` (cooked) and
+`src/tools/cook/recipe_registration.cpp` (recipe).
 
 Adding a new asset kind means adding a factory entry; the serializer itself does
 not change.

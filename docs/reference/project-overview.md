@@ -28,7 +28,10 @@ targets, modules, and flags.
   Each registers at exactly one `SystemStage`.
 - **`Engine`** - stack-constructible owner of the `Scene`, `ResourceManager`,
   `WindowManager`, `SimulationClock`, and the per-stage system list. **No
-  `Engine::get()` singleton.** The only singleton is `ThreadPool::get()`.
+  `Engine::get()` singleton.** Singletons are limited to a handful of
+  process-wide registries and log sinks accessed via a static `get()`:
+  `ThreadPool`, `AsyncLoadQueue`, `BehaviorRegistry`, `AssetFactories`, and
+  `BehaviorErrorLog`.
 - **`FrameContext`** - the per-frame bundle passed to every system. Carries three
   deltas: `deltaTime` (real), `simDeltaTime` (clock-scaled, pause/step-aware),
   `fixedDeltaTime` (1/60). Simulation systems read `simDeltaTime`.
@@ -70,8 +73,8 @@ the renderer contract. See [rendering.md](system/rendering.md).
 `ResourceManager` owns all assets (`MeshAsset`, `TextureAsset`, `MaterialAsset`,
 `ShaderAsset`) behind typed generational `Handle<T>`s. Assets are identified by a
 unique non-empty `name`; scene files reference them by name and resolve via
-`findByName`. `commit()` bumps a per-resource and per-type version so the backend
-skips unchanged uploads. See [resources.md](resources.md).
+`findByName`. `commit()` bumps a per-resource version so the backend skips
+unchanged uploads. See [resources.md](resources.md).
 
 ## Layout and conventions
 

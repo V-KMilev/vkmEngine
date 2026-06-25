@@ -10,8 +10,11 @@ order.** There is no parallel layer scheduler - per-system data parallelism (via
 `ThreadPool`) is the scaling lever, not framework-level system parallelism.
 
 There is no `Engine::get()` singleton. Engine is stack-constructible, so tests and
-headless tools spin up their own instance. Profiling goes through `debug/profiler.h`
-(a Tracy facade), not an in-engine statistics registry.
+headless tools spin up their own instance. Singletons are limited to a handful of
+process-wide registries and log sinks reached via a static `get()`: `ThreadPool`,
+`AsyncLoadQueue`, `BehaviorRegistry`, `AssetFactories`, and `BehaviorErrorLog`.
+Profiling goes through `debug/profiler.h` (a Tracy facade), not an in-engine
+statistics registry.
 
 ```
 Engine
@@ -139,7 +142,7 @@ Engine code, single include root `src/engine/`:
 | `platform/window/`         | `WindowManager`, `Window`, input handles, `FrameLimiter`                |
 | `platform/threading/`      | `ThreadPool`, `Task` (shared-deque pool, see [threading.md](threading.md)) |
 | `platform/library/`        | `DynamicLibrary` (cross-platform `.dll`/`.so` loader for gameplay hot-reload) |
-| `debug/`                   | `FrameTracker`, `FrameInfo`, `profiler` (Tracy facade), error logs       |
+| `debug/`                   | `FrameTracker`, `FrameRateInfo`, `profiler` (Tracy facade), error logs   |
 
 OpenGL backend, `src/backend/opengl/` (flat `gl_`-prefixed includes):
 

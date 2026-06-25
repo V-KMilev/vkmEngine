@@ -3,8 +3,9 @@
 The renderer has two halves with one seam between them. The engine half builds a
 backend-agnostic `RenderView` snapshot each frame. The backend half syncs its GPU
 resources to that snapshot and runs a **fixed, ordered list of passes** to produce
-the image. There is **no engine-level render graph** and **no pass abstraction**
-above the backend - passes are an OpenGL implementation detail.
+the image. There is **no engine-level render graph**, and **no pass abstraction is
+exposed to the engine** - passes (`GLPass`) live entirely inside the backend as
+an OpenGL implementation detail.
 
 > If you have read older docs or comments: there is no `RenderGraph`,
 > `RenderGraphBuilder`, `RGResource`, `RenderPass`, `EnvironmentConfig`, or shader
@@ -28,8 +29,8 @@ RenderSystem::update(FrameContext)
   |-- RenderView::build(scene, visibility)        // engine side, backend-agnostic
   |     |-- buildCamera     from the Visibility snapshot
   |     |-- buildLights / buildProbes
-  |     |-- buildDrawables  from the visible set (sorted for batching;
-  |     |                   transparent run sub-sorted back-to-front)
+  |     |-- buildDrawables  from the visible set (UNSORTED - visibility order;
+  |     |                   the backend does all sorting/partitioning)
   |     |-- buildShadowCasters  from the whole scene (NOT camera-culled)
   |     |-- copy RenderSettings and Environment into the view
   |-- backend.render(view, resources)             // GLBackend
@@ -56,17 +57,20 @@ the `VisibilitySystem` output, reusing the vectors' capacity across frames.
 | `viewportX/Y/Width/Height` | `uint32_t` | Scene render rect |
 | `surfaceHeight` | `uint32_t` | Full backbuffer height (lets a bottom-left backend flip the rect) |
 | `camera` | `CameraData` | view / projection / viewProjection + position |
-| `drawables` | `vector<DrawableData>` | Visible set, pre-sorted for batching |
+| `drawables` | `vector<DrawableData>` | Visible set, in visibility order (UNSORTED); the backend sorts/partitions |
 | `shadowCasters` | `vector<ShadowCasterData>` | Whole scene, not camera-culled |
 | `lights` | `vector<LightData>` | Enabled lights with world transforms + shadow slot |
 | `probes` | `vector<ProbeData>` | Reflection probes in the scene |
 | `settings` | `RenderSettings` | Pass toggles + per-effect params, copied each frame |
 | `environment` | `Environment` | HDR path / intensity / skybox toggle |
 
-Drawables are sorted so that all depth-writing classes (Opaque, AlphaMask, Unlit)
-precede Transparent, and the transparent run is ordered back-to-front - the
-transparent forward phase snapshots the opaque scene for refraction, so opaques
-must already be drawn.
+The frontend does **not** sort drawables - it emits them in visibility order.
+All sorting and partitioning happens in the backend: `partitionDrawables` splits
+opaque from transparent, `GLInstanceBatcher` groups by (material, mesh) for
+instancing, and `GLForwardPass` drives the depth-writing classes (Opaque,
+AlphaMask, Unlit) before the back-to-front transparent run. The transparent
+forward phase snapshots the opaque scene for refraction, so opaques must already
+be drawn.
 
 ## RenderSettings and RenderMode
 
