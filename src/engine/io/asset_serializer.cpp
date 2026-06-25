@@ -13,73 +13,13 @@
 #include "ecs/component/mesh.h"
 #include "ecs/scene.h"
 #include "resource/resource_manager.h"
+#include "io/asset_factory.h"
 #include "io/asset_library.h"
 #include "io/json_vec.h"
 #include "io/project_paths.h"
 #include "io/reflect.h"
 
 namespace Engine {
-
-AssetFactories& AssetFactories::get() {
-    static AssetFactories instance;
-    return instance;
-}
-
-void AssetFactories::registerMesh(std::string kind, MeshFactory factory) {
-    m_meshFactories[std::move(kind)] = std::move(factory);
-}
-
-void AssetFactories::registerTexture(std::string kind, TextureFactory factory) {
-    m_textureFactories[std::move(kind)] = std::move(factory);
-}
-
-void AssetFactories::registerMaterial(std::string kind, MaterialFactory factory) {
-    m_materialFactories[std::move(kind)] = std::move(factory);
-}
-
-void AssetFactories::registerShader(std::string kind, ShaderFactory factory) {
-    m_shaderFactories[std::move(kind)] = std::move(factory);
-}
-
-MeshHandle AssetFactories::createMesh(const nlohmann::json& source, ResourceManager& resources) const {
-    const std::string kind = source.value("kind", std::string{});
-    auto it = m_meshFactories.find(kind);
-    if (it == m_meshFactories.end()) {
-        LOG_ERROR("No mesh factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
-        return {};
-    }
-    return it->second(source, resources);
-}
-
-TextureHandle AssetFactories::createTexture(const nlohmann::json& source, ResourceManager& resources) const {
-    const std::string kind = source.value("kind", std::string{});
-    auto it = m_textureFactories.find(kind);
-    if (it == m_textureFactories.end()) {
-        LOG_ERROR("No texture factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
-        return {};
-    }
-    return it->second(source, resources);
-}
-
-MaterialHandle AssetFactories::createMaterial(const nlohmann::json& source, ResourceManager& resources) const {
-    const std::string kind = source.value("kind", std::string{});
-    auto it = m_materialFactories.find(kind);
-    if (it == m_materialFactories.end()) {
-        LOG_ERROR("No material factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
-        return {};
-    }
-    return it->second(source, resources);
-}
-
-ShaderAsset AssetFactories::createShader(const nlohmann::json& source) const {
-    const std::string kind = source.value("kind", std::string{});
-    auto it = m_shaderFactories.find(kind);
-    if (it == m_shaderFactories.end()) {
-        LOG_ERROR("No shader factory registered for kind '%s' (typo? unsupported builtin? unregistered user factory?)", kind.c_str());
-        return {};
-    }
-    return it->second(source);
-}
 
 namespace AssetSerializer {
 
@@ -330,8 +270,6 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
         return false;
     }
 
-    const auto& factories = AssetFactories::get();
-
     size_t texturesCreated = 0, texturesSkipped = 0;
     size_t materialsCreated = 0, materialsSkipped = 0;
     size_t meshesCreated = 0, meshesSkipped = 0;
@@ -349,7 +287,11 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
             if (resources.findByName<TextureAsset>(name)) { ++texturesSkipped; continue; }
             nlohmann::json source;
             if (!resolveCookedSource(AssetType::Texture, name, source)) continue;
-            TextureHandle h = factories.createTexture(source, resources);
+            if (!assetFactory().createTexture) {
+                LOG_ERROR("No texture dispatch wired (misconfigured binary?) - skipping '%s'", name.c_str());
+                continue;
+            }
+            TextureHandle h = assetFactory().createTexture(source, resources);
             if (!h) {
                 LOG_WARNING("Texture '%s' could not be recreated - skipping", name.c_str());
                 continue;
@@ -369,7 +311,11 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
             if (resources.findByName<MaterialAsset>(name)) { ++materialsSkipped; continue; }
             nlohmann::json source;
             if (!resolveCookedSource(AssetType::Material, name, source)) continue;
-            MaterialHandle h = factories.createMaterial(source, resources);
+            if (!assetFactory().createMaterial) {
+                LOG_ERROR("No material dispatch wired (misconfigured binary?) - skipping '%s'", name.c_str());
+                continue;
+            }
+            MaterialHandle h = assetFactory().createMaterial(source, resources);
             if (!h) {
                 LOG_WARNING("Material '%s' could not be recreated - skipping", name.c_str());
                 continue;
@@ -389,7 +335,11 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
             if (resources.findByName<MeshAsset>(name)) { ++meshesSkipped; continue; }
             nlohmann::json source;
             if (!resolveCookedSource(AssetType::Mesh, name, source)) continue;
-            MeshHandle h = factories.createMesh(source, resources);
+            if (!assetFactory().createMesh) {
+                LOG_ERROR("No mesh dispatch wired (misconfigured binary?) - skipping '%s'", name.c_str());
+                continue;
+            }
+            MeshHandle h = assetFactory().createMesh(source, resources);
             if (!h) {
                 LOG_WARNING("Mesh '%s' could not be recreated - skipping", name.c_str());
                 continue;

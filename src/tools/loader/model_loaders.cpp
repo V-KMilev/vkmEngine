@@ -206,7 +206,7 @@ MeshAsset buildMesh(const aiScene* scene, const std::string& path, int meshIdx) 
 
 // Decode raw RGBA8 bytes into a (cached, idempotent) TextureAsset.
 // @p source is stamped onto the asset so cold-start load can recreate
-// the same texture via AssetFactories.
+// the same texture via the recipe texture dispatch.
 TextureHandle addTexture(
     ResourceManager& res,
     const std::string& name,
