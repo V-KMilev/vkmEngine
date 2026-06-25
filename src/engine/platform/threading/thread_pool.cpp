@@ -33,7 +33,7 @@ ThreadPool& ThreadPool::get() {
     return instance;
 }
 
-void ThreadPool::addTask(Task && task) {
+void ThreadPool::addTask(std::function<void()> && task) {
     {
         std::lock_guard<std::mutex> lock(m_tasksMutex);
         ++m_taskCount;
@@ -43,7 +43,7 @@ void ThreadPool::addTask(Task && task) {
     m_tasksCV.notify_one();
 }
 
-void ThreadPool::addTasks(std::vector<Task>&& tasks) {
+void ThreadPool::addTasks(std::vector<std::function<void()>>&& tasks) {
     {
         std::lock_guard<std::mutex> lock(m_tasksMutex);
         m_taskCount += tasks.size();
@@ -86,7 +86,7 @@ void ThreadPool::stop() {
 void ThreadPool::process() {
     t_isWorker = true;
     while (m_running) {
-        Task task;
+        std::function<void()> task;
         {
             std::unique_lock<std::mutex> lock(m_tasksMutex);
             m_tasksCV.wait(lock, [this]() {
@@ -103,7 +103,7 @@ void ThreadPool::process() {
         // block forever on a count that never reaches zero. Swallow and log;
         // task bodies are responsible for their own error reporting.
         try {
-            task.execute();
+            task();
         } catch (const std::exception& e) {
             LOG_ERROR("ThreadPool task threw: %s", e.what());
         } catch (...) {

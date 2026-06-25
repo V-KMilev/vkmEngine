@@ -510,7 +510,7 @@ MeshHandle requestModelMeshAsync(
     stub.sourceJson() = { {"kind", "model"}, {"path", path}, {"mesh", meshIndex} };
     const MeshHandle handle = resources.add(std::move(stub));
 
-    ThreadPool::get().addTask(Task([handle, path, meshIndex]() {
+    ThreadPool::get().addTask([handle, path, meshIndex]() {
         // ImporterCache is mutex-guarded, so concurrent callers from
         // different workers are safe.
         MeshAsset decoded = loadModelMesh(path, meshIndex);
@@ -523,7 +523,7 @@ MeshHandle requestModelMeshAsync(
         completion.boundsMax = decoded.boundsMax;
         completion.success   = !completion.vertices.empty();
         AsyncLoadQueue::get().pushMesh(std::move(completion));
-    }));
+    });
 
     return handle;
 }
