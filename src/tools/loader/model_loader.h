@@ -28,8 +28,10 @@ class Scene;
  * are Assimp's global mesh / material indices.
  */
 
-/// Build one aiMesh's geometry. Returns an empty MeshAsset on failure.
-/// Sets name + source so the asset round-trips through scene save/load.
+/**
+ * @brief Build one aiMesh's geometry. Returns an empty MeshAsset on failure.
+ * Sets name + source so the asset round-trips through scene save/load.
+ */
 MeshAsset loadModelMesh(const std::string& path, int meshIndex);
 
 /**
@@ -51,8 +53,10 @@ MeshHandle requestModelMeshAsync(
     ResourceManager& resources
 );
 
-/// Build + register one material (loading its textures). @p materialIndex
-/// < 0 yields a default material. Idempotent by name.
+/**
+ * @brief Build + register one material (loading its textures). @p materialIndex
+ * < 0 yields a default material. Idempotent by name.
+ */
 MaterialHandle loadModelMaterial(
     const std::string& path,
     int materialIndex,

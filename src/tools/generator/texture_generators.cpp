@@ -12,9 +12,11 @@
 namespace Engine {
 
 namespace {
-/// Built-in textures are reused via findByName - they're stable, immutable,
-/// and naturally shared across materials. The same "builtin:white" handle
-/// is returned every time the generator is asked for one.
+/**
+ * @brief Built-in textures are reused via findByName - they're stable, immutable,
+ * and naturally shared across materials. The same "builtin:white" handle
+ * is returned every time the generator is asked for one.
+ */
 TextureHandle getOrCreateNamed(ResourceManager& rm, const char* name,
                                const nlohmann::json& source,
                                TextureAsset texture)
@@ -25,6 +27,10 @@ TextureHandle getOrCreateNamed(ResourceManager& rm, const char* name,
     return rm.add(std::move(texture));
 }
 
+/**
+ * @brief Build a 1x1 RGBA8 texture filled with a single clamped color. srgb selects
+ * the sRGB internal format (and tags the asset accordingly).
+ */
 TextureAsset makeSolidColorAsset(glm::vec4 color, bool srgb) {
     TextureAsset texture;
     texture.params.width = 1;
@@ -44,6 +50,10 @@ TextureAsset makeSolidColorAsset(glm::vec4 color, bool srgb) {
     return texture;
 }
 
+/**
+ * @brief Build a 1x1 RGB8 flat normal map (128,128,255 = straight up in tangent
+ * space), i.e. no normal perturbation.
+ */
 TextureAsset makeDefaultNormalAsset() {
     TextureAsset texture;
     texture.params.width = 1;
