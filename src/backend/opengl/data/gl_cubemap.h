@@ -17,8 +17,10 @@ namespace Engine {
  */
 namespace GLCubemap {
 
-/// The +face direction and its up vector, in GL cubemap face order (+X, -X, +Y,
-/// -Y, +Z, -Z).
+/**
+ * @brief The +face direction and its up vector, in GL cubemap face order (+X, -X, +Y,
+ * -Y, +Z, -Z).
+ */
 struct FaceBasis { glm::vec3 dir; glm::vec3 up; };
 inline const FaceBasis FACES[6] = {
     {{ 1.0f,  0.0f,  0.0f}, {0.0f, -1.0f,  0.0f}},
@@ -29,14 +31,18 @@ inline const FaceBasis FACES[6] = {
     {{ 0.0f,  0.0f, -1.0f}, {0.0f, -1.0f,  0.0f}},
 };
 
-/// View matrix looking down face @p face from @p eye (eye = the probe position
-/// for a scene capture, the origin for a direction-only convolution).
+/**
+ * @brief View matrix looking down face @p face from @p eye (eye = the probe position
+ * for a scene capture, the origin for a direction-only convolution).
+ */
 inline glm::mat4 faceView(int face, const glm::vec3& eye) {
     return glm::lookAt(eye, eye + FACES[face].dir, FACES[face].up);
 }
 
-/// 90deg fov, aspect-1 projection for convolving a unit cube (irradiance /
-/// prefilter / equirect projection). Scene captures use their own far plane.
+/**
+ * @brief 90deg fov, aspect-1 projection for convolving a unit cube (irradiance /
+ * prefilter / equirect projection). Scene captures use their own far plane.
+ */
 inline glm::mat4 convolveProjection() {
     return glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
 }

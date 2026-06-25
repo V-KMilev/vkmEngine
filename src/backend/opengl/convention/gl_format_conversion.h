@@ -7,6 +7,10 @@
 
 namespace Engine {
 
+// Map the engine's backend-agnostic texture enums to the GL / Core::Texture2D
+// equivalents for upload. Each falls back to a sane default on an unhandled
+// value rather than asserting, so a new enum case degrades instead of crashing.
+
 inline GLenum toGLenum(TextureInternalFormat fmt) {
     switch (fmt) {
         case TextureInternalFormat::R8:      return GL_R8;

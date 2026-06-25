@@ -38,24 +38,32 @@ struct GLFrameContext {
     GLBloom&          bloom;          ///< Bloom mip chain: written by the bloom pass, blended in composite.
     GLAOTarget&       ao;             ///< GTAO factor: written by the GTAO pass, sampled by forward (ambient).
 
-    /// The frame's drawables split by draw bucket, once per frame by the
-    /// backend (one material resolve each, not one per consuming pass). Opaque
-    /// (incl. AlphaMask / Unlit) is shared by the depth prepass + forward in
-    /// view order; transparent is forward-only, sorted back-to-front there.
+    /**
+     * @brief The frame's drawables split by draw bucket, once per frame by the
+     * backend (one material resolve each, not one per consuming pass). Opaque
+     * (incl. AlphaMask / Unlit) is shared by the depth prepass + forward in
+     * view order; transparent is forward-only, sorted back-to-front there.
+     */
     const std::vector<const DrawableData*>& opaque;
     const std::vector<const DrawableData*>& transparent;
 
-    /// Reflection probes the backend bound this frame: boxes/layers in the
-    /// ProbeBlock UBO, cubes in the two probe arrays. The forward pass passes
-    /// this count to the shader's per-fragment blend loop (0 = none).
+    /**
+     * @brief Reflection probes the backend bound this frame: boxes/layers in the
+     * ProbeBlock UBO, cubes in the two probe arrays. The forward pass passes
+     * this count to the shader's per-fragment blend loop (0 = none).
+     */
     int probeCount = 0;
 
-    /// Set by the depth prepass when it lays down opaque depth. The forward pass
-    /// then early-Zs (LEQUAL, no depth writes/clear) instead of clearing depth.
+    /**
+     * @brief Set by the depth prepass when it lays down opaque depth. The forward pass
+     * then early-Zs (LEQUAL, no depth writes/clear) instead of clearing depth.
+     */
     bool depthPrimed = false;
 
-    /// Set by the GTAO pass when it fills the AO target. The forward pass then
-    /// binds + samples it; otherwise the indirect term uses no screen-space AO.
+    /**
+     * @brief Set by the GTAO pass when it fills the AO target. The forward pass then
+     * binds + samples it; otherwise the indirect term uses no screen-space AO.
+     */
     bool aoReady = false;
 };
 

@@ -24,7 +24,7 @@ inline void uploadUBOIfChanged(std::unique_ptr<Core::UniformBuffer>& ubo, T& las
     last = data;
 }
 
-/// Bind @p ubo to @p bindingPoint when it exists.
+/** @brief Bind @p ubo to @p bindingPoint when it exists. */
 inline void bindUBO(const std::unique_ptr<Core::UniformBuffer>& ubo, uint32_t bindingPoint) {
     if (ubo) ubo->bindBase(bindingPoint);
 }

@@ -14,10 +14,12 @@ namespace Engine {
 /**
  * @brief Lays down opaque depth before the forward pass for early-Z.
  *
- * Renders every non-transparent drawable depth-only into the scene target, so
- * the forward pass can run with LEQUAL + depth writes off and let the GPU
- * reject hidden fragments before the expensive PBR shader. Alpha-masked
- * materials run the same discard here so their holes match. Sets
+ * Renders every non-transparent drawable into the scene target, priming opaque
+ * depth so the forward pass can run with LEQUAL + depth writes off and let the
+ * GPU reject hidden fragments before the expensive PBR shader. Also writes the
+ * G-buffer (view normal + roughness + metalness) into colour attachment 1 for
+ * the GTAO/SSR passes, and clears the HDR target's attachments for the frame.
+ * Alpha-masked materials run the same discard here so their holes match. Sets
  * GLFrameContext::depthPrimed; disable the pass to fall back to single-pass
  * forward.
  */

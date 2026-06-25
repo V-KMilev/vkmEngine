@@ -50,7 +50,7 @@ class GLProbeBaker {
         GLProbeBaker(GLProbeBaker && other) = delete;
         GLProbeBaker& operator=(GLProbeBaker && other) = delete;
 
-        /// Bake the probe at @p layer of @p arr from @p position.
+        /** @brief Bake the probe at @p layer of @p arr from @p position. */
         void bake(Core::Context& gl, GLProbeArray& arr, int layer, const glm::vec3& position,
                   const RenderView& view, const GLView& glView, const GLIBL& globalIBL);
 

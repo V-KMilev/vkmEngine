@@ -34,11 +34,13 @@ class GLAOTarget {
     public:
         void resize(uint32_t width, uint32_t height);
 
-        /// Bind for rendering the AO factor (sets the FBO + viewport). Non-const:
-        /// it mutates GL draw-buffer state.
+        /**
+         * @brief Bind for rendering the AO factor (sets the FBO + viewport). Non-const:
+         * it mutates GL draw-buffer state.
+         */
         void bind(const Core::Context& gl);
 
-        /// Bind the AO texture to @p slot for the forward pass to sample.
+        /** @brief Bind the AO texture to @p slot for the forward pass to sample. */
         void bindTexture(uint32_t slot) const;
 
     private:

@@ -42,28 +42,32 @@ class GLProbeManager {
         GLProbeManager(GLProbeManager && other) = delete;
         GLProbeManager& operator=(GLProbeManager && other) = delete;
 
-        /// Create the baker + shared cube-map arrays. Call with a live GL context.
+        /** @brief Create the baker + shared cube-map arrays. Call with a live GL context. */
         void init();
 
-        /// Select the nearest baked probes, pack the ProbeBlock UBO, and bind it +
-        /// the two cube-map arrays for the forward pass. Returns how many probes
-        /// were bound (0 = none); the caller forwards this to ctx.probeCount.
+        /**
+         * @brief Select the nearest baked probes, pack the ProbeBlock UBO, and bind it +
+         * the two cube-map arrays for the forward pass. Returns how many probes
+         * were bound (0 = none); the caller forwards this to ctx.probeCount.
+         */
         int bind(const RenderView& view);
 
-        /// Frame-end: (re)bake probes that are new, moved, or version-bumped,
-        /// capped per frame so several changing at once don't hitch. Run after the
-        /// passes (the baker rebinds the camera / light UBOs).
+        /**
+         * @brief Frame-end: (re)bake probes that are new, moved, or version-bumped,
+         * capped per frame so several changing at once don't hitch. Run after the
+         * passes (the baker rebinds the camera / light UBOs).
+         */
         void update(Core::Context& gl, const RenderView& view, const GLView& glView, const GLIBL& ibl);
 
     private:
-        /// Per-layer bake state, for change-detected re-baking.
+        /** @brief Per-layer bake state, for change-detected re-baking. */
         struct BakeState {
             bool      baked    = false;
             glm::vec3 position = glm::vec3(0.0f);  ///< Position the layer was last baked at.
             uint32_t  version  = 0;                ///< bakeVersion the layer was last baked at.
         };
 
-        /// std140 ProbeBlock layout - must match shaders/forward/pbr.
+        /** @brief std140 ProbeBlock layout - must match shaders/forward/pbr. */
         struct GpuProbe {
             glm::vec4 center;    ///< xyz world centre, w pad
             glm::vec4 extents;   ///< xyz half-extents, w pad
@@ -73,8 +77,10 @@ class GLProbeManager {
             GpuProbe probes[GLBindings::ProbeTextureSlots::MAX_PROBES];
         };
 
-        /// A baked probe in range this frame, with its camera distance (for the
-        /// nearest-N selection). Reused across frames to avoid a per-frame alloc.
+        /**
+         * @brief A baked probe in range this frame, with its camera distance (for the
+         * nearest-N selection). Reused across frames to avoid a per-frame alloc.
+         */
         struct Active { uint32_t index; float dist; };
 
         std::unique_ptr<GLProbeBaker>        m_baker;  ///< Bakes probes at frame end.

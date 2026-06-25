@@ -39,19 +39,23 @@ class GLCubeConvolver {
         using AttachFace    = std::function<void(int face)>;
         using AttachMipFace = std::function<void(int face, int mip)>;
 
-        /// Convolve the env cube into six diffuse-irradiance faces.
+        /** @brief Convolve the env cube into six diffuse-irradiance faces. */
         void irradiance(const BindEnv& bindEnv, const AttachFace& attach);
 
-        /// GGX prefilter into six faces per mip, roughness 0..1 across @p mips.
+        /** @brief GGX prefilter into six faces per mip, roughness 0..1 across @p mips. */
         void prefilter(int mips, const BindEnv& bindEnv, const AttachMipFace& attach);
 
-        /// The unit cube the captures draw. Reused by the IBL baker's equirect +
-        /// env-capture steps and the probe baker's skybox draw, so there is one
-        /// cube per baker rather than one per step.
+        /**
+         * @brief The unit cube the captures draw. Reused by the IBL baker's equirect +
+         * env-capture steps and the probe baker's skybox draw, so there is one
+         * cube per baker rather than one per step.
+         */
         const GLMesh& cube() const { return *m_cube; }
 
-        /// The shared 90deg convolution projection + per-face view basis, also
-        /// reused by the IBL baker's equirect / env-capture face loops.
+        /**
+         * @brief The shared 90deg convolution projection + per-face view basis, also
+         * reused by the IBL baker's equirect / env-capture face loops.
+         */
         const glm::mat4& projection() const { return m_projection; }
         const glm::mat4& faceView(int face) const { return m_faceViews[face]; }
 

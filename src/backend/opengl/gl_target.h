@@ -35,30 +35,38 @@ class GLTarget {
         GLTarget& operator=(GLTarget && other) = delete;
 
     public:
-        /// Add a second colour attachment (view normal + roughness + metalness).
-        /// Call once before the first resize().
+        /**
+         * @brief Add a second colour attachment (view normal + roughness + metalness).
+         * Call once before the first resize().
+         */
         void enableGBuffer() { m_hasGBuffer = true; }
 
         void resize(uint32_t width, uint32_t height);
 
-        /// Bind for rendering into colour 0 (the common case: skybox, forward,
-        /// SSR resolve). Sets the viewport and the draw buffer to colour 0.
-        /// Non-const: it mutates GL draw-buffer state.
+        /**
+         * @brief Bind for rendering into colour 0 (the common case: skybox, forward,
+         * SSR resolve). Sets the viewport and the draw buffer to colour 0.
+         * Non-const: it mutates GL draw-buffer state.
+         */
         void bind(const Core::Context& gl);
 
-        /// Bind for the G-buffer prepass: draws into colour 1 only.
+        /** @brief Bind for the G-buffer prepass: draws into colour 1 only. */
         void bindGBufferPass(const Core::Context& gl);
 
-        /// Clear the whole target for a new frame (all colour attachments +
-        /// depth). The first pass to touch the target calls this.
+        /**
+         * @brief Clear the whole target for a new frame (all colour attachments +
+         * depth). The first pass to touch the target calls this.
+         */
         void clearForFrame(const Core::Context& gl);
 
         void bindColor(uint32_t slot) const;
         void bindDepth(uint32_t slot) const;
         void bindGBuffer(uint32_t slot) const;
 
-        /// Copy @p src's colour into this target (both viewport-sized). Used to
-        /// snapshot the scene for refraction and to resolve SSR back into it.
+        /**
+         * @brief Copy @p src's colour into this target (both viewport-sized). Used to
+         * snapshot the scene for refraction and to resolve SSR back into it.
+         */
         void blitColorFrom(const GLTarget& src);
 
     private:
