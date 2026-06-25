@@ -264,6 +264,12 @@ void resolveWorldTransforms(Scene& scene) {
             parallelFor(bucket.size(), [&](size_t i) {
                 const EntityId id = bucket[i];
                 const Hierarchy& h = scene.get<Hierarchy>(id);
+                // h.parent is read by raw index without an isAlive guard here (unlike
+                // computeWorldMatrix) deliberately: the bucketing pass above already
+                // walked and validated this entity's full ancestor chain via
+                // contains(), and setParent guarantees every parent has a
+                // WorldTransform. Destroy/reparent mark descendants dirty and fix the
+                // links, so a stale parent index never survives into this pass.
                 const glm::mat4 parentWorld =
                     scene.get<WorldTransform>(h.parent).model;
                 const glm::mat4 local =
