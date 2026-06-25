@@ -14,8 +14,9 @@ cmake --build build
 ```
 
 CMake 3.25+, Ninja, C++17, OpenGL 4.3 core. The build produces two executables -
-`engine_editor` and `engine_runtime` - over a shared `EngineApp` bootstrap. See
-[building.md](building.md) for targets, modules, and flags.
+`engine_editor` and `engine_runtime` - over a shared header-only bootstrap
+(`setupEngineApp` in `app/engine_app.h`). See [building.md](building.md) for
+targets, modules, and flags.
 
 ## Core model
 
@@ -37,7 +38,7 @@ CMake 3.25+, Ninja, C++17, OpenGL 4.3 core. The build produces two executables -
 Stages run in declaration order; within a stage, systems run **sequentially** in
 registration order (there is no parallel layer scheduler - per-system `parallelFor`
 is the scaling lever). The default wiring lives in `setupEngineApp`
-(`src/engine_app/`), shared by both executables; `engine_editor` adds
+(`app/engine_app.h`, a header both executables include); `engine_editor` adds
 `EditorSystem` on top.
 
 | Stage | Default systems |
