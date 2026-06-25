@@ -8,9 +8,10 @@ struct EditorContext;
  * @brief Render Settings window: pass toggles + per-effect tuning.
  *
  * A floating, closeable window (Window > Render Settings) that edits the
- * RenderSystem's live RenderSettings - GTAO, SSR, motion blur, bloom and the
- * reflection-probe contribution. Immediate-apply (no command stack); these are
- * render/app config, not scene edits.
+ * RenderSystem's live RenderSettings - debug view, GTAO, SSR, motion blur,
+ * bloom, shadows and reflection probes - plus the VisibilitySystem culling
+ * thresholds. Immediate-apply (no command stack); these are render/app
+ * config, not scene edits.
  */
 class RenderSettingsPanel {
     public:
@@ -24,8 +25,10 @@ class RenderSettingsPanel {
         RenderSettingsPanel& operator=(RenderSettingsPanel && other) = delete;
 
     public:
-        /// Draws the window while state.showRenderSettings is true; the
-        /// title-bar X clears it.
+        /**
+         * @brief Draws the window while state.showRenderSettings is true; the
+         * title-bar X clears it.
+         */
         void draw(EditorContext& ec);
 };
 

@@ -24,8 +24,10 @@ class ViewportPlaybar {
     public:
         void draw(EditorContext& ec, SceneIOController& sceneIO);
 
-        /// True while the mouse is over the bar (so the viewport does not
-        /// also treat the click as a pick / camera input).
+        /**
+         * @brief True while the mouse is over the bar (so the viewport does not
+         * also treat the click as a pick / camera input).
+         */
         bool isHovered() const { return m_hovered; }
 
     private:

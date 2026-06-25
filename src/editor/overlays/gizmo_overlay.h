@@ -73,6 +73,14 @@ class GizmoOverlay {
          */
         void drawSelectionOutline(EditorContext& ec);
 
+        /**
+         * @brief Ray-cast pick on left-click in the viewport, updating the
+         * editor selection.
+         *
+         * Tests the culled visible set (meshes) and enabled lights; nearest hit
+         * wins, an empty-space click deselects. No-op while the gizmo is hovered
+         * or being dragged. Selection is UI state only - it never dirties the scene.
+         */
         void handleViewportPick(EditorContext& ec);
         bool isGizmoOver() const  { return m_gizmo.isOver(); }
         bool isGizmoUsing() const { return m_gizmo.isUsing(); }

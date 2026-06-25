@@ -19,9 +19,11 @@ namespace EditorSettings {
 namespace {
 using nlohmann::json;
 
-/// Bumped when a load-incompatible change is made to the schema.
-/// Loaders with a lower version fall back to defaults rather than
-/// guessing at fields that no longer exist or have different meanings.
+/**
+ * @brief Bumped when a load-incompatible change is made to the schema.
+ * Loaders with a lower version fall back to defaults rather than
+ * guessing at fields that no longer exist or have different meanings.
+ */
 constexpr int kFileVersion = 1;
 
 json keybindToJson(const KeyBind& k) {
@@ -32,9 +34,11 @@ void keybindFromJson(const json& j, KeyBind& k) {
     k.mods = static_cast<uint8_t>(j.value("mods", 0));
 }
 
-/// One (json name, member) row per configurable keybind. Load and save both
-/// iterate this table, so the two directions can never drift apart - adding
-/// a keybind to EditorKeybinds only needs one new row here.
+/**
+ * @brief One (json name, member) row per configurable keybind. Load and save both
+ * iterate this table, so the two directions can never drift apart - adding
+ * a keybind to EditorKeybinds only needs one new row here.
+ */
 struct KeybindField {
     const char* name;
     KeyBind EditorKeybinds::* field;

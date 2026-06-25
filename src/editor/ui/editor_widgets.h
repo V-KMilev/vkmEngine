@@ -24,10 +24,10 @@ class Scene;
 bool drawVec3Control(const char* label, float* values,
                      float resetValue = 0.0f, float speed = 0.1f);
 
-/// Right-aligned property label with consistent column width across the panel.
+/** @brief Right-aligned property label with consistent column width across the panel. */
 void drawPropertyLabel(const char* label);
 
-/// Case-insensitive substring match. Empty @p filter matches every @p text.
+/** @brief Case-insensitive substring match. Empty @p filter matches every @p text. */
 bool matchesFilter(const char* text, const char* filter);
 
 /**
@@ -48,18 +48,24 @@ bool beginComponentCard(const char* title, const ImVec4& accent,
                         bool defaultOpen, bool* removeClicked = nullptr);
 void endComponentCard();
 
-/// Consistent panel title: header-tinted text with a full-width accent rule.
-/// Replaces the old "TextUnformatted + Separator + Spacing" boilerplate.
+/**
+ * @brief Consistent panel title: header-tinted text with a full-width accent rule.
+ * Replaces the old "TextUnformatted + Separator + Spacing" boilerplate.
+ */
 void drawPanelTitle(const char* title);
 
-/// Easing-function dropdown. Lists all named easings; on selection updates
-/// @p easing in place and returns true. @p id must be a unique ImGui id
-/// (e.g. "##easePos"). Sets the next item width to fill the row.
+/**
+ * @brief Easing-function dropdown. Lists all named easings; on selection updates
+ * @p easing in place and returns true. @p id must be a unique ImGui id
+ * (e.g. "##easePos"). Sets the next item width to fill the row.
+ */
 bool drawEasingCombo(const char* id, EasingFunction& easing);
 
-/// Enum dropdown: one row per name, writes the picked index back into
-/// @p value. Returns true on change. Fills the row, so it pairs with
-/// drawPropertyLabel. Replaces the int-cast/Combo/cast-back boilerplate.
+/**
+ * @brief Enum dropdown: one row per name, writes the picked index back into
+ * @p value. Returns true on change. Fills the row, so it pairs with
+ * drawPropertyLabel. Replaces the int-cast/Combo/cast-back boilerplate.
+ */
 template <typename E>
 bool drawEnumCombo(const char* id, E& value, const char* const names[], int count) {
     int idx = static_cast<int>(value);
@@ -94,8 +100,10 @@ bool drawEnumCombo(const char* id, E& value, const char* const names[], int coun
 template<class Key>
 class EulerCache {
     public:
-        /// Reseed the cache from @p q if the key changed or @p q diverged
-        /// from the cached quaternion (rotation set from outside).
+        /**
+         * @brief Reseed the cache from @p q if the key changed or @p q diverged
+         * from the cached quaternion (rotation set from outside).
+         */
         void sync(const Key& key, const glm::quat& q) {
             const glm::quat cached = glm::quat(glm::radians(m_degrees));
             const bool keyChanged   = !m_haveKey || !(m_key == key);
@@ -116,26 +124,36 @@ class EulerCache {
         bool      m_haveKey = false;
 };
 
-/// Write the user-visible name of @p id into @p buf (falls back to a default
-/// like "Entity 7" when the entity has no Name component).
+/**
+ * @brief Write the user-visible name of @p id into @p buf (falls back to a default
+ * like "Entity 7" when the entity has no Name component).
+ */
 void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t bufSize);
 
-/// Which entity-type glyph represents @p id (camera / light variant / mesh /
-/// animation / generic). Replaces the [C]/[M] ASCII badge.
+/**
+ * @brief Which entity-type glyph represents @p id (camera / light variant / mesh /
+ * animation / generic). Replaces the [C]/[M] ASCII badge.
+ */
 EditorIcon entityIconKind(const Scene& scene, EntityId id);
 
-/// Draw a non-interactive vector icon inline: reserves a @p size square at the
-/// cursor and renders @p icon centered in it (pair with SameLine + text).
+/**
+ * @brief Draw a non-interactive vector icon inline: reserves a @p size square at the
+ * cursor and renders @p icon centered in it (pair with SameLine + text).
+ */
 void inlineIcon(EditorIcon icon, float size, ImU32 color);
 
-/// A tree node row prefixed with a type glyph (replaces the [C] ASCII):
-/// <arrow> <icon> <name>. Forwards to TreeNodeEx; the caller still handles
-/// click / drag / context exactly as before. Returns the TreeNodeEx result.
+/**
+ * @brief A tree node row prefixed with a type glyph (replaces the [C] ASCII):
+ * <arrow> <icon> <name>. Forwards to TreeNodeEx; the caller still handles
+ * click / drag / context exactly as before. Returns the TreeNodeEx result.
+ */
 bool entityTreeNode(const void* idPtr, ImGuiTreeNodeFlags flags,
                     EditorIcon icon, const char* name);
 
-/// A Selectable row prefixed with a type glyph. @p idStr keeps the ImGui id
-/// stable when names collide. Returns true the frame it is clicked.
+/**
+ * @brief A Selectable row prefixed with a type glyph. @p idStr keeps the ImGui id
+ * stable when names collide. Returns true the frame it is clicked.
+ */
 bool entitySelectable(const char* idStr, bool selected,
                       EditorIcon icon, const char* name);
 

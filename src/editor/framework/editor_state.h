@@ -85,20 +85,26 @@ struct EditorState {
     float       toastTimeRemaining = 0.0f;
     ToastKind   toastKind          = ToastKind::Info;
 
-    /// Mark the scene as having unsaved changes. Call from every code path
-    /// that mutates the live Scene (entity ops, gizmo drags, inspector edits).
-    /// Cheap, idempotent.
+    /**
+     * @brief Mark the scene as having unsaved changes. Call from every code path
+     * that mutates the live Scene (entity ops, gizmo drags, inspector edits).
+     * Cheap, idempotent.
+     */
     void markSceneDirty() { sceneDirty = true; }
 
-    /// Selection helpers - selectedEntity and worldSelected are mutually
-    /// exclusive, so always route selection through these (not raw assignment)
-    /// to keep that invariant without a draw-time fixup.
+    /**
+     * @brief Selection helpers - selectedEntity and worldSelected are mutually
+     * exclusive, so always route selection through these (not raw assignment)
+     * to keep that invariant without a draw-time fixup.
+     */
     void selectEntity(EntityId id) { selectedEntity = id; worldSelected = false; }
     void selectWorld()             { selectedEntity = {}; worldSelected = true; }
     void deselect()                { selectedEntity = {}; worldSelected = false; }
 
-    /// Show a transient toast at the corner of the editor. `seconds` <= 0
-    /// uses a kind-appropriate default. Replaces any prior toast.
+    /**
+     * @brief Show a transient toast at the corner of the editor. `seconds` <= 0
+     * uses a kind-appropriate default. Replaces any prior toast.
+     */
     void pushToast(ToastKind kind, std::string msg, float seconds = 0.0f) {
         if (seconds <= 0.0f) {
             seconds = (kind == ToastKind::Error) ? 6.0f

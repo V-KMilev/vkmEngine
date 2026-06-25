@@ -5,7 +5,7 @@
 
 namespace Engine {
 
-/// Modifier flags (bitmask) for keybind combos.
+/** @brief Modifier flags (bitmask) for keybind combos. */
 enum KeyMod : uint8_t {
     KeyMod_None  = 0,
     KeyMod_Ctrl  = 1 << 0,
@@ -13,7 +13,7 @@ enum KeyMod : uint8_t {
     KeyMod_Alt   = 1 << 2,
 };
 
-/// A single keybind: one ImGuiKey + modifier bitmask.
+/** @brief A single keybind: one ImGuiKey + modifier bitmask. */
 struct KeyBind {
     ImGuiKey key  = ImGuiKey_None;
     uint8_t  mods = KeyMod_None;
@@ -22,7 +22,7 @@ struct KeyBind {
     bool operator!=(const KeyBind& o) const { return !(*this == o); }
 };
 
-/// All configurable editor keybinds with industry-standard defaults.
+/** @brief All configurable editor keybinds with industry-standard defaults. */
 struct EditorKeybinds {
     // File
     KeyBind saveScene        = { ImGuiKey_S,      KeyMod_Ctrl };
@@ -54,7 +54,7 @@ struct EditorKeybinds {
     KeyBind gizmoToggleSpace = { ImGuiKey_X, KeyMod_None };
 };
 
-/// Check if a keybind was just pressed this frame (exact modifier match).
+/** @brief Check if a keybind was just pressed this frame (exact modifier match). */
 inline bool isPressed(const KeyBind& bind) {
     if (bind.key == ImGuiKey_None) return false;
     if (!ImGui::IsKeyPressed(bind.key)) return false;
@@ -67,7 +67,7 @@ inline bool isPressed(const KeyBind& bind) {
     return true;
 }
 
-/// Get a human-readable label for a keybind (e.g. "Ctrl+D", "F5", "W").
+/** @brief Get a human-readable label for a keybind (e.g. "Ctrl+D", "F5", "W"). */
 const char* getKeyBindLabel(const KeyBind& bind, char* buf, size_t bufSize);
 
 } // namespace Engine

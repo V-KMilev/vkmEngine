@@ -10,7 +10,7 @@ struct EditorContext;
 class SceneIOController;
 
 /**
- * @brief The editor's top menu bar (File / Edit / View / Scene / Help).
+ * @brief The editor's top menu bar (File / Edit / View / Window / Entity / Help).
  *
  * Extracted from EditorSystem (god-file decomposition). Stateless command
  * surface: it reads/writes EditorState and forwards scene-file intents to

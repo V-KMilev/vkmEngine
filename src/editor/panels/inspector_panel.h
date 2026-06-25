@@ -20,8 +20,11 @@ struct EditorContext;
  * @brief Editor panel for inspecting and editing the selected entity's components.
  *
  * Displays collapsible sections for each component type (Transform, Mesh, Light,
- * Camera, Animation, Hierarchy) with inline editing. Includes a full PBR material
- * editor when a Mesh component is present. Stateless - reads selectedEntity from EditorState.
+ * Rigidbody, Collider, Camera, Reflection Probe, Animation, Script, Hierarchy)
+ * with inline editing, plus an "Add Component" menu. When the World node is
+ * selected instead of an entity, shows the scene-global Environment settings.
+ * Edits route through the command stack so they are undoable. The compact Mesh
+ * card links out to the standalone Material Editor for full PBR editing.
  */
 class InspectorPanel {
     public:

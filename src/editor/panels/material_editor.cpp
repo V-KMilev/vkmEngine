@@ -97,7 +97,7 @@ bool MaterialEditorPanel::drawMaterialBody(
             drawPropertyLabel("Emissive Strength");
             changed |= ImGui::DragFloat("##EmissiveStrength", &mat.emissiveStrength, 0.05f, 0.0f, 64.0f, "%.2f");
             if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("HDR multiplier on emission (drives bloom once it returns)");
+                ImGui::SetTooltip("HDR multiplier on emission (drives bloom)");
 
 
             drawPropertyLabel("Alpha Cutoff");
