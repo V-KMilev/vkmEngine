@@ -208,8 +208,8 @@ void resolveWorldTransforms(Scene& scene) {
     static constexpr uint32_t MAX_DEPTH = 32;
     // Persist the bucket array across frames (cleared, not freed) so we don't
     // construct 32 std::vectors and reallocate their storage every frame -
-    // resolveWorldTransforms runs once per frame on the main thread, so a
-    // function-static thread_local is safe and keeps the per-depth capacity.
+    // function-static thread_local gives each calling thread its own per-depth
+    // scratch and keeps the capacity across calls.
     static thread_local std::array<std::vector<EntityId>, MAX_DEPTH> buckets;
     for (auto& b : buckets) b.clear();
 
