@@ -78,6 +78,12 @@ namespace AssetSerializer {
     /// tools/asset_registration.cpp.
     void applyInline(const nlohmann::json& source, MaterialAsset& target, const ResourceManager& resources);
 
+    /// Build a material's canonical "inline" source descriptor (PBR scalars +
+    /// texture refs by name). This is both the material's editable source of
+    /// truth and its runtime form; the cooker writes it as the material's
+    /// library file.
+    nlohmann::json materialToInline(const MaterialAsset& material, const ResourceManager& resources);
+
 } // namespace AssetSerializer
 
 } // namespace Engine

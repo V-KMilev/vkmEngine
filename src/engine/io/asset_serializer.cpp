@@ -112,9 +112,13 @@ glm::vec4 vec4FromJson(const nlohmann::json& j, const glm::vec4& fallback) {
     return {j[0], j[1], j[2], j[3]};
 }
 
+} // namespace
+
 /// Build an "inline" material source descriptor capturing all PBR scalars +
 /// texture refs by name. This is what we emit on save regardless of how the
-/// material was first created - editor tweaks survive cold-start load.
+/// material was first created - editor tweaks survive cold-start load. Public
+/// (declared in the header) so the asset cooker can write a material's
+/// canonical inline form to the library.
 nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& resources) {
     nlohmann::json src;
     src["kind"]  = "inline";
@@ -154,6 +158,8 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     if (!textures.empty()) src["textures"] = std::move(textures);
     return src;
 }
+
+namespace {
 
 /// Apply an "inline" material descriptor to an existing MaterialAsset,
 /// resolving texture refs via findByName.
