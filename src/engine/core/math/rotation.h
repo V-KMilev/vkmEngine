@@ -28,4 +28,18 @@ inline glm::vec3 computeRight(const glm::quat& rotation) {
     return glm::normalize(rotation * WORLD_AXIS_X_RIGHT);
 }
 
+/**
+ * @brief Rotation of a world/model matrix, scale-tolerant.
+ *
+ * Normalises the upper-3x3 basis columns so a uniformly/non-uniformly scaled
+ * matrix still yields the correct rotation, then quat_casts the orthonormal basis.
+ */
+inline glm::quat worldRotationOf(const glm::mat4& worldMatrix) {
+    glm::mat3 basis(worldMatrix);
+    basis[0] = glm::normalize(basis[0]);
+    basis[1] = glm::normalize(basis[1]);
+    basis[2] = glm::normalize(basis[2]);
+    return glm::normalize(glm::quat_cast(basis));
+}
+
 } // namespace Engine::Math
