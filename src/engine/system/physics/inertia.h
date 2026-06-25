@@ -47,7 +47,7 @@ inline glm::mat3 parallelAxisShift(const glm::mat3& inertia, float mass, const g
  * I_world^-1 = R * I_local^-1 * R^T, with R the rotation matrix of the body's
  * orientation. Recomputed each tick because the orientation changes.
  */
-inline glm::mat3 inertiaWorld(const glm::mat3& invInertiaLocal, const glm::quat& rotation) {
+inline glm::mat3 inverseInertiaWorld(const glm::mat3& invInertiaLocal, const glm::quat& rotation) {
     const glm::mat3 r = glm::mat3_cast(rotation);
     return r * invInertiaLocal * glm::transpose(r);
 }
