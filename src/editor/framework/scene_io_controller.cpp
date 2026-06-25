@@ -19,6 +19,7 @@
 #include "framework/editor_state.h"
 #include "io/scene_serializer.h"
 #include "io/project_paths.h"
+#include "cook/asset_cooker.h"
 #include "system/camera/camera_controller.h"
 #include "system/script/behavior_system.h"
 #include "system/event/event_system.h"
@@ -49,6 +50,9 @@ void SceneIOController::save(FrameContext& ctx, EditorState& state) {
         requestSaveAs();
         return;
     }
+    // Bake every referenced asset into the cooked library + manifest, then write
+    // the scene as name-only references to those cooked assets.
+    AssetCooker::cookAllAssets(ctx.resources);
     if (!SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath)) {
         LOG_ERROR("SceneIOController::save: failed to write %s - scene remains dirty",
             m_currentScenePath.c_str());
@@ -253,6 +257,7 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
             std::filesystem::create_directories(
                 ProjectPaths::scenes(), mkdirEc);
             m_currentScenePath = finalPath;
+            AssetCooker::cookAllAssets(ctx.resources);
             if (SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath)) {
                 state.sceneDirty = false;
                 pushRecent(state, m_currentScenePath);
