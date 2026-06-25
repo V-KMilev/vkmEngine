@@ -8,6 +8,7 @@ target_link_libraries(engine_editor PRIVATE
     EngineCore
     EngineRendering
     EngineTools
+    EngineCooker
     BackendOpenGL
     EngineEditor
     BuildInfo

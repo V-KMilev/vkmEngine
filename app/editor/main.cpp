@@ -1,5 +1,6 @@
 #define VKM_LOG_CATEGORY "MAIN"
 
+#include <cstdlib>
 #include <string>
 
 #include "logger.h"
@@ -31,9 +32,10 @@ int main(int argc, char** argv) {
         // Pass true only to pin a GL error to its exact callsite.
         Core::enableGLDebugLogging(false);
 
-        // Asset factories must be registered before scene I/O can
-        // recreate procedural meshes + folder materials on cold start.
-        Engine::registerBuiltinAssetFactories();
+        // The editor registers the cooked factory set plus the recipe factories
+        // it needs to (re)cook assets from their source. Must precede scene I/O.
+        Engine::registerCookedAssetFactories();
+        Engine::registerRecipeAssetFactories();
 
         // Load the hot-reloadable gameplay module: it registers behaviors into
         // the engine's registry (resolved from this exe). Declared before the
@@ -49,7 +51,7 @@ int main(int argc, char** argv) {
 
         Engine::Engine engine;
 
-        auto sys = setupEngineApp(engine, AppConfig{"VKM Engine", true, false});
+        auto sys = setupEngineApp(engine, AppConfig{"VKM Engine (Editor)", true, false});
 
         engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
             engine, engine.getWindow().getWindowContext(),
@@ -68,8 +70,10 @@ int main(int argc, char** argv) {
 
     } catch (const std::exception& e) {
         LOG_FATAL("Exception: %s", e.what());
+        return EXIT_FAILURE;
     } catch (...) {
         LOG_FATAL("Unknown exception");
+        return EXIT_FAILURE;
     }
 
     LOG_INFO("Shutdown successfully!");
