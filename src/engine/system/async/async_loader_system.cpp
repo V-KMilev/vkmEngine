@@ -71,13 +71,21 @@ void AsyncLoaderSystem::update(FrameContext& ctx) {
             continue;
         }
 
-        asset.params.width          = c.width;
-        asset.params.height         = c.height;
-        asset.params.internalFormat = inferInternalFormat(c.channels, asset.srgb);
-        asset.params.format         = inferFormat(c.channels);
-        asset.params.type           = TexturePixelType::UnsignedByte;
-        asset.pixelData             = std::move(c.pixelData);
-        asset.loading               = false;
+        if (c.hasParams) {
+            // Cooked texture: params (incl. format/sRGB/wrap/filter) are exact.
+            asset.params = c.params;
+            asset.srgb   = (c.params.internalFormat == TextureInternalFormat::SRGB8 ||
+                            c.params.internalFormat == TextureInternalFormat::SRGBA8);
+        } else {
+            // stb-decoded texture: infer format from channel count + sRGB flag.
+            asset.params.width          = c.width;
+            asset.params.height         = c.height;
+            asset.params.internalFormat = inferInternalFormat(c.channels, asset.srgb);
+            asset.params.format         = inferFormat(c.channels);
+            asset.params.type           = TexturePixelType::UnsignedByte;
+        }
+        asset.pixelData = std::move(c.pixelData);
+        asset.loading   = false;
         rm.commit(c.handle);
     }
 

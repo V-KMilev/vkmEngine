@@ -26,7 +26,13 @@ struct TextureLoadCompletion {
     uint32_t width    = 0;
     uint32_t height   = 0;
     int      channels = 0;
-    bool     success  = false;   ///< False if stb_image_load failed; finaliser will warn and leave the asset empty.
+    bool     success  = false;   ///< False if the decode/read failed; finaliser will warn and leave the asset empty.
+
+    /// Cooked textures already know their exact TextureParams (format, wrap,
+    /// filter), so they bypass the channel-count inference the stb path uses.
+    /// When set, the finaliser applies `params` verbatim instead of inferring.
+    bool          hasParams = false;
+    TextureParams params{};
 };
 
 /**
