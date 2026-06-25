@@ -55,8 +55,8 @@ overlays drawn on top.
 | Bottom              | `panels/bottom_panel.cpp`             | Per-scene working surface: grouped master-detail browser                    |
 | Render Settings     | `panels/render_settings_panel.cpp`    | World-level render tuning: `RenderSettings` (GTAO / SSR / bloom / motion blur / shadows / grid) plus the `Environment` (IBL / skybox); opened from Window > Render Settings |
 | Physics Settings    | drawn inline in `editor_system.cpp`   | Edits the scene's `PhysicsWorld` singleton (gravity, solver iterations); opened from the Window menu |
-| Material Editor     | `panels/material_editor.cpp`          | Per-material PBR inspector with live preview (renders the real pipeline)    |
-| Asset Browser       | `panels/asset_browser.cpp`            | Thumbnail grid of materials / meshes / textures; pickable into the inspector|
+| Material Editor     | `panels/material_editor_panel.cpp`          | Per-material PBR inspector with live preview (renders the real pipeline)    |
+| Asset Browser       | `panels/asset_browser_panel.cpp`            | Thumbnail grid of materials / meshes / textures; pickable into the inspector|
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
 | Viewport Overlay    | `overlays/viewport_overlay.cpp`       | FPS counter, entity count, on-screen log overlay                            |
 | Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | Transform gizmo drawing + light/camera gizmos                               |
