@@ -223,7 +223,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         const bool frozen = rb.sleeping || rb.inverseMass == 0.0f;
         pb.invMass = frozen ? 0.0f : rb.inverseMass;
         pb.invInertiaWorld = frozen ? glm::mat3(0.0f)
-                                    : inertiaWorld(rb.invInertiaLocal, worldRot);
+                                    : inverseInertiaWorld(rb.invInertiaLocal, worldRot);
         pb.restitution = rb.restitution;
         pb.friction = rb.friction;
         m_solverBodies.push_back(pb);
@@ -352,7 +352,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
             rb.sleepTimer = 0.0f;
             m_solverBodies[idx].invMass = dynamicInverseMass(rb);
             m_solverBodies[idx].invInertiaWorld =
-                inertiaWorld(rb.invInertiaLocal, scene.get<Transform>(m_bodies[idx]).rotation);
+                inverseInertiaWorld(rb.invInertiaLocal, scene.get<Transform>(m_bodies[idx]).rotation);
         };
         if (rbA.sleeping && !rbB.sleeping && speedB > WAKE_SPEED_SQ) wake(a, rbA);
         if (rbB.sleeping && !rbA.sleeping && speedA > WAKE_SPEED_SQ) wake(b, rbB);
