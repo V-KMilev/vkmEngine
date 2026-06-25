@@ -52,26 +52,30 @@ class GLPreview {
         GLPreview& operator=(GLPreview && other) = delete;
 
     public:
-        /// Compile the bake programs + create the scratch target. Needs a
-        /// live GL context (GLBackend::init).
+        /**
+         * @brief Compile the bake programs + create the scratch target. Needs a
+         * live GL context (GLBackend::init).
+         */
         void init();
 
-        /// Render @p req into its per-key target. Returns the LDR texture id,
-        /// or 0 when the request can't be drawn (missing assets, no init).
+        /**
+         * @brief Render @p req into its per-key target. Returns the LDR texture id,
+         * or 0 when the request can't be drawn (missing assets, no init).
+         */
         uint32_t render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
                         const PreviewRequest& req, const ResourceManager& resources);
 
-        /// Last-rendered texture for @p key, or 0 when none exists.
+        /** @brief Last-rendered texture for @p key, or 0 when none exists. */
         uint32_t texture(uint64_t key) const;
 
-        /// Drop one key's target. Call when the source asset is destroyed.
+        /** @brief Drop one key's target. Call when the source asset is destroyed. */
         void release(uint64_t key);
 
-        /// Drop every cached target.
+        /** @brief Drop every cached target. */
         void releaseAll();
 
     private:
-        /// Per-key output: an LDR texture in its own FBO, sized per request.
+        /** @brief Per-key output: an LDR texture in its own FBO, sized per request. */
         struct Entry {
             std::unique_ptr<Core::Texture2D> ldr;
             Core::FrameBuffer                fbo;

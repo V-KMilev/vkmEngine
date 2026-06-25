@@ -132,7 +132,7 @@ class GLShadowData {
         void uploadAndBind();
 
     private:
-        /// Camera frustum corners + view-space depth span, shared by the cascade fit.
+        /** @brief Camera frustum corners + view-space depth span, shared by the cascade fit. */
         struct CameraFrustum {
             glm::vec3 nearCorners[4];
             glm::vec3 farCorners[4];
@@ -140,8 +140,10 @@ class GLShadowData {
             float farDepth  = 0.0f;
         };
 
-        /// Fit one shadow-casting light into the next free atlas slot(s) for its
-        /// type, writing its GPU entry + render job. next2D/nextCube advance.
+        /**
+         * @brief Fit one shadow-casting light into the next free atlas slot(s) for its
+         * type, writing its GPU entry + render job. next2D/nextCube advance.
+         */
         void fitDirectional(const LightData& light, uint32_t lightIndex,
                             const CameraFrustum& cam, uint32_t& next2D, bool& haveSun);
         void fitSpot(const LightData& light, uint32_t lightIndex, uint32_t& next2D);
@@ -153,7 +155,7 @@ class GLShadowData {
 
         int      m_lightSlot[SHADOW_MAX_TRACKED_LIGHTS];
         uint32_t m_lightCount = 0;
-        uint32_t m_shadowRes;
+        uint32_t m_shadowRes;  ///< Atlas tile resolution this frame, for world-texel bias sizing.
 
         std::vector<Shadow2DJob>   m_jobs2D;
         std::vector<ShadowCubeJob> m_jobsCube;

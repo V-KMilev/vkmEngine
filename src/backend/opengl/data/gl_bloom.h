@@ -32,7 +32,7 @@ class GLBloom {
     public:
         static constexpr int MAX_MIPS = 6;
 
-        /// (Re)allocate the chain for a viewport size. Base is half-res.
+        /** @brief (Re)allocate the chain for a viewport size. Base is half-res. */
         void resize(uint32_t viewportWidth, uint32_t viewportHeight) {
             const int w = static_cast<int>(viewportWidth) / 2;
             const int h = static_cast<int>(viewportHeight) / 2;
@@ -52,10 +52,10 @@ class GLBloom {
         bool isReady()  const { return m_chain.isReady(); }
         int  mipCount() const { return m_chain.mipCount(); }
 
-        /// Bind the chain for sampling; the shader selects a level via textureLod.
+        /** @brief Bind the chain for sampling; the shader selects a level via textureLod. */
         void bind(uint32_t slot) const { m_chain.bindSlot(slot); }
 
-        /// Per-mip render-target ops for the downsample / upsample loop.
+        /** @brief Per-mip render-target ops for the downsample / upsample loop. */
         void bindFbo()   const { m_chain.bindFbo(); }
         void unbindFbo() const { m_chain.unbindFbo(); }
         void attachMip(int mip) const { m_chain.attachMip(mip); }

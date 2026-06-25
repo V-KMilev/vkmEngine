@@ -36,14 +36,18 @@ class GLPass {
         virtual void execute(GLFrameContext& ctx) = 0;
 
     protected:
-        /// Shared fullscreen-pass GL preamble: depth test, blending and face
-        /// culling all off. The post passes route through this so they can't
-        /// drift apart on which states they set.
+        /**
+         * @brief Shared fullscreen-pass GL preamble: depth test, blending and face
+         * culling all off. The post passes route through this so they can't
+         * drift apart on which states they set.
+         */
         void beginFullscreen(Core::Context& gl) const;
 
-        /// Shared fullscreen-pass epilogue: re-enable depth testing (the
-        /// following geometry pass sets its own func / write / cull). Mirrors
-        /// beginFullscreen so the post passes don't each open-code the restore.
+        /**
+         * @brief Shared fullscreen-pass epilogue: re-enable depth testing (the
+         * following geometry pass sets its own func / write / cull). Mirrors
+         * beginFullscreen so the post passes don't each open-code the restore.
+         */
         void endFullscreen(Core::Context& gl) const;
 
     private:

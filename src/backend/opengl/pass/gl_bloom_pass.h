@@ -17,8 +17,8 @@ namespace Engine {
  * Progressively downsamples the HDR scene into the bloom mip chain (Karis-
  * averaged, soft-knee first tap to tame fireflies), then additively upsamples
  * with a 3x3 tent. Mip 0 is left holding the final bloom, which the composite
- * pass blends in before tonemap. Runs after the forward/skybox draw and before
- * composite.
+ * pass blends in before tonemap. Runs after the HDR scene is fully resolved
+ * (forward, SSR, motion blur) and before the grid + composite.
  */
 class GLBloomPass : public GLPass {
     public:
