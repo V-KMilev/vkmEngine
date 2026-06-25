@@ -11,7 +11,7 @@
 #include "generator/texture_generators.h"
 #include "loader/material_loaders.h"
 #include "loader/texture_loaders.h"
-#include "loader/model_loader.h"
+#include "loader/model_loaders.h"
 
 namespace Engine {
 

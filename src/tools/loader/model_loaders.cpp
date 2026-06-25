@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "LOADER"
 
-#include "model_loader.h"
+#include "model_loaders.h"
 
 #include <algorithm>
 #include <cstdint>
