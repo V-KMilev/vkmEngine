@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <unordered_map>
 
 #include "resource/resource.h"
 #include "resource/resource_handle.h"
@@ -16,10 +15,6 @@ namespace Engine {
  * Core::Shader. The backend (GLShader, future VkShader, etc.) reads
  * this asset to produce its concrete program object.
  *
- * `samplerBindings` maps shader sampler-uniform names to the texture
- * unit slot they should bind to. Backends apply these after every
- * (re)compile so a hot reload doesn't reset texture bindings.
- *
  * Hot reload: a FileWatcherSystem polls `path`'s contents and calls
  * `ResourceManager::commit(handle)` when source files change. The
  * backend's resource-sync sees the version bump and rebuilds its
@@ -27,22 +22,6 @@ namespace Engine {
  */
 struct ShaderAsset : public Resource {
     std::string path;  ///< Source directory.
-
-    /**
-     * @brief uniform-name -> texture slot. Applied after every compile by
-     * the backend so the binding survives hot reload.
-     */
-    std::unordered_map<std::string, int> samplerBindings;
-
-    /**
-     * @brief Whether this shader compiles per-material through the variant cache.
-     *
-     * Default false: the shader is a single program reused by every material
-     * that references it (the right choice for unlit, depth-only, and every
-     * post-processing pass). Set to true for shaders whose source has
-     * `#ifdef HAS_TRANSMISSION` / `_CLEARCOAT` / ... blocks (today: pbr).
-     */
-    bool variantAware = false;
 };
 
 using ShaderHandle = Handle<ShaderAsset>;

@@ -20,7 +20,7 @@ class Scene;
  * entity hierarchy under one root entity.
  *
  * Naming is deterministic so a re-import (or a scene reload through the
- * AssetFactories "model" kind) reproduces the same asset names and the
+ * recipe "model" kind) reproduces the same asset names and the
  * Mesh components re-link by name:
  *   mesh     "<stem>:mesh<index>"
  *   material "<stem>:mat<index>"   (or "<stem>:mat_default")
