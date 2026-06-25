@@ -1,8 +1,10 @@
 #version 430 core
 
 /*
- * Blinn-Phong over the engine's full light list - a debug stand-in for the PBR
- * forward shader. Covers every LightType: directional / point / spot punctual
+ * Blinn-Phong over the engine's full light list - a reference stand-in for the
+ * PBR forward shader, NOT loaded by the runtime (the forward pass only builds
+ * forward/pbr); kept as a readable, cheap alternative.
+ * Covers every LightType: directional / point / spot punctual
  * lights, and Rect / Disk area lights (center-point diffuse + representative-
  * point specular, the cheap approximation - no LTC). Reads only albedo from the
  * material UBO; ignores the PBR maps and shadows. Writes linear HDR so the

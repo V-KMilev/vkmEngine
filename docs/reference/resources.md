@@ -121,13 +121,10 @@ It carries texture handles for albedo, normal, metallic, roughness, a
 combined metallic-roughness slot, AO-metallic-roughness (glTF), AO,
 emission, height, clearcoat, transmission.
 
-`MaterialAsset::featureFlags()` derives a `uint32_t` bit set of
-`MaterialFeature` values from the active scalars and present textures
-(`MaterialFeature::Transmission`, `::Clearcoat`, `::Parallax`, `::Volume`,
-`::Anisotropy`, `::Subsurface`, `::Sheen`, `::AlphaMask`). No backend consumes
-this bit set today - it is dormant. The ubershader branches on the individual
-material scalars and texture-present uniforms at runtime instead; one shared PBR
-program, not per-variant compiled shaders; see [Rendering](system/rendering.md).
+All optional PBR features are runtime toggles: one shared PBR ubershader
+branches on the individual material scalars and texture-present uniforms at
+draw time. There is no feature bitset and no per-variant compiled shaders; see
+[Rendering](system/rendering.md).
 
 `MaterialType` is `Opaque = 0`, `Transparent = 1`, `Unlit = 2`, or
 `AlphaMask = 3`. Sorting in the render view groups the depth-writing types
