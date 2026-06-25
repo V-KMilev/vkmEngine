@@ -118,9 +118,13 @@ Shadow rendering goes through `GLShadowPass`, which:
   (lights and shadow casters unchanged).
 - Renders the **full scene** of `castShadows = true` meshes per light
   layer (shadow casters are not camera-culled; see [Visibility](visibility.md)).
-- Writes per-caster `lightSpace` matrices and biases into a UBO that
-  the forward pass samples through `sampler2DArrayShadow` and
-  `samplerCubeArrayShadow`.
+- Writes per-caster `lightSpace` matrices, biases, and atlas tile rects
+  into a UBO. The forward pass samples a single tiled `sampler2D`
+  shadow atlas (`u_shadowAtlas`) - mapping each caster's UV into its tile
+  rect and doing manual 3x3 PCF on the raw depth - plus a small array of
+  plain `samplerCube` maps (`u_shadowCube[SHADOW_MAX_CUBE]`), one per
+  point-light slot, also filtered with manual PCF. There are no hardware
+  comparison samplers (`sampler2DArrayShadow` / `samplerCubeArrayShadow`).
 
 `shadowDistance` controls how far the directional cascades cover in world
 units (smaller values pack the cascades tighter into the near range). It is
@@ -159,7 +163,7 @@ If you bump one side, you must bump the other - by hand. The note in
 (`SHADOW_MAX_2D` vs the C++ `MAX_SHADOW_CASTERS_2D`).
 
 The build *does* generate `shaders/_generated/engine_config.glsl` from
-`engine_config.h` (with names `MAX_LIGHTS`, `SHADOW_MAX_CASTERS_2D`, ...), the
+`engine_config.h` (with names `MAX_LIGHTS`, `MAX_SHADOW_CASTERS_2D`, ...), the
 intended single source of truth - but no shader `#include`s it yet, so it is
 currently unused. Wiring the forward shaders to include it (and dropping the hand
 defines) is the open follow-up; it needs a render verify.
