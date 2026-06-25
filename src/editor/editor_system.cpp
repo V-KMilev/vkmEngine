@@ -179,8 +179,12 @@ void EditorSystem::update(FrameContext& ctx) {
     // serialize behaviors, swap game.dll, recreate them - entities untouched.
     if (m_state.requestScriptReload) {
         m_state.requestScriptReload = false;
-        m_scriptModule.reload(ctx.scene);
-        m_state.pushToast(EditorState::ToastKind::Info, "Reloaded scripts");
+        if (m_scriptModule.reload(ctx.scene)) {
+            m_state.pushToast(EditorState::ToastKind::Info, "Reloaded scripts");
+        } else {
+            m_state.pushToast(EditorState::ToastKind::Error,
+                "Script reload failed - see log. Fix the build and reload again.");
+        }
     }
 
     // Intercept window-close while the scene is dirty: clear shouldClose,

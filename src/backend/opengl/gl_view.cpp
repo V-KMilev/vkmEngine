@@ -15,17 +15,25 @@ template <typename GLT, typename AssetT>
 void GLView::ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, const ResourceManager& resources) {
     if (!handle) return;
 
-    const uint32_t id = handle.id();
+    const uint32_t id         = handle.id();
+    const uint32_t generation = handle.key.generation;
     const AssetT& asset = resources.get(handle);
 
     if (id >= table.entries.size()) {
         table.entries.resize(id + 1);
         table.versions.resize(id + 1, 0);
+        table.generations.resize(id + 1, 0);
     }
 
-    if (!table.entries[id]) {
-        table.entries[id] = std::make_unique<GLT>(asset);
-        table.versions[id] = asset.version;
+    // A freed slot can be recycled by a different asset that also starts at
+    // version 1, so the version gate alone can't distinguish them. Rebuild from
+    // scratch when the slot is empty or its generation moved on (recycled); an
+    // in-place update() is only valid when it is the same asset (same generation)
+    // with a newer version.
+    if (!table.entries[id] || table.generations[id] != generation) {
+        table.entries[id]     = std::make_unique<GLT>(asset);
+        table.versions[id]    = asset.version;
+        table.generations[id] = generation;
     } else if (table.versions[id] != asset.version) {
         table.entries[id]->update(asset);
         table.versions[id] = asset.version;

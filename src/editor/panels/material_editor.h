@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 
+#include "resource/asset/material_asset.h"  // MaterialAsset, MaterialHandle
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/texture_asset.h"   // TextureHandle
 #include "framework/asset_picker.h"
@@ -43,11 +44,16 @@ class MaterialEditorPanel {
         /// (one-time) and return the handle for the current selection.
         MeshHandle previewMesh(ResourceManager& resources, const MeshHandle& entityMesh);
 
-        /// One material texture-slot row. Returns true on change.
+        /// One material texture-slot row. Returns true on change. Takes the
+        /// owning material's handle + a pointer-to-member rather than a raw
+        /// slot reference so a deferred picker can re-resolve the slot safely
+        /// (the sparse-set backing can reallocate while the picker is open).
         bool textureSlot(
             ResourceManager& res,
             const char* label,
-            TextureHandle& slot,
+            MaterialHandle owner,
+            MaterialAsset& mat,
+            TextureHandle MaterialAsset::* member,
             bool srgb
         );
         /// "Load PBR Folder" modal entry point; returns true once a folder
@@ -56,7 +62,8 @@ class MaterialEditorPanel {
         /// The full PBR + texture editor body. Returns true if anything changed.
         bool drawMaterialBody(
             ResourceManager& resources,
-            class MaterialAsset& mat
+            MaterialHandle target,
+            MaterialAsset& mat
         );
 
         // Orbit/zoom state for the preview camera.
@@ -68,10 +75,12 @@ class MaterialEditorPanel {
         // One picker per modal so each cache survives independent open/close.
         AssetPicker m_pbrFolderPicker;
         AssetPicker m_texturePicker;
-        /// Which texture slot the current m_texturePicker session is editing.
-        /// Null when no picker is active.
-        TextureHandle* m_pendingTexture = nullptr;
-        bool          m_pendingTextureSrgb = false;
+        /// The material + slot the active texture picker is editing, identified
+        /// by handle + pointer-to-member (not a raw pointer) so it survives a
+        /// sparse-set reallocation. m_pendingSlot null == no picker active.
+        MaterialHandle                  m_pendingMaterial{};
+        TextureHandle MaterialAsset::*  m_pendingSlot = nullptr;
+        bool                            m_pendingTextureSrgb = false;
 
         /// Color edited in the per-slot "Gen" popup's solid-color generator.
         glm::vec4 m_genColor{1.0f, 1.0f, 1.0f, 1.0f};

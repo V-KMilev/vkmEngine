@@ -32,6 +32,7 @@ template <typename GLT>
 struct GLResourceTable {
     std::vector<std::unique_ptr<GLT>> entries;
     std::vector<uint64_t>             versions;
+    std::vector<uint32_t>             generations;  ///< handle generation per slot; mismatch == slot recycled
 };
 
 /**
