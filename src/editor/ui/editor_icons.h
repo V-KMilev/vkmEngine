@@ -7,9 +7,9 @@ namespace Engine {
 /**
  * @brief Vector icon set drawn with ImDrawList (no icon-font dependency).
  *
- * Shared by the viewport toolbar and the animation editor so iconography
- * stays consistent. Strictly ASCII source per the style guide - glyphs
- * are stroked/filled primitives, not font characters.
+ * Shared across the viewport toolbar, playback bar and panels so
+ * iconography stays consistent. Strictly ASCII source per the style guide -
+ * glyphs are stroked/filled primitives, not font characters.
  */
 enum class EditorIcon {
     Select, Move, Rotate, Scale,
@@ -23,7 +23,7 @@ enum class EditorIcon {
     FrameAll
 };
 
-/// Draw @p icon centered at @p c with half-extent @p r in color @p col.
+/** @brief Draw @p icon centered at @p c with half-extent @p r in color @p col. */
 void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 col);
 
 /**

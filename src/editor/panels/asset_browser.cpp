@@ -100,9 +100,6 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
 
     ensureAssets(resources);
 
-    // Deferred so the purge runs after this frame's tabs finish iterating the
-    // asset tables (removing mid-iteration would skip tiles).
-
     if (ImGui::Button("Import Model...")) state.requestModelImport = true;
     ImGui::SameLine();
     if (ImGui::Button("New Material")) {

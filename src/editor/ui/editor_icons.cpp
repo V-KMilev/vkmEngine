@@ -9,6 +9,7 @@ namespace Engine {
 
 namespace {
 
+// Two-stroke "V" arrowhead at @p tip pointing along unit vector @p dir.
 void arrowHead(ImDrawList* dl, ImVec2 tip, ImVec2 dir, float len, ImU32 col, float th) {
     ImVec2 perp(-dir.y, dir.x);
     ImVec2 backL(tip.x - dir.x * len + perp.x * len * 0.6f,

@@ -33,7 +33,7 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
     // Six axis endpoints (+X, -X, +Y, -Y, +Z, -Z). Each is clickable for a
     // snap-to-view preset (DCC-standard navigation widget).
     struct Endpoint {
-        glm::vec3 worldDir;   // world-space camera direction (negated for label)
+        glm::vec3 worldDir;   // world-space "view from" direction passed to viewFrom
         glm::vec3 viewDir;    // view-rotated, for depth sort + screen position
         ImU32     col;
         const char* label;

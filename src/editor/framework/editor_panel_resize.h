@@ -31,8 +31,10 @@ class EditorPanelResize {
          */
         void process(EditorState& state, ImVec2 areaStart, float mainH, float workW, bool blockNew);
 
-        /// Drop any in-progress drag flags. Call when the editor hides
-        /// (F5) so a held drag doesn't ghost-resume on re-show.
+        /**
+         * @brief Drop any in-progress drag flags. Call when the editor hides
+         * (F5) so a held drag doesn't ghost-resume on re-show.
+         */
         void resetDragState() { m_resizingLeft = m_resizingRight = m_resizingBottom = false; }
 
     private:

@@ -102,8 +102,10 @@ class EditorSystem : public System {
 
         MaterialPreviewSession m_materialPreviews;
 
-        /// Last BehaviorErrorLog total observed, so update() toasts only newly
-        /// thrown behavior errors (not once per frame a disabled one lingers).
+        /**
+         * @brief Last BehaviorErrorLog total observed, so update() toasts only newly
+         * thrown behavior errors (not once per frame a disabled one lingers).
+         */
         unsigned long long m_lastBehaviorErrorTotal = 0;
 
         SceneIOController m_sceneIO;

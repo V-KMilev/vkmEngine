@@ -40,14 +40,18 @@ class MaterialEditorPanel {
         void draw(EditorContext& ec);
 
     private:
-        /// Lazily register the built-in preview shapes as real MeshAssets
-        /// (one-time) and return the handle for the current selection.
+        /**
+         * @brief Lazily register the built-in preview shapes as real MeshAssets
+         * (one-time) and return the handle for the current selection.
+         */
         MeshHandle previewMesh(ResourceManager& resources, const MeshHandle& entityMesh);
 
-        /// One material texture-slot row. Returns true on change. Takes the
-        /// owning material's handle + a pointer-to-member rather than a raw
-        /// slot reference so a deferred picker can re-resolve the slot safely
-        /// (the sparse-set backing can reallocate while the picker is open).
+        /**
+         * @brief One material texture-slot row. Returns true on change. Takes the
+         * owning material's handle + a pointer-to-member rather than a raw
+         * slot reference so a deferred picker can re-resolve the slot safely
+         * (the sparse-set backing can reallocate while the picker is open).
+         */
         bool textureSlot(
             ResourceManager& res,
             const char* label,
@@ -56,10 +60,12 @@ class MaterialEditorPanel {
             TextureHandle MaterialAsset::* member,
             bool srgb
         );
-        /// "Load PBR Folder" modal entry point; returns true once a folder
-        /// is picked, writing the absolute path to @p outFolder.
+        /**
+         * @brief "Load PBR Folder" modal entry point; returns true once a folder
+         * is picked, writing the absolute path to @p outFolder.
+         */
         bool pbrFolderBrowse(std::string& outFolder);
-        /// The full PBR + texture editor body. Returns true if anything changed.
+        /** @brief The full PBR + texture editor body. Returns true if anything changed. */
         bool drawMaterialBody(
             ResourceManager& resources,
             MaterialHandle target,
@@ -75,14 +81,16 @@ class MaterialEditorPanel {
         // One picker per modal so each cache survives independent open/close.
         AssetPicker m_pbrFolderPicker;
         AssetPicker m_texturePicker;
-        /// The material + slot the active texture picker is editing, identified
-        /// by handle + pointer-to-member (not a raw pointer) so it survives a
-        /// sparse-set reallocation. m_pendingSlot null == no picker active.
+        /**
+         * @brief The material + slot the active texture picker is editing, identified
+         * by handle + pointer-to-member (not a raw pointer) so it survives a
+         * sparse-set reallocation. m_pendingSlot null == no picker active.
+         */
         MaterialHandle                  m_pendingMaterial{};
         TextureHandle MaterialAsset::*  m_pendingSlot = nullptr;
         bool                            m_pendingTextureSrgb = false;
 
-        /// Color edited in the per-slot "Gen" popup's solid-color generator.
+        /** @brief Color edited in the per-slot "Gen" popup's solid-color generator. */
         glm::vec4 m_genColor{1.0f, 1.0f, 1.0f, 1.0f};
 };
 

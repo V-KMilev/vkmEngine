@@ -8,22 +8,26 @@
 
 namespace Engine {
 
-/// Gizmo operation type. Select is a no-handle mode: picking only, no
-/// manipulation handles drawn (GizmoOverlay skips manipulate() for it).
+/**
+ * @brief Gizmo operation type. Select is a no-handle mode: picking only, no
+ * manipulation handles drawn (GizmoOverlay skips manipulate() for it).
+ */
 enum class GizmoOperation { Translate, Rotate, Scale, Select };
 
-/// Gizmo coordinate space.
+/** @brief Gizmo coordinate space. */
 enum class GizmoMode { Local, World };
 
-/// Which axis/element is hovered or active during interaction.
+/** @brief Which axis/element is hovered or active during interaction. */
 enum class GizmoElement : int {
     None = 0,
     AxisX, AxisY, AxisZ,
     PlaneYZ, PlaneXZ, PlaneXY,
 };
 
-/// Axis / plane elements by index (0 = X, 1 = Y, 2 = Z), shared by the
-/// hit-test and draw loops so they agree on the index -> element mapping.
+/**
+ * @brief Axis / plane elements by index (0 = X, 1 = Y, 2 = Z), shared by the
+ * hit-test and draw loops so they agree on the index -> element mapping.
+ */
 inline constexpr GizmoElement GIZMO_AXES[3] = {
     GizmoElement::AxisX, GizmoElement::AxisY, GizmoElement::AxisZ,
 };
@@ -31,8 +35,10 @@ inline constexpr GizmoElement GIZMO_PLANES[3] = {
     GizmoElement::PlaneYZ, GizmoElement::PlaneXZ, GizmoElement::PlaneXY,
 };
 
-/// Custom transform gizmo drawn via ImGui DrawList.
-/// Non-copyable, non-movable. Owned by GizmoOverlay.
+/**
+ * @brief Custom transform gizmo drawn via ImGui DrawList.
+ * Non-copyable, non-movable. Owned by GizmoOverlay.
+ */
 class TransformGizmo {
     public:
         TransformGizmo() = default;
@@ -45,8 +51,10 @@ class TransformGizmo {
         TransformGizmo& operator=(TransformGizmo && other) = delete;
 
     public:
-        /// Main entry point. Draws gizmo, handles interaction.
-        /// Returns true if the model matrix was modified by a drag.
+        /**
+         * @brief Main entry point. Draws gizmo, handles interaction.
+         * Returns true if the model matrix was modified by a drag.
+         */
         bool manipulate(
             ImDrawList* drawList,
             const glm::mat4& view,

@@ -24,7 +24,7 @@ namespace EditorSettings {
 bool load(EditorState& state);
 bool save(const EditorState& state);
 
-/// Path the loader/saver uses. Resolved once at startup.
+/** @brief Path the loader/saver uses. Resolved once at startup. */
 std::string path();
 
 }  // namespace EditorSettings
