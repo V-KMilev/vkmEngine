@@ -7,7 +7,7 @@
 
 #include "logger.h"
 
-#include "debug/behavior_error_log.h"
+#include "debug/engine_error_log.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "platform/window/window_manager.h"
@@ -23,14 +23,12 @@ void BehaviorSystem::guard(Behavior& behavior, const char* hookName, Fn&& fn) {
     try {
         fn();
     } catch (const std::exception& e) {
-        BehaviorErrorLog::get().push(behavior.typeName(), hookName, e.what());
-        LOG_ERROR("Behavior '%s' threw in %s - disabling instance: %s", behavior.typeName(), hookName, e.what());
+        reportError("Behavior", std::string(behavior.typeName()) + " / " + hookName, e.what());
         behavior.m_disabled = true;
     } catch (...) {
         // A non-std throw would otherwise escape into the system loop and crash
         // the engine (ThreadPool already guards with catch(...)); contain it here.
-        BehaviorErrorLog::get().push(behavior.typeName(), hookName, "non-std exception");
-        LOG_ERROR("Behavior '%s' threw a non-std exception in %s - disabling instance", behavior.typeName(), hookName);
+        reportError("Behavior", std::string(behavior.typeName()) + " / " + hookName, "non-std exception");
         behavior.m_disabled = true;
     }
 }
@@ -78,11 +76,9 @@ void BehaviorSystem::fireDestroy(Behavior& behavior) {
         try {
             behavior.onDestroy();
         } catch (const std::exception& e) {
-            BehaviorErrorLog::get().push(behavior.typeName(), "onDestroy", e.what());
-            LOG_ERROR("Behavior '%s' threw in onDestroy: %s", behavior.typeName(), e.what());
+            reportError("Behavior", std::string(behavior.typeName()) + " / onDestroy", e.what());
         } catch (...) {
-            BehaviorErrorLog::get().push(behavior.typeName(), "onDestroy", "non-std exception");
-            LOG_ERROR("Behavior '%s' threw a non-std exception in onDestroy", behavior.typeName());
+            reportError("Behavior", std::string(behavior.typeName()) + " / onDestroy", "non-std exception");
         }
     }
     behavior.clearSubscriptions();  // drop listeners while the EventSystem is alive

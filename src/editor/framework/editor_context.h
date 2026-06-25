@@ -7,6 +7,7 @@ namespace Engine {
 struct FrameContext;
 struct EditorState;
 class Engine;
+class EngineErrorLog;
 class CameraControllerSystem;
 class MaterialPreviewSession;
 class RenderSystem;
@@ -40,6 +41,10 @@ struct EditorContext {
     VisibilitySystem&       visibilitySystem;
     EventSystem&            events;
     MaterialPreviewSession& materialPreviews;
+
+    // The editor-owned recoverable-error log (engine reports into it via the
+    // reportError() sink). Read by the Bottom panel's Errors tab.
+    EngineErrorLog&         errorLog;
 
     // Viewport child rect in screen space. Set by EditorSystem each frame
     // just before the in-viewport overlays are drawn.

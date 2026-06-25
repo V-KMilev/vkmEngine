@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include "core/system.h"
+#include "debug/engine_error_log.h"
 #include "framework/editor_state.h"
 #include "framework/material_preview_session.h"
 #include "framework/scene_io_controller.h"
@@ -102,11 +103,15 @@ class EditorSystem : public System {
 
         MaterialPreviewSession m_materialPreviews;
 
+        // The editor owns the recoverable-error log; installed as the engine's
+        // reportError() sink for this editor's lifetime (runtime installs none).
+        EngineErrorLog m_errorLog;
+
         /**
-         * @brief Last BehaviorErrorLog total observed, so update() toasts only newly
-         * thrown behavior errors (not once per frame a disabled one lingers).
+         * @brief Last EngineErrorLog total observed, so update() toasts only newly
+         * reported errors (not once per frame a disabled behavior lingers).
          */
-        unsigned long long m_lastBehaviorErrorTotal = 0;
+        unsigned long long m_lastErrorTotal = 0;
 
         SceneIOController m_sceneIO;
         EditorMenuBar     m_menuBar;
