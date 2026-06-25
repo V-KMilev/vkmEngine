@@ -63,6 +63,14 @@ std::vector<ColliderBox> fitBoxesToMesh(const MeshAsset& mesh, int detail, const
         return { boundsBox(bmin, bmax, absScale) };
     }
 
+    // The raycast path below indexes vertices by index-buffer values. Validate
+    // the buffer once up front so a malformed mesh (index >= vertex count) falls
+    // back to the bounds box instead of reading out of bounds in the hot loop.
+    const uint32_t vertexCount = static_cast<uint32_t>(mesh.vertices.size());
+    for (uint32_t idx : mesh.indices) {
+        if (idx >= vertexCount) return { boundsBox(bmin, bmax, absScale) };
+    }
+
     const int       R    = detail;
     const glm::vec3  cell = ext / static_cast<float>(R);
     const glm::vec3  dir(1.0f, 0.0f, 0.0f);     // scan along +X
