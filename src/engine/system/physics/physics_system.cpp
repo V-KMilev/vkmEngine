@@ -140,6 +140,26 @@ void expandSubShapes(const ColliderProxy& p, std::vector<SubShape>& out) {
     }
 }
 
+// Per-tick scratch shared across phases, kept thread_local so its storage and
+// clear-on-reuse semantics are identical to the previous function-local
+// declarations - the element types live in this anonymous namespace, so the
+// buffers cannot be header members and stay here instead.
+
+// Broadphase / narrowphase view of each collidable body (built in gather).
+thread_local std::vector<ColliderProxy> proxies;
+
+// Per-body world<->local frame, parallel to m_bodies, so writeback can map
+// the solved world pose back into a parented body's local Transform.
+thread_local std::vector<BodyFrame> bodyFrames;
+
+// Broadphase output: candidate proxy-index pairs and the X-sorted proxy order.
+thread_local std::vector<uint32_t> sorted;
+thread_local std::vector<std::pair<uint32_t, uint32_t>> pairs;  // proxy index pairs
+
+// Narrowphase scratch: each collider's child boxes expanded into world space.
+thread_local std::vector<SubShape> subA;
+thread_local std::vector<SubShape> subB;
+
 } // namespace
 
 void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
@@ -155,16 +175,33 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     auto* rbStorage = scene.storage<Rigidbody>();
     if (!rbStorage) return;
 
+    if (!gatherBodies(scene)) return;
+
+    integrateForces(scene, world, dt);
+
+    broadphase();
+
+    // hasContact spans narrowphase -> writeback (the sleep test reads it after the
+    // solve), so it is owned here and threaded through both phases.
+    std::vector<bool> hasContact(m_bodies.size(), false);
+    narrowphase(hasContact);
+
+    wakeOnImpact(scene);
+
+    solve(world, dt);
+
+    writeback(scene, dt, hasContact);
+}
+
+bool PhysicsSystem::gatherBodies(Scene& scene) {
+    auto* rbStorage = scene.storage<Rigidbody>();
+
     // Gather: snapshot every live Rigidbody+Transform into solver state.
     m_bodies.clear();
     m_solverBodies.clear();
 
-    thread_local std::vector<ColliderProxy> proxies;
     proxies.clear();
 
-    // Per-body world<->local frame, parallel to m_bodies, so writeback can map
-    // the solved world pose back into a parented body's local Transform.
-    thread_local std::vector<BodyFrame> bodyFrames;
     bodyFrames.clear();
 
     const uint32_t rbCount = static_cast<uint32_t>(rbStorage->size());
@@ -231,8 +268,10 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         }
     }
 
-    if (m_bodies.empty()) return;
+    return !m_bodies.empty();
+}
 
+void PhysicsSystem::integrateForces(Scene& scene, const PhysicsWorld& world, float dt) {
     // Integrate forces -> velocities (skip sleeping / immovable).
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         Rigidbody& rb = scene.get<Rigidbody>(m_bodies[k]);
@@ -243,10 +282,10 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         pb.linearVelocity *= 1.0f / (1.0f + rb.linearDamping * dt);
         pb.angularVelocity *= 1.0f / (1.0f + rb.angularDamping * dt);
     }
+}
 
+void PhysicsSystem::broadphase() {
     // Broadphase: sort-and-sweep on the X axis.
-    thread_local std::vector<uint32_t> sorted;
-    thread_local std::vector<std::pair<uint32_t, uint32_t>> pairs;  // proxy index pairs
     sorted.clear();
     pairs.clear();
 
@@ -265,18 +304,17 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
             if (aabbOverlap(pa, pb)) pairs.emplace_back(sorted[a], sorted[b]);
         }
     }
+}
 
+void PhysicsSystem::narrowphase(std::vector<bool>& hasContact) {
     // Narrowphase: generate contact manifolds.
     m_manifolds.clear();
-    std::vector<bool> hasContact(m_bodies.size(), false);
     Contact scratch[MAX_CONTACTS_PER_MANIFOLD];
 
     // Colliders expand into their child boxes here, so a single body pair can
     // yield several manifolds (one per child box-pair that touches). The solver
     // already handles many manifolds per body pair, so this just works - each
     // manifold carries the same bodyA/bodyB indices.
-    thread_local std::vector<SubShape> subA;
-    thread_local std::vector<SubShape> subB;
 
     for (const auto& pair : pairs) {
         const ColliderProxy& A = proxies[pair.first];
@@ -328,7 +366,9 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
             }
         }
     }
+}
 
+void PhysicsSystem::wakeOnImpact(Scene& scene) {
     // Wake sleepers struck by a faster body before solving.
     for (const ContactManifold& manifold : m_manifolds) {
         const uint32_t a = manifold.bodyA;
@@ -348,13 +388,17 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         if (rbA.sleeping && !rbB.sleeping && speedB > WAKE_SPEED_SQ) wake(a, rbA);
         if (rbB.sleeping && !rbA.sleeping && speedA > WAKE_SPEED_SQ) wake(b, rbB);
     }
+}
 
+void PhysicsSystem::solve(const PhysicsWorld& world, float dt) {
     // Solve contacts (sequential impulse + split-impulse correction).
     SolverParams params;
     params.iterations = world.solverIterations;
     params.dt = dt;
     solveContacts(m_solverBodies, m_manifolds, params);
+}
 
+void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& hasContact) {
     // Integrate velocities -> pose, write back, update sleep, mark dirty.
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         const EntityId id = m_bodies[k];
