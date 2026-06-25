@@ -9,7 +9,7 @@
  * composite pass still tonemaps it.
  */
 
-#define MAX_LIGHTS 32  // must match Config::MAX_LIGHTS (engine_config.h / engine_config.glsl)
+#include "../../_generated/engine_config.glsl"  // MAX_LIGHTS (generated from engine_config.h)
 
 #define LIGHT_DIRECTIONAL 0
 #define LIGHT_POINT       1
