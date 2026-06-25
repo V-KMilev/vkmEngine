@@ -18,7 +18,7 @@ class FrameTracker;
  * order each frame; within a stage, systems run in registration order.
  *
  * The structure mirrors how a frame actually flows:
- *   Input        -> poll devices, capture/handle input (e.g., CameraController)
+ *   Input        -> poll devices, capture/handle input (e.g., CameraControllerSystem)
  *   Simulation   -> state mutations: events, async loading, gameplay/scripts
  *                   (BehaviorSystem), animation, physics
  *   Transform    -> derive world-space data from local Transforms (HierarchySystem)

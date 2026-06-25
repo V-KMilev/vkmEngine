@@ -18,7 +18,7 @@ namespace Engine {
  * Handles camera movement (WASD, etc.), speed boosting, mouse look, scroll zoom, and pitch/yaw.
  * Designed for use with the Editor camera Entity. Not thread-safe.
  */
-class CameraController : public System {
+class CameraControllerSystem : public System {
     public:
         /** @brief Tunable feel parameters for movement, look, and zoom. */
         struct Settings {
@@ -32,14 +32,14 @@ class CameraController : public System {
             float maxPitch = 90.0f;             ///< Maximum pitch angle in degrees.
         };
 
-        CameraController();
-        ~CameraController() override = default;
+        CameraControllerSystem();
+        ~CameraControllerSystem() override = default;
 
-        CameraController(const CameraController& other) = delete;
-        CameraController& operator=(const CameraController& other) = delete;
+        CameraControllerSystem(const CameraControllerSystem& other) = delete;
+        CameraControllerSystem& operator=(const CameraControllerSystem& other) = delete;
 
-        CameraController(CameraController && other) = delete;
-        CameraController& operator=(CameraController && other) = delete;
+        CameraControllerSystem(CameraControllerSystem && other) = delete;
+        CameraControllerSystem& operator=(CameraControllerSystem && other) = delete;
 
     public:
         /**

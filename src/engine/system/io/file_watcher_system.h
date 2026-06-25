@@ -21,18 +21,18 @@ namespace Engine {
  * Polling cadence is `intervalSeconds`; sub-cadence changes batch into a
  * single callback fire per entry per tick.
  */
-class FileWatcher : public System {
+class FileWatcherSystem : public System {
     public:
         using OnChange = std::function<void()>;
 
-        explicit FileWatcher(float intervalSeconds = 0.5f);
-        ~FileWatcher() override = default;
+        explicit FileWatcherSystem(float intervalSeconds = 0.5f);
+        ~FileWatcherSystem() override = default;
 
-        FileWatcher(const FileWatcher& other) = delete;
-        FileWatcher& operator=(const FileWatcher& other) = delete;
+        FileWatcherSystem(const FileWatcherSystem& other) = delete;
+        FileWatcherSystem& operator=(const FileWatcherSystem& other) = delete;
 
-        FileWatcher(FileWatcher && other) = delete;
-        FileWatcher& operator=(FileWatcher && other) = delete;
+        FileWatcherSystem(FileWatcherSystem && other) = delete;
+        FileWatcherSystem& operator=(FileWatcherSystem && other) = delete;
 
     public:
         /**

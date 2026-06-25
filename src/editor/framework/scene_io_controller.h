@@ -9,7 +9,7 @@ namespace Engine {
 struct FrameContext;
 struct EditorState;
 class EventSystem;
-class CameraController;
+class CameraControllerSystem;
 class RenderSystem;
 
 /**
@@ -35,7 +35,7 @@ class SceneIOController {
     public:
         SceneIOController(
             EventSystem& events,
-            CameraController& cameraController,
+            CameraControllerSystem& cameraController,
             RenderSystem& renderSystem
         );
         ~SceneIOController();
@@ -119,7 +119,7 @@ class SceneIOController {
         static void pushRecent(EditorState& state, const std::string& path);
 
         EventSystem&      m_events;
-        CameraController& m_cameraController;
+        CameraControllerSystem& m_cameraController;
         RenderSystem&     m_renderSystem;
 
         std::string m_currentScenePath;  ///< Empty until the user saves/loads once.

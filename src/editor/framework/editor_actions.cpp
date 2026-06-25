@@ -24,11 +24,11 @@
 #include "resource/asset/material_asset.h"
 #include "system/visibility/visibility.h"
 #include "system/visibility/bounds_utils.h"
-#include "system/camera/camera_controller.h"
+#include "system/camera/camera_controller_system.h"
 #include "generator/light_generators.h"
 #include "generator/mesh_generators.h"
 #include "generator/material_generators.h"
-#include "loader/model_loader.h"
+#include "loader/model_loaders.h"
 #include "io/project_paths.h"
 
 namespace Engine {
@@ -282,7 +282,7 @@ void setActiveCamera(Scene& scene, EditorState& state, EntityId target, const ch
     state.markSceneDirty();
 }
 
-void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController& camera) {
+void focusOnSelected(FrameContext& ctx, EditorState& state, CameraControllerSystem& camera) {
     if (!state.selectedEntity || !ctx.scene.isAlive(state.selectedEntity)) return;
     if (!ctx.scene.has<Transform>(state.selectedEntity)) return;
 
@@ -327,7 +327,7 @@ void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController& ca
     camera.focusOn(ctx.scene, targetPos, focusDistance);
 }
 
-void frameAll(FrameContext& ctx, CameraController& camera) {
+void frameAll(FrameContext& ctx, CameraControllerSystem& camera) {
     if (!ctx.visibility || ctx.visibility->entries.empty()) return;
 
     glm::vec3 mn(std::numeric_limits<float>::max());

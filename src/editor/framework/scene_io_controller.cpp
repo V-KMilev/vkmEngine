@@ -20,7 +20,7 @@
 #include "io/scene_serializer.h"
 #include "io/project_paths.h"
 #include "cook/asset_cooker.h"
-#include "system/camera/camera_controller.h"
+#include "system/camera/camera_controller_system.h"
 #include "system/script/behavior_system.h"
 #include "system/event/event_system.h"
 #include "system/render/render_backend.h"
@@ -30,7 +30,7 @@ namespace Engine {
 
 SceneIOController::SceneIOController(
     EventSystem& events,
-    CameraController& cameraController,
+    CameraControllerSystem& cameraController,
     RenderSystem& renderSystem
 )
     : m_events(events)

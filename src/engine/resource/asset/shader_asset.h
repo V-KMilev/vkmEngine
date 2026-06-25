@@ -20,7 +20,7 @@ namespace Engine {
  * unit slot they should bind to. Backends apply these after every
  * (re)compile so a hot reload doesn't reset texture bindings.
  *
- * Hot reload: a FileWatcher polls `path`'s contents and calls
+ * Hot reload: a FileWatcherSystem polls `path`'s contents and calls
  * `ResourceManager::commit(handle)` when source files change. The
  * backend's resource-sync sees the version bump and rebuilds its
  * GPU object - the asset itself never knows about reloads.

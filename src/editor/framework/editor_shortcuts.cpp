@@ -7,7 +7,7 @@
 #include "framework/scene_io_controller.h"
 #include "framework/editor_actions.h"
 #include "core/system.h"
-#include "system/camera/camera_controller.h"
+#include "system/camera/camera_controller_system.h"
 
 namespace Engine {
 
@@ -16,7 +16,7 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
 
     FrameContext&     ctx    = ec.frame;
     EditorState&      state  = ec.state;
-    CameraController& camera = ec.cameraController;
+    CameraControllerSystem& camera = ec.cameraController;
     const auto&       kb     = state.keybinds;
 
     if (isPressed(kb.toggleHierarchy)) state.showHierarchy = !state.showHierarchy;

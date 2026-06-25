@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "FILEWATCH"
 
-#include "system/io/file_watcher.h"
+#include "system/io/file_watcher_system.h"
 
 #include <system_error>
 
@@ -12,12 +12,12 @@ namespace Engine {
 
 namespace fs = std::filesystem;
 
-FileWatcher::FileWatcher(float intervalSeconds)
+FileWatcherSystem::FileWatcherSystem(float intervalSeconds)
     : m_interval(intervalSeconds)
 {
 }
 
-void FileWatcher::watch(std::string dirPath, OnChange onChange) {
+void FileWatcherSystem::watch(std::string dirPath, OnChange onChange) {
     Entry entry;
     entry.path     = std::move(dirPath);
     entry.onChange = std::move(onChange);
@@ -34,18 +34,18 @@ void FileWatcher::watch(std::string dirPath, OnChange onChange) {
     m_entries.push_back(std::move(entry));
 }
 
-void FileWatcher::update(FrameContext& ctx) {
+void FileWatcherSystem::update(FrameContext& ctx) {
     m_accumulator += ctx.deltaTime;
     if (m_accumulator < m_interval) return;
     m_accumulator -= m_interval;
 
     // Only emit the zone on poll ticks - skipping it on the no-op frames keeps
     // the Tracy timeline clean (this fires once every m_interval seconds).
-    PROFILE_SCOPE("FileWatcher/Poll");
+    PROFILE_SCOPE("FileWatcherSystem/Poll");
     for (auto& entry : m_entries) checkOne(entry);
 }
 
-void FileWatcher::checkOne(Entry& entry) {
+void FileWatcherSystem::checkOne(Entry& entry) {
     bool changed = false;
     std::error_code ec;
 

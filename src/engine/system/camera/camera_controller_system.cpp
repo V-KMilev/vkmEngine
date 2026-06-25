@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "CAMERA"
 
-#include "system/camera/camera_controller.h"
+#include "system/camera/camera_controller_system.h"
 
 #include <algorithm>
 #include <cmath>
@@ -22,9 +22,9 @@
 
 namespace Engine {
 
-CameraController::CameraController() = default;
+CameraControllerSystem::CameraControllerSystem() = default;
 
-EntityId CameraController::resolveActiveCamera(Scene& scene) {
+EntityId CameraControllerSystem::resolveActiveCamera(Scene& scene) {
     // Fast path: keep flying the current camera while it stays the active one.
     EntityId cur = m_cameraEntity.getID();
     if (cur && scene.isAlive(cur)
@@ -48,7 +48,7 @@ EntityId CameraController::resolveActiveCamera(Scene& scene) {
     return {};
 }
 
-void CameraController::reseedAnglesFromRotation(const glm::quat& rotation) {
+void CameraControllerSystem::reseedAnglesFromRotation(const glm::quat& rotation) {
     // Inverse of updateRotationFromAngles():
     //   forward = (cos(pitch)*sin(yaw), sin(pitch), cos(pitch)*cos(yaw))
     const glm::vec3 f = Math::computeForward(rotation);
@@ -56,8 +56,8 @@ void CameraController::reseedAnglesFromRotation(const glm::quat& rotation) {
     m_yaw   = std::atan2(f.x, f.z);
 }
 
-void CameraController::update(FrameContext& ctx) {
-    PROFILE_SCOPE("CameraController");
+void CameraControllerSystem::update(FrameContext& ctx) {
+    PROFILE_SCOPE("CameraControllerSystem");
     // Always drive the active rendered camera. This keeps the fly controls
     // working after "Set as Main Camera" / a scene load (the old code flew a
     // fixed entity while the renderer used a different one).
@@ -77,7 +77,7 @@ void CameraController::update(FrameContext& ctx) {
     updateFlyMode(ctx.window, transform.position, transform.rotation, ctx.deltaTime);
 }
 
-void CameraController::updateFlyMode(WindowManager& windowManager, glm::vec3& position, glm::quat& rotation, float deltaTime) {
+void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, glm::vec3& position, glm::quat& rotation, float deltaTime) {
     auto& inputHandle   = windowManager.getInputHandle();
     auto& mouse    = inputHandle.getMouse();
     auto& keyboard = inputHandle.getKeyboard();
@@ -129,7 +129,7 @@ void CameraController::updateFlyMode(WindowManager& windowManager, glm::vec3& po
     if (keyboard.isKeyPressed(GLFW_KEY_E)) position -= Math::WORLD_AXIS_Y_UP * speed;
 }
 
-void CameraController::focusOn(Scene& scene, const glm::vec3& target, float distance) {
+void CameraControllerSystem::focusOn(Scene& scene, const glm::vec3& target, float distance) {
     EntityId camId = m_cameraEntity.getID();
     if (!camId || !scene.has<Transform>(camId)) return;
 
@@ -159,7 +159,7 @@ void CameraController::focusOn(Scene& scene, const glm::vec3& target, float dist
         target.x, target.y, target.z, distance);
 }
 
-void CameraController::viewFrom(Scene& scene, const glm::vec3& target,
+void CameraControllerSystem::viewFrom(Scene& scene, const glm::vec3& target,
                                 const glm::vec3& direction, float distance) {
     EntityId camId = m_cameraEntity.getID();
     if (!camId || !scene.has<Transform>(camId)) return;
@@ -179,7 +179,7 @@ void CameraController::viewFrom(Scene& scene, const glm::vec3& target,
         target.x, target.y, target.z, dir.x, dir.y, dir.z, distance);
 }
 
-void CameraController::updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch) {
+void CameraControllerSystem::updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch) {
     // Yaw rotates around world up axis
     glm::quat yawQuat = glm::angleAxis(yaw, Math::WORLD_AXIS_Y_UP);
     // Pitch rotates around local right axis (negative because mouse Y is inverted)
