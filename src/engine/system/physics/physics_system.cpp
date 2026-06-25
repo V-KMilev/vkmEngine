@@ -67,7 +67,16 @@ glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
         mn = glm::min(mn, part.center - part.halfExtents);
         mx = glm::max(mx, part.center + part.halfExtents);
     }
-    return boxInverseInertiaLocal(rb.mass, (mx - mn) * 0.5f);
+    // Inertia about the collider centre, parallel-axis-shifted to the entity
+    // origin (where the solver measures contact arms) so an off-centre collider
+    // gets its rotational response about the correct axis.
+    const glm::mat3 inertia = boxInertiaLocal(rb.mass, (mx - mn) * 0.5f);
+    if (inertia == glm::mat3(0.0f)) return glm::mat3(0.0f);
+    const glm::vec3 center = (mx + mn) * 0.5f;
+    const glm::mat3 shifted = glm::dot(center, center) > 0.0f
+                                ? parallelAxisShift(inertia, rb.mass, center)
+                                : inertia;
+    return glm::inverse(shifted);
 }
 
 void computeAABB(

@@ -6,13 +6,13 @@
 namespace Engine {
 
 /**
- * @brief Inverse inertia tensor of a solid box in body-local space.
+ * @brief Inertia tensor of a solid box about its centre, in body-local space.
  *
- * Solid box about its centre: I_x = (1/12) m (h_y^2 + h_z^2) using full
- * extents h = 2 * halfExtents. A non-positive mass or degenerate extent yields
- * mat3(0).
+ * Solid box: I_x = (1/12) m (h_y^2 + h_z^2) using full extents h = 2*halfExtents.
+ * Returns mat3(0) for a non-positive mass or degenerate extent. Callers that need
+ * the inverse (and may parallel-axis-shift first) invert the result themselves.
  */
-inline glm::mat3 boxInverseInertiaLocal(float mass, const glm::vec3& halfExtents) {
+inline glm::mat3 boxInertiaLocal(float mass, const glm::vec3& halfExtents) {
     if (mass <= 0.0f) return glm::mat3(0.0f);
 
     const glm::vec3 full = halfExtents * 2.0f;
@@ -23,10 +23,22 @@ inline glm::mat3 boxInverseInertiaLocal(float mass, const glm::vec3& halfExtents
     if (ix <= 0.0f || iy <= 0.0f || iz <= 0.0f) return glm::mat3(0.0f);
 
     return glm::mat3(
-        1.0f / ix, 0.0f, 0.0f,
-        0.0f, 1.0f / iy, 0.0f,
-        0.0f, 0.0f, 1.0f / iz
+        ix, 0.0f, 0.0f,
+        0.0f, iy, 0.0f,
+        0.0f, 0.0f, iz
     );
+}
+
+/**
+ * @brief Parallel-axis shift of an inertia tensor from the centre of mass to a
+ *        parallel axis offset by @p offset: I' = I + m (|d|^2 E - d d^T).
+ *
+ * Used when a collider's centre is offset from the entity origin (where the
+ * solver measures contact arms) so the body rotates about the correct axis.
+ */
+inline glm::mat3 parallelAxisShift(const glm::mat3& inertia, float mass, const glm::vec3& offset) {
+    const float d2 = glm::dot(offset, offset);
+    return inertia + mass * (glm::mat3(d2) - glm::outerProduct(offset, offset));
 }
 
 /**
