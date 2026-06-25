@@ -41,8 +41,10 @@ class MaterialEditorPanel {
 
     private:
         /**
-         * @brief Lazily register the built-in preview shapes as real MeshAssets
-         * (one-time) and return the handle for the current selection.
+         * @brief Resolve the preview shape for the current selection to a real
+         * MeshAsset handle. Looks the shape up by name every call (O(1)) and
+         * lazily re-registers it if absent, so it survives the ResourceManager
+         * swap a scene load performs (which drops every hidden asset).
          */
         MeshHandle previewMesh(ResourceManager& resources, const MeshHandle& entityMesh);
 
