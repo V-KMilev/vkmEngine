@@ -13,6 +13,7 @@ target_link_libraries(EngineEditor PUBLIC
     vkmGL
 )
 target_link_libraries(EngineEditor PRIVATE
+    EngineRendering    # editor_system uses backend()/renderPreview(); headers only forward-declare it
     vkm_warnings
     BuildInfo
 )
