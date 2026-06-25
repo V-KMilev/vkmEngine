@@ -58,11 +58,12 @@ uint64_t previewVersion(uint64_t materialVersion, uint32_t shapeId,
 
 bool MaterialEditorPanel::drawMaterialBody(
     ResourceManager& resources,
+    MaterialHandle target,
     MaterialAsset& mat
 ) {
     bool changed = false;
-    auto slot = [&](const char* label, TextureHandle& s, bool srgb) {
-        return textureSlot(resources, label, s, srgb);
+    auto slot = [&](const char* label, TextureHandle MaterialAsset::* member, bool srgb) {
+        return textureSlot(resources, label, target, mat, member, srgb);
     };
 
         if (beginComponentCard("Base", ACC_BASE, true)) {
@@ -191,20 +192,20 @@ bool MaterialEditorPanel::drawMaterialBody(
             // PBR Core: the maps every PBR material is likely to set.
             ImGui::TextDisabled("PBR Core");
             ImGui::Spacing();
-            changed |= slot("Albedo",    mat.albedoTexture,    true);
-            changed |= slot("Normal",    mat.normalTexture,    false);
-            changed |= slot("Roughness", mat.roughnessTexture, false);
-            changed |= slot("Metallic",  mat.metallicTexture,  false);
-            changed |= slot("AO",        mat.aoTexture,        false);
-            changed |= slot("Emission",  mat.emissionTexture,  true);
+            changed |= slot("Albedo",    &MaterialAsset::albedoTexture,    true);
+            changed |= slot("Normal",    &MaterialAsset::normalTexture,    false);
+            changed |= slot("Roughness", &MaterialAsset::roughnessTexture, false);
+            changed |= slot("Metallic",  &MaterialAsset::metallicTexture,  false);
+            changed |= slot("AO",        &MaterialAsset::aoTexture,        false);
+            changed |= slot("Emission",  &MaterialAsset::emissionTexture,  true);
 
             // Packed combinations - the loader auto-uses these when present
             // and disregards the separate-channel rows above.
             ImGui::Spacing();
             ImGui::TextDisabled("Packed");
             ImGui::Spacing();
-            changed |= slot("Metallic+Roughness",     mat.metallicRoughnessTexture,   false);
-            changed |= slot("AO+Metallic+Roughness",  mat.aoMetallicRoughnessTexture, false);
+            changed |= slot("Metallic+Roughness",     &MaterialAsset::metallicRoughnessTexture,   false);
+            changed |= slot("AO+Metallic+Roughness",  &MaterialAsset::aoMetallicRoughnessTexture, false);
 
             // Less common: parallax / clearcoat / glass. Pair with the
             // matching scalar in Surface / Clearcoat / Volume cards to take
@@ -212,9 +213,9 @@ bool MaterialEditorPanel::drawMaterialBody(
             ImGui::Spacing();
             ImGui::TextDisabled("Advanced");
             ImGui::Spacing();
-            changed |= slot("Height",       mat.heightTexture,       false);
-            changed |= slot("Clearcoat",    mat.clearcoatTexture,    false);
-            changed |= slot("Transmission", mat.transmissionTexture, false);
+            changed |= slot("Height",       &MaterialAsset::heightTexture,       false);
+            changed |= slot("Clearcoat",    &MaterialAsset::clearcoatTexture,    false);
+            changed |= slot("Transmission", &MaterialAsset::transmissionTexture, false);
         }
         endComponentCard();
 
@@ -247,9 +248,12 @@ MeshHandle MaterialEditorPanel::previewMesh(
 bool MaterialEditorPanel::textureSlot(
     ResourceManager& res,
     const char* label,
-    TextureHandle& slot,
+    MaterialHandle owner,
+    MaterialAsset& mat,
+    TextureHandle MaterialAsset::* member,
     bool srgb
 ) {
+    TextureHandle& slot = mat.*member;
     ImGui::PushID(label);
     drawPropertyLabel(label);
 
@@ -314,7 +318,11 @@ bool MaterialEditorPanel::textureSlot(
         m_texturePicker.options.relativeTo = appRoot;
         m_texturePicker.options.hint       = srgb ? "sRGB: yes" : "sRGB: no";
         m_texturePicker.open();
-        m_pendingTexture     = &slot;
+        // Identify the slot by owner handle + member pointer (not &slot) so the
+        // deferred resolution re-resolves through the live handle, immune to a
+        // sparse-set reallocation while the picker popup is open.
+        m_pendingMaterial    = owner;
+        m_pendingSlot        = member;
         m_pendingTextureSrgb = srgb;
     }
     ImGui::SameLine();
@@ -513,23 +521,27 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         // viewport refresh next frame). Materials are scene assets - any
         // edit is unsaved work.
         auto& mat = resources.edit(target);
-        if (drawMaterialBody(resources, mat)) {
+        if (drawMaterialBody(resources, target, mat)) {
             resources.commit(target);
             state.markSceneDirty();
         }
 
-        // Resolve the texture picker outside the slot row so it survives
-        // the slot's PushID scope and matches the slot's pending target.
+        // Resolve the texture picker outside the slot row so it survives the
+        // slot's PushID scope. Re-resolve the slot through the stored handle +
+        // member rather than a cached pointer: the material may have been
+        // reallocated (New/Duplicate) or deleted while the picker was open.
         std::string pickedTex;
-        if (m_texturePicker.draw(pickedTex) && m_pendingTexture) {
-            const std::string abs = (ProjectPaths::root() / pickedTex).string();
-            TextureHandle h = loadTexture(abs, resources, m_pendingTextureSrgb, true);
-            if (h) {
-                *m_pendingTexture = h;
-                resources.commit(target);
-                state.markSceneDirty();
+        if (m_texturePicker.draw(pickedTex) && m_pendingSlot) {
+            if (resources.isAlive(m_pendingMaterial)) {
+                const std::string abs = (ProjectPaths::root() / pickedTex).string();
+                TextureHandle h = loadTexture(abs, resources, m_pendingTextureSrgb, true);
+                if (h) {
+                    resources.edit(m_pendingMaterial).*m_pendingSlot = h;
+                    resources.commit(m_pendingMaterial);
+                    state.markSceneDirty();
+                }
             }
-            m_pendingTexture = nullptr;
+            m_pendingSlot = nullptr;
         }
     }
     ImGui::EndChild();

@@ -224,15 +224,17 @@ MaterialHandle loadMaterialFromDesc(
     // Metallic and Roughness
     // Check if we have a combined texture first
     if (!desc.metallicRoughnessPath.empty()) {
-        auto combinedTex = loadOrFallback(
+        // Packed glTF map (G = roughness, B = metallic). Bind it to the dedicated
+        // packed slot so the shader samples the right channels; binding it to the
+        // separate metallic/roughness slots reads everything from .r and corrupts
+        // PBR. The MetallicRoughness texture-flag bit is derived from this handle.
+        material.metallicRoughnessTexture = loadOrFallback(
             desc.metallicRoughnessPath,
             resourceManager,
             false,  // linear
             desc.generateMipmaps,
             blackTex
         );
-        material.metallicTexture = combinedTex;
-        material.roughnessTexture = combinedTex;
     } else {
         // Load separate textures
         material.metallicTexture = loadOrFallback(
