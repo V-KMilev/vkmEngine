@@ -103,16 +103,9 @@ class WindowManager {
         bool shouldClose() const;
 
         /**
-         * @brief Alias for shouldClose(), used by the save-on-quit flow whose
-         * "wants to close" reads more naturally than "should close".
-         */
-        bool wantsClose() const { return shouldClose(); }
-
-        /**
          * @brief Requests that the window be closed.
-         * @return true if the request was successful, false otherwise.
          */
-        bool requestClose();
+        void requestClose();
 
         /**
          * @brief Cancel a pending close. Used by the save-on-quit modal when the
@@ -130,27 +123,25 @@ class WindowManager {
 
         /**
          * @brief Swaps the front and back buffers of the window, presenting the rendered image.
-         * @return true if the swap succeeded, false otherwise.
          */
-        bool swapBuffers();
+        void swapBuffers();
 
     public:
         /**
          * @brief Changes the current window mode (fullscreen or windowed).
          * @param windowMode The desired window mode.
-         * @return true if the mode switch was successful, false otherwise.
          */
-        bool updateMode(WindowMode windowMode);
+        void updateMode(WindowMode windowMode);
 
         /**
          * @brief Updates all input states (keyboard, mouse, etc.).
-         * @return true if the update was successful, false otherwise.
          */
-        bool updateInput();
+        void updateInput();
 
         /**
          * @brief Prepares rendering for the next frame.
-         * @return true if frame start was successful, false otherwise.
+         * @return true while the window should stay open, false once a close
+         * has been requested (drives the main loop's exit).
          */
         bool beginFrame();
 

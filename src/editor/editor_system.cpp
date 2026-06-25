@@ -191,7 +191,7 @@ void EditorSystem::update(FrameContext& ctx) {
     // open the save-on-quit modal next frame. A clean scene closes through
     // normally. The modal lives in the ImGui frame below so it works in
     // both visible and hidden editor states.
-    if (ctx.window.wantsClose() && m_state.sceneDirty
+    if (ctx.window.shouldClose() && m_state.sceneDirty
             && !m_state.confirmingQuit) {
         ctx.window.cancelClose();
         m_state.confirmingQuit = true;

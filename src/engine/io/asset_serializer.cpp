@@ -14,6 +14,7 @@
 #include "ecs/scene.h"
 #include "resource/resource_manager.h"
 #include "io/asset_library.h"
+#include "io/json_vec.h"
 #include "io/project_paths.h"
 #include "io/reflect.h"
 
@@ -107,16 +108,11 @@ constexpr std::array<TexField, 11> MATERIAL_TEXTURE_FIELDS = {{
     {"transmission",        &MaterialAsset::transmissionTexture},
 }};
 
-nlohmann::json vec3ToJson(const glm::vec3& v) { return {v.x, v.y, v.z}; }
-nlohmann::json vec4ToJson(const glm::vec4& v) { return {v.x, v.y, v.z, v.w}; }
-glm::vec3 vec3FromJson(const nlohmann::json& j, const glm::vec3& fallback) {
-    if (!j.is_array() || j.size() < 3) return fallback;
-    return {j[0], j[1], j[2]};
-}
-glm::vec4 vec4FromJson(const nlohmann::json& j, const glm::vec4& fallback) {
-    if (!j.is_array() || j.size() < 4) return fallback;
-    return {j[0], j[1], j[2], j[3]};
-}
+// vec/quat <-> JSON helpers are shared with component_serializer; see io/json_vec.h.
+using ::Engine::detail::vec3ToJson;
+using ::Engine::detail::vec4ToJson;
+using ::Engine::detail::vec3FromJson;
+using ::Engine::detail::vec4FromJson;
 
 } // namespace
 

@@ -4,12 +4,11 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <thread>
 #include <type_traits>
 #include <vector>
-
-#include "platform/threading/task.h"
 
 namespace Engine {
 
@@ -38,13 +37,13 @@ class ThreadPool {
         size_t threadCount() const { return m_threads.size(); }
 
         /** @brief Enqueue a single task and wake one worker. */
-        void addTask(Task && task);
+        void addTask(std::function<void()> && task);
 
         /**
          * @brief Enqueue a batch of tasks under one lock and wake all workers.
          * Cheaper than repeated addTask for many tasks at once.
          */
-        void addTasks(std::vector<Task>&& tasks);
+        void addTasks(std::vector<std::function<void()>>&& tasks);
 
         /**
          * @brief Block the caller until the in-flight task count reaches zero.
@@ -80,7 +79,7 @@ class ThreadPool {
         std::atomic<size_t> m_taskCount;
 
         std::vector<std::thread> m_threads;
-        std::deque<Task> m_tasks;
+        std::deque<std::function<void()>> m_tasks;
 
         std::mutex m_tasksMutex;
         std::condition_variable m_tasksCV;
@@ -123,16 +122,16 @@ void parallelFor(size_t count, size_t grain, Function && function) {
     // If there is enough work to justify threading overhead, submit the remaining chunks to the pool
     if (grain < count) {
         // Build all tasks, then submit in one batch (single lock + notify_all)
-        std::vector<Task> tasks;
+        std::vector<std::function<void()>> tasks;
         for (size_t i = grain; i < count; i += grain) {
             size_t start = i;
             size_t end = std::min(i + grain, count);
 
-            tasks.emplace_back(Task([start, end, &invokeAt]() {
+            tasks.emplace_back([start, end, &invokeAt]() {
                 for (size_t i = start; i < end; ++i) {
                     invokeAt(i);
                 }
-            }));
+            });
         }
         pool.addTasks(std::move(tasks));
     }

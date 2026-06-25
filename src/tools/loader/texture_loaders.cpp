@@ -138,7 +138,7 @@ TextureHandle requestTextureAsync(
     // Spawn the decode on a worker. We capture only the path + handle +
     // flip flag - everything ResourceManager-touching happens on the main
     // thread in AsyncLoaderSystem when the completion is drained.
-    ThreadPool::get().addTask(Task([handle, filePath]() {
+    ThreadPool::get().addTask([handle, filePath]() {
         stbi_set_flip_vertically_on_load(true);
         int w = 0, h = 0, channels = 0;
         unsigned char* data = stbi_load(filePath.c_str(), &w, &h, &channels, 0);
@@ -162,7 +162,7 @@ TextureHandle requestTextureAsync(
         stbi_image_free(data);
 
         AsyncLoadQueue::get().pushTexture(std::move(completion));
-    }));
+    });
 
     return handle;
 }
