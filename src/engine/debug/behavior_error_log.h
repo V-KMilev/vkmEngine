@@ -12,7 +12,7 @@ namespace Engine {
  *
  * A behavior whose hook throws is caught by BehaviorSystem, recorded here, and
  * disabled so it never runs again. The editor surfaces these in the Bottom
- * panel and as a toast - the gameplay-script analogue of ShaderErrorLog.
+ * panel's Behavior Errors tab and as a toast.
  *
  * Consecutive duplicates (same behavior + hook + message) bump a count on the
  * existing entry rather than growing the buffer.

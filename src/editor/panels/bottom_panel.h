@@ -9,13 +9,12 @@ namespace Engine {
 struct EditorContext;
 
 /**
- * @brief Editor bottom panel: tabbed Animation editor + error logs.
+ * @brief Editor bottom panel: tabbed Animation editor + error log.
  *
  * The Animation tab drives keyframe editing for the selected entity's
  * Animation component: the timeline, keyframe table per track, easing
- * pickers, and the live preview of the resulting pose. The Shader Errors
- * tab lists shader hot-reload compile failures (see ShaderErrorLog); the
- * Behavior Errors tab lists script-hook failures (see BehaviorErrorLog).
+ * pickers, and the live preview of the resulting pose. The Behavior Errors
+ * tab lists script-hook failures (see BehaviorErrorLog).
  *
  * Editor/application preferences live in the Preferences window (see
  * PreferencesPanel). Frame timing and per-pass profiling are surfaced via
@@ -37,7 +36,6 @@ class BottomPanel {
 
     private:
         void drawAnimationSection(EditorContext& ec);
-        void drawShaderErrorsSection();
         void drawBehaviorErrorsSection();
 
         // Timeline keyframe-dot drag state (Animation section).
