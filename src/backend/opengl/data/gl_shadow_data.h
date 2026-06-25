@@ -155,7 +155,7 @@ class GLShadowData {
 
         int      m_lightSlot[SHADOW_MAX_TRACKED_LIGHTS];
         uint32_t m_lightCount = 0;
-        uint32_t m_shadowRes;  ///< Atlas tile resolution this frame, for world-texel bias sizing.
+        uint32_t m_shadowRes = 0;  ///< Atlas tile resolution this frame, for world-texel bias sizing.
 
         std::vector<Shadow2DJob>   m_jobs2D;
         std::vector<ShadowCubeJob> m_jobsCube;

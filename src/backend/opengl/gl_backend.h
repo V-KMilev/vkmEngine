@@ -40,8 +40,8 @@ struct PassEntry {
  * @brief The OpenGL implementation of RenderBackend.
  *
  * Owns the GL context state, the GPU resource mirror (GLView), and an ordered
- * list of passes. render() syncs the frame's resources, clears, then runs each
- * pass in order. The window's buffer swap stays in the engine loop (it must
+ * list of passes. render() syncs the frame's resources, then runs each pass in
+ * order (clearing is delegated to the passes). The window's buffer swap stays in the engine loop (it must
  * happen after the editor UI draws), so this backend draws but does not present.
  */
 class GLBackend : public RenderBackend {

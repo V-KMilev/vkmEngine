@@ -17,7 +17,6 @@
 #include "core/engine_config.h"
 #include "convention/gl_bindings.h"
 #include "data/gl_material.h"
-#include "data/gl_mesh.h"
 #include "data/gl_ibl.h"
 #include "system/render/render_view.h"
 
