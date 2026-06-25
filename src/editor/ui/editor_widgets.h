@@ -27,6 +27,68 @@ bool drawVec3Control(const char* label, float* values,
 /** @brief Right-aligned property label with consistent column width across the panel. */
 void drawPropertyLabel(const char* label);
 
+/**
+ * @brief A full "property row": right-aligned label + a full-width slider/drag/color
+ * editor + optional hover tooltip. Collapses the repeated
+ * drawPropertyLabel + widget + IsItemHovered/SetTooltip triple used across the
+ * Material / Render Settings / Preferences panels.
+ *
+ * The widget id is scoped by @p label (PushID) with a hidden "##v" handle, so
+ * rows with distinct labels never collide. Returns true the frame the value is
+ * edited. Layout matches drawPropertyLabel (it sets the next item to full width).
+ */
+inline bool propSlider(const char* label, float* v, float lo, float hi,
+                       const char* fmt = "%.3f", const char* tooltip = nullptr) {
+    drawPropertyLabel(label);
+    ImGui::PushID(label);
+    bool changed = ImGui::SliderFloat("##v", v, lo, hi, fmt);
+    if (tooltip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
+    ImGui::PopID();
+    return changed;
+}
+
+inline bool propSliderInt(const char* label, int* v, int lo, int hi,
+                          const char* tooltip = nullptr) {
+    drawPropertyLabel(label);
+    ImGui::PushID(label);
+    bool changed = ImGui::SliderInt("##v", v, lo, hi);
+    if (tooltip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
+    ImGui::PopID();
+    return changed;
+}
+
+inline bool propDrag(const char* label, float* v, float speed, float lo, float hi,
+                     const char* fmt = "%.3f", const char* tooltip = nullptr) {
+    drawPropertyLabel(label);
+    ImGui::PushID(label);
+    bool changed = ImGui::DragFloat("##v", v, speed, lo, hi, fmt);
+    if (tooltip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
+    ImGui::PopID();
+    return changed;
+}
+
+inline bool propColor3(const char* label, float* v,
+                       ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float,
+                       const char* tooltip = nullptr) {
+    drawPropertyLabel(label);
+    ImGui::PushID(label);
+    bool changed = ImGui::ColorEdit3("##v", v, flags);
+    if (tooltip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
+    ImGui::PopID();
+    return changed;
+}
+
+inline bool propColor4(const char* label, float* v,
+                       ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float,
+                       const char* tooltip = nullptr) {
+    drawPropertyLabel(label);
+    ImGui::PushID(label);
+    bool changed = ImGui::ColorEdit4("##v", v, flags);
+    if (tooltip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
+    ImGui::PopID();
+    return changed;
+}
+
 /** @brief Case-insensitive substring match. Empty @p filter matches every @p text. */
 bool matchesFilter(const char* text, const char* filter);
 

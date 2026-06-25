@@ -6,6 +6,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "framework/editor_common.h"
+#include "overlays/wire_draw.h"
 #include "system/visibility/visibility.h"
 #include "system/camera/camera_controller_system.h"
 #include "ecs/component/collider.h"
@@ -20,138 +21,12 @@ namespace {
 constexpr ImU32 COLLIDER_COL = IM_COL32(80, 220, 120, 200);  // physics green
 constexpr ImU32 BOUNDS_COL   = IM_COL32(230, 200, 60, 160);  // mesh-bounds amber
 
-// Project a world point through the viewport's view+projection into
-// screen coordinates inside the viewport child rect. Returns false when
-// the point is behind the camera. The 3D pass renders at viewport size
-// and the viewport child sits at vpMin onscreen, so NDC maps to
-// (vpMin + (0..vpSize)) directly.
-bool projectToViewport(
-    const glm::mat4& vp,
-    const glm::vec3& p,
-    ImVec2 vpMin,
-    ImVec2 vpSize,
-    ImVec2& out
-) {
-    const glm::vec4 clip = vp * glm::vec4(p, 1.0f);
-    if (clip.w <= 1e-5f) return false;
-    const glm::vec3 ndc = glm::vec3(clip) / clip.w;
-    out = ImVec2(vpMin.x + (ndc.x * 0.5f + 0.5f) * vpSize.x,
-                 vpMin.y + (1.0f - (ndc.y * 0.5f + 0.5f)) * vpSize.y);
-    return true;
-}
-
 // World position of a (possibly parented) gizmo'd entity: the cached
 // WorldTransform when present, the local Transform position otherwise.
 glm::vec3 worldPosOf(const Scene& scene, EntityId id, const Transform& tf) {
     if (scene.has<WorldTransform>(id))
         return glm::vec3(scene.get<WorldTransform>(id).model[3]);
     return tf.position;
-}
-
-// Draw a world-space segment as a viewport line, dropping it when either end
-// is behind the camera (same near-plane handling as the gizmo wireframes -
-// good enough for a debug overlay).
-void wireSegment(
-    ImDrawList* dl, const glm::mat4& vp,
-    const glm::vec3& a, const glm::vec3& b,
-    ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness
-) {
-    ImVec2 sa, sb;
-    if (projectToViewport(vp, a, vpMin, vpSize, sa)
-     && projectToViewport(vp, b, vpMin, vpSize, sb))
-        dl->AddLine(sa, sb, col, thickness);
-}
-
-// World-space circle center + radius * (cos t * axisA + sin t * axisB),
-// drawn as connected segments that break where a point falls behind the
-// camera. Every ring/disc gizmo routes through here.
-void wireCircle(
-    ImDrawList* dl, const glm::mat4& vp,
-    const glm::vec3& center, const glm::vec3& axisA, const glm::vec3& axisB,
-    float radius, int segments,
-    ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness
-) {
-    ImVec2 prev{};
-    bool havePrev = false;
-    for (int s = 0; s <= segments; ++s) {
-        const float t = (static_cast<float>(s) / segments) * glm::two_pi<float>();
-        const glm::vec3 p = center + (axisA * std::cos(t) + axisB * std::sin(t)) * radius;
-        ImVec2 sp;
-        if (projectToViewport(vp, p, vpMin, vpSize, sp)) {
-            if (havePrev) dl->AddLine(prev, sp, col, thickness);
-            prev = sp;
-            havePrev = true;
-        } else {
-            havePrev = false;
-        }
-    }
-}
-
-// Three orthogonal great circles - the classic "radius sphere" gizmo.
-void wireSphere(
-    ImDrawList* dl, const glm::mat4& vp,
-    const glm::vec3& center, float radius, int segments,
-    ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness
-) {
-    const glm::vec3 X(1, 0, 0), Y(0, 1, 0), Z(0, 0, 1);
-    wireCircle(dl, vp, center, X, Y, radius, segments, vpMin, vpSize, col, thickness);
-    wireCircle(dl, vp, center, X, Z, radius, segments, vpMin, vpSize, col, thickness);
-    wireCircle(dl, vp, center, Y, Z, radius, segments, vpMin, vpSize, col, thickness);
-}
-
-// World-space arrow: a line plus a filled triangular head at the tip.
-// Skipped entirely when either end is behind the camera.
-void arrowLine(
-    ImDrawList* dl, const glm::mat4& vp,
-    const glm::vec3& from, const glm::vec3& to,
-    ImVec2 vpMin, ImVec2 vpSize, ImU32 col,
-    float thickness, float headLen, float headWidth
-) {
-    ImVec2 a, b;
-    if (!projectToViewport(vp, from, vpMin, vpSize, a)) return;
-    if (!projectToViewport(vp, to,   vpMin, vpSize, b)) return;
-    dl->AddLine(a, b, col, thickness);
-
-    ImVec2 dv(b.x - a.x, b.y - a.y);
-    const float len = std::sqrt(dv.x * dv.x + dv.y * dv.y);
-    if (len <= 1.0f) return;
-    dv.x /= len;
-    dv.y /= len;
-    const ImVec2 perp(-dv.y, dv.x);
-    dl->AddTriangleFilled(b,
-        ImVec2(b.x - dv.x * headLen + perp.x * headWidth,
-               b.y - dv.y * headLen + perp.y * headWidth),
-        ImVec2(b.x - dv.x * headLen - perp.x * headWidth,
-               b.y - dv.y * headLen - perp.y * headWidth),
-        col);
-}
-
-// Box collider: 8 oriented corners, 12 edges. halfExtents are the physics
-// extents - Transform scale is intentionally NOT applied because the solver
-// ignores it too, so a collider that disagrees with the rendered mesh is
-// visible here rather than hidden.
-void wireBox(
-    ImDrawList* dl, const glm::mat4& vp,
-    const glm::vec3& pos, const glm::quat& rot, const glm::vec3& he,
-    ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness = 1.5f
-) {
-    const glm::mat3 r = glm::mat3_cast(rot);
-    glm::vec3 c[8];
-    int k = 0;
-    for (int sx = -1; sx <= 1; sx += 2)
-    for (int sy = -1; sy <= 1; sy += 2)
-    for (int sz = -1; sz <= 1; sz += 2)
-        c[k++] = pos + r * glm::vec3(he.x * sx, he.y * sy, he.z * sz);
-
-    // Corner index bits: bit2 = x, bit1 = y, bit0 = z. An edge joins two
-    // corners that differ in exactly one bit.
-    static const int edges[12][2] = {
-        {0,1}, {2,3}, {4,5}, {6,7},   // along z
-        {0,2}, {1,3}, {4,6}, {5,7},   // along y
-        {0,4}, {1,5}, {2,6}, {3,7},   // along x
-    };
-    for (const auto& e : edges)
-        wireSegment(dl, vp, c[e[0]], c[e[1]], vpMin, vpSize, col, thickness);
 }
 
 } // namespace
@@ -209,10 +84,8 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
 
                 // Build an orthonormal basis in the plane perpendicular to dir
                 // so the three rays are coplanar with that plane.
-                const glm::vec3 up = std::abs(dir.y) < 0.99f
-                    ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
-                const glm::vec3 right = glm::normalize(glm::cross(dir, up));
-                const glm::vec3 udir  = glm::normalize(glm::cross(right, dir));
+                glm::vec3 right, udir;
+                orthoBasis(dir, right, udir);
 
                 const glm::vec3 offsets[3] = {
                     glm::vec3(0.0f),
@@ -387,9 +260,8 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
 
         const glm::vec3 pos   = worldPosOf(ctx.scene, id, tf);
         const glm::vec3 fwd   = glm::normalize(Math::computeForward(tf.rotation));
-        const glm::vec3 right = glm::normalize(glm::cross(fwd,
-            std::abs(fwd.y) < 0.99f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0)));
-        const glm::vec3 up    = glm::normalize(glm::cross(right, fwd));
+        glm::vec3 right, up;
+        orthoBasis(fwd, right, up);
 
         // Use the camera's actual near and far so the gizmo reflects what
         // the camera really clips. Clamp the minimums so degenerate values

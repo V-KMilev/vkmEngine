@@ -40,40 +40,48 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
     ImGui::Separator();
 
     if (ImGui::CollapsingHeader("Ambient Occlusion (GTAO)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::PushID("gtao");
         ImGui::Checkbox("Enabled##gtao", &s.gtao);
         ImGui::BeginDisabled(!s.gtao);
-        drawPropertyLabel("Radius");    ImGui::DragFloat("##gtaoR", &s.gtaoRadius, 0.01f, 0.05f, 5.0f, "%.2f");
-        drawPropertyLabel("Intensity"); ImGui::SliderFloat("##gtaoI", &s.gtaoIntensity, 0.0f, 3.0f, "%.2f");
-        drawPropertyLabel("Power");     ImGui::SliderFloat("##gtaoP", &s.gtaoPower, 0.5f, 4.0f, "%.2f");
-        drawPropertyLabel("Bias");      ImGui::SliderFloat("##gtaoB", &s.gtaoBias, 0.0f, 0.2f, "%.3f");
+        propDrag("Radius", &s.gtaoRadius, 0.01f, 0.05f, 5.0f, "%.2f");
+        propSlider("Intensity", &s.gtaoIntensity, 0.0f, 3.0f, "%.2f");
+        propSlider("Power", &s.gtaoPower, 0.5f, 4.0f, "%.2f");
+        propSlider("Bias", &s.gtaoBias, 0.0f, 0.2f, "%.3f");
         ImGui::EndDisabled();
+        ImGui::PopID();
     }
 
     if (ImGui::CollapsingHeader("Screen-Space Reflections", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::PushID("ssr");
         ImGui::Checkbox("Enabled##ssr", &s.ssr);
         ImGui::BeginDisabled(!s.ssr);
-        drawPropertyLabel("Intensity");    ImGui::SliderFloat("##ssrI", &s.ssrIntensity, 0.0f, 2.0f, "%.2f");
-        drawPropertyLabel("Max Distance"); ImGui::DragFloat("##ssrD", &s.ssrMaxDistance, 0.5f, 1.0f, 200.0f, "%.0f");
+        propSlider("Intensity", &s.ssrIntensity, 0.0f, 2.0f, "%.2f");
+        propDrag("Max Distance", &s.ssrMaxDistance, 0.5f, 1.0f, 200.0f, "%.0f");
         ImGui::EndDisabled();
+        ImGui::PopID();
     }
 
     if (ImGui::CollapsingHeader("Motion Blur", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::PushID("mb");
         ImGui::Checkbox("Enabled##mb", &s.motionBlur);
         ImGui::BeginDisabled(!s.motionBlur);
-        drawPropertyLabel("Intensity");    ImGui::SliderFloat("##mbI", &s.motionBlurIntensity, 0.0f, 3.0f, "%.2f");
-        drawPropertyLabel("Max Velocity"); ImGui::SliderFloat("##mbV", &s.motionBlurMaxVelocity, 0.0f, 0.2f, "%.3f");
-        drawPropertyLabel("Samples");      ImGui::SliderInt("##mbN", &s.motionBlurSamples, 1, 32);
+        propSlider("Intensity", &s.motionBlurIntensity, 0.0f, 3.0f, "%.2f");
+        propSlider("Max Velocity", &s.motionBlurMaxVelocity, 0.0f, 0.2f, "%.3f");
+        propSliderInt("Samples", &s.motionBlurSamples, 1, 32);
         ImGui::EndDisabled();
+        ImGui::PopID();
     }
 
     if (ImGui::CollapsingHeader("Bloom", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::PushID("bloom");
         ImGui::Checkbox("Enabled##bloom", &s.bloom);
         ImGui::BeginDisabled(!s.bloom);
-        drawPropertyLabel("Strength");  ImGui::SliderFloat("##bloomS", &s.bloomStrength, 0.0f, 0.5f, "%.3f");
-        drawPropertyLabel("Threshold"); ImGui::SliderFloat("##bloomT", &s.bloomThreshold, 0.0f, 4.0f, "%.2f");
-        drawPropertyLabel("Knee");      ImGui::SliderFloat("##bloomK", &s.bloomKnee, 0.0f, 1.0f, "%.2f");
-        drawPropertyLabel("Radius");    ImGui::SliderFloat("##bloomR", &s.bloomRadius, 0.001f, 0.02f, "%.4f");
+        propSlider("Strength", &s.bloomStrength, 0.0f, 0.5f, "%.3f");
+        propSlider("Threshold", &s.bloomThreshold, 0.0f, 4.0f, "%.2f");
+        propSlider("Knee", &s.bloomKnee, 0.0f, 1.0f, "%.2f");
+        propSlider("Radius", &s.bloomRadius, 0.001f, 0.02f, "%.4f");
         ImGui::EndDisabled();
+        ImGui::PopID();
     }
 
     if (ImGui::CollapsingHeader("Shadows", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -106,10 +114,10 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         // render pipeline: entities past the distance, or smaller than the
         // screen-size floor, are skipped. The cheapest FPS lever in a dense scene.
         VisibilitySystem::Settings& vis = ec.visibilitySystem.getSettings();
-        drawPropertyLabel("Max Distance");
-        ImGui::DragFloat("##cullDist", &vis.maxDistance, 5.0f, 1.0f, 10000.0f, "%.0f");
-        drawPropertyLabel("Min Screen Size");
-        ImGui::SliderFloat("##cullPixels", &vis.minPixels, 0.0f, 32.0f, "%.1f px");
+        ImGui::PushID("cull");
+        propDrag("Max Distance", &vis.maxDistance, 5.0f, 1.0f, 10000.0f, "%.0f");
+        propSlider("Min Screen Size", &vis.minPixels, 0.0f, 32.0f, "%.1f px");
+        ImGui::PopID();
         ImGui::TextDisabled("Min Screen Size 0 disables screen-size culling.");
     }
 

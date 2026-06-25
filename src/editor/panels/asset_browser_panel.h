@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
+#include "resource/resource_handle.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 
@@ -38,13 +40,23 @@ class AssetBrowserPanel {
         void draw(EditorContext& ec);
 
     private:
+        // Which asset family the rename modal currently targets.
+        enum class RenameKind { Material, Mesh };
+
         void ensureAssets(ResourceManager& resources);
         void drawMaterials(EditorContext& ec);
         void drawMeshes(EditorContext& ec);
 
-        /** @brief Arm the shared rename modal for one asset (the other handle clears). */
-        void openRename(MaterialHandle h, const std::string& name);
-        void openRename(MeshHandle h, const std::string& name);
+        // The single grid body shared by materials and meshes. Asset is the
+        // asset type (MaterialAsset / MeshAsset); the matching handle is
+        // Handle<Asset>. The material-only extras (an "Open in Material Editor"
+        // context item and left-click-to-edit) are guarded with if constexpr.
+        template<typename Asset>
+        void drawAssetGrid(EditorContext& ec);
+
+        /** @brief Arm the shared rename modal for one asset. */
+        template<typename Asset>
+        void openRename(Handle<Asset> h, const std::string& name);
 
         float      m_cell = 104.0f;          ///< Thumbnail edge in px
 
@@ -53,12 +65,14 @@ class AssetBrowserPanel {
         MeshHandle     m_sphere;             ///< Shape for material thumbnails
         MaterialHandle m_neutral;            ///< Material for mesh thumbnails
 
-        // Rename modal state - materials and meshes share one popup; exactly
-        // one target handle is set while the modal is open.
+        // Rename modal state - materials and meshes share one popup; the kind
+        // tag plus the handle key identify the target while the modal is open.
+        // The full StorageIndex (index + generation) is kept so the handle
+        // reconstructs faithfully for rename/command.
         char           m_renameBuf[128] = {};
         std::string    m_renameOldName;     ///< name before the edit, for undo
-        MaterialHandle m_renameMat;
-        MeshHandle     m_renameMesh;
+        RenameKind     m_renameKind = RenameKind::Material;
+        StorageIndex   m_renameKey  = {};   ///< handle key of the rename target
         bool           m_renameOpen = false;
 };
 
