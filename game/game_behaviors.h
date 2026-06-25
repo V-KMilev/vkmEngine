@@ -7,7 +7,7 @@ namespace Engine {
  *
  * Called by the module entry (vkmRegisterBehaviors) when the editor loads the
  * game module, and directly by the runtime (which static-links this code).
- * Mirrors registerBuiltinAssetFactories().
+ * Mirrors registerCookedAssetFactories().
  */
 void registerGameBehaviors();
 
