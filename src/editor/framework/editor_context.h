@@ -7,7 +7,7 @@ namespace Engine {
 struct FrameContext;
 struct EditorState;
 class Engine;
-class CameraController;
+class CameraControllerSystem;
 class MaterialPreviewSession;
 class RenderSystem;
 class VisibilitySystem;
@@ -22,7 +22,7 @@ class EventSystem;
  * injected system pointers of its own and every draw() has one signature.
  *
  * Collaborators are non-owning references: the editor is always constructed
- * with live RenderSystem / VisibilitySystem / CameraController / EventSystem
+ * with live RenderSystem / VisibilitySystem / CameraControllerSystem / EventSystem
  * instances (the editor app registers them before the EditorSystem), so panels
  * don't guard against nullptr.
  */
@@ -35,7 +35,7 @@ struct EditorContext {
     // the engine outlives the editor.
     Engine& engine;
 
-    CameraController&       cameraController;
+    CameraControllerSystem&       cameraController;
     RenderSystem&           renderSystem;
     VisibilitySystem&       visibilitySystem;
     EventSystem&            events;

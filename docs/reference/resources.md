@@ -147,7 +147,7 @@ not compiled variants.
 global or per-type version counter - those mechanisms were removed.) `GLView`
 keys on this per-asset version: it keeps a per-asset cached version and rebuilds
 GPU state only when the cached value diverges from the asset's `version`.
-Hot-reloading a shader file (via `FileWatcher`) bumps the shader version, which
+Hot-reloading a shader file (via `FileWatcherSystem`) bumps the shader version, which
 drops its compiled program; the next draw recompiles lazily.
 
 ## Storage
@@ -194,7 +194,7 @@ generator) lives in the `generator`/`decimate` factory lambdas registered in
 |-------------------------|----------------------------------------------------------------|
 | `texture_loaders.cpp`   | Load via stb_image, auto-detect channels, sRGB flag handling   |
 | `material_loaders.cpp`  | Folder loader: scans a folder for `*Color*`, `*Normal*`, etc.  |
-| `model_loader.cpp`      | Assimp-backed mesh import; per-load aiScene parse cache        |
+| `model_loaders.cpp`      | Assimp-backed mesh import; per-load aiScene parse cache        |
 | `environment_loaders.cpp`| HDR equirectangular image loader (`loadHDRImage`) for IBL / skybox |
 | `shader_loaders.h`      | Load a `ShaderAsset` by path prefix (header-only `inline` functions) |
 

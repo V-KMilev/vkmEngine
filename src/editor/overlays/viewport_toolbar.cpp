@@ -26,7 +26,7 @@ void tipFor(char* buf, size_t n, const char* name, const KeyBind* bind) {
 void ViewportToolbar::draw(EditorContext& ec) {
     FrameContext&     ctx    = ec.frame;
     EditorState&      state  = ec.state;
-    CameraController& camera = ec.cameraController;
+    CameraControllerSystem& camera = ec.cameraController;
 
     const auto& kb = state.keybinds;
 

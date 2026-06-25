@@ -11,7 +11,7 @@
 #include "framework/editor_commands.h"
 #include "system/visibility/visibility.h"
 #include "system/visibility/bounds_utils.h"
-#include "system/camera/camera_controller.h"
+#include "system/camera/camera_controller_system.h"
 #include "resource/resource_manager.h"
 #include "ecs/component/world_transform.h"
 

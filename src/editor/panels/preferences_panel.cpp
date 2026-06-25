@@ -5,7 +5,7 @@
 
 #include "platform/threading/thread_pool.h"
 #include "platform/window/window_manager.h"
-#include "system/camera/camera_controller.h"
+#include "system/camera/camera_controller_system.h"
 
 namespace Engine {
 
@@ -61,7 +61,7 @@ void PreferencesPanel::drawCameraSection(EditorContext& ec) {
     drawPropertyLabel("Min Pitch");    ImGui::DragFloat("##MnP", &s.minPitch, 0.5f, -90.0f, 0.0f, "%.0f deg");
     drawPropertyLabel("Max Pitch");    ImGui::DragFloat("##MxP", &s.maxPitch, 0.5f, 0.0f, 90.0f, "%.0f deg");
     ImGui::Spacing();
-    if (ImGui::Button("Reset to Defaults")) s = CameraController::Settings{};
+    if (ImGui::Button("Reset to Defaults")) s = CameraControllerSystem::Settings{};
 }
 
 void PreferencesPanel::drawGizmoSection(EditorState& state) {

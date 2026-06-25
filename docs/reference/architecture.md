@@ -49,14 +49,14 @@ does:
 
 | Stage      | Systems                                                                         |
 |------------|---------------------------------------------------------------------------------|
-| Input      | `CameraController`                                                              |
+| Input      | `CameraControllerSystem`                                                              |
 | Simulation | `EventSystem`, `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `PhysicsSystem` |
 | Transform  | `HierarchySystem`                                                              |
 | Visibility | `VisibilitySystem`                                                            |
 | Render     | `RenderSystem`                                                                |
 | UI         | `EditorSystem` (editor binary only)                                           |
 
-`FileWatcher` is an Input-stage `System` the engine provides but `setupEngineApp`
+`FileWatcherSystem` is an Input-stage `System` the engine provides but `setupEngineApp`
 does not register today (see [system/io.md](system/io.md)).
 
 Place a new system by responsibility and let stage order schedule it - see
@@ -127,10 +127,10 @@ Engine code, single include root `src/engine/`:
 | `ecs/component/`           | `Transform`, `WorldTransform`, `Camera`, `Mesh`, `Light`, `Animation`, `Hierarchy`, `Name`, `Collider`, `RigidBody`, `PhysicsWorld`, `ReflectionProbe` |
 | `system/animation/`        | `AnimationSystem`, `AnimationTrack`, `Keyframe`, `Easing`               |
 | `system/async/`            | `AsyncLoaderSystem`                                                      |
-| `system/camera/`           | `CameraController`                                                       |
+| `system/camera/`           | `CameraControllerSystem`                                                       |
 | `system/event/`            | `EventSystem` (typed pub/sub)                                            |
 | `system/hierarchy/`        | `HierarchySystem`, `HierarchyOperations` (free functions)               |
-| `system/io/`               | `FileWatcher` (polling hot-reload)                                       |
+| `system/io/`               | `FileWatcherSystem` (polling hot-reload)                                       |
 | `system/physics/`          | `PhysicsSystem`, `collision/`                                            |
 | `system/render/`           | `RenderSystem`, `RenderBackend`, `RenderView`, `RenderSettings`, `data/` |
 | `system/script/`           | `BehaviorSystem`, `Behavior`, `ReflectedBehavior`, `BehaviorRegistry`, `ScriptComponent`, `ScriptModule` (see [system/scripting.md](system/scripting.md)) |
@@ -157,7 +157,7 @@ Editor (`src/editor/`): `EditorSystem` at the root; `framework/`, `panels/`,
 `overlays/`, `gizmo/`, `input/`, `ui/`. Tools (`src/tools/`): `generator/` plus
 the runtime-safe cooked loaders and `asset_registration.cpp` (the `cooked`/
 `inline` runtime factories) build into `EngineTools`; the heavy importers
-(`loader/model_loader`, `texture_loaders`, `material_loaders`) and the asset
+(`loader/model_loaders`, `texture_loaders`, `material_loaders`) and the asset
 cooker (`cook/`) build into the editor-only `EngineCooker`, so the runtime links
 neither Assimp nor the heavy image decode.
 

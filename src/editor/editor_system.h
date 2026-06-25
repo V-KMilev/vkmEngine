@@ -29,7 +29,7 @@ namespace Engine {
 
 struct EditorContext;
 class Engine;
-class CameraController;
+class CameraControllerSystem;
 class EventSystem;
 class Scene;
 class VisibilitySystem;
@@ -42,7 +42,7 @@ class ScriptModule;
  *
  * Constructed once at boot with non-owning pointers to the rendering /
  * input / event collaborators it needs. Each update():
- *  - Routes input intent (capture flags) to CameraController.
+ *  - Routes input intent (capture flags) to CameraControllerSystem.
  *  - Drives the menu bar, status bar, shortcut handler and panel resizer.
  *  - Draws the docked panels and the floating preview/overlay panels.
  *  - Lets the SceneIOController emit any pending Save-As / Load dialogs.
@@ -55,7 +55,7 @@ class EditorSystem : public System {
         EditorSystem(
             Engine& engine,
             GLFWwindow* window,
-            CameraController& cameraController,
+            CameraControllerSystem& cameraController,
             VisibilitySystem& visibilitySystem,
             RenderSystem& renderSystem,
             EventSystem& events,
@@ -94,7 +94,7 @@ class EditorSystem : public System {
     private:
         Engine&           m_engine;
         GLFWwindow*       m_window;
-        CameraController& m_cameraController;
+        CameraControllerSystem& m_cameraController;
         RenderSystem&     m_renderSystem;
         VisibilitySystem& m_visibilitySystem;
         EventSystem&      m_events;

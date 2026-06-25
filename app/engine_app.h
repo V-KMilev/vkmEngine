@@ -5,7 +5,7 @@
 #include "core/engine.h"
 #include "io/project_paths.h"
 
-#include "system/camera/camera_controller.h"
+#include "system/camera/camera_controller_system.h"
 #include "system/event/event_system.h"
 #include "system/async/async_loader_system.h"
 #include "system/script/behavior_system.h"
@@ -31,7 +31,7 @@ struct AppConfig {
 // System handles the caller may still need after bootstrap. The editor feeds
 // these into its EditorSystem; the runtime ignores the return value.
 struct AppSystems {
-    Engine::CameraController& camera;
+    Engine::CameraControllerSystem& camera;
     Engine::EventSystem&      events;
     Engine::VisibilitySystem& visibility;
     Engine::RenderSystem&     render;
@@ -48,7 +48,7 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     window.setFramerate(0);
     window.setIcon((Engine::ProjectPaths::assets() / "logo" / "vkm_engine_icon.png").string());
 
-    auto& cameraController  = engine.addSystem<Engine::CameraController> (Engine::SystemStage::Input);
+    auto& cameraController  = engine.addSystem<Engine::CameraControllerSystem> (Engine::SystemStage::Input);
     auto& eventSystem       = engine.addSystem<Engine::EventSystem>      (Engine::SystemStage::Simulation);
     auto& asyncLoaderSystem = engine.addSystem<Engine::AsyncLoaderSystem>(Engine::SystemStage::Simulation);
     auto& behaviorSystem    = engine.addSystem<Engine::BehaviorSystem>   (Engine::SystemStage::Simulation, eventSystem);

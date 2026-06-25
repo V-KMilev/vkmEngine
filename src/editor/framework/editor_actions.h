@@ -9,7 +9,7 @@ namespace Engine {
 
 class Scene;
 class ResourceManager;
-class CameraController;
+class CameraControllerSystem;
 struct FrameContext;
 struct EditorState;
 struct Mesh;
@@ -46,7 +46,7 @@ enum class EntityKind {
 EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& state, EntityKind kind);
 void duplicateEntity(Scene& scene, EditorState& state, EntityId source);
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity);
-void focusOnSelected(FrameContext& ctx, EditorState& state, CameraController& camera);
+void focusOnSelected(FrameContext& ctx, EditorState& state, CameraControllerSystem& camera);
 
 /**
  * @brief Make @p target the active ("main") camera.
@@ -109,7 +109,7 @@ MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state)
  * visible mesh entity, then focus the camera so the union fits in view.
  * No-op if there is nothing visible.
  */
-void frameAll(FrameContext& ctx, CameraController& camera);
+void frameAll(FrameContext& ctx, CameraControllerSystem& camera);
 void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState& state);
 
 /**
