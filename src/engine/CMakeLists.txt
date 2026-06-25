@@ -25,7 +25,7 @@ add_library(EngineCore STATIC ${ENGINECORE_SOURCES})
 
 target_include_directories(EngineCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-# GLEW headers for window.cpp's glewInit (glew uses old-style include dirs).
+# GLEW headers for window_manager.cpp's glewInit (glew uses old-style include dirs).
 target_include_directories(EngineCore PRIVATE
     ${PROJECT_SOURCE_DIR}/modules/vkmGL/modules/glew/include
 )

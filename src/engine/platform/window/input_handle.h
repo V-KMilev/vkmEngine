@@ -4,17 +4,17 @@ struct GLFWwindow;
 
 namespace Engine {
 
-class Window;
+class WindowManager;
 
 /**
  * @brief Bundles pointers needed by GLFW callbacks.
  *
  * Stored as the GLFW user pointer so all callbacks can access both
- * InputHandle (for input events) and Window (for resize events).
+ * InputHandle (for input events) and WindowManager (for resize events).
  */
 struct WindowCallbackData {
     class InputHandle* input = nullptr;
-    Window* window = nullptr;
+    WindowManager* window = nullptr;
 };
 
 // https://www.glfw.org/docs/latest/group__buttons.html
@@ -172,11 +172,11 @@ class InputHandle {
          *
          * Must be called once after window creation. Key state and scroll delta
          * are updated via callbacks during glfwPollEvents(); resize forwards to
-         * Window::setSize. Stores both pointers as the GLFW user pointer.
-         * @param window       Pointer to the GLFW window.
-         * @param engineWindow Owning Engine::Window, notified on resize.
+         * WindowManager::setSize. Stores both pointers as the GLFW user pointer.
+         * @param window        Pointer to the GLFW window.
+         * @param windowManager Owning Engine::WindowManager, notified on resize.
          */
-        void setupCallbacks(GLFWwindow* window, Window* engineWindow);
+        void setupCallbacks(GLFWwindow* window, WindowManager* windowManager);
 
         /**
          * @brief Update input state from the GLFW window.
