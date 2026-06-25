@@ -10,6 +10,8 @@
 namespace Engine {
 
 class EventSystem;
+class Scene;
+struct PhysicsWorld;
 
 /**
  * @brief Fixed-step rigid-body dynamics: integrates velocities, detects and
@@ -49,6 +51,17 @@ class PhysicsSystem : public System {
         bool hasFixedUpdate() const override { return true; }
 
     private:
+        // fixedUpdate() phases, called in order. They share the member working
+        // buffers (m_bodies / m_solverBodies / m_manifolds) plus file-local
+        // thread_local scratch; cross-phase plain locals are threaded explicitly.
+        bool gatherBodies(Scene& scene);                                ///< Build m_bodies/solver state; false if none
+        void integrateForces(Scene& scene, const PhysicsWorld& world, float dt);
+        void broadphase();                                              ///< Sort-and-sweep -> candidate pairs
+        void narrowphase(std::vector<bool>& hasContact);                ///< Sub-shape tests -> manifolds + events
+        void wakeOnImpact(Scene& scene);                                ///< Wake sleepers struck before solving
+        void solve(const PhysicsWorld& world, float dt);                ///< Sequential-impulse contact solve
+        void writeback(Scene& scene, float dt, const std::vector<bool>& hasContact);  ///< Integrate poses + sleep
+
         EventSystem& m_events;  ///< Collision/trigger events are enqueued here.
 
         std::vector<EntityId>        m_bodies;       ///< Live body entities this tick (indexes m_solverBodies)
