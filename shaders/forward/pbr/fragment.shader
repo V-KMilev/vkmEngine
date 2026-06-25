@@ -8,12 +8,10 @@
  * base), Charlie sheen, subsurface wrap + back translucency, thin
  * transmission with Beer-Lambert volume absorption, parallax-occlusion
  * mapping with self-shadowing, alpha-test (AlphaMask) and Unlit passthrough.
+ * Local reflection probes (parallax-corrected) blended over the global IBL.
  *
- * Every optional lobe branches at runtime on the material UBO - one program
- * for all materials. The MaterialFeature variant cache narrows these to
- * compile-time #ifdefs when it returns.
- *
- * Intentionally absent until their systems return: reflection probes.
+ * Every optional lobe branches at runtime on the material UBO - one shared
+ * program for all materials (there is no compile-time variant cache).
  */
 
 #include "../../_generated/engine_config.glsl"  // MAX_LIGHTS, MAX_SHADOW_CASTERS_2D/_CUBE (generated from engine_config.h)
