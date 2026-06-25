@@ -44,39 +44,50 @@ namespace ComponentSerializer {
     nlohmann::json save(const Light&);
     void load(const nlohmann::json&, Light&);
 
-    /// Rigidbody: dynamics + material fields. inverseMass / invInertiaLocal
-    /// are derived from mass + Collider on load, and the runtime sleep state
-    /// (sleeping / sleepTimer) is not persisted.
+    /**
+     * @brief Rigidbody: dynamics + material fields. inverseMass / invInertiaLocal
+     * are derived from mass + Collider on load, and the runtime sleep state
+     * (sleeping / sleepTimer) is not persisted.
+     */
     nlohmann::json save(const Rigidbody&);
     void load(const nlohmann::json&, Rigidbody&);
 
     nlohmann::json save(const Collider&);
     void load(const nlohmann::json&, Collider&);
 
-    /// PhysicsWorld: the scene's singleton physics settings (gravity + solver
-    /// iteration count). Plain JSON primitives; load tolerates missing keys.
+    /**
+     * @brief PhysicsWorld: the scene's singleton physics settings (gravity + solver
+     * iteration count). Plain JSON primitives; load tolerates missing keys.
+     */
     nlohmann::json save(const PhysicsWorld&);
     void load(const nlohmann::json&, PhysicsWorld&);
 
     nlohmann::json save(const Mesh&, const ResourceManager&);
     void load(const nlohmann::json&, Mesh&, const ResourceManager&);
 
-    /// Hierarchy: only `parent` is serialized; sibling pointers are rebuilt
-    /// on load by re-running HierarchyOperations::setParent. The returned
-    /// JSON stores the parent's *old-file* entity index.
+    /**
+     * @brief Hierarchy: only `parent` is serialized; sibling pointers are rebuilt
+     * on load by re-running HierarchyOperations::setParent. The returned
+     * JSON stores the parent's *old-file* entity index.
+     */
     nlohmann::json save(const Hierarchy&);
-    /// Returns the parent's old-file index (uint32_t max if root).
+    /** @brief Returns the parent's old-file index (uint32_t max if root). */
     uint32_t loadParentIndex(const nlohmann::json&);
 
-    /// Animation: serializes all three tracks (position/rotation/scale),
-    /// playback state, and the per-track easing function by stable name.
+    /**
+     * @brief Animation: serializes all three tracks (position/rotation/scale),
+     * playback state, and the per-track easing function by stable name.
+     */
     nlohmann::json save(const Animation&);
     void load(const nlohmann::json&, Animation&);
 
-    /// ScriptComponent: each behavior is stored by its registered type name
-    /// (BehaviorRegistry key) and recreated through the registry on load.
-    /// Per-behavior tunable fields are not yet serialized (reflection comes
-    /// later); load drops any behavior whose type is not registered.
+    /**
+     * @brief ScriptComponent: each behavior is stored by its registered type name
+     * (BehaviorRegistry key) and recreated through the registry on load. Each
+     * behavior's tunable fields are persisted via Behavior::visitFields (a
+     * `properties` object per behavior); load drops any behavior whose type
+     * is not registered, and keeps a field's default when its key is absent.
+     */
     nlohmann::json save(const ScriptComponent&);
     void load(const nlohmann::json&, ScriptComponent&);
 

@@ -7,8 +7,10 @@
 
 namespace Engine {
 
-/// The asset kinds that live in the library (shaders stay source-referenced and
-/// are not part of the cooked database).
+/**
+ * @brief The asset kinds that live in the library (shaders stay source-referenced and
+ * are not part of the cooked database).
+ */
 enum class AssetType : uint8_t { Mesh, Texture, Material };
 
 /**
@@ -36,14 +38,16 @@ class AssetLibrary {
 
         static AssetLibrary& get();
 
-        /// (Re)load the manifest from disk, replacing current state. A missing
-        /// manifest is not an error - an empty library is a valid fresh project.
+        /**
+         * @brief (Re)load the manifest from disk, replacing current state. A missing
+         * manifest is not an error - an empty library is a valid fresh project.
+         */
         void load();
 
-        /// Resolve (type, name) to its record, or nullptr if absent.
+        /** @brief Resolve (type, name) to its record, or nullptr if absent. */
         const Record* find(AssetType type, const std::string& name) const;
 
-        /// Absolute paths for a record's files.
+        /** @brief Absolute paths for a record's files. */
         std::filesystem::path recipePath(const Record& record) const;
         std::filesystem::path cookedPath(const Record& record) const;
 
@@ -52,8 +56,10 @@ class AssetLibrary {
         void remove(AssetType type, const std::string& name);
         bool save() const;
 
-        /// Stable per-identity UID (16 hex chars of a content hash of type+name),
-        /// used to name recipe/cooked files.
+        /**
+         * @brief Stable per-identity UID (16 hex chars of a content hash of type+name),
+         * used to name recipe/cooked files.
+         */
         static std::string uidFor(AssetType type, const std::string& name);
         static const char* typeTag(AssetType type);
 

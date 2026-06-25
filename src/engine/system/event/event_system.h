@@ -72,20 +72,20 @@ class EventSystem : public System {
             return b ? b->remove(id) : false;
         }
 
-        /// Fire the event synchronously to every listener.
+        /** @brief Fire the event synchronously to every listener. */
         template<typename EventT>
         void emit(const EventT& event) {
             auto* b = findBus<EventT>();
             if (b) b->emit(event);
         }
 
-        /// Queue the event for delivery in the next update() flush.
+        /** @brief Queue the event for delivery in the next update() flush. */
         template<typename EventT>
         void enqueue(EventT event) {
             bus<EventT>().enqueue(std::move(event));
         }
 
-        /// Flush all enqueued events on every bus.
+        /** @brief Flush all enqueued events on every bus. */
         void update(FrameContext& ctx) override;
 
     private:

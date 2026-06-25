@@ -28,8 +28,10 @@ namespace Engine {
 struct ShaderAsset : public Resource {
     std::string path;  ///< Source directory.
 
-    /// uniform-name -> texture slot. Applied after every compile by
-    /// the backend so the binding survives hot reload.
+    /**
+     * @brief uniform-name -> texture slot. Applied after every compile by
+     * the backend so the binding survives hot reload.
+     */
     std::unordered_map<std::string, int> samplerBindings;
 
     /**

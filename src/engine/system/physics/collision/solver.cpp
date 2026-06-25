@@ -9,9 +9,11 @@ namespace Engine {
 
 namespace {
 
-/// Combined material response for a contacting pair. Restitution takes the max
-/// (a bouncy ball off a dead floor still bounces); friction is the geometric
-/// mean, the usual Coulomb pairing.
+/**
+ * @brief Combined material response for a contacting pair. Restitution takes the max
+ * (a bouncy ball off a dead floor still bounces); friction is the geometric
+ * mean, the usual Coulomb pairing.
+ */
 float combineRestitution(const PhysicsBody& a, const PhysicsBody& b) {
     return std::max(a.restitution, b.restitution);
 }
@@ -20,9 +22,11 @@ float combineFriction(const PhysicsBody& a, const PhysicsBody& b) {
     return std::sqrt(std::max(0.0f, a.friction * b.friction));
 }
 
-/// Effective mass along a unit direction at the two contact arms, i.e. the
-/// denominator k = invMassA + invMassB + angular terms used to turn a desired
-/// velocity change into an impulse magnitude.
+/**
+ * @brief Effective mass along a unit direction at the two contact arms, i.e. the
+ * denominator k = invMassA + invMassB + angular terms used to turn a desired
+ * velocity change into an impulse magnitude.
+ */
 float effectiveMass(
     const PhysicsBody& a,
     const PhysicsBody& b,

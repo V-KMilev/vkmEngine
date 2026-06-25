@@ -4,6 +4,12 @@
 
 namespace Engine {
 
+/**
+ * @brief Log the build banner (app name, version, branch, commit, date).
+ *
+ * Reads the APP_* macros injected by CMake as compile definitions; call once
+ * at startup.
+ */
 inline void printBuildInfo() {
     LOG_INFO_C("BUILD", "------- Build Information -------");
     LOG_INFO_C("BUILD", "Running '%s' Version %s", APP_NAME, APP_VERSION);

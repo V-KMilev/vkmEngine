@@ -24,7 +24,7 @@ struct TextureAsset;
  */
 namespace AssetCook {
 
-/// Bump when the on-disk byte layout of the respective body changes.
+/** @brief Bump when the on-disk byte layout of the respective body changes. */
 constexpr uint16_t MESH_FORMAT_VERSION    = 1;
 constexpr uint16_t TEXTURE_FORMAT_VERSION = 1;
 

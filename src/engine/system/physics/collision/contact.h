@@ -6,8 +6,10 @@
 
 namespace Engine {
 
-/// Maximum contact points generated per overlapping pair (a box face contact
-/// needs at most four).
+/**
+ * @brief Maximum contact points generated per overlapping pair (a box face contact
+ * needs at most four).
+ */
 inline constexpr int MAX_CONTACTS_PER_MANIFOLD = 4;
 
 /**

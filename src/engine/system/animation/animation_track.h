@@ -200,8 +200,10 @@ class AnimationTrack {
             addKeyframe(time, value);
         }
 
-        /// Read-only access to keyframe storage - used by serialization and
-        /// any tool that needs to round-trip the track's contents.
+        /**
+         * @brief Read-only access to keyframe storage - used by serialization and
+         * any tool that needs to round-trip the track's contents.
+         */
         const std::vector<float>& getTimes()  const { return m_times; }
         const std::vector<T>&     getValues() const { return m_values; }
 

@@ -26,15 +26,17 @@ class SimulationClock {
         SimulationClock& operator=(SimulationClock && other) = default;
 
     public:
-        /// Pause/resume. Discards any queued single-steps.
+        /** @brief Pause/resume. Discards any queued single-steps. */
         void setPaused(bool paused) { m_paused = paused; m_pendingSteps = 0; }
 
-        /// Slow-motion / fast-forward multiplier applied while running (clamped
-        /// to >= 0). Programmatic by design - no editor UI; drive it from a
-        /// script or console command.
+        /**
+         * @brief Slow-motion / fast-forward multiplier applied while running (clamped
+         * to >= 0). Programmatic by design - no editor UI; drive it from a
+         * script or console command.
+         */
         void setTimeScale(float scale) { m_timeScale = scale < 0.0f ? 0.0f : scale; }
 
-        /// Queue fixed-step advances to play out while paused (editor "step").
+        /** @brief Queue fixed-step advances to play out while paused (editor "step"). */
         void requestStep(int steps = 1) { if (steps > 0) m_pendingSteps += steps; }
 
         /**

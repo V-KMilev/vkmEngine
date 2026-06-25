@@ -102,8 +102,10 @@ class WindowManager {
          */
         bool shouldClose() const;
 
-        /// Alias for shouldClose(), used by the save-on-quit flow whose
-        /// "wants to close" reads more naturally than "should close".
+        /**
+         * @brief Alias for shouldClose(), used by the save-on-quit flow whose
+         * "wants to close" reads more naturally than "should close".
+         */
         bool wantsClose() const { return shouldClose(); }
 
         /**
@@ -112,14 +114,18 @@ class WindowManager {
          */
         bool requestClose();
 
-        /// Cancel a pending close. Used by the save-on-quit modal when the
-        /// user picks Cancel (or Save - the close is deferred until the
-        /// scene is clean). Keeps GLFW out of the editor.
+        /**
+         * @brief Cancel a pending close. Used by the save-on-quit modal when the
+         * user picks Cancel (or Save - the close is deferred until the
+         * scene is clean). Keeps GLFW out of the editor.
+         */
         void cancelClose();
 
-        /// Update the window title. Used by the editor to reflect the
-        /// current scene's filename and dirty state without reaching for
-        /// raw GLFW.
+        /**
+         * @brief Update the window title. Used by the editor to reflect the
+         * current scene's filename and dirty state without reaching for
+         * raw GLFW.
+         */
         void setTitle(const std::string& title);
 
         /**

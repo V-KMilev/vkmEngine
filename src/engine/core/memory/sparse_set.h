@@ -22,9 +22,11 @@ class ISparseSet {
         virtual size_t size() const = 0;
         virtual size_t sparseCapacity() const = 0;
         virtual void compact() = 0;
-        /// @brief Drop every element. Used by Scene::clear and shutdown
-        ///        paths that want O(types) tear-down rather than
-        ///        O(entities x types) one-element-at-a-time removal.
+        /**
+         * @brief Drop every element. Used by Scene::clear and shutdown
+         *        paths that want O(types) tear-down rather than
+         *        O(entities x types) one-element-at-a-time removal.
+         */
         virtual void clear() = 0;
 };
 
@@ -102,7 +104,7 @@ class SparseSet : public ISparseSet {
             return key < m_dataIndex.size() && m_dataIndex[key] != EMPTY;
         }
 
-        /// @brief Virtual override forwarding to contains() for type-erased callers.
+        /** @brief Virtual override forwarding to contains() for type-erased callers. */
         bool has(uint32_t key) const override { return contains(key); }
 
         /**
@@ -148,12 +150,14 @@ class SparseSet : public ISparseSet {
         size_t size() const override { return m_data.size(); }  ///< Number of live elements.
         bool empty()  const          { return m_data.empty(); } ///< True if size() == 0.
 
-        /// @brief Current capacity of the sparse-to-dense mapping array.
+        /** @brief Current capacity of the sparse-to-dense mapping array. */
         size_t sparseCapacity() const override { return m_dataIndex.size(); }
 
-        /// @brief Drop every element. The dense and sparse arrays empty;
-        ///        their capacity is retained so a subsequent rebuild
-        ///        doesn't re-pay allocation cost.
+        /**
+         * @brief Drop every element. The dense and sparse arrays empty;
+         *        their capacity is retained so a subsequent rebuild
+         *        doesn't re-pay allocation cost.
+         */
         void clear() override {
             m_data.clear();
             m_dataId.clear();
@@ -161,7 +165,7 @@ class SparseSet : public ISparseSet {
             std::fill(m_dataIndex.begin(), m_dataIndex.end(), EMPTY);
         }
 
-        /// @brief Shrink the sparse array to fit only live keys, reclaiming wasted memory.
+        /** @brief Shrink the sparse array to fit only live keys, reclaiming wasted memory. */
         void compact() override {
             if (m_data.empty()) {
                 m_dataIndex.clear();
@@ -181,30 +185,32 @@ class SparseSet : public ISparseSet {
         T*       data()       { return m_data.data(); } ///< Raw pointer to the packed dense array.
         const T* data() const { return m_data.data(); } ///< @copydoc data()
 
-        /// @brief Access the sparse key at a dense index (for index-based parallel iteration).
+        /** @brief Access the sparse key at a dense index (for index-based parallel iteration). */
         uint32_t keyAt(uint32_t denseIndex) const { return m_dataId[denseIndex]; }
-        /// @brief Access the element at a dense index (for index-based parallel iteration).
+        /** @brief Access the element at a dense index (for index-based parallel iteration). */
         T&       dataAt(uint32_t denseIndex)       { return m_data[denseIndex]; }
         const T& dataAt(uint32_t denseIndex) const { return m_data[denseIndex]; }
 
-        /// @name Range-based for loop support (iterates the packed dense array, no holes).
-        /// @{
+        /**
+         * @name Range-based for loop support (iterates the packed dense array, no holes).
+         * @{
+         */
         auto begin()       { return m_data.begin(); }
         auto begin() const { return m_data.begin(); }
         auto end()         { return m_data.end(); }
         auto end()   const { return m_data.end(); }
-        /// @}
+        /** @} */
 
     private:
         static constexpr uint32_t EMPTY = UINT32_MAX;
 
-        /// @brief Grows the sparse array to fit @p key if needed.
+        /** @brief Grows the sparse array to fit @p key if needed. */
         void ensureCapacity(uint32_t key) {
             if (key >= m_dataIndex.size())
                 m_dataIndex.resize(key + 1, EMPTY);
         }
 
-        /// @brief Validates the key, emplaces into the dense array, and wires up both mappings.
+        /** @brief Validates the key, emplaces into the dense array, and wires up both mappings. */
         template<typename... Args>
         T& addInternal(uint32_t key, Args&&... args) {
             VKM_ASSERT(key != 0, "SparseSet::add key 0 is reserved");

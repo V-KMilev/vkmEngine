@@ -24,9 +24,11 @@ class Scene;
  * registers factory lambdas here at startup; AssetSerializer dispatches
  * through this registry instead of hard-coding generator names.
  *
- * The map key is the source `kind` field - e.g. "generator" for procedural
- * meshes, "folder" for folder-loaded materials. A future "file" kind for
- * glTF mesh imports plugs in the same way.
+ * The map key is the source `kind` field - e.g. "cooked" for assets read from
+ * the binary cache (the runtime load path), "inline" for materials, plus the
+ * editor's recipe kinds ("generator" procedural meshes, "model" glTF imports,
+ * "file" image textures, "folder" folder-loaded materials). New kinds plug in
+ * the same way by registering another factory.
  */
 class AssetFactories {
     public:
@@ -42,7 +44,7 @@ class AssetFactories {
         void registerMaterial(std::string kind, MaterialFactory factory);
         void registerShader  (std::string kind, ShaderFactory   factory);
 
-        /// Returns an invalid handle if `kind` is unknown.
+        /** @brief Returns an invalid handle if `kind` is unknown. */
         MeshHandle     createMesh    (const nlohmann::json& source, ResourceManager& resources) const;
         TextureHandle  createTexture (const nlohmann::json& source, ResourceManager& resources) const;
         MaterialHandle createMaterial(const nlohmann::json& source, ResourceManager& resources) const;
@@ -73,15 +75,19 @@ namespace AssetSerializer {
     nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources);
     bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources);
 
-    /// Apply an "inline" material descriptor (kind=="inline") to a freshly-
-    /// constructed MaterialAsset. Used by the inline-material factory in
-    /// tools/asset_registration.cpp.
+    /**
+     * @brief Apply an "inline" material descriptor (kind=="inline") to a freshly-
+     * constructed MaterialAsset. Used by the inline-material factory in
+     * tools/asset_registration.cpp.
+     */
     void applyInline(const nlohmann::json& source, MaterialAsset& target, const ResourceManager& resources);
 
-    /// Build a material's canonical "inline" source descriptor (PBR scalars +
-    /// texture refs by name). This is both the material's editable source of
-    /// truth and its runtime form; the cooker writes it as the material's
-    /// library file.
+    /**
+     * @brief Build a material's canonical "inline" source descriptor (PBR scalars +
+     * texture refs by name). This is both the material's editable source of
+     * truth and its runtime form; the cooker writes it as the material's
+     * library file.
+     */
     nlohmann::json materialToInline(const MaterialAsset& material, const ResourceManager& resources);
 
 } // namespace AssetSerializer

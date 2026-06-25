@@ -10,9 +10,11 @@ namespace Engine {
 
 struct MeshAsset;
 
-/// Max detail (grid cells per axis) for fitBoxesToMesh. The fit is a per-column
-/// scanline (~O(detail^2 * triangles)); box count also grows with detail^2, so
-/// high detail is heavier both to fit and at run time.
+/**
+ * @brief Max detail (grid cells per axis) for fitBoxesToMesh. The fit is a per-column
+ * scanline (~O(detail^2 * triangles)); box count also grows with detail^2, so
+ * high detail is heavier both to fit and at run time.
+ */
 inline constexpr int COLLIDER_FIT_MAX_DETAIL = 64;
 
 /**

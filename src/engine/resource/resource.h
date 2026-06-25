@@ -34,11 +34,13 @@ struct Resource {
     public:
         bool hasSource() const noexcept { return source != nullptr; }
 
-        /// Mutable access to the source JSON, allocating an empty object
-        /// if the slot is null. Callers must #include <nlohmann/json.hpp>.
+        /**
+         * @brief Mutable access to the source JSON, allocating an empty object
+         * if the slot is null. Callers must #include <nlohmann/json.hpp>.
+         */
         nlohmann::json&       sourceJson();
 
-        /// Const access. Asserts hasSource(); use hasSource() to guard.
+        /** @brief Const access. Asserts hasSource(); use hasSource() to guard. */
         const nlohmann::json& sourceJson() const;
 
     public:
