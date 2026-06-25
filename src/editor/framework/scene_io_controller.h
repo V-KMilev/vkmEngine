@@ -2,7 +2,8 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
+
+#include "framework/asset_picker.h"
 
 namespace Engine {
 
@@ -135,15 +136,14 @@ class SceneIOController {
          */
         bool        m_playSnapshotDirty = false;
         bool        m_openSaveAsPopup = false;
-        bool        m_openLoadPopup   = false;
         char        m_saveAsBuffer[256] = "scene.json";
 
         /**
-         * @brief Cached listing of the scenes directory. Refreshed when the Load picker opens;
-         * stays stable while it's open instead of re-listing the directory
-         * every frame the modal is up.
+         * @brief Shared cached file picker for the Load-Scene flow: rooted at the
+         * scenes dir, filtered to .json. requestLoad() configures + opens it;
+         * drawDialogs() drives it and feeds a pick into loadPath().
          */
-        std::vector<std::string> m_loadCandidates;
+        AssetPicker m_loadPicker;
 };
 
 } // namespace Engine
