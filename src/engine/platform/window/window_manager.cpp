@@ -150,12 +150,30 @@ bool WindowManager::updateMode(WindowMode windowMode) {
         return false;
     }
 
+    // Target rect/refresh per mode. Fullscreen covers the whole monitor video
+    // mode; Windowed is a centred rect at 75% of the monitor (a full-monitor
+    // windowed rect at (0,0) would look like borderless fullscreen).
+    int targetX = 0;
+    int targetY = 0;
+    int targetW = mode->width;
+    int targetH = mode->height;
+    int targetRefresh = mode->refreshRate;
+
     switch(windowMode) {
         case WindowMode::Fullscreen:
             break;
-        case WindowMode::Windowed:
-            monitor = nullptr;
+        case WindowMode::Windowed: {
+            int monitorX = 0;
+            int monitorY = 0;
+            glfwGetMonitorPos(monitor, &monitorX, &monitorY);
+            monitor       = nullptr;
+            targetW       = static_cast<int>(mode->width  * 0.75);
+            targetH       = static_cast<int>(mode->height * 0.75);
+            targetX       = monitorX + (mode->width  - targetW) / 2;
+            targetY       = monitorY + (mode->height - targetH) / 2;
+            targetRefresh = 0;  // ignored for windowed mode
             break;
+        }
         default:
             LOG_ERROR("Invalid window mode: %s", toString(windowMode));
             return false;
@@ -165,11 +183,11 @@ bool WindowManager::updateMode(WindowMode windowMode) {
     glfwSetWindowMonitor(
         windowContext,
         monitor,
-        0,
-        0,
-        mode->width,
-        mode->height,
-        mode->refreshRate
+        targetX,
+        targetY,
+        targetW,
+        targetH,
+        targetRefresh
     );
 
     LOG_INFO("Mode -> %s (%dx%d @ %dHz)",
