@@ -35,44 +35,6 @@ inline constexpr const char* const MATERIAL_TYPE_NAMES[] = {
 };
 
 /**
- * @brief Bitset of optional PBR lobes / features a material actually uses.
- *
- * Intended for a future shader variant cache: compile one PBR program per
- * distinct flag set so a plain opaque-diffuse material doesn't pay the
- * fragment cost of branches for clearcoat / transmission / sheen / etc.
- * MaterialAsset::featureFlags() derives the bitset from the current scalar
- * values and texture presence. Dormant until the variant cache lands -
- * the ubershader branches at runtime for now.
- */
-enum class MaterialFeature : uint32_t {
-    None         = 0,
-    Transmission = 1u << 0,  ///< transmission > 0 (refracts the scene behind)
-    Volume       = 1u << 1,  ///< thicknessFactor > 0 (Beer-Lambert through the medium)
-    Clearcoat    = 1u << 2,  ///< clearcoat > 0
-    Anisotropy   = 1u << 3,  ///< anisotropy > 0
-    Subsurface   = 1u << 4,  ///< subsurface > 0
-    Sheen        = 1u << 5,  ///< sheenColor != 0
-    Parallax     = 1u << 6,  ///< heightTexture + heightScale > 0
-    AlphaMask    = 1u << 7,  ///< type == MaterialType::AlphaMask (alphaCutoff discard path)
-};
-
-constexpr uint32_t toBits(MaterialFeature f) { return static_cast<uint32_t>(f); }
-
-/**
- * @brief All features OR'd together. The default ubershader path uses this so the
- * shader compiles every optional block; per-material variants narrow it.
- */
-constexpr uint32_t MATERIAL_ALL_FEATURES =
-    toBits(MaterialFeature::Transmission) |
-    toBits(MaterialFeature::Volume)       |
-    toBits(MaterialFeature::Clearcoat)    |
-    toBits(MaterialFeature::Anisotropy)   |
-    toBits(MaterialFeature::Subsurface)   |
-    toBits(MaterialFeature::Sheen)        |
-    toBits(MaterialFeature::Parallax)     |
-    toBits(MaterialFeature::AlphaMask);
-
-/**
  * @brief A complete PBR material.
  *
  * The parameter set follows the Disney/glTF principled model: a metal-rough
@@ -136,33 +98,6 @@ struct MaterialAsset : public Resource {
     TextureHandle heightTexture;                 ///< Height field for parallax (R channel)
     TextureHandle clearcoatTexture;              ///< Clearcoat strength mask (R channel)
     TextureHandle transmissionTexture;           ///< Transmission mask (R channel)
-
-    /**
-     * @brief Compute the MaterialFeature bitset this material requires.
-     *
-     * Intended to drive shader variant selection. Thresholds match the
-     * runtime guards in the PBR fragment shader so a feature that would be
-     * optimised out at compile time also isn't running its `if (X > 0.001)`
-     * block.
-     *
-     * Pure function over the asset's current state. Currently unused: the
-     * PBR path is a single ubershader that branches at runtime, so nothing
-     * calls this yet - it is dormant until the variant cache lands.
-     */
-    uint32_t featureFlags() const {
-        uint32_t f = 0;
-        if (transmission > 0.001f)                  f |= toBits(MaterialFeature::Transmission);
-        if (thicknessFactor > 0.0f)                 f |= toBits(MaterialFeature::Volume);
-        if (clearcoat > 0.001f)                     f |= toBits(MaterialFeature::Clearcoat);
-        if (anisotropy > 0.001f)                    f |= toBits(MaterialFeature::Anisotropy);
-        if (subsurface > 0.001f)                    f |= toBits(MaterialFeature::Subsurface);
-        if (sheenColor.x > 0.0f ||
-            sheenColor.y > 0.0f ||
-            sheenColor.z > 0.0f)                    f |= toBits(MaterialFeature::Sheen);
-        if (heightTexture && heightScale > 0.0f)    f |= toBits(MaterialFeature::Parallax);
-        if (type == MaterialType::AlphaMask)        f |= toBits(MaterialFeature::AlphaMask);
-        return f;
-    }
 };
 
 using MaterialHandle = Handle<MaterialAsset>;
