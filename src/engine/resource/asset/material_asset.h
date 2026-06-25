@@ -53,7 +53,7 @@ enum class MaterialFeature : uint32_t {
     Subsurface   = 1u << 4,  ///< subsurface > 0
     Sheen        = 1u << 5,  ///< sheenColor != 0
     Parallax     = 1u << 6,  ///< heightTexture + heightScale > 0
-    AlphaMask    = 1u << 7,  ///< alphaCutoff > 0 (discard path)
+    AlphaMask    = 1u << 7,  ///< type == MaterialType::AlphaMask (alphaCutoff discard path)
 };
 
 constexpr uint32_t toBits(MaterialFeature f) { return static_cast<uint32_t>(f); }

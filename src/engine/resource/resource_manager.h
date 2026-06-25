@@ -180,14 +180,12 @@ class ResourceManager {
         }
 
         /**
-         * @brief Commit changes to a resource (bumps its per-asset version;
-         *        does NOT bump the global version).
+         * @brief Commit changes to a resource by bumping its per-asset version.
          *
          * The per-asset `version` is what the backend keys GPU re-uploads on:
-         * GLView's syncTable rebuilds an entry only when this changes. Global
-         * version is reserved for handle-invalidating events (swap / clear /
-         * swapSlot / remove) - if commit bumped it, every per-frame slider drag
-         * would wipe and re-upload the whole GPU cache to update one material.
+         * GLView's syncTable rebuilds an entry only when this changes. commit()
+         * touches only the one asset's version, so a per-frame slider drag
+         * re-uploads just that material instead of the whole GPU cache.
          */
         template<typename HandleType>
         void commit(const HandleType& handle) {

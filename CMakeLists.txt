@@ -85,7 +85,7 @@ add_subdirectory(game)
 
 # Two thin executables under app/. engine_runtime is the bare engine; engine_editor
 # adds the in-process editor. Both link the engine libs directly and share the
-# header-only bootstrap in example/engine_app.h (setupEngineApp) - the editor's
+# header-only bootstrap in app/engine_app.h (setupEngineApp) - the editor's
 # only addition is its EditorSystem.
 add_subdirectory(app/runtime)
 if(VKM_WITH_EDITOR)
