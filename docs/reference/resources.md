@@ -44,7 +44,7 @@ const MeshAsset& mesh = rm.get(handle);
 MeshAsset& mut = rm.edit(handle);
 mut.vertices.push_back(...);
 
-// Commit (bumps the per-resource version + the per-type version)
+// Commit (bumps the per-resource version)
 rm.commit(handle);
 
 // Remove
@@ -124,8 +124,9 @@ emission, height, clearcoat, transmission.
 `MaterialAsset::featureFlags()` derives a `uint32_t` bit set of
 `MaterialFeature` values from the active scalars and present textures
 (`MaterialFeature::Transmission`, `::Clearcoat`, `::Parallax`, `::Volume`,
-`::Anisotropy`, `::Subsurface`, `::Sheen`, `::AlphaMask`). The forward pass reads
-this bit set at runtime to enable the optional lobes per draw - one shared PBR
+`::Anisotropy`, `::Subsurface`, `::Sheen`, `::AlphaMask`). No backend consumes
+this bit set today - it is dormant. The ubershader branches on the individual
+material scalars and texture-present uniforms at runtime instead; one shared PBR
 program, not per-variant compiled shaders; see [Rendering](system/rendering.md).
 
 `MaterialType` is `Opaque = 0`, `Transparent = 1`, `Unlit = 2`, or
@@ -142,17 +143,12 @@ not compiled variants.
 
 ## Versioning
 
-`commit(handle)` bumps two counters:
-
-1. The asset's own `version`.
-2. The per-type version (used by `GLView` for early-out: a type that didn't
-   change between frames does not even iterate its asset table).
-
-(There is no global version counter - that mechanism was removed.) `GLView`
-keeps per-asset cached versions and rebuilds GPU state only when the cached
-value diverges from the asset's `version`. Hot-reloading a shader file (via
-`FileWatcher`) bumps the shader version, which drops its compiled program;
-the next draw recompiles lazily.
+`commit(handle)` bumps a single per-asset `version` counter. (There is no
+global or per-type version counter - those mechanisms were removed.) `GLView`
+keys on this per-asset version: it keeps a per-asset cached version and rebuilds
+GPU state only when the cached value diverges from the asset's `version`.
+Hot-reloading a shader file (via `FileWatcher`) bumps the shader version, which
+drops its compiled program; the next draw recompiles lazily.
 
 ## Storage
 

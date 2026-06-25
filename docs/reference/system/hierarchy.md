@@ -61,8 +61,11 @@ sees its parent's `WorldTransform` already up to date. Within a depth
 the entities are siblings; they share no parent/child dependency, so
 they can be resolved concurrently.
 
-For roots (entities without a `Hierarchy` parent), the resolve is a
-no-op: downstream consumers fall back to local `Transform` directly.
+A hierarchy root - an entity that has a `Hierarchy` component but a null
+`parent` - lands in depth bucket 0, where its `WorldTransform` is set
+straight from its local `Transform` (no parent matrix to compose). Entities
+with no `Hierarchy` component at all are never visited here; downstream
+consumers fall back to the local `Transform` directly.
 
 ## Editor integration
 
