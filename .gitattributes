@@ -10,5 +10,8 @@
 *.hdr filter=lfs diff=lfs merge=lfs -text
 *.HDR filter=lfs diff=lfs merge=lfs -text
 
-*.bin filter=lfs diff=lfs merge=lfs -text
 *.svg filter=lfs diff=lfs merge=lfs -text
+*.SVG filter=lfs diff=lfs merge=lfs -text
+
+*.bin filter=lfs diff=lfs merge=lfs -text
+*.BIN filter=lfs diff=lfs merge=lfs -text

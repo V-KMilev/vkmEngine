@@ -1,7 +1,7 @@
 # game - concrete gameplay behaviors. Built two ways:
 #  - `game` (STATIC, here): linked into the runtime exe (shipped-game style; no
 #    hot-reload). Registration is called directly from the runtime's main.
-#  - `game_module` (SHARED, in app/engine_editor): the same sources compiled as a
+#  - `game_module` (SHARED, in app/editor): the same sources compiled as a
 #    library the editor dlopen's for hot-reload, resolving engine symbols from the
 #    editor exe. game_module.cpp (the extern "C" entry) is module-only, so it is
 #    excluded from the static flavor.

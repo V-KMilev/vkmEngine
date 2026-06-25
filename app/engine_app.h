@@ -58,9 +58,9 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     auto& visibilitySystem  = engine.addSystem<Engine::VisibilitySystem> (Engine::SystemStage::Visibility);
     auto& renderSystem      = engine.addSystem<Engine::RenderSystem>     (Engine::SystemStage::Render);
 
-    // The minimal OpenGL backend compiles its own shader (shaders/forward) and
-    // owns its single forward pass - no shader-asset registration or pass
-    // pipeline wiring is needed here yet.
+    // The OpenGL backend compiles its own shaders (shaders/) and owns its
+    // fixed 10-pass forward pipeline - no shader-asset registration or pass
+    // pipeline wiring is needed here at the app level.
     renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
 
     // Default scene: a single cube at the origin under a directional light.

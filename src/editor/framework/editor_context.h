@@ -23,7 +23,7 @@ class EventSystem;
  *
  * Collaborators are non-owning references: the editor is always constructed
  * with live RenderSystem / VisibilitySystem / CameraController / EventSystem
- * instances (main.cpp registers them before the editor system), so panels
+ * instances (the editor app registers them before the EditorSystem), so panels
  * don't guard against nullptr.
  */
 struct EditorContext {

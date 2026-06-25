@@ -272,7 +272,7 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
             case LightType::Disk: {
                 // Wireframe emitter outline. axisU = local +X * width/2 (Rect)
                 // or +X * radius (Disk); axisV = local +Y similarly. Matches
-                // gl_lights.cpp's GPU packing so the gizmo agrees with the
+                // render_view.cpp's GPU packing so the gizmo agrees with the
                 // shaded result.
                 const bool isRect = (light.type == LightType::Rect);
                 const float ux = isRect ? light.areaWidth  * 0.5f : light.areaRadius;
