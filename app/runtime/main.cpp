@@ -1,5 +1,6 @@
 #define VKM_LOG_CATEGORY "MAIN"
 
+#include <cstdlib>
 #include <string>
 
 #include "logger.h"
@@ -29,9 +30,9 @@ int main(int argc, char** argv) {
         // only to pin a GL error to its exact callsite.
         Core::enableGLDebugLogging(false);
 
-        // Asset factories must be registered before scene I/O can
-        // recreate procedural meshes + folder materials on cold start.
-        Engine::registerBuiltinAssetFactories();
+        // The runtime loads only cooked assets, so it registers just the cooked
+        // factory set (no Assimp, no image decode). Must precede scene I/O.
+        Engine::registerCookedAssetFactories();
 
         // The runtime static-links the gameplay module (no hot-reload), so it
         // registers behaviors directly. Must precede setupEngineApp's default
@@ -55,8 +56,10 @@ int main(int argc, char** argv) {
 
     } catch (const std::exception& e) {
         LOG_FATAL("Exception: %s", e.what());
+        return EXIT_FAILURE;
     } catch (...) {
         LOG_FATAL("Unknown exception");
+        return EXIT_FAILURE;
     }
 
     LOG_INFO("Shutdown successfully!");

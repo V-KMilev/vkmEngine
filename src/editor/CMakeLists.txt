@@ -8,6 +8,7 @@ target_include_directories(EngineEditor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(EngineEditor PUBLIC
     EngineCore
     EngineTools
+    EngineCooker       # model import + asset cooking (editor-only heavy deps)
     imgui
     vkmGL
 )
