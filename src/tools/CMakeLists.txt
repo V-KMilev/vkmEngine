@@ -12,6 +12,7 @@ set(ENGINECOOKER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/loader/texture_loaders.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/loader/material_loaders.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cook/recipe_registration.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/cook/asset_cooker.cpp
 )
 list(REMOVE_ITEM ENGINETOOLS_SOURCES ${ENGINECOOKER_SOURCES})
 
