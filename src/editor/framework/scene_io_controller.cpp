@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <string>
 #include <system_error>
-#include <vector>
 
 #include <imgui.h>
 
@@ -75,7 +74,15 @@ void SceneIOController::requestSaveAs() {
 }
 
 void SceneIOController::requestLoad() {
-    m_openLoadPopup = true;
+    m_loadPicker.options.popupId    = "Load Scene";
+    m_loadPicker.options.title      = "Load Scene";
+    m_loadPicker.options.root       = ProjectPaths::scenes();
+    m_loadPicker.options.recursive  = false;
+    m_loadPicker.options.kind       = AssetPicker::Kind::Files;
+    m_loadPicker.options.extensions = {".json"};
+    m_loadPicker.options.relativeTo.clear();  // loadPath() wants an absolute path
+    m_loadPicker.options.hint.clear();
+    m_loadPicker.open();
 }
 
 bool SceneIOController::isSaveDialogActive() const {
@@ -275,53 +282,12 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
         ImGui::EndPopup();
     }
 
-    const std::filesystem::path scenesDir = ProjectPaths::scenes();
-    if (m_openLoadPopup) {
-        // Refresh the cached listing once per open. The popup may stay up for
-        // many frames; re-listing the directory each one is wasted work.
-        m_loadCandidates.clear();
-        std::error_code ec;
-        for (const auto& entry : std::filesystem::directory_iterator(scenesDir, ec)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".json") {
-                m_loadCandidates.push_back(entry.path().string());
-            }
-        }
-        std::sort(m_loadCandidates.begin(), m_loadCandidates.end());
-
-        ImGui::OpenPopup("Load Scene");
-        m_openLoadPopup = false;
-    }
-    if (ImGui::BeginPopupModal("Load Scene", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextDisabled("%s", scenesDir.string().c_str());
-
-        if (m_loadCandidates.empty()) {
-            ImGui::TextDisabled("(no .json files in scenes/)");
-        } else {
-            ImGui::BeginChild("##SceneList", ImVec2(360, 200), true);
-            for (const auto& p : m_loadCandidates) {
-                const std::string filename = std::filesystem::path(p).filename().string();
-                const bool isCurrent = (p == m_currentScenePath);
-                if (ImGui::Selectable(filename.c_str(), isCurrent, ImGuiSelectableFlags_AllowDoubleClick)) {
-                    m_currentScenePath = p;
-                    if (ImGui::IsMouseDoubleClicked(0)) {
-                        load(ctx, state);
-                        ImGui::CloseCurrentPopup();
-                    }
-                }
-            }
-            ImGui::EndChild();
-        }
-
-        const bool canLoad = !m_currentScenePath.empty() && !m_loadCandidates.empty();
-        ImGui::BeginDisabled(!canLoad);
-        if (ImGui::Button("Load", ImVec2(120, 0))) {
-            load(ctx, state);
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
+    // The Load flow rides the shared AssetPicker (rooted at scenes/, .json
+    // filter): requestLoad() configured + opened it; here we just drive it and
+    // route a pick through the same loadPath() the recent-scenes menu uses.
+    std::string picked;
+    if (m_loadPicker.draw(picked)) {
+        loadPath(ctx, state, picked);
     }
 }
 

@@ -7,6 +7,7 @@
 
 #include "ecs/entity.h"
 
+#include "framework/asset_picker.h"  // AssetPicker (Environment HDR browse)
 #include "ui/editor_widgets.h"  // EulerCache
 
 namespace Engine {
@@ -60,11 +61,9 @@ class InspectorPanel {
         // entity. See EulerCache for the gimbal-lock rationale.
         EulerCache<EntityId> m_eulerCache;
 
-        // World inspector's "Skybox HDR" combo: the discovered assets/envs list
-        // is rescanned only on the combo's open transition (m_envComboOpen
-        // tracks the prior state), not every frame the card is visible.
-        std::vector<std::string> m_envCache;
-        bool                     m_envComboOpen = false;
+        // World inspector's "Skybox HDR" browse. Cached file discovery rooted at
+        // assets/envs; opened on demand instead of scanning every frame.
+        AssetPicker m_envPicker;
 };
 
 } // namespace Engine
