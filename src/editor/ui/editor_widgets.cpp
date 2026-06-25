@@ -200,6 +200,7 @@ bool drawEasingCombo(const char* id, EasingFunction& easing) {
 }
 
 bool matchesFilter(const char* text, const char* filter) {
+    if (!filter || !filter[0]) return true;
     for (const char* p = text; *p; ++p) {
         const char* s = filter;
         const char* t = p;
