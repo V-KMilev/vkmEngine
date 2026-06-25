@@ -2,12 +2,11 @@
 
 #include "io/scene_serializer.h"
 
+#include <array>
 #include <fstream>
 #include <limits>
 #include <set>
 #include <string>
-#include <tuple>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -35,109 +34,62 @@ namespace CS = ComponentSerializer;
 constexpr int FILE_FORMAT_VERSION = 2;
 
 /**
- * @brief Per-component serialization recipe.
+ * @brief Per-component serialization, as a flat explicit list.
  *
- * Each saveable component has a SerializerTraits specialisation providing
- * a JSON key + save / load statics. The two macros below stamp out the
- * common shapes so this file stays a flat list of component names:
+ * saveComponents / loadComponents handle one component type per line, in the
+ * same order. Adding a component is a localised edit: add a line to each of
+ * the two functions plus an entry to kComponentKeys below.
  *
- *   VKM_SERIALIZER_TRAITS(Type, "Key")        - default shape; CS::save(v)
- *   VKM_SERIALIZER_TRAITS_R(Type, "Key")      - takes ResourceManager&;
- *                                               used by components that
- *                                               reference assets by handle
- *                                               (Mesh, today)
- *
- * Save-only types (Hierarchy: collects parent links in pass 1, wires them
- * up in pass 2) declare the specialisation by hand without a `load` static;
- * the HasLoad<T> detector in this file skips them during pass 1.
+ * Special cases:
+ *  - Mesh references assets by handle, so save/load take a ResourceManager
+ *    (resolution happens against the staging RM on load).
+ *  - Hierarchy is save-only here: load captures the parent index in pass 1
+ *    and wires it up in pass 2 via HierarchyOperations::setParent, because
+ *    the parent entity may not exist yet when the child is first seen.
  */
-template<typename T> struct SerializerTraits;  // primary; defined via specialisations below.
 
-#define VKM_SERIALIZER_TRAITS(Type, JsonKey)                                                  \
-    template<> struct SerializerTraits<Type> {                                                \
-        static constexpr const char* key = JsonKey;                                           \
-        static json save(const Type& v, const ResourceManager&) { return CS::save(v); }       \
-        static void load(const json& j, Type& v, ResourceManager&) { CS::load(j, v); }        \
-    }
-
-#define VKM_SERIALIZER_TRAITS_R(Type, JsonKey)                                                \
-    template<> struct SerializerTraits<Type> {                                                \
-        static constexpr const char* key = JsonKey;                                           \
-        static json save(const Type& v, const ResourceManager& r) { return CS::save(v, r); }  \
-        static void load(const json& j, Type& v, ResourceManager& r) { CS::load(j, v, r); }   \
-    }
-
-VKM_SERIALIZER_TRAITS  (Name,              "Name");
-VKM_SERIALIZER_TRAITS  (Transform,         "Transform");
-VKM_SERIALIZER_TRAITS  (Camera,            "Camera");
-VKM_SERIALIZER_TRAITS  (Light,             "Light");
-VKM_SERIALIZER_TRAITS  (Rigidbody,         "Rigidbody");
-VKM_SERIALIZER_TRAITS  (Collider,          "Collider");
-VKM_SERIALIZER_TRAITS  (PhysicsWorld,      "PhysicsWorld");
-VKM_SERIALIZER_TRAITS_R(Mesh,              "Mesh");
-VKM_SERIALIZER_TRAITS  (Animation,         "Animation");
-VKM_SERIALIZER_TRAITS  (ScriptComponent,   "Script");
-
-template<> struct SerializerTraits<Hierarchy> {
-    static constexpr const char* key = "Hierarchy";
-    static json save(const Hierarchy& v, const ResourceManager&) { return CS::save(v); }
-    // No `load` - Hierarchy collects parent links in pass 1 and wires them
-    // up in pass 2 via HierarchyOperations::setParent; the entity has to
-    // exist before its parent slot can be resolved.
+// Every JSON key written by saveComponents, for unknown-key detection on load.
+// Order is incidental here (membership test only); keep it in sync with the
+// save/load lists above.
+constexpr std::array<const char*, 11> kComponentKeys = {
+    "Name", "Transform", "Camera", "Light", "Rigidbody", "Collider",
+    "PhysicsWorld", "Mesh", "Animation", "Script", "Hierarchy",
 };
 
-#undef VKM_SERIALIZER_TRAITS
-#undef VKM_SERIALIZER_TRAITS_R
-
-/**
- * @brief Compile-time list of every component type that serializes. Adding a
- * component = add a SerializerTraits specialisation above and add the type
- * here. The fold operators below propagate the change to save / load /
- * known-key checks; no other edits required.
- */
-using SerializedComponents = std::tuple<
-    Name, Transform, Camera, Light, Rigidbody, Collider, PhysicsWorld, Mesh, Animation, ScriptComponent, Hierarchy
->;
-
-// Detect at compile time which traits expose a `load` static. Hierarchy
-// opts out; everyone else opts in.
-template<typename T, typename = void>
-struct HasLoad : std::false_type {};
-template<typename T>
-struct HasLoad<T, std::void_t<decltype(SerializerTraits<T>::load(
-    std::declval<const json&>(), std::declval<T&>(), std::declval<ResourceManager&>()
-))>> : std::true_type {};
-
-template<typename T>
-void saveOne(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
-    if (s.has<T>(id)) c[SerializerTraits<T>::key] = SerializerTraits<T>::save(s.get<T>(id), r);
-}
-template<typename T>
-void loadOne(Scene& s, Entity e, const json& src, ResourceManager& r) {
-    if constexpr (HasLoad<T>::value) {
-        const char* key = SerializerTraits<T>::key;
-        if (!src.contains(key)) return;
-        T value;
-        SerializerTraits<T>::load(src[key], value, r);
-        s.add(e, std::move(value));
-    }
+void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
+    if (s.has<Name>(id))            c["Name"]         = CS::save(s.get<Name>(id));
+    if (s.has<Transform>(id))       c["Transform"]    = CS::save(s.get<Transform>(id));
+    if (s.has<Camera>(id))          c["Camera"]       = CS::save(s.get<Camera>(id));
+    if (s.has<Light>(id))           c["Light"]        = CS::save(s.get<Light>(id));
+    if (s.has<Rigidbody>(id))       c["Rigidbody"]    = CS::save(s.get<Rigidbody>(id));
+    if (s.has<Collider>(id))        c["Collider"]     = CS::save(s.get<Collider>(id));
+    if (s.has<PhysicsWorld>(id))    c["PhysicsWorld"] = CS::save(s.get<PhysicsWorld>(id));
+    if (s.has<Mesh>(id))            c["Mesh"]         = CS::save(s.get<Mesh>(id), r);
+    if (s.has<Animation>(id))       c["Animation"]    = CS::save(s.get<Animation>(id));
+    if (s.has<ScriptComponent>(id)) c["Script"]       = CS::save(s.get<ScriptComponent>(id));
+    if (s.has<Hierarchy>(id))       c["Hierarchy"]    = CS::save(s.get<Hierarchy>(id));
 }
 
-template<typename... Ts>
-void saveAll(const Scene& s, EntityId id, json& c, const ResourceManager& r, std::tuple<Ts...>*) {
-    (saveOne<Ts>(s, id, c, r), ...);
-}
-template<typename... Ts>
-void loadAll(Scene& s, Entity e, const json& src, ResourceManager& r, std::tuple<Ts...>*) {
-    (loadOne<Ts>(s, e, src, r), ...);
-}
-template<typename... Ts>
-bool isKnownKey(const std::string& k, std::tuple<Ts...>*) {
-    return ((k == SerializerTraits<Ts>::key) || ...);
+// Hierarchy is intentionally absent: its parent link is captured by the
+// caller for the pass-2 wire-up, not loaded here.
+void loadComponents(const json& src, Scene& s, Entity e, const ResourceManager& r) {
+    if (src.contains("Name"))         { Name c;            CS::load(src["Name"], c);            s.add(e, std::move(c)); }
+    if (src.contains("Transform"))    { Transform c;       CS::load(src["Transform"], c);       s.add(e, std::move(c)); }
+    if (src.contains("Camera"))       { Camera c;          CS::load(src["Camera"], c);          s.add(e, std::move(c)); }
+    if (src.contains("Light"))        { Light c;           CS::load(src["Light"], c);           s.add(e, std::move(c)); }
+    if (src.contains("Rigidbody"))    { Rigidbody c;       CS::load(src["Rigidbody"], c);       s.add(e, std::move(c)); }
+    if (src.contains("Collider"))     { Collider c;        CS::load(src["Collider"], c);        s.add(e, std::move(c)); }
+    if (src.contains("PhysicsWorld")) { PhysicsWorld c;    CS::load(src["PhysicsWorld"], c);    s.add(e, std::move(c)); }
+    if (src.contains("Mesh"))         { Mesh c;            CS::load(src["Mesh"], c, r);         s.add(e, std::move(c)); }
+    if (src.contains("Animation"))    { Animation c;       CS::load(src["Animation"], c);       s.add(e, std::move(c)); }
+    if (src.contains("Script"))       { ScriptComponent c; CS::load(src["Script"], c);          s.add(e, std::move(c)); }
 }
 
 bool isKnownComponentKey(const std::string& k) {
-    return isKnownKey(k, static_cast<SerializedComponents*>(nullptr));
+    for (const char* key : kComponentKeys) {
+        if (k == key) return true;
+    }
+    return false;
 }
 
 /**
@@ -157,8 +109,8 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
         json components = json::object();
 
         // WorldTransform is derived from Transform + Hierarchy each frame -
-        // not in SerializedComponents, not persisted.
-        saveAll(scene, id, components, resources, static_cast<SerializedComponents*>(nullptr));
+        // not in the component list, not persisted.
+        saveComponents(scene, id, components, resources);
 
         entity["components"] = std::move(components);
         doc["entities"].push_back(std::move(entity));
@@ -246,13 +198,11 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
 
             const auto& components = entry.value("components", json::object());
 
-            // Run every component's loader via the trait fold. Hierarchy is
-            // intentionally skipped here (no `load` static in its traits) -
-            // its parent index is captured below for the pass-2 wire-up.
+            // Run every component's loader. Hierarchy is intentionally skipped
+            // here - its parent index is captured below for the pass-2 wire-up.
             // Components that reference assets (Mesh) look them up in the
             // staging RM so resolution sees what loadAssets just built.
-            loadAll(staging, entity, components, stagingResources,
-                static_cast<SerializedComponents*>(nullptr));
+            loadComponents(components, staging, entity, stagingResources);
             if (components.contains("Hierarchy")) {
                 const uint32_t parentIdx = CS::loadParentIndex(components["Hierarchy"]);
                 if (parentIdx != std::numeric_limits<uint32_t>::max() && parentIdx != 0) {
