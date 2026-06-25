@@ -13,7 +13,7 @@ constexpr float PAD = 5.0f;
 constexpr int   CONTROLS = 3;  // play/pause, step, stop
 }
 
-void ViewportPlaybar::draw(EditorContext& ec, SceneIOController& sceneIO) {
+void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     FrameContext&    ctx    = ec.frame;
     Engine&          engine = ec.engine;
     SimulationClock& clock  = engine.getSimulationClock();
@@ -30,7 +30,7 @@ void ViewportPlaybar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PAD, PAD));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(GAP, 0.0f));
 
-    if (ImGui::BeginChild("##ViewportPlaybar", ImVec2(barW, barH), ImGuiChildFlags_Borders)) {
+    if (ImGui::BeginChild("##PlaybackBar", ImVec2(barW, barH), ImGuiChildFlags_Borders)) {
         // Play/Pause. In Edit mode this is "Play": snapshot the authored scene
         // (so Stop can restore it), then run the clock. In a play session it
         // toggles the clock. The running state is highlighted.
