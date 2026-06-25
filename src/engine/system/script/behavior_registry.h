@@ -34,7 +34,7 @@ class BehaviorRegistry {
         template<typename T>
         void registerBehavior() {
             registerBehavior(T::TYPE_NAME, [] {
-                return std::unique_ptr<Behavior>(std::make_unique<T>());
+                return std::make_unique<T>();
             });
         }
 

@@ -141,6 +141,7 @@ class SparseSet : public ISparseSet {
          * @brief Pre-allocate memory for all internal arrays.
          * @param capacity Expected number of elements. Avoids reallocations during repeated add().
          */
+        // container-parity API; unused today
         void reserve(size_t capacity) {
             m_dataIndex.reserve(capacity);
             m_dataId.reserve(capacity);
@@ -148,6 +149,7 @@ class SparseSet : public ISparseSet {
         }
 
         size_t size() const override { return m_data.size(); }  ///< Number of live elements.
+        // container-parity API; unused today
         bool empty()  const          { return m_data.empty(); } ///< True if size() == 0.
 
         /** @brief Current capacity of the sparse-to-dense mapping array. */
@@ -213,6 +215,7 @@ class SparseSet : public ISparseSet {
         /** @brief Validates the key, emplaces into the dense array, and wires up both mappings. */
         template<typename... Args>
         T& addInternal(uint32_t key, Args&&... args) {
+            VKM_ASSERT(key != EMPTY, "SparseSet::add key cannot be EMPTY sentinel");
             VKM_ASSERT(key != 0, "SparseSet::add key 0 is reserved");
             ensureCapacity(key);
             VKM_ASSERT(!has(key), "SparseSet::add key already present");

@@ -19,9 +19,11 @@ namespace Config {
 
     // The constants below are the single source of truth for both C++ and GLSL:
     // cmake/generate_shader_config.cmake mirrors them (under the same names) into
-    // shaders/_generated/engine_config.glsl, which the forward shaders #include
-    // via the engine's shader preprocessor (see gl_shader_source.h). Do not
-    // re-define these in a shader - include the generated file instead.
+    // shaders/_generated/engine_config.glsl, which the forward shaders pull in
+    // via a #include of "_generated/engine_config.glsl". vkmGL's GraphicsShaderSource
+    // resolves those includes (preprocessShaderSource in
+    // modules/vkmGL/src/shader/gl_shader.cpp). Do not re-define these in a
+    // shader - include the generated file instead.
 
     /** @brief Maximum number of lights uploaded per frame. */
     constexpr uint32_t MAX_LIGHTS = 32;
