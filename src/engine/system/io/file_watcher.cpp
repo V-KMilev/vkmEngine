@@ -7,7 +7,6 @@
 #include "logger.h"
 
 #include "debug/profiler.h"
-#include "core/system.h"
 
 namespace Engine {
 
@@ -38,7 +37,7 @@ void FileWatcher::watch(std::string dirPath, OnChange onChange) {
 void FileWatcher::update(FrameContext& ctx) {
     m_accumulator += ctx.deltaTime;
     if (m_accumulator < m_interval) return;
-    m_accumulator = 0.0f;
+    m_accumulator -= m_interval;
 
     // Only emit the zone on poll ticks - skipping it on the no-op frames keeps
     // the Tracy timeline clean (this fires once every m_interval seconds).

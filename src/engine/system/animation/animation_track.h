@@ -89,11 +89,12 @@ class AnimationTrack {
                 return m_values[0];
             }
 
-            // Clamp time to track duration
+            // Before the first key: hold the first value.
             if (time < 0.0f) {
                 return m_values[0];
             }
 
+            // At/after the last key: hold the last value (clamp to track duration).
             if (time >= m_times.back()) {
                 return m_values.back();
             }

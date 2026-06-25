@@ -39,10 +39,11 @@ bool rayHitsTriangle(
     return t > 1e-6f;
 }
 
-ColliderBox boundsBox(const glm::vec3& bmin, const glm::vec3& bmax, const glm::vec3& scale) {
+// absScale must be component-wise non-negative (all callers pass glm::abs(scale)).
+ColliderBox boundsBox(const glm::vec3& bmin, const glm::vec3& bmax, const glm::vec3& absScale) {
     ColliderBox box;
-    box.center      = (bmin + bmax) * 0.5f * scale;
-    box.halfExtents = glm::max((bmax - bmin) * 0.5f, glm::vec3(1e-3f)) * scale;
+    box.center      = (bmin + bmax) * 0.5f * absScale;
+    box.halfExtents = glm::max((bmax - bmin) * 0.5f, glm::vec3(1e-3f)) * absScale;
     return box;
 }
 

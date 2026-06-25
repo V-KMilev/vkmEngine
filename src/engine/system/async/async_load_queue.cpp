@@ -1,5 +1,7 @@
 #include "system/async/async_load_queue.h"
 
+#include <utility>
+
 namespace Engine {
 
 AsyncLoadQueue& AsyncLoadQueue::get() {

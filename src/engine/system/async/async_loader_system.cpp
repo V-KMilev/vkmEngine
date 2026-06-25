@@ -4,7 +4,6 @@
 
 #include "logger.h"
 
-#include "core/system.h"
 #include "debug/profiler.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/resource_manager.h"

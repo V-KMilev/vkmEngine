@@ -188,7 +188,7 @@ class Scene {
         void remove(Entity entity) {
             VKM_ASSERT(isAlive(entity), "Scene::remove called with dead/stale entity");
             auto* store = findStorage<T>();
-            if (store && store->has(entity.getID().index)) {
+            if (store && store->contains(entity.getID().index)) {
                 store->remove(entity.getID().index);
             }
         }
