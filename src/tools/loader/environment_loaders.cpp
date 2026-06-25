@@ -8,8 +8,9 @@
 
 #include "logger.h"
 
-// stb_image is header-only; STB_IMAGE_IMPLEMENTATION is defined once in
-// texture_loaders.cpp (same EngineTools target), so include declarations only.
+// stb_image is header-only; this TU includes declarations only. The
+// STB_IMAGE_IMPLEMENTATION symbols are provided by the stb module, linked
+// transitively via EngineCore (vkmGL also instantiates the implementation).
 #include "stb_image.h"
 
 #include "io/project_paths.h"

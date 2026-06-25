@@ -16,8 +16,10 @@
 namespace Engine {
 
 namespace {
-/// Build a JSON source descriptor for a procedural mesh. Stored on the
-/// MeshAsset so SceneSerializer can recreate it on cold-start load.
+/**
+ * @brief Build a JSON source descriptor for a procedural mesh. Stored on the
+ * MeshAsset so SceneSerializer can recreate it on cold-start load.
+ */
 nlohmann::json meshGeneratorSource(const char* type, nlohmann::json params = nlohmann::json::object()) {
     nlohmann::json j;
     j["kind"] = "generator";

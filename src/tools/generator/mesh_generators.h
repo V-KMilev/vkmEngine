@@ -27,15 +27,21 @@ MeshAsset generatePlane(
 );
 
 /**
- * @brief Generate a unit cube mesh (from -1 to +1 on all axes).
+ * @brief Generate a unit cube mesh (1 unit per side, spanning -0.5 to +0.5 on all axes).
  * @return MeshAsset containing cube geometry.
  */
 MeshAsset generateCube();
 
 /**
- * @brief Generate a sphere mesh.
- * @param xSegments Number of horizontal segments (default: 32).
- * @param ySegments Number of vertical segments (default: 16).
+ * @brief Generate a unit sphere mesh (radius 0.5), built as a cube-sphere.
+ *
+ * Six subdivided cube faces projected onto the sphere, so there are no poles
+ * (no vertex collapse, no degenerate tangents, no texture pinching). The two
+ * segment counts only control tessellation density: the per-face grid
+ * resolution is derived as max(2, max(xSegments, ySegments) / 2), so they do
+ * not map to distinct horizontal/vertical axes.
+ * @param xSegments Tessellation hint, X axis (default: 32).
+ * @param ySegments Tessellation hint, Y axis (default: 16).
  * @return MeshAsset containing sphere geometry.
  */
 MeshAsset generateSphere(uint32_t xSegments = 32, uint32_t ySegments = 16);

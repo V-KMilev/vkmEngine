@@ -11,17 +11,21 @@ namespace Engine {
  * free of direct dependencies on tools/.
  */
 
-/// Runtime + editor. Kinds that load from the cooked asset database with no
-/// Assimp and no image decode: cooked meshes/textures, inline materials (loaded
-/// from the library), and the engine's directory-based shaders. Call once at
-/// startup before any scene I/O.
+/**
+ * @brief Runtime + editor. Kinds that load from the cooked asset database with no
+ * Assimp and no image decode: cooked meshes/textures, inline materials (loaded
+ * from the library), and the engine's directory-based shaders. Call once at
+ * startup before any scene I/O.
+ */
 void registerCookedAssetFactories();
 
-/// Editor only. The heavy recipe kinds that (re)produce assets from their
-/// source: procedural mesh generators, Assimp model import, and file/solid/
-/// folder textures and materials. These are what the cooker runs to populate
-/// the cooked cache; a runtime build does not link them. Call after
-/// registerCookedAssetFactories().
+/**
+ * @brief Editor only. The heavy recipe kinds that (re)produce assets from their
+ * source: procedural mesh generators, Assimp model import, and file/solid/
+ * folder textures and materials. These are what the cooker runs to populate
+ * the cooked cache; a runtime build does not link them. Call after
+ * registerCookedAssetFactories().
+ */
 void registerRecipeAssetFactories();
 
 } // namespace Engine
