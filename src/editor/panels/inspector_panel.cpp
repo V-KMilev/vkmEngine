@@ -87,24 +87,6 @@ class BehaviorFieldInspector : public BehaviorFieldVisitor {
         char m_id[80] = {};
 };
 
-// Equirect HDRs offered by the Environment card, discovered under assets/envs.
-// Paths stay relative (the IBL baker loads them relative to the working dir),
-// so the chosen string drops straight into Environment::hdrPath.
-std::vector<std::string> discoverEnvironments() {
-    std::vector<std::string> out;
-    std::error_code ec;
-    const std::filesystem::path dir = "assets/envs";
-    if (std::filesystem::is_directory(dir, ec)) {
-        for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".hdr") {
-                out.push_back(entry.path().generic_string());
-            }
-        }
-    }
-    std::sort(out.begin(), out.end());
-    return out;
-}
-
 // Asset-reference combo: pick which loaded asset of type Asset a handle points
 // at. Snapshots the asset list so ImGuiListClipper can window thousands of rows
 // fluidly. Returns true if the selection changed. Used by the Mesh card's
@@ -515,24 +497,35 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
     if (open) {
         bool changed = false;
 
+        // Skybox HDR: browse assets/envs via the shared cached AssetPicker
+        // instead of a bespoke per-open directory scan. The picker returns the
+        // path relative to the project root, so the stored string stays
+        // "assets/envs/<file>.hdr" - exactly what the combo wrote and what the
+        // IBL baker loads relative to the working dir.
         drawPropertyLabel("Skybox HDR");
-        const char* current = env.hdrPath.empty() ? "(none)" : env.hdrPath.c_str();
-        const bool comboOpen = ImGui::BeginCombo("##EnvHdr", current);
-        // Walk assets/envs only on the open transition, not every frame the card
-        // is visible - a directory scan per frame would be wasteful.
-        if (comboOpen && !m_envComboOpen) m_envCache = discoverEnvironments();
-        m_envComboOpen = comboOpen;
-        if (comboOpen) {
-            if (m_envCache.empty()) ImGui::TextDisabled("No .hdr files in assets/envs.");
-            for (const std::string& path : m_envCache) {
-                const bool selected = (path == env.hdrPath);
-                if (ImGui::Selectable(path.c_str(), selected) && path != env.hdrPath) {
-                    env.hdrPath = path;
-                    changed = true;
-                }
-                if (selected) ImGui::SetItemDefaultFocus();
+        ImGui::TextUnformatted(env.hdrPath.empty() ? "(none)" : env.hdrPath.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Browse...")) {
+            const std::filesystem::path appRoot = ProjectPaths::root();
+            m_envPicker.options.popupId    = "PickEnvHdr";
+            m_envPicker.options.title      = "Pick Environment HDR";
+            m_envPicker.options.root       = appRoot / "assets" / "envs";
+            m_envPicker.options.recursive  = false;
+            m_envPicker.options.kind       = AssetPicker::Kind::Files;
+            m_envPicker.options.extensions = {".hdr"};
+            m_envPicker.options.relativeTo = appRoot;
+            m_envPicker.options.hint.clear();
+            m_envPicker.open();
+        }
+        std::string pickedHdr;
+        if (m_envPicker.draw(pickedHdr)) {
+            // Normalize to forward slashes so the stored reference matches the
+            // combo's generic_string() format across platforms.
+            std::string rel = std::filesystem::path(pickedHdr).generic_string();
+            if (rel != env.hdrPath) {
+                env.hdrPath = rel;
+                changed = true;
             }
-            ImGui::EndCombo();
         }
 
         drawPropertyLabel("Show Skybox");
@@ -741,113 +734,19 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
             ImGui::SliderFloat("##ATime", &anim.time, 0.0f, anim.duration, timeFmt);
         }
 
-        ImGui::TextDisabled("Tracks: %s%s%s | keys %zu/%zu/%zu",
-            anim.positionTrack.isEmpty() ? "" : "P ",
-            anim.rotationTrack.isEmpty() ? "" : "R ",
-            anim.scaleTrack.isEmpty()    ? "" : "S ",
-            anim.positionTrack.keyframeCount(),
-            anim.rotationTrack.keyframeCount(),
-            anim.scaleTrack.keyframeCount());
-
-        // Keyframe authoring: "+ Key" snapshots the entity's current Transform
-        // value at the current scrub time; each row edits a keyframe's
-        // time/value or deletes it. Structural edits (time move / delete) shift
-        // indices, so we break and redraw next frame. Rotation keys edit as
-        // Euler degrees (re-derived each frame - fine for authoring, no gimbal
-        // cache).
-        glm::vec3 curPos(0.0f), curScale(1.0f);
-        glm::quat curRot(1.0f, 0.0f, 0.0f, 0.0f);
-        if (scene.has<Transform>(id)) {
-            const Transform& tr = scene.get<Transform>(id);
-            curPos = tr.position; curRot = tr.rotation; curScale = tr.scale;
-        }
-
-        auto vec3Track = [&](const char* label, AnimationTrack<glm::vec3>& track,
-                             const glm::vec3& current) -> bool {
-            bool ch = false;
-            ImGui::PushID(label);
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(label);
-            ImGui::SameLine();
-            if (ImGui::SmallButton("+ Key")) { track.setKeyframe(anim.time, current); ch = true; }
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Key the current value at t = %.2fs", anim.time);
-            EasingFunction e = track.getEasing();
-            if (drawEasingCombo("##ease", e)) { track.setEasing(e); ch = true; }
-
-            const std::vector<float>     times = track.getTimes();   // copies: safe to mutate track in-loop
-            const std::vector<glm::vec3> vals  = track.getValues();
-            for (size_t i = 0; i < times.size(); ++i) {
-                ImGui::PushID(static_cast<int>(i));
-                bool structural = false;
-                float t = times[i];
-                ImGui::SetNextItemWidth(64.0f);
-                if (ImGui::DragFloat("##t", &t, 0.02f, 0.0f, 100000.0f, "%.2fs")) {
-                    track.setKeyframeTime(i, t); ch = true; structural = true;
-                }
-                ImGui::SameLine();
-                glm::vec3 v = vals[i];
-                ImGui::SetNextItemWidth(-28.0f);
-                if (!structural && ImGui::DragFloat3("##v", glm::value_ptr(v), 0.02f)) {
-                    track.setKeyframeValue(i, v); ch = true;
-                }
-                ImGui::SameLine();
-                if (ImGui::SmallButton("x")) { track.removeKeyframe(i); ch = true; structural = true; }
-                ImGui::PopID();
-                if (structural) break;  // indices shifted - redraw next frame
-            }
-            ImGui::PopID();
-            return ch;
+        // Read-only keyframe summary. The full editable keyframe editor (add /
+        // remove / retime / easing per track) lives in the Bottom panel's track
+        // editor; duplicating it here drifted out of sync, so the inspector now
+        // shows only a per-track digest and points the user at that editor.
+        ImGui::Spacing();
+        ImGui::TextUnformatted("Keyframes");
+        auto trackSummary = [](const char* label, size_t count, float dur) {
+            ImGui::BulletText("%s: %zu key%s, %.2fs", label, count, count == 1 ? "" : "s", dur);
         };
-
-        auto quatTrack = [&](const char* label, AnimationTrack<glm::quat>& track,
-                             const glm::quat& current) -> bool {
-            bool ch = false;
-            ImGui::PushID(label);
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(label);
-            ImGui::SameLine();
-            if (ImGui::SmallButton("+ Key")) { track.setKeyframe(anim.time, current); ch = true; }
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Key the current rotation at t = %.2fs", anim.time);
-            EasingFunction e = track.getEasing();
-            if (drawEasingCombo("##ease", e)) { track.setEasing(e); ch = true; }
-
-            const std::vector<float>     times = track.getTimes();
-            const std::vector<glm::quat> vals  = track.getValues();
-            for (size_t i = 0; i < times.size(); ++i) {
-                ImGui::PushID(static_cast<int>(i));
-                bool structural = false;
-                float t = times[i];
-                ImGui::SetNextItemWidth(64.0f);
-                if (ImGui::DragFloat("##t", &t, 0.02f, 0.0f, 100000.0f, "%.2fs")) {
-                    track.setKeyframeTime(i, t); ch = true; structural = true;
-                }
-                ImGui::SameLine();
-                glm::vec3 deg = glm::degrees(glm::eulerAngles(vals[i]));
-                ImGui::SetNextItemWidth(-28.0f);
-                if (!structural && ImGui::DragFloat3("##v", glm::value_ptr(deg), 0.5f, 0.0f, 0.0f, "%.0f")) {
-                    track.setKeyframeValue(i, glm::normalize(glm::quat(glm::radians(deg)))); ch = true;
-                }
-                ImGui::SameLine();
-                if (ImGui::SmallButton("x")) { track.removeKeyframe(i); ch = true; structural = true; }
-                ImGui::PopID();
-                if (structural) break;
-            }
-            ImGui::PopID();
-            return ch;
-        };
-
-        if (ImGui::TreeNode("Keyframes")) {
-            bool kch = false;
-            kch |= vec3Track("Position", anim.positionTrack, curPos);
-            ImGui::Separator();
-            kch |= quatTrack("Rotation", anim.rotationTrack, curRot);
-            ImGui::Separator();
-            kch |= vec3Track("Scale", anim.scaleTrack, curScale);
-            if (kch) { anim.updateDuration(); changed = true; }
-            ImGui::TreePop();
-        }
+        trackSummary("Position", anim.positionTrack.keyframeCount(), anim.positionTrack.getDuration());
+        trackSummary("Rotation", anim.rotationTrack.keyframeCount(), anim.rotationTrack.getDuration());
+        trackSummary("Scale",    anim.scaleTrack.keyframeCount(),    anim.scaleTrack.getDuration());
+        ImGui::TextDisabled("Edit keyframes in Bottom > Animation.");
 
         if (changed) {
             state.commands.push(std::make_unique<ComponentEditCommand<Animation>>(id, before, anim, "Edit Animation"));
