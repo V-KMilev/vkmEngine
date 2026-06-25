@@ -177,6 +177,14 @@ uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
         ibl.bindPrefilter(GLBindings::IBLTextureSlots::Prefilter);
         ibl.bindBrdf(GLBindings::IBLTextureSlots::BrdfLUT);
     }
+    // Indirect-term strength (the shader does `ambient *= u_iblIntensity`, which
+    // scales both IBL and flat ambient). The forward pass drives this from
+    // Environment::intensity; the preview uses full strength so the environment
+    // actually lights and reflects in the material. Without it the uniform
+    // defaults to 0 and the skybox would not affect the preview at all. The
+    // skybox is never drawn here, so it influences the material while staying
+    // invisible.
+    m_pbr->setUniform1f("u_iblIntensity", 1.0f);
     m_pbr->setUniform1i("u_hasSSAO", 0);
     m_pbr->setUniform1i("u_hasSceneColor", 0);
     m_pbr->setUniform1i("u_probeCount", 0);
