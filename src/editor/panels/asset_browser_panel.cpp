@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 
 #include "framework/editor_common.h"
@@ -20,10 +21,6 @@ namespace {
 inline uint64_t materialKey(uint32_t id) { return static_cast<uint64_t>(id) + 1ull; }
 inline uint64_t meshKey(uint32_t id)     { return (1ull << 40) | id; }
 
-ImTextureID asTex(uint32_t gl) {
-    return static_cast<ImTextureID>(static_cast<intptr_t>(gl));
-}
-
 // Total footprint of one cell (image + its frame padding), so the column
 // count and the not-yet-baked placeholder line up exactly.
 float cellWidth(float cell) {
@@ -35,7 +32,7 @@ float cellWidth(float cell) {
 // attach a context menu to it. Returns true on left-click.
 bool thumbButton(uint32_t tex, float cell) {
     if (tex) {
-        return ImGui::ImageButton("##img", asTex(tex), ImVec2(cell, cell),
+        return ImGui::ImageButton("##img", imTexture(tex), ImVec2(cell, cell),
                                   ImVec2(0, 1), ImVec2(1, 0));
     }
     const float w = cellWidth(cell);
@@ -53,19 +50,14 @@ void thumbName(const char* name, float cell) {
 }
 }  // namespace
 
-void AssetBrowserPanel::openRename(MaterialHandle h, const std::string& name) {
+template<typename Asset>
+void AssetBrowserPanel::openRename(Handle<Asset> h, const std::string& name) {
+    static_assert(std::is_same_v<Asset, MaterialAsset> || std::is_same_v<Asset, MeshAsset>,
+                  "AssetBrowserPanel rename only supports materials and meshes");
     snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", name.c_str());
     m_renameOldName = name;
-    m_renameMat  = h;
-    m_renameMesh = {};
-    m_renameOpen = true;
-}
-
-void AssetBrowserPanel::openRename(MeshHandle h, const std::string& name) {
-    snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", name.c_str());
-    m_renameOldName = name;
-    m_renameMesh = h;
-    m_renameMat  = {};
+    m_renameKind = std::is_same_v<Asset, MaterialAsset> ? RenameKind::Material : RenameKind::Mesh;
+    m_renameKey  = h.key;
     m_renameOpen = true;
 }
 
@@ -153,27 +145,43 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
             // Apply now, then push the reverse (the command captures before/
             // after names and re-applies on redo). Routed through the stack
             // so an accidental rename is one Ctrl+Z away.
-            if (m_renameMat) {
-                resources.rename(m_renameMat, m_renameBuf);
-                state.commands.push(std::make_unique<RenameAssetCommand<MaterialHandle>>(
-                    resources, m_renameMat, m_renameOldName, m_renameBuf, "Rename Material"));
-            } else if (m_renameMesh) {
-                resources.rename(m_renameMesh, m_renameBuf);
-                state.commands.push(std::make_unique<RenameAssetCommand<MeshHandle>>(
-                    resources, m_renameMesh, m_renameOldName, m_renameBuf, "Rename Mesh"));
+            if (m_renameKey) {
+                if (m_renameKind == RenameKind::Material) {
+                    const MaterialHandle h{m_renameKey};
+                    resources.rename(h, m_renameBuf);
+                    state.commands.push(std::make_unique<RenameAssetCommand<MaterialHandle>>(
+                        resources, h, m_renameOldName, m_renameBuf, "Rename Material"));
+                } else {
+                    const MeshHandle h{m_renameKey};
+                    resources.rename(h, m_renameBuf);
+                    state.commands.push(std::make_unique<RenameAssetCommand<MeshHandle>>(
+                        resources, h, m_renameOldName, m_renameBuf, "Rename Mesh"));
+                }
             }
             state.markSceneDirty();
-            m_renameMat = {}; m_renameMesh = {};
+            m_renameKey = {};
             ImGui::CloseCurrentPopup();
         }
-        if (cancel) { m_renameMat = {}; m_renameMesh = {}; ImGui::CloseCurrentPopup(); }
+        if (cancel) { m_renameKey = {}; ImGui::CloseCurrentPopup(); }
         ImGui::EndPopup();
     }
 
     ImGui::End();
 }
 
-void AssetBrowserPanel::drawMaterials(EditorContext& ec) {
+// One grid body for both asset families. Asset selects the type; the
+// material-only behavior (an "Open in Material Editor" context item and
+// left-click-to-edit, plus a sphere preview vs. a neutral-material preview)
+// is selected with `if constexpr`. Everything else - the in-use guard, the
+// assign / rename / delete actions, thumbnail sizing, tooltip text, the
+// deferred eviction, and the column layout - is shared verbatim.
+template<typename Asset>
+void AssetBrowserPanel::drawAssetGrid(EditorContext& ec) {
+    static_assert(std::is_same_v<Asset, MaterialAsset> || std::is_same_v<Asset, MeshAsset>,
+                  "AssetBrowserPanel grid only supports materials and meshes");
+    constexpr bool isMaterial = std::is_same_v<Asset, MaterialAsset>;
+    using AssetHandle = Handle<Asset>;
+
     EditorState&     state     = ec.state;
     ResourceManager& resources = ec.frame.resources;
     Scene&           scene     = ec.frame.scene;
@@ -185,55 +193,75 @@ void AssetBrowserPanel::drawMaterials(EditorContext& ec) {
     const int   cols = (std::max)(1, static_cast<int>(
                             ImGui::GetContentRegionAvail().x / step));
 
-    // Materials referenced by any entity - delete is disabled for these so we
+    // Assets referenced by any entity - delete is disabled for these so we
     // never leave a Mesh component pointing at a freed handle (the render path
-    // get()s the material with no liveness guard).
-    std::unordered_set<uint32_t> usedMats;
-    scene.forEach<Mesh>([&](EntityId, const Mesh& m) { if (m.material) usedMats.insert(m.material.id()); });
-    MaterialHandle toDelete{};
+    // get()s the asset with no liveness guard).
+    std::unordered_set<uint32_t> used;
+    scene.forEach<Mesh>([&](EntityId, const Mesh& m) {
+        if constexpr (isMaterial) { if (m.material) used.insert(m.material.id()); }
+        else                      { if (m.mesh)     used.insert(m.mesh.id()); }
+    });
+    AssetHandle toDelete{};
 
     int i = 0;
-    resources.forEachOfType<MaterialAsset>([&](MaterialHandle h, const MaterialAsset& a) {
-        if (a.hidden) return;  // editor helpers (e.g. thumbnail neutral) are not user-facing
+    resources.template forEachOfType<Asset>([&](AssetHandle h, const Asset& a) {
+        if (a.hidden) return;  // editor helpers / preview primitives are not user-facing
 
-        const uint64_t key = materialKey(h.id());
-        const uint32_t tex = ec.materialPreviews.texture(
-            resources, h, m_sphere, 30.0f, 18.0f, 2.6f,
-            key, a.version, /*live*/ false);
+        // Material thumbnails render the asset on a shared preview sphere; mesh
+        // thumbnails render the asset under a shared neutral material. The two
+        // preview poses differ, so the texture() call is selected per family.
+        uint32_t tex;
+        uint64_t key;
+        if constexpr (isMaterial) {
+            key = materialKey(h.id());
+            tex = ec.materialPreviews.texture(
+                resources, h, m_sphere, 30.0f, 18.0f, 2.6f,
+                key, a.version, /*live*/ false);
+        } else {
+            key = meshKey(h.id());
+            tex = ec.materialPreviews.texture(
+                resources, m_neutral, h, 25.0f, 15.0f, 2.6f,
+                key, a.version, /*live*/ false);
+        }
 
         ImGui::PushID(static_cast<int>(h.id()));
         ImGui::BeginGroup();
 
-        const bool clicked = thumbButton(tex, m_cell);
+        const bool clicked [[maybe_unused]] = thumbButton(tex, m_cell);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", a.name.empty() ? "(unnamed)" : a.name.c_str());
 
-        if (ImGui::BeginPopupContextItem("##matctx")) {
-            if (ImGui::MenuItem("Open in Material Editor")) {
+        if (ImGui::BeginPopupContextItem("##assetctx")) {
+            if constexpr (isMaterial) {
+                if (ImGui::MenuItem("Open in Material Editor")) {
+                    state.materialEditorTarget = h;
+                    state.showMaterialEditor   = true;
+                }
+            }
+            ImGui::BeginDisabled(!canAssign);
+            if (ImGui::MenuItem("Assign to selected entity")) {
+                if constexpr (isMaterial) scene.get<Mesh>(sel).material = h;
+                else                      scene.get<Mesh>(sel).mesh     = h;
+                state.markSceneDirty();
+            }
+            ImGui::EndDisabled();
+            if (!canAssign) ImGui::TextDisabled("(select a mesh entity to assign)");
+
+            ImGui::Separator();
+            if (ImGui::MenuItem("Rename...")) openRename<Asset>(h, a.name);
+            const bool inUse = used.count(h.id()) != 0;
+            ImGui::BeginDisabled(inUse);
+            if (ImGui::MenuItem("Delete")) toDelete = h;
+            ImGui::EndDisabled();
+            if (inUse) ImGui::TextDisabled("(in use - reassign before deleting)");
+            ImGui::EndPopup();
+        }
+
+        if constexpr (isMaterial) {
+            if (clicked) {                       // left-click = edit
                 state.materialEditorTarget = h;
                 state.showMaterialEditor   = true;
             }
-            ImGui::BeginDisabled(!canAssign);
-            if (ImGui::MenuItem("Assign to selected entity")) {
-                scene.get<Mesh>(sel).material = h;
-                state.markSceneDirty();
-            }
-            ImGui::EndDisabled();
-            if (!canAssign) ImGui::TextDisabled("(select a mesh entity to assign)");
-
-            ImGui::Separator();
-            if (ImGui::MenuItem("Rename...")) openRename(h, a.name);
-            const bool inUse = usedMats.count(h.id()) != 0;
-            ImGui::BeginDisabled(inUse);
-            if (ImGui::MenuItem("Delete")) toDelete = h;
-            ImGui::EndDisabled();
-            if (inUse) ImGui::TextDisabled("(in use - reassign before deleting)");
-            ImGui::EndPopup();
-        }
-
-        if (clicked) {                       // left-click = edit
-            state.materialEditorTarget = h;
-            state.showMaterialEditor   = true;
         }
 
         thumbName(a.name.c_str(), m_cell);
@@ -244,81 +272,18 @@ void AssetBrowserPanel::drawMaterials(EditorContext& ec) {
     });
 
     if (toDelete) {
-        ec.materialPreviews.evict(materialKey(toDelete.id()));
+        ec.materialPreviews.evict(isMaterial ? materialKey(toDelete.id()) : meshKey(toDelete.id()));
         resources.remove(toDelete);
         state.markSceneDirty();
     }
 
-    if (i == 0) ImGui::TextDisabled("No materials. Import a model or duplicate one.");
-}
-
-void AssetBrowserPanel::drawMeshes(EditorContext& ec) {
-    EditorState&     state     = ec.state;
-    ResourceManager& resources = ec.frame.resources;
-    Scene&           scene     = ec.frame.scene;
-
-    const EntityId sel = state.selectedEntity;
-    const bool canAssign = sel && scene.isAlive(sel) && scene.has<Mesh>(sel);
-
-    const float step = cellWidth(m_cell) + ImGui::GetStyle().ItemSpacing.x;
-    const int   cols = (std::max)(1, static_cast<int>(
-                            ImGui::GetContentRegionAvail().x / step));
-
-    // Meshes referenced by any entity (Mesh.mesh) - delete
-    // is disabled for these so the render path never get()s a freed handle.
-    std::unordered_set<uint32_t> usedMeshes;
-    scene.forEach<Mesh>([&](EntityId, const Mesh& m) { if (m.mesh) usedMeshes.insert(m.mesh.id()); });
-    MeshHandle toDelete{};
-
-    int i = 0;
-    resources.forEachOfType<MeshAsset>([&](MeshHandle h, const MeshAsset& a) {
-        if (a.hidden) return;  // editor preview primitives are not user-facing
-
-        const uint64_t key = meshKey(h.id());
-        const uint32_t tex = ec.materialPreviews.texture(
-            resources, m_neutral, h, 25.0f, 15.0f, 2.6f,
-            key, a.version, /*live*/ false);
-
-        ImGui::PushID(static_cast<int>(h.id()));
-        ImGui::BeginGroup();
-
-        thumbButton(tex, m_cell);
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", a.name.empty() ? "(unnamed)" : a.name.c_str());
-
-        if (ImGui::BeginPopupContextItem("##meshctx")) {
-            ImGui::BeginDisabled(!canAssign);
-            if (ImGui::MenuItem("Assign to selected entity")) {
-                scene.get<Mesh>(sel).mesh = h;
-                state.markSceneDirty();
-            }
-            ImGui::EndDisabled();
-            if (!canAssign) ImGui::TextDisabled("(select a mesh entity to assign)");
-
-            ImGui::Separator();
-            if (ImGui::MenuItem("Rename...")) openRename(h, a.name);
-            const bool inUse = usedMeshes.count(h.id()) != 0;
-            ImGui::BeginDisabled(inUse);
-            if (ImGui::MenuItem("Delete")) toDelete = h;
-            ImGui::EndDisabled();
-            if (inUse) ImGui::TextDisabled("(in use - reassign before deleting)");
-            ImGui::EndPopup();
-        }
-
-        thumbName(a.name.c_str(), m_cell);
-        ImGui::EndGroup();
-        ImGui::PopID();
-
-        if (++i % cols != 0) ImGui::SameLine();
-    });
-
-    if (toDelete) {
-        ec.materialPreviews.evict(meshKey(toDelete.id()));
-        resources.remove(toDelete);
-        state.markSceneDirty();
+    if (i == 0) {
+        if constexpr (isMaterial) ImGui::TextDisabled("No materials. Import a model or duplicate one.");
+        else                      ImGui::TextDisabled("No meshes loaded. Use Import Model...");
     }
-
-    if (i == 0) ImGui::TextDisabled("No meshes loaded. Use Import Model...");
 }
+
+void AssetBrowserPanel::drawMaterials(EditorContext& ec) { drawAssetGrid<MaterialAsset>(ec); }
+void AssetBrowserPanel::drawMeshes(EditorContext& ec)    { drawAssetGrid<MeshAsset>(ec); }
 
 } // namespace Engine

@@ -142,6 +142,39 @@ bool pickAsset(const char* comboId, const char* label, ResourceManager& resource
     ImGui::EndCombo();
     return picked;
 }
+
+// Shared scaffold for a removable, value-edited component card. Owns the
+// remove affordance, the begin/end card pair, the get<T> + `before` snapshot,
+// and the two undo pushes (ComponentEditCommand when a field changed, then
+// RemoveComponentCommand if the card's remove button was pressed). `drawFields`
+// receives the live component and returns whether any field was edited this
+// frame. Behavior-identical to the hand-written sections it replaces: the edit
+// push happens before endComponentCard, the remove push after.
+template <typename T, typename DrawFields>
+void editComponentCard(Scene& scene, EditorState& state, EntityId id,
+                       const char* title, const ImVec4& accent,
+                       const char* editLabel, const char* removeLabel,
+                       DrawFields drawFields) {
+    bool remove = false;
+    const bool open = beginComponentCard(title, accent, true, &remove);
+    if (open) {
+        auto& component = scene.get<T>(id);
+        const T before = component;  // pre-edit value for the undo command
+        const bool changed = drawFields(component);
+        if (changed) {
+            state.commands.push(std::make_unique<ComponentEditCommand<T>>(id, before, component, editLabel));
+            state.markSceneDirty();
+        }
+    }
+    endComponentCard();
+    if (remove) {
+        // Snapshot before removal so undo can restore the exact component.
+        T snap = scene.get<T>(id);
+        scene.remove<T>(Entity{id});
+        state.commands.push(std::make_unique<RemoveComponentCommand<T>>(id, snap, removeLabel));
+        state.markSceneDirty();
+    }
+}
 }
 
 void InspectorPanel::draw(EditorContext& ec) {
@@ -271,51 +304,27 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         ImGui::Separator();
         // Each add routes through AddComponentCommand so undo can drop the
         // component the user just added. The component value captured in
-        // the command is the same one we add to the scene.
-        if (!scene.has<Mesh>(id) && ImGui::MenuItem("Mesh")) {
-            Mesh m{};
-            scene.add(Entity{id}, m);
-            state.commands.push(std::make_unique<AddComponentCommand<Mesh>>(id, m, "Add Mesh"));
-            state.markSceneDirty();
-        }
-        if (!scene.has<Light>(id) && ImGui::MenuItem("Light")) {
-            Light l = generatePointLight();
-            scene.add(Entity{id}, l);
-            state.commands.push(std::make_unique<AddComponentCommand<Light>>(id, l, "Add Light"));
-            state.markSceneDirty();
-        }
-        if (!scene.has<Rigidbody>(id) && ImGui::MenuItem("Rigidbody")) {
-            Rigidbody rb{};
-            scene.add(Entity{id}, rb);
-            state.commands.push(std::make_unique<AddComponentCommand<Rigidbody>>(id, rb, "Add Rigidbody"));
-            state.markSceneDirty();
-        }
-        if (!scene.has<Collider>(id) && ImGui::MenuItem("Collider")) {
-            Collider col{};
-            scene.add(Entity{id}, col);
-            state.commands.push(std::make_unique<AddComponentCommand<Collider>>(id, col, "Add Collider"));
-            state.markSceneDirty();
-        }
-        if (!scene.has<Camera>(id) && ImGui::MenuItem("Camera")) {
-            Camera cam;
-            cam.active = false;
-            scene.add(Entity{id}, cam);
-            state.commands.push(std::make_unique<AddComponentCommand<Camera>>(id, cam, "Add Camera"));
-            state.markSceneDirty();
-        }
-        if (!scene.has<ReflectionProbe>(id) && ImGui::MenuItem("Reflection Probe")) {
-            ReflectionProbe probe{};
-            scene.add(Entity{id}, probe);
-            state.commands.push(std::make_unique<AddComponentCommand<ReflectionProbe>>(id, probe, "Add Reflection Probe"));
-            state.markSceneDirty();
-        }
-        if (!scene.has<Animation>(id) && ImGui::MenuItem("Animation")) {
-            Animation a{};
-            scene.add(Entity{id}, a);
-            state.commands.push(std::make_unique<AddComponentCommand<Animation>>(
-                id, std::move(a), "Add Animation"));
-            state.markSceneDirty();
-        }
+        // the command is the same one we add to the scene. The generic lambda
+        // collapses the otherwise-identical menu items; the component type is
+        // deduced from the prototype value.
+        auto addItem = [&](const char* label, auto value, const char* addLabel) {
+            using T = decltype(value);
+            if (!scene.has<T>(id) && ImGui::MenuItem(label)) {
+                scene.add(Entity{id}, value);
+                state.commands.push(std::make_unique<AddComponentCommand<T>>(id, std::move(value), addLabel));
+                state.markSceneDirty();
+            }
+        };
+
+        addItem("Mesh", Mesh{}, "Add Mesh");
+        addItem("Light", generatePointLight(), "Add Light");
+        addItem("Rigidbody", Rigidbody{}, "Add Rigidbody");
+        addItem("Collider", Collider{}, "Add Collider");
+        Camera cam;
+        cam.active = false;
+        addItem("Camera", cam, "Add Camera");
+        addItem("Reflection Probe", ReflectionProbe{}, "Add Reflection Probe");
+        addItem("Animation", Animation{}, "Add Animation");
         // ScriptComponent is move-only, so it can't ride the (value-copying)
         // AddComponentCommand - add it live, like the World/Physics edits.
         if (!scene.has<ScriptComponent>(id) && ImGui::MenuItem("Script")) {
@@ -363,11 +372,8 @@ void InspectorPanel::drawTransformSection(Scene& scene, EditorState& state, Enti
 
 void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
                                      EditorState& state, EntityId id) {
-    bool remove = false;
-    const bool open = beginComponentCard("Mesh", ACCENT_MESH, true, &remove);
-    if (open) {
-        auto& mesh = scene.get<Mesh>(id);
-        const Mesh before = mesh;  // pre-edit value for the undo command
+    editComponentCard<Mesh>(scene, state, id, "Mesh", ACCENT_MESH, "Edit Mesh", "Remove Mesh",
+                            [&](Mesh& mesh) {
         bool changed = false;
 
         drawPropertyLabel("Visible");      changed |= ImGui::Checkbox("##MeshVis", &mesh.visible);
@@ -418,27 +424,13 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
             ImGui::TextDisabled("No material assigned");
         }
 
-        if (changed) {
-            state.commands.push(std::make_unique<ComponentEditCommand<Mesh>>(id, before, mesh, "Edit Mesh"));
-            state.markSceneDirty();
-        }
-    }
-    endComponentCard();
-    if (remove) {
-        // Snapshot before removal so undo can restore the exact component.
-        Mesh snap = scene.get<Mesh>(id);
-        scene.remove<Mesh>(Entity{id});
-        state.commands.push(std::make_unique<RemoveComponentCommand<Mesh>>(id, snap, "Remove Mesh"));
-        state.markSceneDirty();
-    }
+        return changed;
+    });
 }
 
 void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId id) {
-    bool remove = false;
-    const bool open = beginComponentCard("Light", ACCENT_LIGHT, true, &remove);
-    if (open) {
-        auto& light = scene.get<Light>(id);
-        const Light before = light;  // pre-edit value for the coalescing undo command
+    editComponentCard<Light>(scene, state, id, "Light", ACCENT_LIGHT, "Edit Light", "Remove Light",
+                             [&](Light& light) {
         bool changed = false;
 
         drawPropertyLabel("Type");
@@ -502,18 +494,8 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
         }
         drawPropertyLabel("Enabled");  changed |= ImGui::Checkbox("##LEn", &light.enabled);
 
-        if (changed) {
-            state.commands.push(std::make_unique<ComponentEditCommand<Light>>(id, before, light, "Edit Light"));
-            state.markSceneDirty();
-        }
-    }
-    endComponentCard();
-    if (remove) {
-        Light snap = scene.get<Light>(id);
-        scene.remove<Light>(Entity{id});
-        state.commands.push(std::make_unique<RemoveComponentCommand<Light>>(id, snap, "Remove Light"));
-        state.markSceneDirty();
-    }
+        return changed;
+    });
 }
 
 void InspectorPanel::drawWorldInspector(EditorContext& ec) {
@@ -569,11 +551,9 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
 }
 
 void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id) {
-    bool remove = false;
-    const bool open = beginComponentCard("Reflection Probe", ACCENT_PROBE, true, &remove);
-    if (open) {
-        auto& probe = scene.get<ReflectionProbe>(id);
-        const ReflectionProbe before = probe;  // pre-edit value for the coalescing undo command
+    editComponentCard<ReflectionProbe>(scene, state, id, "Reflection Probe", ACCENT_PROBE,
+                                       "Edit Reflection Probe", "Remove Reflection Probe",
+                                       [&](ReflectionProbe& probe) {
         bool changed = false;
 
         // Box half-extents: the influence + parallax-correction box. Should
@@ -597,27 +577,14 @@ void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state
         }
         ImGui::TextDisabled("Captures the scene from the entity's Transform position.");
 
-        if (changed) {
-            state.commands.push(std::make_unique<ComponentEditCommand<ReflectionProbe>>(
-                id, before, probe, "Edit Reflection Probe"));
-            state.markSceneDirty();
-        }
-    }
-    endComponentCard();
-    if (remove) {
-        ReflectionProbe snap = scene.get<ReflectionProbe>(id);
-        scene.remove<ReflectionProbe>(Entity{id});
-        state.commands.push(std::make_unique<RemoveComponentCommand<ReflectionProbe>>(id, snap, "Remove Reflection Probe"));
-        state.markSceneDirty();
-    }
+        return changed;
+    });
 }
 
 void InspectorPanel::drawRigidbodySection(Scene& scene, EditorState& state, EntityId id) {
-    bool remove = false;
-    const bool open = beginComponentCard("Rigidbody", ACCENT_PHYSICS, true, &remove);
-    if (open) {
-        auto& rb = scene.get<Rigidbody>(id);
-        const Rigidbody before = rb;
+    editComponentCard<Rigidbody>(scene, state, id, "Rigidbody", ACCENT_PHYSICS,
+                                 "Edit Rigidbody", "Remove Rigidbody",
+                                 [&](Rigidbody& rb) {
         bool changed = false;
 
         drawPropertyLabel("Mass");
@@ -641,27 +608,19 @@ void InspectorPanel::drawRigidbodySection(Scene& scene, EditorState& state, Enti
         if (changed) {
             // Wake the body so the edit (especially velocity) survives the next
             // tick - otherwise PhysicsSystem zeroes a sleeping body's velocity.
+            // Applied to the live component before the card pushes the undo
+            // command, so the wake is captured in the command's "after" value.
             rb.sleeping = false;
             rb.sleepTimer = 0.0f;
-            state.commands.push(std::make_unique<ComponentEditCommand<Rigidbody>>(id, before, rb, "Edit Rigidbody"));
-            state.markSceneDirty();
         }
-    }
-    endComponentCard();
-    if (remove) {
-        Rigidbody snap = scene.get<Rigidbody>(id);
-        scene.remove<Rigidbody>(Entity{id});
-        state.commands.push(std::make_unique<RemoveComponentCommand<Rigidbody>>(id, snap, "Remove Rigidbody"));
-        state.markSceneDirty();
-    }
+        return changed;
+    });
 }
 
 void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id) {
-    bool remove = false;
-    const bool open = beginComponentCard("Collider", ACCENT_COLLIDER, true, &remove);
-    if (open) {
-        auto& col = scene.get<Collider>(id);
-        const Collider before = col;
+    editComponentCard<Collider>(scene, state, id, "Collider", ACCENT_COLLIDER,
+                                "Edit Collider", "Remove Collider",
+                                [&](Collider& col) {
         bool changed = false;
 
         // A collider is a set of boxes. A single box is editable here; a
@@ -697,26 +656,13 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
 
         drawPropertyLabel("Trigger");  changed |= ImGui::Checkbox("##ColTrigger", &col.isTrigger);
 
-        if (changed) {
-            state.commands.push(std::make_unique<ComponentEditCommand<Collider>>(id, before, col, "Edit Collider"));
-            state.markSceneDirty();
-        }
-    }
-    endComponentCard();
-    if (remove) {
-        Collider snap = scene.get<Collider>(id);
-        scene.remove<Collider>(Entity{id});
-        state.commands.push(std::make_unique<RemoveComponentCommand<Collider>>(id, snap, "Remove Collider"));
-        state.markSceneDirty();
-    }
+        return changed;
+    });
 }
 
 void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityId id) {
-    bool remove = false;
-    const bool open = beginComponentCard("Camera", ACCENT_CAMERA, true, &remove);
-    if (open) {
-        auto& cam = scene.get<Camera>(id);
-        const Camera before = cam;  // pre-edit value for the undo command
+    editComponentCard<Camera>(scene, state, id, "Camera", ACCENT_CAMERA, "Edit Camera", "Remove Camera",
+                              [&](Camera& cam) {
         bool changed = false;
 
         drawPropertyLabel("Projection");
@@ -743,18 +689,8 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
             EditorActions::setActiveCamera(scene, state, id, "Set Main Camera");
         }
 
-        if (changed) {
-            state.commands.push(std::make_unique<ComponentEditCommand<Camera>>(id, before, cam, "Edit Camera"));
-            state.markSceneDirty();
-        }
-    }
-    endComponentCard();
-    if (remove) {
-        Camera snap = scene.get<Camera>(id);
-        scene.remove<Camera>(Entity{id});
-        state.commands.push(std::make_unique<RemoveComponentCommand<Camera>>(id, snap, "Remove Camera"));
-        state.markSceneDirty();
-    }
+        return changed;
+    });
 }
 
 void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, EntityId id) {

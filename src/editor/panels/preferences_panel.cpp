@@ -53,13 +53,13 @@ void PreferencesPanel::draw(EditorContext& ec) {
 
 void PreferencesPanel::drawCameraSection(EditorContext& ec) {
     auto& s = ec.cameraController.getSettings();
-    drawPropertyLabel("Move Speed");   ImGui::DragFloat("##MS", &s.moveSpeed, 0.5f, 0.1f, 200.0f);
-    drawPropertyLabel("Speed Boost");  ImGui::DragFloat("##SB", &s.speedBoost, 0.1f, 1.0f, 20.0f, "%.1fx");
-    drawPropertyLabel("Look Sens.");   ImGui::DragFloat("##LS", &s.lookSensitivity, 0.0001f, 0.0001f, 0.01f, "%.4f");
-    drawPropertyLabel("Zoom Sens.");   ImGui::DragFloat("##ZS", &s.zoomSensitivity, 0.001f, 0.001f, 0.5f, "%.3f");
-    drawPropertyLabel("Scroll Mult.");  ImGui::DragFloat("##SM", &s.scrollMultiplier, 0.1f, 0.1f, 10.0f, "%.1f");
-    drawPropertyLabel("Min Pitch");    ImGui::DragFloat("##MnP", &s.minPitch, 0.5f, -90.0f, 0.0f, "%.0f deg");
-    drawPropertyLabel("Max Pitch");    ImGui::DragFloat("##MxP", &s.maxPitch, 0.5f, 0.0f, 90.0f, "%.0f deg");
+    propDrag("Move Speed", &s.moveSpeed, 0.5f, 0.1f, 200.0f);
+    propDrag("Speed Boost", &s.speedBoost, 0.1f, 1.0f, 20.0f, "%.1fx");
+    propDrag("Look Sens.", &s.lookSensitivity, 0.0001f, 0.0001f, 0.01f, "%.4f");
+    propDrag("Zoom Sens.", &s.zoomSensitivity, 0.001f, 0.001f, 0.5f, "%.3f");
+    propDrag("Scroll Mult.", &s.scrollMultiplier, 0.1f, 0.1f, 10.0f, "%.1f");
+    propDrag("Min Pitch", &s.minPitch, 0.5f, -90.0f, 0.0f, "%.0f deg");
+    propDrag("Max Pitch", &s.maxPitch, 0.5f, 0.0f, 90.0f, "%.0f deg");
     ImGui::Spacing();
     if (ImGui::Button("Reset to Defaults")) s = CameraControllerSystem::Settings{};
 }
@@ -71,12 +71,9 @@ void PreferencesPanel::drawGizmoSection(EditorState& state) {
     ImGui::TextDisabled("(Hold Ctrl to temporarily snap)");
 
     ImGui::Spacing();
-    drawPropertyLabel("Translate");
-    ImGui::DragFloat("##SnapT", &state.snapTranslate, 0.1f, 0.01f, 100.0f, "%.2f units");
-    drawPropertyLabel("Rotate");
-    ImGui::DragFloat("##SnapR", &state.snapRotate, 1.0f, 1.0f, 180.0f, "%.0f deg");
-    drawPropertyLabel("Scale");
-    ImGui::DragFloat("##SnapS", &state.snapScale, 0.01f, 0.01f, 10.0f, "%.2f");
+    propDrag("Translate", &state.snapTranslate, 0.1f, 0.01f, 100.0f, "%.2f units");
+    propDrag("Rotate", &state.snapRotate, 1.0f, 1.0f, 180.0f, "%.0f deg");
+    propDrag("Scale", &state.snapScale, 0.01f, 0.01f, 10.0f, "%.2f");
 
     ImGui::Spacing();
     ImGui::TextDisabled("The active tool and Local/World space are on the viewport toolbar.");
