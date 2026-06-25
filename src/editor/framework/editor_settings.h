@@ -9,7 +9,7 @@ struct EditorState;
 /**
  * @brief Persistent editor settings (panel widths, toggles, snap config, keybinds).
  *
- * Saves and loads a slim JSON document next to the executable so the editor
+ * Saves and loads a slim JSON document in the project root so the editor
  * comes up the same way it shut down. ImGui's own ini covers floating-window
  * positions and table column widths; this file covers EditorState fields that
  * the engine owns (panel sizes, gizmo defaults, snap step sizes, key

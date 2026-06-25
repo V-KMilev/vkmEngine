@@ -122,7 +122,7 @@ class EditorSystem : public System {
         ViewportOverlay  m_viewportOverlay;
         GizmoOverlay     m_gizmoOverlay;
         ViewportToolbar  m_viewportToolbar;
-        ViewportPlaybar  m_playbar;
+        PlaybackBar      m_playbar;
         PreferencesPanel m_preferences;
         MaterialEditorPanel m_materialEditor;
         AssetBrowserPanel m_assetBrowser;

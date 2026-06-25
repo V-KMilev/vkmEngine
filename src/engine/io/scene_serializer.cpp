@@ -196,9 +196,9 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     }
     if (version < FILE_FORMAT_VERSION) {
         // Older files load on a best-effort basis: every per-component load()
-        // uses json.value("key", fallback) so missing fields keep their
-        // struct defaults. Migrations live here when fields are renamed or
-        // their meaning changes (no schema migrations needed at v1).
+        // uses json.value("key", fallback) so missing fields keep their struct
+        // defaults. There is no format migration - assets resolve by name
+        // through the cooked library regardless of the file's version.
         LOG_INFO("'%s' version %d, current is %d (loading with defaults for missing fields)",
             source, version, FILE_FORMAT_VERSION);
     }

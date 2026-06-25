@@ -12,7 +12,8 @@
 #include "resource/resource_manager.h"
 #include "system/async/async_load_queue.h"
 
-#define STB_IMAGE_IMPLEMENTATION
+// stb_image's implementation is provided once by the stb module (libstb,
+// linked via EngineCore); here we need only the declarations.
 #include "stb_image.h"
 
 namespace Engine {

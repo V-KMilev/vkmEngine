@@ -20,7 +20,7 @@ struct LightData {
     float     intensity;
     glm::vec3 position;
 
-    glm::vec3 direction;    ///< Direction of the light (Directional, Spot)
+    glm::vec3 direction;    ///< Travel direction; filled for all types (from rotation), consumed by directional/spot
 
     float radius;           ///< Attenuation radius (point/spot/area)
 
