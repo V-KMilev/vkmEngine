@@ -17,7 +17,7 @@ class PlayerController : public ReflectedBehavior<PlayerController> {
 
         void onUpdate(float dt) override;
 
-        /// Authored, reflected: movement speed in world units per second.
+        /** @brief Authored, reflected: movement speed in world units per second. */
         float speed = 3.0f;
 };
 
