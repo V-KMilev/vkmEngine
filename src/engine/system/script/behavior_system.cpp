@@ -45,6 +45,23 @@ void BehaviorSystem::ensureStarted(Behavior& behavior, EntityId entity, FrameCon
     });
 }
 
+void BehaviorSystem::tickBehaviors(FrameContext& ctx, float dt, const char* hookName,
+                                   void (Behavior::*hook)(float)) {
+    Scene& scene = ctx.scene;
+    if (auto* storage = scene.storage<ScriptComponent>()) {
+        storage->forEach([&](uint32_t entityIdx, ScriptComponent& sc) {
+            const EntityId id{entityIdx, scene.generationOf(entityIdx)};
+            for (auto& behavior : sc.behaviors) {
+                if (!behavior || behavior->m_disabled) continue;
+                ensureStarted(*behavior, id, ctx);
+                if (behavior->m_disabled) continue;  // onStart threw
+                Behavior* b = behavior.get();
+                guard(*b, hookName, [&] { (b->*hook)(dt); });
+            }
+        });
+    }
+}
+
 void BehaviorSystem::dispatchEntityHook(Scene& scene, EntityId target, EntityId other,
                                         const char* hookName, void (Behavior::*hook)(EntityId)) {
     if (!scene.isAlive(target) || !scene.has<ScriptComponent>(target)) return;
@@ -110,18 +127,7 @@ void BehaviorSystem::update(FrameContext& ctx) {
 
     Scene& scene = ctx.scene;
 
-    if (auto* storage = scene.storage<ScriptComponent>()) {
-        const float dt = ctx.simDeltaTime;
-        storage->forEach([&](uint32_t entityIdx, ScriptComponent& sc) {
-            const EntityId id{entityIdx, scene.generationOf(entityIdx)};
-            for (auto& behavior : sc.behaviors) {
-                if (!behavior || behavior->m_disabled) continue;
-                ensureStarted(*behavior, id, ctx);
-                if (behavior->m_disabled) continue;  // onStart threw
-                guard(*behavior, "onUpdate", [&] { behavior->onUpdate(dt); });
-            }
-        });
-    }
+    tickBehaviors(ctx, ctx.simDeltaTime, "onUpdate", &Behavior::onUpdate);
 
     // Dispatch collisions/triggers gathered since last frame. Swap to locals so
     // a handler that emits a synchronous event can't mutate the list mid-walk.
@@ -145,23 +151,11 @@ void BehaviorSystem::fixedUpdate(FrameContext& ctx) {
 
     // The accumulator that drives fixedUpdate is fed from simDeltaTime, so this
     // only runs while playing (or per queued step) - no explicit pause gate.
-    Scene& scene = ctx.scene;
-    if (auto* storage = scene.storage<ScriptComponent>()) {
-        const float dt = ctx.fixedDeltaTime;
-        storage->forEach([&](uint32_t entityIdx, ScriptComponent& sc) {
-            const EntityId id{entityIdx, scene.generationOf(entityIdx)};
-            for (auto& behavior : sc.behaviors) {
-                if (!behavior || behavior->m_disabled) continue;
-                // fixedUpdate runs before update each frame; onStart fires here
-                // if this is the instance's first tick.
-                ensureStarted(*behavior, id, ctx);
-                if (behavior->m_disabled) continue;
-                guard(*behavior, "onFixedUpdate", [&] { behavior->onFixedUpdate(dt); });
-            }
-        });
-    }
+    // fixedUpdate runs before update each frame; onStart fires here if this is
+    // the instance's first tick.
+    tickBehaviors(ctx, ctx.fixedDeltaTime, "onFixedUpdate", &Behavior::onFixedUpdate);
 
-    drainPendingDestroy(scene);
+    drainPendingDestroy(ctx.scene);
 }
 
 void BehaviorSystem::shutdown() {

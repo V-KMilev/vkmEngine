@@ -67,11 +67,7 @@ void RenderView::buildLights(const Scene& scene) {
         if (scene.has<WorldTransform>(id)) {
             const glm::mat4& world = scene.get<WorldTransform>(id).model;
             position = glm::vec3(world[3]);
-            rotation = glm::quat_cast(glm::mat3(
-                glm::normalize(glm::vec3(world[0])),
-                glm::normalize(glm::vec3(world[1])),
-                glm::normalize(glm::vec3(world[2]))
-            ));
+            rotation = Math::worldRotationOf(world);
         } else {
             position = transform.position;
             rotation = transform.rotation;

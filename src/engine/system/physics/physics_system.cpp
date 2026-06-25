@@ -9,6 +9,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "core/math/rotation.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/component/collider.h"
@@ -114,16 +115,6 @@ struct BodyFrame {
     glm::quat parentRot      = {1.0f, 0.0f, 0.0f, 0.0f};           ///< parent world-space rotation
 };
 
-/// Rotation of a world matrix, scale-tolerant (normalises the basis columns so a
-/// uniformly/non-uniformly scaled parent still yields the correct rotation).
-glm::quat worldRotationOf(const glm::mat4& m) {
-    glm::mat3 basis(m);
-    basis[0] = glm::normalize(basis[0]);
-    basis[1] = glm::normalize(basis[1]);
-    basis[2] = glm::normalize(basis[2]);
-    return glm::normalize(glm::quat_cast(basis));
-}
-
 bool aabbOverlap(const ColliderProxy& a, const ColliderProxy& b) {
     return a.aabbMin.x <= b.aabbMax.x && a.aabbMax.x >= b.aabbMin.x
         && a.aabbMin.y <= b.aabbMax.y && a.aabbMax.y >= b.aabbMin.y
@@ -204,10 +195,10 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
                 const glm::mat4& selfWorld   = scene.get<WorldTransform>(id).model;
                 const glm::mat4& parentWorld = scene.get<WorldTransform>(h.parent).model;
                 worldPos              = glm::vec3(selfWorld[3]);
-                worldRot              = worldRotationOf(selfWorld);
+                worldRot              = Math::worldRotationOf(selfWorld);
                 frame.parented        = true;
                 frame.parentWorldInv  = glm::inverse(parentWorld);
-                frame.parentRot       = worldRotationOf(parentWorld);
+                frame.parentRot       = Math::worldRotationOf(parentWorld);
             }
         }
 
