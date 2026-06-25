@@ -24,7 +24,6 @@ GLSkyboxPass::GLSkyboxPass()
 GLSkyboxPass::~GLSkyboxPass() = default;
 
 void GLSkyboxPass::execute(GLFrameContext& ctx) {
-    if (!isEnabled()) return;
     if (!ctx.ibl.isReady()) return;  // no baked environment -> nothing to draw
 
     const RenderView& view = ctx.view;

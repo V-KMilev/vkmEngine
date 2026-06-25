@@ -81,20 +81,4 @@ MeshAsset generateCone(float radius = 0.5f, float height = 1.0f, uint32_t segmen
  */
 MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution);
 
-/**
- * @brief Decimate @p base and stamp a serializable "decimate" source on the result.
- *
- * Same geometry as @ref decimateMesh, but the returned asset carries a
- * `{"kind":"decimate","base":<baseName>,"grid":<n>}` source descriptor and a
- * deterministic name derived from (baseName, grid). That source is what the
- * scene saver emits and what the "decimate" AssetFactory re-runs on load, so a
- * decimated LOD level survives save/load instead of being silently dropped.
- *
- * @param base           Source mesh to cluster.
- * @param baseName       Name of the source mesh (the level the chain decimates from).
- * @param gridResolution Cells per axis across the AABB (see @ref decimateMesh).
- * @return The decimated MeshAsset with source + name stamped.
- */
-MeshAsset decimateMeshTracked(const MeshAsset& base, const std::string& baseName, uint32_t gridResolution);
-
 } // namespace Engine

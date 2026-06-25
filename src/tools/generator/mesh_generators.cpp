@@ -474,19 +474,5 @@ MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution) {
     return out;
 }
 
-MeshAsset decimateMeshTracked(const MeshAsset& base, const std::string& baseName, uint32_t gridResolution) {
-    MeshAsset out = decimateMesh(base, gridResolution);
-    // Stamp the reload recipe so the level re-decimates on cold-start load. The
-    // base mesh is referenced by name (resolved via findByName on load).
-    nlohmann::json src;
-    src["kind"] = "decimate";
-    src["base"] = baseName;
-    src["grid"] = gridResolution;
-    out.sourceJson() = std::move(src);
-    // Deterministic name keyed on (base, grid) so identical decimations dedupe.
-    out.name = "mesh:decimate:" + baseName + ":" + std::to_string(gridResolution);
-    return out;
-}
-
 } // namespace Engine
 

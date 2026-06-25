@@ -28,8 +28,6 @@ GLForwardPass::GLForwardPass()
 GLForwardPass::~GLForwardPass() = default;
 
 void GLForwardPass::execute(GLFrameContext& ctx) {
-    if (!isEnabled()) return;
-
     const RenderView& view   = ctx.view;
     const GLView&     glView = ctx.resources;
 

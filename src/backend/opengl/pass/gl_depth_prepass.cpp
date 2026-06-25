@@ -22,8 +22,6 @@ GLDepthPrePass::GLDepthPrePass()
 GLDepthPrePass::~GLDepthPrePass() = default;
 
 void GLDepthPrePass::execute(GLFrameContext& ctx) {
-    if (!isEnabled()) return;
-
     const RenderView& view   = ctx.view;
     const GLView&     glView = ctx.resources;
 

@@ -20,8 +20,6 @@ GLMotionBlurPass::GLMotionBlurPass()
 GLMotionBlurPass::~GLMotionBlurPass() = default;
 
 void GLMotionBlurPass::execute(GLFrameContext& ctx) {
-    if (!isEnabled()) return;
-
     const RenderView& view        = ctx.view;
     const glm::mat4   viewProj     = view.camera.projection * view.camera.view;
     const glm::mat4   invViewProj  = glm::inverse(viewProj);
