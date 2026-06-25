@@ -6,6 +6,9 @@
 #include "system/visibility/visibility.h"
 #include "system/camera/camera_controller.h"
 
+#include <algorithm>
+#include <limits>
+
 namespace Engine {
 
 void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {

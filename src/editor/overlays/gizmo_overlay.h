@@ -87,7 +87,6 @@ class GizmoOverlay {
 
     private:
         TransformGizmo m_gizmo;
-        glm::quat m_dragStartRot{1.0f, 0.0f, 0.0f, 0.0f};
         bool m_dragActive = false;
 
         // Undo bookkeeping: snapshot the transform when a drag begins so

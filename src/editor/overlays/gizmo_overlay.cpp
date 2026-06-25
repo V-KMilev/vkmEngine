@@ -64,11 +64,10 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
     bool snap = state.snapEnabled || ImGui::GetIO().KeyCtrl;
     m_gizmo.setSnapAngle(snap ? glm::radians(state.snapRotate) : 0.0f);
 
-    // Capture start rotation when drag begins. Also snapshot the FULL
-    // transform so on drag-end we can push one TransformChangeCommand
-    // covering the whole motion (instead of one per frame).
+    // Snapshot the FULL transform when a drag begins so on drag-end we can
+    // push one TransformChangeCommand covering the whole motion (instead of
+    // one per frame). Rotation drags also re-use this as their start basis.
     if (m_gizmo.isUsing() && !m_dragActive) {
-        m_dragStartRot       = transform.rotation;
         m_dragStartTransform = transform;
         m_dragEntity         = state.selectedEntity;
         m_dragActive         = true;
@@ -91,9 +90,6 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
         m_dragActive = false;
         m_dragEntity = {};
     }
-    if (!m_gizmo.isUsing()) {
-        m_dragActive = false;
-    }
 
     if (m_gizmo.manipulate(drawList, ctx.visibility->view, subProj,
                             state.gizmoOperation, state.gizmoMode, model,
@@ -111,7 +107,7 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
                 deltaRot = invParentRot * deltaRot * parentRot;
             }
 
-            transform.rotation = glm::normalize(deltaRot * m_dragStartRot);
+            transform.rotation = glm::normalize(deltaRot * m_dragStartTransform.rotation);
         } else {
             // For translate/scale: decompose is safe (no quaternion boundary issues)
             if (hasParent) {

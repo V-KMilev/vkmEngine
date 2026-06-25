@@ -139,7 +139,7 @@ class SceneIOController {
         char        m_saveAsBuffer[256] = "scene.json";
 
         /**
-         * @brief Cached scenes/*.json listing. Refreshed when the Load picker opens;
+         * @brief Cached listing of the scenes directory. Refreshed when the Load picker opens;
          * stays stable while it's open instead of re-listing the directory
          * every frame the modal is up.
          */
