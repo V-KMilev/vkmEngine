@@ -39,7 +39,7 @@ void EditorStatusBar::draw(EditorContext& ec) {
             ImGui::TextDisabled("Selected:");
             ImGui::SameLine(0, 4);
 
-            // Parent breadcrumb: walk up the hierarchy chain (max 5 levels) so
+            // Parent breadcrumb: walk up the hierarchy chain (max 6 levels) so
             // deep selections show "Root > Group > Entity" instead of just the
             // leaf name. Keeps the bar one-line by truncating with ellipses.
             char chain[192] = {};

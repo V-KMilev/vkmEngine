@@ -117,9 +117,11 @@ void loadReflected(const nlohmann::json& j, T& obj) {
 //   - Mesh:      ResourceManager handle lookup (cross-asset reference).
 //   - Hierarchy: parent stored as raw scene-table index, resolved by
 //                SceneSerializer after the entity table is loaded.
-//   - Animation: AnimationTrack<T> exposes only addKeyframe / getTimes
-//                (private storage) and updateDuration() must be re-derived
-//                post load - no clean fit for the generic field iteration.
+//   - Animation: AnimationTrack<T> keeps its keyframes private and is driven
+//                through explicit accessors (getTimes / getValues / getEasing
+//                on save; clear / setEasing / addKeyframe on load), and
+//                updateDuration() must be re-derived post load - no clean fit
+//                for the generic field iteration.
 
 nlohmann::json save(const Name& n)         { return saveReflected(n); }
 void load(const nlohmann::json& j, Name& n) { loadReflected(j, n); }

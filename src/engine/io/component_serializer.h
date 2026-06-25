@@ -24,8 +24,9 @@ class ResourceManager;
  * Each component type has a `save` and `load` overload. Add a new component
  * by adding a pair here. Asset handles (in Mesh) are resolved by
  * stable name through ResourceManager::findByName; entity references
- * (Hierarchy::parent) are stored as the old-file entity index and remapped
- * in SceneSerializer::load.
+ * (Hierarchy::parent) are stored as the saved scene-table index, which
+ * resolves directly because SceneSerializer recreates each entity at its
+ * saved slot.
  *
  * Animation serializes in full (all three tracks + the per-track easing by
  * stable name); see save/load(Animation) below.
