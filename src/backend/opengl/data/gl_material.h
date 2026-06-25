@@ -23,7 +23,7 @@ namespace Engine {
  */
 struct TextureBinding {
     TextureHandle handle;
-    uint32_t      slot;
+    uint32_t      slot = 0;
 };
 
 /**

@@ -47,7 +47,7 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbeArray& arr, const glm:
                                 const RenderView& view, const GLView& glView, const GLIBL& globalIBL) {
     const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, CAPTURE_NEAR, CAPTURE_FAR);
 
-    // No-shadow lights: m_noShadow is never built, so slotForLight() == -1 for
+    // No-shadow lights: m_noShadow is default-built, so slotForLight() == -1 for
     // every light and the PBR shader skips shadow sampling (the camera's shadow
     // atlas does not cover the probe's viewpoint).
     m_lights.update(view.lights, m_noShadow);
