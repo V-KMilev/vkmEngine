@@ -38,7 +38,7 @@ void GLCubeConvolver::prefilter(int mips, const BindEnv& bindEnv, const AttachMi
     m_prefilter.setUniformMatrix4fv("u_projection", m_projection);
     bindEnv();
     for (int mip = 0; mip < mips; ++mip) {
-        const float roughness = static_cast<float>(mip) / static_cast<float>(mips - 1);
+        const float roughness = mips > 1 ? static_cast<float>(mip) / static_cast<float>(mips - 1) : 0.0f;
         m_prefilter.setUniform1f("u_roughness", roughness);
         for (int face = 0; face < 6; ++face) {
             m_prefilter.setUniformMatrix4fv("u_view", m_faceViews[face]);

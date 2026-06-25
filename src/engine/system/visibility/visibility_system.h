@@ -6,6 +6,7 @@
 
 #include "core/system.h"
 #include "core/memory/types.h"
+#include "system/visibility/visibility.h"
 
 namespace Engine {
 

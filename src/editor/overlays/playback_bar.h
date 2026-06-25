@@ -20,7 +20,7 @@ class SceneIOController;
  * The snapshot + restore live on SceneIOController (a restore is just an
  * in-memory reload), so the bar drives play mode through it.
  */
-class ViewportPlaybar {
+class PlaybackBar {
     public:
         void draw(EditorContext& ec, SceneIOController& sceneIO);
 
