@@ -47,28 +47,32 @@ class GLIBL {
         static constexpr int PREFILTER_MIPS  = 7;    ///< Roughness mip count (512..8). MAX_REFLECTION_LOD in pbr shader = this - 1
         static constexpr int BRDF_SIZE       = 512;  ///< BRDF/DFG LUT size
 
-        /// True when a (re)bake is required: a non-empty path that differs
-        /// from what was last baked, or nothing has been baked yet.
+        /**
+         * @brief True when a (re)bake is required: a non-empty path that differs
+         * from what was last baked, or nothing has been baked yet.
+         */
         bool needsBake(const std::string& path) const;
 
-        /// Record a successful bake of @p path so needsBake() goes quiet.
+        /** @brief Record a successful bake of @p path so needsBake() goes quiet. */
         void markBaked(const std::string& path);
 
         bool isReady() const { return m_ready; }
 
-        /// Allocate every GL texture + the capture FBO. Idempotent.
+        /** @brief Allocate every GL texture + the capture FBO. Idempotent. */
         void createTargets();
 
-        /// Upload (or replace) the source equirectangular HDR as RGB16F.
+        /** @brief Upload (or replace) the source equirectangular HDR as RGB16F. */
         void uploadEquirect(uint32_t width, uint32_t height, const float* rgb);
 
-        /// Bake render-target ops (capture FBO + per-face/mip attach). Each
-        /// attach also sizes the viewport to the target it points at, so the
-        /// baker holds no GL state itself.
+        /**
+         * @brief Bake render-target ops (capture FBO + per-face/mip attach). Each
+         * attach also sizes the viewport to the target it points at, so the
+         * baker holds no GL state itself.
+         */
         void bindCaptureFbo()   const { m_captureFbo->bind(); }
         void unbindCaptureFbo() const { m_captureFbo->unbind(); }
 
-        /// Bind the source equirectangular HDR as a sampler input.
+        /** @brief Bind the source equirectangular HDR as a sampler input. */
         void bindEquirect(uint32_t slot) const {
             if (m_equirect) m_equirect->bindSlot(slot);
         }
@@ -99,7 +103,7 @@ class GLIBL {
             gl.setViewport(0, 0, BRDF_SIZE, BRDF_SIZE);
         }
 
-        /// Sampler binds for the forward + skybox passes.
+        /** @brief Sampler binds for the forward + skybox passes. */
         void bindEnvCube(uint32_t slot)    const { m_envCube.bindSlot(slot); }
         void bindIrradiance(uint32_t slot) const { m_irradiance.bindSlot(slot); }
         void bindPrefilter(uint32_t slot)  const { m_prefilter.bindSlot(slot); }

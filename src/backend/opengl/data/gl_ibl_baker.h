@@ -40,8 +40,10 @@ class GLIBLBaker {
         GLIBLBaker(GLIBLBaker && other) = delete;
         GLIBLBaker& operator=(GLIBLBaker && other) = delete;
 
-        /// Bake @p ibl from the HDR at @p path. No-op (GLIBL stays not-ready)
-        /// if the file fails to load.
+        /**
+         * @brief Bake @p ibl from the HDR at @p path. No-op (GLIBL stays not-ready)
+         * if the file fails to load.
+         */
         void bake(Core::Context& gl, GLIBL& ibl, const std::string& path);
 
     private:

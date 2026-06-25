@@ -37,17 +37,21 @@ class GLMesh {
         void update(const MeshAsset& mesh);
         void draw() const;
 
-        /// Install @p buffer's per-instance attributes onto this mesh's VAO,
-        /// starting at attribute @p startIndex (a mat4 spans startIndex..+3,
-        /// divisor 1). No-op when @p buffer is already installed at that
-        /// location: the buffer's GL name is stable across orphan-grows, so the
-        /// recorded VAO binding stays valid. Re-points only when a different
-        /// buffer takes the slot (the shadow + forward passes share this VAO but
-        /// bind different instance buffers at location 4).
+        /**
+         * @brief Install @p buffer's per-instance attributes onto this mesh's VAO,
+         * starting at attribute @p startIndex (a mat4 spans startIndex..+3,
+         * divisor 1). No-op when @p buffer is already installed at that
+         * location: the buffer's GL name is stable across orphan-grows, so the
+         * recorded VAO binding stays valid. Re-points only when a different
+         * buffer takes the slot (the shadow + forward passes share this VAO but
+         * bind different instance buffers at location 4).
+         */
         void attachInstances(Core::InstanceBuffer& buffer, uint32_t startIndex) const;
 
-        /// Draw @p count instances, reading per-instance attributes from
-        /// @p baseInstance onward in the attached instance buffer(s).
+        /**
+         * @brief Draw @p count instances, reading per-instance attributes from
+         * @p baseInstance onward in the attached instance buffer(s).
+         */
         void drawInstanced(uint32_t count, uint32_t baseInstance) const;
 
     private:
@@ -56,10 +60,12 @@ class GLMesh {
         std::unique_ptr<Core::IndexBuffer>  m_ibo;
         size_t m_indexCount = 0;
 
-        /// Which instance buffer is currently bound at each start location, so a
-        /// repeated attach of the same buffer skips re-issuing its attribute
-        /// pointers. Two slots cover the engine convention (model @4, normal @8);
-        /// reset whenever update() recreates the VAO.
+        /**
+         * @brief Which instance buffer is currently bound at each start location, so a
+         * repeated attach of the same buffer skips re-issuing its attribute
+         * pointers. Two slots cover the engine convention (model @4, normal @8);
+         * reset whenever update() recreates the VAO.
+         */
         struct InstanceSlot { const Core::InstanceBuffer* buffer = nullptr; uint32_t start = 0; };
         mutable InstanceSlot m_instanceSlots[2];
 };

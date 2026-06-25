@@ -63,6 +63,11 @@ class GLView {
          */
         void sync(const RenderView& view, const ResourceManager& resources);
 
+        /**
+         * @brief Resolve a handle to its synced GPU object; null if the handle is empty
+         * or its asset has not been sync()'d into the table yet. The returned
+         * pointer is owned by this table - do not store it across a sync().
+         */
         const GLMesh*     getMesh(const MeshHandle& handle) const;
         const GLMaterial* getMaterial(const MaterialHandle& handle) const;
         const Core::Texture2D* getTexture(const TextureHandle& handle) const;

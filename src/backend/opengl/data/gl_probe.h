@@ -44,8 +44,10 @@ class GLProbeArray {
         static constexpr int PREFILTER_SIZE  = 128;  ///< Prefilter base face size
         static constexpr int PREFILTER_MIPS  = 5;    ///< Roughness mips; MAX_PROBE_LOD = this - 1
 
-        /// Allocate the arrays (@p capacity layers each) + env cube + depth + FBO.
-        /// Idempotent.
+        /**
+         * @brief Allocate the arrays (@p capacity layers each) + env cube + depth + FBO.
+         * Idempotent.
+         */
         void createTargets(int capacity);
         int  capacity() const { return m_capacity; }
 
@@ -53,7 +55,7 @@ class GLProbeArray {
         void bindCaptureFbo()   const { m_fbo->bind(); }
         void unbindCaptureFbo() const { m_fbo->unbind(); }
 
-        /// Attach the transient env cube @p face as colour 0 (geometry capture).
+        /** @brief Attach the transient env cube @p face as colour 0 (geometry capture). */
         void attachEnvFace(const Core::Context& gl, int face) const {
             m_fbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_env.id(), 0);
@@ -61,12 +63,12 @@ class GLProbeArray {
         }
         void generateEnvMips() const { m_env.generateMipmaps(); }
 
-        /// Attach one face of irradiance-array @p layer as colour 0.
+        /** @brief Attach one face of irradiance-array @p layer as colour 0. */
         void attachIrradianceFace(const Core::Context& gl, int layer, int face) const {
             m_irradiance.attachFace(GL_COLOR_ATTACHMENT0, layer, face, 0);
             gl.setViewport(0, 0, IRRADIANCE_SIZE, IRRADIANCE_SIZE);
         }
-        /// Attach one face/mip of prefilter-array @p layer as colour 0.
+        /** @brief Attach one face/mip of prefilter-array @p layer as colour 0. */
         void attachPrefilterFace(const Core::Context& gl, int layer, int face, int mip) const {
             m_prefilter.attachFace(GL_COLOR_ATTACHMENT0, layer, face, mip);
             const int s = PREFILTER_SIZE >> mip;
