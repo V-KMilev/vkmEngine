@@ -1,15 +1,8 @@
 #pragma once
 
-#include <functional>
-#include <string>
-#include <unordered_map>
-
 #include <nlohmann/json.hpp>
 
 #include "resource/asset/material_asset.h"
-#include "resource/asset/mesh_asset.h"
-#include "resource/asset/shader_asset.h"
-#include "resource/asset/texture_asset.h"
 
 namespace Engine {
 
@@ -17,52 +10,11 @@ class ResourceManager;
 class Scene;
 
 /**
- * @brief Registry of factories that recreate assets from their source JSON.
- *
- * Resolving the layering: engine/io can't directly call into tools/ (mesh
- * generators, material loaders) without inverting the dependency. So tools
- * registers factory lambdas here at startup; AssetSerializer dispatches
- * through this registry instead of hard-coding generator names.
- *
- * The map key is the source `kind` field - e.g. "cooked" for assets read from
- * the binary cache (the runtime load path), "inline" for materials, plus the
- * editor's recipe kinds ("generator" procedural meshes, "model" glTF imports,
- * "file" image textures, "folder" folder-loaded materials). New kinds plug in
- * the same way by registering another factory.
- */
-class AssetFactories {
-    public:
-        using MeshFactory     = std::function<MeshHandle    (const nlohmann::json& desc, ResourceManager& resources)>;
-        using TextureFactory  = std::function<TextureHandle (const nlohmann::json& desc, ResourceManager& resources)>;
-        using MaterialFactory = std::function<MaterialHandle(const nlohmann::json& desc, ResourceManager& resources)>;
-        using ShaderFactory   = std::function<ShaderAsset   (const nlohmann::json& desc)>;
-
-        static AssetFactories& get();
-
-        void registerMesh    (std::string kind, MeshFactory     factory);
-        void registerTexture (std::string kind, TextureFactory  factory);
-        void registerMaterial(std::string kind, MaterialFactory factory);
-        void registerShader  (std::string kind, ShaderFactory   factory);
-
-        /** @brief Returns an invalid handle if `kind` is unknown. */
-        MeshHandle     createMesh    (const nlohmann::json& source, ResourceManager& resources) const;
-        TextureHandle  createTexture (const nlohmann::json& source, ResourceManager& resources) const;
-        MaterialHandle createMaterial(const nlohmann::json& source, ResourceManager& resources) const;
-        ShaderAsset    createShader  (const nlohmann::json& source) const;
-
-    private:
-        std::unordered_map<std::string, MeshFactory>     m_meshFactories;
-        std::unordered_map<std::string, TextureFactory>  m_textureFactories;
-        std::unordered_map<std::string, MaterialFactory> m_materialFactories;
-        std::unordered_map<std::string, ShaderFactory>   m_shaderFactories;
-};
-
-/**
  * @brief Serialize / deserialize the asset graph referenced by a Scene.
  *
  * Saves emit the meshes, materials, and textures actually referenced by the
- * scene. Loads recreate them by dispatching each
- * descriptor through AssetFactories; assets with no source are skipped on
+ * scene. Loads recreate them by dispatching each descriptor through the
+ * AssetFactory seam (io/asset_factory.h); assets with no source are skipped on
  * save (silently - they can't be recreated anyway), and assets already in
  * ResourceManager (by name) are skipped on load (idempotent re-loads).
  *
