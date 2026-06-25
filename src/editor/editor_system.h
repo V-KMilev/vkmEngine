@@ -19,8 +19,8 @@
 #include "panels/inspector_panel.h"
 #include "panels/bottom_panel.h"
 #include "panels/preferences_panel.h"
-#include "panels/material_editor.h"
-#include "panels/asset_browser.h"
+#include "panels/material_editor_panel.h"
+#include "panels/asset_browser_panel.h"
 #include "panels/render_settings_panel.h"
 
 struct GLFWwindow;

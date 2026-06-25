@@ -1,4 +1,4 @@
-#include "panels/asset_browser.h"
+#include "panels/asset_browser_panel.h"
 
 #include <algorithm>
 #include <cstdint>

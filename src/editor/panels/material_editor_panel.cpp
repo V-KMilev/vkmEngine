@@ -1,4 +1,4 @@
-#include "panels/material_editor.h"
+#include "panels/material_editor_panel.h"
 
 #include <algorithm>
 #include <cctype>
