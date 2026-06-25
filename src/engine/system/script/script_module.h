@@ -38,8 +38,9 @@ class ScriptModule {
         bool load(const std::string& modulePath);
 
         /// Hot-reload from the same path: serialize -> swap module -> recreate.
-        /// No-op (logs) if nothing is loaded.
-        void reload(Scene& scene);
+        /// Returns true on success. On failure the module is left unloaded and a
+        /// subsequent reload() retries the load (recovery after a fixed build).
+        bool reload(Scene& scene);
 
         bool isLoaded() const { return m_lib.isLoaded(); }
 

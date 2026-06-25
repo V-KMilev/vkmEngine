@@ -109,10 +109,18 @@ bool ScriptModule::loadCopyAndRegister() {
     return true;
 }
 
-void ScriptModule::reload(Scene& scene) {
+bool ScriptModule::reload(Scene& scene) {
     if (!m_lib.isLoaded()) {
-        LOG_WARNING("ScriptModule::reload called but no module is loaded");
-        return;
+        // A previous reload may have failed and left the module unloaded. There
+        // are no live behaviors to preserve, so just retry the load - this is the
+        // recovery path after a fixed build (the old early-return made a failed
+        // reload permanent). Reload the scene afterwards to restore behaviors.
+        if (m_modulePath.empty()) {
+            LOG_WARNING("ScriptModule::reload called but no module was ever configured");
+            return false;
+        }
+        LOG_INFO("ScriptModule::reload: no module loaded, retrying load of '%s'", m_modulePath.c_str());
+        return loadCopyAndRegister();
     }
 
     // 1. Serialize each entity's behaviors (type + reflected fields) while the
@@ -134,8 +142,8 @@ void ScriptModule::reload(Scene& scene) {
 
     // 4. Load the rebuilt module + re-register.
     if (!loadCopyAndRegister()) {
-        LOG_ERROR("Script reload failed; behaviors were cleared (entities kept). Rebuild and reload again.");
-        return;
+        LOG_ERROR("Script reload failed; behaviors were cleared (entities kept). Fix the build and reload again to retry, then reload the scene to restore behaviors.");
+        return false;
     }
 
     // 5. Recreate behaviors from the saved data via the new module's factories.
@@ -146,6 +154,7 @@ void ScriptModule::reload(Scene& scene) {
         }
     }
     LOG_INFO("Script reload complete (%zu entit(y/ies) restored)", saved.size());
+    return true;
 }
 
 } // namespace Engine
