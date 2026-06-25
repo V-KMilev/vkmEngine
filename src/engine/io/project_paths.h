@@ -24,6 +24,14 @@ inline std::filesystem::path scenes()      { return root() / "scenes"; }
 inline std::filesystem::path screenshots() { return root() / "screenshots"; }
 inline std::filesystem::path envs()        { return assets() / "envs"; }
 
+// Asset database. `library` holds the editable per-asset recipe files (source of
+// truth, version-controlled); `cooked` holds the derived binary cache keyed by
+// recipe hash (regenerable, not version-controlled). The manifest maps an
+// asset's name to its recipe + cooked files.
+inline std::filesystem::path library()         { return root() / "library"; }
+inline std::filesystem::path cooked()          { return root() / "cooked"; }
+inline std::filesystem::path libraryManifest() { return library() / "_manifest.json"; }
+
 } // namespace ProjectPaths
 
 } // namespace Engine
