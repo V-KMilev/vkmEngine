@@ -6,7 +6,7 @@
 #include <ctime>
 #include <memory>
 
-#include "debug/behavior_error_log.h"
+#include "debug/engine_error_log.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
 #include "ui/editor_style.h"
@@ -19,29 +19,29 @@ void BottomPanel::draw(EditorContext& ec) {
             drawAnimationSection(ec);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Behavior Errors")) {
-            drawBehaviorErrorsSection();
+        if (ImGui::BeginTabItem("Errors")) {
+            drawErrorsSection(ec.errorLog);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
     }
 }
 
-void BottomPanel::drawBehaviorErrorsSection() {
-    auto entries = BehaviorErrorLog::get().snapshot();
+void BottomPanel::drawErrorsSection(EngineErrorLog& errorLog) {
+    auto entries = errorLog.snapshot();
     ImGui::Text("%zu entr%s (newest first, cap %zu)",
                 entries.size(), entries.size() == 1 ? "y" : "ies",
-                BehaviorErrorLog::CAPACITY);
+                EngineErrorLog::CAPACITY);
     ImGui::SameLine();
-    if (ImGui::Button("Clear")) BehaviorErrorLog::get().clearAll();
+    if (ImGui::Button("Clear")) errorLog.clearAll();
     ImGui::Separator();
 
     if (entries.empty()) {
-        ImGui::TextDisabled("No behavior errors. A script hook that throws is logged here and the instance is disabled.");
+        ImGui::TextDisabled("No errors. Recoverable engine failures (e.g. a script hook that throws) are recorded here.");
         return;
     }
 
-    if (ImGui::BeginChild("##behavior_err_list",
+    if (ImGui::BeginChild("##engine_err_list",
                           ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 10), false,
                           ImGuiWindowFlags_HorizontalScrollbar)) {
         for (const auto& e : entries) {
@@ -55,13 +55,13 @@ void BottomPanel::drawBehaviorErrorsSection() {
             char ts[16];
             std::strftime(ts, sizeof(ts), "%H:%M:%S", &tm);
 
-            char header[160];
+            char header[192];
             if (e.repeatCount > 1) {
-                std::snprintf(header, sizeof(header), "[%s] %s::%s  x%u",
-                              ts, e.behaviorName.c_str(), e.hook.c_str(), e.repeatCount);
+                std::snprintf(header, sizeof(header), "[%s] [%s] %s  x%u",
+                              ts, e.category.c_str(), e.source.c_str(), e.repeatCount);
             } else {
-                std::snprintf(header, sizeof(header), "[%s] %s::%s",
-                              ts, e.behaviorName.c_str(), e.hook.c_str());
+                std::snprintf(header, sizeof(header), "[%s] [%s] %s",
+                              ts, e.category.c_str(), e.source.c_str());
             }
             ImGui::PushID(&e);
             if (ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen)) {

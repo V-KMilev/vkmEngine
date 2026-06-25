@@ -11,9 +11,12 @@ order.** There is no parallel layer scheduler - per-system data parallelism (via
 
 There is no `Engine::get()` singleton. Engine is stack-constructible, so tests and
 headless tools spin up their own instance. Singletons are limited to a handful of
-process-wide registries and log sinks reached via a static `get()`: `ThreadPool`,
-`AsyncLoadQueue`, `BehaviorRegistry`, `AssetFactories`, and `BehaviorErrorLog`.
-Profiling goes through `debug/profiler.h` (a Tracy facade), not an in-engine
+process-wide registries reached via a static `get()`: `ThreadPool`,
+`AsyncLoadQueue`, and `BehaviorRegistry`. (Asset construction goes through the
+`AssetFactory` function-pointer seam in `io/asset_factory.h`, not a singleton;
+recoverable errors go through the `reportError()` sink, captured by an
+editor-owned `EngineErrorLog`.) Profiling goes through `debug/profiler.h` (a
+Tracy facade), not an in-engine
 statistics registry.
 
 ```

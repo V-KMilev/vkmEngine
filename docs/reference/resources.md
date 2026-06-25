@@ -160,12 +160,12 @@ Every asset type gets its own `SparseSet<T>` (created on first use) plus a
 ## Tools: loaders, generators, and the cooker
 
 Procedural generators and file loaders live in `src/tools/`. They are **not**
-part of the engine core; they register factory lambdas into `AssetFactories` at
-startup so the engine-side `AssetSerializer` can resolve any asset by its `kind`.
+part of the engine core; they wire the `AssetFactory` dispatch seam at startup so
+the engine-side `AssetSerializer` can resolve any asset by its `kind`.
 The tools split by dependency weight:
 
 - **`EngineTools`** (runtime-safe): the GLM-only generators, the cooked-asset
-  loaders, and `registerCookedAssetFactories` (`cooked` / `inline` / `directory`).
+  loaders, and `registerCookedAssetFactories` (`cooked` / `inline`).
 - **`EngineCooker`** (editor-only): the heavy importers (`loader/`, Assimp + stb)
   and the asset cooker (`cook/`), plus `registerRecipeAssetFactories`.
 
@@ -202,5 +202,5 @@ See [IO and serialization](system/io.md) for the full flow.
 referenced by the scene's `Mesh` components (plus their material's
 texture references) and skips any with `hidden = true`. On load,
 assets with the same `name` already in the manager are skipped (loads
-are idempotent), and new assets go through `AssetFactories` dispatch
+are idempotent), and new assets go through the `AssetFactory` dispatch
 by `kind`.

@@ -9,7 +9,7 @@ plus a polling file watcher.
 | Layer               | File                                         | Purpose                                                                                  |
 |---------------------|----------------------------------------------|------------------------------------------------------------------------------------------|
 | Scene serializer    | `src/engine/io/scene_serializer.h`           | Top-level save/load for a `Scene` + the assets it references. Transactional.             |
-| Asset serializer    | `src/engine/io/asset_serializer.h`           | Save name-only asset references; on load resolve them via the asset library + `AssetFactories`. |
+| Asset serializer    | `src/engine/io/asset_serializer.h`           | Save name-only asset references; on load resolve them via the asset library + the `AssetFactory` seam. |
 | Asset library       | `src/engine/io/asset_library.h`              | The cooked-asset database manifest: maps an asset name to its recipe + cooked file + hash. |
 | Asset cooker        | `src/tools/cook/asset_cooker.h` (editor)     | Bakes assets from their recipe into the library + cooked binary cache (`cooked/`).        |
 | Component serializer| `src/engine/io/component_serializer.h`       | Per-component to/from JSON. Mechanical, one save/load pair per component type.           |
@@ -61,7 +61,7 @@ After load, the caller should:
 
 `SceneIOController` in the editor handles these.
 
-## Cooked assets: AssetSerializer, AssetLibrary, AssetFactories
+## Cooked assets: AssetSerializer, AssetLibrary, AssetFactory
 
 The asset pipeline is **cooked-content + an asset database**. The *recipe* (the
 original `source` JSON-with-`kind` descriptor a generator/importer produces) is
@@ -83,28 +83,30 @@ rewrites the manifest (skipping assets whose hash is unchanged).
 
 **Load** - `AssetSerializer::loadAssets` resolves each name through the manifest:
 meshes/textures get a synthesized `{"kind":"cooked","name":...}` source, materials
-load their `inline` descriptor from the library file. Both go through
-`AssetFactories`, a registry of factory lambdas keyed by the `kind` field:
+load their `inline` descriptor from the library file. Both go through the
+`AssetFactory` dispatch seam (`io/asset_factory.h`) - three function pointers
+(mesh / texture / material) that each binary wires at startup, with plain
+switch dispatch on the `kind` field:
 
-| `kind`                 | Registered in    | Resolves to                                         |
+| `kind`                 | Handled by       | Resolves to                                         |
 |------------------------|------------------|-----------------------------------------------------|
 | `cooked`               | runtime + editor | A mesh/texture read from its cooked binary (async)  |
 | `inline`               | runtime + editor | A `MaterialAsset` from PBR scalars + texture refs   |
-| `directory`            | runtime + editor | A path-based `ShaderAsset` (shaders are not cooked)  |
 | `generator` / `decimate` | editor only    | Procedural / LOD meshes (run by the cooker)         |
 | `file` / `model` / `model-image` | editor only | stb / Assimp texture + mesh import          |
 | `folder` / `model` / `default` / `builtin` / `solid` | editor only | material + texture recipes |
 
-The runtime registers only the `cooked` / `inline` / `directory` set
-(`registerCookedAssetFactories`), so it links neither Assimp nor the image
-decoders. The editor additionally registers the recipe kinds
-(`registerRecipeAssetFactories`, built into the editor-only `EngineCooker`) to
-(re)cook from source. Engine code never reaches into `src/tools/`; factories are
-registered at startup in `src/tools/asset_registration.cpp` (cooked) and
+The runtime wires only the cooked dispatch (`registerCookedAssetFactories` sets
+the pointers to `createCookedMesh/Texture/Material`), so it links neither Assimp
+nor the image decoders. The editor instead wires the recipe dispatch
+(`registerRecipeAssetFactories`, built into the editor-only `EngineCooker`),
+whose switches fall through to the cooked functions for cooked/inline kinds.
+Engine code never reaches into `src/tools/`; the dispatch is wired at startup in
+`src/tools/asset_registration.cpp` (cooked) and
 `src/tools/cook/recipe_registration.cpp` (recipe).
 
-Adding a new asset kind means adding a factory entry; the serializer itself does
-not change.
+Adding a new asset kind means adding a `case` to the dispatch switch; the
+serializer itself does not change.
 
 ## ComponentSerializer
 
