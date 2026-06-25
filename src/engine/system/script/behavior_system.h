@@ -75,6 +75,13 @@ class BehaviorSystem : public System {
     private:
         /** @brief Fire onStart once (binding the full context first), catching + disabling on throw. */
         void ensureStarted(Behavior& behavior, EntityId entity, FrameContext& ctx);
+        /**
+         * @brief Shared per-tick walk for update/fixedUpdate: skip null/disabled,
+         *        ensureStarted, re-check disabled, then guard the @p hook (a
+         *        void(float) per-frame hook) with @p dt. Caller drains deferred
+         *        destroys at its own (callsite-specific) point afterwards.
+         */
+        void tickBehaviors(FrameContext& ctx, float dt, const char* hookName, void (Behavior::*hook)(float));
         /** @brief Deliver onCollision/onTrigger (a void(EntityId) hook) to a target entity's started behaviors. */
         void dispatchEntityHook(Scene& scene, EntityId target, EntityId other,
                                 const char* hookName, void (Behavior::*hook)(EntityId));
