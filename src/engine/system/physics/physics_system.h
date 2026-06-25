@@ -24,9 +24,12 @@ class EventSystem;
  * not mid-solve) for overlapping pairs - gameplay reacts via the EventSystem or
  * the behavior onCollision/onTrigger hooks.
  *
- * Bodies are assumed to be hierarchy roots, so an entity's local Transform equals
- * its world pose. Parenting a physics body is unsupported in this pass; children
- * parented *to* a body still follow it (markDirty cascades into the subtree).
+ * A parented rigidbody simulates in world space: its WorldTransform feeds the
+ * solver and the solved pose is mapped back into the local Transform relative to
+ * the parent. This is correct for static / slowly-moving parents (the parent
+ * pose is sampled once per tick, one frame stale); a fast-moving or scaled parent
+ * is not fully handled. Children parented *to* a body still follow it (markDirty
+ * cascades into the subtree).
  */
 class PhysicsSystem : public System {
     public:
