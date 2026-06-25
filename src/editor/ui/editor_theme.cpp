@@ -89,7 +89,7 @@ void applyEditorTheme() {
     c[ImGuiCol_ResizeGrip]            = ImVec4(0.30f, 0.33f, 0.40f, 0.40f);
     c[ImGuiCol_ResizeGripHovered]     = aA(A, 0.65f);
     c[ImGuiCol_ResizeGripActive]      = aA(AH, 0.90f);
-    c[ImGuiCol_NavHighlight]          = A;
+    c[ImGuiCol_NavCursor]             = A;
     c[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
     c[ImGuiCol_NavWindowingDimBg]     = ImVec4(0.05f, 0.05f, 0.06f, 0.55f);
     c[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.04f, 0.04f, 0.06f, 0.60f);

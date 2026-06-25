@@ -158,7 +158,7 @@ bool TransformGizmo::manipulate(
 
     // Don't draw/interact when entity is behind camera
     glm::vec4 clipOrigin = m_viewProj * glm::vec4(m_gizmoOrigin, 1.0f);
-    if (clipOrigin.w <= 0.0f) {
+    if (clipOrigin.w <= 1e-7f) {
         m_hovered = GizmoElement::None;
         if (m_dragging) { m_dragging = false; m_active = GizmoElement::None; }
         return false;
