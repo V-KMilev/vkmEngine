@@ -7,7 +7,6 @@
 #include <memory>
 
 #include "debug/behavior_error_log.h"
-#include "debug/shader_error_log.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
 #include "ui/editor_style.h"
@@ -20,67 +19,12 @@ void BottomPanel::draw(EditorContext& ec) {
             drawAnimationSection(ec);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Shader Errors")) {
-            drawShaderErrorsSection();
-            ImGui::EndTabItem();
-        }
         if (ImGui::BeginTabItem("Behavior Errors")) {
             drawBehaviorErrorsSection();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
     }
-}
-
-void BottomPanel::drawShaderErrorsSection() {
-    auto entries = ShaderErrorLog::get().snapshot();
-    ImGui::Text("%zu entr%s (newest first, cap %zu)",
-                entries.size(), entries.size() == 1 ? "y" : "ies",
-                ShaderErrorLog::CAPACITY);
-    ImGui::SameLine();
-    if (ImGui::Button("Clear")) ShaderErrorLog::get().clearAll();
-    ImGui::Separator();
-
-    if (entries.empty()) {
-        ImGui::TextDisabled("No shader errors. Hot-reload that fails to compile will land here.");
-        return;
-    }
-
-    // Bounded height with its own scroll so the list doesn't claim all the
-    // remaining panel height.
-    if (ImGui::BeginChild("##shader_err_list",
-                          ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 10), false,
-                          ImGuiWindowFlags_HorizontalScrollbar)) {
-        for (const auto& e : entries) {
-            const auto tt = std::chrono::system_clock::to_time_t(e.timestamp);
-            std::tm tm{};
-#if defined(_WIN32)
-            localtime_s(&tm, &tt);
-#else
-            localtime_r(&tt, &tm);
-#endif
-            char ts[16];
-            std::strftime(ts, sizeof(ts), "%H:%M:%S", &tm);
-
-            char header[160];
-            if (e.repeatCount > 1) {
-                std::snprintf(header, sizeof(header), "[%s] %s  x%u",
-                              ts, e.shaderName.c_str(), e.repeatCount);
-            } else {
-                std::snprintf(header, sizeof(header), "[%s] %s",
-                              ts, e.shaderName.c_str());
-            }
-            ImGui::PushID(&e);
-            if (ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen)) {
-                if (!e.definesSummary.empty()) {
-                    ImGui::TextDisabled("defines: %s", e.definesSummary.c_str());
-                }
-                ImGui::TextWrapped("%s", e.message.c_str());
-            }
-            ImGui::PopID();
-        }
-    }
-    ImGui::EndChild();
 }
 
 void BottomPanel::drawBehaviorErrorsSection() {
