@@ -1,7 +1,7 @@
 #include "platform/window/input_handle.h"
 
 #include "platform/window/glfw_include.h"
-#include "platform/window/window.h"
+#include "platform/window/window_manager.h"
 
 namespace Engine {
 
@@ -45,12 +45,12 @@ void MouseInputHandle::resetScrollDelta() {
     m_scrollY = 0.0;
 }
 
-void InputHandle::setupCallbacks(GLFWwindow* window, Window* engineWindow) {
+void InputHandle::setupCallbacks(GLFWwindow* window, WindowManager* windowManager) {
     if (!window) return;
 
     // Bundle both pointers so all GLFW callbacks can access input + window
     m_callbackData.input = this;
-    m_callbackData.window = engineWindow;
+    m_callbackData.window = windowManager;
     glfwSetWindowUserPointer(window, &m_callbackData);
 
     // Key callback - updates keyboard state directly, no polling needed

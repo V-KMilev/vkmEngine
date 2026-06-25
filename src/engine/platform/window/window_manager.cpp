@@ -3,10 +3,11 @@
 #include "platform/window/window_manager.h"
 
 #include <algorithm>
+#include <stdexcept>
 
+#include <GL/glew.h>  // glewInit only - the GL function loader. Backend-agnostic callers don't need this.
 #include "platform/window/glfw_include.h"
 
-#include "platform/window/window.h"
 #include "platform/window/input_handle.h"
 #include "platform/window/frame_limiter.h"
 
@@ -51,21 +52,76 @@ GLFWmonitor* getCurrentMonitor(GLFWwindow* window) {
 }
 }  // anonymous namespace
 
-WindowManager::~WindowManager() = default;
+WindowManager::~WindowManager() {
+    // Teardown order preserved from the former Window dtor + WindowManager dtor:
+    // input/frame-limiter first (they outranked the window in member-destruction
+    // order), then glfwDestroyWindow, then a single glfwTerminate.
+    m_frameLimiter.reset();
+    m_inputHandle.reset();
+
+    if (m_windowHandle) {
+        glfwDestroyWindow(m_windowHandle);
+        m_windowHandle = nullptr;
+    }
+    glfwTerminate();
+
+    LOG_TRACE("Destructed Window '%s'", m_title.c_str());
+}
 
 void WindowManager::createWindow(const std::string& title) {
-    m_window = std::make_unique<Window>(title);
+    m_title = title;
+
+    if (!glfwInit()) {
+        LOG_ERROR("Failed to initialize GLFW");
+        throw std::runtime_error("Failed to initialize GLFW");
+    }
+
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, OPENGL_MAJOR_VERSION);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, OPENGL_MINOR_VERSION);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    // Create a windowed mode window by default (pass NULL for monitor)
+    m_windowHandle = glfwCreateWindow(
+        DEFAULT_WINDOW_WIDTH,
+        DEFAULT_WINDOW_HEIGHT,
+        m_title.c_str(),
+        NULL,
+        NULL
+    );
+
+    if (!m_windowHandle) {
+        LOG_ERROR("Failed to create window");
+        throw std::runtime_error("Failed to create window");
+    }
+
+    // Make the context current (required for glewInit and glfwSwapInterval)
+    glfwMakeContextCurrent(m_windowHandle);
+
+    // Initialize GLEW to load GL function pointers (must happen after context is current).
+    // Version / device strings are logged by the OpenGL backend when it constructs.
+    if (glewInit() != GLEW_OK) {
+        LOG_ERROR("Failed to initialize GLEW");
+        throw std::runtime_error("Failed to initialize GLEW");
+    }
+
+    // VSync off at creation (0 = uncapped). Set later via setVSync.
+    glfwSwapInterval(0);
+
+    // Cache initial size (updated via GLFW window size callback)
+    glfwGetWindowSize(m_windowHandle, &m_width, &m_height);
+
+    LOG_TRACE("Constructed Window '%s'", m_title.c_str());
+
     m_inputHandle = std::make_unique<InputHandle>();
     m_frameLimiter = std::make_unique<FrameLimiter>();
 
-    m_inputHandle->setupCallbacks(m_window->getWindowContext(), m_window.get());
+    m_inputHandle->setupCallbacks(m_windowHandle, this);
     LOG_INFO("Created window '%s' (%dx%d, refresh %dHz)",
-        title.c_str(), m_window->getWidth(), m_window->getHeight(),
-        m_window->getRefreshRate());
+        title.c_str(), m_width, m_height, getRefreshRate());
 }
 
 void WindowManager::setIcon(const std::string& path) {
-    if (!m_window) {
+    if (!m_windowHandle) {
         LOG_ERROR("setIcon called before createWindow - ignored");
         return;
     }
@@ -77,33 +133,33 @@ void WindowManager::setIcon(const std::string& path) {
         return;
     }
     GLFWimage image{ width, height, pixels };
-    glfwSetWindowIcon(m_window->getWindowContext(), 1, &image);
+    glfwSetWindowIcon(m_windowHandle, 1, &image);
     stbi_image_free(pixels);
     LOG_INFO("Window icon set from '%s' (%dx%d)", path.c_str(), width, height);
 }
 
 bool WindowManager::shouldClose() const {
-    return glfwWindowShouldClose(m_window->getWindowContext());
+    return glfwWindowShouldClose(m_windowHandle);
 }
 
 void WindowManager::requestClose() {
     LOG_INFO("Close requested");
-    glfwSetWindowShouldClose(m_window->getWindowContext(), GLFW_TRUE);
+    glfwSetWindowShouldClose(m_windowHandle, GLFW_TRUE);
 }
 
 void WindowManager::cancelClose() {
-    if (m_window) {
+    if (m_windowHandle) {
         LOG_VERBOSE("Pending close cancelled");
-        glfwSetWindowShouldClose(m_window->getWindowContext(), GLFW_FALSE);
+        glfwSetWindowShouldClose(m_windowHandle, GLFW_FALSE);
     }
 }
 
 void WindowManager::setTitle(const std::string& title) {
-    if (m_window) glfwSetWindowTitle(m_window->getWindowContext(), title.c_str());
+    if (m_windowHandle) glfwSetWindowTitle(m_windowHandle, title.c_str());
 }
 
 void WindowManager::swapBuffers() {
-    GLFWwindow* windowContext = m_window->getWindowContext();
+    GLFWwindow* windowContext = m_windowHandle;
 
     {
         // The actual present. With vsync off and no FPS cap this returns fast,
@@ -123,7 +179,7 @@ void WindowManager::swapBuffers() {
 }
 
 void WindowManager::updateMode(WindowMode windowMode) {
-    GLFWwindow* windowContext = m_window->getWindowContext();
+    GLFWwindow* windowContext = m_windowHandle;
 
     GLFWmonitor* monitor = getCurrentMonitor(windowContext);
     if (!monitor) {
@@ -182,7 +238,7 @@ void WindowManager::updateMode(WindowMode windowMode) {
 }
 
 void WindowManager::updateInput() {
-    GLFWwindow* windowContext = m_window->getWindowContext();
+    GLFWwindow* windowContext = m_windowHandle;
 
     // Reset scroll delta before polling new events
     m_inputHandle->getMouse().resetScrollDelta();
@@ -203,7 +259,15 @@ bool WindowManager::beginFrame() {
 void WindowManager::setVSync(bool enabled) {
     // VSync and the software FPS cap are independent knobs. Set only what
     // the caller asked for; leave the framelimiter alone.
-    m_window->setSwapInterval(enabled ? 1 : 0);
+    if (!m_windowHandle) {
+        LOG_ERROR("Cannot set swap interval: window is not initialized");
+        return;
+    }
+
+    glfwMakeContextCurrent(m_windowHandle);
+    // 0 = Uncapped framerate
+    // 1 = VSync enabled
+    glfwSwapInterval(enabled ? 1 : 0);
     LOG_INFO("VSync %s", enabled ? "ON" : "OFF");
 }
 
@@ -220,7 +284,7 @@ void WindowManager::setFramerate(int framerate) {
 }
 
 void WindowManager::setCursorMode(CursorMode mode) {
-    GLFWwindow* windowContext = m_window->getWindowContext();
+    GLFWwindow* windowContext = m_windowHandle;
     if (!windowContext) {
         LOG_ERROR("Cannot set cursor mode: window is not initialized");
         return;
@@ -248,24 +312,47 @@ void WindowManager::setCursorMode(CursorMode mode) {
 }
 
 size_t WindowManager::getWidth() const {
-    if (!m_window) {
+    if (!m_windowHandle) {
         LOG_ERROR("Window is not initialized");
         return 0;
     }
 
-    return m_window->getWidth();
+    return m_width;
 }
 size_t WindowManager::getHeight() const {
-    if (!m_window) {
+    if (!m_windowHandle) {
         LOG_ERROR("Window is not initialized");
         return 0;
     }
 
-    return m_window->getHeight();
+    return m_height;
+}
+
+void WindowManager::setSize(int width, int height) {
+    m_width = width;
+    m_height = height;
+}
+
+int WindowManager::getRefreshRate() const {
+    GLFWmonitor* monitor = glfwGetWindowMonitor(m_windowHandle);
+
+    // If windowed, fall back to the primary monitor
+    if (!monitor) {
+        monitor = glfwGetPrimaryMonitor();
+    }
+
+    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+    if (!mode) {
+        LOG_ERROR("Failed to get video mode for current monitor");
+        return 0;
+    }
+
+    return mode->refreshRate;
 }
 
 GLFWwindow* WindowManager::getWindowContext() const {
-    return m_window ? m_window->getWindowContext() : nullptr;
+    return m_windowHandle;
 }
 
 void WindowManager::setSceneViewport(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
