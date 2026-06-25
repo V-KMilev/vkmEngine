@@ -16,7 +16,7 @@
  * Intentionally absent until their systems return: reflection probes.
  */
 
-#define MAX_LIGHTS 32  // must match Config::MAX_LIGHTS (engine_config.h / engine_config.glsl)
+#include "../../_generated/engine_config.glsl"  // MAX_LIGHTS, MAX_SHADOW_CASTERS_2D/_CUBE (generated from engine_config.h)
 
 // Texture-present flags - bit position matches GLBindings::TextureSlots (C++).
 #define TEX_ALBEDO                (1 << 0)
@@ -101,9 +101,10 @@ layout(std140, binding = 2) uniform CameraBlock {
 } u_camera;
 
 // Shadows: atlas + cube depth maps from the shadow pass. The ShadowBlock UBO
-// mirrors GLShadowData (std140); the counts must match engine_config.h.
-#define SHADOW_MAX_2D   6
-#define SHADOW_MAX_CUBE 2
+// mirrors GLShadowData (std140); counts come from the generated engine config
+// (included above) so they can never drift from engine_config.h.
+#define SHADOW_MAX_2D   MAX_SHADOW_CASTERS_2D
+#define SHADOW_MAX_CUBE MAX_SHADOW_CASTERS_CUBE
 
 struct Shadow2D {
     mat4 lightVP;   // world -> light clip space
