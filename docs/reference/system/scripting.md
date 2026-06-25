@@ -133,8 +133,9 @@ step / Stop apply uniformly:
 4. Drain the deferred-`destroy()` queue after the hook pass (so a self-destroy
    can't free its own `ScriptComponent` mid-iterate).
 
-Every hook runs under a catch net: a behavior that throws is logged to
-`BehaviorErrorLog` and disabled, never fatal. `onDestroy` fires on three paths -
+Every hook runs under a catch net: a behavior that throws is reported via
+`reportError()` (logged, and captured by the editor-owned `EngineErrorLog`) and
+disabled, never fatal. `onDestroy` fires on three paths -
 entity deletion (wired through `Scene::setOnEntityDestroy` in `init`), play stop,
 and shutdown (`endSession`, static so the editor's stop path can call it without
 a system handle).

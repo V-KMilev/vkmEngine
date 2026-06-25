@@ -15,7 +15,7 @@
 #include "logger.h"
 
 #include "core/system.h"
-#include "debug/behavior_error_log.h"
+#include "debug/engine_error_log.h"
 #include "debug/profiler.h"
 #include "ecs/component/name.h"
 #include "ecs/component/physics_world.h"
@@ -92,12 +92,17 @@ EditorSystem::EditorSystem(
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
+
+    // Capture engine-reported recoverable errors into our log for the Errors tab.
+    setErrorSink(&m_errorLog);
+
     LOG_INFO("Initialized (%zu recent scene(s) restored)",
         m_state.recentScenes.size());
 }
 
 EditorSystem::~EditorSystem() {
     LOG_TRACE("Shutting down, saving settings");
+    setErrorSink(nullptr);
     EditorSettings::save(m_state);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
@@ -161,17 +166,17 @@ void EditorSystem::update(FrameContext& ctx) {
 
     m_materialPreviews.onFrameBegin();
 
-    // Surface newly-thrown behavior errors as a toast (the persistent list is
-    // in Bottom > Behavior Errors). totalPushed ignores repeats, so a behavior
-    // that throws then gets disabled toasts exactly once.
-    if (const unsigned long long total = BehaviorErrorLog::get().totalPushed();
-            total > m_lastBehaviorErrorTotal) {
-        m_lastBehaviorErrorTotal = total;
-        const auto recent = BehaviorErrorLog::get().snapshot();
+    // Surface newly-reported errors as a toast (the persistent list is in
+    // Bottom > Errors). totalPushed ignores repeats, so a behavior that throws
+    // then gets disabled toasts exactly once.
+    if (const unsigned long long total = m_errorLog.totalPushed();
+            total > m_lastErrorTotal) {
+        m_lastErrorTotal = total;
+        const auto recent = m_errorLog.snapshot();
         if (!recent.empty()) {
+            const auto& e = recent.front();
             m_state.pushToast(EditorState::ToastKind::Error,
-                "Behavior '" + recent.front().behaviorName +
-                "' threw and was disabled - see Bottom > Behavior Errors");
+                "[" + e.category + "] " + e.source + " - see Bottom > Errors");
         }
     }
 
@@ -318,6 +323,7 @@ void EditorSystem::update(FrameContext& ctx) {
         m_visibilitySystem,
         m_events,
         m_materialPreviews,
+        m_errorLog,
         {},
         {}
     };

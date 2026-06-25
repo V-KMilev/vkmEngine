@@ -28,8 +28,8 @@ class EventSystem;
  * onStart, before the deferred-destroy drain - so a collision handler may
  * destroy its own entity safely).
  *
- * Every hook runs under a catch net: a throwing behavior is logged to
- * BehaviorErrorLog and disabled, never fatal. onDestroy fires via endSession()
+ * Every hook runs under a catch net: a throwing behavior is reported via
+ * reportError() and disabled, never fatal. onDestroy fires via endSession()
  * (play stop / shutdown) and destroyEntityBehaviors() (entity deletion, wired
  * through Scene::setOnEntityDestroy in init()).
  */

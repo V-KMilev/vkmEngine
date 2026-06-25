@@ -28,10 +28,11 @@ targets, modules, and flags.
   Each registers at exactly one `SystemStage`.
 - **`Engine`** - stack-constructible owner of the `Scene`, `ResourceManager`,
   `WindowManager`, `SimulationClock`, and the per-stage system list. **No
-  `Engine::get()` singleton.** Singletons are limited to a handful of
-  process-wide registries and log sinks accessed via a static `get()`:
-  `ThreadPool`, `AsyncLoadQueue`, `BehaviorRegistry`, `AssetFactories`, and
-  `BehaviorErrorLog`.
+  `Engine::get()` singleton.** Singletons are limited to a few process-wide
+  registries accessed via a static `get()`: `ThreadPool`, `AsyncLoadQueue`, and
+  `BehaviorRegistry`. Asset construction uses the `AssetFactory` function-pointer
+  seam; recoverable errors use the `reportError()` sink (captured by the
+  editor-owned `EngineErrorLog`).
 - **`FrameContext`** - the per-frame bundle passed to every system. Carries three
   deltas: `deltaTime` (real), `simDeltaTime` (clock-scaled, pause/step-aware),
   `fixedDeltaTime` (1/60). Simulation systems read `simDeltaTime`.
