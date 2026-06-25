@@ -39,9 +39,10 @@ enum class SystemStage : uint8_t {
 };
 ```
 
-Default wiring lives in `setupEngineApp` (`src/engine_app/engine_app.cpp`), the
-shared bootstrap both executables call. `engine_editor` adds `EditorSystem` from
-its own `main()` after that returns; `engine_runtime` never does:
+Default wiring lives in `setupEngineApp` (`app/engine_app.h`, a header-only
+inline bootstrap both executables include and call). `engine_editor` adds
+`EditorSystem` from its own `main()` after that returns; `engine_runtime` never
+does:
 
 | Stage      | Systems                                                                         |
 |------------|---------------------------------------------------------------------------------|
@@ -150,17 +151,20 @@ OpenGL backend, `src/backend/opengl/` (flat `gl_`-prefixed includes):
 | `pass/`       | the 10 passes: shadow, depth-prepass, gtao, skybox, forward, ssr, motion-blur, bloom, grid, composite |
 
 Editor (`src/editor/`): `EditorSystem` at the root; `framework/`, `panels/`,
-`overlays/`, `gizmo/`, `input/`, `ui/`. Tools (`src/tools/`): `loader/`,
-`generator/`, and `asset_registration.cpp` (registers factories into
-`AssetFactories` at startup).
+`overlays/`, `gizmo/`, `input/`, `ui/`. Tools (`src/tools/`): `generator/` plus
+the runtime-safe cooked loaders and `asset_registration.cpp` (the `cooked`/
+`inline` runtime factories) build into `EngineTools`; the heavy importers
+(`loader/model_loader`, `texture_loaders`, `material_loaders`) and the asset
+cooker (`cook/`) build into the editor-only `EngineCooker`, so the runtime links
+neither Assimp nor the heavy image decode.
 
 Application and gameplay layers sit **outside** the `src/engine/` include root:
 
 | Path                | Contents                                                                  |
 |---------------------|---------------------------------------------------------------------------|
-| `src/engine_app/`   | `EngineApp` (`setupEngineApp`): the shared bootstrap that registers the default systems, installs the GL backend, and seeds the default scene |
-| `app/engine_editor/`| `engine_editor` entry point; loads the gameplay module for hot-reload      |
-| `app/engine_runtime/`| `engine_runtime` entry point; static-links gameplay, can boot a saved scene |
+| `app/engine_app.h`  | `setupEngineApp`: the shared, header-only bootstrap that registers the default systems, installs the GL backend, and seeds the default scene. Both mains include it directly (there is no `EngineApp` library) |
+| `app/editor/`       | `engine_editor` entry point; loads the gameplay module for hot-reload      |
+| `app/runtime/`      | `engine_runtime` entry point; static-links gameplay, can boot a saved scene |
 | `game/`             | concrete gameplay `Behavior`s (the reusable engine is `src/`; `game/` is built on top) |
 
 ## Include conventions

@@ -9,7 +9,9 @@ plus a polling file watcher.
 | Layer               | File                                         | Purpose                                                                                  |
 |---------------------|----------------------------------------------|------------------------------------------------------------------------------------------|
 | Scene serializer    | `src/engine/io/scene_serializer.h`           | Top-level save/load for a `Scene` + the assets it references. Transactional.             |
-| Asset serializer    | `src/engine/io/asset_serializer.h`           | Save/load the asset graph; dispatches `kind` through `AssetFactories`.                   |
+| Asset serializer    | `src/engine/io/asset_serializer.h`           | Save name-only asset references; on load resolve them via the asset library + `AssetFactories`. |
+| Asset library       | `src/engine/io/asset_library.h`              | The cooked-asset database manifest: maps an asset name to its recipe + cooked file + hash. |
+| Asset cooker        | `src/tools/cook/asset_cooker.h` (editor)     | Bakes assets from their recipe into the library + cooked binary cache (`cooked/`).        |
 | Component serializer| `src/engine/io/component_serializer.h`       | Per-component to/from JSON. Mechanical, one save/load pair per component type.           |
 | File watcher        | `src/engine/system/io/file_watcher.h`        | Polling `mtime` watcher; fires a callback per changed file. Used for shader hot-reload.  |
 
@@ -17,12 +19,11 @@ plus a polling file watcher.
 
 `SceneSerializer::save` emits a JSON object with two top-level blocks:
 
-- `assets`: every mesh / material referenced by a `Mesh` component, plus
-  the textures the materials use. Each asset is stored with its
-  `source` descriptor (the original loader/generator JSON), so the
-  loader can recreate it without re-reading the engine's runtime state.
-  Assets marked `hidden = true` are skipped (editor previews, fallback
-  textures, bundled primitives).
+- `assets`: name-only references to every mesh / material referenced by a
+  `Mesh` component, plus the textures the materials use. The asset *data* lives
+  in the cooked library (keyed by name), not in the scene file, so the scene
+  stays tiny and diff-friendly. Assets marked `hidden = true` are skipped
+  (editor previews, fallback textures, bundled primitives).
 - `entities`: one record per entity. Entities are stored at their slot
   index, and each component is keyed by its short name (see Component
   serializer below).
@@ -30,9 +31,11 @@ plus a polling file watcher.
 `SceneSerializer::load` is **transactional for both entities and assets**:
 
 1. Read the file (early-out on parse failure; live scene untouched).
-2. Load the assets into a **staging** `ResourceManager` (not the live
-   one). Idempotent: assets already present by `name` are skipped, so
-   re-loading does not duplicate textures.
+2. Resolve each asset reference through the `AssetLibrary` manifest into a
+   **staging** `ResourceManager` (not the live one): meshes/textures load from
+   their cooked binary, materials from their library `inline` form. Idempotent:
+   assets already present by `name` are skipped. Runs inside a guard so a
+   malformed assets block logs and aborts the load with the live state intact.
 3. Deserialise every entity into a **staging** `Scene` (not the live
    one). Failures here also leave the live scene untouched.
 4. On full success, swap both staging containers in one step:
@@ -58,46 +61,50 @@ After load, the caller should:
 
 `SceneIOController` in the editor handles these.
 
-## AssetSerializer and AssetFactories
+## Cooked assets: AssetSerializer, AssetLibrary, AssetFactories
 
-`AssetSerializer::saveAssetsForScene` walks `Mesh` components, collects
-the referenced meshes and materials, walks the materials to collect
-referenced textures, and emits each asset's `source` JSON descriptor.
+The asset pipeline is **cooked-content + an asset database**. The *recipe* (the
+original `source` JSON-with-`kind` descriptor a generator/importer produces) is
+the editable source of truth; a *cooked* file is a derived binary cache keyed by
+a hash of the recipe. Every asset is its own file:
 
-`AssetSerializer::loadAssets` dispatches each descriptor through
-`AssetFactories`. `AssetFactories` is a registry of factory lambdas
-keyed by the `kind` field of the descriptor:
+- `library/<type>/<uid>.json` - the recipe (and, for materials, the canonical
+  `inline` form). The version-controlled source of truth.
+- `cooked/<type>/<uid>.vkmc` - the derived binary blob (mesh vertices/indices;
+  decoded texture pixels). Regenerable; git-ignored.
+- `library/_manifest.json` - maps each asset `name` to its recipe + cooked file
+  and recipe hash. `AssetLibrary` is the in-memory view, loaded at startup.
 
-| `kind`           | Resolves to                                       |
-|------------------|---------------------------------------------------|
-| `generator`      | A `tools/generator/` mesh factory (triangle, cube, sphere, ...) |
-| `decimate`       | A decimated (LOD) copy of another mesh            |
-| `file`           | A texture loaded from a path (stb_image)          |
-| `model`          | A mesh imported from a model file via Assimp (async) |
-| `folder`         | The folder material loader (auto-discovers textures by naming) |
-| `inline`         | A literal `MaterialAsset` written in place        |
+**Save** - `AssetSerializer::saveAssetsForScene` walks `Mesh` components and emits
+**name-only** references to the meshes/materials/textures used. In the editor,
+`SceneIOController` first calls `AssetCooker::cookAllAssets`, which bakes every
+non-hidden asset in the `ResourceManager` into the library + cooked cache and
+rewrites the manifest (skipping assets whose hash is unchanged).
 
-(The registry also carries a few internal kinds for built-in/solid/fallback
-assets; the table above is the set scene files use.)
+**Load** - `AssetSerializer::loadAssets` resolves each name through the manifest:
+meshes/textures get a synthesized `{"kind":"cooked","name":...}` source, materials
+load their `inline` descriptor from the library file. Both go through
+`AssetFactories`, a registry of factory lambdas keyed by the `kind` field:
 
-Engine code never reaches into `tools/`. Factories are registered at
-startup in `tools/asset_registration.cpp`:
+| `kind`                 | Registered in    | Resolves to                                         |
+|------------------------|------------------|-----------------------------------------------------|
+| `cooked`               | runtime + editor | A mesh/texture read from its cooked binary (async)  |
+| `inline`               | runtime + editor | A `MaterialAsset` from PBR scalars + texture refs   |
+| `directory`            | runtime + editor | A path-based `ShaderAsset` (shaders are not cooked)  |
+| `generator` / `decimate` | editor only    | Procedural / LOD meshes (run by the cooker)         |
+| `file` / `model` / `model-image` | editor only | stb / Assimp texture + mesh import          |
+| `folder` / `model` / `default` / `builtin` / `solid` | editor only | material + texture recipes |
 
-```cpp
-AssetFactories::get().registerMesh("generator", [](const json& d) {
-    const std::string name = d.at("name");
-    if (name == "cube")   return MeshGenerators::generateCube();
-    if (name == "sphere") return MeshGenerators::generateSphere();
-    // ... dispatch the name to the generate* free functions
-});
-AssetFactories::get().registerTexture("file", [](const json& d, ResourceManager& rm) {
-    return TextureLoaders::loadFromFile(rm, d.at("path"));
-});
-// ... etc
-```
+The runtime registers only the `cooked` / `inline` / `directory` set
+(`registerCookedAssetFactories`), so it links neither Assimp nor the image
+decoders. The editor additionally registers the recipe kinds
+(`registerRecipeAssetFactories`, built into the editor-only `EngineCooker`) to
+(re)cook from source. Engine code never reaches into `tools/`; factories are
+registered at startup in `tools/asset_registration.cpp` (cooked) and
+`tools/cook/recipe_registration.cpp` (recipe).
 
-Adding a new asset kind means adding a factory entry; the serializer
-itself does not change.
+Adding a new asset kind means adding a factory entry; the serializer itself does
+not change.
 
 ## ComponentSerializer
 
