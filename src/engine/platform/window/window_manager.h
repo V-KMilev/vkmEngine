@@ -9,9 +9,17 @@ struct GLFWmonitor;
 
 namespace Engine {
 
-class Window;
 class InputHandle;
 class FrameLimiter;
+
+// Window-creation defaults. Platform/window-layer constants (WindowManager owns
+// GL-context creation), kept here rather than in engine_config.h - that file
+// is reserved for cross-cutting ECS / engine-loop limits, not backend/window
+// knobs.
+inline constexpr int OPENGL_MAJOR_VERSION  = 4;     ///< Requested GL context major version.
+inline constexpr int OPENGL_MINOR_VERSION  = 3;     ///< Requested GL context minor version.
+inline constexpr int DEFAULT_WINDOW_WIDTH  = 1920;  ///< Initial window width in pixels.
+inline constexpr int DEFAULT_WINDOW_HEIGHT = 1080;  ///< Initial window height in pixels.
 
 /**
  * @brief Enumerates supported window modes for the application window.
@@ -188,6 +196,19 @@ class WindowManager {
         GLFWwindow* getWindowContext() const;
 
         /**
+         * @brief Set the cached window dimensions. Called from the GLFW window
+         * size callback.
+         *
+         * Thread safety: GLFW callbacks fire during glfwPollEvents() on the main
+         * thread for single-window apps, so setSize/getWidth/getHeight are all
+         * accessed from the same thread. No synchronization needed.
+         *
+         * @param width New window width in pixels.
+         * @param height New window height in pixels.
+         */
+        void setSize(int width, int height);
+
+        /**
          * @brief Describe the rect inside the window the 3D scene renders into.
          *
          * Defaults to the full window. The editor calls this each frame after
@@ -204,7 +225,17 @@ class WindowManager {
         uint32_t sceneViewportHeight() const { return m_sceneVpH; }
 
     private:
-        std::unique_ptr<Window> m_window;
+        /**
+         * @brief Returns the monitor's refresh rate (Hz) for this window.
+         */
+        int getRefreshRate() const;
+
+    private:
+        GLFWwindow* m_windowHandle = nullptr;
+        std::string m_title;
+        int m_width  = 0;
+        int m_height = 0;
+
         std::unique_ptr<InputHandle> m_inputHandle;
         std::unique_ptr<FrameLimiter> m_frameLimiter;
 
