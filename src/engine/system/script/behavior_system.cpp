@@ -26,6 +26,12 @@ void BehaviorSystem::guard(Behavior& behavior, const char* hookName, Fn&& fn) {
         BehaviorErrorLog::get().push(behavior.typeName(), hookName, e.what());
         LOG_ERROR("Behavior '%s' threw in %s - disabling instance: %s", behavior.typeName(), hookName, e.what());
         behavior.m_disabled = true;
+    } catch (...) {
+        // A non-std throw would otherwise escape into the system loop and crash
+        // the engine (ThreadPool already guards with catch(...)); contain it here.
+        BehaviorErrorLog::get().push(behavior.typeName(), hookName, "non-std exception");
+        LOG_ERROR("Behavior '%s' threw a non-std exception in %s - disabling instance", behavior.typeName(), hookName);
+        behavior.m_disabled = true;
     }
 }
 
@@ -57,6 +63,9 @@ void BehaviorSystem::fireDestroy(Behavior& behavior) {
         } catch (const std::exception& e) {
             BehaviorErrorLog::get().push(behavior.typeName(), "onDestroy", e.what());
             LOG_ERROR("Behavior '%s' threw in onDestroy: %s", behavior.typeName(), e.what());
+        } catch (...) {
+            BehaviorErrorLog::get().push(behavior.typeName(), "onDestroy", "non-std exception");
+            LOG_ERROR("Behavior '%s' threw a non-std exception in onDestroy", behavior.typeName());
         }
     }
     behavior.clearSubscriptions();  // drop listeners while the EventSystem is alive
