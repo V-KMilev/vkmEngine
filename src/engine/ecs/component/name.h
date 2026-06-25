@@ -15,7 +15,7 @@ struct Name {
     char value[64] = {};
 };
 
-/// Build a Name from a C-string, truncating safely into the fixed buffer.
+/** @brief Build a Name from a C-string, truncating safely into the fixed buffer. */
 inline Name makeName(const char* str) {
     Name name;
     if (str) {

@@ -34,10 +34,12 @@ constexpr float SLEEP_ANGULAR_SQ = 0.04f;   // (0.2 rad/s)^2
 constexpr float SLEEP_DELAY      = 0.5f;    // seconds of rest before sleeping
 constexpr float WAKE_SPEED_SQ    = 0.25f;   // partner speed^2 that wakes a sleeper
 
-/// Broadphase / narrowphase view of one collidable body, cached per tick.
-/// `body` indexes the parallel solver-body array; `cullStatic` is true only for
-/// permanently immovable bodies (static/kinematic) - a sleeping dynamic body is
-/// NOT cullStatic, so it keeps generating contacts and stays supported.
+/**
+ * @brief Broadphase / narrowphase view of one collidable body, cached per tick.
+ * `body` indexes the parallel solver-body array; `cullStatic` is true only for
+ * permanently immovable bodies (static/kinematic) - a sleeping dynamic body is
+ * NOT cullStatic, so it keeps generating contacts and stays supported.
+ */
 struct ColliderProxy {
     uint32_t body = 0;
     Collider collider;
@@ -95,8 +97,10 @@ bool aabbOverlap(const ColliderProxy& a, const ColliderProxy& b) {
         && a.aabbMin.z <= b.aabbMax.z && a.aabbMax.z >= b.aabbMin.z;
 }
 
-/// A box placed in world space - the unit the box-box narrowphase consumes.
-/// A collider expands into one of these per child box.
+/**
+ * @brief A box placed in world space - the unit the box-box narrowphase consumes.
+ * A collider expands into one of these per child box.
+ */
 struct SubShape {
     glm::vec3 center      = {0.0f, 0.0f, 0.0f};
     glm::quat rotation    = {1.0f, 0.0f, 0.0f, 0.0f};

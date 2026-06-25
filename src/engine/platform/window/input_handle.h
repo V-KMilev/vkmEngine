@@ -49,14 +49,17 @@ class KeyboardInputHandle {
 
     public:
         /**
-         * @brief Check if the specified key is pressed this frame (edge or hold).
+         * @brief Check whether the specified key is currently held down.
+         *
+         * Reports level state, not edges: true for as long as the key is held.
          * @param key The GLFW key code to query.
-         * @return True if the key is currently pressed.
+         * @return True if the key is currently pressed; false for out-of-range keys.
          */
         bool isKeyPressed(int key) const;
 
     private:
         friend class InputHandle;
+        /** @brief Record a key's held state; called from the GLFW key callback. */
         void onKeyEvent(int key, bool pressed);
 
         bool m_keyState[GLFW_KEY_LAST + 1] = {};
@@ -64,9 +67,10 @@ class KeyboardInputHandle {
 
 /**
  * @brief Handles mouse input state tracking and querying.
- * 
+ *
  * Provides methods to update and query the mouse button states, position,
- * movement (delta), and scroll. Also enables scroll callback setup.
+ * movement (delta), and scroll. Scroll is accumulated via the GLFW scroll
+ * callback wired up by InputHandle, not by this class directly.
  */
 class MouseInputHandle {
     public:
@@ -164,11 +168,13 @@ class InputHandle {
 
     public:
         /**
-         * @brief Sets up GLFW callbacks for keyboard and scroll input.
+         * @brief Sets up GLFW callbacks for keyboard, scroll, and window resize.
          *
          * Must be called once after window creation. Key state and scroll delta
-         * are updated via callbacks during glfwPollEvents().
-         * @param window Pointer to the GLFW window.
+         * are updated via callbacks during glfwPollEvents(); resize forwards to
+         * Window::setSize. Stores both pointers as the GLFW user pointer.
+         * @param window       Pointer to the GLFW window.
+         * @param engineWindow Owning Engine::Window, notified on resize.
          */
         void setupCallbacks(GLFWwindow* window, Window* engineWindow);
 

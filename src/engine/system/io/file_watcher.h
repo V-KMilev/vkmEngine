@@ -35,8 +35,10 @@ class FileWatcher : public System {
         FileWatcher& operator=(FileWatcher && other) = delete;
 
     public:
-        /// Watch `dirPath` (non-recursive) for any file changes. `onChange`
-        /// runs the next time the watcher polls after a change is observed.
+        /**
+         * @brief Watch `dirPath` (non-recursive) for any file changes. `onChange`
+         * runs the next time the watcher polls after a change is observed.
+         */
         void watch(std::string dirPath, OnChange onChange);
 
         void update(FrameContext& ctx) override;

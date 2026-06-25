@@ -63,7 +63,7 @@ class ResourceManager {
             return Handle<T>{key};
         }
 
-        /// @brief Convenience overload: stamp a name onto the asset before insertion.
+        /** @brief Convenience overload: stamp a name onto the asset before insertion. */
         template<typename ResourceType>
         auto add(ResourceType && resource, std::string name) {
             resource.name = std::move(name);
@@ -129,7 +129,7 @@ class ResourceManager {
             return slot.allocator->has(handle.key);
         }
 
-        /// @brief Get const access to a resource by handle.
+        /** @brief Get const access to a resource by handle. */
         template<typename HandleType>
         const auto& get(const HandleType& handle) const {
             using T = typename HandleType::resource_t;
@@ -203,10 +203,10 @@ class ResourceManager {
          * (invalid) handle if the type is unregistered or no asset matches.
          *
          * O(1) lookup via a per-type name->index map maintained on
-         * add/remove. Caveat: the index is populated from the resource's
-         * `name` at insertion time; later mutations to `name` via edit()
-         * are not reflected. Don't rename assets after registering them,
-         * or call removeByName/add() instead.
+         * add/remove/rename. Caveat: the index tracks the resource's `name`
+         * only when it is set through this API; a `name` mutated directly via
+         * edit() is not reflected. To rename a registered asset, use
+         * rename(handle, newName) so the index stays consistent.
          */
         template<typename T>
         Handle<T> findByName(const std::string& name) const {
@@ -295,12 +295,14 @@ class ResourceManager {
         }
 
     private:
-        /// Per-type bundle: lifetime (allocator), storage, name index.
+        /** @brief Per-type bundle: lifetime (allocator), storage, name index. */
         struct TypedSlot {
             std::unique_ptr<SlotAllocator>  allocator;
             std::unique_ptr<ISparseSet>     storage;
-            /// name -> storage index. O(1) findByName backing. Populated
-            /// from Resource::name on add(), erased on remove().
+            /**
+             * @brief name -> storage index. O(1) findByName backing. Populated
+             * from Resource::name on add(), erased on remove().
+             */
             std::unordered_map<std::string, uint32_t> nameIndex;
         };
 
@@ -333,9 +335,11 @@ class ResourceManager {
             return static_cast<const SparseSet<T>&>(*slot.storage);
         }
 
-        /// Make @p name non-empty and unique among the names already registered
-        /// in @p slot. Empty -> "asset"; a taken name gets the lowest free
-        /// " (N)" suffix. Called by add() so every asset has a usable key.
+        /**
+         * @brief Make @p name non-empty and unique among the names already registered
+         * in @p slot. Empty -> "asset"; a taken name gets the lowest free
+         * " (N)" suffix. Called by add() so every asset has a usable key.
+         */
         static void ensureUniqueName(const TypedSlot& slot, std::string& name) {
             if (name.empty()) name = "asset";
             if (slot.nameIndex.find(name) == slot.nameIndex.end()) return;

@@ -21,6 +21,7 @@ namespace Engine {
  */
 class CameraController : public System {
     public:
+        /** @brief Tunable feel parameters for movement, look, and zoom. */
         struct Settings {
             float zoomSensitivity  = 0.02f;     ///< Sensitivity multiplier for zooming (e.g. mouse scroll).
             float lookSensitivity  = 0.002f;    ///< Sensitivity multiplier for camera rotation (yaw/pitch).
@@ -48,9 +49,11 @@ class CameraController : public System {
          */
         void setCameraEntity(Entity cameraEntity) { m_cameraEntity = cameraEntity; }
 
-        /// The entity the controller is currently flying (the active rendered
-        /// camera). The editor uses this to suppress the transform gizmo on
-        /// it - a gizmo there would fight the fly controls.
+        /**
+         * @brief The entity the controller is currently flying (the active rendered
+         * camera). The editor uses this to suppress the transform gizmo on
+         * it - a gizmo there would fight the fly controls.
+         */
         Entity getCameraEntity() const { return m_cameraEntity; }
 
         /**
@@ -66,7 +69,11 @@ class CameraController : public System {
         }
 
         /**
-         * @brief Update and apply camera motions (call once per-frame).
+         * @brief Resolve the active rendered camera and apply fly-mode motion.
+         *
+         * Each frame this retargets onto whichever entity has an active Camera
+         * component (so "you move what you see"), reseeding yaw/pitch on a
+         * camera switch, then applies look/move/zoom. Call once per frame.
          * @param ctx The shared FrameContext for this frame.
          */
         void update(FrameContext& ctx) override;
@@ -76,12 +83,14 @@ class CameraController : public System {
         void setSettings(const Settings& s) { m_settings = s; }
         bool isLooking() const { return m_isRightMousePressed; }
 
-        /// Move camera to focus on a target position from a given distance.
+        /** @brief Move camera to focus on a target position from a given distance. */
         void focusOn(Scene& scene, const glm::vec3& target, float distance);
 
-        /// Snap the camera to look at @p target from a specific world-space
-        /// direction (e.g. (1,0,0) for "view from +X"). Used by the
-        /// navigation-gizmo view presets.
+        /**
+         * @brief Snap the camera to look at @p target from a specific world-space
+         * direction (e.g. (1,0,0) for "view from +X"). Used by the
+         * navigation-gizmo view presets.
+         */
         void viewFrom(Scene& scene, const glm::vec3& target,
                       const glm::vec3& direction, float distance);
 
@@ -105,14 +114,18 @@ class CameraController : public System {
          */
         void updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch);
 
-        /// Resolve the camera the editor renders through: the entity whose
-        /// Camera component is `active` (Transform required). Falls back to
-        /// the current entity so the view never dies mid-edit.
+        /**
+         * @brief Resolve the camera the editor renders through: the entity whose
+         * Camera component is `active` (Transform required). Falls back to
+         * the current entity so the view never dies mid-edit.
+         */
         EntityId resolveActiveCamera(Scene& scene);
 
-        /// Re-derive m_yaw / m_pitch from a rotation (inverse of
-        /// updateRotationFromAngles) so retargeting / focus does not snap
-        /// the look direction on the next right-mouse drag.
+        /**
+         * @brief Re-derive m_yaw / m_pitch from a rotation (inverse of
+         * updateRotationFromAngles) so retargeting / focus does not snap
+         * the look direction on the next right-mouse drag.
+         */
         void reseedAnglesFromRotation(const glm::quat& rotation);
 
     private:

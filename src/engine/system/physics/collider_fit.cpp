@@ -11,8 +11,10 @@ namespace Engine {
 
 namespace {
 
-/// Moller-Trumbore ray-triangle test. Returns true (and a positive @p t) when
-/// the ray origin+dir crosses the triangle in front of the origin.
+/**
+ * @brief Moller-Trumbore ray-triangle test. Returns true (and a positive @p t) when
+ * the ray origin+dir crosses the triangle in front of the origin.
+ */
 bool rayHitsTriangle(
     const glm::vec3& o, const glm::vec3& d,
     const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2,

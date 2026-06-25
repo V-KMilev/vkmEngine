@@ -41,16 +41,29 @@ struct RenderView {
     Environment                   environment;     ///< Lighting environment (HDR/skybox), copied from the Scene each frame in build().
 
     public:
+        /**
+         * @brief Refill the snapshot for the current frame.
+         *
+         * Copies the scene's environment, then rebuilds camera, lights, probes,
+         * drawables, and shadow casters from the already-culled @p visibility
+         * set, reusing the vectors' capacity. With no active camera this frame it
+         * emits an empty snapshot (cleared, not stale) and returns early.
+         */
         void build(
             const Scene& scene,
             const Visibility& visibility
         );
 
     private:
+        /** @brief Flatten the active camera's matrices + position; precomputes invProjection. */
         void buildCamera(const Visibility& visibility);
+        /** @brief Snapshot every enabled light to world space (incl. area-light axes). */
         void buildLights(const Scene& scene);
+        /** @brief Snapshot every reflection probe to world space. */
         void buildProbes(const Scene& scene);
+        /** @brief Snapshot one drawable per visible entity with a resolved mesh+material. */
         void buildDrawables(const Scene& scene, const Visibility& visibility);
+        /** @brief Snapshot the scene-wide shadow-caster set with world AABBs. */
         void buildShadowCasters(const Scene& scene, const Visibility& visibility);
 };
 

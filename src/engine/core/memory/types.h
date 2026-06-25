@@ -15,10 +15,10 @@ struct StorageIndex {
     uint32_t index      = 0; ///< Sparse slot index (0 = null/invalid)
     uint32_t generation = 0; ///< Generation at time of creation, compared against slot to detect staleness
 
-    /// True if this is a valid/non-null index
+    /** @brief True if this is a valid/non-null index */
     constexpr explicit operator bool() const noexcept { return index != 0; }
 
-    /// Equality compares both index and generation
+    /** @brief Equality compares both index and generation */
     constexpr bool operator==(const StorageIndex& other) const noexcept {
         return index == other.index && generation == other.generation;
     }
@@ -41,14 +41,14 @@ struct GenerationIndex {
     static constexpr uint32_t ALIVE_BIT = uint32_t(1) << 31; ///< Bit 31: 1 = alive, 0 = dead
     static constexpr uint32_t GEN_MASK  = ~ALIVE_BIT;        ///< Bits 0-30: generation counter
 
-    /// Sets alive/dead status without changing generation
+    /** @brief Sets alive/dead status without changing generation */
     void setAlive(bool alive) { value = (value & GEN_MASK) | (alive ? ALIVE_BIT : 0); }
-    /// Increments generation, preserves alive state
+    /** @brief Increments generation, preserves alive state */
     void bumpGeneration()     { value = (value & ALIVE_BIT) | (((value & GEN_MASK) + 1) & GEN_MASK); }
 
-    /// @return True if alive bit is set
+    /** @return True if alive bit is set */
     bool alive()          const { return value & ALIVE_BIT; }
-    /// @return The current generation (excluding alive bit)
+    /** @return The current generation (excluding alive bit) */
     uint32_t generation() const { return value & GEN_MASK; }
 };
 
@@ -69,8 +69,10 @@ static_assert(sizeof(GenerationIndex) == 4, "GenerationIndex must be 4 bytes");
 using TypeId = uint32_t;
 
 namespace detail {
-    /// Stable id for @p info from one process-wide registry (single definition
-    /// in EngineCore - one instance even when EngineCore is a shared library).
+    /**
+     * @brief Stable id for @p info from one process-wide registry (single definition
+     * in EngineCore - one instance even when EngineCore is a shared library).
+     */
     TypeId typeIdFromInfo(const std::type_info& info);
 }
 

@@ -34,19 +34,23 @@ class ScriptModule {
         ScriptModule& operator=(ScriptModule && other) = delete;
 
     public:
-        /// Load @p modulePath (the built .dll/.so) and register its behaviors.
+        /** @brief Load @p modulePath (the built .dll/.so) and register its behaviors. */
         bool load(const std::string& modulePath);
 
-        /// Hot-reload from the same path: serialize -> swap module -> recreate.
-        /// Returns true on success. On failure the module is left unloaded and a
-        /// subsequent reload() retries the load (recovery after a fixed build).
+        /**
+         * @brief Hot-reload from the same path: serialize -> swap module -> recreate.
+         * Returns true on success. On failure the module is left unloaded and a
+         * subsequent reload() retries the load (recovery after a fixed build).
+         */
         bool reload(Scene& scene);
 
         bool isLoaded() const { return m_lib.isLoaded(); }
 
     private:
-        /// Copy the built module to a fresh name, load it, and call its register
-        /// entry. The copy keeps the build free to overwrite the original.
+        /**
+         * @brief Copy the built module to a fresh name, load it, and call its register
+         * entry. The copy keeps the build free to overwrite the original.
+         */
         bool loadCopyAndRegister();
 
         DynamicLibrary m_lib;

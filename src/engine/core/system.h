@@ -19,18 +19,14 @@ class FrameTracker;
  *
  * The structure mirrors how a frame actually flows:
  *   Input        -> poll devices, capture/handle input (e.g., CameraController)
- *   Simulation   -> state mutations: events, gameplay, animation, physics
+ *   Simulation   -> state mutations: events, async loading, gameplay/scripts
+ *                   (BehaviorSystem), animation, physics
  *   Transform    -> derive world-space data from local Transforms (HierarchySystem)
  *   Visibility   -> culling against the derived world state (VisibilitySystem)
  *   Render       -> submit draw commands (RenderSystem)
  *   UI           -> overlays, editor (EditorSystem)
  *
  * fixedUpdate() observes the same ordering (rarely matters in practice).
- *
- * Future systems slot in by responsibility:
- *   Physics      -> Simulation (its fixedUpdate hook does the work)
- *   Gameplay     -> Simulation
- *   Scripting    -> Simulation, or split between Input (input scripts) and Render (UI scripts)
  */
 enum class SystemStage : uint8_t {
     Input        = 0,

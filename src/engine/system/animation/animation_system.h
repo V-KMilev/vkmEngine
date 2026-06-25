@@ -11,17 +11,18 @@ struct Transform;
  * @brief Advances every Animation component and writes its result into the
  *        entity's Transform.
  *
- * Registered at SystemStage::Simulation. Each update:
- *  - Advances animation.time by deltaTime * speed.
+ * Registered at SystemStage::Simulation. Skipped entirely when no simulation
+ * time elapsed this frame (paused), so an authored Transform is not clobbered
+ * by re-sampling the track at an unchanged time. Each update:
+ *  - Advances animation.time by simDeltaTime * speed, applying looping/stop.
  *  - Applies positionTrack / rotationTrack / scaleTrack values to the
- *    Transform via easing-aware sampling.
- *  - Handles playback control (playing, looping, speed).
+ *    Transform via easing-aware sampling (only for non-empty tracks).
  *  - Marks the touched subtrees dirty so HierarchySystem rebuilds their
  *    WorldTransforms downstream the same frame.
  *
- * The inner per-track loop is parallelised over playing entities; the
- * dirty-mark pass stays serial (markDirty cascades into the same
- * Hierarchy memory).
+ * The evaluate pass (advance time + write Transform) runs in parallel over all
+ * animation slots, skipping non-playing ones; the dirty-mark pass stays serial
+ * because markDirty cascades over descendants in shared Hierarchy memory.
  */
 class AnimationSystem : public System {
     public:

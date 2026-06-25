@@ -4,6 +4,12 @@
 
 namespace Engine {
 
+/**
+ * @brief Backend-agnostic texture descriptors. The GL backend maps these to its
+ * concrete GLenum equivalents at upload time; other backends do likewise.
+ */
+
+/** @brief GPU-side storage format (channels + bit depth + color space). */
 enum class TextureInternalFormat : uint8_t {
     R8,
     RG8,
@@ -15,6 +21,7 @@ enum class TextureInternalFormat : uint8_t {
     RGBA32F
 };
 
+/** @brief Channel layout of the source pixel data passed on upload. */
 enum class TexturePixelFormat : uint8_t {
     R,
     RG,
@@ -22,12 +29,14 @@ enum class TexturePixelFormat : uint8_t {
     RGBA
 };
 
+/** @brief Component type of the source pixel data passed on upload. */
 enum class TexturePixelType : uint8_t {
     UnsignedByte,
     Float,
     HalfFloat
 };
 
+/** @brief How sampling behaves for UVs outside [0,1]. */
 enum class TextureWrapMode : uint8_t {
     Repeat,
     MirroredRepeat,
@@ -35,6 +44,7 @@ enum class TextureWrapMode : uint8_t {
     ClampToBorder
 };
 
+/** @brief Minification filter (the Mipmap variants require generated mipmaps). */
 enum class TextureMinFilter : uint8_t {
     Nearest,
     Linear,
@@ -44,11 +54,16 @@ enum class TextureMinFilter : uint8_t {
     LinearMipmapLinear
 };
 
+/** @brief Magnification filter. */
 enum class TextureMagFilter : uint8_t {
     Nearest,
     Linear
 };
 
+/**
+ * @brief Full sampling + storage description for a texture, consumed by the
+ * backend on GPU upload. Defaults give a mipmapped, edge-clamped RGBA8 map.
+ */
 struct TextureParams {
     uint32_t width  = 0;
     uint32_t height = 0;

@@ -17,7 +17,7 @@ namespace Engine {
  * For pure quat/axis math, use the helpers in core/math/ (rotation.h, axes.h).
  */
 struct Transform {
-    glm::vec3 position = {0.0f, 0.0f, 0.0f};        ///< Local position in world space
+    glm::vec3 position = {0.0f, 0.0f, 0.0f};        ///< Local position
     glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};  ///< Local rotation as quaternion (identity = no rotation)
     glm::vec3 scale    = {1.0f, 1.0f, 1.0f};        ///< Local scale
 

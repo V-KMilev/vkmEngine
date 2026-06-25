@@ -71,9 +71,11 @@ class Scene {
         bool isAlive(Entity entity) const { return isAlive(entity.getID()); }
         bool isAlive(EntityId id) const { return m_entityAllocator.has(id); }
 
-        /// @brief Bounds-tolerant check: is the slot at `index` currently
-        /// holding a live entity? Use this when you only have a raw slot
-        /// index from a previous frame/scene (e.g. a saved selection).
+        /**
+         * @brief Bounds-tolerant check: is the slot at `index` currently
+         * holding a live entity? Use this when you only have a raw slot
+         * index from a previous frame/scene (e.g. a saved selection).
+         */
         bool isAliveAtIndex(uint32_t index) const { return m_entityAllocator.isAliveAtIndex(index); }
 
         /**
@@ -353,7 +355,7 @@ class Scene {
         }
 
     private:
-        /// @brief Get or create the typed SparseSet for component type T.
+        /** @brief Get or create the typed SparseSet for component type T. */
         template<typename T>
         SparseSet<T>& getStorage() {
             TypeId id = typeId<T>();
@@ -364,7 +366,7 @@ class Scene {
             return static_cast<SparseSet<T>&>(*ptr);
         }
 
-        /// @brief Find the typed SparseSet for component type T, or nullptr if unregistered.
+        /** @brief Find the typed SparseSet for component type T, or nullptr if unregistered. */
         template<typename T>
         const SparseSet<T>* findStorage() const {
             TypeId id = typeId<T>();
@@ -372,7 +374,7 @@ class Scene {
             return static_cast<const SparseSet<T>*>(m_components[id].get());
         }
 
-        /// @brief Non-const findStorage for mutable access without lazy creation.
+        /** @brief Non-const findStorage for mutable access without lazy creation. */
         template<typename T>
         SparseSet<T>* findStorage() {
             TypeId id = typeId<T>();
@@ -385,8 +387,10 @@ class Scene {
         std::vector<std::unique_ptr<ISparseSet>> m_components;
         Environment m_environment;
 
-        /// Per-entity destroy observer (see setOnEntityDestroy). Not swapped:
-        /// it belongs to this Scene object, not the contents it holds.
+        /**
+         * @brief Per-entity destroy observer (see setOnEntityDestroy). Not swapped:
+         * it belongs to this Scene object, not the contents it holds.
+         */
         std::function<void(EntityId)> m_onEntityDestroy;
 };
 

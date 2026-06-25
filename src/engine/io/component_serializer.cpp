@@ -280,8 +280,10 @@ void load(const nlohmann::json& j, Animation& a) {
 
 namespace {
 
-/// Writes each visited reflected field into a JSON object (read-only on the
-/// behavior - see the const_cast note in save()).
+/**
+ * @brief Writes each visited reflected field into a JSON object (read-only on the
+ * behavior - see the const_cast note in save()).
+ */
 class BehaviorJsonWriter : public BehaviorFieldVisitor {
     public:
         explicit BehaviorJsonWriter(nlohmann::json& out) : m_out(out) {}
@@ -295,8 +297,10 @@ class BehaviorJsonWriter : public BehaviorFieldVisitor {
         nlohmann::json& m_out;
 };
 
-/// Reads each visited reflected field from a JSON object, keeping the field's
-/// current value when the key is missing or malformed.
+/**
+ * @brief Reads each visited reflected field from a JSON object, keeping the field's
+ * current value when the key is missing or malformed.
+ */
 class BehaviorJsonReader : public BehaviorFieldVisitor {
     public:
         explicit BehaviorJsonReader(const nlohmann::json& in) : m_in(in) {}

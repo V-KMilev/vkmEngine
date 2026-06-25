@@ -23,6 +23,12 @@ namespace Engine {
     glm::vec4 tangent;     ///< Tangent vector (x, y, z, w), used for normal mapping; w is handedness.
 };
 
+/**
+ * @brief CPU-side geometry: indexed triangle mesh plus a cached local-space AABB.
+ *
+ * The backend uploads `vertices`/`indices` to GPU buffers on sync; the bounds
+ * feed frustum/size culling and are (re)computed via computeAndSetBounds().
+ */
 struct MeshAsset : public Resource {
     std::vector<Vertex>   vertices = {};  ///< Vertex buffer (geometry)
     std::vector<uint32_t> indices  = {};  ///< Index buffer (triangle indices)

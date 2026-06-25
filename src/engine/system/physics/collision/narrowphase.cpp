@@ -14,7 +14,7 @@ namespace {
 
 constexpr float EPS = 1e-6f;
 
-/// Oriented bounding box: centre, three unit world axes, half extents.
+/** @brief Oriented bounding box: centre, three unit world axes, half extents. */
 struct OBB {
     glm::vec3 c;
     glm::vec3 u[3];
@@ -32,12 +32,12 @@ float projectRadius(const OBB& box, const glm::vec3& axis) {
          + box.e.z * std::fabs(glm::dot(box.u[2], axis));
 }
 
-/// Overlap of the two boxes projected onto a unit axis. Positive == overlapping.
+/** @brief Overlap of the two boxes projected onto a unit axis. Positive == overlapping. */
 float overlapOnAxis(const OBB& a, const OBB& b, const glm::vec3& axis, const glm::vec3& toCentre) {
     return projectRadius(a, axis) + projectRadius(b, axis) - std::fabs(glm::dot(toCentre, axis));
 }
 
-/// The four world vertices of an OBB face (axis index + outward sign).
+/** @brief The four world vertices of an OBB face (axis index + outward sign). */
 std::array<glm::vec3, 4> faceVertices(const OBB& box, int axis, float sign) {
     const int a = (axis + 1) % 3;
     const int b = (axis + 2) % 3;
@@ -52,8 +52,10 @@ std::array<glm::vec3, 4> faceVertices(const OBB& box, int axis, float sign) {
     };
 }
 
-/// Sutherland-Hodgman clip of a polygon against a half-space: keep the side
-/// where dot(v - planePoint, planeNormal) <= 0.
+/**
+ * @brief Sutherland-Hodgman clip of a polygon against a half-space: keep the side
+ * where dot(v - planePoint, planeNormal) <= 0.
+ */
 void clipToPlane(
     std::vector<glm::vec3>& poly,
     const glm::vec3& planePoint,
@@ -75,7 +77,7 @@ void clipToPlane(
     poly.swap(result);
 }
 
-/// Closest points between two segments (Ericson, Real-Time Collision Detection).
+/** @brief Closest points between two segments (Ericson, Real-Time Collision Detection). */
 void closestSegmentSegment(
     const glm::vec3& p1, const glm::vec3& q1,
     const glm::vec3& p2, const glm::vec3& q2,
