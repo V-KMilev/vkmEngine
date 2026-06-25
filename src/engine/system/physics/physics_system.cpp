@@ -16,6 +16,7 @@
 #include "ecs/component/physics_world.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/transform.h"
+#include "ecs/component/world_transform.h"
 #include "system/event/event_system.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "system/physics/inertia.h"
@@ -91,6 +92,29 @@ void computeAABB(
     }
 }
 
+/**
+ * @brief World-space pose frame for a body, cached at gather so writeback can
+ *        map the solved world pose back to the entity's local Transform.
+ *
+ * `parented == false` means the body is a hierarchy root (its local Transform is
+ * already the world pose - the fast path, no conversion).
+ */
+struct BodyFrame {
+    bool      parented       = false;
+    glm::mat4 parentWorldInv = glm::mat4(1.0f);                    ///< inverse(parent WorldTransform.model)
+    glm::quat parentRot      = {1.0f, 0.0f, 0.0f, 0.0f};           ///< parent world-space rotation
+};
+
+/// Rotation of a world matrix, scale-tolerant (normalises the basis columns so a
+/// uniformly/non-uniformly scaled parent still yields the correct rotation).
+glm::quat worldRotationOf(const glm::mat4& m) {
+    glm::mat3 basis(m);
+    basis[0] = glm::normalize(basis[0]);
+    basis[1] = glm::normalize(basis[1]);
+    basis[2] = glm::normalize(basis[2]);
+    return glm::normalize(glm::quat_cast(basis));
+}
+
 bool aabbOverlap(const ColliderProxy& a, const ColliderProxy& b) {
     return a.aabbMin.x <= b.aabbMax.x && a.aabbMax.x >= b.aabbMin.x
         && a.aabbMin.y <= b.aabbMax.y && a.aabbMax.y >= b.aabbMin.y
@@ -138,6 +162,11 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     thread_local std::vector<ColliderProxy> proxies;
     proxies.clear();
 
+    // Per-body world<->local frame, parallel to m_bodies, so writeback can map
+    // the solved world pose back into a parented body's local Transform.
+    thread_local std::vector<BodyFrame> bodyFrames;
+    bodyFrames.clear();
+
     const uint32_t rbCount = static_cast<uint32_t>(rbStorage->size());
     for (uint32_t i = 0; i < rbCount; ++i) {
         const uint32_t idx = rbStorage->keyAt(i);
@@ -153,18 +182,39 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         rb.inverseMass = dynamicInverseMass(rb);
         rb.invInertiaLocal = localInverseInertia(rb, collider);
 
+        // Resolve the body's WORLD pose. A hierarchy root uses its local
+        // Transform directly (fast path); a parented body reads its
+        // WorldTransform and records its parent's frame so writeback can convert
+        // the solved world pose back to local.
+        glm::vec3 worldPos = t.position;
+        glm::quat worldRot = t.rotation;
+        BodyFrame frame;
+        if (scene.has<Hierarchy>(id)) {
+            const Hierarchy& h = scene.get<Hierarchy>(id);
+            if (h.parent && scene.has<WorldTransform>(id) && scene.has<WorldTransform>(h.parent)) {
+                const glm::mat4& selfWorld   = scene.get<WorldTransform>(id).model;
+                const glm::mat4& parentWorld = scene.get<WorldTransform>(h.parent).model;
+                worldPos              = glm::vec3(selfWorld[3]);
+                worldRot              = worldRotationOf(selfWorld);
+                frame.parented        = true;
+                frame.parentWorldInv  = glm::inverse(parentWorld);
+                frame.parentRot       = worldRotationOf(parentWorld);
+            }
+        }
+
         const uint32_t bodyIndex = static_cast<uint32_t>(m_bodies.size());
         m_bodies.push_back(id);
+        bodyFrames.push_back(frame);
 
         PhysicsBody pb;
-        pb.position = t.position;
+        pb.position = worldPos;
         pb.linearVelocity = rb.linearVelocity;
         pb.angularVelocity = rb.angularVelocity;
         // Sleeping or immovable bodies contribute infinite mass to the solver.
         const bool frozen = rb.sleeping || rb.inverseMass == 0.0f;
         pb.invMass = frozen ? 0.0f : rb.inverseMass;
         pb.invInertiaWorld = frozen ? glm::mat3(0.0f)
-                                    : inertiaWorld(rb.invInertiaLocal, t.rotation);
+                                    : inertiaWorld(rb.invInertiaLocal, worldRot);
         pb.restitution = rb.restitution;
         pb.friction = rb.friction;
         m_solverBodies.push_back(pb);
@@ -173,10 +223,10 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
             ColliderProxy proxy;
             proxy.body = bodyIndex;
             proxy.collider = *collider;
-            proxy.position = t.position;
-            proxy.rotation = t.rotation;
+            proxy.position = worldPos;
+            proxy.rotation = worldRot;
             proxy.cullStatic = rb.isStatic || rb.isKinematic;
-            computeAABB(*collider, t.position, t.rotation, proxy.aabbMin, proxy.aabbMax);
+            computeAABB(*collider, worldPos, worldRot, proxy.aabbMin, proxy.aabbMax);
             proxies.push_back(proxy);
         }
     }
@@ -322,12 +372,25 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
         rb.angularVelocity = pb.angularVelocity;
 
         Transform& t = scene.get<Transform>(id);
+        const BodyFrame& frame = bodyFrames[k];
         const glm::vec3 linear = pb.linearVelocity + pb.pseudoLinear;
         const glm::vec3 angular = pb.angularVelocity + pb.pseudoAngular;
 
-        t.position = pb.position + linear * dt;
+        // Integrate the pose in WORLD space (the frame the solver ran in), then
+        // map it back to the entity's local Transform - an identity map for a
+        // root, parent-relative for a parented body.
+        const glm::vec3 worldPos = pb.position + linear * dt;
+        const glm::quat worldRotOld = frame.parented ? frame.parentRot * t.rotation : t.rotation;
         const glm::quat spin(0.0f, angular.x, angular.y, angular.z);
-        t.rotation = glm::normalize(t.rotation + 0.5f * spin * t.rotation * dt);
+        const glm::quat worldRot = glm::normalize(worldRotOld + 0.5f * spin * worldRotOld * dt);
+
+        if (frame.parented) {
+            t.position = glm::vec3(frame.parentWorldInv * glm::vec4(worldPos, 1.0f));
+            t.rotation = glm::normalize(glm::conjugate(frame.parentRot) * worldRot);
+        } else {
+            t.position = worldPos;
+            t.rotation = worldRot;
+        }
 
         // Sleep bookkeeping: rest while supported long enough, otherwise stay awake.
         if (!rb.isKinematic) {
