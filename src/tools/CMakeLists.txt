@@ -8,7 +8,7 @@ file(GLOB_RECURSE ENGINETOOLS_SOURCES CONFIGURE_DEPENDS *.cpp)
 # EngineCooker (editor-only) instead. Their headers stay here on the shared
 # EngineTools include path, so editor TUs keep including "loader/...".
 set(ENGINECOOKER_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/loader/model_loader.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/loader/model_loaders.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/loader/texture_loaders.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/loader/material_loaders.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cook/recipe_registration.cpp
@@ -50,7 +50,7 @@ if(VKM_WITH_EDITOR)
         EngineTools        # generators + shared headers on the include path
     )
     target_link_libraries(EngineCooker PRIVATE
-        assimp             # model import, used by loader/model_loader.cpp
+        assimp             # model import, used by loader/model_loaders.cpp
         vkm_warnings
         BuildInfo
     )
