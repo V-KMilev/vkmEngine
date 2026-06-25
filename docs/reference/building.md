@@ -46,13 +46,13 @@ editor code.
 | `EngineCore` | Static lib | Core engine: ECS, resources, IO, the non-render systems (animation/visibility/event/physics/script/hierarchy/...), platform, debug |
 | `EngineRendering` | Static lib | Render system, backend abstraction, render view |
 | `BackendOpenGL` | Static lib | OpenGL backend implementation (GLBackend, GLView, passes, GPU resources) |
-| `EngineTools` | Static lib | Asset loaders and procedural generators |
-| `EngineApp` | Static lib | Shared bootstrap (`setupEngineApp`): wires the engine-tier systems, render pipeline, and default scene. Linked by both executables |
+| `EngineTools` | Static lib | Procedural generators + the runtime-safe cooked-asset loaders/factories. No Assimp, no heavy image decode |
+| `EngineCooker` | Static lib | Editor-only: the heavy importers (Assimp model import, stb image decode) + the asset cooker that bakes recipes into the cooked cache (only when `VKM_WITH_EDITOR=ON`) |
 | `EngineEditor` | Static lib | Editor UI, panels, overlays, gizmo, scene I/O (only when `VKM_WITH_EDITOR=ON`) |
 | `game` | Static lib | Concrete gameplay behaviors, static-linked into the runtime (no hot-reload) |
 | `game_module` | Shared lib | The same gameplay sources built as `game.dll`/`libgame.so` for the editor to hot-reload |
-| `engine_runtime` | Executable | Bare engine: `EngineApp` + static `game`, no editor |
-| `engine_editor` | Executable | `EngineApp` + `EngineEditor`, loads `game_module` for hot-reload (only when `VKM_WITH_EDITOR=ON`) |
+| `engine_runtime` | Executable | Bare engine: the engine libs + static `game`, no editor. Includes `app/engine_app.h` for the shared bootstrap; links no Assimp |
+| `engine_editor` | Executable | Engine libs + `EngineEditor` + `EngineCooker`, loads `game_module` for hot-reload (only when `VKM_WITH_EDITOR=ON`) |
 | `EngineHeaders` | Interface lib | Include-only view of EngineCore's public API; the hot-reload module compiles against it without linking EngineCore's objects |
 | `BuildInfo` | Interface lib | Compile-time build metadata (version, branch, commit hash) |
 | `vkm_warnings` | Interface lib | Shared GCC/Clang warning flags; first-party targets opt in, submodules don't |
@@ -60,15 +60,19 @@ editor code.
 ### Dependency Graph
 
 ```
-engine_editor (executable)        engine_runtime (executable)
-  |-- EngineApp                     |-- EngineApp
-  |     |-- EngineCore              |     |-- EngineCore (glm, glfw, vkmLog, nlohmann_json; glew private)
-  |     |-- EngineRendering         |     |-- EngineRendering -- EngineCore
-  |     |-- EngineTools             |     |-- EngineTools -- EngineCore (+ assimp private)
-  |     |-- BackendOpenGL           |     |-- BackendOpenGL -- vkmGL, EngineRendering, EngineTools
-  |-- EngineEditor                  |-- game -- EngineCore
-  |     |-- EngineCore, EngineTools, imgui, vkmGL
-  |-- BuildInfo                     |-- BuildInfo
+engine_editor (executable)              engine_runtime (executable)
+  |-- EngineCore                          |-- EngineCore (glm, glfw, vkmLog, nlohmann_json; glew private)
+  |-- EngineRendering -- EngineCore       |-- EngineRendering -- EngineCore
+  |-- EngineTools -- EngineCore           |-- EngineTools -- EngineCore (generators + cooked loaders; no Assimp)
+  |-- BackendOpenGL -- vkmGL, ...         |-- BackendOpenGL -- vkmGL, EngineRendering, EngineTools
+  |-- EngineCooker -- EngineCore,         |-- game -- EngineCore
+  |     EngineTools (+ assimp private)    |-- BuildInfo
+  |-- EngineEditor -- EngineCore,
+  |     EngineTools, EngineCooker, imgui, vkmGL
+  |-- BuildInfo
+
+Both executables #include app/engine_app.h for setupEngineApp (no EngineApp lib).
+Only engine_editor links EngineCooker, so engine_runtime pulls in no Assimp.
 
 game_module (shared, editor only) -- EngineHeaders (include-only); resolves engine
   symbols from the engine_editor exe at load (Windows import lib / Linux -rdynamic).

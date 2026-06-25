@@ -68,11 +68,12 @@ Every asset inherits `Resource`:
 | `name`         | `std::string`                         | Stable identity for serialization and look-up                                               |
 | `version`      | `uint64_t`                            | Bumped on `commit()`; backends compare to skip re-upload                                    |
 | `hidden`       | `bool`                                | When true, filtered from pickers / Asset Browser / scene save (previews, fallbacks). Set via `addPrivate()` |
-| `source`       | `std::unique_ptr<nlohmann::json>`     | Captured loader/generator descriptor used by `AssetSerializer` on save                      |
+| `source`       | `std::unique_ptr<nlohmann::json>`     | The asset's recipe (loader/generator descriptor). The editor cooker bakes it into the library + cooked cache; scenes reference the asset by `name`, not by this descriptor |
 
 `source` is held by `unique_ptr` against a forward-declared `nlohmann::json`
-so headers don't drag the JSON header in. See the code style guide section
-13.1 for why this is a deliberate exception.
+so headers don't drag the JSON header in (see
+[../guides/code-style.md](../guides/code-style.md) for why this exception is
+deliberate).
 
 `hidden = true` is set (via `ResourceManager::addPrivate`) on previews,
 fallback textures, and bundled primitive meshes; `SceneSerializer` and
@@ -163,13 +164,20 @@ Every asset type gets its own `SparseSet<T>` (created on first use) plus a
 - Swap-and-pop removal keeps data packed.
 - Generation checks make stale handles a no-op (not a crash).
 
-## Tools: loaders and generators
+## Tools: loaders, generators, and the cooker
 
-Procedural generators and file loaders live in `src/tools/`. They are
-**not** part of the engine library; they register factory lambdas into
-`AssetFactories` at startup (`tools/asset_registration.cpp`) so the
-engine-side `AssetSerializer` can recreate any asset by dispatching its
-`kind` field.
+Procedural generators and file loaders live in `src/tools/`. They are **not**
+part of the engine core; they register factory lambdas into `AssetFactories` at
+startup so the engine-side `AssetSerializer` can resolve any asset by its `kind`.
+The tools split by dependency weight:
+
+- **`EngineTools`** (runtime-safe): the GLM-only generators, the cooked-asset
+  loaders, and `registerCookedAssetFactories` (`cooked` / `inline` / `directory`).
+- **`EngineCooker`** (editor-only): the heavy importers (`loader/`, Assimp + stb)
+  and the asset cooker (`cook/`), plus `registerRecipeAssetFactories`.
+
+The runtime registers only the cooked set, so it links neither Assimp nor the
+image decoders; the editor registers both and (re)cooks recipes into the cache.
 
 ### Generators (`src/tools/generator/`)
 
