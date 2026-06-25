@@ -42,7 +42,7 @@ class AssetBrowserPanel {
         void drawMaterials(EditorContext& ec);
         void drawMeshes(EditorContext& ec);
 
-        /// Arm the shared rename modal for one asset (the other handle clears).
+        /** @brief Arm the shared rename modal for one asset (the other handle clears). */
         void openRename(MaterialHandle h, const std::string& name);
         void openRename(MeshHandle h, const std::string& name);
 

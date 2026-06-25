@@ -150,10 +150,12 @@ struct EntitySnapshot {
     std::optional<Rigidbody>       rigidbody;
     std::optional<Collider>        collider;
     std::optional<ReflectionProbe> reflectionProbe;
-    /// ScriptComponent is move-only, so it can't be stored as a value here -
-    /// it's kept as its serialized JSON (type names + reflected fields) and
-    /// recreated on apply via the registry-backed ComponentSerializer. Keeps
-    /// EntitySnapshot copyable.
+    /**
+     * @brief ScriptComponent is move-only, so it can't be stored as a value here -
+     * it's kept as its serialized JSON (type names + reflected fields) and
+     * recreated on apply via the registry-backed ComponentSerializer. Keeps
+     * EntitySnapshot copyable.
+     */
     std::optional<std::string>     scriptJson;
 
     static EntitySnapshot capture(const Scene& scene, EntityId id);
@@ -172,14 +174,18 @@ struct EntitySnapshot {
 struct SubtreeSnapshot {
     struct Node {
         EntitySnapshot snap;
-        /// Slot of this node's parent within the subtree (0 if this is the
-        /// subtree root). Distinct from rootParentSlot, which records the
-        /// external parent the root had before destruction.
+        /**
+         * @brief Slot of this node's parent within the subtree (0 if this is the
+         * subtree root). Distinct from rootParentSlot, which records the
+         * external parent the root had before destruction.
+         */
         uint32_t parentSlot = 0;
     };
     std::vector<Node> nodes;
-    /// Slot of the original parent of the subtree's root (0 if the root
-    /// was top-level). On undo, the root is reattached to this entity.
+    /**
+     * @brief Slot of the original parent of the subtree's root (0 if the root
+     * was top-level). On undo, the root is reattached to this entity.
+     */
     uint32_t rootParentSlot = 0;
 
     static SubtreeSnapshot capture(const Scene& scene, EntityId root);

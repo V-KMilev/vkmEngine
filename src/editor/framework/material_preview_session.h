@@ -54,14 +54,16 @@ class MaterialPreviewSession {
             bool live
         );
 
-        /// Drop the per-key target. Call when the source asset is destroyed.
+        /** @brief Drop the per-key target. Call when the source asset is destroyed. */
         void evict(uint64_t key);
 
-        /// Drop every cached target (e.g. after a scene load swapped assets).
+        /** @brief Drop every cached target (e.g. after a scene load swapped assets). */
         void clear();
 
-        /// Refill the per-frame thumbnail bake budget. Called by EditorSystem
-        /// at the top of each frame.
+        /**
+         * @brief Refill the per-frame thumbnail bake budget. Called by EditorSystem
+         * at the top of each frame.
+         */
         void onFrameBegin() { m_budget = THUMBS_PER_FRAME; }
 
     private:
@@ -72,7 +74,7 @@ class MaterialPreviewSession {
 
         RenderSystem& m_renderSystem;
 
-        /// key -> version stamp of the last render, so unchanged assets skip.
+        /** @brief key -> version stamp of the last render, so unchanged assets skip. */
         std::unordered_map<uint64_t, uint64_t> m_versions;
 
         int m_budget = 0;

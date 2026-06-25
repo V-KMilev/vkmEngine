@@ -46,27 +46,35 @@ class SceneIOController {
         SceneIOController(SceneIOController && other) = delete;
         SceneIOController& operator=(SceneIOController && other) = delete;
 
-        /// Save to the current path, or pop the Save-As prompt if none yet.
-        /// Clears EditorState::sceneDirty on success.
+        /**
+         * @brief Save to the current path, or pop the Save-As prompt if none yet.
+         * Clears EditorState::sceneDirty on success.
+         */
         void save(FrameContext& ctx, EditorState& state);
-        /// Queue the Save-As prompt (opens on the next drawDialogs()).
+        /** @brief Queue the Save-As prompt (opens on the next drawDialogs()). */
         void requestSaveAs();
-        /// Queue the Load-Scene picker (opens on the next drawDialogs()).
+        /** @brief Queue the Load-Scene picker (opens on the next drawDialogs()). */
         void requestLoad();
-        /// Load a scene path directly (used by the recent-scenes menu). Goes
-        /// through the same housekeeping as a Load-modal pick.
+        /**
+         * @brief Load a scene path directly (used by the recent-scenes menu). Goes
+         * through the same housekeeping as a Load-modal pick.
+         */
         void loadPath(FrameContext& ctx, EditorState& state, const std::string& path);
 
-        /// Render any pending Save-As / Load modals. Call once per frame.
+        /** @brief Render any pending Save-As / Load modals. Call once per frame. */
         void drawDialogs(FrameContext& ctx, EditorState& state);
 
-        /// Serialize the live scene + assets to an in-memory snapshot for play
-        /// mode. Call when entering play so Stop can restore the authored state.
+        /**
+         * @brief Serialize the live scene + assets to an in-memory snapshot for play
+         * mode. Call when entering play so Stop can restore the authored state.
+         */
         void captureSnapshot(FrameContext& ctx, EditorState& state);
-        /// Swap the captured snapshot back in (same housekeeping as load()) and
-        /// clear it. No-op if no snapshot was captured.
+        /**
+         * @brief Swap the captured snapshot back in (same housekeeping as load()) and
+         * clear it. No-op if no snapshot was captured.
+         */
         void restoreSnapshot(FrameContext& ctx, EditorState& state);
-        /// True once captureSnapshot() has stored a snapshot (i.e. in play mode).
+        /** @brief True once captureSnapshot() has stored a snapshot (i.e. in play mode). */
         bool hasSnapshot() const { return !m_playSnapshot.empty(); }
 
         bool hasPath() const { return !m_currentScenePath.empty(); }
@@ -82,24 +90,32 @@ class SceneIOController {
         bool isSaveDialogActive() const;
 
     private:
-        /// Load m_currentScenePath: stashes/restores selection, then emits
-        /// SceneLoadedEvent (camera rebind handled by our own subscriber).
+        /**
+         * @brief Load m_currentScenePath: stashes/restores selection, then emits
+         * SceneLoadedEvent (camera rebind handled by our own subscriber).
+         */
         void load(FrameContext& ctx, EditorState& state);
-        /// Name of the current selection (empty if none), captured BEFORE a
-        /// scene swap so afterSceneReplace can re-select it by name afterwards.
+        /**
+         * @brief Name of the current selection (empty if none), captured BEFORE a
+         * scene swap so afterSceneReplace can re-select it by name afterwards.
+         */
         static std::string cacheSelectionName(FrameContext& ctx, EditorState& state);
-        /// Editor housekeeping shared by load() and restoreSnapshot() after the
-        /// scene + resources have been swapped: clear undo, drop stale GPU
-        /// previews, re-select @p priorSelectionName, rebind the active camera,
-        /// and emit SceneLoadedEvent{eventPath}.
+        /**
+         * @brief Editor housekeeping shared by load() and restoreSnapshot() after the
+         * scene + resources have been swapped: clear undo, drop stale GPU
+         * previews, re-select @p priorSelectionName, rebind the active camera,
+         * and emit SceneLoadedEvent{eventPath}.
+         */
         void afterSceneReplace(
             FrameContext& ctx,
             EditorState& state,
             const std::string& priorSelectionName,
             const std::string& eventPath
         );
-        /// Push a saved/loaded scene path to the top of the recent-scenes
-        /// MRU list, deduplicating and trimming to MAX_RECENT_SCENES.
+        /**
+         * @brief Push a saved/loaded scene path to the top of the recent-scenes
+         * MRU list, deduplicating and trimming to MAX_RECENT_SCENES.
+         */
         static void pushRecent(EditorState& state, const std::string& path);
 
         EventSystem&      m_events;
@@ -108,19 +124,25 @@ class SceneIOController {
 
         std::string m_currentScenePath;  ///< Empty until the user saves/loads once.
 
-        /// In-memory play-mode snapshot (serialized scene + assets). Non-empty
-        /// only between captureSnapshot() (Play) and restoreSnapshot() (Stop).
+        /**
+         * @brief In-memory play-mode snapshot (serialized scene + assets). Non-empty
+         * only between captureSnapshot() (Play) and restoreSnapshot() (Stop).
+         */
         std::string m_playSnapshot;
-        /// EditorState::sceneDirty at capture time, restored on Stop so a play
-        /// session leaves the dirty flag exactly as the user left it.
+        /**
+         * @brief EditorState::sceneDirty at capture time, restored on Stop so a play
+         * session leaves the dirty flag exactly as the user left it.
+         */
         bool        m_playSnapshotDirty = false;
         bool        m_openSaveAsPopup = false;
         bool        m_openLoadPopup   = false;
         char        m_saveAsBuffer[256] = "scene.json";
 
-        /// Cached scenes/*.json listing. Refreshed when the Load picker opens;
-        /// stays stable while it's open instead of re-listing the directory
-        /// every frame the modal is up.
+        /**
+         * @brief Cached scenes/*.json listing. Refreshed when the Load picker opens;
+         * stays stable while it's open instead of re-listing the directory
+         * every frame the modal is up.
+         */
         std::vector<std::string> m_loadCandidates;
 };
 

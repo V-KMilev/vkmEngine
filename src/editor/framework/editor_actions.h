@@ -22,8 +22,10 @@ struct Mesh;
  */
 namespace EditorActions {
 
-/// Built-in entity factory kinds the editor's "Create" menu exposes.
-/// Each kind composes a fixed set of components on a fresh entity.
+/**
+ * @brief Built-in entity factory kinds the editor's "Create" menu exposes.
+ * Each kind composes a fixed set of components on a fresh entity.
+ */
 enum class EntityKind {
     Empty,
     Cube,
@@ -66,8 +68,10 @@ void setActiveCamera(Scene& scene, EditorState& state, EntityId target, const ch
  */
 void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity);
 
-/// Mark a non-hierarchy structural change (add/remove entity, etc.).
-/// Used by paths that don't have a specific entity to dirty.
+/**
+ * @brief Mark a non-hierarchy structural change (add/remove entity, etc.).
+ * Used by paths that don't have a specific entity to dirty.
+ */
 void commitStructureChange(EditorState& state);
 
 /**
@@ -100,9 +104,11 @@ MaterialHandle duplicateMaterial(
  */
 MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state);
 
-/// Frame the entire visible scene: union the world-space AABBs of every
-/// visible mesh entity, then focus the camera so the union fits in view.
-/// No-op if there is nothing visible.
+/**
+ * @brief Frame the entire visible scene: union the world-space AABBs of every
+ * visible mesh entity, then focus the camera so the union fits in view.
+ * No-op if there is nothing visible.
+ */
 void frameAll(FrameContext& ctx, CameraController& camera);
 void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState& state);
 

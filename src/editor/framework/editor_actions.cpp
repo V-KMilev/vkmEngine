@@ -351,9 +351,10 @@ void frameAll(FrameContext& ctx, CameraController& camera) {
     const glm::vec3 center = (mn + mx) * 0.5f;
     const glm::vec3 extent = mx - mn;
     const float diag = glm::length(extent);
-    // Fit a sphere of radius diag/2 in the perspective frustum. Assume a
-    // ~50 deg vertical FOV target; a 1.5x pad gives breathing room. The
-    // camera controller normalises the look direction.
+    // Fit a sphere of radius diag/2 in the perspective frustum. A 1.1x pad on
+    // the diagonal gives breathing room, with a 2.0 floor so tiny scenes don't
+    // pull the camera inside the geometry. The camera controller normalises the
+    // look direction.
     const float distance = std::max(2.0f, diag * 1.1f);
     camera.focusOn(ctx.scene, center, distance);
 }

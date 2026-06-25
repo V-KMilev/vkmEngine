@@ -13,7 +13,7 @@ namespace Engine {
  * @brief Cached, modal asset-path picker shared by every editor file dialog.
  *
  * One-frame UI helpers that walk the filesystem (recursive_directory_iterator
- * etc.) every frame the modal is open used to drag with big asset trees.
+ * etc.) every frame the modal is open used to lag with big asset trees.
  * This helper scans once when the popup opens, caches the listing, and reuses
  * it until the popup closes.
  *
@@ -38,21 +38,25 @@ class AssetPicker {
             Kind kind                = Kind::Files;
             std::vector<std::string> extensions;      ///< Lowercased file extensions ({".png", ".jpg"}). Ignored for Directories.
             int maxResults           = 4000;          ///< Safety cap.
-            /// If non-empty, the picker returns paths relative to `relativeTo`
-            /// instead of absolute. Useful when storing as scene references.
+            /**
+             * @brief If non-empty, the picker returns paths relative to `relativeTo`
+             * instead of absolute. Useful when storing as scene references.
+             */
             std::filesystem::path relativeTo;
-            /// Optional one-line hint shown above the list.
+            /** @brief Optional one-line hint shown above the list. */
             std::string hint;
         };
 
         Options options;
 
-        /// Queue the popup to open on the next draw().
+        /** @brief Queue the popup to open on the next draw(). */
         void open();
 
-        /// Draw the picker modal. Returns true the frame the user picks an
-        /// entry; @p outPath is then set to the picked path (made relative to
-        /// `options.relativeTo` when that is set).
+        /**
+         * @brief Draw the picker modal. Returns true the frame the user picks an
+         * entry; @p outPath is then set to the picked path (made relative to
+         * `options.relativeTo` when that is set).
+         */
         bool draw(std::string& outPath);
 
     private:

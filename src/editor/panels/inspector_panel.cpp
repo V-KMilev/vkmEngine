@@ -39,7 +39,6 @@ namespace {
 // eye group a card at a glance (Transform blue, Mesh green, ...).
 const ImVec4 ACCENT_TRANSFORM = EditorStyle::AXIS_Z;
 const ImVec4 ACCENT_MESH      = EditorStyle::AXIS_Y;
-const ImVec4 ACCENT_LOD       = ImVec4(0.90f, 0.49f, 0.13f, 1.0f);
 const ImVec4 ACCENT_LIGHT     = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);
 const ImVec4 ACCENT_CAMERA    = ImVec4(0.30f, 0.78f, 0.80f, 1.0f);
 const ImVec4 ACCENT_ANIM      = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);
@@ -387,7 +386,6 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
         ImGui::Spacing();
 
         // Asset pickers: swap which loaded mesh / material this component uses.
-        // pickAsset (anon namespace) is shared with the LOD section.
         changed |= pickAsset<MeshAsset>    ("##MeshPick", "Mesh Asset",     resources, mesh.mesh);
         changed |= pickAsset<MaterialAsset>("##MatPick",  "Material Asset", resources, mesh.material);
 

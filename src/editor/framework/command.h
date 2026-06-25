@@ -24,13 +24,13 @@ class Command {
     public:
         virtual ~Command() = default;
 
-        /// Re-apply the change. Called when the user presses redo.
+        /** @brief Re-apply the change. Called when the user presses redo. */
         virtual void redo(Scene& scene, EditorState& state) = 0;
 
-        /// Reverse the change. Called when the user presses undo.
+        /** @brief Reverse the change. Called when the user presses undo. */
         virtual void undo(Scene& scene, EditorState& state) = 0;
 
-        /// Short human-readable name for the action (used in Edit menu).
+        /** @brief Short human-readable name for the action (used in Edit menu). */
         virtual const char* label() const = 0;
 
         /**

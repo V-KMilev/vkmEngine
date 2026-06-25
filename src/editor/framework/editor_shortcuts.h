@@ -19,7 +19,7 @@ class SceneIOController;
  */
 class EditorShortcuts {
     public:
-        /// Process this frame's shortcuts. No-op while ImGui wants text input.
+        /** @brief Process this frame's shortcuts. No-op while ImGui wants text input. */
         void process(EditorContext& ec, SceneIOController& sceneIO);
 };
 

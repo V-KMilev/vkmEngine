@@ -33,24 +33,28 @@ class CommandStack {
         CommandStack(CommandStack && other) = delete;
         CommandStack& operator=(CommandStack && other) = delete;
 
-        /// Push a freshly applied command. Coalesces into the top of the
-        /// undo stack if Command::tryMerge says so. Clears the redo stack.
+        /**
+         * @brief Push a freshly applied command. Coalesces into the top of the
+         * undo stack if Command::tryMerge says so. Clears the redo stack.
+         */
         void push(std::unique_ptr<Command> cmd);
 
-        /// Reverse the most recent command. No-op if the stack is empty.
+        /** @brief Reverse the most recent command. No-op if the stack is empty. */
         void undo(Scene& scene, EditorState& state);
 
-        /// Re-apply the most recently undone command. No-op if redo is empty.
+        /** @brief Re-apply the most recently undone command. No-op if redo is empty. */
         void redo(Scene& scene, EditorState& state);
 
-        /// Drop all history. Use on scene swap.
+        /** @brief Drop all history. Use on scene swap. */
         void clear();
 
         bool canUndo() const { return !m_undo.empty(); }
         bool canRedo() const { return !m_redo.empty(); }
 
-        /// Label of the command at the top of undo / redo (for the Edit menu).
-        /// Returns nullptr if empty.
+        /**
+         * @brief Label of the command at the top of undo / redo (for the Edit menu).
+         * Returns nullptr if empty.
+         */
         const char* undoLabel() const;
         const char* redoLabel() const;
 
@@ -61,8 +65,10 @@ class CommandStack {
         std::vector<std::unique_ptr<Command>> m_undo;
         std::vector<std::unique_ptr<Command>> m_redo;
 
-        /// Cap on the undo history to bound editor memory. Oldest entries
-        /// are dropped when the cap is exceeded.
+        /**
+         * @brief Cap on the undo history to bound editor memory. Oldest entries
+         * are dropped when the cap is exceeded.
+         */
         static constexpr size_t HISTORY_LIMIT = 200;
 };
 

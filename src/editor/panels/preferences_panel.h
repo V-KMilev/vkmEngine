@@ -26,8 +26,10 @@ class PreferencesPanel {
         PreferencesPanel& operator=(PreferencesPanel && other) = delete;
 
     public:
-        /// Draws the window while state.showPreferences is true; the
-        /// title-bar X clears it.
+        /**
+         * @brief Draws the window while state.showPreferences is true; the
+         * title-bar X clears it.
+         */
         void draw(EditorContext& ec);
 
     private:

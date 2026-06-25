@@ -7,7 +7,7 @@ namespace Engine {
 struct EditorContext;
 
 /**
- * @brief Floating in-viewport tool box (top-left), Unity/Unreal style.
+ * @brief Floating in-viewport tool box (bottom-left), Unity/Unreal style.
  *
  * Compact button strip for switching the active manipulation tool
  * (Select / Move / Rotate / Scale), toggling Local/World space and snap,
@@ -18,8 +18,10 @@ class ViewportToolbar {
     public:
         void draw(EditorContext& ec);
 
-        /// True while the mouse is over the toolbar (so the viewport does not
-        /// also treat the click as a pick / camera input).
+        /**
+         * @brief True while the mouse is over the toolbar (so the viewport does not
+         * also treat the click as a pick / camera input).
+         */
         bool isHovered() const { return m_hovered; }
 
     private:
