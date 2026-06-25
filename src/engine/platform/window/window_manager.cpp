@@ -86,10 +86,9 @@ bool WindowManager::shouldClose() const {
     return glfwWindowShouldClose(m_window->getWindowContext());
 }
 
-bool WindowManager::requestClose() {
+void WindowManager::requestClose() {
     LOG_INFO("Close requested");
     glfwSetWindowShouldClose(m_window->getWindowContext(), GLFW_TRUE);
-    return true;
 }
 
 void WindowManager::cancelClose() {
@@ -103,13 +102,8 @@ void WindowManager::setTitle(const std::string& title) {
     if (m_window) glfwSetWindowTitle(m_window->getWindowContext(), title.c_str());
 }
 
-bool WindowManager::swapBuffers() {
+void WindowManager::swapBuffers() {
     GLFWwindow* windowContext = m_window->getWindowContext();
-
-    if (!windowContext) {
-        LOG_ERROR("Window is not initialized");
-        return false;
-    }
 
     {
         // The actual present. With vsync off and no FPS cap this returns fast,
@@ -126,28 +120,21 @@ bool WindowManager::swapBuffers() {
         PROFILE_SCOPE("FrameLimiter");
         m_frameLimiter->endFrame();
     }
-
-    return true;
 }
 
-bool WindowManager::updateMode(WindowMode windowMode) {
+void WindowManager::updateMode(WindowMode windowMode) {
     GLFWwindow* windowContext = m_window->getWindowContext();
-
-    if (!windowContext) {
-        LOG_ERROR("Window is not initialized");
-        return false;
-    }
 
     GLFWmonitor* monitor = getCurrentMonitor(windowContext);
     if (!monitor) {
         LOG_ERROR("Failed to get current monitor");
-        return false;
+        return;
     }
 
     const GLFWvidmode* mode = glfwGetVideoMode(monitor);
     if (!mode) {
         LOG_ERROR("Failed to get video mode for current monitor");
-        return false;
+        return;
     }
 
     // Target rect/refresh per mode. Fullscreen covers the whole monitor video
@@ -176,7 +163,7 @@ bool WindowManager::updateMode(WindowMode windowMode) {
         }
         default:
             LOG_ERROR("Invalid window mode: %s", toString(windowMode));
-            return false;
+            return;
     }
 
     // Set window to the corresponding mode
@@ -192,21 +179,10 @@ bool WindowManager::updateMode(WindowMode windowMode) {
 
     LOG_INFO("Mode -> %s (%dx%d @ %dHz)",
         toString(windowMode), mode->width, mode->height, mode->refreshRate);
-    return true;
 }
 
-bool WindowManager::updateInput() {
-    if (!m_inputHandle) {
-        LOG_ERROR("Input handle is not initialized");
-        return false;
-    }
-
+void WindowManager::updateInput() {
     GLFWwindow* windowContext = m_window->getWindowContext();
-
-    if (!windowContext) {
-        LOG_ERROR("Window is not initialized");
-        return false;
-    }
 
     // Reset scroll delta before polling new events
     m_inputHandle->getMouse().resetScrollDelta();
@@ -216,8 +192,6 @@ bool WindowManager::updateInput() {
 
     // Update mouse state (cursor position, button states)
     m_inputHandle->update(windowContext);
-
-    return true;
 }
 
 bool WindowManager::beginFrame() {

@@ -19,10 +19,8 @@ Window::~Window() {
 }
 
 Window::Window(
-    const std::string& title,
-    int swapInterval
+    const std::string& title
 ) : m_title(title),
-    m_swapInterval(swapInterval),
     m_window(nullptr)
 {
     if (!glfwInit()) {
@@ -58,9 +56,8 @@ Window::Window(
         throw std::runtime_error("Failed to initialize GLEW");
     }
 
-    // 0 = Uncapped framerate
-    // 1 = VSync enabled
-    glfwSwapInterval(m_swapInterval);
+    // VSync off at creation (0 = uncapped). Set later via setSwapInterval.
+    glfwSwapInterval(0);
 
     // Cache initial size (updated via GLFW window size callback)
     glfwGetWindowSize(m_window, &m_width, &m_height);
@@ -112,7 +109,6 @@ void Window::setSwapInterval(int interval) {
     // 0 = Uncapped framerate
     // 1 = VSync enabled
     glfwSwapInterval(interval);
-    m_swapInterval = interval;
 }
 
 void Window::cleanup() {

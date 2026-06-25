@@ -12,6 +12,7 @@
 
 #include "ecs/component/camera.h"
 #include "ecs/component/transform.h"
+#include "io/json_vec.h"
 #include "io/reflect.h"
 #include "resource/resource_manager.h"
 #include "system/script/behavior.h"
@@ -22,18 +23,15 @@ namespace Engine::ComponentSerializer {
 
 namespace {
 
-nlohmann::json vec2ToJson(const glm::vec2& v) { return {v.x, v.y}; }
-nlohmann::json vec3ToJson(const glm::vec3& v) { return {v.x, v.y, v.z}; }
-nlohmann::json vec4ToJson(const glm::vec4& v) { return {v.x, v.y, v.z, v.w}; }
-nlohmann::json quatToJson(const glm::quat& q) { return {q.w, q.x, q.y, q.z}; }
-
-glm::vec2 vec2FromJson(const nlohmann::json& j) { return {j[0], j[1]}; }
-glm::vec3 vec3FromJson(const nlohmann::json& j) { return {j[0], j[1], j[2]}; }
-glm::vec4 vec4FromJson(const nlohmann::json& j) { return {j[0], j[1], j[2], j[3]}; }
-glm::quat quatFromJson(const nlohmann::json& j) {
-    return glm::quat(static_cast<float>(j[0]), static_cast<float>(j[1]),
-                     static_cast<float>(j[2]), static_cast<float>(j[3]));
-}
+// vec/quat <-> JSON helpers are shared with asset_serializer; see io/json_vec.h.
+using ::Engine::detail::vec2ToJson;
+using ::Engine::detail::vec3ToJson;
+using ::Engine::detail::vec4ToJson;
+using ::Engine::detail::quatToJson;
+using ::Engine::detail::vec2FromJson;
+using ::Engine::detail::vec3FromJson;
+using ::Engine::detail::vec4FromJson;
+using ::Engine::detail::quatFromJson;
 
 // toJson / fromJson overload set. The reflection-driven save/load templates
 // (saveReflected / loadReflected) iterate a type's fields and forward each
@@ -269,9 +267,9 @@ nlohmann::json save(const Animation& a) {
 }
 
 void load(const nlohmann::json& j, Animation& a) {
-    if (j.contains("position")) loadTrack(j["position"], a.positionTrack, vec3FromJson);
-    if (j.contains("rotation")) loadTrack(j["rotation"], a.rotationTrack, quatFromJson);
-    if (j.contains("scale"))    loadTrack(j["scale"],    a.scaleTrack,    vec3FromJson);
+    if (j.contains("position")) loadTrack(j["position"], a.positionTrack, [](const nlohmann::json& v) { return vec3FromJson(v); });
+    if (j.contains("rotation")) loadTrack(j["rotation"], a.rotationTrack, [](const nlohmann::json& v) { return quatFromJson(v); });
+    if (j.contains("scale"))    loadTrack(j["scale"],    a.scaleTrack,    [](const nlohmann::json& v) { return vec3FromJson(v); });
     a.time    = j.value("time",    a.time);
     a.length  = j.value("length",  a.length);
     a.speed   = j.value("speed",   a.speed);

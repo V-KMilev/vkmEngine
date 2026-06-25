@@ -55,7 +55,7 @@ class ResourceManager {
             // unambiguous key and scene files can reference assets by name.
             ensureUniqueName(slot, resource.name);
 
-            StorageIndex key = slot.allocator->allocate();
+            StorageIndex key = slot.allocator.allocate();
             std::string indexName = resource.name;  // unique + non-empty now
             storageOf<T>(slot).add(key.index, std::forward<ResourceType>(resource));
             slot.nameIndex.emplace(std::move(indexName), key.index);
@@ -98,7 +98,7 @@ class ResourceManager {
         void remove(const HandleType& handle) {
             using T = typename HandleType::resource_t;
             auto& slot = getSlot<T>();
-            VKM_ASSERT(slot.allocator->has(handle.key), "ResourceManager::remove invalid handle");
+            VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::remove invalid handle");
             // Drop the name->index mapping if the asset registered one.
             const T& res = storageOfConst<T>(slot).get(handle.key.index);
             if (!res.name.empty()) {
@@ -108,7 +108,7 @@ class ResourceManager {
                 }
             }
             storageOf<T>(slot).remove(handle.key.index);
-            slot.allocator->free(handle.key);
+            slot.allocator.free(handle.key);
         }
 
         /**
@@ -126,7 +126,7 @@ class ResourceManager {
             TypeId id = typeId<T>();
             if (id >= m_slots.size() || !m_slots[id]) return false;
             const auto& slot = *m_slots[id];
-            return slot.allocator->has(handle.key);
+            return slot.allocator.has(handle.key);
         }
 
         /** @brief Get const access to a resource by handle. */
@@ -134,7 +134,7 @@ class ResourceManager {
         const auto& get(const HandleType& handle) const {
             using T = typename HandleType::resource_t;
             const auto& slot = getSlotConst<T>();
-            VKM_ASSERT(slot.allocator->has(handle.key), "ResourceManager::get invalid handle");
+            VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::get invalid handle");
             return storageOfConst<T>(slot).get(handle.key.index);
         }
 
@@ -150,7 +150,7 @@ class ResourceManager {
         auto& edit(const HandleType& handle) {
             using T = typename HandleType::resource_t;
             auto& slot = getSlot<T>();
-            VKM_ASSERT(slot.allocator->has(handle.key), "ResourceManager::edit invalid handle");
+            VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::edit invalid handle");
             return storageOf<T>(slot).get(handle.key.index);
         }
 
@@ -165,7 +165,7 @@ class ResourceManager {
         void rename(const HandleType& handle, std::string newName) {
             using T = typename HandleType::resource_t;
             auto& slot = getSlot<T>();
-            VKM_ASSERT(slot.allocator->has(handle.key), "ResourceManager::rename invalid handle");
+            VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::rename invalid handle");
             auto& res = storageOf<T>(slot).get(handle.key.index);
             if (!res.name.empty()) {
                 auto it = slot.nameIndex.find(res.name);
@@ -192,7 +192,7 @@ class ResourceManager {
             using T = typename HandleType::resource_t;
             static_assert(std::is_base_of_v<Resource, T>, "Resource type must inherit from Resource to use commit().");
             auto& slot = getSlot<T>();
-            VKM_ASSERT(slot.allocator->has(handle.key), "ResourceManager::commit invalid handle");
+            VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::commit invalid handle");
             ++storageOf<T>(slot).get(handle.key.index).version;
         }
 
@@ -219,7 +219,7 @@ class ResourceManager {
             // remove() erases the mapping, but guards against rename-after-
             // add drift), fall back to invalid.
             if (!storageOfConst<T>(slot).contains(index)) return {};
-            return Handle<T>{StorageIndex{index, slot.allocator->generationOf(index)}};
+            return Handle<T>{StorageIndex{index, slot.allocator.generationOf(index)}};
         }
 
         /**
@@ -234,7 +234,7 @@ class ResourceManager {
             if (id >= m_slots.size() || !m_slots[id]) return;
             const auto& slot = *m_slots[id];
             storageOfConst<T>(slot).forEach([&](uint32_t index, const T& res) {
-                fn(Handle<T>{StorageIndex{index, slot.allocator->generationOf(index)}}, res);
+                fn(Handle<T>{StorageIndex{index, slot.allocator.generationOf(index)}}, res);
             });
         }
 
@@ -295,7 +295,7 @@ class ResourceManager {
     private:
         /** @brief Per-type bundle: lifetime (allocator), storage, name index. */
         struct TypedSlot {
-            std::unique_ptr<SlotAllocator>  allocator;
+            SlotAllocator                   allocator;
             std::unique_ptr<ISparseSet>     storage;
             /**
              * @brief name -> storage index. O(1) findByName backing. Populated
@@ -310,8 +310,7 @@ class ResourceManager {
             if (id >= m_slots.size()) m_slots.resize(id + 1);
             if (!m_slots[id]) {
                 m_slots[id] = std::make_unique<TypedSlot>();
-                m_slots[id]->allocator = std::make_unique<SlotAllocator>();
-                m_slots[id]->storage   = std::make_unique<SparseSet<T>>();
+                m_slots[id]->storage = std::make_unique<SparseSet<T>>();
             }
             return *m_slots[id];
         }

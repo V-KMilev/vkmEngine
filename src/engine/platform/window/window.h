@@ -36,15 +36,13 @@ class Window {
         /**
          * @brief Explicit constructor.
          *
-         * Creates a window with the specified title and sets the OpenGL swap interval.
+         * Creates a window with the specified title. VSync is off at creation;
+         * the swap interval is set later via WindowManager::setVSync /
+         * Window::setSwapInterval.
          *
-         * @param title        The string displayed in the window's title bar.
-         * @param swapInterval The swap interval ("vsync"); 0 disables vsync, >0 enables.
+         * @param title The string displayed in the window's title bar.
          */
-        Window(
-            const std::string& title,
-            int swapInterval = 0
-        );
+        explicit Window(const std::string& title);
 
     public:
         /**
@@ -96,7 +94,6 @@ class Window {
 
     private:
         std::string m_title;
-        int m_swapInterval;
 
         GLFWwindow* m_window;
         int m_width  = 0;

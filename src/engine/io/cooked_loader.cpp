@@ -37,7 +37,7 @@ MeshHandle requestCookedMeshAsync(const std::string& name, ResourceManager& reso
     const std::filesystem::path path = AssetLibrary::get().cookedPath(*record);
     const uint64_t expectHash = record->recipeHash;
 
-    ThreadPool::get().addTask(Task([handle, path, expectHash]() {
+    ThreadPool::get().addTask([handle, path, expectHash]() {
         MeshLoadCompletion completion;
         completion.handle = handle;
 
@@ -54,7 +54,7 @@ MeshHandle requestCookedMeshAsync(const std::string& name, ResourceManager& reso
             LOG_ERROR("Cooked mesh '%s': recipe hash mismatch - cache is stale", path.string().c_str());
         }
         AsyncLoadQueue::get().pushMesh(std::move(completion));
-    }));
+    });
 
     return handle;
 }
@@ -77,7 +77,7 @@ TextureHandle requestCookedTextureAsync(const std::string& name, ResourceManager
     const std::filesystem::path path = AssetLibrary::get().cookedPath(*record);
     const uint64_t expectHash = record->recipeHash;
 
-    ThreadPool::get().addTask(Task([handle, path, expectHash]() {
+    ThreadPool::get().addTask([handle, path, expectHash]() {
         TextureLoadCompletion completion;
         completion.handle = handle;
 
@@ -93,7 +93,7 @@ TextureHandle requestCookedTextureAsync(const std::string& name, ResourceManager
             LOG_ERROR("Cooked texture '%s': recipe hash mismatch - cache is stale", path.string().c_str());
         }
         AsyncLoadQueue::get().pushTexture(std::move(completion));
-    }));
+    });
 
     return handle;
 }

@@ -33,7 +33,7 @@ void Engine::run() {
     while (m_window.beginFrame()) {
         const float deltaTime = m_frameTracker.getFrameRateInfo().frameTime / 1000.0f;
 
-        if (!m_window.updateInput()) break;
+        m_window.updateInput();
 
         // The editor (if attached) writes the scene viewport rect to
         // WindowManager each frame. Without an editor, the 3D pipeline
