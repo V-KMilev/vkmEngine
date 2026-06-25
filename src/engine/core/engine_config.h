@@ -23,13 +23,13 @@ namespace Config {
     // via the engine's shader preprocessor (see gl_shader_source.h). Do not
     // re-define these in a shader - include the generated file instead.
 
-    /// Maximum number of lights uploaded per frame.
+    /** @brief Maximum number of lights uploaded per frame. */
     constexpr uint32_t MAX_LIGHTS = 32;
 
-    /// Shadow caster budget for the 2D atlas (directional + spot).
+    /** @brief Shadow caster budget for the 2D atlas (directional + spot). */
     constexpr uint32_t MAX_SHADOW_CASTERS_2D = 6;
 
-    /// Shadow caster budget for the cube atlas (point lights).
+    /** @brief Shadow caster budget for the cube atlas (point lights). */
     constexpr uint32_t MAX_SHADOW_CASTERS_CUBE = 2;
 
     /**
@@ -52,12 +52,14 @@ namespace Config {
      */
     constexpr float SHADOW_CUBE_NEAR = 0.1f;
 
-    /// Fixed simulation step (60 Hz). Cadence at which fixedUpdate runs.
+    /** @brief Fixed simulation step (60 Hz). Cadence at which fixedUpdate runs. */
     constexpr float FIXED_TIME_STEP = 1.0f / 60.0f;
 
-    /// Cap on the simulation-time accumulator. Prevents a frame hitch from
-    /// queuing enough fixedUpdate ticks to outpace the next frame ("spiral
-    /// of death"). 0.25s ~= 15 ticks max per render frame at FIXED_TIME_STEP.
+    /**
+     * @brief Cap on the simulation-time accumulator. Prevents a frame hitch from
+     * queuing enough fixedUpdate ticks to outpace the next frame ("spiral
+     * of death"). 0.25s ~= 15 ticks max per render frame at FIXED_TIME_STEP.
+     */
     constexpr float MAX_FRAME_ACCUMULATOR = 0.25f;
 
     // Per-system tunables (cull distance, camera sensitivity, etc.) live as

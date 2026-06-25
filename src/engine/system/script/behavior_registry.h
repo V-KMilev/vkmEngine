@@ -24,11 +24,13 @@ class BehaviorRegistry {
 
         static BehaviorRegistry& get();
 
-        /// Register @p name -> @p factory. A duplicate name logs and overwrites.
+        /** @brief Register @p name -> @p factory. A duplicate name logs and overwrites. */
         void registerBehavior(std::string name, Factory factory);
 
-        /// Register T under its T::TYPE_NAME, the single source of truth it also
-        /// returns from Behavior::typeName().
+        /**
+         * @brief Register T under its T::TYPE_NAME, the single source of truth it also
+         * returns from Behavior::typeName().
+         */
         template<typename T>
         void registerBehavior() {
             registerBehavior(T::TYPE_NAME, [] {
@@ -36,18 +38,22 @@ class BehaviorRegistry {
             });
         }
 
-        /// Create a fresh instance by name, or nullptr (and a logged error) if
-        /// the name is unknown.
+        /**
+         * @brief Create a fresh instance by name, or nullptr (and a logged error) if
+         * the name is unknown.
+         */
         std::unique_ptr<Behavior> create(const std::string& name) const;
 
-        /// Whether @p name has a registered factory.
+        /** @brief Whether @p name has a registered factory. */
         bool contains(const std::string& name) const;
 
-        /// All registered names, sorted - for the editor's add-behavior menu.
+        /** @brief All registered names, sorted - for the editor's add-behavior menu. */
         std::vector<std::string> names() const;
 
-        /// Drop every registered factory. Used before unloading the game module
-        /// on hot-reload, since the factories close over module code.
+        /**
+         * @brief Drop every registered factory. Used before unloading the game module
+         * on hot-reload, since the factories close over module code.
+         */
         void clear();
 
     private:

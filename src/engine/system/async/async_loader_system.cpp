@@ -16,9 +16,11 @@ namespace Engine {
 
 namespace {
 
-/// Infer engine-level internal + pixel format from channel count and sRGB.
-/// Mirrors the helper in texture_loaders.cpp; kept local here so the system
-/// has no dependency on the loader's TU.
+/**
+ * @brief Infer engine-level internal + pixel format from channel count and sRGB.
+ * Mirrors the helper in texture_loaders.cpp; kept local here so the system
+ * has no dependency on the loader's TU.
+ */
 TextureInternalFormat inferInternalFormat(int channels, bool srgb) {
     if (srgb) {
         return (channels == 3) ? TextureInternalFormat::SRGB8

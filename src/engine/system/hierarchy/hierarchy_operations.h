@@ -66,11 +66,12 @@ void markDirty(Scene& scene, EntityId entity);
  * @brief Resolve world transforms for every dirty hierarchical entity.
  *
  * For each entity with a Hierarchy whose dirty flag is set, computes its
- * world matrix via computeWorldMatrix and writes it into the entity's
- * pre-seeded WorldTransform. Dirty entities are bucketed by absolute
- * depth in a serial pass and then each bucket runs through parallelFor;
- * parents finish before children by construction so reads of an
- * ancestor's matrix never race a write.
+ * world matrix and writes it into the entity's pre-seeded WorldTransform.
+ * Dirty entities are bucketed by absolute depth in a serial pass and then
+ * each bucket runs through parallelFor; depths are processed in order so a
+ * child reads its parent's already-finalised WorldTransform (one matrix
+ * multiply, parentWorld * local) rather than re-walking the ancestor chain,
+ * and reads of an ancestor's matrix never race a write.
  *
  * This is the per-frame work HierarchySystem runs, exposed here as a
  * free function so editors / loaders / bake passes can trigger it

@@ -132,9 +132,11 @@ namespace Easing {
         return glm::bounceEaseInOut(t);
     }
 
-    /// All easing function names in display order, grouped by family. Drives UI
-    /// dropdowns (resolve with byIndex/byName). Index-aligned with EASING_FNS
-    /// below - add to BOTH when adding an easing (the static_assert guards it).
+    /**
+     * @brief All easing function names in display order, grouped by family. Drives UI
+     * dropdowns (resolve with byIndex/byName). Index-aligned with EASING_FNS
+     * below - add to BOTH when adding an easing (the static_assert guards it).
+     */
     inline constexpr const char* EASING_NAMES[] = {
         "linear",
         "easeInQuad",    "easeOutQuad",    "easeInOutQuad",
@@ -149,9 +151,11 @@ namespace Easing {
         "easeInBounce",  "easeOutBounce",  "easeInOutBounce",
     };
 
-    /// Function pointers, index-aligned with EASING_NAMES above. The four
-    /// lookups below read these two parallel arrays, so each (name, function)
-    /// pairing lives in exactly one place instead of being hand-listed thrice.
+    /**
+     * @brief Function pointers, index-aligned with EASING_NAMES above. The four
+     * lookups below read these two parallel arrays, so each (name, function)
+     * pairing lives in exactly one place instead of being hand-listed thrice.
+     */
     inline constexpr EasingFunction EASING_FNS[] = {
         &linear,
         &easeInQuad,    &easeOutQuad,    &easeInOutQuad,
@@ -171,14 +175,16 @@ namespace Easing {
     static_assert(sizeof(EASING_FNS) / sizeof(EASING_FNS[0]) == static_cast<size_t>(EASING_COUNT),
                   "EASING_NAMES and EASING_FNS must stay index-aligned");
 
-    /// Index into the tables -> function pointer (clamped to linear).
+    /** @brief Index into the tables -> function pointer (clamped to linear). */
     inline EasingFunction byIndex(int i) {
         if (i < 0 || i >= EASING_COUNT) return &linear;
         return EASING_FNS[i];
     }
 
-    /// Stable string name -> function pointer (for deserialization).
-    /// Falls back to linear if the name is unknown.
+    /**
+     * @brief Stable string name -> function pointer (for deserialization).
+     * Falls back to linear if the name is unknown.
+     */
     inline EasingFunction byName(const char* name) {
         for (int i = 0; i < EASING_COUNT; ++i) {
             if (std::strcmp(name, EASING_NAMES[i]) == 0) return EASING_FNS[i];
@@ -186,7 +192,7 @@ namespace Easing {
         return &linear;
     }
 
-    /// Function pointer -> index into the tables (0/linear if unknown).
+    /** @brief Function pointer -> index into the tables (0/linear if unknown). */
     inline int indexOf(EasingFunction f) {
         for (int i = 0; i < EASING_COUNT; ++i) {
             if (EASING_FNS[i] == f) return i;
@@ -194,8 +200,10 @@ namespace Easing {
         return 0;
     }
 
-    /// Function-pointer -> stable string name (for serialization).
-    /// Returns "linear" if the pointer is unknown.
+    /**
+     * @brief Function-pointer -> stable string name (for serialization).
+     * Returns "linear" if the pointer is unknown.
+     */
     inline const char* nameOf(EasingFunction f) {
         return EASING_NAMES[indexOf(f)];
     }

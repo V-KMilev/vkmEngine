@@ -73,31 +73,35 @@ class BehaviorSystem : public System {
         static void destroyEntityBehaviors(Scene& scene, EntityId entity);
 
     private:
-        /// Fire onStart once (binding the full context first), catching + disabling on throw.
+        /** @brief Fire onStart once (binding the full context first), catching + disabling on throw. */
         void ensureStarted(Behavior& behavior, EntityId entity, FrameContext& ctx);
-        /// Deliver onCollision/onTrigger (a void(EntityId) hook) to a target entity's started behaviors.
+        /** @brief Deliver onCollision/onTrigger (a void(EntityId) hook) to a target entity's started behaviors. */
         void dispatchEntityHook(Scene& scene, EntityId target, EntityId other,
                                 const char* hookName, void (Behavior::*hook)(EntityId));
-        /// Apply queued destroy() requests via destroyHierarchy, after the hook pass.
+        /** @brief Apply queued destroy() requests via destroyHierarchy, after the hook pass. */
         void drainPendingDestroy(Scene& scene);
-        /// Run a hook body under the catch net: log + disable the behavior on throw.
+        /** @brief Run a hook body under the catch net: log + disable the behavior on throw. */
         template<typename Fn>
         static void guard(Behavior& behavior, const char* hookName, Fn&& fn);
-        /// Fire onDestroy on a started behavior, catching (but not disabling - it's going away).
+        /** @brief Fire onDestroy on a started behavior, catching (but not disabling - it's going away). */
         static void fireDestroy(Behavior& behavior);
 
         EventSystem& m_events;  ///< Injected into behaviors; also the bus we listen on.
 
-        /// Physics events collected via subscriptions, dispatched to hooks in update().
+        /** @brief Physics events collected via subscriptions, dispatched to hooks in update(). */
         std::vector<CollisionEvent> m_collisions;
         std::vector<TriggerEvent>   m_triggers;
 
-        /// Entities behaviors asked to destroy() this pass; drained after the
-        /// hook loop so a self-destroy can't free its ScriptComponent mid-iterate.
+        /**
+         * @brief Entities behaviors asked to destroy() this pass; drained after the
+         * hook loop so a self-destroy can't free its ScriptComponent mid-iterate.
+         */
         std::vector<EntityId> m_pendingDestroy;
 
-        /// Cached in init() so shutdown() (which gets no FrameContext) can still
-        /// walk the scene. The Scene object is stable for the engine's lifetime.
+        /**
+         * @brief Cached in init() so shutdown() (which gets no FrameContext) can still
+         * walk the scene. The Scene object is stable for the engine's lifetime.
+         */
         Scene* m_scene = nullptr;
 };
 

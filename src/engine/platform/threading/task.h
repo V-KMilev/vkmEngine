@@ -4,6 +4,7 @@
 
 namespace Engine {
 
+/** @brief A unit of work for the ThreadPool: a type-erased nullary callable. */
 struct Task {
     std::function<void()> function = nullptr;
 

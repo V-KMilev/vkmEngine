@@ -34,12 +34,19 @@ class BehaviorErrorLog {
             unsigned int repeatCount = 1;
         };
 
+        /** @brief Process-wide singleton accessor. */
         static BehaviorErrorLog& get();
 
+        /**
+         * @brief Record an error. A consecutive duplicate (same behavior + hook +
+         * message) bumps the existing entry's count instead of appending.
+         */
         void push(std::string behaviorName, std::string hook, std::string message);
+
+        /** @brief Drop every entry. */
         void clearAll();
 
-        /// Copy of the buffer, newest first.
+        /** @brief Copy of the buffer, newest first. */
         std::vector<Entry> snapshot() const;
         std::size_t size() const;
 

@@ -84,9 +84,11 @@ namespace AssetSerializer {
 
 namespace {
 
-/// Texture fields on MaterialAsset, paired with their stable JSON key.
-/// Used by both save (collect referenced textures, emit handle names) and
-/// load (the "inline" material factory resolves these refs by name).
+/**
+ * @brief Texture fields on MaterialAsset, paired with their stable JSON key.
+ * Used by both save (collect referenced textures, emit handle names) and
+ * load (the "inline" material factory resolves these refs by name).
+ */
 struct TexField {
     const char* key;
     TextureHandle MaterialAsset::* member;
@@ -118,11 +120,13 @@ glm::vec4 vec4FromJson(const nlohmann::json& j, const glm::vec4& fallback) {
 
 } // namespace
 
-/// Build an "inline" material source descriptor capturing all PBR scalars +
-/// texture refs by name. This is what we emit on save regardless of how the
-/// material was first created - editor tweaks survive cold-start load. Public
-/// (declared in the header) so the asset cooker can write a material's
-/// canonical inline form to the library.
+/**
+ * @brief Build an "inline" material source descriptor capturing all PBR scalars +
+ * texture refs by name. This is what we emit on save regardless of how the
+ * material was first created - editor tweaks survive cold-start load. Public
+ * (declared in the header) so the asset cooker can write a material's
+ * canonical inline form to the library.
+ */
 nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& resources) {
     nlohmann::json src;
     src["kind"]  = "inline";
@@ -165,8 +169,10 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
 
 namespace {
 
-/// Apply an "inline" material descriptor to an existing MaterialAsset,
-/// resolving texture refs via findByName.
+/**
+ * @brief Apply an "inline" material descriptor to an existing MaterialAsset,
+ * resolving texture refs via findByName.
+ */
 void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const ResourceManager& resources) {
     const std::string typeStr = src.value("type", std::string{"Opaque"});
     m.type = Reflect::enumFromName<MaterialType>(typeStr, MATERIAL_TYPE_NAMES);
@@ -274,8 +280,10 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
 
 namespace {
 
-/// Load the `source` object from a library recipe file (a material's inline
-/// form). Returns false (logging) if the file is missing or malformed.
+/**
+ * @brief Load the `source` object from a library recipe file (a material's inline
+ * form). Returns false (logging) if the file is missing or malformed.
+ */
 bool loadLibrarySource(const AssetLibrary::Record& record, nlohmann::json& outSource) {
     const std::filesystem::path path = AssetLibrary::get().recipePath(record);
     std::ifstream in(path);
@@ -298,10 +306,12 @@ bool loadLibrarySource(const AssetLibrary::Record& record, nlohmann::json& outSo
     return true;
 }
 
-/// Resolve a name-only asset reference to the source its factory needs: meshes
-/// and textures load from the cooked cache by name; materials load their inline
-/// descriptor from the library file. Returns false if the name is not in the
-/// manifest.
+/**
+ * @brief Resolve a name-only asset reference to the source its factory needs: meshes
+ * and textures load from the cooked cache by name; materials load their inline
+ * descriptor from the library file. Returns false if the name is not in the
+ * manifest.
+ */
 bool resolveCookedSource(AssetType type, const std::string& name, nlohmann::json& outSource) {
     const AssetLibrary::Record* record = AssetLibrary::get().find(type, name);
     if (!record) {

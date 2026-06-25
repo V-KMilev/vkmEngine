@@ -23,21 +23,27 @@ class DynamicLibrary {
         DynamicLibrary& operator=(DynamicLibrary && other) noexcept;
 
     public:
-        /// Load the library at @p path. Returns false (and logs) on failure;
-        /// any previously loaded library is unloaded first.
+        /**
+         * @brief Load the library at @p path. Returns false (and logs) on failure;
+         * any previously loaded library is unloaded first.
+         */
         bool load(const std::string& path);
 
-        /// Unload the library if loaded. Idempotent.
+        /** @brief Unload the library if loaded. Idempotent. */
         void unload();
 
         bool isLoaded() const { return m_handle != nullptr; }
 
-        /// Resolve @p name to a symbol address, or nullptr if absent. Cast the
-        /// result to the expected function-pointer type.
+        /**
+         * @brief Resolve @p name to a symbol address, or nullptr if absent. Cast the
+         * result to the expected function-pointer type.
+         */
         void* symbol(const char* name) const;
 
-        /// Map a base name to its platform filename: "game" -> "game.dll"
-        /// (Windows), "libgame.so" (Linux), "libgame.dylib" (macOS).
+        /**
+         * @brief Map a base name to its platform filename: "game" -> "game.dll"
+         * (Windows), "libgame.so" (Linux), "libgame.dylib" (macOS).
+         */
         static std::string platformName(const std::string& baseName);
 
     private:

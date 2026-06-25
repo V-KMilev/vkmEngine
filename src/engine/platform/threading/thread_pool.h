@@ -13,8 +13,16 @@
 
 namespace Engine {
 
+/** @brief Worker count for the process-wide pool: one per hardware thread. */
 const size_t DEFAULT_THREAD_COUNT = std::thread::hardware_concurrency();
 
+/**
+ * @brief Fixed-size pool of worker threads draining a shared task queue.
+ *
+ * Process-wide singleton (get()); the constructor/destructor are private.
+ * Used to back parallelFor; tasks run in submission order across workers.
+ * waitToFinish() blocks until every submitted task has completed.
+ */
 class ThreadPool {
     public:
         ThreadPool(const ThreadPool& other) = delete;
@@ -24,27 +32,47 @@ class ThreadPool {
         ThreadPool& operator=(ThreadPool && other) = delete;
 
     public:
+        /** @brief Access the process-wide pool, constructed on first use. */
         static ThreadPool& get();
 
         size_t threadCount() const { return m_threads.size(); }
 
+        /** @brief Enqueue a single task and wake one worker. */
         void addTask(Task && task);
+
+        /**
+         * @brief Enqueue a batch of tasks under one lock and wake all workers.
+         * Cheaper than repeated addTask for many tasks at once.
+         */
         void addTasks(std::vector<Task>&& tasks);
 
+        /**
+         * @brief Block the caller until the in-flight task count reaches zero.
+         * Counts every task ever submitted (not a per-call barrier), so do
+         * not interleave unrelated submissions across waitToFinish() calls.
+         */
         void waitToFinish();
 
-        /// True when called from a thread owned by the pool. parallelFor
-        /// must not be re-entered from inside a task body - the calling
-        /// worker would spin in waitToFinish() forever on its own slot.
+        /**
+         * @brief True when called from a thread owned by the pool. parallelFor
+         * must not be re-entered from inside a task body - the calling
+         * worker would spin in waitToFinish() forever on its own slot.
+         */
         static bool isWorkerThread();
 
     private:
         ThreadPool(size_t threadCount);
         ~ThreadPool();
 
+        /** @brief Spawn the worker threads. */
         void start(size_t threadCount);
+        /** @brief Signal shutdown and join all workers; clears any unrun tasks. */
         void stop();
 
+        /**
+         * @brief Worker loop: pop and run tasks until shutdown, decrementing the
+         * in-flight count (even on exception) and signalling waiters at zero.
+         */
         void process();
 
     private:
@@ -59,6 +87,13 @@ class ThreadPool {
         std::condition_variable m_doneCV;   ///< Signalled when m_taskCount drops to 0
 };
 
+/**
+ * @brief Run @p function over the index range [0, count) split into @p grain-sized
+ * chunks across the pool, with the calling thread handling the first chunk.
+ * @p function may take a size_t index or no arguments. Re-entry from a worker
+ * thread falls back to a serial sweep to avoid self-deadlock. Blocks until the
+ * whole range is done.
+ */
 template<class Function>
 void parallelFor(size_t count, size_t grain, Function && function) {
     if (count == 0) {
@@ -115,6 +150,11 @@ void parallelFor(size_t count, size_t grain, Function && function) {
     pool.waitToFinish();
 }
 
+/**
+ * @brief parallelFor with an auto-chosen grain: ranges below MIN_PARALLEL run inline
+ * to dodge dispatch overhead; larger ranges are split evenly across all
+ * workers plus the calling thread.
+ */
 template<class Function>
 void parallelFor(size_t count, Function && function) {
     auto& pool = ThreadPool::get();

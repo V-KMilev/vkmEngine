@@ -26,8 +26,10 @@ enum class MaterialType : uint8_t {
     AlphaMask   = 3
 };
 
-/// Names in MaterialType order - the single source for JSON (de)serialization
-/// and the editor's type combo, so the two cannot drift out of enum order.
+/**
+ * @brief Names in MaterialType order - the single source for JSON (de)serialization
+ * and the editor's type combo, so the two cannot drift out of enum order.
+ */
 inline constexpr const char* const MATERIAL_TYPE_NAMES[] = {
     "Opaque", "Transparent", "Unlit", "AlphaMask"
 };
@@ -35,11 +37,11 @@ inline constexpr const char* const MATERIAL_TYPE_NAMES[] = {
 /**
  * @brief Bitset of optional PBR lobes / features a material actually uses.
  *
- * Used by the shader variant cache: the engine compiles one PBR program
- * per distinct flag set so a plain opaque-diffuse material doesn't pay the
+ * Intended for a future shader variant cache: compile one PBR program per
+ * distinct flag set so a plain opaque-diffuse material doesn't pay the
  * fragment cost of branches for clearcoat / transmission / sheen / etc.
  * MaterialAsset::featureFlags() derives the bitset from the current scalar
- * values and texture presence. Dormant until the variant cache returns -
+ * values and texture presence. Dormant until the variant cache lands -
  * the ubershader branches at runtime for now.
  */
 enum class MaterialFeature : uint32_t {
@@ -56,8 +58,10 @@ enum class MaterialFeature : uint32_t {
 
 constexpr uint32_t toBits(MaterialFeature f) { return static_cast<uint32_t>(f); }
 
-/// All features OR'd together. The default ubershader path uses this so the
-/// shader compiles every optional block; per-material variants narrow it.
+/**
+ * @brief All features OR'd together. The default ubershader path uses this so the
+ * shader compiles every optional block; per-material variants narrow it.
+ */
 constexpr uint32_t MATERIAL_ALL_FEATURES =
     toBits(MaterialFeature::Transmission) |
     toBits(MaterialFeature::Volume)       |
@@ -136,13 +140,14 @@ struct MaterialAsset : public Resource {
     /**
      * @brief Compute the MaterialFeature bitset this material requires.
      *
-     * Drives shader variant selection. Thresholds match the runtime guards
-     * in the PBR fragment shader so a feature that's optimised out at
-     * compile time also wasn't running its `if (X > 0.001)` block.
+     * Intended to drive shader variant selection. Thresholds match the
+     * runtime guards in the PBR fragment shader so a feature that would be
+     * optimised out at compile time also isn't running its `if (X > 0.001)`
+     * block.
      *
-     * Pure function over the asset's current state; called whenever a
-     * material is (re)synced to the GPU, so live edits in the Material
-     * Editor are picked up.
+     * Pure function over the asset's current state. Currently unused: the
+     * PBR path is a single ubershader that branches at runtime, so nothing
+     * calls this yet - it is dormant until the variant cache lands.
      */
     uint32_t featureFlags() const {
         uint32_t f = 0;

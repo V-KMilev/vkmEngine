@@ -25,8 +25,10 @@ struct ReflectionProbe {
     float     intensity   = 1.0f;             ///< Linear-HDR multiplier on the probe's contribution.
     uint32_t  resolution  = 256;              ///< Captured cube face size in pixels.
 
-    /// Bump to force a re-bake (e.g. after moving the sun or scene geometry the
-    /// probe's own params don't capture). Moving the probe re-bakes automatically.
+    /**
+     * @brief Bump to force a re-bake (e.g. after moving the sun or scene geometry the
+     * probe's own params don't capture). Moving the probe re-bakes automatically.
+     */
     uint32_t bakeVersion = 0;
 };
 

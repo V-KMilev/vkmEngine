@@ -28,9 +28,11 @@ struct TextureLoadCompletion {
     int      channels = 0;
     bool     success  = false;   ///< False if the decode/read failed; finaliser will warn and leave the asset empty.
 
-    /// Cooked textures already know their exact TextureParams (format, wrap,
-    /// filter), so they bypass the channel-count inference the stb path uses.
-    /// When set, the finaliser applies `params` verbatim instead of inferring.
+    /**
+     * @brief Cooked textures already know their exact TextureParams (format, wrap,
+     * filter), so they bypass the channel-count inference the stb path uses.
+     * When set, the finaliser applies `params` verbatim instead of inferring.
+     */
     bool          hasParams = false;
     TextureParams params{};
 };
@@ -76,9 +78,11 @@ class AsyncLoadQueue {
         void pushTexture(TextureLoadCompletion completion);
         void pushMesh   (MeshLoadCompletion    completion);
 
-        /// Move every pending completion out under one lock and return them.
-        /// Empty if there's nothing pending. Called once per frame by
-        /// AsyncLoaderSystem on the main thread.
+        /**
+         * @brief Move every pending completion out under one lock and return them.
+         * Empty if there's nothing pending. Called once per frame by
+         * AsyncLoaderSystem on the main thread.
+         */
         std::vector<TextureLoadCompletion> drainTextures();
         std::vector<MeshLoadCompletion>    drainMeshes();
 

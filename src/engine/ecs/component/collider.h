@@ -28,8 +28,10 @@ struct ColliderBox {
  * entity's Transform (root-space == world for physics bodies).
  */
 struct Collider {
-    /// The collision volume: one or more boxes. Defaults to a single unit box so
-    /// a freshly added collider is usable; "Fit to Mesh" rebuilds it.
+    /**
+     * @brief The collision volume: one or more boxes. Defaults to a single unit box so
+     * a freshly added collider is usable; "Fit to Mesh" rebuilds it.
+     */
     std::vector<ColliderBox> parts = { ColliderBox{} };
 
     bool isTrigger = false;   ///< Generates contacts for queries but no impulse response

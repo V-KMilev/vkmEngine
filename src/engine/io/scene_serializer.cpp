@@ -89,10 +89,12 @@ template<> struct SerializerTraits<Hierarchy> {
 #undef VKM_SERIALIZER_TRAITS
 #undef VKM_SERIALIZER_TRAITS_R
 
-/// Compile-time list of every component type that serializes. Adding a
-/// component = add a SerializerTraits specialisation above and add the type
-/// here. The fold operators below propagate the change to save / load /
-/// known-key checks; no other edits required.
+/**
+ * @brief Compile-time list of every component type that serializes. Adding a
+ * component = add a SerializerTraits specialisation above and add the type
+ * here. The fold operators below propagate the change to save / load /
+ * known-key checks; no other edits required.
+ */
 using SerializedComponents = std::tuple<
     Name, Transform, Camera, Light, Rigidbody, Collider, PhysicsWorld, Mesh, Animation, ScriptComponent, Hierarchy
 >;

@@ -79,21 +79,27 @@ class Behavior {
         virtual std::unique_ptr<Behavior> clone() const = 0;
 
     protected:
-        /// Create a new (empty) entity; add components to it via m_scene. Safe
-        /// to call from a hook, with one caveat: attaching a ScriptComponent to
-        /// the new entity mid-hook can reallocate the behavior storage being
-        /// iterated - do that kind of structural script wiring outside the hot
-        /// loop (e.g. at scene setup), not inline.
+        /**
+         * @brief Create a new (empty) entity; add components to it via m_scene. Safe
+         * to call from a hook, with one caveat: attaching a ScriptComponent to
+         * the new entity mid-hook can reallocate the behavior storage being
+         * iterated - do that kind of structural script wiring outside the hot
+         * loop (e.g. at scene setup), not inline.
+         */
         Entity spawn();
 
-        /// Destroy @p entity (and its subtree) - deferred until after the current
-        /// hook pass, so destroying your own entity is safe. Fires onDestroy on
-        /// the affected behaviors. Routed through HierarchyOperations.
+        /**
+         * @brief Destroy @p entity (and its subtree) - deferred until after the current
+         * hook pass, so destroying your own entity is safe. Fires onDestroy on
+         * the affected behaviors. Routed through HierarchyOperations.
+         */
         void destroy(EntityId entity);
 
-        /// Subscribe to events of type EventT for this behavior's lifetime. The
-        /// subscription is dropped automatically when the behavior is destroyed
-        /// (or the play session ends), so there is nothing to clean up by hand.
+        /**
+         * @brief Subscribe to events of type EventT for this behavior's lifetime. The
+         * subscription is dropped automatically when the behavior is destroyed
+         * (or the play session ends), so there is nothing to clean up by hand.
+         */
         template<typename EventT>
         void subscribe(std::function<void(const EventT&)> callback) {
             if (!m_events) return;
@@ -111,7 +117,7 @@ class Behavior {
     private:
         friend class BehaviorSystem;
 
-        /// Injected by BehaviorSystem before onStart so hooks can reach the engine.
+        /** @brief Injected by BehaviorSystem before onStart so hooks can reach the engine. */
         void bindContext(
             EntityId entity,
             Scene& scene,
@@ -128,9 +134,11 @@ class Behavior {
             m_pendingDestroy = &pendingDestroy;
         }
 
-        /// Drop all subscribe<E>() listeners. Run from the destructor and, while
-        /// the EventSystem is guaranteed alive, by BehaviorSystem::endSession at
-        /// play stop / shutdown (so it never unsubscribes from a dead bus).
+        /**
+         * @brief Drop all subscribe<E>() listeners. Run from the destructor and, while
+         * the EventSystem is guaranteed alive, by BehaviorSystem::endSession at
+         * play stop / shutdown (so it never unsubscribes from a dead bus).
+         */
         void clearSubscriptions() {
             for (auto& unsubscribe : m_subscriptions) unsubscribe();
             m_subscriptions.clear();

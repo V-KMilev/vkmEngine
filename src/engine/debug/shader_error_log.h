@@ -35,21 +35,28 @@ class ShaderErrorLog {
             unsigned int repeatCount = 1;
         };
 
+        /** @brief Process-wide singleton accessor. */
         static ShaderErrorLog& get();
 
+        /**
+         * @brief Record a compile/link error. A consecutive duplicate (same name +
+         * message) bumps the existing entry's count instead of appending.
+         */
         void push(
             std::string shaderName,
             std::string definesSummary,
             std::string message
         );
 
-        /// Drop all entries whose @p shaderName matches. Called after a
-        /// successful recompile so stale errors don't linger in the UI.
+        /**
+         * @brief Drop all entries whose @p shaderName matches. Called after a
+         * successful recompile so stale errors don't linger in the UI.
+         */
         void clearFor(const std::string& shaderName);
 
         void clearAll();
 
-        /// Returns a copy of the buffer (newest first).
+        /** @brief Returns a copy of the buffer (newest first). */
         std::vector<Entry> snapshot() const;
 
         std::size_t size() const;

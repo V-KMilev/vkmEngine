@@ -107,8 +107,10 @@ class Engine {
         WindowManager m_window;
         FrameTracker  m_frameTracker;
 
-        /// Systems organized by stage. Outer index is SystemStage; inner vector
-        /// preserves registration order within that stage.
+        /**
+         * @brief Systems organized by stage. Outer index is SystemStage; inner vector
+         * preserves registration order within that stage.
+         */
         std::array<std::vector<std::unique_ptr<System>>,
                    static_cast<size_t>(SystemStage::Count)> m_systemsByStage;
 
@@ -125,14 +127,18 @@ class Engine {
 
         SimulationClock m_simClock;
 
-        /// Once-a-second FPS console log. Off by default (the editor uses its
-        /// status bar); the runtime opts in. The timer throttles the log.
+        /**
+         * @brief Once-a-second FPS console log. Off by default (the editor uses its
+         * status bar); the runtime opts in. The timer throttles the log.
+         */
         bool  m_fpsLog      = false;
         float m_fpsLogTimer = 0.0f;
 
-        /// Throttle state for accumulator-clamp warnings (one per second).
-        /// Per-instance so headless tools / tests with multiple Engine
-        /// instances don't cross-suppress each other.
+        /**
+         * @brief Throttle state for accumulator-clamp warnings (one per second).
+         * Per-instance so headless tools / tests with multiple Engine
+         * instances don't cross-suppress each other.
+         */
         std::chrono::steady_clock::time_point m_lastAccumClampWarn{};
         int m_accumClampSuppressed = 0;
 };

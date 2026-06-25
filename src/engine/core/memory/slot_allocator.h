@@ -28,9 +28,11 @@ class SlotAllocator {
         SlotAllocator(SlotAllocator && other) = delete;
         SlotAllocator& operator=(SlotAllocator && other) = delete;
 
-        /// @brief Swap internal state with another allocator. Lets the
-        /// containing Scene support a staging-then-swap load path without
-        /// breaking the no-copy/no-move invariant.
+        /**
+         * @brief Swap internal state with another allocator. Lets the
+         * containing Scene support a staging-then-swap load path without
+         * breaking the no-copy/no-move invariant.
+         */
         void swap(SlotAllocator& other) noexcept {
             using std::swap;
             swap(m_generation, other.m_generation);
@@ -165,7 +167,7 @@ class SlotAllocator {
         }
 
     private:
-        /// @brief Pop a slot from the free list, or grow the generation array if empty.
+        /** @brief Pop a slot from the free list, or grow the generation array if empty. */
         uint32_t allocateSlot() {
             if (!m_freeList.empty()) {
                 uint32_t idx = m_freeList.back();
