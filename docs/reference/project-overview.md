@@ -46,14 +46,14 @@ is the scaling lever). The default wiring lives in `setupEngineApp`
 
 | Stage | Default systems |
 |-------|-----------------|
-| Input | CameraController |
+| Input | CameraControllerSystem |
 | Simulation | EventSystem, AsyncLoaderSystem, BehaviorSystem, AnimationSystem, PhysicsSystem |
 | Transform | HierarchySystem (resolves `WorldTransform` from local `Transform` + hierarchy) |
 | Visibility | VisibilitySystem (frustum / distance / screen-size culling -> `Visibility`) |
 | Render | RenderSystem (builds `RenderView`, hands it to the backend) |
 | UI | EditorSystem (editor binary only) |
 
-(`FileWatcher` is an Input-stage `System` the engine provides but the default app
+(`FileWatcherSystem` is an Input-stage `System` the engine provides but the default app
 does not register; see [io.md](system/io.md).)
 
 ## Rendering at a glance

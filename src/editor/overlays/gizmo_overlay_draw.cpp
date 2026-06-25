@@ -7,7 +7,7 @@
 
 #include "framework/editor_common.h"
 #include "system/visibility/visibility.h"
-#include "system/camera/camera_controller.h"
+#include "system/camera/camera_controller_system.h"
 #include "ecs/component/collider.h"
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/world_transform.h"

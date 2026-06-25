@@ -13,7 +13,7 @@ plus a polling file watcher.
 | Asset library       | `src/engine/io/asset_library.h`              | The cooked-asset database manifest: maps an asset name to its recipe + cooked file + hash. |
 | Asset cooker        | `src/tools/cook/asset_cooker.h` (editor)     | Bakes assets from their recipe into the library + cooked binary cache (`cooked/`).        |
 | Component serializer| `src/engine/io/component_serializer.h`       | Per-component to/from JSON. Mechanical, one save/load pair per component type.           |
-| File watcher        | `src/engine/system/io/file_watcher.h`        | Polling `mtime` watcher; fires a callback per changed file. Used for shader hot-reload.  |
+| File watcher        | `src/engine/system/io/file_watcher_system.h`        | Polling `mtime` watcher; fires a callback per changed file. Used for shader hot-reload.  |
 
 ## SceneSerializer
 
@@ -54,7 +54,7 @@ documents this inline.
 After load, the caller should:
 
 - Emit `SceneSerializer::SceneLoadedEvent` so subscribers
-  (`CameraController`, panels, gameplay code) can refresh anything they
+  (`CameraControllerSystem`, panels, gameplay code) can refresh anything they
   cache across scene swaps.
 - Clear the `CommandStack` (entity IDs and component topology are no
   longer comparable across the swap).
@@ -149,9 +149,9 @@ save/load coverage is three lines:
 
 No registry tables, no virtual dispatch, no macros.
 
-## FileWatcher
+## FileWatcherSystem
 
-`FileWatcher` is a `System` for `SystemStage::Input`. It polls registered
+`FileWatcherSystem` is a `System` for `SystemStage::Input`. It polls registered
 directories on a configurable interval (default 0.5 s), `stat()`s each
 file, and fires the registered `OnChange` callback the next time a
 file's `mtime` differs from the last seen value.
@@ -160,7 +160,7 @@ It is provided by the engine but **not** registered by the default
 `setupEngineApp` wiring today; an app opts in explicitly:
 
 ```cpp
-auto& watcher = engine.addSystem<FileWatcher>(SystemStage::Input);
+auto& watcher = engine.addSystem<FileWatcherSystem>(SystemStage::Input);
 watcher.watch("shaders/forward/pbr", [&]{ resources.commitShader(pbrHandle); });
 ```
 

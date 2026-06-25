@@ -24,7 +24,7 @@
 #include "framework/editor_settings.h"
 #include "input/editor_keybinds.h"
 #include "platform/window/window_manager.h"
-#include "system/camera/camera_controller.h"
+#include "system/camera/camera_controller_system.h"
 #include "system/render/render_system.h"
 #include "system/script/script_module.h"
 #include "system/render/render_view.h"
@@ -36,7 +36,7 @@ namespace Engine {
 EditorSystem::EditorSystem(
     Engine& engine,
     GLFWwindow* window,
-    CameraController& cameraController,
+    CameraControllerSystem& cameraController,
     VisibilitySystem& visibilitySystem,
     RenderSystem& renderSystem,
     EventSystem& events,

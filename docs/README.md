@@ -95,7 +95,7 @@ docs/
       hierarchy.md      world-transform resolve, HierarchyOperations
       animation.md      tracks, keyframes, easing
       events.md         typed pub/sub
-      io.md             scene / asset / component serialization, FileWatcher
+      io.md             scene / asset / component serialization, FileWatcherSystem
       scripting.md      Behavior lifecycle, ScriptComponent, DLL hot-reload
       physics.md        fixed-step rigid bodies, box colliders, contact solver
 ```

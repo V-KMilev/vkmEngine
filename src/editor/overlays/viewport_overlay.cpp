@@ -4,7 +4,7 @@
 #include "ui/editor_style.h"
 #include "core/math/axes.h"
 #include "system/visibility/visibility.h"
-#include "system/camera/camera_controller.h"
+#include "system/camera/camera_controller_system.h"
 
 #include <algorithm>
 #include <limits>

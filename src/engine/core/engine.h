@@ -28,7 +28,7 @@ namespace Engine {
  *
  * Usage:
  *   Engine::Engine engine;
- *   engine.addSystem<CameraController>(SystemStage::Input);
+ *   engine.addSystem<CameraControllerSystem>(SystemStage::Input);
  *   engine.addSystem<RenderSystem>(SystemStage::Render);
  *   engine.run();  // blocks until window closes
  */

@@ -43,7 +43,7 @@ overlays drawn on top.
 | `src/editor/framework/command_stack.h`                | `CommandStack` (bounded undo + redo with merge-on-coalesce)           |
 | `src/editor/framework/editor_commands.h`              | Concrete commands: Transform, Add/RemoveComponent, Create/DestroySubtree, Reparent |
 | `src/editor/framework/scene_io_controller.h`          | Save/Save-As/Load modal + file pickers, post-load housekeeping        |
-| `src/engine/system/camera/camera_controller.h`        | FPS fly-cam System used by the editor                                 |
+| `src/engine/system/camera/camera_controller_system.h`        | FPS fly-cam System used by the editor                                 |
 | `src/editor/gizmo/transform_gizmo.h`                  | Transform gizmo (base `transform_gizmo.cpp` + draw/hit/drag translation units) |
 
 ## Panels
@@ -168,7 +168,7 @@ small per-frame bake budget, so the Asset Browser grid amortizes thumbnail
 generation across frames while the Material Editor's live view re-renders each
 frame.
 
-## CameraController
+## CameraControllerSystem
 
 FPS-style fly camera; a `System` on `SystemStage::Input`. Updates the
 active camera's transform from input each frame.
@@ -187,7 +187,7 @@ active camera's transform from input each frame.
 ### Configuration
 
 ```cpp
-class CameraController : public System {
+class CameraControllerSystem : public System {
     struct Settings {
         float zoomSensitivity   = 0.02f;
         float lookSensitivity   = 0.002f;
