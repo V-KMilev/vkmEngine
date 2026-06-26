@@ -5,8 +5,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "gl_frame_buffer.h"     // Core::FrameBuffer
-#include "gl_screen_triangle.h"  // Core::ScreenTriangle
+#include "gl_frame_buffer.h"
+#include "gl_screen_triangle.h"
 
 #include "gl_target.h"
 #include "data/gl_camera.h"

@@ -5,7 +5,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/resource_handle.h"
-#include "ecs/entity.h"   // EntityId is a using-alias (StorageIndex), not forward-declarable
+#include "ecs/entity.h"
 
 namespace Engine {
 

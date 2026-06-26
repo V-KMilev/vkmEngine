@@ -7,7 +7,7 @@
 #include "logger.h"
 
 #include "gl_context.h"
-#include "texture/gl_texture.h"  // Core::Texture2D
+#include "texture/gl_texture.h"
 
 namespace Engine {
 

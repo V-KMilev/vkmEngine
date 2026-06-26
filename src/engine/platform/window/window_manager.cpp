@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-#include <GL/glew.h>  // glewInit only - the GL function loader. Backend-agnostic callers don't need this.
+#include <GL/glew.h>
 #include "platform/window/glfw_include.h"
 
 #include "platform/window/input_handle.h"

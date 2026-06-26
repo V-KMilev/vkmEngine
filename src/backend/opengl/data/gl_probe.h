@@ -5,11 +5,11 @@
 
 #include <GL/glew.h>
 
-#include "texture/gl_texture.h"  // Core::Texture2D (capture depth)
+#include "texture/gl_texture.h"
 #include "gl_frame_buffer.h"
-#include "gl_context.h"            // Core::Context (per-attach viewport sizing)
-#include "gl_texture_cube.h"        // Core::TextureCube (transient capture cube)
-#include "gl_texture_cube_array.h"  // Core::TextureCubeArray (irradiance + prefilter)
+#include "gl_context.h"
+#include "gl_texture_cube.h"
+#include "gl_texture_cube_array.h"
 
 namespace Engine {
 

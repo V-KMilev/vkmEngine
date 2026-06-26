@@ -2,9 +2,9 @@
 
 #include <glm/glm.hpp>
 
-#include "resource/asset/material_asset.h"  // MaterialAsset, MaterialHandle
+#include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
-#include "resource/asset/texture_asset.h"   // TextureHandle
+#include "resource/asset/texture_asset.h"
 #include "framework/asset_picker.h"
 
 namespace Engine {

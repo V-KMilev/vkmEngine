@@ -5,7 +5,7 @@
 
 #include <GL/glew.h>
 
-#include "gl_mip_chain_texture.h"  // Core::MipChainTexture
+#include "gl_mip_chain_texture.h"
 
 namespace Engine {
 

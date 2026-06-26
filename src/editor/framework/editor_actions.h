@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ecs/entity.h"
-#include "resource/asset/material_asset.h"   // MaterialHandle
+#include "resource/asset/material_asset.h"
 
 #include "framework/asset_picker.h"
 
