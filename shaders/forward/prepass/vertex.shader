@@ -1,4 +1,3 @@
-
 // Depth + G-buffer prepass: lay down opaque + alpha-masked depth so the forward
 // pass can early-Z, and write a view-space normal for SSR. Position must be
 // bit-identical to the forward vertex shader (same math + invariant) so the

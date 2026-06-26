@@ -1,4 +1,3 @@
-
 in vec2 vUV;
 out vec4 FragColor;
 

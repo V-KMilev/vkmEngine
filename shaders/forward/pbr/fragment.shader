@@ -1,4 +1,3 @@
-
 /*
  * Forward PBR ubershader - implements the full MaterialAsset spec.
  *

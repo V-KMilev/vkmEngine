@@ -51,13 +51,6 @@ class Engine {
         WindowManager& getWindow()             { return m_window; }
         const WindowManager& getWindow() const { return m_window; }
 
-        /**
-         * @brief The engine's frame clock: real + simulation time and the fixed-step accumulator.
-         *
-         * The main loop drives it via beginFrame() / consumeFixedStep(); the editor
-         * drives the play state (pause / step). The runtime never touches it, so it
-         * runs at 1x from boot.
-         */
         Clock& getClock()             { return m_clock; }
         const Clock& getClock() const { return m_clock; }
 
