@@ -24,7 +24,14 @@ class Scene;
 bool drawVec3Control(const char* label, float* values,
                      float resetValue = 0.0f, float speed = 0.1f);
 
-/** @brief Right-aligned property label with consistent column width across the panel. */
+/**
+ * @brief Draw a right-aligned property label with a consistent column width.
+ *
+ * Keeps the label column aligned across every property row in a panel and
+ * sets the next item to full width so the paired widget fills the remainder.
+ *
+ * @param label Text shown in the label column.
+ */
 void drawPropertyLabel(const char* label);
 
 /**
@@ -47,7 +54,16 @@ inline bool propSlider(const char* label, float* v, float lo, float hi,
     return changed;
 }
 
-/** @brief propSlider variant backed by an integer SliderInt over [lo, hi]. */
+/**
+ * @brief propSlider variant backed by an integer SliderInt over [lo, hi].
+ *
+ * @param label Property label and ImGui id scope for the row.
+ * @param v Integer value to read and edit in place.
+ * @param lo Inclusive lower bound of the slider.
+ * @param hi Inclusive upper bound of the slider.
+ * @param tooltip Optional hover tooltip; null for none.
+ * @return true the frame the value is edited.
+ */
 inline bool propSliderInt(const char* label, int* v, int lo, int hi,
                           const char* tooltip = nullptr) {
     drawPropertyLabel(label);
@@ -58,7 +74,18 @@ inline bool propSliderInt(const char* label, int* v, int lo, int hi,
     return changed;
 }
 
-/** @brief propSlider variant backed by a DragFloat with the given @p speed. */
+/**
+ * @brief propSlider variant backed by a DragFloat with the given drag speed.
+ *
+ * @param label Property label and ImGui id scope for the row.
+ * @param v Float value to read and edit in place.
+ * @param speed Units changed per pixel dragged.
+ * @param lo Inclusive lower clamp on the value.
+ * @param hi Inclusive upper clamp on the value.
+ * @param fmt printf-style format for the displayed value.
+ * @param tooltip Optional hover tooltip; null for none.
+ * @return true the frame the value is edited.
+ */
 inline bool propDrag(const char* label, float* v, float speed, float lo, float hi,
                      const char* fmt = "%.3f", const char* tooltip = nullptr) {
     drawPropertyLabel(label);
@@ -69,7 +96,15 @@ inline bool propDrag(const char* label, float* v, float speed, float lo, float h
     return changed;
 }
 
-/** @brief propSlider variant backed by an RGB ColorEdit3 with @p flags. */
+/**
+ * @brief propSlider variant backed by an RGB ColorEdit3.
+ *
+ * @param label Property label and ImGui id scope for the row.
+ * @param v Pointer to three floats (RGB) read and edited in place.
+ * @param flags ImGui color-edit flags controlling the picker behavior.
+ * @param tooltip Optional hover tooltip; null for none.
+ * @return true the frame the color is edited.
+ */
 inline bool propColor3(const char* label, float* v,
                        ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float,
                        const char* tooltip = nullptr) {
@@ -81,7 +116,15 @@ inline bool propColor3(const char* label, float* v,
     return changed;
 }
 
-/** @brief propSlider variant backed by an RGBA ColorEdit4 with @p flags. */
+/**
+ * @brief propSlider variant backed by an RGBA ColorEdit4.
+ *
+ * @param label Property label and ImGui id scope for the row.
+ * @param v Pointer to four floats (RGBA) read and edited in place.
+ * @param flags ImGui color-edit flags controlling the picker behavior.
+ * @param tooltip Optional hover tooltip; null for none.
+ * @return true the frame the color is edited.
+ */
 inline bool propColor4(const char* label, float* v,
                        ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float,
                        const char* tooltip = nullptr) {
@@ -93,7 +136,13 @@ inline bool propColor4(const char* label, float* v,
     return changed;
 }
 
-/** @brief Case-insensitive substring match. Empty @p filter matches every @p text. */
+/**
+ * @brief Test whether a string contains a filter substring, case-insensitively.
+ *
+ * @param text Candidate string being filtered.
+ * @param filter Needle to search for; an empty filter matches every text.
+ * @return true when filter occurs in text ignoring case (or filter is empty).
+ */
 bool matchesFilter(const char* text, const char* filter);
 
 /**

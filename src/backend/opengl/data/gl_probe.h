@@ -55,7 +55,12 @@ class GLProbeArray {
         void bindCaptureFbo()   const { m_fbo->bind(); }
         void unbindCaptureFbo() const { m_fbo->unbind(); }
 
-        /** @brief Attach the transient env cube @p face as colour 0 (geometry capture). */
+        /**
+         * @brief Attach the transient env cube @p face as colour 0 (geometry capture).
+         *
+         * @param gl   Live GL context whose viewport is set to the env-capture size.
+         * @param face Cube face index (0..5) attached as the colour-0 target.
+         */
         void attachEnvFace(const Core::Context& gl, int face) const {
             m_fbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_env.id(), 0);
@@ -63,12 +68,25 @@ class GLProbeArray {
         }
         void generateEnvMips() const { m_env.generateMipmaps(); }
 
-        /** @brief Attach one face of irradiance-array @p layer as colour 0. */
+        /**
+         * @brief Attach one face of irradiance-array @p layer as colour 0.
+         *
+         * @param gl    Live GL context whose viewport is set to the irradiance size.
+         * @param layer Cube-array layer (the probe slot) being baked.
+         * @param face  Cube face index (0..5) attached as the colour-0 target.
+         */
         void attachIrradianceFace(const Core::Context& gl, int layer, int face) const {
             m_irradiance.attachFace(GL_COLOR_ATTACHMENT0, layer, face, 0);
             gl.setViewport(0, 0, IRRADIANCE_SIZE, IRRADIANCE_SIZE);
         }
-        /** @brief Attach one face/mip of prefilter-array @p layer as colour 0. */
+        /**
+         * @brief Attach one face/mip of prefilter-array @p layer as colour 0.
+         *
+         * @param gl    Live GL context whose viewport is set to the mip's size.
+         * @param layer Cube-array layer (the probe slot) being baked.
+         * @param face  Cube face index (0..5) attached as the colour-0 target.
+         * @param mip   Roughness mip level being baked; halves the viewport per level.
+         */
         void attachPrefilterFace(const Core::Context& gl, int layer, int face, int mip) const {
             m_prefilter.attachFace(GL_COLOR_ATTACHMENT0, layer, face, mip);
             const int s = PREFILTER_SIZE >> mip;

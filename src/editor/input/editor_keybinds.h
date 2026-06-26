@@ -5,7 +5,11 @@
 
 namespace Engine {
 
-/** @brief Modifier flags (bitmask) for keybind combos. */
+/**
+ * @brief Modifier flags (bitmask) for keybind combos.
+ *
+ * OR the values together to require several modifiers at once for one keybind.
+ */
 enum KeyMod : uint8_t {
     KeyMod_None  = 0,
     KeyMod_Ctrl  = 1 << 0,
@@ -13,7 +17,9 @@ enum KeyMod : uint8_t {
     KeyMod_Alt   = 1 << 2,
 };
 
-/** @brief A single keybind: one ImGuiKey + modifier bitmask. */
+/**
+ * @brief A single keybind: one ImGuiKey plus a modifier bitmask.
+ */
 struct KeyBind {
     ImGuiKey key  = ImGuiKey_None;
     uint8_t  mods = KeyMod_None;
@@ -22,7 +28,11 @@ struct KeyBind {
     bool operator!=(const KeyBind& o) const { return !(*this == o); }
 };
 
-/** @brief All configurable editor keybinds with industry-standard defaults. */
+/**
+ * @brief All configurable editor keybinds with industry-standard defaults.
+ *
+ * Persisted via EditorSettings so user rebindings survive across sessions.
+ */
 struct EditorKeybinds {
     // File
     KeyBind saveScene        = { ImGuiKey_S,      KeyMod_Ctrl };
@@ -55,7 +65,15 @@ struct EditorKeybinds {
     KeyBind gizmoToggleSpace = { ImGuiKey_X, KeyMod_None };
 };
 
-/** @brief Check if a keybind was just pressed this frame (exact modifier match). */
+/**
+ * @brief Check whether a keybind was just pressed this frame.
+ *
+ * Requires an exact modifier match: a Ctrl-only bind does not fire while Shift
+ * is also held, so overlapping combos (e.g. Undo vs Redo) stay distinct.
+ *
+ * @param bind Keybind to test; an unbound (ImGuiKey_None) bind never matches.
+ * @return true on the frame the key transitions to pressed with matching modifiers.
+ */
 inline bool isPressed(const KeyBind& bind) {
     if (bind.key == ImGuiKey_None) return false;
     if (!ImGui::IsKeyPressed(bind.key)) return false;
@@ -68,7 +86,14 @@ inline bool isPressed(const KeyBind& bind) {
     return true;
 }
 
-/** @brief Get a human-readable label for a keybind (e.g. "Ctrl+D", "F5", "W"). */
+/**
+ * @brief Format a human-readable label for a keybind (e.g. "Ctrl+D", "F5", "W").
+ *
+ * @param bind Keybind whose modifiers and key are rendered into text.
+ * @param buf Caller-provided buffer the label is written into.
+ * @param bufSize Capacity of @p buf in bytes; the label is truncated to fit.
+ * @return @p buf, for convenient inline use in menu/tooltip strings.
+ */
 const char* getKeyBindLabel(const KeyBind& bind, char* buf, size_t bufSize);
 
 } // namespace Engine

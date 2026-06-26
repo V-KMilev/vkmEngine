@@ -40,7 +40,11 @@ class GLAOTarget {
          */
         void bind(const Core::Context& gl);
 
-        /** @brief Bind the AO texture to @p slot for the forward pass to sample. */
+        /**
+         * @brief Bind the AO texture to @p slot for the forward pass to sample.
+         *
+         * @param slot Texture unit the forward shader reads the AO factor from.
+         */
         void bindTexture(uint32_t slot) const;
 
     private:

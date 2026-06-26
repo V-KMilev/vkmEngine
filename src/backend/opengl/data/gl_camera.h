@@ -14,7 +14,9 @@ namespace Engine {
 
 namespace Engine {
 
-/** @brief std140 layout - must match the CameraBlock in shaders/forward. */
+/**
+ * @brief std140 layout - must match the CameraBlock in shaders/forward.
+ */
 struct CameraUBO {
     glm::mat4 viewProjection;
     glm::vec4 cameraPosition;  ///< xyz = world position.

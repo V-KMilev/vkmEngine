@@ -23,7 +23,15 @@ enum class EditorIcon {
     FrameAll
 };
 
-/** @brief Draw @p icon centered at @p c with half-extent @p r in color @p col. */
+/**
+ * @brief Draw a vector icon centered at a point with a given half-extent.
+ *
+ * @param dl Draw list to append the icon primitives to.
+ * @param icon Which glyph to render.
+ * @param c Center of the icon in screen space.
+ * @param r Half-extent (radius) of the icon in pixels.
+ * @param col Color the glyph is stroked/filled with.
+ */
 void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 col);
 
 /**

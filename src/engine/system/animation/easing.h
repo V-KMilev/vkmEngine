@@ -92,7 +92,14 @@ namespace Easing {
     static_assert(sizeof(EASING_FNS) / sizeof(EASING_FNS[0]) == static_cast<size_t>(EASING_COUNT),
                   "EASING_NAMES and EASING_FNS must stay index-aligned");
 
-    /** @brief Index into the tables -> function pointer (clamped to linear). */
+    /**
+     * @brief Map a table index to its easing function pointer.
+     *
+     * An out-of-range index is clamped to the linear easing function.
+     *
+     * @param i Index into the easing tables.
+     * @return The matching easing function, or linear if @p i is out of range.
+     */
     inline EasingFunction byIndex(int i) {
         if (i < 0 || i >= EASING_COUNT) return &linear;
         return EASING_FNS[i];
@@ -109,7 +116,12 @@ namespace Easing {
         return &linear;
     }
 
-    /** @brief Function pointer -> index into the tables (0/linear if unknown). */
+    /**
+     * @brief Map an easing function pointer back to its table index.
+     *
+     * @param f The easing function to look up.
+     * @return The table index of @p f, or 0 (linear) if it is not a known function.
+     */
     inline int indexOf(EasingFunction f) {
         for (int i = 0; i < EASING_COUNT; ++i) {
             if (EASING_FNS[i] == f) return i;

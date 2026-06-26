@@ -33,7 +33,12 @@
 
 namespace Engine {
 
-/** @brief Wrap a GL texture id as an ImGui ImTextureID for Image/ImageButton. */
+/**
+ * @brief Wrap a GL texture id as an ImGui ImTextureID for Image/ImageButton.
+ *
+ * @param glTextureId Raw OpenGL texture name to display.
+ * @return The id reinterpreted as the opaque handle ImGui's image widgets expect.
+ */
 inline ImTextureID imTexture(uint32_t glTextureId) {
     return static_cast<ImTextureID>(static_cast<intptr_t>(glTextureId));
 }

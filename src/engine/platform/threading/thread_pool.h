@@ -29,12 +29,24 @@ class ThreadPool {
         ThreadPool& operator=(ThreadPool && other) = delete;
 
     public:
-        /** @brief Access the process-wide pool, constructed on first use. */
+        /**
+         * @brief Access the process-wide thread pool.
+         *
+         * The pool is constructed on first use (Meyers singleton) and shared by
+         * every caller for the lifetime of the process.
+         *
+         * @return Reference to the single process-wide pool.
+         */
         static ThreadPool& get();
 
         size_t threadCount() const { return m_threads.size(); }
 
-        /** @brief Enqueue a single task and wake one worker. */
+        /**
+         * @brief Enqueue a single task and wake one worker.
+         *
+         * @param task The work to run on a worker thread; consumed (moved into
+         *             the queue).
+         */
         void addTask(std::function<void()> && task);
 
         /**
@@ -61,9 +73,18 @@ class ThreadPool {
         ThreadPool(size_t threadCount);
         ~ThreadPool();
 
-        /** @brief Spawn the worker threads. */
+        /**
+         * @brief Spawn the worker threads that drain the task queue.
+         *
+         * @param threadCount Number of worker threads to create.
+         */
         void start(size_t threadCount);
-        /** @brief Signal shutdown and join all workers; clears any unrun tasks. */
+
+        /**
+         * @brief Signal shutdown and join all workers.
+         *
+         * Any tasks still queued but not yet started are discarded.
+         */
         void stop();
 
         /**

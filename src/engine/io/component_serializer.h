@@ -72,7 +72,15 @@ namespace ComponentSerializer {
      * JSON stores the parent's *old-file* entity index.
      */
     nlohmann::json save(const Hierarchy&);
-    /** @brief Returns the parent's old-file index (uint32_t max if root). */
+    /**
+     * @brief Read a saved Hierarchy's parent reference as an old-file entity index.
+     *
+     * The value is the parent's index in the file being loaded, to be remapped
+     * to a live entity by the caller; a root entity yields uint32_t max.
+     *
+     * @param json The serialized Hierarchy object produced by save(const Hierarchy&).
+     * @return The parent's old-file index, or uint32_t max for a root entity.
+     */
     uint32_t loadParentIndex(const nlohmann::json&);
 
     /**

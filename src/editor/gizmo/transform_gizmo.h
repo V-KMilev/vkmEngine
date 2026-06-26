@@ -14,10 +14,14 @@ namespace Engine {
  */
 enum class GizmoOperation { Translate, Rotate, Scale, Select };
 
-/** @brief Gizmo coordinate space. */
+/**
+ * @brief Gizmo coordinate space.
+ */
 enum class GizmoMode { Local, World };
 
-/** @brief Which axis/element is hovered or active during interaction. */
+/**
+ * @brief Which axis/element is hovered or active during interaction.
+ */
 enum class GizmoElement : int {
     None = 0,
     AxisX, AxisY, AxisZ,
@@ -70,10 +74,19 @@ class TransformGizmo {
         bool isOver() const  { return m_hovered != GizmoElement::None; }
         bool isUsing() const { return m_dragging; }
 
-        /** @brief Set snap angle in radians (0 = disabled), applied during rotation drag. */
+        /**
+         * @brief Set the rotation snap increment, applied during a rotation drag.
+         *
+         * @param radians Snap step in radians; 0 disables snapping.
+         */
         void setSnapAngle(float radians) { m_snapAngle = radians; }
 
-        /** @brief Delta quaternion from the current rotation drag (identity if not rotating). */
+        /**
+         * @brief Get the delta rotation accumulated by the current rotation drag.
+         *
+         * @return Delta quaternion from the active rotation drag, or identity
+         *         when no rotation is in progress.
+         */
         glm::quat getDragRotation() const { return m_dragRotation; }
 
     private:

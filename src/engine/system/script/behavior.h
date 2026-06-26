@@ -44,12 +44,47 @@ class Behavior {
         Behavior& operator=(Behavior && other) = delete;
 
     public:
-        virtual void onStart()             {}  ///< First tick this instance runs in play mode.
-        virtual void onUpdate(float dt)    {}  ///< Variable step; dt is simulation seconds.
-        virtual void onFixedUpdate(float dt) {}  ///< Fixed step; dt = fixedDeltaTime. Opt-in.
-        virtual void onCollision(EntityId other) {}  ///< A non-trigger contact with `other` this tick.
-        virtual void onTrigger(EntityId other)   {}  ///< This entity's trigger overlapped `other` this tick.
-        virtual void onDestroy()           {}  ///< Instance torn down (entity removed / play stopped / shutdown).
+        /**
+         * @brief Called on the first tick this instance runs in play mode.
+         */
+        virtual void onStart()             {}
+
+        /**
+         * @brief Called every variable-step frame while play mode runs.
+         *
+         * @param dt Elapsed simulation time this frame, in seconds.
+         */
+        virtual void onUpdate(float dt)    {}
+
+        /**
+         * @brief Called on each fixed-step tick (opt-in).
+         *
+         * Only invoked for behaviors that override it; left empty otherwise.
+         *
+         * @param dt Fixed timestep (fixedDeltaTime), in seconds.
+         */
+        virtual void onFixedUpdate(float dt) {}
+
+        /**
+         * @brief Called when a non-trigger contact with @p other occurs this tick.
+         *
+         * @param other The entity this one collided with.
+         */
+        virtual void onCollision(EntityId other) {}
+
+        /**
+         * @brief Called when this entity's trigger overlapped @p other this tick.
+         *
+         * @param other The entity that overlapped this trigger.
+         */
+        virtual void onTrigger(EntityId other)   {}
+
+        /**
+         * @brief Called when this instance is torn down.
+         *
+         * Fires on entity removal, play stop, or engine shutdown.
+         */
+        virtual void onDestroy()           {}
 
         /**
          * @brief Stable type name, identical to this type's BehaviorRegistry key.
@@ -117,7 +152,19 @@ class Behavior {
     private:
         friend class BehaviorSystem;
 
-        /** @brief Injected by BehaviorSystem before onStart so hooks can reach the engine. */
+        /**
+         * @brief Inject the engine context so hooks can reach the engine.
+         *
+         * Called by BehaviorSystem before onStart, wiring the members the
+         * lifecycle hooks and spawn()/destroy() helpers rely on.
+         *
+         * @param entity         The entity this behavior is attached to.
+         * @param scene          Scene used for entity/component access.
+         * @param resources       Resource manager for assets the behavior needs.
+         * @param input          Read-only keyboard/mouse query handle.
+         * @param events         Gameplay event bus for emit/enqueue/subscribe.
+         * @param pendingDestroy BehaviorSystem's deferred-destroy queue.
+         */
         void bindContext(
             EntityId entity,
             Scene& scene,

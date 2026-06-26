@@ -43,13 +43,20 @@ class AssetPicker {
              * instead of absolute. Useful when storing as scene references.
              */
             std::filesystem::path relativeTo;
-            /** @brief Optional one-line hint shown above the list. */
+            /**
+             * @brief Optional one-line hint shown above the list.
+             */
             std::string hint;
         };
 
         Options options;
 
-        /** @brief Queue the popup to open on the next draw(). */
+        /**
+         * @brief Queue the popup to open on the next draw().
+         *
+         * Sets a deferred flag rather than calling ImGui::OpenPopup directly so
+         * the open is issued from inside draw(), where the popup id is in scope.
+         */
         void open();
 
         /**

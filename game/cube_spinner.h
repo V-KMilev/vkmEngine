@@ -16,7 +16,9 @@ class CubeSpinner : public ReflectedBehavior<CubeSpinner> {
 
         void onUpdate(float dt) override;
 
-        /** @brief Authored, reflected: spin rate about world up, in degrees/second. */
+        /**
+         * @brief Authored, reflected spin rate about world up, in degrees per second.
+         */
         float degreesPerSecond = 90.0f;
 };
 

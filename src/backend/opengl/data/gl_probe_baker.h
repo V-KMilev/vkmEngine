@@ -50,7 +50,17 @@ class GLProbeBaker {
         GLProbeBaker(GLProbeBaker && other) = delete;
         GLProbeBaker& operator=(GLProbeBaker && other) = delete;
 
-        /** @brief Bake the probe at @p layer of @p arr from @p position. */
+        /**
+         * @brief Bake the probe at @p layer of @p arr from @p position.
+         *
+         * @param gl        Live GL context the capture + convolution passes run on.
+         * @param arr       Cube-map array whose layer receives the baked irradiance + prefilter.
+         * @param layer     Array layer (probe slot) to write.
+         * @param position  World-space centre the six faces are captured from.
+         * @param view      Render view supplying the scene drawables and lights to capture.
+         * @param glView    GPU-side mirror of the scene used to issue the capture draws.
+         * @param globalIBL Global IBL used as the ambient term while capturing.
+         */
         void bake(Core::Context& gl, GLProbeArray& arr, int layer, const glm::vec3& position,
                   const RenderView& view, const GLView& glView, const GLIBL& globalIBL);
 

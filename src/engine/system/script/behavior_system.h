@@ -73,7 +73,16 @@ class BehaviorSystem : public System {
         static void destroyEntityBehaviors(Scene& scene, EntityId entity);
 
     private:
-        /** @brief Fire onStart once (binding the full context first), catching + disabling on throw. */
+        /**
+         * @brief Fire onStart once on @p behavior, binding the full context first.
+         *
+         * No-op if the behavior has already started. Runs under the catch net:
+         * a throw is reported and the behavior is disabled.
+         *
+         * @param behavior The behavior to start.
+         * @param entity   The entity owning @p behavior, bound into its context.
+         * @param ctx      Frame context supplying scene/resources/input/events.
+         */
         void ensureStarted(Behavior& behavior, EntityId entity, FrameContext& ctx);
         /**
          * @brief Shared per-tick walk for update/fixedUpdate: skip null/disabled,
@@ -82,20 +91,56 @@ class BehaviorSystem : public System {
          *        destroys at its own (callsite-specific) point afterwards.
          */
         void tickBehaviors(FrameContext& ctx, float dt, const char* hookName, void (Behavior::*hook)(float));
-        /** @brief Deliver onCollision/onTrigger (a void(EntityId) hook) to a target entity's started behaviors. */
+        /**
+         * @brief Deliver an entity-targeted hook (onCollision/onTrigger) to a
+         *        target entity's started behaviors.
+         *
+         * @param scene    Scene holding the behaviors to dispatch to.
+         * @param target   Entity whose started behaviors receive the hook.
+         * @param other    The other entity passed to the hook (the contact partner).
+         * @param hookName Human-readable hook name, used in error reporting.
+         * @param hook     The void(EntityId) member hook to invoke on each behavior.
+         */
         void dispatchEntityHook(Scene& scene, EntityId target, EntityId other,
                                 const char* hookName, void (Behavior::*hook)(EntityId));
-        /** @brief Apply queued destroy() requests via destroyHierarchy, after the hook pass. */
+        /**
+         * @brief Apply queued destroy() requests via destroyHierarchy.
+         *
+         * Run after the hook pass so a behavior can safely destroy its own
+         * entity without freeing the ScriptComponent mid-iteration.
+         *
+         * @param scene Scene the pending entities are destroyed from.
+         */
         void drainPendingDestroy(Scene& scene);
-        /** @brief Run a hook body under the catch net: log + disable the behavior on throw. */
+        /**
+         * @brief Run a hook body under the catch net.
+         *
+         * On throw it logs the failure via reportError() and disables the
+         * behavior so it is skipped thereafter.
+         *
+         * @tparam Fn       Callable type invoked as the hook body.
+         * @param  behavior The behavior whose hook is running (disabled on throw).
+         * @param  hookName Human-readable hook name, used in error reporting.
+         * @param  fn       The hook body to invoke.
+         */
         template<typename Fn>
         static void guard(Behavior& behavior, const char* hookName, Fn&& fn);
-        /** @brief Fire onDestroy on a started behavior, catching (but not disabling - it's going away). */
+        /**
+         * @brief Fire onDestroy on a started behavior.
+         *
+         * Catches a throwing onDestroy but does not disable the behavior, since
+         * it is being torn down anyway.
+         *
+         * @param behavior The behavior to send onDestroy to.
+         */
         static void fireDestroy(Behavior& behavior);
 
         EventSystem& m_events;  ///< Injected into behaviors; also the bus we listen on.
 
-        /** @brief Physics events collected via subscriptions, dispatched to hooks in update(). */
+        /**
+         * @brief Physics events collected via subscriptions, dispatched to hooks
+         *        in update().
+         */
         std::vector<CollisionEvent> m_collisions;
         std::vector<TriggerEvent>   m_triggers;
 

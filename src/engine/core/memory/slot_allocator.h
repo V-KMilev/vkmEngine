@@ -167,7 +167,14 @@ class SlotAllocator {
         }
 
     private:
-        /** @brief Pop a slot from the free list, or grow the generation array if empty. */
+        /**
+         * @brief Obtain a free slot index, recycling first.
+         *
+         * Pops the most recently freed slot from the free list; when the list is
+         * empty it appends a fresh slot to the generation array and returns it.
+         *
+         * @return The index of an allocatable slot.
+         */
         uint32_t allocateSlot() {
             if (!m_freeList.empty()) {
                 uint32_t idx = m_freeList.back();

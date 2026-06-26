@@ -15,10 +15,22 @@ struct StorageIndex {
     uint32_t index      = 0; ///< Sparse slot index (0 = null/invalid)
     uint32_t generation = 0; ///< Generation at time of creation, compared against slot to detect staleness
 
-    /** @brief True if this is a valid/non-null index */
+    /**
+     * @brief Test whether this handle refers to a real slot.
+     *
+     * @return True when index is non-zero (0 is the reserved null sentinel).
+     */
     constexpr explicit operator bool() const noexcept { return index != 0; }
 
-    /** @brief Equality compares both index and generation */
+    /**
+     * @brief Compare two handles for identity.
+     *
+     * Both the slot index and the generation must match, so a recycled slot with
+     * a bumped generation never compares equal to a stale handle.
+     *
+     * @param other Handle to compare against.
+     * @return True if index and generation are both equal.
+     */
     constexpr bool operator==(const StorageIndex& other) const noexcept {
         return index == other.index && generation == other.generation;
     }
@@ -41,14 +53,31 @@ struct GenerationIndex {
     static constexpr uint32_t ALIVE_BIT = uint32_t(1) << 31; ///< Bit 31: 1 = alive, 0 = dead
     static constexpr uint32_t GEN_MASK  = ~ALIVE_BIT;        ///< Bits 0-30: generation counter
 
-    /** @brief Sets alive/dead status without changing generation */
+    /**
+     * @brief Set the alive/dead status, leaving the generation untouched.
+     *
+     * @param alive True marks the slot live, false marks it dead.
+     */
     void setAlive(bool alive) { value = (value & GEN_MASK) | (alive ? ALIVE_BIT : 0); }
-    /** @brief Increments generation, preserves alive state */
+    /**
+     * @brief Increment the generation counter, preserving the alive bit.
+     *
+     * Called on each removal so any handle minted against the old generation is
+     * detected as stale. Wraps within the 31-bit GEN_MASK.
+     */
     void bumpGeneration()     { value = (value & ALIVE_BIT) | (((value & GEN_MASK) + 1) & GEN_MASK); }
 
-    /** @return True if alive bit is set */
+    /**
+     * @brief Query the alive flag.
+     *
+     * @return True when the alive bit is set.
+     */
     bool alive()          const { return value & ALIVE_BIT; }
-    /** @return The current generation (excluding alive bit) */
+    /**
+     * @brief Query the current generation counter.
+     *
+     * @return The generation value with the alive bit masked off.
+     */
     uint32_t generation() const { return value & GEN_MASK; }
 };
 

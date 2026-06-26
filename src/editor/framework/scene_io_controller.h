@@ -52,9 +52,19 @@ class SceneIOController {
          * Clears EditorState::sceneDirty on success.
          */
         void save(FrameContext& ctx, EditorState& state);
-        /** @brief Queue the Save-As prompt (opens on the next drawDialogs()). */
+        /**
+         * @brief Queue the Save-As prompt to open on the next drawDialogs().
+         *
+         * Deferred so the modal is opened from the menu-bar scope, keeping its
+         * popup behavior identical to where it was historically drawn.
+         */
         void requestSaveAs();
-        /** @brief Queue the Load-Scene picker (opens on the next drawDialogs()). */
+        /**
+         * @brief Queue the Load-Scene picker to open on the next drawDialogs().
+         *
+         * Configures the cached load picker (scenes root, .json filter) and
+         * flags it to open; the actual popup is issued from drawDialogs().
+         */
         void requestLoad();
         /**
          * @brief Load a scene path directly (used by the recent-scenes menu). Goes
@@ -62,7 +72,15 @@ class SceneIOController {
          */
         void loadPath(FrameContext& ctx, EditorState& state, const std::string& path);
 
-        /** @brief Render any pending Save-As / Load modals. Call once per frame. */
+        /**
+         * @brief Render any pending Save-As / Load modals.
+         *
+         * Must be called once per frame from the menu-bar scope so the modals
+         * survive the menu closing and behave as before the controller split.
+         *
+         * @param ctx Frame context supplying the scene and resources to save/load.
+         * @param state Editor state read for paths/flags and updated on a completed pick.
+         */
         void drawDialogs(FrameContext& ctx, EditorState& state);
 
         /**
@@ -75,7 +93,12 @@ class SceneIOController {
          * clear it. No-op if no snapshot was captured.
          */
         void restoreSnapshot(FrameContext& ctx, EditorState& state);
-        /** @brief True once captureSnapshot() has stored a snapshot (i.e. in play mode). */
+        /**
+         * @brief Whether a play-mode snapshot is currently held.
+         *
+         * @return true once captureSnapshot() has stored a snapshot (i.e. while
+         *         in play mode), false after restoreSnapshot() clears it.
+         */
         bool hasSnapshot() const { return !m_playSnapshot.empty(); }
 
         bool hasPath() const { return !m_currentScenePath.empty(); }
