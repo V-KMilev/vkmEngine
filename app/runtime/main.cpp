@@ -4,11 +4,11 @@
 #include <string>
 
 #include "logger.h"
-#include "debug/build_info.h"
 
 #include "gl_debug.h"
 
 #include "core/engine.h"
+#include "debug/build_info.h"
 #include "asset_registration.h"
 #include "game_behaviors.h"
 #include "io/asset_library.h"
