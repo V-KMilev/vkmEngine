@@ -29,7 +29,12 @@ class DynamicLibrary {
          */
         bool load(const std::string& path);
 
-        /** @brief Unload the library if loaded. Idempotent. */
+        /**
+         * @brief Unload the library if currently loaded.
+         *
+         * Idempotent: safe to call when no library is loaded and safe to call
+         * more than once.
+         */
         void unload();
 
         bool isLoaded() const { return m_handle != nullptr; }

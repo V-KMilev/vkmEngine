@@ -50,7 +50,11 @@ class GLTarget {
          */
         void bind(const Core::Context& gl);
 
-        /** @brief Bind for the G-buffer prepass: draws into colour 1 only. */
+        /**
+         * @brief Bind for the G-buffer prepass: draws into colour 1 only.
+         *
+         * @param gl Live GL context whose draw-buffer + viewport state is set.
+         */
         void bindGBufferPass(const Core::Context& gl);
 
         /**

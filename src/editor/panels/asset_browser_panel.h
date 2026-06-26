@@ -53,7 +53,14 @@ class AssetBrowserPanel {
         template<typename Asset>
         void drawAssetGrid(EditorContext& ec);
 
-        /** @brief Arm the shared rename modal for one asset. */
+        /**
+         * @brief Arm the shared rename modal for one asset.
+         *
+         * @tparam Asset Asset family being renamed (MaterialAsset or MeshAsset),
+         *         recorded as the modal's RenameKind tag.
+         * @param h Handle of the asset to rename; its key seeds the modal target.
+         * @param name Current name, copied into the edit buffer as the starting text.
+         */
         template<typename Asset>
         void openRename(Handle<Asset> h, const std::string& name);
 

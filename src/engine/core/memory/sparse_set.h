@@ -103,7 +103,15 @@ class SparseSet : public ISparseSet {
             return key < m_dataIndex.size() && m_dataIndex[key] != EMPTY;
         }
 
-        /** @brief Virtual override forwarding to contains() for type-erased callers. */
+        /**
+         * @brief Test whether a key is present via the type-erased interface.
+         *
+         * Virtual override that forwards to contains() so callers holding only an
+         * ISparseSet can do presence checks without knowing T.
+         *
+         * @param key External sparse key.
+         * @return True if the key maps to a live element.
+         */
         bool has(uint32_t key) const override { return contains(key); }
 
         /**
@@ -150,7 +158,12 @@ class SparseSet : public ISparseSet {
             std::fill(m_dataIndex.begin(), m_dataIndex.end(), EMPTY);
         }
 
-        /** @brief Shrink the sparse array to fit only live keys, reclaiming wasted memory. */
+        /**
+         * @brief Shrink the sparse array to fit only live keys, reclaiming wasted memory.
+         *
+         * Resizes the sparse-to-dense map down to the highest live key (+1) and
+         * releases the surplus capacity. The dense arrays are unaffected.
+         */
         void compact() override {
             if (m_data.empty()) {
                 m_dataIndex.clear();
@@ -167,22 +180,55 @@ class SparseSet : public ISparseSet {
             }
         }
 
-        /** @brief Access the sparse key at a dense index (for index-based parallel iteration). */
+        /**
+         * @brief Access the sparse key stored at a dense index.
+         *
+         * Pairs with size() and dataAt() for index-based parallel iteration that
+         * avoids the forEach() callback.
+         *
+         * @param denseIndex Position in packed dense order (< size()).
+         * @return The external sparse key mapped to that dense slot.
+         */
         uint32_t keyAt(uint32_t denseIndex) const { return m_dataId[denseIndex]; }
-        /** @brief Access the element at a dense index (for index-based parallel iteration). */
+        /**
+         * @brief Access the element stored at a dense index.
+         *
+         * Pairs with size() and keyAt() for index-based parallel iteration that
+         * avoids the forEach() callback.
+         *
+         * @param denseIndex Position in packed dense order (< size()).
+         * @return Reference to the element in that dense slot.
+         */
         T&       dataAt(uint32_t denseIndex)       { return m_data[denseIndex]; }
         const T& dataAt(uint32_t denseIndex) const { return m_data[denseIndex]; }
 
     private:
         static constexpr uint32_t EMPTY = UINT32_MAX;
 
-        /** @brief Grows the sparse array to fit @p key if needed. */
+        /**
+         * @brief Grow the sparse array so it can index @p key.
+         *
+         * No-op when @p key already fits; otherwise resizes with EMPTY fill.
+         *
+         * @param key External sparse key that must become addressable.
+         */
         void ensureCapacity(uint32_t key) {
             if (key >= m_dataIndex.size())
                 m_dataIndex.resize(key + 1, EMPTY);
         }
 
-        /** @brief Validates the key, emplaces into the dense array, and wires up both mappings. */
+        /**
+         * @brief Validate the key, emplace into the dense array, and wire up both mappings.
+         *
+         * Shared implementation behind the public add()/emplace() entry points:
+         * asserts the key is neither the EMPTY sentinel, 0 (reserved), nor already
+         * present, then constructs the element in place.
+         *
+         * @tparam Args Constructor argument types forwarded to the element.
+         * @param key External sparse key to associate with the new element.
+         * @param args Arguments forwarded to T's constructor.
+         * @return Reference to the newly constructed element.
+         */
         template<typename... Args>
         T& addInternal(uint32_t key, Args&&... args) {
             VKM_ASSERT(key != EMPTY, "SparseSet::add key cannot be EMPTY sentinel");

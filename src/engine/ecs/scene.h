@@ -349,7 +349,15 @@ class Scene {
         }
 
     private:
-        /** @brief Get or create the typed SparseSet for component type T. */
+        /**
+         * @brief Get or create the typed SparseSet for component type T.
+         *
+         * Lazily allocates the per-type storage on first use, growing the
+         * type-indexed component table as needed.
+         *
+         * @tparam T Component type whose storage is requested.
+         * @return Reference to the storage for T (created if it did not exist).
+         */
         template<typename T>
         SparseSet<T>& getStorage() {
             TypeId id = typeId<T>();
@@ -360,7 +368,14 @@ class Scene {
             return static_cast<SparseSet<T>&>(*ptr);
         }
 
-        /** @brief Find the typed SparseSet for component type T, or nullptr if unregistered. */
+        /**
+         * @brief Find the typed SparseSet for component type T without creating it.
+         *
+         * Read-only lookup that never allocates, unlike getStorage().
+         *
+         * @tparam T Component type whose storage is requested.
+         * @return Pointer to the storage for T, or nullptr if no T has ever been registered.
+         */
         template<typename T>
         const SparseSet<T>* findStorage() const {
             TypeId id = typeId<T>();
@@ -368,7 +383,15 @@ class Scene {
             return static_cast<const SparseSet<T>*>(m_components[id].get());
         }
 
-        /** @brief Non-const findStorage for mutable access without lazy creation. */
+        /**
+         * @brief Find the typed SparseSet for component type T for mutable access.
+         *
+         * Non-const overload of findStorage() that hands back a mutable pointer yet,
+         * like the const form, never lazily creates the storage.
+         *
+         * @tparam T Component type whose storage is requested.
+         * @return Pointer to the storage for T, or nullptr if no T has ever been registered.
+         */
         template<typename T>
         SparseSet<T>* findStorage() {
             TypeId id = typeId<T>();

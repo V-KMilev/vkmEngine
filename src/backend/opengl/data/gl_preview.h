@@ -65,17 +65,32 @@ class GLPreview {
         uint32_t render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
                         const PreviewRequest& req, const ResourceManager& resources);
 
-        /** @brief Last-rendered texture for @p key, or 0 when none exists. */
+        /**
+         * @brief Last-rendered texture for @p key, or 0 when none exists.
+         *
+         * @param key  Preview cache key (asset/request identity).
+         * @return GL texture id of the cached LDR result, or 0 if nothing is cached.
+         */
         uint32_t texture(uint64_t key) const;
 
-        /** @brief Drop one key's target. Call when the source asset is destroyed. */
+        /**
+         * @brief Drop one key's target.
+         *
+         * Call when the source asset is destroyed so its cached preview is freed.
+         *
+         * @param key Preview cache key whose target is released.
+         */
         void release(uint64_t key);
 
-        /** @brief Drop every cached target. */
+        /**
+         * @brief Drop every cached target.
+         */
         void releaseAll();
 
     private:
-        /** @brief Per-key output: an LDR texture in its own FBO, sized per request. */
+        /**
+         * @brief Per-key output: an LDR texture in its own FBO, sized per request.
+         */
         struct Entry {
             std::unique_ptr<Core::Texture2D> ldr;
             Core::FrameBuffer                fbo;

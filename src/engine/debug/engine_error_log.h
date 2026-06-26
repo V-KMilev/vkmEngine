@@ -43,10 +43,17 @@ class EngineErrorLog {
          */
         void push(std::string category, std::string source, std::string message);
 
-        /** @brief Drop every entry. */
+        /**
+         * @brief Drop every buffered entry.
+         */
         void clearAll();
 
-        /** @brief Copy of the buffer, newest first. */
+        /**
+         * @brief Return a copy of the buffered entries, newest first.
+         *
+         * @return The buffered entries in reverse insertion order (most recent
+         *         error first).
+         */
         std::vector<Entry> snapshot() const;
         std::size_t size() const;
 
@@ -70,7 +77,15 @@ class EngineErrorLog {
  */
 void reportError(const char* category, std::string source, std::string message);
 
-/** @brief Install (nullptr to clear) the sink reportError() records into. */
+/**
+ * @brief Install the sink that reportError() appends recorded errors into.
+ *
+ * Typically the editor installs its owned log; the headless runtime leaves no
+ * sink so errors only reach the log.
+ *
+ * @param sink The error log to receive future reports, or nullptr to clear the
+ *             current sink.
+ */
 void setErrorSink(EngineErrorLog* sink);
 
 } // namespace Engine

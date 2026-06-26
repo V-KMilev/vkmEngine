@@ -18,6 +18,12 @@ namespace {
  * Built-in textures are stable, immutable, and naturally shared across
  * materials. The same "builtin:white" handle is returned every time the
  * generator is asked for one.
+ *
+ * @param rm Resource manager to look up the name in / add the texture to.
+ * @param name Stable lookup name (also the findByName dedup key).
+ * @param source JSON source descriptor stamped onto a newly created asset.
+ * @param texture Texture asset to register if no existing one matches the name.
+ * @return Handle to the existing texture if found, otherwise the newly added one.
  */
 TextureHandle getOrCreateNamed(ResourceManager& rm, const char* name,
                                const nlohmann::json& source,
@@ -32,7 +38,9 @@ TextureHandle getOrCreateNamed(ResourceManager& rm, const char* name,
 /**
  * @brief Build a 1x1 RGBA8 texture filled with a single clamped color.
  *
- * srgb selects the sRGB internal format (and tags the asset accordingly).
+ * @param color RGBA color (clamped to 0-1 per channel) used to fill the texel.
+ * @param srgb Selects the sRGB internal format (and tags the asset accordingly).
+ * @return The 1x1 solid-color texture asset.
  */
 TextureAsset makeSolidColorAsset(glm::vec4 color, bool srgb) {
     TextureAsset texture;
@@ -57,6 +65,8 @@ TextureAsset makeSolidColorAsset(glm::vec4 color, bool srgb) {
  * @brief Build a 1x1 RGB8 flat normal map.
  *
  * 128,128,255 = straight up in tangent space, i.e. no normal perturbation.
+ *
+ * @return The 1x1 flat normal-map texture asset.
  */
 TextureAsset makeDefaultNormalAsset() {
     TextureAsset texture;

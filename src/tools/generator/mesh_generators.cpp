@@ -20,6 +20,10 @@ namespace {
  * @brief Build a JSON source descriptor for a procedural mesh.
  *
  * Stored on the MeshAsset so SceneSerializer can recreate it on cold-start load.
+ *
+ * @param type Generator type tag (e.g. "cube", "sphere").
+ * @param params Optional generator parameters to embed under "params".
+ * @return The "generator" source descriptor JSON.
  */
 nlohmann::json meshGeneratorSource(const char* type, nlohmann::json params = nlohmann::json::object()) {
     nlohmann::json j;
@@ -35,6 +39,10 @@ nlohmann::json meshGeneratorSource(const char* type, nlohmann::json params = nlo
  * The AssetDatabase key is "mesh:generator:<type>:<param>:<param>..."
  * derived deterministically from the same params so identical generator
  * calls map to the same GUID across runs.
+ *
+ * @param mesh Freshly generated mesh to stamp (source + name set in place).
+ * @param type Generator type tag (e.g. "cube", "sphere").
+ * @param params Generator parameters folded into the deterministic key.
  */
 void stampGenerated(MeshAsset& mesh, const char* type, const nlohmann::json& params = {}) {
     mesh.sourceJson() = meshGeneratorSource(type, params);

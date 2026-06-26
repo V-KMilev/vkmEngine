@@ -24,7 +24,14 @@ class BehaviorRegistry {
 
         static BehaviorRegistry& get();
 
-        /** @brief Register @p name -> @p factory. A duplicate name logs and overwrites. */
+        /**
+         * @brief Register @p name -> @p factory.
+         *
+         * A duplicate name logs a warning and overwrites the existing factory.
+         *
+         * @param name    Key the behavior type is registered and created under.
+         * @param factory Callable that constructs a fresh instance of the type.
+         */
         void registerBehavior(std::string name, Factory factory);
 
         /**
@@ -44,10 +51,21 @@ class BehaviorRegistry {
          */
         std::unique_ptr<Behavior> create(const std::string& name) const;
 
-        /** @brief Whether @p name has a registered factory. */
+        /**
+         * @brief Report whether @p name has a registered factory.
+         *
+         * @param name Behavior type name to look up.
+         * @return True if a factory is registered under @p name.
+         */
         bool contains(const std::string& name) const;
 
-        /** @brief All registered names, sorted - for the editor's add-behavior menu. */
+        /**
+         * @brief List every registered behavior name, sorted.
+         *
+         * Used to populate the editor's add-behavior menu.
+         *
+         * @return Alphabetically sorted copy of all registered type names.
+         */
         std::vector<std::string> names() const;
 
         /**

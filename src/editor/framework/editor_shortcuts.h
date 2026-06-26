@@ -19,7 +19,15 @@ class SceneIOController;
  */
 class EditorShortcuts {
     public:
-        /** @brief Process this frame's shortcuts. No-op while ImGui wants text input. */
+        /**
+         * @brief Process this frame's shortcuts.
+         *
+         * No-op while ImGui wants text input, so a keybind never fires while
+         * the user is typing into a field.
+         *
+         * @param ec Editor context holding the scene, state and keybinds to read and mutate.
+         * @param sceneIO Controller the save/load shortcuts forward their intent to.
+         */
         void process(EditorContext& ec, SceneIOController& sceneIO);
 };
 

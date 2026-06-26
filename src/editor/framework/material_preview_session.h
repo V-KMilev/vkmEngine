@@ -54,10 +54,22 @@ class MaterialPreviewSession {
             bool live
         );
 
-        /** @brief Drop the per-key target. Call when the source asset is destroyed. */
+        /**
+         * @brief Drop the cached render target for a single key.
+         *
+         * Call when the source asset is destroyed so its stale preview is not
+         * served again.
+         *
+         * @param key Cache key whose target and version stamp are forgotten.
+         */
         void evict(uint64_t key);
 
-        /** @brief Drop every cached target (e.g. after a scene load swapped assets). */
+        /**
+         * @brief Drop every cached render target.
+         *
+         * Used after a scene load swaps the asset set out from under the cache,
+         * forcing every preview to re-render on next request.
+         */
         void clear();
 
         /**
@@ -74,7 +86,9 @@ class MaterialPreviewSession {
 
         RenderSystem& m_renderSystem;
 
-        /** @brief key -> version stamp of the last render, so unchanged assets skip. */
+        /**
+         * @brief key -> version stamp of the last render, so unchanged assets skip.
+         */
         std::unordered_map<uint64_t, uint64_t> m_versions;
 
         int m_budget = 0;

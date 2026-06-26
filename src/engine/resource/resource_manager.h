@@ -63,7 +63,14 @@ class ResourceManager {
             return Handle<T>{key};
         }
 
-        /** @brief Convenience overload: stamp a name onto the asset before insertion. */
+        /**
+         * @brief Convenience overload: stamp a name onto the asset before insertion.
+         *
+         * @tparam ResourceType The resource type (must inherit from Resource).
+         * @param resource The resource instance to add (will be moved).
+         * @param name Stable name to assign before the asset is inserted.
+         * @return Handle for the newly inserted asset.
+         */
         template<typename ResourceType>
         auto add(ResourceType && resource, std::string name) {
             resource.name = std::move(name);
@@ -124,7 +131,16 @@ class ResourceManager {
             return slot.allocator.has(handle.key);
         }
 
-        /** @brief Get const access to a resource by handle. */
+        /**
+         * @brief Get const access to a resource by handle.
+         *
+         * Asserts the handle still names a live resource; use isAlive() first
+         * for handles that may have been freed.
+         *
+         * @tparam HandleType Handle type identifying the resource type.
+         * @param handle Handle naming the resource to fetch.
+         * @return Const reference to the stored resource.
+         */
         template<typename HandleType>
         const auto& get(const HandleType& handle) const {
             using T = typename HandleType::resource_t;
@@ -283,7 +299,9 @@ class ResourceManager {
         }
 
     private:
-        /** @brief Per-type bundle: lifetime (allocator), storage, name index. */
+        /**
+         * @brief Per-type bundle: lifetime (allocator), storage, name index.
+         */
         struct TypedSlot {
             SlotAllocator                   allocator;
             std::unique_ptr<ISparseSet>     storage;

@@ -21,12 +21,29 @@ struct EditorState;
  */
 namespace EditorSettings {
 
-/** @brief Load settings into state; returns false on missing/invalid file. */
+/**
+ * @brief Load persisted settings into state.
+ *
+ * @param state Editor state to populate with the saved fields; left at its
+ *              built-in defaults when the file is missing or invalid.
+ * @return false on a missing or invalid settings file, true on success.
+ */
 bool load(EditorState& state);
-/** @brief Write state to the settings file; returns false on write failure. */
+/**
+ * @brief Write the editor-owned settings to the settings file.
+ *
+ * @param state Editor state whose persistent fields are serialized.
+ * @return false on write failure, true on success.
+ */
 bool save(const EditorState& state);
 
-/** @brief Path the loader/saver uses. Resolved once at startup. */
+/**
+ * @brief Filesystem path the loader and saver operate on.
+ *
+ * Resolved once at startup, defaulting to APP_ROOT_DIR/editor_settings.json.
+ *
+ * @return Absolute path to the settings JSON document.
+ */
 std::string path();
 
 }  // namespace EditorSettings

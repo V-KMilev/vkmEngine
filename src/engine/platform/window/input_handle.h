@@ -59,7 +59,15 @@ class KeyboardInputHandle {
 
     private:
         friend class InputHandle;
-        /** @brief Record a key's held state; called from the GLFW key callback. */
+        /**
+         * @brief Record a key's held state.
+         *
+         * Called from the GLFW key callback during glfwPollEvents(); out-of-range
+         * key codes are ignored.
+         *
+         * @param key     The GLFW key code that changed.
+         * @param pressed True when the key is now held, false when released.
+         */
         void onKeyEvent(int key, bool pressed);
 
         bool m_keyState[GLFW_KEY_LAST + 1] = {};

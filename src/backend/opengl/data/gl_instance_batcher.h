@@ -66,9 +66,16 @@ class GLInstanceBatcher {
         void drawRun(const InstanceRun& run);
 
     private:
-        /** @brief Push one drawable's matrices into the flattened arrays. */
+        /**
+         * @brief Push one drawable's matrices into the flattened arrays.
+         *
+         * @param d Drawable whose model + normal matrices are appended in run order.
+         */
         void append(const DrawableData& d);
-        /** @brief Upload the flattened model + normal arrays to the GPU instance buffers. */
+
+        /**
+         * @brief Upload the flattened model + normal arrays to the GPU instance buffers.
+         */
         void upload();
 
         std::vector<InstanceRun> m_runs;

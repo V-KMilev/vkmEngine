@@ -20,7 +20,11 @@ namespace Engine {
 
 namespace {
 /**
- * @brief Helper to infer texture internal format from channel count and sRGB flag.
+ * @brief Infer the texture internal format from channel count and sRGB flag.
+ *
+ * @param channels Number of image channels (1-4).
+ * @param srgb Whether the texture should use an sRGB internal format.
+ * @return The matching internal format (defaults to (S)RGBA8 for unexpected counts).
  */
 TextureInternalFormat inferInternalFormat(int channels, bool srgb) {
     if (srgb) {
@@ -40,7 +44,10 @@ TextureInternalFormat inferInternalFormat(int channels, bool srgb) {
 }
 
 /**
- * @brief Helper to infer texture pixel format from channel count.
+ * @brief Infer the texture pixel format from channel count.
+ *
+ * @param channels Number of image channels (1-4).
+ * @return The matching pixel format (defaults to RGBA for unexpected counts).
  */
 TexturePixelFormat inferFormat(int channels) {
     switch (channels) {
