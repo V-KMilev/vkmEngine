@@ -32,9 +32,9 @@ struct AppConfig {
 // these into its EditorSystem; the runtime ignores the return value.
 struct AppSystems {
     Engine::CameraControllerSystem& camera;
-    Engine::EventSystem&      events;
-    Engine::VisibilitySystem& visibility;
-    Engine::RenderSystem&     render;
+    Engine::EventSystem&            events;
+    Engine::VisibilitySystem&       visibility;
+    Engine::RenderSystem&           render;
 };
 
 // Stands a ready-to-run engine app up in `engine`: the window, the standard
@@ -48,15 +48,15 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     window.setFramerate(0);
     window.setIcon((Engine::ProjectPaths::assets() / "logo" / "vkm_engine_icon.png").string());
 
-    auto& cameraController  = engine.addSystem<Engine::CameraControllerSystem> (Engine::SystemStage::Input);
-    auto& eventSystem       = engine.addSystem<Engine::EventSystem>      (Engine::SystemStage::Simulation);
+    auto& cameraController  = engine.addSystem<Engine::CameraControllerSystem>(Engine::SystemStage::Input);
+    auto& eventSystem       = engine.addSystem<Engine::EventSystem>(Engine::SystemStage::Simulation);
     auto& asyncLoaderSystem = engine.addSystem<Engine::AsyncLoaderSystem>(Engine::SystemStage::Simulation);
-    auto& behaviorSystem    = engine.addSystem<Engine::BehaviorSystem>   (Engine::SystemStage::Simulation, eventSystem);
-    auto& animationSystem   = engine.addSystem<Engine::AnimationSystem>  (Engine::SystemStage::Simulation);
-    auto& physicsSystem     = engine.addSystem<Engine::PhysicsSystem>    (Engine::SystemStage::Simulation, eventSystem);
-    auto& hierarchySystem   = engine.addSystem<Engine::HierarchySystem>  (Engine::SystemStage::Transform);
-    auto& visibilitySystem  = engine.addSystem<Engine::VisibilitySystem> (Engine::SystemStage::Visibility);
-    auto& renderSystem      = engine.addSystem<Engine::RenderSystem>     (Engine::SystemStage::Render);
+    auto& behaviorSystem    = engine.addSystem<Engine::BehaviorSystem>(Engine::SystemStage::Simulation, eventSystem);
+    auto& animationSystem   = engine.addSystem<Engine::AnimationSystem>(Engine::SystemStage::Simulation);
+    auto& physicsSystem     = engine.addSystem<Engine::PhysicsSystem>(Engine::SystemStage::Simulation, eventSystem);
+    auto& hierarchySystem   = engine.addSystem<Engine::HierarchySystem>(Engine::SystemStage::Transform);
+    auto& visibilitySystem  = engine.addSystem<Engine::VisibilitySystem>(Engine::SystemStage::Visibility);
+    auto& renderSystem      = engine.addSystem<Engine::RenderSystem>(Engine::SystemStage::Render);
 
     // The OpenGL backend compiles its own shaders (shaders/) and owns its
     // fixed 10-pass forward pipeline - no shader-asset registration or pass
