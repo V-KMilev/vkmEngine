@@ -14,8 +14,8 @@ namespace Engine {
  * Combining the fields in one struct improves cache locality when iterating
  * visibility results (vs parallel vectors that cross cache lines). The AABB
  * is the result of localToWorldAABB on the mesh's local bounds with this
- * entity's model matrix; downstream passes (AABB debug, picking) consume it
- * directly instead of re-transforming.
+ * entity's model matrix; picking consumes it directly instead of
+ * re-transforming.
  */
 struct VisibleEntity {
     EntityId id;
@@ -25,7 +25,7 @@ struct VisibleEntity {
 };
 
 /**
- * @brief Result of a visibility pass: camera data and visible entities.
+ * @brief Result of a visibility pass: camera data, visible entities, and the scene-wide shadow-caster set.
  *
  * Populated by VisibilitySystem each frame and consumed by downstream
  * systems (RenderSystem, AnimationSystem).

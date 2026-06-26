@@ -35,7 +35,6 @@ void RenderView::build(
         lights.clear();
         shadowCasters.clear();
         probes.clear();
-        LOG_ERROR("No active camera; nothing to render this frame");
         return;
     }
 

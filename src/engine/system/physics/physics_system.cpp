@@ -196,7 +196,6 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 bool PhysicsSystem::gatherBodies(Scene& scene) {
     auto* rbStorage = scene.storage<Rigidbody>();
 
-    // Gather: snapshot every live Rigidbody+Transform into solver state.
     m_bodies.clear();
     m_solverBodies.clear();
 
@@ -272,7 +271,6 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
 }
 
 void PhysicsSystem::integrateForces(Scene& scene, const PhysicsWorld& world, float dt) {
-    // Integrate forces -> velocities (skip sleeping / immovable).
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         Rigidbody& rb = scene.get<Rigidbody>(m_bodies[k]);
         PhysicsBody& pb = m_solverBodies[k];
@@ -285,7 +283,6 @@ void PhysicsSystem::integrateForces(Scene& scene, const PhysicsWorld& world, flo
 }
 
 void PhysicsSystem::broadphase() {
-    // Broadphase: sort-and-sweep on the X axis.
     sorted.clear();
     pairs.clear();
 
@@ -307,7 +304,6 @@ void PhysicsSystem::broadphase() {
 }
 
 void PhysicsSystem::narrowphase(std::vector<bool>& hasContact) {
-    // Narrowphase: generate contact manifolds.
     m_manifolds.clear();
     Contact scratch[MAX_CONTACTS_PER_MANIFOLD];
 
@@ -369,7 +365,6 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact) {
 }
 
 void PhysicsSystem::wakeOnImpact(Scene& scene) {
-    // Wake sleepers struck by a faster body before solving.
     for (const ContactManifold& manifold : m_manifolds) {
         const uint32_t a = manifold.bodyA;
         const uint32_t b = manifold.bodyB;
@@ -391,7 +386,6 @@ void PhysicsSystem::wakeOnImpact(Scene& scene) {
 }
 
 void PhysicsSystem::solve(const PhysicsWorld& world, float dt) {
-    // Solve contacts (sequential impulse + split-impulse correction).
     SolverParams params;
     params.iterations = world.solverIterations;
     params.dt = dt;
@@ -399,7 +393,6 @@ void PhysicsSystem::solve(const PhysicsWorld& world, float dt) {
 }
 
 void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& hasContact) {
-    // Integrate velocities -> pose, write back, update sleep, mark dirty.
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         const EntityId id = m_bodies[k];
         Rigidbody& rb = scene.get<Rigidbody>(id);

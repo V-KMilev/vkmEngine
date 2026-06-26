@@ -12,14 +12,12 @@
 
 namespace Engine {
 
-/** @brief Worker count for the process-wide pool: one per hardware thread. */
-const size_t DEFAULT_THREAD_COUNT = std::thread::hardware_concurrency();
-
 /**
  * @brief Fixed-size pool of worker threads draining a shared task queue.
  *
  * Process-wide singleton (get()); the constructor/destructor are private.
- * Used to back parallelFor; tasks run in submission order across workers.
+ * Used to back parallelFor; workers dequeue tasks in FIFO submission order
+ * but execute them concurrently (no ordering of completion).
  * waitToFinish() blocks until every submitted task has completed.
  */
 class ThreadPool {
@@ -43,7 +41,7 @@ class ThreadPool {
          * @brief Enqueue a batch of tasks under one lock and wake all workers.
          * Cheaper than repeated addTask for many tasks at once.
          */
-        void addTasks(std::vector<std::function<void()>>&& tasks);
+        void addTasks(std::vector<std::function<void()>> && tasks);
 
         /**
          * @brief Block the caller until the in-flight task count reaches zero.

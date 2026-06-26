@@ -17,6 +17,7 @@
 #include "debug/profiler.h"
 #include "core/math/axes.h"
 #include "core/math/rotation.h"
+#include "ecs/scene.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/camera.h"
 
@@ -48,12 +49,15 @@ EntityId CameraControllerSystem::resolveActiveCamera(Scene& scene) {
     return {};
 }
 
-void CameraControllerSystem::reseedAnglesFromRotation(const glm::quat& rotation) {
+void CameraControllerSystem::setAnglesFromDirection(const glm::vec3& dir) {
     // Inverse of updateRotationFromAngles():
     //   forward = (cos(pitch)*sin(yaw), sin(pitch), cos(pitch)*cos(yaw))
-    const glm::vec3 f = Math::computeForward(rotation);
-    m_pitch = std::asin(std::clamp(f.y, -1.0f, 1.0f));
-    m_yaw   = std::atan2(f.x, f.z);
+    m_pitch = std::asin(std::clamp(dir.y, -1.0f, 1.0f));
+    m_yaw   = std::atan2(dir.x, dir.z);
+}
+
+void CameraControllerSystem::reseedAnglesFromRotation(const glm::quat& rotation) {
+    setAnglesFromDirection(Math::computeForward(rotation));
 }
 
 void CameraControllerSystem::update(FrameContext& ctx) {
@@ -146,21 +150,14 @@ void CameraControllerSystem::focusOn(Scene& scene, const glm::vec3& target, floa
 
     transform.position = target + dir * distance;
 
-    // Recompute yaw/pitch from the new look direction. This must invert the
-    // exact forward mapping updateRotationFromAngles() produces:
-    //   forward = (cos(pitch)*sin(yaw), sin(pitch), cos(pitch)*cos(yaw))
-    // so pitch = asin(forward.y) and yaw = atan2(forward.x, forward.z).
-    glm::vec3 lookDir = glm::normalize(target - transform.position);
-    m_pitch = std::asin(std::clamp(lookDir.y, -1.0f, 1.0f));
-    m_yaw   = std::atan2(lookDir.x, lookDir.z);
+    setAnglesFromDirection(glm::normalize(target - transform.position));
 
     updateRotationFromAngles(transform.rotation, m_yaw, m_pitch);
     LOG_VERBOSE("FocusOn target=(%.2f,%.2f,%.2f) distance=%.2f",
         target.x, target.y, target.z, distance);
 }
 
-void CameraControllerSystem::viewFrom(Scene& scene, const glm::vec3& target,
-                                const glm::vec3& direction, float distance) {
+void CameraControllerSystem::viewFrom(Scene& scene, const glm::vec3& target, const glm::vec3& direction, float distance) {
     EntityId camId = m_cameraEntity.getID();
     if (!camId || !scene.has<Transform>(camId)) return;
 
@@ -171,9 +168,7 @@ void CameraControllerSystem::viewFrom(Scene& scene, const glm::vec3& target,
     const glm::vec3 dir = direction / dlen;
 
     transform.position = target + dir * distance;
-    const glm::vec3 lookDir = -dir;
-    m_pitch = std::asin(std::clamp(lookDir.y, -1.0f, 1.0f));
-    m_yaw   = std::atan2(lookDir.x, lookDir.z);
+    setAnglesFromDirection(-dir);
     updateRotationFromAngles(transform.rotation, m_yaw, m_pitch);
     LOG_VERBOSE("ViewFrom target=(%.2f,%.2f,%.2f) dir=(%.2f,%.2f,%.2f) distance=%.2f",
         target.x, target.y, target.z, dir.x, dir.y, dir.z, distance);

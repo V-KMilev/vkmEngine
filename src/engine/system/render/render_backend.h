@@ -20,14 +20,12 @@ namespace Engine {
  * Tags the active backend; the human-readable identity is reported through info().
  */
 enum class RenderBackendType {
-    OpenGL,    ///< OpenGL-based rendering backend.
-    Optix,     ///< NVIDIA Optix ray tracing rendering backend.
-    CPU,       ///< CPU/software-based raytracing backend.
+    OpenGL,  ///< OpenGL-based rendering backend.
 };
 
 /**
  * @brief Human-readable backend identity for the editor status bar.
- * 
+ *
  * Deliberately generic: swapping backends changes the strings, never the call site.
  */
 struct BackendInfo {

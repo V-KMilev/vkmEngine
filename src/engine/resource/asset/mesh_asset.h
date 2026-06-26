@@ -16,7 +16,7 @@ namespace Engine {
  * Contains all necessary per-vertex attributes required for rendering and shading,
  * including position, surface normal, UV coordinates, and a tangent vector for normal mapping.
  */
- struct Vertex {
+struct Vertex {
     glm::vec3 position;    ///< 3D position of the vertex in model space (x, y, z).
     glm::vec3 normal;      ///< Surface normal at the vertex (used for lighting).
     glm::vec2 uv;          ///< 2D texture coordinates (u, v) for mapping textures.

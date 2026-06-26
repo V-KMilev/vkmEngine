@@ -7,17 +7,15 @@
 namespace Engine {
 
 /**
- * @brief Frame timing snapshot: average / min / max over a sliding window.
+ * @brief Frame timing snapshot: average over a sliding window.
  */
 struct FrameRateInfo {
-    float frameTime    = 0.0f;
-    float frameRate    = 0.0f;
-    float minFrameTime = 0.0f;
-    float maxFrameTime = 0.0f;
+    float frameTime = 0.0f;
+    float frameRate = 0.0f;
 };
 
 /**
- * @brief Tracks per-frame timing (frametime, framerate, min/max) over a
+ * @brief Tracks per-frame timing (frametime, framerate) over a
  *        sliding window of recent frames.
  *
  * Engine owns one and updates it once per main-loop iteration. Drives
@@ -43,9 +41,6 @@ class FrameTracker {
          * Call once per render frame, typically at end-of-loop.
          */
         void update();
-
-        /** @brief Drop accumulated samples; reset min/max/avg to zero. */
-        void reset();
 
         const FrameRateInfo& getFrameRateInfo() const { return m_frameRateInfo; }
 
