@@ -25,52 +25,33 @@ namespace Config {
     // modules/vkmGL/src/shader/gl_shader.cpp). Do not re-define these in a
     // shader - include the generated file instead.
 
-    /**
-     * @brief Maximum number of lights uploaded per frame.
-     */
+    // Maximum number of lights uploaded per frame.
     constexpr uint32_t MAX_LIGHTS = 32;
 
-    /**
-     * @brief Shadow caster budget for the 2D atlas (directional + spot).
-     */
+    // Shadow caster budget for the 2D atlas (directional + spot).
     constexpr uint32_t MAX_SHADOW_CASTERS_2D = 6;
 
-    /**
-     * @brief Shadow caster budget for the cube atlas (point lights).
-     */
+    // Shadow caster budget for the cube atlas (point lights).
     constexpr uint32_t MAX_SHADOW_CASTERS_CUBE = 2;
 
-    /**
-     * @brief Cascade count for the directional (sun) shadow.
-     *
-     * The first directional shadow caster reserves this many consecutive 2D
-     * atlas layers; remaining layers (MAX_SHADOW_CASTERS_2D - NUM_CASCADES) serve
-     * spot lights.
-     */
+    // Cascade count for the directional (sun) shadow. The first directional
+    // shadow caster reserves this many consecutive 2D atlas layers; remaining
+    // layers (MAX_SHADOW_CASTERS_2D - NUM_CASCADES) serve spot lights.
     constexpr uint32_t NUM_CASCADES = 4;
 
-    /**
-     * @brief Near plane used when rasterising and sampling point-light cube shadows.
-     *
-     * Pinned to a small but non-zero value so depth values keep resolution at
-     * typical occluder distances without losing fragments inside very small
-     * lights. Consumed on the CPU (gl_shadow_data.cpp builds the cube
-     * projection); not mirrored to GLSL, since no shader reads it.
-     */
+    // Near plane used when rasterising and sampling point-light cube shadows.
+    // Pinned to a small but non-zero value so depth values keep resolution at
+    // typical occluder distances without losing fragments inside very small
+    // lights. Consumed on the CPU (gl_shadow_data.cpp builds the cube
+    // projection); not mirrored to GLSL, since no shader reads it.
     constexpr float SHADOW_CUBE_NEAR = 0.1f;
 
-    /**
-     * @brief Fixed simulation step (60 Hz).
-     *
-     * The cadence at which fixedUpdate runs.
-     */
+    // Fixed simulation step (60 Hz). The cadence at which fixedUpdate runs.
     constexpr float FIXED_TIME_STEP = 1.0f / 60.0f;
 
-    /**
-     * @brief Cap on the simulation-time accumulator. Prevents a frame hitch from
-     * queuing enough fixedUpdate ticks to outpace the next frame ("spiral
-     * of death"). 0.25s ~= 15 ticks max per render frame at FIXED_TIME_STEP.
-     */
+    // Cap on the simulation-time accumulator. Prevents a frame hitch from
+    // queuing enough fixedUpdate ticks to outpace the next frame ("spiral
+    // of death"). 0.25s ~= 15 ticks max per render frame at FIXED_TIME_STEP.
     constexpr float MAX_FRAME_ACCUMULATOR = 0.25f;
 
     // Per-system tunables (cull distance, camera sensitivity, etc.) live as
