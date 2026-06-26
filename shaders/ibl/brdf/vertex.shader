@@ -3,7 +3,6 @@
  *
  * Drawn with glDrawArrays(GL_TRIANGLES, 0, 3) and an empty VAO.
  */
-#version 420 core
 
 out vec2 vUV;
 

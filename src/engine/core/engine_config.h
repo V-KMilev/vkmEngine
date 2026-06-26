@@ -10,7 +10,7 @@ namespace Engine {
  * Backend-agnostic limits and defaults consumed by ECS systems and read by
  * any rendering backend. Backend-specific knobs (atlas resolutions, texture
  * slot assignments, UBO binding points) live in their backend's own config
- * (e.g. src/backend/opengl/config/gl_config.h).
+ * (e.g. src/backend/opengl/convention/gl_bindings.h).
  *
  * Anything that has to stay in sync with a shader carries a comment naming
  * the shader file and the matching identifier.
@@ -48,9 +48,8 @@ namespace Config {
      *
      * Pinned to a small but non-zero value so depth values keep resolution at
      * typical occluder distances without losing fragments inside very small
-     * lights. cmake/generate_shader_config.cmake reads this value at build
-     * time and emits it as SHADOW_CUBE_NEAR into
-     * shaders/_generated/engine_config.glsl - single source of truth.
+     * lights. Consumed on the CPU (gl_shadow_data.cpp builds the cube
+     * projection); not mirrored to GLSL, since no shader reads it.
      */
     constexpr float SHADOW_CUBE_NEAR = 0.1f;
 

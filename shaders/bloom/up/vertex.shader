@@ -1,7 +1,6 @@
 /**
  * Bloom upsample - attribute-less fullscreen triangle.
  */
-#version 420 core
 
 out vec2 vUV;
 

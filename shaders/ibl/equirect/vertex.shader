@@ -4,7 +4,6 @@
  * Drawn with the unit-cube mesh; only position (location 0) is used. Emits
  * the local position so the fragment shader can treat it as a direction.
  */
-#version 420 core
 
 layout (location = 0) in vec3 aPos;
 

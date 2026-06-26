@@ -6,7 +6,6 @@
  * Sampling is always from one explicit source mip (textureLod), so the same
  * shader handles "scene HDR -> mip0" and "mip i-1 -> mip i".
  */
-#version 420 core
 
 in vec2 vUV;
 

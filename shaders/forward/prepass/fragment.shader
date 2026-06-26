@@ -1,4 +1,3 @@
-#version 430 core
 
 /*
  * Depth + G-buffer prepass fragment stage. Writes a view-space normal
@@ -46,17 +45,7 @@ layout(std140, binding = 0) uniform MaterialBlock {
 
 layout(binding = 0) uniform sampler2D u_albedoTexture;
 
-vec2 signNotZero(vec2 v) {
-    return vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
-}
-
-// Octahedral-encode a unit vector to [0,1]^2 (two channels, good precision).
-vec2 octEncode(vec3 n) {
-    n /= (abs(n.x) + abs(n.y) + abs(n.z));
-    vec2 p = n.xy;
-    if (n.z < 0.0) p = (1.0 - abs(p.yx)) * signNotZero(p);
-    return p * 0.5 + 0.5;
-}
+#include "../../_common/normal_codec.glsl"  // signNotZero, octEncode
 
 void main() {
     if (u_material.type == MAT_ALPHA_MASK) {

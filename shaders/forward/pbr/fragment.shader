@@ -1,4 +1,3 @@
-#version 430 core
 
 /*
  * Forward PBR ubershader - implements the full MaterialAsset spec.

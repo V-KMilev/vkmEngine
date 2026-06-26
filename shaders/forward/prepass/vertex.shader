@@ -1,4 +1,3 @@
-#version 430 core
 
 // Depth + G-buffer prepass: lay down opaque + alpha-masked depth so the forward
 // pass can early-Z, and write a view-space normal for SSR. Position must be

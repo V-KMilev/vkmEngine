@@ -1,7 +1,6 @@
 /**
  * Motion blur - attribute-less fullscreen triangle.
  */
-#version 430 core
 
 out vec2 vUV;
 

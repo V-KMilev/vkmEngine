@@ -5,7 +5,6 @@
  * forward shader applies to the prefiltered specular: F * dfg.x + dfg.y.
  * Rendered once into an RG16F texture.
  */
-#version 420 core
 
 in vec2 vUV;
 
