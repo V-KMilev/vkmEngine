@@ -167,7 +167,8 @@ MaterialHandle createRecipeMaterial(const nlohmann::json& source, ResourceManage
 } // namespace
 
 void registerRecipeAssetFactories() {
-    LOG_INFO("Registering recipe asset factories (meshes: generator/model/decimate, textures: file/builtin/solid/model-image, materials: folder/default/model)");
+    LOG_INFO("Registering recipe asset factories (meshes: generator/model/decimate, "
+             "textures: file/builtin/solid/model-image, materials: folder/default/model)");
     assetFactory().createMesh     = &createRecipeMesh;
     assetFactory().createTexture  = &createRecipeTexture;
     assetFactory().createMaterial = &createRecipeMaterial;

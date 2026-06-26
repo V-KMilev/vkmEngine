@@ -29,7 +29,7 @@ namespace {
         }
         return p;
     }
-}
+} // namespace
 
 HDRImage loadHDRImage(const std::string& filePath) {
     HDRImage image;

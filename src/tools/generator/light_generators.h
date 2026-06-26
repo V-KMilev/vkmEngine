@@ -8,7 +8,7 @@ namespace Engine {
 
 /**
  * @brief Generate a directional light (sun-like).
- * 
+ *
  * @param color Light color (RGB).
  * @param intensity Light intensity multiplier.
  * @param castShadows Whether this light should cast shadows.
@@ -22,7 +22,7 @@ Light generateDirectionalLight(
 
 /**
  * @brief Generate a point light (light bulb).
- * 
+ *
  * @param color Light color (RGB).
  * @param intensity Light intensity multiplier.
  * @param radius Attenuation radius.
@@ -38,7 +38,7 @@ Light generatePointLight(
 
 /**
  * @brief Generate a spot light (flashlight).
- * 
+ *
  * @param color Light color (RGB).
  * @param intensity Light intensity multiplier.
  * @param radius Attenuation radius.

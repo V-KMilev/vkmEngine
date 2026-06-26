@@ -13,9 +13,11 @@ namespace Engine {
 
 namespace {
 /**
- * @brief Built-in textures are reused via findByName - they're stable, immutable,
- * and naturally shared across materials. The same "builtin:white" handle
- * is returned every time the generator is asked for one.
+ * @brief Reuse built-in textures via findByName.
+ *
+ * Built-in textures are stable, immutable, and naturally shared across
+ * materials. The same "builtin:white" handle is returned every time the
+ * generator is asked for one.
  */
 TextureHandle getOrCreateNamed(ResourceManager& rm, const char* name,
                                const nlohmann::json& source,
@@ -28,8 +30,9 @@ TextureHandle getOrCreateNamed(ResourceManager& rm, const char* name,
 }
 
 /**
- * @brief Build a 1x1 RGBA8 texture filled with a single clamped color. srgb selects
- * the sRGB internal format (and tags the asset accordingly).
+ * @brief Build a 1x1 RGBA8 texture filled with a single clamped color.
+ *
+ * srgb selects the sRGB internal format (and tags the asset accordingly).
  */
 TextureAsset makeSolidColorAsset(glm::vec4 color, bool srgb) {
     TextureAsset texture;
@@ -51,8 +54,9 @@ TextureAsset makeSolidColorAsset(glm::vec4 color, bool srgb) {
 }
 
 /**
- * @brief Build a 1x1 RGB8 flat normal map (128,128,255 = straight up in tangent
- * space), i.e. no normal perturbation.
+ * @brief Build a 1x1 RGB8 flat normal map.
+ *
+ * 128,128,255 = straight up in tangent space, i.e. no normal perturbation.
  */
 TextureAsset makeDefaultNormalAsset() {
     TextureAsset texture;
@@ -71,7 +75,8 @@ TextureAsset makeDefaultNormalAsset() {
     texture.pixelData[2] = 255;
     return texture;
 }
-}
+
+} // namespace
 
 TextureHandle generateWhiteTexture(ResourceManager& rm) {
     return getOrCreateNamed(rm, "builtin:white",

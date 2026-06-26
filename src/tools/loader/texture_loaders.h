@@ -11,10 +11,10 @@ class ResourceManager;
 
 /**
  * @brief Load a texture from a file.
- * 
+ *
  * Supports common image formats: PNG, JPG, TGA, BMP, etc.
  * Uses stb_image internally for loading.
- * 
+ *
  * @param filePath Path to the image file.
  * @param resourceManager Resource manager to add the texture to.
  * @param srgb Whether to use sRGB color space (true for albedo, false for data textures).
@@ -41,8 +41,8 @@ TextureHandle loadTexture(
  * point.
  *
  * Idempotent: requesting the same path twice (within a session)
- * returns the same handle - AssetDatabase + findById dedup at the
- * resource layer.
+ * returns the same handle - findByName(path) dedup at the resource
+ * layer.
  */
 TextureHandle requestTextureAsync(
     const std::string& filePath,
