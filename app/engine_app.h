@@ -67,7 +67,7 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     auto cameraEntity = generateDefaultScene(engine);
     cameraController.setCameraEntity(cameraEntity);
 
-    engine.getSimulationClock().setPaused(config.startPaused);
+    engine.getClock().setPaused(config.startPaused);
     engine.logFPS(config.logFps);
 
     return AppSystems{cameraController, eventSystem, visibilitySystem, renderSystem};

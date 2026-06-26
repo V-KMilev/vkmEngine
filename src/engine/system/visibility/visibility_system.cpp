@@ -9,6 +9,7 @@
 
 #include "debug/profiler.h"
 #include "platform/threading/thread_pool.h"
+#include "platform/window/window_manager.h"
 
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
@@ -88,7 +89,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
 
     // Pre-compute screen-size threshold for sqrt-free test
     const float projScaleY = projection[1][1];
-    const float vpHeight = static_cast<float>(ctx.viewportHeight);
+    const float vpHeight = static_cast<float>(ctx.window.sceneViewportHeight());
     const float denom = projScaleY * vpHeight;
     const float screenThresholdSq = (denom > 0.0f)
         ? (m_settings.minPixels * m_settings.minPixels) / (denom * denom)

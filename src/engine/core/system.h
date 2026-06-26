@@ -2,14 +2,16 @@
 
 #include <cstdint>
 
-#include "system/visibility/visibility.h"
+namespace Engine {
+    class WindowManager;
+    class Clock;
+
+    class Scene;
+    class ResourceManager;
+    struct Visibility;
+}
 
 namespace Engine {
-
-class Scene;
-class ResourceManager;
-class WindowManager;
-class FrameTracker;
 
 /**
  * @brief Named per-frame execution stages.
@@ -40,54 +42,23 @@ enum class SystemStage : uint8_t {
 };
 
 /**
- * @brief Per-frame state bundle passed to all systems.
+ * @brief Per-frame state bundle passed to every system.
  *
- * Provides a uniform interface for systems to access shared per-frame data.
- * visibility is a non-owning pointer to persistent storage (owned by
- * VisibilitySystem) so systems can read culling results without forcing
- * a per-frame vector allocation.
- *
- * Three deltas:
- *   - deltaTime: variable, real elapsed time since last render frame. Read in
- *     update() by anything that must run regardless of simulation state -
- *     camera, file watching, UI animations.
- *   - simDeltaTime: simulation time elapsed this frame (deltaTime scaled by the
- *     SimulationClock; 0 while paused, one step's worth while single-stepping).
- *     Read in update() by simulation systems instead of deltaTime, so pause,
- *     time-scale, and step apply uniformly.
- *   - fixedDeltaTime: constant simulation step (1/60 by default). Read in
- *     fixedUpdate(); the fixed accumulator is itself fed from simDeltaTime.
+ * A uniform handle to the shared per-frame state: the window, the frame Clock,
+ * the Scene and ResourceManager, and the visibility snapshot. Time is read
+ * through the Clock - getDeltaTime() for real-time work, getSimDelta() for
+ * simulation update(), getFixedStep() in fixedUpdate(). visibility is a
+ * non-owning pointer to storage owned by VisibilitySystem (null until that
+ * system runs this frame), so systems read culling results without a per-frame
+ * allocation.
  */
 struct FrameContext {
+    WindowManager& window;
+    Clock& clock;
+
     Scene& scene;
     ResourceManager& resources;
-    WindowManager& window;
-    FrameTracker& frameTracker;
-
-    float deltaTime;
-    float simDeltaTime;
-    float fixedDeltaTime;
-    // The scene's render rect within the GLFW window. The editor reports
-    // it via WindowManager::setSceneViewport so the 3D pass renders at the
-    // viewport's aspect & size, not the full window. With no editor, the
-    // engine defaults to the full window.
-    uint32_t viewportX = 0;
-    uint32_t viewportY = 0;
-    uint32_t viewportWidth;
-    uint32_t viewportHeight;
-
-    /**
-     * @brief Per-frame visibility snapshot populated by VisibilitySystem.
-     *
-     * Lifecycle:
-     *   - null on the very first frame (no stage has run yet)
-     *   - null in updates that run before the Visibility stage (Input,
-     *     Simulation, Transform) - those stages don't have data yet
-     *   - non-null in Visibility, Render, UI from frame 2 onward
-     * Editor overlays guard with `if (ctx.visibility)` so they degrade
-     * to a no-op on the first frame instead of asserting.
-     */
-    const Visibility* visibility = nullptr;
+    const Visibility* visibility;
 };
 
 /**
@@ -95,8 +66,7 @@ struct FrameContext {
  *
  * Systems are scheduled per SystemStage and executed in stage order each
  * frame, in registration order within a stage. They read from and/or write
- * to a shared FrameContext and support init/update/fixedUpdate/shutdown
- * hooks plus runtime enable/disable.
+ * to a shared FrameContext and support init/update/fixedUpdate/shutdown hooks.
  */
 class System {
     public:
@@ -110,10 +80,26 @@ class System {
 
     public:
         /**
+         * @brief Whether this system implements fixedUpdate().
+         *
+         * Override and return true in any system that provides a real
+         * fixedUpdate body. The fixed-step accumulator loop checks this so it
+         * skips systems with no real fixedUpdate body instead of dispatching an
+         * empty virtual across every registered system every tick. Default false
+         * matches the default empty fixedUpdate.
+         */
+        virtual bool hasFixedUpdate() const { return false; }
+
+        /**
          * @brief Called once after all systems are registered, before the first update.
          * @param ctx The shared FrameContext for initialization.
          */
         virtual void init(FrameContext& ctx) {}
+
+        /**
+          * @brief Called once on engine shutdown.
+          */
+        virtual void shutdown() {}
 
         /**
          * @brief Execute this system for the current frame.
@@ -125,7 +111,7 @@ class System {
          * @brief Execute this system at the fixed simulation rate.
          *
          * Called 0+ times per render frame, driven by an accumulator in the main
-         * loop. Use ctx.fixedDeltaTime (not deltaTime). Intended for deterministic
+         * loop. Use ctx.clock.getFixedStep() for the step length. Intended for deterministic
          * simulation (physics, networking tick). Empty default; opt in by override.
          *
          * Note: fixedUpdate runs BEFORE update each frame, so ctx.visibility is
@@ -134,30 +120,8 @@ class System {
          */
         virtual void fixedUpdate(FrameContext& ctx) {}
 
-        /**
-         * @brief Whether this system implements fixedUpdate().
-         *
-         * Override and return true in any system that provides a real
-         * fixedUpdate body. The engine builds a filtered list at init so the
-         * fixed-step accumulator loop only visits opt-in systems instead of
-         * dispatching empty virtuals across every registered system every
-         * tick. Default false matches the default empty fixedUpdate.
-         */
-        virtual bool hasFixedUpdate() const { return false; }
-
-        /**
-         * @brief Called once on engine shutdown, in reverse registration order.
-         */
-        virtual void shutdown() {}
-
-        bool isEnabled() const { return m_enabled; }
-        void setEnabled(bool enabled) { m_enabled = enabled; }
-
     protected:
         System() = default;
-
-    private:
-        bool m_enabled = true;
 };
 
 } // namespace Engine

@@ -14,6 +14,7 @@
 
 #include "logger.h"
 
+#include "core/clock.h"
 #include "core/system.h"
 #include "debug/engine_error_log.h"
 #include "debug/profiler.h"
@@ -270,7 +271,7 @@ void EditorSystem::update(FrameContext& ctx) {
 
     // Toast renders in both visible/hidden paths - failure feedback should
     // not vanish just because F5 was pressed.
-    drawToast(m_state, ctx.deltaTime);
+    drawToast(m_state, ctx.clock.getDeltaTime());
 
     if (!m_state.editorVisible) {
         m_cameraController.setEditorInputCapture(false, false);

@@ -20,13 +20,13 @@ void RenderSystem::update(FrameContext& ctx) {
     // m_view holds the size we last rendered at; installPending() zeroes it
     // after a swap so a freshly installed backend is sized on its first frame.
     if (
-        ctx.viewportX != m_view.viewportX || ctx.viewportY != m_view.viewportY ||
-        ctx.viewportWidth != m_view.viewportWidth || ctx.viewportHeight != m_view.viewportHeight
+        ctx.window.sceneViewportX() != m_view.viewportX || ctx.window.sceneViewportY() != m_view.viewportY ||
+        ctx.window.sceneViewportWidth() != m_view.viewportWidth || ctx.window.sceneViewportHeight() != m_view.viewportHeight
     ) {
-        m_view.viewportX      = ctx.viewportX;
-        m_view.viewportY      = ctx.viewportY;
-        m_view.viewportWidth  = ctx.viewportWidth;
-        m_view.viewportHeight = ctx.viewportHeight;
+        m_view.viewportX      = ctx.window.sceneViewportX();
+        m_view.viewportY      = ctx.window.sceneViewportY();
+        m_view.viewportWidth  = ctx.window.sceneViewportWidth();
+        m_view.viewportHeight = ctx.window.sceneViewportHeight();
 
         m_backend->resize(m_view.viewportX, m_view.viewportY,
                           m_view.viewportWidth, m_view.viewportHeight);

@@ -1,26 +1,24 @@
 #pragma once
 
 #include <array>
-#include <chrono>
 #include <memory>
 #include <vector>
 
 #include "ecs/scene.h"
 #include "resource/resource_manager.h"
 #include "platform/window/window_manager.h"
-#include "debug/frame_tracker.h"
 #include "core/system.h"
-#include "core/simulation_clock.h"
+#include "core/clock.h"
 
 namespace Engine {
 
 /**
  * @brief Engine context: owns core state and runs the main loop.
  *
- * Owns the Scene, ResourceManager, WindowManager, FrameTracker, and the
+ * Owns the Scene, ResourceManager, WindowManager, Clock, and the
  * per-stage system pipeline. Profiling is handled via debug/profiler.h
  * (Tracy facade) - the engine emits FrameMark per loop iteration and
- * per-stage CPU zones in updateStage(). GPU collect is the backend's job,
+ * a per-stage CPU zone over each stage's update(). GPU collect is the backend's job,
  * done at the tail of each RenderBackend::render() call.
  *
  * Non-copyable, non-movable, but stack-constructible: tests and
@@ -54,14 +52,14 @@ class Engine {
         const WindowManager& getWindow() const { return m_window; }
 
         /**
-         * @brief Owns play/pause/step/time-scale for simulation.
+         * @brief The engine's frame clock: real + simulation time and the fixed-step accumulator.
          *
-         * The main loop feeds its sim-delta to FrameContext; the editor drives
-         * the play state. The runtime never touches it, so it simulates at 1x
-         * from boot.
+         * The main loop drives it via beginFrame() / consumeFixedStep(); the editor
+         * drives the play state (pause / step). The runtime never touches it, so it
+         * runs at 1x from boot.
          */
-        SimulationClock& getSimulationClock()             { return m_simClock; }
-        const SimulationClock& getSimulationClock() const { return m_simClock; }
+        Clock& getClock()             { return m_clock; }
+        const Clock& getClock() const { return m_clock; }
 
         /**
          * @brief Log "FPS: N (M ms)" to the console once a second.
@@ -70,6 +68,11 @@ class Engine {
          * it leaves this off to keep the console quiet.
          */
         void logFPS(bool enabled = true) { m_fpsLog = enabled; }
+
+        /**
+         * @brief Run the main loop (blocks until the window is closed).
+         */
+        void run();
 
         /**
          * @brief Create and register a system at the given execution stage.
@@ -91,11 +94,6 @@ class Engine {
             return ref;
         }
 
-        /**
-         * @brief Run the main loop (blocks until the window is closed).
-         */
-        void run();
-
     private:
         void initSystems(FrameContext& ctx);
         void shutdownSystems();
@@ -105,42 +103,12 @@ class Engine {
         ResourceManager m_resources;
 
         WindowManager m_window;
-        FrameTracker  m_frameTracker;
+        Clock         m_clock;
 
-        /**
-         * @brief Systems organized by stage. Outer index is SystemStage; inner vector
-         * preserves registration order within that stage.
-         */
-        std::array<std::vector<std::unique_ptr<System>>,
-                   static_cast<size_t>(SystemStage::Count)> m_systemsByStage;
-
-        /**
-         * @brief Subset of systems that actually implement fixedUpdate().
-         *
-         * Built once at init from System::hasFixedUpdate(); the accumulator
-         * loop iterates this list instead of dispatching the empty virtual
-         * across every registered system every tick.
-         */
-        std::vector<System*> m_fixedUpdaters;
+        std::array<std::vector<std::unique_ptr<System>>, static_cast<size_t>(SystemStage::Count)> m_systemsByStage;
 
         bool m_initialized = false;
-
-        SimulationClock m_simClock;
-
-        /**
-         * @brief Once-a-second FPS console log. Off by default (the editor uses its
-         * status bar); the runtime opts in. The timer throttles the log.
-         */
-        bool  m_fpsLog      = false;
-        float m_fpsLogTimer = 0.0f;
-
-        /**
-         * @brief Throttle state for accumulator-clamp warnings (one per second).
-         * Per-instance so headless tools / tests with multiple Engine
-         * instances don't cross-suppress each other.
-         */
-        std::chrono::steady_clock::time_point m_lastAccumClampWarn{};
-        int m_accumClampSuppressed = 0;
+        bool m_fpsLog      = false;
 };
 
 } // namespace Engine
