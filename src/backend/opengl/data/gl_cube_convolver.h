@@ -30,10 +30,11 @@ class GLCubeConvolver {
         GLCubeConvolver();
         ~GLCubeConvolver();
 
-        GLCubeConvolver(const GLCubeConvolver&) = delete;
-        GLCubeConvolver& operator=(const GLCubeConvolver&) = delete;
-        GLCubeConvolver(GLCubeConvolver&&) = delete;
-        GLCubeConvolver& operator=(GLCubeConvolver&&) = delete;
+        GLCubeConvolver(const GLCubeConvolver& other) = delete;
+        GLCubeConvolver& operator=(const GLCubeConvolver& other) = delete;
+
+        GLCubeConvolver(GLCubeConvolver && other) = delete;
+        GLCubeConvolver& operator=(GLCubeConvolver && other) = delete;
 
         using BindEnv       = std::function<void()>;          ///< Bind the source env cube to unit 0.
         using AttachFace    = std::function<void(int face)>;

@@ -19,7 +19,8 @@ namespace Engine {
 
 namespace Engine {
 
-static constexpr uint32_t SHADOW_MAX_TRACKED_LIGHTS = 64;
+// Shadow slots are only ever queried for lights that made the GPU light list.
+constexpr uint32_t SHADOW_MAX_TRACKED_LIGHTS = Config::MAX_LIGHTS;
 
 /**
  * @brief One 2D shadow caster (std140) - a directional cascade or a spot map.
