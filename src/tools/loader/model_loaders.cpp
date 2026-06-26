@@ -17,7 +17,7 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include <assimp/material.h>
-#include <assimp/GltfMaterial.h>   // AI_MATKEY_GLTF_ALPHAMODE / ALPHACUTOFF
+#include <assimp/GltfMaterial.h>
 
 // Assimp's headers can drag in platform headers that #define ERROR / near /
 // far (wingdi) which collide with logger.h's LogLevel::ERROR. Guard before
@@ -32,7 +32,7 @@
   #undef far
 #endif
 
-#include "stb_image.h"   // declarations only; impl is in texture_loaders.cpp
+#include "stb_image.h"
 
 #include <nlohmann/json.hpp>
 #include <glm/glm.hpp>

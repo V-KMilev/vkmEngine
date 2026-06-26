@@ -5,10 +5,10 @@
 
 #include <glm/glm.hpp>
 
-#include "gl_instance_buffer.h"  // Core::InstanceBuffer (header-only)
+#include "gl_instance_buffer.h"
 
-#include "resource/asset/mesh_asset.h"      // MeshHandle
-#include "resource/asset/material_asset.h"  // MaterialHandle
+#include "resource/asset/mesh_asset.h"
+#include "resource/asset/material_asset.h"
 
 namespace Engine {
 

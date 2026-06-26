@@ -5,7 +5,7 @@
 #include <string>
 
 #include "convention/gl_format_conversion.h"
-#include "texture/gl_texture.h"  // Core::Texture2D
+#include "texture/gl_texture.h"
 
 #include "resource/asset/texture_asset.h"
 

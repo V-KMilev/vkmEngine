@@ -6,7 +6,7 @@
 
 #include <glm/glm.hpp>
 
-#include "convention/gl_bindings.h"  // ProbeTextureSlots::MAX_PROBES
+#include "convention/gl_bindings.h"
 
 namespace Core {
     class Context;

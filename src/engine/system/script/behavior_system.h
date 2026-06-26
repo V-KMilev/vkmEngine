@@ -4,8 +4,8 @@
 
 #include "core/system.h"
 #include "ecs/entity.h"
-#include "system/physics/physics_events.h"  // CollisionEvent / TriggerEvent
-#include "system/script/behavior.h"          // Behavior (pointer-to-member hook params)
+#include "system/physics/physics_events.h"
+#include "system/script/behavior.h"
 
 namespace Engine {
 

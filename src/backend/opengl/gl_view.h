@@ -4,9 +4,9 @@
 #include <memory>
 #include <vector>
 
-#include "resource/asset/mesh_asset.h"      // MeshHandle
-#include "resource/asset/material_asset.h"  // MaterialHandle
-#include "resource/asset/texture_asset.h"   // TextureHandle
+#include "resource/asset/mesh_asset.h"
+#include "resource/asset/material_asset.h"
+#include "resource/asset/texture_asset.h"
 
 #include "data/gl_mesh.h"
 #include "data/gl_material.h"
