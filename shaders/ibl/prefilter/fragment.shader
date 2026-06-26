@@ -4,7 +4,6 @@
  * Importance-samples the environment cubemap with the GGX distribution. The
  * bake pass sets u_roughness per mip level (0 at mip 0 .. 1 at the last mip).
  */
-#version 420 core
 
 in vec3 vLocalPos;
 

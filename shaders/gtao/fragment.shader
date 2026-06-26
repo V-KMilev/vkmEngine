@@ -12,7 +12,6 @@
  * Works entirely in view space from depth + the G-buffer normal - no world-space
  * data needed. Interleaved-gradient rotation per pixel hides slice banding.
  */
-#version 430 core
 
 in vec2 vUV;
 
@@ -33,16 +32,7 @@ const int   STEPS   = 5;
 const float PI      = 3.14159265359;
 const float HALF_PI = 1.57079632679;
 
-vec2 signNotZero(vec2 v) {
-    return vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
-}
-
-vec3 octDecode(vec2 e) {
-    e = e * 2.0 - 1.0;
-    vec3 n = vec3(e.xy, 1.0 - abs(e.x) - abs(e.y));
-    if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * signNotZero(n.xy);
-    return normalize(n);
-}
+#include "../_common/normal_codec.glsl"  // signNotZero, octDecode
 
 vec3 viewPos(vec2 uv, float depth) {
     vec4 ndc = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);

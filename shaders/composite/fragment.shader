@@ -1,4 +1,3 @@
-#version 430 core
 
 in vec2 vUV;
 out vec4 FragColor;
@@ -27,17 +26,7 @@ const int MODE_AO        = 5;
 const int MODE_BLOOM     = 6;
 const int MODE_SHADOW    = 7;
 
-vec2 signNotZero(vec2 v) {
-    return vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
-}
-
-// Octahedral decode - matches octEncode in the depth prepass / octDecode in SSR.
-vec3 octDecode(vec2 e) {
-    e = e * 2.0 - 1.0;
-    vec3 n = vec3(e.xy, 1.0 - abs(e.x) - abs(e.y));
-    if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * signNotZero(n.xy);
-    return normalize(n);
-}
+#include "../_common/normal_codec.glsl"  // signNotZero, octDecode
 
 // Visualize one intermediate render target, raw (no tonemap / FXAA).
 vec3 debugColor(vec2 uv) {

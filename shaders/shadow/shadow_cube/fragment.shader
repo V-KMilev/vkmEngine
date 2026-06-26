@@ -1,4 +1,3 @@
-#version 430 core
 
 // Store linear distance from the light, normalised by the light's range, so the
 // six faces share one comparison space and the forward pass can sample by

@@ -1,4 +1,3 @@
-#version 430 core
 
 /*
  * Anti-aliased world grid. Minor lines every 1 unit, major every 10, the world

@@ -13,7 +13,6 @@
  *
  * Ref: McGuire & Mara, "Efficient GPU Screen-Space Ray Tracing", JCGT 2014.
  */
-#version 430 core
 
 in vec2 vUV;
 
@@ -35,16 +34,7 @@ const float THICKNESS  = 1.2;    // view-space surface thickness for the crossin
 const float START_BIAS = 0.05;   // lift the ray off its own surface (anti-acne)
 const float MAX_ROUGH   = 0.6;   // rougher surfaces don't get a sharp reflection
 
-vec2 signNotZero(vec2 v) {
-    return vec2(v.x >= 0.0 ? 1.0 : -1.0, v.y >= 0.0 ? 1.0 : -1.0);
-}
-
-vec3 octDecode(vec2 e) {
-    e = e * 2.0 - 1.0;
-    vec3 n = vec3(e.xy, 1.0 - abs(e.x) - abs(e.y));
-    if (n.z < 0.0) n.xy = (1.0 - abs(n.yx)) * signNotZero(n.xy);
-    return normalize(n);
-}
+#include "../_common/normal_codec.glsl"  // signNotZero, octDecode
 
 vec3 viewPos(vec2 uv, float depth) {
     vec4 ndc = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);

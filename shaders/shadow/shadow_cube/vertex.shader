@@ -1,4 +1,3 @@
-#version 430 core
 
 // Point-light cube shadow depth: rasterise into one cube face. The fragment
 // stage writes linear distance-to-light, so the world position is passed down.

@@ -5,7 +5,6 @@
  * direction. Linear in, linear out (no tone mapping anywhere in the engine
  * except the composite pass).
  */
-#version 420 core
 
 in vec3 vLocalPos;
 

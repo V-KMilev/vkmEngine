@@ -20,18 +20,11 @@ function(_extract_uint cxx_name out_var)
     string(REGEX MATCH "constexpr[ \t]+uint32_t[ \t]+${cxx_name}[ \t]*=[ \t]*([0-9]+)" _ "${_config_src}")
     set(${out_var} ${CMAKE_MATCH_1} PARENT_SCOPE)
 endfunction()
-function(_extract_float cxx_name out_var)
-    string(REGEX MATCH "constexpr[ \t]+float[ \t]+${cxx_name}[ \t]*=[ \t]*([^;]+);" _ "${_config_src}")
-    set(${out_var} ${CMAKE_MATCH_1} PARENT_SCOPE)
-endfunction()
-
 _extract_uint(MAX_LIGHTS              _max_lights)
 _extract_uint(MAX_SHADOW_CASTERS_2D   _max_shadow_2d)
 _extract_uint(MAX_SHADOW_CASTERS_CUBE _max_shadow_cube)
-_extract_uint(NUM_CASCADES            _num_cascades)
-_extract_float(SHADOW_CUBE_NEAR       _cube_near)
 
-if(NOT _max_lights OR NOT _max_shadow_2d OR NOT _max_shadow_cube OR NOT _num_cascades OR NOT _cube_near)
+if(NOT _max_lights OR NOT _max_shadow_2d OR NOT _max_shadow_cube)
     message(FATAL_ERROR "generate_shader_config: failed to extract a constant from ${_engine_config_h}")
 endif()
 
@@ -47,9 +40,7 @@ set(_glsl
 const int   MAX_LIGHTS              = ${_max_lights};
 const int   MAX_SHADOW_CASTERS_2D   = ${_max_shadow_2d};
 const int   MAX_SHADOW_CASTERS_CUBE = ${_max_shadow_cube};
-const int   NUM_CASCADES            = ${_num_cascades};
-const float SHADOW_CUBE_NEAR        = ${_cube_near};
 ")
 
 file(WRITE ${_generated_glsl} "${_glsl}")
-message(STATUS "Generated ${_generated_glsl} (MAX_LIGHTS=${_max_lights}, NUM_CASCADES=${_num_cascades})")
+message(STATUS "Generated ${_generated_glsl} (MAX_LIGHTS=${_max_lights})")

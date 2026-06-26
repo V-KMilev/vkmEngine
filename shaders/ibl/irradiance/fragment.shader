@@ -4,7 +4,6 @@
  * Integrates the environment cubemap over the hemisphere about the cube
  * direction. Output is the irradiance the split-sum diffuse term samples.
  */
-#version 420 core
 
 in vec3 vLocalPos;
 

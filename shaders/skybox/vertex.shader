@@ -5,7 +5,6 @@
  * so the cube stays centered on the camera, and z is forced to w so the
  * skybox sits at the far plane (drawn after opaque with depth func LEQUAL).
  */
-#version 420 core
 
 layout (location = 0) in vec3 aPos;
 

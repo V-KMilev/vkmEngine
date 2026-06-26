@@ -5,7 +5,6 @@
  * GL_ONE) into the next larger mip, so the chain accumulates a wide, smooth
  * energy-conserving bloom. u_filterRadius is in UV space.
  */
-#version 420 core
 
 in vec2 vUV;
 
