@@ -25,6 +25,9 @@ GLShadowData::~GLShadowData() = default;
 
 namespace {
 
+// Range to use for a light that carries no radius.
+constexpr float DEFAULT_LIGHT_RANGE = 50.0f;
+
 // A stable up axis for a light/view direction (avoids a degenerate lookAt when
 // the direction is near-vertical).
 glm::vec3 stableUp(const glm::vec3& dir) {
@@ -90,6 +93,7 @@ void GLShadowData::build(const RenderView& view) {
 // Directional sun: N frustum-fit cascades into the first 2D slots.
 void GLShadowData::fitDirectional(const LightData& light, uint32_t lightIndex,
                                   const CameraFrustum& cam, uint32_t& next2D, bool& haveSun) {
+    // cascadeSplits is a vec4 and fr[] is sized N+1 == 5, so 4 cascades max.
     const uint32_t N = std::min<uint32_t>(Config::NUM_CASCADES, 4u);
     if (haveSun || next2D + N > Config::MAX_SHADOW_CASTERS_2D) return;
     haveSun = true;
@@ -168,7 +172,7 @@ void GLShadowData::fitSpot(const LightData& light, uint32_t lightIndex, uint32_t
 
     const glm::vec3 dir   = glm::normalize(light.direction);
     const glm::vec3 up    = stableUp(dir);
-    const float     range = light.radius > 0.0f ? light.radius : 50.0f;
+    const float     range = light.radius > 0.0f ? light.radius : DEFAULT_LIGHT_RANGE;
     const float     fov   = std::min(glm::radians(170.0f), 2.0f * light.outerConeAngle * 1.1f);
 
     const glm::mat4 lView   = glm::lookAt(light.position, light.position + dir, up);
@@ -193,7 +197,7 @@ void GLShadowData::fitPoint(const LightData& light, uint32_t lightIndex, uint32_
     if (nextCube >= Config::MAX_SHADOW_CASTERS_CUBE) return;
     const uint32_t slot = nextCube++;
 
-    const float range = light.radius > 0.0f ? light.radius : 50.0f;
+    const float range = light.radius > 0.0f ? light.radius : DEFAULT_LIGHT_RANGE;
     const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f,
                                             Config::SHADOW_CUBE_NEAR, range);
 

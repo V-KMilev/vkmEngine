@@ -18,8 +18,8 @@ namespace Engine {
  * geometric normal from depth, ray-marches the reflected view ray against the
  * depth copy, and composites the hit's scene colour (Fresnel + edge faded) into
  * a scratch target that is then blitted back over the HDR target. Runs after the
- * forward draw and before bloom, so
- * reflections bloom and tonemap with the rest of the scene.
+ * forward draw and before bloom, so reflections bloom and tonemap with the rest
+ * of the scene.
  */
 class GLSSRPass : public GLPass {
     public:

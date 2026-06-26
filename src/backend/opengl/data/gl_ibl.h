@@ -58,9 +58,8 @@ class GLIBL {
         void uploadEquirect(uint32_t width, uint32_t height, const float* rgb);
 
         /**
-         * @brief Bake render-target ops (capture FBO + per-face/mip attach). Each
-         * attach also sizes the viewport to the target it points at, so the
-         * baker holds no GL state itself.
+         * @brief Bind / unbind the shared capture FBO that every face/mip attach
+         * targets. The baker holds no GL state itself.
          */
         void bindCaptureFbo()   const { m_captureFbo->bind(); }
         void unbindCaptureFbo() const { m_captureFbo->unbind(); }
@@ -70,19 +69,23 @@ class GLIBL {
             if (m_equirect) m_equirect->bindSlot(slot);
         }
 
+        /** @brief Attach env cube @p face as colour 0, sized to its viewport. */
         void attachEnvFace(const Core::Context& gl, int face) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_envCube.id(), 0);
             gl.setViewport(0, 0, ENV_SIZE, ENV_SIZE);
         }
+        /** @brief Generate the env cube mip chain (prefilter source). */
         void generateEnvMips() const { m_envCube.generateMipmaps(); }
 
+        /** @brief Attach irradiance cube @p face as colour 0, sized to its viewport. */
         void attachIrradianceFace(const Core::Context& gl, int face) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_irradiance.id(), 0);
             gl.setViewport(0, 0, IRRADIANCE_SIZE, IRRADIANCE_SIZE);
         }
 
+        /** @brief Attach prefilter cube @p face / @p mip as colour 0, sized to its viewport. */
         void attachPrefilterFace(const Core::Context& gl, int face, int mip) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_prefilter.id(), mip);
@@ -90,6 +93,7 @@ class GLIBL {
             gl.setViewport(0, 0, s, s);
         }
 
+        /** @brief Attach the BRDF/DFG LUT as colour 0, sized to its viewport. */
         void attachBrdf(const Core::Context& gl) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_2D, m_brdf ? m_brdf->getID() : 0, 0);

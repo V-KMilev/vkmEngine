@@ -16,11 +16,15 @@
 
 namespace Engine {
 
+namespace {
+
 // Quad half-size in world units. The vertex shader recentres the quad on the
 // camera and scales it by this, so it always covers the visible ground. The
 // fragment shader's distance fade (which keys off the same extent) hides the
 // quad rim, so the grid never shows a hard edge regardless of camera height.
-static constexpr float GRID_EXTENT = 200.0f;
+constexpr float GRID_EXTENT = 200.0f;
+
+} // namespace
 
 GLGridPass::GLGridPass()
     : m_shader(std::make_unique<Core::Shader>("shaders/grid"))

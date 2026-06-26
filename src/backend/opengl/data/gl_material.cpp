@@ -34,7 +34,7 @@ constexpr MapBinding MATERIAL_MAPS[] = {
     {&MaterialAsset::aoMetallicRoughnessTexture, GLBindings::TextureSlots::AOMetallicRoughness, GLBindings::MaterialTextureFlags::AOMetallicRoughness},
 };
 
-}
+} // namespace
 
 GLMaterial::GLMaterial(const MaterialAsset& material) {
     update(material);
