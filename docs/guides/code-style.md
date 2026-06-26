@@ -311,6 +311,17 @@ Rules:
   and confuses tooling. Detail goes after the first blank line.
 - No multi-paragraph `///` blocks. Past ~3 lines or when you need `@param` /
   `@return`, switch to `/** @brief */`.
+- **Keep the full block on the documented surface.** Public APIs and non-trivial
+  class / template methods carry a full `/** ... */` block: a one-sentence
+  `@brief`, a detail paragraph for the non-obvious *why*, and `@param` /
+  `@tparam` / `@return` for the parameters and result. Do **not** collapse an
+  existing documented block down to a bare one-line `@brief`. A `@param` that
+  names what an argument is is expected Doxygen, not a what-comment - anti-pattern
+  #7 is about inline `//` that restate a *statement*, not about parameter docs.
+  Always use the **multi-line** form (`/**` on its own line, then ` * @brief
+  ...`) on a documented declaration - never the single-line `/** @brief ... */`,
+  and never a trailing `///<` on a function/method declaration (`///<` is for
+  plain data members only).
 
 ```cpp
 struct Transform {
