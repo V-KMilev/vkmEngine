@@ -14,6 +14,11 @@
 
 namespace Engine::HierarchyOperations {
 
+namespace {
+// Maximum supported hierarchy depth; deeper chains are clamped/skipped.
+constexpr uint32_t MAX_DEPTH = 32;
+} // namespace
+
 void markDirty(Scene& scene, EntityId entity) {
     if (!entity || !scene.isAlive(entity) || !scene.has<Hierarchy>(entity)) return;
 
@@ -43,7 +48,7 @@ void setParent(Scene& scene, EntityId child, EntityId parent) {
     {
         EntityId ancestor = parent;
         uint32_t depth = 0;
-        while (ancestor && depth < 32) {
+        while (ancestor && depth < MAX_DEPTH) {
             if (ancestor == child) {
                 LOG_WARNING("HierarchyOperations::setParent: cycle detected, ignoring");
                 return;
@@ -151,7 +156,6 @@ void removeFromParent(Scene& scene, EntityId entity) {
 
 glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity) {
     // Collect parent chain (bottom-up) into a fixed-size stack array
-    static constexpr uint32_t MAX_DEPTH = 32;
     EntityId chain[MAX_DEPTH];
     uint32_t depth = 0;
 
@@ -205,7 +209,7 @@ void resolveWorldTransforms(Scene& scene) {
     // Invariant relied on here: every entity with Hierarchy also has
     // WorldTransform (pre-seeded by setParent) - no structural mutation
     // happens inside the parallel section.
-    static constexpr uint32_t MAX_DEPTH = 32;
+    //
     // Persist the bucket array across frames (cleared, not freed) so we don't
     // construct 32 std::vectors and reallocate their storage every frame -
     // function-static thread_local gives each calling thread its own per-depth

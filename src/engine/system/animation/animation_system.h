@@ -49,7 +49,7 @@ class AnimationSystem : public System {
          * @param animation The animation component.
          * @param transform The transform component to update.
          */
-         void applyAnimation(const Animation& animation, Transform& transform) const;
+        void applyAnimation(const Animation& animation, Transform& transform) const;
 };
 
 } // namespace Engine

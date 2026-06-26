@@ -7,7 +7,6 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "ecs/entity.h"
-#include "ecs/scene.h"
 #include "core/system.h"
 
 namespace Engine {
@@ -26,7 +25,7 @@ class CameraControllerSystem : public System {
             float lookSensitivity  = 0.002f;    ///< Sensitivity multiplier for camera rotation (yaw/pitch).
             float moveSpeed        = 10.0f;     ///< Default movement speed (units per second).
             float speedBoost       = 3.0f;      ///< Multiplier for movement when speed boost (e.g. Shift) is active.
-            float scrollMultiplier = 2.0f;      ///< Multiplier for scroll-based adjustments (zoom or movement).
+            float scrollMultiplier = 2.0f;      ///< Multiplier for scroll-based forward/back dolly.
 
             float minPitch = -90.0f;            ///< Minimum pitch angle in degrees (to prevent flipping).
             float maxPitch = 90.0f;             ///< Maximum pitch angle in degrees.
@@ -90,8 +89,7 @@ class CameraControllerSystem : public System {
          * direction (e.g. (1,0,0) for "view from +X"). Used by the
          * navigation-gizmo view presets.
          */
-        void viewFrom(Scene& scene, const glm::vec3& target,
-                      const glm::vec3& direction, float distance);
+        void viewFrom(Scene& scene, const glm::vec3& target, const glm::vec3& direction, float distance);
 
     private:
         /**
@@ -126,6 +124,12 @@ class CameraControllerSystem : public System {
          * the look direction on the next right-mouse drag.
          */
         void reseedAnglesFromRotation(const glm::quat& rotation);
+
+        /**
+         * @brief Set m_yaw / m_pitch from a (normalized) look direction, the
+         * inverse of the forward mapping updateRotationFromAngles() produces.
+         */
+        void setAnglesFromDirection(const glm::vec3& dir);
 
     private:
         Entity   m_cameraEntity;

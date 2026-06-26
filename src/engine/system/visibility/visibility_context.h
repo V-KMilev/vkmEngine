@@ -7,7 +7,7 @@
 namespace Engine {
 
 /**
- * @brief Per-frame data for visibility and culling (frustum, matrices, viewport, thresholds).
+ * @brief Per-frame data for visibility and culling (frustum, view matrix, camera position, thresholds).
  */
 struct VisibilityContext {
     Math::Frustum frustum;       ///< View frustum planes (from Math::extractFrustum).

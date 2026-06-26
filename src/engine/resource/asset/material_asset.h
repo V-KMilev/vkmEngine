@@ -58,7 +58,7 @@ struct MaterialAsset : public Resource {
     float normalScale  = 1.0f;                   ///< Normal map intensity (0: flat, 1: as authored, >1: exaggerated)
 
     glm::vec3 emission     = {0,0,0};            ///< Emissive color (RGB), linear
-    float emissiveStrength = 1.0f;               ///< HDR multiplier on emission (drives bloom once it returns)
+    float emissiveStrength = 1.0f;               ///< HDR multiplier on emission (feeds the bloom pass)
 
     // Secondary lobes
     float clearcoat               = 0.0f;        ///< Clearcoat layer strength (0: none, 1: full); attenuates the base layer

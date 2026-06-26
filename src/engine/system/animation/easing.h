@@ -6,12 +6,16 @@
 
 namespace Engine {
 
-/** @brief Type alias for easing function pointers.
+/**
+ * @brief Type alias for easing function pointers.
+ *
  * An easing function takes a float from 0 to 1 and returns a float from 0 to 1.
  */
 using EasingFunction = float (*)(float);
 
-/** @brief Namespace containing common easing/interpolation functions.
+/**
+ * @brief Namespace containing common easing/interpolation functions.
+ *
  * These call the corresponding GLM easing routines.
  * We use function pointers to avoid the complexity of template functions.
  * All easing functions accept t in [0, 1] and produce a value in [0, 1].

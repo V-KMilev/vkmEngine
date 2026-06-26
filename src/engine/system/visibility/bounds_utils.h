@@ -12,6 +12,7 @@ inline constexpr float BOUNDS_EPSILON_SQ = 1e-8f;
 
 /**
  * @brief True if the AABB has non-degenerate extent (squared length of extent > epsilon).
+ *
  * Degenerate or empty bounds return false. Uses squared extent to avoid sqrt.
  */
 inline bool hasValidBounds(const glm::vec3& min, const glm::vec3& max) noexcept {

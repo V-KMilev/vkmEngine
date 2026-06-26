@@ -17,9 +17,6 @@
 
 namespace Engine {
 
-class Scene;
-void detachFromHierarchy(Scene& scene, EntityId entity);
-
 /**
  * @brief Central registry managing entities and an open set of component types.
  *
@@ -273,12 +270,9 @@ class Scene {
         }
 
         /**
-         * @brief Remove every entity and reset component storage. Used for
-         * scene load to start from a clean slate.
-         *
-         * Safe in any destruction order: detachFromHierarchy guards each
-         * sibling/parent/child touch with isAlive + has<Hierarchy>, so
-         * already-destroyed neighbours are skipped silently.
+         * @brief Drop every component set and reset the entity allocator and
+         * environment in one pass. Used for scene load to start from a clean
+         * slate.
          */
         void clear() {
             // O(types + entities) rather than the previous

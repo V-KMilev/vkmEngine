@@ -1,7 +1,5 @@
 #include "debug/frame_tracker.h"
 
-#include <algorithm>
-
 using namespace std::chrono;
 
 namespace Engine {
@@ -33,24 +31,6 @@ void FrameTracker::update() {
     // Valid samples only - avoids inflated FPS on startup.
     m_frameRateInfo.frameTime = static_cast<float>(m_runningSum / static_cast<double>(m_validSamples));
     m_frameRateInfo.frameRate = 1000.0f / m_frameRateInfo.frameTime;
-
-    auto validEnd = m_frameTimes.begin() + static_cast<std::ptrdiff_t>(m_validSamples);
-    auto [minIt, maxIt] = std::minmax_element(m_frameTimes.begin(), validEnd);
-    m_frameRateInfo.minFrameTime = *minIt;
-    m_frameRateInfo.maxFrameTime = *maxIt;
-}
-
-void FrameTracker::reset() {
-    m_frameRateInfo.frameTime = 0.0f;
-    m_frameRateInfo.frameRate = 0.0f;
-    m_frameRateInfo.minFrameTime = 0.0f;
-    m_frameRateInfo.maxFrameTime = 0.0f;
-
-    m_frameIndex = 0;
-    m_validSamples = 0;
-    m_runningSum = 0.0;
-    m_frameTimes.fill(0.0f);
-    m_lastFrameTime = high_resolution_clock::now();
 }
 
 } // namespace Engine

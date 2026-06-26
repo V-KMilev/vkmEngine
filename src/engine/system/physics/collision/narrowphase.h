@@ -10,7 +10,7 @@ namespace Engine {
 /**
  * @brief Generate contact points between two oriented boxes in world space.
  *
- * Colliders are sets of boxes, so the solver runs this once per child-box pair.
+ * Colliders are sets of boxes, so the narrowphase runs this once per child-box pair.
  * Writes up to MAX_CONTACTS_PER_MANIFOLD entries into @p out and returns the
  * count; 0 means no overlap. Every emitted normal points from box A toward box
  * B, so the caller pushes A along -normal and B along +normal.

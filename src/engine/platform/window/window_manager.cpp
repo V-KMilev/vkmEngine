@@ -47,7 +47,7 @@ GLFWmonitor* getCurrentMonitor(GLFWwindow* window) {
             bestMonitor = monitors[i];
         }
     }
-        
+
     return bestMonitor ? bestMonitor : glfwGetPrimaryMonitor();
 }
 }  // anonymous namespace
@@ -159,15 +159,13 @@ void WindowManager::setTitle(const std::string& title) {
 }
 
 void WindowManager::swapBuffers() {
-    GLFWwindow* windowContext = m_windowHandle;
-
     {
         // The actual present. With vsync off and no FPS cap this returns fast,
         // but when the CPU outruns the GPU the driver blocks here (or in the
         // next frame's first GL call) until the queue drains - so a fat
         // SwapBuffers zone is the tell-tale of a GPU-bound frame.
         PROFILE_SCOPE("SwapBuffers");
-        glfwSwapBuffers(windowContext);
+        glfwSwapBuffers(m_windowHandle);
     }
 
     {
@@ -179,9 +177,7 @@ void WindowManager::swapBuffers() {
 }
 
 void WindowManager::updateMode(WindowMode windowMode) {
-    GLFWwindow* windowContext = m_windowHandle;
-
-    GLFWmonitor* monitor = getCurrentMonitor(windowContext);
+    GLFWmonitor* monitor = getCurrentMonitor(m_windowHandle);
     if (!monitor) {
         LOG_ERROR("Failed to get current monitor");
         return;
@@ -224,7 +220,7 @@ void WindowManager::updateMode(WindowMode windowMode) {
 
     // Set window to the corresponding mode
     glfwSetWindowMonitor(
-        windowContext,
+        m_windowHandle,
         monitor,
         targetX,
         targetY,
@@ -238,8 +234,6 @@ void WindowManager::updateMode(WindowMode windowMode) {
 }
 
 void WindowManager::updateInput() {
-    GLFWwindow* windowContext = m_windowHandle;
-
     // Reset scroll delta before polling new events
     m_inputHandle->getMouse().resetScrollDelta();
 
@@ -247,7 +241,7 @@ void WindowManager::updateInput() {
     glfwPollEvents();
 
     // Update mouse state (cursor position, button states)
-    m_inputHandle->update(windowContext);
+    m_inputHandle->update(m_windowHandle);
 }
 
 bool WindowManager::beginFrame() {
@@ -284,8 +278,7 @@ void WindowManager::setFramerate(int framerate) {
 }
 
 void WindowManager::setCursorMode(CursorMode mode) {
-    GLFWwindow* windowContext = m_windowHandle;
-    if (!windowContext) {
+    if (!m_windowHandle) {
         LOG_ERROR("Cannot set cursor mode: window is not initialized");
         return;
     }
@@ -308,7 +301,7 @@ void WindowManager::setCursorMode(CursorMode mode) {
             LOG_ERROR("Invalid cursor mode: %d", static_cast<int>(mode));
             return;
     }
-    glfwSetInputMode(windowContext, GLFW_CURSOR, glfwmode);
+    glfwSetInputMode(m_windowHandle, GLFW_CURSOR, glfwmode);
 }
 
 size_t WindowManager::getWidth() const {

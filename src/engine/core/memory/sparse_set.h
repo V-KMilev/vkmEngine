@@ -167,9 +167,6 @@ class SparseSet : public ISparseSet {
             }
         }
 
-        T*       data()       { return m_data.data(); } ///< Raw pointer to the packed dense array.
-        const T* data() const { return m_data.data(); } ///< @copydoc data()
-
         /** @brief Access the sparse key at a dense index (for index-based parallel iteration). */
         uint32_t keyAt(uint32_t denseIndex) const { return m_dataId[denseIndex]; }
         /** @brief Access the element at a dense index (for index-based parallel iteration). */
