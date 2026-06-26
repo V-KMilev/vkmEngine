@@ -15,7 +15,7 @@ namespace Engine {
 
 // Meshes: "cooked" kind. Loaded from the binary cache by name, resolved through
 // AssetLibrary. Async file read + deserialize off the main thread, finalised by
-// AsyncLoaderSystem - no Assimp, no stb decode.
+// AsyncLoaderSystem.
 MeshHandle createCookedMesh(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
     if (kind == "cooked") {

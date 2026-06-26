@@ -2,6 +2,7 @@
 
 #include "cook/asset_cooker.h"
 
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <system_error>
