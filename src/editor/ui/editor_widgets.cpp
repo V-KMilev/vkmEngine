@@ -17,10 +17,6 @@
 
 namespace Engine {
 
-namespace {
-constexpr float LABEL_WIDTH = EditorStyle::LABEL_WIDTH;
-}
-
 bool drawVec3Control(const char* label, float* values,
                      float resetValue, float speed) {
     bool changed = false;
@@ -28,12 +24,12 @@ bool drawVec3Control(const char* label, float* values,
 
     float lineHeight = ImGui::GetFrameHeight();
     ImVec2 buttonSize(lineHeight + 2.0f, lineHeight);
-    float inputWidth = (ImGui::GetContentRegionAvail().x - LABEL_WIDTH
+    float inputWidth = (ImGui::GetContentRegionAvail().x - EditorStyle::LABEL_WIDTH
                         - buttonSize.x * 3 - ImGui::GetStyle().ItemSpacing.x * 5) / 3.0f;
 
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
-    ImGui::SameLine(LABEL_WIDTH);
+    ImGui::SameLine(EditorStyle::LABEL_WIDTH);
 
     static const struct {
         const char*   button;
@@ -69,7 +65,7 @@ void drawPropertyLabel(const char* label) {
     // item just starts after the actual text width plus a padding. Short
     // labels still align at LABEL_WIDTH so the inspector reads as a column.
     const float lw = ImGui::CalcTextSize(label).x + ImGui::GetStyle().ItemSpacing.x;
-    ImGui::SameLine(std::max(LABEL_WIDTH, lw));
+    ImGui::SameLine(std::max(EditorStyle::LABEL_WIDTH, lw));
     ImGui::SetNextItemWidth(-1);
 }
 

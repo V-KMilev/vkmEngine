@@ -216,9 +216,7 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
         if (ctx.scene.has<Mesh>(id)) return; // already tested above
         if (!light.enabled)          return; // unselectable when off, matches gizmo draw
 
-        glm::vec3 pos = ctx.scene.has<WorldTransform>(id)
-            ? glm::vec3(ctx.scene.get<WorldTransform>(id).model[3])
-            : transform.position;
+        glm::vec3 pos = worldPosOf(ctx.scene, id, transform);
 
         // Pick AABB scales with the light's reach: big area lights stay easy
         // to hit, tiny point lights still need a near click. Directionals have

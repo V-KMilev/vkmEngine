@@ -1,5 +1,7 @@
 #include "panels/preferences_panel.h"
 
+#include <algorithm>
+
 #include "framework/editor_common.h"
 #include "ui/editor_style.h"
 
@@ -122,6 +124,7 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
         &state.keybinds.openPreferences,
         &state.keybinds.deleteEntity, &state.keybinds.deselect,
         &state.keybinds.duplicate, &state.keybinds.focusSelected,
+        &state.keybinds.frameAll,
         &state.keybinds.gizmoSelect, &state.keybinds.gizmoTranslate,
         &state.keybinds.gizmoRotate, &state.keybinds.gizmoScale,
         &state.keybinds.gizmoToggleSpace,
@@ -201,6 +204,7 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
     drawKeybindRow("Deselect",       state.keybinds.deselect);
     drawKeybindRow("Duplicate",      state.keybinds.duplicate);
     drawKeybindRow("Focus Selected", state.keybinds.focusSelected);
+    drawKeybindRow("Frame All",      state.keybinds.frameAll);
 
     ImGui::Spacing();
     ImGui::TextDisabled("Gizmo (disabled during fly-cam)");

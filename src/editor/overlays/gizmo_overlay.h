@@ -1,7 +1,6 @@
 #pragma once
 
 #include <imgui.h>
-#include <glm/gtc/quaternion.hpp>
 
 #include "ecs/entity.h"
 #include "ecs/component/transform.h"
@@ -9,7 +8,13 @@
 
 namespace Engine {
 
+class Scene;
 struct EditorContext;
+
+// World position of a (possibly parented) entity: the cached WorldTransform
+// when present, the local Transform position otherwise. Shared by the gizmo
+// draw and picking paths so both agree on the rule.
+glm::vec3 worldPosOf(const Scene& scene, EntityId id, const Transform& tf);
 
 /**
  * @brief Viewport overlay for the transform gizmo and entity picking.

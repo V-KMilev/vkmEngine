@@ -45,6 +45,7 @@ struct EditorKeybinds {
     KeyBind deselect         = { ImGuiKey_Escape, KeyMod_None };
     KeyBind duplicate        = { ImGuiKey_D,      KeyMod_Ctrl };
     KeyBind focusSelected    = { ImGuiKey_F,      KeyMod_None };
+    KeyBind frameAll         = { ImGuiKey_F,      KeyMod_Shift };
 
     // Gizmo modes (only active when camera NOT in fly mode)
     KeyBind gizmoSelect      = { ImGuiKey_Q, KeyMod_None };

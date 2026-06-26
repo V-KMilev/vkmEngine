@@ -11,7 +11,7 @@ constexpr float BTN = 26.0f;
 constexpr float GAP = 4.0f;
 constexpr float PAD = 5.0f;
 constexpr int   CONTROLS = 3;  // play/pause, step, stop
-}
+} // namespace
 
 void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     FrameContext&    ctx    = ec.frame;

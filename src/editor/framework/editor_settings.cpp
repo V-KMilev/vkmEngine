@@ -1,7 +1,6 @@
 #define VKM_LOG_CATEGORY "EDITOR"
 
 #include "framework/editor_settings.h"
-#include "framework/editor_state.h"
 
 #include <filesystem>
 #include <fstream>
@@ -11,6 +10,7 @@
 
 #include "logger.h"
 
+#include "framework/editor_state.h"
 #include "io/project_paths.h"
 
 namespace Engine {
@@ -21,10 +21,11 @@ using nlohmann::json;
 
 /**
  * @brief Bumped when a load-incompatible change is made to the schema.
+ *
  * Loaders with a lower version fall back to defaults rather than
  * guessing at fields that no longer exist or have different meanings.
  */
-constexpr int kFileVersion = 1;
+constexpr int FILE_VERSION = 1;
 
 json keybindToJson(const KeyBind& k) {
     return json{ {"key", static_cast<int>(k.key)}, {"mods", k.mods} };
@@ -35,9 +36,10 @@ void keybindFromJson(const json& j, KeyBind& k) {
 }
 
 /**
- * @brief One (json name, member) row per configurable keybind. Load and save both
- * iterate this table, so the two directions can never drift apart - adding
- * a keybind to EditorKeybinds only needs one new row here.
+ * @brief One (json name, member) row per configurable keybind.
+ *
+ * Load and save both iterate this table, so the two directions can never
+ * drift apart - adding a keybind to EditorKeybinds only needs one new row here.
  */
 struct KeybindField {
     const char* name;
@@ -58,13 +60,14 @@ constexpr KeybindField KEYBIND_FIELDS[] = {
     { "deselect",         &EditorKeybinds::deselect         },
     { "duplicate",        &EditorKeybinds::duplicate        },
     { "focusSelected",    &EditorKeybinds::focusSelected    },
+    { "frameAll",         &EditorKeybinds::frameAll         },
     { "gizmoSelect",      &EditorKeybinds::gizmoSelect      },
     { "gizmoTranslate",   &EditorKeybinds::gizmoTranslate   },
     { "gizmoRotate",      &EditorKeybinds::gizmoRotate      },
     { "gizmoScale",       &EditorKeybinds::gizmoScale       },
     { "gizmoToggleSpace", &EditorKeybinds::gizmoToggleSpace },
 };
-}
+} // namespace
 
 std::string path() {
     return (ProjectPaths::root() / "editor_settings.json").string();
@@ -83,11 +86,11 @@ bool load(EditorState& state) {
     }
 
     const int v = j.value("version", 0);
-    if (v != kFileVersion) {
+    if (v != FILE_VERSION) {
         // Future-incompatible: better to start from documented defaults than
         // to load fields with semantically different meanings.
         LOG_WARNING("EditorSettings::load: file version %d != expected %d. Using defaults.",
-            v, kFileVersion);
+            v, FILE_VERSION);
         return false;
     }
 
@@ -135,7 +138,7 @@ bool load(EditorState& state) {
 
 bool save(const EditorState& state) {
     json j;
-    j["version"]           = kFileVersion;
+    j["version"]           = FILE_VERSION;
     j["showHierarchy"]     = state.showHierarchy;
     j["showInspector"]     = state.showInspector;
     j["showBottom"]        = state.showBottom;

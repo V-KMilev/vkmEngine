@@ -21,28 +21,54 @@ namespace {
 constexpr ImU32 COLLIDER_COL = IM_COL32(80, 220, 120, 200);  // physics green
 constexpr ImU32 BOUNDS_COL   = IM_COL32(230, 200, 60, 160);  // mesh-bounds amber
 
-// World position of a (possibly parented) gizmo'd entity: the cached
-// WorldTransform when present, the local Transform position otherwise.
+// RAII scope shared by every viewport gizmo pass: it caches the view-projection
+// and drawlist, and pushes/pops the viewport clip rect. valid() is false when
+// there is no camera to project through, in which case nothing was pushed and
+// the caller must return early.
+struct ViewportOverlayScope {
+    explicit ViewportOverlayScope(EditorContext& ec) {
+        const FrameContext& ctx = ec.frame;
+        if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+        vp     = ctx.visibility->projection * ctx.visibility->view;
+        vpMin  = ec.viewportPos;
+        vpSize = ec.viewportSize;
+        dl     = ImGui::GetWindowDrawList();
+        dl->PushClipRect(vpMin, ImVec2(vpMin.x + vpSize.x, vpMin.y + vpSize.y), true);
+    }
+
+    ~ViewportOverlayScope() {
+        if (dl) dl->PopClipRect();
+    }
+
+    ViewportOverlayScope(const ViewportOverlayScope&) = delete;
+    ViewportOverlayScope& operator=(const ViewportOverlayScope&) = delete;
+
+    bool valid() const { return dl != nullptr; }
+
+    glm::mat4   vp{1.0f};
+    ImVec2      vpMin{0, 0};
+    ImVec2      vpSize{0, 0};
+    ImDrawList* dl = nullptr;
+};
+
+} // namespace
+
 glm::vec3 worldPosOf(const Scene& scene, EntityId id, const Transform& tf) {
     if (scene.has<WorldTransform>(id))
         return glm::vec3(scene.get<WorldTransform>(id).model[3]);
     return tf.position;
 }
 
-} // namespace
-
 void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
-    FrameContext& ctx = ec.frame;
-    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+    ViewportOverlayScope scope(ec);
+    if (!scope.valid()) return;
 
-    const glm::mat4 vp     = ctx.visibility->projection * ctx.visibility->view;
-    const ImVec2    vpMin  = ec.viewportPos;
-    const ImVec2    vpSize = ec.viewportSize;
+    const glm::mat4 vp     = scope.vp;
+    const ImVec2    vpMin  = scope.vpMin;
+    const ImVec2    vpSize = scope.vpSize;
+    ImDrawList*     dl     = scope.dl;
 
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->PushClipRect(vpMin, ImVec2(vpMin.x + vpSize.x, vpMin.y + vpSize.y), true);
-
-    ctx.scene.forEach<Light, Transform>([&](EntityId id, const Light& light, const Transform& tf) {
+    ec.frame.scene.forEach<Light, Transform>([&](EntityId id, const Light& light, const Transform& tf) {
         if (!light.enabled) return;
         const bool selected = (ec.state.selectedEntity == id);
         const ImU32 col = selected
@@ -51,7 +77,7 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                        static_cast<int>(light.color.g * 220),
                        static_cast<int>(light.color.b * 220), 200);
 
-        const glm::vec3 pos = worldPosOf(ctx.scene, id, tf);
+        const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
         const glm::vec3 dir = glm::normalize(Math::computeForward(tf.rotation));
 
         // Billboard icon at the entity origin so a light is always findable
@@ -198,26 +224,20 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
             }
         }
     });
-
-    dl->PopClipRect();
 }
 
 void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
-    FrameContext& ctx = ec.frame;
-    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+    ViewportOverlayScope scope(ec);
+    if (!scope.valid()) return;
 
-    const glm::mat4 vp = ctx.visibility->projection * ctx.visibility->view;
+    const glm::mat4 vp = scope.vp;
+    ImDrawList*     dl = scope.dl;
 
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->PushClipRect(ec.viewportPos,
-        ImVec2(ec.viewportPos.x + ec.viewportSize.x,
-               ec.viewportPos.y + ec.viewportSize.y), true);
-
-    ctx.scene.forEach<ReflectionProbe, Transform>([&](EntityId id, const ReflectionProbe& probe, const Transform& tf) {
+    ec.frame.scene.forEach<ReflectionProbe, Transform>([&](EntityId id, const ReflectionProbe& probe, const Transform& tf) {
         const bool  selected = (ec.state.selectedEntity == id);
         const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : IM_COL32(77, 158, 235, 200);
 
-        const glm::vec3 pos = worldPosOf(ctx.scene, id, tf);
+        const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
         const glm::vec3 e   = probe.halfExtents;
 
         // The world-axis-aligned influence box (wireBox with no rotation).
@@ -229,23 +249,17 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
         if (projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, sp))
             dl->AddCircleFilled(sp, selected ? 4.0f : 3.0f, col);
     });
-
-    dl->PopClipRect();
 }
 
 void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
-    FrameContext& ctx = ec.frame;
-    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+    ViewportOverlayScope scope(ec);
+    if (!scope.valid()) return;
 
-    const glm::mat4 vp = ctx.visibility->projection * ctx.visibility->view;
+    const glm::mat4 vp = scope.vp;
+    ImDrawList*     dl = scope.dl;
     const EntityId activeCamId = ec.cameraController.getCameraEntity().getID();
 
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->PushClipRect(ec.viewportPos,
-        ImVec2(ec.viewportPos.x + ec.viewportSize.x,
-               ec.viewportPos.y + ec.viewportSize.y), true);
-
-    ctx.scene.forEach<Camera, Transform>([&](EntityId id, const Camera& cam, const Transform& tf) {
+    ec.frame.scene.forEach<Camera, Transform>([&](EntityId id, const Camera& cam, const Transform& tf) {
         // The active editor camera *is* the viewer - drawing a frustum
         // there would put a gizmo inside the user's eye. Skip it.
         if (id == activeCamId) return;
@@ -258,7 +272,7 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
             ? IM_COL32(255, 200, 80, 130)
             : IM_COL32(120, 200, 220, 140);
 
-        const glm::vec3 pos   = worldPosOf(ctx.scene, id, tf);
+        const glm::vec3 pos   = worldPosOf(ec.frame.scene, id, tf);
         const glm::vec3 fwd   = glm::normalize(Math::computeForward(tf.rotation));
         glm::vec3 right, up;
         orthoBasis(fwd, right, up);
@@ -364,25 +378,21 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
             drawEditorIcon(dl, EditorIcon::Camera, apexSp, r * 0.85f, col);
         }
     });
-
-    dl->PopClipRect();
 }
 
 void GizmoOverlay::drawColliderGizmos(EditorContext& ec) {
-    FrameContext& ctx = ec.frame;
-    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+    ViewportOverlayScope scope(ec);
+    if (!scope.valid()) return;
 
-    const glm::mat4 vp     = ctx.visibility->projection * ctx.visibility->view;
-    const ImVec2    vpMin  = ec.viewportPos;
-    const ImVec2    vpSize = ec.viewportSize;
-
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->PushClipRect(vpMin, ImVec2(vpMin.x + vpSize.x, vpMin.y + vpSize.y), true);
+    const glm::mat4 vp     = scope.vp;
+    const ImVec2    vpMin  = scope.vpMin;
+    const ImVec2    vpSize = scope.vpSize;
+    ImDrawList*     dl     = scope.dl;
 
     // Physics evaluates a collider in the entity's Transform frame - position +
     // rotation, no scale (see PhysicsSystem). Draw it the same way so the
     // wireframe is exactly what the solver collides against.
-    ctx.scene.forEach<Collider, Transform>([&](EntityId id, const Collider& col, const Transform& tf) {
+    ec.frame.scene.forEach<Collider, Transform>([&](EntityId id, const Collider& col, const Transform& tf) {
         const bool   selected = (ec.state.selectedEntity == id);
         const ImU32  color    = selected ? EditorStyle::HIGHLIGHT_U32 : COLLIDER_COL;
         const glm::mat3 r = glm::mat3_cast(tf.rotation);
@@ -390,59 +400,49 @@ void GizmoOverlay::drawColliderGizmos(EditorContext& ec) {
             wireBox(dl, vp, tf.position + r * part.center, tf.rotation,
                     part.halfExtents, vpMin, vpSize, color);
     });
-
-    dl->PopClipRect();
 }
 
 void GizmoOverlay::drawBoundsGizmos(EditorContext& ec) {
-    FrameContext& ctx = ec.frame;
-    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+    ViewportOverlayScope scope(ec);
+    if (!scope.valid()) return;
 
-    const glm::mat4 vp     = ctx.visibility->projection * ctx.visibility->view;
-    const ImVec2    vpMin  = ec.viewportPos;
-    const ImVec2    vpSize = ec.viewportSize;
-
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->PushClipRect(vpMin, ImVec2(vpMin.x + vpSize.x, vpMin.y + vpSize.y), true);
+    const glm::mat4 vp     = scope.vp;
+    const ImVec2    vpMin  = scope.vpMin;
+    const ImVec2    vpSize = scope.vpSize;
+    ImDrawList*     dl     = scope.dl;
 
     // World-space AABB of every visible entity, already computed by the
     // visibility pass. This used to be an engine render pass; it's an editor
     // overlay now (an axis-aligned box is wireBox with no rotation).
-    for (const VisibleEntity& e : ctx.visibility->entries) {
+    for (const VisibleEntity& e : ec.frame.visibility->entries) {
         if (e.worldMin == e.worldMax) continue;
         const glm::vec3 center = (e.worldMin + e.worldMax) * 0.5f;
         const glm::vec3 he     = (e.worldMax - e.worldMin) * 0.5f;
         wireBox(dl, vp, center, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), he, vpMin, vpSize, BOUNDS_COL);
     }
-
-    dl->PopClipRect();
 }
 
 void GizmoOverlay::drawSelectionOutline(EditorContext& ec) {
-    FrameContext& ctx = ec.frame;
-    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
+    ViewportOverlayScope scope(ec);
+    if (!scope.valid()) return;
 
     const EntityId sel = ec.state.selectedEntity;
-    if (!sel || !ctx.scene.isAlive(sel)) return;
+    if (!sel || !ec.frame.scene.isAlive(sel)) return;
 
-    const glm::mat4 vp     = ctx.visibility->projection * ctx.visibility->view;
-    const ImVec2    vpMin  = ec.viewportPos;
-    const ImVec2    vpSize = ec.viewportSize;
-
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->PushClipRect(vpMin, ImVec2(vpMin.x + vpSize.x, vpMin.y + vpSize.y), true);
+    const glm::mat4 vp     = scope.vp;
+    const ImVec2    vpMin  = scope.vpMin;
+    const ImVec2    vpSize = scope.vpSize;
+    ImDrawList*     dl     = scope.dl;
 
     // Outline the selected entity's world AABB. Only mesh entities are in the
     // visible set; lights / probes / cameras highlight their own gizmos instead.
-    for (const VisibleEntity& e : ctx.visibility->entries) {
+    for (const VisibleEntity& e : ec.frame.visibility->entries) {
         if (e.id != sel || e.worldMin == e.worldMax) continue;
         const glm::vec3 center = (e.worldMin + e.worldMax) * 0.5f;
         const glm::vec3 he     = (e.worldMax - e.worldMin) * 0.5f;
         wireBox(dl, vp, center, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), he, vpMin, vpSize, EditorStyle::HIGHLIGHT_U32);
         break;
     }
-
-    dl->PopClipRect();
 }
 
 } // namespace Engine

@@ -6,8 +6,7 @@
 
 #include <imgui.h>
 
-#include "texture/gl_texture.h"   // Core::Texture2D - the brand mark
-#include "io/project_paths.h"
+#include "texture/gl_texture.h"
 
 #include "core/system.h"
 #include "debug/frame_tracker.h"
@@ -15,6 +14,7 @@
 #include "framework/editor_context.h"
 #include "framework/scene_io_controller.h"
 #include "framework/editor_actions.h"
+#include "io/project_paths.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_system.h"
 #include "ui/editor_widgets.h"
@@ -128,7 +128,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
                             false, !!state.selectedEntity)) {
             EditorActions::focusOnSelected(ctx, state, ec.cameraController);
         }
-        if (ImGui::MenuItem("Frame All", "Shift+F")) {
+        if (ImGui::MenuItem("Frame All", getKeyBindLabel(state.keybinds.frameAll, lbl, sizeof(lbl)))) {
             EditorActions::frameAll(ctx, ec.cameraController);
         }
         ImGui::Separator();

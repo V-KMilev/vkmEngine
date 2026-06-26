@@ -12,16 +12,12 @@ constexpr float BTN = 26.0f;   ///< Icon button side length
 constexpr float SEP = 10.0f;   ///< Spacing between groups
 constexpr float PAD = 5.0f;    ///< Toolbar inner padding
 
-void tipFor(char* buf, size_t n, const char* name, const KeyBind* bind) {
-    if (bind) {
-        char key[24];
-        getKeyBindLabel(*bind, key, sizeof(key));
-        snprintf(buf, n, "%s  (%s)", name, key);
-    } else {
-        snprintf(buf, n, "%s", name);
-    }
+void tipFor(char* buf, size_t n, const char* name, const KeyBind& bind) {
+    char key[24];
+    getKeyBindLabel(bind, key, sizeof(key));
+    snprintf(buf, n, "%s  (%s)", name, key);
 }
-}
+} // namespace
 
 void ViewportToolbar::draw(EditorContext& ec) {
     FrameContext&     ctx    = ec.frame;
@@ -33,7 +29,7 @@ void ViewportToolbar::draw(EditorContext& ec) {
     auto tool = [&](const char* id, EditorIcon icon, GizmoOperation op,
                     const char* name, const KeyBind& bind) {
         char tip[80];
-        tipFor(tip, sizeof(tip), name, &bind);
+        tipFor(tip, sizeof(tip), name, bind);
         if (iconButton(id, icon, state.gizmoOperation == op, true, tip, BTN))
             state.gizmoOperation = op;
         ImGui::SameLine();
@@ -60,7 +56,7 @@ void ViewportToolbar::draw(EditorContext& ec) {
         bool world = state.gizmoMode == GizmoMode::World;
         char spcTip[80];
         tipFor(spcTip, sizeof(spcTip), world ? "Space: World" : "Space: Local",
-               &kb.gizmoToggleSpace);
+               kb.gizmoToggleSpace);
         if (iconButton("spc", world ? EditorIcon::SpaceWorld : EditorIcon::SpaceLocal,
                        false, true, spcTip, BTN))
             state.gizmoMode = world ? GizmoMode::Local : GizmoMode::World;
@@ -70,10 +66,11 @@ void ViewportToolbar::draw(EditorContext& ec) {
             state.snapEnabled = !state.snapEnabled;
 
         bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
-        char dupTip[80], focTip[80], delTip[80];
-        tipFor(dupTip, sizeof(dupTip), "Duplicate", &kb.duplicate);
-        tipFor(focTip, sizeof(focTip), "Focus camera on selection", &kb.focusSelected);
-        tipFor(delTip, sizeof(delTip), "Delete", &kb.deleteEntity);
+        char dupTip[80], focTip[80], delTip[80], frameTip[80];
+        tipFor(dupTip, sizeof(dupTip), "Duplicate", kb.duplicate);
+        tipFor(focTip, sizeof(focTip), "Focus camera on selection", kb.focusSelected);
+        tipFor(delTip, sizeof(delTip), "Delete", kb.deleteEntity);
+        tipFor(frameTip, sizeof(frameTip), "Frame All", kb.frameAll);
 
         ImGui::SameLine(0, SEP);
         if (iconButton("dup", EditorIcon::Duplicate, false, haveSel, dupTip, BTN))
@@ -88,7 +85,7 @@ void ViewportToolbar::draw(EditorContext& ec) {
         // Right group: scene-wide view actions.
         ImGui::SameLine(0, SEP);
         if (iconButton("frameAll", EditorIcon::FrameAll, false, true,
-                       "Frame All  (Shift+F)", BTN))
+                       frameTip, BTN))
             EditorActions::frameAll(ctx, camera);
 
         m_hovered = ImGui::IsWindowHovered(

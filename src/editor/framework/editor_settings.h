@@ -21,7 +21,9 @@ struct EditorState;
  */
 namespace EditorSettings {
 
+/** @brief Load settings into state; returns false on missing/invalid file. */
 bool load(EditorState& state);
+/** @brief Write state to the settings file; returns false on write failure. */
 bool save(const EditorState& state);
 
 /** @brief Path the loader/saver uses. Resolved once at startup. */
