@@ -18,7 +18,11 @@ namespace {
 // One off-screen target texture: clamped, no mips, GL_FLOAT type. Filter defaults
 // to nearest (depth / G-buffer); the HDR colour target passes linear.
 std::unique_ptr<Core::Texture2D> makeTarget2D(
-    const char* name, uint32_t w, uint32_t h, GLenum internalFormat, GLenum format,
+    const char* name,
+    uint32_t w,
+    uint32_t h,
+    GLenum internalFormat,
+    GLenum format,
     Core::TextureMinFilter minFilter = Core::TextureMinFilter::Nearest,
     Core::TextureMagFilter magFilter = Core::TextureMagFilter::Nearest) {
     Core::Texture2DParams p;

@@ -11,11 +11,12 @@
 namespace Engine {
 
 namespace {
+
 // Instance attribute base locations - must match the layout(location=N) in the
 // forward + prepass vertex shaders. A mat4 spans N..N+3.
 constexpr uint32_t MODEL_ATTRIB  = 4;   // per-instance model       -> 4..7
 constexpr uint32_t NORMAL_ATTRIB = 8;   // per-instance normal mat  -> 8..11
-}
+} // namespace
 
 void GLInstanceBatcher::append(const DrawableData& d) {
     m_models.push_back(d.model);
@@ -31,7 +32,7 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildGrouped(
 
     // Sort indices by (material id, mesh id) so identical draws sit contiguously
     // and merge into one instanced call each. Sorting indices keeps the input
-    // list untouched and avoids moving the ~100-byte DrawableData pointers' targets.
+    // list untouched.
     m_order.resize(list.size());
     for (uint32_t i = 0; i < list.size(); ++i) m_order[i] = i;
     std::sort(m_order.begin(), m_order.end(), [&](uint32_t a, uint32_t b) {

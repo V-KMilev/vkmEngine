@@ -45,8 +45,8 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
     m_shader->bind();
     ctx.sceneHDR.bindColor(0);
     ctx.bloom.bind(1);
-    const float bloomStrength = (ctx.bloom.isReady() && ctx.view.settings.bloom)
-        ? ctx.view.settings.bloomStrength : 0.0f;
+    const float bloomStrength = (ctx.bloom.isReady() && view.settings.bloom)
+        ? view.settings.bloomStrength : 0.0f;
     m_shader->setUniform1f("u_bloomStrength", bloomStrength);
     m_shader->setUniform1i("u_fxaa", view.settings.fxaa ? 1 : 0);
 

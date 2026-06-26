@@ -12,8 +12,8 @@ void GLProbeArray::createTargets(int capacity) {
 
     // RGBA16F is the guaranteed colour-renderable HDR format (RGB16F render
     // support is optional). Each array holds m_capacity cubes (capacity * 6 faces).
-    m_irradiance.create(IRRADIANCE_SIZE, 1,             m_capacity, GL_RGBA16F);
-    m_prefilter.create (PREFILTER_SIZE,  PREFILTER_MIPS, m_capacity, GL_RGBA16F);
+    m_irradiance.create(IRRADIANCE_SIZE, 1, m_capacity, GL_RGBA16F);
+    m_prefilter.create(PREFILTER_SIZE, PREFILTER_MIPS, m_capacity, GL_RGBA16F);
     m_env.create(ENV_SIZE, ENV_MIPS, GL_RGB16F, GL_RGB, GL_FLOAT, true);
 
     // Shared capture depth for the six geometry captures (convolution runs

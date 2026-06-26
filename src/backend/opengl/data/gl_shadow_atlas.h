@@ -17,10 +17,10 @@ namespace Core {
 namespace Engine {
 
 // SHADOW_ATLAS_COLS * SHADOW_ATLAS_ROWS must be >= Config::MAX_SHADOW_CASTERS_2D (6).
-static constexpr uint32_t SHADOW_ATLAS_COLS     = 3;
-static constexpr uint32_t SHADOW_ATLAS_ROWS     = 2;
-static constexpr uint32_t SHADOW_ATLAS_TILE_RES = 4096;
-static constexpr uint32_t SHADOW_CUBE_RES       = 1024;
+constexpr uint32_t SHADOW_ATLAS_COLS     = 3;
+constexpr uint32_t SHADOW_ATLAS_ROWS     = 2;
+constexpr uint32_t SHADOW_ATLAS_TILE_RES = 4096;
+constexpr uint32_t SHADOW_CUBE_RES       = 1024;
 
 /**
  * @brief Depth atlases for the shadow pass: one tiled 2D atlas (directional

@@ -3,7 +3,6 @@
 #include "pass/gl_ssr_pass.h"
 
 #include <GL/glew.h>
-#include <glm/glm.hpp>
 
 #include "gl_shader.h"
 #include "gl_context.h"
