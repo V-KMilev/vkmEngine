@@ -93,7 +93,7 @@ class SceneIOController {
     private:
         /**
          * @brief Load m_currentScenePath: stashes/restores selection, then emits
-         * SceneLoadedEvent (camera rebind handled by our own subscriber).
+         * SceneLoadedEvent (camera rebind done inline by afterSceneReplace()).
          */
         void load(FrameContext& ctx, EditorState& state);
         /**

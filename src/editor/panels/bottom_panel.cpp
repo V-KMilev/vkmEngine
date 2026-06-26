@@ -1,5 +1,6 @@
 #include "panels/bottom_panel.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>

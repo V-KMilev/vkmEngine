@@ -14,10 +14,10 @@ namespace Engine {
 void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
     if (ImGui::GetIO().WantTextInput) return;
 
-    FrameContext&     ctx    = ec.frame;
-    EditorState&      state  = ec.state;
+    FrameContext& ctx = ec.frame;
+    EditorState& state = ec.state;
     CameraControllerSystem& camera = ec.cameraController;
-    const auto&       kb     = state.keybinds;
+    const auto& kb = state.keybinds;
 
     if (isPressed(kb.toggleHierarchy)) state.showHierarchy = !state.showHierarchy;
     if (isPressed(kb.toggleInspector)) state.showInspector = !state.showInspector;
@@ -53,9 +53,7 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
     if (isPressed(kb.focusSelected) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
         EditorActions::focusOnSelected(ctx, state, camera);
     }
-    // Shift+F: frame the whole scene. Standard Blender/Unity binding.
-    if (!ImGui::GetIO().KeyCtrl && ImGui::GetIO().KeyShift && !ImGui::GetIO().KeyAlt
-        && ImGui::IsKeyPressed(ImGuiKey_F)) {
+    if (isPressed(kb.frameAll)) {
         EditorActions::frameAll(ctx, camera);
     }
 

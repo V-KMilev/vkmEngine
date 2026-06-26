@@ -12,9 +12,10 @@ class SceneIOController;
 /**
  * @brief The editor's top menu bar (File / Edit / View / Window / Entity / Help).
  *
- * Extracted from EditorSystem (god-file decomposition). Stateless command
- * surface: it reads/writes EditorState and forwards scene-file intents to
- * the SceneIOController. Draws inside the root window's menu-bar scope
+ * Extracted from EditorSystem (god-file decomposition). Holds no command
+ * state: it reads/writes EditorState and forwards scene-file intents to the
+ * SceneIOController; the only owned state is a lazily-loaded brand-mark
+ * texture. Draws inside the root window's menu-bar scope
  * with strict ordering (like the viewport overlays), called once per frame
  * between Begin("##Editor") and the panel layout.
  *

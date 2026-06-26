@@ -70,10 +70,10 @@ class TransformGizmo {
         bool isOver() const  { return m_hovered != GizmoElement::None; }
         bool isUsing() const { return m_dragging; }
 
-        // Set snap angle in radians (0 = disabled). Applied during rotation drag.
+        /** @brief Set snap angle in radians (0 = disabled), applied during rotation drag. */
         void setSnapAngle(float radians) { m_snapAngle = radians; }
 
-        // Returns the delta quaternion from the current rotation drag (identity if not rotating).
+        /** @brief Delta quaternion from the current rotation drag (identity if not rotating). */
         glm::quat getDragRotation() const { return m_dragRotation; }
 
     private:
