@@ -51,7 +51,7 @@ TexturePixelFormat inferFormat(int channels) {
         default: return TexturePixelFormat::RGBA;
     }
 }
-}
+} // namespace
 
 TextureHandle loadTexture(
     const std::string& filePath,

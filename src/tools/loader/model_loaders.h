@@ -42,8 +42,9 @@ MeshAsset loadModelMesh(const std::string& path, int meshIndex);
  * AsyncLoaderSystem patches the live asset with the decoded vertices,
  * indices and bounds 1+ frames out.
  *
- * Idempotent by AssetId: a second request for the same (path, meshIndex)
- * returns the existing handle even while the first is still in flight.
+ * Idempotent by name (derived from path+meshIndex): a second request for
+ * the same (path, meshIndex) returns the existing handle even while the
+ * first is still in flight.
  * VisibilitySystem already skips meshes with zero-extent bounds, so a
  * loading mesh stays invisible (no fallback geometry needed).
  */

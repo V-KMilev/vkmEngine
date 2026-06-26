@@ -15,24 +15,16 @@
 namespace Engine {
 
 namespace {
-/**
- * @brief Convert string to lowercase for case-insensitive comparison.
- */
 std::string toLower(const std::string& str) {
     std::string result = str;
-    std::transform(result.begin(), result.end(), result.begin(), 
+    std::transform(result.begin(), result.end(), result.begin(),
         [](unsigned char c) { return std::tolower(c); });
     return result;
 }
 
-/**
- * @brief Search for a texture file matching common naming patterns.
- * 
- * Scans all files in the folder with the specified extensions and checks
- * if any filename contains one of the patterns (case-insensitive).
- * 
- * Example: Pattern "Color" matches "PavingStones_Color.jpg", "brick_color.png", etc.
- */
+// Scans the folder for the first file whose name contains one of the patterns
+// (case-insensitive) and carries one of the extensions. Pattern "Color" matches
+// "PavingStones_Color.jpg", "brick_color.png", etc.
 std::optional<std::string> findTexture(
     const std::string& folderPath,
     const std::vector<std::string>& patterns,
@@ -65,7 +57,7 @@ std::optional<std::string> findTexture(
         std::string filenameLower = toLower(filename);
         for (const auto& pattern : patterns) {
             std::string patternLower = toLower(pattern);
-                
+
             if (filenameLower.find(patternLower) != std::string::npos) {
                 return entry.path().string();
             }
@@ -75,9 +67,6 @@ std::optional<std::string> findTexture(
     return std::nullopt;
 }
 
-/**
- * @brief Load a texture if path is provided, otherwise return fallback.
- */
 TextureHandle loadOrFallback(
     const std::string& texturePath,
     ResourceManager& resourceManager,
@@ -105,7 +94,13 @@ TextureHandle loadOrFallback(
 
     return handle;
 }
-}
+
+// Single-user helper for loadMaterialFromFolder; defined below.
+MaterialHandle loadMaterialFromDesc(
+    const MaterialLoadDesc& desc,
+    ResourceManager& resourceManager
+);
+} // namespace
 
 MaterialHandle loadMaterialFromFolder(
     const std::string& folderPath,
@@ -123,7 +118,7 @@ MaterialHandle loadMaterialFromFolder(
 
     // Common naming patterns for each texture type
     auto findAlbedo = findTexture(folderPath, {
-        "Color", "color", "Albedo", "albedo", 
+        "Color", "color", "Albedo", "albedo",
         "BaseColor", "basecolor", "Diffuse", "diffuse",
         "Base_Color", "base_color"
     });
@@ -182,6 +177,7 @@ MaterialHandle loadMaterialFromFolder(
     return handle;
 }
 
+namespace {
 MaterialHandle loadMaterialFromDesc(
     const MaterialLoadDesc& desc,
     ResourceManager& resourceManager
@@ -292,5 +288,6 @@ MaterialHandle loadMaterialFromDesc(
 
     return resourceManager.add(std::move(material));
 }
+} // namespace
 
 } // namespace Engine

@@ -14,7 +14,7 @@ class ResourceManager;
 
 /**
  * @brief Descriptor for loading a PBR material from individual texture files.
- * 
+ *
  * Allows fine-grained control over which textures to load and their properties.
  * Any texture path left empty will use a generated fallback texture.
  */
@@ -22,12 +22,12 @@ struct MaterialLoadDesc {
     // Texture file paths (leave empty to use fallback)
     std::string albedoPath;
     std::string normalPath;
-    std::string metallicRoughnessPath;  // Combined texture (B = metallic, G = roughness)
-    std::string metallicPath;           // Separate metallic texture
-    std::string roughnessPath;          // Separate roughness texture
+    std::string metallicRoughnessPath;  ///< Packed map: B = metallic, G = roughness
+    std::string metallicPath;
+    std::string roughnessPath;
     std::string aoPath;
     std::string emissionPath;
-    std::string heightPath;             // Height/displacement map for parallax
+    std::string heightPath;             ///< Height/displacement map for parallax
 
     // Material base properties (used if no texture is provided or as tint)
     glm::vec4 albedo = glm::vec4(1.0f);
@@ -35,16 +35,15 @@ struct MaterialLoadDesc {
     float metallic = 0.0f;
     float roughness = 1.0f;
     float ao = 1.0f;
-    float normalScale = 1.0f;  // Normal map intensity
-    float heightScale = 0.0f; // Parallax depth scale (disabled by default for safety)
+    float normalScale = 1.0f;
+    float heightScale = 0.0f;  ///< Parallax depth scale (disabled by default for safety)
 
-    // Texture generation options
     bool generateMipmaps = true;
 };
 
 /**
  * @brief Load a PBR material from a texture folder with automatic file detection.
- * 
+ *
  * Searches for common PBR texture naming patterns in the specified folder:
  * - Color/Albedo/BaseColor/Diffuse (sRGB)
  * - Normal/NormalGL (linear)
@@ -53,46 +52,18 @@ struct MaterialLoadDesc {
  * - AO/AmbientOcclusion/Occlusion (linear)
  * - Emission/Emissive (sRGB)
  * - MetallicRoughness/ORM (linear, packed)
- * 
+ *
  * Common file extensions are checked: .jpg, .jpeg, .png, .tga, .bmp
- * 
+ *
  * @param folderPath Path to folder containing PBR textures
  * @param resourceManager Resource manager to add the material to
  * @param baseProperties Optional base material properties (defaults if not provided)
  * @return Handle to the loaded material
- * 
- * @example
- * auto material = loadMaterialFromFolder(
- *     "assets/materials/brick",
- *     resources
- * );
  */
 MaterialHandle loadMaterialFromFolder(
     const std::string& folderPath,
     ResourceManager& resourceManager,
     const MaterialLoadDesc& baseProperties = MaterialLoadDesc{}
-);
-
-/**
- * @brief Load a PBR material from a descriptor with explicit texture paths.
- * 
- * Provides fine-grained control over which textures to load.
- * Any texture path left empty will use a generated fallback texture.
- * 
- * @param desc Material load descriptor
- * @param resourceManager Resource manager to add the material to
- * @return Handle to the loaded material
- * 
- * @example
- * MaterialLoadDesc desc;
- * desc.albedoPath = "assets/textures/brick_color.jpg";
- * desc.normalPath = "assets/textures/brick_normal.png";
- * desc.roughness = 0.8f;
- * auto material = loadMaterialFromDesc(desc, resources);
- */
-MaterialHandle loadMaterialFromDesc(
-    const MaterialLoadDesc& desc,
-    ResourceManager& resourceManager
 );
 
 } // namespace Engine

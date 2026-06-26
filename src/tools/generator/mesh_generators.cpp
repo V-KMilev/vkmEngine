@@ -17,8 +17,9 @@ namespace Engine {
 
 namespace {
 /**
- * @brief Build a JSON source descriptor for a procedural mesh. Stored on the
- * MeshAsset so SceneSerializer can recreate it on cold-start load.
+ * @brief Build a JSON source descriptor for a procedural mesh.
+ *
+ * Stored on the MeshAsset so SceneSerializer can recreate it on cold-start load.
  */
 nlohmann::json meshGeneratorSource(const char* type, nlohmann::json params = nlohmann::json::object()) {
     nlohmann::json j;
@@ -46,7 +47,8 @@ void stampGenerated(MeshAsset& mesh, const char* type, const nlohmann::json& par
     }
     mesh.name = key;
 }
-}
+
+} // namespace
 
 MeshAsset generateTriangle(float size) {
     MeshAsset mesh;
@@ -329,9 +331,7 @@ MeshAsset generatePyramid(float baseSize, float height) {
     return mesh;
 }
 
-MeshAsset generateCone(
-    float radius, float height, uint32_t segments
-) {
+MeshAsset generateCone(float radius, float height, uint32_t segments) {
     MeshAsset mesh;
 
     const float halfHeight = height * 0.5f;
@@ -352,11 +352,11 @@ MeshAsset generateCone(
         float x = std::cos(angle) * radius;
         float z = std::sin(angle) * radius;
         glm::vec3 position(x, -halfHeight, z);
-        
+
         // Normal for cone side (pointing outward from center)
         glm::vec3 sideNormal = glm::normalize(glm::vec3(x, 0.0f, z));
         glm::vec3 coneNormal = glm::normalize(glm::vec3(sideNormal.x, radius / height, sideNormal.z));
-        
+
         float u = static_cast<float>(i) / static_cast<float>(segments);
         mesh.vertices.push_back(Vertex{ position, coneNormal, glm::vec2(u, 0.0f), tangent });
     }
