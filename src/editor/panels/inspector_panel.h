@@ -7,8 +7,8 @@
 
 #include "ecs/entity.h"
 
-#include "framework/asset_picker.h"  // AssetPicker (Environment HDR browse)
-#include "ui/editor_widgets.h"  // EulerCache
+#include "framework/asset_picker.h"
+#include "ui/editor_widgets.h"
 
 namespace Engine {
 

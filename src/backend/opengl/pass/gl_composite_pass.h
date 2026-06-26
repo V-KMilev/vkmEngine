@@ -3,7 +3,7 @@
 #include <memory>
 
 #include "gl_pass.h"
-#include "gl_screen_triangle.h"  // Core::ScreenTriangle (by-value member)
+#include "gl_screen_triangle.h"
 
 namespace Core {
     class Shader;

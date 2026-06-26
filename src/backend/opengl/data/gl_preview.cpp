@@ -13,7 +13,7 @@
 
 #include "gl_context.h"
 #include "gl_shader.h"
-#include "texture/gl_texture.h"  // Core::Texture2D
+#include "texture/gl_texture.h"
 
 #include "gl_view.h"
 #include "data/gl_ibl.h"
@@ -21,7 +21,7 @@
 #include "data/gl_mesh.h"
 #include "convention/gl_bindings.h"
 #include "resource/resource_manager.h"
-#include "system/render/render_backend.h"  // PreviewRequest
+#include "system/render/render_backend.h"
 #include "system/render/render_view.h"
 #include "system/render/data/camera_data.h"
 

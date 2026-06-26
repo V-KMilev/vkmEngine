@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-#include "ui/editor_widgets.h"  // EulerCache
+#include "ui/editor_widgets.h"
 
 namespace Engine {
 

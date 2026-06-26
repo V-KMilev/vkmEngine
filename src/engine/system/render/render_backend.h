@@ -3,8 +3,8 @@
 #include <cstdint>
 #include <string>
 
-#include "resource/asset/mesh_asset.h"      // MeshHandle
-#include "resource/asset/material_asset.h"  // MaterialHandle
+#include "resource/asset/mesh_asset.h"
+#include "resource/asset/material_asset.h"
 
 namespace Engine {
     struct RenderView;

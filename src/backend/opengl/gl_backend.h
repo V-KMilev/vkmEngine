@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "gl_context.h"  // Core::Context (held by value)
+#include "gl_context.h"
 
 #include "system/render/render_backend.h"
 #include "gl_view.h"

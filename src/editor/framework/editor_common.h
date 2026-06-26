@@ -12,7 +12,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "core/system.h"   // FrameContext
+#include "core/system.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/camera.h"
 #include "ecs/component/hierarchy.h"

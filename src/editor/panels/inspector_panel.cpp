@@ -23,7 +23,7 @@
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
 #include "generator/light_generators.h"
-#include "io/project_paths.h"            // ProjectPaths::root for the probe HDR browse
+#include "io/project_paths.h"
 #include "resource/resource_manager.h"
 #include "system/physics/collider_fit.h"
 #include "system/script/behavior.h"

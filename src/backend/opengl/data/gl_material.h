@@ -6,7 +6,7 @@
 
 #include <glm/glm.hpp>
 
-#include "resource/asset/material_asset.h"  // TextureHandle, MaterialType
+#include "resource/asset/material_asset.h"
 
 namespace Core {
     class UniformBuffer;

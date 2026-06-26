@@ -11,7 +11,7 @@
 #include "framework/editor_status_bar.h"
 #include "framework/editor_shortcuts.h"
 #include "framework/editor_panel_resize.h"
-#include "framework/editor_actions.h"   // ModelImportDialog
+#include "framework/editor_actions.h"
 #include "overlays/viewport_overlay.h"
 #include "overlays/gizmo_overlay.h"
 #include "overlays/viewport_toolbar.h"

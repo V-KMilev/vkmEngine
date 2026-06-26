@@ -5,10 +5,10 @@
 
 #include <GL/glew.h>
 
-#include "texture/gl_texture.h"  // qualified: data/gl_texture.h (Engine GLTexture) shadows the bare name
+#include "texture/gl_texture.h"
 #include "gl_frame_buffer.h"
 #include "gl_texture_cube.h"
-#include "gl_context.h"          // Core::Context (per-attach viewport sizing)
+#include "gl_context.h"
 
 namespace Engine {
 

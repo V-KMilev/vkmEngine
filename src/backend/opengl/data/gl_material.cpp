@@ -7,7 +7,7 @@
 #include "convention/gl_bindings.h"
 #include "gl_uniform_buffer.h"
 #include "gl_view.h"
-#include "texture/gl_texture.h"  // Core::Texture2D (bindSlot)
+#include "texture/gl_texture.h"
 
 namespace Engine {
 
