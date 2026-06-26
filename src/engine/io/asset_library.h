@@ -44,11 +44,29 @@ class AssetLibrary {
          */
         void load();
 
-        /** @brief Resolve (type, name) to its record, or nullptr if absent. */
+        /**
+         * @brief Resolve (type, name) to its record, or nullptr if absent.
+         *
+         * @param type Asset type half of the lookup key.
+         * @param name Asset name half of the lookup key.
+         * @return Pointer to the matching record, or nullptr if none is registered.
+         */
         const Record* find(AssetType type, const std::string& name) const;
 
-        /** @brief Absolute paths for a record's files. */
+        /**
+         * @brief Resolve a record's recipe file to an absolute path.
+         *
+         * @param record The library record whose recipe file is wanted.
+         * @return Absolute path to the record's recipe file under the project library dir.
+         */
         std::filesystem::path recipePath(const Record& record) const;
+
+        /**
+         * @brief Resolve a record's cooked file to an absolute path.
+         *
+         * @param record The library record whose cooked file is wanted.
+         * @return Absolute path to the record's cooked file under the project cooked dir.
+         */
         std::filesystem::path cookedPath(const Record& record) const;
 
         // Editor-only mutation. upsert replaces any existing record for (type,name).

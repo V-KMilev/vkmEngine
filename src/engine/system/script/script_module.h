@@ -34,7 +34,16 @@ class ScriptModule {
         ScriptModule& operator=(ScriptModule && other) = delete;
 
     public:
-        /** @brief Load @p modulePath (the built .dll/.so) and register its behaviors. */
+        /**
+         * @brief Load the gameplay module and register its behaviors.
+         *
+         * Copies the built module aside (keeping the original writable for
+         * rebuilds), loads the copy, and calls its register entry to populate
+         * the BehaviorRegistry.
+         *
+         * @param modulePath Path to the built module (.dll/.so) to load.
+         * @return True if the module loaded and registered successfully.
+         */
         bool load(const std::string& modulePath);
 
         /**

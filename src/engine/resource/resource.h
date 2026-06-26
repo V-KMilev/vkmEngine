@@ -40,7 +40,14 @@ struct Resource {
          */
         nlohmann::json&       sourceJson();
 
-        /** @brief Const access. Asserts hasSource(); use hasSource() to guard. */
+        /**
+         * @brief Const access to the source JSON.
+         *
+         * Asserts hasSource() rather than allocating, since a const object
+         * cannot lazily create the slot; guard the call with hasSource().
+         *
+         * @return Const reference to the existing source descriptor JSON.
+         */
         const nlohmann::json& sourceJson() const;
 
     public:

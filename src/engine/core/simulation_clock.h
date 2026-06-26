@@ -26,7 +26,14 @@ class SimulationClock {
         SimulationClock& operator=(SimulationClock && other) = default;
 
     public:
-        /** @brief Pause/resume. Discards any queued single-steps. */
+        /**
+         * @brief Pause or resume the clock.
+         *
+         * Changing the pause state discards any single-steps queued via
+         * requestStep().
+         *
+         * @param paused True freezes simulation time, false resumes it.
+         */
         void setPaused(bool paused) { m_paused = paused; m_pendingSteps = 0; }
 
         /**
@@ -36,7 +43,14 @@ class SimulationClock {
          */
         void setTimeScale(float scale) { m_timeScale = scale < 0.0f ? 0.0f : scale; }
 
-        /** @brief Queue fixed-step advances to play out while paused (editor "step"). */
+        /**
+         * @brief Queue fixed-step advances to play out while paused (editor "step").
+         *
+         * Non-positive counts are ignored. The queued steps are consumed by the
+         * next advance() calls while the clock is paused.
+         *
+         * @param steps Number of fixed steps to enqueue (default 1).
+         */
         void requestStep(int steps = 1) { if (steps > 0) m_pendingSteps += steps; }
 
         /**

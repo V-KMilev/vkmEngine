@@ -39,13 +39,32 @@ class CommandStack {
          */
         void push(std::unique_ptr<Command> cmd);
 
-        /** @brief Reverse the most recent command. No-op if the stack is empty. */
+        /**
+         * @brief Reverse the most recent command and move it to the redo stack.
+         *
+         * No-op if the undo stack is empty.
+         *
+         * @param scene Scene the command's reverse operation mutates.
+         * @param state Editor state the command may touch (e.g. selection restore).
+         */
         void undo(Scene& scene, EditorState& state);
 
-        /** @brief Re-apply the most recently undone command. No-op if redo is empty. */
+        /**
+         * @brief Re-apply the most recently undone command and move it back to undo.
+         *
+         * No-op if the redo stack is empty.
+         *
+         * @param scene Scene the command's redo operation mutates.
+         * @param state Editor state the command may touch (e.g. selection restore).
+         */
         void redo(Scene& scene, EditorState& state);
 
-        /** @brief Drop all history. Use on scene swap. */
+        /**
+         * @brief Drop all undo and redo history.
+         *
+         * Used on scene swap, where entity IDs and component topology are no
+         * longer comparable across the new scene.
+         */
         void clear();
 
         bool canUndo() const { return !m_undo.empty(); }

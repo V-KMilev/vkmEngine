@@ -25,13 +25,19 @@ namespace Config {
     // modules/vkmGL/src/shader/gl_shader.cpp). Do not re-define these in a
     // shader - include the generated file instead.
 
-    /** @brief Maximum number of lights uploaded per frame. */
+    /**
+     * @brief Maximum number of lights uploaded per frame.
+     */
     constexpr uint32_t MAX_LIGHTS = 32;
 
-    /** @brief Shadow caster budget for the 2D atlas (directional + spot). */
+    /**
+     * @brief Shadow caster budget for the 2D atlas (directional + spot).
+     */
     constexpr uint32_t MAX_SHADOW_CASTERS_2D = 6;
 
-    /** @brief Shadow caster budget for the cube atlas (point lights). */
+    /**
+     * @brief Shadow caster budget for the cube atlas (point lights).
+     */
     constexpr uint32_t MAX_SHADOW_CASTERS_CUBE = 2;
 
     /**
@@ -53,7 +59,11 @@ namespace Config {
      */
     constexpr float SHADOW_CUBE_NEAR = 0.1f;
 
-    /** @brief Fixed simulation step (60 Hz). Cadence at which fixedUpdate runs. */
+    /**
+     * @brief Fixed simulation step (60 Hz).
+     *
+     * The cadence at which fixedUpdate runs.
+     */
     constexpr float FIXED_TIME_STEP = 1.0f / 60.0f;
 
     /**

@@ -72,20 +72,42 @@ class EventSystem : public System {
             return b ? b->remove(id) : false;
         }
 
-        /** @brief Fire the event synchronously to every listener. */
+        /**
+         * @brief Fire the event synchronously to every listener.
+         *
+         * Listeners are invoked immediately on the calling thread; no queuing occurs.
+         *
+         * @tparam EventT The event type whose bus receives the dispatch.
+         * @param event The event instance delivered to each subscribed callback.
+         */
         template<typename EventT>
         void emit(const EventT& event) {
             auto* b = findBus<EventT>();
             if (b) b->emit(event);
         }
 
-        /** @brief Queue the event for delivery in the next update() flush. */
+        /**
+         * @brief Queue the event for delivery in the next update() flush.
+         *
+         * Deferred delivery lets producers fire events without recursing into
+         * listeners mid-frame; the queued event is dispatched when update() runs.
+         *
+         * @tparam EventT The event type whose bus receives the queued instance.
+         * @param event The event instance to enqueue (moved into the bus queue).
+         */
         template<typename EventT>
         void enqueue(EventT event) {
             bus<EventT>().enqueue(std::move(event));
         }
 
-        /** @brief Flush all enqueued events on every bus. */
+        /**
+         * @brief Flush all enqueued events on every bus.
+         *
+         * Drains every per-type queue, delivering deferred events to their
+         * listeners. Called once per frame as the system's update step.
+         *
+         * @param ctx The shared FrameContext for this frame.
+         */
         void update(FrameContext& ctx) override;
 
     private:

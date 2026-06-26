@@ -15,7 +15,15 @@ struct Name {
     char value[64] = {};
 };
 
-/** @brief Build a Name from a C-string, truncating safely into the fixed buffer. */
+/**
+ * @brief Build a Name from a C-string, truncating safely into the fixed buffer.
+ *
+ * Copies at most sizeof(Name::value) - 1 bytes and always null-terminates; a
+ * null @p str yields an empty Name.
+ *
+ * @param str Source C-string to copy, or nullptr for an empty name.
+ * @return A Name holding the (possibly truncated) text.
+ */
 inline Name makeName(const char* str) {
     Name name;
     if (str) {

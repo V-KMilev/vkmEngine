@@ -14,7 +14,9 @@ namespace {
 
 constexpr float EPS = 1e-6f;
 
-/** @brief Oriented bounding box: centre, three unit world axes, half extents. */
+/**
+ * @brief Oriented bounding box: centre, three unit world axes, half extents.
+ */
 struct OBB {
     glm::vec3 c;
     glm::vec3 u[3];
@@ -32,12 +34,33 @@ float projectRadius(const OBB& box, const glm::vec3& axis) {
          + box.e.z * std::fabs(glm::dot(box.u[2], axis));
 }
 
-/** @brief Overlap of the two boxes projected onto a unit axis. Positive == overlapping. */
+/**
+ * @brief Overlap of the two boxes projected onto a candidate separating axis.
+ *
+ * A positive result means the projections overlap by that much; a negative result
+ * means the axis separates the two boxes.
+ *
+ * @param a First oriented box.
+ * @param b Second oriented box.
+ * @param axis Unit axis to project both boxes onto.
+ * @param toCentre Vector from a's centre to b's centre.
+ * @return Signed overlap along the axis; positive == overlapping.
+ */
 float overlapOnAxis(const OBB& a, const OBB& b, const glm::vec3& axis, const glm::vec3& toCentre) {
     return projectRadius(a, axis) + projectRadius(b, axis) - std::fabs(glm::dot(toCentre, axis));
 }
 
-/** @brief The four world vertices of an OBB face (axis index + outward sign). */
+/**
+ * @brief Compute the four world-space vertices of one face of an OBB.
+ *
+ * The face is selected by the local axis it is perpendicular to and the outward
+ * direction along that axis.
+ *
+ * @param box The oriented box whose face is wanted.
+ * @param axis Local axis index (0..2) normal to the face.
+ * @param sign Outward direction along that axis (+1 or -1).
+ * @return The four face corners in world space, wound consistently.
+ */
 std::array<glm::vec3, 4> faceVertices(const OBB& box, int axis, float sign) {
     const int a = (axis + 1) % 3;
     const int b = (axis + 2) % 3;
@@ -77,7 +100,19 @@ void clipToPlane(
     poly.swap(result);
 }
 
-/** @brief Closest points between two segments (Ericson, Real-Time Collision Detection). */
+/**
+ * @brief Find the closest pair of points between two line segments.
+ *
+ * Uses the clamped parametric method from Ericson, Real-Time Collision Detection,
+ * handling the degenerate cases where either segment collapses to a point.
+ *
+ * @param p1 Start of the first segment.
+ * @param q1 End of the first segment.
+ * @param p2 Start of the second segment.
+ * @param q2 End of the second segment.
+ * @param c1 Out: closest point on the first segment.
+ * @param c2 Out: closest point on the second segment.
+ */
 void closestSegmentSegment(
     const glm::vec3& p1, const glm::vec3& q1,
     const glm::vec3& p2, const glm::vec3& q2,

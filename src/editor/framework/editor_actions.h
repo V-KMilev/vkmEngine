@@ -43,9 +43,56 @@ enum class EntityKind {
     ReflectionProbe,
 };
 
+/**
+ * @brief Create a new entity of the given kind and push it as an undoable step.
+ *
+ * Adds a Transform and Name to a fresh entity, then composes the kind-specific
+ * components (mesh + default material, light, camera, reflection probe). The
+ * creation is snapshotted so undo can destroy it and redo re-create it intact.
+ *
+ * @param scene Scene the entity is created in.
+ * @param resources Resource manager that meshes/materials for the kind are registered with.
+ * @param state Editor state whose command stack and dirty flag are updated.
+ * @param kind Which built-in entity factory to run.
+ * @return Id of the newly created entity.
+ */
 EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& state, EntityKind kind);
+/**
+ * @brief Duplicate an entity, copying its components onto a fresh one.
+ *
+ * Clones the supported components (transform offset on X, name, mesh, light,
+ * camera as inactive, rigidbody, collider, reflection probe, animation paused,
+ * and deep-cloned script behaviors), pushes the result as an undoable step,
+ * and selects the copy.
+ *
+ * @param scene Scene holding the source and receiving the copy.
+ * @param state Editor state whose command stack, dirty flag and selection are updated.
+ * @param source Entity to copy from.
+ */
 void duplicateEntity(Scene& scene, EditorState& state, EntityId source);
+/**
+ * @brief Delete an entity (and its subtree) as a single undoable step.
+ *
+ * Snapshots the subtree before destroying it so undo can restore every node
+ * under its original parent, and clears the selection if the deleted entity
+ * was selected. The undo label reflects whether children were present.
+ *
+ * @param scene Scene the entity is removed from.
+ * @param state Editor state whose command stack, dirty flag and selection are updated.
+ * @param entity Root entity to delete.
+ */
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity);
+/**
+ * @brief Focus the camera on the current selection.
+ *
+ * Centers on the selected entity's world-space mesh bounds (falling back to its
+ * origin), choosing a distance that frames the bounds. No-op if nothing is
+ * selected, the selection is dead, or it has no transform.
+ *
+ * @param ctx Frame context supplying the scene and resources to read.
+ * @param state Editor state holding the current selection.
+ * @param camera Camera controller moved to frame the target.
+ */
 void focusOnSelected(FrameContext& ctx, EditorState& state, CameraControllerSystem& camera);
 
 /**
@@ -110,6 +157,18 @@ MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state)
  * No-op if there is nothing visible.
  */
 void frameAll(FrameContext& ctx, CameraControllerSystem& camera);
+/**
+ * @brief Draw the "Create" submenu and create+select the chosen entity kind.
+ *
+ * Lists every EntityKind as a menu item; clicking one calls createEntity and
+ * selects the result. The "Import Model..." item only flags
+ * EditorState::requestModelImport because its modal must be drawn outside the
+ * menu (which closes on click) - see ModelImportDialog::draw.
+ *
+ * @param scene Scene new entities are created in.
+ * @param resources Resource manager passed through to createEntity.
+ * @param state Editor state updated with the new selection / import request.
+ */
 void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState& state);
 
 /**
@@ -124,6 +183,17 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
  */
 class ModelImportDialog {
     public:
+        /**
+         * @brief Drive the Import Model picker and import the chosen file.
+         *
+         * Opens the cached picker when EditorState::requestModelImport is set,
+         * then on a pick loads the model into the scene. Call once per frame
+         * from the menu-bar scope so the modal survives the Create menu closing.
+         *
+         * @param scene Scene the imported model is added to.
+         * @param resources Resource manager the imported meshes/materials register with.
+         * @param state Editor state holding the import request and updated on import.
+         */
         void draw(Scene& scene, ResourceManager& resources, EditorState& state);
     private:
         AssetPicker m_picker;

@@ -19,7 +19,9 @@ namespace Engine {
  */
 class CameraControllerSystem : public System {
     public:
-        /** @brief Tunable feel parameters for movement, look, and zoom. */
+        /**
+         * @brief Tunable feel parameters for movement, look, and zoom.
+         */
         struct Settings {
             float zoomSensitivity  = 0.02f;     ///< Sensitivity multiplier for zooming (e.g. mouse scroll).
             float lookSensitivity  = 0.002f;    ///< Sensitivity multiplier for camera rotation (yaw/pitch).
@@ -81,7 +83,13 @@ class CameraControllerSystem : public System {
         void setSettings(const Settings& s) { m_settings = s; }
         bool isLooking() const { return m_isRightMousePressed; }
 
-        /** @brief Move camera to focus on a target position from a given distance. */
+        /**
+         * @brief Move the camera to focus on a target position from a given distance.
+         *
+         * @param scene    The scene whose camera transform is updated.
+         * @param target   World-space point the camera should center on.
+         * @param distance Distance to pull back from @p target along the view direction.
+         */
         void focusOn(Scene& scene, const glm::vec3& target, float distance);
 
         /**

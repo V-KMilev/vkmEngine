@@ -42,7 +42,11 @@ class GLProbeManager {
         GLProbeManager(GLProbeManager && other) = delete;
         GLProbeManager& operator=(GLProbeManager && other) = delete;
 
-        /** @brief Create the baker + shared cube-map arrays. Call with a live GL context. */
+        /**
+         * @brief Create the baker + shared cube-map arrays.
+         *
+         * Must be called with a live GL context bound.
+         */
         void init();
 
         /**
@@ -60,14 +64,18 @@ class GLProbeManager {
         void update(Core::Context& gl, const RenderView& view, const GLView& glView, const GLIBL& ibl);
 
     private:
-        /** @brief Per-layer bake state, for change-detected re-baking. */
+        /**
+         * @brief Per-layer bake state, for change-detected re-baking.
+         */
         struct BakeState {
             bool      baked    = false;
             glm::vec3 position = glm::vec3(0.0f);  ///< Position the layer was last baked at.
             uint32_t  version  = 0;                ///< bakeVersion the layer was last baked at.
         };
 
-        /** @brief std140 ProbeBlock layout - must match shaders/forward/pbr. */
+        /**
+         * @brief std140 ProbeBlock layout - must match shaders/forward/pbr.
+         */
         struct GpuProbe {
             glm::vec4 center;    ///< xyz world centre, w pad
             glm::vec4 extents;   ///< xyz half-extents, w pad

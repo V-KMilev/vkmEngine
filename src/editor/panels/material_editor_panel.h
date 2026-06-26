@@ -67,7 +67,14 @@ class MaterialEditorPanel {
          * is picked, writing the absolute path to @p outFolder.
          */
         bool pbrFolderBrowse(std::string& outFolder);
-        /** @brief The full PBR + texture editor body. Returns true if anything changed. */
+        /**
+         * @brief Draw the full PBR + texture editor body for one material.
+         *
+         * @param resources Resource manager used to resolve and edit texture slots.
+         * @param target Handle of the material being edited (stable across slot reallocations).
+         * @param mat The material asset whose fields the controls write to.
+         * @return true if any field changed this frame.
+         */
         bool drawMaterialBody(
             ResourceManager& resources,
             MaterialHandle target,
@@ -92,7 +99,9 @@ class MaterialEditorPanel {
         TextureHandle MaterialAsset::*  m_pendingSlot = nullptr;
         bool                            m_pendingTextureSrgb = false;
 
-        /** @brief Color edited in the per-slot "Gen" popup's solid-color generator. */
+        /**
+         * @brief Color edited in the per-slot "Gen" popup's solid-color generator.
+         */
         glm::vec4 m_genColor{1.0f, 1.0f, 1.0f, 1.0f};
 };
 

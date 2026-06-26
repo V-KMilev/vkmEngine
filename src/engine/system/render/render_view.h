@@ -55,15 +55,53 @@ struct RenderView {
         );
 
     private:
-        /** @brief Flatten the active camera's matrices + position; precomputes invProjection. */
+        /**
+         * @brief Flatten the active camera's matrices and position into CameraData.
+         *
+         * Precomputes invProjection once here so the backend never inverts the
+         * projection per frame.
+         *
+         * @param visibility Culled set carrying the active camera resolved this frame.
+         */
         void buildCamera(const Visibility& visibility);
-        /** @brief Snapshot every enabled light to world space (incl. area-light axes). */
+
+        /**
+         * @brief Snapshot every enabled light into world space.
+         *
+         * Includes the area-light axes (axisU/axisV) derived from each light's
+         * world rotation.
+         *
+         * @param scene Scene whose Light components are gathered.
+         */
         void buildLights(const Scene& scene);
-        /** @brief Snapshot every reflection probe to world space. */
+
+        /**
+         * @brief Snapshot every reflection probe into world space.
+         *
+         * @param scene Scene whose ReflectionProbe components are gathered.
+         */
         void buildProbes(const Scene& scene);
-        /** @brief Snapshot one drawable per visible entity with a resolved mesh+material. */
+
+        /**
+         * @brief Snapshot one drawable per visible entity that resolves a mesh and material.
+         *
+         * Entities with no usable mesh+material pair are skipped, so the drawable
+         * count may be smaller than the visible-entity count.
+         *
+         * @param scene      Scene supplying mesh, material, and transform components.
+         * @param visibility Culled set listing the entities to emit drawables for.
+         */
         void buildDrawables(const Scene& scene, const Visibility& visibility);
-        /** @brief Snapshot the scene-wide shadow-caster set with world AABBs. */
+
+        /**
+         * @brief Snapshot the scene-wide shadow-caster set with world-space AABBs.
+         *
+         * Casters are gathered independently of the visible set so off-screen
+         * occluders still contribute to shadows.
+         *
+         * @param scene      Scene supplying mesh and transform components.
+         * @param visibility Culled set carrying the gathered shadow-caster entities.
+         */
         void buildShadowCasters(const Scene& scene, const Visibility& visibility);
 };
 

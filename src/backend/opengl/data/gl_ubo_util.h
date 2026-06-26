@@ -24,7 +24,12 @@ inline void uploadUBOIfChanged(std::unique_ptr<Core::UniformBuffer>& ubo, T& las
     last = data;
 }
 
-/** @brief Bind @p ubo to @p bindingPoint when it exists. */
+/**
+ * @brief Bind @p ubo to @p bindingPoint when it exists.
+ *
+ * @param ubo          Uniform buffer to bind; a null buffer is skipped.
+ * @param bindingPoint std140 binding index the shader block is bound to.
+ */
 inline void bindUBO(const std::unique_ptr<Core::UniformBuffer>& ubo, uint32_t bindingPoint) {
     if (ubo) ubo->bindBase(bindingPoint);
 }

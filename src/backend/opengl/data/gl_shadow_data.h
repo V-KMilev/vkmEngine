@@ -133,7 +133,9 @@ class GLShadowData {
         void uploadAndBind();
 
     private:
-        /** @brief Camera frustum corners + view-space depth span, shared by the cascade fit. */
+        /**
+         * @brief Camera frustum corners + view-space depth span, shared by the cascade fit.
+         */
         struct CameraFrustum {
             glm::vec3 nearCorners[4];
             glm::vec3 farCorners[4];
