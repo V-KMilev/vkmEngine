@@ -1,7 +1,8 @@
 #include "ui/editor_theme.h"
-#include "ui/editor_style.h"
 
 #include <imgui.h>
+
+#include "ui/editor_style.h"
 
 namespace Engine {
 

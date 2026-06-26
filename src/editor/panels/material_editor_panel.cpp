@@ -66,126 +66,126 @@ bool MaterialEditorPanel::drawMaterialBody(
         return textureSlot(resources, label, target, mat, member, srgb);
     };
 
-        if (beginComponentCard("Base", ACC_BASE, true)) {
-            drawPropertyLabel("Type");
-            if (drawEnumCombo("##MatType", mat.type, MATERIAL_TYPE_NAMES, IM_ARRAYSIZE(MATERIAL_TYPE_NAMES))) {
-                // Picking AlphaMask in the editor should turn on the discard
-                // path even if the asset shipped with cutoff = 0 (off).
-                if (mat.type == MaterialType::AlphaMask && mat.alphaCutoff <= 0.0f) {
-                    mat.alphaCutoff = 0.5f;
-                }
-                changed = true;
+    if (beginComponentCard("Base", ACC_BASE, true)) {
+        drawPropertyLabel("Type");
+        if (drawEnumCombo("##MatType", mat.type, MATERIAL_TYPE_NAMES, IM_ARRAYSIZE(MATERIAL_TYPE_NAMES))) {
+            // Picking AlphaMask in the editor should turn on the discard
+            // path even if the asset shipped with cutoff = 0 (off).
+            if (mat.type == MaterialType::AlphaMask && mat.alphaCutoff <= 0.0f) {
+                mat.alphaCutoff = 0.5f;
             }
-
-            changed |= propColor4("Albedo", glm::value_ptr(mat.albedo),
-                ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaPreviewHalf);
-
-            changed |= propSlider("Metallic", &mat.metallic, 0.0f, 1.0f, "%.2f");
-
-            changed |= propSlider("Roughness", &mat.roughness, 0.0f, 1.0f, "%.2f");
-
-            changed |= propColor3("Emission", glm::value_ptr(mat.emission),
-                ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
-
-            changed |= propSlider("AO", &mat.ao, 0.0f, 1.0f, "%.2f");
-
-            changed |= propDrag("Emissive Strength", &mat.emissiveStrength, 0.05f, 0.0f, 64.0f, "%.2f",
-                "HDR multiplier on emission (drives bloom)");
-
-            changed |= propSlider("Alpha Cutoff", &mat.alphaCutoff, 0.0f, 1.0f, "%.2f",
-                "AlphaMask type only: fragments with albedo.a < cutoff are discarded (foliage/leaves)");
+            changed = true;
         }
-        endComponentCard();
 
-        if (beginComponentCard("Surface", ACC_SURF, false)) {
-            changed |= propDrag("IOR", &mat.ior, 0.01f, 1.0f, 3.0f, "%.2f",
-                "1.0 air, 1.33 water, 1.5 glass, 2.4 diamond");
+        changed |= propColor4("Albedo", glm::value_ptr(mat.albedo),
+            ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaPreviewHalf);
 
-            changed |= propSlider("Transmission", &mat.transmission, 0.0f, 1.0f, "%.2f");
+        changed |= propSlider("Metallic", &mat.metallic, 0.0f, 1.0f, "%.2f");
 
-            changed |= propDrag("Normal Scale", &mat.normalScale, 0.01f, 0.0f, 5.0f, "%.2f");
+        changed |= propSlider("Roughness", &mat.roughness, 0.0f, 1.0f, "%.2f");
 
-            changed |= propDrag("Height Scale", &mat.heightScale, 0.001f, 0.0f, 0.5f, "%.3f");
-        }
-        endComponentCard();
+        changed |= propColor3("Emission", glm::value_ptr(mat.emission),
+            ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
 
-        if (beginComponentCard("Clearcoat", ACC_COAT, false)) {
-            changed |= propSlider("Strength", &mat.clearcoat, 0.0f, 1.0f, "%.2f");
+        changed |= propSlider("AO", &mat.ao, 0.0f, 1.0f, "%.2f");
 
-            changed |= propSlider("Roughness", &mat.clearcoatRoughness, 0.0f, 1.0f, "%.2f");
-        }
-        endComponentCard();
+        changed |= propDrag("Emissive Strength", &mat.emissiveStrength, 0.05f, 0.0f, 64.0f, "%.2f",
+            "HDR multiplier on emission (drives bloom)");
 
-        if (beginComponentCard("Anisotropy", ACC_ANISO, false)) {
-            changed |= propSlider("Strength", &mat.anisotropy, 0.0f, 1.0f, "%.2f");
+        changed |= propSlider("Alpha Cutoff", &mat.alphaCutoff, 0.0f, 1.0f, "%.2f",
+            "AlphaMask type only: fragments with albedo.a < cutoff are discarded (foliage/leaves)");
+    }
+    endComponentCard();
 
-            drawPropertyLabel("Direction");
-            changed |= ImGui::DragFloat3("##AnisoDir",
-                glm::value_ptr(mat.anisotropyDirection), 0.01f, -1.0f, 1.0f, "%.2f");
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Tangent-space anisotropy direction");
-        }
-        endComponentCard();
+    if (beginComponentCard("Surface", ACC_SURF, false)) {
+        changed |= propDrag("IOR", &mat.ior, 0.01f, 1.0f, 3.0f, "%.2f",
+            "1.0 air, 1.33 water, 1.5 glass, 2.4 diamond");
 
-        if (beginComponentCard("Subsurface", ACC_SSS, false)) {
-            changed |= propSlider("Strength", &mat.subsurface, 0.0f, 1.0f, "%.2f");
+        changed |= propSlider("Transmission", &mat.transmission, 0.0f, 1.0f, "%.2f");
 
-            changed |= propColor3("Color", glm::value_ptr(mat.subsurfaceColor),
-                ImGuiColorEditFlags_Float);
-        }
-        endComponentCard();
+        changed |= propDrag("Normal Scale", &mat.normalScale, 0.01f, 0.0f, 5.0f, "%.2f");
 
-        if (beginComponentCard("Sheen", ACC_SHEEN, false)) {
-            changed |= propColor3("Color", glm::value_ptr(mat.sheenColor),
-                ImGuiColorEditFlags_Float, "Black = no sheen (fabric / cloth rim term)");
+        changed |= propDrag("Height Scale", &mat.heightScale, 0.001f, 0.0f, 0.5f, "%.3f");
+    }
+    endComponentCard();
 
-            changed |= propSlider("Roughness", &mat.sheenRoughness, 0.0f, 1.0f, "%.2f");
-        }
-        endComponentCard();
+    if (beginComponentCard("Clearcoat", ACC_COAT, false)) {
+        changed |= propSlider("Strength", &mat.clearcoat, 0.0f, 1.0f, "%.2f");
 
-        if (beginComponentCard("Volume", ACC_VOL, false)) {
-            changed |= propDrag("Thickness", &mat.thicknessFactor, 0.01f, 0.0f, 100.0f, "%.3f",
-                "Volume thickness in metres. 0 = thin-walled (no absorption)");
+        changed |= propSlider("Roughness", &mat.clearcoatRoughness, 0.0f, 1.0f, "%.2f");
+    }
+    endComponentCard();
 
-            changed |= propDrag("Atten. Distance", &mat.attenuationDistance, 0.01f, 0.0001f, 1000.0f, "%.3f",
-                "Path length (m) at which white light becomes attenuation color");
+    if (beginComponentCard("Anisotropy", ACC_ANISO, false)) {
+        changed |= propSlider("Strength", &mat.anisotropy, 0.0f, 1.0f, "%.2f");
 
-            changed |= propColor3("Atten. Color", glm::value_ptr(mat.attenuationColor),
-                ImGuiColorEditFlags_Float,
-                "Transmittance after one attenuation distance (white = clear)");
-        }
-        endComponentCard();
+        drawPropertyLabel("Direction");
+        changed |= ImGui::DragFloat3("##AnisoDir",
+            glm::value_ptr(mat.anisotropyDirection), 0.01f, -1.0f, 1.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Tangent-space anisotropy direction");
+    }
+    endComponentCard();
 
-        if (beginComponentCard("Textures", ACC_TEX, false)) {
-            // PBR Core: the maps every PBR material is likely to set.
-            ImGui::TextDisabled("PBR Core");
-            ImGui::Spacing();
-            changed |= slot("Albedo",    &MaterialAsset::albedoTexture,    true);
-            changed |= slot("Normal",    &MaterialAsset::normalTexture,    false);
-            changed |= slot("Roughness", &MaterialAsset::roughnessTexture, false);
-            changed |= slot("Metallic",  &MaterialAsset::metallicTexture,  false);
-            changed |= slot("AO",        &MaterialAsset::aoTexture,        false);
-            changed |= slot("Emission",  &MaterialAsset::emissionTexture,  true);
+    if (beginComponentCard("Subsurface", ACC_SSS, false)) {
+        changed |= propSlider("Strength", &mat.subsurface, 0.0f, 1.0f, "%.2f");
 
-            // Packed combinations - the loader auto-uses these when present
-            // and disregards the separate-channel rows above.
-            ImGui::Spacing();
-            ImGui::TextDisabled("Packed");
-            ImGui::Spacing();
-            changed |= slot("Metallic+Roughness",     &MaterialAsset::metallicRoughnessTexture,   false);
-            changed |= slot("AO+Metallic+Roughness",  &MaterialAsset::aoMetallicRoughnessTexture, false);
+        changed |= propColor3("Color", glm::value_ptr(mat.subsurfaceColor),
+            ImGuiColorEditFlags_Float);
+    }
+    endComponentCard();
 
-            // Less common: parallax / clearcoat / glass. Pair with the
-            // matching scalar in Surface / Clearcoat / Volume cards to take
-            // effect.
-            ImGui::Spacing();
-            ImGui::TextDisabled("Advanced");
-            ImGui::Spacing();
-            changed |= slot("Height",       &MaterialAsset::heightTexture,       false);
-            changed |= slot("Clearcoat",    &MaterialAsset::clearcoatTexture,    false);
-            changed |= slot("Transmission", &MaterialAsset::transmissionTexture, false);
-        }
-        endComponentCard();
+    if (beginComponentCard("Sheen", ACC_SHEEN, false)) {
+        changed |= propColor3("Color", glm::value_ptr(mat.sheenColor),
+            ImGuiColorEditFlags_Float, "Black = no sheen (fabric / cloth rim term)");
+
+        changed |= propSlider("Roughness", &mat.sheenRoughness, 0.0f, 1.0f, "%.2f");
+    }
+    endComponentCard();
+
+    if (beginComponentCard("Volume", ACC_VOL, false)) {
+        changed |= propDrag("Thickness", &mat.thicknessFactor, 0.01f, 0.0f, 100.0f, "%.3f",
+            "Volume thickness in metres. 0 = thin-walled (no absorption)");
+
+        changed |= propDrag("Atten. Distance", &mat.attenuationDistance, 0.01f, 0.0001f, 1000.0f, "%.3f",
+            "Path length (m) at which white light becomes attenuation color");
+
+        changed |= propColor3("Atten. Color", glm::value_ptr(mat.attenuationColor),
+            ImGuiColorEditFlags_Float,
+            "Transmittance after one attenuation distance (white = clear)");
+    }
+    endComponentCard();
+
+    if (beginComponentCard("Textures", ACC_TEX, false)) {
+        // PBR Core: the maps every PBR material is likely to set.
+        ImGui::TextDisabled("PBR Core");
+        ImGui::Spacing();
+        changed |= slot("Albedo",    &MaterialAsset::albedoTexture,    true);
+        changed |= slot("Normal",    &MaterialAsset::normalTexture,    false);
+        changed |= slot("Roughness", &MaterialAsset::roughnessTexture, false);
+        changed |= slot("Metallic",  &MaterialAsset::metallicTexture,  false);
+        changed |= slot("AO",        &MaterialAsset::aoTexture,        false);
+        changed |= slot("Emission",  &MaterialAsset::emissionTexture,  true);
+
+        // Packed combinations - the loader auto-uses these when present
+        // and disregards the separate-channel rows above.
+        ImGui::Spacing();
+        ImGui::TextDisabled("Packed");
+        ImGui::Spacing();
+        changed |= slot("Metallic+Roughness",     &MaterialAsset::metallicRoughnessTexture,   false);
+        changed |= slot("AO+Metallic+Roughness",  &MaterialAsset::aoMetallicRoughnessTexture, false);
+
+        // Less common: parallax / clearcoat / glass. Pair with the
+        // matching scalar in Surface / Clearcoat / Volume cards to take
+        // effect.
+        ImGui::Spacing();
+        ImGui::TextDisabled("Advanced");
+        ImGui::Spacing();
+        changed |= slot("Height",       &MaterialAsset::heightTexture,       false);
+        changed |= slot("Clearcoat",    &MaterialAsset::clearcoatTexture,    false);
+        changed |= slot("Transmission", &MaterialAsset::transmissionTexture, false);
+    }
+    endComponentCard();
 
     return changed;
 }

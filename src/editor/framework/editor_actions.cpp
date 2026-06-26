@@ -121,6 +121,12 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
     scene.add(entity, Transform{});
     scene.add(entity, makeName(defaultName(kind)));
 
+    auto addMesh = [&](MeshAsset mesh) {
+        auto meshHandle = resources.add(std::move(mesh));
+        auto matHandle  = generateDefaultMaterial(resources);
+        scene.add(entity, Mesh{meshHandle, matHandle});
+    };
+
     switch (kind) {
         case EntityKind::Empty:
             break;
@@ -139,42 +145,12 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         case EntityKind::DiskLight:
             scene.add(entity, generateDiskLight());
             break;
-        case EntityKind::Cube: {
-            auto meshHandle = resources.add(generateCube());
-            auto matHandle  = generateDefaultMaterial(resources);
-            scene.add(entity, Mesh{meshHandle, matHandle});
-            break;
-        }
-        case EntityKind::Sphere: {
-            auto meshHandle = resources.add(generateSphere());
-            auto matHandle  = generateDefaultMaterial(resources);
-            scene.add(entity, Mesh{meshHandle, matHandle});
-            break;
-        }
-        case EntityKind::Plane: {
-            auto meshHandle = resources.add(generatePlane());
-            auto matHandle  = generateDefaultMaterial(resources);
-            scene.add(entity, Mesh{meshHandle, matHandle});
-            break;
-        }
-        case EntityKind::Triangle: {
-            auto meshHandle = resources.add(generateTriangle());
-            auto matHandle  = generateDefaultMaterial(resources);
-            scene.add(entity, Mesh{meshHandle, matHandle});
-            break;
-        }
-        case EntityKind::Pyramid: {
-            auto meshHandle = resources.add(generatePyramid());
-            auto matHandle  = generateDefaultMaterial(resources);
-            scene.add(entity, Mesh{meshHandle, matHandle});
-            break;
-        }
-        case EntityKind::Cone: {
-            auto meshHandle = resources.add(generateCone());
-            auto matHandle  = generateDefaultMaterial(resources);
-            scene.add(entity, Mesh{meshHandle, matHandle});
-            break;
-        }
+        case EntityKind::Cube:     addMesh(generateCube());     break;
+        case EntityKind::Sphere:   addMesh(generateSphere());   break;
+        case EntityKind::Plane:    addMesh(generatePlane());    break;
+        case EntityKind::Triangle: addMesh(generateTriangle()); break;
+        case EntityKind::Pyramid:  addMesh(generatePyramid());  break;
+        case EntityKind::Cone:     addMesh(generateCone());     break;
         case EntityKind::Camera: {
             Camera cam;
             cam.active = false;

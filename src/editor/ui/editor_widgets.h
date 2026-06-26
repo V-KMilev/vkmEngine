@@ -47,6 +47,7 @@ inline bool propSlider(const char* label, float* v, float lo, float hi,
     return changed;
 }
 
+/** @brief propSlider variant backed by an integer SliderInt over [lo, hi]. */
 inline bool propSliderInt(const char* label, int* v, int lo, int hi,
                           const char* tooltip = nullptr) {
     drawPropertyLabel(label);
@@ -57,6 +58,7 @@ inline bool propSliderInt(const char* label, int* v, int lo, int hi,
     return changed;
 }
 
+/** @brief propSlider variant backed by a DragFloat with the given @p speed. */
 inline bool propDrag(const char* label, float* v, float speed, float lo, float hi,
                      const char* fmt = "%.3f", const char* tooltip = nullptr) {
     drawPropertyLabel(label);
@@ -67,6 +69,7 @@ inline bool propDrag(const char* label, float* v, float speed, float lo, float h
     return changed;
 }
 
+/** @brief propSlider variant backed by an RGB ColorEdit3 with @p flags. */
 inline bool propColor3(const char* label, float* v,
                        ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float,
                        const char* tooltip = nullptr) {
@@ -78,6 +81,7 @@ inline bool propColor3(const char* label, float* v,
     return changed;
 }
 
+/** @brief propSlider variant backed by an RGBA ColorEdit4 with @p flags. */
 inline bool propColor4(const char* label, float* v,
                        ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float,
                        const char* tooltip = nullptr) {

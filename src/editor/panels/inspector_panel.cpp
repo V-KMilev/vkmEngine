@@ -19,10 +19,10 @@
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/transform.h"
 #include "ecs/environment.h"
+#include "framework/editor_actions.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
 #include "generator/light_generators.h"
-#include "framework/editor_actions.h"
 #include "io/project_paths.h"            // ProjectPaths::root for the probe HDR browse
 #include "resource/resource_manager.h"
 #include "system/physics/collider_fit.h"
