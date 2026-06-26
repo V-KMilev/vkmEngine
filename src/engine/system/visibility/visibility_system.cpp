@@ -29,8 +29,11 @@ namespace Engine {
 void VisibilitySystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("VisibilitySystem");
 
-    // Reuse persistent buffer - clear keeps capacity, avoiding per-frame allocation
+    // Reuse persistent buffers - clear keeps capacity, avoiding per-frame allocation.
+    // Cleared here, not at the serial gather, so the early-return paths below still
+    // publish an empty result instead of last frame's stale entries/casters.
     m_result.entries.clear();
+    m_result.shadowCasters.clear();
     m_result.hasCamera = false;
 
     glm::mat4 view;
@@ -171,10 +174,9 @@ void VisibilitySystem::update(FrameContext& ctx) {
         });
     }
 
-    // Serial gather - sequential reads, reuses persistent m_result.entries capacity
+    // Serial gather - sequential reads, reuses persistent m_result buffer capacity
+    // (entries/shadowCasters were already cleared at the top of update()).
     PROFILE_SCOPE("Visibility/Gather");
-    m_result.entries.clear();
-    m_result.shadowCasters.clear();
     for (uint32_t i = 0; i < meshCount; ++i) {
         const bool visible = m_visibleFlags[i] != 0;
         const bool caster  = m_casterFlags[i]  != 0;
