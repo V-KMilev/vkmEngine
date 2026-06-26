@@ -5,6 +5,7 @@
 
 #include "logger.h"
 
+#include "core/clock.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation.h"
@@ -21,7 +22,7 @@ void AnimationSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("AnimationSystem");
 
     auto& scene = ctx.scene;
-    const float simDelta = ctx.simDeltaTime;
+    const float simDelta = ctx.clock.getSimDelta();
 
     // No simulation time elapsed (paused, or not stepping this frame): advance
     // nothing and, crucially, apply nothing - so authoring a Transform while

@@ -4,6 +4,7 @@
 
 #include "core/system.h"
 #include "core/memory/types.h"
+#include "ecs/entity.h"
 #include "system/physics/collision/contact.h"
 #include "system/physics/collision/solver.h"
 
@@ -19,7 +20,7 @@ struct PhysicsWorld;
  *
  * Registered at SystemStage::Simulation, after AnimationSystem and before
  * HierarchySystem, so physics-updated Transforms propagate to WorldTransform the
- * same frame. All work runs in fixedUpdate() against ctx.fixedDeltaTime; update()
+ * same frame. All work runs in fixedUpdate() against ctx.clock.getFixedStep(); update()
  * is a no-op.
  *
  * Emits CollisionEvent / TriggerEvent (enqueued, so listeners fire next flush,

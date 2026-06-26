@@ -7,6 +7,7 @@
 
 #include "logger.h"
 
+#include "core/clock.h"
 #include "debug/engine_error_log.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
@@ -115,7 +116,7 @@ void BehaviorSystem::update(FrameContext& ctx) {
 
     // No simulation time elapsed (paused / not stepping): scripts don't tick.
     // Drop any queued physics events so they don't pile up across a pause.
-    if (ctx.simDeltaTime <= 0.0f) {
+    if (ctx.clock.getSimDelta() <= 0.0f) {
         m_collisions.clear();
         m_triggers.clear();
         return;
@@ -123,7 +124,7 @@ void BehaviorSystem::update(FrameContext& ctx) {
 
     Scene& scene = ctx.scene;
 
-    tickBehaviors(ctx, ctx.simDeltaTime, "onUpdate", &Behavior::onUpdate);
+    tickBehaviors(ctx, ctx.clock.getSimDelta(), "onUpdate", &Behavior::onUpdate);
 
     // Dispatch collisions/triggers gathered since last frame. Swap to locals so
     // a handler that emits a synchronous event can't mutate the list mid-walk.
@@ -149,7 +150,7 @@ void BehaviorSystem::fixedUpdate(FrameContext& ctx) {
     // only runs while playing (or per queued step) - no explicit pause gate.
     // fixedUpdate runs before update each frame; onStart fires here if this is
     // the instance's first tick.
-    tickBehaviors(ctx, ctx.fixedDeltaTime, "onFixedUpdate", &Behavior::onFixedUpdate);
+    tickBehaviors(ctx, ctx.clock.getFixedStep(), "onFixedUpdate", &Behavior::onFixedUpdate);
 
     drainPendingDestroy(ctx.scene);
 }

@@ -9,7 +9,7 @@
 #include "texture/gl_texture.h"
 
 #include "core/system.h"
-#include "debug/frame_tracker.h"
+#include "core/clock.h"
 #include "framework/editor_common.h"
 #include "framework/editor_context.h"
 #include "framework/scene_io_controller.h"
@@ -189,7 +189,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     // available from multiple intent sources (Inspector empty-state,
     // Hierarchy "+"), not just the menu bar.
 
-    const float rate = ctx.frameTracker.getFrameRateInfo().frameRate;
+    const float rate = ctx.clock.getFrameRate();
     char fps[32];
     snprintf(fps, sizeof(fps), "%.0f FPS", rate);
     float fpsW = ImGui::CalcTextSize(fps).x;
