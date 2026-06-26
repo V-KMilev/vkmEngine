@@ -1,4 +1,3 @@
-
 // Attribute-less fullscreen triangle: positions + UVs synthesized from
 // gl_VertexID (no vertex buffer). Matches Core::ScreenTriangle's 3-vertex draw.
 out vec2 vUV;

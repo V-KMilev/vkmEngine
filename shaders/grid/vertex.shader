@@ -1,4 +1,3 @@
-
 /*
  * World-space ground grid: a quad in the XZ plane, recentred on the camera and
  * scaled large so it covers the view. The fragment shader draws the cells; this
