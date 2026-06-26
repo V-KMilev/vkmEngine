@@ -9,9 +9,9 @@ class SceneIOController;
  * @brief Top-centre simulation HUD (Play/Pause, Step, Stop) with play mode.
  *
  * A small floating icon bar in the viewport (same look as the bottom-left
- * tool box) that drives play mode + the engine's SimulationClock:
+ * tool box) that drives play mode + the engine's Clock:
  *  - Edit mode (no snapshot): Play captures a scene snapshot, then runs the
- *    SimulationClock so physics/animation/scripts tick. Step enters a paused
+ *    Clock so physics/animation/scripts tick. Step enters a paused
  *    play session and advances one fixed tick.
  *  - Play mode (snapshot held): Play/Pause toggles the clock; Step advances
  *    one fixed tick while paused; Stop restores the snapshot and returns to

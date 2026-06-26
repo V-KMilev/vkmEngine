@@ -6,6 +6,7 @@
 
 #include "logger.h"
 
+#include "core/clock.h"
 #include "debug/profiler.h"
 
 namespace Engine {
@@ -35,7 +36,7 @@ void FileWatcherSystem::watch(std::string dirPath, OnChange onChange) {
 }
 
 void FileWatcherSystem::update(FrameContext& ctx) {
-    m_accumulator += ctx.deltaTime;
+    m_accumulator += ctx.clock.getDeltaTime();
     if (m_accumulator < m_interval) return;
     m_accumulator -= m_interval;
 

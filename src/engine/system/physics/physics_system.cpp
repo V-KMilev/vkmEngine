@@ -9,6 +9,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "core/clock.h"
 #include "core/math/rotation.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
@@ -166,7 +167,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     PROFILE_SCOPE("PhysicsSystem");
 
     Scene& scene = ctx.scene;
-    const float dt = ctx.fixedDeltaTime;
+    const float dt = ctx.clock.getFixedStep();
 
     // Per-scene physics settings (singleton component); defaults if absent.
     PhysicsWorld world;

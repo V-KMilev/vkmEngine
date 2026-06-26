@@ -16,7 +16,7 @@ constexpr int   CONTROLS = 3;  // play/pause, step, stop
 void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     FrameContext&    ctx    = ec.frame;
     Engine&          engine = ec.engine;
-    SimulationClock& clock  = engine.getSimulationClock();
+    Clock& clock = engine.getClock();
 
     const bool playing = sceneIO.hasSnapshot();  // a play session is active
     const bool paused  = clock.isPaused();

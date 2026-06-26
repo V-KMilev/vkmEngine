@@ -110,6 +110,9 @@ void WindowManager::createWindow(const std::string& title) {
     // Cache initial size (updated via GLFW window size callback)
     glfwGetWindowSize(m_windowHandle, &m_width, &m_height);
 
+    // Seed the scene viewport to the full window by default.
+    setSceneViewport(0, 0, static_cast<uint32_t>(m_width), static_cast<uint32_t>(m_height));
+
     LOG_TRACE("Constructed Window '%s'", m_title.c_str());
 
     m_inputHandle = std::make_unique<InputHandle>();

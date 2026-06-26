@@ -15,6 +15,7 @@
 #include "platform/window/glfw_include.h"
 
 #include "debug/profiler.h"
+#include "core/clock.h"
 #include "core/math/axes.h"
 #include "core/math/rotation.h"
 #include "ecs/scene.h"
@@ -78,7 +79,7 @@ void CameraControllerSystem::update(FrameContext& ctx) {
         m_lastDrivenId = target;
     }
 
-    updateFlyMode(ctx.window, transform.position, transform.rotation, ctx.deltaTime);
+    updateFlyMode(ctx.window, transform.position, transform.rotation, ctx.clock.getDeltaTime());
 }
 
 void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, glm::vec3& position, glm::quat& rotation, float deltaTime) {

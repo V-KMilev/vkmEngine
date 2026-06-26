@@ -18,7 +18,7 @@ class EventSystem;
  *
  * Registered at SystemStage::Simulation, before PhysicsSystem, so scripts set
  * up state for physics to integrate the same frame. Ticks only while the
- * SimulationClock is running (ctx.simDeltaTime > 0), so pause / step / Stop
+ * Clock is running (ctx.clock.getSimDelta() > 0), so pause / step / Stop
  * apply uniformly: on an instance's first tick it injects the engine context
  * and calls onStart(), then onUpdate(simDeltaTime) every frame and
  * onFixedUpdate(fixedDeltaTime) every fixed tick.
