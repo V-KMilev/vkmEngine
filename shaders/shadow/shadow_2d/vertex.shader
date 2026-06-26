@@ -1,4 +1,3 @@
-#version 430 core
 
 // Depth-only shadow pass: project geometry into the light's clip space. Only
 // position is needed; the model matrix arrives per-instance (the shadow pass

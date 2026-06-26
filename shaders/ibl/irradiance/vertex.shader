@@ -1,7 +1,6 @@
 /**
  * IBL bake - shared cube vertex shader (diffuse irradiance convolution).
  */
-#version 420 core
 
 layout (location = 0) in vec3 aPos;
 

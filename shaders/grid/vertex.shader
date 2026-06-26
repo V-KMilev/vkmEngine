@@ -1,4 +1,3 @@
-#version 430 core
 
 /*
  * World-space ground grid: a quad in the XZ plane, recentred on the camera and

@@ -11,6 +11,7 @@
 
 #include "gl_frame_context.h"
 #include "gl_pass.h"
+#include "gl_shader.h"
 #include "pass/gl_shadow_pass.h"
 #include "pass/gl_depth_prepass.h"
 #include "pass/gl_gtao_pass.h"
@@ -24,6 +25,7 @@
 #include "data/gl_ibl_baker.h"
 #include "data/gl_material.h"
 #include "system/render/render_view.h"
+#include "platform/window/window_manager.h"
 
 #include "debug/profiler_gl.h"
 
@@ -52,8 +54,9 @@ bool GLBackend::init(WindowManager& window) {
     // written by the depth prepass and read by SSR. Enable before the first resize.
     m_sceneHDR.enableGBuffer();
 
-    m_shadowAtlas.init();
-
+    // Shaders omit their own #version; inject it from the requested GL context
+    // version (single source of truth) before the passes compile their programs.
+    Core::setGraphicsShaderVersion(OPENGL_GLSL_VERSION);
 
     // Build the pass list. Passes compile their shaders, so this must run after
     // the context exists. Order: shadow depth maps; a depth prepass (early-Z,
@@ -136,7 +139,19 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // Each pass binds and clears its own target: the shadow pass fills the depth
     // atlas, the forward pass renders the lit scene into m_sceneHDR sampling it,
     // and the composite pass tonemaps that to the backbuffer.
-    GLFrameContext ctx{view, m_view, m_context, m_sceneHDR, m_sceneColor, m_shadowAtlas, m_shadowData, m_ibl, m_bloom, m_ao, m_opaque, m_transparent};
+    GLFrameContext ctx{
+        view,
+        m_view,
+        m_context,
+        m_sceneHDR,
+        m_sceneColor,
+        m_shadowAtlas,
+        m_shadowData,
+        m_ibl,
+        m_bloom,
+        m_ao,
+        m_opaque,
+        m_transparent};
 
     // Reflection probes: pack the baked probes (nearest MAX_PROBES) into the
     // ProbeBlock UBO and bind the two cube-map arrays; the forward pass blends

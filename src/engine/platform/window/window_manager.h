@@ -18,6 +18,7 @@ class FrameLimiter;
 // knobs.
 inline constexpr int OPENGL_MAJOR_VERSION  = 4;     ///< Requested GL context major version.
 inline constexpr int OPENGL_MINOR_VERSION  = 3;     ///< Requested GL context minor version.
+inline constexpr int OPENGL_GLSL_VERSION   = OPENGL_MAJOR_VERSION * 100 + OPENGL_MINOR_VERSION * 10;  ///< GLSL "#version" the shader loader injects (derived: 4.3 -> 430).
 inline constexpr int DEFAULT_WINDOW_WIDTH  = 1920;  ///< Initial window width in pixels.
 inline constexpr int DEFAULT_WINDOW_HEIGHT = 1080;  ///< Initial window height in pixels.
 
@@ -25,15 +26,13 @@ inline constexpr int DEFAULT_WINDOW_HEIGHT = 1080;  ///< Initial window height i
  * @brief Enumerates supported window modes for the application window.
  *
  * WindowMode is used to specify how the application window should be displayed on the user's monitor.
- * 
- * - NONE:       No active window mode or undefined state; the window may not be visible or active.
- * - FULLSCREEN: The window occupies the entire screen, with no window borders or decorations; 
+ *
+ * - Fullscreen: The window occupies the entire screen, with no window borders or decorations;
  *               typically used for immersive applications and games.
- * - WINDOWED:   The window operates within a resizable and movable container, allowing it to share the
+ * - Windowed:   The window operates within a resizable and movable container, allowing it to share the
  *               desktop with other applications; contains standard OS borders and controls.
  */
 enum class WindowMode {
-    None       = 0,    ///< No active window mode or undefined.
     Fullscreen = 1,    ///< Window occupies the entire screen.
     Windowed   = 2     ///< Window is in windowed mode.
 };
@@ -41,10 +40,10 @@ enum class WindowMode {
 /**
  * @brief Enumerates supported cursor modes for the application window.
  *
- * - NORMAL:   Standard visible cursor, can move outside the window.
- * - HIDDEN:   Cursor is invisible but movement is unrestricted.
- * - DISABLED: Cursor is hidden and movement is confined to the window (useful for FPS cameras).
- * - CAPTURED: Cursor is captured and not visible, often for raw input scenarios.
+ * - Normal:   Standard visible cursor, can move outside the window.
+ * - Hidden:   Cursor is invisible but movement is unrestricted.
+ * - Disabled: Cursor is hidden and movement is confined to the window (useful for FPS cameras).
+ * - Captured: Cursor is captured and not visible, often for raw input scenarios.
  */
 enum class CursorMode {
     Normal   = 0,    ///< Cursor visible, standard mode.
@@ -55,13 +54,12 @@ enum class CursorMode {
 
 /**
  * @brief Convert a WindowMode enum value to its string representation.
- * 
+ *
  * @param type The WindowMode to convert.
  * @return const char* String representation of the WindowMode.
  */
 constexpr const char* toString(WindowMode type) {
     switch (type) {
-        case WindowMode::None:       return "None";
         case WindowMode::Fullscreen: return "Fullscreen";
         case WindowMode::Windowed:   return "Windowed";
         default: return "UNKNOWN";

@@ -5,7 +5,6 @@
  * HDR target - the composite pass owns tonemap + gamma, so the sky tone-maps
  * consistently with lit geometry.
  */
-#version 420 core
 
 in vec3 vDir;
 

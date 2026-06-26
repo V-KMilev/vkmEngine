@@ -8,7 +8,6 @@
  * streak. The velocity is clamped so a fast turn or a scene cut cannot smear the
  * whole screen.
  */
-#version 430 core
 
 in vec2 vUV;
 
