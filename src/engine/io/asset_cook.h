@@ -12,8 +12,8 @@ struct TextureAsset;
  * @brief Cooked binary asset format (derived cache).
  *
  * A cooked file is produced by the editor cooker from an asset's recipe and
- * consumed by both binaries. It is little-endian only - an endian sentinel in
- * the header makes a wrong-endian file fail to read rather than load garbage.
+ * consumed by both binaries. It is host-endian; an endian sentinel rejects a
+ * file written on a differently-endianed machine rather than loading garbage.
  * The recipe stays the source of truth; cooked files are regenerable and keyed
  * to their recipe via a hash carried in the header.
  *

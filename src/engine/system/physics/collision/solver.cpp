@@ -69,11 +69,11 @@ void solveContacts(
     const SolverParams& params
 ) {
     // Restitution target per contact, computed ONCE from the pre-solve approach
-    // speed. Recomputing it each iteration (the old bug) saw the post-impulse,
-    // already-separating velocity - the bias vanished after pass 1 and the rest
-    // of the passes drove the contact back to a resting vn == 0, cancelling the
-    // bounce so a moving body stopped dead at a wall. A constant target keeps
-    // every pass aiming at the same separation speed.
+    // speed. A per-iteration recompute would read the post-impulse,
+    // already-separating velocity, so the bias would vanish after pass 1 and the
+    // rest of the passes would drive the contact back to a resting vn == 0,
+    // cancelling the bounce so a moving body stops dead at a wall. A constant
+    // target keeps every pass aiming at the same separation speed.
     for (ContactManifold& manifold : manifolds) {
         PhysicsBody& a = bodies[manifold.bodyA];
         PhysicsBody& b = bodies[manifold.bodyB];

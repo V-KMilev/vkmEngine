@@ -45,7 +45,6 @@ class AnimationTrack {
          * @param value The value for the keyframe.
          */
         void addKeyframe(float time, const T& value) {
-            // Find insertion point to maintain sorted order
             auto it = std::upper_bound(m_times.begin(), m_times.end(), time);
             auto index = static_cast<size_t>(it - m_times.begin());
             m_times.insert(it, time);
@@ -107,7 +106,6 @@ class AnimationTrack {
             const size_t nextIndex = static_cast<size_t>(it - m_times.begin());
             const size_t prevIndex = nextIndex - 1;
 
-            // Calculate normalized time [0, 1] between the two keyframes
             float segmentDuration = m_times[nextIndex] - m_times[prevIndex];
             if (segmentDuration <= 0.0f) {
                 return m_values[prevIndex];
@@ -115,7 +113,6 @@ class AnimationTrack {
 
             float t = (time - m_times[prevIndex]) / segmentDuration;
 
-            // Apply easing to the interpolation factor
             float eased = m_easing(t);
 
             // Interpolate using appropriate method (slerp for quaternions, mix for others)

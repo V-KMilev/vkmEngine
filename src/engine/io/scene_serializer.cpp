@@ -38,7 +38,7 @@ constexpr int FILE_FORMAT_VERSION = 2;
  *
  * saveComponents / loadComponents handle one component type per line, in the
  * same order. Adding a component is a localised edit: add a line to each of
- * the two functions plus an entry to kComponentKeys below.
+ * the two functions plus an entry to COMPONENT_KEYS below.
  *
  * Special cases:
  *  - Mesh references assets by handle, so save/load take a ResourceManager
@@ -50,8 +50,8 @@ constexpr int FILE_FORMAT_VERSION = 2;
 
 // Every JSON key written by saveComponents, for unknown-key detection on load.
 // Order is incidental here (membership test only); keep it in sync with the
-// save/load lists above.
-constexpr std::array<const char*, 11> kComponentKeys = {
+// save/load lists below.
+constexpr std::array<const char*, 11> COMPONENT_KEYS = {
     "Name", "Transform", "Camera", "Light", "Rigidbody", "Collider",
     "PhysicsWorld", "Mesh", "Animation", "Script", "Hierarchy",
 };
@@ -86,7 +86,7 @@ void loadComponents(const json& src, Scene& s, Entity e, const ResourceManager& 
 }
 
 bool isKnownComponentKey(const std::string& k) {
-    for (const char* key : kComponentKeys) {
+    for (const char* key : COMPONENT_KEYS) {
         if (k == key) return true;
     }
     return false;

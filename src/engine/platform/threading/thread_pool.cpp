@@ -29,7 +29,7 @@ ThreadPool::~ThreadPool() {
 }
 
 ThreadPool& ThreadPool::get() {
-    static ThreadPool instance(DEFAULT_THREAD_COUNT);
+    static ThreadPool instance(std::thread::hardware_concurrency());
     return instance;
 }
 
@@ -43,7 +43,7 @@ void ThreadPool::addTask(std::function<void()> && task) {
     m_tasksCV.notify_one();
 }
 
-void ThreadPool::addTasks(std::vector<std::function<void()>>&& tasks) {
+void ThreadPool::addTasks(std::vector<std::function<void()>> && tasks) {
     {
         std::lock_guard<std::mutex> lock(m_tasksMutex);
         m_taskCount += tasks.size();

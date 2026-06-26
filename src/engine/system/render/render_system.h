@@ -4,6 +4,7 @@
 
 #include "core/system.h"
 #include "system/render/render_backend.h"
+#include "system/render/render_settings.h"
 #include "system/render/render_view.h"
 
 namespace Engine {

@@ -43,7 +43,7 @@ class FrameLimiter {
          *
          * @param framerate Desired framerate in FPS.
          */
-        void setTargetFramerate(int framerate) { m_targetFramerate = framerate > 0 ? framerate : 0;}
+        void setTargetFramerate(int framerate) { m_targetFramerate = framerate > 0 ? framerate : 0; }
 
     private:
         int m_targetFramerate = 0;

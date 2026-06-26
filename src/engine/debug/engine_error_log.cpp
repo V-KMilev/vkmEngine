@@ -2,15 +2,17 @@
 
 #include "debug/engine_error_log.h"
 
+#include <utility>
+
 #include "logger.h"
 
 namespace Engine {
 
 namespace {
-    // The single optional sink. The editor installs its own EngineErrorLog here;
-    // the runtime leaves it null so errors only reach the log.
-    EngineErrorLog* g_sink = nullptr;
-}
+// The single optional sink. The editor installs its own EngineErrorLog here;
+// the runtime leaves it null so errors only reach the log.
+EngineErrorLog* g_sink = nullptr;
+} // namespace
 
 void reportError(const char* category, std::string source, std::string message) {
     const char* cat = category ? category : "";

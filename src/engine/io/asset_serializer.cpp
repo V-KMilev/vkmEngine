@@ -56,13 +56,6 @@ using ::Engine::detail::vec4FromJson;
 
 } // namespace
 
-/**
- * @brief Build an "inline" material source descriptor capturing all PBR scalars +
- * texture refs by name. This is what we emit on save regardless of how the
- * material was first created - editor tweaks survive cold-start load. Public
- * (declared in the header) so the asset cooker can write a material's
- * canonical inline form to the library.
- */
 nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& resources) {
     nlohmann::json src;
     src["kind"]  = "inline";

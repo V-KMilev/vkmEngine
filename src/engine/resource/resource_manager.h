@@ -101,12 +101,7 @@ class ResourceManager {
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::remove invalid handle");
             // Drop the name->index mapping if the asset registered one.
             const T& res = storageOfConst<T>(slot).get(handle.key.index);
-            if (!res.name.empty()) {
-                auto it = slot.nameIndex.find(res.name);
-                if (it != slot.nameIndex.end() && it->second == handle.key.index) {
-                    slot.nameIndex.erase(it);
-                }
-            }
+            dropNameIndex(slot, res.name, handle.key.index);
             storageOf<T>(slot).remove(handle.key.index);
             slot.allocator.free(handle.key);
         }
@@ -167,12 +162,7 @@ class ResourceManager {
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::rename invalid handle");
             auto& res = storageOf<T>(slot).get(handle.key.index);
-            if (!res.name.empty()) {
-                auto it = slot.nameIndex.find(res.name);
-                if (it != slot.nameIndex.end() && it->second == handle.key.index) {
-                    slot.nameIndex.erase(it);
-                }
-            }
+            dropNameIndex(slot, res.name, handle.key.index);
             res.name = std::move(newName);
             if (!res.name.empty()) {
                 slot.nameIndex[res.name] = handle.key.index;
@@ -330,6 +320,19 @@ class ResourceManager {
         template<typename T>
         static const SparseSet<T>& storageOfConst(const TypedSlot& slot) {
             return static_cast<const SparseSet<T>&>(*slot.storage);
+        }
+
+        /**
+         * @brief Erase the name->index mapping for @p name when it still points
+         * at @p index. Shared by remove() and rename() so the index stays
+         * consistent in one place.
+         */
+        static void dropNameIndex(TypedSlot& slot, const std::string& name, uint32_t index) {
+            if (name.empty()) return;
+            auto it = slot.nameIndex.find(name);
+            if (it != slot.nameIndex.end() && it->second == index) {
+                slot.nameIndex.erase(it);
+            }
         }
 
         /**
