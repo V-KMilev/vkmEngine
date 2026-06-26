@@ -1,4 +1,3 @@
-
 /*
  * Depth + G-buffer prepass fragment stage. Writes a view-space normal
  * (octahedral) plus roughness + metalness into colour attachment 1 - the
