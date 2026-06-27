@@ -139,7 +139,7 @@ class Behavior {
         void subscribe(std::function<void(const EventT&)> callback) {
             if (!m_events) return;
             EventSystem* events = m_events;
-            const EventSystem::ListenerId id = events->subscribe<EventT>(std::move(callback));
+            const ListenerId id = events->subscribe<EventT>(std::move(callback));
             m_subscriptions.push_back([events, id]() { events->unsubscribe<EventT>(id); });
         }
 
