@@ -59,7 +59,7 @@ using ::Engine::detail::vec4FromJson;
 nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& resources) {
     nlohmann::json src;
     src["kind"]  = "inline";
-    src["type"]  = Reflect::enumName(m.type, MATERIAL_TYPE_NAMES);
+    src["type"]  = Reflect::enumName(m.type);
     src["albedo"]              = vec4ToJson(m.albedo);
     src["emission"]            = vec3ToJson(m.emission);
     src["emissiveStrength"]    = m.emissiveStrength;
@@ -104,7 +104,7 @@ namespace {
  */
 void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const ResourceManager& resources) {
     const std::string typeStr = src.value("type", std::string{"Opaque"});
-    m.type = Reflect::enumFromName<MaterialType>(typeStr, MATERIAL_TYPE_NAMES);
+    m.type = Reflect::enumFromName<MaterialType>(typeStr);
 
     m.albedo              = vec4FromJson(src.value("albedo",              nlohmann::json{}), m.albedo);
     m.emission            = vec3FromJson(src.value("emission",            nlohmann::json{}), m.emission);

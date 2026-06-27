@@ -71,19 +71,19 @@ inline void fromJson(const nlohmann::json& j, char (&v)[N]) {
     v[N - 1] = '\0';
 }
 
-// Enums.
+// Enums. Names come from each type's VKM_ENUM_NAMES registration.
 inline nlohmann::json toJson(ProjectionType v) {
-    return Reflect::enumName(v, PROJECTION_TYPE_NAMES);
+    return Reflect::enumName(v);
 }
 inline void fromJson(const nlohmann::json& j, ProjectionType& v) {
-    v = Reflect::enumFromName<ProjectionType>(j.get<std::string>(), PROJECTION_TYPE_NAMES);
+    v = Reflect::enumFromName<ProjectionType>(j.get<std::string>());
 }
 
 inline nlohmann::json toJson(LightType t) {
-    return Reflect::enumName(t, LIGHT_TYPE_NAMES);
+    return Reflect::enumName(t);
 }
 inline void fromJson(const nlohmann::json& j, LightType& v) {
-    v = Reflect::enumFromName<LightType>(j.get<std::string>(), LIGHT_TYPE_NAMES);
+    v = Reflect::enumFromName<LightType>(j.get<std::string>());
 }
 
 // Reflection driver. Iterates a type's reflected fields and forwards each
@@ -180,9 +180,6 @@ void load(const nlohmann::json& j, Collider& c) {
     }
     c.parts = { box };
 }
-
-nlohmann::json save(const PhysicsWorld& w) { return saveReflected(w); }
-void load(const nlohmann::json& j, PhysicsWorld& w) { loadReflected(j, w); }
 
 nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
     return {
@@ -410,11 +407,6 @@ VKM_REFLECT_BEGIN(Engine::Rigidbody)
     VKM_F(gravityScale),
     VKM_F(isKinematic),
     VKM_F(isStatic)
-VKM_REFLECT_END()
-
-VKM_REFLECT_BEGIN(Engine::PhysicsWorld)
-    VKM_F(gravity),
-    VKM_F(solverIterations)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(Engine::Collider)

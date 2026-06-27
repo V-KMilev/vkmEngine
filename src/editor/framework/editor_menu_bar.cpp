@@ -146,7 +146,6 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         ImGui::MenuItem("Bottom Panel",  getKeyBindLabel(state.keybinds.toggleBottom, lbl, sizeof(lbl)), &state.showBottom);
         ImGui::Separator();
         ImGui::MenuItem("Render Settings",  nullptr, &state.showRenderSettings);
-        ImGui::MenuItem("Physics Settings", nullptr, &state.showPhysics);
         ImGui::MenuItem("Material Editor",  nullptr, &state.showMaterialEditor);
         ImGui::MenuItem("Asset Browser",    nullptr, &state.showAssetBrowser);
         ImGui::EndMenu();

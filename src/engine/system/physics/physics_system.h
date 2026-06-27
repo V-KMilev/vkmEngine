@@ -12,7 +12,7 @@ namespace Engine {
 
 class EventSystem;
 class Scene;
-struct PhysicsWorld;
+struct Environment;
 
 /**
  * @brief Fixed-step rigid-body dynamics: integrates velocities, detects and
@@ -72,10 +72,10 @@ class PhysicsSystem : public System {
          * Frozen (kinematic / sleeping) bodies are left untouched.
          *
          * @param scene Scene providing the gathered bodies.
-         * @param world Physics world parameters (gravity vector, damping).
+         * @param env   Scene-global settings (supplies the gravity vector).
          * @param dt    Fixed timestep, in seconds.
          */
-        void integrateForces(Scene& scene, const PhysicsWorld& world, float dt);
+        void integrateForces(Scene& scene, const Environment& env, float dt);
 
         /**
          * @brief Sort-and-sweep the bodies into candidate collision pairs.
@@ -101,10 +101,10 @@ class PhysicsSystem : public System {
         /**
          * @brief Resolve the contact manifolds with a sequential-impulse solver.
          *
-         * @param world Physics world parameters (solver iteration counts, etc.).
-         * @param dt    Fixed timestep, in seconds.
+         * @param env Scene-global settings (supplies the solver iteration count).
+         * @param dt  Fixed timestep, in seconds.
          */
-        void solve(const PhysicsWorld& world, float dt);
+        void solve(const Environment& env, float dt);
 
         /**
          * @brief Integrate solved velocities into poses and update sleep state.

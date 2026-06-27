@@ -68,7 +68,7 @@ bool MaterialEditorPanel::drawMaterialBody(
 
     if (beginComponentCard("Base", ACC_BASE, true)) {
         drawPropertyLabel("Type");
-        if (drawEnumCombo("##MatType", mat.type, MATERIAL_TYPE_NAMES, IM_ARRAYSIZE(MATERIAL_TYPE_NAMES))) {
+        if (drawEnumCombo("##MatType", mat.type)) {
             // Picking AlphaMask in the editor should turn on the discard
             // path even if the asset shipped with cutoff = 0 (off).
             if (mat.type == MaterialType::AlphaMask && mat.alphaCutoff <= 0.0f) {

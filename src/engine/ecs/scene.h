@@ -61,39 +61,6 @@ class Scene {
         }
 
         /**
-         * @brief Check if an entity is still alive (valid index + matching generation).
-         * @param entity The entity to check.
-         * @return true if the entity is alive.
-         */
-        bool isAlive(Entity entity) const { return isAlive(entity.getID()); }
-        bool isAlive(EntityId id) const { return m_entityAllocator.has(id); }
-
-        /**
-         * @brief Bounds-tolerant check: is the slot at `index` currently
-         * holding a live entity? Use this when you only have a raw slot
-         * index from a previous frame/scene (e.g. a saved selection).
-         */
-        bool isAliveAtIndex(uint32_t index) const { return m_entityAllocator.isAliveAtIndex(index); }
-
-        /**
-         * @brief Number of live entities.
-         */
-        size_t entityCount() const { return m_entityAllocator.size(); }
-
-        /**
-         * @brief The scene's lighting environment (skybox + IBL): scene-global, always
-         * present, round-trips with the scene. Read by RenderView each frame;
-         * edited via the editor's World inspector.
-         */
-        Environment& environment() { return m_environment; }
-        const Environment& environment() const { return m_environment; }
-
-        /**
-         * @brief Get the generation counter for an entity index (for reconstructing EntityId from dense index).
-         */
-        uint32_t generationOf(uint32_t index) const { return m_entityAllocator.generationOf(index); }
-
-        /**
          * @brief Destroy an entity by removing all of its components and recycling its slot.
          * @param entity The entity to destroy.
          */
@@ -114,6 +81,13 @@ class Scene {
             m_entityAllocator.free(id);
         }
 
+        bool isAlive(Entity entity)           const { return isAlive(entity.getID()); }
+        bool isAlive(EntityId id)             const { return m_entityAllocator.has(id); }
+        bool isAliveAtIndex(uint32_t index)   const { return m_entityAllocator.isAliveAtIndex(index); }
+        size_t entityCount()                  const { return m_entityAllocator.size(); }
+        uint32_t generationOf(uint32_t index) const { return m_entityAllocator.generationOf(index); }
+
+    public:
         /**
          * @brief Add a component to an entity.
          * @tparam T Component type (any type; storage is created on first use).
@@ -126,6 +100,20 @@ class Scene {
             VKM_ASSERT(isAlive(entity), "Scene::add called with dead/stale entity");
             using U = std::remove_cv_t<std::remove_reference_t<T>>;
             return getStorage<U>().add(entity.getID().index, std::forward<T>(component));
+        }
+
+        /**
+         * @brief Remove a component of type T from an entity.
+         * @tparam T Component type.
+         * @param entity The entity whose component will be removed.
+         */
+        template<typename T>
+        void remove(Entity entity) {
+            VKM_ASSERT(isAlive(entity), "Scene::remove called with dead/stale entity");
+            auto* store = findStorage<T>();
+            if (store && store->contains(entity.getID().index)) {
+                store->remove(entity.getID().index);
+            }
         }
 
         /**
@@ -177,20 +165,6 @@ class Scene {
         }
 
         /**
-         * @brief Remove a component of type T from an entity.
-         * @tparam T Component type.
-         * @param entity The entity whose component will be removed.
-         */
-        template<typename T>
-        void remove(Entity entity) {
-            VKM_ASSERT(isAlive(entity), "Scene::remove called with dead/stale entity");
-            auto* store = findStorage<T>();
-            if (store && store->contains(entity.getID().index)) {
-                store->remove(entity.getID().index);
-            }
-        }
-
-        /**
          * @brief Number of live components of type T.
          * @tparam T Component type.
          */
@@ -200,6 +174,7 @@ class Scene {
             return store ? store->size() : 0;
         }
 
+    public:
         /**
          * @brief Iterate all live components densely (no holes).
          *
@@ -269,6 +244,24 @@ class Scene {
             });
         }
 
+    public:
+        /**
+         * @brief Direct access to the typed SparseSet for component type T.
+         *
+         * Use for index-based / parallel iteration where Scene::get<T>(id)
+         * per element would be wasteful. Returns nullptr if no entity has
+         * ever added a T (the storage is lazy).
+         *
+         * @tparam T Component type.
+         * @return Pointer to the SparseSet, or nullptr if unregistered.
+         */
+        template<typename T>
+        SparseSet<T>* storage() { return findStorage<T>(); }
+
+        template<typename T>
+        const SparseSet<T>* storage() const { return findStorage<T>(); }
+
+    public:
         /**
          * @brief Drop every component set and reset the entity allocator and
          * environment in one pass. Used for scene load to start from a clean
@@ -319,21 +312,14 @@ class Scene {
             swap(m_environment, other.m_environment);
         }
 
+    public:
         /**
-         * @brief Direct access to the typed SparseSet for component type T.
-         *
-         * Use for index-based / parallel iteration where Scene::get<T>(id)
-         * per element would be wasteful. Returns nullptr if no entity has
-         * ever added a T (the storage is lazy).
-         *
-         * @tparam T Component type.
-         * @return Pointer to the SparseSet, or nullptr if unregistered.
+         * @brief The scene's lighting environment (skybox + IBL): scene-global, always
+         * present, round-trips with the scene. Read by RenderView each frame;
+         * edited via the editor's World inspector.
          */
-        template<typename T>
-        SparseSet<T>* storage() { return findStorage<T>(); }
-
-        template<typename T>
-        const SparseSet<T>* storage() const { return findStorage<T>(); }
+        Environment& environment() { return m_environment; }
+        const Environment& environment() const { return m_environment; }
 
         /**
          * @brief Install a single observer invoked (with the EntityId) at the
@@ -369,21 +355,6 @@ class Scene {
         }
 
         /**
-         * @brief Find the typed SparseSet for component type T without creating it.
-         *
-         * Read-only lookup that never allocates, unlike getStorage().
-         *
-         * @tparam T Component type whose storage is requested.
-         * @return Pointer to the storage for T, or nullptr if no T has ever been registered.
-         */
-        template<typename T>
-        const SparseSet<T>* findStorage() const {
-            TypeId id = typeId<T>();
-            if (id >= m_components.size() || !m_components[id]) return nullptr;
-            return static_cast<const SparseSet<T>*>(m_components[id].get());
-        }
-
-        /**
          * @brief Find the typed SparseSet for component type T for mutable access.
          *
          * Non-const overload of findStorage() that hands back a mutable pointer yet,
@@ -399,15 +370,19 @@ class Scene {
             return static_cast<SparseSet<T>*>(m_components[id].get());
         }
 
+        template<typename T>
+        const SparseSet<T>* findStorage() const {
+            TypeId id = typeId<T>();
+            if (id >= m_components.size() || !m_components[id]) return nullptr;
+            return static_cast<const SparseSet<T>*>(m_components[id].get());
+        }
+
     private:
-        SlotAllocator m_entityAllocator;
-        std::vector<std::unique_ptr<ISparseSet>> m_components;
         Environment m_environment;
 
-        /**
-         * @brief Per-entity destroy observer (see setOnEntityDestroy). Not swapped:
-         * it belongs to this Scene object, not the contents it holds.
-         */
+        SlotAllocator m_entityAllocator;
+        std::vector<std::unique_ptr<ISparseSet>> m_components;
+
         std::function<void(EntityId)> m_onEntityDestroy;
 };
 

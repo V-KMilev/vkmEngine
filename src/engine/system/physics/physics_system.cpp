@@ -13,9 +13,9 @@
 #include "core/math/rotation.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
+#include "ecs/environment.h"
 #include "ecs/component/collider.h"
 #include "ecs/component/hierarchy.h"
-#include "ecs/component/physics_world.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/world_transform.h"
@@ -169,16 +169,15 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     Scene& scene = ctx.scene;
     const float dt = ctx.clock.getFixedStep();
 
-    // Per-scene physics settings (singleton component); defaults if absent.
-    PhysicsWorld world;
-    scene.forEach<PhysicsWorld>([&](EntityId, const PhysicsWorld& w) { world = w; });
+    // Per-scene physics settings live on the scene-global Environment.
+    const Environment& env = scene.environment();
 
     auto* rbStorage = scene.storage<Rigidbody>();
     if (!rbStorage) return;
 
     if (!gatherBodies(scene)) return;
 
-    integrateForces(scene, world, dt);
+    integrateForces(scene, env, dt);
 
     broadphase();
 
@@ -189,7 +188,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 
     wakeOnImpact(scene);
 
-    solve(world, dt);
+    solve(env, dt);
 
     writeback(scene, dt, hasContact);
 }
@@ -271,13 +270,13 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
     return !m_bodies.empty();
 }
 
-void PhysicsSystem::integrateForces(Scene& scene, const PhysicsWorld& world, float dt) {
+void PhysicsSystem::integrateForces(Scene& scene, const Environment& env, float dt) {
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         Rigidbody& rb = scene.get<Rigidbody>(m_bodies[k]);
         PhysicsBody& pb = m_solverBodies[k];
         if (rb.sleeping || rb.isStatic || rb.isKinematic || rb.inverseMass == 0.0f) continue;
 
-        pb.linearVelocity += world.gravity * rb.gravityScale * dt;
+        pb.linearVelocity += env.gravity * rb.gravityScale * dt;
         pb.linearVelocity *= 1.0f / (1.0f + rb.linearDamping * dt);
         pb.angularVelocity *= 1.0f / (1.0f + rb.angularDamping * dt);
     }
@@ -386,9 +385,9 @@ void PhysicsSystem::wakeOnImpact(Scene& scene) {
     }
 }
 
-void PhysicsSystem::solve(const PhysicsWorld& world, float dt) {
+void PhysicsSystem::solve(const Environment& env, float dt) {
     SolverParams params;
-    params.iterations = world.solverIterations;
+    params.iterations = env.solverIterations;
     params.dt = dt;
     solveContacts(m_solverBodies, m_manifolds, params);
 }

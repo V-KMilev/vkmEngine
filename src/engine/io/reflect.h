@@ -56,26 +56,40 @@ constexpr void forEachField(T& obj, Fn&& fn) {
 }
 
 /**
+ * @brief Maps an enum to its value-ordered names. Specialise via
+ *        VKM_ENUM_NAMES (below), which exposes:
+ *
+ *          static constexpr const char* const values[];  // index == enum value
+ *          static constexpr std::size_t      count;       // == sizeof(values)
+ *
+ * The unspecialised primary is intentionally incomplete: naming an
+ * unregistered enum is then a clear compile error rather than a silent
+ * fallback. enumName / enumFromName / the editor's drawEnumCombo all read
+ * this one table, so an enum's serialized names and its UI combo cannot drift.
+ */
+template<typename Enum>
+struct EnumNames;
+
+/**
  * @brief Enum value -> its serialized / display name.
  *
- * @p names lists the names in enum-value order (the value is the index); an
- * out-of-range value falls back to the first name. Pairing this with one
- * names[] array declared next to the enum gives serialization and editor
- * combos a single source of truth that cannot drift.
+ * An out-of-range value falls back to the first name.
  */
-template<typename Enum, std::size_t N>
-constexpr const char* enumName(Enum value, const char* const (&names)[N]) {
+template<typename Enum>
+constexpr const char* enumName(Enum value) {
+    using Names = EnumNames<Enum>;
     const auto index = static_cast<std::size_t>(value);
-    return index < N ? names[index] : names[0];
+    return index < Names::count ? Names::values[index] : Names::values[0];
 }
 
 /**
  * @brief Parse an enum from a name, falling back to value 0 when unknown.
  */
-template<typename Enum, std::size_t N>
-Enum enumFromName(std::string_view name, const char* const (&names)[N]) {
-    for (std::size_t i = 0; i < N; ++i) {
-        if (name == names[i]) return static_cast<Enum>(i);
+template<typename Enum>
+Enum enumFromName(std::string_view name) {
+    using Names = EnumNames<Enum>;
+    for (std::size_t i = 0; i < Names::count; ++i) {
+        if (name == Names::values[i]) return static_cast<Enum>(i);
     }
     return static_cast<Enum>(0);
 }
@@ -113,4 +127,34 @@ Enum enumFromName(std::string_view name, const char* const (&names)[N]) {
             );                                                               \
         }                                                                    \
     };                                                                       \
+    }
+
+/**
+ * @brief Register an enum's value-ordered names in one place.
+ *
+ * Invoke INSIDE namespace Engine, right after the enum, with the unqualified
+ * type and the names in value order:
+ *
+ *   namespace Engine {
+ *   enum class LightType { Directional, Point, ... , Count };
+ *   VKM_ENUM_NAMES(LightType, "Directional", "Point", ...)
+ *   }
+ *
+ * It opens `namespace Reflect` (which, nested in Engine, is Engine::Reflect) and
+ * specialises EnumNames there - no global-scope ::Engine:: qualification needed,
+ * since the only shadowed name is the class Engine, which this never spells.
+ *
+ * This one table is what enumName / enumFromName / drawEnumCombo read, so an
+ * enum's serialized names and its editor combo cannot drift. The enum must end
+ * in a trailing `Count` sentinel: the static_assert ties the list length to it,
+ * so adding a value without a name fails to compile.
+ */
+#define VKM_ENUM_NAMES(EnumType, ...)                                            \
+    namespace Reflect {                                                          \
+    template<> struct EnumNames<EnumType> {                                      \
+        static constexpr const char* const values[] = { __VA_ARGS__ };           \
+        static constexpr std::size_t count = sizeof(values) / sizeof(values[0]); \
+        static_assert(count == static_cast<std::size_t>(EnumType::Count),        \
+                      #EnumType " names out of sync with its Count sentinel");   \
+    };                                                                           \
     }
