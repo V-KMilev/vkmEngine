@@ -12,6 +12,7 @@
 #include "logger.h"
 
 #include "core/hash/fnv1a.h"
+#include "io/json_file.h"
 #include "io/project_paths.h"
 
 namespace Engine {
@@ -57,19 +58,8 @@ void AssetLibrary::load() {
         return;
     }
 
-    std::ifstream in(path);
-    if (!in) {
-        LOG_ERROR("Asset library: cannot open manifest %s", path.string().c_str());
-        return;
-    }
-
     nlohmann::json doc;
-    try {
-        in >> doc;
-    } catch (const nlohmann::json::exception& e) {
-        LOG_ERROR("Asset library: malformed manifest %s: %s", path.string().c_str(), e.what());
-        return;
-    }
+    if (!detail::readJsonFile(path, doc, "Asset library manifest")) return;
 
     m_cookerVersion = doc.value("cookerVersion", 0u);
 

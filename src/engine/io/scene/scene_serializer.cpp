@@ -19,6 +19,7 @@
 #include "ecs/entity.h"
 #include "io/asset/asset_serializer.h"
 #include "io/scene/component_serializer.h"
+#include "io/json_file.h"
 #include "io/json_vec.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/shader_asset.h"
@@ -294,19 +295,8 @@ bool save(const Scene& scene, const ResourceManager& resources, const std::strin
 
 bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
     PROFILE_SCOPE("SceneSerializer::load");
-    std::ifstream in(path);
-    if (!in) {
-        LOG_ERROR("SceneSerializer::load failed to open '%s'", path.c_str());
-        return false;
-    }
-
     json doc;
-    try {
-        in >> doc;
-    } catch (const std::exception& e) {
-        LOG_ERROR("SceneSerializer::load JSON parse error in '%s': %s", path.c_str(), e.what());
-        return false;
-    }
+    if (!detail::readJsonFile(path, doc, "Scene")) return false;
 
     return readSceneJson(doc, scene, resources, path.c_str());
 }
