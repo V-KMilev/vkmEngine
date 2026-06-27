@@ -235,14 +235,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
             // Reject dropping onto self or onto one of the dragged node's
             // own descendants (would create a hierarchy cycle).
             if (scene.isAlive(dragged) && !isSelfOrAncestor(scene, entity, dragged)) {
-                EntityId oldParent{};
-                if (scene.has<Hierarchy>(dragged)) {
-                    oldParent = scene.get<Hierarchy>(dragged).parent;
-                }
-                HierarchyOperations::setParent(scene, dragged, entity);
-                state.commands.push(std::make_unique<ReparentCommand>(
-                    dragged, oldParent, entity, "Reparent Entity"));
-                EditorActions::commitHierarchyMutation(scene, state, dragged);
+                EditorActions::reparentKeepingWorld(scene, state, dragged, entity, "Reparent Entity");
             }
         }
         ImGui::EndDragDropTarget();
@@ -274,11 +267,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
 
     if (scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).parent) {
         if (ImGui::MenuItem("Unparent")) {
-            const EntityId oldParent = scene.get<Hierarchy>(entity).parent;
-            HierarchyOperations::removeFromParent(scene, entity);
-            state.commands.push(std::make_unique<ReparentCommand>(
-                entity, oldParent, EntityId{}, "Unparent"));
-            EditorActions::commitHierarchyMutation(scene, state, entity);
+            EditorActions::reparentKeepingWorld(scene, state, entity, EntityId{}, "Unparent");
         }
     }
 

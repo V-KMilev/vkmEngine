@@ -40,6 +40,56 @@ void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity) 
     state.markSceneDirty();
 }
 
+namespace {
+// Write a model matrix back into a local Transform (TRS), matching the gizmo's
+// decomposition: translation from the last column, per-axis scale from the
+// basis-column lengths, rotation from the scale-normalised basis.
+void setTransformFromMatrix(Transform& t, const glm::mat4& m) {
+    const glm::vec3 cx(m[0]), cy(m[1]), cz(m[2]);
+    t.position = glm::vec3(m[3]);
+    t.scale    = glm::vec3(glm::length(cx), glm::length(cy), glm::length(cz));
+
+    const glm::mat3 basis(
+        t.scale.x != 0.0f ? cx / t.scale.x : glm::vec3(1.0f, 0.0f, 0.0f),
+        t.scale.y != 0.0f ? cy / t.scale.y : glm::vec3(0.0f, 1.0f, 0.0f),
+        t.scale.z != 0.0f ? cz / t.scale.z : glm::vec3(0.0f, 0.0f, 1.0f));
+    t.rotation = glm::normalize(glm::quat_cast(basis));
+}
+} // namespace
+
+void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
+                          EntityId newParent, const char* label) {
+    if (!scene.isAlive(child) || !scene.has<Transform>(child)) return;
+
+    EntityId oldParent{};
+    if (scene.has<Hierarchy>(child)) oldParent = scene.get<Hierarchy>(child).parent;
+
+    // Capture the state to preserve: the world matrix (fixed across the move)
+    // and the current local transform (for undo).
+    const Transform before = scene.get<Transform>(child);
+    const glm::mat4 world   = HierarchyOperations::computeWorldMatrix(scene, child);
+
+    const bool toParent = newParent && scene.isAlive(newParent);
+    if (toParent) {
+        HierarchyOperations::setParent(scene, child, newParent);
+    } else {
+        HierarchyOperations::removeFromParent(scene, child);
+    }
+
+    // Re-express the preserved world matrix in the new parent's space so the
+    // entity stays put. Unparenting to root leaves local == world.
+    glm::mat4 local = world;
+    if (toParent && scene.has<Transform>(newParent)) {
+        local = glm::inverse(HierarchyOperations::computeWorldMatrix(scene, newParent)) * world;
+    }
+    Transform& t = scene.get<Transform>(child);
+    setTransformFromMatrix(t, local);
+
+    state.commands.push(std::make_unique<ReparentCommand>(
+        child, oldParent, toParent ? newParent : EntityId{}, before, t, label));
+    commitHierarchyMutation(scene, state, child);
+}
+
 void commitStructureChange(EditorState& state) {
     state.hierarchyDirty = true;
     state.markSceneDirty();

@@ -851,13 +851,7 @@ void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, Enti
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("Unparent")) {
-                // Capture the parent before the detach so the reparent is
-                // undoable (matches the Hierarchy panel's context-menu action).
-                const EntityId oldParent = h.parent;
-                HierarchyOperations::removeFromParent(scene, id);
-                state.commands.push(std::make_unique<ReparentCommand>(
-                    id, oldParent, EntityId{}, "Unparent"));
-                EditorActions::commitHierarchyMutation(scene, state, id);
+                EditorActions::reparentKeepingWorld(scene, state, id, EntityId{}, "Unparent");
                 unparented = true;  // `h` is now stale - skip the rest
             }
         } else {
