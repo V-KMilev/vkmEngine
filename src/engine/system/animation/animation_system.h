@@ -26,7 +26,7 @@ struct Transform;
  */
 class AnimationSystem : public System {
     public:
-        AnimationSystem();
+        AnimationSystem() = default;
         ~AnimationSystem() override = default;
 
         AnimationSystem(const AnimationSystem& other) = delete;
@@ -36,20 +36,15 @@ class AnimationSystem : public System {
         AnimationSystem& operator=(AnimationSystem && other) = delete;
 
     public:
-        /**
-         * @brief Update all animations in the scene.
-         * @param ctx The shared FrameContext for this frame.
-         */
         void update(FrameContext& ctx) override;
 
     private:
-
         /**
          * @brief Apply animation values to a Transform component.
          * @param animation The animation component.
          * @param transform The transform component to update.
          */
-        void applyAnimation(const Animation& animation, Transform& transform) const;
+        static void applyAnimation(const Animation& animation, Transform& transform);
 };
 
 } // namespace Engine

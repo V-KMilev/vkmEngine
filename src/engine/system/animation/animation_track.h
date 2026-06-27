@@ -7,7 +7,7 @@
 
 #include <glm/gtc/quaternion.hpp>
 
-#include "system/animation/easing.h"
+#include "core/math/easing.h"
 
 namespace Engine {
 
@@ -23,19 +23,20 @@ namespace Engine {
 template<typename T>
 class AnimationTrack {
     public:
-        AnimationTrack(EasingFunction easing = Easing::linear) : m_easing(easing) {}
+        AnimationTrack() = default;
         ~AnimationTrack() = default;
 
-        // Tracks own only POD storage (sorted vectors + an easing function
-        // pointer), so the compiler-generated copy/move are correct and
-        // cheap. Copyability matters for the editor's undo machinery: an
-        // AddAnimation / RemoveAnimation command captures the component
-        // by value to restore it intact on undo.
         AnimationTrack(const AnimationTrack& other) = default;
         AnimationTrack& operator=(const AnimationTrack& other) = default;
 
         AnimationTrack(AnimationTrack && other) noexcept = default;
         AnimationTrack& operator=(AnimationTrack && other) noexcept = default;
+
+        /**
+         * @brief Construct a track that interpolates with @p easing. The default
+         *        constructor uses linear (see m_easing's initializer).
+         */
+        explicit AnimationTrack(EasingFunction easing) : m_easing(easing) {}
 
     public:
         /**
@@ -220,9 +221,10 @@ class AnimationTrack {
             }
         }
 
+    private:
         std::vector<float> m_times;   ///< Keyframe timestamps (sorted ascending)
         std::vector<T>     m_values;  ///< Keyframe values (parallel to m_times)
-        EasingFunction     m_easing;
+        EasingFunction     m_easing = Easing::linear;
 };
 
 } // namespace Engine
