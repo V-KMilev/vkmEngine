@@ -4,7 +4,6 @@
 
 #include <array>
 #include <filesystem>
-#include <fstream>
 #include <string>
 #include <type_traits>
 #include <unordered_set>
@@ -16,6 +15,7 @@
 #include "resource/resource_manager.h"
 #include "io/asset/asset_factory.h"
 #include "io/asset/asset_library.h"
+#include "io/json_file.h"
 #include "io/json_vec.h"
 #include "io/project_paths.h"
 #include "core/reflect.h"
@@ -192,18 +192,8 @@ namespace {
  */
 bool loadLibrarySource(const Record& record, nlohmann::json& outSource) {
     const std::filesystem::path path = AssetLibrary::get().recipePath(record);
-    std::ifstream in(path);
-    if (!in) {
-        LOG_ERROR("Asset library recipe missing: %s", path.string().c_str());
-        return false;
-    }
     nlohmann::json doc;
-    try {
-        in >> doc;
-    } catch (const nlohmann::json::exception& e) {
-        LOG_ERROR("Asset library recipe malformed %s: %s", path.string().c_str(), e.what());
-        return false;
-    }
+    if (!detail::readJsonFile(path, doc, "Asset library recipe")) return false;
     if (!doc.contains("source")) {
         LOG_ERROR("Asset library recipe %s has no 'source'", path.string().c_str());
         return false;
@@ -244,7 +234,15 @@ std::pair<size_t, size_t> loadAssetSection(
     const char* what, ResourceManager& resources) {
     size_t created = 0, skipped = 0;
     auto it = assetsJson.find(sectionKey);
-    if (it == assetsJson.end() || !it->is_array()) return {created, skipped};
+    if (it == assetsJson.end() || !it->is_array() || it->empty()) return {created, skipped};
+
+    // Loop-invariant: a null dispatch means this binary was built without the
+    // factory wired (e.g. the runtime with no recipe importers). Bail once
+    // rather than re-checking and logging per entry.
+    if (!factory) {
+        LOG_ERROR("No %s dispatch wired (misconfigured binary?) - skipping section", what);
+        return {created, skipped};
+    }
 
     for (const auto& entry : *it) {
         const std::string name = entry.value("name", std::string{});
@@ -256,10 +254,6 @@ std::pair<size_t, size_t> loadAssetSection(
 
         nlohmann::json source;
         if (!resolveCookedSource(type, name, source)) continue;
-        if (!factory) {
-            LOG_ERROR("No %s dispatch wired (misconfigured binary?) - skipping '%s'", what, name.c_str());
-            continue;
-        }
         Handle<Asset> h = factory(source, resources);
         if (!h) {
             LOG_WARNING("%s '%s' could not be recreated - skipping", what, name.c_str());

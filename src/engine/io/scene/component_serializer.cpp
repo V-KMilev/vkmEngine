@@ -135,8 +135,8 @@ nlohmann::json save(const Collider& c) {
     nlohmann::json arr = nlohmann::json::array();
     for (const ColliderBox& b : c.parts) {
         arr.push_back({
-            {"center", {b.center.x, b.center.y, b.center.z}},
-            {"half",   {b.halfExtents.x, b.halfExtents.y, b.halfExtents.z}},
+            {"center", vec3ToJson(b.center)},
+            {"half",   vec3ToJson(b.halfExtents)},
         });
     }
     j["parts"] = std::move(arr);
@@ -151,11 +151,11 @@ void load(const nlohmann::json& j, Collider& c) {
     c.parts.clear();
     c.parts.reserve(it->size());
     for (const auto& e : *it) {
-        const auto& ctr = e.at("center");
-        const auto& hf  = e.at("half");
+        // at() preserves the throw-on-missing-key behavior (caught by the scene
+        // loader's guard); jsonToVec3 adds bounds-checked, logged array reads.
         ColliderBox b;
-        b.center      = {ctr[0].get<float>(), ctr[1].get<float>(), ctr[2].get<float>()};
-        b.halfExtents = {hf[0].get<float>(),  hf[1].get<float>(),  hf[2].get<float>()};
+        b.center      = jsonToVec3(e.at("center"));
+        b.halfExtents = jsonToVec3(e.at("half"));
         c.parts.push_back(b);
     }
 }
@@ -281,9 +281,9 @@ class BehaviorJsonReader : public BehaviorFieldVisitor {
         void field(const char* name, int& v)   override { if (m_in.contains(name)) v = m_in[name].get<int>(); }
         void field(const char* name, bool& v)  override { if (m_in.contains(name)) v = m_in[name].get<bool>(); }
         void field(const char* name, glm::vec3& v) override {
-            if (m_in.contains(name) && m_in[name].is_array() && m_in[name].size() == 3) {
-                v = jsonToVec3(m_in[name]);
-            }
+            // jsonToVec3 validates the array shape and falls back to the current
+            // value (passed as the fallback) on a missing/malformed node.
+            if (m_in.contains(name)) v = jsonToVec3(m_in[name], v);
         }
 
     private:
