@@ -10,6 +10,7 @@
 #include "logger.h"
 #include "platform/threading/thread_pool.h"
 #include "resource/resource_manager.h"
+#include "resource/texture_format.h"
 #include "system/async/async_load_queue.h"
 
 // stb_image's implementation is provided once by the stb module (libstb,
@@ -17,48 +18,6 @@
 #include "stb_image.h"
 
 namespace Engine {
-
-namespace {
-/**
- * @brief Infer the texture internal format from channel count and sRGB flag.
- *
- * @param channels Number of image channels (1-4).
- * @param srgb Whether the texture should use an sRGB internal format.
- * @return The matching internal format (defaults to (S)RGBA8 for unexpected counts).
- */
-TextureInternalFormat inferInternalFormat(int channels, bool srgb) {
-    if (srgb) {
-        switch (channels) {
-            case 3: return TextureInternalFormat::SRGB8;
-            case 4: return TextureInternalFormat::SRGBA8;
-            default: return TextureInternalFormat::SRGBA8;
-        }
-    }
-    switch (channels) {
-        case 1: return TextureInternalFormat::R8;
-        case 2: return TextureInternalFormat::RG8;
-        case 3: return TextureInternalFormat::RGB8;
-        case 4: return TextureInternalFormat::RGBA8;
-        default: return TextureInternalFormat::RGBA8;
-    }
-}
-
-/**
- * @brief Infer the texture pixel format from channel count.
- *
- * @param channels Number of image channels (1-4).
- * @return The matching pixel format (defaults to RGBA for unexpected counts).
- */
-TexturePixelFormat inferFormat(int channels) {
-    switch (channels) {
-        case 1: return TexturePixelFormat::R;
-        case 2: return TexturePixelFormat::RG;
-        case 3: return TexturePixelFormat::RGB;
-        case 4: return TexturePixelFormat::RGBA;
-        default: return TexturePixelFormat::RGBA;
-    }
-}
-} // namespace
 
 TextureHandle loadTexture(
     const std::string& filePath,
