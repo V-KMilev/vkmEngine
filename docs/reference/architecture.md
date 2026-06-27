@@ -124,11 +124,11 @@ Engine code, single include root `src/engine/`:
 | Path                       | Contents                                                                 |
 |----------------------------|--------------------------------------------------------------------------|
 | `core/`                    | `Engine`, `System`, `FrameContext`, `SystemStage`, `SimulationClock`, `engine_config`, `reflect` |
-| `core/math/`               | math helpers (rotation, axes, random)                                    |
+| `core/math/`               | math helpers (rotation, axes, random, easing)                            |
 | `core/memory/`             | `TypeId`, `SparseSet`, `SlotAllocator`, `StorageIndex`                   |
 | `ecs/`                     | `Scene`, `Entity`, `Environment`                                        |
 | `ecs/component/`           | `Transform`, `WorldTransform`, `Camera`, `Mesh`, `Light`, `Animation`, `Hierarchy`, `Name`, `Collider`, `RigidBody`, `PhysicsWorld`, `ReflectionProbe` |
-| `system/animation/`        | `AnimationSystem`, `AnimationTrack`, `Keyframe`, `Easing`               |
+| `system/animation/`        | `AnimationSystem`, `AnimationTrack`, `Keyframe`                          |
 | `system/async/`            | `AsyncLoaderSystem`                                                      |
 | `system/camera/`           | `CameraControllerSystem`                                                       |
 | `system/event/`            | `EventSystem` (typed pub/sub)                                            |

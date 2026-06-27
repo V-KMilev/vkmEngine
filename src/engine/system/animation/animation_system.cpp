@@ -16,8 +16,6 @@
 
 namespace Engine {
 
-AnimationSystem::AnimationSystem() = default;
-
 void AnimationSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("AnimationSystem");
 
@@ -80,7 +78,7 @@ void AnimationSystem::update(FrameContext& ctx) {
     }
 }
 
-void AnimationSystem::applyAnimation(const Animation& animation, Transform& transform) const {
+void AnimationSystem::applyAnimation(const Animation& animation, Transform& transform) {
     float time = animation.time;
 
     if (!animation.positionTrack.isEmpty()) {

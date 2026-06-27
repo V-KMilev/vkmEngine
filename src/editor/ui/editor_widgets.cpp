@@ -186,13 +186,21 @@ void drawPanelTitle(const char* title) {
 }
 
 bool drawEasingCombo(const char* id, EasingFunction& easing) {
-    int idx = Easing::indexOf(easing);
+    const int current = Easing::indexOf(easing);
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::Combo(id, &idx, Easing::EASING_NAMES, Easing::EASING_COUNT)) {
-        easing = Easing::byIndex(idx);
-        return true;
+    if (!ImGui::BeginCombo(id, Easing::EASINGS[current].name)) return false;
+
+    bool changed = false;
+    for (int i = 0; i < Easing::EASING_COUNT; ++i) {
+        const bool selected = (i == current);
+        if (ImGui::Selectable(Easing::EASINGS[i].name, selected)) {
+            easing = Easing::byIndex(i);
+            changed = true;
+        }
+        if (selected) ImGui::SetItemDefaultFocus();
     }
-    return false;
+    ImGui::EndCombo();
+    return changed;
 }
 
 bool matchesFilter(const char* text, const char* filter) {

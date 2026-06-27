@@ -8,7 +8,7 @@ single-step apply uniformly.
 
 - `src/engine/system/animation/animation_system.h` - AnimationSystem
 - `src/engine/system/animation/animation_track.h` - AnimationTrack<T> (keyframe storage lives here)
-- `src/engine/system/animation/easing.h` - easing functions
+- `src/engine/core/math/easing.h` - easing functions (interpolation curves)
 - `src/engine/ecs/component/animation.h` - Animation component
 
 ## Update model

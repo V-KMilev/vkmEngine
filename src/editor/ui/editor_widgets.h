@@ -9,7 +9,7 @@
 
 #include "ecs/entity.h"
 #include "core/reflect.h"
-#include "system/animation/easing.h"
+#include "core/math/easing.h"
 #include "ui/editor_icons.h"
 
 namespace Engine {
