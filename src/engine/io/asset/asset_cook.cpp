@@ -100,20 +100,46 @@ bool verifyFileSize(std::istream& is, const std::filesystem::path& path, uint64_
     return true;
 }
 
+// Create parent dirs and open `path` (truncating) for a cooked write. The
+// returned stream is unopened on failure - check `if (!os)` at the call site.
+std::ofstream openCookedWrite(const std::filesystem::path& path, const char* what) {
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+
+    std::ofstream os(path, std::ios::binary | std::ios::trunc);
+    if (!os) LOG_ERROR("Cooked %s '%s': cannot open for writing", what, path.string().c_str());
+    return os;
+}
+
+// Open `path` and validate its header + declared size against the expected
+// kind/version/fixed-body size. On success `is` is positioned at the body start
+// and outRecipeHash / outPayloadBytes are filled; on any open / magic / endian /
+// version / size mismatch it logs and returns false.
+bool openCookedRead(std::ifstream& is, const std::filesystem::path& path,
+                    uint16_t expectKind, uint16_t expectVersion, uint64_t fixedBytes,
+                    const char* what, uint64_t& outRecipeHash, uint64_t& outPayloadBytes) {
+    is.open(path, std::ios::binary);
+    if (!is) {
+        LOG_ERROR("Cooked %s '%s': cannot open", what, path.string().c_str());
+        return false;
+    }
+    if (!readHeader(is, path, expectKind, expectVersion, outRecipeHash, outPayloadBytes)) return false;
+    if (!verifyFileSize(is, path, outPayloadBytes)) return false;
+    if (outPayloadBytes < fixedBytes) {
+        LOG_ERROR("Cooked %s '%s': payload too small", what, path.string().c_str());
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 bool writeMesh(const std::filesystem::path& path, const MeshAsset& mesh, uint64_t recipeHash) {
     static_assert(sizeof(Vertex) == 48, "Vertex layout changed - bump MESH_FORMAT_VERSION and the cook format");
     static_assert(std::is_trivially_copyable_v<Vertex>, "Vertex must be trivially copyable to bulk-write");
 
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-
-    std::ofstream os(path, std::ios::binary | std::ios::trunc);
-    if (!os) {
-        LOG_ERROR("Cooked mesh '%s': cannot open for writing", path.string().c_str());
-        return false;
-    }
+    std::ofstream os = openCookedWrite(path, "mesh");
+    if (!os) return false;
 
     const uint64_t vertexCount = mesh.vertices.size();
     const uint64_t indexCount  = mesh.indices.size();
@@ -137,20 +163,11 @@ bool writeMesh(const std::filesystem::path& path, const MeshAsset& mesh, uint64_
 
 bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHash) {
     const std::string p = path.string();
-    std::ifstream is(path, std::ios::binary);
-    if (!is) {
-        LOG_ERROR("Cooked mesh '%s': cannot open", p.c_str());
-        return false;
-    }
-
+    std::ifstream is;
     uint64_t recipeHash = 0;
     uint64_t payloadBytes = 0;
-    if (!readHeader(is, path, KIND_MESH, MESH_FORMAT_VERSION, recipeHash, payloadBytes)) return false;
-    if (!verifyFileSize(is, path, payloadBytes)) return false;
-    if (payloadBytes < MESH_FIXED_BYTES) {
-        LOG_ERROR("Cooked mesh '%s': payload too small", p.c_str());
-        return false;
-    }
+    if (!openCookedRead(is, path, KIND_MESH, MESH_FORMAT_VERSION, MESH_FIXED_BYTES, "mesh",
+                        recipeHash, payloadBytes)) return false;
 
     glm::vec3 boundsMin{0};
     glm::vec3 boundsMax{0};
@@ -197,14 +214,8 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHa
 }
 
 bool writeTexture(const std::filesystem::path& path, const TextureAsset& texture, uint64_t recipeHash) {
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-
-    std::ofstream os(path, std::ios::binary | std::ios::trunc);
-    if (!os) {
-        LOG_ERROR("Cooked texture '%s': cannot open for writing", path.string().c_str());
-        return false;
-    }
+    std::ofstream os = openCookedWrite(path, "texture");
+    if (!os) return false;
 
     const TextureParams& tp = texture.params;
     const uint64_t pixelBytes  = texture.pixelData.size();
@@ -234,20 +245,11 @@ bool writeTexture(const std::filesystem::path& path, const TextureAsset& texture
 
 bool readTexture(const std::filesystem::path& path, TextureAsset& out, uint64_t* outHash) {
     const std::string p = path.string();
-    std::ifstream is(path, std::ios::binary);
-    if (!is) {
-        LOG_ERROR("Cooked texture '%s': cannot open", p.c_str());
-        return false;
-    }
-
+    std::ifstream is;
     uint64_t recipeHash = 0;
     uint64_t payloadBytes = 0;
-    if (!readHeader(is, path, KIND_TEXTURE, TEXTURE_FORMAT_VERSION, recipeHash, payloadBytes)) return false;
-    if (!verifyFileSize(is, path, payloadBytes)) return false;
-    if (payloadBytes < TEXTURE_FIXED_BYTES) {
-        LOG_ERROR("Cooked texture '%s': payload too small", p.c_str());
-        return false;
-    }
+    if (!openCookedRead(is, path, KIND_TEXTURE, TEXTURE_FORMAT_VERSION, TEXTURE_FIXED_BYTES, "texture",
+                        recipeHash, payloadBytes)) return false;
 
     TextureParams tp;
     uint8_t generateMipmaps = 0;
