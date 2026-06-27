@@ -22,11 +22,8 @@ class CubeSpinner : public ReflectedBehavior<CubeSpinner> {
         float degreesPerSecond = 90.0f;
 };
 
-} // namespace Engine
-
-// Leading :: is required: this header is compiled alongside core/engine.h, so
-// inside the macro's `namespace Engine::Reflect` the bare name `Engine` would
-// bind to the class Engine::Engine, not the namespace. Fully-qualify it.
-VKM_REFLECT_BEGIN(::Engine::CubeSpinner)
+VKM_REFLECT_BEGIN(CubeSpinner)
     VKM_F(degreesPerSecond)
 VKM_REFLECT_END()
+
+} // namespace Engine

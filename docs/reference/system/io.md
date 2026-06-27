@@ -8,11 +8,11 @@ plus a polling file watcher.
 
 | Layer               | File                                         | Purpose                                                                                  |
 |---------------------|----------------------------------------------|------------------------------------------------------------------------------------------|
-| Scene serializer    | `src/engine/io/scene_serializer.h`           | Top-level save/load for a `Scene` + the assets it references. Transactional.             |
-| Asset serializer    | `src/engine/io/asset_serializer.h`           | Save name-only asset references; on load resolve them via the asset library + the `AssetFactory` seam. |
-| Asset library       | `src/engine/io/asset_library.h`              | The cooked-asset database manifest: maps an asset name to its recipe + cooked file + hash. |
+| Scene serializer    | `src/engine/io/scene/scene_serializer.h`           | Top-level save/load for a `Scene` + the assets it references. Transactional.             |
+| Asset serializer    | `src/engine/io/asset/asset_serializer.h`           | Save name-only asset references; on load resolve them via the asset library + the `AssetFactory` seam. |
+| Asset library       | `src/engine/io/asset/asset_library.h`              | The cooked-asset database manifest: maps an asset name to its recipe + cooked file + hash. |
 | Asset cooker        | `src/tools/cook/asset_cooker.h` (editor)     | Bakes assets from their recipe into the library + cooked binary cache (`cooked/`).        |
-| Component serializer| `src/engine/io/component_serializer.h`       | Per-component to/from JSON. Mechanical, one save/load pair per component type.           |
+| Component serializer| `src/engine/io/scene/component_serializer.h`       | Per-component to/from JSON. Mechanical, one save/load pair per component type.           |
 | File watcher        | `src/engine/system/io/file_watcher_system.h`        | Polling `mtime` watcher; fires a callback per changed file. Used for shader hot-reload.  |
 
 ## SceneSerializer
@@ -53,9 +53,6 @@ documents this inline.
 
 After load, the caller should:
 
-- Emit `SceneSerializer::SceneLoadedEvent` so subscribers
-  (`CameraControllerSystem`, panels, gameplay code) can refresh anything they
-  cache across scene swaps.
 - Clear the `CommandStack` (entity IDs and component topology are no
   longer comparable across the swap).
 
@@ -84,7 +81,7 @@ rewrites the manifest (skipping assets whose hash is unchanged).
 **Load** - `AssetSerializer::loadAssets` resolves each name through the manifest:
 meshes/textures get a synthesized `{"kind":"cooked","name":...}` source, materials
 load their `inline` descriptor from the library file. Both go through the
-`AssetFactory` dispatch seam (`io/asset_factory.h`) - three function pointers
+`AssetFactory` dispatch seam (`io/asset/asset_factory.h`) - three function pointers
 (mesh / texture / material) that each binary wires at startup, with plain
 switch dispatch on the `kind` field:
 

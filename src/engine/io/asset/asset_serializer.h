@@ -14,7 +14,7 @@ class Scene;
  *
  * Saves emit the meshes, materials, and textures actually referenced by the
  * scene. Loads recreate them by dispatching each descriptor through the
- * AssetFactory seam (io/asset_factory.h); assets with no source are skipped on
+ * AssetFactory seam (io/asset/asset_factory.h); assets with no source are skipped on
  * save (silently - they can't be recreated anyway), and assets already in
  * ResourceManager (by name) are skipped on load (idempotent re-loads).
  *
@@ -23,7 +23,6 @@ class Scene;
  * recreates them via the texture factory before materials resolve their refs.
  */
 namespace AssetSerializer {
-
     nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources);
     bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources);
 

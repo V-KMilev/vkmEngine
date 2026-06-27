@@ -9,7 +9,7 @@
 
 #include "resource/asset/texture_asset.h"
 
-#include "io/reflect.h"
+#include "core/reflect.h"
 
 namespace Engine {
 
@@ -98,5 +98,34 @@ struct MaterialAsset : public Resource {
 };
 
 using MaterialHandle = Handle<MaterialAsset>;
+
+// Plain (non-texture) fields, driven by reflection in AssetSerializer's
+// materialToInline / applyInlineMaterial. Texture handles are intentionally
+// absent - they serialize separately as name refs.
+VKM_REFLECT_BEGIN(MaterialAsset)
+    VKM_F(type),
+    VKM_F(alphaCutoff),
+    VKM_F(albedo),
+    VKM_F(metallic),
+    VKM_F(roughness),
+    VKM_F(ior),
+    VKM_F(ao),
+    VKM_F(normalScale),
+    VKM_F(emission),
+    VKM_F(emissiveStrength),
+    VKM_F(clearcoat),
+    VKM_F(clearcoatRoughness),
+    VKM_F(anisotropy),
+    VKM_F(anisotropyDirection),
+    VKM_F(sheenColor),
+    VKM_F(sheenRoughness),
+    VKM_F(subsurface),
+    VKM_F(subsurfaceColor),
+    VKM_F(transmission),
+    VKM_F(thicknessFactor),
+    VKM_F(attenuationDistance),
+    VKM_F(attenuationColor),
+    VKM_F(heightScale)
+VKM_REFLECT_END()
 
 } // namespace Engine

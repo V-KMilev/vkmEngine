@@ -1,11 +1,12 @@
 #define VKM_LOG_CATEGORY "IO"
 
-#include "io/component_serializer.h"
+#include "io/scene/component_serializer.h"
 
 #include <cstddef>
 #include <cstring>
 #include <limits>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include "logger.h"
@@ -13,7 +14,7 @@
 #include "ecs/component/camera.h"
 #include "ecs/component/transform.h"
 #include "io/json_vec.h"
-#include "io/reflect.h"
+#include "core/reflect.h"
 #include "resource/resource_manager.h"
 #include "system/script/behavior.h"
 #include "system/script/behavior_field_visitor.h"
@@ -28,10 +29,10 @@ using ::Engine::detail::vec2ToJson;
 using ::Engine::detail::vec3ToJson;
 using ::Engine::detail::vec4ToJson;
 using ::Engine::detail::quatToJson;
-using ::Engine::detail::vec2FromJson;
-using ::Engine::detail::vec3FromJson;
-using ::Engine::detail::vec4FromJson;
-using ::Engine::detail::quatFromJson;
+using ::Engine::detail::jsonToVec2;
+using ::Engine::detail::jsonToVec3;
+using ::Engine::detail::jsonToVec4;
+using ::Engine::detail::jsonToQuat;
 
 // toJson / fromJson overload set. The reflection-driven save/load templates
 // (saveReflected / loadReflected) iterate a type's fields and forward each
@@ -56,10 +57,10 @@ inline void fromJson(const nlohmann::json& j, int&      v) { v = j.get<int>(); }
 inline void fromJson(const nlohmann::json& j, uint32_t& v) { v = j.get<uint32_t>(); }
 inline void fromJson(const nlohmann::json& j, float&    v) { v = j.get<float>(); }
 inline void fromJson(const nlohmann::json& j, std::string& s) { s = j.get<std::string>(); }
-inline void fromJson(const nlohmann::json& j, glm::vec2& v) { if (j.is_array() && j.size() >= 2) v = vec2FromJson(j); }
-inline void fromJson(const nlohmann::json& j, glm::vec3& v) { if (j.is_array() && j.size() >= 3) v = vec3FromJson(j); }
-inline void fromJson(const nlohmann::json& j, glm::vec4& v) { if (j.is_array() && j.size() >= 4) v = vec4FromJson(j); }
-inline void fromJson(const nlohmann::json& j, glm::quat& q) { if (j.is_array() && j.size() >= 4) q = quatFromJson(j); }
+inline void fromJson(const nlohmann::json& j, glm::vec2& v) { v = jsonToVec2(j, v); }
+inline void fromJson(const nlohmann::json& j, glm::vec3& v) { v = jsonToVec3(j, v); }
+inline void fromJson(const nlohmann::json& j, glm::vec4& v) { v = jsonToVec4(j, v); }
+inline void fromJson(const nlohmann::json& j, glm::quat& q) { q = jsonToQuat(j, q); }
 
 // Fixed-size character buffers (e.g. Name::value is char[64]).
 template<std::size_t N>
@@ -71,20 +72,13 @@ inline void fromJson(const nlohmann::json& j, char (&v)[N]) {
     v[N - 1] = '\0';
 }
 
-// Enums. Names come from each type's VKM_ENUM_NAMES registration.
-inline nlohmann::json toJson(ProjectionType v) {
-    return Reflect::enumName(v);
-}
-inline void fromJson(const nlohmann::json& j, ProjectionType& v) {
-    v = Reflect::enumFromName<ProjectionType>(j.get<std::string>());
-}
-
-inline nlohmann::json toJson(LightType t) {
-    return Reflect::enumName(t);
-}
-inline void fromJson(const nlohmann::json& j, LightType& v) {
-    v = Reflect::enumFromName<LightType>(j.get<std::string>());
-}
+// Enums: any scoped enum registered via VKM_ENUM_NAMES (Camera's ProjectionType,
+// Light's LightType, ...). The SFINAE keeps these out of overload resolution for
+// non-enum types, so the primitive overloads above still win for those.
+template<typename E, typename = std::enable_if_t<std::is_enum_v<E>>>
+inline nlohmann::json toJson(E v) { return Reflect::enumName(v); }
+template<typename E, typename = std::enable_if_t<std::is_enum_v<E>>>
+inline void fromJson(const nlohmann::json& j, E& v) { v = Reflect::enumFromName<E>(j.get<std::string>()); }
 
 // Reflection driver. Iterates a type's reflected fields and forwards each
 // (name, value) through the toJson / fromJson overload set. Phase-1
@@ -121,19 +115,19 @@ void loadReflected(const nlohmann::json& j, T& obj) {
 //                updateDuration() must be re-derived post load - no clean fit
 //                for the generic field iteration.
 
-nlohmann::json save(const Name& n)         { return saveReflected(n); }
+nlohmann::json save(const Name& n)          { return saveReflected(n); }
 void load(const nlohmann::json& j, Name& n) { loadReflected(j, n); }
 
-nlohmann::json save(const Transform& t)         { return saveReflected(t); }
+nlohmann::json save(const Transform& t)          { return saveReflected(t); }
 void load(const nlohmann::json& j, Transform& t) { loadReflected(j, t); }
 
-nlohmann::json save(const Camera& c)         { return saveReflected(c); }
+nlohmann::json save(const Camera& c)          { return saveReflected(c); }
 void load(const nlohmann::json& j, Camera& c) { loadReflected(j, c); }
 
-nlohmann::json save(const Light& l)         { return saveReflected(l); }
+nlohmann::json save(const Light& l)          { return saveReflected(l); }
 void load(const nlohmann::json& j, Light& l) { loadReflected(j, l); }
 
-nlohmann::json save(const Rigidbody& rb) { return saveReflected(rb); }
+nlohmann::json save(const Rigidbody& rb)          { return saveReflected(rb); }
 void load(const nlohmann::json& j, Rigidbody& rb) { loadReflected(j, rb); }
 
 nlohmann::json save(const Collider& c) {
@@ -150,36 +144,33 @@ nlohmann::json save(const Collider& c) {
 }
 void load(const nlohmann::json& j, Collider& c) {
     loadReflected(j, c);   // isTrigger
+
+    auto it = j.find("parts");
+    if (it == j.end() || !it->is_array() || it->empty()) return;  // keep the default unit box
+
     c.parts.clear();
-
-    if (auto it = j.find("parts"); it != j.end() && it->is_array() && !it->empty()) {
-        c.parts.reserve(it->size());
-        for (const auto& e : *it) {
-            const auto& ctr = e.at("center");
-            const auto& hf  = e.at("half");
-            ColliderBox b;
-            b.center      = {ctr[0].get<float>(), ctr[1].get<float>(), ctr[2].get<float>()};
-            b.halfExtents = {hf[0].get<float>(),  hf[1].get<float>(),  hf[2].get<float>()};
-            c.parts.push_back(b);
-        }
-        return;
+    c.parts.reserve(it->size());
+    for (const auto& e : *it) {
+        const auto& ctr = e.at("center");
+        const auto& hf  = e.at("half");
+        ColliderBox b;
+        b.center      = {ctr[0].get<float>(), ctr[1].get<float>(), ctr[2].get<float>()};
+        b.halfExtents = {hf[0].get<float>(),  hf[1].get<float>(),  hf[2].get<float>()};
+        c.parts.push_back(b);
     }
-
-    // Legacy migration: scenes saved before colliders became box lists carried a
-    // primitive "shape" + radius/halfExtents/plane. Collapse each to one box so
-    // they still load (Sphere -> enclosing box, Plane -> a large thin slab).
-    const std::string shape = j.value("shape", std::string("Box"));
-    ColliderBox box;
-    if (shape == "Sphere") {
-        box.halfExtents = glm::vec3(j.value("radius", 0.5f));
-    } else if (shape == "Plane") {
-        box.center      = glm::vec3(0.0f, j.value("planeOffset", 0.0f), 0.0f);
-        box.halfExtents = glm::vec3(1000.0f, 0.01f, 1000.0f);
-    } else if (auto he = j.find("halfExtents"); he != j.end() && he->is_array() && he->size() == 3) {
-        box.halfExtents = {(*he)[0].get<float>(), (*he)[1].get<float>(), (*he)[2].get<float>()};
-    }
-    c.parts = { box };
 }
+
+namespace {
+// Resolve a saved asset name to a live handle, warning (and leaving the slot
+// empty) when it isn't in the asset graph - e.g. a dependency not loaded yet.
+template<typename Asset>
+Handle<Asset> resolveAssetRef(const ResourceManager& r, const std::string& name, const char* what) {
+    if (name.empty()) return {};
+    Handle<Asset> h = r.findByName<Asset>(name);
+    if (!h) LOG_WARNING("SceneLoad: %s asset '%s' not found - Mesh component left unresolved", what, name.c_str());
+    return h;
+}
+} // namespace
 
 nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
     return {
@@ -190,24 +181,8 @@ nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
     };
 }
 void load(const nlohmann::json& j, Mesh& m, const ResourceManager& resources) {
-    const std::string meshName     = j.value("mesh",     std::string{});
-    const std::string materialName = j.value("material", std::string{});
-
-    if (!meshName.empty()) {
-        m.mesh = resources.findByName<MeshAsset>(meshName);
-        if (!m.mesh) {
-            LOG_WARNING("SceneLoad: mesh asset '%s' not found - Mesh component left unresolved",
-                        meshName.c_str());
-        }
-    }
-    if (!materialName.empty()) {
-        m.material = resources.findByName<MaterialAsset>(materialName);
-        if (!m.material) {
-            LOG_WARNING("SceneLoad: material asset '%s' not found - Mesh component left unresolved",
-                        materialName.c_str());
-        }
-    }
-
+    m.mesh        = resolveAssetRef<MeshAsset>    (resources, j.value("mesh",     std::string{}), "mesh");
+    m.material    = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material");
     m.visible     = j.value("visible",     m.visible);
     m.castShadows = j.value("castShadows", m.castShadows);
 }
@@ -264,9 +239,9 @@ nlohmann::json save(const Animation& a) {
 }
 
 void load(const nlohmann::json& j, Animation& a) {
-    if (j.contains("position")) loadTrack(j["position"], a.positionTrack, [](const nlohmann::json& v) { return vec3FromJson(v); });
-    if (j.contains("rotation")) loadTrack(j["rotation"], a.rotationTrack, [](const nlohmann::json& v) { return quatFromJson(v); });
-    if (j.contains("scale"))    loadTrack(j["scale"],    a.scaleTrack,    [](const nlohmann::json& v) { return vec3FromJson(v); });
+    if (j.contains("position")) loadTrack(j["position"], a.positionTrack, [](const nlohmann::json& v) { return jsonToVec3(v); });
+    if (j.contains("rotation")) loadTrack(j["rotation"], a.rotationTrack, [](const nlohmann::json& v) { return jsonToQuat(v); });
+    if (j.contains("scale"))    loadTrack(j["scale"],    a.scaleTrack,    [](const nlohmann::json& v) { return jsonToVec3(v); });
     a.time    = j.value("time",    a.time);
     a.length  = j.value("length",  a.length);
     a.speed   = j.value("speed",   a.speed);
@@ -307,7 +282,7 @@ class BehaviorJsonReader : public BehaviorFieldVisitor {
         void field(const char* name, bool& v)  override { if (m_in.contains(name)) v = m_in[name].get<bool>(); }
         void field(const char* name, glm::vec3& v) override {
             if (m_in.contains(name) && m_in[name].is_array() && m_in[name].size() == 3) {
-                v = vec3FromJson(m_in[name]);
+                v = jsonToVec3(m_in[name]);
             }
         }
 
@@ -349,67 +324,3 @@ void load(const nlohmann::json& j, ScriptComponent& sc) {
 
 
 } // namespace Engine::ComponentSerializer
-
-// Reflection markups. Listed at file scope so the VKM_REFLECT_BEGIN macro
-// can re-open Engine::Reflect and specialise Traits<T> there without
-// fighting the surrounding namespace. Each entry lists the JSON-persisted
-// fields; fields omitted here are NOT serialised (e.g. a Rigidbody's
-// derived inverseMass and runtime sleep state, see Rigidbody below).
-
-VKM_REFLECT_BEGIN(Engine::Name)
-    VKM_F(value)
-VKM_REFLECT_END()
-
-VKM_REFLECT_BEGIN(Engine::Transform)
-    VKM_F(position),
-    VKM_F(rotation),
-    VKM_F(scale)
-VKM_REFLECT_END()
-
-VKM_REFLECT_BEGIN(Engine::Camera)
-    VKM_F(projection),
-    VKM_F(fovY),
-    VKM_F(orthoHeight),
-    VKM_F(aspect),
-    VKM_F(zNear),
-    VKM_F(zFar),
-    VKM_F(exposure),
-    VKM_F(active)
-VKM_REFLECT_END()
-
-VKM_REFLECT_BEGIN(Engine::Light)
-    VKM_F(type),
-    VKM_F(color),
-    VKM_F(intensity),
-    VKM_F(radius),
-    VKM_F(innerConeAngle),
-    VKM_F(outerConeAngle),
-    VKM_F(areaWidth),
-    VKM_F(areaHeight),
-    VKM_F(areaRadius),
-    VKM_F(twoSided),
-    VKM_F(castShadows),
-    VKM_F(shadowBias),
-    VKM_F(shadowDistance),
-    VKM_F(enabled)
-VKM_REFLECT_END()
-
-// inverseMass / invInertiaLocal are derived from mass + Collider on load;
-// sleeping / sleepTimer are runtime-only. All are intentionally absent.
-VKM_REFLECT_BEGIN(Engine::Rigidbody)
-    VKM_F(linearVelocity),
-    VKM_F(angularVelocity),
-    VKM_F(mass),
-    VKM_F(linearDamping),
-    VKM_F(angularDamping),
-    VKM_F(restitution),
-    VKM_F(friction),
-    VKM_F(gravityScale),
-    VKM_F(isKinematic),
-    VKM_F(isStatic)
-VKM_REFLECT_END()
-
-VKM_REFLECT_BEGIN(Engine::Collider)
-    VKM_F(isTrigger)
-VKM_REFLECT_END()
-

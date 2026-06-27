@@ -23,8 +23,8 @@ class PlayerController : public ReflectedBehavior<PlayerController> {
         float speed = 3.0f;
 };
 
-} // namespace Engine
-
-VKM_REFLECT_BEGIN(::Engine::PlayerController)
+VKM_REFLECT_BEGIN(PlayerController)
     VKM_F(speed)
 VKM_REFLECT_END()
+
+} // namespace Engine

@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "IO"
 
-#include "io/scene_serializer.h"
+#include "io/scene/scene_serializer.h"
 
 #include <array>
 #include <fstream>
@@ -17,8 +17,8 @@
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/entity.h"
-#include "io/asset_serializer.h"
-#include "io/component_serializer.h"
+#include "io/asset/asset_serializer.h"
+#include "io/scene/component_serializer.h"
 #include "io/json_vec.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/shader_asset.h"
@@ -147,14 +147,6 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             source, version, FILE_FORMAT_VERSION);
         return false;
     }
-    if (version < FILE_FORMAT_VERSION) {
-        // Older files load on a best-effort basis: every per-component load()
-        // uses json.value("key", fallback) so missing fields keep their struct
-        // defaults. There is no format migration - assets resolve by name
-        // through the cooked library regardless of the file's version.
-        LOG_INFO("'%s' version %d, current is %d (loading with defaults for missing fields)",
-            source, version, FILE_FORMAT_VERSION);
-    }
     if (!doc.contains("entities") || !doc["entities"].is_array()) {
         LOG_ERROR("Missing or invalid 'entities' array in '%s'", source);
         return false;
@@ -243,14 +235,13 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     }
 
     // Scene-global settings (lighting environment + physics world): a top-level
-    // object. A file saved before a field existed just keeps the staging
-    // scene's default for it.
+    // object. Missing fields keep the staging scene's defaults.
     if (auto it = doc.find("environment"); it != doc.end() && it->is_object()) {
         Environment& env = staging.environment();
         env.hdrPath          = it->value("hdrPath",          env.hdrPath);
         env.intensity        = it->value("intensity",        env.intensity);
         env.showSkybox       = it->value("showSkybox",       env.showSkybox);
-        env.gravity          = detail::vec3FromJson(it->value("gravity", nlohmann::json{}), env.gravity);
+        env.gravity          = detail::jsonToVec3(it->value("gravity", nlohmann::json{}), env.gravity);
         env.solverIterations = it->value("solverIterations", env.solverIterations);
     }
 

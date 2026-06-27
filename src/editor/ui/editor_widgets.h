@@ -8,7 +8,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "ecs/entity.h"
-#include "io/reflect.h"
+#include "core/reflect.h"
 #include "system/animation/easing.h"
 #include "ui/editor_icons.h"
 

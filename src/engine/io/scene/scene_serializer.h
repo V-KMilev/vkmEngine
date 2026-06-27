@@ -30,20 +30,6 @@ class ResourceManager;
  * last saved layout.
  */
 namespace SceneSerializer {
-
-    /**
-     * @brief Emitted by callers of load() after a successful load.
-     *
-     * Subscribers (camera controllers, editor panels, gameplay code that
-     * tracks entities) listen via EventSystem and refresh anything cached
-     * across scene reloads. SceneSerializer itself does NOT publish -
-     * that's the caller's responsibility, since only the caller has access
-     * to an EventSystem.
-     */
-    struct SceneLoadedEvent {
-        std::string path;
-    };
-
     /**
      * @brief Save @p scene + the assets it references to @p path.
      *

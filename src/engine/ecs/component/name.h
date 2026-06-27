@@ -2,6 +2,8 @@
 
 #include <cstring>
 
+#include "core/reflect.h"
+
 namespace Engine {
 
 /**
@@ -14,6 +16,10 @@ namespace Engine {
 struct Name {
     char value[64] = {};
 };
+
+VKM_REFLECT_BEGIN(Name)
+    VKM_F(value)
+VKM_REFLECT_END()
 
 /**
  * @brief Build a Name from a C-string, truncating safely into the fixed buffer.

@@ -57,7 +57,7 @@ Half-written abstractions are worse than none. If 80% of what you need is
 already in `HierarchyOperations`, the `tools/generator/` helpers, or a culling
 stage, extend that instead of starting a parallel utility. Search first; the
 engine has more reusable machinery than is obvious at a glance (`SparseSet<T>`,
-`SlotAllocator`, `ThreadPool::parallelFor`, the `io/reflect.h` field reflection,
+`SlotAllocator`, `ThreadPool::parallelFor`, the `core/reflect.h` field reflection,
 the event pub/sub).
 
 ### 3.2 Where does it belong?

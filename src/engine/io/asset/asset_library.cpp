@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "IO"
 
-#include "io/asset_library.h"
+#include "io/asset/asset_library.h"
 
 #include <array>
 #include <cstdio>
@@ -20,22 +20,6 @@ namespace {
 
 constexpr uint32_t MANIFEST_VERSION = 1;
 
-const char* tagOf(AssetType type) {
-    switch (type) {
-        case AssetType::Mesh:     return "mesh";
-        case AssetType::Texture:  return "texture";
-        case AssetType::Material: return "material";
-    }
-    return "mesh";
-}
-
-bool typeFromTag(const std::string& tag, AssetType& out) {
-    if (tag == "mesh")     { out = AssetType::Mesh;     return true; }
-    if (tag == "texture")  { out = AssetType::Texture;  return true; }
-    if (tag == "material") { out = AssetType::Material; return true; }
-    return false;
-}
-
 } // namespace
 
 AssetLibrary& AssetLibrary::get() {
@@ -43,12 +27,8 @@ AssetLibrary& AssetLibrary::get() {
     return instance;
 }
 
-const char* AssetLibrary::typeTag(AssetType type) {
-    return tagOf(type);
-}
-
 std::string AssetLibrary::key(AssetType type, const std::string& name) {
-    return std::string(tagOf(type)) + ':' + name;
+    return std::string(Reflect::enumName(type)) + ':' + name;
 }
 
 std::string AssetLibrary::uidFor(AssetType type, const std::string& name) {
@@ -101,8 +81,10 @@ void AssetLibrary::load() {
 
     for (const auto& entry : *assets) {
         Record r;
-        if (!typeFromTag(entry.value("type", std::string{}), r.type)) {
-            LOG_WARNING("Asset library: entry with unknown type, skipping");
+        const std::string typeStr = entry.value("type", std::string{});
+        r.type = Reflect::enumFromName<AssetType>(typeStr);
+        if (Reflect::enumName(r.type) != typeStr) {   // unknown tag falls back to value 0
+            LOG_WARNING("Asset library: entry with unknown type '%s', skipping", typeStr.c_str());
             continue;
         }
         r.name       = entry.value("name", std::string{});
@@ -119,7 +101,7 @@ void AssetLibrary::load() {
     LOG_INFO("Asset library: loaded %zu record(s) from %s", m_records.size(), path.string().c_str());
 }
 
-const AssetLibrary::Record* AssetLibrary::find(AssetType type, const std::string& name) const {
+const Record* AssetLibrary::find(AssetType type, const std::string& name) const {
     auto it = m_records.find(key(type, name));
     return it == m_records.end() ? nullptr : &it->second;
 }
@@ -143,7 +125,7 @@ bool AssetLibrary::save() const {
         (void)k;
         nlohmann::json entry;
         entry["name"]   = r.name;
-        entry["type"]   = tagOf(r.type);
+        entry["type"]   = Reflect::enumName(r.type);
         entry["recipe"] = r.recipeFile;
         if (!r.cookedFile.empty()) entry["cooked"] = r.cookedFile;
         entry["hash"]   = r.recipeHash;
