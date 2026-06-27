@@ -2,6 +2,8 @@
 
 #include <glm/glm.hpp>
 
+#include "core/reflect.h"
+
 namespace Engine {
 
 /**
@@ -45,5 +47,20 @@ struct Rigidbody {
 
     float sleepTimer = 0.0f;                          ///< Runtime-only: seconds spent resting; not persisted
 };
+
+// invInertiaLocal / inverseMass are derived from mass + Collider on load;
+// sleeping / sleepTimer are runtime-only. All are intentionally absent.
+VKM_REFLECT_BEGIN(Rigidbody)
+    VKM_F(linearVelocity),
+    VKM_F(angularVelocity),
+    VKM_F(mass),
+    VKM_F(linearDamping),
+    VKM_F(angularDamping),
+    VKM_F(restitution),
+    VKM_F(friction),
+    VKM_F(gravityScale),
+    VKM_F(isKinematic),
+    VKM_F(isStatic)
+VKM_REFLECT_END()
 
 } // namespace Engine

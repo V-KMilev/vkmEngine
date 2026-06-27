@@ -5,6 +5,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "core/math/rotation.h"
+#include "core/reflect.h"
 
 namespace Engine {
 
@@ -50,5 +51,11 @@ struct Transform {
         );
     }
 };
+
+VKM_REFLECT_BEGIN(Transform)
+    VKM_F(position),
+    VKM_F(rotation),
+    VKM_F(scale)
+VKM_REFLECT_END()
 
 } // namespace Engine

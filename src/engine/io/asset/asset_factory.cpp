@@ -1,4 +1,4 @@
-#include "io/asset_factory.h"
+#include "io/asset/asset_factory.h"
 
 namespace Engine {
 

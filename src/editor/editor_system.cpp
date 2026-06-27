@@ -49,7 +49,7 @@ EditorSystem::EditorSystem(
     , m_events(events)
     , m_scriptModule(scriptModule)
     , m_materialPreviews(renderSystem)
-    , m_sceneIO(events, cameraController, renderSystem)
+    , m_sceneIO(cameraController, renderSystem)
 {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();

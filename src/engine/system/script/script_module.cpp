@@ -12,7 +12,7 @@
 #include "logger.h"
 
 #include "ecs/scene.h"
-#include "io/component_serializer.h"
+#include "io/scene/component_serializer.h"
 #include "system/script/behavior_registry.h"
 #include "system/script/script_component.h"
 

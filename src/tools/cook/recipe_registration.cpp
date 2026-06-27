@@ -6,8 +6,8 @@
 
 #include "logger.h"
 
-#include "io/asset_factory.h"
-#include "io/asset_serializer.h"
+#include "io/asset/asset_factory.h"
+#include "io/asset/asset_serializer.h"
 #include "resource/resource_manager.h"
 #include "generator/material_generators.h"
 #include "generator/mesh_generators.h"

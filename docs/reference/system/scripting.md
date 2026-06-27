@@ -73,6 +73,8 @@ single source of authoring state - they drive the inspector, serialization, and
 duplication uniformly.
 
 ```cpp
+namespace Engine {
+
 class CubeSpinner : public ReflectedBehavior<CubeSpinner> {
     public:
         static constexpr const char* TYPE_NAME = "CubeSpinner";
@@ -80,9 +82,11 @@ class CubeSpinner : public ReflectedBehavior<CubeSpinner> {
         float degreesPerSecond = 90.0f;   // authored, reflected
 };
 
-VKM_REFLECT_BEGIN(::Engine::CubeSpinner)
+VKM_REFLECT_BEGIN(CubeSpinner)
     VKM_F(degreesPerSecond)
 VKM_REFLECT_END()
+
+} // namespace Engine
 ```
 
 `BehaviorFieldVisitor` is the type-erased bridge that lets code holding only a

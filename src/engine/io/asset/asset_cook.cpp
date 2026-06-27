@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "IO"
 
-#include "io/asset_cook.h"
+#include "io/asset/asset_cook.h"
 
 #include <cstring>
 #include <fstream>

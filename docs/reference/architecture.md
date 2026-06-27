@@ -13,7 +13,7 @@ There is no `Engine::get()` singleton. Engine is stack-constructible, so tests a
 headless tools spin up their own instance. Singletons are limited to a handful of
 process-wide registries reached via a static `get()`: `ThreadPool`,
 `AsyncLoadQueue`, and `BehaviorRegistry`. (Asset construction goes through the
-`AssetFactory` function-pointer seam in `io/asset_factory.h`, not a singleton;
+`AssetFactory` function-pointer seam in `io/asset/asset_factory.h`, not a singleton;
 recoverable errors go through the `reportError()` sink, captured by an
 editor-owned `EngineErrorLog`.) Profiling goes through `debug/profiler.h` (a
 Tracy facade), not an in-engine
@@ -123,8 +123,8 @@ Engine code, single include root `src/engine/`:
 
 | Path                       | Contents                                                                 |
 |----------------------------|--------------------------------------------------------------------------|
-| `core/`                    | `Engine`, `System`, `FrameContext`, `SystemStage`, `SimulationClock`, `engine_config` |
-| `core/math/`               | math helpers (rotation, axes)                                            |
+| `core/`                    | `Engine`, `System`, `FrameContext`, `SystemStage`, `SimulationClock`, `engine_config`, `reflect` |
+| `core/math/`               | math helpers (rotation, axes, random)                                    |
 | `core/memory/`             | `TypeId`, `SparseSet`, `SlotAllocator`, `StorageIndex`                   |
 | `ecs/`                     | `Scene`, `Entity`, `Environment`                                        |
 | `ecs/component/`           | `Transform`, `WorldTransform`, `Camera`, `Mesh`, `Light`, `Animation`, `Hierarchy`, `Name`, `Collider`, `RigidBody`, `PhysicsWorld`, `ReflectionProbe` |
@@ -141,7 +141,9 @@ Engine code, single include root `src/engine/`:
 | `system/visibility/culling/` | `FrustumCuller`, `DistanceCulling`, `ScreenSizeCulling`                |
 | `resource/`                | `ResourceManager`, `Resource`, `Handle`, `texture_format`               |
 | `resource/asset/`          | `MeshAsset`, `MaterialAsset`, `TextureAsset`, `ShaderAsset`             |
-| `io/`                      | `SceneSerializer`, `AssetSerializer`, `ComponentSerializer`, `reflect.h`, `project_paths` |
+| `io/`                      | `json_vec`, `project_paths` (shared I/O helpers)                          |
+| `io/asset/`                | `AssetLibrary`, `AssetFactory`, `AssetCooker`, `CookedLoader`, `AssetSerializer` |
+| `io/scene/`                | `SceneSerializer`, `ComponentSerializer`                                  |
 | `platform/window/`         | `WindowManager`, `Window`, input handles, `FrameLimiter`                |
 | `platform/threading/`      | `ThreadPool`, `Task` (shared-deque pool, see [threading.md](threading.md)) |
 | `platform/library/`        | `DynamicLibrary` (cross-platform `.dll`/`.so` loader for gameplay hot-reload) |
@@ -204,7 +206,7 @@ seeing only `RenderBackend` through engine headers. Tools use their own root
 | Type erasure + TypeId     | `ISparseSet`, `typeId<T>()`          | Open component registry without modifying Scene          |
 | Fold expressions          | `forEach<A, B, ...>`                 | Compile-time multi-component query                       |
 | `if constexpr` dispatch   | `ResourceManager`                    | Type-safe routing to the correct storage                 |
-| Compile-time reflection   | `io/reflect.h` `Field` + `Traits`    | Field iteration driving (de)serialization and inspectors |
+| Compile-time reflection   | `core/reflect.h` `Field` + `Traits`  | Field iteration driving (de)serialization and inspectors |
 | Frame-local snapshot      | `RenderView`                         | Capture scene state for the backend, no shared mutation  |
 | Version-based GPU sync    | `Resource::version` + `GLView`       | Skip redundant GPU uploads                               |
 | Instanced rendering       | sorted drawables + instance batches  | One draw per (material, mesh) batch                      |

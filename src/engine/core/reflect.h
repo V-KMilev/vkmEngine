@@ -99,22 +99,29 @@ Enum enumFromName(std::string_view name) {
 /**
  * @brief Macro shorthand for declaring a Traits specialisation.
  *
- * Usage (outside any namespace):
+ * Invoke INSIDE namespace Engine, right after the type, with the unqualified
+ * name (mirrors VKM_ENUM_NAMES):
  *
- *   VKM_REFLECT_BEGIN(Engine::Transform)
+ *   namespace Engine {
+ *   struct Transform { ... };
+ *   VKM_REFLECT_BEGIN(Transform)
  *       VKM_F(position),
  *       VKM_F(rotation),
  *       VKM_F(scale)
  *   VKM_REFLECT_END()
+ *   }
  *
- * VKM_F() looks up the type alias `vkm_reflect_self` injected by
- * VKM_REFLECT_BEGIN so each field doesn't have to repeat the type name.
+ * It opens `namespace Reflect` (which, nested in Engine, is Engine::Reflect) and
+ * specialises Traits there - no global-scope ::Engine:: dance, since the only
+ * shadowed name is the class Engine, which this never spells. VKM_F() looks up
+ * the `vkm_reflect_self` alias the macro injects so each field needn't repeat
+ * the type name.
  *
- * Fields omitted from the macro are NOT serialised - that's the
- * mechanism for "internal only" data.
+ * Fields omitted from the macro are NOT serialised - that's the mechanism for
+ * "internal only" data.
  */
 #define VKM_REFLECT_BEGIN(Type)                                              \
-    namespace Engine::Reflect {                                              \
+    namespace Reflect {                                                      \
     template<> struct Traits<Type> {                                         \
         using vkm_reflect_self = Type;                                       \
         static constexpr auto fields() {                                     \
