@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <tuple>
 #include <utility>
@@ -11,6 +10,7 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/environment.h"
 #include "ecs/entity.h"
+#include "ecs/scene_observer.h"
 #include "core/memory/slot_allocator.h"
 #include "core/memory/sparse_set.h"
 #include "core/memory/types.h"
@@ -66,11 +66,12 @@ class Scene {
          */
         void destroyEntity(Entity entity) {
             EntityId id = entity.getID();
-            // Generic per-entity destroy notification (entity + components still
-            // intact). Scene stays type-agnostic; a system installs the hook -
-            // BehaviorSystem uses it to fire script onDestroy on every destroy
-            // path. Single observer is all any current caller needs.
-            if (m_onEntityDestroy) m_onEntityDestroy(id);
+            // Notify observers before tear-down (entity + components still intact).
+            // Scene stays system-agnostic; systems register via addObserver -
+            // BehaviorSystem uses this to fire script onDestroy on every destroy path.
+            for (ISceneObserver* observer : m_observers) {
+                observer->onEntityDestroyed(id);
+            }
             detachFromHierarchy(*this, id);
 
             for (auto& set : m_components) {
@@ -322,16 +323,29 @@ class Scene {
         const Environment& environment() const { return m_environment; }
 
         /**
-         * @brief Install a single observer invoked (with the EntityId) at the
-         * start of every destroyEntity, before its components are removed.
+         * @brief Register an observer, notified at the start of every destroyEntity
+         * before components are removed.
          *
-         * Keeps Scene type-agnostic while letting a system react to deletions -
-         * BehaviorSystem uses it to fire script onDestroy on every destroy path.
-         * Belongs to this Scene object, so it persists across swap()/clear()
-         * (not swapped with scene contents).
+         * Keeps Scene system-agnostic while letting systems react to deletions -
+         * BehaviorSystem registers to fire script onDestroy on every destroy path.
+         * Observers are non-owning and belong to this Scene object, so they persist
+         * across swap()/clear() (not swapped with scene contents); pair every
+         * addObserver with removeObserver before the observer is destroyed.
          */
-        void setOnEntityDestroy(std::function<void(EntityId)> callback) {
-            m_onEntityDestroy = std::move(callback);
+        void addObserver(ISceneObserver* observer) {
+            m_observers.push_back(observer);
+        }
+
+        /**
+         * @brief Unregister a previously added observer (no-op if not present).
+         */
+        void removeObserver(ISceneObserver* observer) {
+            for (auto it = m_observers.begin(); it != m_observers.end(); ++it) {
+                if (*it == observer) {
+                    m_observers.erase(it);
+                    return;
+                }
+            }
         }
 
     private:
@@ -382,8 +396,7 @@ class Scene {
 
         SlotAllocator m_entityAllocator;
         std::vector<std::unique_ptr<ISparseSet>> m_components;
-
-        std::function<void(EntityId)> m_onEntityDestroy;
+        std::vector<ISceneObserver*> m_observers;  ///< Non-owning; each notified on entity destroy.
 };
 
 } // namespace Engine
