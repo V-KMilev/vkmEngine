@@ -92,4 +92,38 @@ struct TextureParams {
     bool generateMipmaps = true;
 };
 
+/**
+ * @brief Infer the GPU storage format from channel count and sRGB flag.
+ *
+ * The stb decode path only knows the channel count, so format selection is
+ * inferred here. Shared by the synchronous loader and the async finaliser so
+ * both agree on the mapping. Unexpected counts fall back to (S)RGBA8.
+ */
+inline TextureInternalFormat inferInternalFormat(int channels, bool srgb) {
+    if (srgb) {
+        return (channels == 3) ? TextureInternalFormat::SRGB8
+                               : TextureInternalFormat::SRGBA8;
+    }
+    switch (channels) {
+        case 1:  return TextureInternalFormat::R8;
+        case 2:  return TextureInternalFormat::RG8;
+        case 3:  return TextureInternalFormat::RGB8;
+        case 4:
+        default: return TextureInternalFormat::RGBA8;
+    }
+}
+
+/**
+ * @brief Infer the source pixel layout from channel count (defaults to RGBA).
+ */
+inline TexturePixelFormat inferFormat(int channels) {
+    switch (channels) {
+        case 1:  return TexturePixelFormat::R;
+        case 2:  return TexturePixelFormat::RG;
+        case 3:  return TexturePixelFormat::RGB;
+        case 4:
+        default: return TexturePixelFormat::RGBA;
+    }
+}
+
 } // namespace Engine

@@ -88,6 +88,7 @@ class AsyncLoadQueue {
     private:
         AsyncLoadQueue() = default;
 
+    private:
         std::mutex                          m_mutex;
         std::vector<TextureLoadCompletion>  m_textures;
         std::vector<MeshLoadCompletion>     m_meshes;
