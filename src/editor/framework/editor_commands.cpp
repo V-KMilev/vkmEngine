@@ -5,7 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include "ecs/scene.h"
-#include "io/component_serializer.h"
+#include "io/scene/component_serializer.h"
 #include "resource/resource_manager.h"
 #include "framework/editor_state.h"
 #include "system/hierarchy/hierarchy_operations.h"

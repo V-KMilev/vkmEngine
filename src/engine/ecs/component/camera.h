@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 
 #include "core/math/projection.h"
-#include "io/reflect.h"
+#include "core/reflect.h"
 
 namespace Engine {
 
@@ -48,5 +48,16 @@ struct Camera {
         }
     }
 };
+
+VKM_REFLECT_BEGIN(Camera)
+    VKM_F(projection),
+    VKM_F(fovY),
+    VKM_F(orthoHeight),
+    VKM_F(aspect),
+    VKM_F(zNear),
+    VKM_F(zFar),
+    VKM_F(exposure),
+    VKM_F(active)
+VKM_REFLECT_END()
 
 } // namespace Engine

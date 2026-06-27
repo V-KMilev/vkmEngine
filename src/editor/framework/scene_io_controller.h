@@ -9,7 +9,6 @@ namespace Engine {
 
 struct FrameContext;
 struct EditorState;
-class EventSystem;
 class CameraControllerSystem;
 class RenderSystem;
 
@@ -19,7 +18,6 @@ class RenderSystem;
  * Holds the current scene path, performs Save / Save-As / Load, renders the
  * Save-As and Load-picker modals, and runs post-load editor housekeeping
  * (camera rebind, temporal-history invalidate) directly inside load().
- * Emits SceneSerializer::SceneLoadedEvent for external subscribers.
  *
  * It also owns the in-memory play-mode snapshot: captureSnapshot() on Play
  * serializes the authored scene to memory, and restoreSnapshot() on Stop
@@ -35,7 +33,6 @@ class RenderSystem;
 class SceneIOController {
     public:
         SceneIOController(
-            EventSystem& events,
             CameraControllerSystem& cameraController,
             RenderSystem& renderSystem
         );
@@ -115,8 +112,8 @@ class SceneIOController {
 
     private:
         /**
-         * @brief Load m_currentScenePath: stashes/restores selection, then emits
-         * SceneLoadedEvent (camera rebind done inline by afterSceneReplace()).
+         * @brief Load m_currentScenePath: stashes/restores selection, then runs
+         * afterSceneReplace() housekeeping (camera rebind done inline).
          */
         void load(FrameContext& ctx, EditorState& state);
         /**
@@ -127,8 +124,7 @@ class SceneIOController {
         /**
          * @brief Editor housekeeping shared by load() and restoreSnapshot() after the
          * scene + resources have been swapped: clear undo, drop stale GPU
-         * previews, re-select @p priorSelectionName, rebind the active camera,
-         * and emit SceneLoadedEvent{eventPath}.
+         * previews, re-select @p priorSelectionName, and rebind the active camera.
          */
         void afterSceneReplace(
             FrameContext& ctx,
@@ -142,7 +138,6 @@ class SceneIOController {
          */
         static void pushRecent(EditorState& state, const std::string& path);
 
-        EventSystem&      m_events;
         CameraControllerSystem& m_cameraController;
         RenderSystem&     m_renderSystem;
 

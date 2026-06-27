@@ -6,9 +6,9 @@
 
 #include "logger.h"
 
-#include "io/asset_factory.h"
-#include "io/asset_serializer.h"
-#include "io/cooked_loader.h"
+#include "io/asset/asset_factory.h"
+#include "io/asset/asset_serializer.h"
+#include "io/asset/cooked_loader.h"
 #include "resource/resource_manager.h"
 
 namespace Engine {

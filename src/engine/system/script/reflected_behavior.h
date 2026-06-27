@@ -4,7 +4,7 @@
 #include <string_view>
 #include <tuple>
 
-#include "io/reflect.h"
+#include "core/reflect.h"
 #include "system/script/behavior.h"
 #include "system/script/behavior_field_visitor.h"
 

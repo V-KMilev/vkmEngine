@@ -16,31 +16,23 @@
 #include "ecs/component/name.h"
 #include "ecs/scene.h"
 #include "framework/editor_state.h"
-#include "io/scene_serializer.h"
+#include "io/scene/scene_serializer.h"
 #include "io/project_paths.h"
 #include "cook/asset_cooker.h"
 #include "system/camera/camera_controller_system.h"
 #include "system/script/behavior_system.h"
-#include "system/event/event_system.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_system.h"
 
 namespace Engine {
 
 SceneIOController::SceneIOController(
-    EventSystem& events,
     CameraControllerSystem& cameraController,
     RenderSystem& renderSystem
 )
-    : m_events(events)
-    , m_cameraController(cameraController)
+    : m_cameraController(cameraController)
     , m_renderSystem(renderSystem)
-{
-    // Post-load editor housekeeping (camera rebind, temporal-history
-    // invalidate) lives in load() directly - no self-subscribe needed.
-    // Other listeners (outside this class) still receive
-    // SceneSerializer::SceneLoadedEvent when load() emits it below.
-}
+{}
 
 SceneIOController::~SceneIOController() = default;
 
@@ -172,11 +164,6 @@ void SceneIOController::afterSceneReplace(
             activeCount, eventPath.c_str());
     }
     m_cameraController.setCameraEntity(rebound);
-
-    // Tell external subscribers (anything that cares about scene swaps) the
-    // scene was replaced. The effects above used to ride this event back to
-    // us via a self-subscribe; we do them directly now that we have ctx.
-    m_events.emit(SceneSerializer::SceneLoadedEvent{eventPath});
 }
 
 void SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {

@@ -12,9 +12,9 @@
 #include "logger.h"
 
 #include "core/hash/fnv1a.h"
-#include "io/asset_cook.h"
-#include "io/asset_library.h"
-#include "io/asset_serializer.h"
+#include "io/asset/asset_cook.h"
+#include "io/asset/asset_library.h"
+#include "io/asset/asset_serializer.h"
 #include "io/project_paths.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
@@ -65,7 +65,7 @@ void cookMesh(const MeshAsset& mesh) {
     const std::string cookedRel = "meshes/" + uid + ".vkmc";
 
     const std::filesystem::path cookedPath = ProjectPaths::cooked() / cookedRel;
-    const AssetLibrary::Record* existing = lib.find(AssetType::Mesh, mesh.name);
+    const Record* existing = lib.find(AssetType::Mesh, mesh.name);
     std::error_code ec;
     if (existing && existing->recipeHash == hash && std::filesystem::exists(cookedPath, ec)) return;
 
@@ -88,7 +88,7 @@ void cookTexture(const TextureAsset& tex) {
     const std::string cookedRel = "textures/" + uid + ".vkmc";
 
     const std::filesystem::path cookedPath = ProjectPaths::cooked() / cookedRel;
-    const AssetLibrary::Record* existing = lib.find(AssetType::Texture, tex.name);
+    const Record* existing = lib.find(AssetType::Texture, tex.name);
     std::error_code ec;
     if (existing && existing->recipeHash == hash && std::filesystem::exists(cookedPath, ec)) return;
 
@@ -110,7 +110,7 @@ void cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
     const std::string uid = AssetLibrary::uidFor(AssetType::Material, mat.name);
     const std::string recipeRel = "materials/" + uid + ".json";
 
-    const AssetLibrary::Record* existing = lib.find(AssetType::Material, mat.name);
+    const Record* existing = lib.find(AssetType::Material, mat.name);
     if (existing && existing->recipeHash == hash) return;
 
     if (!writeRecipeFile(ProjectPaths::library() / recipeRel, mat.name, "material", inlineSource)) return;

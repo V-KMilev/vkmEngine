@@ -421,7 +421,7 @@ instead of writing a move constructor. Lightweight value types (`Entity`,
   recursion.
 - CTAD with an explicit **deduction guide** is the idiom for letting an
   aggregate deduce its template arguments at the call site. From
-  `io/reflect.h`, the reflection `Field` type:
+  `core/reflect.h`, the reflection `Field` type:
 
   ```cpp
   template<typename T, typename M>

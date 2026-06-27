@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+#include "core/reflect.h"
+
 namespace Engine {
 
 /**
@@ -31,5 +33,9 @@ struct Collider {
     std::vector<ColliderBox> parts = { ColliderBox{} }; ///< The collision volume: one or more boxes. Default to a single unit box.
     bool isTrigger = false;                             ///< Generates contacts for queries but no impulse response.
 };
+
+VKM_REFLECT_BEGIN(Collider)
+    VKM_F(isTrigger)
+VKM_REFLECT_END()
 
 } // namespace Engine

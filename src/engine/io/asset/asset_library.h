@@ -5,13 +5,31 @@
 #include <string>
 #include <unordered_map>
 
+#include "core/reflect.h"
+
 namespace Engine {
 
 /**
  * @brief The asset kinds that live in the library (shaders stay source-referenced and
  * are not part of the cooked database).
  */
-enum class AssetType : uint8_t { Mesh, Texture, Material };
+enum class AssetType : uint8_t {
+    Mesh,
+    Texture,
+    Material,
+
+    Count
+};
+
+VKM_ENUM_NAMES(AssetType, "mesh", "texture", "material")
+
+struct Record {
+    AssetType   type = AssetType::Mesh;
+    std::string name;
+    std::string recipeFile;          ///< Relative to ProjectPaths::library().
+    std::string cookedFile;          ///< Relative to ProjectPaths::cooked(); empty for materials.
+    uint64_t    recipeHash = 0;      ///< hash(recipe + cookerVersion); guards staleness.
+};
 
 /**
  * @brief In-memory view of the on-disk asset database manifest.
@@ -28,14 +46,15 @@ enum class AssetType : uint8_t { Mesh, Texture, Material };
  */
 class AssetLibrary {
     public:
-        struct Record {
-            AssetType   type = AssetType::Mesh;
-            std::string name;
-            std::string recipeFile;          ///< Relative to ProjectPaths::library().
-            std::string cookedFile;          ///< Relative to ProjectPaths::cooked(); empty for materials.
-            uint64_t    recipeHash = 0;      ///< hash(recipe + cookerVersion); guards staleness.
-        };
+        ~AssetLibrary() = default;
 
+        AssetLibrary(const AssetLibrary& other) = delete;
+        AssetLibrary& operator=(const AssetLibrary& other) = delete;
+
+        AssetLibrary(AssetLibrary && other) noexcept = delete;
+        AssetLibrary& operator=(AssetLibrary && other) noexcept = delete;
+
+    public:
         static AssetLibrary& get();
 
         /**
@@ -79,13 +98,13 @@ class AssetLibrary {
          * used to name recipe/cooked files.
          */
         static std::string uidFor(AssetType type, const std::string& name);
-        static const char* typeTag(AssetType type);
 
     private:
         AssetLibrary() = default;
 
         static std::string key(AssetType type, const std::string& name);
 
+    private:
         std::unordered_map<std::string, Record> m_records;  ///< keyed by key(type,name)
         uint32_t m_cookerVersion = 0;                       ///< cooker version recorded in the manifest
 };

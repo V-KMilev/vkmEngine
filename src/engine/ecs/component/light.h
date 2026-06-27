@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-#include "io/reflect.h"
+#include "core/reflect.h"
 
 namespace Engine {
 
@@ -58,5 +58,22 @@ struct Light {
 
     bool enabled = true;                       ///< Is this light enabled?
 };
+
+VKM_REFLECT_BEGIN(Light)
+    VKM_F(type),
+    VKM_F(color),
+    VKM_F(intensity),
+    VKM_F(radius),
+    VKM_F(innerConeAngle),
+    VKM_F(outerConeAngle),
+    VKM_F(areaWidth),
+    VKM_F(areaHeight),
+    VKM_F(areaRadius),
+    VKM_F(twoSided),
+    VKM_F(castShadows),
+    VKM_F(shadowBias),
+    VKM_F(shadowDistance),
+    VKM_F(enabled)
+VKM_REFLECT_END()
 
 } // namespace Engine

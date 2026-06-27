@@ -52,7 +52,7 @@ cute.
 This is the balance the project cares about most, and it cuts both ways.
 
 The good abstractions in this engine - `RenderBackend`, `System`,
-`SparseSet<T>`, `Handle<T>`, the `io/reflect.h` field reflection - are excellent
+`SparseSet<T>`, `Handle<T>`, the `core/reflect.h` field reflection - are excellent
 *because each removes real duplication and serves many callers.* That is what
 "generic so it does not bite us long term" means: an abstraction that absorbs
 the next ten similar cases without change.

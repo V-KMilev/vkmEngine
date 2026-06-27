@@ -11,8 +11,8 @@
 #include "debug/build_info.h"
 #include "asset_registration.h"
 #include "game_behaviors.h"
-#include "io/asset_library.h"
-#include "io/scene_serializer.h"
+#include "io/asset/asset_library.h"
+#include "io/scene/scene_serializer.h"
 #include "app/engine_app.h"
 
 int main(int argc, char** argv) {
