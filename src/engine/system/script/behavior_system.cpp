@@ -99,16 +99,19 @@ void BehaviorSystem::drainPendingDestroy(Scene& scene) {
 void BehaviorSystem::init(FrameContext& ctx) {
     m_scene = &ctx.scene;
 
-    // onDestroy for any entity-deletion path: Scene fires this generic hook from
-    // destroyEntity (raw or via destroyHierarchy), keeping itself script-agnostic.
-    ctx.scene.setOnEntityDestroy([this](EntityId entity) {
-        if (m_scene) destroyEntityBehaviors(*m_scene, entity);
-    });
+    // onDestroy for any entity-deletion path: register as a Scene observer, so
+    // Scene fires onEntityDestroyed from destroyEntity (raw or via
+    // destroyHierarchy) while staying script-agnostic.
+    ctx.scene.addObserver(this);
 
     // Physics overlaps -> behavior hooks. Collect here; dispatch in update()
     // once behaviors are started and with valid context.
     m_events.subscribe<CollisionEvent>([this](const CollisionEvent& e) { m_collisions.push_back(e); });
     m_events.subscribe<TriggerEvent>([this](const TriggerEvent& e) { m_triggers.push_back(e); });
+}
+
+void BehaviorSystem::onEntityDestroyed(EntityId entity) {
+    if (m_scene) destroyEntityBehaviors(*m_scene, entity);
 }
 
 void BehaviorSystem::update(FrameContext& ctx) {
@@ -158,7 +161,7 @@ void BehaviorSystem::fixedUpdate(FrameContext& ctx) {
 void BehaviorSystem::shutdown() {
     if (!m_scene) return;
     endSession(*m_scene);            // onDestroy + drop subscriptions while the bus lives
-    m_scene->setOnEntityDestroy(nullptr);  // avoid a callback into this dying system
+    m_scene->removeObserver(this);  // avoid a callback into this dying system
 }
 
 void BehaviorSystem::endSession(Scene& scene) {

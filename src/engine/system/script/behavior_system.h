@@ -4,6 +4,7 @@
 
 #include "core/system.h"
 #include "ecs/entity.h"
+#include "ecs/scene_observer.h"
 #include "system/physics/physics_events.h"
 #include "system/script/behavior.h"
 
@@ -30,10 +31,11 @@ class EventSystem;
  *
  * Every hook runs under a catch net: a throwing behavior is reported via
  * reportError() and disabled, never fatal. onDestroy fires via endSession()
- * (play stop / shutdown) and destroyEntityBehaviors() (entity deletion, wired
- * through Scene::setOnEntityDestroy in init()).
+ * (play stop / shutdown) and destroyEntityBehaviors() (entity deletion - this
+ * system registers as a Scene ISceneObserver via Scene::addObserver() in
+ * init()).
  */
-class BehaviorSystem : public System {
+class BehaviorSystem : public System, public ISceneObserver {
     public:
         explicit BehaviorSystem(EventSystem& events) : m_events(events) {}
         ~BehaviorSystem() override = default;
@@ -52,6 +54,15 @@ class BehaviorSystem : public System {
         void shutdown() override;
 
         /**
+         * @brief ISceneObserver: fire script onDestroy on @p entity's behaviors
+         *        just before Scene removes its ScriptComponent.
+         *
+         * Registered via Scene::addObserver() in init(), so it covers every destroy
+         * path (raw Scene::destroyEntity and destroyHierarchy alike).
+         */
+        void onEntityDestroyed(EntityId entity) override;
+
+        /**
          * @brief Fire onDestroy on every started behavior in @p scene, drop their
          *        subscriptions, and reset their started/disabled flags.
          *
@@ -66,9 +77,9 @@ class BehaviorSystem : public System {
          * @brief Fire onDestroy on @p entity's started behaviors, just before
          *        its ScriptComponent is destroyed (entity deletion).
          *
-         * Wired to Scene::setOnEntityDestroy() in init(), so it covers every
-         * destroy path (raw Scene::destroyEntity and destroyHierarchy alike). A
-         * no-op if the entity has no started behaviors.
+         * The work behind onEntityDestroyed(); static so the editor's stop path
+         * can reuse it without a BehaviorSystem handle. A no-op if the entity has
+         * no started behaviors.
          */
         static void destroyEntityBehaviors(Scene& scene, EntityId entity);
 
