@@ -19,6 +19,7 @@
 #include "ecs/entity.h"
 #include "io/asset_serializer.h"
 #include "io/component_serializer.h"
+#include "io/json_vec.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/shader_asset.h"
 #include "system/hierarchy/hierarchy_operations.h"
@@ -51,9 +52,9 @@ constexpr int FILE_FORMAT_VERSION = 2;
 // Every JSON key written by saveComponents, for unknown-key detection on load.
 // Order is incidental here (membership test only); keep it in sync with the
 // save/load lists below.
-constexpr std::array<const char*, 11> COMPONENT_KEYS = {
+constexpr std::array<const char*, 10> COMPONENT_KEYS = {
     "Name", "Transform", "Camera", "Light", "Rigidbody", "Collider",
-    "PhysicsWorld", "Mesh", "Animation", "Script", "Hierarchy",
+    "Mesh", "Animation", "Script", "Hierarchy",
 };
 
 void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
@@ -63,7 +64,6 @@ void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager&
     if (s.has<Light>(id))           c["Light"]        = CS::save(s.get<Light>(id));
     if (s.has<Rigidbody>(id))       c["Rigidbody"]    = CS::save(s.get<Rigidbody>(id));
     if (s.has<Collider>(id))        c["Collider"]     = CS::save(s.get<Collider>(id));
-    if (s.has<PhysicsWorld>(id))    c["PhysicsWorld"] = CS::save(s.get<PhysicsWorld>(id));
     if (s.has<Mesh>(id))            c["Mesh"]         = CS::save(s.get<Mesh>(id), r);
     if (s.has<Animation>(id))       c["Animation"]    = CS::save(s.get<Animation>(id));
     if (s.has<ScriptComponent>(id)) c["Script"]       = CS::save(s.get<ScriptComponent>(id));
@@ -79,7 +79,6 @@ void loadComponents(const json& src, Scene& s, Entity e, const ResourceManager& 
     if (src.contains("Light"))        { Light c;           CS::load(src["Light"], c);           s.add(e, std::move(c)); }
     if (src.contains("Rigidbody"))    { Rigidbody c;       CS::load(src["Rigidbody"], c);       s.add(e, std::move(c)); }
     if (src.contains("Collider"))     { Collider c;        CS::load(src["Collider"], c);        s.add(e, std::move(c)); }
-    if (src.contains("PhysicsWorld")) { PhysicsWorld c;    CS::load(src["PhysicsWorld"], c);    s.add(e, std::move(c)); }
     if (src.contains("Mesh"))         { Mesh c;            CS::load(src["Mesh"], c, r);         s.add(e, std::move(c)); }
     if (src.contains("Animation"))    { Animation c;       CS::load(src["Animation"], c);       s.add(e, std::move(c)); }
     if (src.contains("Script"))       { ScriptComponent c; CS::load(src["Script"], c);          s.add(e, std::move(c)); }
@@ -116,13 +115,15 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
         doc["entities"].push_back(std::move(entity));
     });
 
-    // Scene-global lighting environment (skybox + IBL): a top-level object, not
-    // a per-entity component.
+    // Scene-global settings (lighting environment + physics world): a top-level
+    // object, not a per-entity component.
     const Environment& env = scene.environment();
     doc["environment"] = {
-        {"hdrPath",    env.hdrPath},
-        {"intensity",  env.intensity},
-        {"showSkybox", env.showSkybox},
+        {"hdrPath",          env.hdrPath},
+        {"intensity",        env.intensity},
+        {"showSkybox",       env.showSkybox},
+        {"gravity",          detail::vec3ToJson(env.gravity)},
+        {"solverIterations", env.solverIterations},
     };
     return doc;
 }
@@ -241,13 +242,16 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             k.c_str(), source);
     }
 
-    // Scene-global lighting environment (skybox + IBL): a top-level object. A
-    // file saved before it existed just keeps the staging scene's defaults.
+    // Scene-global settings (lighting environment + physics world): a top-level
+    // object. A file saved before a field existed just keeps the staging
+    // scene's default for it.
     if (auto it = doc.find("environment"); it != doc.end() && it->is_object()) {
         Environment& env = staging.environment();
-        env.hdrPath    = it->value("hdrPath",    env.hdrPath);
-        env.intensity  = it->value("intensity",  env.intensity);
-        env.showSkybox = it->value("showSkybox", env.showSkybox);
+        env.hdrPath          = it->value("hdrPath",          env.hdrPath);
+        env.intensity        = it->value("intensity",        env.intensity);
+        env.showSkybox       = it->value("showSkybox",       env.showSkybox);
+        env.gravity          = detail::vec3FromJson(it->value("gravity", nlohmann::json{}), env.gravity);
+        env.solverIterations = it->value("solverIterations", env.solverIterations);
     }
 
     // Commit phase: both stagings swap into place in one step. Until this

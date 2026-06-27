@@ -222,6 +222,7 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                 wireSphere(dl, vp, pos, rr, 24, vpMin, vpSize, fade, 1.0f);
                 break;
             }
+            case LightType::Count: break;
         }
     });
 }

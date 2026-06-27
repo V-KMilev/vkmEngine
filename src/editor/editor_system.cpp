@@ -18,8 +18,6 @@
 #include "core/system.h"
 #include "debug/engine_error_log.h"
 #include "debug/profiler.h"
-#include "ecs/component/name.h"
-#include "ecs/component/physics_world.h"
 #include "ecs/scene.h"
 #include "framework/editor_context.h"
 #include "framework/editor_settings.h"
@@ -385,10 +383,6 @@ void EditorSystem::update(FrameContext& ctx) {
         PROFILE_SCOPE("Panel/RenderSettings");
         m_renderSettings.draw(ec);
     }
-    if (m_state.showPhysics) {
-        PROFILE_SCOPE("Panel/Physics");
-        drawPhysicsSettings(ec);
-    }
 
     {
         PROFILE_SCOPE("Editor/ImGuiRender");
@@ -398,39 +392,6 @@ void EditorSystem::update(FrameContext& ctx) {
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }
-}
-
-void EditorSystem::drawPhysicsSettings(EditorContext& ec) {
-    Scene& scene = ec.frame.scene;
-
-    // The PhysicsWorld singleton is the source of truth (PhysicsSystem
-    // reads it each tick). Edit a copy seeded from it - or from defaults -
-    // and only materialize the component on an actual change, so merely
-    // opening the window doesn't add an entity / dirty the scene.
-    PhysicsWorld* pw = nullptr;
-    scene.forEach<PhysicsWorld>([&](EntityId, PhysicsWorld& w) { if (!pw) pw = &w; });
-    PhysicsWorld edited = pw ? *pw : PhysicsWorld{};
-
-    ImGui::SetNextWindowSize(ImVec2(300, 150), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Physics Settings", &m_state.showPhysics)) {
-        ImGui::TextDisabled("Per-scene physics settings");
-        ImGui::Spacing();
-
-        bool changed = false;
-        changed |= ImGui::DragFloat3("Gravity", &edited.gravity.x, 0.05f, -50.0f, 50.0f, "%.2f");
-        changed |= ImGui::DragInt("Solver Iterations", &edited.solverIterations, 0.1f, 1, 32);
-
-        if (changed) {
-            if (!pw) {
-                Entity entity = scene.createEntity();
-                scene.add(entity, makeName("Physics World"));
-                pw = &scene.add(entity, PhysicsWorld{});
-            }
-            *pw = edited;
-            m_state.markSceneDirty();
-        }
-    }
-    ImGui::End();
 }
 
 void EditorSystem::drawWorkspace(EditorContext& ec) {

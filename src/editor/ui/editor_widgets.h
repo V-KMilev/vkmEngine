@@ -8,6 +8,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "ecs/entity.h"
+#include "io/reflect.h"
 #include "system/animation/easing.h"
 #include "ui/editor_icons.h"
 
@@ -180,12 +181,16 @@ bool drawEasingCombo(const char* id, EasingFunction& easing);
  * @brief Enum dropdown: one row per name, writes the picked index back into
  * @p value. Returns true on change. Fills the row, so it pairs with
  * drawPropertyLabel. Replaces the int-cast/Combo/cast-back boilerplate.
+ *
+ * Names + count come from the enum's VKM_ENUM_NAMES registration, so the combo
+ * and the JSON (de)serialization share one source and cannot drift.
  */
 template <typename E>
-bool drawEnumCombo(const char* id, E& value, const char* const names[], int count) {
+bool drawEnumCombo(const char* id, E& value) {
+    using Names = Reflect::EnumNames<E>;
     int idx = static_cast<int>(value);
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::Combo(id, &idx, names, count)) {
+    if (ImGui::Combo(id, &idx, Names::values, static_cast<int>(Names::count))) {
         value = static_cast<E>(idx);
         return true;
     }

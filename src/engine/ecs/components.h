@@ -10,7 +10,6 @@
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/collider.h"
-#include "ecs/component/physics_world.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/world_transform.h"
 #include "ecs/component/name.h"

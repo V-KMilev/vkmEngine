@@ -416,7 +416,7 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
         bool changed = false;
 
         drawPropertyLabel("Type");
-        changed |= drawEnumCombo("##LType", light.type, LIGHT_TYPE_NAMES, IM_ARRAYSIZE(LIGHT_TYPE_NAMES));
+        changed |= drawEnumCombo("##LType", light.type);
 
         drawPropertyLabel("Color");
         changed |= ImGui::ColorEdit3("##LColor", glm::value_ptr(light.color), ImGuiColorEditFlags_Float);
@@ -536,8 +536,22 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
 
         ImGui::TextDisabled("Swapping the HDR re-bakes the IBL (a brief hitch).");
 
-        // Scene-global settings edit live (no per-entity undo command), matching
-        // the Physics Settings flow.
+        // Scene-global settings edit live, no per-entity undo command.
+        if (changed) state.markSceneDirty();
+    }
+    endComponentCard();
+
+    // Physics world parameters - also scene-global Environment state, read by
+    // PhysicsSystem each fixed step.
+    if (beginComponentCard("Physics", ACCENT_PHYSICS, true)) {
+        bool changed = false;
+
+        drawPropertyLabel("Gravity");
+        changed |= ImGui::DragFloat3("##EnvGravity", glm::value_ptr(env.gravity), 0.05f, -50.0f, 50.0f, "%.2f");
+
+        drawPropertyLabel("Solver Iterations");
+        changed |= ImGui::DragInt("##EnvSolverIters", &env.solverIterations, 0.1f, 1, 32);
+
         if (changed) state.markSceneDirty();
     }
     endComponentCard();
@@ -659,7 +673,7 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
         bool changed = false;
 
         drawPropertyLabel("Projection");
-        changed |= drawEnumCombo("##CProj", cam.projection, PROJECTION_TYPE_NAMES, IM_ARRAYSIZE(PROJECTION_TYPE_NAMES));
+        changed |= drawEnumCombo("##CProj", cam.projection);
 
         if (cam.projection == ProjectionType::Perspective) {
             float fovDeg = glm::degrees(cam.fovY);

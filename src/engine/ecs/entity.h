@@ -38,6 +38,10 @@ class Entity {
         Entity(Entity && other) noexcept = default;
         Entity& operator=(Entity && other) noexcept = default;
 
+        constexpr explicit operator bool() const noexcept { return bool(m_id); }
+        constexpr bool operator==(const Entity& other) const noexcept { return m_id == other.m_id; }
+        constexpr bool operator!=(const Entity& other) const noexcept { return !(*this == other); }
+
         /**
          * @brief Construct an Entity with the given EntityId.
          * @param id The unique EntityId assigned to this entity.
@@ -45,32 +49,6 @@ class Entity {
         explicit Entity(EntityId id) : m_id(id) {}
 
     public:
-        /**
-         * @brief Check if the entity is valid (has a nonzero index).
-         * @return True if this entity references a valid slot; false if null.
-         */
-        constexpr explicit operator bool() const noexcept {
-            return bool(m_id);
-        }
-
-        /**
-         * @brief Equality comparison based on EntityId (index + generation).
-         * @param other Entity to compare with.
-         * @return True if both index and generation match.
-         */
-        constexpr bool operator==(const Entity& other) const noexcept {
-            return m_id == other.m_id;
-        }
-
-        /**
-         * @brief Inequality comparison; the negation of operator==.
-         * @param other Entity to compare with.
-         * @return True if index or generation differ.
-         */
-        constexpr bool operator!=(const Entity& other) const noexcept {
-            return !(*this == other);
-        }
-
         /**
          * @brief Get the underlying EntityId.
          * @return The EntityId (StorageIndex) for this entity.

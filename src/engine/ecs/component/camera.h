@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 
 #include "core/math/projection.h"
+#include "io/reflect.h"
 
 namespace Engine {
 
@@ -11,16 +12,11 @@ namespace Engine {
  */
 enum class ProjectionType {
     Perspective  = 0,   ///< Perspective projection
-    Orthographic = 1    ///< Orthographic (parallel) projection
+    Orthographic = 1,   ///< Orthographic (parallel) projection
+    Count               ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
 
-/**
- * @brief Names in ProjectionType order - the single source for JSON
- * (de)serialization and editor combos, so the two cannot drift.
- */
-inline constexpr const char* const PROJECTION_TYPE_NAMES[] = {
-    "Perspective", "Orthographic"
-};
+VKM_ENUM_NAMES(ProjectionType, "Perspective", "Orthographic")
 
 /**
  * @brief Component representing a camera, containing projection and view parameters.
