@@ -9,6 +9,8 @@
 
 #include "resource/asset/texture_asset.h"
 
+#include "io/reflect.h"
+
 namespace Engine {
 
 /**
@@ -23,16 +25,11 @@ enum class MaterialType : uint8_t {
     Opaque      = 0,
     Transparent = 1,
     Unlit       = 2,
-    AlphaMask   = 3
+    AlphaMask   = 3,
+    Count
 };
 
-/**
- * @brief Names in MaterialType order - the single source for JSON (de)serialization
- * and the editor's type combo, so the two cannot drift out of enum order.
- */
-inline constexpr const char* const MATERIAL_TYPE_NAMES[] = {
-    "Opaque", "Transparent", "Unlit", "AlphaMask"
-};
+VKM_ENUM_NAMES(MaterialType, "Opaque", "Transparent", "Unlit", "AlphaMask")
 
 /**
  * @brief A complete PBR material.

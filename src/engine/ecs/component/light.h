@@ -2,6 +2,8 @@
 
 #include <glm/glm.hpp>
 
+#include "io/reflect.h"
+
 namespace Engine {
 
 /**
@@ -18,16 +20,11 @@ enum class LightType {
     Point       = 1,    ///< Point light (light bulb, has position and radius)
     Spot        = 2,    ///< Spot light (flashlight, has position, direction, and cone)
     Rect        = 3,    ///< Rectangular area light (width x height, faces -direction)
-    Disk        = 4     ///< Disk area light (areaRadius, faces -direction)
+    Disk        = 4,    ///< Disk area light (areaRadius, faces -direction)
+    Count               ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
 
-/**
- * @brief Names in LightType order - the single source for JSON (de)serialization
- * and editor combos, so the two cannot drift.
- */
-inline constexpr const char* const LIGHT_TYPE_NAMES[] = {
-    "Directional", "Point", "Spot", "Rect", "Disk"
-};
+VKM_ENUM_NAMES(LightType, "Directional", "Point", "Spot", "Rect", "Disk")
 
 /**
  * @brief Component representing a light source in the scene.

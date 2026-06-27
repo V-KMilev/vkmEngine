@@ -8,7 +8,6 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/light.h"
 #include "ecs/component/mesh.h"
-#include "ecs/component/physics_world.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/name.h"
 #include "ecs/component/transform.h"
@@ -55,13 +54,6 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const Collider&);
     void load(const nlohmann::json&, Collider&);
-
-    /**
-     * @brief PhysicsWorld: the scene's singleton physics settings (gravity + solver
-     * iteration count). Plain JSON primitives; load tolerates missing keys.
-     */
-    nlohmann::json save(const PhysicsWorld&);
-    void load(const nlohmann::json&, PhysicsWorld&);
 
     nlohmann::json save(const Mesh&, const ResourceManager&);
     void load(const nlohmann::json&, Mesh&, const ResourceManager&);

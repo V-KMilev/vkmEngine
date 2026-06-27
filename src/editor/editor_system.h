@@ -83,15 +83,6 @@ class EditorSystem : public System {
          */
         void drawWorkspace(EditorContext& ec);
 
-        /**
-         * @brief Floating "Physics Settings" window.
-         *
-         * Small enough that it lives here instead of panels/ - it edits a
-         * copy of the PhysicsWorld singleton component and only materializes
-         * the entity on an actual change.
-         */
-        void drawPhysicsSettings(EditorContext& ec);
-
     private:
         Engine&           m_engine;
         GLFWwindow*       m_window;
