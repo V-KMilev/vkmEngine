@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -10,6 +9,8 @@
 #include "core/system.h"
 
 namespace Engine {
+
+struct Transform;
 
 /**
  * @brief Camera controller used in the editor, supporting free-fly and look controls.
@@ -138,6 +139,14 @@ class CameraControllerSystem : public System {
          * inverse of the forward mapping updateRotationFromAngles() produces.
          */
         void setAnglesFromDirection(const glm::vec3& dir);
+
+        /**
+         * @brief Place the camera @p distance back from @p target along
+         * @p dirToCamera (unit, pointing from target toward the camera) and aim
+         * it at @p target. Shared core of focusOn() / viewFrom().
+         */
+        void placeCamera(Transform& transform, const glm::vec3& target,
+                         const glm::vec3& dirToCamera, float distance);
 
     private:
         Entity   m_cameraEntity;

@@ -66,8 +66,10 @@ void CameraControllerSystem::update(FrameContext& ctx) {
     // Always drive the active rendered camera. This keeps the fly controls
     // working after "Set as Main Camera" / a scene load (the old code flew a
     // fixed entity while the renderer used a different one).
+    // resolveActiveCamera only ever returns {} or a live entity that has a
+    // Transform, so a non-empty result needs no further validation here.
     EntityId target = resolveActiveCamera(ctx.scene);
-    if (!target || !ctx.scene.isAlive(target) || !ctx.scene.has<Transform>(target)) return;
+    if (!target) return;
 
     m_cameraEntity = Entity{target};
     auto& transform = ctx.scene.get<Transform>(target);
@@ -134,26 +136,27 @@ void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, glm::ve
     if (keyboard.isKeyPressed(GLFW_KEY_E)) position -= Math::WORLD_AXIS_Y_UP * speed;
 }
 
+void CameraControllerSystem::placeCamera(Transform& transform, const glm::vec3& target,
+                                         const glm::vec3& dirToCamera, float distance) {
+    transform.position = target + dirToCamera * distance;
+    // dirToCamera points target -> camera, so the look direction is its negation.
+    setAnglesFromDirection(-dirToCamera);
+    updateRotationFromAngles(transform.rotation, m_yaw, m_pitch);
+}
+
 void CameraControllerSystem::focusOn(Scene& scene, const glm::vec3& target, float distance) {
     EntityId camId = m_cameraEntity.getID();
     if (!camId || !scene.has<Transform>(camId)) return;
 
     auto& transform = scene.get<Transform>(camId);
 
-    // Direction from target to current camera position
+    // Keep the current view direction, pulling back to `distance` from target.
+    // Degenerate (camera sitting on target) -> back off along current forward.
     glm::vec3 dir = transform.position - target;
-    float len = glm::length(dir);
-    if (len < 0.001f) {
-        dir = -Math::computeForward(transform.rotation);
-    } else {
-        dir /= len;
-    }
+    const float len = glm::length(dir);
+    dir = (len < 0.001f) ? -Math::computeForward(transform.rotation) : dir / len;
 
-    transform.position = target + dir * distance;
-
-    setAnglesFromDirection(glm::normalize(target - transform.position));
-
-    updateRotationFromAngles(transform.rotation, m_yaw, m_pitch);
+    placeCamera(transform, target, dir, distance);
     LOG_VERBOSE("FocusOn target=(%.2f,%.2f,%.2f) distance=%.2f",
         target.x, target.y, target.z, distance);
 }
@@ -168,9 +171,7 @@ void CameraControllerSystem::viewFrom(Scene& scene, const glm::vec3& target, con
     if (dlen < 1e-6f) return;
     const glm::vec3 dir = direction / dlen;
 
-    transform.position = target + dir * distance;
-    setAnglesFromDirection(-dir);
-    updateRotationFromAngles(transform.rotation, m_yaw, m_pitch);
+    placeCamera(transform, target, dir, distance);
     LOG_VERBOSE("ViewFrom target=(%.2f,%.2f,%.2f) dir=(%.2f,%.2f,%.2f) distance=%.2f",
         target.x, target.y, target.z, dir.x, dir.y, dir.z, distance);
 }
