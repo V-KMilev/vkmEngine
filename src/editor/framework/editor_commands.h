@@ -237,14 +237,17 @@ class DestroySubtreeCommand : public Command {
 /**
  * @brief Re-parent an entity, undoable.
  *
- * Records (child, oldParent, newParent) at construction; either parent
- * may be a null EntityId for "top-level". Undo replays the inverse via
- * HierarchyOperations::setParent / removeFromParent.
+ * Records (child, oldParent, newParent) plus the child's local Transform on
+ * each side of the move; either parent may be a null EntityId for "top-level".
+ * The interactive reparent re-bases the local Transform so world position is
+ * preserved, so undo/redo restore the matching transform alongside the links.
  */
 class ReparentCommand : public Command {
     public:
-        ReparentCommand(EntityId child, EntityId oldParent, EntityId newParent, const char* label)
-            : m_child(child), m_oldParent(oldParent), m_newParent(newParent), m_label(label) {}
+        ReparentCommand(EntityId child, EntityId oldParent, EntityId newParent,
+                        const Transform& before, const Transform& after, const char* label)
+            : m_child(child), m_oldParent(oldParent), m_newParent(newParent),
+              m_before(before), m_after(after), m_label(label) {}
 
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
@@ -254,6 +257,8 @@ class ReparentCommand : public Command {
         EntityId    m_child;
         EntityId    m_oldParent;
         EntityId    m_newParent;
+        Transform   m_before;   ///< Local transform before the reparent (restored on undo).
+        Transform   m_after;    ///< World-preserving local transform after (restored on redo).
         const char* m_label;
 };
 
