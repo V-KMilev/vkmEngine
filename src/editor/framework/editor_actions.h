@@ -116,6 +116,19 @@ void setActiveCamera(Scene& scene, EditorState& state, EntityId target, const ch
 void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity);
 
 /**
+ * @brief Reparent @p child under @p newParent (null = unparent to root) while
+ * keeping its world transform fixed, and push an undoable ReparentCommand.
+ *
+ * The engine-level setParent/removeFromParent keep the local Transform as-is
+ * (loaders and the scene serializer rely on that), so an interactive reparent
+ * must re-base the local Transform itself - otherwise the entity visibly jumps
+ * by the old/new parent's world contribution. Decomposes the preserved world
+ * matrix into the new parent's space (same math the transform gizmo uses).
+ */
+void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
+                          EntityId newParent, const char* label);
+
+/**
  * @brief Mark a non-hierarchy structural change (add/remove entity, etc.).
  * Used by paths that don't have a specific entity to dirty.
  */

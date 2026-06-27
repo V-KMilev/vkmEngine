@@ -294,25 +294,31 @@ void DestroySubtreeCommand::undo(Scene& scene, EditorState& state) {
     }
 }
 
+namespace {
+// Re-link `child` under `parent` (null = root) and restore the stored local
+// transform, so undo/redo land on the exact world-preserving state the
+// interactive reparent produced.
+void applyReparent(Scene& scene, EntityId child, EntityId parent, const Transform& local) {
+    if (parent) {
+        if (!scene.isAlive(parent)) return;
+        HierarchyOperations::setParent(scene, child, parent);
+    } else {
+        HierarchyOperations::removeFromParent(scene, child);
+    }
+    if (scene.has<Transform>(child)) scene.get<Transform>(child) = local;
+    HierarchyOperations::markDirty(scene, child);
+}
+} // namespace
+
 void ReparentCommand::redo(Scene& scene, EditorState& state) {
     if (!scene.isAlive(m_child)) return;
-    if (m_newParent) {
-        if (!scene.isAlive(m_newParent)) return;
-        HierarchyOperations::setParent(scene, m_child, m_newParent);
-    } else {
-        HierarchyOperations::removeFromParent(scene, m_child);
-    }
+    applyReparent(scene, m_child, m_newParent, m_after);
     state.hierarchyDirty = true;
 }
 
 void ReparentCommand::undo(Scene& scene, EditorState& state) {
     if (!scene.isAlive(m_child)) return;
-    if (m_oldParent) {
-        if (!scene.isAlive(m_oldParent)) return;
-        HierarchyOperations::setParent(scene, m_child, m_oldParent);
-    } else {
-        HierarchyOperations::removeFromParent(scene, m_child);
-    }
+    applyReparent(scene, m_child, m_oldParent, m_before);
     state.hierarchyDirty = true;
 }
 

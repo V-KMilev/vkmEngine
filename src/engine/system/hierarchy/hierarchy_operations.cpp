@@ -17,6 +17,12 @@ namespace Engine::HierarchyOperations {
 namespace {
 // Maximum supported hierarchy depth; deeper chains are clamped/skipped.
 constexpr uint32_t MAX_DEPTH = 32;
+
+// Add a default-constructed T to `id` only if it doesn't already have one.
+template<typename T>
+void ensure(Scene& scene, EntityId id) {
+    if (!scene.has<T>(id)) scene.add(Entity(id), T{});
+}
 } // namespace
 
 void markDirty(Scene& scene, EntityId entity) {
@@ -26,17 +32,10 @@ void markDirty(Scene& scene, EntityId entity) {
     if (h.dirty) return;  // Already dirty; descendants must already be too
 
     h.dirty = true;
-    EntityId child = h.firstChild;
-    while (child) {
-        // A dead-or-Hierarchyless child terminates the walk - the sibling
-        // chain runs through that node's nextSibling, so we can't continue
-        // past it. Corruption is already logged at its source (removeFromParent
-        // / detachFromHierarchy); silently stopping here keeps the engine alive.
-        if (!scene.isAlive(child) || !scene.has<Hierarchy>(child)) break;
-        const EntityId next = scene.get<Hierarchy>(child).nextSibling;
-        markDirty(scene, child);
-        child = next;
-    }
+    // Cascade to descendants. forEachChild snapshots the next sibling before
+    // each call; markDirty's guard above makes revisiting a dead or
+    // already-dirty node a harmless no-op, so corrupt links can't loop us.
+    forEachChild(scene, entity, [&](EntityId child) { markDirty(scene, child); });
 }
 
 void setParent(Scene& scene, EntityId child, EntityId parent) {
@@ -68,18 +67,10 @@ void setParent(Scene& scene, EntityId child, EntityId parent) {
     // Ensure both entities have Hierarchy + WorldTransform components.
     // Pre-seeding WorldTransform here keeps resolveWorldTransforms() free of
     // structural mutation, which is the precondition for parallelising it.
-    if (!scene.has<Hierarchy>(child)) {
-        scene.add(Entity(child), Hierarchy{});
-    }
-    if (!scene.has<WorldTransform>(child)) {
-        scene.add(Entity(child), WorldTransform{});
-    }
-    if (!scene.has<Hierarchy>(parent)) {
-        scene.add(Entity(parent), Hierarchy{});
-    }
-    if (!scene.has<WorldTransform>(parent)) {
-        scene.add(Entity(parent), WorldTransform{});
-    }
+    ensure<Hierarchy>(scene, child);
+    ensure<WorldTransform>(scene, child);
+    ensure<Hierarchy>(scene, parent);
+    ensure<WorldTransform>(scene, parent);
 
     auto& childH = scene.get<Hierarchy>(child);
     auto& parentH = scene.get<Hierarchy>(parent);
@@ -288,18 +279,10 @@ void resolveWorldTransforms(Scene& scene) {
 void destroyHierarchy(Scene& scene, EntityId entity) {
     if (!scene.isAlive(entity)) return;
 
-    // Recursively destroy children first (depth-first)
-    if (scene.has<Hierarchy>(entity)) {
-        EntityId child = scene.get<Hierarchy>(entity).firstChild;
-        while (child) {
-            // Save next sibling before destroying (destroying invalidates current node)
-            EntityId next = scene.has<Hierarchy>(child)
-                ? scene.get<Hierarchy>(child).nextSibling
-                : EntityId{};
-            destroyHierarchy(scene, child);
-            child = next;
-        }
-    }
+    // Destroy descendants depth-first. forEachChild snapshots the next sibling
+    // before each call, so destroying the current child's subtree (which
+    // unlinks it) can't strand the walk.
+    forEachChild(scene, entity, [&](EntityId child) { destroyHierarchy(scene, child); });
 
     // Detach from parent before destruction
     removeFromParent(scene, entity);
