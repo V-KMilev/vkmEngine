@@ -2,6 +2,8 @@
 
 #include "system/async/async_loader_system.h"
 
+#include <vector>
+
 #include "logger.h"
 
 #include "debug/profiler.h"
@@ -16,31 +18,27 @@ namespace Engine {
 namespace {
 
 /**
- * @brief Infer engine-level internal + pixel format from channel count and sRGB.
- * Mirrors the helper in texture_loaders.cpp; kept local here so the system
- * has no dependency on the loader's TU.
+ * @brief Finalise one batch of drained completions against the ResourceManager.
+ *
+ * Shared skeleton for both asset kinds: skip dropped handles, guard against an
+ * asset destroyed between the worker pushing and this drain (scene swap, editor
+ * deletion) - rm.get on a dead handle is UB - then hand the live asset to
+ * @p apply. The loading flag is always cleared; the asset is committed (bumping
+ * its version so the backend re-uploads) only when @p apply reports success.
  */
-TextureInternalFormat inferInternalFormat(int channels, bool srgb) {
-    if (srgb) {
-        return (channels == 3) ? TextureInternalFormat::SRGB8
-                               : TextureInternalFormat::SRGBA8;
-    }
-    switch (channels) {
-        case 1: return TextureInternalFormat::R8;
-        case 2: return TextureInternalFormat::RG8;
-        case 3: return TextureInternalFormat::RGB8;
-        case 4:
-        default: return TextureInternalFormat::RGBA8;
-    }
-}
+template <typename Completion, typename Apply>
+void finalize(ResourceManager& rm, std::vector<Completion> completions, Apply apply) {
+    for (auto& c : completions) {
+        if (!c.handle) continue;
+        if (!rm.isAlive(c.handle)) {
+            LOG_VERBOSE("Async handle %u dead before completion landed - dropping", c.handle.id());
+            continue;
+        }
 
-TexturePixelFormat inferFormat(int channels) {
-    switch (channels) {
-        case 1: return TexturePixelFormat::R;
-        case 2: return TexturePixelFormat::RG;
-        case 3: return TexturePixelFormat::RGB;
-        case 4:
-        default: return TexturePixelFormat::RGBA;
+        auto& asset = rm.edit(c.handle);
+        const bool applied = apply(asset, c);
+        asset.loading = false;
+        if (applied) rm.commit(c.handle);
     }
 }
 
@@ -49,27 +47,16 @@ TexturePixelFormat inferFormat(int channels) {
 void AsyncLoaderSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("AsyncLoaderSystem");
 
-    ResourceManager& rm = ctx.resources;
+    ResourceManager& rm    = ctx.resources;
+    AsyncLoadQueue&  queue = AsyncLoadQueue::get();
 
-    // Textures: pixel data + format inferred from channel count.
-    for (auto& c : AsyncLoadQueue::get().drainTextures()) {
-        if (!c.handle) continue;
-
-        // The asset may have been destroyed between push and drain (scene
-        // swap, editor deletion). resourceManager.get on a dead handle is
-        // UB; guard with a slot-level liveness check.
-        if (!rm.isAlive(c.handle)) {
-            LOG_VERBOSE("Texture handle %u dead before completion landed - dropping", c.handle.id());
-            continue;
-        }
-
-        TextureAsset& asset = rm.edit(c.handle);
-
+    // Textures: pixel data + format, either inferred from channel count or
+    // (for cooked textures) applied verbatim from exact params.
+    finalize(rm, queue.drainTextures(), [](TextureAsset& asset, TextureLoadCompletion& c) {
         if (!c.success || c.pixelData.empty()) {
             LOG_WARNING("Async texture decode failed for '%s' - leaving asset empty",
                 asset.filePath.c_str());
-            asset.loading = false;
-            continue;
+            return false;
         }
 
         if (c.hasParams) {
@@ -86,36 +73,24 @@ void AsyncLoaderSystem::update(FrameContext& ctx) {
             asset.params.type           = TexturePixelType::UnsignedByte;
         }
         asset.pixelData = std::move(c.pixelData);
-        asset.loading   = false;
-        rm.commit(c.handle);
-    }
+        return true;
+    });
 
-    // Meshes: vertex/index buffers + precomputed bounds. The worker did
-    // the bounds computation alongside the vertex extraction so this loop
-    // is pure move + commit.
-    for (auto& c : AsyncLoadQueue::get().drainMeshes()) {
-        if (!c.handle) continue;
-        if (!rm.isAlive(c.handle)) {
-            LOG_VERBOSE("Mesh handle %u dead before completion landed - dropping", c.handle.id());
-            continue;
-        }
-
-        MeshAsset& asset = rm.edit(c.handle);
-
+    // Meshes: vertex/index buffers + precomputed bounds. The worker computed
+    // bounds alongside vertex extraction, so this is a pure move.
+    finalize(rm, queue.drainMeshes(), [](MeshAsset& asset, MeshLoadCompletion& c) {
         if (!c.success || c.vertices.empty()) {
             LOG_WARNING("Async mesh decode failed for '%s' - leaving asset empty",
                 asset.name.c_str());
-            asset.loading = false;
-            continue;
+            return false;
         }
 
         asset.vertices  = std::move(c.vertices);
         asset.indices   = std::move(c.indices);
         asset.boundsMin = c.boundsMin;
         asset.boundsMax = c.boundsMax;
-        asset.loading   = false;
-        rm.commit(c.handle);
-    }
+        return true;
+    });
 }
 
 } // namespace Engine
