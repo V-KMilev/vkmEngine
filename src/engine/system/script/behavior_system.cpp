@@ -19,17 +19,37 @@
 
 namespace Engine {
 
+namespace {
+
+// Build the "TypeName / hook" label used in behavior error reports. Called only
+// on throw, so it never allocates on the per-hook hot path.
+std::string hookLabel(const Behavior& behavior, const char* hookName) {
+    return std::string(behavior.typeName()) + " / " + hookName;
+}
+
+// Run a hook body under the catch net, reporting any throw. Returns true if it
+// threw, leaving the caller to decide the consequence (guard disables the
+// behavior; teardown just logs and moves on).
 template<typename Fn>
-void BehaviorSystem::guard(Behavior& behavior, const char* hookName, Fn&& fn) {
+bool runGuarded(Behavior& behavior, const char* hookName, Fn&& fn) {
     try {
         fn();
+        return false;
     } catch (const std::exception& e) {
-        reportError("Behavior", std::string(behavior.typeName()) + " / " + hookName, e.what());
-        behavior.m_disabled = true;
+        reportError("Behavior", hookLabel(behavior, hookName), e.what());
     } catch (...) {
         // A non-std throw would otherwise escape into the system loop and crash
         // the engine (ThreadPool already guards with catch(...)); contain it here.
-        reportError("Behavior", std::string(behavior.typeName()) + " / " + hookName, "non-std exception");
+        reportError("Behavior", hookLabel(behavior, hookName), "non-std exception");
+    }
+    return true;
+}
+
+} // namespace
+
+template<typename Fn>
+void BehaviorSystem::guard(Behavior& behavior, const char* hookName, Fn&& fn) {
+    if (runGuarded(behavior, hookName, std::forward<Fn>(fn))) {
         behavior.m_disabled = true;
     }
 }
@@ -73,14 +93,11 @@ void BehaviorSystem::dispatchEntityHook(Scene& scene, EntityId target, EntityId 
 }
 
 void BehaviorSystem::fireDestroy(Behavior& behavior) {
-    if (behavior.m_started) {  // onDestroy mirrors onStart - never started, never destroyed
-        try {
-            behavior.onDestroy();
-        } catch (const std::exception& e) {
-            reportError("Behavior", std::string(behavior.typeName()) + " / onDestroy", e.what());
-        } catch (...) {
-            reportError("Behavior", std::string(behavior.typeName()) + " / onDestroy", "non-std exception");
-        }
+    // onDestroy mirrors onStart: never started, never destroyed. Unlike guard(),
+    // a throw here is logged but doesn't disable - the behavior is being torn
+    // down anyway.
+    if (behavior.m_started) {
+        runGuarded(behavior, "onDestroy", [&] { behavior.onDestroy(); });
     }
     behavior.clearSubscriptions();  // drop listeners while the EventSystem is alive
 }

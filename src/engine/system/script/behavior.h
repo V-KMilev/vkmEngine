@@ -191,10 +191,11 @@ class Behavior {
             m_subscriptions.clear();
         }
 
-        std::vector<std::function<void()>> m_subscriptions;  ///< Auto-unsubscribe thunks.
-        std::vector<EntityId>* m_pendingDestroy = nullptr;   ///< BehaviorSystem's deferred-destroy queue.
-        bool m_started  = false;  ///< onStart already fired (managed by BehaviorSystem).
-        bool m_disabled = false;  ///< Set after a hook threw; BehaviorSystem then skips it.
+    private:
+        std::vector<std::function<void()>> m_subscriptions;
+        std::vector<EntityId>* m_pendingDestroy = nullptr;
+        bool m_started  = false;
+        bool m_disabled = false;
 };
 
 } // namespace Engine
