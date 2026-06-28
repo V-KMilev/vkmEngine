@@ -71,7 +71,9 @@ MeshAsset generateTriangle(float size) {
         Vertex{ glm::vec3( 0.5f, 0.0f, -0.25f) * size, normal, glm::vec2(1.0f, 0.0f), tangent }   // Bottom-right
     };
 
-    mesh.indices = { 0, 1, 2 };
+    // CCW seen from +Y (the normal side), so cross(v1-v0, v2-v0) == +Y and the
+    // lit face is the one the normal points out of.
+    mesh.indices = { 0, 2, 1 };
     mesh.computeAndSetBounds();
     stampGenerated(mesh, "triangle", {{"size", size}});
     return mesh;
@@ -85,7 +87,8 @@ MeshAsset generatePlane(float width, float height, uint32_t widthSegments, uint3
 
     // Tessellated grid: width x height (full dimensions, centred on origin),
     // subdivided into widthSegments x heightSegments quads. u runs along x,
-    // v along z; per-cell winding matches the original single-quad plane.
+    // v along z; each cell is wound CCW seen from +Y so the lit face is the
+    // normal (+Y) side under back-face culling.
     const uint32_t nx = widthSegments  > 0 ? widthSegments  : 1;
     const uint32_t nz = heightSegments > 0 ? heightSegments : 1;
     const float halfW = width  * 0.5f;
@@ -111,11 +114,11 @@ MeshAsset generatePlane(float width, float height, uint32_t widthSegments, uint3
             const uint32_t v11 = (j + 1) * stride + (i + 1);
             const uint32_t v01 = (j + 1) * stride + i;
             mesh.indices.push_back(v00);
+            mesh.indices.push_back(v11);
             mesh.indices.push_back(v10);
             mesh.indices.push_back(v11);
-            mesh.indices.push_back(v11);
-            mesh.indices.push_back(v01);
             mesh.indices.push_back(v00);
+            mesh.indices.push_back(v01);
         }
     }
 
@@ -289,7 +292,8 @@ MeshAsset generatePyramid(float baseSize, float height) {
 
     // Side normals derived from the actual slope so they stay correct for any
     // baseSize/height (a fixed normal would only suit one set of proportions).
-    // cross(c-a, b-a) points outward for the winding used in mesh.indices below.
+    // Each side is wound (a, c, b) in mesh.indices below, so its front-face
+    // normal is cross((c)-a, (b)-a) - exactly what this returns (outward).
     auto faceNormal = [](const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
         return glm::normalize(glm::cross(c - a, b - a));
     };
@@ -326,12 +330,16 @@ MeshAsset generatePyramid(float baseSize, float height) {
         Vertex{ apex, nLeft, glm::vec2(0.5f, 1.0f), tangent }
     };
 
+    // Base winds CCW seen from below (its -Y normal side). Each side winds
+    // (base-left, apex, base-right) so cross(v1-v0, v2-v0) points outward,
+    // matching the slope normals above - otherwise the sides face inward and
+    // get culled.
     mesh.indices = {
         0, 1, 2,  2, 3, 0,      // Base
-        4, 5, 6,                // Back
-        7, 8, 9,                // Right
-        10, 11, 12,             // Front
-        13, 14, 15              // Left
+        4, 6, 5,                // Back
+        7, 9, 8,                // Right
+        10, 12, 11,             // Front
+        13, 15, 14              // Left
     };
 
     mesh.computeAndSetBounds();
@@ -373,20 +381,23 @@ MeshAsset generateCone(float radius, float height, uint32_t segments) {
     mesh.vertices.push_back(Vertex{ baseCenter, nDown, glm::vec2(0.5f, 0.5f), tangent });
     uint32_t baseCenterIndex = static_cast<uint32_t>(mesh.vertices.size()) - 1;
 
-    // Create cone side triangles (tip to base circle)
+    // Cone side triangles (tip to base circle). The base ring runs CCW seen
+    // from +Y, so (tip, next, i) gives cross(v1-v0, v2-v0) pointing radially
+    // outward - the side normals' direction. (tip, i, next) would face inward.
     for (uint32_t i = 0; i < segments; ++i) {
         uint32_t nextI = (i + 1) % segments;
         mesh.indices.push_back(tipIndex);
-        mesh.indices.push_back(baseStartIndex + i);
         mesh.indices.push_back(baseStartIndex + nextI);
+        mesh.indices.push_back(baseStartIndex + i);
     }
 
-    // Create base cap triangles
+    // Base cap triangles, wound CCW seen from below so the -Y normal side is
+    // the lit (front) face.
     for (uint32_t i = 0; i < segments; ++i) {
         uint32_t nextI = (i + 1) % segments;
         mesh.indices.push_back(baseCenterIndex);
-        mesh.indices.push_back(baseStartIndex + nextI);
         mesh.indices.push_back(baseStartIndex + i);
+        mesh.indices.push_back(baseStartIndex + nextI);
     }
 
     mesh.computeAndSetBounds();
