@@ -116,39 +116,35 @@ MaterialHandle loadMaterialFromFolder(
 
     MaterialLoadDesc desc = baseProperties;
 
-    // Common naming patterns for each texture type
+    // Common naming patterns per texture type. findTexture lowercases both the
+    // filename and each pattern before matching, so patterns are listed once in
+    // lowercase. Distinct spellings that are NOT mere case variants (e.g.
+    // "basecolor" vs "base_color") are kept - they match different filenames.
     auto findAlbedo = findTexture(folderPath, {
-        "Color", "color", "Albedo", "albedo",
-        "BaseColor", "basecolor", "Diffuse", "diffuse",
-        "Base_Color", "base_color"
+        "color", "albedo", "basecolor", "diffuse", "base_color"
     });
     auto findNormal = findTexture(folderPath, {
-        "Normal", "normal", "NormalGL", "normalgl",
-        "Normal_GL", "normal_gl", "Norm", "norm"
+        "normal", "normalgl", "normal_gl", "norm"
     });
     auto findMetallic = findTexture(folderPath, {
-        "Metallic", "metallic", "Metalness", "metalness",
-        "Metal", "metal"
+        "metallic", "metalness", "metal"
     });
     auto findRoughness = findTexture(folderPath, {
-        "Roughness", "roughness", "Rough", "rough"
+        "roughness", "rough"
     });
     auto findMetallicRoughness = findTexture(folderPath, {
-        "MetallicRoughness", "metallic_roughness",
-        "ORM", "orm",  // Occlusion-Roughness-Metallic
-        "RMA", "rma"   // Roughness-Metallic-AO
+        "metallicroughness", "metallic_roughness",
+        "orm",  // Occlusion-Roughness-Metallic
+        "rma"   // Roughness-Metallic-AO
     });
     auto findAO = findTexture(folderPath, {
-        "AO", "ao", "AmbientOcclusion", "ambient_occlusion",
-        "Occlusion", "occlusion", "Ambient_Occlusion"
+        "ao", "ambientocclusion", "ambient_occlusion", "occlusion"
     });
     auto findEmission = findTexture(folderPath, {
-        "Emission", "emission", "Emissive", "emissive",
-        "Emit", "emit", "Glow", "glow"
+        "emission", "emissive", "emit", "glow"
     });
     auto findHeight = findTexture(folderPath, {
-        "Height", "height", "Displacement", "displacement",
-        "Disp", "disp", "Parallax", "parallax"
+        "height", "displacement", "disp", "parallax"
     });
 
     // Assign found textures

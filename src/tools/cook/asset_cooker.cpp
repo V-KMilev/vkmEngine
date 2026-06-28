@@ -54,8 +54,11 @@ bool writeRecipeFile(const std::filesystem::path& path, const std::string& name,
     return static_cast<bool>(out);
 }
 
-void cookMesh(const MeshAsset& mesh) {
-    if (mesh.name.empty() || mesh.loading || !mesh.hasSource() || mesh.vertices.empty()) return;
+// The cook* helpers return false only on a real cook failure (recipe / cooked
+// write); a skip - unnamed, still loading, no source, or already up to date -
+// returns true, so cookAllAssets can distinguish failures from no-ops.
+bool cookMesh(const MeshAsset& mesh) {
+    if (mesh.name.empty() || mesh.loading || !mesh.hasSource() || mesh.vertices.empty()) return true;
 
     AssetLibrary& lib = AssetLibrary::get();
     const nlohmann::json& recipe = mesh.sourceJson();
@@ -67,18 +70,19 @@ void cookMesh(const MeshAsset& mesh) {
     const std::filesystem::path cookedPath = ProjectPaths::cooked() / cookedRel;
     const Record* existing = lib.find(AssetType::Mesh, mesh.name);
     std::error_code ec;
-    if (existing && existing->recipeHash == hash && std::filesystem::exists(cookedPath, ec)) return;
+    if (existing && existing->recipeHash == hash && std::filesystem::exists(cookedPath, ec)) return true;
 
-    if (!writeRecipeFile(ProjectPaths::library() / recipeRel, mesh.name, "mesh", recipe)) return;
-    if (!AssetCook::writeMesh(cookedPath, mesh, hash)) return;
+    if (!writeRecipeFile(ProjectPaths::library() / recipeRel, mesh.name, "mesh", recipe)) return false;
+    if (!AssetCook::writeMesh(cookedPath, mesh, hash)) return false;
 
     lib.upsert({AssetType::Mesh, mesh.name, recipeRel, cookedRel, hash});
     LOG_INFO("Cooked mesh '%s' (%zu verts, %zu indices)",
              mesh.name.c_str(), mesh.vertices.size(), mesh.indices.size());
+    return true;
 }
 
-void cookTexture(const TextureAsset& tex) {
-    if (tex.name.empty() || tex.loading || !tex.hasSource() || tex.pixelData.empty()) return;
+bool cookTexture(const TextureAsset& tex) {
+    if (tex.name.empty() || tex.loading || !tex.hasSource() || tex.pixelData.empty()) return true;
 
     AssetLibrary& lib = AssetLibrary::get();
     const nlohmann::json& recipe = tex.sourceJson();
@@ -90,17 +94,18 @@ void cookTexture(const TextureAsset& tex) {
     const std::filesystem::path cookedPath = ProjectPaths::cooked() / cookedRel;
     const Record* existing = lib.find(AssetType::Texture, tex.name);
     std::error_code ec;
-    if (existing && existing->recipeHash == hash && std::filesystem::exists(cookedPath, ec)) return;
+    if (existing && existing->recipeHash == hash && std::filesystem::exists(cookedPath, ec)) return true;
 
-    if (!writeRecipeFile(ProjectPaths::library() / recipeRel, tex.name, "texture", recipe)) return;
-    if (!AssetCook::writeTexture(cookedPath, tex, hash)) return;
+    if (!writeRecipeFile(ProjectPaths::library() / recipeRel, tex.name, "texture", recipe)) return false;
+    if (!AssetCook::writeTexture(cookedPath, tex, hash)) return false;
 
     lib.upsert({AssetType::Texture, tex.name, recipeRel, cookedRel, hash});
     LOG_INFO("Cooked texture '%s' (%ux%u)", tex.name.c_str(), tex.params.width, tex.params.height);
+    return true;
 }
 
-void cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
-    if (mat.name.empty()) return;
+bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
+    if (mat.name.empty()) return true;
 
     AssetLibrary& lib = AssetLibrary::get();
     // A material's canonical inline form is both its editable source of truth and
@@ -111,12 +116,13 @@ void cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
     const std::string recipeRel = "materials/" + uid + ".json";
 
     const Record* existing = lib.find(AssetType::Material, mat.name);
-    if (existing && existing->recipeHash == hash) return;
+    if (existing && existing->recipeHash == hash) return true;
 
-    if (!writeRecipeFile(ProjectPaths::library() / recipeRel, mat.name, "material", inlineSource)) return;
+    if (!writeRecipeFile(ProjectPaths::library() / recipeRel, mat.name, "material", inlineSource)) return false;
 
     lib.upsert({AssetType::Material, mat.name, recipeRel, std::string{}, hash});
     LOG_INFO("Cooked material '%s'", mat.name.c_str());
+    return true;
 }
 
 } // namespace
@@ -126,15 +132,22 @@ void cookAllAssets(ResourceManager& resources) {
 
     // Textures first, then materials (which reference textures by name), then
     // meshes - matching the load order so a downstream consumer is consistent.
+    size_t failed = 0;
     resources.forEachOfType<TextureAsset>([&](TextureHandle, const TextureAsset& tex) {
-        if (!tex.hidden) cookTexture(tex);
+        if (!tex.hidden && !cookTexture(tex)) ++failed;
     });
     resources.forEachOfType<MaterialAsset>([&](MaterialHandle, const MaterialAsset& mat) {
-        if (!mat.hidden) cookMaterial(mat, resources);
+        if (!mat.hidden && !cookMaterial(mat, resources)) ++failed;
     });
     resources.forEachOfType<MeshAsset>([&](MeshHandle, const MeshAsset& mesh) {
-        if (!mesh.hidden) cookMesh(mesh);
+        if (!mesh.hidden && !cookMesh(mesh)) ++failed;
     });
+
+    // A failed cook leaves the manifest referencing a cooked file that was never
+    // written; surface it instead of saving silently as if everything succeeded.
+    if (failed > 0) {
+        LOG_ERROR("Cooker: %zu asset(s) failed to cook; manifest may reference missing cooked files", failed);
+    }
 
     if (!AssetLibrary::get().save()) {
         LOG_ERROR("Cooker: failed to save the asset library manifest");
