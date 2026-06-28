@@ -1,0 +1,96 @@
+#define VKM_LOG_CATEGORY "ASYNC_LOADER"
+
+#include "system/async/async_loader_system.h"
+
+#include <vector>
+
+#include "logger.h"
+
+#include "debug/profiler.h"
+#include "resource/asset/mesh_asset.h"
+#include "resource/resource_manager.h"
+#include "resource/asset/texture_asset.h"
+#include "resource/texture_format.h"
+#include "system/async/async_load_queue.h"
+
+namespace Engine {
+
+namespace {
+
+/**
+ * @brief Finalise one batch of drained completions against the ResourceManager.
+ *
+ * Shared skeleton for both asset kinds: skip dropped handles, guard against an
+ * asset destroyed between the worker pushing and this drain (scene swap, editor
+ * deletion) - rm.get on a dead handle is UB - then hand the live asset to
+ * @p apply. The loading flag is always cleared; the asset is committed (bumping
+ * its version so the backend re-uploads) only when @p apply reports success.
+ */
+template <typename Completion, typename Apply>
+void finalize(ResourceManager& rm, std::vector<Completion> completions, Apply apply) {
+    for (auto& c : completions) {
+        if (!c.handle) continue;
+        if (!rm.isAlive(c.handle)) {
+            LOG_VERBOSE("Async handle %u dead before completion landed - dropping", c.handle.id());
+            continue;
+        }
+
+        auto& asset = rm.edit(c.handle);
+        const bool applied = apply(asset, c);
+        asset.loading = false;
+        if (applied) rm.commit(c.handle);
+    }
+}
+
+} // namespace
+
+void AsyncLoaderSystem::update(FrameContext& ctx) {
+    PROFILE_SCOPE("AsyncLoaderSystem");
+
+    ResourceManager& rm    = ctx.resources;
+    AsyncLoadQueue&  queue = AsyncLoadQueue::get();
+
+    // Textures: pixel data + format, either inferred from channel count or
+    // (for cooked textures) applied verbatim from exact params.
+    finalize(rm, queue.drainTextures(), [](TextureAsset& asset, TextureLoadCompletion& c) {
+        if (!c.success || c.pixelData.empty()) {
+            LOG_WARNING("Async texture decode failed for '%s' - leaving asset empty",
+                asset.filePath.c_str());
+            return false;
+        }
+
+        if (c.hasParams) {
+            // Cooked texture: params (incl. format/sRGB/wrap/filter) are exact.
+            asset.params = c.params;
+            asset.srgb   = (c.params.internalFormat == TextureInternalFormat::SRGB8 ||
+                            c.params.internalFormat == TextureInternalFormat::SRGBA8);
+        } else {
+            // stb-decoded texture: infer format from channel count + sRGB flag.
+            asset.params.width          = c.width;
+            asset.params.height         = c.height;
+            asset.params.internalFormat = inferInternalFormat(c.channels, asset.srgb);
+            asset.params.format         = inferFormat(c.channels);
+            asset.params.type           = TexturePixelType::UnsignedByte;
+        }
+        asset.pixelData = std::move(c.pixelData);
+        return true;
+    });
+
+    // Meshes: vertex/index buffers + precomputed bounds. The worker computed
+    // bounds alongside vertex extraction, so this is a pure move.
+    finalize(rm, queue.drainMeshes(), [](MeshAsset& asset, MeshLoadCompletion& c) {
+        if (!c.success || c.vertices.empty()) {
+            LOG_WARNING("Async mesh decode failed for '%s' - leaving asset empty",
+                asset.name.c_str());
+            return false;
+        }
+
+        asset.vertices  = std::move(c.vertices);
+        asset.indices   = std::move(c.indices);
+        asset.boundsMin = c.boundsMin;
+        asset.boundsMax = c.boundsMax;
+        return true;
+    });
+}
+
+} // namespace Engine

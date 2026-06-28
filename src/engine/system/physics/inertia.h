@@ -1,0 +1,55 @@
+#pragma once
+
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+
+namespace Engine {
+
+/**
+ * @brief Inertia tensor of a solid box about its centre, in body-local space.
+ *
+ * Solid box: I_x = (1/12) m (h_y^2 + h_z^2) using full extents h = 2*halfExtents.
+ * Returns mat3(0) for a non-positive mass or degenerate extent. Callers that need
+ * the inverse (and may parallel-axis-shift first) invert the result themselves.
+ */
+inline glm::mat3 boxInertiaLocal(float mass, const glm::vec3& halfExtents) {
+    if (mass <= 0.0f) return glm::mat3(0.0f);
+
+    const glm::vec3 full = halfExtents * 2.0f;
+    const float k = mass / 12.0f;
+    const float ix = k * (full.y * full.y + full.z * full.z);
+    const float iy = k * (full.x * full.x + full.z * full.z);
+    const float iz = k * (full.x * full.x + full.y * full.y);
+    if (ix <= 0.0f || iy <= 0.0f || iz <= 0.0f) return glm::mat3(0.0f);
+
+    return glm::mat3(
+        ix, 0.0f, 0.0f,
+        0.0f, iy, 0.0f,
+        0.0f, 0.0f, iz
+    );
+}
+
+/**
+ * @brief Parallel-axis shift of an inertia tensor from the centre of mass to a
+ *        parallel axis offset by @p offset: I' = I + m (|d|^2 E - d d^T).
+ *
+ * Used when a collider's centre is offset from the entity origin (where the
+ * solver measures contact arms) so the body rotates about the correct axis.
+ */
+inline glm::mat3 parallelAxisShift(const glm::mat3& inertia, float mass, const glm::vec3& offset) {
+    const float d2 = glm::dot(offset, offset);
+    return inertia + mass * (glm::mat3(d2) - glm::outerProduct(offset, offset));
+}
+
+/**
+ * @brief Rotate a body-local inverse inertia tensor into world space.
+ *
+ * I_world^-1 = R * I_local^-1 * R^T, with R the rotation matrix of the body's
+ * orientation. Recomputed each tick because the orientation changes.
+ */
+inline glm::mat3 inverseInertiaWorld(const glm::mat3& invInertiaLocal, const glm::quat& rotation) {
+    const glm::mat3 r = glm::mat3_cast(rotation);
+    return r * invInertiaLocal * glm::transpose(r);
+}
+
+} // namespace Engine
