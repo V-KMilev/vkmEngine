@@ -96,4 +96,23 @@ inline bool isPressed(const KeyBind& bind) {
  */
 const char* getKeyBindLabel(const KeyBind& bind, char* buf, size_t bufSize);
 
+/**
+ * @brief Value-returning keybind label, for inline use as a MenuItem shortcut:
+ * `ImGui::MenuItem("Save Scene", keyLabel(kb.saveScene))`.
+ *
+ * Wraps a small fixed buffer that implicitly decays to const char*, so call
+ * sites don't juggle a scratch char[] + size. The temporary lives to the end of
+ * the full expression - long enough for ImGui, which renders the shortcut
+ * during the call rather than storing the pointer.
+ */
+struct KeyLabel {
+    char buf[48];
+    operator const char*() const { return buf; }
+};
+inline KeyLabel keyLabel(const KeyBind& bind) {
+    KeyLabel out;
+    getKeyBindLabel(bind, out.buf, sizeof(out.buf));
+    return out;
+}
+
 } // namespace Engine

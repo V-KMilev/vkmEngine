@@ -128,12 +128,33 @@ class ComponentEditCommand : public Command {
 };
 
 /**
+ * @brief The value-copyable components an EntitySnapshot round-trips, as
+ * (Type, field-name) rows.
+ *
+ * This single list drives the snapshot's fields, capture() and apply() so the
+ * three can never drift - adding a component to the editor's "resurrect intact"
+ * vocabulary is one new row here. ScriptComponent is deliberately absent: it is
+ * move-only and stored as serialized JSON (see EntitySnapshot::scriptJson),
+ * handled as an explicit special case in capture/apply.
+ */
+#define VKM_EDITOR_SNAPSHOT_COMPONENTS(X) \
+    X(Transform,       transform)         \
+    X(Mesh,            mesh)              \
+    X(Light,           light)            \
+    X(Camera,          camera)           \
+    X(Animation,       animation)        \
+    X(Name,            name)             \
+    X(Rigidbody,       rigidbody)        \
+    X(Collider,        collider)         \
+    X(ReflectionProbe, reflectionProbe)
+
+/**
  * @brief Snapshot of every editor-visible component on a single entity.
  *
  * Used by Create / Destroy commands so an undo can resurrect an entity
  * with the exact same components it had before destruction. Each field is
- * populated only when the entity carried that component. Future component
- * types added to the editor's vocabulary go here too.
+ * populated only when the entity carried that component. The component set is
+ * defined once in VKM_EDITOR_SNAPSHOT_COMPONENTS above.
  *
  * Hierarchy itself is not stored here - subtree rewiring is the job of
  * SubtreeSnapshot, which knows the parent/child links across multiple
@@ -141,15 +162,9 @@ class ComponentEditCommand : public Command {
  */
 struct EntitySnapshot {
     uint32_t slotIndex = 0;
-    std::optional<Transform>       transform;
-    std::optional<Mesh>            mesh;
-    std::optional<Light>           light;
-    std::optional<Camera>          camera;
-    std::optional<Animation>       animation;
-    std::optional<Name>            name;
-    std::optional<Rigidbody>       rigidbody;
-    std::optional<Collider>        collider;
-    std::optional<ReflectionProbe> reflectionProbe;
+#define VKM_SNAPSHOT_FIELD(Type, field) std::optional<Type> field;
+    VKM_EDITOR_SNAPSHOT_COMPONENTS(VKM_SNAPSHOT_FIELD)
+#undef VKM_SNAPSHOT_FIELD
     /**
      * @brief ScriptComponent is move-only, so it can't be stored as a value here -
      * it's kept as its serialized JSON (type names + reflected fields) and

@@ -149,15 +149,10 @@ template class RenameAssetCommand<MeshHandle>;
 EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
     EntitySnapshot s;
     s.slotIndex = id.index;
-    if (scene.has<Transform>(id)) s.transform = scene.get<Transform>(id);
-    if (scene.has<Mesh>(id))      s.mesh      = scene.get<Mesh>(id);
-    if (scene.has<Light>(id))     s.light     = scene.get<Light>(id);
-    if (scene.has<Camera>(id))    s.camera    = scene.get<Camera>(id);
-    if (scene.has<Animation>(id)) s.animation = scene.get<Animation>(id);
-    if (scene.has<Name>(id))      s.name      = scene.get<Name>(id);
-    if (scene.has<Rigidbody>(id)) s.rigidbody = scene.get<Rigidbody>(id);
-    if (scene.has<Collider>(id))  s.collider  = scene.get<Collider>(id);
-    if (scene.has<ReflectionProbe>(id)) s.reflectionProbe = scene.get<ReflectionProbe>(id);
+#define VKM_SNAPSHOT_CAPTURE(Type, field) \
+    if (scene.has<Type>(id)) s.field = scene.get<Type>(id);
+    VKM_EDITOR_SNAPSHOT_COMPONENTS(VKM_SNAPSHOT_CAPTURE)
+#undef VKM_SNAPSHOT_CAPTURE
     if (scene.has<ScriptComponent>(id)) {
         s.scriptJson = ComponentSerializer::save(scene.get<ScriptComponent>(id)).dump();
     }
@@ -166,20 +161,13 @@ EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
 
 void EntitySnapshot::apply(Scene& scene, EntityId id) const {
     Entity e{id};
-    // Construct fresh copies before forwarding - Scene::add's T&& binds
-    // an rvalue and the optionals hold lvalues.
-    if (transform && !scene.has<Transform>(id)) { Transform v = *transform; scene.add(e, std::move(v)); }
-    if (mesh      && !scene.has<Mesh>(id))      { Mesh      v = *mesh;      scene.add(e, std::move(v)); }
-    if (light     && !scene.has<Light>(id))     { Light     v = *light;     scene.add(e, std::move(v)); }
-    if (camera    && !scene.has<Camera>(id))    { Camera    v = *camera;    scene.add(e, std::move(v)); }
-    if (animation && !scene.has<Animation>(id)) { Animation v = *animation; scene.add(e, std::move(v)); }
-    if (name      && !scene.has<Name>(id))      { Name      v = *name;      scene.add(e, std::move(v)); }
-    if (rigidbody && !scene.has<Rigidbody>(id)) { Rigidbody v = *rigidbody; scene.add(e, std::move(v)); }
-    if (collider  && !scene.has<Collider>(id))  { Collider  v = *collider;  scene.add(e, std::move(v)); }
-    if (reflectionProbe && !scene.has<ReflectionProbe>(id)) {
-        ReflectionProbe v = *reflectionProbe;
-        scene.add(e, std::move(v));
-    }
+    // Construct a fresh copy before forwarding - Scene::add's T&& binds an
+    // rvalue and the optionals hold lvalues. Only add what's missing so apply
+    // onto a half-populated entity is a no-op for components already present.
+#define VKM_SNAPSHOT_APPLY(Type, fieldName) \
+    if (fieldName && !scene.has<Type>(id)) { Type v = *fieldName; scene.add(e, std::move(v)); }
+    VKM_EDITOR_SNAPSHOT_COMPONENTS(VKM_SNAPSHOT_APPLY)
+#undef VKM_SNAPSHOT_APPLY
     if (scriptJson && !scene.has<ScriptComponent>(id)) {
         ScriptComponent sc;
         ComponentSerializer::load(nlohmann::json::parse(*scriptJson), sc);

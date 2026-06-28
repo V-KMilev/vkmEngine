@@ -42,6 +42,12 @@ class InspectorPanel {
         void draw(EditorContext& ec);
 
     private:
+        // The blank-panel and entity-identity rows, factored out of draw() so it
+        // reads as a thin orchestrator (empty-state guard -> identity -> the
+        // component-section dispatch that is its real job).
+        void drawEmptySelectionState(EditorContext& ec);
+        void drawIdentityHeader(Scene& scene, EditorState& state, EntityId id);
+
         // Each section takes the EditorState so it can flag the scene as dirty
         // when the user edits anything. Centralizing this avoids missing edits.
         void drawTransformSection(Scene& scene, EditorState& state, EntityId id);
