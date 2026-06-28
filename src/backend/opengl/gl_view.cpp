@@ -19,10 +19,8 @@ void GLView::ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, c
     const uint32_t generation = handle.key.generation;
     const AssetT& asset = resources.get(handle);
 
-    if (id >= table.entries.size()) {
-        table.entries.resize(id + 1);
-        table.versions.resize(id + 1, 0);
-        table.generations.resize(id + 1, 0);
+    if (id >= table.slots.size()) {
+        table.slots.resize(id + 1);
     }
 
     // A freed slot can be recycled by a different asset that also starts at
@@ -30,13 +28,14 @@ void GLView::ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, c
     // scratch when the slot is empty or its generation moved on (recycled); an
     // in-place update() is only valid when it is the same asset (same generation)
     // with a newer version.
-    if (!table.entries[id] || table.generations[id] != generation) {
-        table.entries[id]     = std::make_unique<GLT>(asset);
-        table.versions[id]    = asset.version;
-        table.generations[id] = generation;
-    } else if (table.versions[id] != asset.version) {
-        table.entries[id]->update(asset);
-        table.versions[id] = asset.version;
+    auto& slot = table.slots[id];
+    if (!slot.gl || slot.generation != generation) {
+        slot.gl         = std::make_unique<GLT>(asset);
+        slot.version    = asset.version;
+        slot.generation = generation;
+    } else if (slot.version != asset.version) {
+        slot.gl->update(asset);
+        slot.version = asset.version;
     }
 }
 
@@ -59,20 +58,20 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
 const GLMesh* GLView::getMesh(const MeshHandle& handle) const {
     if (!handle) return nullptr;
     const uint32_t id = handle.id();
-    return id < m_meshes.entries.size() ? m_meshes.entries[id].get() : nullptr;
+    return id < m_meshes.slots.size() ? m_meshes.slots[id].gl.get() : nullptr;
 }
 
 const GLMaterial* GLView::getMaterial(const MaterialHandle& handle) const {
     if (!handle) return nullptr;
     const uint32_t id = handle.id();
-    return id < m_materials.entries.size() ? m_materials.entries[id].get() : nullptr;
+    return id < m_materials.slots.size() ? m_materials.slots[id].gl.get() : nullptr;
 }
 
 const Core::Texture2D* GLView::getTexture(const TextureHandle& handle) const {
     if (!handle) return nullptr;
     const uint32_t id = handle.id();
-    if (id >= m_textures.entries.size() || !m_textures.entries[id]) return nullptr;
-    return &m_textures.entries[id]->getTexture();
+    if (id >= m_textures.slots.size() || !m_textures.slots[id].gl) return nullptr;
+    return &m_textures.slots[id].gl->getTexture();
 }
 
 } // namespace Engine
