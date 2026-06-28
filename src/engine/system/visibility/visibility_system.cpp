@@ -18,7 +18,7 @@
 #include "ecs/component/transform.h"
 #include "ecs/component/world_transform.h"
 
-#include "system/visibility/bounds_utils.h"
+#include "core/math/bounds.h"
 #include "system/visibility/visibility_context.h"
 
 #include "system/visibility/culling/frustum_culler.h"
@@ -26,6 +26,39 @@
 #include "system/visibility/culling/distance_culling.h"
 
 namespace Engine {
+
+bool VisibilitySystem::resolveActiveCamera(Scene& scene) {
+    auto setCamera = [&](const Camera& camera, const Transform& transform) {
+        m_result.projection     = Camera::computeProjection(camera);
+        m_result.view           = Transform::computeView(transform);
+        m_result.cameraPosition = transform.position;
+        m_result.hasCamera      = true;
+    };
+
+    // Fast path: the cached camera entity (O(1) lookup).
+    if (m_cachedCameraEntity
+        && scene.isAlive(m_cachedCameraEntity)
+        && scene.has<Camera>(m_cachedCameraEntity)
+        && scene.has<Transform>(m_cachedCameraEntity))
+    {
+        const Camera& camera = scene.get<Camera>(m_cachedCameraEntity);
+        if (camera.active) {
+            setCamera(camera, scene.get<Transform>(m_cachedCameraEntity));
+            return true;
+        }
+    }
+
+    // Slow path: scan for the first active camera and re-cache it.
+    m_cachedCameraEntity = {};
+    bool found = false;
+    scene.forEach<Camera, Transform>([&](EntityId id, const Camera& camera, const Transform& transform) {
+        if (found || !camera.active) return;
+        setCamera(camera, transform);
+        m_cachedCameraEntity = id;
+        found = true;
+    });
+    return found;
+}
 
 void VisibilitySystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("VisibilitySystem");
@@ -37,58 +70,18 @@ void VisibilitySystem::update(FrameContext& ctx) {
     m_result.shadowCasters.clear();
     m_result.hasCamera = false;
 
-    glm::mat4 view;
-    glm::mat4 projection;
-    glm::vec3 cameraPosition;
-    bool found = false;
-
-    // Fast path: try the cached camera entity first (O(1) lookup)
-    if (m_cachedCameraEntity
-        && ctx.scene.isAlive(m_cachedCameraEntity)
-        && ctx.scene.has<Camera>(m_cachedCameraEntity)
-        && ctx.scene.has<Transform>(m_cachedCameraEntity))
-    {
-        const auto& camera = ctx.scene.get<Camera>(m_cachedCameraEntity);
-        const auto& transform = ctx.scene.get<Transform>(m_cachedCameraEntity);
-        if (camera.active) {
-            projection     = Camera::computeProjection(camera);
-            view           = Transform::computeView(transform);
-            cameraPosition = transform.position;
-            found = true;
-        }
-    }
-
-    // Slow path: search all entities for an active camera
-    if (!found) {
-        m_cachedCameraEntity = {};
-        ctx.scene.forEach<Camera, Transform>([&](EntityId id, const Camera& camera, const Transform& transform) {
-            if (found) return;
-            if (!camera.active) return;
-
-            projection     = Camera::computeProjection(camera);
-            view           = Transform::computeView(transform);
-            cameraPosition = transform.position;
-            m_cachedCameraEntity = id;
-            found = true;
-        });
-    }
-
-    if (!found) {
+    if (!resolveActiveCamera(ctx.scene)) {
         LOG_ERROR("No active camera found for visibility");
         ctx.visibility = &m_result;
         return;
     }
 
-    // Forward camera data so downstream systems avoid redundant lookups
-    m_result.view           = view;
-    m_result.projection     = projection;
-    m_result.cameraPosition = cameraPosition;
-    m_result.hasCamera      = true;
-
-    const glm::mat4 viewProjection = projection * view;
+    // resolveActiveCamera filled m_result.{view, projection, cameraPosition,
+    // hasCamera}; downstream systems read those directly.
+    const glm::mat4 viewProjection = m_result.projection * m_result.view;
 
     // Pre-compute screen-size threshold for sqrt-free test
-    const float projScaleY = projection[1][1];
+    const float projScaleY = m_result.projection[1][1];
     const float vpHeight = static_cast<float>(ctx.window.sceneViewportHeight());
     const float denom = projScaleY * vpHeight;
     const float screenThresholdSq = (denom > 0.0f)
@@ -97,8 +90,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
 
     VisibilityContext context{
         .frustum        = Math::extractFrustum(viewProjection),
-        .cameraPosition = cameraPosition,
-        .view           = view,
+        .cameraPosition = m_result.cameraPosition,
+        .view           = m_result.view,
         .minPixels      = m_settings.minPixels,
         .maxDistance    = m_settings.maxDistance,
         .maxDistanceSquared = m_settings.maxDistance * m_settings.maxDistance,
@@ -142,7 +135,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
             if (!transformStorage->contains(entityIdx)) return;
 
             const auto& meshAsset = resources.get(mesh.mesh);
-            if (!hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) return;
+            if (!Math::hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) return;
 
             const Transform& transform = transformStorage->get(entityIdx);
 
@@ -151,7 +144,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
                 : Transform::computeModelMatrix(transform);
 
             glm::vec3 worldMin, worldMax;
-            localToWorldAABB(
+            Math::localToWorldAABB(
                 modelMatrix,
                 meshAsset.boundsMin,
                 meshAsset.boundsMax,

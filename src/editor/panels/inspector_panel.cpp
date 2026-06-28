@@ -30,7 +30,7 @@
 #include "system/script/behavior_field_visitor.h"
 #include "system/script/behavior_registry.h"
 #include "system/script/script_component.h"
-#include "system/visibility/bounds_utils.h"
+#include "core/math/bounds.h"
 
 namespace Engine {
 
@@ -365,7 +365,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
             const auto& asset = resources.get(mesh.mesh);
             ImGui::TextDisabled("%zu verts, %zu tris",
                 asset.vertices.size(), asset.indices.size() / 3);
-            if (hasValidBounds(asset.boundsMin, asset.boundsMax)) {
+            if (Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) {
                 glm::vec3 ext = asset.boundsMax - asset.boundsMin;
                 ImGui::TextDisabled("Bounds: %.1f x %.1f x %.1f", ext.x, ext.y, ext.z);
             }
@@ -645,7 +645,7 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
         // solver ignores Transform scale.
         if (scene.has<Mesh>(id) && scene.get<Mesh>(id).mesh) {
             const auto& asset = resources.get(scene.get<Mesh>(id).mesh);
-            if (hasValidBounds(asset.boundsMin, asset.boundsMax)) {
+            if (Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) {
                 ImGui::Spacing();
                 drawPropertyLabel("Detail");
                 ImGui::SetNextItemWidth(-1.0f);

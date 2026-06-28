@@ -24,7 +24,7 @@
 #include "system/physics/inertia.h"
 #include "system/physics/physics_events.h"
 #include "system/physics/collision/narrowphase.h"
-#include "system/visibility/bounds_utils.h"
+#include "core/math/bounds.h"
 
 namespace Engine {
 
@@ -89,7 +89,7 @@ void computeAABB(
     for (const ColliderBox& part : collider.parts) {
         model[3] = glm::vec4(pos + r * part.center, 1.0f);
         glm::vec3 mn, mx;
-        localToWorldAABB(model, -part.halfExtents, part.halfExtents, mn, mx);
+        Math::localToWorldAABB(model, -part.halfExtents, part.halfExtents, mn, mx);
         outMin = glm::min(outMin, mn);
         outMax = glm::max(outMax, mx);
     }

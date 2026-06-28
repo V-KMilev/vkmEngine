@@ -10,7 +10,7 @@
 #include "framework/editor_common.h"
 #include "framework/editor_commands.h"
 #include "system/visibility/visibility.h"
-#include "system/visibility/bounds_utils.h"
+#include "core/math/bounds.h"
 #include "system/camera/camera_controller_system.h"
 #include "resource/resource_manager.h"
 #include "ecs/component/world_transform.h"
@@ -197,13 +197,13 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
         const Mesh& mesh = ctx.scene.get<Mesh>(v.id);
         if (!mesh.mesh || !ctx.resources.isAlive(mesh.mesh)) continue;
         const auto& asset = ctx.resources.get(mesh.mesh);
-        if (!hasValidBounds(asset.boundsMin, asset.boundsMax)) continue;
+        if (!Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) continue;
 
         glm::vec3 worldMin, worldMax;
-        localToWorldAABB(v.model, asset.boundsMin, asset.boundsMax, worldMin, worldMax);
+        Math::localToWorldAABB(v.model, asset.boundsMin, asset.boundsMax, worldMin, worldMax);
 
         float t;
-        if (rayIntersectsAABB(rayOrigin, invDir, worldMin, worldMax, t) && t < nearestT) {
+        if (Math::rayIntersectsAABB(rayOrigin, invDir, worldMin, worldMax, t) && t < nearestT) {
             nearestT = t;
             hitEntity = v.id;
         }
@@ -228,7 +228,7 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
         const glm::vec3 lightMax = pos + glm::vec3(radius);
 
         float t;
-        if (rayIntersectsAABB(rayOrigin, invDir, lightMin, lightMax, t) && t < nearestT) {
+        if (Math::rayIntersectsAABB(rayOrigin, invDir, lightMin, lightMax, t) && t < nearestT) {
             nearestT = t;
             hitEntity = id;
         }
