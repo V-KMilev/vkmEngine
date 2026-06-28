@@ -48,22 +48,11 @@ struct MeshAsset : public Resource {
     bool loading = false;
 
     /**
-     * @brief Compute axis-aligned bounding box (AABB) from vertex positions.
+     * @brief Compute the local-space AABB from vertex positions and store it in
+     * boundsMin / boundsMax (used for frustum/size culling).
      *
-     * Calculates the minimum and maximum corners of an AABB that encompasses
-     * all vertex positions in the mesh. This is used for frustum culling.
-     *
-     * @param mesh The mesh asset to compute bounds for.
-     * @param[out] boundsMin Output minimum corner of the AABB.
-     * @param[out] boundsMax Output maximum corner of the AABB.
-     */
-    static void computeBounds(const MeshAsset& mesh, glm::vec3& boundsMin, glm::vec3& boundsMax);
-
-    /**
-     * @brief Compute and set the AABB bounds for this mesh asset.
-     *
-     * Calculates bounds from vertex positions and sets them in the mesh asset.
-     * This should be called after creating or loading a mesh.
+     * Call after creating or loading the mesh; an empty mesh yields a
+     * zero-extent box at the origin.
      */
     void computeAndSetBounds();
 };
