@@ -228,6 +228,15 @@ class WindowManager {
          */
         int getRefreshRate() const;
 
+        /**
+         * @brief Guard for methods that need a live window: returns true if one
+         * exists, else logs "<action>: window is not initialized" and returns
+         * false so the caller can bail.
+         *
+         * @param action Caller name used in the log message.
+         */
+        bool hasWindow(const char* action) const;
+
     private:
         GLFWwindow* m_windowHandle = nullptr;
         std::string m_title;
