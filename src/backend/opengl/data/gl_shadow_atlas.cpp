@@ -13,6 +13,13 @@
 
 namespace Engine {
 
+// The 2D atlas must have a tile for every directional/spot caster the shadow
+// planner can hand out. Enforce the capacity invariant at compile time so a bump
+// to MAX_SHADOW_CASTERS_2D in engine_config.h fails the build instead of silently
+// handing out off-atlas slots.
+static_assert(SHADOW_ATLAS_COLS * SHADOW_ATLAS_ROWS >= Config::MAX_SHADOW_CASTERS_2D,
+              "Shadow atlas grid too small for MAX_SHADOW_CASTERS_2D");
+
 GLShadowAtlas::GLShadowAtlas()  = default;
 GLShadowAtlas::~GLShadowAtlas() = default;
 

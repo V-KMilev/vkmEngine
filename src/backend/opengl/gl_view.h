@@ -30,9 +30,12 @@ namespace Engine {
  */
 template <typename GLT>
 struct GLResourceTable {
-    std::vector<std::unique_ptr<GLT>> entries;
-    std::vector<uint64_t>             versions;
-    std::vector<uint32_t>             generations;  ///< handle generation per slot; mismatch == slot recycled
+    struct Slot {
+        std::unique_ptr<GLT> gl;
+        uint64_t             version    = 0;
+        uint32_t             generation = 0;  ///< handle generation; mismatch == slot recycled
+    };
+    std::vector<Slot> slots;  ///< indexed by handle.id()
 };
 
 /**
