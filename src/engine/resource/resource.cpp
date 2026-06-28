@@ -6,6 +6,14 @@
 
 namespace Engine {
 
+namespace {
+// Deep-copy the source descriptor so a copied Resource owns its own json
+// (null stays null). Shared by the copy ctor and copy-assignment.
+std::unique_ptr<nlohmann::json> cloneSource(const std::unique_ptr<nlohmann::json>& src) {
+    return src ? std::make_unique<nlohmann::json>(*src) : nullptr;
+}
+} // namespace
+
 // Out-of-line so the header only needs the json forward-declaration; the
 // full template definition is only seen here.
 Resource::Resource() = default;
@@ -17,8 +25,7 @@ Resource::Resource(const Resource& other)
     : version(other.version)
     , name(other.name)
     , hidden(other.hidden)
-    , source(other.source ? std::make_unique<nlohmann::json>(*other.source)
-                          : nullptr)
+    , source(cloneSource(other.source))
 {}
 
 Resource& Resource::operator=(const Resource& other) {
@@ -26,8 +33,7 @@ Resource& Resource::operator=(const Resource& other) {
     version = other.version;
     name    = other.name;
     hidden  = other.hidden;
-    source  = other.source ? std::make_unique<nlohmann::json>(*other.source)
-                           : nullptr;
+    source  = cloneSource(other.source);
     return *this;
 }
 

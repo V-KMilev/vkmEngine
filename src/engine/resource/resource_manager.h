@@ -47,6 +47,7 @@ class ResourceManager {
         template<typename ResourceType>
         auto add(ResourceType && resource) {
             using T = std::remove_cv_t<std::remove_reference_t<ResourceType>>;
+            static_assert(std::is_base_of_v<Resource, T>, "ResourceManager stores only types deriving from Resource.");
             auto& slot = getSlot<T>();
 
             // The name is the asset's serializable identity, so guarantee it is
@@ -125,10 +126,8 @@ class ResourceManager {
         template<typename HandleType>
         bool isAlive(const HandleType& handle) const {
             using T = typename HandleType::resource_t;
-            TypeId id = typeId<T>();
-            if (id >= m_slots.size() || !m_slots[id]) return false;
-            const auto& slot = *m_slots[id];
-            return slot.allocator.has(handle.key);
+            const TypedSlot* slot = trySlot<T>();
+            return slot && slot->allocator.has(handle.key);
         }
 
         /**
@@ -214,18 +213,17 @@ class ResourceManager {
          */
         template<typename T>
         Handle<T> findByName(const std::string& name) const {
-            TypeId id = typeId<T>();
-            if (id >= m_slots.size() || !m_slots[id]) return {};
-            const auto& slot = *m_slots[id];
+            const TypedSlot* slot = trySlot<T>();
+            if (!slot) return {};
 
-            auto it = slot.nameIndex.find(name);
-            if (it == slot.nameIndex.end()) return {};
+            auto it = slot->nameIndex.find(name);
+            if (it == slot->nameIndex.end()) return {};
             const uint32_t index = it->second;
             // Defensive: if the entry was removed (shouldn't happen because
             // remove() erases the mapping, but guards against rename-after-
             // add drift), fall back to invalid.
-            if (!storageOfConst<T>(slot).contains(index)) return {};
-            return Handle<T>{StorageIndex{index, slot.allocator.generationOf(index)}};
+            if (!storageOfConst<T>(*slot).contains(index)) return {};
+            return Handle<T>{StorageIndex{index, slot->allocator.generationOf(index)}};
         }
 
         /**
@@ -236,11 +234,10 @@ class ResourceManager {
          */
         template<typename T, typename Fn>
         void forEachOfType(Fn&& fn) const {
-            TypeId id = typeId<T>();
-            if (id >= m_slots.size() || !m_slots[id]) return;
-            const auto& slot = *m_slots[id];
-            storageOfConst<T>(slot).forEach([&](uint32_t index, const T& res) {
-                fn(Handle<T>{StorageIndex{index, slot.allocator.generationOf(index)}}, res);
+            const TypedSlot* slot = trySlot<T>();
+            if (!slot) return;
+            storageOfConst<T>(*slot).forEach([&](uint32_t index, const T& res) {
+                fn(Handle<T>{StorageIndex{index, slot->allocator.generationOf(index)}}, res);
             });
         }
 
@@ -323,11 +320,23 @@ class ResourceManager {
             return *m_slots[id];
         }
 
+        /**
+         * @brief Look up the const slot for @p T, or nullptr if the type was
+         * never registered. The graceful lookup primitive behind isAlive /
+         * findByName / forEachOfType (which return empty for an unknown type).
+         */
+        template<typename T>
+        const TypedSlot* trySlot() const {
+            TypeId id = typeId<T>();
+            if (id >= m_slots.size() || !m_slots[id]) return nullptr;
+            return m_slots[id].get();
+        }
+
         template<typename T>
         const TypedSlot& getSlotConst() const {
-            TypeId id = typeId<T>();
-            VKM_ASSERT(id < m_slots.size() && m_slots[id], "ResourceManager: type not registered");
-            return *m_slots[id];
+            const TypedSlot* slot = trySlot<T>();
+            VKM_ASSERT(slot, "ResourceManager: type not registered");
+            return *slot;
         }
 
         template<typename T>
