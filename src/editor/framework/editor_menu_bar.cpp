@@ -21,6 +21,14 @@
 
 namespace Engine {
 
+namespace {
+// "Undo Transform" / "Redo" - the verb plus the top-of-stack op label, or just
+// the verb when the stack end is reached (op == null).
+void historyItemLabel(char* buf, size_t n, const char* verb, const char* op) {
+    snprintf(buf, n, "%s%s%s", verb, op ? " " : "", op ? op : "");
+}
+} // namespace
+
 // Defined here (not =default in the header) so the unique_ptr<Core::Texture2D>
 // member sees the complete type for destruction.
 EditorMenuBar::EditorMenuBar()  = default;
@@ -47,15 +55,14 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     }
 
     if (ImGui::BeginMenu("File")) {
-        char lbl[48];
         const bool haveCurrent = sceneIO.hasPath();
-        if (ImGui::MenuItem("Save Scene",   getKeyBindLabel(state.keybinds.saveScene, lbl, sizeof(lbl)), false, haveCurrent)) {
+        if (ImGui::MenuItem("Save Scene", keyLabel(state.keybinds.saveScene), false, haveCurrent)) {
             sceneIO.save(ctx, state);
         }
-        if (ImGui::MenuItem("Save Scene As...", getKeyBindLabel(state.keybinds.saveSceneAs, lbl, sizeof(lbl)))) {
+        if (ImGui::MenuItem("Save Scene As...", keyLabel(state.keybinds.saveSceneAs))) {
             sceneIO.requestSaveAs();
         }
-        if (ImGui::MenuItem("Load Scene...", getKeyBindLabel(state.keybinds.loadScene, lbl, sizeof(lbl)))) {
+        if (ImGui::MenuItem("Load Scene...", keyLabel(state.keybinds.loadScene))) {
             sceneIO.requestLoad();
         }
 
@@ -86,29 +93,19 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     }
 
     if (ImGui::BeginMenu("Edit")) {
-        char lbl[48];
         // Undo / redo with the top-of-stack label so users see what action
         // they're reverting (e.g. "Undo Transform", "Redo Create Entity").
         char undoText[80], redoText[80];
-        const char* undoOp = state.commands.undoLabel();
-        const char* redoOp = state.commands.redoLabel();
-        snprintf(undoText, sizeof(undoText), "Undo%s%s",
-            undoOp ? " " : "", undoOp ? undoOp : "");
-        snprintf(redoText, sizeof(redoText), "Redo%s%s",
-            redoOp ? " " : "", redoOp ? redoOp : "");
-        if (ImGui::MenuItem(undoText, getKeyBindLabel(state.keybinds.undo, lbl, sizeof(lbl)),
-                false, state.commands.canUndo())) {
-            state.commands.undo(ctx.scene, state);
-            state.markSceneDirty();
+        historyItemLabel(undoText, sizeof(undoText), "Undo", state.commands.undoLabel());
+        historyItemLabel(redoText, sizeof(redoText), "Redo", state.commands.redoLabel());
+        if (ImGui::MenuItem(undoText, keyLabel(state.keybinds.undo), false, state.commands.canUndo())) {
+            EditorActions::undo(ctx.scene, state);
         }
-        if (ImGui::MenuItem(redoText, getKeyBindLabel(state.keybinds.redo, lbl, sizeof(lbl)),
-                false, state.commands.canRedo())) {
-            state.commands.redo(ctx.scene, state);
-            state.markSceneDirty();
+        if (ImGui::MenuItem(redoText, keyLabel(state.keybinds.redo), false, state.commands.canRedo())) {
+            EditorActions::redo(ctx.scene, state);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Preferences...",
-                getKeyBindLabel(state.keybinds.openPreferences, lbl, sizeof(lbl)),
+        if (ImGui::MenuItem("Preferences...", keyLabel(state.keybinds.openPreferences),
                 state.showPreferences)) {
             state.showPreferences = !state.showPreferences;
         }
@@ -123,12 +120,11 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
 
     // View: camera / viewport commands only.
     if (ImGui::BeginMenu("View")) {
-        char lbl[48];
-        if (ImGui::MenuItem("Frame Selected", getKeyBindLabel(state.keybinds.focusSelected, lbl, sizeof(lbl)),
+        if (ImGui::MenuItem("Frame Selected", keyLabel(state.keybinds.focusSelected),
                             false, !!state.selectedEntity)) {
             EditorActions::focusOnSelected(ctx, state, ec.cameraController);
         }
-        if (ImGui::MenuItem("Frame All", getKeyBindLabel(state.keybinds.frameAll, lbl, sizeof(lbl)))) {
+        if (ImGui::MenuItem("Frame All", keyLabel(state.keybinds.frameAll))) {
             EditorActions::frameAll(ctx, ec.cameraController);
         }
         ImGui::Separator();
@@ -140,10 +136,9 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     // Window: show/hide every panel and tool window. Docked layout panels
     // first, then the floating tool/settings windows.
     if (ImGui::BeginMenu("Window")) {
-        char lbl[48];
-        ImGui::MenuItem("Scene",         getKeyBindLabel(state.keybinds.toggleHierarchy, lbl, sizeof(lbl)), &state.showHierarchy);
-        ImGui::MenuItem("Inspector",     getKeyBindLabel(state.keybinds.toggleInspector, lbl, sizeof(lbl)), &state.showInspector);
-        ImGui::MenuItem("Bottom Panel",  getKeyBindLabel(state.keybinds.toggleBottom, lbl, sizeof(lbl)), &state.showBottom);
+        ImGui::MenuItem("Scene",        keyLabel(state.keybinds.toggleHierarchy), &state.showHierarchy);
+        ImGui::MenuItem("Inspector",    keyLabel(state.keybinds.toggleInspector), &state.showInspector);
+        ImGui::MenuItem("Bottom Panel", keyLabel(state.keybinds.toggleBottom), &state.showBottom);
         ImGui::Separator();
         ImGui::MenuItem("Render Settings",  nullptr, &state.showRenderSettings);
         ImGui::MenuItem("Material Editor",  nullptr, &state.showMaterialEditor);
@@ -154,8 +149,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     if (ImGui::BeginMenu("Entity")) {
         EditorActions::drawCreateEntityMenu(ctx.scene, ctx.resources, state);
         ImGui::Separator();
-        char deselectLbl[48];
-        if (ImGui::MenuItem("Deselect", getKeyBindLabel(state.keybinds.deselect, deselectLbl, sizeof(deselectLbl)))) {
+        if (ImGui::MenuItem("Deselect", keyLabel(state.keybinds.deselect))) {
             state.deselect();
         }
         ImGui::EndMenu();
