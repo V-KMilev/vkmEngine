@@ -36,105 +36,74 @@ bool drawVec3Control(const char* label, float* values,
 void drawPropertyLabel(const char* label);
 
 /**
- * @brief A full "property row": right-aligned label + a full-width slider/drag/color
- * editor + optional hover tooltip. Collapses the repeated
- * drawPropertyLabel + widget + IsItemHovered/SetTooltip triple used across the
- * Material / Render Settings / Preferences panels.
+ * @brief A full "property row": right-aligned label + a full-width control +
+ * optional hover tooltip. propRow is the shared core; the prop* wrappers below
+ * each supply one ImGui control. Collapses the repeated drawPropertyLabel +
+ * widget + IsItemHovered/SetTooltip triple used across the Inspector / Material
+ * / Render Settings / Preferences panels.
  *
  * The widget id is scoped by @p label (PushID) with a hidden "##v" handle, so
- * rows with distinct labels never collide. Returns true the frame the value is
- * edited. Layout matches drawPropertyLabel (it sets the next item to full width).
+ * rows with distinct labels never collide. drawPropertyLabel sets the next item
+ * to full width, so the control fills the row. @p widget is a callable that
+ * draws the control and returns whether it was edited; propRow returns that.
  */
+template <typename Widget>
+inline bool propRow(const char* label, const char* tooltip, Widget&& widget) {
+    drawPropertyLabel(label);
+    ImGui::PushID(label);
+    const bool changed = widget();
+    if (tooltip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
+    ImGui::PopID();
+    return changed;
+}
+
+/// Property row backed by a SliderFloat over [lo, hi].
 inline bool propSlider(const char* label, float* v, float lo, float hi,
                        const char* fmt = "%.3f", const char* tooltip = nullptr) {
-    drawPropertyLabel(label);
-    ImGui::PushID(label);
-    bool changed = ImGui::SliderFloat("##v", v, lo, hi, fmt);
-    if (tooltip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
-    ImGui::PopID();
-    return changed;
+    return propRow(label, tooltip, [&] { return ImGui::SliderFloat("##v", v, lo, hi, fmt); });
 }
 
-/**
- * @brief propSlider variant backed by an integer SliderInt over [lo, hi].
- *
- * @param label Property label and ImGui id scope for the row.
- * @param v Integer value to read and edit in place.
- * @param lo Inclusive lower bound of the slider.
- * @param hi Inclusive upper bound of the slider.
- * @param tooltip Optional hover tooltip; null for none.
- * @return true the frame the value is edited.
- */
+/// Property row backed by an integer SliderInt over [lo, hi].
 inline bool propSliderInt(const char* label, int* v, int lo, int hi,
                           const char* tooltip = nullptr) {
-    drawPropertyLabel(label);
-    ImGui::PushID(label);
-    bool changed = ImGui::SliderInt("##v", v, lo, hi);
-    if (tooltip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
-    ImGui::PopID();
-    return changed;
+    return propRow(label, tooltip, [&] { return ImGui::SliderInt("##v", v, lo, hi); });
 }
 
-/**
- * @brief propSlider variant backed by a DragFloat with the given drag speed.
- *
- * @param label Property label and ImGui id scope for the row.
- * @param v Float value to read and edit in place.
- * @param speed Units changed per pixel dragged.
- * @param lo Inclusive lower clamp on the value.
- * @param hi Inclusive upper clamp on the value.
- * @param fmt printf-style format for the displayed value.
- * @param tooltip Optional hover tooltip; null for none.
- * @return true the frame the value is edited.
- */
+/// Property row backed by a DragFloat with the given drag speed and clamp.
 inline bool propDrag(const char* label, float* v, float speed, float lo, float hi,
                      const char* fmt = "%.3f", const char* tooltip = nullptr) {
-    drawPropertyLabel(label);
-    ImGui::PushID(label);
-    bool changed = ImGui::DragFloat("##v", v, speed, lo, hi, fmt);
-    if (tooltip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
-    ImGui::PopID();
-    return changed;
+    return propRow(label, tooltip, [&] { return ImGui::DragFloat("##v", v, speed, lo, hi, fmt); });
 }
 
-/**
- * @brief propSlider variant backed by an RGB ColorEdit3.
- *
- * @param label Property label and ImGui id scope for the row.
- * @param v Pointer to three floats (RGB) read and edited in place.
- * @param flags ImGui color-edit flags controlling the picker behavior.
- * @param tooltip Optional hover tooltip; null for none.
- * @return true the frame the color is edited.
- */
+/// Property row backed by an integer DragInt with the given drag speed and clamp.
+inline bool propDragInt(const char* label, int* v, float speed, int lo, int hi,
+                        const char* tooltip = nullptr) {
+    return propRow(label, tooltip, [&] { return ImGui::DragInt("##v", v, speed, lo, hi); });
+}
+
+/// Property row backed by a 3-component DragFloat3 (shared clamp/speed per axis).
+inline bool propDrag3(const char* label, float* v, float speed, float lo, float hi,
+                      const char* fmt = "%.3f", const char* tooltip = nullptr) {
+    return propRow(label, tooltip, [&] { return ImGui::DragFloat3("##v", v, speed, lo, hi, fmt); });
+}
+
+/// Property row backed by an RGB ColorEdit3.
 inline bool propColor3(const char* label, float* v,
                        ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float,
                        const char* tooltip = nullptr) {
-    drawPropertyLabel(label);
-    ImGui::PushID(label);
-    bool changed = ImGui::ColorEdit3("##v", v, flags);
-    if (tooltip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
-    ImGui::PopID();
-    return changed;
+    return propRow(label, tooltip, [&] { return ImGui::ColorEdit3("##v", v, flags); });
 }
 
-/**
- * @brief propSlider variant backed by an RGBA ColorEdit4.
- *
- * @param label Property label and ImGui id scope for the row.
- * @param v Pointer to four floats (RGBA) read and edited in place.
- * @param flags ImGui color-edit flags controlling the picker behavior.
- * @param tooltip Optional hover tooltip; null for none.
- * @return true the frame the color is edited.
- */
+/// Property row backed by an RGBA ColorEdit4.
 inline bool propColor4(const char* label, float* v,
                        ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float,
                        const char* tooltip = nullptr) {
-    drawPropertyLabel(label);
-    ImGui::PushID(label);
-    bool changed = ImGui::ColorEdit4("##v", v, flags);
-    if (tooltip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
-    ImGui::PopID();
-    return changed;
+    return propRow(label, tooltip, [&] { return ImGui::ColorEdit4("##v", v, flags); });
+}
+
+/// Property row backed by a Checkbox (the box sits right after the label column).
+inline bool propCheckbox(const char* label, bool* v, const char* tooltip = nullptr) {
+    return propRow(label, tooltip, [&] { return ImGui::Checkbox("##v", v); });
 }
 
 /**
@@ -195,6 +164,19 @@ bool drawEnumCombo(const char* id, E& value) {
         return true;
     }
     return false;
+}
+
+/**
+ * @brief Property row wrapping drawEnumCombo: right-aligned label + full-width
+ * enum dropdown, so an enum field reads like the other prop* rows in a card.
+ */
+template <typename E>
+bool propEnumCombo(const char* label, E& value) {
+    drawPropertyLabel(label);
+    ImGui::PushID(label);
+    const bool changed = drawEnumCombo("##v", value);
+    ImGui::PopID();
+    return changed;
 }
 
 /**

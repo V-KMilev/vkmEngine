@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <system_error>
+#include <type_traits>
 
 #include <nlohmann/json.hpp>
 
@@ -67,6 +68,31 @@ constexpr KeybindField KEYBIND_FIELDS[] = {
     { "gizmoScale",       &EditorKeybinds::gizmoScale       },
     { "gizmoToggleSpace", &EditorKeybinds::gizmoToggleSpace },
 };
+
+/**
+ * @brief Visit each persisted (json-key, member) scalar in one list.
+ *
+ * Both load and save walk this single function, so the two directions can
+ * never list different fields - the only thing that differs is the visitor
+ * @p f (read from json vs. write to json). @p State is EditorState for load
+ * and const EditorState for save, which keeps save const-correct. Enums and
+ * the keybinds / recentScenes blocks are handled outside this list.
+ */
+template <typename State, typename Fn>
+void visitScalarFields(State& state, Fn&& f) {
+    f("showHierarchy",     state.showHierarchy);
+    f("showInspector",     state.showInspector);
+    f("showBottom",        state.showBottom);
+    f("leftPanelWidth",    state.leftPanelWidth);
+    f("rightPanelWidth",   state.rightPanelWidth);
+    f("bottomPanelHeight", state.bottomPanelHeight);
+    f("gizmoOperation",    state.gizmoOperation);
+    f("gizmoMode",         state.gizmoMode);
+    f("snapEnabled",       state.snapEnabled);
+    f("snapTranslate",     state.snapTranslate);
+    f("snapRotate",        state.snapRotate);
+    f("snapScale",         state.snapScale);
+}
 } // namespace
 
 std::string path() {
@@ -94,27 +120,16 @@ bool load(EditorState& state) {
         return false;
     }
 
-    // Panel visibility
-    state.showHierarchy     = j.value("showHierarchy",     state.showHierarchy);
-    state.showInspector     = j.value("showInspector",     state.showInspector);
-    state.showBottom        = j.value("showBottom",        state.showBottom);
-
-    // Panel sizes
-    state.leftPanelWidth    = j.value("leftPanelWidth",    state.leftPanelWidth);
-    state.rightPanelWidth   = j.value("rightPanelWidth",   state.rightPanelWidth);
-    state.bottomPanelHeight = j.value("bottomPanelHeight", state.bottomPanelHeight);
-
-    // Gizmo defaults
-    state.gizmoOperation = static_cast<GizmoOperation>(
-        j.value("gizmoOperation", static_cast<int>(state.gizmoOperation)));
-    state.gizmoMode = static_cast<GizmoMode>(
-        j.value("gizmoMode", static_cast<int>(state.gizmoMode)));
-
-    // Snap
-    state.snapEnabled    = j.value("snapEnabled",    state.snapEnabled);
-    state.snapTranslate  = j.value("snapTranslate",  state.snapTranslate);
-    state.snapRotate     = j.value("snapRotate",     state.snapRotate);
-    state.snapScale      = j.value("snapScale",      state.snapScale);
+    // Panel visibility / sizes, gizmo defaults, snap - read each field from j,
+    // leaving the in-struct default when the key is absent. Enums round-trip
+    // through their underlying int.
+    visitScalarFields(state, [&](const char* key, auto& member) {
+        using M = std::decay_t<decltype(member)>;
+        if constexpr (std::is_enum_v<M>)
+            member = static_cast<M>(j.value(key, static_cast<int>(member)));
+        else
+            member = j.value(key, member);
+    });
 
     // Keybinds (per field; missing keys leave defaults)
     if (j.contains("keybinds")) {
@@ -138,19 +153,14 @@ bool load(EditorState& state) {
 
 bool save(const EditorState& state) {
     json j;
-    j["version"]           = FILE_VERSION;
-    j["showHierarchy"]     = state.showHierarchy;
-    j["showInspector"]     = state.showInspector;
-    j["showBottom"]        = state.showBottom;
-    j["leftPanelWidth"]    = state.leftPanelWidth;
-    j["rightPanelWidth"]   = state.rightPanelWidth;
-    j["bottomPanelHeight"] = state.bottomPanelHeight;
-    j["gizmoOperation"]    = static_cast<int>(state.gizmoOperation);
-    j["gizmoMode"]         = static_cast<int>(state.gizmoMode);
-    j["snapEnabled"]       = state.snapEnabled;
-    j["snapTranslate"]     = state.snapTranslate;
-    j["snapRotate"]        = state.snapRotate;
-    j["snapScale"]         = state.snapScale;
+    j["version"] = FILE_VERSION;
+    visitScalarFields(state, [&](const char* key, const auto& member) {
+        using M = std::decay_t<decltype(member)>;
+        if constexpr (std::is_enum_v<M>)
+            j[key] = static_cast<int>(member);
+        else
+            j[key] = member;
+    });
 
     json kb;
     for (const KeybindField& f : KEYBIND_FIELDS) {

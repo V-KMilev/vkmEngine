@@ -168,89 +168,15 @@ void InspectorPanel::draw(EditorContext& ec) {
     const bool haveEntity = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
     if (!haveEntity) {
         // The World node (scene-global settings) is selected instead of an entity.
-        if (state.worldSelected) { drawWorldInspector(ec); return; }
-
-        // Centered empty-state with a large neutral glyph + two-line hint and
-        // a quick "create entity" affordance, so a fresh user has somewhere
-        // to go from a blank panel.
-        const ImVec2 region = ImGui::GetContentRegionAvail();
-        const float glyphSize = 56.0f;
-        const float lineH     = ImGui::GetTextLineHeightWithSpacing();
-        const float blockH    = glyphSize + lineH * 2.0f + ImGui::GetFrameHeight() + 24.0f;
-        ImGui::Dummy(ImVec2(0.0f, std::max(0.0f, (region.y - blockH) * 0.35f)));
-
-        const ImVec2 cur = ImGui::GetCursorScreenPos();
-        const float iconCx = cur.x + region.x * 0.5f;
-        ImGui::Dummy(ImVec2(0.0f, glyphSize));
-        drawEditorIcon(ImGui::GetWindowDrawList(), EditorIcon::Select,
-            ImVec2(iconCx, cur.y + glyphSize * 0.5f), glyphSize * 0.40f,
-            ImGui::GetColorU32(ImGuiCol_TextDisabled));
-
-        ImGui::Spacing();
-        const char* line1 = "No entity selected";
-        const char* line2 = "Pick one in the Hierarchy, or click in the viewport.";
-        ImGui::SetCursorPosX((region.x - ImGui::CalcTextSize(line1).x) * 0.5f);
-        ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
-        ImGui::TextUnformatted(line1);
-        ImGui::PopStyleColor();
-        ImGui::SetCursorPosX((region.x - ImGui::CalcTextSize(line2).x) * 0.5f);
-        ImGui::TextDisabled("%s", line2);
-
-        ImGui::Spacing();
-        const float btnW = 180.0f;
-        ImGui::SetCursorPosX((region.x - btnW) * 0.5f);
-        if (ImGui::Button("+  Create Entity", ImVec2(btnW, 0.0f)))
-            ImGui::OpenPopup("##EmptyCreate");
-        if (ImGui::BeginPopup("##EmptyCreate")) {
-            EditorActions::drawCreateEntityMenu(ctx.scene, ctx.resources, state);
-            ImGui::EndPopup();
-        }
+        if (state.worldSelected) drawWorldInspector(ec);
+        else                     drawEmptySelectionState(ec);
         return;
     }
 
-    auto& scene = ctx.scene;
-    EntityId id = state.selectedEntity;
+    Scene& scene = ctx.scene;
+    EntityId id  = state.selectedEntity;
 
-    // Identity header: type badge + name (or "Add name" affordance) + id.
-    // Naming is opt-in - the inspector never adds Name during draw, only on
-    // explicit user action, so a glance at an entity doesn't mutate the scene.
-    {
-        const float ih = ImGui::GetFrameHeight();
-        inlineIcon(entityIconKind(scene, id), ih,
-                   ImGui::GetColorU32(EditorStyle::ACCENT));
-        ImGui::SameLine();
-
-        if (scene.has<Name>(id)) {
-            auto& name = scene.get<Name>(id);
-            const Name before = name;
-            ImGui::SetNextItemWidth(-46.0f);
-            if (ImGui::InputText("##Name", name.value, sizeof(name.value))) {
-                // Route through the command stack like every other inspector
-                // edit: tryMerge coalesces the keystroke stream into one undo
-                // step, and markSceneDirty stops the rename from being silently
-                // lost on close (it used to do neither).
-                state.commands.push(std::make_unique<ComponentEditCommand<Name>>(
-                    id, before, name, "Rename"));
-                state.markSceneDirty();
-            }
-        } else {
-            char fallback[64];
-            getEntityDisplayName(scene, id, fallback, sizeof(fallback));
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(fallback);
-            ImGui::SameLine();
-            if (ImGui::SmallButton("+##addname")) {
-                Name n = makeName(fallback);
-                scene.add(Entity{id}, n);
-                state.commands.push(std::make_unique<AddComponentCommand<Name>>(id, n, "Add Name"));
-                state.markSceneDirty();
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add a Name component to rename this entity");
-            ImGui::SameLine(0.0f, ImGui::GetContentRegionAvail().x - 46.0f);
-        }
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextDisabled("#%u", id.index);
-    }
+    drawIdentityHeader(scene, state, id);
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -272,6 +198,87 @@ void InspectorPanel::draw(EditorContext& ec) {
     ImGui::Spacing();
 
     drawAddComponentMenu(scene, state, id);
+}
+
+void InspectorPanel::drawEmptySelectionState(EditorContext& ec) {
+    FrameContext& ctx   = ec.frame;
+    EditorState&  state = ec.state;
+
+    // Centered empty-state with a large neutral glyph + two-line hint and a
+    // quick "create entity" affordance, so a fresh user has somewhere to go
+    // from a blank panel.
+    const ImVec2 region = ImGui::GetContentRegionAvail();
+    const float glyphSize = 56.0f;
+    const float lineH     = ImGui::GetTextLineHeightWithSpacing();
+    const float blockH    = glyphSize + lineH * 2.0f + ImGui::GetFrameHeight() + 24.0f;
+    ImGui::Dummy(ImVec2(0.0f, std::max(0.0f, (region.y - blockH) * 0.35f)));
+
+    const ImVec2 cur = ImGui::GetCursorScreenPos();
+    const float iconCx = cur.x + region.x * 0.5f;
+    ImGui::Dummy(ImVec2(0.0f, glyphSize));
+    drawEditorIcon(ImGui::GetWindowDrawList(), EditorIcon::Select,
+        ImVec2(iconCx, cur.y + glyphSize * 0.5f), glyphSize * 0.40f,
+        ImGui::GetColorU32(ImGuiCol_TextDisabled));
+
+    ImGui::Spacing();
+    const char* line1 = "No entity selected";
+    const char* line2 = "Pick one in the Hierarchy, or click in the viewport.";
+    ImGui::SetCursorPosX((region.x - ImGui::CalcTextSize(line1).x) * 0.5f);
+    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
+    ImGui::TextUnformatted(line1);
+    ImGui::PopStyleColor();
+    ImGui::SetCursorPosX((region.x - ImGui::CalcTextSize(line2).x) * 0.5f);
+    ImGui::TextDisabled("%s", line2);
+
+    ImGui::Spacing();
+    const float btnW = 180.0f;
+    ImGui::SetCursorPosX((region.x - btnW) * 0.5f);
+    if (ImGui::Button("+  Create Entity", ImVec2(btnW, 0.0f)))
+        ImGui::OpenPopup("##EmptyCreate");
+    if (ImGui::BeginPopup("##EmptyCreate")) {
+        EditorActions::drawCreateEntityMenu(ctx.scene, ctx.resources, state);
+        ImGui::EndPopup();
+    }
+}
+
+void InspectorPanel::drawIdentityHeader(Scene& scene, EditorState& state, EntityId id) {
+    // Type badge + name (or "Add name" affordance) + id. Naming is opt-in - the
+    // inspector never adds Name during draw, only on explicit user action, so a
+    // glance at an entity doesn't mutate the scene.
+    const float ih = ImGui::GetFrameHeight();
+    inlineIcon(entityIconKind(scene, id), ih, ImGui::GetColorU32(EditorStyle::ACCENT));
+    ImGui::SameLine();
+
+    if (scene.has<Name>(id)) {
+        auto& name = scene.get<Name>(id);
+        const Name before = name;
+        ImGui::SetNextItemWidth(-46.0f);
+        if (ImGui::InputText("##Name", name.value, sizeof(name.value))) {
+            // Route through the command stack like every other inspector edit:
+            // tryMerge coalesces the keystroke stream into one undo step, and
+            // markSceneDirty stops the rename from being silently lost on close
+            // (it used to do neither).
+            state.commands.push(std::make_unique<ComponentEditCommand<Name>>(
+                id, before, name, "Rename"));
+            state.markSceneDirty();
+        }
+    } else {
+        char fallback[64];
+        getEntityDisplayName(scene, id, fallback, sizeof(fallback));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(fallback);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("+##addname")) {
+            Name n = makeName(fallback);
+            scene.add(Entity{id}, n);
+            state.commands.push(std::make_unique<AddComponentCommand<Name>>(id, n, "Add Name"));
+            state.markSceneDirty();
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add a Name component to rename this entity");
+        ImGui::SameLine(0.0f, ImGui::GetContentRegionAvail().x - 46.0f);
+    }
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("#%u", id.index);
 }
 
 void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, EntityId id) {
@@ -358,8 +365,8 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
                             [&](Mesh& mesh) {
         bool changed = false;
 
-        drawPropertyLabel("Visible");      changed |= ImGui::Checkbox("##MeshVis", &mesh.visible);
-        drawPropertyLabel("Cast Shadow");  changed |= ImGui::Checkbox("##MeshShad", &mesh.castShadows);
+        changed |= propCheckbox("Visible", &mesh.visible);
+        changed |= propCheckbox("Cast Shadow", &mesh.castShadows);
 
         if (mesh.mesh && resources.isAlive(mesh.mesh)) {
             const auto& asset = resources.get(mesh.mesh);
@@ -415,66 +422,50 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
                              [&](Light& light) {
         bool changed = false;
 
-        drawPropertyLabel("Type");
-        changed |= drawEnumCombo("##LType", light.type);
-
-        drawPropertyLabel("Color");
-        changed |= ImGui::ColorEdit3("##LColor", glm::value_ptr(light.color), ImGuiColorEditFlags_Float);
+        changed |= propEnumCombo("Type", light.type);
+        changed |= propColor3("Color", glm::value_ptr(light.color));
 
         // Intensity is unbounded on the upper end (HDR scenes routinely need
         // values in the hundreds for sun, thousands for studio lights). The
         // drag range only clamps soft; users can type any value.
-        drawPropertyLabel("Intensity");
-        changed |= ImGui::DragFloat("##LIntensity", &light.intensity, 0.5f, 0.0f, 100000.0f, "%.2f");
+        changed |= propDrag("Intensity", &light.intensity, 0.5f, 0.0f, 100000.0f, "%.2f");
 
-        if (light.type != LightType::Directional) {
-            drawPropertyLabel("Radius");
-            changed |= ImGui::DragFloat("##LRadius", &light.radius, 0.5f, 0.1f, 1000.0f, "%.1f");
-        }
+        if (light.type != LightType::Directional)
+            changed |= propDrag("Radius", &light.radius, 0.5f, 0.1f, 1000.0f, "%.1f");
 
         if (light.type == LightType::Spot) {
             float innerDeg = glm::degrees(light.innerConeAngle);
             float outerDeg = glm::degrees(light.outerConeAngle);
-            drawPropertyLabel("Inner Cone");
-            if (ImGui::DragFloat("##InnerC", &innerDeg, 0.5f, 0.0f, 90.0f, "%.1f deg")) {
+            if (propDrag("Inner Cone", &innerDeg, 0.5f, 0.0f, 90.0f, "%.1f deg")) {
                 light.innerConeAngle = glm::radians(innerDeg);
                 changed = true;
             }
-            drawPropertyLabel("Outer Cone");
-            if (ImGui::DragFloat("##OuterC", &outerDeg, 0.5f, 0.0f, 90.0f, "%.1f deg")) {
+            if (propDrag("Outer Cone", &outerDeg, 0.5f, 0.0f, 90.0f, "%.1f deg")) {
                 light.outerConeAngle = glm::radians(outerDeg);
                 changed = true;
             }
         }
 
         if (light.type == LightType::Rect) {
-            drawPropertyLabel("Width");
-            changed |= ImGui::DragFloat("##LRectW", &light.areaWidth, 0.05f, 0.01f, 100.0f, "%.2f");
-            drawPropertyLabel("Height");
-            changed |= ImGui::DragFloat("##LRectH", &light.areaHeight, 0.05f, 0.01f, 100.0f, "%.2f");
-            drawPropertyLabel("Two-sided");
-            changed |= ImGui::Checkbox("##LRectTS", &light.twoSided);
+            changed |= propDrag("Width", &light.areaWidth, 0.05f, 0.01f, 100.0f, "%.2f");
+            changed |= propDrag("Height", &light.areaHeight, 0.05f, 0.01f, 100.0f, "%.2f");
+            changed |= propCheckbox("Two-sided", &light.twoSided);
         }
         if (light.type == LightType::Disk) {
-            drawPropertyLabel("Disk Radius");
-            changed |= ImGui::DragFloat("##LDiskR", &light.areaRadius, 0.05f, 0.01f, 100.0f, "%.2f");
-            drawPropertyLabel("Two-sided");
-            changed |= ImGui::Checkbox("##LDiskTS", &light.twoSided);
+            changed |= propDrag("Disk Radius", &light.areaRadius, 0.05f, 0.01f, 100.0f, "%.2f");
+            changed |= propCheckbox("Two-sided", &light.twoSided);
         }
         if (light.type == LightType::Rect || light.type == LightType::Disk) {
             ImGui::TextDisabled("LTC Lambertian diffuse + representative-point GGX specular.");
         }
 
-        drawPropertyLabel("Shadows");  changed |= ImGui::Checkbox("##Shad", &light.castShadows);
+        changed |= propCheckbox("Shadows", &light.castShadows);
         if (light.castShadows) {
-            drawPropertyLabel("Shadow Bias");
-            changed |= ImGui::DragFloat("##ShadBias", &light.shadowBias, 0.0005f, 0.0f, 0.1f, "%.4f");
-            if (light.type == LightType::Directional) {
-                drawPropertyLabel("Shadow Distance");
-                changed |= ImGui::DragFloat("##ShadDist", &light.shadowDistance, 1.0f, 1.0f, 1000.0f, "%.1f");
-            }
+            changed |= propDrag("Shadow Bias", &light.shadowBias, 0.0005f, 0.0f, 0.1f, "%.4f");
+            if (light.type == LightType::Directional)
+                changed |= propDrag("Shadow Distance", &light.shadowDistance, 1.0f, 1.0f, 1000.0f, "%.1f");
         }
-        drawPropertyLabel("Enabled");  changed |= ImGui::Checkbox("##LEn", &light.enabled);
+        changed |= propCheckbox("Enabled", &light.enabled);
 
         return changed;
     });
@@ -528,11 +519,8 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
             }
         }
 
-        drawPropertyLabel("Show Skybox");
-        changed |= ImGui::Checkbox("##EnvShow", &env.showSkybox);
-
-        drawPropertyLabel("Brightness");
-        changed |= ImGui::SliderFloat("##EnvIntensity", &env.intensity, 0.0f, 3.0f, "%.2f");
+        changed |= propCheckbox("Show Skybox", &env.showSkybox);
+        changed |= propSlider("Brightness", &env.intensity, 0.0f, 3.0f, "%.2f");
 
         ImGui::TextDisabled("Swapping the HDR re-bakes the IBL (a brief hitch).");
 
@@ -546,11 +534,8 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
     if (beginComponentCard("Physics", ACCENT_PHYSICS, true)) {
         bool changed = false;
 
-        drawPropertyLabel("Gravity");
-        changed |= ImGui::DragFloat3("##EnvGravity", glm::value_ptr(env.gravity), 0.05f, -50.0f, 50.0f, "%.2f");
-
-        drawPropertyLabel("Solver Iterations");
-        changed |= ImGui::DragInt("##EnvSolverIters", &env.solverIterations, 0.1f, 1, 32);
+        changed |= propDrag3("Gravity", glm::value_ptr(env.gravity), 0.05f, -50.0f, 50.0f, "%.2f");
+        changed |= propDragInt("Solver Iterations", &env.solverIterations, 0.1f, 1, 32);
 
         if (changed) state.markSceneDirty();
     }
@@ -565,14 +550,9 @@ void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state
 
         // Box half-extents: the influence + parallax-correction box. Should
         // roughly match the surrounding walls of the region the probe represents.
-        drawPropertyLabel("Box Size");
-        changed |= ImGui::DragFloat3("##ProbeBox", glm::value_ptr(probe.halfExtents), 0.1f, 0.1f, 1000.0f, "%.1f");
-
-        drawPropertyLabel("Falloff");
-        changed |= ImGui::SliderFloat("##ProbeFalloff", &probe.falloff, 0.0f, 1.0f, "%.2f");
-
-        drawPropertyLabel("Intensity");
-        changed |= ImGui::DragFloat("##ProbeIntensity", &probe.intensity, 0.02f, 0.0f, 8.0f, "%.2f");
+        changed |= propDrag3("Box Size", glm::value_ptr(probe.halfExtents), 0.1f, 0.1f, 1000.0f, "%.1f");
+        changed |= propSlider("Falloff", &probe.falloff, 0.0f, 1.0f, "%.2f");
+        changed |= propDrag("Intensity", &probe.intensity, 0.02f, 0.0f, 8.0f, "%.2f");
 
         ImGui::Spacing();
         // Box / falloff / intensity are runtime blend params (no re-bake). Moving
@@ -594,21 +574,14 @@ void InspectorPanel::drawRigidbodySection(Scene& scene, EditorState& state, Enti
                                  [&](Rigidbody& rb) {
         bool changed = false;
 
-        drawPropertyLabel("Mass");
-        changed |= ImGui::DragFloat("##RbMass", &rb.mass, 0.1f, 0.0f, 1000.0f, "%.2f");
-        drawPropertyLabel("Static");      changed |= ImGui::Checkbox("##RbStatic", &rb.isStatic);
-        drawPropertyLabel("Kinematic");   changed |= ImGui::Checkbox("##RbKinematic", &rb.isKinematic);
-
-        drawPropertyLabel("Gravity Scale");
-        changed |= ImGui::DragFloat("##RbGrav", &rb.gravityScale, 0.05f, 0.0f, 10.0f, "%.2f");
-        drawPropertyLabel("Restitution");
-        changed |= ImGui::DragFloat("##RbRest", &rb.restitution, 0.01f, 0.0f, 1.0f, "%.2f");
-        drawPropertyLabel("Friction");
-        changed |= ImGui::DragFloat("##RbFric", &rb.friction, 0.01f, 0.0f, 2.0f, "%.2f");
-        drawPropertyLabel("Linear Damping");
-        changed |= ImGui::DragFloat("##RbLinDamp", &rb.linearDamping, 0.005f, 0.0f, 1.0f, "%.3f");
-        drawPropertyLabel("Angular Damping");
-        changed |= ImGui::DragFloat("##RbAngDamp", &rb.angularDamping, 0.005f, 0.0f, 1.0f, "%.3f");
+        changed |= propDrag("Mass", &rb.mass, 0.1f, 0.0f, 1000.0f, "%.2f");
+        changed |= propCheckbox("Static", &rb.isStatic);
+        changed |= propCheckbox("Kinematic", &rb.isKinematic);
+        changed |= propDrag("Gravity Scale", &rb.gravityScale, 0.05f, 0.0f, 10.0f, "%.2f");
+        changed |= propDrag("Restitution", &rb.restitution, 0.01f, 0.0f, 1.0f, "%.2f");
+        changed |= propDrag("Friction", &rb.friction, 0.01f, 0.0f, 2.0f, "%.2f");
+        changed |= propDrag("Linear Damping", &rb.linearDamping, 0.005f, 0.0f, 1.0f, "%.3f");
+        changed |= propDrag("Angular Damping", &rb.angularDamping, 0.005f, 0.0f, 1.0f, "%.3f");
 
         changed |= drawVec3Control("Velocity", glm::value_ptr(rb.linearVelocity), 0.0f, 0.1f);
 
@@ -647,11 +620,8 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
             const auto& asset = resources.get(scene.get<Mesh>(id).mesh);
             if (Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) {
                 ImGui::Spacing();
-                drawPropertyLabel("Detail");
-                ImGui::SetNextItemWidth(-1.0f);
-                ImGui::SliderInt("##ColDetail", &state.colliderFitDetail, 1, COLLIDER_FIT_MAX_DETAIL);
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("1 = one box; higher = a tighter box compound (more boxes = heavier)");
+                propSliderInt("Detail", &state.colliderFitDetail, 1, COLLIDER_FIT_MAX_DETAIL,
+                    "1 = one box; higher = a tighter box compound (more boxes = heavier)");
                 if (ImGui::Button("Fit to Mesh", ImVec2(-1.0f, 0.0f))) {
                     const glm::vec3 scale = scene.has<Transform>(id)
                         ? scene.get<Transform>(id).scale : glm::vec3(1.0f);
@@ -661,7 +631,7 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
             }
         }
 
-        drawPropertyLabel("Trigger");  changed |= ImGui::Checkbox("##ColTrigger", &col.isTrigger);
+        changed |= propCheckbox("Trigger", &col.isTrigger);
 
         return changed;
     });
@@ -672,25 +642,22 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
                               [&](Camera& cam) {
         bool changed = false;
 
-        drawPropertyLabel("Projection");
-        changed |= drawEnumCombo("##CProj", cam.projection);
+        changed |= propEnumCombo("Projection", cam.projection);
 
         if (cam.projection == ProjectionType::Perspective) {
             float fovDeg = glm::degrees(cam.fovY);
-            drawPropertyLabel("FOV");
-            if (ImGui::SliderFloat("##CFOV", &fovDeg, 10.0f, 170.0f, "%.0f deg")) {
+            if (propSlider("FOV", &fovDeg, 10.0f, 170.0f, "%.0f deg")) {
                 cam.fovY = glm::radians(fovDeg);
                 changed = true;
             }
         } else {
-            drawPropertyLabel("Ortho Height");
-            changed |= ImGui::DragFloat("##COrthoH", &cam.orthoHeight, 0.1f, 0.1f, 1000.0f);
+            changed |= propDrag("Ortho Height", &cam.orthoHeight, 0.1f, 0.1f, 1000.0f);
         }
 
-        drawPropertyLabel("Near Clip"); changed |= ImGui::DragFloat("##CNear", &cam.zNear, 0.01f, 0.001f, cam.zFar, "%.3f");
-        drawPropertyLabel("Far Clip");  changed |= ImGui::DragFloat("##CFar", &cam.zFar, 1.0f, cam.zNear, 100000.0f, "%.0f");
-        drawPropertyLabel("Exposure");  changed |= ImGui::DragFloat("##CExp", &cam.exposure, 0.01f, 0.0f, 10.0f, "%.2f");
-        drawPropertyLabel("Active");    changed |= ImGui::Checkbox("##CAct", &cam.active);
+        changed |= propDrag("Near Clip", &cam.zNear, 0.01f, 0.001f, cam.zFar, "%.3f");
+        changed |= propDrag("Far Clip", &cam.zFar, 1.0f, cam.zNear, 100000.0f, "%.0f");
+        changed |= propDrag("Exposure", &cam.exposure, 0.01f, 0.0f, 10.0f, "%.2f");
+        changed |= propCheckbox("Active", &cam.active);
 
         if (ImGui::Button("Set as Main Camera", ImVec2(-1, 0))) {
             EditorActions::setActiveCamera(scene, state, id, "Set Main Camera");
@@ -733,9 +700,7 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
         // Explicit minimum length holds the clip open past the last keyframe
         // (0 = auto, derived from the keyframes). Folds into `duration` via
         // updateDuration() so the scrubber and playback see it immediately.
-        drawPropertyLabel("Length");
-        ImGui::SetNextItemWidth(-1);
-        if (ImGui::DragFloat("##ALength", &anim.length, 0.02f, 0.0f, 100000.0f, "%.2f s  (0 = auto)")) {
+        if (propDrag("Length", &anim.length, 0.02f, 0.0f, 100000.0f, "%.2f s  (0 = auto)")) {
             anim.length = std::max(0.0f, anim.length);  // same clamp as the Bottom panel
             anim.updateDuration();
             changed = true;

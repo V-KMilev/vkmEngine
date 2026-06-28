@@ -60,10 +60,11 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
 /**
  * @brief Duplicate an entity, copying its components onto a fresh one.
  *
- * Clones the supported components (transform offset on X, name, mesh, light,
- * camera as inactive, rigidbody, collider, reflection probe, animation paused,
- * and deep-cloned script behaviors), pushes the result as an undoable step,
- * and selects the copy.
+ * Captures the source via EntitySnapshot (so the component set stays single-
+ * sourced), nudges the copy off the source on X, leaves a duplicated camera
+ * inactive and a duplicated animation paused, then pushes the result as an
+ * undoable step and selects the copy. Script behaviors carry over through the
+ * snapshot serializer.
  *
  * @param scene Scene holding the source and receiving the copy.
  * @param state Editor state whose command stack, dirty flag and selection are updated.
@@ -82,6 +83,16 @@ void duplicateEntity(Scene& scene, EditorState& state, EntityId source);
  * @param entity Root entity to delete.
  */
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity);
+
+/**
+ * @brief Apply the command stack's undo / redo, then flag the scene dirty.
+ *
+ * Shared by the Edit menu and the keyboard shortcuts so the "run it, then mark
+ * dirty" step lives in one place instead of being copy-pasted at both sites.
+ */
+void undo(Scene& scene, EditorState& state);
+void redo(Scene& scene, EditorState& state);
+
 /**
  * @brief Focus the camera on the current selection.
  *
@@ -208,6 +219,7 @@ class ModelImportDialog {
          * @param state Editor state holding the import request and updated on import.
          */
         void draw(Scene& scene, ResourceManager& resources, EditorState& state);
+
     private:
         AssetPicker m_picker;
 };

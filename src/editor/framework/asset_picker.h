@@ -28,29 +28,6 @@ namespace Engine {
  */
 class AssetPicker {
     public:
-        enum class Kind { Files, Directories };
-
-        struct Options {
-            const char* popupId      = "AssetPicker"; ///< Unique popup id.
-            const char* title        = "Pick asset";  ///< Modal title shown to user.
-            std::filesystem::path root;               ///< Search root.
-            bool recursive           = false;         ///< Walk subdirectories.
-            Kind kind                = Kind::Files;
-            std::vector<std::string> extensions;      ///< Lowercased file extensions ({".png", ".jpg"}). Ignored for Directories.
-            int maxResults           = 4000;          ///< Safety cap.
-            /**
-             * @brief If non-empty, the picker returns paths relative to `relativeTo`
-             * instead of absolute. Useful when storing as scene references.
-             */
-            std::filesystem::path relativeTo;
-            /**
-             * @brief Optional one-line hint shown above the list.
-             */
-            std::string hint;
-        };
-
-        Options options;
-
         /**
          * @brief Queue the popup to open on the next draw().
          *
@@ -69,6 +46,31 @@ class AssetPicker {
     private:
         void refreshIfNeeded();
 
+    public:
+        enum class Kind { Files, Directories };
+
+        struct Options {
+            const char* popupId      = "AssetPicker"; ///< Unique popup id.
+            const char* title        = "Pick asset";  ///< Modal title shown to user.
+            std::filesystem::path root;               ///< Search root.
+            bool recursive           = false;         ///< Walk subdirectories.
+            Kind kind                = Kind::Files;
+            std::vector<std::string> extensions;      ///< Lowercased file extensions ({".png", ".jpg"}). Ignored for Directories.
+            int maxResults           = 4000;          ///< Safety cap.
+            /**
+            * @brief If non-empty, the picker returns paths relative to `relativeTo`
+            * instead of absolute. Useful when storing as scene references.
+            */
+            std::filesystem::path relativeTo;
+            /**
+            * @brief Optional one-line hint shown above the list.
+            */
+            std::string hint;
+        };
+
+        Options options;
+
+    private:
         bool m_openRequested = false;
         std::vector<std::string> m_entries;  ///< Display strings (filename or relative).
         std::vector<std::filesystem::path> m_paths;  ///< Absolute (or relative-to) paths.

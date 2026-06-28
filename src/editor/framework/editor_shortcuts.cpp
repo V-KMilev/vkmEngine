@@ -33,13 +33,8 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
 
     // Undo / redo - checked in this order so Ctrl+Shift+Z (redo) wins
     // when both bindings would match.
-    if (isPressed(kb.redo)) {
-        state.commands.redo(ctx.scene, state);
-        state.markSceneDirty();
-    } else if (isPressed(kb.undo)) {
-        state.commands.undo(ctx.scene, state);
-        state.markSceneDirty();
-    }
+    if (isPressed(kb.redo))      EditorActions::redo(ctx.scene, state);
+    else if (isPressed(kb.undo)) EditorActions::undo(ctx.scene, state);
 
     if (isPressed(kb.deleteEntity) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
         EditorActions::deleteEntity(ctx.scene, state, state.selectedEntity);

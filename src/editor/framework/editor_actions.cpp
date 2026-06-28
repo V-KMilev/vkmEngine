@@ -19,7 +19,6 @@
 #include "ecs/component/name.h"
 #include "ecs/component/reflection_probe.h"
 #include "system/hierarchy/hierarchy_operations.h"
-#include "system/script/script_component.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
 #include "system/visibility/visibility.h"
@@ -95,6 +94,19 @@ void commitStructureChange(EditorState& state) {
     state.markSceneDirty();
 }
 
+namespace {
+// First material name not already taken: `base`, then "base 2", "base 3", ...
+// The name is a material's identity (it's what save/load key off), so each new
+// or duplicated material must land on a distinct one.
+std::string uniqueMaterialName(ResourceManager& resources, const std::string& base) {
+    std::string name = base;
+    for (int n = 2; resources.findByName<MaterialAsset>(name); ++n) {
+        name = base + " " + std::to_string(n);
+    }
+    return name;
+}
+} // namespace
+
 MaterialHandle duplicateMaterial(
     ResourceManager& resources,
     EditorState& state,
@@ -106,15 +118,8 @@ MaterialHandle duplicateMaterial(
 
     MaterialAsset copy = src;  // value copy of params + texture refs
     copy.version = 1;
-
-    // Unique name: "<src> copy", then "<src> copy 2", ... so the duplicate is a
-    // distinct, separately-referenceable asset (the name is the identity).
-    const std::string base = (src.name.empty() ? std::string("material") : src.name) + " copy";
-    std::string name = base;
-    for (int n = 2; resources.findByName<MaterialAsset>(name); ++n) {
-        name = base + " " + std::to_string(n);
-    }
-    copy.name = name;
+    copy.name = uniqueMaterialName(resources,
+        (src.name.empty() ? std::string("material") : src.name) + " copy");
 
     MaterialHandle nh = resources.add(std::move(copy));
     if (!nh) return MaterialHandle{};
@@ -128,15 +133,9 @@ MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state)
     MaterialHandle h = generateDefaultMaterial(resources);
     if (!h) return MaterialHandle{};
 
-    // Unique, human-readable name: "Material", then "Material 1", "Material 2"...
-    std::string name = "Material";
-    for (int n = 1; resources.findByName<MaterialAsset>(name); ++n) {
-        name = "Material " + std::to_string(n);
-    }
-    // The unique name (above) is the material's identity; generateDefaultMaterial
-    // shares the "material:default" name, so the rename is what distinguishes
-    // each new material on save/load.
-    resources.rename(h, name);
+    // generateDefaultMaterial shares the "material:default" name; the unique
+    // rename is what distinguishes each new material on save/load.
+    resources.rename(h, uniqueMaterialName(resources, "Material"));
 
     state.markSceneDirty();
     return h;
@@ -221,56 +220,18 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
 }
 
 void duplicateEntity(Scene& scene, EditorState& state, EntityId source) {
-    auto entity = scene.createEntity();
-    EntityId newId = entity.getID();
+    // Reuse the snapshot machinery so the "what components make up an entity"
+    // list lives in exactly one place (VKM_EDITOR_SNAPSHOT_COMPONENTS). Then
+    // apply the few duplicate-specific tweaks on the captured copy: nudge it off
+    // the source, and don't let the copy steal "active camera" or auto-play.
+    EntitySnapshot snap = EntitySnapshot::capture(scene, source);
+    if (snap.transform) snap.transform->position += glm::vec3(1.0f, 0.0f, 0.0f);
+    if (snap.camera)    snap.camera->active = false;
+    if (snap.animation) snap.animation->playing = false;
 
-    if (scene.has<Transform>(source)) {
-        auto t = scene.get<Transform>(source);
-        t.position += glm::vec3(1.0f, 0.0f, 0.0f);
-        scene.add(entity, std::move(t));
-    }
-    if (scene.has<Name>(source)) {
-        auto n = scene.get<Name>(source);
-        scene.add(entity, std::move(n));
-    }
-    if (scene.has<Mesh>(source)) {
-        scene.add(entity, scene.get<Mesh>(source));
-    }
-    if (scene.has<Light>(source)) {
-        scene.add(entity, scene.get<Light>(source));
-    }
-    if (scene.has<Camera>(source)) {
-        auto cam = scene.get<Camera>(source);
-        cam.active = false;
-        scene.add(entity, cam);
-    }
-    if (scene.has<Rigidbody>(source)) {
-        scene.add(entity, scene.get<Rigidbody>(source));
-    }
-    if (scene.has<Collider>(source)) {
-        scene.add(entity, scene.get<Collider>(source));
-    }
-    if (scene.has<ReflectionProbe>(source)) {
-        scene.add(entity, scene.get<ReflectionProbe>(source));
-    }
-    if (scene.has<Animation>(source)) {
-        // Tracks are now copyable - clone the source animation in full
-        // (keyframes and all) so duplicated entities keep their motion.
-        Animation anim = scene.get<Animation>(source);
-        anim.playing   = false;
-        scene.add(entity, std::move(anim));
-    }
-    if (scene.has<ScriptComponent>(source)) {
-        // ScriptComponent is move-only - deep-copy each behavior via clone()
-        // (authored fields carried over; context rebinds on the new entity).
-        const ScriptComponent& src = scene.get<ScriptComponent>(source);
-        ScriptComponent copy;
-        copy.behaviors.reserve(src.behaviors.size());
-        for (const auto& behavior : src.behaviors) {
-            if (behavior) copy.behaviors.push_back(behavior->clone());
-        }
-        scene.add(entity, std::move(copy));
-    }
+    Entity entity = scene.createEntity();
+    EntityId newId = entity.getID();
+    snap.apply(scene, newId);
 
     // Same path as createEntity: snapshot the result so undo destroys it.
     state.commands.push(std::make_unique<CreateEntityCommand>(
@@ -295,6 +256,16 @@ void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
     state.commands.push(std::make_unique<DestroySubtreeCommand>(
         std::move(snap), priorSel, label));
     commitStructureChange(state);
+}
+
+void undo(Scene& scene, EditorState& state) {
+    state.commands.undo(scene, state);
+    state.markSceneDirty();
+}
+
+void redo(Scene& scene, EditorState& state) {
+    state.commands.redo(scene, state);
+    state.markSceneDirty();
 }
 
 void setActiveCamera(Scene& scene, EditorState& state, EntityId target, const char* label) {
@@ -392,25 +363,25 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
         };
         item("Empty Entity", EntityKind::Empty);
         ImGui::Separator();
-        item("Cube",     EntityKind::Cube);
-        item("Sphere",   EntityKind::Sphere);
-        item("Plane",    EntityKind::Plane);
-        item("Triangle", EntityKind::Triangle);
-        item("Pyramid",  EntityKind::Pyramid);
-        item("Cone",     EntityKind::Cone);
-        ImGui::Separator();
-        item("Point Light",       EntityKind::PointLight);
-        item("Spot Light",        EntityKind::SpotLight);
-        item("Directional Light", EntityKind::DirectionalLight);
-        item("Rect Light",        EntityKind::RectLight);
-        item("Disk Light",        EntityKind::DiskLight);
-        ImGui::Separator();
         item("Camera", EntityKind::Camera);
         item("Reflection Probe", EntityKind::ReflectionProbe);
         ImGui::Separator();
+        item("Rect Light",        EntityKind::RectLight);
+        item("Disk Light",        EntityKind::DiskLight);
+        item("Spot Light",        EntityKind::SpotLight);
+        item("Point Light",       EntityKind::PointLight);
+        item("Directional Light", EntityKind::DirectionalLight);
+        ImGui::Separator();
+        item("Triangle", EntityKind::Triangle);
+        item("Plane",    EntityKind::Plane);
+        item("Cube",     EntityKind::Cube);
+        item("Sphere",   EntityKind::Sphere);
+        item("Pyramid",  EntityKind::Pyramid);
+        item("Cone",     EntityKind::Cone);
+        ImGui::Separator();
         // The modal can't live here: the menu closes on click and this
         // function stops being called. Defer to drawModelImportDialog().
-        if (ImGui::MenuItem("Import Model...")) state.requestModelImport = true;
+        if (ImGui::MenuItem("Import Model")) state.requestModelImport = true;
         ImGui::EndMenu();
     }
 }
