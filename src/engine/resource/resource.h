@@ -52,24 +52,9 @@ struct Resource {
 
     public:
         uint64_t    version    = 1;
-        std::string name;                 ///< Serializable identity: scene files reference assets by name, resolved via ResourceManager::findByName. Kept unique within a type by add().
-        bool        hidden     = false;   ///< Filtered from pickers / Asset Browser / scene save. See ResourceManager::addPrivate.
-
-        /**
-         * @brief Origin descriptor JSON, lazy-allocated.
-         *
-         * Stored behind a unique_ptr so this header only forward-declares
-         * nlohmann::json - every TU that includes a Resource subclass
-         * (MeshAsset, ...) avoids the ~10k-line json template tax.
-         * Callers that read or write it must #include <nlohmann/json.hpp>
-         * in their .cpp.
-         *
-         * Shape is loader-specific. Examples:
-         *   {"kind":"generator","type":"sphere","segments":48,"rings":24}
-         *   {"kind":"folder","path":"assets/PavingStones118_2K-JPG"}
-         *   {"kind":"file","path":"assets/foo.png","sRGB":true}
-         */
-        std::unique_ptr<nlohmann::json> source;
+        std::string name;                       ///< Serializable identity: scene files reference assets by name, resolved via ResourceManager::findByName. Kept unique within a type by add().
+        bool        hidden     = false;         ///< Filtered from pickers / Asset Browser / scene save. See ResourceManager::addPrivate.
+        std::unique_ptr<nlohmann::json> source; ///< Origin descriptor JSON, lazy-allocated.
 };
 
 } // namespace Engine
