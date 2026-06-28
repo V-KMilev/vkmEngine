@@ -1,7 +1,9 @@
 #define VKM_LOG_CATEGORY "MAIN"
 
 #include <cstdlib>
+#include <filesystem>
 #include <string>
+#include <system_error>
 
 #include "logger.h"
 
@@ -12,13 +14,19 @@
 #include "asset_registration.h"
 #include "game_behaviors.h"
 #include "io/asset/asset_library.h"
+#include "io/project_paths.h"
 #include "io/scene/scene_serializer.h"
 #include "app/engine_app.h"
 
 int main(int argc, char** argv) {
     try {
-        const std::string rootDir = APP_ROOT_DIR;
-        const std::string logFile = rootDir + "/logs/log.log";
+        // Resolve the project root from the executable so a packaged build is
+        // relocatable, and ensure logs/ exists - a shipped game has none yet and
+        // Logger::init fails if it cannot open the file.
+        const std::filesystem::path root = Engine::ProjectPaths::root();
+        std::error_code ec;
+        std::filesystem::create_directories(root / "logs", ec);
+        const std::string logFile = (root / "logs" / "log.log").string();
 
         if (!Logger::init(logFile, "VKM-ENGINE", LogLevel::TRACE)) {
             return -1;
