@@ -5,8 +5,14 @@
 #include "logger.h"
 
 #if defined(_WIN32)
-    #define WIN32_LEAN_AND_MEAN
-    #define NOMINMAX
+    // Guard the lean-windows defines: the MinGW libstdc++ headers pulled in above
+    // (via <string>) already define NOMINMAX, so an unguarded redefine warns.
+    #ifndef WIN32_LEAN_AND_MEAN
+        #define WIN32_LEAN_AND_MEAN
+    #endif
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
     #define NOGDI
     #include <windows.h>
 #else

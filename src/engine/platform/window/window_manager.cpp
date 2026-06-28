@@ -85,8 +85,8 @@ void WindowManager::createWindow(const std::string& title) {
         DEFAULT_WINDOW_WIDTH,
         DEFAULT_WINDOW_HEIGHT,
         m_title.c_str(),
-        NULL,
-        NULL
+        nullptr,
+        nullptr
     );
 
     if (!m_windowHandle) {
@@ -124,10 +124,7 @@ void WindowManager::createWindow(const std::string& title) {
 }
 
 void WindowManager::setIcon(const std::string& path) {
-    if (!m_windowHandle) {
-        LOG_ERROR("setIcon called before createWindow - ignored");
-        return;
-    }
+    if (!hasWindow("setIcon")) return;
     int width, height, channels;
     // Force 4 channels (RGBA) - GLFWimage expects 32-bit RGBA, top-left origin.
     unsigned char* pixels = stbi_load(path.c_str(), &width, &height, &channels, 4);
@@ -232,8 +229,10 @@ void WindowManager::updateMode(WindowMode windowMode) {
         targetRefresh
     );
 
+    // Log the rect actually applied (Windowed is a 75% centred rect, not the
+    // full monitor mode); targetRefresh is 0 for windowed.
     LOG_INFO("Mode -> %s (%dx%d @ %dHz)",
-        toString(windowMode), mode->width, mode->height, mode->refreshRate);
+        toString(windowMode), targetW, targetH, targetRefresh);
 }
 
 void WindowManager::updateInput() {
@@ -256,10 +255,7 @@ bool WindowManager::beginFrame() {
 void WindowManager::setVSync(bool enabled) {
     // VSync and the software FPS cap are independent knobs. Set only what
     // the caller asked for; leave the framelimiter alone.
-    if (!m_windowHandle) {
-        LOG_ERROR("Cannot set swap interval: window is not initialized");
-        return;
-    }
+    if (!hasWindow("setVSync")) return;
 
     glfwMakeContextCurrent(m_windowHandle);
     // 0 = Uncapped framerate
@@ -281,10 +277,7 @@ void WindowManager::setFramerate(int framerate) {
 }
 
 void WindowManager::setCursorMode(CursorMode mode) {
-    if (!m_windowHandle) {
-        LOG_ERROR("Cannot set cursor mode: window is not initialized");
-        return;
-    }
+    if (!hasWindow("setCursorMode")) return;
 
     auto glfwmode = GLFW_CURSOR_NORMAL;
     switch (mode) {
@@ -308,25 +301,23 @@ void WindowManager::setCursorMode(CursorMode mode) {
 }
 
 size_t WindowManager::getWidth() const {
-    if (!m_windowHandle) {
-        LOG_ERROR("Window is not initialized");
-        return 0;
-    }
-
+    if (!hasWindow("getWidth")) return 0;
     return m_width;
 }
 size_t WindowManager::getHeight() const {
-    if (!m_windowHandle) {
-        LOG_ERROR("Window is not initialized");
-        return 0;
-    }
-
+    if (!hasWindow("getHeight")) return 0;
     return m_height;
 }
 
 void WindowManager::setSize(int width, int height) {
     m_width = width;
     m_height = height;
+}
+
+bool WindowManager::hasWindow(const char* action) const {
+    if (m_windowHandle) return true;
+    LOG_ERROR("%s: window is not initialized", action);
+    return false;
 }
 
 int WindowManager::getRefreshRate() const {

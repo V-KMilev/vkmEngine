@@ -5,10 +5,10 @@
 namespace Engine {
 
 /**
- * @brief Cross-platform handle to a loaded shared library (.dll / .so / .dylib).
+ * @brief Cross-platform handle to a loaded shared library (.dll / .so).
  *
  * Wraps LoadLibrary/GetProcAddress/FreeLibrary (Windows) and
- * dlopen/dlsym/dlclose (POSIX). Move-only: it owns the OS handle and unloads on
+ * dlopen/dlsym/dlclose (Linux). Move-only: it owns the OS handle and unloads on
  * destruction. Used by the editor to load the gameplay module for hot-reload.
  */
 class DynamicLibrary {
@@ -47,12 +47,12 @@ class DynamicLibrary {
 
         /**
          * @brief Map a base name to its platform filename: "game" -> "game.dll"
-         * (Windows), "libgame.so" (Linux), "libgame.dylib" (macOS).
+         * (Windows) or "libgame.so" (Linux).
          */
         static std::string platformName(const std::string& baseName);
 
     private:
-        void* m_handle = nullptr;  ///< HMODULE (Windows) or dlopen handle (POSIX).
+        void* m_handle = nullptr;
 };
 
 } // namespace Engine
