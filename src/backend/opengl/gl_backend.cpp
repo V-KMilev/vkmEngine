@@ -47,7 +47,9 @@ bool GLBackend::init(WindowManager& window) {
 
     m_context.setClearColor({0.1f, 0.1f, 0.1f, 1.0f});
     m_context.setDefaultState();
-    m_context.setDepthTest(true);
+    // Start with face culling off (overriding setDefaultState's cull-on): every
+    // geometry pass sets its own cull state and the fullscreen passes disable it,
+    // so this just makes the frame-start default explicit.
     m_context.setFaceCulling(false);
 
     // The scene target carries a G-buffer (view normal + roughness + metalness),

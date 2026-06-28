@@ -85,7 +85,7 @@ class GLShadowAtlas {
         static glm::vec2 tileUVScale();
 
     private:
-        uint32_t m_tileRes;
+        uint32_t m_tileRes = 0;
 
         Core::FrameBuffer m_fbo2D;
         Core::FrameBuffer m_fboCube;

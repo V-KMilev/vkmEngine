@@ -19,17 +19,17 @@ void RenderSystem::update(FrameContext& ctx) {
     // Resize the backend's surface only when the viewport actually changes.
     // m_view holds the size we last rendered at; installPending() zeroes it
     // after a swap so a freshly installed backend is sized on its first frame.
-    if (
-        ctx.window.sceneViewportX() != m_view.viewportX || ctx.window.sceneViewportY() != m_view.viewportY ||
-        ctx.window.sceneViewportWidth() != m_view.viewportWidth || ctx.window.sceneViewportHeight() != m_view.viewportHeight
-    ) {
-        m_view.viewportX      = ctx.window.sceneViewportX();
-        m_view.viewportY      = ctx.window.sceneViewportY();
-        m_view.viewportWidth  = ctx.window.sceneViewportWidth();
-        m_view.viewportHeight = ctx.window.sceneViewportHeight();
-
-        m_backend->resize(m_view.viewportX, m_view.viewportY,
-                          m_view.viewportWidth, m_view.viewportHeight);
+    const uint32_t vpX = ctx.window.sceneViewportX();
+    const uint32_t vpY = ctx.window.sceneViewportY();
+    const uint32_t vpW = ctx.window.sceneViewportWidth();
+    const uint32_t vpH = ctx.window.sceneViewportHeight();
+    if (vpX != m_view.viewportX || vpY != m_view.viewportY ||
+        vpW != m_view.viewportWidth || vpH != m_view.viewportHeight) {
+        m_view.viewportX      = vpX;
+        m_view.viewportY      = vpY;
+        m_view.viewportWidth  = vpW;
+        m_view.viewportHeight = vpH;
+        m_backend->resize(vpX, vpY, vpW, vpH);
     }
 
     // The full backbuffer height lets a bottom-left backend flip the top-left
