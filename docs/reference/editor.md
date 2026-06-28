@@ -1,0 +1,236 @@
+# Editor
+
+The editor is an ImGui-based shell registered as a `System` on
+`SystemStage::UI`. It owns the panel set, the workspace layout, the
+camera controller wiring, the undo/redo stack, and the scene I/O
+controller. Everything mutating goes through an `EditorContext`
+aggregate, so panels do not reach into each other.
+
+## Layout
+
+```
++---------------------------------------------------------------+
+|                          Menu bar                             |
++---------------------------------------------------------------+
+|                                                |              |
+|                   Viewport (3D scene)          |              |
+|                                                |  Inspector   |
+|  [Toolbar]                       [Nav gizmo]   |              |
+|  [Playback bar (top-centre)]                   |              |
+|  [Hierarchy panel docked left]                 |              |
+|                                                |              |
++---------------------------------------------------------------+
+|                  Bottom panel (master-detail)                 |
++---------------------------------------------------------------+
+|                          Status bar                           |
++---------------------------------------------------------------+
+```
+
+The viewport renders into a dedicated render target; the editor calls
+`WindowManager::setSceneViewport(x, y, w, h)` so `FrameContext` carries
+the viewport rect, and `RenderSystem` draws into that rect. The result
+is presented as an ImGui image inside the docked viewport area, with
+overlays drawn on top.
+
+## Key files
+
+| File                                                  | Responsibility                                                        |
+|-------------------------------------------------------|-----------------------------------------------------------------------|
+| `src/editor/editor_system.h`                          | `EditorSystem` (System subclass; owns the panel set + workspace)      |
+| `src/editor/framework/editor_state.h`                 | `EditorState` (selection, gizmo mode, snap, command stack, ...)       |
+| `src/editor/framework/editor_context.h`               | `EditorContext` aggregate passed to every panel                       |
+| `src/editor/framework/command.h`                      | `Command` abstract base for undo/redo                                 |
+| `src/editor/framework/command_stack.h`                | `CommandStack` (bounded undo + redo with merge-on-coalesce)           |
+| `src/editor/framework/editor_commands.h`              | Concrete commands: Transform, Add/RemoveComponent, Create/DestroySubtree, Reparent |
+| `src/editor/framework/scene_io_controller.h`          | Save/Save-As/Load modal + file pickers, post-load housekeeping        |
+| `src/engine/system/camera/camera_controller_system.h`        | FPS fly-cam System used by the editor                                 |
+| `src/editor/gizmo/transform_gizmo.h`                  | Transform gizmo (base `transform_gizmo.cpp` + draw/hit/drag translation units) |
+
+## Panels
+
+| Panel               | File                                  | Description                                                                 |
+|---------------------|---------------------------------------|-----------------------------------------------------------------------------|
+| Hierarchy           | `panels/hierarchy_panel.cpp`          | Entity tree; drag a node onto another to reparent (cycle-safe); context-menu Unparent |
+| Inspector           | `panels/inspector_panel.cpp`          | Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent |
+| Bottom              | `panels/bottom_panel.cpp`             | Per-scene working surface: grouped master-detail browser                    |
+| Render Settings     | `panels/render_settings_panel.cpp`    | World-level render tuning: `RenderSettings` (GTAO / SSR / bloom / motion blur / shadows / grid) plus the `Environment` (IBL / skybox); opened from Window > Render Settings |
+| Physics Settings    | drawn inline in `editor_system.cpp`   | Edits the scene's `PhysicsWorld` singleton (gravity, solver iterations); opened from the Window menu |
+| Material Editor     | `panels/material_editor_panel.cpp`          | Per-material PBR inspector with live preview (renders the real pipeline)    |
+| Asset Browser       | `panels/asset_browser_panel.cpp`            | Thumbnail grid of materials / meshes / textures; pickable into the inspector|
+| Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
+| Viewport Overlay    | `overlays/viewport_overlay.cpp`       | FPS counter, entity count, on-screen log overlay                            |
+| Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | Transform gizmo drawing + light/camera gizmos                               |
+| Viewport Toolbar    | `overlays/viewport_toolbar.cpp`       | In-viewport icon tool box: tool/space/snap + selection actions              |
+| Playback Bar        | `overlays/playback_bar.cpp`           | Top-centre Play/Pause/Stop transport for all Animation components           |
+
+### Bottom panel vs Preferences
+
+The editor separates **per-scene working data** from **editor/app
+preferences**:
+
+- **Bottom panel** is a grouped master-detail browser over the scene
+  surface. Left-nav groups: `WORLD` (Environment, Rendering), `TOOLS`
+  (Animation), `INFO` (Statistics).
+- **Preferences window** is a floating, closeable window opened from
+  `Edit > Preferences` (Ctrl+,). Groups: `VIEWPORT` (camera fly-cam,
+  gizmo snap defaults), `APPLICATION` (display), `INPUT` (keybinds).
+  These moved out of the bottom panel because they are user/app config,
+  not scene data. The Preferences gizmo section is snap-only; the
+  active tool and Local/World space live on the viewport toolbar.
+
+### Animation editor (Bottom panel, Animation tab)
+
+Operates on the selected entity. When it has **no** `Animation`, the
+whole editor is shown disabled (preview of the UI) with a single
+centered **Add Animation Component** button. New animations default to
+a 5 s `length` so the timeline is immediately usable.
+
+Controls (icon buttons, shared `editor_icons.{h,cpp}`):
+
+- Playback: Play/Pause, Stop (rewind), global **Set Key** (add/replace
+  a keyframe on all three tracks at the current time), Loop, Speed.
+- **Length** (`Animation::length`, serialized): explicit animation
+  duration in seconds; `0` means auto from the last keyframe. The
+  timeline spans `max(last keyframe, length)`, so you can set a length
+  and place keys anywhere along it (looping uses this duration too).
+- A scrubbable timeline: ruler, per-track keyframe dots (P/R/S),
+  playhead. Drag empty timeline to scrub; drag a keyframe dot to retime
+  it (hover highlights; cursor switches to resize).
+- `Time` is a typed `InputFloat` so you can place the playhead exactly.
+- Per track (Position/Rotation/Scale): `+` add or replace a key from
+  the live transform, trash to clear, easing dropdown, plus an editable
+  keyframe table (XYZ values for pos/scale, Euler degrees for rotation;
+  per-row Time editable; per-row delete).
+
+Scrubbing or editing while paused live-previews the pose in the
+viewport. Re-keying at an existing time **replaces** that keyframe
+instead of stacking a zero-length segment. The Inspector's Animation
+section is a compact summary (play/stop, loop, speed, time slider,
+track/key counts) that points here for full keyframe editing.
+
+## Undo / redo
+
+Every editor mutation goes through a `Command` that captures the
+"before" state and applies the "after" state. The stack is bounded
+(default 200 entries) and is cleared on scene load (entity IDs and
+component topology are not comparable across a swap).
+
+Available commands (in `framework/editor_commands.h`):
+
+- `TransformChangeCommand`: position / rotation / scale on an entity.
+  Coalesces consecutive edits on the same entity, so a gizmo drag or a
+  stream of inspector micro-edits collapses to one undo step.
+- `ComponentEditCommand<T>`: a generic field edit on an existing component
+  (snapshots before/after), the inspector's catch-all undo step.
+- `AddComponentCommand<T>` / `RemoveComponentCommand<T>`, instantiated for
+  `Mesh`, `Light`, `Camera`, `Animation`, `Rigidbody`, `Collider`,
+  `ReflectionProbe` (Add also covers `Name`). Remove snapshots the prior value so
+  undo restores it exactly, not a default-constructed copy.
+- `CreateEntityCommand`: captures the post-create slot so redo
+  recreates at the same slot.
+- `DestroySubtreeCommand`: captures the entire subtree (entity plus
+  every descendant) including parent/child wiring, so undo can
+  resurrect a non-leaf delete exactly.
+- `ReparentCommand`: (child, oldParent, newParent), inverse via
+  `HierarchyOperations::setParent` / `removeFromParent`.
+- `SetActiveCameraCommand`: backs the inspector's "Set as Main" camera action.
+- `RenameAssetCommand<HandleType>`: undoable asset rename (routes through
+  `ResourceManager::rename` so the name index stays consistent).
+
+Templated commands are emitted out of line via `extern template` in the
+header and instantiated once in `editor_commands.cpp` so each
+translation unit doesn't recompile the bodies.
+
+`CommandStack::push` calls `Command::tryMerge` against the top of the
+undo stack first; that is where transform drag coalescing happens.
+
+## Scene I/O
+
+`SceneIOController` owns the New / Open / Save / Save-As flow:
+
+- Drives the file-picker modals.
+- Hands off to `SceneSerializer::save` / `load` (engine-side; see
+  [IO and serialization](system/io.md)).
+- After a successful load it clears the command stack and rebinds the
+  camera if the loaded scene defined one.
+- Maintains a recent-scenes list cached when the Open dialog is opened
+  (so re-opening doesn't re-scan disk every frame).
+
+## Material preview / Asset browser
+
+Both the Material Editor and the Asset Browser show live PBR previews.
+These are rendered by the backend's dedicated preview path
+(`RenderBackend::renderPreview`, backed by `GLPreview`) - **not** the full
+frame pipeline. It is a minimal forward + composite render of the material on
+a preview mesh into a small offscreen target, kept separate from the main
+10-pass path. Results are cached per asset (keyed by handle + version) with a
+small per-frame bake budget, so the Asset Browser grid amortizes thumbnail
+generation across frames while the Material Editor's live view re-renders each
+frame.
+
+## CameraControllerSystem
+
+FPS-style fly camera; a `System` on `SystemStage::Input`. Updates the
+active camera's transform from input each frame.
+
+### Controls
+
+| Input                          | Action                            |
+|--------------------------------|-----------------------------------|
+| Right mouse button (hold)      | Enable look mode (cursor hidden)  |
+| Mouse movement (in look mode)  | Rotate camera (yaw/pitch)         |
+| W / A / S / D                  | Move forward / left / back / right|
+| Q / E                          | Move down / up                    |
+| Shift (hold)                   | Speed boost                       |
+| Scroll wheel                   | Zoom (adjust FoV)                 |
+
+### Configuration
+
+```cpp
+class CameraControllerSystem : public System {
+    struct Settings {
+        float zoomSensitivity   = 0.02f;
+        float lookSensitivity   = 0.002f;
+        float moveSpeed         = 10.0f;
+        float speedBoost        = 3.0f;
+        float scrollMultiplier  = 2.0f;
+        float minPitch          = -90.0f;
+        float maxPitch          = 90.0f;
+    };
+    // ...
+};
+```
+
+Keybindings are configurable through the keybinds system; see the
+Preferences window's INPUT group.
+
+## Transform gizmo
+
+Viewport-space manipulation handles for translate, rotate, and scale.
+Axis-constrained operations are supported. A fourth mode, **Select**,
+draws no handles (pick-only) so clicks always select rather than drag.
+
+The gizmo is split across four translation units for readability:
+
+- `transform_gizmo.cpp`: the `manipulate()` entry point and shared math
+  (world<->screen projection, ray construction, screen scale).
+- `transform_gizmo_draw.cpp`: the visuals (handles, halos, axis lines).
+- `transform_gizmo_hit.cpp`: ray casts and pick tests.
+- `transform_gizmo_drag.cpp`: the drag state machine and command
+  emission. Drag emits a single `TransformChangeCommand` per drag.
+
+Default tool keybinds (active only when the camera is **not** in fly mode):
+`Q` Select, `W` Move, `E` Rotate, `R` Scale, `X` toggles Local / World.
+All are rebindable from the Preferences > INPUT panel.
+
+Light and camera entities show their own gizmos in `gizmo_overlay.cpp`
+(directional rays, cone projections, frustum lines, area-light edges).
+
+## Entity selection and shortcuts
+
+- Click in the viewport to pick entities (ray-AABB against the visible
+  set's cached world AABBs).
+- The hierarchy panel highlights the selection.
+- The inspector shows components of the selected entity.
+- Focus, duplicate, delete, undo, redo, save, save-as, open, preferences
+  have dedicated keybinds; the full list lives in `input/editor_keybinds.h`.
