@@ -22,7 +22,7 @@ class ResourceManager;
  * @param resources Resource manager the new mesh is added to.
  * @return Handle to the created mesh, or an invalid handle on failure.
  */
-MeshHandle     createCookedMesh    (const nlohmann::json& source, ResourceManager& resources);
+MeshHandle     createCookedMesh(const nlohmann::json& source, ResourceManager& resources);
 
 /**
  * @brief Create a texture from its cooked source descriptor (runtime + editor).
@@ -34,7 +34,7 @@ MeshHandle     createCookedMesh    (const nlohmann::json& source, ResourceManage
  * @param resources Resource manager the new texture is added to.
  * @return Handle to the created texture, or an invalid handle on failure.
  */
-TextureHandle  createCookedTexture (const nlohmann::json& source, ResourceManager& resources);
+TextureHandle  createCookedTexture(const nlohmann::json& source, ResourceManager& resources);
 
 /**
  * @brief Create a material from its cooked (inline) source descriptor.
