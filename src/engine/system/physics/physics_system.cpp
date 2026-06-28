@@ -37,25 +37,17 @@ constexpr float SLEEP_ANGULAR_SQ = 0.04f;   // (0.2 rad/s)^2
 constexpr float SLEEP_DELAY      = 0.5f;    // seconds of rest before sleeping
 constexpr float WAKE_SPEED_SQ    = 0.25f;   // partner speed^2 that wakes a sleeper
 
-/**
- * @brief Broadphase / narrowphase view of one collidable body, cached per tick.
- * `body` indexes the parallel solver-body array; `cullStatic` is true only for
- * permanently immovable bodies (static/kinematic) - a sleeping dynamic body is
- * NOT cullStatic, so it keeps generating contacts and stays supported.
- */
-struct ColliderProxy {
-    uint32_t body = 0;
-    Collider collider;
-    glm::vec3 position = {0.0f, 0.0f, 0.0f};
-    glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};
-    glm::vec3 aabbMin = {0.0f, 0.0f, 0.0f};
-    glm::vec3 aabbMax = {0.0f, 0.0f, 0.0f};
-    bool cullStatic = false;
-};
-
 float dynamicInverseMass(const Rigidbody& rb) {
     if (rb.isStatic || rb.isKinematic || rb.mass <= 0.0f) return 0.0f;
     return 1.0f / rb.mass;
+}
+
+// A body the integrator and solver leave alone: asleep or immovable (static,
+// kinematic, or non-positive mass). Relies on rb.inverseMass being current,
+// which holds for every body in m_bodies once gatherBodies has set it -
+// dynamicInverseMass already folds static/kinematic/zero-mass into inverseMass.
+bool isFrozen(const Rigidbody& rb) {
+    return rb.sleeping || rb.inverseMass == 0.0f;
 }
 
 glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
@@ -93,8 +85,8 @@ void computeAABB(
     outMin = glm::vec3(std::numeric_limits<float>::max());
     outMax = glm::vec3(std::numeric_limits<float>::lowest());
     const glm::mat3 r = glm::mat3_cast(rot);
+    glm::mat4 model = glm::mat4_cast(rot);  // rotation block is constant per body
     for (const ColliderBox& part : collider.parts) {
-        glm::mat4 model = glm::mat4_cast(rot);
         model[3] = glm::vec4(pos + r * part.center, 1.0f);
         glm::vec3 mn, mx;
         localToWorldAABB(model, -part.halfExtents, part.halfExtents, mn, mx);
@@ -103,34 +95,11 @@ void computeAABB(
     }
 }
 
-/**
- * @brief World-space pose frame for a body, cached at gather so writeback can
- *        map the solved world pose back to the entity's local Transform.
- *
- * `parented == false` means the body is a hierarchy root (its local Transform is
- * already the world pose - the fast path, no conversion).
- */
-struct BodyFrame {
-    bool      parented       = false;
-    glm::mat4 parentWorldInv = glm::mat4(1.0f);                    ///< inverse(parent WorldTransform.model)
-    glm::quat parentRot      = {1.0f, 0.0f, 0.0f, 0.0f};           ///< parent world-space rotation
-};
-
 bool aabbOverlap(const ColliderProxy& a, const ColliderProxy& b) {
     return a.aabbMin.x <= b.aabbMax.x && a.aabbMax.x >= b.aabbMin.x
         && a.aabbMin.y <= b.aabbMax.y && a.aabbMax.y >= b.aabbMin.y
         && a.aabbMin.z <= b.aabbMax.z && a.aabbMax.z >= b.aabbMin.z;
 }
-
-/**
- * @brief A box placed in world space - the unit the box-box narrowphase consumes.
- * A collider expands into one of these per child box.
- */
-struct SubShape {
-    glm::vec3 center      = {0.0f, 0.0f, 0.0f};
-    glm::quat rotation    = {1.0f, 0.0f, 0.0f, 0.0f};
-    glm::vec3 halfExtents = {0.5f, 0.5f, 0.5f};
-};
 
 void expandSubShapes(const ColliderProxy& p, std::vector<SubShape>& out) {
     out.clear();
@@ -140,26 +109,6 @@ void expandSubShapes(const ColliderProxy& p, std::vector<SubShape>& out) {
         out.push_back({p.position + r * part.center, p.rotation, part.halfExtents});
     }
 }
-
-// Per-tick scratch shared across phases, kept thread_local so its storage and
-// clear-on-reuse semantics are identical to the previous function-local
-// declarations - the element types live in this anonymous namespace, so the
-// buffers cannot be header members and stay here instead.
-
-// Broadphase / narrowphase view of each collidable body (built in gather).
-thread_local std::vector<ColliderProxy> proxies;
-
-// Per-body world<->local frame, parallel to m_bodies, so writeback can map
-// the solved world pose back into a parented body's local Transform.
-thread_local std::vector<BodyFrame> bodyFrames;
-
-// Broadphase output: candidate proxy-index pairs and the X-sorted proxy order.
-thread_local std::vector<uint32_t> sorted;
-thread_local std::vector<std::pair<uint32_t, uint32_t>> pairs;  // proxy index pairs
-
-// Narrowphase scratch: each collider's child boxes expanded into world space.
-thread_local std::vector<SubShape> subA;
-thread_local std::vector<SubShape> subB;
 
 } // namespace
 
@@ -171,9 +120,6 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 
     // Per-scene physics settings live on the scene-global Environment.
     const Environment& env = scene.environment();
-
-    auto* rbStorage = scene.storage<Rigidbody>();
-    if (!rbStorage) return;
 
     if (!gatherBodies(scene)) return;
 
@@ -195,13 +141,12 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 
 bool PhysicsSystem::gatherBodies(Scene& scene) {
     auto* rbStorage = scene.storage<Rigidbody>();
+    if (!rbStorage) return false;
 
     m_bodies.clear();
     m_solverBodies.clear();
-
-    proxies.clear();
-
-    bodyFrames.clear();
+    m_proxies.clear();
+    m_bodyFrames.clear();
 
     const uint32_t rbCount = static_cast<uint32_t>(rbStorage->size());
     for (uint32_t i = 0; i < rbCount; ++i) {
@@ -240,14 +185,14 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
 
         const uint32_t bodyIndex = static_cast<uint32_t>(m_bodies.size());
         m_bodies.push_back(id);
-        bodyFrames.push_back(frame);
+        m_bodyFrames.push_back(frame);
 
         PhysicsBody pb;
         pb.position = worldPos;
         pb.linearVelocity = rb.linearVelocity;
         pb.angularVelocity = rb.angularVelocity;
         // Sleeping or immovable bodies contribute infinite mass to the solver.
-        const bool frozen = rb.sleeping || rb.inverseMass == 0.0f;
+        const bool frozen = isFrozen(rb);
         pb.invMass = frozen ? 0.0f : rb.inverseMass;
         pb.invInertiaWorld = frozen ? glm::mat3(0.0f)
                                     : inverseInertiaWorld(rb.invInertiaLocal, worldRot);
@@ -263,7 +208,7 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
             proxy.rotation = worldRot;
             proxy.cullStatic = rb.isStatic || rb.isKinematic;
             computeAABB(*collider, worldPos, worldRot, proxy.aabbMin, proxy.aabbMax);
-            proxies.push_back(proxy);
+            m_proxies.push_back(proxy);
         }
     }
 
@@ -274,7 +219,7 @@ void PhysicsSystem::integrateForces(Scene& scene, const Environment& env, float 
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         Rigidbody& rb = scene.get<Rigidbody>(m_bodies[k]);
         PhysicsBody& pb = m_solverBodies[k];
-        if (rb.sleeping || rb.isStatic || rb.isKinematic || rb.inverseMass == 0.0f) continue;
+        if (isFrozen(rb)) continue;
 
         pb.linearVelocity += env.gravity * rb.gravityScale * dt;
         pb.linearVelocity *= 1.0f / (1.0f + rb.linearDamping * dt);
@@ -283,22 +228,22 @@ void PhysicsSystem::integrateForces(Scene& scene, const Environment& env, float 
 }
 
 void PhysicsSystem::broadphase() {
-    sorted.clear();
-    pairs.clear();
+    m_sorted.clear();
+    m_pairs.clear();
 
-    for (uint32_t p = 0; p < proxies.size(); ++p) sorted.push_back(p);
+    for (uint32_t p = 0; p < m_proxies.size(); ++p) m_sorted.push_back(p);
 
-    std::sort(sorted.begin(), sorted.end(), [&](uint32_t a, uint32_t b) {
-        return proxies[a].aabbMin.x < proxies[b].aabbMin.x;
+    std::sort(m_sorted.begin(), m_sorted.end(), [&](uint32_t a, uint32_t b) {
+        return m_proxies[a].aabbMin.x < m_proxies[b].aabbMin.x;
     });
 
-    for (size_t a = 0; a < sorted.size(); ++a) {
-        const ColliderProxy& pa = proxies[sorted[a]];
-        for (size_t b = a + 1; b < sorted.size(); ++b) {
-            const ColliderProxy& pb = proxies[sorted[b]];
-            if (pb.aabbMin.x > pa.aabbMax.x) break;  // sorted: no further overlap on X
+    for (size_t a = 0; a < m_sorted.size(); ++a) {
+        const ColliderProxy& pa = m_proxies[m_sorted[a]];
+        for (size_t b = a + 1; b < m_sorted.size(); ++b) {
+            const ColliderProxy& pb = m_proxies[m_sorted[b]];
+            if (pb.aabbMin.x > pa.aabbMax.x) break;  // sorted on X: no further overlap
             if (pa.cullStatic && pb.cullStatic) continue;
-            if (aabbOverlap(pa, pb)) pairs.emplace_back(sorted[a], sorted[b]);
+            if (aabbOverlap(pa, pb)) m_pairs.emplace_back(m_sorted[a], m_sorted[b]);
         }
     }
 }
@@ -312,19 +257,19 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact) {
     // already handles many manifolds per body pair, so this just works - each
     // manifold carries the same bodyA/bodyB indices.
 
-    for (const auto& pair : pairs) {
-        const ColliderProxy& A = proxies[pair.first];
-        const ColliderProxy& B = proxies[pair.second];
+    for (const auto& pair : m_pairs) {
+        const ColliderProxy& A = m_proxies[pair.first];
+        const ColliderProxy& B = m_proxies[pair.second];
         const bool trigger = A.collider.isTrigger || B.collider.isTrigger;
 
-        expandSubShapes(A, subA);
-        expandSubShapes(B, subB);
+        expandSubShapes(A, m_subA);
+        expandSubShapes(B, m_subB);
 
         bool anyContact = false;
         glm::vec3 contactPoint(0.0f);
         glm::vec3 contactNormal(0.0f, 1.0f, 0.0f);
-        for (const SubShape& sa : subA) {
-            for (const SubShape& sb : subB) {
+        for (const SubShape& sa : m_subA) {
+            for (const SubShape& sb : m_subB) {
                 const int n = contactBoxes(
                     sa.center, sa.rotation, sa.halfExtents,
                     sb.center, sb.rotation, sb.halfExtents,
@@ -376,7 +321,7 @@ void PhysicsSystem::wakeOnImpact(Scene& scene) {
         auto wake = [&](uint32_t idx, Rigidbody& rb) {
             rb.sleeping = false;
             rb.sleepTimer = 0.0f;
-            m_solverBodies[idx].invMass = dynamicInverseMass(rb);
+            m_solverBodies[idx].invMass = rb.inverseMass;
             m_solverBodies[idx].invInertiaWorld =
                 inverseInertiaWorld(rb.invInertiaLocal, scene.get<Transform>(m_bodies[idx]).rotation);
         };
@@ -409,7 +354,7 @@ void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& h
         rb.angularVelocity = pb.angularVelocity;
 
         Transform& t = scene.get<Transform>(id);
-        const BodyFrame& frame = bodyFrames[k];
+        const BodyFrame& frame = m_bodyFrames[k];
         const glm::vec3 linear = pb.linearVelocity + pb.pseudoLinear;
         const glm::vec3 angular = pb.angularVelocity + pb.pseudoAngular;
 

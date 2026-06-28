@@ -3,7 +3,6 @@
 #include <array>
 #include <cmath>
 #include <limits>
-#include <vector>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -75,29 +74,36 @@ std::array<glm::vec3, 4> faceVertices(const OBB& box, int axis, float sign) {
     };
 }
 
+// A convex contact polygon with inline storage. An incident box face starts at 4
+// vertices and is clipped against 4 reference side planes; each clip adds at most
+// one vertex, so the count never exceeds 8 - 16 leaves comfortable headroom and
+// keeps the narrowphase off the heap.
+constexpr int MAX_CLIP_VERTS = 16;
+
+struct ClipPoly {
+    glm::vec3 v[MAX_CLIP_VERTS];
+    int n = 0;
+    void push(const glm::vec3& p) { if (n < MAX_CLIP_VERTS) v[n++] = p; }
+};
+
 /**
  * @brief Sutherland-Hodgman clip of a polygon against a half-space: keep the side
  * where dot(v - planePoint, planeNormal) <= 0.
  */
-void clipToPlane(
-    std::vector<glm::vec3>& poly,
-    const glm::vec3& planePoint,
-    const glm::vec3& planeNormal
-) {
-    std::vector<glm::vec3> result;
-    result.reserve(poly.size() + 1);
-    for (size_t i = 0; i < poly.size(); ++i) {
-        const glm::vec3& cur = poly[i];
-        const glm::vec3& nxt = poly[(i + 1) % poly.size()];
+void clipToPlane(ClipPoly& poly, const glm::vec3& planePoint, const glm::vec3& planeNormal) {
+    ClipPoly result;
+    for (int i = 0; i < poly.n; ++i) {
+        const glm::vec3& cur = poly.v[i];
+        const glm::vec3& nxt = poly.v[(i + 1) % poly.n];
         const float dc = glm::dot(cur - planePoint, planeNormal);
         const float dn = glm::dot(nxt - planePoint, planeNormal);
-        if (dc <= 0.0f) result.push_back(cur);
+        if (dc <= 0.0f) result.push(cur);
         if ((dc < 0.0f) != (dn < 0.0f)) {
             const float t = dc / (dc - dn);
-            result.push_back(cur + t * (nxt - cur));
+            result.push(cur + t * (nxt - cur));
         }
     }
-    poly.swap(result);
+    poly = result;
 }
 
 /**
@@ -149,6 +155,99 @@ void closestSegmentSegment(
     c2 = p2 + d2 * t;
 }
 
+/**
+ * @brief Edge-edge contact: a single point at the midpoint of the closest points
+ * of the two edges selected by @p caseIndex (each box's edge along axis ia / jb).
+ *
+ * @param axis    Contact normal, oriented A -> B.
+ * @param overlap Penetration depth along @p axis.
+ */
+int edgeEdgeContact(const OBB& a, const OBB& b, int caseIndex,
+                    const glm::vec3& axis, float overlap, Contact* out) {
+    const int ia = (caseIndex - 6) / 3;
+    const int jb = (caseIndex - 6) % 3;
+
+    // Walk each centre out to the contacting edge: the two non-edge axes pick the
+    // extreme corner along the normal, the edge axis itself spans the edge below.
+    glm::vec3 pA = a.c;
+    for (int k = 0; k < 3; ++k)
+        if (k != ia) pA += a.u[k] * (glm::dot(a.u[k], axis) > 0.0f ? a.e[k] : -a.e[k]);
+    glm::vec3 pB = b.c;
+    for (int k = 0; k < 3; ++k)
+        if (k != jb) pB += b.u[k] * (glm::dot(b.u[k], axis) > 0.0f ? -b.e[k] : b.e[k]);
+
+    glm::vec3 c1;
+    glm::vec3 c2;
+    closestSegmentSegment(
+        pA - a.u[ia] * a.e[ia], pA + a.u[ia] * a.e[ia],
+        pB - b.u[jb] * b.e[jb], pB + b.u[jb] * b.e[jb],
+        c1, c2);
+
+    out[0].point = (c1 + c2) * 0.5f;
+    out[0].normal = axis;
+    out[0].penetration = overlap;
+    return 1;
+}
+
+/**
+ * @brief Face contact: clip the incident box's face against the reference face's
+ * side planes and keep the points lying below the reference face.
+ *
+ * @param caseIndex 0..5; selects which box owns the reference face (0..2 -> A).
+ * @param axis      Contact normal, oriented A -> B.
+ */
+int faceContact(const OBB& a, const OBB& b, int caseIndex, const glm::vec3& axis, Contact* out) {
+    const bool refIsA = caseIndex < 3;
+    const OBB& ref = refIsA ? a : b;
+    const OBB& inc = refIsA ? b : a;
+    const int refAxis = refIsA ? caseIndex : caseIndex - 3;
+    const glm::vec3 refNormal = refIsA ? axis : -axis;  // outward from ref toward inc
+    const float refSign = glm::dot(ref.u[refAxis], refNormal) >= 0.0f ? 1.0f : -1.0f;
+
+    // Incident face: the face of inc whose outward normal most opposes refNormal.
+    int incAxis = 0;
+    float maxAbsDot = glm::dot(inc.u[0], refNormal);
+    for (int i = 1; i < 3; ++i) {
+        const float d = glm::dot(inc.u[i], refNormal);
+        if (std::fabs(d) > std::fabs(maxAbsDot)) { maxAbsDot = d; incAxis = i; }
+    }
+    const float incSign = maxAbsDot > 0.0f ? -1.0f : 1.0f;
+
+    const auto incFace = faceVertices(inc, incAxis, incSign);
+    ClipPoly poly;
+    for (const glm::vec3& vtx : incFace) poly.push(vtx);
+
+    // Clip against the reference face's four side planes (both directions along
+    // each of its two in-face tangents).
+    const glm::vec3 refCenter = ref.c + ref.u[refAxis] * (ref.e[refAxis] * refSign);
+    const int tangents[2] = {(refAxis + 1) % 3, (refAxis + 2) % 3};
+    for (int t : tangents) {
+        clipToPlane(poly, refCenter + ref.u[t] * ref.e[t],  ref.u[t]);
+        clipToPlane(poly, refCenter - ref.u[t] * ref.e[t], -ref.u[t]);
+    }
+
+    int count = 0;
+    for (int i = 0; i < poly.n; ++i) {
+        const glm::vec3& v = poly.v[i];
+        const float dist = glm::dot(v - refCenter, refNormal);
+        if (dist > 0.0f) continue;  // not penetrating the reference face
+        if (count >= MAX_CONTACTS_PER_MANIFOLD) break;
+        out[count].point = v;
+        out[count].normal = axis;  // A -> B regardless of which box is reference
+        out[count].penetration = -dist;
+        ++count;
+    }
+    return count;
+}
+
+/**
+ * @brief Box-box contact generation via the separating-axis test (SAT).
+ *
+ * Scans the 15 candidate axes (3 face normals per box + 9 edge-edge cross
+ * products); a negative overlap on any axis means no collision. The axis of
+ * minimum overlap classifies the contact as edge-edge or face, which is then
+ * dispatched to the matching builder.
+ */
 int contactBoxBox(const OBB& a, const OBB& b, Contact* out) {
     const glm::vec3 toCentre = b.c - a.c;
 
@@ -178,73 +277,9 @@ int contactBoxBox(const OBB& a, const OBB& b, Contact* out) {
 
     if (bestCase < 0) return 0;
 
-    // Edge-edge: one contact at the midpoint of the closest edge pair.
-    if (bestCase >= 6) {
-        const int ia = (bestCase - 6) / 3;
-        const int jb = (bestCase - 6) % 3;
-
-        glm::vec3 pA = a.c;
-        for (int k = 0; k < 3; ++k)
-            if (k != ia) pA += a.u[k] * (glm::dot(a.u[k], bestAxis) > 0.0f ? a.e[k] : -a.e[k]);
-        glm::vec3 pB = b.c;
-        for (int k = 0; k < 3; ++k)
-            if (k != jb) pB += b.u[k] * (glm::dot(b.u[k], bestAxis) > 0.0f ? -b.e[k] : b.e[k]);
-
-        glm::vec3 c1;
-        glm::vec3 c2;
-        closestSegmentSegment(
-            pA - a.u[ia] * a.e[ia], pA + a.u[ia] * a.e[ia],
-            pB - b.u[jb] * b.e[jb], pB + b.u[jb] * b.e[jb],
-            c1, c2);
-
-        out[0].point = (c1 + c2) * 0.5f;
-        out[0].normal = bestAxis;
-        out[0].penetration = bestOverlap;
-        return 1;
-    }
-
-    // Face contact: clip the incident face against the reference face side planes.
-    const bool refIsA = bestCase < 3;
-    const OBB& ref = refIsA ? a : b;
-    const OBB& inc = refIsA ? b : a;
-    const int refAxis = refIsA ? bestCase : bestCase - 3;
-    const glm::vec3 refNormal = refIsA ? bestAxis : -bestAxis;  // outward from ref toward inc
-    const float refSign = glm::dot(ref.u[refAxis], refNormal) >= 0.0f ? 1.0f : -1.0f;
-
-    // Incident face: the face of inc whose outward normal most opposes refNormal.
-    int incAxis = 0;
-    float minDot = glm::dot(inc.u[0], refNormal);
-    for (int i = 1; i < 3; ++i) {
-        const float d = glm::dot(inc.u[i], refNormal);
-        if (std::fabs(d) > std::fabs(minDot)) { minDot = d; incAxis = i; }
-    }
-    const float incSign = minDot > 0.0f ? -1.0f : 1.0f;
-
-    const auto incFace = faceVertices(inc, incAxis, incSign);
-    std::vector<glm::vec3> poly(incFace.begin(), incFace.end());
-
-    const glm::vec3 refCenter = ref.c + ref.u[refAxis] * (ref.e[refAxis] * refSign);
-    const int t0 = (refAxis + 1) % 3;
-    const int t1 = (refAxis + 2) % 3;
-    const int tangents[2] = {t0, t1};
-    for (int t : tangents) {
-        const glm::vec3 planePt1 = refCenter + ref.u[t] * ref.e[t];
-        clipToPlane(poly, planePt1, ref.u[t]);
-        const glm::vec3 planePt2 = refCenter - ref.u[t] * ref.e[t];
-        clipToPlane(poly, planePt2, -ref.u[t]);
-    }
-
-    int count = 0;
-    for (const glm::vec3& v : poly) {
-        const float dist = glm::dot(v - refCenter, refNormal);
-        if (dist > 0.0f) continue;  // not penetrating the reference face
-        if (count >= MAX_CONTACTS_PER_MANIFOLD) break;
-        out[count].point = v;
-        out[count].normal = bestAxis;  // A -> B regardless of which box is reference
-        out[count].penetration = -dist;
-        ++count;
-    }
-    return count;
+    return bestCase >= 6
+        ? edgeEdgeContact(a, b, bestCase, bestAxis, bestOverlap, out)
+        : faceContact(a, b, bestCase, bestAxis, out);
 }
 
 } // namespace

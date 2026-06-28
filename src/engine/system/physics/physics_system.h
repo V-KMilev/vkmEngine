@@ -1,10 +1,13 @@
 #pragma once
 
+#include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "core/system.h"
 #include "core/memory/types.h"
 #include "ecs/entity.h"
+#include "system/physics/physics_internal.h"
 #include "system/physics/collision/contact.h"
 #include "system/physics/collision/solver.h"
 
@@ -121,6 +124,18 @@ class PhysicsSystem : public System {
         std::vector<EntityId>        m_bodies;       ///< Live body entities this tick (indexes m_solverBodies)
         std::vector<PhysicsBody>     m_solverBodies; ///< Cached dynamic state, aligned with m_bodies
         std::vector<ContactManifold> m_manifolds;    ///< Reused across ticks; clear() keeps capacity
+
+        // Per-tick scratch, reused across ticks (clear() keeps capacity). The
+        // element types live in physics_internal.h so these can be members here
+        // instead of file-local statics.
+        std::vector<ColliderProxy> m_proxies;     ///< Broad/narrowphase view of each collidable body (built in gather)
+        std::vector<BodyFrame>     m_bodyFrames;  ///< World<->local frame per body, parallel to m_bodies (for writeback)
+
+        std::vector<uint32_t>                      m_sorted;  ///< X-sorted proxy order (broadphase)
+        std::vector<std::pair<uint32_t, uint32_t>> m_pairs;   ///< Candidate proxy-index pairs (broadphase)
+
+        std::vector<SubShape> m_subA;  ///< A's child boxes expanded to world space (narrowphase)
+        std::vector<SubShape> m_subB;  ///< B's child boxes expanded to world space (narrowphase)
 };
 
 } // namespace Engine
