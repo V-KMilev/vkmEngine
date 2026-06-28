@@ -52,18 +52,22 @@ class VisibilitySystem : public System {
         void setSettings(const Settings& s) { m_settings = s; }
 
     private:
+        /**
+         * @brief Resolve the active camera into m_result (view / projection /
+         * cameraPosition / hasCamera) and refresh the camera-entity cache.
+         *
+         * Tries the cached entity first (O(1)); on a miss, scans for the first
+         * active camera. Returns false (m_result.hasCamera left false) when none
+         * is found.
+         */
+        bool resolveActiveCamera(Scene& scene);
+
+    private:
         Settings m_settings;
 
         EntityId m_cachedCameraEntity{};
-        Visibility m_result;  ///< Persistent buffer - vectors reuse capacity across frames.
+        Visibility m_result;
 
-        /**
-         * @brief Persistent scratch buffers for the multithreaded culling path.
-         *
-         * Kept as members so their capacity is reused across frames rather than
-         * reallocated; each frame the buffers are resized to the current entity
-         * count and overwritten in parallel.
-         */
         std::vector<uint8_t>   m_visibleFlags;
         std::vector<uint8_t>   m_casterFlags;
         std::vector<glm::mat4> m_modelMatrices;
