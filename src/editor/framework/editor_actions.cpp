@@ -23,7 +23,7 @@
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
 #include "system/visibility/visibility.h"
-#include "system/visibility/bounds_utils.h"
+#include "core/math/bounds.h"
 #include "system/camera/camera_controller_system.h"
 #include "generator/light_generators.h"
 #include "generator/mesh_generators.h"
@@ -329,7 +329,7 @@ void focusOnSelected(FrameContext& ctx, EditorState& state, CameraControllerSyst
             ? HierarchyOperations::computeWorldMatrix(ctx.scene, state.selectedEntity)
             : Transform::computeModelMatrix(ctx.scene.get<Transform>(state.selectedEntity));
 
-        if (hasValidBounds(asset.boundsMin, asset.boundsMax)) {
+        if (Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) {
             glm::vec3 localCenter = (asset.boundsMin + asset.boundsMax) * 0.5f;
             targetPos = glm::vec3(model * glm::vec4(localCenter, 1.0f));
 
@@ -364,10 +364,10 @@ void frameAll(FrameContext& ctx, CameraControllerSystem& camera) {
         const auto& mesh = ctx.scene.get<Mesh>(v.id);
         if (!mesh.mesh || !ctx.resources.isAlive(mesh.mesh)) continue;
         const auto& asset = ctx.resources.get(mesh.mesh);
-        if (!hasValidBounds(asset.boundsMin, asset.boundsMax)) continue;
+        if (!Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) continue;
 
         glm::vec3 wMin, wMax;
-        localToWorldAABB(v.model, asset.boundsMin, asset.boundsMax, wMin, wMax);
+        Math::localToWorldAABB(v.model, asset.boundsMin, asset.boundsMax, wMin, wMax);
         mn = glm::min(mn, wMin);
         mx = glm::max(mx, wMax);
         any = true;
