@@ -1,0 +1,84 @@
+#define VKM_LOG_CATEGORY "BACKEND::GL"
+
+#include "data/gl_mesh.h"
+
+#include <cstdint>
+
+#include "gl_vertex_array.h"
+#include "gl_vertex_buffer.h"
+#include "gl_vertex_buffer_layout.h"
+#include "gl_index_buffer.h"
+#include "gl_instance_buffer.h"
+
+#include "resource/asset/mesh_asset.h"
+
+namespace Engine {
+
+GLMesh::GLMesh(const MeshAsset& mesh) {
+    update(mesh);
+}
+
+GLMesh::~GLMesh() = default;
+
+void GLMesh::update(const MeshAsset& mesh) {
+    m_indexCount = static_cast<uint32_t>(mesh.indices.size());
+
+    const uint32_t vertexBytes = static_cast<uint32_t>(mesh.vertices.size() * sizeof(Vertex));
+    m_vbo = std::make_unique<Core::VertexBuffer>(mesh.vertices.data(), vertexBytes);
+    m_ibo = std::make_unique<Core::IndexBuffer>(mesh.indices.data(), m_indexCount);
+
+    // Interleaved vertex layout - must match the `in` attributes in the shader.
+    Core::VertexBufferLayout layout;
+    layout.push<float>(3);  // position (location 0)
+    layout.push<float>(3);  // normal   (location 1)
+    layout.push<float>(2);  // uv       (location 2)
+    layout.push<float>(4);  // tangent  (location 3)
+
+    m_vao = std::make_unique<Core::VertexArray>();
+    m_vao->addBuffer(*m_vbo, layout);
+
+    // Fresh VAO: previously-recorded instance attachments no longer apply.
+    for (InstanceSlot& slot : m_instanceSlots) slot = {};
+}
+
+void GLMesh::draw() const {
+    if (!m_vao || m_indexCount == 0) return;
+
+    m_vao->bind();
+    m_ibo->bind();
+    m_ibo->draw();
+}
+
+void GLMesh::attachInstances(Core::InstanceBuffer& buffer, uint32_t startIndex) const {
+    if (!m_vao) return;
+
+    // Same buffer already installed at this location? The binding is still
+    // valid (stable GL name across grows) - skip the 4 attrib-pointer calls.
+    for (const InstanceSlot& slot : m_instanceSlots) {
+        if (slot.buffer == &buffer && slot.start == startIndex) return;
+    }
+
+    buffer.attachToVAO(*m_vao, startIndex);
+
+    // Record into the slot for this location: reuse the matching-start slot
+    // (a different buffer took it) or the first free one.
+    for (InstanceSlot& slot : m_instanceSlots) {
+        if (slot.buffer == nullptr || slot.start == startIndex) {
+            slot.buffer = &buffer;
+            slot.start  = startIndex;
+            return;
+        }
+    }
+}
+
+void GLMesh::drawInstanced(uint32_t count, uint32_t baseInstance) const {
+    if (!m_vao || m_indexCount == 0 || count == 0) return;
+
+    m_vao->bind();
+    m_ibo->bind();
+    // baseInstance offsets which per-instance attribute element each instance
+    // reads, so all runs can share one uploaded buffer (GL 4.2+ / ARB_base_instance).
+    m_ibo->drawInstanced(count, baseInstance);
+}
+
+} // namespace Engine

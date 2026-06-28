@@ -1,0 +1,21 @@
+[submodule "modules/vkmGL"]
+	path = modules/vkmGL
+	url = https://github.com/V-KMilev/vkmGL.git
+[submodule "modules/vkmLog"]
+	path = modules/vkmLog
+	url = https://github.com/V-KMilev/vkmLog.git
+[submodule "modules/imgui"]
+	path = modules/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "modules/json"]
+	path = modules/json
+	url = https://github.com/nlohmann/json
+[submodule "modules/assimp"]
+	path = modules/assimp
+	url = https://github.com/assimp/assimp.git
+[submodule "modules/tracy"]
+	path = modules/tracy
+	url = https://github.com/wolfpld/tracy.git
+[submodule "modules/stb"]
+	path = modules/stb
+	url = https://github.com/nothings/stb.git
