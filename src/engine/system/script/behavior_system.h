@@ -146,25 +146,14 @@ class BehaviorSystem : public System, public ISceneObserver {
          */
         static void fireDestroy(Behavior& behavior);
 
-        EventSystem& m_events;  ///< Injected into behaviors; also the bus we listen on.
+    private:
+        EventSystem& m_events;
 
-        /**
-         * @brief Physics events collected via subscriptions, dispatched to hooks
-         *        in update().
-         */
         std::vector<CollisionEvent> m_collisions;
         std::vector<TriggerEvent>   m_triggers;
 
-        /**
-         * @brief Entities behaviors asked to destroy() this pass; drained after the
-         * hook loop so a self-destroy can't free its ScriptComponent mid-iterate.
-         */
         std::vector<EntityId> m_pendingDestroy;
 
-        /**
-         * @brief Cached in init() so shutdown() (which gets no FrameContext) can still
-         * walk the scene. The Scene object is stable for the engine's lifetime.
-         */
         Scene* m_scene = nullptr;
 };
 
