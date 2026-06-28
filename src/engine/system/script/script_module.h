@@ -62,9 +62,10 @@ class ScriptModule {
          */
         bool loadCopyAndRegister();
 
+    private:
         DynamicLibrary m_lib;
-        std::string    m_modulePath;      ///< The built module (overwritten by rebuilds).
-        std::string    m_loadedCopyPath;  ///< The copy actually loaded.
+        std::string    m_modulePath;
+        std::string    m_loadedCopyPath;
         int            m_reloadCounter = 0;
 };
 
