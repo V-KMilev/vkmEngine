@@ -5,19 +5,23 @@
 namespace Engine {
 
 /**
- * @brief Canonical on-disk locations for the project, under the build-time
- *        APP_ROOT_DIR define.
+ * @brief Canonical on-disk locations for the project.
  *
  * One place defines the project layout; callers compose specific files from
- * these directories (e.g. ProjectPaths::assets() / "_database.json") instead
- * of re-concatenating APP_ROOT_DIR at each site. Header-only inline, like the
- * other small free-function headers - every consumer already compiles with
- * APP_ROOT_DIR (the BuildInfo target), so no separate translation unit is
- * needed to hide the define.
+ * these directories (e.g. ProjectPaths::library() / "_manifest.json") instead
+ * of re-deriving the root at each site.
+ *
+ * root() is resolved once at first use: a packaged build ships its data beside
+ * the executable (detected by a `shaders/` folder next to the exe) and roots
+ * there, so the game is relocatable; otherwise it falls back to the build-time
+ * APP_ROOT_DIR (the dev repo root). root() is therefore defined out-of-line in
+ * project_paths.cpp - resolving the executable path is platform code - while the
+ * composing helpers below stay header-inline.
  */
 namespace ProjectPaths {
 
-inline std::filesystem::path root()        { return std::filesystem::path(APP_ROOT_DIR); }
+std::filesystem::path root();
+
 inline std::filesystem::path assets()      { return root() / "assets"; }
 inline std::filesystem::path shaders()     { return root() / "shaders"; }
 inline std::filesystem::path scenes()      { return root() / "scenes"; }
