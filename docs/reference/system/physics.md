@@ -18,7 +18,7 @@ and **before** `HierarchySystem`, so physics-updated transforms propagate into
 - `src/engine/system/physics/inertia.h` - box inverse-inertia + world-space rotation helpers
 - `src/engine/system/physics/collider_fit.h/.cpp` - `fitBoxesToMesh` ("Fit to Mesh")
 - `src/engine/system/physics/physics_events.h` - `CollisionEvent`, `TriggerEvent`
-- `src/engine/ecs/component/rigidbody.h`, `collider.h`, `physics_world.h` - the components
+- `src/engine/ecs/component/rigidbody.h`, `collider.h` - the components
 
 ## Components
 

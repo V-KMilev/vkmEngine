@@ -8,7 +8,6 @@ from a single `std::deque<Task>` guarded by one mutex and two condition variable
 
 - `src/engine/platform/threading/thread_pool.h` - `ThreadPool` + the free
   `parallelFor` functions
-- `src/engine/platform/threading/task.h` - `Task` (the work unit)
 
 ## ThreadPool
 

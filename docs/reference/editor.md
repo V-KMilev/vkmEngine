@@ -210,14 +210,11 @@ Viewport-space manipulation handles for translate, rotate, and scale.
 Axis-constrained operations are supported. A fourth mode, **Select**,
 draws no handles (pick-only) so clicks always select rather than drag.
 
-The gizmo is split across four translation units for readability:
-
-- `transform_gizmo.cpp`: the `manipulate()` entry point and shared math
-  (world<->screen projection, ray construction, screen scale).
-- `transform_gizmo_draw.cpp`: the visuals (handles, halos, axis lines).
-- `transform_gizmo_hit.cpp`: ray casts and pick tests.
-- `transform_gizmo_drag.cpp`: the drag state machine and command
-  emission. Drag emits a single `TransformChangeCommand` per drag.
+`transform_gizmo.cpp` holds the whole gizmo: the `manipulate()` entry point and
+its shared math (world<->screen projection, ray construction, screen scale), the
+visuals, the ray casts and pick tests, and the drag state machine. A drag emits
+a single `TransformChangeCommand`, so undo steps back over the whole gesture
+rather than each frame of it.
 
 Default tool keybinds (active only when the camera is **not** in fly mode):
 `Q` Select, `W` Move, `E` Rotate, `R` Scale, `X` toggles Local / World.
