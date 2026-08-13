@@ -156,10 +156,13 @@ class Behavior {
 
         /**
          * @brief Create a new (empty) entity; add components via context().scene.
-         * Safe to call from a hook, with one caveat: attaching a ScriptComponent
-         * to the new entity mid-hook can reallocate the behavior storage being
-         * iterated - do that kind of structural script wiring outside the hot
-         * loop (e.g. at scene setup), not inline.
+         *
+         * Safe from a hook, including attaching a ScriptComponent to the new
+         * entity: BehaviorSystem walks a snapshot and re-resolves each entity,
+         * so growing the component storage mid-pass moves it underneath the
+         * loop without consequence. A behavior added during a pass starts on
+         * the next one - the same rule destroy() follows in the other
+         * direction.
          */
         Entity spawn() { return m_ctx->scene->createEntity(); }
 
