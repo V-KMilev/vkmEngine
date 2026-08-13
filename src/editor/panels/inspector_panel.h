@@ -57,10 +57,18 @@ class InspectorPanel {
         void drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawCameraSection(Scene& scene, EditorState& state, EntityId id);
         void drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id);
+        void drawDecalSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawParticleSection(Scene& scene, EditorState& state, EntityId id);
+        void drawIrradianceVolumeSection(Scene& scene, EditorState& state, EntityId id);
         void drawWorldInspector(EditorContext& ec);
         void drawAnimationSection(Scene& scene, EditorState& state, EntityId id);
         void drawScriptSection(Scene& scene, EditorState& state, EntityId id);
         void drawHierarchySection(Scene& scene, EditorState& state, EntityId id);
+        void drawUICanvasSection(Scene& scene, EditorState& state, EntityId id);
+        void drawUIElementSection(Scene& scene, EditorState& state, EntityId id);
+        void drawUIImageSection(Scene& scene, EditorState& state, EntityId id);
+        void drawUITextSection(Scene& scene, EditorState& state, EntityId id);
+        void drawUIButtonSection(Scene& scene, EditorState& state, EntityId id);
         void drawAddComponentMenu(Scene& scene, EditorState& state, EntityId id);
 
         // Euler-angle edit cache for the Transform Rotation field, keyed by

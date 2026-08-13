@@ -88,20 +88,23 @@ void PreferencesPanel::drawDisplaySection(FrameContext& ctx) {
 
     ImGui::Spacing();
     ImGui::SeparatorText("Window Mode");
-    if (ImGui::Button("Fullscreen", ImVec2(110, 0))) window.updateMode(WindowMode::Fullscreen);
-    ImGui::SameLine();
-    if (ImGui::Button("Windowed", ImVec2(110, 0))) window.updateMode(WindowMode::Windowed);
+    // Stateful: the radios reflect the applied mode (the old stateless button
+    // pair gave no hint which mode was active).
+    if (ImGui::RadioButton("Windowed", window.mode() == WindowMode::Windowed))
+        window.updateMode(WindowMode::Windowed);
+    ImGui::SameLine(0, EditorStyle::px(16.0f));
+    if (ImGui::RadioButton("Fullscreen", window.mode() == WindowMode::Fullscreen))
+        window.updateMode(WindowMode::Fullscreen);
 
     ImGui::Spacing();
     ImGui::SeparatorText("VSync");
-    if (ImGui::Button("VSync On", ImVec2(110, 0))) window.setVSync(true);
-    ImGui::SameLine();
-    if (ImGui::Button("VSync Off", ImVec2(110, 0))) window.setVSync(false);
+    bool vsync = window.vsync();
+    if (ImGui::Checkbox("Sync to display refresh", &vsync)) window.setVSync(vsync);
 
     ImGui::Spacing();
     ImGui::SeparatorText("Frame Cap");
     drawPropertyLabel("FPS Limit");
-    ImGui::SetNextItemWidth(80);
+    ImGui::SetNextItemWidth(EditorStyle::px(80.0f));
     ImGui::InputInt("##FPSLim", &m_fpsLimitEdit, 30);
     m_fpsLimitEdit = std::max(0, m_fpsLimitEdit);
     ImGui::SameLine();
@@ -116,11 +119,14 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
     // than iterating the struct - there's no introspection but the list
     // is short and stable.
     const KeyBind* all[] = {
+        &state.keybinds.newScene,
         &state.keybinds.saveScene, &state.keybinds.saveSceneAs, &state.keybinds.loadScene,
         &state.keybinds.undo, &state.keybinds.redo,
         &state.keybinds.toggleHierarchy,
         &state.keybinds.toggleInspector, &state.keybinds.toggleBottom,
         &state.keybinds.toggleEditor,
+        &state.keybinds.toggleRenderSettings, &state.keybinds.toggleMaterialEditor,
+        &state.keybinds.toggleAssetBrowser,
         &state.keybinds.openPreferences,
         &state.keybinds.deleteEntity, &state.keybinds.deselect,
         &state.keybinds.duplicate, &state.keybinds.focusSelected,
@@ -145,13 +151,13 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
         snprintf(btnId, sizeof(btnId), "%s##%s",
                  (m_rebindTarget == label) ? "Press key..." : keyLabel, label);
 
-        if (ImGui::Button(btnId, ImVec2(120, 0))) {
+        if (ImGui::Button(btnId, ImVec2(EditorStyle::px(120.0f), 0))) {
             m_rebindTarget = label;
         }
 
         if (isConflict(bind)) {
             ImGui::SameLine();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.65f, 0.25f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
             ImGui::TextUnformatted("(!)");
             ImGui::PopStyleColor();
             if (ImGui::IsItemHovered())
@@ -180,26 +186,30 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
         }
     };
 
-    ImGui::TextDisabled("File");
+    sectionLabel("File");
+    drawKeybindRow("New Scene",      state.keybinds.newScene);
     drawKeybindRow("Save Scene",     state.keybinds.saveScene);
     drawKeybindRow("Save Scene As",  state.keybinds.saveSceneAs);
     drawKeybindRow("Load Scene",     state.keybinds.loadScene);
 
     ImGui::Spacing();
-    ImGui::TextDisabled("Edit");
+    sectionLabel("Edit");
     drawKeybindRow("Undo",           state.keybinds.undo);
     drawKeybindRow("Redo",           state.keybinds.redo);
 
     ImGui::Spacing();
-    ImGui::TextDisabled("Windows & Panels");
-    drawKeybindRow("Toggle Scene",     state.keybinds.toggleHierarchy);
+    sectionLabel("Windows & Panels");
+    drawKeybindRow("Toggle Hierarchy", state.keybinds.toggleHierarchy);
     drawKeybindRow("Toggle Inspector", state.keybinds.toggleInspector);
     drawKeybindRow("Toggle Bottom",    state.keybinds.toggleBottom);
+    drawKeybindRow("Render Settings",  state.keybinds.toggleRenderSettings);
+    drawKeybindRow("Material Editor",  state.keybinds.toggleMaterialEditor);
+    drawKeybindRow("Asset Browser",    state.keybinds.toggleAssetBrowser);
     drawKeybindRow("Toggle Editor",    state.keybinds.toggleEditor);
     drawKeybindRow("Preferences",      state.keybinds.openPreferences);
 
     ImGui::Spacing();
-    ImGui::TextDisabled("Entity");
+    sectionLabel("Entity");
     drawKeybindRow("Delete",         state.keybinds.deleteEntity);
     drawKeybindRow("Deselect",       state.keybinds.deselect);
     drawKeybindRow("Duplicate",      state.keybinds.duplicate);
@@ -207,7 +217,7 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
     drawKeybindRow("Frame All",      state.keybinds.frameAll);
 
     ImGui::Spacing();
-    ImGui::TextDisabled("Gizmo (disabled during fly-cam)");
+    sectionLabel("Gizmo (disabled during fly-cam)");
     drawKeybindRow("Select",      state.keybinds.gizmoSelect);
     drawKeybindRow("Translate",   state.keybinds.gizmoTranslate);
     drawKeybindRow("Rotate",      state.keybinds.gizmoRotate);

@@ -6,10 +6,22 @@
 #include <vector>
 
 #include "framework/editor_common.h"
+#include "ui/editor_style.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_actions.h"
+#include "system/script/script_component.h"
 
 namespace Engine {
+
+namespace {
+// One click policy for every hierarchy row: plain replaces, Ctrl toggles,
+// Shift adds.
+void rowClickSelect(EditorState& state, EntityId id) {
+    if (ImGui::GetIO().KeyCtrl)       state.toggleSelection(id);
+    else if (ImGui::GetIO().KeyShift) state.addToSelection(id);
+    else                              state.selectEntity(id);
+}
+} // namespace
 
 namespace {
 /**
@@ -25,14 +37,19 @@ bool isSelfOrAncestor(const Scene& scene, EntityId node, EntityId maybeAncestor)
     }
     return false;
 }
+
+// Entities the hierarchy lists: 3D nodes (Transform) and screen-space UI nodes
+// (UICanvas / UIElement), so UI entities appear in the tree alongside the scene
+// graph even though they carry no Transform.
+bool isHierarchyNode(const Scene& scene, EntityId id) {
+    return scene.has<Transform>(id) || scene.has<UICanvas>(id) || scene.has<UIElement>(id);
+}
 }
 
 void HierarchyPanel::draw(EditorContext& ec) {
     FrameContext& ctx   = ec.frame;
     EditorState&  state = ec.state;
     auto& scene = ctx.scene;
-
-    drawPanelTitle("Scene");
 
     float btnW = ImGui::GetFrameHeight();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - btnW - ImGui::GetStyle().ItemSpacing.x);
@@ -57,7 +74,8 @@ void HierarchyPanel::draw(EditorContext& ec) {
         if (wasDirty) {
             m_cachedRoots.clear();
             m_cachedRoots.reserve(currentCount);
-            scene.forEach<Transform>([&](EntityId id, const Transform&) {
+            scene.forEachEntity([&](EntityId id) {
+                if (!isHierarchyNode(scene, id)) return;
                 bool isRoot = !scene.has<Hierarchy>(id) || !scene.get<Hierarchy>(id).parent;
                 if (isRoot) m_cachedRoots.push_back(id);
             });
@@ -75,7 +93,8 @@ void HierarchyPanel::draw(EditorContext& ec) {
                 m_lastFilter[sizeof(m_lastFilter) - 1] = '\0';
                 m_cachedFiltered.clear();
                 // Search all entities (not just roots) so children are discoverable
-                scene.forEach<Transform>([&](EntityId id, const Transform&) {
+                scene.forEachEntity([&](EntityId id) {
+                    if (!isHierarchyNode(scene, id)) return;
                     char name[64];
                     getEntityDisplayName(scene, id, name, sizeof(name));
                     if (matchesFilter(name, m_filter))
@@ -89,12 +108,35 @@ void HierarchyPanel::draw(EditorContext& ec) {
         // the top; selecting it shows those settings in the Inspector.
         if (!hasFilter) {
             static char worldNodeId = 0;   // stable address -> a unique ImGui id for this non-entity row
+            // FramePadding matches the entity rows' height - without it this
+            // first, shorter row let the icon glyph poke past the child's top
+            // clip (visibly shaved against the search bar).
             ImGuiTreeNodeFlags f = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen
-                                 | ImGuiTreeNodeFlags_SpanAvailWidth;
+                                 | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
             if (state.worldSelected) f |= ImGuiTreeNodeFlags_Selected;
             entityTreeNode(static_cast<void*>(&worldNodeId), f, EditorIcon::SpaceWorld, "World");
             if (ImGui::IsItemClicked()) state.selectWorld();
             ImGui::Separator();
+        }
+
+        // Empty scene: a centered call to action instead of a bare list.
+        if (displayList.empty() && !hasFilter) {
+            ImGui::Spacing();
+            ImGui::Spacing();
+            const char* line = "The scene is empty.";
+            ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x
+                                  - ImGui::CalcTextSize(line).x) * 0.5f);
+            ImGui::TextDisabled("%s", line);
+            const float btnW = EditorStyle::px(170.0f);
+            ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - btnW) * 0.5f);
+            if (ImGui::Button("+  Create Entity", ImVec2(btnW, 0)))
+                ImGui::OpenPopup("##CreateEmptyState");
+            // Same-scope popup: the header's "##CreatePopup" is begun at panel
+            // scope and would never match an OpenPopup from inside this child.
+            if (ImGui::BeginPopup("##CreateEmptyState")) {
+                EditorActions::drawCreateEntityMenu(scene, ec.frame.resources, state);
+                ImGui::EndPopup();
+            }
         }
 
         // ImGuiListClipper: only build/draw the rows actually on screen.
@@ -105,13 +147,13 @@ void HierarchyPanel::draw(EditorContext& ec) {
                 EntityId id = displayList[i];
                 if (hasFilter) {
                     ImGuiTreeNodeFlags f = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen
-                                         | ImGuiTreeNodeFlags_SpanAvailWidth;
-                    if (state.selectedEntity == id) f |= ImGuiTreeNodeFlags_Selected;
+                                         | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
+                    if (state.isSelected(id)) f |= ImGuiTreeNodeFlags_Selected;
                     char name[64];
                     getEntityDisplayName(scene, id, name, sizeof(name));
                     entityTreeNode(reinterpret_cast<void*>(static_cast<uintptr_t>(id.index)),
                                    f, entityIconKind(scene, id), name);
-                    if (ImGui::IsItemClicked()) state.selectEntity(id);
+                    if (ImGui::IsItemClicked()) rowClickSelect(state, id);
                     drawEntityContextMenu(scene, state, id);
                 } else {
                     drawEntityNode(scene, state, id);
@@ -142,7 +184,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
 
     bool hasChildren = scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).firstChild;
     if (!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-    if (state.selectedEntity == entity) flags |= ImGuiTreeNodeFlags_Selected;
+    if (state.isSelected(entity)) flags |= ImGuiTreeNodeFlags_Selected;
 
     char name[64];
     getEntityDisplayName(scene, entity, name, sizeof(name));
@@ -219,6 +261,18 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
         if (scene.has<Light>(entity))     append("Light");
         if (scene.has<Camera>(entity))    append("Camera");
         if (scene.has<Animation>(entity)) append("Animation");
+        if (scene.has<Rigidbody>(entity))        append("Rigidbody");
+        if (scene.has<Collider>(entity))         append("Collider");
+        if (scene.has<ScriptComponent>(entity))  append("Script");
+        if (scene.has<ReflectionProbe>(entity))  append("Probe");
+        if (scene.has<IrradianceVolume>(entity)) append("GI Volume");
+        if (scene.has<Decal>(entity))            append("Decal");
+        if (scene.has<ParticleEmitter>(entity))  append("Particles");
+        if (scene.has<UICanvas>(entity))         append("Canvas");
+        if (scene.has<UIElement>(entity))        append("UI Element");
+        if (scene.has<UIImage>(entity))          append("Image");
+        if (scene.has<UIText>(entity))           append("Text");
+        if (scene.has<UIButton>(entity))         append("Button");
         if (scene.has<Hierarchy>(entity)) append("Hierarchy");
         ImGui::TextUnformatted(comps[0] ? comps : "(no components)");
         ImGui::EndTooltip();
@@ -241,7 +295,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
         ImGui::EndDragDropTarget();
     }
 
-    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) state.selectEntity(entity);
+    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) rowClickSelect(state, entity);
 
     drawEntityContextMenu(scene, state, entity);
 
@@ -262,8 +316,17 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
     ImGui::Separator();
 
     if (ImGui::MenuItem("Select")) state.selectEntity(entity);
-    if (ImGui::MenuItem("Duplicate", "Ctrl+D")) EditorActions::duplicateEntity(scene, state, entity);
-    if (ImGui::MenuItem("Delete", "Del")) EditorActions::deleteEntity(scene, state, entity);
+    // On a row inside the multi-selection the ops act on the whole set;
+    // a right-click on an unselected row stays single-entity.
+    const bool onSelection = state.isSelected(entity) && state.selection.size() > 1;
+    if (ImGui::MenuItem("Duplicate", keyLabel(state.keybinds.duplicate))) {
+        if (onSelection) EditorActions::duplicateSelection(scene, state);
+        else             EditorActions::duplicateEntity(scene, state, entity);
+    }
+    if (ImGui::MenuItem("Delete", keyLabel(state.keybinds.deleteEntity))) {
+        if (onSelection) EditorActions::deleteSelection(scene, state);
+        else             EditorActions::deleteEntity(scene, state, entity);
+    }
 
     if (scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).parent) {
         if (ImGui::MenuItem("Unparent")) {
@@ -311,8 +374,8 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
         ImGui::Separator();
         const auto& cam = scene.get<Camera>(entity);
         const bool isActive = cam.active;
-        if (ImGui::MenuItem("Look Through Camera", nullptr, false, !isActive)) {
-            EditorActions::setActiveCamera(scene, state, entity, "Look Through Camera");
+        if (ImGui::MenuItem("Set as Main Camera", nullptr, false, !isActive)) {
+            EditorActions::setActiveCamera(scene, state, entity, "Set Main Camera");
         }
     }
 

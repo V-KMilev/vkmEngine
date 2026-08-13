@@ -111,7 +111,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
         };
 
         float ih = ImGui::GetFrameHeight();
-        const float GAP = 8.0f;
+        const float GAP = EditorStyle::px(8.0f);
         if (iconButton("anplay", anim.playing ? EditorIcon::Pause : EditorIcon::Play,
                        anim.playing, true, anim.playing ? "Pause" : "Play", ih))
             anim.playing = !anim.playing;
@@ -133,10 +133,11 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
         ImGui::SameLine(0, GAP);
         changed |= ImGui::Checkbox("Loop", &anim.looping);
         ImGui::SameLine(0, GAP);
-        ImGui::SetNextItemWidth(90);
-        changed |= ImGui::DragFloat("Speed", &anim.speed, 0.005f, 0.0f, 10.0f, "%.2fx");
+        // Value-embedded prefix, matching the Inspector's hidden-label rows.
+        ImGui::SetNextItemWidth(EditorStyle::px(110.0f));
+        changed |= ImGui::DragFloat("##animSpeed", &anim.speed, 0.005f, 0.0f, 10.0f, "Speed %.2fx");
         ImGui::SameLine(0, GAP);
-        ImGui::SetNextItemWidth(110);
+        ImGui::SetNextItemWidth(EditorStyle::px(110.0f));
         float lengthEdit = anim.length;
         if (ImGui::InputFloat("Length", &lengthEdit, 0.1f, 1.0f, "%.2f s")) {
             anim.length = std::max(0.0f, lengthEdit);
@@ -152,13 +153,13 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
         ImGui::Spacing();
         {
             const float laneH  = 16.0f;
-            const float rulerH = 18.0f;
+            const float rulerH = EditorStyle::px(18.0f);
             const float h = rulerH + laneH * 3.0f + 6.0f;
             ImVec2 p0 = ImGui::GetCursorScreenPos();
             float w = ImGui::GetContentRegionAvail().x;
             ImGui::InvisibleButton("##timeline", ImVec2(w, h));
             ImDrawList* dl = ImGui::GetWindowDrawList();
-            dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + h), IM_COL32(18, 18, 20, 255), 3.0f);
+            dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + h), EditorStyle::TIMELINE_BG_U32, 3.0f);
 
             float D = dur > 1e-4f ? dur : 1.0f;
             auto timeToX = [&](float t) { return p0.x + (t / D) * w; };
@@ -168,10 +169,10 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             for (int i = 0; i <= ticks; ++i) {
                 float t = D * static_cast<float>(i) / ticks;
                 float x = timeToX(t);
-                dl->AddLine(ImVec2(x, p0.y), ImVec2(x, p0.y + rulerH * 0.5f), IM_COL32(90, 90, 95, 255));
+                dl->AddLine(ImVec2(x, p0.y), ImVec2(x, p0.y + rulerH * 0.5f), EditorStyle::TIMELINE_TICK_U32);
                 char lab[16];
                 snprintf(lab, sizeof(lab), "%.2f", t);
-                dl->AddText(ImVec2(x + 2, p0.y + 1), IM_COL32(150, 150, 155, 255), lab);
+                dl->AddText(ImVec2(x + 2, p0.y + 1), EditorStyle::TIMELINE_LABEL_U32, lab);
             }
 
             struct Lane { ImU32 c; const char* n; const std::vector<float>* times; };
@@ -222,7 +223,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             for (int i = 0; i < 3; ++i) {
                 float ly = laneY(i);
                 dl->AddText(ImVec2(p0.x + 3, ly - 7), lanes[i].c, lanes[i].n);
-                dl->AddLine(ImVec2(p0.x + 16, ly), ImVec2(p0.x + w, ly), IM_COL32(45, 45, 50, 255));
+                dl->AddLine(ImVec2(p0.x + 16, ly), ImVec2(p0.x + w, ly), EditorStyle::TIMELINE_LANE_U32);
                 const auto& times = *lanes[i].times;
                 for (size_t k = 0; k < times.size(); ++k) {
                     bool hot = (i == hovTrack && k == hovIdx)
@@ -239,7 +240,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
         }
 
-        ImGui::SetNextItemWidth(160);
+        ImGui::SetNextItemWidth(EditorStyle::px(140.0f));
         float prevTime = anim.time;
         if (ImGui::InputFloat("Time", &anim.time, 0.01f, 0.1f, "%.3f s")) {
             anim.time = std::clamp(anim.time, 0.0f, std::max(dur, 0.0f));
@@ -400,13 +401,13 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
         ImGui::EndDisabled();
 
         float ovEndY = ImGui::GetCursorScreenPos().y;
-        float bw = 240.0f;
+        float bw = EditorStyle::px(240.0f);
         float bh = ImGui::GetFrameHeight() + 10.0f;
         ImVec2 bpos(ovStart.x + (ovW - bw) * 0.5f,
                     (ovStart.y + ovEndY) * 0.5f - bh * 0.5f);
         ImGui::GetWindowDrawList()->AddRectFilled(
             ImVec2(bpos.x - 14, bpos.y - 14), ImVec2(bpos.x + bw + 14, bpos.y + bh + 14),
-            IM_COL32(18, 18, 22, 238), 6.0f);
+            EditorStyle::TIMELINE_GHOST_U32, 6.0f);
         ImGui::SetCursorScreenPos(bpos);
         if (ImGui::Button("Add Animation Component", ImVec2(bw, bh))) {
             scene.add(Entity{id}, Animation{});

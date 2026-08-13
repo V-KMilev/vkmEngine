@@ -16,6 +16,7 @@
 #include "system/script/script_module.h"
 #include "platform/library/dynamic_library.h"
 #include "app/engine_app.h"
+#include "example/potion_scene.h"
 
 int main(int argc, char** argv) {
     try {
@@ -56,11 +57,12 @@ int main(int argc, char** argv) {
 
         Engine::Engine engine;
 
-        auto sys = setupEngineApp(engine, AppConfig{"VKM Engine (Editor)", true, false});
+        auto sys = setupEngineApp(engine,
+            AppConfig{"VKM Engine (Editor)", true, false, generatePotionRunnerScene});
 
         engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
             engine, engine.getWindow().getWindowContext(),
-            sys.camera, sys.visibility, sys.render, sys.events, scriptModule);
+            sys.camera, sys.visibility, sys.render, scriptModule);
 
         if (argc > 1) {
             const char* scenePath = argv[1];

@@ -31,7 +31,6 @@ namespace Engine {
 struct EditorContext;
 class Engine;
 class CameraControllerSystem;
-class EventSystem;
 class Scene;
 class VisibilitySystem;
 class RenderSystem;
@@ -59,7 +58,6 @@ class EditorSystem : public System {
             CameraControllerSystem& cameraController,
             VisibilitySystem& visibilitySystem,
             RenderSystem& renderSystem,
-            EventSystem& events,
             ScriptModule& scriptModule
         );
         ~EditorSystem() override;
@@ -81,6 +79,12 @@ class EditorSystem : public System {
          * (rather than its own unit) so it doesn't need every panel
          * passed back in.
          */
+        /**
+         * @brief Execute a guarded destructive scene action (quit / new / open)
+         * once the unsaved-changes flow resolves it.
+         */
+        void performSceneAction(FrameContext& ctx, EditorState::PendingSceneAction action);
+
         void drawWorkspace(EditorContext& ec);
 
     private:
@@ -89,7 +93,6 @@ class EditorSystem : public System {
         CameraControllerSystem& m_cameraController;
         RenderSystem&     m_renderSystem;
         VisibilitySystem& m_visibilitySystem;
-        EventSystem&      m_events;
         ScriptModule&     m_scriptModule;
 
         MaterialPreviewSession m_materialPreviews;
