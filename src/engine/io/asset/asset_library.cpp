@@ -2,6 +2,7 @@
 
 #include "io/asset/asset_library.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <fstream>
@@ -94,6 +95,15 @@ void AssetLibrary::load() {
 const AssetRecord* AssetLibrary::find(AssetType type, const std::string& name) const {
     auto it = m_records.find(key(type, name));
     return it == m_records.end() ? nullptr : &it->second;
+}
+
+std::vector<std::string> AssetLibrary::namesOf(AssetType type) const {
+    std::vector<std::string> names;
+    for (const auto& [_, record] : m_records) {
+        if (record.type == type) names.push_back(record.name);
+    }
+    std::sort(names.begin(), names.end());
+    return names;
 }
 
 void AssetLibrary::upsert(AssetRecord record) {
