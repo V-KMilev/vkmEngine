@@ -56,8 +56,8 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
         [](const Endpoint& a, const Endpoint& b) { return a.viewDir.z < b.viewDir.z; });
 
     // Background disc.
-    drawList->AddCircleFilled(center, gizmoSize * 0.5f, IM_COL32(20, 20, 22, 160), 32);
-    drawList->AddCircle(center, gizmoSize * 0.5f, IM_COL32(50, 50, 55, 200), 32, 1.0f);
+    drawList->AddCircleFilled(center, gizmoSize * 0.5f, EditorStyle::NAV_DISC_U32, 32);
+    drawList->AddCircle(center, gizmoSize * 0.5f, EditorStyle::NAV_RING_U32, 32, 1.0f);
 
     // Hit-test the endpoints (front-most wins) using current mouse position.
     // Skip when the mouse isn't over the viewport - otherwise the gizmo

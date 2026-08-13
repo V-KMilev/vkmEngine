@@ -1,5 +1,8 @@
 #pragma once
 
+#include <utility>
+#include <vector>
+
 #include <imgui.h>
 
 #include "ecs/entity.h"
@@ -56,6 +59,15 @@ class GizmoOverlay {
         void drawProbeGizmos(EditorContext& ec);
 
         /**
+         * @brief Draw the authoring shapes of the effect components: each
+         * decal's projection box (its Transform scale IS the box) with a line
+         * along the projection direction, and a marker + velocity line per
+         * particle emitter. Without these, an unselected decal or emitter is
+         * invisible in the viewport.
+         */
+        void drawEffectGizmos(EditorContext& ec);
+
+        /**
          * @brief Draw a wireframe of every entity's physics Collider (its set
          * of boxes) so the user sees what the solver collides against.
          *
@@ -99,6 +111,13 @@ class GizmoOverlay {
         // whole drag rather than one per intermediate frame.
         Transform m_dragStartTransform{};
         EntityId  m_dragEntity{};
+
+        /**
+         * @brief Drag-start transforms of EVERY selected entity (active
+         * included), so a gizmo drag moves the whole selection and drag-end
+         * can push one batch undo covering all of it.
+         */
+        std::vector<std::pair<EntityId, Transform>> m_dragSelection;
 };
 
 } // namespace Engine

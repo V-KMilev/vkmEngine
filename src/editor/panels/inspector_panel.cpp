@@ -15,9 +15,17 @@
 
 #include "ecs/component/animation.h"
 #include "ecs/component/collider.h"
+#include "ecs/component/decal.h"
+#include "ecs/component/particle_emitter.h"
+#include "ecs/component/irradiance_volume.h"
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/transform.h"
+#include "ecs/component/ui_canvas.h"
+#include "ecs/component/ui_element.h"
+#include "ecs/component/ui_image.h"
+#include "ecs/component/ui_text.h"
+#include "ecs/component/ui_button.h"
 #include "ecs/environment.h"
 #include "framework/editor_actions.h"
 #include "framework/editor_commands.h"
@@ -35,20 +43,6 @@
 namespace Engine {
 
 namespace {
-// Per-component accent colors - the left strip / guide line that lets the
-// eye group a card at a glance (Transform blue, Mesh green, ...).
-const ImVec4 ACCENT_TRANSFORM = EditorStyle::AXIS_Z;
-const ImVec4 ACCENT_MESH      = EditorStyle::AXIS_Y;
-const ImVec4 ACCENT_LIGHT     = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);
-const ImVec4 ACCENT_CAMERA    = ImVec4(0.30f, 0.78f, 0.80f, 1.0f);
-const ImVec4 ACCENT_ANIM      = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);
-const ImVec4 ACCENT_HIERARCHY = ImVec4(0.55f, 0.58f, 0.62f, 1.0f);
-const ImVec4 ACCENT_PHYSICS   = ImVec4(0.36f, 0.78f, 0.45f, 1.0f);
-const ImVec4 ACCENT_COLLIDER  = ImVec4(0.25f, 0.65f, 0.40f, 1.0f);
-const ImVec4 ACCENT_PROBE     = ImVec4(0.30f, 0.62f, 0.92f, 1.0f);  // reflection probe (blue)
-const ImVec4 ACCENT_ENV       = ImVec4(0.45f, 0.66f, 0.95f, 1.0f);  // environment / skybox (sky blue)
-const ImVec4 ACCENT_SCRIPT    = ImVec4(0.85f, 0.45f, 0.58f, 1.0f);  // script / behavior (rose)
-
 // Generic reflected-field -> ImGui inspector. The editor only sees a Behavior*,
 // so a behavior's authored fields are edited through this visitor (the same
 // bridge serialization uses). One DragFloat/Checkbox/etc. per field type;
@@ -76,6 +70,20 @@ class BehaviorFieldInspector : public BehaviorFieldVisitor {
             ImGui::SetNextItemWidth(-1.0f);
             if (ImGui::DragFloat3(widgetId(name), glm::value_ptr(v), 0.1f)) changed = true;
         }
+
+        void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {
+            drawPropertyLabel(name);
+            ImGui::SetNextItemWidth(-1.0f);
+            if (ImGui::Combo(widgetId(name), &index, names, static_cast<int>(count))) changed = true;
+        }
+
+        // Nested struct: a collapsing tree node. When open it pushes an ID scope,
+        // so sub-fields with the same name as a sibling struct's don't collide;
+        // endStruct/TreePop runs only on the open path (beginStruct returned true).
+        bool beginStruct(const char* name) override {
+            return ImGui::TreeNodeEx(name, ImGuiTreeNodeFlags_DefaultOpen);
+        }
+        void endStruct() override { ImGui::TreePop(); }
 
     private:
         // Hidden-label id for the widget; uniqueness across behaviors comes from
@@ -163,7 +171,14 @@ void InspectorPanel::draw(EditorContext& ec) {
     FrameContext& ctx   = ec.frame;
     EditorState&  state = ec.state;
 
-    drawPanelTitle("Inspector");
+    // Multi-selection: the cards below edit the ACTIVE entity; the banner
+    // keeps the set visible (batch edits act via Delete/Duplicate/gizmo).
+    if (state.selection.size() > 1) {
+        ImGui::TextColored(EditorStyle::ACCENT, "%zu entities selected",
+                           state.selection.size());
+        ImGui::TextDisabled("Editing the active entity below.");
+        ImGui::Separator();
+    }
 
     const bool haveEntity = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
     if (!haveEntity) {
@@ -189,8 +204,16 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<Collider>(id))   drawColliderSection(scene, ctx.resources, state, id);
     if (scene.has<Camera>(id))     drawCameraSection(scene, state, id);
     if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, state, id);
+    if (scene.has<Decal>(id))          drawDecalSection(scene, ctx.resources, state, id);
+    if (scene.has<ParticleEmitter>(id)) drawParticleSection(scene, state, id);
+    if (scene.has<IrradianceVolume>(id)) drawIrradianceVolumeSection(scene, state, id);
     if (scene.has<Animation>(id))  drawAnimationSection(scene, state, id);
     if (scene.has<ScriptComponent>(id)) drawScriptSection(scene, state, id);
+    if (scene.has<UICanvas>(id))   drawUICanvasSection(scene, state, id);
+    if (scene.has<UIElement>(id))  drawUIElementSection(scene, state, id);
+    if (scene.has<UIImage>(id))    drawUIImageSection(scene, state, id);
+    if (scene.has<UIText>(id))     drawUITextSection(scene, state, id);
+    if (scene.has<UIButton>(id))   drawUIButtonSection(scene, state, id);
     if (scene.has<Hierarchy>(id))  drawHierarchySection(scene, state, id);
 
     ImGui::Spacing();
@@ -208,7 +231,7 @@ void InspectorPanel::drawEmptySelectionState(EditorContext& ec) {
     // quick "create entity" affordance, so a fresh user has somewhere to go
     // from a blank panel.
     const ImVec2 region = ImGui::GetContentRegionAvail();
-    const float glyphSize = 56.0f;
+    const float glyphSize = EditorStyle::px(56.0f);
     const float lineH     = ImGui::GetTextLineHeightWithSpacing();
     const float blockH    = glyphSize + lineH * 2.0f + ImGui::GetFrameHeight() + 24.0f;
     ImGui::Dummy(ImVec2(0.0f, std::max(0.0f, (region.y - blockH) * 0.35f)));
@@ -231,7 +254,7 @@ void InspectorPanel::drawEmptySelectionState(EditorContext& ec) {
     ImGui::TextDisabled("%s", line2);
 
     ImGui::Spacing();
-    const float btnW = 180.0f;
+    const float btnW = EditorStyle::px(180.0f);
     ImGui::SetCursorPosX((region.x - btnW) * 0.5f);
     if (ImGui::Button("+  Create Entity", ImVec2(btnW, 0.0f)))
         ImGui::OpenPopup("##EmptyCreate");
@@ -242,17 +265,21 @@ void InspectorPanel::drawEmptySelectionState(EditorContext& ec) {
 }
 
 void InspectorPanel::drawIdentityHeader(Scene& scene, EditorState& state, EntityId id) {
-    // Type badge + name (or "Add name" affordance) + id. Naming is opt-in - the
-    // inspector never adds Name during draw, only on explicit user action, so a
-    // glance at an entity doesn't mutate the scene.
+    // Type badge, then the id, then the name bar filling the rest of the row:
+    // [icon] #41 [name...............]. Naming is opt-in - the inspector never
+    // adds Name during draw, only on explicit user action, so a glance at an
+    // entity doesn't mutate the scene.
     const float ih = ImGui::GetFrameHeight();
     inlineIcon(entityIconKind(scene, id), ih, ImGui::GetColorU32(EditorStyle::ACCENT));
+    ImGui::SameLine();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("#%u", id.index);
     ImGui::SameLine();
 
     if (scene.has<Name>(id)) {
         auto& name = scene.get<Name>(id);
         const Name before = name;
-        ImGui::SetNextItemWidth(-46.0f);
+        ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::InputText("##Name", name.value, sizeof(name.value))) {
             // Route through the command stack like every other inspector edit:
             // tryMerge coalesces the keystroke stream into one undo step, and
@@ -275,10 +302,73 @@ void InspectorPanel::drawIdentityHeader(Scene& scene, EditorState& state, Entity
             state.markSceneDirty();
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add a Name component to rename this entity");
-        ImGui::SameLine(0.0f, ImGui::GetContentRegionAvail().x - 46.0f);
     }
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("#%u", id.index);
+}
+
+void InspectorPanel::drawUICanvasSection(Scene& scene, EditorState& state, EntityId id) {
+    editComponentCard<UICanvas>(scene, state, id, "UI Canvas", EditorStyle::Accent::UI, "Edit UI Canvas", "Remove UI Canvas",
+        [&](UICanvas& c) {
+            bool changed = false;
+            changed |= propEnumCombo("Scale Mode", c.scaleMode);
+            changed |= propDrag("Reference Height", &c.referenceHeight, 1.0f, 1.0f, 8192.0f, "%.0f",
+                                "Authoring height; ScaleWithHeight scales the layout against it.");
+            changed |= propDragInt("Sort Order", &c.sortOrder, 1.0f, -1000, 1000,
+                                   "Higher draws on top across canvases.");
+            changed |= propCheckbox("Visible", &c.visible);
+            return changed;
+        });
+}
+
+void InspectorPanel::drawUIElementSection(Scene& scene, EditorState& state, EntityId id) {
+    editComponentCard<UIElement>(scene, state, id, "UI Element", EditorStyle::Accent::UI, "Edit UI Element", "Remove UI Element",
+        [&](UIElement& e) {
+            bool changed = false;
+            changed |= propRow("Anchor", "Parent anchor point, 0..1 (top-left to bottom-right).",
+                [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.anchor), 0.005f, 0.0f, 1.0f, "%.3f"); });
+            changed |= propRow("Pivot", "Element pivot, 0..1; the point placed at the anchor.",
+                [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.pivot), 0.005f, 0.0f, 1.0f, "%.3f"); });
+            changed |= propRow("Position", "Offset from the anchor, in reference pixels.",
+                [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.position), 0.5f, 0.0f, 0.0f, "%.1f"); });
+            changed |= propRow("Size", "Element size, in reference pixels.",
+                [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.size), 0.5f, 0.0f, 8192.0f, "%.1f"); });
+            changed |= propCheckbox("Visible", &e.visible, "Hides this element and its whole subtree.");
+            return changed;
+        });
+}
+
+void InspectorPanel::drawUIImageSection(Scene& scene, EditorState& state, EntityId id) {
+    editComponentCard<UIImage>(scene, state, id, "UI Image", EditorStyle::Accent::UI, "Edit UI Image", "Remove UI Image",
+        [&](UIImage& i) {
+            return propColor4("Color", glm::value_ptr(i.color));
+        });
+}
+
+void InspectorPanel::drawUITextSection(Scene& scene, EditorState& state, EntityId id) {
+    editComponentCard<UIText>(scene, state, id, "UI Text", EditorStyle::Accent::UI, "Edit UI Text", "Remove UI Text",
+        [&](UIText& t) {
+            bool changed = false;
+            changed |= propString("Text", t.text);
+            changed |= propString("Font", t.font, "Baked SDF font asset name (e.g. ui:roboto).");
+            changed |= propDrag("Size", &t.pixelSize, 0.5f, 1.0f, 512.0f, "%.0f", "Text height in reference pixels.");
+            changed |= propEnumCombo("Align", t.align);
+            changed |= propEnumCombo("V Align", t.valign);
+            changed |= propColor4("Color", glm::value_ptr(t.color));
+            return changed;
+        });
+}
+
+void InspectorPanel::drawUIButtonSection(Scene& scene, EditorState& state, EntityId id) {
+    editComponentCard<UIButton>(scene, state, id, "UI Button", EditorStyle::Accent::UI, "Edit UI Button", "Remove UI Button",
+        [&](UIButton& b) {
+            bool changed = false;
+            changed |= propString("Event Id", b.eventId, "Identifier the UIClickEvent carries when this button fires.");
+            changed |= propCheckbox("Interactable", &b.interactable);
+            changed |= propColor4("Normal", glm::value_ptr(b.normalColor));
+            changed |= propColor4("Hover", glm::value_ptr(b.hoverColor));
+            changed |= propColor4("Pressed", glm::value_ptr(b.pressedColor));
+            changed |= propColor4("Disabled", glm::value_ptr(b.disabledColor));
+            return changed;
+        });
 }
 
 void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, EntityId id) {
@@ -289,7 +379,17 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
     if (clicked) ImGui::OpenPopup("##AddComp");
 
     if (ImGui::BeginPopup("##AddComp")) {
-        ImGui::TextDisabled("Add Component");
+        sectionLabel("Add Component");
+        // Type-to-narrow: 16+ component types no longer fit one eyeful.
+        // Focused on open, like the Hierarchy filter.
+        static char s_componentFilter[48] = {};
+        if (ImGui::IsWindowAppearing()) {
+            s_componentFilter[0] = '\0';
+            ImGui::SetKeyboardFocusHere();
+        }
+        ImGui::SetNextItemWidth(EditorStyle::px(200.0f));
+        ImGui::InputTextWithHint("##compFilter", "Search...",
+                                 s_componentFilter, sizeof(s_componentFilter));
         ImGui::Separator();
         // Each add routes through AddComponentCommand so undo can drop the
         // component the user just added. The component value captured in
@@ -298,6 +398,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         // deduced from the prototype value.
         auto addItem = [&](const char* label, auto value, const char* addLabel) {
             using T = decltype(value);
+            if (!matchesFilter(label, s_componentFilter)) return;
             if (!scene.has<T>(id) && ImGui::MenuItem(label)) {
                 scene.add(Entity{id}, value);
                 state.commands.push(std::make_unique<AddComponentCommand<T>>(id, std::move(value), addLabel));
@@ -313,10 +414,25 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         cam.active = false;
         addItem("Camera", cam, "Add Camera");
         addItem("Reflection Probe", ReflectionProbe{}, "Add Reflection Probe");
+        addItem("Decal", Decal{}, "Add Decal");
+        addItem("Particle Emitter", ParticleEmitter{}, "Add Particle Emitter");
+        addItem("Irradiance Volume", IrradianceVolume{}, "Add Irradiance Volume");
         addItem("Animation", Animation{}, "Add Animation");
+
+        if (s_componentFilter[0] == '\0') {
+            ImGui::Separator();
+            sectionLabel("UI");
+        }
+        addItem("UI Canvas", UICanvas{}, "Add UI Canvas");
+        addItem("UI Element", UIElement{}, "Add UI Element");
+        addItem("UI Image", UIImage{}, "Add UI Image");
+        addItem("UI Text", UIText{}, "Add UI Text");
+        addItem("UI Button", UIButton{}, "Add UI Button");
+
         // ScriptComponent is move-only, so it can't ride the (value-copying)
         // AddComponentCommand - add it live, like the World/Physics edits.
-        if (!scene.has<ScriptComponent>(id) && ImGui::MenuItem("Script")) {
+        if (matchesFilter("Script", s_componentFilter)
+            && !scene.has<ScriptComponent>(id) && ImGui::MenuItem("Script")) {
             scene.add(Entity{id}, ScriptComponent{});
             state.markSceneDirty();
         }
@@ -326,7 +442,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
 
 void InspectorPanel::drawTransformSection(Scene& scene, EditorState& state, EntityId id) {
     // Transform is intrinsic - no remove affordance.
-    const bool open = beginComponentCard("Transform", ACCENT_TRANSFORM, true);
+    const bool open = beginComponentCard("Transform", EditorStyle::Accent::Transform, true);
     if (open) {
         auto& t = scene.get<Transform>(id);
         const Transform before = t;  // pre-edit value for the coalescing undo command
@@ -361,7 +477,7 @@ void InspectorPanel::drawTransformSection(Scene& scene, EditorState& state, Enti
 
 void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
                                      EditorState& state, EntityId id) {
-    editComponentCard<Mesh>(scene, state, id, "Mesh", ACCENT_MESH, "Edit Mesh", "Remove Mesh",
+    editComponentCard<Mesh>(scene, state, id, "Mesh", EditorStyle::Accent::Mesh, "Edit Mesh", "Remove Mesh",
                             [&](Mesh& mesh) {
         bool changed = false;
 
@@ -418,7 +534,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
 }
 
 void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<Light>(scene, state, id, "Light", ACCENT_LIGHT, "Edit Light", "Remove Light",
+    editComponentCard<Light>(scene, state, id, "Light", EditorStyle::Accent::Light, "Edit Light", "Remove Light",
                              [&](Light& light) {
         bool changed = false;
 
@@ -434,14 +550,10 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
             changed |= propDrag("Radius", &light.radius, 0.5f, 0.1f, 1000.0f, "%.1f");
 
         if (light.type == LightType::Spot) {
-            float innerDeg = glm::degrees(light.innerConeAngle);
-            float outerDeg = glm::degrees(light.outerConeAngle);
-            if (propDrag("Inner Cone", &innerDeg, 0.5f, 0.0f, 90.0f, "%.1f deg")) {
-                light.innerConeAngle = glm::radians(innerDeg);
+            if (propAngleDrag("Inner Cone", &light.innerConeAngle, 0.5f, 0.0f, 90.0f)) {
                 changed = true;
             }
-            if (propDrag("Outer Cone", &outerDeg, 0.5f, 0.0f, 90.0f, "%.1f deg")) {
-                light.outerConeAngle = glm::radians(outerDeg);
+            if (propAngleDrag("Outer Cone", &light.outerConeAngle, 0.5f, 0.0f, 90.0f)) {
                 changed = true;
             }
         }
@@ -456,7 +568,6 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
             changed |= propCheckbox("Two-sided", &light.twoSided);
         }
         if (light.type == LightType::Rect || light.type == LightType::Disk) {
-            ImGui::TextDisabled("LTC Lambertian diffuse + representative-point GGX specular.");
         }
 
         changed |= propCheckbox("Shadows", &light.castShadows);
@@ -484,9 +595,12 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    const bool open = beginComponentCard("Environment", ACCENT_ENV, true);
+    // Every card edits the live Environment; `before` is snapshotted per card
+    // so each edit lands as one undoable, mergeable command.
+    const bool open = beginComponentCard("Environment", EditorStyle::Accent::Env, true);
     if (open) {
         bool changed = false;
+        const Environment before = env;
 
         // Skybox HDR: browse assets/envs via the shared cached AssetPicker
         // instead of a bespoke per-open directory scan. The picker returns the
@@ -520,30 +634,93 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
         }
 
         changed |= propCheckbox("Show Skybox", &env.showSkybox);
-        changed |= propSlider("Brightness", &env.intensity, 0.0f, 3.0f, "%.2f");
+        changed |= propSlider("Brightness", &env.intensity, 0.0f, 3.0f, "%.2f",
+                              "Indirect (IBL) strength. Swapping the HDR re-bakes the IBL (a brief hitch).");
 
-        ImGui::TextDisabled("Swapping the HDR re-bakes the IBL (a brief hitch).");
+        if (changed) {
+            state.commands.push(std::make_unique<EnvironmentEditCommand>(before, env, "Edit Environment"));
+            state.markSceneDirty();
+        }
+    }
+    endComponentCard();
 
-        // Scene-global settings edit live, no per-entity undo command.
-        if (changed) state.markSceneDirty();
+    // Procedural sky: bakes a Rayleigh + Mie atmosphere into the IBL in place of
+    // the HDR. Edits are live - the backend re-bakes when a value (or the sun)
+    // changes - so a slow drag re-bakes each frame (a brief hitch, as noted).
+    if (beginComponentCard("Procedural Sky", EditorStyle::Accent::Env, true)) {
+        bool changed = false;
+        const Environment before = env;
+
+        changed |= propCheckbox("Enabled", &env.proceduralSky,
+                                "Bakes a Rayleigh+Mie atmosphere instead of the HDR; the sun follows the scene's directional light");
+
+        ImGui::BeginDisabled(!env.proceduralSky);
+        changed |= propSlider("Sun Intensity", &env.skySunIntensity, 0.0f, 60.0f, "%.1f");
+        changed |= propSlider("Rayleigh", &env.skyRayleigh, 0.0f, 4.0f, "%.2f");
+        changed |= propSlider("Mie", &env.skyMie, 0.0f, 4.0f, "%.2f");
+        changed |= propSlider("Mie Asymmetry", &env.skyMieG, 0.0f, 0.99f, "%.2f");
+        changed |= propSlider("Sun Disc Size", &env.skySunAngularRadius, 0.002f, 0.1f, "%.3f");
+        changed |= propSlider("Sun Disc Intensity", &env.skySunDiscIntensity, 0.0f, 60.0f, "%.1f");
+        ImGui::EndDisabled();
+
+        if (changed) {
+            state.commands.push(std::make_unique<EnvironmentEditCommand>(before, env, "Edit Procedural Sky"));
+            state.markSceneDirty();
+        }
+    }
+    endComponentCard();
+
+    // Volumetric fog: a froxel compute scatters the scene lights through a
+    // height-falloff medium and applies it to the frame.
+    if (beginComponentCard("Volumetric Fog", EditorStyle::Accent::Env, true)) {
+        bool changed = false;
+        const Environment before = env;
+
+        changed |= propCheckbox("Enabled", &env.fogEnabled,
+                                "Froxel fog: scatters the scene lights (incl. local lights) through a height-falloff medium");
+
+        ImGui::BeginDisabled(!env.fogEnabled);
+        changed |= propSlider("Density", &env.fogDensity, 0.0f, 0.3f, "%.3f");
+        changed |= propDrag("Height", &env.fogHeight, 0.2f, -100.0f, 1000.0f, "%.1f");
+        changed |= propSlider("Height Falloff", &env.fogHeightFalloff, 0.0f, 1.0f, "%.3f");
+        changed |= propSlider("Anisotropy", &env.fogAnisotropy, -0.95f, 0.95f, "%.2f");
+        changed |= propColor3("Albedo", glm::value_ptr(env.fogAlbedo));
+
+        // Froxel grid dimensions: raise them when point-light shafts look blocky
+        // (fog compute cost scales with X*Y*Z). Defaults 160x90x64.
+        changed |= propDragU32("Froxels X", &env.fogResolutionX, 1.0f, 16u, 512u,
+                               "Screen-horizontal froxels. More = sharper light shafts.");
+        changed |= propDragU32("Froxels Y", &env.fogResolutionY, 1.0f, 16u, 512u);
+        changed |= propDragU32("Froxels Z", &env.fogResolutionZ, 1.0f, 16u, 512u,
+                               "Depth slices. More = smoother fog falloff with distance.");
+        ImGui::EndDisabled();
+
+        if (changed) {
+            state.commands.push(std::make_unique<EnvironmentEditCommand>(before, env, "Edit Volumetric Fog"));
+            state.markSceneDirty();
+        }
     }
     endComponentCard();
 
     // Physics world parameters - also scene-global Environment state, read by
     // PhysicsSystem each fixed step.
-    if (beginComponentCard("Physics", ACCENT_PHYSICS, true)) {
+    if (beginComponentCard("Physics", EditorStyle::Accent::Physics, true)) {
         bool changed = false;
+        const Environment before = env;
 
         changed |= propDrag3("Gravity", glm::value_ptr(env.gravity), 0.05f, -50.0f, 50.0f, "%.2f");
         changed |= propDragInt("Solver Iterations", &env.solverIterations, 0.1f, 1, 32);
 
-        if (changed) state.markSceneDirty();
+        if (changed) {
+            state.commands.push(std::make_unique<EnvironmentEditCommand>(before, env, "Edit Physics"));
+            state.markSceneDirty();
+        }
     }
     endComponentCard();
 }
 
 void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<ReflectionProbe>(scene, state, id, "Reflection Probe", ACCENT_PROBE,
+    editComponentCard<ReflectionProbe>(scene, state, id, "Reflection Probe", EditorStyle::Accent::Probe,
                                        "Edit Reflection Probe", "Remove Reflection Probe",
                                        [&](ReflectionProbe& probe) {
         bool changed = false;
@@ -554,22 +731,104 @@ void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state
         changed |= propSlider("Falloff", &probe.falloff, 0.0f, 1.0f, "%.2f");
         changed |= propDrag("Intensity", &probe.intensity, 0.02f, 0.0f, 8.0f, "%.2f");
 
+        // Capture resolution: the cube face size the probe bakes at (sharper
+        // reflections cost more VRAM + bake time). The probe cubes share one
+        // GPU array, so the highest resolution among all probes drives them all.
+        static const char*    RES_LABELS[] = {"128", "256", "512", "1024"};
+        static const uint32_t RES_VALUES[] = {128u, 256u, 512u, 1024u};
+        changed |= propValueCombo("Resolution", RES_LABELS, RES_VALUES, 4, &probe.resolution,
+                                  "Cube face size for the bake. Shared across probes: the "
+                                  "largest wins. Changing it re-bakes every probe.");
+
         ImGui::Spacing();
         // Box / falloff / intensity are runtime blend params (no re-bake). Moving
         // the probe re-bakes automatically; Rebake forces it after the scene
         // changed (sun moved, geometry edited) by bumping the version.
-        if (ImGui::Button("Rebake", ImVec2(-1, 0))) {
-            probe.bakeVersion++;
-            changed = true;
-        }
-        ImGui::TextDisabled("Captures the scene from the entity's Transform position.");
+        changed |= rebakeButton(probe.bakeVersion);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Captures the scene from the entity's Transform position");
+
+        return changed;
+    });
+}
+
+void InspectorPanel::drawDecalSection(Scene& scene, ResourceManager& resources,
+                                     EditorState& state, EntityId id) {
+    editComponentCard<Decal>(scene, state, id, "Decal", EditorStyle::Accent::Mesh, "Edit Decal", "Remove Decal",
+                             [&](Decal& decal) {
+        bool changed = false;
+
+        // The projected material: its albedo (with alpha) is what lands on the surface.
+        changed |= pickAsset<MaterialAsset>("##DecalMatPick", "Material", resources, decal.material);
+        changed |= propSlider("Angle Fade", &decal.angleFade, 0.0f, 1.0f, "%.2f",
+                              "Fade where the surface turns away from the projector (projects along -Z; the Transform's scale is the box)");
+        changed |= propSlider("Opacity", &decal.opacity, 0.0f, 1.0f, "%.2f");
+
+        return changed;
+    });
+}
+
+void InspectorPanel::drawParticleSection(Scene& scene, EditorState& state, EntityId id) {
+    editComponentCard<ParticleEmitter>(scene, state, id, "Particle Emitter", EditorStyle::Accent::Light,
+                                       "Edit Particle Emitter", "Remove Particle Emitter",
+                                       [&](ParticleEmitter& e) {
+        bool changed = false;
+
+        changed |= propCheckbox("Emitting", &e.emitting);
+        changed |= propDrag("Rate", &e.rate, 0.5f, 0.0f, 2000.0f, "%.1f");
+        changed |= propDrag("Lifetime", &e.lifetime, 0.05f, 0.01f, 60.0f, "%.2f");
+
+        changed |= propDragU32("Max Particles", &e.maxParticles, 1.0f, 1u, 20000u);
+
+        ImGui::Spacing();
+        changed |= propDrag3("Velocity", glm::value_ptr(e.velocity), 0.05f, -100.0f, 100.0f, "%.2f");
+        changed |= propDrag("Spread", &e.spread, 0.02f, 0.0f, 50.0f, "%.2f");
+        changed |= propDrag3("Acceleration", glm::value_ptr(e.acceleration), 0.05f, -100.0f, 100.0f, "%.2f");
+
+        ImGui::Spacing();
+        changed |= propColor4("Start Color", glm::value_ptr(e.startColor));
+        changed |= propColor4("End Color", glm::value_ptr(e.endColor));
+        changed |= propDrag("Start Size", &e.startSize, 0.005f, 0.0f, 20.0f, "%.3f");
+        changed |= propDrag("End Size", &e.endSize, 0.005f, 0.0f, 20.0f, "%.3f");
+        changed |= propSlider("Softness", &e.softness, 0.0f, 1.0f, "%.2f",
+                              "Edge falloff: 1 = soft blob, 0 = hard-edged crisp disc");
+        changed |= propCheckbox("Additive", &e.additive,
+                                "Additive blend suits sparks/fire; alpha blend suits smoke");
+
+        ImGui::TextDisabled("Live: %d particle(s).",
+                            static_cast<int>(e.particles.size()));
+
+        return changed;
+    });
+}
+
+void InspectorPanel::drawIrradianceVolumeSection(Scene& scene, EditorState& state, EntityId id) {
+    editComponentCard<IrradianceVolume>(scene, state, id, "Irradiance Volume", EditorStyle::Accent::Probe,
+                                        "Edit Irradiance Volume", "Remove Irradiance Volume",
+                                        [&](IrradianceVolume& v) {
+        bool changed = false;
+
+        changed |= propDrag3("Box Size", glm::value_ptr(v.halfExtents), 0.1f, 0.1f, 1000.0f, "%.1f");
+
+        changed |= propDragU32("Probes X", &v.resolutionX, 0.1f, 1u, 64u);
+        changed |= propDragU32("Probes Y", &v.resolutionY, 0.1f, 1u, 64u);
+        changed |= propDragU32("Probes Z", &v.resolutionZ, 0.1f, 1u, 64u);
+
+        changed |= propDrag("Intensity", &v.intensity, 0.02f, 0.0f, 8.0f, "%.2f");
+
+        ImGui::Spacing();
+        changed |= rebakeButton(v.bakeVersion);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Each probe is a scene capture at bake time -\nthis costs bake time, not frame time");
+        ImGui::TextDisabled("%u probes.",
+                            v.resolutionX * v.resolutionY * v.resolutionZ);
 
         return changed;
     });
 }
 
 void InspectorPanel::drawRigidbodySection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<Rigidbody>(scene, state, id, "Rigidbody", ACCENT_PHYSICS,
+    editComponentCard<Rigidbody>(scene, state, id, "Rigidbody", EditorStyle::Accent::Physics,
                                  "Edit Rigidbody", "Remove Rigidbody",
                                  [&](Rigidbody& rb) {
         bool changed = false;
@@ -578,12 +837,17 @@ void InspectorPanel::drawRigidbodySection(Scene& scene, EditorState& state, Enti
         changed |= propCheckbox("Static", &rb.isStatic);
         changed |= propCheckbox("Kinematic", &rb.isKinematic);
         changed |= propDrag("Gravity Scale", &rb.gravityScale, 0.05f, 0.0f, 10.0f, "%.2f");
-        changed |= propDrag("Restitution", &rb.restitution, 0.01f, 0.0f, 1.0f, "%.2f");
-        changed |= propDrag("Friction", &rb.friction, 0.01f, 0.0f, 2.0f, "%.2f");
-        changed |= propDrag("Linear Damping", &rb.linearDamping, 0.005f, 0.0f, 1.0f, "%.3f");
-        changed |= propDrag("Angular Damping", &rb.angularDamping, 0.005f, 0.0f, 1.0f, "%.3f");
+        changed |= propSlider("Restitution", &rb.restitution, 0.0f, 1.0f, "%.2f");
+        changed |= propSlider("Friction", &rb.friction, 0.0f, 2.0f, "%.2f");
+        changed |= propSlider("Linear Damping", &rb.linearDamping, 0.0f, 1.0f, "%.3f");
+        changed |= propSlider("Angular Damping", &rb.angularDamping, 0.0f, 1.0f, "%.3f");
 
         changed |= drawVec3Control("Velocity", glm::value_ptr(rb.linearVelocity), 0.0f, 0.1f);
+        changed |= drawVec3Control("Angular Vel", glm::value_ptr(rb.angularVelocity), 0.0f, 0.1f);
+        changed |= propCheckbox("Freeze Rotation", &rb.freezeRotation,
+                                "Translation only: contacts never torque the body (character controllers)");
+        changed |= propCheckbox("Can Sleep", &rb.canSleep,
+                                "Uncheck for script-driven bodies that must stay responsive at rest");
 
         if (changed) {
             // Wake the body so the edit (especially velocity) survives the next
@@ -598,14 +862,19 @@ void InspectorPanel::drawRigidbodySection(Scene& scene, EditorState& state, Enti
 }
 
 void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id) {
-    editComponentCard<Collider>(scene, state, id, "Collider", ACCENT_COLLIDER,
+    editComponentCard<Collider>(scene, state, id, "Collider", EditorStyle::Accent::Collider,
                                 "Edit Collider", "Remove Collider",
                                 [&](Collider& col) {
         bool changed = false;
 
         // A collider is a set of boxes. A single box is editable here; a
         // mesh-fitted compound shows its box count (rebuild it via Fit to Mesh).
+        changed |= propCheckbox("Enabled", &col.enabled,
+                                "Disabled colliders are inert: no broadphase entry, no contacts");
+
         if (col.parts.size() == 1) {
+            changed |= drawVec3Control("Center",
+                glm::value_ptr(col.parts[0].center), 0.0f, 0.05f);
             changed |= drawVec3Control("Half Extents",
                 glm::value_ptr(col.parts[0].halfExtents), 0.5f, 0.05f);
         } else {
@@ -638,25 +907,34 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
 }
 
 void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<Camera>(scene, state, id, "Camera", ACCENT_CAMERA, "Edit Camera", "Remove Camera",
+    editComponentCard<Camera>(scene, state, id, "Camera", EditorStyle::Accent::Camera, "Edit Camera", "Remove Camera",
                               [&](Camera& cam) {
         bool changed = false;
 
         changed |= propEnumCombo("Projection", cam.projection);
 
         if (cam.projection == ProjectionType::Perspective) {
-            float fovDeg = glm::degrees(cam.fovY);
-            if (propSlider("FOV", &fovDeg, 10.0f, 170.0f, "%.0f deg")) {
-                cam.fovY = glm::radians(fovDeg);
-                changed = true;
-            }
+            changed |= propAngleSlider("FOV", &cam.fovY, 10.0f, 170.0f);
         } else {
             changed |= propDrag("Ortho Height", &cam.orthoHeight, 0.1f, 0.1f, 1000.0f);
         }
 
+        // Aspect: <= 0 tracks the viewport (the default); manual pins a ratio.
+        bool autoAspect = cam.aspect <= 0.0f;
+        if (propCheckbox("Auto Aspect", &autoAspect, "Derive the aspect ratio from the viewport each frame")) {
+            cam.aspect = autoAspect ? 0.0f : 16.0f / 9.0f;
+            changed = true;
+        }
+        if (!autoAspect)
+            changed |= propDrag("Aspect", &cam.aspect, 0.01f, 0.1f, 10.0f, "%.3f");
+
         changed |= propDrag("Near Clip", &cam.zNear, 0.01f, 0.001f, cam.zFar, "%.3f");
         changed |= propDrag("Far Clip", &cam.zFar, 1.0f, cam.zNear, 100000.0f, "%.0f");
         changed |= propDrag("Exposure", &cam.exposure, 0.01f, 0.0f, 10.0f, "%.2f");
+
+        // Depth of field: amount 0 disables the blur pass entirely.
+        changed |= propDrag("Focus Distance", &cam.focusDistance, 0.1f, 0.01f, 10000.0f, "%.2f");
+        changed |= propSlider("DoF Amount", &cam.dofAmount, 0.0f, 1.0f, "%.2f");
         changed |= propCheckbox("Active", &cam.active);
 
         if (ImGui::Button("Set as Main Camera", ImVec2(-1, 0))) {
@@ -669,7 +947,7 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
 
 void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, EntityId id) {
     bool remove = false;
-    const bool open = beginComponentCard("Animation", ACCENT_ANIM, true, &remove);
+    const bool open = beginComponentCard("Animation", EditorStyle::Accent::Anim, true, &remove);
     if (open) {
         auto& anim = scene.get<Animation>(id);
         // Undo snapshot. Only authoring edits (length, keyframes) push a command;
@@ -744,7 +1022,7 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
 
 void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityId id) {
     bool remove = false;
-    const bool open = beginComponentCard("Script", ACCENT_SCRIPT, true, &remove);
+    const bool open = beginComponentCard("Script", EditorStyle::Accent::Script, true, &remove);
     if (open) {
         auto& sc = scene.get<ScriptComponent>(id);
 
@@ -756,10 +1034,16 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
             if (!behavior) continue;
             ImGui::PushID(static_cast<int>(i));
 
+            // Behavior header row in the card voice: emphasized name, the
+            // remove affordance right-pinned like a card's own x.
             ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(behavior->typeName());
-            ImGui::SameLine();
-            if (ImGui::SmallButton("x")) removeIndex = static_cast<int>(i);
+            ImGui::TextColored(EditorStyle::HEADER_TEXT, "%s", behavior->typeName());
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x - EditorStyle::px(14.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::DANGER);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            const bool removeThis = ImGui::SmallButton("x##rmbeh");
+            ImGui::PopStyleColor(2);
+            if (removeThis) removeIndex = static_cast<int>(i);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove behavior");
 
             BehaviorFieldInspector inspector;
@@ -776,12 +1060,26 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
         if (ImGui::Button("+  Add Behavior", ImVec2(-1, 0))) ImGui::OpenPopup("##AddBehavior");
         if (ImGui::BeginPopup("##AddBehavior")) {
             const std::vector<std::string> names = BehaviorRegistry::get().names();
-            if (names.empty()) ImGui::TextDisabled("No behaviors registered.");
-            for (const std::string& name : names) {
-                if (ImGui::MenuItem(name.c_str())) {
-                    if (auto behavior = BehaviorRegistry::get().create(name)) {
-                        sc.behaviors.push_back(std::move(behavior));
-                        state.markSceneDirty();
+            if (names.empty()) {
+                ImGui::TextDisabled("No behaviors registered.");
+            } else {
+                // Same type-to-narrow affordance as Add Component.
+                static char s_behaviorFilter[48] = {};
+                if (ImGui::IsWindowAppearing()) {
+                    s_behaviorFilter[0] = '\0';
+                    ImGui::SetKeyboardFocusHere();
+                }
+                ImGui::SetNextItemWidth(EditorStyle::px(200.0f));
+                ImGui::InputTextWithHint("##behaviorFilter", "Search...",
+                                         s_behaviorFilter, sizeof(s_behaviorFilter));
+                ImGui::Separator();
+                for (const std::string& name : names) {
+                    if (!matchesFilter(name.c_str(), s_behaviorFilter)) continue;
+                    if (ImGui::MenuItem(name.c_str())) {
+                        if (auto behavior = BehaviorRegistry::get().create(name)) {
+                            sc.behaviors.push_back(std::move(behavior));
+                            state.markSceneDirty();
+                        }
                     }
                 }
             }
@@ -801,7 +1099,7 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
 }
 
 void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, EntityId id) {
-    const bool open = beginComponentCard("Hierarchy", ACCENT_HIERARCHY, false);
+    const bool open = beginComponentCard("Hierarchy", EditorStyle::Accent::Hierarchy, false);
     if (open) {
         const auto& h = scene.get<Hierarchy>(id);
 

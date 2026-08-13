@@ -71,24 +71,49 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
         m_dragStartTransform = transform;
         m_dragEntity         = state.selectedEntity;
         m_dragActive         = true;
+
+        // Snapshot every selected transform so the drag moves the whole set
+        // and drag-end can build one batch undo.
+        m_dragSelection.clear();
+        const EntityId flown = ec.cameraController.getCameraEntity().getID();
+        for (EntityId id : state.selection) {
+            if (!ctx.scene.isAlive(id) || !ctx.scene.has<Transform>(id)) continue;
+            if (id == flown) continue;
+            m_dragSelection.emplace_back(id, ctx.scene.get<Transform>(id));
+        }
     }
     // Drag-end: only push if the transform actually changed during the drag
     // (no-op clicks on the gizmo don't deserve an undo entry).
     if (!m_gizmo.isUsing() && m_dragActive) {
-        if (m_dragEntity && ctx.scene.isAlive(m_dragEntity)
-                && ctx.scene.has<Transform>(m_dragEntity)) {
-            const Transform& after = ctx.scene.get<Transform>(m_dragEntity);
-            const Transform& bef   = m_dragStartTransform;
-            const bool changed = bef.position != after.position
-                              || bef.rotation != after.rotation
-                              || bef.scale    != after.scale;
-            if (changed) {
+        auto changedOf = [&](EntityId id, const Transform& bef, const Transform*& after) {
+            if (!id || !ctx.scene.isAlive(id) || !ctx.scene.has<Transform>(id)) return false;
+            after = &ctx.scene.get<Transform>(id);
+            return bef.position != after->position
+                || bef.rotation != after->rotation
+                || bef.scale    != after->scale;
+        };
+
+        if (m_dragSelection.size() > 1) {
+            // One history entry for the whole selection's motion.
+            auto batch = std::make_unique<CompositeCommand>("Transform Selection");
+            for (const auto& [id, bef] : m_dragSelection) {
+                const Transform* after = nullptr;
+                if (changedOf(id, bef, after)) {
+                    batch->add(std::make_unique<TransformChangeCommand>(
+                        id, bef, *after, "Transform"));
+                }
+            }
+            if (!batch->empty()) state.commands.push(std::move(batch));
+        } else {
+            const Transform* after = nullptr;
+            if (changedOf(m_dragEntity, m_dragStartTransform, after)) {
                 state.commands.push(std::make_unique<TransformChangeCommand>(
-                    m_dragEntity, bef, after, "Transform"));
+                    m_dragEntity, m_dragStartTransform, *after, "Transform"));
             }
         }
         m_dragActive = false;
         m_dragEntity = {};
+        m_dragSelection.clear();
     }
 
     if (m_gizmo.manipulate(drawList, ctx.visibility->view, subProj,
@@ -139,6 +164,50 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
 
             transform.position = pos;
             transform.scale    = scale;
+        }
+
+        // Apply the active entity's delta to the rest of the selection, each
+        // from its own drag-start snapshot (never incrementally, so error
+        // does not accumulate). Translation is a world-space delta converted
+        // into each entity's parent space; rotation applies in place (no
+        // orbit around a shared pivot); scale is a component-wise ratio.
+        if (m_dragSelection.size() > 1) {
+            const glm::vec3 worldDelta =
+                glm::vec3(parentWorld * glm::vec4(transform.position, 1.0f))
+              - glm::vec3(parentWorld * glm::vec4(m_dragStartTransform.position, 1.0f));
+            const glm::quat worldRot = m_gizmo.getDragRotation();
+            const glm::vec3 startScale = m_dragStartTransform.scale;
+            const glm::vec3 ratio(
+                startScale.x != 0.0f ? transform.scale.x / startScale.x : 1.0f,
+                startScale.y != 0.0f ? transform.scale.y / startScale.y : 1.0f,
+                startScale.z != 0.0f ? transform.scale.z / startScale.z : 1.0f);
+
+            for (const auto& [id, start] : m_dragSelection) {
+                if (id == state.selectedEntity) continue;
+                if (!ctx.scene.isAlive(id) || !ctx.scene.has<Transform>(id)) continue;
+                Transform& t = ctx.scene.get<Transform>(id);
+
+                glm::mat4 pw(1.0f);
+                if (ctx.scene.has<Hierarchy>(id) && ctx.scene.get<Hierarchy>(id).parent) {
+                    pw = HierarchyOperations::computeWorldMatrix(ctx.scene, id)
+                       * glm::inverse(Transform::computeModelMatrix(t));
+                }
+
+                if (state.gizmoOperation == GizmoOperation::Translate) {
+                    const glm::vec3 worldStart =
+                        glm::vec3(pw * glm::vec4(start.position, 1.0f));
+                    t.position = glm::vec3(glm::inverse(pw)
+                                 * glm::vec4(worldStart + worldDelta, 1.0f));
+                } else if (state.gizmoOperation == GizmoOperation::Rotate) {
+                    const glm::quat parentRot = glm::quat_cast(glm::mat3(pw));
+                    const glm::quat localRot  =
+                        glm::inverse(parentRot) * worldRot * parentRot;
+                    t.rotation = glm::normalize(localRot * start.rotation);
+                } else if (state.gizmoOperation == GizmoOperation::Scale) {
+                    t.scale = start.scale * ratio;
+                }
+                HierarchyOperations::markDirty(ctx.scene, id);
+            }
         }
 
         // Local transform changed - mark this entity's hierarchy subtree dirty
@@ -237,10 +306,14 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
     // Selection is editor UI state - it does not modify the scene. Setting
     // sceneDirty here used to prompt the user to save just for clicking.
     // hierarchyDirty is still raised so the Hierarchy panel re-highlights.
+    const bool ctrl  = ImGui::GetIO().KeyCtrl;
+    const bool shift = ImGui::GetIO().KeyShift;
     if (hitEntity) {
-        state.selectEntity(hitEntity);
-    } else {
-        // Click on empty space deselects
+        if (ctrl)       state.toggleSelection(hitEntity);
+        else if (shift) state.addToSelection(hitEntity);
+        else            state.selectEntity(hitEntity);
+    } else if (!ctrl && !shift) {
+        // Click on empty space deselects (modified clicks leave the set alone)
         state.deselect();
     }
     state.hierarchyDirty = true;
