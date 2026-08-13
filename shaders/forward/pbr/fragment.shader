@@ -509,11 +509,18 @@ vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, v
     // Base specular: anisotropic when configured, isotropic otherwise.
     float D, Vis;
     if (u_material.anisotropy > 0.001) {
-        vec3 aT = normalize(T * u_material.anisotropyDirection.x +
-                            B * u_material.anisotropyDirection.y +
-                            N * u_material.anisotropyDirection.z);
-        vec3 aB = normalize(cross(N, aT));
-        aT = normalize(cross(aB, N));
+        // Project the authored direction into the shading plane and fall back
+        // to the geometric tangent when it is degenerate. The direction is a
+        // free vector in the material, so it can arrive zeroed or parallel to
+        // N - normalize() of either is NaN, and a NaN here poisons D, Vis and
+        // the whole fragment.
+        vec3 aT = T * u_material.anisotropyDirection.x +
+                  B * u_material.anisotropyDirection.y +
+                  N * u_material.anisotropyDirection.z;
+        aT -= N * dot(aT, N);
+        float aTLen = length(aT);
+        aT = (aTLen > 1e-4) ? aT / aTLen : T;
+        vec3 aB = cross(N, aT);   // unit: N and aT are unit and perpendicular
         float at = max(a * (1.0 + u_material.anisotropy), 1e-3);
         float ab = max(a * (1.0 - u_material.anisotropy), 1e-3);
         D   = distributionGGXAniso(NdotH, dot(aT, H), dot(aB, H), at, ab);
