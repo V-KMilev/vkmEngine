@@ -11,6 +11,8 @@
 
 namespace Engine {
 
+class EditorRenderHooks;
+
 struct EditorContext;
 class RenderBackend;
 class ResourceManager;
@@ -61,7 +63,7 @@ class MaterialEditorPanel {
          */
         bool textureSlot(
             ResourceManager& res,
-            RenderBackend* backend,
+            EditorRenderHooks* backend,
             const char* label,
             MaterialHandle owner,
             MaterialAsset& mat,
@@ -83,7 +85,7 @@ class MaterialEditorPanel {
          */
         bool drawMaterialBody(
             ResourceManager& resources,
-            RenderBackend* backend,
+            EditorRenderHooks* backend,
             MaterialHandle target,
             MaterialAsset& mat
         );

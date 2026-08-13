@@ -128,29 +128,6 @@ class RenderBackend {
         virtual void render(const RenderView& view, const ResourceManager& resources) = 0;
 
         /**
-         * @brief Editor preview hooks - optional.
-         *
-         * renderPreview() draws the request offscreen and returns a GpuTextureId
-         * the UI layer can display; previewTexture() returns the last-rendered
-         * texture for a key, or 0 when none exists. A backend without an
-         * offscreen path keeps these no-ops and the editor shows no image.
-         */
-        virtual GpuTextureId renderPreview(const PreviewRequest& request,
-                                           const ResourceManager& resources) { return 0; }
-        virtual GpuTextureId previewTexture(uint64_t key) const { return 0; }
-        virtual void releasePreview(uint64_t key) {}
-        virtual void releaseAllPreviews() {}
-
-        /**
-         * @brief GPU texture id for @p handle - editor thumbnails.
-         *
-         * Same opaque id family as renderPreview. Returns 0 while the texture has no GPU mirror
-         * yet (never drawn, or still decoding) - the editor shows a
-         * placeholder and retries next frame.
-         */
-        virtual GpuTextureId textureId(const TextureHandle& handle) const { return 0; }
-
-        /**
          * @brief Recompile shaders whose source changed on disk - a dev hook.
          *
          * Cheap enough to call every frame: the common answer is "nothing

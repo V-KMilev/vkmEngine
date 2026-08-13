@@ -1,5 +1,7 @@
 #include "panels/material_editor_panel.h"
 
+#include "system/render/editor_render_hooks.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
@@ -53,7 +55,7 @@ uint64_t previewVersion(uint64_t materialVersion, uint32_t shapeId,
 
 bool MaterialEditorPanel::drawMaterialBody(
     ResourceManager& resources,
-    RenderBackend* backend,
+    EditorRenderHooks* backend,
     MaterialHandle target,
     MaterialAsset& mat
 ) {
@@ -209,7 +211,7 @@ MeshHandle MaterialEditorPanel::previewMesh(
 
 bool MaterialEditorPanel::textureSlot(
     ResourceManager& res,
-    RenderBackend* backend,
+    EditorRenderHooks* backend,
     const char* label,
     MaterialHandle owner,
     MaterialAsset& mat,
@@ -589,7 +591,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         // viewport refresh next frame). Materials are scene assets - any
         // edit is unsaved work.
         auto& mat = resources.edit(target);
-        if (drawMaterialBody(resources, ec.renderSystem.backend(), target, mat)) {
+        if (drawMaterialBody(resources, editorRenderHooks(ec.renderSystem.backend()), target, mat)) {
             resources.commit(target);
             state.markSceneDirty();
         }
