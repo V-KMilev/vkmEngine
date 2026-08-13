@@ -9,6 +9,7 @@
 #include "core/system.h"
 
 namespace Engine {
+    class InputMap;
 
 struct Transform;
 
@@ -114,10 +115,12 @@ class CameraControllerSystem : public System {
         /**
          * @brief Update camera transform based on fly mode controls.
          * @param position Reference to the camera's position vector.
+         * @param input    Resolved actions for movement and boost.
          * @param rotation Reference to the camera's rotation quaternion.
          * @param deltaTime Time elapsed since last update.
          */
-        void updateFlyMode(WindowManager& window, glm::vec3& position, glm::quat& rotation, float deltaTime);
+        void updateFlyMode(WindowManager& window, const InputMap& input,
+                           glm::vec3& position, glm::quat& rotation, float deltaTime);
 
         /**
          * @brief Compute a quaternion from yaw/pitch and write it to @p rotation.

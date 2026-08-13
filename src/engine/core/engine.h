@@ -10,6 +10,7 @@
 #include "core/system.h"
 #include "core/clock.h"
 #include "core/event/event_bus.h"
+#include "platform/input/input_map.h"
 
 namespace Engine {
 
@@ -57,6 +58,16 @@ class Engine {
         EventBus& getEvents()             { return m_events; }
         const EventBus& getEvents() const { return m_events; }
 
+        /**
+         * @brief The action map gameplay reads input through.
+         *
+         * Exposed so the bootstrap can install a project's bindings and a
+         * controls screen can edit them; systems and behaviors reach it through
+         * the frame context instead.
+         */
+        InputMap& getInput()             { return m_input; }
+        const InputMap& getInput() const { return m_input; }
+
         WindowManager& getWindow()             { return m_window; }
         const WindowManager& getWindow() const { return m_window; }
 
@@ -103,6 +114,7 @@ class Engine {
 
         Clock         m_clock;
         EventBus      m_events;
+        InputMap      m_input;
         WindowManager m_window;
 
         std::array<std::vector<std::unique_ptr<System>>, static_cast<size_t>(SystemStage::Count)> m_systemsByStage;

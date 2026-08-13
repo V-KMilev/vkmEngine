@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "platform/input/input_map.h"
+
 namespace Engine {
     class WindowManager;
     class Clock;
@@ -53,7 +55,9 @@ enum class SystemStage : uint8_t {
  * session. Time is read through the Clock: getDeltaTime() for real-time work,
  * getSimDelta() for simulation update(), getFixedStep() in fixedUpdate().
  * `events` is the gameplay pub/sub bus (owned by the Engine, flushed at the
- * top of the Simulation stage).
+ * top of the Simulation stage). `input` resolves named actions from the frame's
+ * physical input; it is sampled once before any system runs, so every reader
+ * agrees on what is held and where the edges are.
  *
  * Pointers are per-frame PRODUCTS - computed by one stage and consumed by a
  * later one, null until their producer has run this frame. `visibility` points
@@ -69,6 +73,7 @@ struct FrameContext {
     Clock&           clock;
     EventBus&        events;
     WindowManager&   window;
+    InputMap&        input;
 
     const Visibility* visibility = nullptr;
     const UIDrawData* ui         = nullptr;

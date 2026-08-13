@@ -17,6 +17,7 @@ file(GLOB_RECURSE ENGINECORE_SOURCES CONFIGURE_DEPENDS
     system/hierarchy/*.cpp
     system/ui/*.cpp
     system/io/*.cpp
+    platform/input/*.cpp
     platform/window/*.cpp
     platform/threading/*.cpp
     platform/library/*.cpp
