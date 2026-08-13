@@ -1123,8 +1123,15 @@ void StressArena::updateDebris(float dt) {
 
     m_debrisAccum += debrisRate * dt;
     while (m_debrisAccum >= 1.0f) {
+        // Keep only the fraction while capped, matching ParticleSystem: banking
+        // whole spawns at the cap discharges them the moment pieces start
+        // expiring. The shipped rate stays under one per frame so it never
+        // reaches that, but debrisRate is a dial.
+        if (m_debris.size() >= MAX_LIVE) {
+            m_debrisAccum -= std::floor(m_debrisAccum);
+            break;
+        }
         m_debrisAccum -= 1.0f;
-        if (m_debris.size() >= MAX_LIVE) break;
 
         const float angle  = m_churnRng.nextFloat(0.0f, glm::two_pi<float>());
         const float radius = m_churnRng.nextFloat(PIT_HALF, PROP_ZONE_OUTER);
