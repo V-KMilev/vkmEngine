@@ -125,7 +125,7 @@ Today's coverage (the `SerializedComponents` tuple in `scene_serializer.cpp`):
 
 `Environment` (the scene's lighting environment: HDR path, intensity, skybox
 toggle) is serialized separately, alongside the entities. Render tuning (GTAO /
-SSR / bloom / ...) lives in `RenderSettings` on the RenderSystem, not in a
+bloom / MSAA / ...) lives in `RenderSettings` on the RenderSystem, not in a
 serialized component.
 
 `Mesh` references handles by `name` rather than by `Storage` index;

@@ -570,3 +570,26 @@ structure.
 As covered in [section 3](#3-implementation-file-structure-cpp), the
 `#define VKM_LOG_CATEGORY "..."` is the one `#define` allowed before the own
 header include. Every other configuration macro stays in its natural position.
+
+### 13.6 Terse value accessors
+
+Small value-like types keep single-noun accessors without the `getX` prefix
+when the name reads as the thing itself: `Handle::id()`, `Scene::environment()`,
+`GenerationIndex::alive()` / `generation()`, `SparseSet::size()`,
+`ThreadPool::threadCount()`, `WindowManager::mode()` / `vsync()`,
+`AnimationTrack::keyframeCount()`. The `getX` rule applies to behavioral
+classes; renaming these idiomatic accessors would churn call sites for no
+clarity gain. Do not mix styles on one class.
+
+### 13.7 Reflected behavior fields are bare publics
+
+Authored fields on `Behavior` subclasses (`CubeSpinner::degreesPerSecond`)
+are bare public members on a class, violating 4.1 deliberately: the field
+name is the serialized identity (scene JSON + inspector label), and an `m_`
+prefix would leak into both. Runtime-only state on behaviors still uses `m_`.
+
+### 13.8 `glfw_include.h` precedes the own-header in `input_handle.cpp`
+
+GLFW's header must be configured (macro guards) before anything else includes
+it transitively, so `input_handle.cpp` puts `glfw_include.h` first, ahead of
+its own header - the one file exempt from the own-header-first rule.
