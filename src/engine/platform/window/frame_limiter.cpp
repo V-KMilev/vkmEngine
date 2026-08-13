@@ -2,25 +2,26 @@
 
 #include <thread>
 
-using namespace std::chrono;
-
 namespace Engine {
 
 void FrameLimiter::beginFrame() {
-    m_frameStart = high_resolution_clock::now();
+    // steady_clock like Clock: monotonic, so a wall-clock adjustment mid-frame
+    // can never stall the limiter (high_resolution_clock has no such guarantee).
+    m_frameStart = std::chrono::steady_clock::now();
 }
 
 void FrameLimiter::endFrame() {
+    using namespace std::chrono;
+
     // Frame limiting is disabled (unlimited mode)
     if (m_targetFramerate == 0) {
         return;
     }
 
-    // Target frame duration
     duration<double, std::milli> targetFrameTime(1000.0 / static_cast<double>(m_targetFramerate));
-    auto targetEnd = m_frameStart + duration_cast<high_resolution_clock::duration>(targetFrameTime);
+    auto targetEnd = m_frameStart + duration_cast<steady_clock::duration>(targetFrameTime);
 
-    auto now = high_resolution_clock::now();
+    auto now = steady_clock::now();
 
     // Already past target, no sleep needed
     if (now >= targetEnd) {
@@ -36,7 +37,7 @@ void FrameLimiter::endFrame() {
     }
 
     // Spin-wait for precise timing
-    while (high_resolution_clock::now() < targetEnd) {
+    while (std::chrono::steady_clock::now() < targetEnd) {
         std::this_thread::yield();
     }
 }

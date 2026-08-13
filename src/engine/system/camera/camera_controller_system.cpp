@@ -63,6 +63,8 @@ void CameraControllerSystem::reseedAnglesFromRotation(const glm::quat& rotation)
 
 void CameraControllerSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("CameraControllerSystem");
+    if (!m_enabled) return;
+
     // Always drive the active rendered camera. This keeps the fly controls
     // working after "Set as Main Camera" / a scene load (the old code flew a
     // fixed entity while the renderer used a different one).
@@ -102,7 +104,6 @@ void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, glm::ve
         return;
     }
 
-    // Update yaw and pitch
     m_yaw   -= static_cast<float>(mouse.getDeltaX()) * m_settings.lookSensitivity;
     m_pitch -= static_cast<float>(mouse.getDeltaY()) * m_settings.lookSensitivity;
     m_pitch = std::clamp(m_pitch, glm::radians(m_settings.minPitch), glm::radians(m_settings.maxPitch));
@@ -112,7 +113,6 @@ void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, glm::ve
     glm::vec3 forward = Math::computeForward(rotation);
     glm::vec3 right   = Math::computeRight(rotation);
 
-    // Scroll wheel modifies forward/back
     float scrollDelta = static_cast<float>(mouse.getScrollY());
     if (std::abs(scrollDelta) > 0.001f) {
         position += forward * scrollDelta * m_settings.zoomSensitivity * m_settings.scrollMultiplier;

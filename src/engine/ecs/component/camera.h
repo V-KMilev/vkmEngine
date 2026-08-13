@@ -31,20 +31,28 @@ struct Camera {
     ProjectionType projection = ProjectionType::Perspective;    ///< Type of projection
     float fovY                = glm::radians(70.0f);            ///< Vertical field of view in radians (default: ~70 degrees)
     float orthoHeight         = 10.0f;                          ///< Orthographic half-height in world units
-    float aspect              = 16.0f / 9.0f;                   ///< Aspect ratio (width / height)
+    float aspect              = 0.0f;                           ///< Aspect ratio (width / height); <= 0 = derive from the viewport each frame
     float zNear               = 0.1f;                           ///< Near clip plane distance
     float zFar                = 1000.0f;                        ///< Far clip plane distance
     float exposure            = 1.0f;                           ///< Camera exposure (linear multiplier for final output)
+    float focusDistance       = 10.0f;                          ///< Depth of field: world distance held in sharp focus
+    float dofAmount           = 0.0f;                           ///< Depth of field strength (0 = off)
     bool active               = true;                           ///< Is this camera active?
 
     /**
      * @brief Compute the projection matrix for this camera.
+     *
+     * @param camera         The camera to build the projection for.
+     * @param viewportAspect The aspect used while camera.aspect <= 0 (auto mode:
+     *                       the camera tracks the viewport it renders into).
+     * @return The projection matrix.
      */
-    static glm::mat4 computeProjection(const Camera& camera) {
+    static glm::mat4 computeProjection(const Camera& camera, float viewportAspect) {
+        const float aspect = camera.aspect > 0.0f ? camera.aspect : viewportAspect;
         if (camera.projection == ProjectionType::Perspective) {
-            return Math::makePerspective(camera.fovY, camera.aspect, camera.zNear, camera.zFar);
+            return Math::makePerspective(camera.fovY, aspect, camera.zNear, camera.zFar);
         } else {
-            return Math::makeOrthographic(camera.orthoHeight, camera.aspect, camera.zNear, camera.zFar);
+            return Math::makeOrthographic(camera.orthoHeight, aspect, camera.zNear, camera.zFar);
         }
     }
 };
@@ -57,6 +65,8 @@ VKM_REFLECT_BEGIN(Camera)
     VKM_F(zNear),
     VKM_F(zFar),
     VKM_F(exposure),
+    VKM_F(focusDistance),
+    VKM_F(dofAmount),
     VKM_F(active)
 VKM_REFLECT_END()
 

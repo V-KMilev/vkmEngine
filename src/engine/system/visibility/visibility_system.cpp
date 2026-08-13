@@ -22,16 +22,18 @@
 #include "system/visibility/visibility_context.h"
 
 #include "system/visibility/culling/frustum_culler.h"
-#include "system/visibility/culling/screen_size_culling.h"
-#include "system/visibility/culling/distance_culling.h"
+#include "system/visibility/culling/screen_size_culler.h"
+#include "system/visibility/culling/distance_culler.h"
 
 namespace Engine {
 
-bool VisibilitySystem::resolveActiveCamera(Scene& scene) {
+bool VisibilitySystem::resolveActiveCamera(Scene& scene, float viewportAspect) {
     auto setCamera = [&](const Camera& camera, const Transform& transform) {
-        m_result.projection     = Camera::computeProjection(camera);
+        m_result.projection     = Camera::computeProjection(camera, viewportAspect);
         m_result.view           = Transform::computeView(transform);
         m_result.cameraPosition = transform.position;
+        m_result.focusDistance  = camera.focusDistance;
+        m_result.dofAmount      = camera.dofAmount;
         m_result.hasCamera      = true;
     };
 
@@ -70,7 +72,12 @@ void VisibilitySystem::update(FrameContext& ctx) {
     m_result.shadowCasters.clear();
     m_result.hasCamera = false;
 
-    if (!resolveActiveCamera(ctx.scene)) {
+    // Cameras in auto-aspect mode (aspect <= 0) track the viewport.
+    const float vpW = static_cast<float>(ctx.window.sceneViewportWidth());
+    const float vpH = static_cast<float>(ctx.window.sceneViewportHeight());
+    const float viewportAspect = vpH > 0.0f ? vpW / vpH : 16.0f / 9.0f;
+
+    if (!resolveActiveCamera(ctx.scene, viewportAspect)) {
         LOG_ERROR("No active camera found for visibility");
         ctx.visibility = &m_result;
         return;

@@ -41,14 +41,25 @@ struct BackendInfo {
  * derives it from the asset handle); rendering the same key again overwrites
  * that target. Sizes are square pixels.
  */
+/**
+ * @brief What fills the preview behind the mesh.
+ */
+enum class PreviewBackground : uint8_t {
+    Dark,  ///< Dark studio backdrop (the default).
+    Grey,  ///< Mid-grey backdrop, for judging albedo and silhouettes.
+    Sky,   ///< The baked environment cubemap (falls back to Dark before the IBL bakes).
+};
+
 struct PreviewRequest {
-    uint64_t       key      = 0;      ///< Identifies the cached target.
-    uint32_t       size     = 256;    ///< Output edge length in pixels.
-    MeshHandle     mesh;              ///< Shape to draw.
-    MaterialHandle material;          ///< Material to draw it with.
-    float          yawDeg   = 35.0f;  ///< Orbit yaw (degrees).
-    float          pitchDeg = 20.0f;  ///< Orbit pitch (degrees).
-    float          distance = 3.0f;   ///< Camera distance, in mesh bounding radii.
+    uint64_t          key      = 0;      ///< Identifies the cached target.
+    uint32_t          size     = 256;    ///< Output edge length in pixels.
+    MeshHandle        mesh;              ///< Shape to draw.
+    MaterialHandle    material;          ///< Material to draw it with.
+    float             yawDeg   = 35.0f;  ///< Orbit yaw (degrees).
+    float             pitchDeg = 20.0f;  ///< Orbit pitch (degrees).
+    float             distance = 3.0f;   ///< Camera distance, in mesh bounding radii.
+    PreviewBackground background = PreviewBackground::Dark;  ///< Backdrop behind the mesh.
+    float             lightYawDeg = 0.0f;  ///< Studio rig rotation around Y (degrees).
 };
 
 /**
@@ -116,6 +127,16 @@ class RenderBackend {
         virtual uint32_t previewTexture(uint64_t key) const { return 0; }
         virtual void releasePreview(uint64_t key) {}
         virtual void releaseAllPreviews() {}
+
+        /**
+         * @brief GPU texture id for @p handle - editor thumbnails.
+         *
+         * Same opaque id family as renderPreview (for OpenGL: the GL texture
+         * name ImGui samples). Returns 0 while the texture has no GPU mirror
+         * yet (never drawn, or still decoding) - the editor shows a
+         * placeholder and retries next frame.
+         */
+        virtual uint32_t textureId(const TextureHandle& handle) const { return 0; }
 
     protected:
         RenderBackendType m_type;
