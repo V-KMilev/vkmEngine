@@ -68,7 +68,7 @@ bool cookMesh(const MeshAsset& mesh) {
     const std::string cookedRel = "meshes/" + uid + ".vkmc";
 
     const std::filesystem::path cookedPath = ProjectPaths::cooked() / cookedRel;
-    const Record* existing = lib.find(AssetType::Mesh, mesh.name);
+    const AssetRecord* existing = lib.find(AssetType::Mesh, mesh.name);
     std::error_code ec;
     if (existing && existing->recipeHash == hash && std::filesystem::exists(cookedPath, ec)) return true;
 
@@ -92,7 +92,7 @@ bool cookTexture(const TextureAsset& tex) {
     const std::string cookedRel = "textures/" + uid + ".vkmc";
 
     const std::filesystem::path cookedPath = ProjectPaths::cooked() / cookedRel;
-    const Record* existing = lib.find(AssetType::Texture, tex.name);
+    const AssetRecord* existing = lib.find(AssetType::Texture, tex.name);
     std::error_code ec;
     if (existing && existing->recipeHash == hash && std::filesystem::exists(cookedPath, ec)) return true;
 
@@ -115,7 +115,7 @@ bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
     const std::string uid = AssetLibrary::uidFor(AssetType::Material, mat.name);
     const std::string recipeRel = "materials/" + uid + ".json";
 
-    const Record* existing = lib.find(AssetType::Material, mat.name);
+    const AssetRecord* existing = lib.find(AssetType::Material, mat.name);
     if (existing && existing->recipeHash == hash) return true;
 
     if (!writeRecipeFile(ProjectPaths::library() / recipeRel, mat.name, "material", inlineSource)) return false;

@@ -140,6 +140,12 @@ class WindowManager {
         void updateMode(WindowMode windowMode);
 
         /**
+         * @brief The window mode last applied by updateMode (Windowed at
+         * creation). Lets UI reflect the current state instead of guessing.
+         */
+        WindowMode mode() const { return m_windowMode; }
+
+        /**
          * @brief Updates all input states (keyboard, mouse, etc.).
          */
         void updateInput();
@@ -156,6 +162,11 @@ class WindowManager {
          * @param enabled True to enable VSync, false to disable.
          */
         void setVSync(bool enabled);
+
+        /**
+         * @brief Whether vsync was last enabled via setVSync (off at creation).
+         */
+        bool vsync() const { return m_vsync; }
 
         /**
          * @brief Sets the maximum framerate for the render loop.
@@ -177,13 +188,22 @@ class WindowManager {
         const InputHandle& getInputHandle() const { return *m_inputHandle; }
 
         /**
-         * @brief Get the width of the window.
-         * @return The width of the window.
+         * @brief Get the framebuffer width in pixels.
+         *
+         * This is the drawable size GL viewports and render targets are sized in,
+         * which differs from the window size in screen coords on a HiDPI / scaled
+         * display. Kept current by the framebuffer-size callback.
+         *
+         * @return The framebuffer width in pixels.
          */
         size_t getWidth() const;
         /**
-         * @brief Get the height of the window.
-         * @return The height of the window.
+         * @brief Get the framebuffer height in pixels.
+         *
+         * The drawable-height counterpart of getWidth(); see it for the
+         * window-size-versus-framebuffer distinction.
+         *
+         * @return The framebuffer height in pixels.
          */
         size_t getHeight() const;
 
@@ -194,15 +214,15 @@ class WindowManager {
         GLFWwindow* getWindowContext() const;
 
         /**
-         * @brief Set the cached window dimensions. Called from the GLFW window
-         * size callback.
+         * @brief Set the cached drawable dimensions. Called from the GLFW
+         * framebuffer-size callback.
          *
          * Thread safety: GLFW callbacks fire during glfwPollEvents() on the main
          * thread for single-window apps, so setSize/getWidth/getHeight are all
          * accessed from the same thread. No synchronization needed.
          *
-         * @param width New window width in pixels.
-         * @param height New window height in pixels.
+         * @param width New framebuffer width in pixels.
+         * @param height New framebuffer height in pixels.
          */
         void setSize(int width, int height);
 
@@ -219,8 +239,8 @@ class WindowManager {
         void setSceneViewport(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
         uint32_t sceneViewportX()      const { return m_sceneVpX; }
         uint32_t sceneViewportY()      const { return m_sceneVpY; }
-        uint32_t sceneViewportWidth()  const { return m_sceneVpW; }
-        uint32_t sceneViewportHeight() const { return m_sceneVpH; }
+        uint32_t sceneViewportWidth()  const { return m_sceneVpW != 0 ? m_sceneVpW : static_cast<uint32_t>(m_width); }
+        uint32_t sceneViewportHeight() const { return m_sceneVpH != 0 ? m_sceneVpH : static_cast<uint32_t>(m_height); }
 
     private:
         /**
@@ -240,11 +260,15 @@ class WindowManager {
     private:
         GLFWwindow* m_windowHandle = nullptr;
         std::string m_title;
-        int m_width  = 0;
-        int m_height = 0;
+
+        int m_width  = 0;    ///< Framebuffer (drawable) width in pixels.
+        int m_height = 0;    ///< Framebuffer (drawable) height in pixels.
 
         std::unique_ptr<InputHandle> m_inputHandle;
         std::unique_ptr<FrameLimiter> m_frameLimiter;
+
+        WindowMode m_windowMode = WindowMode::Windowed;  ///< Last applied mode.
+        bool       m_vsync      = false;                 ///< Last applied vsync state.
 
         // Scene viewport rect inside the window (set by the editor, read
         // by the engine when populating FrameContext). 0 in width/height

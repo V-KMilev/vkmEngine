@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "LOADER"
 
-#include "material_loaders.h"
+#include "loader/material_loaders.h"
 
 #include <filesystem>
 #include <algorithm>
@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
+
 #include "resource/resource_manager.h"
 #include "loader/texture_loaders.h"
 #include "generator/texture_generators.h"

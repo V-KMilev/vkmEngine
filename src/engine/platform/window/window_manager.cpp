@@ -50,7 +50,7 @@ GLFWmonitor* getCurrentMonitor(GLFWwindow* window) {
 
     return bestMonitor ? bestMonitor : glfwGetPrimaryMonitor();
 }
-}  // anonymous namespace
+} // namespace
 
 WindowManager::~WindowManager() {
     // Teardown order preserved from the former Window dtor + WindowManager dtor:
@@ -107,11 +107,10 @@ void WindowManager::createWindow(const std::string& title) {
     // VSync off at creation (0 = uncapped). Set later via setVSync.
     glfwSwapInterval(0);
 
-    // Cache initial size (updated via GLFW window size callback)
-    glfwGetWindowSize(m_windowHandle, &m_width, &m_height);
-
-    // Seed the scene viewport to the full window by default.
-    setSceneViewport(0, 0, static_cast<uint32_t>(m_width), static_cast<uint32_t>(m_height));
+    // Cache the framebuffer size in pixels - the unit GL viewports and render
+    // targets use, which differs from the window size (screen coords) on HiDPI /
+    // scaled displays. The framebuffer-size callback keeps it current.
+    glfwGetFramebufferSize(m_windowHandle, &m_width, &m_height);
 
     LOG_TRACE("Constructed Window '%s'", m_title.c_str());
 
@@ -198,7 +197,7 @@ void WindowManager::updateMode(WindowMode windowMode) {
     int targetH = mode->height;
     int targetRefresh = mode->refreshRate;
 
-    switch(windowMode) {
+    switch (windowMode) {
         case WindowMode::Fullscreen:
             break;
         case WindowMode::Windowed: {
@@ -218,7 +217,6 @@ void WindowManager::updateMode(WindowMode windowMode) {
             return;
     }
 
-    // Set window to the corresponding mode
     glfwSetWindowMonitor(
         m_windowHandle,
         monitor,
@@ -228,6 +226,8 @@ void WindowManager::updateMode(WindowMode windowMode) {
         targetH,
         targetRefresh
     );
+
+    m_windowMode = windowMode;
 
     // Log the rect actually applied (Windowed is a 75% centred rect, not the
     // full monitor mode); targetRefresh is 0 for windowed.
@@ -242,7 +242,6 @@ void WindowManager::updateInput() {
     // Process GLFW events - key/scroll callbacks fire here
     glfwPollEvents();
 
-    // Update mouse state (cursor position, button states)
     m_inputHandle->update(m_windowHandle);
 }
 
@@ -261,6 +260,7 @@ void WindowManager::setVSync(bool enabled) {
     // 0 = Uncapped framerate
     // 1 = VSync enabled
     glfwSwapInterval(enabled ? 1 : 0);
+    m_vsync = enabled;
     LOG_INFO("VSync %s", enabled ? "ON" : "OFF");
 }
 
