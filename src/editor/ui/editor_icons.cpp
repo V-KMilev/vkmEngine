@@ -45,6 +45,7 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::Pause:      return 0xe12e;  // pause
         case EditorIcon::Stop:       return 0xe167;  // square
         case EditorIcon::Step:       return 0xe160;  // skip-forward
+        case EditorIcon::Loop:       return 0xe146;  // repeat
         case EditorIcon::Key:        return 0xe2d2;  // diamond (keyframe)
         case EditorIcon::Plus:       return 0xe13d;  // plus
         case EditorIcon::Cross:      return 0xe1b2;  // x
@@ -210,6 +211,25 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
             ImVec2 b2(e.x - t.x * hl * 0.35f - n.x * hw,
                       e.y - t.y * hl * 0.35f - n.y * hw);
             dl->AddTriangleFilled(tip, b1, b2, col);
+            break;
+        }
+        case EditorIcon::Loop: {
+            // Repeat: a rounded rectangular circuit broken at the top-right,
+            // with an arrowhead closing the gap so the direction of travel
+            // reads at button size.
+            const float w = r * 0.66f, h = r * 0.46f, rad = r * 0.22f;
+            dl->PathLineTo(P( 0.35f, -h / r));
+            dl->PathArcTo(ImVec2(c.x + w - rad, c.y - h + rad), rad, -1.5708f, 0.0f, 8);
+            dl->PathArcTo(ImVec2(c.x + w - rad, c.y + h - rad), rad, 0.0f, 1.5708f, 8);
+            dl->PathArcTo(ImVec2(c.x - w + rad, c.y + h - rad), rad, 1.5708f, 3.1416f, 8);
+            dl->PathArcTo(ImVec2(c.x - w + rad, c.y - h + rad), rad, 3.1416f, 4.7124f, 8);
+            dl->PathStroke(col, ImDrawFlags_None, th);
+
+            // Arrowhead at the break, pointing along the circuit (to the right).
+            const ImVec2 tip(c.x + w * 0.62f, c.y - h);
+            dl->AddTriangleFilled(tip,
+                                  ImVec2(tip.x - r * 0.34f, tip.y - r * 0.24f),
+                                  ImVec2(tip.x - r * 0.34f, tip.y + r * 0.24f), col);
             break;
         }
         case EditorIcon::Scale: {

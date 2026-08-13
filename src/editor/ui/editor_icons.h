@@ -15,7 +15,7 @@ enum class EditorIcon {
     Select, Move, Rotate, Scale,
     SpaceLocal, SpaceWorld, Snap,
     Duplicate, Focus, Trash,
-    Play, Pause, Stop, Step, Key, Plus, Cross,
+    Play, Pause, Stop, Step, Loop, Key, Plus, Cross,
     // Entity-type glyphs (Hierarchy / Inspector identity) - replace the old
     // [C]/[M]/[D] ASCII badges.
     Entity, Mesh, Camera, LightDir, LightPoint, LightSpot, Anim,

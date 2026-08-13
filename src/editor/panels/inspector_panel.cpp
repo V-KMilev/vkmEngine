@@ -1017,7 +1017,11 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
         bool changed = false;
 
         ImGui::SameLine(0, GAP);
-        changed |= ImGui::Checkbox("Loop", &anim.looping);
+        if (iconButton("inspLoop", EditorIcon::Loop, anim.looping, true,
+                       anim.looping ? "Looping" : "Play once", ih)) {
+            anim.looping = !anim.looping;
+            changed = true;
+        }
         ImGui::SameLine(0, GAP);
         ImGui::SetNextItemWidth(-1);
         changed |= ImGui::DragFloat("##ASpeed", &anim.speed, 0.005f, 0.0f, 10.0f, "Speed %.2fx");
