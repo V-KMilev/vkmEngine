@@ -136,21 +136,23 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 | 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas each frame. Culling and mesh-grouping are **not** done here - `GLShadowData::build` does both on the thread pool, so the pass only gathers, uploads and draws |
 | 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (oct view-normal / roughness / metalness). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses |
 | 3 | ResolveDepth | MSAA only: resolves depth (and the G-buffer when GTAO / decals / a debug view will read it) into `m_sceneHDR` |
-| 4 | GTAO | Full-res ground-truth AO + bent normal into the mask target |
-| 5 | ContactShadow | Screen-space sun visibility raymarch (skips when the scene has no directional light) |
-| 6 | Skybox | Fills the background before geometry so transparents blend over it |
-| 7 | ClusterCull | Compute: culls lights into the Forward+ cluster grid SSBO |
-| 8 | FogCompute | Compute: froxel light inject + front-to-back integration (allocates the volumes on the first fog frame) |
-| 9 | Forward | The PBR ubershader: opaque (depth-primed), alpha-mask (writes depth, alpha-to-coverage under MSAA), then back-to-front transparents sampling an opaque snapshot for refraction |
-| 10 | Particles | CPU billboard particles into the scene target, depth-tested, never depth-writing |
-| 11 | ResolveColor | MSAA only: resolves colour (and re-resolves depth when alpha-mask drew) into `m_sceneHDR` |
-| 12 | Decals | Projected decal boxes blended into the post colour chain, sampling depth + G-buffer |
-| 13 | FogApply | Composites the integrated froxel fog (chain: src -> dst) |
-| 14 | DoF | Circle-of-confusion disk blur driven by the camera's focus distance / amount (chain: src -> dst) |
-| 15 | Bloom | Bright-pass + mip-chain down/upsample off the chain; composite blends it back |
-| 16 | Grid | World-space ground grid overlay into the chain (LEQUAL test done in its shader) |
-| 17 | Composite | Tonemap to the backbuffer viewport (or a debug buffer per `renderMode`) |
-| 18 | UI | Screen-space in-game UI overlay drawn flat on top (no-op when empty). See [ui.md](ui.md) |
+| 4 | HiZ | Reduces the resolved depth into a hierarchical depth pyramid: each texel the **farthest** depth of the region below it (`GLHiZ`) |
+| 5 | OcclusionCull | Compute: tests every opaque instance's world AABB against the pyramid and writes the survivors' indices plus each run's indirect draw command. The answer stays on the GPU - a readback would stall the frame it is meant to speed up |
+| 6 | GTAO | Full-res ground-truth AO + bent normal into the mask target |
+| 7 | ContactShadow | Screen-space sun visibility raymarch (skips when the scene has no directional light) |
+| 8 | Skybox | Fills the background before geometry so transparents blend over it |
+| 9 | ClusterCull | Compute: culls lights into the Forward+ cluster grid SSBO |
+| 10 | FogCompute | Compute: froxel light inject + front-to-back integration (allocates the volumes on the first fog frame) |
+| 11 | Forward | The PBR ubershader: opaque (depth-primed), alpha-mask (writes depth, alpha-to-coverage under MSAA), then back-to-front transparents sampling an opaque snapshot for refraction |
+| 12 | Particles | CPU billboard particles into the scene target, depth-tested, never depth-writing |
+| 13 | ResolveColor | MSAA only: resolves colour (and re-resolves depth when alpha-mask drew) into `m_sceneHDR` |
+| 14 | Decals | Projected decal boxes blended into the post colour chain, sampling depth + G-buffer |
+| 15 | FogApply | Composites the integrated froxel fog (chain: src -> dst) |
+| 16 | DoF | Circle-of-confusion disk blur driven by the camera's focus distance / amount (chain: src -> dst) |
+| 17 | Bloom | Bright-pass + mip-chain down/upsample off the chain; composite blends it back |
+| 18 | Grid | World-space ground grid overlay into the chain (LEQUAL test done in its shader) |
+| 19 | Composite | Tonemap to the backbuffer viewport (or a debug buffer per `renderMode`) |
+| 20 | UI | Screen-space in-game UI overlay drawn flat on top (no-op when empty). See [ui.md](ui.md) |
 
 IBL is **not** a pass: the persistent `GLIBLBaker` re-bakes inside `render()`
 when `environment.hdrPath` changes or, for the procedural sky, when the sun

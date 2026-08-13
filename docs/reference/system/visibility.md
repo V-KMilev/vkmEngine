@@ -130,7 +130,27 @@ There is **no** occlusion-culling stage today (no `occlusion_culler.h`); the
 three cullers above are the whole pipeline. Hi-Z / software-depth occlusion is a
 possible future addition.
 
-## AABB helpers
+### Occlusion culling (GPU)
+
+Not a stage here. Occlusion is resolved on the GPU, after the depth prepass has
+laid down the frame's opaque depth: `GLHiZPass` reduces that into a
+hierarchical depth pyramid and `GLOcclusionCullPass` tests every opaque
+instance's world AABB against it, so what the forward pass draws is only what
+can be seen. See [Rendering](rendering.md).
+
+It sits there rather than here for two reasons. The depth it needs does not
+exist until the prepass has run, which is after this system has finished; and
+the answer is wanted by the draw, not by the cull, so keeping it on the GPU
+avoids a readback that would stall the frame it is meant to speed up.
+
+That also means occlusion needs no authoring. An earlier CPU implementation
+rasterized entities marked with an `Occluder` component into a small software
+depth buffer - a well-established technique, and what Godot and Unreal's mobile
+path still do - but it could only ever see the geometry someone had remembered
+to mark. The pyramid is built from the real depth buffer, so every opaque
+surface occludes, and the component is gone.
+
+## AABB helpers## AABB helpers
 
 `bounds_utils.h` exposes two helpers used inside the culling loop:
 

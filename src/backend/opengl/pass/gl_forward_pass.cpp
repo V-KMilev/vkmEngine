@@ -185,20 +185,23 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
 }
 
 void GLForwardPass::drawRuns(GLFrameContext& ctx, const GLInstanceBatchView& batch) {
+    batch.bindInstanceData();
+
     const std::vector<InstanceRun>& runs = batch.runs();
     const GLView& glView = ctx.resources;
 
     // Re-bind material state only when it differs from the last run's.
     const GLMaterial* boundMaterial = nullptr;
 
-    for (const InstanceRun& run : runs) {
+    for (uint32_t i = 0; i < runs.size(); ++i) {
+        const InstanceRun& run = runs[i];
         const GLMaterial* material = glView.getMaterial(run.material);
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::Material);
             material->bindTextures(glView);
             boundMaterial = material;
         }
-        batch.draw(run);
+        batch.draw(run, i);
     }
 }
 

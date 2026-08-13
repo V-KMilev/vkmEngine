@@ -230,6 +230,8 @@ void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility
         drawable.model        = entry.model;
         // Inverse-transpose once per drawable here, not per vertex in two shaders.
         drawable.normalMatrix = glm::transpose(glm::inverse(glm::mat3(entry.model)));
+        drawable.worldMin     = entry.worldMin;
+        drawable.worldMax     = entry.worldMax;
         drawable.castShadows  = mesh.castShadows;
         drawables.push_back(drawable);
     }

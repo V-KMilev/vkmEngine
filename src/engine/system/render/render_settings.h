@@ -48,6 +48,7 @@ struct RenderSettings {
     bool gtao       = true;
     bool bloom      = true;
     bool probes     = true;
+    bool occlusionCulling = true;  ///< Test instances against the Hi-Z pyramid before drawing them.
 
     // GTAO
     float gtaoRadius    = 0.6f;   ///< World-space sample radius.
