@@ -9,6 +9,8 @@
 #include "gl_pass.h"
 #include "gl_instance_buffer.h"
 
+#include "data/gl_shadow_data.h"
+
 namespace Core {
     class Shader;
 }
@@ -65,7 +67,7 @@ class GLShadowPass : public GLPass {
          *
          * @param lightVP The light clip-space matrix to cull and draw against.
          */
-        void renderCasters(GLFrameContext& ctx, const glm::mat4& lightVP);
+        void renderCasters(GLFrameContext& ctx, const ShadowCasterBatch& batch);
 
     private:
         std::unique_ptr<Core::Shader> m_depth2D;    ///< Projected depth (cascades + spots).
