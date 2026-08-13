@@ -46,6 +46,11 @@ struct GLResourceTable {
  * is uploaded the first time a frame references it and re-uploaded only when its
  * version changes. This is the only place the backend reads ResourceManager;
  * the render path resolves a drawable's handles to these GPU objects.
+ *
+ * The version gate is only meaningful within a single asset graph. A scene load
+ * or editor play-stop restore swaps the whole graph, and the incoming one
+ * restarts its handles and versions from scratch - so every table is dropped
+ * when ResourceManager::epoch() moves and rebuilt against the new graph.
  */
 class GLView {
     public:
@@ -93,11 +98,23 @@ class GLView {
         template <typename GLT, typename AssetT>
         void ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, const ResourceManager& resources);
 
+        /**
+         * @brief Drop every cached GPU object when @p resources swapped graphs.
+         *
+         * A no-op while the epoch is unchanged, which is every frame but the
+         * first one after a load.
+         *
+         * @param resources The resource manager this view mirrors.
+         */
+        void invalidateOnEpochChange(const ResourceManager& resources);
+
     private:
         GLResourceTable<GLMesh>     m_meshes;
         GLResourceTable<GLMaterial> m_materials;
         GLResourceTable<GLTexture>  m_textures;
         GLResourceTable<GLTexture>  m_fontAtlases;  ///< SDF atlases keyed by FontHandle (fonts carry pixels, not TextureAssets).
+
+        uint64_t m_epoch = 0;  ///< Asset-graph identity these tables were built against; 0 = never synced.
 };
 
 } // namespace Engine
