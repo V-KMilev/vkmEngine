@@ -1,6 +1,7 @@
 #include "system/particle/particle_system.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "core/clock.h"
 #include "core/math/random.h"
@@ -47,8 +48,16 @@ void ParticleSystem::update(FrameContext& ctx) {
             // fractional remainder so a low rate still emits evenly.
             emitter.spawnAccumulator += emitter.rate * dt;
             while (emitter.spawnAccumulator >= 1.0f) {
+                // At capacity the accumulator keeps only its fraction. Banking
+                // whole spawns while full meant a long-saturated emitter built
+                // up arbitrarily many credits and then discharged them the
+                // instant particles started dying - a visible burst out of
+                // nowhere, worse the longer it had been full.
+                if (emitter.particles.size() >= emitter.maxParticles) {
+                    emitter.spawnAccumulator -= std::floor(emitter.spawnAccumulator);
+                    break;
+                }
                 emitter.spawnAccumulator -= 1.0f;
-                if (emitter.particles.size() >= emitter.maxParticles) break;
 
                 Particle p;
                 p.position = origin;
