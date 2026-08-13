@@ -19,7 +19,7 @@
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/world_transform.h"
-#include "system/event/event_system.h"
+#include "core/event/event_bus.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "system/physics/inertia.h"
 #include "system/physics/physics_events.h"
@@ -51,6 +51,10 @@ bool isFrozen(const Rigidbody& rb) {
 }
 
 glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
+    // freezeRotation: infinite rotational inertia. Contact impulses then apply
+    // zero torque in the solver, so the body translates but never tumbles -
+    // the character-controller case (a runner shouldn't spin from a graze).
+    if (rb.freezeRotation) return glm::mat3(0.0f);
     if (dynamicInverseMass(rb) == 0.0f || !collider || collider->parts.empty())
         return glm::mat3(0.0f);
     // Approximate the collider's inertia with a solid box of its overall local
@@ -130,7 +134,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     // hasContact spans narrowphase -> writeback (the sleep test reads it after the
     // solve), so it is owned here and threaded through both phases.
     std::vector<bool> hasContact(m_bodies.size(), false);
-    narrowphase(hasContact);
+    narrowphase(hasContact, ctx.events);
 
     wakeOnImpact(scene);
 
@@ -190,7 +194,9 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
         PhysicsBody pb;
         pb.position = worldPos;
         pb.linearVelocity = rb.linearVelocity;
-        pb.angularVelocity = rb.angularVelocity;
+        // A rotation-frozen body also sheds any residual spin, so its
+        // orientation integrates as identity and stays script-owned.
+        pb.angularVelocity = rb.freezeRotation ? glm::vec3(0.0f) : rb.angularVelocity;
         // Sleeping or immovable bodies contribute infinite mass to the solver.
         const bool frozen = isFrozen(rb);
         pb.invMass = frozen ? 0.0f : rb.inverseMass;
@@ -200,7 +206,7 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
         pb.friction = rb.friction;
         m_solverBodies.push_back(pb);
 
-        if (collider) {
+        if (collider && collider->enabled) {
             ColliderProxy proxy;
             proxy.body = bodyIndex;
             proxy.collider = *collider;
@@ -248,7 +254,7 @@ void PhysicsSystem::broadphase() {
     }
 }
 
-void PhysicsSystem::narrowphase(std::vector<bool>& hasContact) {
+void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events) {
     m_manifolds.clear();
     Contact scratch[MAX_CONTACTS_PER_MANIFOLD];
 
@@ -295,15 +301,15 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact) {
             hasContact[B.body] = true;
 
             // Surface the overlap to gameplay (enqueued: listeners fire on the
-            // next EventSystem flush, never mid-solve). Triggers are queried,
+            // next EventBus flush, never mid-solve). Triggers are queried,
             // not resolved, so they only produce events.
             const EntityId entityA = m_bodies[A.body];
             const EntityId entityB = m_bodies[B.body];
             if (trigger) {
-                if (A.collider.isTrigger) m_events.enqueue(TriggerEvent{entityA, entityB});
-                if (B.collider.isTrigger) m_events.enqueue(TriggerEvent{entityB, entityA});
+                if (A.collider.isTrigger) events.enqueue(TriggerEvent{entityA, entityB});
+                if (B.collider.isTrigger) events.enqueue(TriggerEvent{entityB, entityA});
             } else {
-                m_events.enqueue(CollisionEvent{entityA, entityB, contactPoint, contactNormal});
+                events.enqueue(CollisionEvent{entityA, entityB, contactPoint, contactNormal});
             }
         }
     }
@@ -374,8 +380,11 @@ void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& h
             t.rotation = worldRot;
         }
 
-        // Sleep bookkeeping: rest while supported long enough, otherwise stay awake.
-        if (!rb.isKinematic) {
+        // Sleep bookkeeping: rest while supported long enough, otherwise stay
+        // awake. canSleep opts a body out entirely - script-driven characters
+        // must never doze off, or their velocity writes get zeroed and the
+        // solver treats them as immovable mid-gameplay.
+        if (!rb.isKinematic && rb.canSleep) {
             const float linSq = glm::dot(rb.linearVelocity, rb.linearVelocity);
             const float angSq = glm::dot(rb.angularVelocity, rb.angularVelocity);
             const bool resting = hasContact[k] && linSq < SLEEP_LINEAR_SQ && angSq < SLEEP_ANGULAR_SQ;

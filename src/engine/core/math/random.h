@@ -31,8 +31,8 @@ class Rng {
         Rng(const Rng& other) = delete;
         Rng& operator=(const Rng& other) = delete;
 
-        Rng(Rng&& other) noexcept = delete;
-        Rng& operator=(Rng&& other) noexcept = delete;
+        Rng(Rng && other) noexcept = delete;
+        Rng& operator=(Rng && other) noexcept = delete;
 
         /**
          * @brief Seed with an explicit state and (optionally) stream selector.

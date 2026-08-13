@@ -6,21 +6,25 @@
 #include <vector>
 
 #include "core/memory/types.h"
-#include "core/system.h"
-#include "system/event/event_bus.h"
+#include "core/event/bus.h"
 
 namespace Engine {
 
 /**
  * @brief Typed pub/sub event dispatcher.
  *
+ * Engine infrastructure, not a System: the Engine owns one by value (like the
+ * Clock and WindowManager), carries it on every FrameContext, and calls
+ * flush() at the top of the Simulation stage - the fixed, visible point where
+ * queued events deliver.
+ *
  * Subscribe a typed callback for events of type EventT; emit() fires listeners
- * synchronously, enqueue() buffers events flushed once per frame via update().
- * Per-type listener and queue storage is created lazily on first use.
+ * synchronously, enqueue() buffers events until the next flush(). Per-type
+ * listener and queue storage is created lazily on first use.
  *
  * Threading: main-thread only. emit / enqueue / subscribe / unsubscribe must
- * all happen on the system's update thread. If a future subsystem (e.g. physics
- * on a worker) needs to push events, add a mutex to Bus<EventT> at that point.
+ * all happen on the frame thread. If a future subsystem (e.g. physics on a
+ * worker) needs to push events, add a mutex to Bus<EventT> at that point.
  *
  * Caveats:
  *  - Don't subscribe or unsubscribe from inside a listener callback during
@@ -33,19 +37,19 @@ namespace Engine {
  *   struct DamageEvent { EntityId target; int amount; };
  *   auto id = events.subscribe<DamageEvent>([](const DamageEvent& e) { ... });
  *   events.emit(DamageEvent{target, 50});       // sync
- *   events.enqueue(DamageEvent{target, 25});    // deferred until next update()
+ *   events.enqueue(DamageEvent{target, 25});    // deferred until next flush()
  *   events.unsubscribe<DamageEvent>(id);
  */
-class EventSystem : public System {
+class EventBus {
     public:
-        EventSystem() = default;
-        ~EventSystem() override = default;
+        EventBus() = default;
+        ~EventBus() = default;
 
-        EventSystem(const EventSystem& other) = delete;
-        EventSystem& operator=(const EventSystem& other) = delete;
+        EventBus(const EventBus& other) = delete;
+        EventBus& operator=(const EventBus& other) = delete;
 
-        EventSystem(EventSystem && other) noexcept = delete;
-        EventSystem& operator=(EventSystem && other) noexcept = delete;
+        EventBus(EventBus && other) noexcept = delete;
+        EventBus& operator=(EventBus && other) noexcept = delete;
 
     public:
         /**
@@ -76,7 +80,7 @@ class EventSystem : public System {
         }
 
         /**
-         * @brief Queue @p event for delivery on the next update() flush (no mid-frame recursion).
+         * @brief Queue @p event for delivery on the next flush() (no mid-frame recursion).
          */
         template<typename EventT>
         void enqueue(EventT event) {
@@ -84,9 +88,12 @@ class EventSystem : public System {
         }
 
         /**
-         * @brief Drain every per-type queue to its listeners. Runs once per frame as the update step.
+         * @brief Drain every per-type queue to its listeners.
+         *
+         * Called once per frame by Engine::run at the top of the Simulation
+         * stage, before any gameplay system ticks.
          */
-        void update(FrameContext& ctx) override;
+        void flush();
 
     private:
         /**

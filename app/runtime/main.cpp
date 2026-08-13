@@ -17,6 +17,7 @@
 #include "io/project_paths.h"
 #include "io/scene/scene_serializer.h"
 #include "app/engine_app.h"
+#include "example/potion_scene.h"
 
 int main(int argc, char** argv) {
     try {
@@ -25,6 +26,11 @@ int main(int argc, char** argv) {
         // Logger::init fails if it cannot open the file.
         const std::filesystem::path root = Engine::ProjectPaths::root();
         std::error_code ec;
+        // Pin the working directory to that root: some subsystems (shader
+        // loading) open CWD-relative paths, so without this the game only runs
+        // when launched FROM the package root - double-clicking the exe in
+        // bin/ would die on 'shaders/...' not existing.
+        std::filesystem::current_path(root, ec);
         std::filesystem::create_directories(root / "logs", ec);
         const std::string logFile = (root / "logs" / "log.log").string();
 
@@ -54,7 +60,8 @@ int main(int argc, char** argv) {
 
         Engine::Engine engine;
 
-        setupEngineApp(engine, AppConfig{"VKM Engine (Runtime)", false, true});
+        setupEngineApp(engine,
+            AppConfig{"VKM Engine (Runtime)", false, true, generatePotionRunnerScene});
 
         if (argc > 1) {
             const char* scenePath = argv[1];

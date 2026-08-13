@@ -23,7 +23,7 @@ enum class AssetType : uint8_t {
 
 VKM_ENUM_NAMES(AssetType, "mesh", "texture", "material")
 
-struct Record {
+struct AssetRecord {
     AssetType   type = AssetType::Mesh;
     std::string name;
     std::string recipeFile;          ///< Relative to ProjectPaths::library().
@@ -70,7 +70,7 @@ class AssetLibrary {
          * @param name Asset name half of the lookup key.
          * @return Pointer to the matching record, or nullptr if none is registered.
          */
-        const Record* find(AssetType type, const std::string& name) const;
+        const AssetRecord* find(AssetType type, const std::string& name) const;
 
         /**
          * @brief Resolve a record's recipe file to an absolute path.
@@ -78,7 +78,7 @@ class AssetLibrary {
          * @param record The library record whose recipe file is wanted.
          * @return Absolute path to the record's recipe file under the project library dir.
          */
-        std::filesystem::path recipePath(const Record& record) const;
+        std::filesystem::path recipePath(const AssetRecord& record) const;
 
         /**
          * @brief Resolve a record's cooked file to an absolute path.
@@ -86,10 +86,10 @@ class AssetLibrary {
          * @param record The library record whose cooked file is wanted.
          * @return Absolute path to the record's cooked file under the project cooked dir.
          */
-        std::filesystem::path cookedPath(const Record& record) const;
+        std::filesystem::path cookedPath(const AssetRecord& record) const;
 
         // Editor-only mutation. upsert replaces any existing record for (type,name).
-        void upsert(Record record);
+        void upsert(AssetRecord record);
         void remove(AssetType type, const std::string& name);
         bool save() const;
 
@@ -105,7 +105,7 @@ class AssetLibrary {
         static std::string key(AssetType type, const std::string& name);
 
     private:
-        std::unordered_map<std::string, Record> m_records;  ///< keyed by key(type,name)
+        std::unordered_map<std::string, AssetRecord> m_records;  ///< keyed by key(type,name)
         uint32_t m_cookerVersion = 0;                       ///< cooker version recorded in the manifest
 };
 

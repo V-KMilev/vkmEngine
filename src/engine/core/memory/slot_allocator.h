@@ -29,8 +29,9 @@ class SlotAllocator {
         SlotAllocator& operator=(SlotAllocator && other) = delete;
 
         /**
-         * @brief Swap internal state with another allocator. Lets the
-         * containing Scene support a staging-then-swap load path without
+         * @brief Swap internal state with another allocator.
+         *
+         * Lets the containing Scene support a staging-then-swap load path without
          * breaking the no-copy/no-move invariant.
          */
         void swap(SlotAllocator& other) noexcept {
@@ -51,8 +52,9 @@ class SlotAllocator {
         }
 
         /**
-         * @brief Free a handle, bumping its generation and recycling the slot.
-         * @param id The handle to free. Must be alive (asserts).
+         * @brief Free a handle, bumping its generation and recycling the slot. @param id The handle to free.
+         *
+         * Must be alive (asserts).
          */
         void free(StorageIndex id) {
             VKM_ASSERT(has(id), "SlotAllocator::free called with invalid handle");
@@ -81,9 +83,9 @@ class SlotAllocator {
         }
 
         /**
-         * @brief Get the current generation for a sparse slot index.
-         * @param index The sparse slot index. Must be in bounds.
-         * @return The current generation counter for that slot.
+         * @brief Get the current generation for a sparse slot index. @param index The sparse slot index.
+         *
+         * Must be in bounds. @return The current generation counter for that slot.
          */
         uint32_t generationOf(uint32_t index) const {
             VKM_ASSERT(index < m_generation.size(), "SlotAllocator::generationOf out of bounds");
@@ -91,9 +93,9 @@ class SlotAllocator {
         }
 
         /**
-         * @brief Check whether `index` currently holds a live slot, with
-         * bounds tolerance - returns false for indices past the allocator's
-         * reach. Slot 0 is reserved and always reports false.
+         * @brief Check whether `index` currently holds a live slot, with bounds tolerance - returns false for indices past the allocator's reach.
+         *
+         * Slot 0 is reserved and always reports false.
          */
         bool isAliveAtIndex(uint32_t index) const {
             return index > 0
@@ -102,9 +104,10 @@ class SlotAllocator {
         }
 
         /**
-         * @brief Allocate a slot at a specific index. Used by SceneSerializer
-         * so loaded entities keep the slot indices they had at save time
-         * (eliminates id-remap on Hierarchy::parent etc.).
+         * @brief Allocate a slot at a specific index.
+         *
+         * Used by SceneSerializer so loaded entities keep the slot indices they
+         * had at save time (eliminates id-remap on Hierarchy::parent etc.).
          *
          * - Grows the underlying array with dead placeholders up to `index`.
          * - Removes `index` from the free list if present.
@@ -133,9 +136,10 @@ class SlotAllocator {
         }
 
         /**
-         * @brief Invoke fn(index) for every currently-alive slot. Index 0 is
-         * reserved as the null/invalid slot and is never yielded. Order is
-         * ascending by slot index (not allocation order).
+         * @brief Invoke fn(index) for every currently-alive slot.
+         *
+         * Index 0 is reserved as the null/invalid slot and is never yielded. Order
+         * is ascending by slot index (not allocation order).
          */
         template<typename Fn>
         void forEach(Fn&& fn) const {

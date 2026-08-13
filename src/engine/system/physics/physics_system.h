@@ -13,7 +13,7 @@
 
 namespace Engine {
 
-class EventSystem;
+class EventBus;
 class Scene;
 struct Environment;
 
@@ -27,7 +27,7 @@ struct Environment;
  * is a no-op.
  *
  * Emits CollisionEvent / TriggerEvent (enqueued, so listeners fire next flush,
- * not mid-solve) for overlapping pairs - gameplay reacts via the EventSystem or
+ * not mid-solve) for overlapping pairs - gameplay reacts via the EventBus or
  * the behavior onCollision/onTrigger hooks.
  *
  * A parented rigidbody simulates in world space: its WorldTransform feeds the
@@ -39,7 +39,7 @@ struct Environment;
  */
 class PhysicsSystem : public System {
     public:
-        explicit PhysicsSystem(EventSystem& events) : m_events(events) {}
+        PhysicsSystem() = default;
         ~PhysicsSystem() override = default;
 
         PhysicsSystem(const PhysicsSystem& other) = delete;
@@ -56,8 +56,8 @@ class PhysicsSystem : public System {
 
     private:
         // fixedUpdate() phases, called in order. They share the member working
-        // buffers (m_bodies / m_solverBodies / m_manifolds) plus file-local
-        // thread_local scratch; cross-phase plain locals are threaded explicitly.
+        // buffers (m_bodies / m_solverBodies / m_manifolds); cross-phase plain
+        // locals are threaded explicitly.
 
         /**
          * @brief Collect the scene's simulated bodies into the working buffers.
@@ -91,8 +91,9 @@ class PhysicsSystem : public System {
          * Produces the contact manifolds for the solver and fires collision events.
          *
          * @param hasContact Per-body flags, set true for each body that gained a contact.
+         * @param events     Bus the collision / trigger events are enqueued on.
          */
-        void narrowphase(std::vector<bool>& hasContact);
+        void narrowphase(std::vector<bool>& hasContact, EventBus& events);
 
         /**
          * @brief Wake any sleeping bodies struck this step, before the solve.
@@ -119,8 +120,6 @@ class PhysicsSystem : public System {
         void writeback(Scene& scene, float dt, const std::vector<bool>& hasContact);
 
     private:
-        EventSystem& m_events;  ///< Collision/trigger events are enqueued here.
-
         std::vector<EntityId>        m_bodies;       ///< Live body entities this tick (indexes m_solverBodies)
         std::vector<PhysicsBody>     m_solverBodies; ///< Cached dynamic state, aligned with m_bodies
         std::vector<ContactManifold> m_manifolds;    ///< Reused across ticks; clear() keeps capacity

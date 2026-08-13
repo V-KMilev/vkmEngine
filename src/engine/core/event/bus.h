@@ -19,14 +19,18 @@ using ListenerId = uint32_t;
  */
 struct IBus {
     virtual ~IBus() = default;
-    virtual void flush() = 0;   ///< Drain this bus's queued events to its listeners.
+
+    /**
+     * @brief Drain this bus's queued events to its listeners.
+     */
+    virtual void flush() = 0;
 };
 
 /**
  * @brief Listener list plus deferred-event queue for a single event type.
  *
- * Implementation detail of EventSystem: created lazily per event type and
- * driven only through it. The flush-depth guard enforces EventSystem's "no
+ * Implementation detail of EventBus: created lazily per event type and
+ * driven only through it. The flush-depth guard enforces EventBus's "no
  * (un)subscribe from inside a listener callback during emit/flush" contract.
  */
 template<typename EventT>
@@ -52,7 +56,7 @@ class Bus : public IBus {
             // Listeners that need self-unsubscribe should enqueue an event
             // to be processed after the current flush returns.
             VKM_ASSERT(m_flushDepth == 0,
-                "EventSystem: unsubscribe is not allowed from inside a "
+                "EventBus: unsubscribe is not allowed from inside a "
                 "listener callback during emit/flush");
             for (auto it = m_listeners.begin(); it != m_listeners.end(); ++it) {
                 if (it->id == id) {

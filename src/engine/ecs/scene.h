@@ -264,9 +264,9 @@ class Scene {
 
     public:
         /**
-         * @brief Drop every component set and reset the entity allocator and
-         * environment in one pass. Used for scene load to start from a clean
-         * slate.
+         * @brief Drop every component set and reset the entity allocator and environment in one pass.
+         *
+         * Used for scene load to start from a clean slate.
          */
         void clear() {
             // O(types + entities) rather than the previous
@@ -315,9 +315,9 @@ class Scene {
 
     public:
         /**
-         * @brief The scene's lighting environment (skybox + IBL): scene-global, always
-         * present, round-trips with the scene. Read by RenderView each frame;
-         * edited via the editor's World inspector.
+         * @brief The scene's lighting environment (skybox + IBL): scene-global, always present, round-trips with the scene.
+         *
+         * Read by RenderView each frame; edited via the editor's World inspector.
          */
         Environment& environment() { return m_environment; }
         const Environment& environment() const { return m_environment; }
