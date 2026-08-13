@@ -7,6 +7,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/texture_asset.h"
+#include "resource/asset/font_asset.h"
 
 #include "data/gl_mesh.h"
 #include "data/gl_material.h"
@@ -74,6 +75,7 @@ class GLView {
         const GLMesh*     getMesh(const MeshHandle& handle) const;
         const GLMaterial* getMaterial(const MaterialHandle& handle) const;
         const Core::Texture2D* getTexture(const TextureHandle& handle) const;
+        const Core::Texture2D* getFontAtlas(const FontHandle& handle) const;
 
     private:
         /**
@@ -95,6 +97,7 @@ class GLView {
         GLResourceTable<GLMesh>     m_meshes;
         GLResourceTable<GLMaterial> m_materials;
         GLResourceTable<GLTexture>  m_textures;
+        GLResourceTable<GLTexture>  m_fontAtlases;  ///< SDF atlases keyed by FontHandle (fonts carry pixels, not TextureAssets).
 };
 
 } // namespace Engine

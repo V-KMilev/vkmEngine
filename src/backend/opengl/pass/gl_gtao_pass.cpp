@@ -6,10 +6,11 @@
 
 #include "gl_shader.h"
 #include "gl_context.h"
+#include "gl_screen_triangle.h"
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
-#include "gl_ao_target.h"
+#include "gl_mask_target.h"
 #include "convention/gl_bindings.h"
 #include "system/render/render_view.h"
 
@@ -41,7 +42,7 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
     m_shader->setUniform1f("u_power",     view.settings.gtaoPower);
     m_shader->setUniform1f("u_bias",      view.settings.gtaoBias);
 
-    m_tri.draw();
+    ctx.screenTri.draw();
 
     endFullscreen(ctx.gl);
     ctx.aoReady = true;
