@@ -84,8 +84,15 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     // repeats dominate at scale - skip the material + texture work when the
     // handle matches the previous drawable's.
     MaterialHandle lastMaterial;
+    MeshHandle     lastMesh;
     for (const DrawableData& d : view.drawables) {
-        ensure(m_meshes, d.mesh, resources);
+        // Same repeat-skip the material gets, for the same reason: the draw
+        // sort clusters by (material, mesh), so consecutive drawables share
+        // both and re-ensuring is a resource lookup for an answer already had.
+        if (d.mesh != lastMesh) {
+            lastMesh = d.mesh;
+            ensure(m_meshes, d.mesh, resources);
+        }
         if (d.material == lastMaterial) continue;
         lastMaterial = d.material;
         ensure(m_materials, d.material, resources);
