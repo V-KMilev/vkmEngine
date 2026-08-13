@@ -15,7 +15,7 @@ namespace Engine {
  *
  * The C++ analogue of Unreal's class registration. Game code registers each
  * behavior type at startup (registerBehavior<T>()); serialization recreates
- * instances by name (create("CubeSpinner")). A single process-wide registry
+ * instances by name (create("PotionRunner")). A single process-wide registry
  * reached through get() (it must be reachable from game-DLL code).
  */
 class BehaviorRegistry {
