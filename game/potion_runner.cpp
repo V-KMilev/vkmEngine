@@ -27,6 +27,7 @@
 #include "ecs/component/ui_button.h"
 #include "platform/window/input_handle.h"
 #include "platform/window/glfw_include.h"
+#include "proc_mesh.h"
 #include "resource/resource_manager.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "system/physics/physics_events.h"
@@ -100,74 +101,6 @@ constexpr uint64_t RUN_SEED = 0x9E3779B9u;
 // once per fixed tick via the event flush, so this bridges that latency - and
 // its tail doubles as coyote time at ledges.
 constexpr float GROUNDED_GRACE = 0.12f;
-
-/**
- * @brief Build the one unit cube every prop is a scaled instance of.
- *
- * Mirrors the engine's generateCube() winding/normals exactly so it shades and
- * face-culls identically, but lives here to keep game/ dependent on EngineCore
- * only (the generators live in the editor/runtime-side tools module).
- */
-MeshAsset makeCubeMesh() {
-    MeshAsset mesh;
-
-    const glm::vec3 nFront ( 0.0f,  0.0f, -1.0f);
-    const glm::vec3 nBack  ( 0.0f,  0.0f,  1.0f);
-    const glm::vec3 nLeft  (-1.0f,  0.0f,  0.0f);
-    const glm::vec3 nRight ( 1.0f,  0.0f,  0.0f);
-    const glm::vec3 nTop   ( 0.0f,  1.0f,  0.0f);
-    const glm::vec3 nBottom( 0.0f, -1.0f,  0.0f);
-
-    const glm::vec4 tRight   ( 1.0f,  0.0f,  0.0f, 1.0f);
-    const glm::vec4 tLeft    (-1.0f,  0.0f,  0.0f, 1.0f);
-    const glm::vec4 tForward ( 0.0f,  0.0f,  1.0f, 1.0f);
-    const glm::vec4 tBack    ( 0.0f,  0.0f, -1.0f, 1.0f);
-
-    mesh.vertices = {
-        { {-0.5f, -0.5f, -0.5f}, nFront,  {0, 0}, tRight },
-        { { 0.5f, -0.5f, -0.5f}, nFront,  {1, 0}, tRight },
-        { { 0.5f,  0.5f, -0.5f}, nFront,  {1, 1}, tRight },
-        { {-0.5f,  0.5f, -0.5f}, nFront,  {0, 1}, tRight },
-
-        { { 0.5f, -0.5f,  0.5f}, nBack,   {0, 0}, tLeft },
-        { {-0.5f, -0.5f,  0.5f}, nBack,   {1, 0}, tLeft },
-        { {-0.5f,  0.5f,  0.5f}, nBack,   {1, 1}, tLeft },
-        { { 0.5f,  0.5f,  0.5f}, nBack,   {0, 1}, tLeft },
-
-        { {-0.5f, -0.5f,  0.5f}, nLeft,   {0, 0}, tBack },
-        { {-0.5f, -0.5f, -0.5f}, nLeft,   {1, 0}, tBack },
-        { {-0.5f,  0.5f, -0.5f}, nLeft,   {1, 1}, tBack },
-        { {-0.5f,  0.5f,  0.5f}, nLeft,   {0, 1}, tBack },
-
-        { { 0.5f, -0.5f, -0.5f}, nRight,  {0, 0}, tForward },
-        { { 0.5f, -0.5f,  0.5f}, nRight,  {1, 0}, tForward },
-        { { 0.5f,  0.5f,  0.5f}, nRight,  {1, 1}, tForward },
-        { { 0.5f,  0.5f, -0.5f}, nRight,  {0, 1}, tForward },
-
-        { {-0.5f,  0.5f, -0.5f}, nTop,    {0, 0}, tRight },
-        { { 0.5f,  0.5f, -0.5f}, nTop,    {1, 0}, tRight },
-        { { 0.5f,  0.5f,  0.5f}, nTop,    {1, 1}, tRight },
-        { {-0.5f,  0.5f,  0.5f}, nTop,    {0, 1}, tRight },
-
-        { {-0.5f, -0.5f,  0.5f}, nBottom, {0, 0}, tRight },
-        { { 0.5f, -0.5f,  0.5f}, nBottom, {1, 0}, tRight },
-        { { 0.5f, -0.5f, -0.5f}, nBottom, {1, 1}, tRight },
-        { {-0.5f, -0.5f, -0.5f}, nBottom, {0, 1}, tRight }
-    };
-
-    mesh.indices = {
-        0, 2, 1,  0, 3, 2,
-        4, 6, 5,  4, 7, 6,
-        8,10, 9,  8,11,10,
-        12,14,13, 12,15,14,
-        16,18,17, 16,19,18,
-        20,22,21, 20,23,22
-    };
-
-    mesh.boundsMin = glm::vec3(-0.5f);
-    mesh.boundsMax = glm::vec3( 0.5f);
-    return mesh;
-}
 
 /**
  * @brief A looping limb swing for the AnimationSystem: rotate about X between
