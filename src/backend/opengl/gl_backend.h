@@ -11,6 +11,7 @@
 #include "gl_screen_triangle.h"
 
 #include "system/render/render_backend.h"
+#include "system/render/editor_render_hooks.h"
 #include "gl_view.h"
 #include "data/gl_instance_batcher.h"
 #include "gl_target.h"
@@ -55,7 +56,7 @@ struct PassEntry {
  * order (clearing is delegated to the passes). The window's buffer swap stays in the engine loop (it must
  * happen after the editor UI draws), so this backend draws but does not present.
  */
-class GLBackend : public RenderBackend {
+class GLBackend : public RenderBackend, public EditorRenderHooks {
     public:
         GLBackend();
         ~GLBackend() override;

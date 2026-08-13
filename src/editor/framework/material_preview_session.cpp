@@ -1,6 +1,6 @@
 #include "framework/material_preview_session.h"
 
-#include "system/render/render_backend.h"
+#include "system/render/editor_render_hooks.h"
 #include "system/render/render_system.h"
 
 namespace Engine {
@@ -11,7 +11,7 @@ uint32_t MaterialPreviewSession::texture(
     uint64_t version,
     bool live
 ) {
-    RenderBackend* backend = m_renderSystem.backend();
+    EditorRenderHooks* backend = editorRenderHooks(m_renderSystem.backend());
     if (!backend || !req.material || !req.mesh) return 0;
 
     const GpuTextureId cached = backend->previewTexture(req.key);
@@ -36,14 +36,14 @@ uint32_t MaterialPreviewSession::texture(
 
 void MaterialPreviewSession::evict(uint64_t key) {
     m_versions.erase(key);
-    if (RenderBackend* backend = m_renderSystem.backend()) {
+    if (EditorRenderHooks* backend = editorRenderHooks(m_renderSystem.backend())) {
         backend->releasePreview(key);
     }
 }
 
 void MaterialPreviewSession::clear() {
     m_versions.clear();
-    if (RenderBackend* backend = m_renderSystem.backend()) {
+    if (EditorRenderHooks* backend = editorRenderHooks(m_renderSystem.backend())) {
         backend->releaseAllPreviews();
     }
 }

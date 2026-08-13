@@ -27,7 +27,7 @@
 #include "cook/asset_cooker.h"
 #include "system/camera/camera_controller_system.h"
 #include "system/script/behavior_system.h"
-#include "system/render/render_backend.h"
+#include "system/render/editor_render_hooks.h"
 #include "system/render/render_system.h"
 
 namespace Engine {
@@ -177,7 +177,7 @@ void SceneIOController::afterSceneReplace(
     // The swap replaced the ResourceManager wholesale, so preview targets
     // keyed by the old asset handles are stale. Drop them; the Material
     // Editor / Asset Browser re-bake lazily on their next draw.
-    if (RenderBackend* backend = m_renderSystem.backend()) {
+    if (EditorRenderHooks* backend = editorRenderHooks(m_renderSystem.backend())) {
         backend->releaseAllPreviews();
     }
 
