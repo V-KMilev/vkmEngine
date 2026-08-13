@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "core/reflect.h"
 
@@ -71,6 +72,20 @@ class AssetLibrary {
          * @return Pointer to the matching record, or nullptr if none is registered.
          */
         const AssetRecord* find(AssetType type, const std::string& name) const;
+
+        /**
+         * @brief Every registered asset name of @p type, sorted.
+         *
+         * The manifest is the authoritative name->record map, so this is how a
+         * caller discovers what a project actually has rather than hardcoding
+         * names. Sorted because the backing store is unordered: callers that
+         * need a reproducible selection (a benchmark picking the same meshes on
+         * every run) would otherwise get a different set per process.
+         *
+         * @param type Asset type to enumerate.
+         * @return Sorted names; empty if the type has no registered records.
+         */
+        std::vector<std::string> namesOf(AssetType type) const;
 
         /**
          * @brief Resolve a record's recipe file to an absolute path.
