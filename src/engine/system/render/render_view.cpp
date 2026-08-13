@@ -2,6 +2,8 @@
 
 #include "system/render/render_view.h"
 
+#include <algorithm>
+
 #include <glm/gtc/quaternion.hpp>
 
 #include "logger.h"
@@ -11,6 +13,9 @@
 #include "ecs/component/mesh.h"
 #include "ecs/component/light.h"
 #include "ecs/component/reflection_probe.h"
+#include "ecs/component/decal.h"
+#include "ecs/component/particle_emitter.h"
+#include "ecs/component/irradiance_volume.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/world_transform.h"
 #include "ecs/environment.h"
@@ -22,12 +27,22 @@ namespace Engine {
 
 void RenderView::build(
     const Scene& scene,
-    const Visibility& visibility
+    const Visibility& visibility,
+    const UIDrawData* uiData
 ) {
     PROFILE_SCOPE("RenderView::build");
 
     // The scene's lighting environment.
     environment = scene.environment();
+
+    // The UI overlay is independent of the 3D camera, so snapshot it before the
+    // no-camera early-out (a HUD/menu still draws when nothing 3D is in view).
+    // Vector assignment reuses the destination capacity.
+    ui.clear();
+    if (uiData) {
+        ui.vertices = uiData->vertices;
+        ui.commands = uiData->commands;
+    }
 
     if (!visibility.hasCamera) {
         // No camera this frame: emit an empty snapshot, not a stale one.
@@ -35,21 +50,31 @@ void RenderView::build(
         lights.clear();
         shadowCasters.clear();
         probes.clear();
+        decals.clear();
+        particlesAdditive.clear();
+        particlesAlpha.clear();
+        irradianceVolumes.clear();
         return;
     }
 
     buildCamera(visibility);
     buildLights(scene);
     buildProbes(scene);
+    buildDecals(scene);
+    buildParticles(scene);
+    buildIrradianceVolumes(scene);
     buildDrawables(scene, visibility);
     buildShadowCasters(scene, visibility);
 }
 
 void RenderView::buildCamera(const Visibility& visibility) {
-    camera.view          = visibility.view;
-    camera.projection    = visibility.projection;
-    camera.invProjection = glm::inverse(visibility.projection);
-    camera.position      = visibility.cameraPosition;
+    camera.view       = visibility.view;
+    camera.projection = visibility.projection;
+    camera.position   = visibility.cameraPosition;
+    camera.derive();
+
+    camera.focusDistance = visibility.focusDistance;
+    camera.dofAmount     = visibility.dofAmount;
 }
 
 void RenderView::buildLights(const Scene& scene) {
@@ -119,7 +144,66 @@ void RenderView::buildProbes(const Scene& scene) {
             if (scene.has<WorldTransform>(id)) {
                 position = glm::vec3(scene.get<WorldTransform>(id).model[3]);
             }
-            probes.push_back({ position, probe.halfExtents, probe.falloff, probe.intensity, probe.bakeVersion });
+            probes.push_back({ position, probe.halfExtents, probe.falloff, probe.intensity,
+                               probe.resolution, probe.bakeVersion });
+        });
+}
+
+void RenderView::buildDecals(const Scene& scene) {
+    decals.clear();
+
+    // Every decal, resolved to world space. The box transform comes from the
+    // WorldTransform when the decal is parented, else its local Transform.
+    scene.forEach<Decal, Transform>(
+        [&](EntityId id, const Decal& decal, const Transform& transform) {
+            glm::mat4 model = Transform::computeModelMatrix(transform);
+            if (scene.has<WorldTransform>(id)) {
+                model = scene.get<WorldTransform>(id).model;
+            }
+            decals.push_back({ model, glm::inverse(model), decal.material, decal.angleFade, decal.opacity });
+        });
+}
+
+void RenderView::buildParticles(const Scene& scene) {
+    particlesAdditive.clear();
+    particlesAlpha.clear();
+
+    scene.forEach<ParticleEmitter>([&](EntityId, const ParticleEmitter& emitter) {
+        auto& out = emitter.additive ? particlesAdditive : particlesAlpha;
+        for (const Particle& p : emitter.particles) {
+            // Age drives the size + colour ramp; a particle past its life was
+            // already retired by the simulation.
+            const float t = (p.lifetime > 0.0f) ? (p.age / p.lifetime) : 1.0f;
+            out.push_back({
+                glm::vec4(p.position, glm::mix(emitter.startSize, emitter.endSize, t)),
+                glm::mix(emitter.startColor, emitter.endColor, t),
+                glm::vec4(emitter.softness, 0.0f, 0.0f, 0.0f),
+            });
+        }
+    });
+
+    // Alpha particles blend order-dependently, so sort far-to-near like the
+    // transparent bucket. Additive blending is commutative - leave it unsorted.
+    const glm::vec3 eye = camera.position;
+    std::sort(particlesAlpha.begin(), particlesAlpha.end(),
+              [&eye](const ParticleData& a, const ParticleData& b) {
+                  return glm::dot(glm::vec3(a.positionSize) - eye, glm::vec3(a.positionSize) - eye)
+                       > glm::dot(glm::vec3(b.positionSize) - eye, glm::vec3(b.positionSize) - eye);
+              });
+}
+
+void RenderView::buildIrradianceVolumes(const Scene& scene) {
+    irradianceVolumes.clear();
+
+    scene.forEach<IrradianceVolume, Transform>(
+        [&](EntityId id, const IrradianceVolume& v, const Transform& transform) {
+            glm::vec3 center = transform.position;
+            if (scene.has<WorldTransform>(id)) {
+                center = glm::vec3(scene.get<WorldTransform>(id).model[3]);
+            }
+            irradianceVolumes.push_back({ center, v.halfExtents,
+                                          v.resolutionX, v.resolutionY, v.resolutionZ,
+                                          v.intensity, v.bakeVersion });
         });
 }
 
@@ -137,14 +221,17 @@ void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility
         if (!scene.isAlive(entry.id)) continue;
         const Mesh& mesh = scene.get<Mesh>(entry.id);
         // unresolved slot
-        if (!mesh.mesh || !mesh.material) continue;
+        if (!entry.mesh || !mesh.material) continue;
 
         DrawableData drawable;
-        drawable.mesh         = mesh.mesh;
+        // The level the cull selected, not the component's own handle.
+        drawable.mesh         = entry.mesh;
         drawable.material     = mesh.material;
         drawable.model        = entry.model;
         // Inverse-transpose once per drawable here, not per vertex in two shaders.
         drawable.normalMatrix = glm::transpose(glm::inverse(glm::mat3(entry.model)));
+        drawable.worldMin     = entry.worldMin;
+        drawable.worldMax     = entry.worldMax;
         drawable.castShadows  = mesh.castShadows;
         drawables.push_back(drawable);
     }
@@ -162,11 +249,10 @@ void RenderView::buildShadowCasters(const Scene& scene, const Visibility& visibi
     for (const VisibleEntity& entry : visibility.shadowCasters) {
         // deleted between cull and render
         if (!scene.isAlive(entry.id)) continue;
-        const Mesh& mesh = scene.get<Mesh>(entry.id);
         // unresolved slot
-        if (!mesh.mesh) continue;
+        if (!entry.mesh) continue;
 
-        shadowCasters.push_back({ mesh.mesh, entry.model, entry.worldMin, entry.worldMax });
+        shadowCasters.push_back({ entry.mesh, entry.model, entry.worldMin, entry.worldMax });
     }
 }
 

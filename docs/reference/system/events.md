@@ -1,14 +1,20 @@
-# Event System
+# Event Bus
 
 Typed pub/sub dispatcher for in-engine events. Subscribers register a
 typed callback for events of type `EventT`; publishers call `emit()` to
-fire synchronously or `enqueue()` to defer until the next `update()`
-flush.
+fire synchronously or `enqueue()` to defer until the next `flush()`.
+
+The bus is **engine infrastructure, not a System**: the Engine owns one by
+value (like the Clock and WindowManager), every `FrameContext` carries it as
+`ctx.events`, and the frame loop calls `flush()` at the top of the Simulation
+stage - the fixed, visible point where queued events deliver. Nothing is wired
+to it in `setupEngineApp`; systems just read it off the context.
 
 ## Key Files
 
-- `src/engine/system/event/event_system.h` -- `EventSystem` (System subclass)
-- `src/engine/system/event/event_system.cpp`
+- `src/engine/core/event/event_bus.h` -- `EventBus` (the facade)
+- `src/engine/core/event/event_bus.cpp` -- `flush()`
+- `src/engine/core/event/bus.h` -- per-type `Bus<EventT>` internals
 
 ## Event Types
 
@@ -25,15 +31,14 @@ sees only `DamageEvent` instances.
 ## Subscribing
 
 ```cpp
-auto& events = engine.getSystem<EventSystem>();
-
-auto id = events.subscribe<DamageEvent>([](const DamageEvent& e) {
+// Inside a system: ctx.events. From the app layer: engine.getEvents().
+auto id = ctx.events.subscribe<DamageEvent>([](const DamageEvent& e) {
     applyDamage(e.target, e.amount);
 });
 ```
 
 `subscribe` returns a `ListenerId` for later removal. The callback runs
-on the EventSystem's update thread (main thread today).
+on the frame thread (main thread today).
 
 ## Unsubscribing
 
@@ -52,7 +57,7 @@ Two flavours:
 
 ```cpp
 events.emit(DamageEvent{target, 50});      // synchronous: every listener fires now
-events.enqueue(DamageEvent{target, 25});   // deferred: fires on next update() flush
+events.enqueue(DamageEvent{target, 25});   // deferred: fires on next flush()
 ```
 
 Use `emit` for tightly coupled local state changes (gameplay reaction in
@@ -61,18 +66,18 @@ reactions, asset events, latency-tolerant work).
 
 ## Flushing
 
-`EventSystem::update(FrameContext&)` (Simulation stage) iterates every
-bus and drains its queue. Each enqueued event is delivered to every
+`EventBus::flush()`, called by `Engine::run` at the top of the Simulation
+stage, iterates every bus and drains its queue. Each enqueued event is delivered to every
 listener registered for its type.
 
 A listener that enqueues a new event during flush will see it land on
-the *next* frame's flush - the system swaps the queue at the start of
+the *next* frame's flush - the bus swaps the queue at the start of
 flush so re-entrant enqueues land in fresh storage.
 
 ## Threading
 
 Main thread only. `emit`, `enqueue`, `subscribe`, `unsubscribe`, and
-`update` must all happen on the same thread (typically the engine's
+`flush` must all happen on the same thread (typically the engine's
 update thread). If a future subsystem (e.g. physics on a worker) needs
 to push events, add a mutex to `Bus<EventT>` at that point.
 

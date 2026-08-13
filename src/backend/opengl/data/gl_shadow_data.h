@@ -84,12 +84,41 @@ struct ShadowCubeJob {
 };
 
 /**
+ * @brief The casters one shadow job rasterises: indices into RenderView::shadowCasters.
+ *
+ * Sorted by mesh id so the pass can walk it as contiguous per-mesh runs and
+ * issue one instanced draw each.
+ */
+struct ShadowCasterBatch {
+    std::vector<uint32_t> order;
+};
+
+/**
+ * @brief Per-task workspace for the cull, owned by GLShadowData and reused.
+ *
+ * One instance per job so tasks never share, and kept between frames so a steady
+ * shadow plan allocates nothing.
+ */
+struct CullScratch {
+    std::vector<uint32_t> survivors;  ///< Frustum survivors, before mesh grouping.
+    std::vector<uint32_t> counts;     ///< Per-mesh histogram, then the scatter cursor.
+};
+
+/**
  * @brief Builds the frame's shadow plan and owns the ShadowBlock UBO.
  *
  * build() assigns atlas slots to shadow-casting lights, fits the directional
- * cascades / spot frusta / point cube matrices, and records the render jobs.
- * slotForLight() feeds GLLights (the per-light shadowSlot); the jobs feed
- * GLShadowPass. Call build() before GLLights::update and uploadAndBind().
+ * cascades / spot frusta / point cube matrices, records the render jobs, and
+ * culls the caster list against each one. slotForLight() feeds GLLights (the
+ * per-light shadowSlot); the jobs and their batches feed GLShadowPass. Call
+ * build() before GLLights::update and uploadAndBind().
+ *
+ * Culling lives here rather than in the pass because it is not a GL concern and
+ * because doing it per tile, inline, was the single most expensive thing in the
+ * frame: the caster set is scene-wide, so each cascade, spot and cube face
+ * re-scanned every caster while the render thread waited. Hoisting it lets all
+ * of it run on the thread pool, and lets a point light reject most of the scene
+ * once against its bounding sphere instead of six times against its faces.
  */
 class GLShadowData {
     public:
@@ -128,11 +157,43 @@ class GLShadowData {
         const std::vector<ShadowCubeJob>& jobsCube() const { return m_jobsCube; }
 
         /**
+         * @brief Casters surviving the cull for 2D job @p jobIndex.
+         *
+         * @param jobIndex Index into jobs2D().
+         * @return Mesh-sorted indices into RenderView::shadowCasters.
+         */
+        const ShadowCasterBatch& batch2D(size_t jobIndex) const { return m_batches2D[jobIndex]; }
+
+        /**
+         * @brief Casters surviving the cull for one face of a cube job.
+         *
+         * @param jobIndex Index into jobsCube().
+         * @param face     Cube face, 0-5.
+         * @return Mesh-sorted indices into RenderView::shadowCasters.
+         */
+        const ShadowCasterBatch& batchCube(size_t jobIndex, uint32_t face) const {
+            return m_batchesCube[jobIndex * 6 + face];
+        }
+
+        /**
          * @brief Upload the ShadowBlock UBO and bind it to its binding point.
          */
         void uploadAndBind();
 
     private:
+        /**
+         * @brief Cull the caster list against every job recorded this frame.
+         *
+         * Runs on the thread pool: each cascade, spot and cube face is an
+         * independent scan writing to its own batch, so there is nothing to
+         * synchronise. Point lights reject against the light's bounding sphere
+         * once first, and their six faces refine that survivor set instead of
+         * re-scanning the scene.
+         *
+         * @param view The frame's render view, supplying shadowCasters.
+         */
+        void cullCasters(const RenderView& view);
+
         /**
          * @brief Camera frustum corners + view-space depth span, shared by the cascade fit.
          */
@@ -162,6 +223,19 @@ class GLShadowData {
 
         std::vector<Shadow2DJob>   m_jobs2D;
         std::vector<ShadowCubeJob> m_jobsCube;
+
+        // Cull results, index-aligned with the job lists above (cube batches are
+        // flattened six-per-job). Kept across frames and only cleared, never
+        // freed, so a steady shadow plan stops allocating after the first frame.
+        std::vector<ShadowCasterBatch> m_batches2D;
+        std::vector<ShadowCasterBatch> m_batchesCube;
+
+        // Scratch for the cull, kept alive between frames for the same reason.
+        std::vector<uint32_t>              m_allCasters;      ///< Identity index list: every caster is a 2D-job candidate.
+        std::vector<std::vector<uint32_t>> m_cubeCandidates;  ///< Per point light, the casters its sphere reaches.
+        std::vector<uint32_t>              m_meshKeys;        ///< Mesh id per caster, flattened for the grouping pass.
+        uint32_t                           m_keyCount = 0;    ///< Histogram size: highest mesh id in use, plus one.
+        std::vector<CullScratch>           m_scratch;         ///< One workspace per cull task.
 };
 
 } // namespace Engine

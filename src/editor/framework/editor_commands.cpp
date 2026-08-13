@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "ecs/component/lod.h"
 #include "ecs/scene.h"
 #include "io/scene/component_serializer.h"
 #include "resource/resource_manager.h"
@@ -40,6 +41,28 @@ bool TransformChangeCommand::tryMerge(Command& incoming) {
     auto* p = dynamic_cast<TransformChangeCommand*>(&incoming);
     if (!p || p->m_entity != m_entity) return false;
     m_after = p->m_after;
+    return true;
+}
+
+EnvironmentEditCommand::EnvironmentEditCommand(
+    const Environment& before, const Environment& after, const char* label)
+    : m_before(before), m_after(after), m_label(label) {}
+
+void EnvironmentEditCommand::redo(Scene& scene, EditorState&) {
+    scene.environment() = m_after;
+}
+
+void EnvironmentEditCommand::undo(Scene& scene, EditorState&) {
+    scene.environment() = m_before;
+}
+
+bool EnvironmentEditCommand::tryMerge(Command& incoming) {
+    // Coalesce with any other Environment edit: the chain start (m_before)
+    // stays; only m_after slides forward to the newest value.
+    auto* p = dynamic_cast<EnvironmentEditCommand*>(&incoming);
+    if (!p) return false;
+    m_after = p->m_after;
+    m_label = p->m_label;
     return true;
 }
 
@@ -98,6 +121,17 @@ template class RemoveComponentCommand<Collider>;
 template class AddComponentCommand<ReflectionProbe>;
 template class RemoveComponentCommand<ReflectionProbe>;
 
+template class AddComponentCommand<Decal>;
+template class RemoveComponentCommand<Decal>;
+
+template class AddComponentCommand<ParticleEmitter>;
+template class RemoveComponentCommand<ParticleEmitter>;
+
+template class AddComponentCommand<IrradianceVolume>;
+template class RemoveComponentCommand<IrradianceVolume>;
+template class AddComponentCommand<LOD>;
+template class RemoveComponentCommand<LOD>;
+
 template <typename T>
 void ComponentEditCommand<T>::redo(Scene& scene, EditorState&) {
     if (!scene.isAlive(m_entity) || !scene.has<T>(m_entity)) return;
@@ -128,6 +162,26 @@ template class ComponentEditCommand<Animation>;
 template class ComponentEditCommand<Rigidbody>;
 template class ComponentEditCommand<Collider>;
 template class ComponentEditCommand<ReflectionProbe>;
+template class ComponentEditCommand<Decal>;
+template class ComponentEditCommand<ParticleEmitter>;
+template class ComponentEditCommand<IrradianceVolume>;
+template class ComponentEditCommand<LOD>;
+
+template class AddComponentCommand<UICanvas>;
+template class AddComponentCommand<UIElement>;
+template class AddComponentCommand<UIImage>;
+template class AddComponentCommand<UIText>;
+template class AddComponentCommand<UIButton>;
+template class RemoveComponentCommand<UICanvas>;
+template class RemoveComponentCommand<UIElement>;
+template class RemoveComponentCommand<UIImage>;
+template class RemoveComponentCommand<UIText>;
+template class RemoveComponentCommand<UIButton>;
+template class ComponentEditCommand<UICanvas>;
+template class ComponentEditCommand<UIElement>;
+template class ComponentEditCommand<UIImage>;
+template class ComponentEditCommand<UIText>;
+template class ComponentEditCommand<UIButton>;
 
 template <typename HandleType>
 void RenameAssetCommand<HandleType>::redo(Scene&, EditorState& state) {
@@ -178,6 +232,10 @@ void EntitySnapshot::apply(Scene& scene, EntityId id) const {
 void CreateEntityCommand::redo(Scene& scene, EditorState& state) {
     Entity e = scene.createEntityAt(m_snap.slotIndex);
     m_snap.apply(scene, e.getID());
+    if (m_parentSlot && scene.isAliveAtIndex(m_parentSlot)) {
+        const EntityId parent{m_parentSlot, scene.generationOf(m_parentSlot)};
+        HierarchyOperations::setParent(scene, e.getID(), parent);
+    }
     state.hierarchyDirty = true;
     state.selectEntity(e.getID());
 }

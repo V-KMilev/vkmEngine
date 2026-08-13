@@ -13,7 +13,7 @@ plus a polling file watcher.
 | Asset library       | `src/engine/io/asset/asset_library.h`              | The cooked-asset database manifest: maps an asset name to its recipe + cooked file + hash. |
 | Asset cooker        | `src/tools/cook/asset_cooker.h` (editor)     | Bakes assets from their recipe into the library + cooked binary cache (`cooked/`).        |
 | Component serializer| `src/engine/io/scene/component_serializer.h`       | Per-component to/from JSON. Mechanical, one save/load pair per component type.           |
-| File watcher        | `src/engine/system/io/file_watcher_system.h`        | Polling `mtime` watcher; fires a callback per changed file. Used for shader hot-reload.  |
+| Shader reload       | `modules/vkmGL/src/shader/gl_shader_reload.h`      | Live-shader registry + `reloadChangedShaders`; rebuilds a program whose source's `mtime` moved, keeping the old one on a compile error. |
 
 ## SceneSerializer
 
@@ -125,7 +125,7 @@ Today's coverage (the `SerializedComponents` tuple in `scene_serializer.cpp`):
 
 `Environment` (the scene's lighting environment: HDR path, intensity, skybox
 toggle) is serialized separately, alongside the entities. Render tuning (GTAO /
-SSR / bloom / ...) lives in `RenderSettings` on the RenderSystem, not in a
+bloom / MSAA / ...) lives in `RenderSettings` on the RenderSystem, not in a
 serialized component.
 
 `Mesh` references handles by `name` rather than by `Storage` index;

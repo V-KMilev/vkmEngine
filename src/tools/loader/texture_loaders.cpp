@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "LOADER"
 
-#include "texture_loaders.h"
+#include "loader/texture_loaders.h"
 
 #include <cstdint>
 #include <cstring>
@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
+
 #include "platform/threading/thread_pool.h"
 #include "resource/resource_manager.h"
 #include "resource/texture_format.h"
@@ -101,11 +102,18 @@ TextureHandle requestTextureAsync(
     };
     const TextureHandle handle = resourceManager.add(std::move(stub));
 
-    // Spawn the decode on a worker. We capture only the path + handle +
-    // flip flag - everything ResourceManager-touching happens on the main
-    // thread in AsyncLoaderSystem when the completion is drained.
+    // stb's orientation flag is a process-wide global, so it is set here on the
+    // main thread rather than inside the task. Two decodes racing on it would
+    // silently hand one of them the wrong orientation - harmless only for as
+    // long as every caller wants the same value, which is not a property worth
+    // depending on. Setting it before the task is queued orders it against the
+    // worker that will read it.
+    stbi_set_flip_vertically_on_load(true);
+
+    // Spawn the decode on a worker. We capture only the path + handle -
+    // everything ResourceManager-touching happens on the main thread in
+    // AsyncLoaderSystem when the completion is drained.
     ThreadPool::get().addTask([handle, filePath]() {
-        stbi_set_flip_vertically_on_load(true);
         int w = 0, h = 0, channels = 0;
         unsigned char* data = stbi_load(filePath.c_str(), &w, &h, &channels, 0);
 

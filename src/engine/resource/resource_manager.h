@@ -202,8 +202,10 @@ class ResourceManager {
         }
 
         /**
-         * @brief Find a resource by its `name` field. Returns a default
-         * (invalid) handle if the type is unregistered or no asset matches.
+         * @brief Find a resource by its `name` field.
+         *
+         * Returns a default (invalid) handle if the type is unregistered or no
+         * asset matches.
          *
          * O(1) lookup via a per-type name->index map maintained on
          * add/remove/rename. Caveat: the index tracks the resource's `name`
@@ -273,13 +275,15 @@ class ResourceManager {
         void swap(ResourceManager& other) noexcept {
             using std::swap;
             swap(m_slots, other.m_slots);
+            ++m_epoch;
+            ++other.m_epoch;
             LOG_INFO_C("RESOURCE", "Swap committed");
         }
 
         /**
          * @brief Swap the per-type slot for @p T with @p other.
          *
-         * Used by SceneSerializer to keep engine-owned asset types (shaders)
+         * Used by SceneSerializer to keep engine-owned asset types (fonts)
          * out of the scene-level swap: a full RM swap would strand cached
          * handles in render passes because the scene-staged RM never had
          * those types populated. Slot exchange is symmetric and works even
@@ -293,7 +297,25 @@ class ResourceManager {
             if (m_slots.size() < needed) m_slots.resize(needed);
             if (other.m_slots.size() < needed) other.m_slots.resize(needed);
             swap(m_slots[id], other.m_slots[id]);
+            ++m_epoch;
+            ++other.m_epoch;
         }
+
+        /**
+         * @brief Identity of the current asset graph, bumped by every swap.
+         *
+         * Per-asset `version` tracks edits *within* one graph; it cannot detect a
+         * wholesale graph replacement (scene load, editor play-stop restore),
+         * because the incoming graph is freshly built - its handles restart at
+         * the same indices and generations, and its assets at version 1. To a
+         * cache keyed on (index, generation, version) the new graph is therefore
+         * indistinguishable from the old one, and stale GPU data survives the
+         * swap.
+         *
+         * A backend cache must compare this epoch and drop everything when it
+         * moves, then repopulate from the new graph.
+         */
+        uint64_t epoch() const { return m_epoch; }
 
     private:
         /**
@@ -303,8 +325,10 @@ class ResourceManager {
             SlotAllocator                   allocator;
             std::unique_ptr<ISparseSet>     storage;
             /**
-             * @brief name -> storage index. O(1) findByName backing. Populated
-             * from Resource::name on add(), erased on remove().
+             * @brief name -> storage index.
+             *
+             * O(1) findByName backing. Populated from Resource::name on add(), erased
+             * on remove().
              */
             std::unordered_map<std::string, uint32_t> nameIndex;
         };
@@ -321,9 +345,10 @@ class ResourceManager {
         }
 
         /**
-         * @brief Look up the const slot for @p T, or nullptr if the type was
-         * never registered. The graceful lookup primitive behind isAlive /
-         * findByName / forEachOfType (which return empty for an unknown type).
+         * @brief Look up the const slot for @p T, or nullptr if the type was never registered.
+         *
+         * The graceful lookup primitive behind isAlive / findByName /
+         * forEachOfType (which return empty for an unknown type).
          */
         template<typename T>
         const TypedSlot* trySlot() const {
@@ -350,9 +375,10 @@ class ResourceManager {
         }
 
         /**
-         * @brief Erase the name->index mapping for @p name when it still points
-         * at @p index. Shared by remove() and rename() so the index stays
-         * consistent in one place.
+         * @brief Erase the name->index mapping for @p name when it still points at @p index.
+         *
+         * Shared by remove() and rename() so the index stays consistent in one
+         * place.
          */
         static void dropNameIndex(TypedSlot& slot, const std::string& name, uint32_t index) {
             if (name.empty()) return;
@@ -363,9 +389,10 @@ class ResourceManager {
         }
 
         /**
-         * @brief Make @p name non-empty and unique among the names already registered
-         * in @p slot. Empty -> "asset"; a taken name gets the lowest free
-         * " (N)" suffix. Called by add() so every asset has a usable key.
+         * @brief Make @p name non-empty and unique among the names already registered in @p slot.
+         *
+         * Empty -> "asset"; a taken name gets the lowest free " (N)" suffix.
+         * Called by add() so every asset has a usable key.
          */
         static void ensureUniqueName(const TypedSlot& slot, std::string& name) {
             if (name.empty()) name = "asset";
@@ -382,6 +409,10 @@ class ResourceManager {
 
     private:
         std::vector<std::unique_ptr<TypedSlot>> m_slots;
+
+        // Starts at 1 so a cache can hold 0 as "never synced" and repopulate on
+        // its first pass without a special case.
+        uint64_t m_epoch = 1;
 };
 
 } // namespace Engine

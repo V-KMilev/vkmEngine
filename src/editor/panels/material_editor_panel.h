@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include <glm/glm.hpp>
 
 #include "resource/asset/material_asset.h"
@@ -9,7 +11,10 @@
 
 namespace Engine {
 
+class EditorRenderHooks;
+
 struct EditorContext;
+class RenderBackend;
 class ResourceManager;
 
 /**
@@ -53,9 +58,12 @@ class MaterialEditorPanel {
          * owning material's handle + a pointer-to-member rather than a raw
          * slot reference so a deferred picker can re-resolve the slot safely
          * (the sparse-set backing can reallocate while the picker is open).
+         * @p backend resolves the slot's GPU texture for the thumbnail (may
+         * be null: no thumbnail).
          */
         bool textureSlot(
             ResourceManager& res,
+            EditorRenderHooks* backend,
             const char* label,
             MaterialHandle owner,
             MaterialAsset& mat,
@@ -77,6 +85,7 @@ class MaterialEditorPanel {
          */
         bool drawMaterialBody(
             ResourceManager& resources,
+            EditorRenderHooks* backend,
             MaterialHandle target,
             MaterialAsset& mat
         );
@@ -86,6 +95,8 @@ class MaterialEditorPanel {
         float m_pitch    = 20.0f;
         float m_distance = 3.0f;
         int   m_primitive = 0;     ///< 0 sphere, 1 cube, 2 plane, 3 entity mesh
+        int   m_background = 0;    ///< PreviewBackground: 0 dark, 1 grey, 2 sky
+        float m_lightYaw   = 0.0f; ///< Studio rig rotation around Y (degrees)
 
         // One picker per modal so each cache survives independent open/close.
         AssetPicker m_pbrFolderPicker;
@@ -103,6 +114,11 @@ class MaterialEditorPanel {
          * @brief Color edited in the per-slot "Gen" popup's solid-color generator.
          */
         glm::vec4 m_genColor{1.0f, 1.0f, 1.0f, 1.0f};
+
+        // Rename modal state (toolbar "Rename" button).
+        bool        m_renameOpen = false;
+        char        m_renameBuf[128] = {};
+        std::string m_renameOldName;
 };
 
 } // namespace Engine

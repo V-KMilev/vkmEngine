@@ -4,11 +4,11 @@
 
 #include <algorithm>
 
-#include "gl_uniform_buffer.h"
+#include "gl_shader_storage_buffer.h"
 
 #include "convention/gl_bindings.h"
 #include "data/gl_shadow_data.h"
-#include "data/gl_ubo_util.h"
+#include "gl_buffer_upload.h"
 #include "system/render/data/light_data.h"
 
 namespace Engine {
@@ -17,7 +17,7 @@ GLLights::GLLights()  = default;
 GLLights::~GLLights() = default;
 
 void GLLights::update(const std::vector<LightData>& lights, const GLShadowData& shadow) {
-    LightsUBO data{};
+    LightsBuffer data{};
 
     const int count = std::min(static_cast<int>(lights.size()), MAX_LIGHTS);
     data.count = count;
@@ -36,8 +36,11 @@ void GLLights::update(const std::vector<LightData>& lights, const GLShadowData& 
         gpu.axisV     = glm::vec4(light.axisV, 0.0f);
     }
 
-    uploadUBOIfChanged(m_ubo, m_last, data);
-    bindUBO(m_ubo, GLBindings::UBOBindingPoints::Lights);
+    // Only the header + the lights actually in use travel to the GPU; the tail
+    // of the fixed-capacity array is never read (shader loops stop at count).
+    const size_t activeSize = offsetof(LightsBuffer, lights) + sizeof(GpuLight) * count;
+    Core::uploadPrefixIfChanged(m_ssbo, m_last, data, activeSize);
+    Core::bindSSBO(m_ssbo, GLBindings::SSBOBindingPoints::Lights);
 }
 
 } // namespace Engine

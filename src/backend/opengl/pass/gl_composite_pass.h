@@ -3,7 +3,6 @@
 #include <memory>
 
 #include "gl_pass.h"
-#include "gl_screen_triangle.h"
 
 namespace Core {
     class Shader;
@@ -34,7 +33,6 @@ class GLCompositePass : public GLPass {
 
     private:
         std::unique_ptr<Core::Shader> m_shader;
-        Core::ScreenTriangle          m_tri;
 };
 
 } // namespace Engine

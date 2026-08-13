@@ -17,14 +17,21 @@ struct WindowCallbackData {
     WindowManager* window = nullptr;
 };
 
-// https://www.glfw.org/docs/latest/group__buttons.html
-#if !defined(GLFW_MOUSE_BUTTON_LAST)
-    #define GLFW_MOUSE_BUTTON_LAST 7
-#endif
-
-#if !defined(GLFW_KEY_LAST)
-    #define GLFW_KEY_LAST 348
-#endif
+/**
+ * @brief Highest key and mouse-button codes this header sizes its arrays for.
+ *
+ * Engine-owned constants rather than GLFW's macros, so that including
+ * <GLFW/glfw3.h> is not forced on everything that touches input. Defining
+ * GLFW's own macro names here would be worse than it looks: whichever header a
+ * translation unit saw first would win, so the arrays below - and therefore
+ * sizeof(KeyboardInputHandle) - would depend on include order. That is an ODR
+ * violation, currently invisible only because the values happen to agree.
+ *
+ * input_handle.cpp does include GLFW and static_asserts these against the real
+ * ones, so a GLFW that adds a key breaks the build instead of the memory.
+ */
+constexpr int MAX_MOUSE_BUTTON = 7;    // GLFW_MOUSE_BUTTON_LAST
+constexpr int MAX_KEY          = 348;  // GLFW_KEY_LAST
 
 /**
  * @brief Tracks keyboard key state and answers per-key pressed queries.
@@ -70,7 +77,7 @@ class KeyboardInputHandle {
          */
         void onKeyEvent(int key, bool pressed);
 
-        bool m_keyState[GLFW_KEY_LAST + 1] = {};
+        bool m_keyState[MAX_KEY + 1] = {};
 };
 
 /**
@@ -148,7 +155,7 @@ class MouseInputHandle {
         void setScrollDelta(double yOffset);
 
     private:
-        bool m_buttonState[GLFW_MOUSE_BUTTON_LAST + 1] = {};
+        bool m_buttonState[MAX_MOUSE_BUTTON + 1] = {};
 
         double m_x = 0.0;
         double m_y = 0.0;

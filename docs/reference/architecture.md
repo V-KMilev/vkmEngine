@@ -53,7 +53,7 @@ does:
 | Stage      | Systems                                                                         |
 |------------|---------------------------------------------------------------------------------|
 | Input      | `CameraControllerSystem`                                                              |
-| Simulation | `EventSystem`, `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `PhysicsSystem` |
+| Simulation | (EventBus flush), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `PhysicsSystem` |
 | Transform  | `HierarchySystem`                                                              |
 | Visibility | `VisibilitySystem`                                                            |
 | Render     | `RenderSystem`                                                                |
@@ -131,7 +131,7 @@ Engine code, single include root `src/engine/`:
 | `system/animation/`        | `AnimationSystem`, `AnimationTrack`, `Keyframe`                          |
 | `system/async/`            | `AsyncLoaderSystem`                                                      |
 | `system/camera/`           | `CameraControllerSystem`                                                       |
-| `system/event/`            | `EventSystem` (typed pub/sub)                                            |
+| `core/event/`              | `EventBus` (typed pub/sub; engine-owned infrastructure)                  |
 | `system/hierarchy/`        | `HierarchySystem`, `HierarchyOperations` (free functions)               |
 | `system/io/`               | `FileWatcherSystem` (polling hot-reload)                                       |
 | `system/physics/`          | `PhysicsSystem`, `collision/`                                            |
@@ -156,7 +156,7 @@ OpenGL backend, `src/backend/opengl/` (flat `gl_`-prefixed includes):
 | (top level)   | `GLBackend`, `GLView`, `GLTarget`, `GLPass`, `GLFrameContext`             |
 | `convention/` | `gl_bindings` (UBO/sampler contract), `gl_format_conversion`              |
 | `data/`       | `GLMesh`, `GLMaterial`, `GLTexture`, `GLLights`, `GLCamera`, `GLShadowAtlas`/`Data`, `GLIBL`, `GLBloom`, probe + preview helpers |
-| `pass/`       | the 10 passes: shadow, depth-prepass, gtao, skybox, forward, ssr, motion-blur, bloom, grid, composite |
+| `pass/`       | the passes: shadow, depth-prepass, resolve, gtao, contact-shadow, skybox, cluster-cull, fog (compute + apply), forward, particle, decal, motion-blur, dof, bloom, grid, composite, ui |
 
 Editor (`src/editor/`): `EditorSystem` at the root; `framework/`, `panels/`,
 `overlays/`, `gizmo/`, `input/`, `ui/`. Tools (`src/tools/`): `generator/` plus

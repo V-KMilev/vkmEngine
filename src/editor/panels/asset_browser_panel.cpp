@@ -1,5 +1,7 @@
 #include "panels/asset_browser_panel.h"
 
+#include "ui/editor_dialogs.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <memory>
@@ -103,10 +105,14 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Create a blank PBR material and open it in the Material Editor");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(170.0f);
-    ImGui::SliderFloat("##cell", &m_cell, 64.0f, 256.0f, "thumb %.0f");
+    ImGui::SetNextItemWidth(EditorStyle::px(140.0f));
+    ImGui::SliderFloat("##cell", &m_cell, 64.0f, 256.0f, "Size %.0f");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Thumbnail size");
+    // Search fills the rest of the row - the grid gates on it below.
     ImGui::SameLine();
-    ImGui::TextDisabled("(?)");
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputTextWithHint("##assetFilter", "Search...", m_filter, sizeof(m_filter));
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Left-click a material to edit it.\n"
                           "Right-click any tile for Assign / actions.");
@@ -130,18 +136,18 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
 
     // Shared rename modal, opened from either tab's context menu. Rendered at
     // panel scope (not inside the tab child) so the popup id resolves cleanly.
-    if (m_renameOpen) {
-        ImGui::OpenPopup("Rename Asset");
-        m_renameOpen = false;
-    }
-    if (ImGui::BeginPopupModal("Rename Asset", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::SetNextItemWidth(280.0f);
+    if (beginDialog("Rename Asset", m_renameOpen)) {
+        ImGui::SetNextItemWidth(EditorStyle::px(280.0f));
         const bool commit = ImGui::InputText("##rnbuf", m_renameBuf, sizeof(m_renameBuf),
                                               ImGuiInputTextFlags_EnterReturnsTrue);
-        const bool ok     = ImGui::Button("Rename") || commit;
-        ImGui::SameLine();
-        const bool cancel = ImGui::Button("Cancel");
-        if (ok && m_renameBuf[0] != '\0') {
+
+        DialogResult r = dialogButtons(m_renameOpen, "Rename", m_renameBuf[0] != '\0');
+        if (commit && m_renameBuf[0] != '\0' && r == DialogResult::None) {
+            r = DialogResult::Confirm;
+            m_renameOpen = false;
+            ImGui::CloseCurrentPopup();
+        }
+        if (r == DialogResult::Confirm) {
             // Apply now, then push the reverse (the command captures before/
             // after names and re-applies on redo). Routed through the stack
             // so an accidental rename is one Ctrl+Z away.
@@ -160,10 +166,9 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
             }
             state.markSceneDirty();
             m_renameKey = {};
-            ImGui::CloseCurrentPopup();
         }
-        if (cancel) { m_renameKey = {}; ImGui::CloseCurrentPopup(); }
-        ImGui::EndPopup();
+        if (r == DialogResult::Cancel) m_renameKey = {};
+        endDialog();
     }
 
     ImGui::End();
@@ -206,23 +211,29 @@ void AssetBrowserPanel::drawAssetGrid(EditorContext& ec) {
     int i = 0;
     resources.template forEachOfType<Asset>([&](AssetHandle h, const Asset& a) {
         if (a.hidden) return;  // editor helpers / preview primitives are not user-facing
+        if (!matchesFilter(a.name.c_str(), m_filter)) return;
 
         // Material thumbnails render the asset on a shared preview sphere; mesh
         // thumbnails render the asset under a shared neutral material. The two
         // preview poses differ, so the texture() call is selected per family.
-        uint32_t tex;
-        uint64_t key;
+        PreviewRequest req;
         if constexpr (isMaterial) {
-            key = materialKey(h.id());
-            tex = ec.materialPreviews.texture(
-                resources, h, m_sphere, 30.0f, 18.0f, 2.6f,
-                key, a.version, /*live*/ false);
+            req.key      = materialKey(h.id());
+            req.material = h;
+            req.mesh     = m_sphere;
+            req.yawDeg   = 30.0f;
+            req.pitchDeg = 18.0f;
         } else {
-            key = meshKey(h.id());
-            tex = ec.materialPreviews.texture(
-                resources, m_neutral, h, 25.0f, 15.0f, 2.6f,
-                key, a.version, /*live*/ false);
+            req.key      = meshKey(h.id());
+            req.material = m_neutral;
+            req.mesh     = h;
+            req.yawDeg   = 25.0f;
+            req.pitchDeg = 15.0f;
         }
+        req.distance = 2.6f;
+        const uint64_t key = req.key;
+        const uint32_t tex =
+            ec.materialPreviews.texture(resources, req, a.version, /*live*/ false);
 
         ImGui::PushID(static_cast<int>(h.id()));
         ImGui::BeginGroup();

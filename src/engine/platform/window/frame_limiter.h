@@ -47,7 +47,7 @@ class FrameLimiter {
 
     private:
         int m_targetFramerate = 0;
-        std::chrono::high_resolution_clock::time_point m_frameStart;
+        std::chrono::steady_clock::time_point m_frameStart;  ///< Monotonic - immune to wall-clock jumps.
 };
 
 } // namespace Engine

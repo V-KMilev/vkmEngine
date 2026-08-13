@@ -13,6 +13,8 @@
 #include "platform/window/window_manager.h"
 #include "platform/window/input_handle.h"
 #include "platform/window/glfw_include.h"
+#include "platform/input/default_bindings.h"
+#include "platform/input/input_map.h"
 
 #include "debug/profiler.h"
 #include "core/clock.h"
@@ -63,6 +65,8 @@ void CameraControllerSystem::reseedAnglesFromRotation(const glm::quat& rotation)
 
 void CameraControllerSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("CameraControllerSystem");
+    if (!m_enabled) return;
+
     // Always drive the active rendered camera. This keeps the fly controls
     // working after "Set as Main Camera" / a scene load (the old code flew a
     // fixed entity while the renderer used a different one).
@@ -81,10 +85,11 @@ void CameraControllerSystem::update(FrameContext& ctx) {
         m_lastDrivenId = target;
     }
 
-    updateFlyMode(ctx.window, transform.position, transform.rotation, ctx.clock.getDeltaTime());
+    updateFlyMode(ctx.window, ctx.input, transform.position, transform.rotation, ctx.clock.getDeltaTime());
 }
 
-void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, glm::vec3& position, glm::quat& rotation, float deltaTime) {
+void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, const InputMap& input,
+                                           glm::vec3& position, glm::quat& rotation, float deltaTime) {
     auto& inputHandle   = windowManager.getInputHandle();
     auto& mouse    = inputHandle.getMouse();
     auto& keyboard = inputHandle.getKeyboard();
@@ -102,7 +107,6 @@ void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, glm::ve
         return;
     }
 
-    // Update yaw and pitch
     m_yaw   -= static_cast<float>(mouse.getDeltaX()) * m_settings.lookSensitivity;
     m_pitch -= static_cast<float>(mouse.getDeltaY()) * m_settings.lookSensitivity;
     m_pitch = std::clamp(m_pitch, glm::radians(m_settings.minPitch), glm::radians(m_settings.maxPitch));
@@ -112,7 +116,6 @@ void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, glm::ve
     glm::vec3 forward = Math::computeForward(rotation);
     glm::vec3 right   = Math::computeRight(rotation);
 
-    // Scroll wheel modifies forward/back
     float scrollDelta = static_cast<float>(mouse.getScrollY());
     if (std::abs(scrollDelta) > 0.001f) {
         position += forward * scrollDelta * m_settings.zoomSensitivity * m_settings.scrollMultiplier;
@@ -123,17 +126,15 @@ void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, glm::ve
 
     // Movement speed with optional boost
     float speed = m_settings.moveSpeed * deltaTime;
-    if (keyboard.isKeyPressed(GLFW_KEY_LEFT_SHIFT)) {
+    if (input.held(InputActions::BOOST)) {
         speed *= m_settings.speedBoost;
     }
 
-    // WASD + QE movement
-    if (keyboard.isKeyPressed(GLFW_KEY_W)) position += forward * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_S)) position -= forward * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_A)) position += right * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_D)) position -= right * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_Q)) position += Math::WORLD_AXIS_Y_UP * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_E)) position -= Math::WORLD_AXIS_Y_UP * speed;
+    // Axes rather than six key tests: opposing directions already cancel in the
+    // map, and the binding (WASD here) is the project's to change.
+    position += forward                * (input.axis(InputActions::MOVE_FORWARD) * speed);
+    position += right                  * (input.axis(InputActions::MOVE_RIGHT)   * speed);
+    position += Math::WORLD_AXIS_Y  * (input.axis(InputActions::MOVE_UP)      * speed);
 }
 
 void CameraControllerSystem::placeCamera(Transform& transform, const glm::vec3& target,
@@ -178,9 +179,9 @@ void CameraControllerSystem::viewFrom(Scene& scene, const glm::vec3& target, con
 
 void CameraControllerSystem::updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch) {
     // Yaw rotates around world up axis
-    glm::quat yawQuat = glm::angleAxis(yaw, Math::WORLD_AXIS_Y_UP);
+    glm::quat yawQuat = glm::angleAxis(yaw, Math::WORLD_AXIS_Y);
     // Pitch rotates around local right axis (negative because mouse Y is inverted)
-    glm::quat pitchQuat = glm::angleAxis(pitch, -Math::WORLD_AXIS_X_RIGHT);
+    glm::quat pitchQuat = glm::angleAxis(pitch, -Math::WORLD_AXIS_X);
     // Apply yaw first, then pitch (order matters for correct behavior)
     rotation = yawQuat * pitchQuat;
 }

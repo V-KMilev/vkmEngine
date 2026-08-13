@@ -1,4 +1,4 @@
-#include "mesh_generators.h"
+#include "generator/mesh_generators.h"
 
 #include <cmath>
 #include <algorithm>

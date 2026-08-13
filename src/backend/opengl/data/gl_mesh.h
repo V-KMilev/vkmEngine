@@ -38,21 +38,52 @@ class GLMesh {
         void draw() const;
 
         /**
-         * @brief Install @p buffer's per-instance attributes onto this mesh's VAO,
-         * starting at attribute @p startIndex (a mat4 spans startIndex..+3,
-         * divisor 1). No-op when @p buffer is already installed at that
-         * location: the buffer's GL name is stable across orphan-grows, so the
-         * recorded VAO binding stays valid. Re-points only when a different
-         * buffer takes the slot (the shadow + forward passes share this VAO but
-         * bind different instance buffers at location 4).
+         * @brief Install @p buffer's per-instance matrices as vertex attributes.
+         *
+         * For a pass whose vertex stage is the cost. The shadow pass redraws
+         * the same casters once per light and per cube face with almost no
+         * shading, so a hardware attribute fetch is likely to beat the two
+         * dependent storage loads attachInstanceIndex costs per vertex - and
+         * the CPU work the indirect form would save does not help a frame that
+         * is GPU-bound. The forward pass, being fragment-bound, goes the other
+         * way; it uses the index path.
+         *
+         * @param buffer     Per-instance matrices, in draw order.
+         * @param startIndex First of the four attribute slots the mat4 spans.
          */
         void attachInstances(Core::InstanceBuffer& buffer, uint32_t startIndex) const;
+
+        /**
+         * @brief Point the VAO's instance-index attribute at @p buffer.
+         *
+         * The only per-instance vertex attribute in the engine: one uint naming
+         * which instance this is. Everything else about an instance is read
+         * from storage buffers, so a pass that draws a subset supplies an index
+         * list rather than a reordered copy of the transforms, and the GPU cull
+         * settles an instance by writing 4 bytes instead of 128.
+         *
+         * @param buffer Instance-index buffer; one uint per drawn instance.
+         */
+        void attachInstanceIndex(const Core::VertexBuffer& buffer) const;
 
         /**
          * @brief Draw @p count instances, reading per-instance attributes from
          * @p baseInstance onward in the attached instance buffer(s).
          */
         void drawInstanced(uint32_t count, uint32_t baseInstance) const;
+
+        /**
+         * @brief Draw from a command the GPU wrote, at @p commandOffset bytes
+         *        into the currently bound GL_DRAW_INDIRECT_BUFFER.
+         *
+         * The instance count lives in that command rather than in this call, so
+         * a cull running on the GPU can decide it without the CPU learning what
+         * it decided.
+         */
+        void drawIndirect(uint32_t commandOffset) const;
+
+        /// Indices in this mesh, for filling an indirect draw command.
+        uint32_t indexCount() const { return static_cast<uint32_t>(m_indexCount); }
 
     private:
         std::unique_ptr<Core::VertexArray>  m_vao;
@@ -66,8 +97,6 @@ class GLMesh {
          * pointers. Two slots cover the engine convention (model @4, normal @8);
          * reset whenever update() recreates the VAO.
          */
-        struct InstanceSlot { const Core::InstanceBuffer* buffer = nullptr; uint32_t start = 0; };
-        mutable InstanceSlot m_instanceSlots[2];
 };
 
 } // namespace Engine

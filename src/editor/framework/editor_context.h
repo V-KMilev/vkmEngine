@@ -12,7 +12,6 @@ class CameraControllerSystem;
 class MaterialPreviewSession;
 class RenderSystem;
 class VisibilitySystem;
-class EventSystem;
 
 /**
  * @brief Everything a panel needs for one frame, in one place.
@@ -23,9 +22,9 @@ class EventSystem;
  * injected system pointers of its own and every draw() has one signature.
  *
  * Collaborators are non-owning references: the editor is always constructed
- * with live RenderSystem / VisibilitySystem / CameraControllerSystem / EventSystem
+ * with live RenderSystem / VisibilitySystem / CameraControllerSystem
  * instances (the editor app registers them before the EditorSystem), so panels
- * don't guard against nullptr.
+ * don't guard against nullptr. The event bus rides frame.events.
  */
 struct EditorContext {
     FrameContext& frame;
@@ -36,10 +35,9 @@ struct EditorContext {
     // the engine outlives the editor.
     Engine& engine;
 
-    CameraControllerSystem&       cameraController;
+    CameraControllerSystem& cameraController;
     RenderSystem&           renderSystem;
     VisibilitySystem&       visibilitySystem;
-    EventSystem&            events;
     MaterialPreviewSession& materialPreviews;
 
     // The editor-owned recoverable-error log (engine reports into it via the

@@ -1,17 +1,23 @@
 #include "panels/material_editor_panel.h"
 
+#include "system/render/editor_render_hooks.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <system_error>
 #include <utility>
 #include <vector>
 
+#include "ecs/component/decal.h"
 #include "framework/editor_common.h"
+#include "framework/editor_commands.h"
+#include "ui/editor_dialogs.h"
 #include "framework/material_preview_session.h"
 #include "framework/editor_actions.h"
 #include "loader/texture_loaders.h"
@@ -24,22 +30,12 @@
 namespace Engine {
 
 namespace {
-// Card accents - keep the Material Editor in the same visual language as
-// the Inspector (left accent strip + guide line per group).
-const ImVec4 ACC_BASE   = ImVec4(0.90f, 0.55f, 0.25f, 1.0f);  // warm
-const ImVec4 ACC_SURF   = ImVec4(0.28f, 0.74f, 0.74f, 1.0f);  // teal
-const ImVec4 ACC_COAT   = ImVec4(0.45f, 0.62f, 0.92f, 1.0f);  // light blue
-const ImVec4 ACC_ANISO  = ImVec4(0.64f, 0.44f, 0.86f, 1.0f);  // purple
-const ImVec4 ACC_SSS    = ImVec4(0.88f, 0.45f, 0.55f, 1.0f);  // pink
-const ImVec4 ACC_SHEEN  = ImVec4(1.00f, 0.80f, 0.22f, 1.0f);  // gold
-const ImVec4 ACC_VOL    = ImVec4(0.55f, 0.85f, 0.65f, 1.0f);  // mint - glass volume
-const ImVec4 ACC_TEX    = EditorStyle::AXIS_Y;                 // green
-
 // Fold everything that changes the live preview image into one version stamp
 // so MaterialPreviewSession re-bakes only when something actually changed,
 // instead of re-rendering the preview every idle frame.
 uint64_t previewVersion(uint64_t materialVersion, uint32_t shapeId,
-                        int primitive, float yaw, float pitch, float distance) {
+                        int primitive, float yaw, float pitch, float distance,
+                        int background, float lightYaw) {
     auto floatBits = [](float f) {
         uint32_t b;
         std::memcpy(&b, &f, sizeof(b));
@@ -48,7 +44,8 @@ uint64_t previewVersion(uint64_t materialVersion, uint32_t shapeId,
     uint64_t h = 1469598103934665603ull;  // FNV-1a offset basis
     for (uint64_t v : { materialVersion, static_cast<uint64_t>(shapeId),
                         static_cast<uint64_t>(primitive),
-                        floatBits(yaw), floatBits(pitch), floatBits(distance) }) {
+                        floatBits(yaw), floatBits(pitch), floatBits(distance),
+                        static_cast<uint64_t>(background), floatBits(lightYaw) }) {
         h = (h ^ v) * 1099511628211ull;
     }
     return h;
@@ -58,15 +55,16 @@ uint64_t previewVersion(uint64_t materialVersion, uint32_t shapeId,
 
 bool MaterialEditorPanel::drawMaterialBody(
     ResourceManager& resources,
+    EditorRenderHooks* backend,
     MaterialHandle target,
     MaterialAsset& mat
 ) {
     bool changed = false;
     auto slot = [&](const char* label, TextureHandle MaterialAsset::* member, bool srgb) {
-        return textureSlot(resources, label, target, mat, member, srgb);
+        return textureSlot(resources, backend, label, target, mat, member, srgb);
     };
 
-    if (beginComponentCard("Base", ACC_BASE, true)) {
+    if (beginComponentCard("Base", EditorStyle::Accent::MatBase, true)) {
         drawPropertyLabel("Type");
         if (drawEnumCombo("##MatType", mat.type)) {
             // Picking AlphaMask in the editor should turn on the discard
@@ -97,7 +95,7 @@ bool MaterialEditorPanel::drawMaterialBody(
     }
     endComponentCard();
 
-    if (beginComponentCard("Surface", ACC_SURF, false)) {
+    if (beginComponentCard("Surface", EditorStyle::Accent::MatSurface, false)) {
         changed |= propDrag("IOR", &mat.ior, 0.01f, 1.0f, 3.0f, "%.2f",
             "1.0 air, 1.33 water, 1.5 glass, 2.4 diamond");
 
@@ -109,25 +107,23 @@ bool MaterialEditorPanel::drawMaterialBody(
     }
     endComponentCard();
 
-    if (beginComponentCard("Clearcoat", ACC_COAT, false)) {
+    if (beginComponentCard("Clearcoat", EditorStyle::Accent::MatCoat, false)) {
         changed |= propSlider("Strength", &mat.clearcoat, 0.0f, 1.0f, "%.2f");
 
         changed |= propSlider("Roughness", &mat.clearcoatRoughness, 0.0f, 1.0f, "%.2f");
     }
     endComponentCard();
 
-    if (beginComponentCard("Anisotropy", ACC_ANISO, false)) {
+    if (beginComponentCard("Anisotropy", EditorStyle::Accent::MatAniso, false)) {
         changed |= propSlider("Strength", &mat.anisotropy, 0.0f, 1.0f, "%.2f");
 
-        drawPropertyLabel("Direction");
-        changed |= ImGui::DragFloat3("##AnisoDir",
-            glm::value_ptr(mat.anisotropyDirection), 0.01f, -1.0f, 1.0f, "%.2f");
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Tangent-space anisotropy direction");
+        changed |= propDrag3("Direction", glm::value_ptr(mat.anisotropyDirection),
+                             0.01f, -1.0f, 1.0f, "%.2f",
+                             "Tangent-space anisotropy direction");
     }
     endComponentCard();
 
-    if (beginComponentCard("Subsurface", ACC_SSS, false)) {
+    if (beginComponentCard("Subsurface", EditorStyle::Accent::MatSSS, false)) {
         changed |= propSlider("Strength", &mat.subsurface, 0.0f, 1.0f, "%.2f");
 
         changed |= propColor3("Color", glm::value_ptr(mat.subsurfaceColor),
@@ -135,7 +131,7 @@ bool MaterialEditorPanel::drawMaterialBody(
     }
     endComponentCard();
 
-    if (beginComponentCard("Sheen", ACC_SHEEN, false)) {
+    if (beginComponentCard("Sheen", EditorStyle::Accent::MatSheen, false)) {
         changed |= propColor3("Color", glm::value_ptr(mat.sheenColor),
             ImGuiColorEditFlags_Float, "Black = no sheen (fabric / cloth rim term)");
 
@@ -143,7 +139,7 @@ bool MaterialEditorPanel::drawMaterialBody(
     }
     endComponentCard();
 
-    if (beginComponentCard("Volume", ACC_VOL, false)) {
+    if (beginComponentCard("Volume", EditorStyle::Accent::MatVolume, false)) {
         changed |= propDrag("Thickness", &mat.thicknessFactor, 0.01f, 0.0f, 100.0f, "%.3f",
             "Volume thickness in metres. 0 = thin-walled (no absorption)");
 
@@ -156,7 +152,7 @@ bool MaterialEditorPanel::drawMaterialBody(
     }
     endComponentCard();
 
-    if (beginComponentCard("Textures", ACC_TEX, false)) {
+    if (beginComponentCard("Textures", EditorStyle::Accent::MatTexture, false)) {
         // PBR Core: the maps every PBR material is likely to set.
         ImGui::TextDisabled("PBR Core");
         ImGui::Spacing();
@@ -215,6 +211,7 @@ MeshHandle MaterialEditorPanel::previewMesh(
 
 bool MaterialEditorPanel::textureSlot(
     ResourceManager& res,
+    EditorRenderHooks* backend,
     const char* label,
     MaterialHandle owner,
     MaterialAsset& mat,
@@ -235,9 +232,36 @@ bool MaterialEditorPanel::textureSlot(
 
     bool changed = false;
 
+    // Thumbnail of the GPU mirror the renderer actually samples. 0 = not
+    // resident yet (or empty slot): draw just the placeholder frame - the live
+    // preview render syncs the material's textures, so a bound slot resolves
+    // within a frame. Loaded textures are flipped at decode (stb flip-on-load),
+    // so the UVs unflip.
+    const ImGuiStyle& st = ImGui::GetStyle();
+    const float    thumb = ImGui::GetFrameHeight();
+    const GpuTextureId texId = (slot && backend) ? backend->textureId(slot) : 0;
+    const ImVec2   tp    = ImGui::GetCursorScreenPos();
+    if (texId) {
+        ImGui::Image(imTexture(texId), ImVec2(thumb, thumb), ImVec2(0, 1), ImVec2(1, 0));
+        if (ImGui::IsItemHovered()) {
+            const auto& t = res.get(slot);
+            const float big = EditorStyle::px(128.0f);
+            ImGui::BeginTooltip();
+            ImGui::Image(imTexture(texId), ImVec2(big, big), ImVec2(0, 1), ImVec2(1, 0));
+            ImGui::TextDisabled("%ux%u%s", t.params.width, t.params.height,
+                                t.srgb ? "  sRGB" : "");
+            if (!t.filePath.empty()) ImGui::TextDisabled("%s", t.filePath.c_str());
+            ImGui::EndTooltip();
+        }
+    } else {
+        ImGui::Dummy(ImVec2(thumb, thumb));
+    }
+    ImGui::GetWindowDrawList()->AddRect(
+        tp, ImVec2(tp.x + thumb, tp.y + thumb), ImGui::GetColorU32(ImGuiCol_Border));
+    ImGui::SameLine();
+
     // File name only, frame-aligned, with Gen/Set/Clear pinned to the right so
     // a long path can never shove them off or overlap them.
-    const ImGuiStyle& st = ImGui::GetStyle();
     const float genW  = ImGui::CalcTextSize("Gen").x   + st.FramePadding.x * 2.0f;
     const float setW  = ImGui::CalcTextSize("Set").x   + st.FramePadding.x * 2.0f;
     const float clrW  = ImGui::CalcTextSize("Clear").x + st.FramePadding.x * 2.0f;
@@ -349,11 +373,22 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         ImGui::TextWrapped("Select an entity with a material, or pick one below.");
         ImGui::Spacing();
         ImGui::SetNextItemWidth(-1);
-        if (ImGui::BeginCombo("##PickMat", "(choose a material)")) {
+        if (ImGui::BeginCombo("##PickMat", "(choose a material)", ImGuiComboFlags_HeightLarge)) {
+            // Same type-to-narrow affordance as Add Component: focused on open.
+            static char s_matFilter[48] = {};
+            if (ImGui::IsWindowAppearing()) {
+                s_matFilter[0] = '\0';
+                ImGui::SetKeyboardFocusHere();
+            }
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputTextWithHint("##matFilter", "Search...",
+                                     s_matFilter, sizeof(s_matFilter));
+            ImGui::Separator();
             // Snapshot once so ImGuiListClipper can window the visible rows.
             std::vector<std::pair<MaterialHandle, const MaterialAsset*>> rows;
             resources.forEachOfType<MaterialAsset>([&](MaterialHandle h, const MaterialAsset& a) {
                 if (a.hidden) return;  // editor helpers (e.g. thumbnail neutral) are not user-facing
+                if (!matchesFilter(a.name.c_str(), s_matFilter)) return;
                 rows.emplace_back(h, &a);
             });
             ImGuiListClipper clipper;
@@ -374,8 +409,8 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
     }
 
     // Left pane: studio preview + view controls.
-    const float PREVIEW_SIZE = 320.0f;
-    const float PANE_WIDTH   = PREVIEW_SIZE + 36.0f;
+    const float PREVIEW_SIZE = EditorStyle::px(320.0f);
+    const float PANE_WIDTH   = PREVIEW_SIZE + EditorStyle::px(36.0f);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
     ImGui::BeginChild("##mePreview", ImVec2(PANE_WIDTH, 0), ImGuiChildFlags_Borders);
@@ -391,13 +426,22 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         // re-render the preview every frame.
         const uint64_t version = shape
             ? previewVersion(resources.get(target).version, shape.id(),
-                             m_primitive, m_yaw, m_pitch, m_distance)
+                             m_primitive, m_yaw, m_pitch, m_distance,
+                             m_background, m_lightYaw)
             : 0ull;
-        uint32_t tex = shape
-            ? ec.materialPreviews.texture(
-                  resources, target, shape, m_yaw, m_pitch, m_distance,
-                  /*key*/ 0ull, version, /*live*/ true)
-            : 0u;
+        uint32_t tex = 0;
+        if (shape) {
+            PreviewRequest req;
+            req.key         = 0ull;
+            req.mesh        = shape;
+            req.material    = target;
+            req.yawDeg      = m_yaw;
+            req.pitchDeg    = m_pitch;
+            req.distance    = m_distance;
+            req.background  = static_cast<PreviewBackground>(m_background);
+            req.lightYawDeg = m_lightYaw;
+            tex = ec.materialPreviews.texture(resources, req, version, /*live*/ true);
+        }
 
         if (tex) {
             const ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -406,7 +450,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
             // Thin frame around the studio render.
             ImGui::GetWindowDrawList()->AddRect(
                 origin, ImVec2(origin.x + PREVIEW_SIZE, origin.y + PREVIEW_SIZE),
-                IM_COL32(255, 255, 255, 36), 3.0f);
+                ImGui::GetColorU32(ImGuiCol_Border), 3.0f);
             // Transparent hit-target so the orbit drag owns the active id and
             // never moves the window (see editor ConfigWindowsMoveFromTitleBar).
             ImGui::SetCursorScreenPos(origin);
@@ -420,6 +464,9 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
                 const float w = ImGui::GetIO().MouseWheel;
                 if (w != 0.0f) m_distance = std::clamp(m_distance - w * 0.25f, 0.6f, 12.0f);
             }
+            // Delayed so it never flashes up mid-orbit.
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !ImGui::IsItemActive())
+                ImGui::SetTooltip("Drag to orbit, scroll to zoom");
         } else {
             ImGui::TextDisabled("(preview unavailable)");
         }
@@ -429,12 +476,20 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         ImGui::SetNextItemWidth(-1);
         const char* prims[] = {"Sphere", "Cube", "Plane", "Entity Mesh"};
         ImGui::Combo("##PreviewPrim", &m_primitive, prims, IM_ARRAYSIZE(prims));
+
+        ImGui::TextDisabled("Background");
+        ImGui::SetNextItemWidth(-1);
+        const char* bgs[] = {"Dark", "Grey", "Sky"};
+        ImGui::Combo("##PreviewBg", &m_background, bgs, IM_ARRAYSIZE(bgs));
+
+        ImGui::TextDisabled("Light Angle");
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SliderFloat("##PreviewLight", &m_lightYaw, 0.0f, 360.0f, "%.0f");
+
         if (ImGui::Button("Reset View", ImVec2(-1, 0))) {
             m_yaw = 35.0f; m_pitch = 20.0f; m_distance = 3.0f;
+            m_lightYaw = 0.0f;
         }
-        ImGui::Spacing();
-        ImGui::TextDisabled("drag = orbit");
-        ImGui::TextDisabled("wheel = zoom");
     }
     ImGui::EndChild();
     ImGui::PopStyleVar();
@@ -449,6 +504,44 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         ImGui::TextUnformatted(cur.name.empty() ? "(unnamed material)"
                                                 : cur.name.c_str());
         ImGui::PopStyleColor();
+
+        // Who shares this material. Edits apply to every user (materials are
+        // shared by handle), so surface the blast radius next to the name and
+        // let Select turn the user list into the scene selection.
+        std::vector<EntityId> users;
+        scene.forEach<Mesh>([&](EntityId id, const Mesh& m) {
+            if (m.material && m.material.id() == target.id()) users.push_back(id);
+        });
+        scene.forEach<Decal>([&](EntityId id, const Decal& d) {
+            if (d.material && d.material.id() == target.id()) users.push_back(id);
+        });
+        {
+            const ImGuiStyle& st = ImGui::GetStyle();
+            if (users.empty()) {
+                const char* unused = "(unused)";
+                ImGui::SameLine();
+                const float x = ImGui::GetContentRegionMax().x
+                              - ImGui::CalcTextSize(unused).x;
+                if (ImGui::GetCursorPosX() < x) ImGui::SetCursorPosX(x);
+                ImGui::TextDisabled("%s", unused);
+            } else {
+                char used[32];
+                std::snprintf(used, sizeof(used), "Used by %zu", users.size());
+                const float selW = ImGui::CalcTextSize("Select").x + st.FramePadding.x * 2.0f;
+                ImGui::SameLine();
+                const float x = ImGui::GetContentRegionMax().x - selW
+                              - ImGui::CalcTextSize(used).x - st.ItemSpacing.x;
+                if (ImGui::GetCursorPosX() < x) ImGui::SetCursorPosX(x);
+                ImGui::TextDisabled("%s", used);
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Select")) {
+                    state.selectEntity(users[0]);
+                    for (size_t i = 1; i < users.size(); ++i) state.addToSelection(users[i]);
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Select every entity using this material");
+            }
+        }
 
         if (ImGui::SmallButton("New")) {
             if (MaterialHandle nh = EditorActions::createNewMaterial(resources, state)) {
@@ -470,6 +563,15 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
             ImGui::SetTooltip("Fork this material so edits don't affect other users");
         ImGui::SameLine();
 
+        if (ImGui::SmallButton("Rename")) {
+            std::snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", cur.name.c_str());
+            m_renameOldName = cur.name;
+            m_renameOpen    = true;
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Rename this material");
+        ImGui::SameLine();
+
         std::string pbrFolder;
         if (pbrFolderBrowse(pbrFolder)) {
             MaterialHandle h = loadMaterialFromFolder(pbrFolder, resources);
@@ -489,7 +591,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         // viewport refresh next frame). Materials are scene assets - any
         // edit is unsaved work.
         auto& mat = resources.edit(target);
-        if (drawMaterialBody(resources, target, mat)) {
+        if (drawMaterialBody(resources, editorRenderHooks(ec.renderSystem.backend()), target, mat)) {
             resources.commit(target);
             state.markSceneDirty();
         }
@@ -513,6 +615,28 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         }
     }
     ImGui::EndChild();
+
+    // Rename modal at panel scope (not inside the params child) so the popup
+    // id resolves cleanly. Same flow as the Asset Browser's: apply now, push
+    // RenameAssetCommand so the rename is one Ctrl+Z away.
+    if (beginDialog("Rename Material", m_renameOpen)) {
+        ImGui::SetNextItemWidth(EditorStyle::px(280.0f));
+        const bool commit = ImGui::InputText("##rnbuf", m_renameBuf, sizeof(m_renameBuf),
+                                             ImGuiInputTextFlags_EnterReturnsTrue);
+        DialogResult r = dialogButtons(m_renameOpen, "Rename", m_renameBuf[0] != '\0');
+        if (commit && m_renameBuf[0] != '\0' && r == DialogResult::None) {
+            r = DialogResult::Confirm;
+            m_renameOpen = false;
+            ImGui::CloseCurrentPopup();
+        }
+        if (r == DialogResult::Confirm && resources.isAlive(target)) {
+            resources.rename(target, m_renameBuf);
+            state.commands.push(std::make_unique<RenameAssetCommand<MaterialHandle>>(
+                resources, target, m_renameOldName, m_renameBuf, "Rename Material"));
+            state.markSceneDirty();
+        }
+        endDialog();
+    }
 
     ImGui::End();
 }

@@ -11,7 +11,7 @@ per-track interpolated values only to visible entities).
 - `src/engine/system/visibility/visibility_system.h` for `VisibilitySystem`
 - `src/engine/system/visibility/visibility.h` for the `Visibility` result struct
 - `src/engine/system/visibility/visibility_context.h` for the per-frame culling parameters
-- `src/engine/system/visibility/bounds_utils.h` for the AABB helpers
+- `src/engine/core/math/bounds.h` for the AABB helpers
 - `src/engine/system/visibility/culling/` for the individual cullers
 
 ## Pipeline
@@ -48,10 +48,11 @@ active camera so downstream consumers do not have to look the camera back up.
 
 ```cpp
 struct VisibleEntity {
-    EntityId  id;
-    glm::mat4 model;        // pre-computed world matrix
-    glm::vec3 worldMin;     // cached world-space AABB for debug/picking
-    glm::vec3 worldMax;
+    EntityId   id;
+    glm::mat4  model;        // pre-computed world matrix
+    glm::vec3  worldMin;     // cached world-space AABB for debug/picking
+    glm::vec3  worldMax;
+    MeshHandle mesh;         // geometry to draw - the LOD-selected one, if any
 };
 
 struct Visibility {
@@ -74,6 +75,34 @@ light's volume. `VisibilitySystem` fills `Visibility.shadowCasters` from the
 full Mesh set, and `RenderView::build` copies it into the view. See
 [Rendering](rendering.md).
 
+## Level of detail
+
+An entity with an `LOD` component (`ecs/component/lod.h`) draws coarser
+geometry as it recedes. Selection happens inside the cull rather than in a
+pass of its own: the cull already has the camera distance and already runs in
+parallel, so LOD costs one comparison per surviving entity.
+
+```cpp
+struct LODLevel { MeshHandle mesh; float maxDistance; };
+struct LOD      { std::vector<LODLevel> levels; float bias = 1.0f; };
+```
+
+Levels are ordered near to far and matched against `distance <= maxDistance *
+bias`; `bias` is the global quality knob. Past the last level the last level
+keeps drawing - making something vanish is `DistanceCuller`'s job, and two
+components able to do it would make it ambiguous which one did.
+
+The chosen handle is published as `VisibleEntity::mesh`, so the render path
+never looks at the `LOD` component. An entity without one publishes its `Mesh`
+handle unchanged.
+
+Levels can be authored by hand or generated: `generateLOD` (`tools/generator/
+lod_generator.h`, exposed as **Generate Levels** on the inspector's LOD card)
+decimates the source mesh, registers each level as a named asset
+(`<mesh>:lod1`) so it serializes like any other, and drops a level that
+decimation could not usefully coarsen. For geometry the engine generated
+itself, re-tessellating at a lower resolution beats decimating it.
+
 ## Culling stages
 
 ### Frustum culling (`frustum_culler.h`)
@@ -85,25 +114,41 @@ projected onto the (absolute) plane normal. If `dist + radius < 0` on any plane
 the box is fully outside and the entity is culled. This is branchless (no
 per-corner selects) thanks to the pre-computed `absNormals`.
 
-### Distance culling (`distance_culling.h`)
+### Distance culling (`distance_culler.h`)
 
 Squared distance from the AABB center to the camera. Rejects entities
 beyond `maxDistance` (default 500 units). Disabled when `maxDistance <= 0`.
 
-### Screen-size culling (`screen_size_culling.h`)
+### Screen-size culling (`screen_size_culler.h`)
 
 Projects the bounding sphere radius into screen space using
 `(radius * proj[1][1]) / depth * viewportHeight`. Rejects entities
 smaller than `minPixels` (default 3). Uses a pre-computed squared
 threshold for a sqrt-free comparison.
 
-There is **no** occlusion-culling stage today (no `occlusion_culler.h`); the
-three cullers above are the whole pipeline. Hi-Z / software-depth occlusion is a
-possible future addition.
+### Occlusion culling (GPU)
+
+Not a stage here. Occlusion is resolved on the GPU, after the depth prepass has
+laid down the frame's opaque depth: `GLHiZPass` reduces that into a
+hierarchical depth pyramid and `GLOcclusionCullPass` tests every opaque
+instance's world AABB against it, so what the forward pass draws is only what
+can be seen. See [Rendering](rendering.md).
+
+It sits there rather than here for two reasons. The depth it needs does not
+exist until the prepass has run, which is after this system has finished; and
+the answer is wanted by the draw, not by the cull, so keeping it on the GPU
+avoids a readback that would stall the frame it is meant to speed up.
+
+That also means occlusion needs no authoring. An earlier CPU implementation
+rasterized entities marked with an `Occluder` component into a small software
+depth buffer - a well-established technique, and what Godot and Unreal's mobile
+path still do - but it could only ever see the geometry someone had remembered
+to mark. The pyramid is built from the real depth buffer, so every opaque
+surface occludes, and the component is gone.
 
 ## AABB helpers
 
-`bounds_utils.h` exposes two helpers used inside the culling loop:
+`core/math/bounds.h` exposes two helpers used inside the culling loop:
 
 - `localToWorldAABB` transforms a local AABB to world space in 18
   multiplications (Arvo) instead of 128 (transform all 8 corners and
