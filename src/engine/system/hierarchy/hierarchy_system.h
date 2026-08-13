@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/system.h"
+#include "system/hierarchy/hierarchy_operations.h"
 
 namespace Engine {
 
@@ -28,6 +29,9 @@ class HierarchySystem : public System {
 
     public:
         void update(FrameContext& ctx) override;
+
+    private:
+        HierarchyOperations::DepthBuckets m_buckets;  ///< Per-depth scratch for the resolve pass; kept for its capacity.
 };
 
 } // namespace Engine
