@@ -209,6 +209,21 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHa
         return false;
     }
 
+    // Indices are bounds-checked as well as sized. A file can pass every size
+    // check above and still name vertices that do not exist - a truncated write
+    // resumed, a bad sector - and nothing downstream re-checks: decimation
+    // indexes a per-vertex array with them, and GL is handed the buffer as-is.
+    const auto vertexTotal = static_cast<uint32_t>(out.vertices.size());
+    for (const uint32_t index : out.indices) {
+        if (index >= vertexTotal) {
+            LOG_ERROR("Cooked mesh '%s': index %u is past the %u vertices it declares",
+                      p.c_str(), index, vertexTotal);
+            out.vertices.clear();
+            out.indices.clear();
+            return false;
+        }
+    }
+
     if (outHash) *outHash = recipeHash;
     return true;
 }
