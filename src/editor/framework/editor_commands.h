@@ -295,8 +295,19 @@ struct SubtreeSnapshot {
  */
 class CreateEntityCommand : public Command {
     public:
-        CreateEntityCommand(EntitySnapshot snap, const char* label)
-            : m_snap(std::move(snap)), m_label(label) {}
+        /**
+         * @brief Re-create @p snap's entity, optionally back under a parent.
+         *
+         * EntitySnapshot is leaf-only by design - subtree wiring belongs to
+         * SubtreeSnapshot. But a newly created UI element is parented to the
+         * selected canvas before it is snapshotted, and a UI element with no
+         * UICanvas ancestor is not laid out or drawn at all. Redo carries the
+         * parent slot so it comes back attached instead of silently invisible.
+         *
+         * @param parentSlot Slot of the parent to restore, or 0 for a root.
+         */
+        CreateEntityCommand(EntitySnapshot snap, const char* label, uint32_t parentSlot = 0)
+            : m_snap(std::move(snap)), m_label(label), m_parentSlot(parentSlot) {}
 
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
@@ -305,6 +316,7 @@ class CreateEntityCommand : public Command {
     private:
         EntitySnapshot m_snap;
         const char*    m_label;
+        uint32_t       m_parentSlot = 0;
 };
 
 /**
