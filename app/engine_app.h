@@ -15,6 +15,7 @@
 #include "system/ui/ui_system.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
+#include "platform/input/default_bindings.h"
 
 #include "gl_backend.h"
 
@@ -63,6 +64,9 @@ struct AppSystems {
 // choice itself (AppConfig::buildBootScene), any extra systems (the editor
 // adds EditorSystem), scene-file overrides, and the run loop.
 inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config) {
+    // Bindings first: the systems below read input through named actions, and an
+    // action with no binding is silently dead rather than an error.
+    Engine::installDefaultBindings(engine.getInput());
     auto& window = engine.getWindow();
     window.createWindow(config.windowTitle);
     window.setFramerate(0);

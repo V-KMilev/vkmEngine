@@ -291,11 +291,7 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         float m_milestoneTimer = 0.0f;  ///< Seconds left on the distance-milestone flash.
         float m_nextDistanceLog = 0.0f;
 
-        // Rising-edge detection for the discrete inputs (lane / jump / restart).
-        bool m_prevLeft    = false;
-        bool m_prevRight   = false;
-        bool m_prevJump    = false;
-        bool m_prevRestart = false;
+        // This frame's edges, read off the input map in readInput.
         bool m_edgeLeft    = false;
         bool m_edgeRight   = false;
         bool m_edgeJump    = false;

@@ -4,7 +4,8 @@
 
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
-#include "platform/window/input_handle.h"
+#include "platform/input/default_bindings.h"
+#include "platform/input/input_map.h"
 #include "platform/window/glfw_include.h"
 #include "system/hierarchy/hierarchy_operations.h"
 
@@ -14,12 +15,12 @@ void PlayerController::onUpdate(float dt) {
     Scene& scene = *context().scene;
     if (!scene.has<Transform>(m_entity)) return;
 
-    const KeyboardInputHandle& keys = context().window->getInputHandle().getKeyboard();
-    glm::vec3 move(0.0f);
-    if (keys.isKeyPressed(GLFW_KEY_W)) move.z -= 1.0f;  // forward
-    if (keys.isKeyPressed(GLFW_KEY_S)) move.z += 1.0f;
-    if (keys.isKeyPressed(GLFW_KEY_A)) move.x -= 1.0f;
-    if (keys.isKeyPressed(GLFW_KEY_D)) move.x += 1.0f;
+    // Reuses the engine's camera movement actions rather than defining its own:
+    // this is a demo controller, and sharing them means rebinding movement once
+    // rebinds it here too.
+    const InputMap& input = *context().input;
+    const glm::vec3 move(input.axis(InputActions::MOVE_RIGHT), 0.0f,
+                         -input.axis(InputActions::MOVE_FORWARD));
     if (move.x == 0.0f && move.z == 0.0f) return;
 
     Transform& transform = scene.get<Transform>(m_entity);
