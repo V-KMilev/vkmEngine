@@ -105,11 +105,13 @@ bool aabbOverlap(const ColliderProxy& a, const ColliderProxy& b) {
         && a.aabbMin.z <= b.aabbMax.z && a.aabbMax.z >= b.aabbMin.z;
 }
 
-void expandSubShapes(const ColliderProxy& p, std::vector<SubShape>& out) {
+void expandSubShapes(const ColliderProxy& p, const std::vector<ColliderBox>& parts,
+                     std::vector<SubShape>& out) {
     out.clear();
-    out.reserve(p.collider.parts.size());
+    out.reserve(p.partsCount);
     const glm::mat3 r = glm::mat3_cast(p.rotation);
-    for (const ColliderBox& part : p.collider.parts) {
+    for (uint32_t i = 0; i < p.partsCount; ++i) {
+        const ColliderBox& part = parts[p.partsFirst + i];
         out.push_back({p.position + r * part.center, p.rotation, part.halfExtents});
     }
 }
@@ -152,6 +154,7 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
     m_bodies.clear();
     m_solverBodies.clear();
     m_proxies.clear();
+    m_proxyParts.clear();   // capacity kept: the parts are POD, so no per-body allocation
     m_bodyFrames.clear();
 
     const uint32_t rbCount = static_cast<uint32_t>(rbStorage->size());
@@ -211,7 +214,10 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
         if (collider && collider->enabled) {
             ColliderProxy proxy;
             proxy.body = bodyIndex;
-            proxy.collider = *collider;
+            proxy.partsFirst = static_cast<uint32_t>(m_proxyParts.size());
+            proxy.partsCount = static_cast<uint32_t>(collider->parts.size());
+            proxy.isTrigger  = collider->isTrigger;
+            m_proxyParts.insert(m_proxyParts.end(), collider->parts.begin(), collider->parts.end());
             proxy.position = worldPos;
             proxy.rotation = worldRot;
             proxy.cullStatic = rb.isStatic || rb.isKinematic;
@@ -274,10 +280,10 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events)
     for (const auto& pair : m_pairs) {
         const ColliderProxy& A = m_proxies[pair.first];
         const ColliderProxy& B = m_proxies[pair.second];
-        const bool trigger = A.collider.isTrigger || B.collider.isTrigger;
+        const bool trigger = A.isTrigger || B.isTrigger;
 
-        expandSubShapes(A, m_subA);
-        expandSubShapes(B, m_subB);
+        expandSubShapes(A, m_proxyParts, m_subA);
+        expandSubShapes(B, m_proxyParts, m_subB);
 
         bool anyContact = false;
         glm::vec3 contactPoint(0.0f);
@@ -314,8 +320,8 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events)
             const EntityId entityA = m_bodies[A.body];
             const EntityId entityB = m_bodies[B.body];
             if (trigger) {
-                if (A.collider.isTrigger) events.enqueue(TriggerEvent{entityA, entityB});
-                if (B.collider.isTrigger) events.enqueue(TriggerEvent{entityB, entityA});
+                if (A.isTrigger) events.enqueue(TriggerEvent{entityA, entityB});
+                if (B.isTrigger) events.enqueue(TriggerEvent{entityB, entityA});
             } else {
                 events.enqueue(CollisionEvent{entityA, entityB, contactPoint, contactNormal});
             }
