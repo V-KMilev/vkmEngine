@@ -1,6 +1,6 @@
 // Octahedral normal codec - pack/unpack a unit vector to [0,1]^2 with good
 // precision. The depth prepass encodes the world normal into the G-buffer;
-// the post passes that read it back decode (composite, gtao, ssr). The engine's
+// the post passes that read it back decode (composite, gtao, decals). The engine's
 // GLSL preprocessor inlines this file; #include it after the #version line.
 
 vec2 signNotZero(vec2 v) {

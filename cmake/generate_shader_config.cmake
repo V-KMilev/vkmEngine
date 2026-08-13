@@ -1,13 +1,18 @@
-# Extract integer/float constants from src/engine/core/engine_config.h and
-# emit them as a GLSL header at shaders/_generated/engine_config.glsl.
+# Extract cross-language constants from the C++ headers and emit them as GLSL
+# headers under shaders/_generated/.
 #
-# This makes engine_config.h the single source of truth for cross-language
-# constants (MAX_LIGHTS et al). The engine's shader preprocessor inlines the
-# generated header, so shaders `#include "_generated/engine_config.glsl"`
-# instead of hand-copying the values.
+# This keeps the C++ side the single source of truth: engine_config.h for the
+# tuning constants (MAX_LIGHTS et al, plus the backend's mip/probe caps), and
+# render_settings.h for the RenderMode enum the composite debug views switch
+# on. The engine's shader preprocessor inlines the generated headers, so
+# shaders `#include "_generated/..."` instead of hand-copying the values.
 #
 # Inputs:  src/engine/core/engine_config.h
+#          src/engine/system/render/render_settings.h
+#          src/backend/opengl/data/gl_ibl.h / gl_probe.h
+#          src/backend/opengl/convention/gl_bindings.h
 # Outputs: shaders/_generated/engine_config.glsl
+#          shaders/_generated/render_modes.glsl
 
 set(_engine_config_h ${CMAKE_SOURCE_DIR}/src/engine/core/engine_config.h)
 set(_generated_glsl  ${CMAKE_SOURCE_DIR}/shaders/_generated/engine_config.glsl)
@@ -23,9 +28,32 @@ endfunction()
 _extract_uint(MAX_LIGHTS              _max_lights)
 _extract_uint(MAX_SHADOW_CASTERS_2D   _max_shadow_2d)
 _extract_uint(MAX_SHADOW_CASTERS_CUBE _max_shadow_cube)
+_extract_uint(CLUSTER_X               _cluster_x)
+_extract_uint(CLUSTER_Y               _cluster_y)
+_extract_uint(CLUSTER_Z               _cluster_z)
+_extract_uint(MAX_LIGHTS_PER_CLUSTER  _max_per_cluster)
 
-if(NOT _max_lights OR NOT _max_shadow_2d OR NOT _max_shadow_cube)
+if(NOT _max_lights OR NOT _max_shadow_2d OR NOT _max_shadow_cube
+   OR NOT _cluster_x OR NOT _cluster_y OR NOT _cluster_z OR NOT _max_per_cluster)
     message(FATAL_ERROR "generate_shader_config: failed to extract a constant from ${_engine_config_h}")
+endif()
+
+# Backend caps that pair with fixed GPU array/mip layouts. Extracted from their
+# owning headers so the shader constants can never drift from the C++ ones.
+file(READ ${CMAKE_SOURCE_DIR}/src/backend/opengl/convention/gl_bindings.h _bindings_src)
+string(REGEX MATCH "constexpr[ \t]+uint32_t[ \t]+MAX_PROBES[ \t]*=[ \t]*([0-9]+)" _ "${_bindings_src}")
+set(_max_probes ${CMAKE_MATCH_1})
+
+file(READ ${CMAKE_SOURCE_DIR}/src/backend/opengl/data/gl_ibl.h _ibl_src)
+string(REGEX MATCH "constexpr[ \t]+int[ \t]+PREFILTER_MIPS[ \t]*=[ \t]*([0-9]+)" _ "${_ibl_src}")
+math(EXPR _max_reflection_lod "${CMAKE_MATCH_1} - 1")
+
+file(READ ${CMAKE_SOURCE_DIR}/src/backend/opengl/data/gl_probe.h _probe_src)
+string(REGEX MATCH "constexpr[ \t]+int[ \t]+PREFILTER_MIPS[ \t]*=[ \t]*([0-9]+)" _ "${_probe_src}")
+math(EXPR _max_probe_lod "${CMAKE_MATCH_1} - 1")
+
+if(NOT _max_probes OR NOT _max_reflection_lod OR NOT _max_probe_lod)
+    message(FATAL_ERROR "generate_shader_config: failed to extract a backend cap (MAX_PROBES / PREFILTER_MIPS)")
 endif()
 
 # Mirror the C++ defaults to GLSL.
@@ -40,7 +68,50 @@ set(_glsl
 const int   MAX_LIGHTS              = ${_max_lights};
 const int   MAX_SHADOW_CASTERS_2D   = ${_max_shadow_2d};
 const int   MAX_SHADOW_CASTERS_CUBE = ${_max_shadow_cube};
+const int   CLUSTER_X               = ${_cluster_x};
+const int   CLUSTER_Y               = ${_cluster_y};
+const int   CLUSTER_Z               = ${_cluster_z};
+const int   MAX_LIGHTS_PER_CLUSTER  = ${_max_per_cluster};
+const int   NUM_CLUSTERS            = ${_cluster_x} * ${_cluster_y} * ${_cluster_z};
+const int   MAX_PROBES              = ${_max_probes};
+const float MAX_REFLECTION_LOD      = ${_max_reflection_lod}.0;
+const float MAX_PROBE_LOD           = ${_max_probe_lod}.0;
 ")
 
 file(WRITE ${_generated_glsl} "${_glsl}")
 message(STATUS "Generated ${_generated_glsl} (MAX_LIGHTS=${_max_lights})")
+
+# ---------------------------------------------------------------------------
+# render_modes.glsl: MODE_* constants from the RenderMode enum, by ordinal.
+# CamelCase entries become UPPER_SNAKE (AmbientOcclusion -> AMBIENT_OCCLUSION),
+# so the GLSL names track the C++ enum mechanically.
+# ---------------------------------------------------------------------------
+
+set(_render_settings_h ${CMAKE_SOURCE_DIR}/src/engine/system/render/render_settings.h)
+set(_render_modes_glsl ${CMAKE_SOURCE_DIR}/shaders/_generated/render_modes.glsl)
+
+file(READ ${_render_settings_h} _settings_src)
+string(REGEX MATCH "enum class RenderMode[^{]*\\{([^}]*)\\}" _ "${_settings_src}")
+if(NOT CMAKE_MATCH_1)
+    message(FATAL_ERROR "generate_shader_config: failed to extract RenderMode from ${_render_settings_h}")
+endif()
+# Strip // comments first or their words scrape as fake enum entries.
+string(REGEX REPLACE "//[^\n]*" "" _enum_body "${CMAKE_MATCH_1}")
+string(REGEX MATCHALL "[A-Za-z0-9]+" _mode_names "${_enum_body}")
+
+set(_modes_glsl
+"// AUTO-GENERATED by cmake/generate_shader_config.cmake at configure time.
+// Source of truth: RenderMode in src/engine/system/render/render_settings.h
+//
+// Do not edit by hand - any change will be overwritten next configure.
+")
+set(_mode_index 0)
+foreach(_mode ${_mode_names})
+    string(REGEX REPLACE "([a-z0-9])([A-Z])" "\\1_\\2" _snake "${_mode}")
+    string(TOUPPER "${_snake}" _snake)
+    string(APPEND _modes_glsl "const int MODE_${_snake} = ${_mode_index};\n")
+    math(EXPR _mode_index "${_mode_index} + 1")
+endforeach()
+
+file(WRITE ${_render_modes_glsl} "${_modes_glsl}")
+message(STATUS "Generated ${_render_modes_glsl} (${_mode_index} modes)")
