@@ -134,7 +134,7 @@ void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, const I
     // map, and the binding (WASD here) is the project's to change.
     position += forward                * (input.axis(InputActions::MOVE_FORWARD) * speed);
     position += right                  * (input.axis(InputActions::MOVE_RIGHT)   * speed);
-    position += Math::WORLD_AXIS_Y_UP  * (input.axis(InputActions::MOVE_UP)      * speed);
+    position += Math::WORLD_AXIS_Y  * (input.axis(InputActions::MOVE_UP)      * speed);
 }
 
 void CameraControllerSystem::placeCamera(Transform& transform, const glm::vec3& target,
@@ -179,9 +179,9 @@ void CameraControllerSystem::viewFrom(Scene& scene, const glm::vec3& target, con
 
 void CameraControllerSystem::updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch) {
     // Yaw rotates around world up axis
-    glm::quat yawQuat = glm::angleAxis(yaw, Math::WORLD_AXIS_Y_UP);
+    glm::quat yawQuat = glm::angleAxis(yaw, Math::WORLD_AXIS_Y);
     // Pitch rotates around local right axis (negative because mouse Y is inverted)
-    glm::quat pitchQuat = glm::angleAxis(pitch, -Math::WORLD_AXIS_X_RIGHT);
+    glm::quat pitchQuat = glm::angleAxis(pitch, -Math::WORLD_AXIS_X);
     // Apply yaw first, then pitch (order matters for correct behavior)
     rotation = yawQuat * pitchQuat;
 }

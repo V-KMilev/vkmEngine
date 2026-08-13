@@ -46,7 +46,7 @@ inline Engine::Entity generatePotionRunnerScene(Engine::Engine& engine) {
     scene.add(camera, Engine::Camera{Engine::ProjectionType::Perspective});
     scene.add(camera, Engine::Transform{
         glm::vec3(0.0f, 4.6f, -8.5f),
-        glm::angleAxis(0.34f, Engine::Math::WORLD_AXIS_X_RIGHT),
+        glm::angleAxis(0.34f, Engine::Math::WORLD_AXIS_X),
         glm::vec3(1.0f)
     });
 
