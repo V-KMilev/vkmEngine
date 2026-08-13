@@ -57,10 +57,14 @@ void AssetPicker::refreshIfNeeded() {
     m_paths.clear();
     m_filter[0] = '\0';
     m_selected  = -1;
+    m_truncated = false;
 
     std::error_code ec;
     auto consider = [&](const std::filesystem::directory_entry& e) -> bool {
-        if (static_cast<int>(m_paths.size()) >= options.maxResults) return false;
+        if (static_cast<int>(m_paths.size()) >= options.maxResults) {
+            m_truncated = true;
+            return false;
+        }
         const bool isFile = e.is_regular_file();
         const bool isDir  = e.is_directory();
         if (options.kind == Kind::Files && !isFile) return true;
@@ -127,6 +131,14 @@ bool AssetPicker::draw(std::string& outPath) {
         ImVec2(FLT_MAX, FLT_MAX));
     if (ImGui::BeginPopupModal(titleId, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
         ImGui::TextDisabled("%s", options.root.string().c_str());
+        // Say so when the listing was cut short. A partial list that looks
+        // complete is the same failure as an empty one with no warning: the
+        // user concludes the file is not there.
+        if (m_truncated) {
+            ImGui::SameLine(0, EditorStyle::px(12.0f));
+            ImGui::TextColored(EditorStyle::WARNING,
+                               "first %d only - narrow the search", options.maxResults);
+        }
         if (!options.hint.empty()) {
             ImGui::SameLine(0, EditorStyle::px(12.0f));
             ImGui::TextDisabled("%s", options.hint.c_str());

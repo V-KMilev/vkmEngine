@@ -78,6 +78,7 @@ class AssetPicker {
         bool m_openRequested = false;
         char m_filter[64] = {};   ///< Live search needle, cleared on every open.
         int  m_selected   = -1;   ///< Selected row (index into the unfiltered lists), -1 = none.
+        bool m_truncated  = false; ///< The listing hit maxResults, so the view is partial.
         std::vector<std::string> m_entries;  ///< Display strings (filename or relative).
         std::vector<std::filesystem::path> m_paths;  ///< Absolute (or relative-to) paths.
 };
