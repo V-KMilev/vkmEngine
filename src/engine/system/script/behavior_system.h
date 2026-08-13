@@ -150,6 +150,18 @@ class BehaviorSystem : public System, public ISceneObserver {
         std::vector<CollisionEvent> m_collisions;
         std::vector<TriggerEvent>   m_triggers;
 
+        /**
+         * @brief Entities to tick this pass, snapshotted before any hook runs.
+         *
+         * A hook that spawns an entity and gives it a ScriptComponent grows the
+         * component storage mid-iteration, which reallocates it and leaves a
+         * reference into the old buffer - a use-after-free with nothing to show
+         * for it. Walking a snapshot and re-resolving each entity means the
+         * storage may move underneath the pass without consequence. Kept as a
+         * member for its capacity.
+         */
+        std::vector<EntityId> m_tickList;
+
         std::vector<EntityId> m_pendingDestroy;
 
         BehaviorContext m_context;

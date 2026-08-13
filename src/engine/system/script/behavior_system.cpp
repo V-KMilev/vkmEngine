@@ -62,17 +62,38 @@ void BehaviorSystem::ensureStarted(Behavior& behavior, EntityId entity) {
 void BehaviorSystem::tickBehaviors(FrameContext& ctx, float dt, const char* hookName,
                                    void (Behavior::*hook)(float)) {
     Scene& scene = ctx.scene;
-    if (auto* storage = scene.storage<ScriptComponent>()) {
-        storage->forEach([&](uint32_t entityIdx, ScriptComponent& sc) {
-            const EntityId id{entityIdx, scene.generationOf(entityIdx)};
-            for (auto& behavior : sc.behaviors) {
-                if (!behavior || behavior->m_disabled) continue;
-                ensureStarted(*behavior, id);
-                if (behavior->m_disabled) continue;  // onStart threw
-                Behavior* b = behavior.get();
-                guard(*b, hookName, [&] { (b->*hook)(dt); });
-            }
-        });
+    auto* storage = scene.storage<ScriptComponent>();
+    if (!storage) return;
+
+    // Snapshot who to tick before running anything. A hook is free to spawn an
+    // entity and script it, which grows this very storage; iterating it live
+    // would hand the loop a reference into a buffer that has since moved.
+    // Behaviors added during the pass start next frame, which is the same rule
+    // destroy() already follows in the other direction.
+    m_tickList.clear();
+    m_tickList.reserve(storage->size());
+    storage->forEach([&](uint32_t entityIdx, ScriptComponent&) {
+        m_tickList.push_back(EntityId{entityIdx, scene.generationOf(entityIdx)});
+    });
+
+    for (const EntityId id : m_tickList) {
+        // Re-resolved every step: the entity may have been destroyed by an
+        // earlier hook, and the storage may have moved since the snapshot.
+        if (!scene.isAlive(id) || !scene.has<ScriptComponent>(id)) continue;
+
+        const size_t behaviorCount = scene.get<ScriptComponent>(id).behaviors.size();
+        for (size_t i = 0; i < behaviorCount; ++i) {
+            if (!scene.isAlive(id) || !scene.has<ScriptComponent>(id)) break;
+            ScriptComponent& sc = scene.get<ScriptComponent>(id);
+            if (i >= sc.behaviors.size()) break;
+
+            auto& behavior = sc.behaviors[i];
+            if (!behavior || behavior->m_disabled) continue;
+            ensureStarted(*behavior, id);
+            if (behavior->m_disabled) continue;  // onStart threw
+            Behavior* b = behavior.get();
+            guard(*b, hookName, [&] { (b->*hook)(dt); });
+        }
     }
 }
 
