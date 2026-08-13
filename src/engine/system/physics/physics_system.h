@@ -128,6 +128,7 @@ class PhysicsSystem : public System {
         // element types live in physics_internal.h so these can be members here
         // instead of file-local statics.
         std::vector<ColliderProxy> m_proxies;     ///< Broad/narrowphase view of each collidable body (built in gather)
+        std::vector<ColliderBox>   m_proxyParts;  ///< Every proxy's boxes end to end; proxies index into it
         std::vector<BodyFrame>     m_bodyFrames;  ///< World<->local frame per body, parallel to m_bodies (for writeback)
 
         std::vector<uint32_t>                      m_sorted;  ///< X-sorted proxy order (broadphase)
