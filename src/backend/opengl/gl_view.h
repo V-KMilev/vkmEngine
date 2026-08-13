@@ -50,8 +50,8 @@ struct GLResourceTable {
  *
  * The version gate is only meaningful within a single asset graph. A scene load
  * or editor play-stop restore swaps the whole graph, and the incoming one
- * restarts its handles and versions from scratch - so every table is dropped
- * when ResourceManager::epoch() moves and rebuilt against the new graph.
+ * restarts its handles and versions from scratch, so the gate cannot see the
+ * difference. The backend detects that swap centrally and calls invalidate().
  */
 class GLView {
     public:
@@ -72,6 +72,15 @@ class GLView {
          * @param resources The resource manager to use.
          */
         void sync(const RenderView& view, const ResourceManager& resources);
+
+        /**
+         * @brief Drop every cached GPU object.
+         *
+         * Called when the asset graph is replaced: the incoming graph reuses the
+         * same handle indices, generations and versions, so nothing in these
+         * tables can be matched against it. The next sync() repopulates.
+         */
+        void invalidate();
 
         /**
          * @brief Resolve a handle to its synced GPU object; null if the handle is empty
@@ -117,16 +126,6 @@ class GLView {
         void ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, const ResourceManager& resources);
 
         /**
-         * @brief Drop every cached GPU object when @p resources swapped graphs.
-         *
-         * A no-op while the epoch is unchanged, which is every frame but the
-         * first one after a load.
-         *
-         * @param resources The resource manager this view mirrors.
-         */
-        void invalidateOnEpochChange(const ResourceManager& resources);
-
-        /**
          * @brief Warn once if @p handle's asset settled with no pixels.
          *
          * The placeholder makes a missing texture visible; this names the file,
@@ -150,7 +149,6 @@ class GLView {
 
         std::unordered_set<uint32_t> m_reportedMissing;  ///< Texture ids already warned about, so the log stays one line per asset.
 
-        uint64_t m_epoch = 0;  ///< Asset-graph identity these tables were built against; 0 = never synced.
 };
 
 } // namespace Engine

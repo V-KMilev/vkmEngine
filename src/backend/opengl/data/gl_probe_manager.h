@@ -63,6 +63,16 @@ class GLProbeManager {
          */
         void update(Core::Context& gl, const RenderView& view, const GLView& glView, const GLIBL& ibl);
 
+        /**
+         * @brief Forget every layer's bake state, forcing a re-bake.
+         *
+         * A probe's cube map is a capture of scene geometry, but the re-bake
+         * test only compares the probe's own position and bakeVersion. Replacing
+         * the scene leaves both identical while changing everything the capture
+         * contains, so the swap has to say so explicitly.
+         */
+        void invalidate();
+
     private:
         /**
          * @brief Per-layer bake state, for change-detected re-baking.
