@@ -52,13 +52,13 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
     // sampled - the prepass writes normal/roughness/metalness from the UBO - so
     // binding the material UBO is enough.
     const GLMaterial* boundMaterial = nullptr;
-    for (const InstanceRun& run : m_batcher.buildGrouped(ctx.opaque, glView)) {
+    for (const InstanceRun& run : ctx.opaqueBatch.runs()) {
         const GLMaterial* material = glView.getMaterial(run.material);
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::Material);
             boundMaterial = material;
         }
-        m_batcher.drawRun(run);
+        ctx.opaqueBatch.drawRun(run);
     }
 }
 

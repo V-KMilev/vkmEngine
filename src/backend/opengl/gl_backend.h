@@ -12,6 +12,7 @@
 
 #include "system/render/render_backend.h"
 #include "gl_view.h"
+#include "data/gl_instance_batcher.h"
 #include "gl_target.h"
 #include "gl_mask_target.h"
 #include "data/gl_camera.h"
@@ -106,6 +107,10 @@ class GLBackend : public RenderBackend {
     private:
         Core::Context m_context;
         GLView        m_view;
+
+        // Batches the opaque bucket once per frame for both the depth prepass
+        // and the forward pass (see GLFrameContext::opaqueBatch).
+        GLInstanceBatcher m_opaqueBatcher;
         Core::ScreenTriangle m_screenTri;  ///< Shared fullscreen triangle, referenced by the frame context.
         GLTarget      m_sceneHDR;    ///< Single-sample resolved scene (sampled by post). At 1x MSAA the geometry passes render straight into it.
         GLTarget      m_sceneMS;     ///< Multisample scene the geometry passes render into when MSAA is on; resolved into m_sceneHDR.

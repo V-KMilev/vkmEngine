@@ -240,6 +240,11 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // Bucket the drawables once; the prepass + forward both read the result.
     partitionDrawables(view);
 
+    // ...and batch the opaque bucket once too. Both passes draw this identical
+    // list, so batching it per-pass sorted every drawable and re-uploaded both
+    // instance buffers twice a frame to produce the same runs.
+    m_opaqueBatcher.buildGrouped(m_opaque, m_view);
+
     // Each pass binds and clears its own target: the shadow pass fills the depth
     // atlas, the forward pass renders the lit scene into m_sceneHDR sampling it,
     // and the composite pass tonemaps that to the backbuffer.
@@ -261,7 +266,8 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_irradiance,
         m_opaque,
         m_alphaMask,
-        m_transparent};
+        m_transparent,
+        m_opaqueBatcher};
 
     ctx.sunDir = sunDir;
     ctx.hasSun = hasSun;

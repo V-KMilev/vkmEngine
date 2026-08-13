@@ -49,7 +49,8 @@ class GLForwardPass : public GLPass {
          * Rebinds the material UBO + textures only when the material changes
          * between consecutive runs; each run is one instanced draw.
          */
-        void drawRuns(GLFrameContext& ctx, const std::vector<InstanceRun>& runs);
+        void drawRuns(GLFrameContext& ctx, const std::vector<InstanceRun>& runs,
+                      GLInstanceBatcher& batcher);
 
     private:
         std::unique_ptr<Core::Shader> m_shader;
