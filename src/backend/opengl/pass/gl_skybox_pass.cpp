@@ -2,6 +2,8 @@
 
 #include "pass/gl_skybox_pass.h"
 
+#include <cmath>
+
 #include <GL/glew.h>
 
 #include "gl_shader.h"
@@ -33,7 +35,7 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
     // shader forces z = w so the cube sits at the far plane; depth func LEQUAL
     // with depth writes off fills only the background pixels (depth == far from
     // the prepass) and leaves lit geometry untouched.
-    ctx.sceneHDR.bind(ctx.gl);
+    ctx.sceneRender.bind(ctx.gl);
     ctx.gl.setDepthTest(true);
     ctx.gl.setDepthWrite(false);
     ctx.gl.setDepthFunc(GL_LEQUAL);
@@ -44,6 +46,18 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
     m_shader->setUniformMatrix4fv("u_view", view.camera.view);
     m_shader->setUniformMatrix4fv("u_projection", view.camera.projection);
     m_shader->setUniform1f("u_iblIntensity", view.environment.intensity);
+
+    // Analytic sun disc: only for the procedural sky (an HDR skybox already has
+    // its own sun). The disc fades over its outer 20% for a soft limb.
+    const bool hasSun = view.environment.proceduralSky;
+    m_shader->setUniform1i("u_hasSun", hasSun ? 1 : 0);
+    if (hasSun) {
+        const float r = view.environment.skySunAngularRadius;
+        m_shader->setUniform3fv("u_sunDir", ctx.sunDir);
+        m_shader->setUniform1f("u_sunCosOuter", std::cos(r));
+        m_shader->setUniform1f("u_sunCosInner", std::cos(r * 0.8f));
+        m_shader->setUniform1f("u_sunDiscIntensity", view.environment.skySunDiscIntensity);
+    }
 
     ctx.ibl.bindEnvCube(GLBindings::IBLTextureSlots::EnvCube);
     m_cube->draw();

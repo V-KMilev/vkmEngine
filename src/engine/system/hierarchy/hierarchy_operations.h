@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <vector>
+
 #include <glm/glm.hpp>
 
 #include "ecs/scene.h"
@@ -79,7 +82,25 @@ void markDirty(Scene& scene, EntityId entity);
  *
  * @param scene The scene to resolve.
  */
-void resolveWorldTransforms(Scene& scene);
+/**
+ * @brief Deepest ancestor chain the resolve pass will follow.
+ *
+ * Public because DepthBuckets is sized by it and the caller owns that storage.
+ */
+constexpr uint32_t MAX_DEPTH = 32;
+
+/**
+ * @brief Per-depth scratch for resolveWorldTransforms, owned by the caller.
+ *
+ * The pass buckets dirty entities by depth, and the buckets want to keep their
+ * capacity across frames rather than reallocating 32 vectors every tick. Held
+ * by the system that drives the pass, the way every other system here holds its
+ * scratch - a function-static would make it process-global state shared between
+ * any two Scenes that ever ran the pass.
+ */
+using DepthBuckets = std::array<std::vector<EntityId>, MAX_DEPTH>;
+
+void resolveWorldTransforms(Scene& scene, DepthBuckets& buckets);
 
 /**
  * @brief Iterate over all direct children of an entity.

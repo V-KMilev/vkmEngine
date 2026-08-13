@@ -12,9 +12,12 @@
 #include "convention/gl_bindings.h"
 #include "data/gl_shadow_atlas.h"
 #include "data/gl_cubemap.h"
-#include "data/gl_ubo_util.h"
+#include "gl_buffer_upload.h"
 #include "ecs/component/light.h"
 #include "system/render/render_view.h"
+#include "debug/profiler.h"
+#include "platform/threading/thread_pool.h"
+#include "core/math/frustum.h"
 
 namespace Engine {
 
@@ -48,7 +51,7 @@ void GLShadowData::build(const RenderView& view) {
     m_shadowRes = view.settings.shadowResolution;
 
     // Camera frustum corners in world space, from the inverse view-projection.
-    const glm::mat4 invVP = glm::inverse(view.camera.projection * view.camera.view);
+    const glm::mat4& invVP = view.camera.invViewProj;
     const glm::vec2 ndc[4] = { {-1, -1}, {1, -1}, {1, 1}, {-1, 1} };
     CameraFrustum cam;
     for (int k = 0; k < 4; ++k) {
@@ -88,6 +91,139 @@ void GLShadowData::build(const RenderView& view) {
             default: break;
         }
     }
+
+    cullCasters(view);
+}
+
+namespace {
+
+/**
+ * @brief Does an AABB touch a sphere? Standard closest-point-on-box test.
+ */
+bool aabbIntersectsSphere(const glm::vec3& boundsMin, const glm::vec3& boundsMax,
+                          const glm::vec3& center, float radius) {
+    const glm::vec3 closest = glm::clamp(center, boundsMin, boundsMax);
+    const glm::vec3 delta   = closest - center;
+    return glm::dot(delta, delta) <= radius * radius;
+}
+
+/**
+ * @brief Cull @p source against @p viewProjection into @p batch, grouped by mesh.
+ *
+ * Grouping is a counting sort over mesh ids rather than std::sort. The
+ * comparison sort this replaced spent its time chasing casters[index].mesh for
+ * randomly ordered indices - O(n log n) comparisons, each a likely cache miss,
+ * which measured as the dominant cost of the whole cull. Mesh ids are small
+ * dense integers, so a histogram plus a prefix sum does the same job in two
+ * linear passes over contiguous memory.
+ *
+ * @param batch   Output; its order list is rebuilt.
+ * @param scratch Per-task workspace, reused across frames to avoid allocating.
+ * @param casters The frame's caster list.
+ * @param keys    Mesh id per caster, precomputed linearly by the caller.
+ * @param source  Which casters to consider: all of them, or a light's sphere survivors.
+ * @param viewProjection The tile or face matrix to cull against.
+ */
+void cullInto(ShadowCasterBatch& batch,
+              CullScratch& scratch,
+              const std::vector<ShadowCasterData>& casters,
+              const std::vector<uint32_t>& keys,
+              uint32_t keyCount,
+              const std::vector<uint32_t>& source,
+              const glm::mat4& viewProjection) {
+    const Math::Frustum frustum = Math::extractFrustum(viewProjection);
+
+    // Pass 1: survivors, counting each mesh as it goes.
+    scratch.survivors.clear();
+    scratch.counts.assign(keyCount, 0);
+    for (uint32_t index : source) {
+        if (!Math::frustumIntersectsAABB(frustum, casters[index].aabbMin, casters[index].aabbMax))
+            continue;
+        scratch.survivors.push_back(index);
+        ++scratch.counts[keys[index]];
+    }
+
+    batch.order.resize(scratch.survivors.size());
+    if (scratch.survivors.empty()) return;
+
+    // Prefix sum turns the histogram into a write cursor per mesh.
+    uint32_t running = 0;
+    for (uint32_t& count : scratch.counts) {
+        const uint32_t n = count;
+        count = running;
+        running += n;
+    }
+
+    // Pass 2: scatter each survivor into its mesh's run.
+    for (uint32_t index : scratch.survivors) batch.order[scratch.counts[keys[index]]++] = index;
+}
+
+} // namespace
+
+void GLShadowData::cullCasters(const RenderView& view) {
+    PROFILE_SCOPE("Shadow/Cull");
+
+    const std::vector<ShadowCasterData>& casters = view.shadowCasters;
+
+    m_batches2D.resize(m_jobs2D.size());
+    m_batchesCube.resize(m_jobsCube.size() * 6);
+
+    // Every caster is a candidate for a 2D job; cascades and spots have no
+    // cheaper enclosing volume to reject against first.
+    {
+    PROFILE_SCOPE("Shadow/Cull/Prepare");
+    // Mesh ids pulled out into a flat array once. Every job's grouping pass then
+    // reads keys linearly instead of chasing the caster structs.
+    const uint32_t count = static_cast<uint32_t>(casters.size());
+    m_allCasters.resize(count);
+    m_meshKeys.resize(count);
+    uint32_t maxKey = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        m_allCasters[i] = i;
+        m_meshKeys[i]   = casters[i].mesh.id();
+        maxKey = std::max(maxKey, m_meshKeys[i]);
+    }
+    m_keyCount = count ? maxKey + 1 : 0;
+    }
+
+    // Point lights first, and serially over lights: each one narrows the scene to
+    // what its sphere reaches, which is what makes the six face culls cheap. With
+    // only a couple of cube lights in flight there is nothing to gain from
+    // parallelising this outer loop, and the faces below parallelise anyway.
+    {
+    PROFILE_SCOPE("Shadow/Cull/Sphere");
+    m_cubeCandidates.resize(m_jobsCube.size());
+    for (size_t j = 0; j < m_jobsCube.size(); ++j) {
+        const ShadowCubeJob& job = m_jobsCube[j];
+        std::vector<uint32_t>& candidates = m_cubeCandidates[j];
+
+        candidates.clear();
+        for (uint32_t i = 0; i < static_cast<uint32_t>(casters.size()); ++i) {
+            if (aabbIntersectsSphere(casters[i].aabbMin, casters[i].aabbMax, job.pos, job.range))
+                candidates.push_back(i);
+        }
+    }
+    }
+
+    // One task per tile and per face. They write to disjoint batches, so no
+    // synchronisation is needed and the whole cull leaves the render thread.
+    const size_t jobs2D    = m_jobs2D.size();
+    const size_t cubeFaces = m_jobsCube.size() * 6;
+
+    PROFILE_SCOPE("Shadow/Cull/Jobs");
+    m_scratch.resize(jobs2D + cubeFaces);
+
+    parallelFor(jobs2D + cubeFaces, 1, [&](size_t task) {
+        if (task < jobs2D) {
+            cullInto(m_batches2D[task], m_scratch[task], casters, m_meshKeys, m_keyCount,
+                     m_allCasters, m_jobs2D[task].lightVP);
+            return;
+        }
+        const size_t face = task - jobs2D;
+        const size_t job  = face / 6;
+        cullInto(m_batchesCube[face], m_scratch[task], casters, m_meshKeys, m_keyCount,
+                 m_cubeCandidates[job], m_jobsCube[job].faceVP[face % 6]);
+    });
 }
 
 // Directional sun: N frustum-fit cascades into the first 2D slots.
@@ -222,8 +358,8 @@ int GLShadowData::slotForLight(uint32_t lightIndex) const {
 }
 
 void GLShadowData::uploadAndBind() {
-    uploadUBOIfChanged(m_ubo, m_last, m_data);
-    bindUBO(m_ubo, GLBindings::UBOBindingPoints::Shadow);
+    Core::uploadIfChanged(m_ubo, m_last, m_data);
+    Core::bindUBO(m_ubo, GLBindings::UBOBindingPoints::Shadow);
 }
 
 } // namespace Engine

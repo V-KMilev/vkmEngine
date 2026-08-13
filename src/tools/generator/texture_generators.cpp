@@ -1,4 +1,4 @@
-#include "texture_generators.h"
+#include "generator/texture_generators.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -6,7 +6,6 @@
 #include <glm/common.hpp>
 #include <nlohmann/json.hpp>
 
-#include "logger.h"
 #include "resource/resource_manager.h"
 
 namespace Engine {

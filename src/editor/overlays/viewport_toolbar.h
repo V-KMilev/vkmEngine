@@ -19,13 +19,21 @@ class ViewportToolbar {
         void draw(EditorContext& ec);
 
         /**
+         * @brief Small top-left viewport overlay: the shading/debug view
+         * dropdown (RenderMode) - a quick switch without opening the Render
+         * Settings window.
+         */
+        void drawViewMode(EditorContext& ec);
+
+        /**
          * @brief True while the mouse is over the toolbar (so the viewport does not
          * also treat the click as a pick / camera input).
          */
-        bool isHovered() const { return m_hovered; }
+        bool isHovered() const { return m_hovered || m_viewModeHovered; }
 
     private:
-        bool m_hovered = false;
+        bool m_hovered = false;          ///< Tool strip hovered this frame.
+        bool m_viewModeHovered = false;  ///< View-mode overlay hovered this frame.
 };
 
 } // namespace Engine

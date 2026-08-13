@@ -30,6 +30,14 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
     if (isPressed(kb.saveSceneAs))     sceneIO.requestSaveAs();
     else if (isPressed(kb.saveScene))  sceneIO.save(ctx, state);
     if (isPressed(kb.loadScene))       sceneIO.requestLoad();
+    if (isPressed(kb.newScene)) {
+        if (state.sceneDirty) state.confirmAction = EditorState::PendingSceneAction::New;
+        else                  sceneIO.newScene(ctx, state);
+    }
+
+    if (isPressed(kb.toggleRenderSettings)) state.showRenderSettings = !state.showRenderSettings;
+    if (isPressed(kb.toggleMaterialEditor)) state.showMaterialEditor = !state.showMaterialEditor;
+    if (isPressed(kb.toggleAssetBrowser))   state.showAssetBrowser   = !state.showAssetBrowser;
 
     // Undo / redo - checked in this order so Ctrl+Shift+Z (redo) wins
     // when both bindings would match.
@@ -37,13 +45,13 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
     else if (isPressed(kb.undo)) EditorActions::undo(ctx.scene, state);
 
     if (isPressed(kb.deleteEntity) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
-        EditorActions::deleteEntity(ctx.scene, state, state.selectedEntity);
+        EditorActions::deleteSelection(ctx.scene, state);
     }
     if (isPressed(kb.deselect)) {
         state.deselect();
     }
     if (isPressed(kb.duplicate) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
-        EditorActions::duplicateEntity(ctx.scene, state, state.selectedEntity);
+        EditorActions::duplicateSelection(ctx.scene, state);
     }
     if (isPressed(kb.focusSelected) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
         EditorActions::focusOnSelected(ctx, state, camera);

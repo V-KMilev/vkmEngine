@@ -70,16 +70,22 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbeArray& arr, const glm:
     // u_probeCount = 0 is the recursion guard: the bake never samples probes.
     m_pbr.bind();
     m_pbr.setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
+    // Same trap as the irradiance bake: unset, this is 0 and the capture loses
+    // its whole indirect term.
+    m_pbr.setUniform1f("u_iblIntensity", view.environment.intensity);
     if (hasIBL) {
         globalIBL.bindIrradiance(GLBindings::IBLTextureSlots::Irradiance);
         globalIBL.bindPrefilter(GLBindings::IBLTextureSlots::Prefilter);
         globalIBL.bindBrdf(GLBindings::IBLTextureSlots::BrdfLUT);
     }
     m_pbr.setUniform1i("u_hasSSAO", 0);
+    m_pbr.setUniform1i("u_hasContactShadow", 0);
     m_pbr.setUniform1i("u_hasSceneColor", 0);
     m_pbr.setUniform1i("u_probeCount", 0);
+    m_pbr.setUniform1i("u_useClusters", 0);
+    m_pbr.setUniform1i("u_hasIrradianceVolume", 0);  // never sample GI while baking
     m_pbr.setUniform2f("u_screenSize",
-        static_cast<float>(GLProbeArray::ENV_SIZE), static_cast<float>(GLProbeArray::ENV_SIZE));
+        static_cast<float>(arr.envSize()), static_cast<float>(arr.envSize()));
 
     for (int face = 0; face < 6; ++face) {
         const glm::mat4 viewM = GLCubemap::faceView(face, position);
@@ -97,6 +103,7 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbeArray& arr, const glm:
         cam.view       = viewM;
         cam.projection = proj;
         cam.position   = position;
+        cam.derive();
         m_camera.update(cam);
 
         // Background: the global skybox (env cube) so off-geometry directions
@@ -121,15 +128,18 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbeArray& arr, const glm:
         gl.setCullFace(GL_BACK);
         m_pbr.bind();
 
+        m_batcher.bindInstanceData();
+
         const GLMaterial* boundMaterial = nullptr;
-        for (const InstanceRun& run : runs) {
+        for (uint32_t i = 0; i < runs.size(); ++i) {
+            const InstanceRun& run = runs[i];
             const GLMaterial* material = glView.getMaterial(run.material);
             if (material && material != boundMaterial) {
                 material->bind(GLBindings::UBOBindingPoints::Material);
                 material->bindTextures(glView);
                 boundMaterial = material;
             }
-            m_batcher.drawRun(run);
+            m_batcher.drawRun(run, i);
         }
     }
 

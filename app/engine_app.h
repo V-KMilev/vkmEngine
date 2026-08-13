@@ -6,18 +6,33 @@
 #include "io/project_paths.h"
 
 #include "system/camera/camera_controller_system.h"
-#include "system/event/event_system.h"
 #include "system/async/async_loader_system.h"
 #include "system/script/behavior_system.h"
 #include "system/animation/animation_system.h"
+#include "system/particle/particle_system.h"
 #include "system/physics/physics_system.h"
 #include "system/hierarchy/hierarchy_system.h"
+#include "system/ui/ui_system.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
+#include "platform/input/default_bindings.h"
 
 #include "gl_backend.h"
 
-#include "example/default_scene.h"
+#include "resource/asset/font_asset.h"
+#include "font/font_baker.h"
+
+// Bake the default UI font ("ui:roboto") into @p resources unless it is already
+// present, so every UIText resolves its font by name. Startup-only: scene loads
+// carry the FontAsset slot across the asset-graph swap (SceneSerializer swaps it
+// back, like shaders), so the bake never has to be repeated. The baker no-ops
+// gracefully if the .ttf is gone.
+inline void ensureDefaultUIFont(Engine::ResourceManager& resources) {
+    if (resources.findByName<Engine::FontAsset>("ui:roboto")) return;
+    Engine::bakeFontSDF(resources,
+        (Engine::ProjectPaths::assets() / "fonts" / "Roboto-Medium.ttf").string(),
+        "ui:roboto");
+}
 
 // Per-binary policy for the shared bootstrap: everything that genuinely differs
 // between engine_editor and engine_runtime, and nothing more - so the system
@@ -26,49 +41,64 @@ struct AppConfig {
     const char* windowTitle;
     bool        startPaused;
     bool        logFps;
+
+    // Boot-scene builder: fills the fresh Scene and returns the entity the
+    // camera controller should fly (the binaries pass their game's generator;
+    // null boots an empty scene and leaves the controller to resolve the
+    // active camera). Scene choice is binary policy, not bootstrap policy.
+    Engine::Entity (*buildBootScene)(Engine::Engine&) = nullptr;
 };
 
 // System handles the caller may still need after bootstrap. The editor feeds
 // these into its EditorSystem; the runtime ignores the return value.
 struct AppSystems {
     Engine::CameraControllerSystem& camera;
-    Engine::EventSystem&            events;
     Engine::VisibilitySystem&       visibility;
     Engine::RenderSystem&           render;
 };
 
 // Stands a ready-to-run engine app up in `engine`: the window, the standard
-// system stack, the GL backend, and the default scene. The caller owns what
-// differs per-binary - gameplay registration (must happen before this so the
-// default scene can create behaviors through the registry), any extra systems
-// (the editor adds EditorSystem), scene-file overrides, and the run loop.
+// system stack, the GL backend, and the config's boot scene. The caller owns
+// what differs per-binary - gameplay registration (must happen before this so
+// the boot scene can create behaviors through the registry), the boot-scene
+// choice itself (AppConfig::buildBootScene), any extra systems (the editor
+// adds EditorSystem), scene-file overrides, and the run loop.
 inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config) {
+    // Bindings first: the systems below read input through named actions, and an
+    // action with no binding is silently dead rather than an error.
+    Engine::installDefaultBindings(engine.getInput());
     auto& window = engine.getWindow();
     window.createWindow(config.windowTitle);
     window.setFramerate(0);
     window.setIcon((Engine::ProjectPaths::assets() / "logo" / "vkm_engine_icon.png").string());
 
-    auto& cameraController  = engine.addSystem<Engine::CameraControllerSystem>(Engine::SystemStage::Input);
-    auto& eventSystem       = engine.addSystem<Engine::EventSystem>(Engine::SystemStage::Simulation);
-    auto& asyncLoaderSystem = engine.addSystem<Engine::AsyncLoaderSystem>(Engine::SystemStage::Simulation);
-    auto& behaviorSystem    = engine.addSystem<Engine::BehaviorSystem>(Engine::SystemStage::Simulation, eventSystem);
-    auto& animationSystem   = engine.addSystem<Engine::AnimationSystem>(Engine::SystemStage::Simulation);
-    auto& physicsSystem     = engine.addSystem<Engine::PhysicsSystem>(Engine::SystemStage::Simulation, eventSystem);
-    auto& hierarchySystem   = engine.addSystem<Engine::HierarchySystem>(Engine::SystemStage::Transform);
-    auto& visibilitySystem  = engine.addSystem<Engine::VisibilitySystem>(Engine::SystemStage::Visibility);
-    auto& renderSystem      = engine.addSystem<Engine::RenderSystem>(Engine::SystemStage::Render);
+    auto& cameraController = engine.addSystem<Engine::CameraControllerSystem>(Engine::SystemStage::Input);
+    engine.addSystem<Engine::AsyncLoaderSystem>(Engine::SystemStage::Simulation);
+    engine.addSystem<Engine::BehaviorSystem>(Engine::SystemStage::Simulation);
+    engine.addSystem<Engine::AnimationSystem>(Engine::SystemStage::Simulation);
+    engine.addSystem<Engine::ParticleSystem>(Engine::SystemStage::Simulation);
+    engine.addSystem<Engine::PhysicsSystem>(Engine::SystemStage::Simulation);
+    engine.addSystem<Engine::HierarchySystem>(Engine::SystemStage::Transform);
+    engine.addSystem<Engine::UISystem>(Engine::SystemStage::Transform);
+    auto& visibilitySystem = engine.addSystem<Engine::VisibilitySystem>(Engine::SystemStage::Visibility);
+    auto& renderSystem     = engine.addSystem<Engine::RenderSystem>(Engine::SystemStage::Render);
 
     // The OpenGL backend compiles its own shaders (shaders/) and owns its
-    // fixed 10-pass forward pipeline - no shader-asset registration or pass
-    // pipeline wiring is needed here at the app level.
+    // fixed forward pass pipeline - no shader-asset registration or pass
+    // wiring is needed here at the app level.
     renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
 
-    // Default scene: a single cube at the origin under a directional light.
-    auto cameraEntity = generateDefaultScene(engine);
-    cameraController.setCameraEntity(cameraEntity);
+    // Bake the default UI font up front so every UIText - whether built by the
+    // boot scene or loaded from a scene file - resolves its font by name.
+    ensureDefaultUIFont(engine.getResources());
+
+    if (config.buildBootScene) {
+        auto cameraEntity = config.buildBootScene(engine);
+        cameraController.setCameraEntity(cameraEntity);
+    }
 
     engine.getClock().setPaused(config.startPaused);
-    engine.logFPS(config.logFps);
+    engine.setFPSLog(config.logFps);
 
-    return AppSystems{cameraController, eventSystem, visibilitySystem, renderSystem};
+    return AppSystems{cameraController, visibilitySystem, renderSystem};
 }

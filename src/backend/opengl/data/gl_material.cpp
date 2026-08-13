@@ -91,9 +91,14 @@ void GLMaterial::bind(uint32_t bindingPoint) const {
 
 void GLMaterial::bindTextures(const GLView& view) const {
     for (const auto& binding : m_textureBindings) {
-        if (const Core::Texture2D* texture = view.getTexture(binding.handle)) {
-            texture->bindSlot(binding.slot);
-        }
+        // Every referenced map binds something. Skipping an unresolved one would
+        // leave the previous draw's texture live in that slot, so a material
+        // still streaming (or one whose file failed to decode) would silently
+        // render with another object's maps - a shading bug to look at, with
+        // nothing pointing at the actual cause. The placeholder is unmistakable.
+        const Core::Texture2D* texture = view.getTexture(binding.handle);
+        if (!texture) texture = &view.missingTexture();
+        texture->bindSlot(binding.slot);
     }
 }
 

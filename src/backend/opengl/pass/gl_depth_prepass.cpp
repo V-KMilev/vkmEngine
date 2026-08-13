@@ -16,12 +16,12 @@
 
 namespace Engine {
 
-GLDepthPrePass::GLDepthPrePass()
+GLDepthPrepass::GLDepthPrepass()
     : m_shader(std::make_unique<Core::Shader>("shaders/forward/prepass")) {}
 
-GLDepthPrePass::~GLDepthPrePass() = default;
+GLDepthPrepass::~GLDepthPrepass() = default;
 
-void GLDepthPrePass::execute(GLFrameContext& ctx) {
+void GLDepthPrepass::execute(GLFrameContext& ctx) {
     const RenderView& view   = ctx.view;
     const GLView&     glView = ctx.resources;
 
@@ -30,38 +30,40 @@ void GLDepthPrePass::execute(GLFrameContext& ctx) {
     // normal + roughness + metalness) into colour attachment 1 while priming
     // depth. The skybox + forward run after and never clear colour, so a
     // transparent surface is never wiped by a later background fill.
-    ctx.sceneHDR.clearForFrame(ctx.gl);
+    // Re-assert the scene clear colour: offscreen renderers (material previews,
+    // probe bakes) set their own backdrop between frames, and the stored colour
+    // is applied at clear.
+    ctx.gl.setClearColor(glm::vec4(0.0f));
+    ctx.sceneRender.clearForFrame(ctx.gl);
     ctx.gl.setDepthTest(true);
     ctx.gl.setDepthWrite(true);
     ctx.gl.setDepthFunc(GL_LESS);
     ctx.gl.setBlending(false);
     ctx.gl.setFaceCulling(true);
     ctx.gl.setCullFace(GL_BACK);
-    ctx.sceneHDR.bindGBufferPass(ctx.gl);
+    ctx.sceneRender.bindGBufferPass(ctx.gl);
 
     m_shader->bind();
     m_shader->setUniformMatrix4fv("u_view", view.camera.view);
 
-    // The backend already split out the non-transparent drawables (transparents
-    // draw blended in the forward pass and never prime depth); draw them
-    // instanced, grouped by (material, mesh).
+    // The backend routes only opaque / unlit drawables here (alpha-masked and
+    // transparent geometry draws in the forward pass); prime their depth +
+    // G-buffer instanced, grouped by (material, mesh). No albedo texture is
+    // sampled - the prepass writes normal/roughness/metalness from the UBO - so
+    // binding the material UBO is enough.
     const GLMaterial* boundMaterial = nullptr;
-    for (const InstanceRun& run : m_batcher.buildGrouped(ctx.opaque, glView)) {
+    ctx.opaqueBatch.bindInstanceData();
+
+    const std::vector<InstanceRun>& runs = ctx.opaqueBatch.runs();
+    for (uint32_t i = 0; i < runs.size(); ++i) {
+        const InstanceRun& run = runs[i];
         const GLMaterial* material = glView.getMaterial(run.material);
         if (material && material != boundMaterial) {
-            // The UBO carries type/cutoff for the alpha-mask branch; only
-            // alpha-masked materials sample albedo, so skip texture binds
-            // (and their cost) for the common opaque case.
             material->bind(GLBindings::UBOBindingPoints::Material);
-            if (material->getType() == MaterialType::AlphaMask) {
-                material->bindTextures(glView);
-            }
             boundMaterial = material;
         }
-        m_batcher.drawRun(run);
+        ctx.opaqueBatch.draw(run, i);
     }
-
-    ctx.depthPrimed = true;
 }
 
 } // namespace Engine

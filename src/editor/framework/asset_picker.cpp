@@ -3,10 +3,16 @@
 #include "framework/asset_picker.h"
 
 #include <algorithm>
+#include <cfloat>
+#include <cstdio>
 #include <cctype>
 #include <system_error>
 
 #include "logger.h"
+
+#include "ui/editor_dialogs.h"
+#include "ui/editor_style.h"
+#include "ui/editor_widgets.h"
 
 namespace Engine {
 
@@ -49,10 +55,16 @@ void AssetPicker::refreshIfNeeded() {
 
     m_entries.clear();
     m_paths.clear();
+    m_filter[0] = '\0';
+    m_selected  = -1;
+    m_truncated = false;
 
     std::error_code ec;
     auto consider = [&](const std::filesystem::directory_entry& e) -> bool {
-        if (static_cast<int>(m_paths.size()) >= options.maxResults) return false;
+        if (static_cast<int>(m_paths.size()) >= options.maxResults) {
+            m_truncated = true;
+            return false;
+        }
         const bool isFile = e.is_regular_file();
         const bool isDir  = e.is_directory();
         if (options.kind == Kind::Files && !isFile) return true;
@@ -96,45 +108,101 @@ void AssetPicker::refreshIfNeeded() {
     m_entries = std::move(e2);
     m_paths   = std::move(p2);
 
-    ImGui::OpenPopup(options.popupId);
+    char titleId[160];
+    snprintf(titleId, sizeof(titleId), "%s###%s", options.title, options.popupId);
+    ImGui::OpenPopup(titleId);
 }
 
 bool AssetPicker::draw(std::string& outPath) {
     refreshIfNeeded();
 
+    // Real title in the bar, stable id after ### (the raw popupId used to BE
+    // the visible title, so dialogs were named "PickEnvHdr").
+    char titleId[160];
+    snprintf(titleId, sizeof(titleId), "%s###%s", options.title, options.popupId);
+
     bool picked = false;
-    if (ImGui::BeginPopupModal(options.popupId, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(EditorStyle::px(520.0f), EditorStyle::px(400.0f)),
+                             ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints(
+        ImVec2(EditorStyle::px(380.0f), EditorStyle::px(260.0f)),
+        ImVec2(FLT_MAX, FLT_MAX));
+    if (ImGui::BeginPopupModal(titleId, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
         ImGui::TextDisabled("%s", options.root.string().c_str());
+        // Say so when the listing was cut short. A partial list that looks
+        // complete is the same failure as an empty one with no warning: the
+        // user concludes the file is not there.
+        if (m_truncated) {
+            ImGui::SameLine(0, EditorStyle::px(12.0f));
+            ImGui::TextColored(EditorStyle::WARNING,
+                               "first %d only - narrow the search", options.maxResults);
+        }
         if (!options.hint.empty()) {
-            ImGui::SameLine(0, 12);
+            ImGui::SameLine(0, EditorStyle::px(12.0f));
             ImGui::TextDisabled("%s", options.hint.c_str());
         }
-        ImGui::Separator();
 
-        if (m_entries.empty()) {
-            ImGui::TextDisabled("(no matching entries)");
-        } else {
-            ImGui::BeginChild("##AssetPickerList", ImVec2(420, 240), true);
-            ImGuiListClipper clipper;
-            clipper.Begin(static_cast<int>(m_entries.size()));
-            while (clipper.Step()) {
-                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
-                    if (ImGui::Selectable(m_entries[i].c_str())) {
-                        if (!options.relativeTo.empty()) {
-                            outPath = m_entries[i];
-                        } else {
-                            outPath = m_paths[i].string();
+        // Live filter. Focused on open so type-to-narrow needs no click;
+        // Enter here confirms the selection (or the lone match).
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::SetNextItemWidth(-1.0f);
+        const bool searchCommit = ImGui::InputTextWithHint("##pickerFilter", "Search...",
+            m_filter, sizeof(m_filter), ImGuiInputTextFlags_EnterReturnsTrue);
+
+        // Filtered view over the cached listing (indices into the full lists).
+        std::vector<int> view;
+        view.reserve(m_entries.size());
+        for (int i = 0; i < static_cast<int>(m_entries.size()); ++i) {
+            if (matchesFilter(m_entries[i].c_str(), m_filter)) view.push_back(i);
+        }
+
+        auto confirm = [&](int idx) {
+            outPath = options.relativeTo.empty() ? m_paths[idx].string() : m_entries[idx];
+            picked  = true;
+            ImGui::CloseCurrentPopup();
+        };
+
+        // The list stretches; the button row keeps its one-row footprint.
+        const float footerH = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
+        if (ImGui::BeginChild("##AssetPickerList", ImVec2(0, -footerH),
+                              ImGuiChildFlags_Borders)) {
+            if (view.empty()) {
+                ImGui::TextDisabled(m_entries.empty() ? "(no matching entries)"
+                                                      : "(nothing matches the search)");
+            } else {
+                ImGuiListClipper clipper;
+                clipper.Begin(static_cast<int>(view.size()));
+                while (clipper.Step()) {
+                    for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
+                        const int i = view[row];
+                        const bool sel = (i == m_selected);
+                        if (ImGui::Selectable(m_entries[i].c_str(), sel,
+                                              ImGuiSelectableFlags_AllowDoubleClick)) {
+                            m_selected = i;
+                            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) confirm(i);
                         }
-                        picked = true;
-                        ImGui::CloseCurrentPopup();
                     }
                 }
             }
-            ImGui::EndChild();
+        }
+        ImGui::EndChild();
+
+        // Enter from the search field: the selection, or the single match.
+        if (!picked && searchCommit) {
+            if (m_selected >= 0 && matchesFilter(m_entries[m_selected].c_str(), m_filter)) {
+                confirm(m_selected);
+            } else if (view.size() == 1) {
+                confirm(view[0]);
+            }
         }
 
-        ImGui::Separator();
-        if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+        if (!picked) {
+            bool want = true;  // lifetime is popup-managed; the flag is discarded
+            const DialogResult r = dialogButtons(want, "Open", m_selected >= 0);
+            if (r == DialogResult::Confirm) confirm(m_selected);
+        }
         ImGui::EndPopup();
     }
     return picked;

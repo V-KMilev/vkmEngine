@@ -12,6 +12,7 @@
 #include "logger.h"
 
 #include "framework/editor_state.h"
+#include "system/render/render_settings.h"
 #include "io/project_paths.h"
 
 namespace Engine {
@@ -47,6 +48,7 @@ struct KeybindField {
     KeyBind EditorKeybinds::* field;
 };
 constexpr KeybindField KEYBIND_FIELDS[] = {
+    { "newScene",         &EditorKeybinds::newScene         },
     { "saveScene",        &EditorKeybinds::saveScene        },
     { "saveSceneAs",      &EditorKeybinds::saveSceneAs      },
     { "loadScene",        &EditorKeybinds::loadScene        },
@@ -56,6 +58,9 @@ constexpr KeybindField KEYBIND_FIELDS[] = {
     { "toggleInspector",  &EditorKeybinds::toggleInspector  },
     { "toggleBottom",     &EditorKeybinds::toggleBottom     },
     { "toggleEditor",     &EditorKeybinds::toggleEditor     },
+    { "toggleRenderSettings", &EditorKeybinds::toggleRenderSettings },
+    { "toggleMaterialEditor", &EditorKeybinds::toggleMaterialEditor },
+    { "toggleAssetBrowser",   &EditorKeybinds::toggleAssetBrowser   },
     { "openPreferences",  &EditorKeybinds::openPreferences  },
     { "deleteEntity",     &EditorKeybinds::deleteEntity     },
     { "deselect",         &EditorKeybinds::deselect         },
@@ -93,13 +98,43 @@ void visitScalarFields(State& state, Fn&& f) {
     f("snapRotate",        state.snapRotate);
     f("snapScale",         state.snapScale);
 }
+
+/**
+ * @brief The persisted RenderSettings fields, one (json-key, member) row each.
+ *
+ * Same single-list contract as visitScalarFields: load and save walk this one
+ * function so the two directions can never drift. Machine-quality tuning
+ * belongs here (not in the scene) by the Environment/RenderSettings split.
+ */
+template <typename Settings, typename Fn>
+void visitRenderFields(Settings& r, Fn&& f) {
+    f("renderMode",            r.renderMode);
+    f("gtao",                  r.gtao);
+    f("bloom",                 r.bloom);
+    f("probes",                r.probes);
+    f("occlusionCulling",      r.occlusionCulling);
+    f("gtaoRadius",            r.gtaoRadius);
+    f("gtaoIntensity",         r.gtaoIntensity);
+    f("gtaoPower",             r.gtaoPower);
+    f("gtaoBias",              r.gtaoBias);
+    f("bloomStrength",         r.bloomStrength);
+    f("bloomThreshold",        r.bloomThreshold);
+    f("bloomKnee",             r.bloomKnee);
+    f("bloomRadius",           r.bloomRadius);
+    f("msaaSamples",           r.msaaSamples);
+    f("contactShadows",        r.contactShadows);
+    f("contactShadowLength",   r.contactShadowLength);
+    f("contactShadowThickness", r.contactShadowThickness);
+    f("shadowResolution",      r.shadowResolution);
+    f("grid",                  r.grid);
+}
 } // namespace
 
 std::string path() {
     return (ProjectPaths::root() / "editor_settings.json").string();
 }
 
-bool load(EditorState& state) {
+bool load(EditorState& state, RenderSettings& render) {
     std::ifstream in(path());
     if (!in.good()) return false;
     json j;
@@ -139,6 +174,18 @@ bool load(EditorState& state) {
         }
     }
 
+    // Render settings (machine-quality tuning; absent keys keep defaults)
+    if (j.contains("renderSettings")) {
+        const auto& rs = j["renderSettings"];
+        visitRenderFields(render, [&](const char* key, auto& member) {
+            using M = std::decay_t<decltype(member)>;
+            if constexpr (std::is_enum_v<M>)
+                member = static_cast<M>(rs.value(key, static_cast<int>(member)));
+            else
+                member = rs.value(key, member);
+        });
+    }
+
     // Recent scenes
     state.recentScenes.clear();
     if (j.contains("recentScenes") && j["recentScenes"].is_array()) {
@@ -151,7 +198,7 @@ bool load(EditorState& state) {
     return true;
 }
 
-bool save(const EditorState& state) {
+bool save(const EditorState& state, const RenderSettings& render) {
     json j;
     j["version"] = FILE_VERSION;
     visitScalarFields(state, [&](const char* key, const auto& member) {
@@ -167,6 +214,16 @@ bool save(const EditorState& state) {
         kb[f.name] = keybindToJson(state.keybinds.*f.field);
     }
     j["keybinds"] = std::move(kb);
+
+    json rs;
+    visitRenderFields(render, [&](const char* key, const auto& member) {
+        using M = std::decay_t<decltype(member)>;
+        if constexpr (std::is_enum_v<M>)
+            rs[key] = static_cast<int>(member);
+        else
+            rs[key] = member;
+    });
+    j["renderSettings"] = std::move(rs);
 
     j["recentScenes"] = state.recentScenes;
 

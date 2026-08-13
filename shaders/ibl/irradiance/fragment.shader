@@ -11,7 +11,7 @@ out vec4 FragColor;
 
 uniform samplerCube u_envCube;
 
-const float PI = 3.14159265359;
+#include "../../_common/constants.glsl"
 
 void main() {
     vec3 N = normalize(vLocalPos);

@@ -1,10 +1,10 @@
 # ============================================================================
 # External Dependencies
 # ============================================================================
-if(NOT TARGET vkmLog)
-    add_subdirectory(vkmLog)
-endif()
-
+# vkmGL is the platform layer: its own modules/CMakeLists adds and exposes glm,
+# glfw, glew, and vkmLog (plus the stb headers, used below). The engine consumes
+# those targets instead of re-declaring the submodules, so each dependency is
+# checked out exactly once. Add vkmGL before anything that needs vkmLog.
 if(NOT TARGET vkmGL)
     add_subdirectory(vkmGL)
 endif()
@@ -21,14 +21,15 @@ endif()
 # ============================================================================
 # stb (image decoding). Header-only upstream; we compile the implementation
 # once into a tiny static lib so any engine target (not just the GL backend)
-# can decode images - the window icon is the first user. vkmGL keeps its own
+# can decode images - the window icon is the first user. The headers come from
+# vkmGL's stb submodule (the single checkout); vkmGL itself compiles a
 # file-local copy (STB_IMAGE_STATIC), so there is no duplicate-symbol clash.
 # ============================================================================
 if(NOT TARGET stb)
     set(_stb_impl ${CMAKE_CURRENT_BINARY_DIR}/stb_image_impl.c)
     file(WRITE ${_stb_impl} "#define STB_IMAGE_IMPLEMENTATION\n#include \"stb_image.h\"\n")
     add_library(stb STATIC ${_stb_impl})
-    target_include_directories(stb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/stb)
+    target_include_directories(stb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/vkmGL/modules/stb)
 endif()
 
 # ============================================================================
@@ -59,6 +60,21 @@ if(NOT TARGET assimp)
 endif()
 
 # ============================================================================
+# FreeType (font rasterizer for ImGui). Vendored so the build doesn't depend
+# on a system libfreetype being installed. Trimmed to the core rasterizer:
+# no zlib/bzip2/png/harfbuzz/brotli - none of which UI text needs - keeping
+# the build self-contained like assimp above.
+# ============================================================================
+set(FT_DISABLE_ZLIB     ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BZIP2    ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_PNG      ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BROTLI   ON CACHE BOOL "" FORCE)
+if(NOT TARGET freetype)
+    add_subdirectory(freetype)
+endif()
+
+# ============================================================================
 # ImGui Library
 # ============================================================================
 add_library(imgui STATIC
@@ -69,6 +85,7 @@ add_library(imgui STATIC
     imgui/imgui_demo.cpp
     imgui/backends/imgui_impl_glfw.cpp
     imgui/backends/imgui_impl_opengl3.cpp
+    imgui/misc/freetype/imgui_freetype.cpp
 )
 
 target_include_directories(imgui PUBLIC
@@ -76,8 +93,12 @@ target_include_directories(imgui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends
 )
 
+# FreeType font rasterizer: proper hinting, visibly crisper than the default
+# stb_truetype path at UI sizes (which has no hinting at all). Vendored above.
+target_compile_definitions(imgui PUBLIC IMGUI_ENABLE_FREETYPE)
 target_link_libraries(imgui PUBLIC
     glfw
+    freetype
 )
 
 # imgui uses its own built-in GL loader (imgui_impl_opengl3_loader.h)

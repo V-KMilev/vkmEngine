@@ -10,6 +10,8 @@
 
 #include <imgui.h>
 #include <glm/glm.hpp>
+
+#include "system/render/render_backend.h"  // GpuTextureId, for imTexture below
 #include <glm/gtc/type_ptr.hpp>
 
 #include "core/system.h"
@@ -18,6 +20,7 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/light.h"
 #include "ecs/component/mesh.h"
+#include "ecs/component/lod.h"
 #include "ecs/component/name.h"
 #include "ecs/component/transform.h"
 #include "ecs/scene.h"
@@ -39,8 +42,8 @@ namespace Engine {
  * @param glTextureId Raw OpenGL texture name to display.
  * @return The id reinterpreted as the opaque handle ImGui's image widgets expect.
  */
-inline ImTextureID imTexture(uint32_t glTextureId) {
-    return static_cast<ImTextureID>(static_cast<intptr_t>(glTextureId));
+inline ImTextureID imTexture(GpuTextureId id) {
+    return static_cast<ImTextureID>(static_cast<intptr_t>(id));
 }
 
 } // namespace Engine

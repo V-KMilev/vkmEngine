@@ -65,6 +65,7 @@ class AssetBrowserPanel {
         void openRename(Handle<Asset> h, const std::string& name);
 
         float      m_cell = 104.0f;          ///< Thumbnail edge in px
+        char       m_filter[64] = {};        ///< Grid search needle (both tabs)
 
         // Re-acquired every draw via ensureAssets - no ready flag so a
         // ResourceManager swap (scene load) doesn't leave stale handles.

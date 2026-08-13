@@ -17,26 +17,33 @@ void EditorStatusBar::draw(EditorContext& ec) {
     EditorState&        state = ec.state;
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 0));
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.10f, 0.10f, 0.11f, 1.0f));
+    // Same elevation as the menu bar, bookending the workspace.
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg));
 
     if (ImGui::BeginChild("##Status", ImVec2(0, 0), ImGuiChildFlags_None)) {
-        ImGui::SetCursorPosX(8);
+        ImGui::SetCursorPosX(EditorStyle::px(8.0f));
         ImGui::AlignTextToFramePadding();
 
         // Dirty indicator on the left edge. A small accent dot is louder than
         // a star and doesn't get lost next to the selection text.
         if (state.sceneDirty) {
+            const float r = EditorStyle::px(4.0f);
             ImGui::GetWindowDrawList()->AddCircleFilled(
-                ImVec2(ImGui::GetCursorScreenPos().x + 4.0f,
+                ImVec2(ImGui::GetCursorScreenPos().x + r,
                        ImGui::GetCursorScreenPos().y + ImGui::GetTextLineHeight() * 0.5f + 2.0f),
-                4.0f, ImGui::GetColorU32(EditorStyle::ACCENT));
-            ImGui::Dummy(ImVec2(12.0f, 0.0f));
-            ImGui::SameLine(0, 0);
+                r, ImGui::GetColorU32(EditorStyle::ACCENT));
+            // Full line height so the dot is actually hoverable for its tooltip.
+            ImGui::Dummy(ImVec2(EditorStyle::px(12.0f), ImGui::GetTextLineHeight()));
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Unsaved changes");
+            ImGui::SameLine(0, 0);
         }
 
         if (state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
-            ImGui::TextDisabled("Selected:");
+            if (state.selection.size() > 1) {
+                ImGui::TextDisabled("%zu selected  |  Active:", state.selection.size());
+            } else {
+                ImGui::TextDisabled("Selected:");
+            }
             ImGui::SameLine(0, 4);
 
             // Parent breadcrumb: walk up the hierarchy chain (max 6 levels) so
@@ -77,7 +84,7 @@ void EditorStatusBar::draw(EditorContext& ec) {
         snprintf(right, sizeof(right), "%s v%s | %s | %.8s",
                  APP_NAME, APP_VERSION, APP_BRANCH, APP_COMMIT_HASH);
         float rw = ImGui::CalcTextSize(right).x;
-        ImGui::SameLine(ImGui::GetWindowWidth() - rw - 16);
+        ImGui::SameLine(ImGui::GetWindowWidth() - rw - EditorStyle::px(16.0f));
         ImGui::TextDisabled("%s", right);
     }
     ImGui::EndChild();

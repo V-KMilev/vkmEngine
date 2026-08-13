@@ -14,12 +14,34 @@ namespace Engine {
 namespace GLBindings {
 
     // UBO binding points - match `layout(std140, binding = N)` in the shaders.
+    // (Binding 1 is free: the light list moved to an SSBO, below.)
     namespace UBOBindingPoints {
         constexpr uint32_t Material = 0;  ///< Per-material PBR properties.
-        constexpr uint32_t Lights   = 1;  ///< Scene light list.
         constexpr uint32_t Camera   = 2;  ///< Per-frame camera (viewProjection, position).
         constexpr uint32_t Shadow   = 3;  ///< Shadow casters (cascades / spot / cube).
         constexpr uint32_t Probes   = 4;  ///< Reflection-probe boxes + layers (ProbeBlock).
+    }
+
+    // SSBO binding points - match `layout(std430, binding = N)` in the shaders.
+    // A separate namespace from the UBO points (GL binds them independently).
+    namespace SSBOBindingPoints {
+        constexpr uint32_t Lights      = 0;  ///< Scene light list (grows past the UBO size limit).
+        constexpr uint32_t ClusterGrid = 1;  ///< Per-cluster light lists (written by the cull compute, read by forward).
+        constexpr uint32_t Particles   = 2;  ///< Billboard particle instances, indexed by the particle vertex stage.
+
+        // The GPU occlusion cull's working set (3-9) and the per-instance
+        // transforms every geometry vertex stage reads (10-12). Instance data
+        // lives in storage rather than vertex attributes so the cull can pick
+        // instances by writing an index instead of copying their matrices; see
+        // shaders/_common/instancing.glsl.
+        constexpr uint32_t CullBounds     = 3;
+        constexpr uint32_t CullRunIndex   = 4;
+        constexpr uint32_t CullVisible    = 7;   // 5, 6 and 8 are free: the cull reads bounds and writes indices, never matrices
+        constexpr uint32_t CullCommands   = 9;
+
+        constexpr uint32_t InstanceModels  = 10;  ///< Per-instance model matrices, batch order.
+        // 11 is free: the index buffer reaches the vertex stage as an attribute.
+        constexpr uint32_t InstanceNormals = 12;  ///< Per-instance normal matrices, batch order.
     }
 
     // Texture units above the material maps (0-10), for the shadow pass outputs.
@@ -38,12 +60,33 @@ namespace GLBindings {
         constexpr uint32_t EnvCube    = 17;  ///< Sharp environment cubemap (skybox; samplerCube).
     }
 
+    // The low slots the composite + bloom shaders sample directly (their
+    // samplers default to binding 0/1).
+    namespace CompositeTextureSlots {
+        constexpr uint32_t Scene = 0;  ///< Final post-chain colour (u_hdr).
+        constexpr uint32_t Bloom = 1;  ///< Bloom mip 0 (u_bloom).
+    }
+    namespace BloomTextureSlots {
+        constexpr uint32_t Source = 0;  ///< Downsample/upsample source (u_src).
+    }
+
     // Post-process inputs above the IBL slots.
     namespace PostTextureSlots {
-        constexpr uint32_t SceneColor = 18;  ///< Scene colour (refraction + SSR + motion-blur source).
-        constexpr uint32_t SceneDepth = 19;  ///< Scene depth texture (SSR ray-march / GTAO / motion blur).
-        constexpr uint32_t SceneGBuffer = 20; ///< Scene G-buffer: oct view-normal + roughness + metalness (SSR / GTAO).
+        constexpr uint32_t SceneColor = 18;  ///< Scene colour (refraction + post-pass source: fog, DoF, decals).
+        constexpr uint32_t SceneDepth = 19;  ///< Scene depth texture (GTAO / contact shadows / decals / fog / DoF).
+        constexpr uint32_t SceneGBuffer = 20; ///< Scene G-buffer: oct view-normal + roughness + metalness (GTAO / decals).
         constexpr uint32_t SSAO       = 21;  ///< GTAO occlusion factor, sampled by the forward pass.
+        constexpr uint32_t FogVolume  = 24;  ///< Integrated froxel fog (sampler3D), sampled by the fog-apply pass.
+        constexpr uint32_t ContactShadow = 25;  ///< Screen-space sun contact-shadow mask, sampled by the forward pass.
+        constexpr uint32_t HiZ        = 30;  ///< Hierarchical depth pyramid: reduced by the HiZ pass, tested by the occlusion cull.
+    }
+
+    // Baked irradiance volume: SH-L1 coefficients, one sampler3D each.
+    namespace IrradianceVolumeSlots {
+        constexpr uint32_t SH0 = 26;
+        constexpr uint32_t SH1 = 27;
+        constexpr uint32_t SH2 = 28;
+        constexpr uint32_t SH3 = 29;
     }
 
     // Reflection-probe cube-map arrays, above the post slots. Two samplers hold
@@ -75,7 +118,7 @@ namespace GLBindings {
 
     // Bits packed into MaterialUBO.textureFlags: which maps are bound, so the
     // shader knows which to sample. Bit position == the map's texture slot.
-    // Must match the FLAG_* constants in shaders/forward.
+    // Must match the TEX_* constants in shaders/forward/pbr.
     namespace MaterialTextureFlags {
         constexpr int Albedo              = 1 << TextureSlots::Albedo;
         constexpr int Normal              = 1 << TextureSlots::Normal;

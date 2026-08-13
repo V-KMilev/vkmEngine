@@ -18,4 +18,3 @@ void MeshAsset::computeAndSetBounds() {
 }
 
 } // namespace Engine
-

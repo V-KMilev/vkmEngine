@@ -67,8 +67,8 @@ class RenderSystem : public System {
          * @brief Editable render tuning (pass toggles + params). The editor's Render
          * Settings panel mutates this; it is copied into the RenderView each frame.
          */
-        RenderSettings& settings() { return m_settings; }
-        const RenderSettings& settings() const { return m_settings; }
+        RenderSettings& getSettings() { return m_settings; }
+        const RenderSettings& getSettings() const { return m_settings; }
 
     private:
         /**

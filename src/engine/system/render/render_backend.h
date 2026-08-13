@@ -41,14 +41,25 @@ struct BackendInfo {
  * derives it from the asset handle); rendering the same key again overwrites
  * that target. Sizes are square pixels.
  */
+/**
+ * @brief What fills the preview behind the mesh.
+ */
+enum class PreviewBackground : uint8_t {
+    Dark,  ///< Dark studio backdrop (the default).
+    Grey,  ///< Mid-grey backdrop, for judging albedo and silhouettes.
+    Sky,   ///< The baked environment cubemap (falls back to Dark before the IBL bakes).
+};
+
 struct PreviewRequest {
-    uint64_t       key      = 0;      ///< Identifies the cached target.
-    uint32_t       size     = 256;    ///< Output edge length in pixels.
-    MeshHandle     mesh;              ///< Shape to draw.
-    MaterialHandle material;          ///< Material to draw it with.
-    float          yawDeg   = 35.0f;  ///< Orbit yaw (degrees).
-    float          pitchDeg = 20.0f;  ///< Orbit pitch (degrees).
-    float          distance = 3.0f;   ///< Camera distance, in mesh bounding radii.
+    uint64_t          key      = 0;      ///< Identifies the cached target.
+    uint32_t          size     = 256;    ///< Output edge length in pixels.
+    MeshHandle        mesh;              ///< Shape to draw.
+    MaterialHandle    material;          ///< Material to draw it with.
+    float             yawDeg   = 35.0f;  ///< Orbit yaw (degrees).
+    float             pitchDeg = 20.0f;  ///< Orbit pitch (degrees).
+    float             distance = 3.0f;   ///< Camera distance, in mesh bounding radii.
+    PreviewBackground background = PreviewBackground::Dark;  ///< Backdrop behind the mesh.
+    float             lightYawDeg = 0.0f;  ///< Studio rig rotation around Y (degrees).
 };
 
 /**
@@ -61,6 +72,20 @@ struct PreviewRequest {
  * another: there is no GPU state to migrate, and the new backend re-uploads
  * what it needs from the handles in the next RenderView.
  */
+/**
+ * @brief A GPU texture, as an opaque id the UI layer can hand back to the backend.
+ *
+ * The value means whatever the backend wants it to: OpenGL returns the GL
+ * texture name, and a Vulkan or D3D12 backend would return a descriptor handle.
+ * Nothing outside the backend may interpret it - the only valid operations are
+ * passing it back and testing it against zero, which always means "no texture".
+ *
+ * 64 bits because that is what the wider APIs need. GL names fit in 32, but
+ * VkDescriptorSet and a D3D12 descriptor handle do not, and a type that cannot
+ * represent the second backend's handles is not an abstraction.
+ */
+using GpuTextureId = uint64_t;
+
 class RenderBackend {
     public:
         explicit RenderBackend(RenderBackendType type) : m_type(type) {}
@@ -103,19 +128,19 @@ class RenderBackend {
         virtual void render(const RenderView& view, const ResourceManager& resources) = 0;
 
         /**
-         * @brief Editor preview hooks - optional.
+         * @brief Recompile shaders whose source changed on disk - a dev hook.
          *
-         * renderPreview() draws the request offscreen and returns an opaque
-         * texture id the UI layer can display (for OpenGL: the GL texture
-         * name ImGui samples); previewTexture() returns the last-rendered
-         * texture for a key, or 0 when none exists. A backend without an
-         * offscreen path keeps these no-ops and the editor shows no image.
+         * Cheap enough to call every frame: the common answer is "nothing
+         * changed", which costs a directory scan and a timestamp compare. A
+         * shader that no longer compiles keeps the program it had and logs the
+         * error, so a half-finished edit never takes the renderer down.
+         *
+         * A backend that compiles shaders ahead of time, or a packaged build
+         * with no sources on disk, leaves this a no-op.
+         *
+         * @return Number of shaders recompiled; 0 when nothing changed.
          */
-        virtual uint32_t renderPreview(const PreviewRequest& request,
-                                       const ResourceManager& resources) { return 0; }
-        virtual uint32_t previewTexture(uint64_t key) const { return 0; }
-        virtual void releasePreview(uint64_t key) {}
-        virtual void releaseAllPreviews() {}
+        virtual uint32_t reloadChangedShaders() { return 0; }
 
     protected:
         RenderBackendType m_type;

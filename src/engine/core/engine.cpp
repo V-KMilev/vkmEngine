@@ -9,9 +9,6 @@
 
 namespace Engine {
 
-Engine::Engine()  = default;
-Engine::~Engine() = default;
-
 namespace {
 
 constexpr const char* STAGE_NAMES[] = {
@@ -21,6 +18,9 @@ static_assert(sizeof(STAGE_NAMES) / sizeof(STAGE_NAMES[0]) == static_cast<size_t
               "STAGE_NAMES must stay in sync with SystemStage");
 
 } // namespace
+
+Engine::Engine()  = default;
+Engine::~Engine() = default;
 
 void Engine::run() {
     constexpr float FPS_LOG_INTERVAL = 1.0f;
@@ -32,12 +32,16 @@ void Engine::run() {
         m_clock.beginFrame();
 
         FrameContext ctx{
-            m_window, m_clock,
             m_scene, m_resources,
-            nullptr
+            m_clock, m_events, m_window, m_input
         };
 
         m_window.updateInput();
+
+        // Resolve actions once, before any system runs, so every reader in the
+        // frame - and both the fixed and variable updates - sees the same input
+        // state and the same edges.
+        m_input.update(m_window.getInputHandle());
 
         if (!m_initialized) {
             initSystems(ctx);
@@ -59,6 +63,12 @@ void Engine::run() {
         // Variable-rate: every stage's update() in order, one Tracy zone per stage.
         for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
             PROFILE_SCOPE_NAMED(STAGE_NAMES[s]);
+
+            // Queued events deliver at the top of Simulation - after input,
+            // before any gameplay system ticks. The bus is infrastructure, so
+            // the loop owns this step rather than a stand-in system.
+            if (s == static_cast<size_t>(SystemStage::Simulation)) m_events.flush();
+
             for (auto& sys : m_systemsByStage[s]) {
                 sys->update(ctx);
             }

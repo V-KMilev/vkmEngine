@@ -6,8 +6,10 @@
 
 #include "gl_shader.h"
 #include "gl_context.h"
+#include "gl_screen_triangle.h"
 
 #include "gl_frame_context.h"
+#include "convention/gl_bindings.h"
 #include "gl_target.h"
 #include "data/gl_bloom.h"
 #include "system/render/render_view.h"
@@ -30,7 +32,7 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
 
     beginFullscreen(ctx.gl);
 
-    m_tri.bind();
+    ctx.screenTri.bind();
     bloom.bindFbo();
 
     const int mips = bloom.mipCount();
@@ -40,34 +42,34 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
     m_down->bind();
     for (int mip = 0; mip < mips; ++mip) {
         if (mip == 0) {
-            ctx.sceneHDR.bindColor(0);
+            ctx.colorSrc->bindColor(GLBindings::BloomTextureSlots::Source);
             m_down->setUniform1f("u_srcLod", 0.0f);
             m_down->setUniform1i("u_karis", 1);
             m_down->setUniform1f("u_threshold", settings.bloomThreshold);
             m_down->setUniform1f("u_knee",      settings.bloomKnee);
         } else {
-            bloom.bind(0);
+            bloom.bind(GLBindings::BloomTextureSlots::Source);
             m_down->setUniform1f("u_srcLod", static_cast<float>(mip - 1));
             m_down->setUniform1i("u_karis", 0);
         }
         bloom.attachMip(mip);
-        m_tri.emit();
+        ctx.screenTri.emit();
     }
 
     // Additive upsample back up the chain (tent filter).
     m_up->bind();
     m_up->setUniform1f("u_filterRadius", settings.bloomRadius);
-    bloom.bind(0);
+    bloom.bind(GLBindings::BloomTextureSlots::Source);
     ctx.gl.setBlending(true);
     ctx.gl.setBlendFunc(GL_ONE, GL_ONE);
     for (int mip = mips - 1; mip > 0; --mip) {
         m_up->setUniform1f("u_srcLod", static_cast<float>(mip));
         bloom.attachMip(mip - 1);
-        m_tri.emit();
+        ctx.screenTri.emit();
     }
     ctx.gl.setBlending(false);
 
-    m_tri.unbind();
+    ctx.screenTri.unbind();
     bloom.unbindFbo();
     endFullscreen(ctx.gl);
 }

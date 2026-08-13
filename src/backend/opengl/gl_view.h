@@ -2,11 +2,13 @@
 
 #include <cstdint>
 #include <memory>
+#include <unordered_set>
 #include <vector>
 
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/texture_asset.h"
+#include "resource/asset/font_asset.h"
 
 #include "data/gl_mesh.h"
 #include "data/gl_material.h"
@@ -45,6 +47,11 @@ struct GLResourceTable {
  * is uploaded the first time a frame references it and re-uploaded only when its
  * version changes. This is the only place the backend reads ResourceManager;
  * the render path resolves a drawable's handles to these GPU objects.
+ *
+ * The version gate is only meaningful within a single asset graph. A scene load
+ * or editor play-stop restore swaps the whole graph, and the incoming one
+ * restarts its handles and versions from scratch, so the gate cannot see the
+ * difference. The backend detects that swap centrally and calls invalidate().
  */
 class GLView {
     public:
@@ -67,6 +74,15 @@ class GLView {
         void sync(const RenderView& view, const ResourceManager& resources);
 
         /**
+         * @brief Drop every cached GPU object.
+         *
+         * Called when the asset graph is replaced: the incoming graph reuses the
+         * same handle indices, generations and versions, so nothing in these
+         * tables can be matched against it. The next sync() repopulates.
+         */
+        void invalidate();
+
+        /**
          * @brief Resolve a handle to its synced GPU object; null if the handle is empty
          * or its asset has not been sync()'d into the table yet. The returned
          * pointer is owned by this table - do not store it across a sync().
@@ -74,6 +90,24 @@ class GLView {
         const GLMesh*     getMesh(const MeshHandle& handle) const;
         const GLMaterial* getMaterial(const MaterialHandle& handle) const;
         const Core::Texture2D* getTexture(const TextureHandle& handle) const;
+        const Core::Texture2D* getFontAtlas(const FontHandle& handle) const;
+
+        /**
+         * @brief The magenta/black checkerboard bound wherever a real texture
+         *        should be but isn't.
+         *
+         * A material that references a texture which is still streaming, failed
+         * to decode, or no longer resolves would otherwise sample whatever the
+         * previous draw left in that slot - so a broken asset shows up as some
+         * other object's texture, which reads as a shading bug rather than a
+         * missing file. Binding something deliberately, obviously wrong makes
+         * the failure self-reporting.
+         *
+         * Built on first use, so a frame that never misses never allocates it.
+         *
+         * @return The placeholder texture; never null once the GL context exists.
+         */
+        const Core::Texture2D& missingTexture() const;
 
     private:
         /**
@@ -91,10 +125,30 @@ class GLView {
         template <typename GLT, typename AssetT>
         void ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, const ResourceManager& resources);
 
+        /**
+         * @brief Warn once if @p handle's asset settled with no pixels.
+         *
+         * The placeholder makes a missing texture visible; this names the file,
+         * which is the part the screen cannot tell you. Assets still streaming
+         * are skipped - those are not failures, and they resolve on their own.
+         *
+         * @param handle    The texture to check.
+         * @param resources The resource manager holding it.
+         */
+        void reportIfMissing(const TextureHandle& handle, const ResourceManager& resources);
+
     private:
         GLResourceTable<GLMesh>     m_meshes;
         GLResourceTable<GLMaterial> m_materials;
         GLResourceTable<GLTexture>  m_textures;
+        GLResourceTable<GLTexture>  m_fontAtlases;  ///< SDF atlases keyed by FontHandle (fonts carry pixels, not TextureAssets).
+
+        // Not part of the tables: it belongs to no asset and must survive the
+        // epoch flush, since a graph swap is exactly when things are missing.
+        mutable std::unique_ptr<Core::Texture2D> m_missingTexture;
+
+        std::unordered_set<uint32_t> m_reportedMissing;  ///< Texture ids already warned about, so the log stays one line per asset.
+
 };
 
 } // namespace Engine

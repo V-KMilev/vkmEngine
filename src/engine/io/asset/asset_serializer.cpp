@@ -88,15 +88,18 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     return src;
 }
 
-namespace {
-
 /**
  * @brief Apply an "inline" material descriptor to an existing MaterialAsset,
  * resolving texture refs via findByName.
+ *
+ * Public (declared in asset_serializer.h) so asset_registration.cpp can hand
+ * it to the inline material factory - it used to sit behind a pure forwarding
+ * wrapper for that.
  */
-void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const ResourceManager& resources) {
+void applyInline(const nlohmann::json& src, MaterialAsset& m, const ResourceManager& resources) {
     // Mirror of materialToInline: reflection drives the scalar / vector / enum
-    // fields (a missing key keeps the current value), textures resolve by name.
+    // fields (a missing key keeps the current value, except type which resets
+    // to Opaque), textures resolve by name.
     Reflect::forEachField(m, [&](std::string_view name, auto& val) {
         using V = std::decay_t<decltype(val)>;
         const std::string key(name);
@@ -126,6 +129,8 @@ void applyInlineMaterial(const nlohmann::json& src, MaterialAsset& m, const Reso
         }
     }
 }
+
+namespace {
 
 /**
  * @brief Emit one name-only asset reference into @p target.
@@ -190,7 +195,7 @@ namespace {
  * @brief Load the `source` object from a library recipe file (a material's inline
  * form). Returns false (logging) if the file is missing or malformed.
  */
-bool loadLibrarySource(const Record& record, nlohmann::json& outSource) {
+bool loadLibrarySource(const AssetRecord& record, nlohmann::json& outSource) {
     const std::filesystem::path path = AssetLibrary::get().recipePath(record);
     nlohmann::json doc;
     if (!detail::readJsonFile(path, doc, "Asset library recipe")) return false;
@@ -209,7 +214,7 @@ bool loadLibrarySource(const Record& record, nlohmann::json& outSource) {
  * manifest.
  */
 bool resolveCookedSource(AssetType type, const std::string& name, nlohmann::json& outSource) {
-    const Record* record = AssetLibrary::get().find(type, name);
+    const AssetRecord* record = AssetLibrary::get().find(type, name);
     if (!record) {
         LOG_ERROR("Asset '%s' (%s) has no entry in the asset library manifest",
             name.c_str(), Reflect::enumName(type));
@@ -283,12 +288,6 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
     LOG_INFO("%zu texture(s), %zu material(s), %zu mesh(es) created; %zu+%zu+%zu skipped (already loaded)",
         texC, matC, mshC, texS, matS, mshS);
     return true;
-}
-
-// Expose the inline applier for asset_registration.cpp to use when
-// registering the inline material factory.
-void applyInline(const nlohmann::json& src, MaterialAsset& m, const ResourceManager& resources) {
-    applyInlineMaterial(src, m, resources);
 }
 
 } // namespace AssetSerializer

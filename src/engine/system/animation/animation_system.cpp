@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-#include "logger.h"
-
 #include "core/clock.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
@@ -31,6 +29,9 @@ void AnimationSystem::update(FrameContext& ctx) {
     if (!animStorage) return;
 
     const size_t animCount = animStorage->size();
+
+    m_appliedFlags.assign(animCount, 0);
+
     const size_t grain = std::max<size_t>(128, animCount / (ThreadPool::get().threadCount() * 4));
 
     // Parallel: advance time and apply tracks to Transform for every playing animation.
@@ -57,6 +58,7 @@ void AnimationSystem::update(FrameContext& ctx) {
             const EntityId id{entityIdx, scene.generationOf(entityIdx)};
             if (scene.has<Transform>(id)) {
                 applyAnimation(animation, scene.get<Transform>(id));
+                m_appliedFlags[i] = 1;
             }
         });
     }
@@ -67,8 +69,7 @@ void AnimationSystem::update(FrameContext& ctx) {
     {
         PROFILE_SCOPE("Animation/MarkDirty");
         for (size_t i = 0; i < animCount; ++i) {
-            const Animation& animation = animStorage->dataAt(static_cast<uint32_t>(i));
-            if (!animation.playing) continue;
+            if (!m_appliedFlags[i]) continue;
 
             const uint32_t entityIdx = animStorage->keyAt(static_cast<uint32_t>(i));
             const EntityId id{entityIdx, scene.generationOf(entityIdx)};

@@ -1,4 +1,4 @@
-#include "light_generators.h"
+#include "generator/light_generators.h"
 
 namespace Engine {
 
