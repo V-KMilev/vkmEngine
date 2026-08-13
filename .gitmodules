@@ -1,9 +1,6 @@
 [submodule "modules/vkmGL"]
 	path = modules/vkmGL
 	url = https://github.com/V-KMilev/vkmGL.git
-[submodule "modules/vkmLog"]
-	path = modules/vkmLog
-	url = https://github.com/V-KMilev/vkmLog.git
 [submodule "modules/imgui"]
 	path = modules/imgui
 	url = https://github.com/ocornut/imgui.git
@@ -16,6 +13,6 @@
 [submodule "modules/tracy"]
 	path = modules/tracy
 	url = https://github.com/wolfpld/tracy.git
-[submodule "modules/stb"]
-	path = modules/stb
-	url = https://github.com/nothings/stb.git
+[submodule "modules/freetype"]
+	path = modules/freetype
+	url = https://github.com/freetype/freetype.git
