@@ -759,15 +759,18 @@ void main() {
                 // that the silhouette reads as circular.
                 const int N_DISK = 12;
                 vec3 verts[12];
-                for (int k = 0; k < N_DISK; ++k) {
-                    float t = -float(k) / float(N_DISK) * 6.2831853;  // CW order
+                // Named apart from the enclosing light loop's k: shadowing a
+                // counter inside maths this dense is a trap for whoever edits
+                // it next, even though the scopes are distinct.
+                for (int dv = 0; dv < N_DISK; ++dv) {
+                    float t = -float(dv) / float(N_DISK) * 6.2831853;  // CW order
                     vec3 worldP = lightPos + cos(t) * U + sin(t) * Vv;
-                    verts[k] = normalize(toLocal * (worldP - vWorldPos));
+                    verts[dv] = normalize(toLocal * (worldP - vWorldPos));
                 }
                 float sum = 0.0;
-                for (int k = 0; k < N_DISK; ++k) {
-                    int j = (k + 1) % N_DISK;
-                    sum += ltcEdgeIntegral(verts[k], verts[j]);
+                for (int de = 0; de < N_DISK; ++de) {
+                    int next = (de + 1) % N_DISK;
+                    sum += ltcEdgeIntegral(verts[de], verts[next]);
                 }
                 irradiance = sum;
             }
