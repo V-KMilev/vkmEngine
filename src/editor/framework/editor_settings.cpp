@@ -112,6 +112,7 @@ void visitRenderFields(Settings& r, Fn&& f) {
     f("gtao",                  r.gtao);
     f("bloom",                 r.bloom);
     f("probes",                r.probes);
+    f("occlusionCulling",      r.occlusionCulling);
     f("gtaoRadius",            r.gtaoRadius);
     f("gtaoIntensity",         r.gtaoIntensity);
     f("gtaoPower",             r.gtaoPower);
