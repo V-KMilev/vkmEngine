@@ -34,8 +34,16 @@ namespace Config {
     // CLUSTER_X x CLUSTER_Y screen tiles by CLUSTER_Z exponential depth slices,
     // and a compute pass culls the lights into each cluster's list (capped at
     // MAX_LIGHTS_PER_CLUSTER). The forward pass then shades only its cluster.
-    constexpr uint32_t CLUSTER_X = 16;
-    constexpr uint32_t CLUSTER_Y = 9;
+    //
+    // 32x18 puts a tile at roughly 60px on a 1080p-class viewport. Coarser tiles
+    // make each pixel iterate lights that only clip a far corner of its tile: at
+    // 16x9 (120px tiles) that measured 0.35 ms of extra forward shading in a
+    // 220-light scene. Finer than this stops paying - 48x27 measured identical
+    // to 32x18 while costing 2.3x the grid memory - because the cull is already
+    // tight enough that the remaining per-pixel lights genuinely overlap it.
+    // The cull pass itself is insensitive to the split (0.10 -> 0.11 ms).
+    constexpr uint32_t CLUSTER_X = 32;
+    constexpr uint32_t CLUSTER_Y = 18;
     constexpr uint32_t CLUSTER_Z = 24;
     constexpr uint32_t MAX_LIGHTS_PER_CLUSTER = 64;
 
