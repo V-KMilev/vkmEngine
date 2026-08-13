@@ -28,6 +28,7 @@
 #include "platform/window/window_manager.h"
 #include "system/camera/camera_controller_system.h"
 #include "system/render/render_system.h"
+#include "system/render/editor_render_hooks.h"
 #include "system/script/script_module.h"
 #include "system/render/render_view.h"
 #include "ui/editor_theme.h"
