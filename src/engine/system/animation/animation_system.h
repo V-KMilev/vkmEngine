@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <vector>
+
 #include "core/system.h"
 
 namespace Engine {
@@ -45,6 +48,19 @@ class AnimationSystem : public System {
          * @param transform The transform component to update.
          */
         static void applyAnimation(const Animation& animation, Transform& transform);
+
+    private:
+        /**
+         * @brief Which slots wrote a Transform this frame, set by the parallel pass.
+         *
+         * The serial dirty-mark pass cannot ask `playing` instead: the frame a
+         * non-looping animation ends, the parallel pass clears `playing` and
+         * *then* writes the final pose, so keying off it would skip marking the
+         * one write that mattered and leave a parented entity a frame short of
+         * its end pose for good. Written at disjoint indices, so the parallel
+         * pass needs no synchronisation - the same shape VisibilitySystem uses.
+         */
+        std::vector<uint8_t> m_appliedFlags;
 };
 
 } // namespace Engine
