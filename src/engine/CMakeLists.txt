@@ -7,6 +7,7 @@ file(GLOB_RECURSE ENGINECORE_SOURCES CONFIGURE_DEPENDS
     io/*.cpp
     resource/*.cpp
     system/animation/*.cpp
+    system/particle/*.cpp
     system/async/*.cpp
     system/camera/*.cpp
     system/visibility/*.cpp
@@ -14,6 +15,7 @@ file(GLOB_RECURSE ENGINECORE_SOURCES CONFIGURE_DEPENDS
     system/script/*.cpp
     system/event/*.cpp
     system/hierarchy/*.cpp
+    system/ui/*.cpp
     system/io/*.cpp
     platform/window/*.cpp
     platform/threading/*.cpp

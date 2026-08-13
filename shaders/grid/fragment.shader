@@ -7,6 +7,8 @@
 in vec3 vWorld;
 out vec4 FragColor;
 
+layout(binding = 19) uniform sampler2D u_sceneDepth;  // geometry target depth
+
 uniform vec3  u_camPos;
 uniform float u_extent;
 
@@ -18,6 +20,12 @@ float gridFactor(vec2 coord, float spacing) {
 }
 
 void main() {
+    // The grid draws into the post chain, whose targets carry no depth
+    // attachment - so the LEQUAL occlusion test runs here instead: keep the
+    // fragment only when nothing in the scene is in front of it.
+    float sceneDepth = texelFetch(u_sceneDepth, ivec2(gl_FragCoord.xy), 0).r;
+    if (gl_FragCoord.z > sceneDepth) discard;
+
     vec2 c = vWorld.xz;
 
     float minor = gridFactor(c,  1.0);

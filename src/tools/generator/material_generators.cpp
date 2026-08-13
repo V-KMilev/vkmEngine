@@ -1,10 +1,11 @@
 #define VKM_LOG_CATEGORY "GENERATOR"
 
-#include "material_generators.h"
+#include "generator/material_generators.h"
 
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
+
 #include "resource/resource_manager.h"
 #include "generator/texture_generators.h"
 
