@@ -189,17 +189,22 @@ class Scene {
          */
         template<typename First, typename... Rest, typename Fn>
         void forEach(Fn&& fn) {
-            auto& firstStorage = getStorage<First>();
+            // findStorage, not getStorage: iterating is a read, and creating the
+            // set as a side effect of looking would also flip a later
+            // storage<T>() from null to non-null - which several systems branch on.
+            auto* firstStorage = findStorage<First>();
+            if (!firstStorage) return;
 
             if constexpr (sizeof...(Rest) == 0) {
-                firstStorage.forEach([&](uint32_t entityIdx, First& first) {
+                firstStorage->forEach([&](uint32_t entityIdx, First& first) {
                     EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
                     fn(eid, first);
                 });
             } else {
-                auto restStorages = std::make_tuple(&getStorage<Rest>()...);
+                auto restStorages = std::make_tuple(findStorage<Rest>()...);
+                if (!(std::get<SparseSet<Rest>*>(restStorages) && ...)) return;
 
-                firstStorage.forEach([&](uint32_t entityIdx, First& first) {
+                firstStorage->forEach([&](uint32_t entityIdx, First& first) {
                     if (!(std::get<SparseSet<Rest>*>(restStorages)->contains(entityIdx) && ...)) return;
 
                     EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
