@@ -35,6 +35,7 @@ void GLTexture::update(const TextureAsset& texture) {
         m_texture->setData(data, texture.params.width, texture.params.height,
                            params.format, params.type);
     }
+    if (data) m_hasPixels = true;
 }
 
 void GLTexture::update(const FontAsset& font) {
@@ -54,6 +55,7 @@ void GLTexture::update(const FontAsset& font) {
     } else if (params.data) {
         m_texture->setData(params.data, params.width, params.height, GL_RED, GL_UNSIGNED_BYTE);
     }
+    if (params.data) m_hasPixels = true;
 }
 
 } // namespace Engine

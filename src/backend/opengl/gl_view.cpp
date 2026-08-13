@@ -2,6 +2,14 @@
 
 #include "gl_view.h"
 
+#include <vector>
+
+#include <GL/glew.h>
+
+#include "logger.h"
+
+#include "texture/gl_texture.h"
+
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"
 
@@ -53,6 +61,21 @@ void GLView::invalidateOnEpochChange(const ResourceManager& resources) {
     m_epoch = epoch;
 }
 
+void GLView::reportIfMissing(const TextureHandle& handle, const ResourceManager& resources) {
+    const TextureAsset& asset = resources.get(handle);
+    // Still in flight is not a failure - it resolves on a later frame, and the
+    // placeholder covers the gap meanwhile.
+    if (asset.loading || !asset.pixelData.empty()) return;
+
+    // Settled with nothing in it: the decode failed or the file was never
+    // there. Say so once per asset - the checkerboard shows that something is
+    // wrong, this says which file, which is the part you cannot see on screen.
+    if (!m_reportedMissing.insert(handle.id()).second) return;
+
+    LOG_WARNING("Texture '%s' has no pixels (path '%s') - drawing the missing-texture placeholder",
+        asset.name.c_str(), asset.filePath.c_str());
+}
+
 void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     invalidateOnEpochChange(resources);
 
@@ -74,6 +97,7 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         if (!material) continue;
         for (const auto& binding : material->getTextureBindings()) {
             ensure(m_textures, binding.handle, resources);
+            reportIfMissing(binding.handle, resources);
         }
     }
 
@@ -100,7 +124,50 @@ const Core::Texture2D* GLView::getTexture(const TextureHandle& handle) const {
     if (!handle) return nullptr;
     const uint32_t id = handle.id();
     if (id >= m_textures.slots.size() || !m_textures.slots[id].gl) return nullptr;
+    // A texture whose pixels never arrived is not usable data: report it absent
+    // so the caller substitutes the placeholder instead of sampling undefined
+    // contents.
+    if (!m_textures.slots[id].gl->hasPixels()) return nullptr;
     return &m_textures.slots[id].gl->getTexture();
+}
+
+const Core::Texture2D& GLView::missingTexture() const {
+    if (m_missingTexture) return *m_missingTexture;
+
+    // 8x8 magenta-on-black checker. Magenta because nothing in a PBR scene is
+    // legitimately that colour, and a checker because a flat fill can pass for
+    // an authored material while a grid at any scale reads as "not a texture".
+    constexpr uint32_t SIZE  = 8;
+    constexpr uint32_t CHECK = 2;   // pixels per square
+    std::vector<uint8_t> pixels(SIZE * SIZE * 4);
+    for (uint32_t y = 0; y < SIZE; ++y) {
+        for (uint32_t x = 0; x < SIZE; ++x) {
+            const bool lit = ((x / CHECK) + (y / CHECK)) % 2 == 0;
+            uint8_t* p = &pixels[(y * SIZE + x) * 4];
+            p[0] = lit ? 255 : 0;
+            p[1] = 0;
+            p[2] = lit ? 255 : 0;
+            p[3] = 255;
+        }
+    }
+
+    Core::Texture2DParams params;
+    params.width           = SIZE;
+    params.height          = SIZE;
+    params.internalFormat  = GL_SRGB8_ALPHA8;  // sampled as colour, like any albedo map
+    params.format          = GL_RGBA;
+    params.type            = GL_UNSIGNED_BYTE;
+    params.wrapS           = Core::TextureWrap::Repeat;
+    params.wrapT           = Core::TextureWrap::Repeat;
+    // Nearest, and no mips: the point is to stay a hard-edged grid at every
+    // distance rather than blurring into flat magenta far away.
+    params.minFilter       = Core::TextureMinFilter::Nearest;
+    params.magFilter       = Core::TextureMagFilter::Nearest;
+    params.generateMipmaps = false;
+    params.data            = pixels.data();
+
+    m_missingTexture = std::make_unique<Core::Texture2D>("missing", params);
+    return *m_missingTexture;
 }
 
 const Core::Texture2D* GLView::getFontAtlas(const FontHandle& handle) const {

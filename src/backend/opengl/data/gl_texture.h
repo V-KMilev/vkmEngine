@@ -37,8 +37,19 @@ class GLTexture {
 
         const Core::Texture2D& getTexture() const { return *m_texture; }
 
+        /**
+         * @brief Whether real pixels have ever been uploaded into this texture.
+         *
+         * False for an asset that is still streaming in or whose decode failed:
+         * the GL object exists and is bindable, but its contents are undefined.
+         * Callers should substitute the missing-texture placeholder rather than
+         * sample it, so a load failure is visible instead of arbitrary.
+         */
+        bool hasPixels() const { return m_hasPixels; }
+
     private:
         std::unique_ptr<Core::Texture2D> m_texture;
+        bool                             m_hasPixels = false;
 };
 
 } // namespace Engine
