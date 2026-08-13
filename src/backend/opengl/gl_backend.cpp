@@ -14,6 +14,7 @@
 #include "gl_pass.h"
 #include "gl_shader.h"
 #include "texture/gl_texture.h"
+#include "shader/gl_shader_reload.h"
 #include "pass/gl_shadow_pass.h"
 #include "pass/gl_depth_prepass.h"
 #include "pass/gl_resolve_pass.h"
@@ -431,6 +432,12 @@ void GLBackend::releasePreview(uint64_t key) {
 GpuTextureId GLBackend::textureId(const TextureHandle& handle) const {
     const Core::Texture2D* tex = m_view.getTexture(handle);
     return tex ? tex->getID() : 0;
+}
+
+uint32_t GLBackend::reloadChangedShaders() {
+    // Every Core::Shader registers itself, so this reaches the passes, the
+    // bakers and the editor previews without any of them opting in.
+    return Core::reloadChangedShaders("shaders");
 }
 
 void GLBackend::releaseAllPreviews() {
