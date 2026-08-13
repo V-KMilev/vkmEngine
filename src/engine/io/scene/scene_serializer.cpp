@@ -236,6 +236,7 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     std::vector<std::pair<Entity, std::string>> prefabRoots;  // instance roots to expand
     size_t entityCount = 0;
     std::set<std::string> unknownKeys;  // dedup warnings - one per drift, not per entity
+    const json noComponents = json::object();   // stand-in for an entity that has none
 
     try {
         for (const auto& entry : doc["entities"]) {
@@ -247,7 +248,11 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             const Entity entity = staging.createEntityAt(id);
             ++entityCount;
 
-            const auto& components = entry.value("components", json::object());
+            // Referenced, not value()'d: nlohmann returns by value, so asking
+            // that way deep-copied every entity's whole component block on the
+            // way past it.
+            const auto it = entry.find("components");
+            const json& components = (it != entry.end()) ? *it : noComponents;
 
             // Run every component's loader. Hierarchy is intentionally skipped
             // here - its parent index is captured below for the pass-2 wire-up.
