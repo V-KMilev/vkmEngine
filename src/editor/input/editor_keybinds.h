@@ -35,6 +35,7 @@ struct KeyBind {
  */
 struct EditorKeybinds {
     // File
+    KeyBind newScene         = { ImGuiKey_N,      KeyMod_Ctrl };
     KeyBind saveScene        = { ImGuiKey_S,      KeyMod_Ctrl };
     KeyBind saveSceneAs      = { ImGuiKey_S,      KeyMod_Ctrl | KeyMod_Shift };
     KeyBind loadScene        = { ImGuiKey_O,      KeyMod_Ctrl };
@@ -48,6 +49,9 @@ struct EditorKeybinds {
     KeyBind toggleInspector  = { ImGuiKey_2,      KeyMod_Ctrl };
     KeyBind toggleBottom     = { ImGuiKey_3,      KeyMod_Ctrl };
     KeyBind toggleEditor     = { ImGuiKey_F5,     KeyMod_None };
+    KeyBind toggleRenderSettings = { ImGuiKey_4,  KeyMod_Ctrl };
+    KeyBind toggleMaterialEditor = { ImGuiKey_5,  KeyMod_Ctrl };
+    KeyBind toggleAssetBrowser   = { ImGuiKey_6,  KeyMod_Ctrl };
     KeyBind openPreferences  = { ImGuiKey_Comma,  KeyMod_Ctrl };
 
     // Entity operations

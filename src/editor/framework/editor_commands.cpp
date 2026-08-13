@@ -43,6 +43,28 @@ bool TransformChangeCommand::tryMerge(Command& incoming) {
     return true;
 }
 
+EnvironmentEditCommand::EnvironmentEditCommand(
+    const Environment& before, const Environment& after, const char* label)
+    : m_before(before), m_after(after), m_label(label) {}
+
+void EnvironmentEditCommand::redo(Scene& scene, EditorState&) {
+    scene.environment() = m_after;
+}
+
+void EnvironmentEditCommand::undo(Scene& scene, EditorState&) {
+    scene.environment() = m_before;
+}
+
+bool EnvironmentEditCommand::tryMerge(Command& incoming) {
+    // Coalesce with any other Environment edit: the chain start (m_before)
+    // stays; only m_after slides forward to the newest value.
+    auto* p = dynamic_cast<EnvironmentEditCommand*>(&incoming);
+    if (!p) return false;
+    m_after = p->m_after;
+    m_label = p->m_label;
+    return true;
+}
+
 template <typename T>
 void AddComponentCommand<T>::redo(Scene& scene, EditorState& state) {
     if (!scene.isAlive(m_entity) || scene.has<T>(m_entity)) return;
@@ -98,6 +120,15 @@ template class RemoveComponentCommand<Collider>;
 template class AddComponentCommand<ReflectionProbe>;
 template class RemoveComponentCommand<ReflectionProbe>;
 
+template class AddComponentCommand<Decal>;
+template class RemoveComponentCommand<Decal>;
+
+template class AddComponentCommand<ParticleEmitter>;
+template class RemoveComponentCommand<ParticleEmitter>;
+
+template class AddComponentCommand<IrradianceVolume>;
+template class RemoveComponentCommand<IrradianceVolume>;
+
 template <typename T>
 void ComponentEditCommand<T>::redo(Scene& scene, EditorState&) {
     if (!scene.isAlive(m_entity) || !scene.has<T>(m_entity)) return;
@@ -128,6 +159,25 @@ template class ComponentEditCommand<Animation>;
 template class ComponentEditCommand<Rigidbody>;
 template class ComponentEditCommand<Collider>;
 template class ComponentEditCommand<ReflectionProbe>;
+template class ComponentEditCommand<Decal>;
+template class ComponentEditCommand<ParticleEmitter>;
+template class ComponentEditCommand<IrradianceVolume>;
+
+template class AddComponentCommand<UICanvas>;
+template class AddComponentCommand<UIElement>;
+template class AddComponentCommand<UIImage>;
+template class AddComponentCommand<UIText>;
+template class AddComponentCommand<UIButton>;
+template class RemoveComponentCommand<UICanvas>;
+template class RemoveComponentCommand<UIElement>;
+template class RemoveComponentCommand<UIImage>;
+template class RemoveComponentCommand<UIText>;
+template class RemoveComponentCommand<UIButton>;
+template class ComponentEditCommand<UICanvas>;
+template class ComponentEditCommand<UIElement>;
+template class ComponentEditCommand<UIImage>;
+template class ComponentEditCommand<UIText>;
+template class ComponentEditCommand<UIButton>;
 
 template <typename HandleType>
 void RenameAssetCommand<HandleType>::redo(Scene&, EditorState& state) {

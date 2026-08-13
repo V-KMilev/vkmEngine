@@ -14,6 +14,15 @@
 #include "ecs/component/camera.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/name.h"
+#include "ecs/component/reflection_probe.h"
+#include "ecs/component/irradiance_volume.h"
+#include "ecs/component/decal.h"
+#include "ecs/component/particle_emitter.h"
+#include "ecs/component/ui_canvas.h"
+#include "ecs/component/ui_element.h"
+#include "ecs/component/ui_image.h"
+#include "ecs/component/ui_text.h"
+#include "ecs/component/ui_button.h"
 
 namespace Engine {
 
@@ -24,12 +33,15 @@ bool drawVec3Control(const char* label, float* values,
 
     float lineHeight = ImGui::GetFrameHeight();
     ImVec2 buttonSize(lineHeight + 2.0f, lineHeight);
-    float inputWidth = (ImGui::GetContentRegionAvail().x - EditorStyle::LABEL_WIDTH
+    float inputWidth = (ImGui::GetContentRegionAvail().x - EditorStyle::labelWidth()
                         - buttonSize.x * 3 - ImGui::GetStyle().ItemSpacing.x * 5) / 3.0f;
 
+    // Column measured from the row's start (card-indent aware), like
+    // drawPropertyLabel.
+    const float startX = ImGui::GetCursorPosX();
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
-    ImGui::SameLine(EditorStyle::LABEL_WIDTH);
+    ImGui::SameLine(startX + EditorStyle::labelWidth());
 
     static const struct {
         const char*   button;
@@ -45,7 +57,7 @@ bool drawVec3Control(const char* label, float* values,
     for (int i = 0; i < 3; ++i) {
         ImGui::PushStyleColor(ImGuiCol_Button, axes[i].color);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, axes[i].hover);
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, axes[i].color);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, axes[i].hover);
         if (ImGui::Button(axes[i].button, buttonSize)) { values[i] = resetValue; changed = true; }
         ImGui::PopStyleColor(3);
         ImGui::SameLine(0, 2);
@@ -60,12 +72,35 @@ bool drawVec3Control(const char* label, float* values,
 
 void drawPropertyLabel(const char* label) {
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
-    // Labels that exceed the reserved column don't get truncated - the next
-    // item just starts after the actual text width plus a padding. Short
-    // labels still align at LABEL_WIDTH so the inspector reads as a column.
-    const float lw = ImGui::CalcTextSize(label).x + ImGui::GetStyle().ItemSpacing.x;
-    ImGui::SameLine(std::max(EditorStyle::LABEL_WIDTH, lw));
+
+    // The label lives in a fixed column measured from the ROW's start - i.e.
+    // including any card indent. (It used to be measured from the window edge,
+    // so inside indented cards a wide label slid underneath its widget:
+    // "Focus Distance" behind the slider.) A long label ellipsizes inside the
+    // column (full text on hover) instead of pushing the widget; the widget
+    // always starts at the column edge with the remaining width.
+    const float startX = ImGui::GetCursorPosX();
+    const float colW   = EditorStyle::labelWidth();
+    const float maxW   = colW - ImGui::GetStyle().ItemSpacing.x;
+
+    if (ImGui::CalcTextSize(label).x <= maxW) {
+        ImGui::TextUnformatted(label);
+    } else {
+        const float dotsW = ImGui::CalcTextSize("..").x;
+        char clipped[96];
+        size_t n = 0;
+        for (const char* c = label; *c && n < sizeof(clipped) - 4; ++c) {
+            clipped[n] = *c;
+            clipped[n + 1] = '\0';
+            if (ImGui::CalcTextSize(clipped).x + dotsW > maxW) break;
+            ++n;
+        }
+        snprintf(clipped + n, sizeof(clipped) - n, "..");
+        ImGui::TextUnformatted(clipped);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", label);
+    }
+
+    ImGui::SameLine(startX + colW);
     ImGui::SetNextItemWidth(-1);
 }
 
@@ -178,13 +213,6 @@ void accentRule() {
 }
 }
 
-void drawPanelTitle(const char* title) {
-    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
-    ImGui::TextUnformatted(title);
-    ImGui::PopStyleColor();
-    accentRule();
-}
-
 bool drawEasingCombo(const char* id, EasingFunction& easing) {
     const int current = Easing::indexOf(easing);
     ImGui::SetNextItemWidth(-1);
@@ -227,12 +255,25 @@ void getEntityDisplayName(const Scene& scene, EntityId id,
     const char* typeName = "Entity";
     if (scene.has<Camera>(id))    typeName = "Camera";
     else if (scene.has<Light>(id)) {
-        auto& l = scene.get<Light>(id);
-        typeName = l.type == LightType::Directional ? "Dir Light" :
-                   l.type == LightType::Point ? "Point Light" : "Spot Light";
+        switch (scene.get<Light>(id).type) {
+            case LightType::Directional: typeName = "Dir Light";   break;
+            case LightType::Point:       typeName = "Point Light"; break;
+            case LightType::Spot:        typeName = "Spot Light";  break;
+            case LightType::Rect:        typeName = "Rect Light";  break;
+            case LightType::Disk:        typeName = "Disk Light";  break;
+            case LightType::Count:                                 break;
+        }
     }
     else if (scene.has<Mesh>(id)) typeName = scene.has<Animation>(id) ? "Animated Mesh" : "Mesh";
-    else if (scene.has<Animation>(id)) typeName = "Animation";
+    else if (scene.has<Animation>(id))        typeName = "Animation";
+    else if (scene.has<ReflectionProbe>(id))  typeName = "Probe";
+    else if (scene.has<IrradianceVolume>(id)) typeName = "GI Volume";
+    else if (scene.has<Decal>(id))            typeName = "Decal";
+    else if (scene.has<ParticleEmitter>(id))  typeName = "Emitter";
+    else if (scene.has<UIButton>(id))         typeName = "Button";
+    else if (scene.has<UIText>(id))           typeName = "Text";
+    else if (scene.has<UIImage>(id))          typeName = "Panel";
+    else if (scene.has<UICanvas>(id))         typeName = "Canvas";
     snprintf(buf, bufSize, "%s %u", typeName, id.index);
 }
 
@@ -268,13 +309,27 @@ void drawRowGlyph(EditorIcon ic, float startX, ImVec2 rmin, float rh) {
 EditorIcon entityIconKind(const Scene& scene, EntityId id) {
     if (scene.has<Camera>(id)) return EditorIcon::Camera;
     if (scene.has<Light>(id)) {
-        const auto& l = scene.get<Light>(id);
-        if (l.type == LightType::Directional) return EditorIcon::LightDir;
-        if (l.type == LightType::Point)       return EditorIcon::LightPoint;
-        return EditorIcon::LightSpot;
+        switch (scene.get<Light>(id).type) {
+            case LightType::Directional: return EditorIcon::LightDir;
+            case LightType::Point:       return EditorIcon::LightPoint;
+            case LightType::Spot:        return EditorIcon::LightSpot;
+            case LightType::Rect:        return EditorIcon::LightRect;
+            case LightType::Disk:        return EditorIcon::LightDisk;
+            case LightType::Count:       break;
+        }
+        return EditorIcon::LightPoint;
     }
-    if (scene.has<Mesh>(id))      return EditorIcon::Mesh;
-    if (scene.has<Animation>(id)) return EditorIcon::Anim;
+    if (scene.has<Mesh>(id))             return EditorIcon::Mesh;
+    if (scene.has<Animation>(id))        return EditorIcon::Anim;
+    if (scene.has<ReflectionProbe>(id))  return EditorIcon::Probe;
+    if (scene.has<IrradianceVolume>(id)) return EditorIcon::Volume;
+    if (scene.has<Decal>(id))            return EditorIcon::Decal;
+    if (scene.has<ParticleEmitter>(id))  return EditorIcon::Particle;
+    if (scene.has<UIButton>(id))  return EditorIcon::UIButton;
+    if (scene.has<UIText>(id))    return EditorIcon::UIText;
+    if (scene.has<UIImage>(id))   return EditorIcon::UIImage;
+    if (scene.has<UICanvas>(id))  return EditorIcon::UICanvas;
+    if (scene.has<UIElement>(id)) return EditorIcon::UIWidget;
     return EditorIcon::Entity;
 }
 
@@ -294,6 +349,15 @@ bool entityTreeNode(const void* idPtr, ImGuiTreeNodeFlags flags,
     const float  rh   = ImGui::GetItemRectSize().y;
     drawRowGlyph(icon, rmin.x + ImGui::GetTreeNodeToLabelSpacing(), rmin, rh);
     return open;
+}
+
+bool iconMenuItem(EditorIcon icon, const char* label, const char* shortcut, bool enabled) {
+    char padded[96];
+    iconPaddedLabel(padded, sizeof(padded), label, nullptr);
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    const bool pressed = ImGui::MenuItem(padded, shortcut, false, enabled);
+    drawRowGlyph(icon, p.x + 4.0f, p, ImGui::GetItemRectSize().y);
+    return pressed;
 }
 
 bool entitySelectable(const char* idStr, bool selected,
