@@ -40,6 +40,10 @@ class AssetPicker {
          * @brief Draw the picker modal. Returns true the frame the user picks an
          * entry; @p outPath is then set to the picked path (made relative to
          * `options.relativeTo` when that is set).
+         *
+         * A single click selects; double-click, Enter, or the Open button
+         * confirms (Enter in the search field confirms the selection, or the
+         * only match when the filter narrows to one). Escape / Cancel dismiss.
          */
         bool draw(std::string& outPath);
 
@@ -72,6 +76,8 @@ class AssetPicker {
 
     private:
         bool m_openRequested = false;
+        char m_filter[64] = {};   ///< Live search needle, cleared on every open.
+        int  m_selected   = -1;   ///< Selected row (index into the unfiltered lists), -1 = none.
         std::vector<std::string> m_entries;  ///< Display strings (filename or relative).
         std::vector<std::filesystem::path> m_paths;  ///< Absolute (or relative-to) paths.
 };

@@ -19,9 +19,28 @@ enum class EditorIcon {
     // Entity-type glyphs (Hierarchy / Inspector identity) - replace the old
     // [C]/[M]/[D] ASCII badges.
     Entity, Mesh, Camera, LightDir, LightPoint, LightSpot, Anim,
+    Probe, Volume, Decal, Particle, UIWidget,
+    // Fine-grained entity glyphs (icon-font set; vector path falls back to
+    // the coarse glyph above).
+    UICanvas, UIText, UIImage, UIButton,
+    LightRect, LightDisk,
+    Cube, Sphere, Plane, Pyramid, Cone, Triangle,
+    Empty, Import, Colliders,
     // Viewport actions
     FrameAll
 };
+
+/**
+ * @brief Load the editor icon font (Lucide) into the ImGui atlas.
+ *
+ * Call once at editor init, after the text font is added. When the file is
+ * missing the editor falls back to the built-in vector glyphs, so a stripped
+ * install still has icons - just not the designed set.
+ *
+ * @param path Filesystem path to the icon TTF.
+ * @return Whether the font loaded.
+ */
+bool loadEditorIconFont(const char* path);
 
 /**
  * @brief Draw a vector icon centered at a point with a given half-extent.

@@ -41,6 +41,13 @@ enum class EntityKind {
     DiskLight,
     Camera,
     ReflectionProbe,
+    IrradianceVolume,
+    Decal,
+    ParticleEmitter,
+    UICanvas,
+    UIPanel,
+    UIText,
+    UIButton,
 };
 
 /**
@@ -83,6 +90,20 @@ void duplicateEntity(Scene& scene, EditorState& state, EntityId source);
  * @param entity Root entity to delete.
  */
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity);
+
+/**
+ * @brief Delete every selected entity as ONE undo step.
+ *
+ * Entities whose ancestor is also selected are skipped (they die with the
+ * ancestor's subtree). Falls back to deleteEntity for a single selection.
+ */
+void deleteSelection(Scene& scene, EditorState& state);
+
+/**
+ * @brief Duplicate every selected entity as ONE undo step; the clones become
+ * the new selection. Falls back to duplicateEntity for a single selection.
+ */
+void duplicateSelection(Scene& scene, EditorState& state);
 
 /**
  * @brief Apply the command stack's undo / redo, then flag the scene dirty.
