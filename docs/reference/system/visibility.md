@@ -11,7 +11,7 @@ per-track interpolated values only to visible entities).
 - `src/engine/system/visibility/visibility_system.h` for `VisibilitySystem`
 - `src/engine/system/visibility/visibility.h` for the `Visibility` result struct
 - `src/engine/system/visibility/visibility_context.h` for the per-frame culling parameters
-- `src/engine/system/visibility/bounds_utils.h` for the AABB helpers
+- `src/engine/core/math/bounds.h` for the AABB helpers
 - `src/engine/system/visibility/culling/` for the individual cullers
 
 ## Pipeline
@@ -114,21 +114,17 @@ projected onto the (absolute) plane normal. If `dist + radius < 0` on any plane
 the box is fully outside and the entity is culled. This is branchless (no
 per-corner selects) thanks to the pre-computed `absNormals`.
 
-### Distance culling (`distance_culling.h`)
+### Distance culling (`distance_culler.h`)
 
 Squared distance from the AABB center to the camera. Rejects entities
 beyond `maxDistance` (default 500 units). Disabled when `maxDistance <= 0`.
 
-### Screen-size culling (`screen_size_culling.h`)
+### Screen-size culling (`screen_size_culler.h`)
 
 Projects the bounding sphere radius into screen space using
 `(radius * proj[1][1]) / depth * viewportHeight`. Rejects entities
 smaller than `minPixels` (default 3). Uses a pre-computed squared
 threshold for a sqrt-free comparison.
-
-There is **no** occlusion-culling stage today (no `occlusion_culler.h`); the
-three cullers above are the whole pipeline. Hi-Z / software-depth occlusion is a
-possible future addition.
 
 ### Occlusion culling (GPU)
 
@@ -150,9 +146,9 @@ path still do - but it could only ever see the geometry someone had remembered
 to mark. The pyramid is built from the real depth buffer, so every opaque
 surface occludes, and the component is gone.
 
-## AABB helpers## AABB helpers
+## AABB helpers
 
-`bounds_utils.h` exposes two helpers used inside the culling loop:
+`core/math/bounds.h` exposes two helpers used inside the culling loop:
 
 - `localToWorldAABB` transforms a local AABB to world space in 18
   multiplications (Arvo) instead of 128 (transform all 8 corners and

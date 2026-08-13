@@ -10,7 +10,7 @@ and they sync to the GPU through a per-resource version counter.
 - `src/engine/resource/resource_manager.h` for the manager
 - `src/engine/resource/resource.h` for the `Resource` base (version, name, hidden flag, source JSON)
 - `src/engine/resource/resource_handle.h` for type-safe `Handle<T>`
-- `src/engine/resource/asset/mesh_asset.h`, `asset/texture_asset.h`, `asset/material_asset.h`, `asset/shader_asset.h` for the four asset kinds
+- `src/engine/resource/asset/mesh_asset.h`, `asset/texture_asset.h`, `asset/material_asset.h`, `asset/font_asset.h` for the asset kinds
 - `src/engine/core/memory/sparse_set.h` for the `SparseSet<T>` that backs each asset table
 
 ## Handles
@@ -193,7 +193,6 @@ generator) lives in the `generator`/`decimate` factory lambdas registered in
 | `material_loaders.cpp`  | Folder loader: scans a folder for `*Color*`, `*Normal*`, etc.  |
 | `model_loaders.cpp`      | Assimp-backed mesh import; per-load aiScene parse cache        |
 | `environment_loaders.cpp`| HDR equirectangular image loader (`loadHDRImage`) for IBL / skybox |
-| `shader_loaders.h`      | Load a `ShaderAsset` by path prefix (header-only `inline` functions) |
 
 ## Save/load round-trip
 
