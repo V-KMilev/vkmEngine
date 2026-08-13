@@ -275,6 +275,8 @@ class ResourceManager {
         void swap(ResourceManager& other) noexcept {
             using std::swap;
             swap(m_slots, other.m_slots);
+            ++m_epoch;
+            ++other.m_epoch;
             LOG_INFO_C("RESOURCE", "Swap committed");
         }
 
@@ -295,7 +297,25 @@ class ResourceManager {
             if (m_slots.size() < needed) m_slots.resize(needed);
             if (other.m_slots.size() < needed) other.m_slots.resize(needed);
             swap(m_slots[id], other.m_slots[id]);
+            ++m_epoch;
+            ++other.m_epoch;
         }
+
+        /**
+         * @brief Identity of the current asset graph, bumped by every swap.
+         *
+         * Per-asset `version` tracks edits *within* one graph; it cannot detect a
+         * wholesale graph replacement (scene load, editor play-stop restore),
+         * because the incoming graph is freshly built - its handles restart at
+         * the same indices and generations, and its assets at version 1. To a
+         * cache keyed on (index, generation, version) the new graph is therefore
+         * indistinguishable from the old one, and stale GPU data survives the
+         * swap.
+         *
+         * A backend cache must compare this epoch and drop everything when it
+         * moves, then repopulate from the new graph.
+         */
+        uint64_t epoch() const { return m_epoch; }
 
     private:
         /**
@@ -389,6 +409,10 @@ class ResourceManager {
 
     private:
         std::vector<std::unique_ptr<TypedSlot>> m_slots;
+
+        // Starts at 1 so a cache can hold 0 as "never synced" and repopulate on
+        // its first pass without a special case.
+        uint64_t m_epoch = 1;
 };
 
 } // namespace Engine
