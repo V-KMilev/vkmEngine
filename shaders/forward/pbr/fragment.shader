@@ -13,6 +13,9 @@
  */
 
 #include "../../_generated/engine_config.glsl"  // MAX_LIGHTS, MAX_SHADOW_CASTERS_2D/_CUBE (generated from engine_config.h)
+#include "../../_common/lights.glsl"            // Light + LightsBlock + cluster grid + LIGHT_* + falloff
+#include "../../_common/depth.glsl"
+#include "../../_common/normal_codec.glsl"           // signNotZero, octDecode (GTAO bent normal)
 
 // Texture-present flags - bit position matches GLBindings::TextureSlots (C++).
 #define TEX_ALBEDO                (1 << 0)
@@ -33,13 +36,6 @@
 #define MAT_UNLIT       2
 #define MAT_ALPHA_MASK  3
 
-// LightType (light.h).
-#define LIGHT_DIRECTIONAL 0
-#define LIGHT_POINT       1
-#define LIGHT_SPOT        2
-#define LIGHT_RECT        3
-#define LIGHT_DISK        4
-
 in vec3 vWorldPos;
 in vec3 vNormal;
 in vec2 vUV;
@@ -48,140 +44,14 @@ in vec3 vBitangent;
 
 out vec4 FragColor;
 
-// Matches MaterialUBO (gl_material.h) std140 layout exactly: vec4 block
-// first, then the scalar tail in the same order.
-layout(std140, binding = 0) uniform MaterialBlock {
-    vec4 albedo;               // rgb + opacity
-    vec4 emission;             // rgb + emissiveStrength
-    vec4 anisotropyDirection;  // xyz tangent-space direction
-    vec4 sheenColor;           // rgb + sheenRoughness
-    vec4 subsurfaceColor;      // rgb
-    vec4 attenuationColor;     // rgb + attenuationDistance
+#include "../../_common/material.glsl"
 
-    float metallic;
-    float roughness;
-    float ior;
-    float ao;
-    float normalScale;
-    float clearcoat;
-    float clearcoatRoughness;
-    float anisotropy;
-    float subsurface;
-    float transmission;
-    float thicknessFactor;
-    float heightScale;
-    float alphaCutoff;
-    int   type;
-    int   textureFlags;
-    int   _mp0;
-} u_material;
+#include "../../_common/camera.glsl"
 
-struct Light {
-    vec4 position;   // xyz = world position, w = type
-    vec4 color;      // xyz = rgb,            w = intensity
-    vec4 direction;  // xyz = world dir,      w = attenuation radius
-    vec4 spot;       // x = inner cone, y = outer cone (radians), z = unused, w = shadowSlot (-1 = none)
-    vec4 axisU;      // xyz = half-right world axis (Rect/Disk), w = twoSided
-    vec4 axisV;      // xyz = half-up    world axis (Rect/Disk), w = unused
-};
-
-layout(std140, binding = 1) uniform LightsBlock {
-    int   lightCount;
-    int   _lp0; int _lp1; int _lp2;
-    Light lights[MAX_LIGHTS];
-} u_lights;
-
-layout(std140, binding = 2) uniform CameraBlock {
-    mat4 viewProjection;
-    vec4 cameraPosition;
-} u_camera;
-
-// Shadows: atlas + cube depth maps from the shadow pass. The ShadowBlock UBO
-// mirrors GLShadowData (std140); counts come from the generated engine config
-// (included above) so they can never drift from engine_config.h.
-#define SHADOW_MAX_2D   MAX_SHADOW_CASTERS_2D
-#define SHADOW_MAX_CUBE MAX_SHADOW_CASTERS_CUBE
-
-struct Shadow2D {
-    mat4 lightVP;   // world -> light clip space
-    vec4 atlas;     // xy = tile UV offset, zw = tile UV scale
-    vec4 params;    // x = depth-compare bias
-};
-struct ShadowCube {
-    vec4 posRange;  // xyz = light world pos, w = range
-    vec4 params;    // x = bias
-};
-
-layout(std140, binding = 3) uniform ShadowBlock {
-    vec4 camForward;     // xyz = camera forward (cascade selection)
-    vec4 cascadeSplits;  // view-space far depth per cascade
-    int  csmBase;        // first 2D slot of the sun's cascade run (-1 = no sun)
-    int  csmCount;       // active cascades
-    int  _sp0;
-    int  _sp1;
-    Shadow2D   s2d[SHADOW_MAX_2D];
-    ShadowCube scube[SHADOW_MAX_CUBE];
-} u_shadow;
-
-layout(binding = 11) uniform sampler2D   u_shadowAtlas;
-layout(binding = 12) uniform samplerCube u_shadowCube[SHADOW_MAX_CUBE];
-
-// 3x3 PCF sample of one 2D atlas tile. Returns 1 (lit) .. 0 (shadowed); off-map
-// or beyond-far reads as lit so geometry outside the map is never darkened.
-float sample2DSlot(int slot, vec3 worldPos, vec3 N, float ndotl) {
-    Shadow2D sm = u_shadow.s2d[slot];
-
-    // Normal-offset bias: shift the sample point along the surface normal by a
-    // few shadow texels (more at grazing angles). params.y is the cascade's
-    // world texel size, so this scales per cascade and kills self-shadow acne
-    // without the peter-panning a large depth bias would cause.
-    float offsetTexels = 1.5 + 3.0 * (1.0 - clamp(ndotl, 0.0, 1.0));
-    vec3  samplePos    = worldPos + N * (sm.params.y * offsetTexels);
-
-    vec4 lc = sm.lightVP * vec4(samplePos, 1.0);
-    if (lc.w <= 0.0) return 1.0;
-    vec3 proj = lc.xyz / lc.w * 0.5 + 0.5;
-    if (proj.z > 1.0 ||
-        proj.x < 0.0 || proj.x > 1.0 ||
-        proj.y < 0.0 || proj.y > 1.0) {
-        return 1.0;
-    }
-
-    // Small constant depth bias on top (params.x = the light's shadowBias knob).
-    float bias    = sm.params.x;
-    vec2  atlasUV = sm.atlas.xy + proj.xy * sm.atlas.zw;
-    vec2  texel   = 1.0 / vec2(textureSize(u_shadowAtlas, 0));
-    float lit     = 0.0;
-    for (int x = -1; x <= 1; ++x) {
-        for (int y = -1; y <= 1; ++y) {
-            float d = texture(u_shadowAtlas, atlasUV + vec2(x, y) * texel).r;
-            lit += (proj.z - bias > d) ? 0.0 : 1.0;
-        }
-    }
-    return lit / 9.0;
-}
-
-// Directional sun: pick the tightest cascade containing the fragment by view
-// depth, then PCF-sample that cascade's tile.
-float sampleCSM(vec3 worldPos, vec3 N, float ndotl) {
-    float vd = dot(worldPos - u_camera.cameraPosition.xyz, u_shadow.camForward.xyz);
-    int   ci = u_shadow.csmCount - 1;
-    for (int i = 0; i < u_shadow.csmCount; ++i) {
-        if (vd <= u_shadow.cascadeSplits[i]) { ci = i; break; }
-    }
-    return sample2DSlot(u_shadow.csmBase + ci, worldPos, N, ndotl);
-}
-
-// Point light: compare normalised distance-to-light against the cube depth.
-float sampleCube(int slot, vec3 worldPos, float ndotl) {
-    ShadowCube sc = u_shadow.scube[slot];
-    vec3  toFrag = worldPos - sc.posRange.xyz;
-    float dist   = length(toFrag) / sc.posRange.w;
-    if (dist > 1.0) return 1.0;
-    float bias   = max(sc.params.x * (1.0 - ndotl), sc.params.x * 0.2) * 2.0;
-    float stored = texture(u_shadowCube[slot], toFrag).r;
-    return (dist - bias > stored) ? 0.0 : 1.0;
-}
+// Shadows: the ShadowBlock UBO, atlas/cube samplers, and the per-light-type
+// sampling functions live in a shared include - the volumetric fog scatters the
+// sun through the very same cascades.
+#include "../../_common/shadows.glsl"
 
 layout(binding = 0)  uniform sampler2D u_albedoTexture;
 layout(binding = 1)  uniform sampler2D u_normalTexture;
@@ -203,25 +73,44 @@ layout(binding = 15) uniform samplerCube u_prefilter;   // roughness-prefiltered
 layout(binding = 16) uniform sampler2D   u_brdfLUT;      // split-sum BRDF/DFG LUT
 uniform int u_hasIBL;
 uniform float u_iblIntensity;  // environment intensity: scales the indirect (IBL / flat ambient) term
+uniform int   u_renderMode;    // MODE_* debug view; 0 (default) everywhere but the main view
 // Highest prefilter mip index; matches GLIBL::PREFILTER_MIPS - 1 (C++).
-const float MAX_REFLECTION_LOD = 6.0;
 
 // Scene-color copy (opaque + sky) for screen-space transmission refraction.
 // The forward pass binds it for the transparent bucket; u_hasSceneColor gates it.
 layout(binding = 18) uniform sampler2D u_sceneColor;
 uniform int  u_hasSceneColor;
-uniform vec2 u_screenSize;
+uniform vec2  u_screenSize;
+uniform float u_zNear;        // camera near plane (cluster depth-slice mapping)
+uniform float u_zFar;         // camera far plane
+uniform int   u_useClusters;  // 1 = per-cluster light list, 0 = full list (preview / probe bake)
+uniform mat4  u_invView;      // view -> world, to bring the GTAO bent normal into world space
 
 // Screen-space ambient occlusion (GTAO). Bound by the forward pass when the
 // GTAO pass ran this frame; u_hasSSAO gates it. Modulates the indirect term.
-layout(binding = 21) uniform sampler2D u_ssao;
+layout(binding = 21) uniform sampler2D u_ao;
 uniform int u_hasSSAO;
+
+// Baked irradiance volume (SH-L1 on a probe grid): indirect diffuse for anything
+// inside its box. u_hasIrradianceVolume gates it (0 in the bakes, which must not
+// sample the volume they are producing).
+layout(binding = 26) uniform sampler3D u_shVolume0;
+layout(binding = 27) uniform sampler3D u_shVolume1;
+layout(binding = 28) uniform sampler3D u_shVolume2;
+layout(binding = 29) uniform sampler3D u_shVolume3;
+uniform int   u_hasIrradianceVolume;
+uniform vec3  u_ivMin;        // volume box min corner (world)
+uniform vec3  u_ivSize;       // volume box size (world)
+uniform float u_ivIntensity;
+
+// Screen-space sun contact-shadow mask; u_hasContactShadow gates it (0 in the
+// preview / probe bakes, which run no contact-shadow pass).
+layout(binding = 25) uniform sampler2D u_contactShadow;
+uniform int u_hasContactShadow;
 
 // Local reflection probes (parallax-corrected boxes), stored as cube-map arrays
 // (layer = probe index). The backend binds two array samplers + the ProbeBlock
 // UBO; the shader weight-blends the covering probes over the global IBL.
-// MAX_PROBES must match GLBindings::ProbeTextureSlots::MAX_PROBES (C++).
-#define MAX_PROBES 32
 layout(binding = 22) uniform samplerCubeArray u_probeIrr;
 layout(binding = 23) uniform samplerCubeArray u_probePref;
 uniform int u_probeCount;
@@ -235,7 +124,6 @@ layout(std140, binding = 4) uniform ProbeBlock {
     ProbeEntry probes[MAX_PROBES];
 } u_probes;
 
-const float MAX_PROBE_LOD = 4.0;  // GLProbeArray::PREFILTER_MIPS - 1
 
 // Parallax box correction: intersect the reflection ray from worldPos along R
 // with the probe box, then return the direction from the box centre to the hit.
@@ -258,7 +146,7 @@ float probeWeight(vec3 worldPos, vec3 center, vec3 extents, float falloff) {
     return 1.0 - smoothstep(1.0 - falloff, 1.0, m);
 }
 
-const float PI = 3.14159265359;
+#include "../../_common/constants.glsl"
 
 bool hasTex(int flag) {
     return (u_material.textureFlags & flag) != 0;
@@ -420,12 +308,9 @@ float specularAA(vec3 N, float roughness) {
 // BRDF lobes
 // ---------------------------------------------------------------------------
 
-// GGX / Trowbridge-Reitz normal distribution (Karis stable form).
-float distributionGGX(float NdotH, float a) {
-    float a2 = a * a;
-    float d  = (NdotH * a2 - NdotH) * NdotH + 1.0;
-    return a2 / max(PI * d * d, 1e-7);
-}
+#include "../../_common/brdf.glsl"  // distributionGGX (takes the GGX alpha)
+#include "../../_common/sh_l1.glsl"  // SH_Y*/SH_A*: the irradiance-volume projection <-> evaluation contract
+#include "../../_generated/render_modes.glsl"  // SH_Y*/SH_A*: the irradiance-volume projection <-> evaluation contract
 
 // Height-correlated Smith visibility (already folds in the 1/(4 NoL NoV)).
 float visSmithCorrelated(float NdotV, float NdotL, float a) {
@@ -473,13 +358,6 @@ vec3 fresnelSchlick(float u, vec3 f0) {
 // ---------------------------------------------------------------------------
 // Lights
 // ---------------------------------------------------------------------------
-
-// Smooth windowed inverse-square falloff (physically based, finite range).
-float distanceAttenuation(float dist, float radius) {
-    float invSqr = 1.0 / max(dist * dist, 1e-4);
-    float window = clamp(1.0 - pow(dist / max(radius, 1e-3), 4.0), 0.0, 1.0);
-    return invSqr * window * window;
-}
 
 // LTC area-light integration - diffuse / Lambertian only.
 //
@@ -717,7 +595,51 @@ vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, v
     return (baseLit + ccContrib + transmitted + sss + sheen) * radiance;
 }
 
+// Fade the volume out near its faces so its edge is not a hard seam against the
+// global IBL. 0 outside the box, 1 well inside.
+float irradianceVolumeWeight(vec3 worldPos) {
+    vec3 uvw = (worldPos - u_ivMin) / max(u_ivSize, vec3(1e-4));
+    if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0)))) return 0.0;
+    vec3  toFace = min(uvw, 1.0 - uvw);                 // distance to the nearest face, in [0, 0.5]
+    float d      = min(min(toFace.x, toFace.y), toFace.z);
+    return clamp(d / 0.05, 0.0, 1.0);                   // fade across the outer 5%
+}
+
+// Irradiance from the volume's SH-L1 for normal @p n. The stored coefficients are
+// radiance-projected; this applies the cosine-lobe convolution (Ramamoorthi).
+vec3 sampleIrradianceVolume(vec3 worldPos, vec3 n) {
+    vec3 uvw = clamp((worldPos - u_ivMin) / max(u_ivSize, vec3(1e-4)), 0.0, 1.0);
+    vec3 sh0 = texture(u_shVolume0, uvw).rgb;
+    vec3 sh1 = texture(u_shVolume1, uvw).rgb;
+    vec3 sh2 = texture(u_shVolume2, uvw).rgb;
+    vec3 sh3 = texture(u_shVolume3, uvw).rgb;
+
+    vec3 E = SH_A0 * SH_Y0 * sh0 + SH_A1 * SH_Y1 * (n.y * sh1 + n.z * sh2 + n.x * sh3);
+    return max(E, vec3(0.0));
+}
+
+// Specular occlusion (Filament): AO alone over-darkens rough specular and
+// under-darkens smooth, so weight it by view angle and roughness.
+float specularOcclusion(float NoV, float ao, float roughness) {
+    return clamp(pow(NoV + ao, exp2(-16.0 * roughness - 1.0)) - 1.0 + ao, 0.0, 1.0);
+}
+
 // ---------------------------------------------------------------------------
+
+// Which cluster this fragment falls in: screen tile from gl_FragCoord, depth
+// slice from the linear view depth (matches the cull compute's exponential
+// slicing). Must agree with the grid the compute pass wrote.
+int clusterIndex(vec3 worldPos) {
+    vec2 tileSize = u_screenSize / vec2(float(CLUSTER_X), float(CLUSTER_Y));
+    uint tx = uint(clamp(gl_FragCoord.x / tileSize.x, 0.0, float(CLUSTER_X - 1)));
+    uint ty = uint(clamp(gl_FragCoord.y / tileSize.y, 0.0, float(CLUSTER_Y - 1)));
+
+    float vd = dot(worldPos - u_camera.cameraPosition.xyz, u_shadow.camForward.xyz);
+    float slice = viewDepthToSlice(vd, u_zNear, u_zFar, float(CLUSTER_Z));
+    uint tz = uint(clamp(floor(slice), 0.0, float(CLUSTER_Z - 1)));
+
+    return int(tx + ty * uint(CLUSTER_X) + tz * uint(CLUSTER_X * CLUSTER_Y));
+}
 
 void main() {
     vec3 V = normalize(u_camera.cameraPosition.xyz - vWorldPos);
@@ -733,11 +655,18 @@ void main() {
         uv = parallax(uv, viewTS);
     }
 
-    // Alpha test for foliage / leaves (glTF alphaMode = MASK). Done before
-    // any lighting work so masked-out pixels skip the whole PBR cost.
+    // Alpha test for foliage / leaves (glTF alphaMode = MASK). Done before any
+    // lighting work so masked-out pixels skip the whole PBR cost. The cutout is
+    // sharpened to a ~1px edge and written as coverage (outAlpha below): under
+    // MSAA the forward pass enables alpha-to-coverage so this anti-aliases; with
+    // A2C off, blending is off too, so any coverage > 0 renders solid - a hard
+    // cutout, matching the old behaviour.
+    float maskCoverage = 1.0;
     if (u_material.type == MAT_ALPHA_MASK) {
         float aTex = hasTex(TEX_ALBEDO) ? texture(u_albedoTexture, uv).a : 1.0;
-        if (u_material.albedo.a * aTex < u_material.alphaCutoff) discard;
+        float a    = u_material.albedo.a * aTex;
+        maskCoverage = clamp((a - u_material.alphaCutoff) / max(fwidth(a), 1e-5) + 0.5, 0.0, 1.0);
+        if (maskCoverage <= 0.0) discard;
     }
 
     Surface s = sampleSurface(uv);
@@ -759,8 +688,20 @@ void main() {
 
     vec3 Lo = vec3(0.0);
 
-    for (int i = 0; i < u_lights.lightCount && i < MAX_LIGHTS; ++i) {
-        Light light = u_lights.lights[i];
+    // Forward+: shade only the lights the cull compute placed in this fragment's
+    // cluster. The preview / probe-bake paths run no cull pass, so they set
+    // u_useClusters = 0 and fall back to the full light list.
+    uint count;
+    int  ci = 0;
+    if (u_useClusters == 1) {
+        ci    = clusterIndex(vWorldPos);
+        count = u_clusters.clusters[ci].count;
+    } else {
+        count = uint(min(u_lights.lightCount, MAX_LIGHTS));
+    }
+    for (uint k = 0u; k < count; ++k) {
+        uint  li    = (u_useClusters == 1) ? u_clusters.clusters[ci].indices[k] : k;
+        Light light = u_lights.lights[li];
 
         vec3  lightPos  = light.position.xyz;
         vec3  lightDir  = normalize(light.direction.xyz);
@@ -904,9 +845,15 @@ void main() {
         int sslot = int(light.spot.w);
         if (sslot >= 0) {
             float ndotl = dot(N, L);
-            if (type == LIGHT_DIRECTIONAL) visibility *= sampleCSM(vWorldPos, N, ndotl);
+            if (type == LIGHT_DIRECTIONAL) visibility *= sampleCSM(vWorldPos, N, ndotl, u_camera.cameraPosition.xyz);
             else if (type == LIGHT_SPOT)   visibility *= sample2DSlot(sslot, vWorldPos, N, ndotl);
             else if (type == LIGHT_POINT)  visibility *= sampleCube(sslot, vWorldPos, ndotl);
+        }
+
+        // Screen-space contact shadow: catches small-scale sun occlusion the
+        // cascades miss. Sun only, and only where still lit.
+        if (type == LIGHT_DIRECTIONAL && u_hasContactShadow == 1 && visibility > 0.0) {
+            visibility *= texture(u_contactShadow, gl_FragCoord.xy / u_screenSize).r;
         }
 
         // POM self-shadowing: only for the directional sun so the
@@ -927,6 +874,17 @@ void main() {
     // diffuse from the irradiance cube, specular from the roughness-prefiltered
     // cube weighted by the BRDF/DFG LUT. Falls back to flat ambient otherwise.
     // The AO map modulates the indirect term either way.
+    // Screen-space AO (GTAO) carries the occlusion factor plus a bent normal -
+    // the average unoccluded direction. Sampling irradiance along the bent normal
+    // (instead of the geometric normal) keeps creases from over-collecting light.
+    float ssao  = 1.0;
+    vec3  bentN = N;
+    if (u_hasSSAO == 1) {
+        vec4 aoSample = texture(u_ao, gl_FragCoord.xy / u_screenSize);
+        ssao  = aoSample.r;
+        bentN = normalize(mat3(u_invView) * octDecode(aoSample.gb));
+    }
+
     vec3 ambient;
     if (u_hasIBL == 1) {
         float NdotV = max(dot(N, V), 1e-4);
@@ -937,13 +895,28 @@ void main() {
         vec3 F  = f0 + (max(vec3(1.0 - s.roughness), f0) - f0) * pow(1.0 - NdotV, 5.0);
         vec3 kD = (1.0 - F) * (1.0 - s.metallic);
 
-        vec3 diffuseIBL  = texture(u_irradiance, N).rgb * s.albedo * kD;
+        vec3 diffuseIBL  = texture(u_irradiance, bentN).rgb * s.albedo * kD;
+
+        // Baked GI: inside a volume, its SH irradiance replaces the global
+        // ambient for the diffuse half (reflections still come from the probes).
+        // kD already carries (1 - metallic), so metals are untouched.
+        if (u_hasIrradianceVolume == 1) {
+            float ivw = irradianceVolumeWeight(vWorldPos);
+            if (ivw > 0.0) {
+                vec3 volumeDiffuse = (sampleIrradianceVolume(vWorldPos, bentN) / PI)
+                                   * u_ivIntensity * s.albedo * kD;
+                diffuseIBL = mix(diffuseIBL, volumeDiffuse, ivw);
+            }
+        }
 
         vec3 prefiltered = textureLod(u_prefilter, R, s.roughness * MAX_REFLECTION_LOD).rgb;
         vec2 dfg         = texture(u_brdfLUT, vec2(NdotV, s.roughness)).rg;
         vec3 specularIBL = prefiltered * (F * dfg.x + dfg.y);
 
-        ambient = (diffuseIBL + specularIBL) * s.ao;
+        // Diffuse takes the raw occlusion; specular takes the angle/roughness-
+        // aware form, so a rough surface's reflection is not flatly darkened.
+        float specOcc = specularOcclusion(NdotV, ssao, s.roughness);
+        ambient = (diffuseIBL * ssao + specularIBL * specOcc) * s.ao;
 
         // Local probes: weight-blend the covering probes (parallax-corrected
         // reflection + local irradiance) over the global IBL. Reuses F/kD/dfg.
@@ -958,22 +931,16 @@ void main() {
                 if (w <= 0.0) continue;
                 float layer = u_probes.probes[p].params.z;
                 vec3  Rp = probeParallax(R, vWorldPos, center, extents);
-                vec3  pd = texture(u_probeIrr, vec4(N, layer)).rgb * s.albedo * kD;
+                vec3  pd = texture(u_probeIrr, vec4(bentN, layer)).rgb * s.albedo * kD;
                 vec3  ps = textureLod(u_probePref, vec4(Rp, layer), s.roughness * MAX_PROBE_LOD).rgb * (F * dfg.x + dfg.y);
-                probeSum += (pd + ps) * s.ao * w;
+                probeSum += (pd * ssao + ps * specOcc) * s.ao * w;
                 wSum     += w;
             }
             if (wSum > 0.0) ambient = mix(ambient, probeSum / wSum, min(wSum, 1.0));
         }
     } else {
         // Flat ambient fallback (no baked environment). Diffuse-only.
-        ambient = vec3(0.03) * s.albedo * s.ao;
-    }
-
-    // Screen-space AO (GTAO) modulates the indirect term on top of the material
-    // AO map. Sampled by screen UV; 1.0 (no occlusion) when the pass is off.
-    if (u_hasSSAO == 1) {
-        ambient *= texture(u_ssao, gl_FragCoord.xy / u_screenSize).r;
+        ambient = vec3(0.03) * s.albedo * s.ao * ssao;
     }
 
     // Environment intensity scales the indirect term, so the Environment panel's
@@ -981,6 +948,20 @@ void main() {
     ambient *= u_iblIntensity;
 
     vec3 color = ambient + Lo + s.emission;
+
+    // Shading-split debug views (composite tonemaps these like the normal
+    // path). Unset in the preview/baker paths, so they always shade normally.
+    if (u_renderMode == MODE_GI_ONLY)     { FragColor = vec4(ambient, 1.0); return; }
+    if (u_renderMode == MODE_DIRECT_ONLY) { FragColor = vec4(Lo, 1.0); return; }
+    if (u_renderMode == MODE_CLUSTERS) {
+        // Green -> yellow -> red heatmap over the cluster's light count.
+        float t    = clamp(float(count) / float(MAX_LIGHTS_PER_CLUSTER), 0.0, 1.0) * 3.0;
+        vec3  heat = mix(vec3(0.02, 0.10, 0.02), vec3(0.15, 0.85, 0.15), clamp(t, 0.0, 1.0));
+        heat       = mix(heat, vec3(0.95, 0.85, 0.10), clamp(t - 1.0, 0.0, 1.0));
+        heat       = mix(heat, vec3(0.95, 0.10, 0.10), clamp(t - 2.0, 0.0, 1.0));
+        FragColor = vec4(heat, 1.0);
+        return;
+    }
 
     // Screen-space transmission refraction: sample the copied scene behind the
     // surface, offset along the refracted view ray (IOR bend), tinted by the
@@ -1009,8 +990,8 @@ void main() {
     }
 
     // Write linear HDR - the composite pass tonemaps + gamma-corrects.
-    // Transparent materials carry their opacity; everything else writes 1
-    // so blending in the transparent bucket composes correctly.
-    float outAlpha = (u_material.type == MAT_TRANSPARENT) ? s.opacity : 1.0;
+    // Transparent materials carry their opacity; alpha-masked materials write
+    // their sharpened cutout coverage (for alpha-to-coverage); opaque writes 1.
+    float outAlpha = (u_material.type == MAT_TRANSPARENT) ? s.opacity : maskCoverage;
     FragColor = vec4(color, outAlpha);
 }

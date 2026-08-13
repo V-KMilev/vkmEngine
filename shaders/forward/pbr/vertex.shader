@@ -5,10 +5,7 @@ layout (location = 3) in vec4 aTangent;       // xyz = tangent, w = handedness
 layout (location = 4) in mat4 aModel;         // per-instance model matrix (loc 4-7, divisor 1)
 layout (location = 8) in mat4 aNormalMatrix;  // per-instance normal matrix (loc 8-11; mat3 used)
 
-layout(std140, binding = 2) uniform CameraBlock {
-    mat4 viewProjection;
-    vec4 cameraPosition;  // xyz = world position
-} u_camera;
+#include "../../_common/camera.glsl"
 
 out vec3 vWorldPos;
 out vec3 vNormal;

@@ -15,10 +15,10 @@
 
 in vec2 vUV;
 
-out float FragColor;
+out vec4 FragColor;  // r = AO, gb = octahedral bent normal (view space)
 
-layout(binding = 19) uniform sampler2D u_depth;     // scene depth
-layout(binding = 20) uniform sampler2D u_gbuffer;   // oct view-normal.xy, roughness, metalness
+layout(binding = 19) uniform sampler2D u_sceneDepth;     // scene depth
+layout(binding = 20) uniform sampler2D u_sceneGBuffer;   // oct view-normal.xy, roughness, metalness
 
 uniform mat4  u_invProjection;
 uniform float u_proj11;     // projection[1][1]: world radius -> screen
@@ -29,16 +29,11 @@ uniform float u_bias;       // view-space self-occlusion guard
 
 const int   SLICES  = 3;
 const int   STEPS   = 5;
-const float PI      = 3.14159265359;
+#include "../_common/constants.glsl"
+#include "../_common/depth.glsl"
 const float HALF_PI = 1.57079632679;
 
-#include "../_common/normal_codec.glsl"  // signNotZero, octDecode
-
-vec3 viewPos(vec2 uv, float depth) {
-    vec4 ndc = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
-    vec4 v   = u_invProjection * ndc;
-    return v.xyz / v.w;
-}
+#include "../_common/normal_codec.glsl"  // signNotZero, octDecode, octEncode
 
 float interleavedGradient(vec2 p) {
     return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
@@ -52,11 +47,11 @@ float arc(float h, float n) {
 }
 
 void main() {
-    float depth = texture(u_depth, vUV).r;
-    if (depth >= 1.0) { FragColor = 1.0; return; }   // sky: nothing to occlude
+    float depth = texture(u_sceneDepth, vUV).r;
+    if (depth >= 1.0) { FragColor = vec4(1.0, 0.0, 0.0, 1.0); return; }   // sky: nothing to occlude
 
-    vec3 P = viewPos(vUV, depth);
-    vec3 N = octDecode(texture(u_gbuffer, vUV).rg);
+    vec3 P = viewPosFromDepth(vUV, depth, u_invProjection);
+    vec3 N = octDecode(texture(u_sceneGBuffer, vUV).rg);
     vec3 V = normalize(-P);
 
     // World radius -> screen-space UV radius at this depth; cap the near-camera
@@ -65,6 +60,7 @@ void main() {
 
     float noise = interleavedGradient(gl_FragCoord.xy);
     float visibility = 0.0;
+    vec3  bent      = vec3(0.0);  // average unoccluded direction, accumulated per slice
 
     for (int s = 0; s < SLICES; ++s) {
         float phi = (float(s) + noise) * (PI / float(SLICES));
@@ -95,7 +91,7 @@ void main() {
 
             vec2 uvP = vUV + off;
             if (all(greaterThanEqual(uvP, vec2(0.0))) && all(lessThanEqual(uvP, vec2(1.0)))) {
-                vec3  sh   = viewPos(uvP, texture(u_depth, uvP).r) - P;
+                vec3  sh   = viewPosFromDepth(uvP, texture(u_sceneDepth, uvP).r, u_invProjection) - P;
                 float len  = length(sh);
                 float c    = dot(sh, V) / max(len, 1e-4) - u_bias;
                 float fall = clamp(1.0 - len / u_radius, 0.0, 1.0);   // distant occluders fade out
@@ -103,7 +99,7 @@ void main() {
             }
             vec2 uvN = vUV - off;
             if (all(greaterThanEqual(uvN, vec2(0.0))) && all(lessThanEqual(uvN, vec2(1.0)))) {
-                vec3  sh   = viewPos(uvN, texture(u_depth, uvN).r) - P;
+                vec3  sh   = viewPosFromDepth(uvN, texture(u_sceneDepth, uvN).r, u_invProjection) - P;
                 float len  = length(sh);
                 float c    = dot(sh, V) / max(len, 1e-4) - u_bias;
                 float fall = clamp(1.0 - len / u_radius, 0.0, 1.0);
@@ -116,6 +112,11 @@ void main() {
         float h1 = n + max(-acos(clamp(cHorizon1, -1.0, 1.0)) - n, -HALF_PI);
         float h2 = n + min( acos(clamp(cHorizon2, -1.0, 1.0)) - n,  HALF_PI);
         visibility += projNLen * (arc(h1, n) + arc(h2, n));
+
+        // Bent normal: the visible arc's bisector, in this slice's (V, ortho)
+        // basis, weighted like the visibility so occluded slices count less.
+        float bentAngle = (h1 + h2) * 0.5;
+        bent += projNLen * (V * cos(bentAngle) + ortho * sin(bentAngle));
     }
 
     visibility /= float(SLICES);
@@ -123,5 +124,9 @@ void main() {
     // visibility >= 1 on open surfaces -> AO clamps to 1 (no false darkening);
     // occluders pull it down. Intensity scales the occluded part, power adds bite.
     float ao = clamp(1.0 - u_intensity * (1.0 - visibility), 0.0, 1.0);
-    FragColor = pow(ao, u_power);
+
+    // Fall back to the geometric normal where every slice was degenerate.
+    vec3 bentN = (dot(bent, bent) > 1e-8) ? normalize(bent) : N;
+
+    FragColor = vec4(pow(ao, u_power), octEncode(bentN), 1.0);
 }
