@@ -1,6 +1,11 @@
 #define VKM_LOG_CATEGORY "EDITOR"
 
 #include "framework/scene_io_controller.h"
+#include "ecs/environment.h"
+#include "generator/light_generators.h"
+
+#include "ui/editor_style.h"
+#include "ui/editor_dialogs.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -13,6 +18,7 @@
 
 #include "core/system.h"
 #include "ecs/component/camera.h"
+#include "ecs/component/transform.h"
 #include "ecs/component/name.h"
 #include "ecs/scene.h"
 #include "framework/editor_state.h"
@@ -21,7 +27,7 @@
 #include "cook/asset_cooker.h"
 #include "system/camera/camera_controller_system.h"
 #include "system/script/behavior_system.h"
-#include "system/render/render_backend.h"
+#include "system/render/editor_render_hooks.h"
 #include "system/render/render_system.h"
 
 namespace Engine {
@@ -78,7 +84,9 @@ void SceneIOController::requestLoad() {
 }
 
 bool SceneIOController::isSaveDialogActive() const {
-    // Queued (about to open this frame) or already open from a prior frame.
+    // The intent flag now stays set for the dialog's whole lifetime (the
+    // dialog scaffold clears it on any dismissal), but keep the popup check
+    // for the single frame between CloseCurrentPopup and the next Begin.
     return m_openSaveAsPopup || ImGui::IsPopupOpen("Save Scene As");
 }
 
@@ -111,6 +119,43 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
     pushRecent(state, m_currentScenePath);
 }
 
+void SceneIOController::newScene(FrameContext& ctx, EditorState& state) {
+    // Tear down any live behaviors before their entities vanish.
+    BehaviorSystem::endSession(ctx.scene);
+
+    ctx.scene.clear();
+    ctx.scene.environment() = Environment{};
+    m_currentScenePath.clear();
+
+    afterSceneReplace(ctx, state, /*priorSelectionName*/ {}, /*eventPath*/ {});
+
+    // Seed the minimal viable scene - an eye and a key light - directly (not
+    // via EditorActions) so no undo entries or selection side effects exist
+    // in a brand-new scene.
+    {
+        auto cam = ctx.scene.createEntity();
+        Transform camTf;
+        camTf.position = {0.0f, 2.0f, 6.0f};
+        ctx.scene.add(cam, camTf);
+        ctx.scene.add(cam, Camera{});
+        Name camName{};
+        snprintf(camName.value, sizeof(camName.value), "Camera");
+        ctx.scene.add(cam, camName);
+
+        auto sun = ctx.scene.createEntity();
+        Transform sunTf;
+        sunTf.position = {0.0f, 8.0f, 0.0f};
+        ctx.scene.add(sun, sunTf);
+        ctx.scene.add(sun, generateDirectionalLight());
+        Name sunName{};
+        snprintf(sunName.value, sizeof(sunName.value), "Sun");
+        ctx.scene.add(sun, sunName);
+    }
+
+    state.sceneDirty = false;
+    state.pushToast(EditorState::ToastKind::Info, "New scene");
+}
+
 std::string SceneIOController::cacheSelectionName(FrameContext& ctx, EditorState& state) {
     if (state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)
             && ctx.scene.has<Name>(state.selectedEntity)) {
@@ -132,7 +177,7 @@ void SceneIOController::afterSceneReplace(
     // The swap replaced the ResourceManager wholesale, so preview targets
     // keyed by the old asset handles are stale. Drop them; the Material
     // Editor / Asset Browser re-bake lazily on their next draw.
-    if (RenderBackend* backend = m_renderSystem.backend()) {
+    if (EditorRenderHooks* backend = editorRenderHooks(m_renderSystem.backend())) {
         backend->releaseAllPreviews();
     }
 
@@ -208,16 +253,24 @@ void SceneIOController::pushRecent(EditorState& state, const std::string& path) 
     if (mru.size() > EditorState::MAX_RECENT_SCENES) mru.resize(EditorState::MAX_RECENT_SCENES);
 }
 
-void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
-    if (m_openSaveAsPopup) {
-        ImGui::OpenPopup("Save Scene As");
-        m_openSaveAsPopup = false;
+void SceneIOController::requestOpenPath(FrameContext& ctx, EditorState& state, const std::string& path) {
+    if (state.sceneDirty) {
+        state.confirmAction    = EditorState::PendingSceneAction::Open;
+        state.pendingScenePath = path;
+        return;
     }
-    if (ImGui::BeginPopupModal("Save Scene As", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    loadPath(ctx, state, path);
+}
+
+void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
+    if (beginDialog("Save Scene As", m_openSaveAsPopup)) {
         ImGui::TextDisabled("Saved into %s (.json appended automatically)",
                             ProjectPaths::scenes().string().c_str());
-        ImGui::SetNextItemWidth(360.0f);
-        ImGui::InputText("##SaveAsName", m_saveAsBuffer, sizeof(m_saveAsBuffer));
+        ImGui::SetNextItemWidth(EditorStyle::px(360.0f));
+        // Enter in the field commits (EnterReturnsTrue), matching the
+        // scaffold's Enter-confirms contract.
+        const bool enterCommit = ImGui::InputText("##SaveAsName", m_saveAsBuffer,
+            sizeof(m_saveAsBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
 
         // Canonicalise the filename: trim whitespace, append .json if the
         // user didn't, and check for an existing file under scenes/. Without
@@ -240,12 +293,18 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
             ImGui::TextDisabled("Will save as: %s", finalName.c_str());
         }
         if (collides) {
-            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f),
+            ImGui::TextColored(EditorStyle::WARNING,
                 "Overwrites existing %s", finalName.c_str());
         }
 
-        ImGui::BeginDisabled(empty);
-        if (ImGui::Button(collides ? "Overwrite" : "Save", ImVec2(120, 0))) {
+        DialogResult r = dialogButtons(m_openSaveAsPopup,
+                                       collides ? "Overwrite" : "Save", !empty);
+        if (enterCommit && !empty && r == DialogResult::None) {
+            r = DialogResult::Confirm;
+            m_openSaveAsPopup = false;
+            ImGui::CloseCurrentPopup();
+        }
+        if (r == DialogResult::Confirm) {
             // First-time save: the scenes/ directory may not exist yet.
             std::error_code mkdirEc;
             std::filesystem::create_directories(
@@ -261,12 +320,8 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
                 state.pushToast(EditorState::ToastKind::Error,
                     "Save failed: " + finalName);
             }
-            ImGui::CloseCurrentPopup();
         }
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
+        endDialog();
     }
 
     // The Load flow rides the shared AssetPicker (rooted at scenes/, .json
@@ -274,7 +329,7 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
     // route a pick through the same loadPath() the recent-scenes menu uses.
     std::string picked;
     if (m_loadPicker.draw(picked)) {
-        loadPath(ctx, state, picked);
+        requestOpenPath(ctx, state, picked);
     }
 }
 

@@ -18,28 +18,27 @@ namespace Engine {
  * depth so the forward pass can run with LEQUAL + depth writes off and let the
  * GPU reject hidden fragments before the expensive PBR shader. Also writes the
  * G-buffer (view normal + roughness + metalness) into colour attachment 1 for
- * the GTAO/SSR passes, and clears the HDR target's attachments for the frame.
- * Alpha-masked materials run the same discard here so their holes match. Sets
- * GLFrameContext::depthPrimed; disable the pass to fall back to single-pass
- * forward.
+ * the GTAO + decal passes, and clears the HDR target's attachments for the frame.
+ * Alpha-masked materials run the same discard here so their holes match. The
+ * pass is unconditional: the forward pass assumes primed depth (LEQUAL, writes
+ * off) and never clears.
  */
-class GLDepthPrePass : public GLPass {
+class GLDepthPrepass : public GLPass {
     public:
-        GLDepthPrePass();
-        ~GLDepthPrePass() override;
+        GLDepthPrepass();
+        ~GLDepthPrepass() override;
 
-        GLDepthPrePass(const GLDepthPrePass& other) = delete;
-        GLDepthPrePass& operator=(const GLDepthPrePass& other) = delete;
+        GLDepthPrepass(const GLDepthPrepass& other) = delete;
+        GLDepthPrepass& operator=(const GLDepthPrepass& other) = delete;
 
-        GLDepthPrePass(GLDepthPrePass && other) = delete;
-        GLDepthPrePass& operator=(GLDepthPrePass && other) = delete;
+        GLDepthPrepass(GLDepthPrepass && other) = delete;
+        GLDepthPrepass& operator=(GLDepthPrepass && other) = delete;
 
     public:
         void execute(GLFrameContext& ctx) override;
 
     private:
         std::unique_ptr<Core::Shader> m_shader;
-        GLInstanceBatcher             m_batcher;
 };
 
 } // namespace Engine

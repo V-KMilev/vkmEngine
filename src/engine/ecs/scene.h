@@ -189,17 +189,22 @@ class Scene {
          */
         template<typename First, typename... Rest, typename Fn>
         void forEach(Fn&& fn) {
-            auto& firstStorage = getStorage<First>();
+            // findStorage, not getStorage: iterating is a read, and creating the
+            // set as a side effect of looking would also flip a later
+            // storage<T>() from null to non-null - which several systems branch on.
+            auto* firstStorage = findStorage<First>();
+            if (!firstStorage) return;
 
             if constexpr (sizeof...(Rest) == 0) {
-                firstStorage.forEach([&](uint32_t entityIdx, First& first) {
+                firstStorage->forEach([&](uint32_t entityIdx, First& first) {
                     EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
                     fn(eid, first);
                 });
             } else {
-                auto restStorages = std::make_tuple(&getStorage<Rest>()...);
+                auto restStorages = std::make_tuple(findStorage<Rest>()...);
+                if (!(std::get<SparseSet<Rest>*>(restStorages) && ...)) return;
 
-                firstStorage.forEach([&](uint32_t entityIdx, First& first) {
+                firstStorage->forEach([&](uint32_t entityIdx, First& first) {
                     if (!(std::get<SparseSet<Rest>*>(restStorages)->contains(entityIdx) && ...)) return;
 
                     EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
@@ -264,9 +269,9 @@ class Scene {
 
     public:
         /**
-         * @brief Drop every component set and reset the entity allocator and
-         * environment in one pass. Used for scene load to start from a clean
-         * slate.
+         * @brief Drop every component set and reset the entity allocator and environment in one pass.
+         *
+         * Used for scene load to start from a clean slate.
          */
         void clear() {
             // O(types + entities) rather than the previous
@@ -315,9 +320,9 @@ class Scene {
 
     public:
         /**
-         * @brief The scene's lighting environment (skybox + IBL): scene-global, always
-         * present, round-trips with the scene. Read by RenderView each frame;
-         * edited via the editor's World inspector.
+         * @brief The scene's lighting environment (skybox + IBL): scene-global, always present, round-trips with the scene.
+         *
+         * Read by RenderView each frame; edited via the editor's World inspector.
          */
         Environment& environment() { return m_environment; }
         const Environment& environment() const { return m_environment; }

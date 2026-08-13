@@ -22,13 +22,19 @@
 #include "framework/editor_context.h"
 #include "framework/editor_settings.h"
 #include "input/editor_keybinds.h"
+#include "ui/editor_style.h"
+#include "ui/editor_dialogs.h"
+#include "ui/editor_icons.h"
 #include "platform/window/window_manager.h"
 #include "system/camera/camera_controller_system.h"
 #include "system/render/render_system.h"
+#include "system/render/editor_render_hooks.h"
 #include "system/script/script_module.h"
 #include "system/render/render_view.h"
 #include "ui/editor_theme.h"
 #include "io/project_paths.h"
+
+#include "core/engine.h"
 
 namespace Engine {
 
@@ -38,7 +44,6 @@ EditorSystem::EditorSystem(
     CameraControllerSystem& cameraController,
     VisibilitySystem& visibilitySystem,
     RenderSystem& renderSystem,
-    EventSystem& events,
     ScriptModule& scriptModule
 )
     : m_engine(engine)
@@ -46,7 +51,6 @@ EditorSystem::EditorSystem(
     , m_cameraController(cameraController)
     , m_renderSystem(renderSystem)
     , m_visibilitySystem(visibilitySystem)
-    , m_events(events)
     , m_scriptModule(scriptModule)
     , m_materialPreviews(renderSystem)
     , m_sceneIO(cameraController, renderSystem)
@@ -67,11 +71,41 @@ EditorSystem::EditorSystem(
     static std::string s_iniPath = (ProjectPaths::root() / "imgui.ini").string();
     io.IniFilename = s_iniPath.c_str();
 
+    // A real TTF instead of ImGui's 13 px bitmap default - the single biggest
+    // visual upgrade every panel inherits. Roboto Medium already ships with the
+    // engine (the in-game UI bakes its SDF font from it), so the editor reuses
+    // it; swap the path to restyle. Sized against the window's content scale
+    // so text stays crisp on HiDPI displays.
+    {
+        float scaleX = 1.0f, scaleY = 1.0f;
+        glfwGetWindowContentScale(window, &scaleX, &scaleY);
+        const float fontSize = std::floor(15.0f * std::max(scaleX, 1.0f));
+        static std::string s_fontPath =
+            (ProjectPaths::root() / "assets" / "fonts" / "Roboto-Medium.ttf").string();
+        if (!io.Fonts->AddFontFromFileTTF(s_fontPath.c_str(), fontSize)) {
+            LOG_WARNING("Editor font %s failed to load; using the ImGui default",
+                        s_fontPath.c_str());
+        }
+
+        // The icon font (Lucide). Missing file falls back to the built-in
+        // vector glyphs, so this is a soft dependency.
+        static std::string s_iconPath =
+            (ProjectPaths::root() / "assets" / "fonts" / "lucide.ttf").string();
+        if (!loadEditorIconFont(s_iconPath.c_str())) {
+            LOG_WARNING("Icon font %s failed to load; using vector glyphs",
+                        s_iconPath.c_str());
+        }
+    }
+
     applyEditorTheme();
 
     // Restore persisted editor state (panel widths, toggles, snap, keybinds,
     // recent scenes). Missing/invalid file is non-fatal - defaults apply.
-    EditorSettings::load(m_state);
+    // The grid defaults off engine-wide (it is an editor aid); the editor
+    // wants it on out of the box. Set before the load so a persisted value
+    // still wins.
+    m_renderSystem.getSettings().grid = true;
+    EditorSettings::load(m_state, m_renderSystem.getSettings());
 
     const size_t recentBefore = m_state.recentScenes.size();
 
@@ -102,10 +136,27 @@ EditorSystem::EditorSystem(
 EditorSystem::~EditorSystem() {
     LOG_TRACE("Shutting down, saving settings");
     setErrorSink(nullptr);
-    EditorSettings::save(m_state);
+    EditorSettings::save(m_state, m_renderSystem.getSettings());
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+}
+
+void EditorSystem::performSceneAction(FrameContext& ctx, EditorState::PendingSceneAction action) {
+    switch (action) {
+        case EditorState::PendingSceneAction::Quit:
+            ctx.window.requestClose();
+            break;
+        case EditorState::PendingSceneAction::New:
+            m_sceneIO.newScene(ctx, m_state);
+            break;
+        case EditorState::PendingSceneAction::Open:
+            m_sceneIO.loadPath(ctx, m_state, m_state.pendingScenePath);
+            m_state.pendingScenePath.clear();
+            break;
+        case EditorState::PendingSceneAction::None:
+            break;
+    }
 }
 
 namespace {
@@ -122,10 +173,11 @@ void drawToast(EditorState& state, float deltaTime) {
 
     ImVec4 bg;
     switch (state.toastKind) {
-        case EditorState::ToastKind::Error:   bg = ImVec4(0.55f, 0.18f, 0.18f, 0.95f * alpha); break;
-        case EditorState::ToastKind::Warning: bg = ImVec4(0.55f, 0.42f, 0.10f, 0.95f * alpha); break;
-        default:                              bg = ImVec4(0.16f, 0.16f, 0.19f, 0.95f * alpha); break;
+        case EditorState::ToastKind::Error:   bg = EditorStyle::TOAST_ERROR_BG;   break;
+        case EditorState::ToastKind::Warning: bg = EditorStyle::TOAST_WARNING_BG; break;
+        default:                              bg = EditorStyle::TOAST_INFO_BG;    break;
     }
+    bg.w = 0.95f * alpha;
 
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     const float pad = 12.0f;
@@ -179,8 +231,24 @@ void EditorSystem::update(FrameContext& ctx) {
         }
     }
 
+    // Shader hot reload. Polled rather than watched: a filesystem watcher is a
+    // per-platform dependency for something a once-a-second directory scan of a
+    // few dozen files already answers. Editor-only - a shipped runtime has no
+    // shader sources to watch and should not be touching the disk each frame.
+    m_shaderPollTimer += ctx.clock.getDeltaTime();
+    if (m_shaderPollTimer >= SHADER_POLL_INTERVAL) {
+        m_shaderPollTimer = 0.0f;
+        if (RenderBackend* backend = m_renderSystem.backend()) {
+            const uint32_t reloaded = backend->reloadChangedShaders();
+            if (reloaded > 0) {
+                m_state.pushToast(EditorState::ToastKind::Info,
+                    "Reloaded " + std::to_string(reloaded) + " shader(s)");
+            }
+        }
+    }
+
     // Hot-reload the gameplay module on request (Edit > Reload Scripts):
-    // serialize behaviors, swap game.dll, recreate them - entities untouched.
+    // serialize behaviors, swap the game module, recreate them - entities untouched.
     if (m_state.requestScriptReload) {
         m_state.requestScriptReload = false;
         if (m_scriptModule.reload(ctx.scene)) {
@@ -191,14 +259,25 @@ void EditorSystem::update(FrameContext& ctx) {
         }
     }
 
+    // Selection hygiene: deletes / scene swaps can leave dead ids in the
+    // multi-select set - prune once per frame before any UI reads it.
+    m_state.selection.erase(
+        std::remove_if(m_state.selection.begin(), m_state.selection.end(),
+            [&](EntityId id) { return !id || !ctx.scene.isAlive(id); }),
+        m_state.selection.end());
+    if (m_state.selectedEntity && !ctx.scene.isAlive(m_state.selectedEntity)) {
+        m_state.selectedEntity = m_state.selection.empty() ? EntityId{}
+                                                           : m_state.selection.back();
+    }
+
     // Intercept window-close while the scene is dirty: clear shouldClose,
     // open the save-on-quit modal next frame. A clean scene closes through
     // normally. The modal lives in the ImGui frame below so it works in
     // both visible and hidden editor states.
     if (ctx.window.shouldClose() && m_state.sceneDirty
-            && !m_state.confirmingQuit) {
+            && m_state.confirmAction == EditorState::PendingSceneAction::None) {
         ctx.window.cancelClose();
-        m_state.confirmingQuit = true;
+        m_state.confirmAction = EditorState::PendingSceneAction::Quit;
     }
 
     // After a "Save" choice in the modal, three outcomes are possible:
@@ -206,12 +285,12 @@ void EditorSystem::update(FrameContext& ctx) {
     //   (b) Save-As opened, user picks a name -> sceneDirty drops later -> close then.
     //   (c) Save-As opened, user cancels -> no save dialog active, scene still
     //       dirty -> user changed their mind, drop the intent.
-    if (m_state.closeAfterSave) {
+    if (m_state.afterSaveAction != EditorState::PendingSceneAction::None) {
         if (!m_state.sceneDirty) {
-            ctx.window.requestClose();
-            m_state.closeAfterSave = false;
+            performSceneAction(ctx, m_state.afterSaveAction);
+            m_state.afterSaveAction = EditorState::PendingSceneAction::None;
         } else if (!m_sceneIO.isSaveDialogActive()) {
-            m_state.closeAfterSave = false;
+            m_state.afterSaveAction = EditorState::PendingSceneAction::None;
         }
     }
 
@@ -232,39 +311,36 @@ void EditorSystem::update(FrameContext& ctx) {
         // from continuing while the editor isn't drawing.
         if (!m_state.editorVisible) m_panelResize.resetDragState();
     }
-    // Save-on-quit modal: top-priority, drawn before anything else so it's
-    // visible whether the editor is shown or hidden. Reachable only via
-    // the close-intercept above.
-    if (m_state.confirmingQuit) {
-        ImGui::OpenPopup("Unsaved Changes");
-    }
-    if (ImGui::BeginPopupModal("Unsaved Changes", nullptr,
-            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
-        ImGui::TextUnformatted("This scene has unsaved changes.");
-        ImGui::Spacing();
-        ImGui::TextDisabled("%s", m_sceneIO.path().empty()
-            ? "(untitled scene)" : m_sceneIO.path().c_str());
-        ImGui::Spacing();
-        if (ImGui::Button("Save", ImVec2(110, 0))) {
-            // save() opens Save-As if there's no current path; closeAfterSave
-            // defers the actual window-close until sceneDirty drops to false.
-            m_sceneIO.save(ctx, m_state);
-            m_state.closeAfterSave = true;
-            m_state.confirmingQuit = false;
-            ImGui::CloseCurrentPopup();
+    // Save-guard modal: top-priority, drawn before anything else so it's
+    // visible whether the editor is shown or hidden. Shared by the window
+    // close-intercept above and File > New Scene - the pending intent is
+    // whichever confirming* flag is set. The dialog scaffold owns the open
+    // handshake (fixing the old bug where OpenPopup re-fired every frame and
+    // Escape could never dismiss it) and the Enter/Escape contract.
+    {
+        bool want = m_state.confirmAction != EditorState::PendingSceneAction::None;
+        if (beginDialog("Unsaved Changes", want)) {
+            const EditorState::PendingSceneAction action = m_state.confirmAction;
+            ImGui::TextUnformatted("This scene has unsaved changes.");
+            ImGui::Spacing();
+            ImGui::TextDisabled("%s", m_sceneIO.path().empty()
+                ? "(untitled scene)" : m_sceneIO.path().c_str());
+
+            switch (dialogButtons(want, "Save", true, "Cancel", "Don't Save")) {
+                case DialogResult::Confirm:
+                    // save() opens Save-As if there's no current path; the
+                    // deferred action fires once sceneDirty drops to false.
+                    m_sceneIO.save(ctx, m_state);
+                    m_state.afterSaveAction = action;
+                    break;
+                case DialogResult::Alt:
+                    performSceneAction(ctx, action);
+                    break;
+                default: break;
+            }
+            endDialog();
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Don't Save", ImVec2(110, 0))) {
-            ctx.window.requestClose();
-            m_state.confirmingQuit = false;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(110, 0))) {
-            m_state.confirmingQuit = false;
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
+        if (!want) m_state.confirmAction = EditorState::PendingSceneAction::None;
     }
 
     // Toast renders in both visible/hidden paths - failure feedback should
@@ -281,21 +357,24 @@ void EditorSystem::update(FrameContext& ctx) {
             static_cast<uint32_t>(ctx.window.getHeight()));
 
         // While the editor is hidden, draw a tiny corner hint so new users
-        // know how to bring it back. Otherwise F5 is a one-way trap door.
+        // know how to bring it back. Uses the live (rebindable) toggle key
+        // and auto-sizes with the font instead of a fixed 180x28 box.
         {
             const ImGuiViewport* vp = ImGui::GetMainViewport();
-            const float pad = 10.0f;
-            const ImVec2 size(180, 28);
-            ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - size.x - pad,
-                                           vp->WorkPos.y + vp->WorkSize.y - size.y - pad));
-            ImGui::SetNextWindowSize(size);
+            const float pad = EditorStyle::px(10.0f);
+            char hint[64];
+            snprintf(hint, sizeof(hint), "Press %s to show editor",
+                     keyLabel(m_state.keybinds.toggleEditor).buf);
+            ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - pad,
+                                           vp->WorkPos.y + vp->WorkSize.y - pad),
+                                    ImGuiCond_Always, ImVec2(1.0f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.55f));
             ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
             ImGui::Begin("##F5Hint", nullptr,
                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
                 ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoMove |
                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
-            ImGui::TextDisabled("Press F5 to show editor");
+            ImGui::TextDisabled("%s", hint);
             ImGui::End();
             ImGui::PopStyleVar();
             ImGui::PopStyleColor();
@@ -320,7 +399,6 @@ void EditorSystem::update(FrameContext& ctx) {
         m_cameraController,
         m_renderSystem,
         m_visibilitySystem,
-        m_events,
         m_materialPreviews,
         m_errorLog,
         {},
@@ -397,6 +475,12 @@ void EditorSystem::update(FrameContext& ctx) {
 void EditorSystem::drawWorkspace(EditorContext& ec) {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
+    // Zero spacing tiles the panel children edge-to-edge; each panel restores
+    // the theme spacing INSIDE its child, so panel content - and every popup
+    // opened from it, which snapshots the style at Begin - keeps the theme's
+    // rhythm instead of inheriting the tiling hack (menus opened from panels
+    // used to render squashed while the same menu from the menu bar did not).
+    const ImVec2 themeSpacing = ImGui::GetStyle().ItemSpacing;
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
 
     float toolbarH = ImGui::GetCursorPosY();
@@ -414,7 +498,9 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
         PROFILE_SCOPE("Panel/Hierarchy");
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
         if (ImGui::BeginChild("##Hierarchy", ImVec2(leftW, mainH), ImGuiChildFlags_Borders)) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, themeSpacing);
             m_hierarchy.draw(ec);
+            ImGui::PopStyleVar();
         }
         ImGui::EndChild();
         ImGui::PopStyleVar();
@@ -442,11 +528,13 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
             m_gizmoOverlay.drawLightGizmos(ec);
             m_gizmoOverlay.drawCameraGizmos(ec);
             m_gizmoOverlay.drawProbeGizmos(ec);
+            m_gizmoOverlay.drawEffectGizmos(ec);
             if (m_state.showColliders) m_gizmoOverlay.drawColliderGizmos(ec);
             if (m_state.showBounds)    m_gizmoOverlay.drawBoundsGizmos(ec);
             m_gizmoOverlay.drawSelectionOutline(ec);
             m_gizmoOverlay.drawTransformGizmo(ec);
             m_viewportToolbar.draw(ec);
+            m_viewportToolbar.drawViewMode(ec);
             m_playbar.draw(ec, m_sceneIO);
             if (!m_viewportToolbar.isHovered() && !m_playbar.isHovered())
                 m_gizmoOverlay.handleViewportPick(ec);
@@ -462,7 +550,9 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
         PROFILE_SCOPE("Panel/Inspector");
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
         if (ImGui::BeginChild("##Inspector", ImVec2(rightW, mainH), ImGuiChildFlags_Borders)) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, themeSpacing);
             m_inspector.draw(ec);
+            ImGui::PopStyleVar();
         }
         ImGui::EndChild();
         ImGui::PopStyleVar();
@@ -472,7 +562,9 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
         PROFILE_SCOPE("Panel/Bottom");
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
         if (ImGui::BeginChild("##Bottom", ImVec2(0, bottomH), ImGuiChildFlags_Borders)) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, themeSpacing);
             m_bottom.draw(ec);
+            ImGui::PopStyleVar();
         }
         ImGui::EndChild();
         ImGui::PopStyleVar();

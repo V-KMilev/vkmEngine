@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <string>
 
 #include <imgui.h>
 #include <glm/glm.hpp>
@@ -10,6 +12,7 @@
 #include "ecs/entity.h"
 #include "core/reflect.h"
 #include "core/math/easing.h"
+#include "ui/editor_style.h"
 #include "ui/editor_icons.h"
 
 namespace Engine {
@@ -107,6 +110,110 @@ inline bool propCheckbox(const char* label, bool* v, const char* tooltip = nullp
 }
 
 /**
+ * @brief Property row backed by a Combo over a fixed table of raw values.
+ *
+ * For quality steps stored as plain numbers (MSAA samples, atlas resolution):
+ * @p labels and @p values are parallel arrays of @p count entries. A stored
+ * value not present in the table previews as "?" until edited.
+ *
+ * @param label   Property label (also the ImGui id scope).
+ * @param labels  Display string per selectable value.
+ * @param values  The raw value each label maps to.
+ * @param count   Entries in both arrays.
+ * @param v       The edited value.
+ * @param tooltip Optional hover tooltip.
+ * @return Whether the value changed this frame.
+ */
+inline bool propValueCombo(const char* label, const char* const* labels,
+                           const uint32_t* values, int count, uint32_t* v,
+                           const char* tooltip = nullptr) {
+    return propRow(label, tooltip, [&] {
+        int idx = -1;
+        for (int i = 0; i < count; ++i)
+            if (values[i] == *v) idx = i;
+        bool changed = false;
+        if (ImGui::BeginCombo("##v", idx >= 0 ? labels[idx] : "?")) {
+            for (int i = 0; i < count; ++i) {
+                if (ImGui::Selectable(labels[i], i == idx) && i != idx) {
+                    *v = values[i];
+                    changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        return changed;
+    });
+}
+
+/// Property row: an integer drag staged over a uint32_t member.
+inline bool propDragU32(const char* label, uint32_t* v, float speed,
+                        uint32_t lo, uint32_t hi, const char* tooltip = nullptr) {
+    int staged = static_cast<int>(*v);
+    const bool changed = propDragInt(label, &staged, speed,
+                                     static_cast<int>(lo), static_cast<int>(hi), tooltip);
+    if (changed) *v = static_cast<uint32_t>(staged < 0 ? 0 : staged);
+    return changed;
+}
+
+/// Property row: a degrees drag staged over a radians-stored member.
+inline bool propAngleDrag(const char* label, float* radians, float speed,
+                          float loDeg, float hiDeg, const char* tooltip = nullptr) {
+    float deg = glm::degrees(*radians);
+    const bool changed = propDrag(label, &deg, speed, loDeg, hiDeg, "%.1f deg", tooltip);
+    if (changed) *radians = glm::radians(deg);
+    return changed;
+}
+
+/// Property row: a degrees slider staged over a radians-stored member.
+inline bool propAngleSlider(const char* label, float* radians,
+                            float loDeg, float hiDeg, const char* tooltip = nullptr) {
+    float deg = glm::degrees(*radians);
+    const bool changed = propSlider(label, &deg, loDeg, hiDeg, "%.0f deg", tooltip);
+    if (changed) *radians = glm::radians(deg);
+    return changed;
+}
+
+/**
+ * @brief Property row: a string edit staged through a fixed buffer.
+ *
+ * imgui_stdlib isn't compiled in, so the edit round-trips a 256-byte stack
+ * buffer; longer strings are clamped on edit.
+ */
+inline bool propString(const char* label, std::string& s, const char* tooltip = nullptr) {
+    char buf[256];
+    std::strncpy(buf, s.c_str(), sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+    const bool changed = propRow(label, tooltip, [&] { return ImGui::InputText("##v", buf, sizeof(buf)); });
+    if (changed) s = buf;
+    return changed;
+}
+
+/**
+ * @brief Full-width Rebake button: bumps @p bakeVersion when pressed.
+ *
+ * Shared by the reflection-probe and irradiance-volume cards (and anything
+ * else whose backend re-bakes on a version change).
+ */
+inline bool rebakeButton(uint32_t& bakeVersion) {
+    if (ImGui::Button("Rebake", ImVec2(-1, 0))) {
+        ++bakeVersion;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Section heading inside a panel or popup.
+ *
+ * One treatment for group headings (Preferences keybind groups, popup
+ * headers), distinct from TextDisabled - which stays for hints and metadata
+ * so the three no longer share one grey.
+ */
+inline void sectionLabel(const char* text) {
+    ImGui::TextColored(EditorStyle::HEADER_TEXT, "%s", text);
+}
+
+/**
  * @brief Test whether a string contains a filter substring, case-insensitively.
  *
  * @param text Candidate string being filtered.
@@ -114,6 +221,21 @@ inline bool propCheckbox(const char* label, bool* v, const char* tooltip = nullp
  * @return true when filter occurs in text ignoring case (or filter is empty).
  */
 bool matchesFilter(const char* text, const char* filter);
+
+/**
+ * @brief A MenuItem with a leading entity/tool glyph.
+ *
+ * Draws the icon into label padding the same way the hierarchy rows do, so
+ * menus (Create, context menus) carry the same iconography as the tree.
+ *
+ * @param icon     Glyph drawn ahead of the label.
+ * @param label    Menu item text.
+ * @param shortcut Optional right-aligned shortcut label.
+ * @param enabled  Standard MenuItem enabled flag.
+ * @return true on the frame the item is activated.
+ */
+bool iconMenuItem(EditorIcon icon, const char* label, const char* shortcut = nullptr,
+                  bool enabled = true);
 
 /**
  * @brief Modern component "card": a framed, accent-colored collapsible block.
@@ -132,12 +254,6 @@ bool matchesFilter(const char* text, const char* filter);
 bool beginComponentCard(const char* title, const ImVec4& accent,
                         bool defaultOpen, bool* removeClicked = nullptr);
 void endComponentCard();
-
-/**
- * @brief Consistent panel title: header-tinted text with a full-width accent rule.
- * Replaces the old "TextUnformatted + Separator + Spacing" boilerplate.
- */
-void drawPanelTitle(const char* title);
 
 /**
  * @brief Easing-function dropdown. Lists all named easings; on selection updates

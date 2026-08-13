@@ -1,18 +1,14 @@
-#define VKM_LOG_CATEGORY "SCRIPT"
-
 #include "system/script/behavior_system.h"
 
 #include <exception>
 #include <utility>
-
-#include "logger.h"
 
 #include "core/clock.h"
 #include "debug/engine_error_log.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "platform/window/window_manager.h"
-#include "system/event/event_system.h"
+#include "core/event/event_bus.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "system/script/behavior.h"
 #include "system/script/script_component.h"
@@ -54,10 +50,9 @@ void BehaviorSystem::guard(Behavior& behavior, const char* hookName, Fn&& fn) {
     }
 }
 
-void BehaviorSystem::ensureStarted(Behavior& behavior, EntityId entity, FrameContext& ctx) {
+void BehaviorSystem::ensureStarted(Behavior& behavior, EntityId entity) {
     if (behavior.m_started) return;
-    behavior.bindContext(entity, ctx.scene, ctx.resources,
-                         ctx.window.getInputHandle(), m_events, m_pendingDestroy);
+    behavior.bindContext(entity, m_context);
     guard(behavior, "onStart", [&] {
         behavior.onStart();
         behavior.m_started = true;
@@ -67,17 +62,38 @@ void BehaviorSystem::ensureStarted(Behavior& behavior, EntityId entity, FrameCon
 void BehaviorSystem::tickBehaviors(FrameContext& ctx, float dt, const char* hookName,
                                    void (Behavior::*hook)(float)) {
     Scene& scene = ctx.scene;
-    if (auto* storage = scene.storage<ScriptComponent>()) {
-        storage->forEach([&](uint32_t entityIdx, ScriptComponent& sc) {
-            const EntityId id{entityIdx, scene.generationOf(entityIdx)};
-            for (auto& behavior : sc.behaviors) {
-                if (!behavior || behavior->m_disabled) continue;
-                ensureStarted(*behavior, id, ctx);
-                if (behavior->m_disabled) continue;  // onStart threw
-                Behavior* b = behavior.get();
-                guard(*b, hookName, [&] { (b->*hook)(dt); });
-            }
-        });
+    auto* storage = scene.storage<ScriptComponent>();
+    if (!storage) return;
+
+    // Snapshot who to tick before running anything. A hook is free to spawn an
+    // entity and script it, which grows this very storage; iterating it live
+    // would hand the loop a reference into a buffer that has since moved.
+    // Behaviors added during the pass start next frame, which is the same rule
+    // destroy() already follows in the other direction.
+    m_tickList.clear();
+    m_tickList.reserve(storage->size());
+    storage->forEach([&](uint32_t entityIdx, ScriptComponent&) {
+        m_tickList.push_back(EntityId{entityIdx, scene.generationOf(entityIdx)});
+    });
+
+    for (const EntityId id : m_tickList) {
+        // Re-resolved every step: the entity may have been destroyed by an
+        // earlier hook, and the storage may have moved since the snapshot.
+        if (!scene.isAlive(id) || !scene.has<ScriptComponent>(id)) continue;
+
+        const size_t behaviorCount = scene.get<ScriptComponent>(id).behaviors.size();
+        for (size_t i = 0; i < behaviorCount; ++i) {
+            if (!scene.isAlive(id) || !scene.has<ScriptComponent>(id)) break;
+            ScriptComponent& sc = scene.get<ScriptComponent>(id);
+            if (i >= sc.behaviors.size()) break;
+
+            auto& behavior = sc.behaviors[i];
+            if (!behavior || behavior->m_disabled) continue;
+            ensureStarted(*behavior, id);
+            if (behavior->m_disabled) continue;  // onStart threw
+            Behavior* b = behavior.get();
+            guard(*b, hookName, [&] { (b->*hook)(dt); });
+        }
     }
 }
 
@@ -99,7 +115,7 @@ void BehaviorSystem::fireDestroy(Behavior& behavior) {
     if (behavior.m_started) {
         runGuarded(behavior, "onDestroy", [&] { behavior.onDestroy(); });
     }
-    behavior.clearSubscriptions();  // drop listeners while the EventSystem is alive
+    behavior.clearSubscriptions();
 }
 
 void BehaviorSystem::drainPendingDestroy(Scene& scene) {
@@ -114,7 +130,15 @@ void BehaviorSystem::drainPendingDestroy(Scene& scene) {
 }
 
 void BehaviorSystem::init(FrameContext& ctx) {
-    m_scene = &ctx.scene;
+    // Complete the capability bundle (pendingDestroy was wired at
+    // construction): every behavior binds a pointer to it, so its fields must
+    // all be session-stable - which everything on the FrameContext service
+    // block is.
+    m_context.scene     = &ctx.scene;
+    m_context.resources = &ctx.resources;
+    m_context.window    = &ctx.window;
+    m_context.events    = &ctx.events;
+    m_context.input     = &ctx.input;
 
     // onDestroy for any entity-deletion path: register as a Scene observer, so
     // Scene fires onEntityDestroyed from destroyEntity (raw or via
@@ -123,12 +147,12 @@ void BehaviorSystem::init(FrameContext& ctx) {
 
     // Physics overlaps -> behavior hooks. Collect here; dispatch in update()
     // once behaviors are started and with valid context.
-    m_events.subscribe<CollisionEvent>([this](const CollisionEvent& e) { m_collisions.push_back(e); });
-    m_events.subscribe<TriggerEvent>([this](const TriggerEvent& e) { m_triggers.push_back(e); });
+    m_context.events->subscribe<CollisionEvent>([this](const CollisionEvent& e) { m_collisions.push_back(e); });
+    m_context.events->subscribe<TriggerEvent>([this](const TriggerEvent& e) { m_triggers.push_back(e); });
 }
 
 void BehaviorSystem::onEntityDestroyed(EntityId entity) {
-    if (m_scene) destroyEntityBehaviors(*m_scene, entity);
+    if (m_context.scene) destroyEntityBehaviors(*m_context.scene, entity);
 }
 
 void BehaviorSystem::update(FrameContext& ctx) {
@@ -176,9 +200,9 @@ void BehaviorSystem::fixedUpdate(FrameContext& ctx) {
 }
 
 void BehaviorSystem::shutdown() {
-    if (!m_scene) return;
-    endSession(*m_scene);            // onDestroy + drop subscriptions while the bus lives
-    m_scene->removeObserver(this);  // avoid a callback into this dying system
+    if (!m_context.scene) return;
+    endSession(*m_context.scene);            // onDestroy + drop subscriptions while the bus lives
+    m_context.scene->removeObserver(this);   // avoid a callback into this dying system
 }
 
 void BehaviorSystem::endSession(Scene& scene) {

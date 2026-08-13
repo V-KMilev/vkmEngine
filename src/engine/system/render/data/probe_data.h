@@ -18,6 +18,7 @@ struct ProbeData {
     glm::vec3 halfExtents;  ///< Influence box half-size, for parallax correction + falloff.
     float     falloff;      ///< Fraction of the half-extent over which influence fades to the global IBL.
     float     intensity;    ///< Linear-HDR multiplier on the probe's contribution.
+    uint32_t  resolution;   ///< Requested capture face size; the shared arrays size to the max across probes.
     uint32_t  bakeVersion;  ///< Re-bake trigger (snapshot of the component's bakeVersion).
 };
 

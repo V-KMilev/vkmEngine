@@ -3,8 +3,7 @@
 #include <cstdint>
 #include <unordered_map>
 
-#include "resource/asset/material_asset.h"
-#include "resource/asset/mesh_asset.h"
+#include "system/render/render_backend.h"
 
 namespace Engine {
 
@@ -37,19 +36,16 @@ class MaterialPreviewSession {
         /**
          * @brief Live preview / cached thumbnail in one call.
          *
-         * Returns the texture id of the most-recent render for @p key,
-         * re-rendering only when @p version differs from the cached stamp
-         * (and, for thumbnails, only within this frame's bake budget).
-         * 0 = nothing to show yet.
+         * The caller fills @p req with what to draw (key, mesh, material,
+         * orbit, background, light rotation); the session owns the output
+         * size (live pane vs thumbnail). Returns the texture id of the
+         * most-recent render for req.key, re-rendering only when @p version
+         * differs from the cached stamp (and, for thumbnails, only within
+         * this frame's bake budget). 0 = nothing to show yet.
          */
         uint32_t texture(
             ResourceManager& resources,
-            const MaterialHandle& material,
-            const MeshHandle& mesh,
-            float yawDeg,
-            float pitchDeg,
-            float distance,
-            uint64_t key,
+            PreviewRequest req,
             uint64_t version,
             bool live
         );

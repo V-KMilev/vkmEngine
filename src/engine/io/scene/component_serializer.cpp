@@ -8,10 +8,12 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "logger.h"
 
 #include "ecs/component/camera.h"
+#include "ecs/environment.h"
 #include "ecs/component/transform.h"
 #include "io/json_vec.h"
 #include "core/reflect.h"
@@ -115,6 +117,14 @@ void loadReflected(const nlohmann::json& j, T& obj) {
 //                updateDuration() must be re-derived post load - no clean fit
 //                for the generic field iteration.
 
+nlohmann::json save(const Environment& env) {
+    return saveReflected(env);
+}
+
+void load(const nlohmann::json& j, Environment& env) {
+    loadReflected(j, env);
+}
+
 nlohmann::json save(const Name& n)          { return saveReflected(n); }
 void load(const nlohmann::json& j, Name& n) { loadReflected(j, n); }
 
@@ -131,7 +141,7 @@ nlohmann::json save(const Rigidbody& rb)          { return saveReflected(rb); }
 void load(const nlohmann::json& j, Rigidbody& rb) { loadReflected(j, rb); }
 
 nlohmann::json save(const Collider& c) {
-    nlohmann::json j = saveReflected(c);   // isTrigger
+    nlohmann::json j = saveReflected(c);   // isTrigger + enabled
     nlohmann::json arr = nlohmann::json::array();
     for (const ColliderBox& b : c.parts) {
         arr.push_back({
@@ -143,7 +153,7 @@ nlohmann::json save(const Collider& c) {
     return j;
 }
 void load(const nlohmann::json& j, Collider& c) {
-    loadReflected(j, c);   // isTrigger
+    loadReflected(j, c);   // isTrigger + enabled
 
     auto it = j.find("parts");
     if (it == j.end() || !it->is_array() || it->empty()) return;  // keep the default unit box
@@ -167,7 +177,7 @@ template<typename Asset>
 Handle<Asset> resolveAssetRef(const ResourceManager& r, const std::string& name, const char* what) {
     if (name.empty()) return {};
     Handle<Asset> h = r.findByName<Asset>(name);
-    if (!h) LOG_WARNING("SceneLoad: %s asset '%s' not found - Mesh component left unresolved", what, name.c_str());
+    if (!h) LOG_WARNING("SceneLoad: %s asset '%s' not found - reference left unresolved", what, name.c_str());
     return h;
 }
 } // namespace
@@ -186,6 +196,65 @@ void load(const nlohmann::json& j, Mesh& m, const ResourceManager& resources) {
     m.visible     = j.value("visible",     m.visible);
     m.castShadows = j.value("castShadows", m.castShadows);
 }
+
+nlohmann::json save(const LOD& l, const ResourceManager& resources) {
+    nlohmann::json levels = nlohmann::json::array();
+    for (const LODLevel& level : l.levels) {
+        if (!level.mesh) continue;   // an unresolved level would load as a hole in the ramp
+        levels.push_back({
+            {"mesh",        resources.get(level.mesh).name},
+            {"maxDistance", level.maxDistance},
+        });
+    }
+    return {{"levels", levels}, {"bias", l.bias}};
+}
+void load(const nlohmann::json& j, LOD& l, const ResourceManager& resources) {
+    l.bias = j.value("bias", l.bias);
+    if (!j.contains("levels")) return;
+    for (const auto& entry : j["levels"]) {
+        MeshHandle mesh = resolveAssetRef<MeshAsset>(
+            resources, entry.value("mesh", std::string{}), "LOD mesh");
+        if (!mesh) continue;
+        l.levels.push_back({mesh, entry.value("maxDistance", 0.0f)});
+    }
+}
+
+nlohmann::json save(const Decal& d, const ResourceManager& resources) {
+    return {
+        {"material",  d.material ? resources.get(d.material).name : std::string{}},
+        {"angleFade", d.angleFade},
+        {"opacity",   d.opacity},
+    };
+}
+void load(const nlohmann::json& j, Decal& d, const ResourceManager& resources) {
+    d.material  = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material");
+    d.angleFade = j.value("angleFade", d.angleFade);
+    d.opacity   = j.value("opacity",   d.opacity);
+}
+
+nlohmann::json save(const ParticleEmitter& e)          { return saveReflected(e); }
+void load(const nlohmann::json& j, ParticleEmitter& e) { loadReflected(j, e); }
+
+nlohmann::json save(const ReflectionProbe& p)          { return saveReflected(p); }
+void load(const nlohmann::json& j, ReflectionProbe& p) { loadReflected(j, p); }
+
+nlohmann::json save(const IrradianceVolume& v)          { return saveReflected(v); }
+void load(const nlohmann::json& j, IrradianceVolume& v) { loadReflected(j, v); }
+
+nlohmann::json save(const UICanvas& c)          { return saveReflected(c); }
+void load(const nlohmann::json& j, UICanvas& c) { loadReflected(j, c); }
+
+nlohmann::json save(const UIElement& e)          { return saveReflected(e); }
+void load(const nlohmann::json& j, UIElement& e) { loadReflected(j, e); }
+
+nlohmann::json save(const UIImage& i)          { return saveReflected(i); }
+void load(const nlohmann::json& j, UIImage& i) { loadReflected(j, i); }
+
+nlohmann::json save(const UIText& t)          { return saveReflected(t); }
+void load(const nlohmann::json& j, UIText& t) { loadReflected(j, t); }
+
+nlohmann::json save(const UIButton& b)          { return saveReflected(b); }
+void load(const nlohmann::json& j, UIButton& b) { loadReflected(j, b); }
 
 nlohmann::json save(const Hierarchy& h) {
     return nlohmann::json{{"parent", h.parent.index}};
@@ -255,39 +324,78 @@ namespace {
 /**
  * @brief Writes each visited reflected field into a JSON object (read-only on the
  * behavior - see the const_cast note in save()).
+ *
+ * A nested reflected struct becomes a JSON sub-object: beginStruct pushes it and
+ * endStruct pops, so `cur()` is always the object the current fields write into.
  */
 class BehaviorJsonWriter : public BehaviorFieldVisitor {
     public:
-        explicit BehaviorJsonWriter(nlohmann::json& out) : m_out(out) {}
+        explicit BehaviorJsonWriter(nlohmann::json& out) { m_scopes.push_back(&out); }
 
-        void field(const char* name, float& v) override { m_out[name] = v; }
-        void field(const char* name, int& v)   override { m_out[name] = v; }
-        void field(const char* name, bool& v)  override { m_out[name] = v; }
-        void field(const char* name, glm::vec3& v) override { m_out[name] = vec3ToJson(v); }
+        void field(const char* name, float& v) override { cur()[name] = v; }
+        void field(const char* name, int& v)   override { cur()[name] = v; }
+        void field(const char* name, bool& v)  override { cur()[name] = v; }
+        void field(const char* name, glm::vec3& v) override { cur()[name] = vec3ToJson(v); }
+
+        void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {
+            // By name, not the raw index: reordering enum values without renaming
+            // then leaves existing scenes valid (matches Reflect::enumName).
+            if (index >= 0 && static_cast<std::size_t>(index) < count) cur()[name] = names[index];
+        }
+
+        bool beginStruct(const char* name) override {
+            m_scopes.push_back(&(cur()[name] = nlohmann::json::object()));
+            return true;
+        }
+        void endStruct() override { m_scopes.pop_back(); }
 
     private:
-        nlohmann::json& m_out;
+        // std::map-backed json: a reference to a nested value stays valid as
+        // siblings are inserted, so holding these pointers across the walk is safe.
+        nlohmann::json& cur() { return *m_scopes.back(); }
+        std::vector<nlohmann::json*> m_scopes;
 };
 
 /**
  * @brief Reads each visited reflected field from a JSON object, keeping the field's
  * current value when the key is missing or malformed.
+ *
+ * A nested struct descends into its sub-object; a missing/mistyped sub-object is
+ * skipped (beginStruct returns false), leaving that struct's fields at their
+ * constructed defaults - the same keep-current-value rule the leaves follow.
  */
 class BehaviorJsonReader : public BehaviorFieldVisitor {
     public:
-        explicit BehaviorJsonReader(const nlohmann::json& in) : m_in(in) {}
+        explicit BehaviorJsonReader(const nlohmann::json& in) { m_scopes.push_back(&in); }
 
-        void field(const char* name, float& v) override { if (m_in.contains(name)) v = m_in[name].get<float>(); }
-        void field(const char* name, int& v)   override { if (m_in.contains(name)) v = m_in[name].get<int>(); }
-        void field(const char* name, bool& v)  override { if (m_in.contains(name)) v = m_in[name].get<bool>(); }
+        void field(const char* name, float& v) override { if (cur().contains(name)) v = cur()[name].get<float>(); }
+        void field(const char* name, int& v)   override { if (cur().contains(name)) v = cur()[name].get<int>(); }
+        void field(const char* name, bool& v)  override { if (cur().contains(name)) v = cur()[name].get<bool>(); }
         void field(const char* name, glm::vec3& v) override {
             // jsonToVec3 validates the array shape and falls back to the current
             // value (passed as the fallback) on a missing/malformed node.
-            if (m_in.contains(name)) v = jsonToVec3(m_in[name], v);
+            if (cur().contains(name)) v = jsonToVec3(cur()[name], v);
         }
 
+        void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {
+            if (!cur().contains(name) || !cur()[name].is_string()) return;   // keep current
+            const std::string picked = cur()[name].get<std::string>();
+            for (std::size_t i = 0; i < count; ++i) {
+                if (picked == names[i]) { index = static_cast<int>(i); return; }
+            }
+            // Unknown name (a removed/renamed value): keep the current value.
+        }
+
+        bool beginStruct(const char* name) override {
+            if (!cur().contains(name) || !cur()[name].is_object()) return false;   // keep current
+            m_scopes.push_back(&cur()[name]);
+            return true;
+        }
+        void endStruct() override { m_scopes.pop_back(); }
+
     private:
-        const nlohmann::json& m_in;
+        const nlohmann::json& cur() { return *m_scopes.back(); }
+        std::vector<const nlohmann::json*> m_scopes;
 };
 
 } // namespace
@@ -321,6 +429,5 @@ void load(const nlohmann::json& j, ScriptComponent& sc) {
         sc.behaviors.push_back(std::move(behavior));
     }
 }
-
 
 } // namespace Engine::ComponentSerializer

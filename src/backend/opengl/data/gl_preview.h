@@ -24,6 +24,7 @@ namespace Engine {
 
 class GLView;
 class GLIBL;
+class GLMesh;
 class ResourceManager;
 struct PreviewRequest;
 
@@ -101,6 +102,8 @@ class GLPreview {
 
         std::unique_ptr<Core::Shader>         m_pbr;       ///< forward PBR (scene draw)
         std::unique_ptr<Core::Shader>         m_composite; ///< tonemap HDR -> LDR
+        std::unique_ptr<Core::Shader>         m_skybox;    ///< sky backdrop (Background::Sky)
+        std::unique_ptr<GLMesh>               m_skyCube;   ///< unit cube for the sky draw
         std::unique_ptr<Core::ScreenTriangle> m_tri;       ///< fullscreen tonemap draw
 
         GLTarget          m_scratch;   ///< shared HDR scene target (fixed size)

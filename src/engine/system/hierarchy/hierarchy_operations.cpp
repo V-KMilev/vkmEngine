@@ -16,7 +16,6 @@ namespace Engine::HierarchyOperations {
 
 namespace {
 // Maximum supported hierarchy depth; deeper chains are clamped/skipped.
-constexpr uint32_t MAX_DEPTH = 32;
 
 // Add a default-constructed T to `id` only if it doesn't already have one.
 template<typename T>
@@ -186,7 +185,7 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity) {
     return worldMatrix;
 }
 
-void resolveWorldTransforms(Scene& scene) {
+void resolveWorldTransforms(Scene& scene, DepthBuckets& buckets) {
     PROFILE_SCOPE("Hierarchy/ResolveWorld");
     auto* hierarchyStorage = scene.storage<Hierarchy>();
     if (!hierarchyStorage) return;
@@ -201,11 +200,8 @@ void resolveWorldTransforms(Scene& scene) {
     // WorldTransform (pre-seeded by setParent) - no structural mutation
     // happens inside the parallel section.
     //
-    // Persist the bucket array across frames (cleared, not freed) so we don't
-    // construct 32 std::vectors and reallocate their storage every frame -
-    // function-static thread_local gives each calling thread its own per-depth
-    // scratch and keeps the capacity across calls.
-    static thread_local std::array<std::vector<EntityId>, MAX_DEPTH> buckets;
+    // Cleared, not freed: the caller keeps the buckets so their capacity
+    // survives the frame and the pass constructs nothing.
     for (auto& b : buckets) b.clear();
 
     const uint32_t count = static_cast<uint32_t>(hierarchyStorage->size());

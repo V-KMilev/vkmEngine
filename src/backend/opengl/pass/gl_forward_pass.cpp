@@ -11,7 +11,9 @@
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
-#include "gl_ao_target.h"
+#include "data/gl_cluster_grid.h"
+#include "data/gl_irradiance_volume.h"
+#include "gl_mask_target.h"
 #include "data/gl_shadow_atlas.h"
 #include "gl_view.h"
 #include "core/engine_config.h"
@@ -32,29 +34,21 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     const GLView&     glView = ctx.resources;
 
     // Camera + light UBOs are already uploaded and bound by the backend; this
-    // pass renders the lit geometry into the HDR target.
-    ctx.sceneHDR.bind(ctx.gl);
+    // pass renders the lit geometry into the scene target (multisample when MSAA
+    // is on, resolved into sceneHDR afterwards).
+    ctx.sceneRender.bind(ctx.gl);
     ctx.gl.setDepthTest(true);
     ctx.gl.setBlending(false);
     ctx.gl.setFaceCulling(true);
     ctx.gl.setCullFace(GL_BACK);
 
-    if (ctx.depthPrimed) {
-        // The prepass cleared the target and primed opaque depth, and the skybox
-        // filled the background before this pass. Match the primed depth with
-        // LEQUAL and leave writes off for early-Z. Do NOT clear here - that would
-        // wipe the skybox and leave transparents nothing to blend over.
-        ctx.gl.setDepthFunc(GL_LEQUAL);
-        ctx.gl.setDepthWrite(false);
-    } else {
-        // No prepass (fallback): single-pass forward owns its depth + colour
-        // clear. The standard pipeline always runs the prepass, so this path is
-        // not normally taken (and a skybox, if present, would be cleared here).
-        ctx.gl.setDepthFunc(GL_LESS);
-        ctx.gl.setDepthWrite(true);
-        ctx.gl.setClearColor({0.01f, 0.01f, 0.01f, 1.0f});
-        ctx.gl.clear(true, true, false);
-    }
+    // The prepass cleared the target and primed opaque depth (it is
+    // unconditional in the pass list), and the skybox filled the background
+    // before this pass. Match the primed depth with LEQUAL and leave writes off
+    // for early-Z. Do NOT clear here - that would wipe the skybox and leave
+    // transparents nothing to blend over.
+    ctx.gl.setDepthFunc(GL_LEQUAL);
+    ctx.gl.setDepthWrite(false);
 
     m_shader->bind();
 
@@ -82,6 +76,27 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     if (ctx.aoReady) ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
     m_shader->setUniform1i("u_hasSSAO", ctx.aoReady ? 1 : 0);
 
+    // Screen-space sun contact-shadow mask (multiplied into the directional light).
+    if (ctx.contactShadowReady) ctx.contactShadow.bindTexture(GLBindings::PostTextureSlots::ContactShadow);
+    m_shader->setUniform1i("u_hasContactShadow", ctx.contactShadowReady ? 1 : 0);
+    // View -> world, so the GTAO bent normal can be used in world space.
+    m_shader->setUniformMatrix4fv("u_invView", view.camera.invView);
+
+    // Baked GI: bind the SH volume when one is baked, and hand the shader its box
+    // so a fragment can place itself in the grid.
+    const bool hasIV = ctx.irradiance.isReady() && !view.irradianceVolumes.empty();
+    m_shader->setUniform1i("u_hasIrradianceVolume", hasIV ? 1 : 0);
+    if (hasIV) {
+        const IrradianceVolumeData& iv = view.irradianceVolumes[0];
+        ctx.irradiance.bindSlot(0, GLBindings::IrradianceVolumeSlots::SH0);
+        ctx.irradiance.bindSlot(1, GLBindings::IrradianceVolumeSlots::SH1);
+        ctx.irradiance.bindSlot(2, GLBindings::IrradianceVolumeSlots::SH2);
+        ctx.irradiance.bindSlot(3, GLBindings::IrradianceVolumeSlots::SH3);
+        m_shader->setUniform3fv("u_ivMin",  iv.center - iv.halfExtents);
+        m_shader->setUniform3fv("u_ivSize", iv.halfExtents * 2.0f);
+        m_shader->setUniform1f("u_ivIntensity", iv.intensity);
+    }
+
     // Reflection probes: the backend bound the cube arrays + ProbeBlock UBO; hand
     // the shader the active count, or 0 when probes are toggled off.
     m_shader->setUniform1i("u_probeCount", ctx.view.settings.probes ? ctx.probeCount : 0);
@@ -91,10 +106,37 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     m_shader->setUniform1i("u_hasSceneColor", 0);
     m_shader->setUniform2f("u_screenSize", static_cast<float>(view.viewportWidth), static_cast<float>(view.viewportHeight));
 
+    // Forward+ cluster light lists: bind the grid the cull compute wrote, and the
+    // near/far (same two-coefficient form as the cull pass) for the fragment's
+    // cluster lookup.
+    ctx.clusters.bind();
+    m_shader->setUniform1i("u_useClusters", 1);
+    m_shader->setUniform1i("u_renderMode", static_cast<int>(view.settings.renderMode));
+    m_shader->setUniform1f("u_zNear", view.camera.zNear);
+    m_shader->setUniform1f("u_zFar",  view.camera.zFar);
+
     // Opaque / AlphaMask / Unlit (already split out by the backend) keep the
     // view's order - sorted upstream by material+mesh - and merge into instanced
     // runs grouped by (material, mesh).
-    drawRuns(ctx, m_batcher.buildGrouped(ctx.opaque, glView));
+    // Batched once by the backend; the prepass drew these same runs.
+    drawRuns(ctx, ctx.opaqueBatch);
+
+    if (!ctx.alphaMask.empty()) {
+        // Alpha-masked geometry (foliage / fences / grates) is not in the
+        // prepass, so it primes its own depth here: writes on, LEQUAL over the
+        // opaque scene. Under MSAA, GL_SAMPLE_ALPHA_TO_COVERAGE turns the
+        // shader's sharpened cutout alpha into anti-aliased edges; at 1 sample
+        // it is a no-op (a hard cutout). Enabled raw - the Context deliberately
+        // does not model this one-off state, and the enable/disable is paired.
+        ctx.gl.setDepthWrite(true);
+        ctx.gl.setDepthFunc(GL_LEQUAL);
+        const bool a2c = ctx.view.settings.msaaSamples > 1;
+        if (a2c) glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        m_batcher.buildGrouped(ctx.alphaMask, glView);
+        drawRuns(ctx, GLInstanceBatchView(m_batcher));
+        if (a2c) glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        ctx.gl.setDepthWrite(false);  // back to the early-Z state for the transparent grab
+    }
 
     if (!ctx.transparent.empty()) {
         // Key the transparent bucket by squared distance and sort back-to-front
@@ -113,10 +155,11 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         for (const auto& entry : m_transparent) m_transparentSorted.push_back(entry.second);
 
         // Copy the opaque + sky scene so transmissive surfaces can refract what
-        // is behind them, then resume rendering into the HDR target.
-        ctx.sceneColor.blitColorFrom(ctx.sceneHDR);
-        ctx.sceneHDR.bind(ctx.gl);
-        ctx.sceneColor.bindColor(GLBindings::PostTextureSlots::SceneColor);
+        // is behind them (blitColorFrom resolves the multisample colour into the
+        // single-sample scratch), then resume rendering into the scene target.
+        ctx.colorDst->blitColorFrom(ctx.sceneRender);
+        ctx.sceneRender.bind(ctx.gl);
+        ctx.colorDst->bindColor(GLBindings::PostTextureSlots::SceneColor);
         m_shader->setUniform1i("u_hasSceneColor", 1);
 
         // Blended, depth-tested against the opaque scene but not written, so
@@ -125,7 +168,8 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         ctx.gl.setDepthWrite(false);
 
-        drawRuns(ctx, m_batcher.buildSequential(m_transparentSorted, glView));
+        m_batcher.buildSequential(m_transparentSorted, glView);
+        drawRuns(ctx, GLInstanceBatchView(m_batcher));
 
         ctx.gl.setBlending(false);
         ctx.gl.setDepthWrite(true);
@@ -140,20 +184,24 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     ctx.gl.setDepthWrite(true);
 }
 
-void GLForwardPass::drawRuns(GLFrameContext& ctx, const std::vector<InstanceRun>& runs) {
+void GLForwardPass::drawRuns(GLFrameContext& ctx, const GLInstanceBatchView& batch) {
+    batch.bindInstanceData();
+
+    const std::vector<InstanceRun>& runs = batch.runs();
     const GLView& glView = ctx.resources;
 
     // Re-bind material state only when it differs from the last run's.
     const GLMaterial* boundMaterial = nullptr;
 
-    for (const InstanceRun& run : runs) {
+    for (uint32_t i = 0; i < runs.size(); ++i) {
+        const InstanceRun& run = runs[i];
         const GLMaterial* material = glView.getMaterial(run.material);
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::Material);
             material->bindTextures(glView);
             boundMaterial = material;
         }
-        m_batcher.drawRun(run);
+        batch.draw(run, i);
     }
 }
 

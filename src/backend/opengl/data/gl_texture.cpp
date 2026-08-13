@@ -8,11 +8,16 @@
 #include "texture/gl_texture.h"
 
 #include "resource/asset/texture_asset.h"
+#include "resource/asset/font_asset.h"
 
 namespace Engine {
 
 GLTexture::GLTexture(const TextureAsset& texture) {
     update(texture);
+}
+
+GLTexture::GLTexture(const FontAsset& font) {
+    update(font);
 }
 
 GLTexture::~GLTexture() = default;
@@ -30,6 +35,27 @@ void GLTexture::update(const TextureAsset& texture) {
         m_texture->setData(data, texture.params.width, texture.params.height,
                            params.format, params.type);
     }
+    if (data) m_hasPixels = true;
+}
+
+void GLTexture::update(const FontAsset& font) {
+    Core::Texture2DParams params;
+    params.width           = font.atlasSize;
+    params.height          = font.atlasSize;
+    params.internalFormat  = GL_R8;
+    params.format          = GL_RED;
+    params.type            = GL_UNSIGNED_BYTE;
+    params.minFilter       = Core::TextureMinFilter::Linear;
+    params.magFilter       = Core::TextureMagFilter::Linear;
+    params.generateMipmaps = false;
+    params.data            = font.atlasPixels.empty() ? nullptr : font.atlasPixels.data();
+
+    if (!m_texture) {
+        m_texture = std::make_unique<Core::Texture2D>(font.name + ":atlas", params);
+    } else if (params.data) {
+        m_texture->setData(params.data, params.width, params.height, GL_RED, GL_UNSIGNED_BYTE);
+    }
+    if (params.data) m_hasPixels = true;
 }
 
 } // namespace Engine

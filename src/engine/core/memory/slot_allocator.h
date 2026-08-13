@@ -29,14 +29,16 @@ class SlotAllocator {
         SlotAllocator& operator=(SlotAllocator && other) = delete;
 
         /**
-         * @brief Swap internal state with another allocator. Lets the
-         * containing Scene support a staging-then-swap load path without
+         * @brief Swap internal state with another allocator.
+         *
+         * Lets the containing Scene support a staging-then-swap load path without
          * breaking the no-copy/no-move invariant.
          */
         void swap(SlotAllocator& other) noexcept {
             using std::swap;
             swap(m_generation, other.m_generation);
             swap(m_freeList,   other.m_freeList);
+            swap(m_liveCount,  other.m_liveCount);
         }
 
     public:
@@ -47,18 +49,21 @@ class SlotAllocator {
         StorageIndex allocate() {
             uint32_t idx = allocateSlot();
             m_generation[idx].setAlive(true);
+            ++m_liveCount;
             return StorageIndex{idx, m_generation[idx].generation()};
         }
 
         /**
-         * @brief Free a handle, bumping its generation and recycling the slot.
-         * @param id The handle to free. Must be alive (asserts).
+         * @brief Free a handle, bumping its generation and recycling the slot. @param id The handle to free.
+         *
+         * Must be alive (asserts).
          */
         void free(StorageIndex id) {
             VKM_ASSERT(has(id), "SlotAllocator::free called with invalid handle");
             m_generation[id.index].setAlive(false);
             m_generation[id.index].bumpGeneration();
             m_freeList.push_back(id.index);
+            --m_liveCount;
         }
 
         /**
@@ -76,14 +81,12 @@ class SlotAllocator {
         /**
          * @brief Number of currently live (allocated and not freed) slots.
          */
-        size_t size() const {
-            return m_generation.size() - 1 - m_freeList.size();
-        }
+        size_t size() const { return m_liveCount; }
 
         /**
-         * @brief Get the current generation for a sparse slot index.
-         * @param index The sparse slot index. Must be in bounds.
-         * @return The current generation counter for that slot.
+         * @brief Get the current generation for a sparse slot index. @param index The sparse slot index.
+         *
+         * Must be in bounds. @return The current generation counter for that slot.
          */
         uint32_t generationOf(uint32_t index) const {
             VKM_ASSERT(index < m_generation.size(), "SlotAllocator::generationOf out of bounds");
@@ -91,9 +94,9 @@ class SlotAllocator {
         }
 
         /**
-         * @brief Check whether `index` currently holds a live slot, with
-         * bounds tolerance - returns false for indices past the allocator's
-         * reach. Slot 0 is reserved and always reports false.
+         * @brief Check whether `index` currently holds a live slot, with bounds tolerance - returns false for indices past the allocator's reach.
+         *
+         * Slot 0 is reserved and always reports false.
          */
         bool isAliveAtIndex(uint32_t index) const {
             return index > 0
@@ -102,9 +105,10 @@ class SlotAllocator {
         }
 
         /**
-         * @brief Allocate a slot at a specific index. Used by SceneSerializer
-         * so loaded entities keep the slot indices they had at save time
-         * (eliminates id-remap on Hierarchy::parent etc.).
+         * @brief Allocate a slot at a specific index.
+         *
+         * Used by SceneSerializer so loaded entities keep the slot indices they
+         * had at save time (eliminates id-remap on Hierarchy::parent etc.).
          *
          * - Grows the underlying array with dead placeholders up to `index`.
          * - Removes `index` from the free list if present.
@@ -125,17 +129,22 @@ class SlotAllocator {
             VKM_ASSERT(!m_generation[index].alive(),
                 "SlotAllocator::allocateAt: slot %u already alive", index);
 
-            auto it = std::find(m_freeList.begin(), m_freeList.end(), index);
-            if (it != m_freeList.end()) m_freeList.erase(it);
-
+            // The slot may still be sitting in the free list; it is left there
+            // and skipped when it comes up, rather than searched for and erased.
+            // Erasing meant a linear find plus a mid-vector shift per call, and
+            // loading a scene whose indices have gaps calls this once per entity
+            // with the gaps accumulating in the list - quadratic in entity count
+            // for a scene that had ever had something deleted.
             m_generation[index].setAlive(true);
+            ++m_liveCount;
             return StorageIndex{index, m_generation[index].generation()};
         }
 
         /**
-         * @brief Invoke fn(index) for every currently-alive slot. Index 0 is
-         * reserved as the null/invalid slot and is never yielded. Order is
-         * ascending by slot index (not allocation order).
+         * @brief Invoke fn(index) for every currently-alive slot.
+         *
+         * Index 0 is reserved as the null/invalid slot and is never yielded. Order
+         * is ascending by slot index (not allocation order).
          */
         template<typename Fn>
         void forEach(Fn&& fn) const {
@@ -153,17 +162,16 @@ class SlotAllocator {
          * to drop everything. Slot 0 stays reserved (untouched).
          */
         void clear() {
+            m_freeList.clear();
+            m_freeList.reserve(m_generation.size());
             for (uint32_t i = 1; i < m_generation.size(); ++i) {
                 if (m_generation[i].alive()) {
                     m_generation[i].setAlive(false);
                     m_generation[i].bumpGeneration();
                 }
+                m_freeList.push_back(i);   // dead either way, so re-allocatable
             }
-            m_freeList.clear();
-            // Every slot above index 0 is now dead and re-allocatable.
-            for (uint32_t i = 1; i < m_generation.size(); ++i) {
-                m_freeList.push_back(i);
-            }
+            m_liveCount = 0;
         }
 
     private:
@@ -176,10 +184,12 @@ class SlotAllocator {
          * @return The index of an allocatable slot.
          */
         uint32_t allocateSlot() {
-            if (!m_freeList.empty()) {
-                uint32_t idx = m_freeList.back();
+            // Skip anything allocateAt claimed while it sat in the list. Each
+            // stale entry is discarded once, so the scan stays amortised O(1).
+            while (!m_freeList.empty()) {
+                const uint32_t idx = m_freeList.back();
                 m_freeList.pop_back();
-                return idx;
+                if (!m_generation[idx].alive()) return idx;
             }
 
             uint32_t idx = static_cast<uint32_t>(m_generation.size());
@@ -189,7 +199,8 @@ class SlotAllocator {
 
     private:
         std::vector<GenerationIndex> m_generation; ///< Per-slot alive flag + generation counter
-        std::vector<uint32_t> m_freeList;          ///< Recycled slot indices
+        std::vector<uint32_t> m_freeList;          ///< Recycled slot indices; may hold slots allocateAt has since claimed
+        size_t m_liveCount = 0;                    ///< Live slots, tracked rather than derived from the free list
 };
 
 } // namespace Engine

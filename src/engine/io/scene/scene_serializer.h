@@ -1,6 +1,10 @@
 #pragma once
 
+#include <nlohmann/json_fwd.hpp>
+
 #include <string>
+
+#include "ecs/entity.h"
 
 namespace Engine {
 
@@ -30,6 +34,36 @@ class ResourceManager;
  * last saved layout.
  */
 namespace SceneSerializer {
+    /**
+     * @brief Write every serialized component of @p id into @p out.
+     *
+     * Shared with the prefab writer, which stores the same per-entity shape - a
+     * prefab is a scene fragment, and a second copy of this table would drift
+     * from this one the first time a component is added.
+     *
+     * @param scene     Scene holding the entity.
+     * @param id        Entity to serialize.
+     * @param out       JSON object to fill, keyed by component name.
+     * @param resources Resolves asset handles to their names.
+     */
+    void saveComponents(const Scene& scene, EntityId id, nlohmann::json& out,
+                        const ResourceManager& resources);
+
+    /**
+     * @brief Add every component present in @p src to @p entity.
+     *
+     * Hierarchy is deliberately absent: a parent may not exist yet when its
+     * child is read, so callers capture the link and wire it up in a second
+     * pass once every entity exists.
+     *
+     * @param src       JSON object written by saveComponents.
+     * @param scene     Scene to add into.
+     * @param entity    Entity receiving the components.
+     * @param resources Resolves asset names back to handles.
+     */
+    void loadComponents(const nlohmann::json& src, Scene& scene, Entity entity,
+                        const ResourceManager& resources);
+
     /**
      * @brief Save @p scene + the assets it references to @p path.
      *

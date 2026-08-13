@@ -43,6 +43,8 @@ struct Rigidbody {
 
     bool isKinematic = false;                         ///< Script-driven: ignores forces, immune to impulses, still moves
     bool isStatic    = false;                         ///< Never moves; inverseMass forced to 0
+    bool freezeRotation = false;                      ///< Dynamic translation only: contacts never torque the body (character controllers)
+    bool canSleep    = true;                          ///< Opt out of sleeping (false) for script-driven bodies that must stay responsive
     bool sleeping    = false;                         ///< Below energy threshold; skipped until disturbed
 
     float sleepTimer = 0.0f;                          ///< Runtime-only: seconds spent resting; not persisted
@@ -60,7 +62,9 @@ VKM_REFLECT_BEGIN(Rigidbody)
     VKM_F(friction),
     VKM_F(gravityScale),
     VKM_F(isKinematic),
-    VKM_F(isStatic)
+    VKM_F(isStatic),
+    VKM_F(freezeRotation),
+    VKM_F(canSleep)
 VKM_REFLECT_END()
 
 } // namespace Engine

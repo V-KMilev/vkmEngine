@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <vector>
 #include <type_traits>
 
@@ -40,8 +39,7 @@ class ISparseSet {
  * caller owns the key lifecycle (Scene pairs this with SlotAllocator for
  * entities; ResourceManager pairs it with a per-type allocator for assets).
  *
- * Removal is swap-and-pop with a memcpy fast path for trivially copyable
- * types.
+ * Removal is swap-and-pop.
  *
  * @tparam T Element type to store.
  */
@@ -78,11 +76,10 @@ class SparseSet : public ISparseSet {
             uint32_t lastIdx = static_cast<uint32_t>(m_data.size() - 1);
 
             if (dataIdx != lastIdx) {
-                if constexpr (std::is_trivially_copyable_v<T>) {
-                    std::memcpy(&m_data[dataIdx], &m_data[lastIdx], sizeof(T));
-                } else {
-                    m_data[dataIdx] = std::move(m_data[lastIdx]);
-                }
+                // Move-assign covers both cases: for a trivially copyable T the
+                // compiler emits the same memcpy an explicit branch would, so
+                // the branch only cost a header and a reading of it.
+                m_data[dataIdx] = std::move(m_data[lastIdx]);
 
                 // Update reverse and forward mappings for moved element
                 m_dataId[dataIdx]              = m_dataId[lastIdx];
@@ -144,7 +141,10 @@ class SparseSet : public ISparseSet {
             }
         }
 
-        size_t size() const override { return m_data.size(); }  ///< Number of live elements.
+        /**
+         * @brief Number of live elements.
+         */
+        size_t size() const override { return m_data.size(); }
 
         /**
          * @brief Drop every element. The dense and sparse arrays empty;
@@ -220,7 +220,7 @@ class SparseSet : public ISparseSet {
         /**
          * @brief Validate the key, emplace into the dense array, and wire up both mappings.
          *
-         * Shared implementation behind the public add()/emplace() entry points:
+         * Shared implementation behind the public add() entry points:
          * asserts the key is neither the EMPTY sentinel, 0 (reserved), nor already
          * present, then constructs the element in place.
          *

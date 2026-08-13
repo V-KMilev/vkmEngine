@@ -89,9 +89,12 @@ class AnimationTrack {
                 return m_values[0];
             }
 
-            // Before the first key: hold the first value.
-            if (time < 0.0f) {
-                return m_values[0];
+            // At/before the first key: hold the first value. The guard used to
+            // be `time < 0.0f`, which let a track whose first key sits past 0
+            // reach the interpolation below with upper_bound == begin() - the
+            // prevIndex then underflowed size_t and read m_times[SIZE_MAX].
+            if (time <= m_times.front()) {
+                return m_values.front();
             }
 
             // At/after the last key: hold the last value (clamp to track duration).

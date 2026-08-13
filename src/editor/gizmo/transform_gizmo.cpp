@@ -160,7 +160,14 @@ bool TransformGizmo::manipulate(
     glm::vec4 clipOrigin = m_viewProj * glm::vec4(m_gizmoOrigin, 1.0f);
     if (clipOrigin.w <= 1e-7f) {
         m_hovered = GizmoElement::None;
-        if (m_dragging) { m_dragging = false; m_active = GizmoElement::None; }
+        // Cancel exactly as the release path does, m_dragRotation included: a
+        // rotation drag interrupted by the entity going behind the camera would
+        // otherwise leave the last angle behind for the next reader.
+        if (m_dragging) {
+            m_dragging = false;
+            m_active = GizmoElement::None;
+            m_dragRotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        }
         return false;
     }
 

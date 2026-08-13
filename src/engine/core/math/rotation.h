@@ -11,21 +11,25 @@ namespace Engine::Math {
  * @brief Rotate the +Z basis by the quaternion and normalize.
  */
 inline glm::vec3 computeForward(const glm::quat& rotation) {
-    return glm::normalize(rotation * WORLD_AXIS_Z_FORWARD);
+    return glm::normalize(rotation * WORLD_AXIS_Z);
 }
 
 /**
  * @brief Rotate the +Y basis by the quaternion and normalize.
  */
 inline glm::vec3 computeUp(const glm::quat& rotation) {
-    return glm::normalize(rotation * WORLD_AXIS_Y_UP);
+    return glm::normalize(rotation * WORLD_AXIS_Y);
 }
 
 /**
  * @brief Rotate the +X basis by the quaternion and normalize.
  */
 inline glm::vec3 computeRight(const glm::quat& rotation) {
-    return glm::normalize(rotation * WORLD_AXIS_X_RIGHT);
+    // Negated deliberately. Forward is +Z and the maths is right-handed, so a
+    // right-handed camera basis (right x up = -forward) puts right at -X, not
+    // +X. Returning the raw +X axis here is what inverted the fly camera's
+    // strafe; see axes.h.
+    return glm::normalize(rotation * -WORLD_AXIS_X);
 }
 
 /**

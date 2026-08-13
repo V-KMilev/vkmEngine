@@ -4,7 +4,11 @@
 
 #include <algorithm>
 
+#include <algorithm>
+
 #include <GL/glew.h>
+
+#include "debug/profiler.h"
 
 #include "gl_shader.h"
 #include "gl_context.h"
@@ -45,64 +49,66 @@ void GLShadowPass::render2D(GLFrameContext& ctx) {
 
     ctx.shadowAtlas.begin2D(ctx.gl);
     m_depth2D->bind();
-    for (const Shadow2DJob& job : jobs) {
-        ctx.shadowAtlas.setTileViewport(ctx.gl, job.slot);
-        m_depth2D->setUniformMatrix4fv("u_lightVP", job.lightVP);
-        renderCasters(ctx, job.lightVP);
+    for (size_t j = 0; j < jobs.size(); ++j) {
+        ctx.shadowAtlas.setTileViewport(ctx.gl, jobs[j].slot);
+        m_depth2D->setUniformMatrix4fv("u_lightVP", jobs[j].lightVP);
+        renderCasters(ctx, ctx.shadowData.batch2D(j));
     }
 }
 
 void GLShadowPass::renderCube(GLFrameContext& ctx) {
     // Point lights, six faces each (linear distance depth).
-    for (const ShadowCubeJob& job : ctx.shadowData.jobsCube()) {
-        m_depthCube->bind();
+    m_depthCube->bind();
+    const std::vector<ShadowCubeJob>& jobs = ctx.shadowData.jobsCube();
+    for (size_t j = 0; j < jobs.size(); ++j) {
+        const ShadowCubeJob& job = jobs[j];
         m_depthCube->setUniform3fv("u_lightPos", job.pos);
         m_depthCube->setUniform1f("u_range", job.range);
         for (uint32_t f = 0; f < 6; ++f) {
             ctx.shadowAtlas.beginCubeFace(ctx.gl, job.slot, f);
             m_depthCube->setUniformMatrix4fv("u_faceVP", job.faceVP[f]);
-            renderCasters(ctx, job.faceVP[f]);
+            renderCasters(ctx, ctx.shadowData.batchCube(j, f));
         }
     }
 }
 
-void GLShadowPass::renderCasters(GLFrameContext& ctx, const glm::mat4& lightVP) {
-    const GLView&       glView  = ctx.resources;
-    const Math::Frustum frustum = Math::extractFrustum(lightVP);
+void GLShadowPass::renderCasters(GLFrameContext& ctx, const ShadowCasterBatch& batch) {
+    if (batch.order.empty()) return;
+
+    const GLView& glView = ctx.resources;
     const std::vector<ShadowCasterData>& casters = ctx.view.shadowCasters;
+    const std::vector<uint32_t>&         order   = batch.order;
 
-    // The caster set is scene-wide; cull it against this tile/face's frustum, then
-    // sort the survivors by mesh so identical meshes batch into one instanced draw.
-    m_order.clear();
-    for (uint32_t i = 0; i < casters.size(); ++i) {
-        if (Math::frustumIntersectsAABB(frustum, casters[i].aabbMin, casters[i].aabbMax))
-            m_order.push_back(i);
-    }
-    if (m_order.empty()) return;
-    std::sort(m_order.begin(), m_order.end(), [&](uint32_t a, uint32_t b) {
-        return casters[a].mesh.id() < casters[b].mesh.id();
-    });
-
+    // Culling and mesh-sorting already happened on the thread pool (see
+    // GLShadowData::cullCasters), so this is submission only.
+    //
     // Flatten every survivor's model into one buffer and upload it once, then draw
     // each mesh run from its slice via baseInstance (the forward batcher's single-
     // upload pattern). Depth-only, so just the model buffer - no normal matrix.
+    {
+    PROFILE_SCOPE("ShadowCasters/Gather");
     m_models.clear();
-    m_models.reserve(m_order.size());
-    for (uint32_t idx : m_order) m_models.push_back(casters[idx].model);
+    m_models.reserve(order.size());
+    for (uint32_t idx : order) m_models.push_back(casters[idx].model);
+    }
+    {
+    PROFILE_SCOPE("ShadowCasters/Upload");
     m_instances.update(m_models.data(), static_cast<uint32_t>(m_models.size()));
+    }
 
-    uint32_t i = 0;
-    while (i < m_order.size()) {
-        const uint32_t meshId = casters[m_order[i]].mesh.id();
-        const GLMesh*  mesh   = glView.getMesh(casters[m_order[i]].mesh);
+    PROFILE_SCOPE("ShadowCasters/Draw");
+    size_t i = 0;
+    while (i < order.size()) {
+        const uint32_t meshId = casters[order[i]].mesh.id();
+        const GLMesh*  mesh   = glView.getMesh(casters[order[i]].mesh);
 
-        const uint32_t first = i;
-        while (i < m_order.size() && casters[m_order[i]].mesh.id() == meshId) ++i;
-        const uint32_t count = i - first;
+        const size_t first = i;
+        while (i < order.size() && casters[order[i]].mesh.id() == meshId) ++i;
+        const uint32_t count = static_cast<uint32_t>(i - first);
 
         if (mesh) {
             mesh->attachInstances(m_instances, 4);
-            mesh->drawInstanced(count, first);
+            mesh->drawInstanced(count, static_cast<uint32_t>(first));
         }
     }
 }

@@ -17,7 +17,7 @@ struct HDRImage {
     uint32_t height = 0;
     std::vector<float> pixels;  ///< width * height * 3, linear RGB
 
-    bool valid() const { return width > 0 && height > 0 && !pixels.empty(); }
+    bool isValid() const { return width > 0 && height > 0 && !pixels.empty(); }
 };
 
 /**
@@ -27,7 +27,7 @@ struct HDRImage {
  * the GL texture origin and the equirect bake shader.
  *
  * @param filePath Path to the Radiance .hdr file to load.
- * @return The decoded HDR image, or an empty image (valid() == false) on
+ * @return The decoded HDR image, or an empty image (isValid() == false) on
  *         failure; the caller logs/handles it.
  */
 HDRImage loadHDRImage(const std::string& filePath);

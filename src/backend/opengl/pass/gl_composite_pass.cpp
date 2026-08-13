@@ -6,12 +6,14 @@
 
 #include "gl_shader.h"
 #include "gl_context.h"
+#include "gl_screen_triangle.h"
 #include "gl_frame_buffer.h"
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
-#include "gl_ao_target.h"
+#include "gl_mask_target.h"
 #include "data/gl_bloom.h"
+#include "data/gl_fog_volume.h"
 #include "data/gl_shadow_atlas.h"
 #include "convention/gl_bindings.h"
 #include "system/render/render_view.h"
@@ -27,28 +29,15 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
 
     // Back to the backbuffer, into the window's viewport rect.
-    // viewportY arrives top-left origin (window/UI convention); GL's default
-    // framebuffer is bottom-left, so flip against the full surface height or the
-    // blit lands mirrored off the editor's viewport panel.
-    const int32_t glY = static_cast<int32_t>(view.surfaceHeight)
-                      - static_cast<int32_t>(view.viewportY)
-                      - static_cast<int32_t>(view.viewportHeight);
-    Core::FrameBuffer::bindDefault();
-    ctx.gl.setViewport(
-        static_cast<int32_t>(view.viewportX),
-        glY,
-        static_cast<int32_t>(view.viewportWidth),
-        static_cast<int32_t>(view.viewportHeight)
-    );
+    bindBackbufferViewport(ctx);
     beginFullscreen(ctx.gl);  // depth test / blending / face culling off, like the other post passes
 
     m_shader->bind();
-    ctx.sceneHDR.bindColor(0);
-    ctx.bloom.bind(1);
+    ctx.colorSrc->bindColor(GLBindings::CompositeTextureSlots::Scene);
+    ctx.bloom.bind(GLBindings::CompositeTextureSlots::Bloom);
     const float bloomStrength = (ctx.bloom.isReady() && view.settings.bloom)
         ? view.settings.bloomStrength : 0.0f;
     m_shader->setUniform1f("u_bloomStrength", bloomStrength);
-    m_shader->setUniform1i("u_fxaa", view.settings.fxaa ? 1 : 0);
 
     // Debug views: bind the intermediate buffers the shader samples + the
     // projection for depth linearization. Default path binds nothing extra.
@@ -59,10 +48,14 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
         ctx.sceneHDR.bindGBuffer(GLBindings::PostTextureSlots::SceneGBuffer);
         ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
         ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
+        if (ctx.contactShadowReady)
+            ctx.contactShadow.bindTexture(GLBindings::PostTextureSlots::ContactShadow);
+        if (ctx.fogReady)
+            ctx.fog.bindIntegratedSlot(GLBindings::PostTextureSlots::FogVolume);
         m_shader->setUniformMatrix4fv("u_projection", view.camera.projection);
     }
 
-    m_tri.draw();
+    ctx.screenTri.draw();
 }
 
 } // namespace Engine

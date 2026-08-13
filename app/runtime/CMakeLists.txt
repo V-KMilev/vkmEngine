@@ -35,10 +35,27 @@ target_include_directories(engine_runtime PRIVATE ${CMAKE_SOURCE_DIR})
 # ships the way the runtime consumes it: shaders + HDR envs as SOURCE (compiled
 # / IBL-baked at load), meshes/textures as COOKED binaries, materials as their
 # inline library recipes. The runtime creates logs/ on startup, so it isn't shipped.
+
+# Everything in bin/ links against its siblings there - the exe against its .so
+# deps, and those against each other (vkmGL -> vkmLog, glew). $ORIGIN points the
+# loader at each binary's own directory, so the package runs once moved off the
+# build machine. CMake links with the build-tree rpath and rewrites it to this on
+# install; Windows resolves DLLs from the exe's directory and needs no rpath.
+if(NOT WIN32)
+    set_target_properties(engine_runtime vkmGL vkmLog glew
+        PROPERTIES INSTALL_RPATH "$ORIGIN")
+endif()
+
 install(TARGETS engine_runtime RUNTIME DESTINATION bin COMPONENT Runtime)
 
-# Shared libraries the exe links (glew, vkmGL, vkmLog here; glfw is static).
+# Shared libraries the exe links (glew, vkmGL, vkmLog; glfw is static). On Windows
+# these are DLLs gathered from the linked imports; that genex is empty elsewhere,
+# so on other platforms install the library targets directly - install() carries
+# the version symlink chain (libGLEW.so -> .so.2.3 -> .so.2.3.0) the loader needs.
 install(FILES $<TARGET_RUNTIME_DLLS:engine_runtime> DESTINATION bin COMPONENT Runtime OPTIONAL)
+if(NOT WIN32)
+    install(TARGETS vkmGL vkmLog glew LIBRARY DESTINATION bin COMPONENT Runtime)
+endif()
 
 # The compiler's own runtime DLLs are not imported targets, so copy the MinGW
 # trio from the toolchain bin when present (UCRT / Win10+ ships ucrtbase itself).
@@ -55,10 +72,20 @@ endif()
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/shaders DESTINATION . COMPONENT Runtime)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/scenes  DESTINATION . COMPONENT Runtime)
 
-# Cooked output + library recipes (manifest + inline materials). OPTIONAL so the
-# install doesn't fail before the first cook - but the game needs them at runtime.
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/cooked  DESTINATION . COMPONENT Runtime OPTIONAL)
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/library DESTINATION . COMPONENT Runtime OPTIONAL)
+# Cooked mesh/texture binaries - the form the runtime consumes them in.
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/cooked DESTINATION . COMPONENT Runtime OPTIONAL)
 
-# HDR environments (IBL is baked from these at load).
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/envs DESTINATION assets COMPONENT Runtime OPTIONAL)
+# Library: ship only the runtime-relevant subset. The runtime reads the manifest
+# (resolves asset names -> cooked files + recipe hashes) and the material recipes
+# (materials are not cooked - they are rebuilt from these inline recipes at load).
+# library/meshes and library/textures hold the source recipes the editor re-cooks
+# from; the runtime never reads them. OPTIONAL so the install works before a cook.
+install(FILES     ${CMAKE_SOURCE_DIR}/library/_manifest.json DESTINATION library COMPONENT Runtime OPTIONAL)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/library/materials      DESTINATION library COMPONENT Runtime OPTIONAL)
+
+# HDR environments (IBL is baked from these at load) and the window icon
+# (setupEngineApp loads it on startup). assets/models is import-source only - the
+# runtime uses the cooked meshes, so it is not shipped.
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/envs  DESTINATION assets COMPONENT Runtime OPTIONAL)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/logo  DESTINATION assets COMPONENT Runtime OPTIONAL)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/fonts DESTINATION assets COMPONENT Runtime OPTIONAL)

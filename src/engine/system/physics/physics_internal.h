@@ -17,7 +17,19 @@ namespace Engine {
  */
 struct ColliderProxy {
     uint32_t body = 0;
-    Collider collider;
+
+    /**
+     * @brief This body's boxes, as a span into the tick's shared parts buffer.
+     *
+     * A span rather than a copy of the Collider. Holding the component by value
+     * meant every tick destroyed and reallocated one std::vector per body -
+     * thousands of allocations a second for geometry that almost never changes.
+     * Indices rather than pointers because the shared buffer may grow while
+     * proxies are still being appended, and an index survives that.
+     */
+    uint32_t partsFirst = 0;
+    uint32_t partsCount = 0;
+    bool isTrigger = false;
     glm::vec3 position = {0.0f, 0.0f, 0.0f};
     glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 aabbMin = {0.0f, 0.0f, 0.0f};

@@ -8,7 +8,6 @@ from a single `std::deque<Task>` guarded by one mutex and two condition variable
 
 - `src/engine/platform/threading/thread_pool.h` - `ThreadPool` + the free
   `parallelFor` functions
-- `src/engine/platform/threading/task.h` - `Task` (the work unit)
 
 ## ThreadPool
 
@@ -78,6 +77,8 @@ parallelFor(entities.size(), [&](size_t i) {
 `parallelFor` is the per-system scaling lever (the framework does not parallelize
 systems against each other - see [architecture.md](architecture.md)). The main
 consumers are `VisibilitySystem` (culling across the visible set with per-thread
-scratch buffers) and `HierarchySystem` (resolving world transforms by depth bucket).
+scratch buffers), `HierarchySystem` (resolving world transforms by depth bucket),
+and `GLShadowData::cullCasters` (one task per cascade, spot and cube face, each
+writing its own caster batch).
 For correctness, parallel work writes into pre-sized per-index or per-thread buffers
 rather than sharing mutable state across the loop.

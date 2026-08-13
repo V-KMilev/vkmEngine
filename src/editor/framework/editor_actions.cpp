@@ -1,5 +1,7 @@
 #include "framework/editor_actions.h"
 
+#include "ui/editor_widgets.h"
+
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -18,6 +20,9 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/name.h"
 #include "ecs/component/reflection_probe.h"
+#include "ecs/component/irradiance_volume.h"
+#include "ecs/component/decal.h"
+#include "ecs/component/particle_emitter.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
@@ -158,6 +163,13 @@ const char* defaultName(EntityKind k) {
         case EntityKind::DiskLight:        return "Disk Light";
         case EntityKind::Camera:           return "Camera";
         case EntityKind::ReflectionProbe:  return "Reflection Probe";
+        case EntityKind::IrradianceVolume: return "Irradiance Volume";
+        case EntityKind::Decal:            return "Decal";
+        case EntityKind::ParticleEmitter:  return "Particle Emitter";
+        case EntityKind::UICanvas:         return "UI Canvas";
+        case EntityKind::UIPanel:          return "UI Panel";
+        case EntityKind::UIText:           return "UI Text";
+        case EntityKind::UIButton:         return "UI Button";
     }
     return "Entity";
 }
@@ -167,7 +179,15 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
     auto entity = scene.createEntity();
     EntityId id = entity.getID();
 
-    scene.add(entity, Transform{});
+    // UI entities are screen-space: a canvas gets a UICanvas, a UI element gets a
+    // UIElement; everything else gets a 3D Transform.
+    const bool isCanvas    = kind == EntityKind::UICanvas;
+    const bool isUIElement = kind == EntityKind::UIPanel || kind == EntityKind::UIText
+                          || kind == EntityKind::UIButton;
+    if (isCanvas)         scene.add(entity, UICanvas{});
+    else if (isUIElement) scene.add(entity, UIElement{});
+    else                  scene.add(entity, Transform{});
+
     scene.add(entity, makeName(defaultName(kind)));
 
     auto addMesh = [&](MeshAsset mesh) {
@@ -209,21 +229,46 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         case EntityKind::ReflectionProbe:
             scene.add(entity, ReflectionProbe{});
             break;
+        case EntityKind::IrradianceVolume:
+            scene.add(entity, IrradianceVolume{});
+            break;
+        case EntityKind::Decal:
+            scene.add(entity, Decal{});
+            break;
+        case EntityKind::ParticleEmitter:
+            scene.add(entity, ParticleEmitter{});
+            break;
+        case EntityKind::UICanvas:                          break;  // UICanvas added above
+        case EntityKind::UIPanel:  scene.add(entity, UIImage{});  break;
+        case EntityKind::UIText:   scene.add(entity, UIText{});   break;
+        case EntityKind::UIButton: scene.add(entity, UIButton{}); break;
+    }
+
+    // A new UI element defaults to living under the selected canvas / element so
+    // it renders immediately; otherwise it starts as a root for the user to
+    // parent (a UI element needs a UICanvas ancestor to be laid out and drawn).
+    uint32_t parentSlot = 0;
+    if (isUIElement && state.selectedEntity && scene.isAlive(state.selectedEntity)
+        && (scene.has<UICanvas>(state.selectedEntity) || scene.has<UIElement>(state.selectedEntity))) {
+        HierarchyOperations::setParent(scene, id, state.selectedEntity);
+        parentSlot = state.selectedEntity.index;
     }
 
     // Snapshot the just-created entity so undo can resurrect it intact
     // (CreateEntityCommand::undo destroys; redo re-creates at the same slot).
+    // The parent slot rides along: EntitySnapshot is leaf-only, so without it a
+    // redone UI element comes back as a root and stops being drawn.
     state.commands.push(std::make_unique<CreateEntityCommand>(
-        EntitySnapshot::capture(scene, id), "Create Entity"));
+        EntitySnapshot::capture(scene, id), "Create Entity", parentSlot));
     commitStructureChange(state);
     return id;
 }
 
-void duplicateEntity(Scene& scene, EditorState& state, EntityId source) {
-    // Reuse the snapshot machinery so the "what components make up an entity"
-    // list lives in exactly one place (VKM_EDITOR_SNAPSHOT_COMPONENTS). Then
-    // apply the few duplicate-specific tweaks on the captured copy: nudge it off
-    // the source, and don't let the copy steal "active camera" or auto-play.
+namespace {
+// The duplicate core shared by the single and batch paths: clone @p source
+// via the snapshot machinery (so "what makes up an entity" lives in one
+// place), nudged off the original, never stealing active-camera/auto-play.
+EntityId duplicateOne(Scene& scene, EntityId source) {
     EntitySnapshot snap = EntitySnapshot::capture(scene, source);
     if (snap.transform) snap.transform->position += glm::vec3(1.0f, 0.0f, 0.0f);
     if (snap.camera)    snap.camera->active = false;
@@ -232,12 +277,81 @@ void duplicateEntity(Scene& scene, EditorState& state, EntityId source) {
     Entity entity = scene.createEntity();
     EntityId newId = entity.getID();
     snap.apply(scene, newId);
+    return newId;
+}
+} // namespace
 
+void duplicateEntity(Scene& scene, EditorState& state, EntityId source) {
+    const EntityId newId = duplicateOne(scene, source);
     // Same path as createEntity: snapshot the result so undo destroys it.
     state.commands.push(std::make_unique<CreateEntityCommand>(
         EntitySnapshot::capture(scene, newId), "Duplicate Entity"));
     commitStructureChange(state);
     state.selectEntity(newId);
+}
+
+void duplicateSelection(Scene& scene, EditorState& state) {
+    if (state.selection.size() <= 1) {
+        if (state.selectedEntity) duplicateEntity(scene, state, state.selectedEntity);
+        return;
+    }
+
+    const std::vector<EntityId> sources = state.selection;
+    auto batch = std::make_unique<CompositeCommand>("Duplicate Selection");
+    std::vector<EntityId> clones;
+    clones.reserve(sources.size());
+    for (EntityId src : sources) {
+        if (!scene.isAlive(src)) continue;
+        const EntityId newId = duplicateOne(scene, src);
+        batch->add(std::make_unique<CreateEntityCommand>(
+            EntitySnapshot::capture(scene, newId), "Duplicate Entity"));
+        clones.push_back(newId);
+    }
+    if (clones.empty()) return;
+
+    state.commands.push(std::move(batch));
+    commitStructureChange(state);
+
+    // The clones become the selection (first as active, like a fresh drag).
+    state.selectEntity(clones.front());
+    for (size_t i = 1; i < clones.size(); ++i) state.addToSelection(clones[i]);
+    state.selectedEntity = clones.front();
+}
+
+void deleteSelection(Scene& scene, EditorState& state) {
+    if (state.selection.size() <= 1) {
+        if (state.selectedEntity) deleteEntity(scene, state, state.selectedEntity);
+        return;
+    }
+
+    // Roots only: an entity whose ancestor is also selected dies with that
+    // ancestor's subtree - deleting it separately would double-destroy.
+    const std::vector<EntityId> sel = state.selection;
+    auto hasSelectedAncestor = [&](EntityId id) {
+        EntityId cur = id;
+        while (scene.isAlive(cur) && scene.has<Hierarchy>(cur)) {
+            cur = scene.get<Hierarchy>(cur).parent;
+            if (!cur) break;
+            if (state.isSelected(cur)) return true;
+        }
+        return false;
+    };
+
+    const EntityId priorSel = state.selectedEntity;
+    state.deselect();
+
+    auto batch = std::make_unique<CompositeCommand>("Delete Selection");
+    for (EntityId id : sel) {
+        if (!scene.isAlive(id) || hasSelectedAncestor(id)) continue;
+        SubtreeSnapshot snap = SubtreeSnapshot::capture(scene, id);
+        HierarchyOperations::destroyHierarchy(scene, id);
+        batch->add(std::make_unique<DestroySubtreeCommand>(
+            std::move(snap), priorSel, "Delete Entity"));
+    }
+    if (batch->empty()) return;
+
+    state.commands.push(std::move(batch));
+    commitStructureChange(state);
 }
 
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
@@ -358,30 +472,47 @@ void frameAll(FrameContext& ctx, CameraControllerSystem& camera) {
 
 void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState& state) {
     if (ImGui::BeginMenu("Create")) {
-        auto item = [&](const char* label, EntityKind k) {
-            if (ImGui::MenuItem(label)) state.selectEntity(createEntity(scene, resources, state, k));
+        auto item = [&](EditorIcon icon, const char* label, EntityKind k) {
+            if (iconMenuItem(icon, label)) state.selectEntity(createEntity(scene, resources, state, k));
         };
-        item("Empty Entity", EntityKind::Empty);
+        item(EditorIcon::Empty, "Empty", EntityKind::Empty);
         ImGui::Separator();
-        item("Camera", EntityKind::Camera);
-        item("Reflection Probe", EntityKind::ReflectionProbe);
+        item(EditorIcon::Camera,   "Camera",            EntityKind::Camera);
+        item(EditorIcon::Probe,    "Reflection Probe",  EntityKind::ReflectionProbe);
+        item(EditorIcon::Volume,   "Irradiance Volume", EntityKind::IrradianceVolume);
+        item(EditorIcon::Decal,    "Decal",             EntityKind::Decal);
+        item(EditorIcon::Particle, "Particle Emitter",  EntityKind::ParticleEmitter);
         ImGui::Separator();
-        item("Rect Light",        EntityKind::RectLight);
-        item("Disk Light",        EntityKind::DiskLight);
-        item("Spot Light",        EntityKind::SpotLight);
-        item("Point Light",       EntityKind::PointLight);
-        item("Directional Light", EntityKind::DirectionalLight);
-        ImGui::Separator();
-        item("Triangle", EntityKind::Triangle);
-        item("Plane",    EntityKind::Plane);
-        item("Cube",     EntityKind::Cube);
-        item("Sphere",   EntityKind::Sphere);
-        item("Pyramid",  EntityKind::Pyramid);
-        item("Cone",     EntityKind::Cone);
+        if (ImGui::BeginMenu("Light")) {
+            item(EditorIcon::LightDir,   "Directional", EntityKind::DirectionalLight);
+            item(EditorIcon::LightPoint, "Point",       EntityKind::PointLight);
+            item(EditorIcon::LightSpot,  "Spot",        EntityKind::SpotLight);
+            item(EditorIcon::LightRect,  "Rect",        EntityKind::RectLight);
+            item(EditorIcon::LightDisk,  "Disk",        EntityKind::DiskLight);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Primitive")) {
+            item(EditorIcon::Cube,     "Cube",     EntityKind::Cube);
+            item(EditorIcon::Sphere,   "Sphere",   EntityKind::Sphere);
+            item(EditorIcon::Plane,    "Plane",    EntityKind::Plane);
+            item(EditorIcon::Cone,     "Cone",     EntityKind::Cone);
+            item(EditorIcon::Pyramid,  "Pyramid",  EntityKind::Pyramid);
+            item(EditorIcon::Triangle, "Triangle", EntityKind::Triangle);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("UI")) {
+            // A canvas is the screen-space root; panels/text/buttons created with
+            // a canvas or element selected drop in as its children.
+            item(EditorIcon::UICanvas, "Canvas", EntityKind::UICanvas);
+            item(EditorIcon::UIImage,  "Panel",  EntityKind::UIPanel);
+            item(EditorIcon::UIText,   "Text",   EntityKind::UIText);
+            item(EditorIcon::UIButton, "Button", EntityKind::UIButton);
+            ImGui::EndMenu();
+        }
         ImGui::Separator();
         // The modal can't live here: the menu closes on click and this
         // function stops being called. Defer to drawModelImportDialog().
-        if (ImGui::MenuItem("Import Model")) state.requestModelImport = true;
+        if (iconMenuItem(EditorIcon::Import, "Import Model")) state.requestModelImport = true;
         ImGui::EndMenu();
     }
 }

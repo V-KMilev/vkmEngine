@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "LOADER"
 
-#include "model_loaders.h"
+#include "loader/model_loaders.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -194,7 +194,12 @@ MeshAsset buildMesh(const aiScene* scene, const std::string& path, int meshIdx) 
     out.indices.reserve(static_cast<size_t>(m->mNumFaces) * 3);
     for (unsigned f = 0; f < m->mNumFaces; ++f) {
         const aiFace& face = m->mFaces[f];
-        for (unsigned k = 0; k < face.mNumIndices; ++k)
+        // Triangles only. aiProcess_Triangulate splits polygons but leaves
+        // point and line primitives alone, and some exporters emit them; pushing
+        // a 1- or 2-index face into a triangle list shifts every triangle after
+        // it, which shows up as geometry that is subtly and inexplicably wrong.
+        if (face.mNumIndices != 3) continue;
+        for (unsigned k = 0; k < 3; ++k)
             out.indices.push_back(face.mIndices[k]);
     }
 

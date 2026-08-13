@@ -46,6 +46,20 @@ class GLPass {
          * beginFullscreen so the post passes don't each open-code the restore.
          */
         void endFullscreen(Core::Context& gl) const;
+
+        /**
+         * @brief Bind the default framebuffer with the view's window-space
+         * viewport rect.
+         *
+         * viewportY arrives top-left origin (window/UI convention) while GL's
+         * default framebuffer is bottom-left, so the rect is flipped against the
+         * full surface height - otherwise output lands mirrored off the editor's
+         * viewport panel. Shared by every pass that draws to the backbuffer
+         * (composite, UI) so the flip lives in exactly one place.
+         *
+         * @param ctx The frame context whose view supplies the rect.
+         */
+        void bindBackbufferViewport(GLFrameContext& ctx) const;
 };
 
 } // namespace Engine

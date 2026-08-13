@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "ecs/entity.h"
+#include "resource/asset/mesh_asset.h"
 
 namespace Engine {
 
@@ -22,13 +23,23 @@ struct VisibleEntity {
     glm::mat4 model;
     glm::vec3 worldMin{0.0f};
     glm::vec3 worldMax{0.0f};
+
+    /**
+     * @brief Geometry to draw, already resolved.
+     *
+     * The Mesh component's handle normally, or the level an LOD component
+     * selected for this frame's distance. Carried here because the cull is
+     * where the distance is known; the consumer would otherwise have to
+     * recompute it to make the same choice.
+     */
+    MeshHandle mesh;
 };
 
 /**
  * @brief Result of a visibility pass: camera data, visible entities, and the scene-wide shadow-caster set.
  *
- * Populated by VisibilitySystem each frame and consumed by downstream
- * systems (RenderSystem, AnimationSystem).
+ * Populated by VisibilitySystem each frame and consumed downstream by
+ * RenderSystem and the editor's picking/overlays.
  *
  * Camera data is computed once during culling and forwarded to avoid redundant lookups.
  */
@@ -39,6 +50,9 @@ struct Visibility {
     glm::mat4 view           = glm::mat4(1.0f);
     glm::mat4 projection     = glm::mat4(1.0f);
     glm::vec3 cameraPosition = glm::vec3(0.0f);
+
+    float focusDistance      = 10.0f;   ///< Active camera's depth-of-field focus distance.
+    float dofAmount          = 0.0f;    ///< Active camera's depth-of-field strength (0 = off).
 
     bool hasCamera           = false;
 };

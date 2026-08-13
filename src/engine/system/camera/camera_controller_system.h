@@ -9,6 +9,7 @@
 #include "core/system.h"
 
 namespace Engine {
+    class InputMap;
 
 struct Transform;
 
@@ -70,6 +71,16 @@ class CameraControllerSystem : public System {
         }
 
         /**
+         * @brief Enable or disable the fly controls entirely.
+         *
+         * The controller is an authoring tool: the editor keeps it on, but a
+         * shipped game owns its camera and cursor (gameplay drives both), so
+         * the runtime turns it off at bootstrap. Disabled, update() is a no-op
+         * - no camera writes, no cursor-mode changes.
+         */
+        void setEnabled(bool enabled) { m_enabled = enabled; }
+
+        /**
          * @brief Resolve the active rendered camera and apply fly-mode motion.
          *
          * Each frame this retargets onto whichever entity has an active Camera
@@ -104,10 +115,12 @@ class CameraControllerSystem : public System {
         /**
          * @brief Update camera transform based on fly mode controls.
          * @param position Reference to the camera's position vector.
+         * @param input    Resolved actions for movement and boost.
          * @param rotation Reference to the camera's rotation quaternion.
          * @param deltaTime Time elapsed since last update.
          */
-        void updateFlyMode(WindowManager& window, glm::vec3& position, glm::quat& rotation, float deltaTime);
+        void updateFlyMode(WindowManager& window, const InputMap& input,
+                           glm::vec3& position, glm::quat& rotation, float deltaTime);
 
         /**
          * @brief Compute a quaternion from yaw/pitch and write it to @p rotation.
@@ -160,7 +173,7 @@ class CameraControllerSystem : public System {
 
         bool m_editorWantsMouse    = false;
         bool m_editorWantsKeyboard = false;
+        bool m_enabled             = true;
 };
 
 } // namespace Engine
-

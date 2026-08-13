@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -22,7 +23,8 @@ namespace Engine {
  */
 struct EditorState {
     // Selection
-    EntityId selectedEntity{};
+    EntityId selectedEntity{};               ///< The ACTIVE entity (last clicked); always in `selection` when set.
+    std::vector<EntityId> selection;         ///< Every selected entity (multi-select set), active included.
     bool     worldSelected = false;
 
     // Gizmo config
@@ -61,12 +63,22 @@ struct EditorState {
     bool hierarchyDirty  = true;     ///< Set by entity ops, consumed by HierarchyPanel
     bool editorVisible   = true;     ///< Toggle entire editor UI (F5)
     bool requestModelImport = false;  ///< Set by the Import Model menu item, consumed by the menu-bar dialog
+    int  lodGenLevels = 2;            ///< Levels the LOD card's Generate button builds below the source.
     bool requestScriptReload = false; ///< Set by the Reload Scripts menu item, consumed by EditorSystem (hot-reload)
 
     // Scene I/O state
     bool sceneDirty = false;    ///< Unsaved edits since last save/load. Title shows '*'.
-    bool confirmingQuit  = false;  ///< Save-on-quit modal is open this frame.
-    bool closeAfterSave  = false;  ///< Window-close pending until the next clean save.
+
+    /**
+     * @brief The destructive scene actions that pass through the shared
+     * unsaved-changes guard. confirmAction is what the modal is currently
+     * confirming; afterSaveAction is deferred until the next clean save
+     * (the "Save" choice); pendingScenePath is the target of a guarded Open.
+     */
+    enum class PendingSceneAction : uint8_t { None, Quit, New, Open };
+    PendingSceneAction confirmAction   = PendingSceneAction::None;
+    PendingSceneAction afterSaveAction = PendingSceneAction::None;
+    std::string        pendingScenePath;
     std::vector<std::string> recentScenes;  ///< MRU list (absolute paths), most-recent first.
     static constexpr size_t MAX_RECENT_SCENES = 8;
 
@@ -92,13 +104,45 @@ struct EditorState {
     void markSceneDirty() { sceneDirty = true; }
 
     /**
-     * @brief Selection helpers - selectedEntity and worldSelected are mutually
-     * exclusive, so always route selection through these (not raw assignment)
-     * to keep that invariant without a draw-time fixup.
+     * @brief Selection helpers - route ALL selection changes through these.
+     *
+     * Invariants they maintain: selectedEntity (the active entity) is always a
+     * member of `selection` when non-null; selection and worldSelected are
+     * mutually exclusive. Plain click = selectEntity (replace); Ctrl+click =
+     * toggleSelection; Shift+click = addToSelection / a range in the
+     * Hierarchy.
      */
-    void selectEntity(EntityId id) { selectedEntity = id; worldSelected = false; }
-    void selectWorld()             { selectedEntity = {}; worldSelected = true; }
-    void deselect()                { selectedEntity = {}; worldSelected = false; }
+    void selectEntity(EntityId id) {
+        selectedEntity = id;
+        selection.assign(1, id);
+        worldSelected = false;
+    }
+
+    void addToSelection(EntityId id) {
+        if (!isSelected(id)) selection.push_back(id);
+        selectedEntity = id;
+        worldSelected  = false;
+    }
+
+    void toggleSelection(EntityId id) {
+        auto it = std::find(selection.begin(), selection.end(), id);
+        if (it != selection.end()) {
+            selection.erase(it);
+            if (selectedEntity == id)
+                selectedEntity = selection.empty() ? EntityId{} : selection.back();
+        } else {
+            selection.push_back(id);
+            selectedEntity = id;
+        }
+        worldSelected = false;
+    }
+
+    bool isSelected(EntityId id) const {
+        return std::find(selection.begin(), selection.end(), id) != selection.end();
+    }
+
+    void selectWorld() { selectedEntity = {}; selection.clear(); worldSelected = true; }
+    void deselect()    { selectedEntity = {}; selection.clear(); worldSelected = false; }
 
     /**
      * @brief Show a transient toast at the corner of the editor. `seconds` <= 0

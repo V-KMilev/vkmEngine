@@ -8,7 +8,11 @@
 #include "system/render/data/light_data.h"
 #include "system/render/data/shadow_caster_data.h"
 #include "system/render/data/probe_data.h"
+#include "system/render/data/decal_data.h"
+#include "system/render/data/particle_data.h"
+#include "system/render/data/irradiance_volume_data.h"
 #include "system/render/render_settings.h"
+#include "system/ui/ui_draw_data.h"
 #include "ecs/environment.h"
 
 namespace Engine {
@@ -36,22 +40,32 @@ struct RenderView {
     std::vector<ShadowCasterData> shadowCasters;   ///< The shadow casters for the view.
     std::vector<LightData>        lights;          ///< The lights for the view.
     std::vector<ProbeData>        probes;          ///< The reflection probes in the scene.
+    std::vector<DecalData>        decals;          ///< The projected decals in the scene.
+    std::vector<ParticleData>     particlesAdditive;  ///< Billboard particles from additive emitters (order-independent).
+    std::vector<ParticleData>     particlesAlpha;     ///< Billboard particles from alpha emitters, sorted back-to-front.
+    std::vector<IrradianceVolumeData> irradianceVolumes;  ///< Baked-GI volumes in the scene.
 
     RenderSettings                settings;        ///< Editable render tuning (copied from the RenderSystem each frame).
     Environment                   environment;     ///< Lighting environment (HDR/skybox), copied from the Scene each frame in build().
+    UIDrawData                    ui;              ///< Screen-space UI overlay, copied from the UISystem's draw list each frame.
 
     public:
         /**
          * @brief Refill the snapshot for the current frame.
          *
-         * Copies the scene's environment, then rebuilds camera, lights, probes,
-         * drawables, and shadow casters from the already-culled @p visibility
-         * set, reusing the vectors' capacity. With no active camera this frame it
-         * emits an empty snapshot (cleared, not stale) and returns early.
+         * Copies the scene's environment and the @p ui overlay (independent of
+         * the camera, so it survives the no-camera path), then rebuilds camera,
+         * lights, probes, drawables, and shadow casters from the already-culled
+         * @p visibility set, reusing the vectors' capacity. With no active camera
+         * this frame it emits an empty 3D snapshot (cleared, not stale) and
+         * returns early.
+         *
+         * @param ui The UISystem's draw list for this frame, or null if none.
          */
         void build(
             const Scene& scene,
-            const Visibility& visibility
+            const Visibility& visibility,
+            const UIDrawData* ui
         );
 
     private:
@@ -81,6 +95,29 @@ struct RenderView {
          * @param scene Scene whose ReflectionProbe components are gathered.
          */
         void buildProbes(const Scene& scene);
+
+        /**
+         * @brief Snapshot every decal into world space (box transform + its inverse).
+         *
+         * @param scene Scene whose Decal components are gathered.
+         */
+        void buildDecals(const Scene& scene);
+
+        /**
+         * @brief Flatten every emitter's live particles into billboard instances,
+         * evaluating size + colour from each particle's age. Alpha particles are
+         * sorted back-to-front against the camera; additive ones need no order.
+         *
+         * @param scene Scene whose ParticleEmitter components are gathered.
+         */
+        void buildParticles(const Scene& scene);
+
+        /**
+         * @brief Snapshot every irradiance volume into world space.
+         *
+         * @param scene Scene whose IrradianceVolume components are gathered.
+         */
+        void buildIrradianceVolumes(const Scene& scene);
 
         /**
          * @brief Snapshot one drawable per visible entity that resolves a mesh and material.

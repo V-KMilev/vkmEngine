@@ -32,10 +32,12 @@ struct ColliderBox {
 struct Collider {
     std::vector<ColliderBox> parts = { ColliderBox{} }; ///< The collision volume: one or more boxes. Default to a single unit box.
     bool isTrigger = false;                             ///< Generates contacts for queries but no impulse response.
+    bool enabled   = true;                              ///< When false the collider is inert: no broadphase entry, no contacts, no debug draw.
 };
 
 VKM_REFLECT_BEGIN(Collider)
-    VKM_F(isTrigger)
+    VKM_F(isTrigger),
+    VKM_F(enabled)
 VKM_REFLECT_END()
 
 } // namespace Engine

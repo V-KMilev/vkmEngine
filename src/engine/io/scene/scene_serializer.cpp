@@ -22,8 +22,10 @@
 #include "io/json_file.h"
 #include "io/json_vec.h"
 #include "resource/resource_manager.h"
-#include "resource/asset/shader_asset.h"
+#include "resource/asset/font_asset.h"
 #include "system/hierarchy/hierarchy_operations.h"
+#include "io/scene/prefab.h"
+#include "ecs/component/prefab_instance.h"
 
 namespace Engine::SceneSerializer {
 
@@ -53,10 +55,14 @@ constexpr int FILE_FORMAT_VERSION = 2;
 // Every JSON key written by saveComponents, for unknown-key detection on load.
 // Order is incidental here (membership test only); keep it in sync with the
 // save/load lists below.
-constexpr std::array<const char*, 10> COMPONENT_KEYS = {
+constexpr std::array<const char*, 20> COMPONENT_KEYS = {
     "Name", "Transform", "Camera", "Light", "Rigidbody", "Collider",
-    "Mesh", "Animation", "Script", "Hierarchy",
+    "Mesh", "LOD", "Decal", "ParticleEmitter", "IrradianceVolume", "ReflectionProbe",
+    "Animation", "Script", "Hierarchy",
+    "UICanvas", "UIElement", "UIImage", "UIText", "UIButton",
 };
+
+} // namespace
 
 void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
     if (s.has<Name>(id))            c["Name"]         = CS::save(s.get<Name>(id));
@@ -66,9 +72,19 @@ void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager&
     if (s.has<Rigidbody>(id))       c["Rigidbody"]    = CS::save(s.get<Rigidbody>(id));
     if (s.has<Collider>(id))        c["Collider"]     = CS::save(s.get<Collider>(id));
     if (s.has<Mesh>(id))            c["Mesh"]         = CS::save(s.get<Mesh>(id), r);
+    if (s.has<LOD>(id))             c["LOD"]          = CS::save(s.get<LOD>(id), r);
+    if (s.has<Decal>(id))           c["Decal"]        = CS::save(s.get<Decal>(id), r);
+    if (s.has<ParticleEmitter>(id)) c["ParticleEmitter"] = CS::save(s.get<ParticleEmitter>(id));
+    if (s.has<IrradianceVolume>(id)) c["IrradianceVolume"] = CS::save(s.get<IrradianceVolume>(id));
+    if (s.has<ReflectionProbe>(id))  c["ReflectionProbe"]  = CS::save(s.get<ReflectionProbe>(id));
     if (s.has<Animation>(id))       c["Animation"]    = CS::save(s.get<Animation>(id));
     if (s.has<ScriptComponent>(id)) c["Script"]       = CS::save(s.get<ScriptComponent>(id));
     if (s.has<Hierarchy>(id))       c["Hierarchy"]    = CS::save(s.get<Hierarchy>(id));
+    if (s.has<UICanvas>(id))        c["UICanvas"]     = CS::save(s.get<UICanvas>(id));
+    if (s.has<UIElement>(id))       c["UIElement"]    = CS::save(s.get<UIElement>(id));
+    if (s.has<UIImage>(id))         c["UIImage"]      = CS::save(s.get<UIImage>(id));
+    if (s.has<UIText>(id))          c["UIText"]       = CS::save(s.get<UIText>(id));
+    if (s.has<UIButton>(id))        c["UIButton"]     = CS::save(s.get<UIButton>(id));
 }
 
 // Hierarchy is intentionally absent: its parent link is captured by the
@@ -81,8 +97,38 @@ void loadComponents(const json& src, Scene& s, Entity e, const ResourceManager& 
     if (src.contains("Rigidbody"))    { Rigidbody c;       CS::load(src["Rigidbody"], c);       s.add(e, std::move(c)); }
     if (src.contains("Collider"))     { Collider c;        CS::load(src["Collider"], c);        s.add(e, std::move(c)); }
     if (src.contains("Mesh"))         { Mesh c;            CS::load(src["Mesh"], c, r);         s.add(e, std::move(c)); }
+    if (src.contains("LOD"))          { LOD c;             CS::load(src["LOD"], c, r);          s.add(e, std::move(c)); }
+    if (src.contains("Decal"))        { Decal c;           CS::load(src["Decal"], c, r);        s.add(e, std::move(c)); }
+    if (src.contains("ParticleEmitter")) { ParticleEmitter c; CS::load(src["ParticleEmitter"], c); s.add(e, std::move(c)); }
+    if (src.contains("IrradianceVolume")) { IrradianceVolume c; CS::load(src["IrradianceVolume"], c); s.add(e, std::move(c)); }
+    if (src.contains("ReflectionProbe"))  { ReflectionProbe c;  CS::load(src["ReflectionProbe"], c);  s.add(e, std::move(c)); }
     if (src.contains("Animation"))    { Animation c;       CS::load(src["Animation"], c);       s.add(e, std::move(c)); }
     if (src.contains("Script"))       { ScriptComponent c; CS::load(src["Script"], c);          s.add(e, std::move(c)); }
+    if (src.contains("UICanvas"))     { UICanvas c;        CS::load(src["UICanvas"], c);        s.add(e, std::move(c)); }
+    if (src.contains("UIElement"))    { UIElement c;       CS::load(src["UIElement"], c);       s.add(e, std::move(c)); }
+    if (src.contains("UIImage"))      { UIImage c;         CS::load(src["UIImage"], c);         s.add(e, std::move(c)); }
+    if (src.contains("UIText"))       { UIText c;          CS::load(src["UIText"], c);          s.add(e, std::move(c)); }
+    if (src.contains("UIButton"))     { UIButton c;        CS::load(src["UIButton"], c);        s.add(e, std::move(c)); }
+}
+
+namespace {
+
+/**
+ * @brief Is @p id inside (but not the root of) a prefab instance?
+ *
+ * Walks up rather than marking every descendant, so the prefab's own entities
+ * carry no bookkeeping and cannot fall out of sync with their root.
+ */
+bool isInsidePrefabInstance(const Scene& scene, EntityId id) {
+    if (!scene.has<Hierarchy>(id)) return false;
+
+    EntityId cursor = scene.get<Hierarchy>(id).parent;
+    for (int depth = 0; depth < 32 && scene.isAlive(cursor); ++depth) {
+        if (scene.has<PrefabInstance>(cursor)) return true;
+        if (!scene.has<Hierarchy>(cursor)) break;
+        cursor = scene.get<Hierarchy>(cursor).parent;
+    }
+    return false;
 }
 
 bool isKnownComponentKey(const std::string& k) {
@@ -104,6 +150,10 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
     doc["entities"] = json::array();
 
     scene.forEachEntity([&](EntityId id) {
+        // Entities inside a prefab instance are not the scene's to describe -
+        // the prefab file defines them, and the loader rebuilds them from it.
+        if (isInsidePrefabInstance(scene, id)) return;
+
         json entity;
         entity["id"] = id.index;
         json components = json::object();
@@ -112,20 +162,26 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
         // not in the component list, not persisted.
         saveComponents(scene, id, components, resources);
 
+        // A prefab root stores its source instead of its contents. Transform
+        // and Hierarchy stay: where the instance sits, and what it hangs off,
+        // belong to the scene rather than to the prefab.
+        if (scene.has<PrefabInstance>(id)) {
+            const json transform  = std::move(components["Transform"]);
+            const json hierarchy  = std::move(components["Hierarchy"]);
+            components = json::object();
+            if (!transform.is_null()) components["Transform"] = std::move(transform);
+            if (!hierarchy.is_null()) components["Hierarchy"] = std::move(hierarchy);
+            entity["prefab"] = scene.get<PrefabInstance>(id).source;
+        }
+
         entity["components"] = std::move(components);
         doc["entities"].push_back(std::move(entity));
     });
 
-    // Scene-global settings (lighting environment + physics world): a top-level
-    // object, not a per-entity component.
-    const Environment& env = scene.environment();
-    doc["environment"] = {
-        {"hdrPath",          env.hdrPath},
-        {"intensity",        env.intensity},
-        {"showSkybox",       env.showSkybox},
-        {"gravity",          detail::vec3ToJson(env.gravity)},
-        {"solverIterations", env.solverIterations},
-    };
+    // Scene-global settings (lighting environment + physics world): a
+    // top-level object, not a per-entity component. Fully reflected - the
+    // field list lives once, in environment.h.
+    doc["environment"] = ComponentSerializer::save(scene.environment());
     return doc;
 }
 
@@ -177,8 +233,10 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     // non-relational components. Hierarchy::parent is captured for pass 2
     // because the parent might not have been created yet on first sight.
     std::vector<std::pair<uint32_t, uint32_t>> parentLinks;  // (child idx, parent idx)
+    std::vector<std::pair<Entity, std::string>> prefabRoots;  // instance roots to expand
     size_t entityCount = 0;
     std::set<std::string> unknownKeys;  // dedup warnings - one per drift, not per entity
+    const json noComponents = json::object();   // stand-in for an entity that has none
 
     try {
         for (const auto& entry : doc["entities"]) {
@@ -190,7 +248,11 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             const Entity entity = staging.createEntityAt(id);
             ++entityCount;
 
-            const auto& components = entry.value("components", json::object());
+            // Referenced, not value()'d: nlohmann returns by value, so asking
+            // that way deep-copied every entity's whole component block on the
+            // way past it.
+            const auto it = entry.find("components");
+            const json& components = (it != entry.end()) ? *it : noComponents;
 
             // Run every component's loader. Hierarchy is intentionally skipped
             // here - its parent index is captured below for the pass-2 wire-up.
@@ -204,10 +266,25 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
                 }
             }
 
+            if (entry.contains("prefab")) {
+                prefabRoots.emplace_back(entity, entry.value("prefab", std::string{}));
+                staging.add(entity, PrefabInstance{entry.value("prefab", std::string{})});
+            }
+
             if (components.is_object()) {
                 for (const auto& kv : components.items()) {
                     if (!isKnownComponentKey(kv.key())) unknownKeys.insert(kv.key());
                 }
+            }
+        }
+
+        // Pass 2b: expand prefab instances. After the entity pass so the roots
+        // hold their saved slots, and the prefab's own entities take whatever
+        // is free rather than competing for them.
+        for (const auto& [root, prefabPath] : prefabRoots) {
+            if (!Prefab::instantiateInto(staging, stagingResources, prefabPath, root)) {
+                LOG_WARNING("Prefab '%s' failed to expand in '%s'; instance left empty",
+                    prefabPath.c_str(), source);
             }
         }
 
@@ -235,15 +312,10 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             k.c_str(), source);
     }
 
-    // Scene-global settings (lighting environment + physics world): a top-level
-    // object. Missing fields keep the staging scene's defaults.
+    // Scene-global settings (lighting environment + physics world): a
+    // top-level object. Missing fields keep the staging scene's defaults.
     if (auto it = doc.find("environment"); it != doc.end() && it->is_object()) {
-        Environment& env = staging.environment();
-        env.hdrPath          = it->value("hdrPath",          env.hdrPath);
-        env.intensity        = it->value("intensity",        env.intensity);
-        env.showSkybox       = it->value("showSkybox",       env.showSkybox);
-        env.gravity          = detail::jsonToVec3(it->value("gravity", nlohmann::json{}), env.gravity);
-        env.solverIterations = it->value("solverIterations", env.solverIterations);
+        ComponentSerializer::load(*it, staging.environment());
     }
 
     // Commit phase: both stagings swap into place in one step. Until this
@@ -257,14 +329,15 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     // (MaterialEditor preview meshes, AssetBrowser neutral material)
     // re-acquire on next use via findByName-or-addPrivate (O(1) now).
     //
-    // Shaders are engine-owned (loaded once in main()) and never enter the
-    // scene file, so the staging RM has no ShaderAsset slot. Swap shaders
-    // back from the just-displaced live RM so cached shader handles in the
-    // render passes stay valid; without this the next frame's draw
-    // dereferences an empty ShaderAsset slot and segfaults.
+    // Fonts are engine-owned (baked at startup) and never enter the scene
+    // file, so the staging RM has no font slot. Swap it back from the
+    // just-displaced live RM - without it every UIText silently loses its
+    // font (resolved by name each frame) on every load. Safe because
+    // FontAsset is self-contained - no handles into the slots that were
+    // just replaced.
     scene.swap(staging);
     resources.swap(stagingResources);
-    resources.swapSlot<ShaderAsset>(stagingResources);
+    resources.swapSlot<FontAsset>(stagingResources);
     scene.compact();
 
     LOG_INFO("Loaded scene from '%s' (%zu entities, %zu hierarchy links)",
