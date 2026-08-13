@@ -45,9 +45,6 @@ void GLMesh::update(const MeshAsset& mesh) {
 
     m_vao = std::make_unique<Core::VertexArray>();
     m_vao->addBuffer(*m_vbo, layout);
-
-    // Fresh VAO: previously-recorded instance attachments no longer apply.
-    for (InstanceSlot& slot : m_instanceSlots) slot = {};
 }
 
 void GLMesh::draw() const {

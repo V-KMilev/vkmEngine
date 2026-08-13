@@ -570,9 +570,6 @@ void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId
             changed |= propDrag("Disk Radius", &light.areaRadius, 0.05f, 0.01f, 100.0f, "%.2f");
             changed |= propCheckbox("Two-sided", &light.twoSided);
         }
-        if (light.type == LightType::Rect || light.type == LightType::Disk) {
-        }
-
         changed |= propCheckbox("Shadows", &light.castShadows);
         if (light.castShadows) {
             changed |= propDrag("Shadow Bias", &light.shadowBias, 0.0005f, 0.0f, 0.1f, "%.4f");
@@ -1012,13 +1009,18 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
             anim.playing = false;
             anim.time = 0.0f;
         }
+        // Loop and Speed are authored properties that round-trip with the
+        // scene, so they push an edit like any other field. Play / Stop / the
+        // scrubber do not: they are transport controls, and dirtying the scene
+        // every time someone previews a clip would make the unsaved-changes
+        // prompt meaningless.
+        bool changed = false;
+
         ImGui::SameLine(0, GAP);
-        ImGui::Checkbox("Loop", &anim.looping);
+        changed |= ImGui::Checkbox("Loop", &anim.looping);
         ImGui::SameLine(0, GAP);
         ImGui::SetNextItemWidth(-1);
-        ImGui::DragFloat("##ASpeed", &anim.speed, 0.005f, 0.0f, 10.0f, "Speed %.2fx");
-
-        bool changed = false;
+        changed |= ImGui::DragFloat("##ASpeed", &anim.speed, 0.005f, 0.0f, 10.0f, "Speed %.2fx");
 
         // Explicit minimum length holds the clip open past the last keyframe
         // (0 = auto, derived from the keyframes). Folds into `duration` via
