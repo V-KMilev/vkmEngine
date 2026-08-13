@@ -118,6 +118,16 @@ class GizmoOverlay {
          * can push one batch undo covering all of it.
          */
         std::vector<std::pair<EntityId, Transform>> m_dragSelection;
+
+        /**
+         * @brief Is the dragged entity itself a descendant of another selected one?
+         *
+         * The gizmo always writes the active entity's Transform - that is the
+         * handle the user grabbed. When an ancestor is selected too, the motion
+         * also arrives down the hierarchy, so that direct write has to be undone
+         * or the entity travels twice.
+         */
+        bool m_dragActiveIsDescendant = false;
 };
 
 } // namespace Engine
