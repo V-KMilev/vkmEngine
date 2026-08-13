@@ -231,8 +231,6 @@ void EditorSystem::update(FrameContext& ctx) {
         }
     }
 
-    // Hot-reload the gameplay module on request (Edit > Reload Scripts):
-    // serialize behaviors, swap game.dll, recreate them - entities untouched.
     // Shader hot reload. Polled rather than watched: a filesystem watcher is a
     // per-platform dependency for something a once-a-second directory scan of a
     // few dozen files already answers. Editor-only - a shipped runtime has no
@@ -249,6 +247,8 @@ void EditorSystem::update(FrameContext& ctx) {
         }
     }
 
+    // Hot-reload the gameplay module on request (Edit > Reload Scripts):
+    // serialize behaviors, swap the game module, recreate them - entities untouched.
     if (m_state.requestScriptReload) {
         m_state.requestScriptReload = false;
         if (m_scriptModule.reload(ctx.scene)) {

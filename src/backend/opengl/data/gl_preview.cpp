@@ -223,8 +223,8 @@ uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
     m_pbr->setUniform1i("u_hasContactShadow", 0);
     m_pbr->setUniform1i("u_hasSceneColor", 0);
     m_pbr->setUniform1i("u_probeCount", 0);
-    m_pbr->setUniform1i("u_useClusters", 0);
-    m_pbr->setUniform1i("u_hasIrradianceVolume", 0);  // no cull pass here: shade the full light list
+    m_pbr->setUniform1i("u_useClusters", 0);           // no cull pass here: shade the full light list
+    m_pbr->setUniform1i("u_hasIrradianceVolume", 0);  // and never sample baked GI into a preview
     m_pbr->setUniform2f("u_screenSize",
         static_cast<float>(SCENE_SIZE), static_cast<float>(SCENE_SIZE));
 
