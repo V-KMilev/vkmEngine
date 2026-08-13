@@ -144,6 +144,8 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 }
 
 bool PhysicsSystem::gatherBodies(Scene& scene) {
+    PROFILE_SCOPE("Physics/Gather");
+
     auto* rbStorage = scene.storage<Rigidbody>();
     if (!rbStorage) return false;
 
@@ -222,6 +224,8 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
 }
 
 void PhysicsSystem::integrateForces(Scene& scene, const Environment& env, float dt) {
+    PROFILE_SCOPE("Physics/Integrate");
+
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         Rigidbody& rb = scene.get<Rigidbody>(m_bodies[k]);
         PhysicsBody& pb = m_solverBodies[k];
@@ -234,6 +238,8 @@ void PhysicsSystem::integrateForces(Scene& scene, const Environment& env, float 
 }
 
 void PhysicsSystem::broadphase() {
+    PROFILE_SCOPE("Physics/Broadphase");
+
     m_sorted.clear();
     m_pairs.clear();
 
@@ -255,6 +261,8 @@ void PhysicsSystem::broadphase() {
 }
 
 void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events) {
+    PROFILE_SCOPE("Physics/Narrowphase");
+
     m_manifolds.clear();
     Contact scratch[MAX_CONTACTS_PER_MANIFOLD];
 
@@ -316,6 +324,8 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events)
 }
 
 void PhysicsSystem::wakeOnImpact(Scene& scene) {
+    PROFILE_SCOPE("Physics/Wake");
+
     for (const ContactManifold& manifold : m_manifolds) {
         const uint32_t a = manifold.bodyA;
         const uint32_t b = manifold.bodyB;
@@ -337,6 +347,8 @@ void PhysicsSystem::wakeOnImpact(Scene& scene) {
 }
 
 void PhysicsSystem::solve(const Environment& env, float dt) {
+    PROFILE_SCOPE("Physics/Solve");
+
     SolverParams params;
     params.iterations = env.solverIterations;
     params.dt = dt;
@@ -344,6 +356,8 @@ void PhysicsSystem::solve(const Environment& env, float dt) {
 }
 
 void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& hasContact) {
+    PROFILE_SCOPE("Physics/Writeback");
+
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         const EntityId id = m_bodies[k];
         Rigidbody& rb = scene.get<Rigidbody>(id);
