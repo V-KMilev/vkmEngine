@@ -16,7 +16,7 @@ void CubeSpinner::onUpdate(float dt) {
 
     Transform& transform = scene.get<Transform>(m_entity);
     const float radians = glm::radians(degreesPerSecond) * dt;
-    const glm::quat spin = glm::angleAxis(radians, Math::WORLD_AXIS_Y_UP);
+    const glm::quat spin = glm::angleAxis(radians, Math::WORLD_AXIS_Y);
     transform.rotation = glm::normalize(spin * transform.rotation);
 
     // Visibility recomputes a non-hierarchical entity's model from its local
