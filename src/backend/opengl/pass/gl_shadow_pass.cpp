@@ -54,8 +54,8 @@ void GLShadowPass::render2D(GLFrameContext& ctx) {
 
 void GLShadowPass::renderCube(GLFrameContext& ctx) {
     // Point lights, six faces each (linear distance depth).
+    m_depthCube->bind();
     for (const ShadowCubeJob& job : ctx.shadowData.jobsCube()) {
-        m_depthCube->bind();
         m_depthCube->setUniform3fv("u_lightPos", job.pos);
         m_depthCube->setUniform1f("u_range", job.range);
         for (uint32_t f = 0; f < 6; ++f) {

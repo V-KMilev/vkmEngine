@@ -8,7 +8,7 @@
 #include "core/engine_config.h"
 
 namespace Core {
-    class UniformBuffer;
+    class ShaderStorageBuffer;
 }
 
 namespace Engine {
@@ -49,18 +49,20 @@ struct GpuLight {
     glm::vec4 axisV;
 };
 
-struct LightsUBO {
+struct LightsBuffer {
     int      count;
     int      pad0, pad1, pad2;
     GpuLight lights[MAX_LIGHTS];
 };
 
 /**
- * @brief GPU mirror of the frame's lights - the LightsBlock UBO.
+ * @brief GPU mirror of the frame's lights - the LightsBlock SSBO.
  *
- * update() packs each LightData into the std140 array the shaders iterate,
- * uploads it to the lights binding point, and skips the upload when the set is
- * unchanged from the previous frame. Lights past the cap are dropped.
+ * update() packs each LightData into the std430 array the shaders iterate,
+ * uploads it to the lights SSBO binding point, and skips the upload when the set
+ * is unchanged from the previous frame. Lights past the cap are dropped. The
+ * list lives in an SSBO (not a UBO) so it can grow past the UBO size limit and
+ * so the cluster-cull compute pass can read it.
  */
 class GLLights {
     public:
@@ -77,8 +79,8 @@ class GLLights {
         void update(const std::vector<LightData>& lights, const GLShadowData& shadow);
 
     private:
-        std::unique_ptr<Core::UniformBuffer> m_ubo;
-        LightsUBO                            m_last{};
+        std::unique_ptr<Core::ShaderStorageBuffer> m_ssbo;
+        LightsBuffer                               m_last{};
 };
 
 } // namespace Engine

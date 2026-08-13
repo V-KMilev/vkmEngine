@@ -38,18 +38,36 @@ class GLProbeArray {
         GLProbeArray(GLProbeArray && other) = delete;
         GLProbeArray& operator=(GLProbeArray && other) = delete;
 
-        static constexpr int ENV_SIZE        = 256;  ///< Capture env cube face size
-        static constexpr int ENV_MIPS        = 5;    ///< Env cube mips (prefilter source)
-        static constexpr int IRRADIANCE_SIZE = 32;   ///< Irradiance face size
-        static constexpr int PREFILTER_SIZE  = 128;  ///< Prefilter base face size
-        static constexpr int PREFILTER_MIPS  = 5;    ///< Roughness mips; MAX_PROBE_LOD = this - 1
+        static constexpr int ENV_MIPS       = 5;  ///< Env cube mips (prefilter source)
+        static constexpr int PREFILTER_MIPS = 5;  ///< Roughness mips; MAX_PROBE_LOD = this - 1
+
+        // Requested capture resolution bounds (the env cube face size). The
+        // prefilter/irradiance faces derive from it (res/2, res/8), preserving
+        // the original 256/128/32 ratio. Clamped to a power of two in range.
+        static constexpr int MIN_RESOLUTION     = 128;
+        static constexpr int MAX_RESOLUTION     = 1024;
+        static constexpr int DEFAULT_RESOLUTION = 256;
 
         /**
-         * @brief Allocate the arrays (@p capacity layers each) + env cube + depth + FBO.
-         * Idempotent.
+         * @brief Clamp @p resolution to [MIN,MAX] and round down to a power of two.
+         *
+         * @param resolution Requested capture face size in pixels.
+         * @return The face size actually usable for the shared cube arrays.
          */
-        void createTargets(int capacity);
+        static int clampResolution(int resolution);
+
+        /**
+         * @brief Allocate the arrays (@p capacity layers each) + env cube + depth + FBO,
+         * sized from @p resolution. Re-allocates when either changes; a no-op when
+         * both match the current build.
+         *
+         * @param capacity   Probe-array layer count (probe slots).
+         * @param resolution Capture face size; prefilter/irradiance derive from it.
+         */
+        void createTargets(int capacity, int resolution);
         int  capacity() const { return m_capacity; }
+        int  resolution() const { return m_resolution; }
+        int  envSize() const { return m_envSize; }
 
         // Bake render-target ops: attach a face/layer, sized to its viewport.
         void bindCaptureFbo()   const { m_fbo->bind(); }
@@ -64,7 +82,7 @@ class GLProbeArray {
         void attachEnvFace(const Core::Context& gl, int face) const {
             m_fbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_env.id(), 0);
-            gl.setViewport(0, 0, ENV_SIZE, ENV_SIZE);
+            gl.setViewport(0, 0, m_envSize, m_envSize);
         }
         void generateEnvMips() const { m_env.generateMipmaps(); }
 
@@ -77,7 +95,7 @@ class GLProbeArray {
          */
         void attachIrradianceFace(const Core::Context& gl, int layer, int face) const {
             m_irradiance.attachFace(GL_COLOR_ATTACHMENT0, layer, face, 0);
-            gl.setViewport(0, 0, IRRADIANCE_SIZE, IRRADIANCE_SIZE);
+            gl.setViewport(0, 0, m_irradianceSize, m_irradianceSize);
         }
         /**
          * @brief Attach one face/mip of prefilter-array @p layer as colour 0.
@@ -89,7 +107,7 @@ class GLProbeArray {
          */
         void attachPrefilterFace(const Core::Context& gl, int layer, int face, int mip) const {
             m_prefilter.attachFace(GL_COLOR_ATTACHMENT0, layer, face, mip);
-            const int s = PREFILTER_SIZE >> mip;
+            const int s = m_prefilterSize >> mip;
             gl.setViewport(0, 0, s, s);
         }
 
@@ -105,7 +123,11 @@ class GLProbeArray {
 
         std::unique_ptr<Core::Texture2D>   m_depth;
         std::unique_ptr<Core::FrameBuffer> m_fbo;
-        int m_capacity = 0;
+        int m_capacity   = 0;
+        int m_resolution = 0;  ///< Current build's capture face size (0 = not built).
+        int m_envSize        = 0;
+        int m_irradianceSize = 0;
+        int m_prefilterSize  = 0;
 };
 
 } // namespace Engine

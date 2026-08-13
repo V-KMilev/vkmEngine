@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "BACKEND::GL"
 
-#include "gl_ao_target.h"
+#include "gl_mask_target.h"
 
 #include <GL/glew.h>
 
@@ -11,22 +11,30 @@
 
 namespace Engine {
 
-GLAOTarget::GLAOTarget()  = default;
-GLAOTarget::~GLAOTarget() = default;
+GLMaskTarget::GLMaskTarget()  = default;
+GLMaskTarget::~GLMaskTarget() = default;
 
-void GLAOTarget::resize(uint32_t width, uint32_t height) {
+void GLMaskTarget::setFormat(GLenum internalFormat, GLenum format) {
+    if (internalFormat == m_internalFormat && format == m_format) return;
+    m_internalFormat = internalFormat;
+    m_format         = format;
+    m_width          = 0;  // force a rebuild on the next resize
+}
+
+void GLMaskTarget::resize(uint32_t width, uint32_t height) {
     if (width == 0 || height == 0) return;
     if (width == m_width && height == m_height) return;
     m_width  = width;
     m_height = height;
 
-    // Single AO factor in [0,1]. R16F keeps banding off the soft falloff; linear
-    // filter so the forward sample (and any later half-res upsample) is smooth.
+    // The occlusion factor in [0,1] (plus a packed bent normal when the format
+    // says so). Float keeps banding off the soft falloff; linear filter so the
+    // forward sample (and any later half-res upsample) is smooth.
     Core::Texture2DParams p;
     p.width          = width;
     p.height         = height;
-    p.internalFormat = GL_R16F;
-    p.format         = GL_RED;
+    p.internalFormat = m_internalFormat;
+    p.format         = m_format;
     p.type           = GL_FLOAT;
     p.minFilter      = Core::TextureMinFilter::Linear;
     p.magFilter      = Core::TextureMagFilter::Linear;
@@ -39,18 +47,18 @@ void GLAOTarget::resize(uint32_t width, uint32_t height) {
     m_fbo.attachTexture2D(GL_COLOR_ATTACHMENT0, m_tex->getID());
     m_fbo.setDrawBuffer(GL_COLOR_ATTACHMENT0);
     if (!m_fbo.isComplete()) {
-        LOG_ERROR("GLAOTarget framebuffer incomplete (%ux%u)", width, height);
+        LOG_ERROR("GLMaskTarget framebuffer incomplete (%ux%u)", width, height);
     }
     m_fbo.unbind();
 }
 
-void GLAOTarget::bind(const Core::Context& gl) {
+void GLMaskTarget::bind(const Core::Context& gl) {
     m_fbo.bind();
     m_fbo.setDrawBuffer(GL_COLOR_ATTACHMENT0);
     gl.setViewport(0, 0, static_cast<int32_t>(m_width), static_cast<int32_t>(m_height));
 }
 
-void GLAOTarget::bindTexture(uint32_t slot) const {
+void GLMaskTarget::bindTexture(uint32_t slot) const {
     if (m_tex) m_tex->bindSlot(slot);
 }
 

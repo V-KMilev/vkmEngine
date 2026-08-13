@@ -12,7 +12,7 @@
 #include "convention/gl_bindings.h"
 #include "data/gl_shadow_atlas.h"
 #include "data/gl_cubemap.h"
-#include "data/gl_ubo_util.h"
+#include "gl_buffer_upload.h"
 #include "ecs/component/light.h"
 #include "system/render/render_view.h"
 
@@ -48,7 +48,7 @@ void GLShadowData::build(const RenderView& view) {
     m_shadowRes = view.settings.shadowResolution;
 
     // Camera frustum corners in world space, from the inverse view-projection.
-    const glm::mat4 invVP = glm::inverse(view.camera.projection * view.camera.view);
+    const glm::mat4& invVP = view.camera.invViewProj;
     const glm::vec2 ndc[4] = { {-1, -1}, {1, -1}, {1, 1}, {-1, 1} };
     CameraFrustum cam;
     for (int k = 0; k < 4; ++k) {
@@ -222,8 +222,8 @@ int GLShadowData::slotForLight(uint32_t lightIndex) const {
 }
 
 void GLShadowData::uploadAndBind() {
-    uploadUBOIfChanged(m_ubo, m_last, m_data);
-    bindUBO(m_ubo, GLBindings::UBOBindingPoints::Shadow);
+    Core::uploadIfChanged(m_ubo, m_last, m_data);
+    Core::bindUBO(m_ubo, GLBindings::UBOBindingPoints::Shadow);
 }
 
 } // namespace Engine
