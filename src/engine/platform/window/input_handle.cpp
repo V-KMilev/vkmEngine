@@ -74,7 +74,7 @@ void InputHandle::setupCallbacks(GLFWwindow* window, WindowManager* windowManage
     glfwSetWindowUserPointer(window, &m_callbackData);
 
     // Key callback - updates keyboard state directly, no polling needed
-    glfwSetKeyCallback(window, [](GLFWwindow* w, int key, int /*scancode*/, int action, int /*mods*/) {
+    glfwSetKeyCallback(window, [](GLFWwindow* w, int key, int, int action, int) {
         if (auto* data = callbackData(w); data && data->input) {
             const bool pressed = (action == GLFW_PRESS || action == GLFW_REPEAT);
             data->input->m_keyboardHandle.onKeyEvent(key, pressed);
@@ -82,14 +82,16 @@ void InputHandle::setupCallbacks(GLFWwindow* window, WindowManager* windowManage
     });
 
     // Scroll callback (horizontal scroll unused)
-    glfwSetScrollCallback(window, [](GLFWwindow* w, double /*xOffset*/, double yOffset) {
+    glfwSetScrollCallback(window, [](GLFWwindow* w, double, double yOffset) {
         if (auto* data = callbackData(w); data && data->input) {
             data->input->m_mouseHandle.setScrollDelta(yOffset);
         }
     });
 
-    // Window size callback - instant updates on resize, no polling needed
-    glfwSetWindowSizeCallback(window, [](GLFWwindow* w, int width, int height) {
+    // Framebuffer-size callback - tracks the drawable size in pixels (what GL
+    // viewports use), which also covers HiDPI / DPI changes a window-size callback
+    // would miss. Instant updates on resize, no polling needed.
+    glfwSetFramebufferSizeCallback(window, [](GLFWwindow* w, int width, int height) {
         if (auto* data = callbackData(w); data && data->window) {
             data->window->setSize(width, height);
         }

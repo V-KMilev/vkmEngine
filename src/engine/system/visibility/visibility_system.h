@@ -17,8 +17,8 @@ namespace Engine {
  * re-lookup, falling back to a scene scan), then culls every Mesh in parallel
  * through frustum -> distance -> screen-size tests, transforming each mesh's
  * local AABB to world space via WorldTransform when present (else Transform).
- * The result is published on FrameContext::visibility for RenderSystem and
- * AnimationSystem. Shadow casters are gathered separately so off-screen
+ * The result is published on FrameContext::visibility for the render side
+ * (RenderSystem, editor picking). Shadow casters are gathered separately so off-screen
  * occluders survive frustum culling.
  */
 class VisibilitySystem : public System {
@@ -60,7 +60,7 @@ class VisibilitySystem : public System {
          * active camera. Returns false (m_result.hasCamera left false) when none
          * is found.
          */
-        bool resolveActiveCamera(Scene& scene);
+        bool resolveActiveCamera(Scene& scene, float viewportAspect);
 
     private:
         Settings m_settings;

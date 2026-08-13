@@ -70,6 +70,16 @@ class CameraControllerSystem : public System {
         }
 
         /**
+         * @brief Enable or disable the fly controls entirely.
+         *
+         * The controller is an authoring tool: the editor keeps it on, but a
+         * shipped game owns its camera and cursor (gameplay drives both), so
+         * the runtime turns it off at bootstrap. Disabled, update() is a no-op
+         * - no camera writes, no cursor-mode changes.
+         */
+        void setEnabled(bool enabled) { m_enabled = enabled; }
+
+        /**
          * @brief Resolve the active rendered camera and apply fly-mode motion.
          *
          * Each frame this retargets onto whichever entity has an active Camera
@@ -160,7 +170,7 @@ class CameraControllerSystem : public System {
 
         bool m_editorWantsMouse    = false;
         bool m_editorWantsKeyboard = false;
+        bool m_enabled             = true;
 };
 
 } // namespace Engine
-

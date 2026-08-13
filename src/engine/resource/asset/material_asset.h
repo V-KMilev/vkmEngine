@@ -100,7 +100,7 @@ struct MaterialAsset : public Resource {
 using MaterialHandle = Handle<MaterialAsset>;
 
 // Plain (non-texture) fields, driven by reflection in AssetSerializer's
-// materialToInline / applyInlineMaterial. Texture handles are intentionally
+// materialToInline / applyInline. Texture handles are intentionally
 // absent - they serialize separately as name refs.
 VKM_REFLECT_BEGIN(MaterialAsset)
     VKM_F(type),

@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "LOADER"
 
-#include "texture_loaders.h"
+#include "loader/texture_loaders.h"
 
 #include <cstdint>
 #include <cstring>
@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
+
 #include "platform/threading/thread_pool.h"
 #include "resource/resource_manager.h"
 #include "resource/texture_format.h"
