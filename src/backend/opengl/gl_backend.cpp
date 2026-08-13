@@ -179,7 +179,10 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     PROFILE_SCOPE("GLBackend::render");
     PROFILE_GPU_SCOPE("GPU.Frame");
 
-    m_view.sync(view, resources);
+    {
+        PROFILE_SCOPE("Render/SyncAssets");
+        m_view.sync(view, resources);
+    }
     m_sceneHDR.resize(view.viewportWidth, view.viewportHeight);
     m_postA.resize(view.viewportWidth, view.viewportHeight);
     m_postB.resize(view.viewportWidth, view.viewportHeight);
@@ -226,24 +229,39 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
 
     // Rebuild the shadow atlas if the editor changed its resolution (a no-op when
     // unchanged). Done before the shadow plan so both agree on the tile size.
-    m_shadowAtlas.init(view.settings.shadowResolution);
+    {
+        PROFILE_SCOPE("Render/ShadowAtlasInit");
+        m_shadowAtlas.init(view.settings.shadowResolution);
+    }
 
     // Plan the frame's shadows first: it assigns each light an atlas slot, which
     // the lights UBO then carries (spot.w), and uploads the ShadowBlock UBO.
-    m_shadowData.build(view);
+    {
+        PROFILE_SCOPE("Shadow/Plan");
+        m_shadowData.build(view);
+    }
 
     // Per-frame UBOs: uploaded and bound once here, visible to every pass.
-    m_camera.update(view.camera);
-    m_lights.update(view.lights, m_shadowData);
-    m_shadowData.uploadAndBind();
+    {
+        PROFILE_SCOPE("Render/FrameUBOs");
+        m_camera.update(view.camera);
+        m_lights.update(view.lights, m_shadowData);
+        m_shadowData.uploadAndBind();
+    }
 
     // Bucket the drawables once; the prepass + forward both read the result.
-    partitionDrawables(view);
+    {
+        PROFILE_SCOPE("Render/Partition");
+        partitionDrawables(view);
+    }
 
     // ...and batch the opaque bucket once too. Both passes draw this identical
     // list, so batching it per-pass sorted every drawable and re-uploaded both
     // instance buffers twice a frame to produce the same runs.
-    m_opaqueBatcher.buildGrouped(m_opaque, m_view);
+    {
+        PROFILE_SCOPE("Render/OpaqueBatch");
+        m_opaqueBatcher.buildGrouped(m_opaque, m_view);
+    }
 
     // Each pass binds and clears its own target: the shadow pass fills the depth
     // atlas, the forward pass renders the lit scene into m_sceneHDR sampling it,
