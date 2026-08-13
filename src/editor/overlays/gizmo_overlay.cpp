@@ -74,13 +74,32 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
 
         // Snapshot every selected transform so the drag moves the whole set
         // and drag-end can build one batch undo.
+        //
+        // Roots of the selection only, the same rule deleteSelection follows.
+        // An entity whose ancestor is also selected already inherits that
+        // ancestor's motion through the hierarchy; moving it again on its own
+        // applied the delta twice, so dragging a parent and its child together
+        // sent the child twice as far.
         m_dragSelection.clear();
         const EntityId flown = ec.cameraController.getCameraEntity().getID();
+        auto hasSelectedAncestor = [&](EntityId id) {
+            EntityId cur = id;
+            for (int depth = 0; depth < 32; ++depth) {
+                if (!ctx.scene.isAlive(cur) || !ctx.scene.has<Hierarchy>(cur)) return false;
+                cur = ctx.scene.get<Hierarchy>(cur).parent;
+                if (!cur) return false;
+                if (state.isSelected(cur)) return true;
+            }
+            return false;
+        };
         for (EntityId id : state.selection) {
             if (!ctx.scene.isAlive(id) || !ctx.scene.has<Transform>(id)) continue;
             if (id == flown) continue;
+            if (hasSelectedAncestor(id)) continue;
             m_dragSelection.emplace_back(id, ctx.scene.get<Transform>(id));
         }
+        m_dragActiveIsDescendant = m_dragSelection.size() > 1
+                                && hasSelectedAncestor(state.selectedEntity);
     }
     // Drag-end: only push if the transform actually changed during the drag
     // (no-op clicks on the gizmo don't deserve an undo entry).
@@ -208,6 +227,12 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
                 }
                 HierarchyOperations::markDirty(ctx.scene, id);
             }
+
+            // The gizmo wrote the active entity directly, but an ancestor of it
+            // is moving too and that motion already reaches it through the
+            // hierarchy. Put it back where the drag started so it is carried
+            // rather than carried *and* pushed.
+            if (m_dragActiveIsDescendant) transform = m_dragStartTransform;
         }
 
         // Local transform changed - mark this entity's hierarchy subtree dirty
