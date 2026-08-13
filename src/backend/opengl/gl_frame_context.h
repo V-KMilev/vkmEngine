@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+#include "data/gl_instance_batcher.h"
+
 namespace Core {
     class Context;
     class ScreenTriangle;
@@ -60,6 +62,21 @@ struct GLFrameContext {
     const std::vector<const DrawableData*>& opaque;
     const std::vector<const DrawableData*>& alphaMask;
     const std::vector<const DrawableData*>& transparent;
+
+    /**
+     * @brief The opaque bucket already batched into instanced runs.
+     *
+     * A frame product like the buckets themselves, for the same reason: the
+     * depth prepass and the forward pass draw the identical opaque list, so
+     * batching it per-pass sorted ~5000 drawables and re-uploaded both instance
+     * buffers twice a frame for byte-identical results.
+     *
+     * Consumers draw its runs through it and must not call build*() on it -
+     * that would invalidate the runs the other pass is about to draw. A pass
+     * needing its own batching (alpha-mask, transparent) keeps a private
+     * batcher.
+     */
+    GLInstanceBatcher& opaqueBatch;
 
     // --- Filled by the backend before the pass loop -------------------------
 
