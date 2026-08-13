@@ -106,6 +106,8 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
                  "Entities beyond this camera distance are culled");
         propSlider("Min Screen Size", &vis.minPixels, 0.0f, 32.0f, "%.1f px",
                    "Entities smaller than this on screen are culled; 0 disables");
+        propCheckbox("Occlusion", &s.occlusionCulling,
+                     "Test instances against the frame's depth pyramid and skip the hidden ones");
         ImGui::PopID();
         if (ImGui::Button("Reset Culling", ImVec2(-1, 0))) {
             ec.visibilitySystem.setSettings({});

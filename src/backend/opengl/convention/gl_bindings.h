@@ -28,6 +28,22 @@ namespace GLBindings {
         constexpr uint32_t Lights      = 0;  ///< Scene light list (grows past the UBO size limit).
         constexpr uint32_t ClusterGrid = 1;  ///< Per-cluster light lists (written by the cull compute, read by forward).
         constexpr uint32_t Particles   = 2;  ///< Billboard particle instances, indexed by the particle vertex stage.
+
+        // The GPU occlusion cull's working set (3-9) and the per-instance
+        // transforms every geometry vertex stage reads (10-12). Instance data
+        // lives in storage rather than vertex attributes so the cull can pick
+        // instances by writing an index instead of copying their matrices; see
+        // shaders/_common/instancing.glsl.
+        constexpr uint32_t CullBounds     = 3;
+        constexpr uint32_t CullRunIndex   = 4;
+        constexpr uint32_t CullModels     = 5;
+        constexpr uint32_t CullNormals    = 6;
+        constexpr uint32_t CullVisible    = 7;
+        constexpr uint32_t CullCommands   = 9;
+
+        constexpr uint32_t InstanceModels  = 10;  ///< Per-instance model matrices, batch order.
+        // 11 is free: the index buffer reaches the vertex stage as an attribute.
+        constexpr uint32_t InstanceNormals = 12;  ///< Per-instance normal matrices, batch order.
     }
 
     // Texture units above the material maps (0-10), for the shadow pass outputs.
@@ -64,6 +80,7 @@ namespace GLBindings {
         constexpr uint32_t SSAO       = 21;  ///< GTAO occlusion factor, sampled by the forward pass.
         constexpr uint32_t FogVolume  = 24;  ///< Integrated froxel fog (sampler3D), sampled by the fog-apply pass.
         constexpr uint32_t ContactShadow = 25;  ///< Screen-space sun contact-shadow mask, sampled by the forward pass.
+        constexpr uint32_t HiZ        = 30;  ///< Hierarchical depth pyramid: reduced by the HiZ pass, tested by the occlusion cull.
     }
 
     // Baked irradiance volume: SH-L1 coefficients, one sampler3D each.

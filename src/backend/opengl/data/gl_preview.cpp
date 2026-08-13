@@ -241,7 +241,8 @@ uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
     const std::vector<InstanceRun>& runs = m_batcher.buildGrouped(m_drawables, glView);
     material->bind(GLBindings::UBOBindingPoints::Material);
     material->bindTextures(glView);
-    for (const InstanceRun& run : runs) m_batcher.drawRun(run);
+    m_batcher.bindInstanceData();
+    for (uint32_t i = 0; i < runs.size(); ++i) m_batcher.drawRun(runs[i], i);
 
     if (transparent) gl.setBlending(false);
 
