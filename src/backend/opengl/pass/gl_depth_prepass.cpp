@@ -58,7 +58,7 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
             material->bind(GLBindings::UBOBindingPoints::Material);
             boundMaterial = material;
         }
-        ctx.opaqueBatch.drawRun(run);
+        ctx.opaqueBatch.draw(run);
     }
 }
 

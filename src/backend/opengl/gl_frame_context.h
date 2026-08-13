@@ -71,12 +71,12 @@ struct GLFrameContext {
      * batching it per-pass sorted ~5000 drawables and re-uploaded both instance
      * buffers twice a frame for byte-identical results.
      *
-     * Consumers draw its runs through it and must not call build*() on it -
-     * that would invalidate the runs the other pass is about to draw. A pass
+     * Handed out as a draw-only view: rebuilding it would invalidate the runs
+     * the other pass is about to draw, so the view offers no way to. A pass
      * needing its own batching (alpha-mask, transparent) keeps a private
      * batcher.
      */
-    GLInstanceBatcher& opaqueBatch;
+    GLInstanceBatchView opaqueBatch;
 
     // --- Filled by the backend before the pass loop -------------------------
 

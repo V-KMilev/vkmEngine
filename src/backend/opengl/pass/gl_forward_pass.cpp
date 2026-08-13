@@ -119,7 +119,7 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     // view's order - sorted upstream by material+mesh - and merge into instanced
     // runs grouped by (material, mesh).
     // Batched once by the backend; the prepass drew these same runs.
-    drawRuns(ctx, ctx.opaqueBatch.runs(), ctx.opaqueBatch);
+    drawRuns(ctx, ctx.opaqueBatch);
 
     if (!ctx.alphaMask.empty()) {
         // Alpha-masked geometry (foliage / fences / grates) is not in the
@@ -132,7 +132,8 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.gl.setDepthFunc(GL_LEQUAL);
         const bool a2c = ctx.view.settings.msaaSamples > 1;
         if (a2c) glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
-        drawRuns(ctx, m_batcher.buildGrouped(ctx.alphaMask, glView), m_batcher);
+        m_batcher.buildGrouped(ctx.alphaMask, glView);
+        drawRuns(ctx, GLInstanceBatchView(m_batcher));
         if (a2c) glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
         ctx.gl.setDepthWrite(false);  // back to the early-Z state for the transparent grab
     }
@@ -167,7 +168,8 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         ctx.gl.setDepthWrite(false);
 
-        drawRuns(ctx, m_batcher.buildSequential(m_transparentSorted, glView), m_batcher);
+        m_batcher.buildSequential(m_transparentSorted, glView);
+        drawRuns(ctx, GLInstanceBatchView(m_batcher));
 
         ctx.gl.setBlending(false);
         ctx.gl.setDepthWrite(true);
@@ -182,8 +184,8 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     ctx.gl.setDepthWrite(true);
 }
 
-void GLForwardPass::drawRuns(GLFrameContext& ctx, const std::vector<InstanceRun>& runs,
-                             GLInstanceBatcher& batcher) {
+void GLForwardPass::drawRuns(GLFrameContext& ctx, const GLInstanceBatchView& batch) {
+    const std::vector<InstanceRun>& runs = batch.runs();
     const GLView& glView = ctx.resources;
 
     // Re-bind material state only when it differs from the last run's.
@@ -196,7 +198,7 @@ void GLForwardPass::drawRuns(GLFrameContext& ctx, const std::vector<InstanceRun>
             material->bindTextures(glView);
             boundMaterial = material;
         }
-        batcher.drawRun(run);
+        batch.draw(run);
     }
 }
 
