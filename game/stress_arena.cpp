@@ -185,7 +185,7 @@ Animation makeSpin(float period, float phase) {
     for (int k = 0; k <= 3; ++k) {
         anim.rotationTrack.addKeyframe(
             period * static_cast<float>(k) / 3.0f,
-            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y_UP));
+            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y));
     }
     anim.time    = phase;
     anim.playing = true;
@@ -260,7 +260,7 @@ Animation makeOrbitHop(float period, float radius, float height, float phase) {
     for (int k = 0; k <= 3; ++k) {
         anim.rotationTrack.addKeyframe(
             period * static_cast<float>(k) / 3.0f,
-            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y_UP));
+            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y));
     }
     anim.scaleTrack.addKeyframe(0.0f,          glm::vec3(1.0f));
     anim.scaleTrack.addKeyframe(period * 0.25f, glm::vec3(0.8f, 1.25f, 0.8f));
@@ -622,7 +622,7 @@ void StressArena::buildLights() {
         Transform transform;
         transform.position = position;
         // Spots point down and outward; the rotation is only read for spots.
-        transform.rotation = glm::angleAxis(frand(0.6f, 1.4f), Math::WORLD_AXIS_X_RIGHT);
+        transform.rotation = glm::angleAxis(frand(0.6f, 1.4f), Math::WORLD_AXIS_X);
         m_scene->add(entity, std::move(transform));
 
         Light light;
@@ -753,7 +753,7 @@ void StressArena::buildDecals() {
         // Sit above the ground and project down: the box's Y extent is the
         // projection depth, so it must reach the surface it marks.
         transform.position = {spot.x, GROUND_Y + 2.0f, spot.z};
-        transform.rotation = glm::angleAxis(frand(0.0f, glm::two_pi<float>()), Math::WORLD_AXIS_Y_UP);
+        transform.rotation = glm::angleAxis(frand(0.0f, glm::two_pi<float>()), Math::WORLD_AXIS_Y);
         transform.scale    = glm::vec3(frand(3.0f, 8.0f), 5.0f, frand(3.0f, 8.0f));
         m_scene->add(entity, std::move(transform));
 
@@ -916,7 +916,7 @@ void StressArena::buildModels() {
             {spot.x, GROUND_Y, spot.z}, glm::vec3(1.0f));
 
         m_scene->get<Transform>(entity).rotation =
-            glm::angleAxis(frand(0.0f, glm::two_pi<float>()), Math::WORLD_AXIS_Y_UP);
+            glm::angleAxis(frand(0.0f, glm::two_pi<float>()), Math::WORLD_AXIS_Y);
 
         kind.instances.push_back(entity);
         kind.sizes.push_back(size);
@@ -1005,7 +1005,7 @@ void StressArena::buildDrones() {
             lampTransform.position = {0.0f, -0.4f, 0.0f};
             // Point straight down: +Z is forward, so a +90 degree X rotation
             // tips it from horizontal to floorward.
-            lampTransform.rotation = glm::angleAxis(glm::half_pi<float>(), Math::WORLD_AXIS_X_RIGHT);
+            lampTransform.rotation = glm::angleAxis(glm::half_pi<float>(), Math::WORLD_AXIS_X);
             m_scene->add(lamp, std::move(lampTransform));
 
             Light spot;
@@ -1068,8 +1068,8 @@ void StressArena::updateDrones() {
         // Bank into the turn and face along the tangent. +Z forward again, so
         // the yaw is measured from +Z rather than the -Z most code assumes.
         transform.rotation =
-            glm::angleAxis(-angle, Math::WORLD_AXIS_Y_UP) *
-            glm::angleAxis(std::sin(angle * 1.9f) * 0.25f, Math::WORLD_AXIS_Z_FORWARD);
+            glm::angleAxis(-angle, Math::WORLD_AXIS_Y) *
+            glm::angleAxis(std::sin(angle * 1.9f) * 0.25f, Math::WORLD_AXIS_Z);
 
         // The subtree is stale until this is called - the arm, rotor and lamp
         // all hang off this transform, and nothing else marks it.
@@ -1362,7 +1362,7 @@ void StressArena::updateCamera(float dt) {
     // forward, but this engine's forward is +Z (Math::computeForward), so the
     // unnegated result aims the camera directly away from the target - here,
     // out at the tower ring a few units behind it instead of across the block.
-    transform.rotation = glm::quatLookAt(-forward, Math::WORLD_AXIS_Y_UP);
+    transform.rotation = glm::quatLookAt(-forward, Math::WORLD_AXIS_Y);
 }
 
 void StressArena::updatePhysics() {

@@ -129,9 +129,9 @@ constexpr float GROUNDED_GRACE = 0.12f;
 Animation makeSwing(float amplitude, float phase) {
     Animation anim;
     anim.rotationTrack.setEasing(Easing::byName("easeInOutSine"));
-    anim.rotationTrack.addKeyframe(0.0f,             glm::angleAxis(-amplitude, Math::WORLD_AXIS_X_RIGHT));
-    anim.rotationTrack.addKeyframe(RUN_PERIOD * 0.5f, glm::angleAxis( amplitude, Math::WORLD_AXIS_X_RIGHT));
-    anim.rotationTrack.addKeyframe(RUN_PERIOD,        glm::angleAxis(-amplitude, Math::WORLD_AXIS_X_RIGHT));
+    anim.rotationTrack.addKeyframe(0.0f,             glm::angleAxis(-amplitude, Math::WORLD_AXIS_X));
+    anim.rotationTrack.addKeyframe(RUN_PERIOD * 0.5f, glm::angleAxis( amplitude, Math::WORLD_AXIS_X));
+    anim.rotationTrack.addKeyframe(RUN_PERIOD,        glm::angleAxis(-amplitude, Math::WORLD_AXIS_X));
     anim.time    = phase;
     anim.playing = true;
     anim.looping = true;
@@ -151,7 +151,7 @@ Animation makeCoinSpin(float phase) {
     for (int k = 0; k <= 3; ++k) {
         anim.rotationTrack.addKeyframe(
             PERIOD * static_cast<float>(k) / 3.0f,
-            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y_UP));
+            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y));
     }
     anim.scaleTrack.setEasing(Easing::byName("easeInOutSine"));
     anim.scaleTrack.addKeyframe(0.0f,           {0.70f, 0.70f, 0.12f});
@@ -648,7 +648,7 @@ void PotionRunner::buildWorld() {
         m_scene->add(o.lamp, makeName("Train Headlight"));
         m_scene->add(o.lamp, std::move(beam));
         m_scene->add(o.lamp, Transform{{0.0f, 1.05f, SPAWN_Z},
-                                       glm::angleAxis(glm::pi<float>(), Math::WORLD_AXIS_Y_UP),
+                                       glm::angleAxis(glm::pi<float>(), Math::WORLD_AXIS_Y),
                                        glm::vec3(1.0f)});
         // The hull is a kinematic collision body: the dynamic player lands on
         // its roof (solver contact), and any non-top contact is the crash
@@ -697,7 +697,7 @@ void PotionRunner::buildWorld() {
         {
             Transform& plowT = m_scene->get<Transform>(o.plow);
             plowT.scale    = {obstacleHalfX() * 1.7f, 0.50f, 0.12f};
-            plowT.rotation = glm::angleAxis(-0.7f, Math::WORLD_AXIS_X_RIGHT);
+            plowT.rotation = glm::angleAxis(-0.7f, Math::WORLD_AXIS_X);
             m_scene->get<Transform>(o.lampBar).scale =
                 {obstacleHalfX() * 2.0f * 0.55f, 0.16f, 0.08f};
         }
@@ -829,7 +829,7 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
             rt.scale    = {halfX * 2.0f * 0.9f, 0.14f, slopeLen};
             // Pitch the slab nose-down about X so its +Z end sits up at the
             // roof and its -Z end (toward the oncoming player) meets the rails.
-            rt.rotation = glm::angleAxis(-std::atan2(o.top, RAMP_RUN), Math::WORLD_AXIS_X_RIGHT);
+            rt.rotation = glm::angleAxis(-std::atan2(o.top, RAMP_RUN), Math::WORLD_AXIS_X);
         }
         o.isTrain = true;
         // Three hull colours, cycled deterministically; a convoy reuses its
@@ -1109,7 +1109,7 @@ void PotionRunner::updatePlayer(float dt) {
 
     t.position.x = m_playerX;
     t.position.z = 0.0f;
-    t.rotation   = glm::angleAxis(bank, Math::WORLD_AXIS_Z_FORWARD);
+    t.rotation   = glm::angleAxis(bank, Math::WORLD_AXIS_Z);
     t.scale      = {1.0f, squashY, 1.0f};
 }
 
@@ -1248,7 +1248,7 @@ void PotionRunner::updateCamera(float dt) {
 
     Transform& t = m_scene->get<Transform>(m_camera);
     t.position = {m_camX, m_camY, -8.5f};
-    t.rotation = glm::angleAxis(0.34f, Math::WORLD_AXIS_X_RIGHT);  // look down the +Z track
+    t.rotation = glm::angleAxis(0.34f, Math::WORLD_AXIS_X);  // look down the +Z track
 }
 
 void PotionRunner::die() {

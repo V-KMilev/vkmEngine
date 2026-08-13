@@ -26,9 +26,9 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
 
     // Transform world axes by camera view rotation
     glm::mat3 viewRot = glm::mat3(ctx.visibility->view);
-    glm::vec3 axisX = viewRot * Math::WORLD_AXIS_X_RIGHT;
-    glm::vec3 axisY = viewRot * Math::WORLD_AXIS_Y_UP;
-    glm::vec3 axisZ = viewRot * Math::WORLD_AXIS_Z_FORWARD;
+    glm::vec3 axisX = viewRot * Math::WORLD_AXIS_X;
+    glm::vec3 axisY = viewRot * Math::WORLD_AXIS_Y;
+    glm::vec3 axisZ = viewRot * Math::WORLD_AXIS_Z;
 
     constexpr float axisLen = gizmoSize * 0.8f;
     constexpr float labelDotRadius = 8.0f;
@@ -43,12 +43,12 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
         bool positive;
     };
     Endpoint endpoints[] = {
-        { Math::WORLD_AXIS_X_RIGHT,    axisX, EditorStyle::AXIS_X_U32, "X",  true  },
-        { -Math::WORLD_AXIS_X_RIGHT,  -axisX, EditorStyle::AXIS_X_U32, "-X", false },
-        { Math::WORLD_AXIS_Y_UP,       axisY, EditorStyle::AXIS_Y_U32, "Y",  true  },
-        { -Math::WORLD_AXIS_Y_UP,     -axisY, EditorStyle::AXIS_Y_U32, "-Y", false },
-        { Math::WORLD_AXIS_Z_FORWARD,  axisZ, EditorStyle::AXIS_Z_U32, "Z",  true  },
-        { -Math::WORLD_AXIS_Z_FORWARD,-axisZ, EditorStyle::AXIS_Z_U32, "-Z", false },
+        {  Math::WORLD_AXIS_X,  axisX, EditorStyle::AXIS_X_U32, "X",  true  },
+        { -Math::WORLD_AXIS_X, -axisX, EditorStyle::AXIS_X_U32, "-X", false },
+        {  Math::WORLD_AXIS_Y,  axisY, EditorStyle::AXIS_Y_U32, "Y",  true  },
+        { -Math::WORLD_AXIS_Y, -axisY, EditorStyle::AXIS_Y_U32, "-Y", false },
+        {  Math::WORLD_AXIS_Z,  axisZ, EditorStyle::AXIS_Z_U32, "Z",  true  },
+        { -Math::WORLD_AXIS_Z, -axisZ, EditorStyle::AXIS_Z_U32, "-Z", false },
     };
 
     // Back-to-front by depth in view-space (small z = closer to camera).
