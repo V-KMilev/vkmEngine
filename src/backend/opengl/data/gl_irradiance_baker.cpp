@@ -99,15 +99,18 @@ void GLIrradianceBaker::captureProbe(Core::Context& gl, const glm::vec3& positio
         gl.setCullFace(GL_BACK);
         m_pbr.bind();
 
+        m_batcher.bindInstanceData();
+
         const GLMaterial* boundMaterial = nullptr;
-        for (const InstanceRun& run : runs) {
+        for (uint32_t i = 0; i < runs.size(); ++i) {
+            const InstanceRun& run = runs[i];
             const GLMaterial* material = glView.getMaterial(run.material);
             if (material && material != boundMaterial) {
                 material->bind(GLBindings::UBOBindingPoints::Material);
                 material->bindTextures(glView);
                 boundMaterial = material;
             }
-            m_batcher.drawRun(run);
+            m_batcher.drawRun(run, i);
         }
     }
 

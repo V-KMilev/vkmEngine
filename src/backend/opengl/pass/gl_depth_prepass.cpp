@@ -52,13 +52,17 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
     // sampled - the prepass writes normal/roughness/metalness from the UBO - so
     // binding the material UBO is enough.
     const GLMaterial* boundMaterial = nullptr;
-    for (const InstanceRun& run : ctx.opaqueBatch.runs()) {
+    ctx.opaqueBatch.bindInstanceData();
+
+    const std::vector<InstanceRun>& runs = ctx.opaqueBatch.runs();
+    for (uint32_t i = 0; i < runs.size(); ++i) {
+        const InstanceRun& run = runs[i];
         const GLMaterial* material = glView.getMaterial(run.material);
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::Material);
             boundMaterial = material;
         }
-        ctx.opaqueBatch.draw(run);
+        ctx.opaqueBatch.draw(run, i);
     }
 }
 

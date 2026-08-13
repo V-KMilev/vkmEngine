@@ -25,6 +25,7 @@ class GLBloom;
 class GLClusterGrid;
 class GLFogVolume;
 class GLIrradianceVolume;
+class GLHiZ;
 
 /**
  * @brief Everything a GLPass needs for one frame.
@@ -50,6 +51,7 @@ struct GLFrameContext {
     GLClusterGrid&    clusters;       ///< Forward+ per-cluster light lists: written by the cluster pass, read by forward.
     GLFogVolume&      fog;            ///< Froxel fog volumes: written by the fog compute, applied by the fog-apply pass.
     GLIrradianceVolume& irradiance;   ///< Baked SH irradiance volume, sampled by the forward ambient term.
+    GLHiZ&            hiz;            ///< Hierarchical depth pyramid: built after the prepass, tested by the occlusion cull.
 
     /**
      * @brief The frame's drawables split by draw bucket, once per frame by the

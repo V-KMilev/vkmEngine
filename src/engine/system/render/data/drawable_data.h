@@ -20,6 +20,17 @@ struct DrawableData {
     glm::mat4      model;        ///< The model matrix to render the mesh with.
     glm::mat3      normalMatrix; ///< transpose(inverse(mat3(model))): correct normals under non-uniform scale. Precomputed so the vertex shader skips a per-vertex matrix inverse.
 
+    /**
+     * @brief World-space AABB, as the visibility cull already computed it.
+     *
+     * Carried because the backend culls too: the GPU occlusion pass tests this
+     * box against the frame's depth. Recomputing it below the interface would
+     * mean transforming the same bounds twice per frame for the same answer.
+     * The shadow-caster list carries its bounds for the same reason.
+     */
+    glm::vec3 worldMin;
+    glm::vec3 worldMax;
+
     bool castShadows;            ///< Whether the drawable casts shadows.
 };
 

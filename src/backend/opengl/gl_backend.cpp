@@ -26,6 +26,8 @@
 #include "pass/gl_decal_pass.h"
 #include "pass/gl_particle_pass.h"
 #include "pass/gl_gtao_pass.h"
+#include "pass/gl_hiz_pass.h"
+#include "pass/gl_occlusion_cull_pass.h"
 #include "pass/gl_forward_pass.h"
 #include "pass/gl_skybox_pass.h"
 #include "pass/gl_bloom_pass.h"
@@ -126,6 +128,8 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"Shadow",         std::make_unique<GLShadowPass>()});
     m_passes.push_back({"DepthPrepass",   std::make_unique<GLDepthPrepass>()});
     m_passes.push_back({"ResolveDepth",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Geometry)});
+    m_passes.push_back({"HiZ",            std::make_unique<GLHiZPass>()});
+    m_passes.push_back({"OcclusionCull",  std::make_unique<GLOcclusionCullPass>()});
     m_passes.push_back({"GTAO",           std::make_unique<GLGTAOPass>()});
     m_passes.push_back({"ContactShadow",  std::make_unique<GLContactShadowPass>()});
     m_passes.push_back({"Skybox",         std::make_unique<GLSkyboxPass>()});
@@ -193,6 +197,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     m_postA.resize(view.viewportWidth, view.viewportHeight);
     m_postB.resize(view.viewportWidth, view.viewportHeight);
     m_bloom.resize(view.viewportWidth, view.viewportHeight);
+    m_hiz.resize(view.viewportWidth, view.viewportHeight);
 
     // Mask targets only exist while something reads them (the composite debug
     // views sample the AO target unconditionally, so any non-default view keeps
@@ -288,6 +293,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_clusterGrid,
         m_fog,
         m_irradiance,
+        m_hiz,
         m_opaque,
         m_alphaMask,
         m_transparent,
