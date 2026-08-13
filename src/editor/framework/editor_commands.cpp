@@ -232,6 +232,10 @@ void EntitySnapshot::apply(Scene& scene, EntityId id) const {
 void CreateEntityCommand::redo(Scene& scene, EditorState& state) {
     Entity e = scene.createEntityAt(m_snap.slotIndex);
     m_snap.apply(scene, e.getID());
+    if (m_parentSlot && scene.isAliveAtIndex(m_parentSlot)) {
+        const EntityId parent{m_parentSlot, scene.generationOf(m_parentSlot)};
+        HierarchyOperations::setParent(scene, e.getID(), parent);
+    }
     state.hierarchyDirty = true;
     state.selectEntity(e.getID());
 }
