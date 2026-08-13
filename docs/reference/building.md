@@ -101,7 +101,8 @@ shaders/
   forward/      # forward shading: pbr/ (the ubershader), phong/, prepass/
   shadow/       # shadow_2d/, shadow_cube/
   ibl/          # equirect/, irradiance/, prefilter/, brdf/  (IBL bake)
-  gtao/  ssr/  motion_blur/  bloom/  skybox/  composite/  grid/
+  gtao/  contact_shadow/  bloom/  skybox/  composite/  grid/
+  clustering/  fog/  dof/  decal/  particle/  irradiance/  ui/
   _generated/   # engine_config.glsl, generated from engine_config.h at configure time
 ```
 

@@ -39,29 +39,39 @@ class Behavior {
         virtual std::unique_ptr<Behavior> clone() const = 0;      // deep copy for duplication
 
     protected:
+        BehaviorContext& context();     // scene / resources / window / events
         Entity spawn();                 // create a new entity
         void   destroy(EntityId);       // deferred until after the hook pass
         template<typename E> void subscribe(std::function<void(const E&)>);  // auto-unsubscribes
 
-        EntityId           m_entity;
-        Scene*             m_scene;
-        ResourceManager*   m_resources;
-        const InputHandle* m_input;     // read-only keyboard/mouse
-        EventSystem*       m_events;    // gameplay pub/sub
+        EntityId m_entity;              // the entity this behavior is attached to
+};
+
+// The gameplay capability surface, owned by the BehaviorSystem and stable for
+// the whole session (a field belongs here exactly when behaviors may use it).
+struct BehaviorContext {
+    Scene*                 scene;
+    ResourceManager*       resources;
+    WindowManager*         window;
+    EventBus*              events;
+    std::vector<EntityId>* pendingDestroy;
 };
 ```
 
 `Behavior` is **non-copyable and non-movable** - instances are owned by
-`unique_ptr` inside the `ScriptComponent`. `BehaviorSystem` injects the engine
-context (`bindContext`) before `onStart()`, so the hooks reach the scene,
-resources, input, and events without globals.
+`unique_ptr` inside the `ScriptComponent`. `BehaviorSystem` binds its
+session-stable `BehaviorContext` (`bindContext`) before `onStart()`, so hooks
+reach the engine through one pointer - and because the context outlives every
+frame (unlike `FrameContext`), `subscribe()` callbacks may use `context()`
+safely too. Growing the capability surface is one field on `BehaviorContext`;
+`bindContext` never changes.
 
 - `spawn()` / `destroy()` are the safe structural-edit helpers. `destroy()` is
   deferred to after the current hook pass, so a behavior may destroy its own
   entity from a hook.
-- `subscribe<E>()` registers an `EventSystem` listener bound to the behavior's
+- `subscribe<E>()` registers an `EventBus` listener bound to the behavior's
   lifetime - it auto-unsubscribes on destroy, so there is nothing to clean up by
-  hand (a raw `m_events->subscribe` would dangle once the instance dies).
+  hand (a raw subscribe on the bus would dangle once the instance dies).
 
 ### ReflectedBehavior - the no-boilerplate path
 

@@ -53,7 +53,7 @@ overlays drawn on top.
 | Hierarchy           | `panels/hierarchy_panel.cpp`          | Entity tree; drag a node onto another to reparent (cycle-safe); context-menu Unparent |
 | Inspector           | `panels/inspector_panel.cpp`          | Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent |
 | Bottom              | `panels/bottom_panel.cpp`             | Per-scene working surface: grouped master-detail browser                    |
-| Render Settings     | `panels/render_settings_panel.cpp`    | World-level render tuning: `RenderSettings` (GTAO / SSR / bloom / motion blur / shadows / grid) plus the `Environment` (IBL / skybox); opened from Window > Render Settings |
+| Render Settings     | `panels/render_settings_panel.cpp`    | World-level render tuning: `RenderSettings` (GTAO / contact shadows / bloom / MSAA / shadows / grid) plus the `Environment` (IBL / skybox); opened from Window > Render Settings |
 | Physics Settings    | drawn inline in `editor_system.cpp`   | Edits the scene's `PhysicsWorld` singleton (gravity, solver iterations); opened from the Window menu |
 | Material Editor     | `panels/material_editor_panel.cpp`          | Per-material PBR inspector with live preview (renders the real pipeline)    |
 | Asset Browser       | `panels/asset_browser_panel.cpp`            | Thumbnail grid of materials / meshes / textures; pickable into the inspector|
@@ -163,7 +163,7 @@ These are rendered by the backend's dedicated preview path
 (`RenderBackend::renderPreview`, backed by `GLPreview`) - **not** the full
 frame pipeline. It is a minimal forward + composite render of the material on
 a preview mesh into a small offscreen target, kept separate from the main
-10-pass path. Results are cached per asset (keyed by handle + version) with a
+18-pass path. Results are cached per asset (keyed by handle + version) with a
 small per-frame bake budget, so the Asset Browser grid amortizes thumbnail
 generation across frames while the Material Editor's live view re-renders each
 frame.

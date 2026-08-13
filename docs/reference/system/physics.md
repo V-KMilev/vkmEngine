@@ -26,26 +26,32 @@ All three are plain data structs; see [ecs.md](../ecs.md) for the field tables.
 
 - **`Rigidbody`** - dynamics state: `linearVelocity`, `angularVelocity`, `mass`
   (cached `inverseMass`), `linearDamping` / `angularDamping`, `restitution`,
-  `friction`, `gravityScale`, and the `isKinematic` / `isStatic` / `sleeping`
-  flags. `inverseMass == 0` means static/kinematic (infinite mass): forces never
-  move it, but it is an immovable wall in collisions. `invInertiaLocal` is
-  re-derived from `mass` + `Collider` every tick, so editing either takes effect
-  without an "apply" step.
+  `friction`, `gravityScale`, and the `isKinematic` / `isStatic` /
+  `freezeRotation` / `sleeping` flags. `inverseMass == 0` means static/kinematic
+  (infinite mass): forces never move it, but it is an immovable wall in
+  collisions. `freezeRotation` zeroes the inverse inertia of a dynamic body so
+  contacts can never torque it - the character-controller case: the body
+  translates under the solver while its orientation stays script-owned.
+  `invInertiaLocal` is re-derived from `mass` + `Collider` every tick, so
+  editing either takes effect without an "apply" step.
 - **`Collider`** - one or more `ColliderBox` parts (`center`, `halfExtents`),
   evaluated in the entity's `Transform` frame. The narrowphase is **box-vs-box
   only**, run per child-box pair. `isTrigger` makes it generate events without an
-  impulse response. The solver ignores `Transform` scale - "Fit to Mesh" bakes
+  impulse response. `enabled = false` makes the collider inert - it gets no
+  broadphase entry, produces no contacts or events, and the editor's collider
+  overlay skips it (for pooled/phased objects that toggle collision without
+  component churn). The solver ignores `Transform` scale - "Fit to Mesh" bakes
   scale into the box centres and half-extents.
-- **`PhysicsWorld`** - the scene's singleton physics settings: `gravity` and
-  `solverIterations`. `PhysicsSystem` reads it each tick and falls back to the
-  same defaults when no `PhysicsWorld` exists, so gravity persists with the scene
-  and can differ per scene.
+- **Scene physics settings** - `gravity` and `solverIterations` live on the
+  scene-global `Environment` (`ecs/environment.h`), serialized with the scene.
+  `PhysicsSystem` reads them each tick, so gravity persists with the scene and
+  can differ per scene.
 
 ## Per-tick flow (`fixedUpdate`)
 
 ```
 PhysicsSystem::fixedUpdate(ctx)
-  1. Read the PhysicsWorld singleton (defaults if absent).
+  1. Read the physics settings off the scene's Environment.
   2. Gather: snapshot every live Rigidbody + Transform into PhysicsBody solver
      state; build a ColliderProxy (world AABB + sub-boxes) per body with a Collider.
      Re-derive inverseMass + invInertiaLocal. Sleeping / immovable bodies enter
@@ -77,7 +83,7 @@ restitution, then a separate **split-impulse** pass that fills
 pose alongside the real velocities but never persisted, so penetration is removed
 without injecting energy.
 
-`SolverParams`: `iterations` (PGS passes, from `PhysicsWorld::solverIterations`),
+`SolverParams`: `iterations` (PGS passes, from `Environment::solverIterations`),
 `dt`, `baumgarte` (position-correction stiffness), `penetrationSlop` (allowed
 overlap before correction), `restitutionThreshold` (below this approach speed,
 ignore bounce). `Contact` accumulates `normalImpulse` / `tangentImpulse` across a
@@ -101,7 +107,7 @@ struct CollisionEvent { EntityId a, b; glm::vec3 point, normal; };  // normal po
 struct TriggerEvent   { EntityId trigger, other; };
 ```
 
-Both are **enqueued** (not emitted), so listeners fire on the next `EventSystem`
+Both are **enqueued** (not emitted), so listeners fire on the next `EventBus`
 flush, never mid-solve. They fire once per overlapping pair per fixed tick *while
 the overlap lasts* - there is no enter/exit edge detection yet. Triggers are
 queried, not resolved, so they only produce events. Gameplay reacts either by
@@ -111,7 +117,8 @@ subscribing to the events directly or through the behavior `onCollision` /
 
 ## Editor integration
 
-- A **Physics Settings** window (Window menu) edits the `PhysicsWorld` singleton.
+- The World inspector's **Physics** card edits the Environment's gravity and
+  solver iterations (undoable like the other World cards).
 - The inspector's Collider section offers **Fit to Mesh**, which calls
   `fitBoxesToMesh` to approximate the entity's mesh with a grid of boxes
   (`detail` clamped to `[1, COLLIDER_FIT_MAX_DETAIL]`; `detail == 1` is the
