@@ -237,7 +237,7 @@ bool MaterialEditorPanel::textureSlot(
     // so the UVs unflip.
     const ImGuiStyle& st = ImGui::GetStyle();
     const float    thumb = ImGui::GetFrameHeight();
-    const uint32_t texId = (slot && backend) ? backend->textureId(slot) : 0;
+    const GpuTextureId texId = (slot && backend) ? backend->textureId(slot) : 0;
     const ImVec2   tp    = ImGui::GetCursorScreenPos();
     if (texId) {
         ImGui::Image(imTexture(texId), ImVec2(thumb, thumb), ImVec2(0, 1), ImVec2(1, 0));

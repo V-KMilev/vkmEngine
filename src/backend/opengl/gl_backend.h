@@ -71,12 +71,12 @@ class GLBackend : public RenderBackend {
         void render(const RenderView& view, const ResourceManager& resources) override;
 
         // Editor previews: offscreen studio renders, cached per key (GLPreview).
-        uint32_t renderPreview(const PreviewRequest& request,
+        GpuTextureId renderPreview(const PreviewRequest& request,
                                const ResourceManager& resources) override;
-        uint32_t previewTexture(uint64_t key) const override;
+        GpuTextureId previewTexture(uint64_t key) const override;
         void releasePreview(uint64_t key) override;
         void releaseAllPreviews() override;
-        uint32_t textureId(const TextureHandle& handle) const override;
+        GpuTextureId textureId(const TextureHandle& handle) const override;
 
     private:
         /**
