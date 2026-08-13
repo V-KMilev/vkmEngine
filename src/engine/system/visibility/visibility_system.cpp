@@ -14,6 +14,7 @@
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
 #include "ecs/component/mesh.h"
+#include "ecs/component/lod.h"
 #include "ecs/component/camera.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/world_transform.h"
@@ -26,6 +27,45 @@
 #include "system/visibility/culling/distance_culler.h"
 
 namespace Engine {
+
+namespace {
+
+/**
+ * @brief Pick the geometry for this entity at this distance.
+ *
+ * Falls through to the Mesh component's own handle when the entity has no LOD
+ * component, which is the common case and costs one storage lookup.
+ *
+ * Distance is measured to the bounds centre rather than the origin so a long
+ * object does not pop when its pivot happens to sit far from its body.
+ *
+ * @return The chosen mesh; never empty when the Mesh component had one.
+ */
+template <typename LODStorage>
+MeshHandle selectLOD(const Mesh& mesh, const LODStorage* lodStorage, uint32_t entityIdx,
+                     const glm::vec3& worldMin, const glm::vec3& worldMax,
+                     const VisibilityContext& context) {
+    if (!lodStorage || !lodStorage->contains(entityIdx)) return mesh.mesh;
+
+    const LOD& lod = lodStorage->get(entityIdx);
+    if (lod.levels.empty()) return mesh.mesh;
+
+    const glm::vec3 centre = (worldMin + worldMax) * 0.5f;
+    const glm::vec3 delta  = centre - context.cameraPosition;
+    const float distance   = glm::length(delta);
+    const float scaled     = distance / glm::max(lod.bias, 0.001f);
+
+    for (const LODLevel& level : lod.levels) {
+        if (scaled <= level.maxDistance) return level.mesh ? level.mesh : mesh.mesh;
+    }
+
+    // Past the last threshold the coarsest level keeps drawing; removing the
+    // entity is DistanceCuller's decision, not this one's.
+    const MeshHandle& last = lod.levels.back().mesh;
+    return last ? last : mesh.mesh;
+}
+
+} // namespace
 
 bool VisibilitySystem::resolveActiveCamera(Scene& scene, float viewportAspect) {
     auto setCamera = [&](const Camera& camera, const Transform& transform) {
@@ -118,12 +158,14 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const uint32_t meshCount = static_cast<uint32_t>(meshStorage->size());
 
     const auto& resources = ctx.resources;
+    const auto* lodStorage = ctx.scene.storage<LOD>();
 
     // Persistent flat arrays - resize reuses capacity (no alloc after first frame).
     // Each thread writes to disjoint indices, so zero contention / zero atomics.
     m_visibleFlags.resize(meshCount);
     m_casterFlags.resize(meshCount);
     m_modelMatrices.resize(meshCount);
+    m_meshes.resize(meshCount);
     m_worldMins.resize(meshCount);
     m_worldMaxs.resize(meshCount);
 
@@ -165,6 +207,11 @@ void VisibilitySystem::update(FrameContext& ctx) {
             m_worldMins[i]     = worldMin;
             m_worldMaxs[i]     = worldMax;
             m_casterFlags[i]   = mesh.castShadows ? 1 : 0;
+            // Resolved here because this is where the distance is known. Shadow
+            // casters get the same level as the camera view: a lower-detail
+            // silhouette is exactly as good for a depth map, and picking
+            // separately would mean a second selection with no visible benefit.
+            m_meshes[i]        = selectLOD(mesh, lodStorage, entityIdx, worldMin, worldMax, context);
 
             // The camera-visibility culls only set the visible flag.
             if (!FrustumCuller::isVisible(worldMin, worldMax, context)) return;
@@ -185,7 +232,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
 
         const uint32_t entityIdx = meshStorage->keyAt(i);
         const EntityId eid{entityIdx, ctx.scene.generationOf(entityIdx)};
-        const VisibleEntity entry{eid, m_modelMatrices[i], m_worldMins[i], m_worldMaxs[i]};
+        const VisibleEntity entry{eid, m_modelMatrices[i], m_worldMins[i], m_worldMaxs[i], m_meshes[i]};
 
         if (visible) m_result.entries.push_back(entry);
         if (caster)  m_result.shadowCasters.push_back(entry);

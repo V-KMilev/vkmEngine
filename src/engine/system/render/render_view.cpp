@@ -221,10 +221,11 @@ void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility
         if (!scene.isAlive(entry.id)) continue;
         const Mesh& mesh = scene.get<Mesh>(entry.id);
         // unresolved slot
-        if (!mesh.mesh || !mesh.material) continue;
+        if (!entry.mesh || !mesh.material) continue;
 
         DrawableData drawable;
-        drawable.mesh         = mesh.mesh;
+        // The level the cull selected, not the component's own handle.
+        drawable.mesh         = entry.mesh;
         drawable.material     = mesh.material;
         drawable.model        = entry.model;
         // Inverse-transpose once per drawable here, not per vertex in two shaders.
@@ -246,11 +247,10 @@ void RenderView::buildShadowCasters(const Scene& scene, const Visibility& visibi
     for (const VisibleEntity& entry : visibility.shadowCasters) {
         // deleted between cull and render
         if (!scene.isAlive(entry.id)) continue;
-        const Mesh& mesh = scene.get<Mesh>(entry.id);
         // unresolved slot
-        if (!mesh.mesh) continue;
+        if (!entry.mesh) continue;
 
-        shadowCasters.push_back({ mesh.mesh, entry.model, entry.worldMin, entry.worldMax });
+        shadowCasters.push_back({ entry.mesh, entry.model, entry.worldMin, entry.worldMax });
     }
 }
 

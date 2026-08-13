@@ -19,6 +19,7 @@
 #include "ecs/component/decal.h"
 #include "ecs/component/irradiance_volume.h"
 #include "ecs/component/light.h"
+#include "ecs/component/lod.h"
 #include "ecs/component/mesh.h"
 #include "ecs/component/name.h"
 #include "ecs/component/particle_emitter.h"
@@ -373,6 +374,14 @@ void StressArena::buildMaterials() {
     m_sphere   = m_resources->add(makeSphereMesh(24, 12), "stress:sphere");
     m_cylinder = m_resources->add(makeCylinderMesh(20), "stress:cylinder");
 
+    // Coarser builds of the round shapes for the far LOD levels. A cube has no
+    // detail to drop, so it has no levels and keeps its single mesh - which is
+    // also the case that proves LOD is opt-in per entity rather than global.
+    m_sphereMid = m_resources->add(makeSphereMesh(12, 6), "stress:sphere_mid");
+    m_sphereLow = m_resources->add(makeSphereMesh(6, 4),  "stress:sphere_low");
+    m_cylMid    = m_resources->add(makeCylinderMesh(10),  "stress:cyl_mid");
+    m_cylLow    = m_resources->add(makeCylinderMesh(6),   "stress:cyl_low");
+
     // Mid-grey architecture, roughly 40-55% albedo. Dark surfaces would swallow
     // the daylight and hide exactly the shadowing and GI this scene exists to
     // put under load.
@@ -574,6 +583,16 @@ void StressArena::buildProps() {
             {spot.x, GROUND_Y + scale * 0.5f, spot.z}, glm::vec3(scale));
 
         m_props.push_back(prop);
+
+        // Round props drop tessellation with distance; cubes have nothing to
+        // drop. Thresholds are deliberately short for the arena's scale so the
+        // switch is exercised across the camera loop rather than never reached.
+        if (lodEnabled && shape != 0) {
+            LOD lod;
+            if (shape == 1) lod.levels = { {m_sphere,   35.0f}, {m_sphereMid, 70.0f}, {m_sphereLow, 0.0f} };
+            else            lod.levels = { {m_cylinder, 35.0f}, {m_cylMid,    70.0f}, {m_cylLow,    0.0f} };
+            m_scene->add(prop, std::move(lod));
+        }
 
         // The first animatedCount props get a track. Spread across all four clip
         // shapes so the evaluator is measured on its real mix rather than on one

@@ -61,6 +61,7 @@ class InspectorPanel {
         void drawParticleSection(Scene& scene, EditorState& state, EntityId id);
         void drawIrradianceVolumeSection(Scene& scene, EditorState& state, EntityId id);
         void drawWorldInspector(EditorContext& ec);
+        void drawLODSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawAnimationSection(Scene& scene, EditorState& state, EntityId id);
         void drawScriptSection(Scene& scene, EditorState& state, EntityId id);
         void drawHierarchySection(Scene& scene, EditorState& state, EntityId id);

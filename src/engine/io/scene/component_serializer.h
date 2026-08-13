@@ -6,6 +6,7 @@
 #include "ecs/component/camera.h"
 #include "ecs/component/collider.h"
 #include "ecs/component/decal.h"
+#include "ecs/component/lod.h"
 #include "ecs/component/particle_emitter.h"
 #include "ecs/component/irradiance_volume.h"
 #include "ecs/component/reflection_probe.h"
@@ -76,6 +77,9 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const Mesh&, const ResourceManager&);
     void load(const nlohmann::json&, Mesh&, const ResourceManager&);
+
+    nlohmann::json save(const LOD&, const ResourceManager&);
+    void load(const nlohmann::json&, LOD&, const ResourceManager&);
 
     nlohmann::json save(const Decal&, const ResourceManager&);
     void load(const nlohmann::json&, Decal&, const ResourceManager&);

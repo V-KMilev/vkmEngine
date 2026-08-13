@@ -48,10 +48,11 @@ active camera so downstream consumers do not have to look the camera back up.
 
 ```cpp
 struct VisibleEntity {
-    EntityId  id;
-    glm::mat4 model;        // pre-computed world matrix
-    glm::vec3 worldMin;     // cached world-space AABB for debug/picking
-    glm::vec3 worldMax;
+    EntityId   id;
+    glm::mat4  model;        // pre-computed world matrix
+    glm::vec3  worldMin;     // cached world-space AABB for debug/picking
+    glm::vec3  worldMax;
+    MeshHandle mesh;         // geometry to draw - the LOD-selected one, if any
 };
 
 struct Visibility {
@@ -73,6 +74,34 @@ shadow pass must draw geometry outside the camera frustum but inside a
 light's volume. `VisibilitySystem` fills `Visibility.shadowCasters` from the
 full Mesh set, and `RenderView::build` copies it into the view. See
 [Rendering](rendering.md).
+
+## Level of detail
+
+An entity with an `LOD` component (`ecs/component/lod.h`) draws coarser
+geometry as it recedes. Selection happens inside the cull rather than in a
+pass of its own: the cull already has the camera distance and already runs in
+parallel, so LOD costs one comparison per surviving entity.
+
+```cpp
+struct LODLevel { MeshHandle mesh; float maxDistance; };
+struct LOD      { std::vector<LODLevel> levels; float bias = 1.0f; };
+```
+
+Levels are ordered near to far and matched against `distance <= maxDistance *
+bias`; `bias` is the global quality knob. Past the last level the last level
+keeps drawing - making something vanish is `DistanceCuller`'s job, and two
+components able to do it would make it ambiguous which one did.
+
+The chosen handle is published as `VisibleEntity::mesh`, so the render path
+never looks at the `LOD` component. An entity without one publishes its `Mesh`
+handle unchanged.
+
+Levels can be authored by hand or generated: `generateLOD` (`tools/generator/
+lod_generator.h`, exposed as **Generate Levels** on the inspector's LOD card)
+decimates the source mesh, registers each level as a named asset
+(`<mesh>:lod1`) so it serializes like any other, and drops a level that
+decimation could not usefully coarsen. For geometry the engine generated
+itself, re-tessellating at a lower resolution beats decimating it.
 
 ## Culling stages
 
