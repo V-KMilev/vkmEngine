@@ -131,7 +131,11 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             changed = true;
         }
         ImGui::SameLine(0, GAP);
-        changed |= ImGui::Checkbox("Loop", &anim.looping);
+        if (iconButton("anloop", EditorIcon::Loop, anim.looping, true,
+                       anim.looping ? "Looping" : "Play once", ih)) {
+            anim.looping = !anim.looping;
+            changed = true;
+        }
         ImGui::SameLine(0, GAP);
         // Value-embedded prefix, matching the Inspector's hidden-label rows.
         ImGui::SetNextItemWidth(EditorStyle::px(110.0f));
