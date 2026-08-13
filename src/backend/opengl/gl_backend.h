@@ -80,6 +80,27 @@ class GLBackend : public RenderBackend {
 
     private:
         /**
+         * @brief Drop every GPU cache derived from the scene, after a graph swap.
+         *
+         * Several caches avoid redundant GPU work by remembering what they last
+         * built and comparing it against values the scene supplies: asset handle
+         * and version for GLView, probe position and bakeVersion for the probe
+         * array, box and grid for the irradiance volume. Every one of those
+         * repeats exactly when a scene is replaced - SceneSerializer commits by
+         * swapping a freshly built graph into place, and the editor's play-stop
+         * restore takes the same path - so each would skip work it must redo and
+         * go on showing the previous scene's contents.
+         *
+         * Detecting the swap here, once, is deliberate. The alternative is every
+         * cache inventing its own staleness test, which is exactly how the probe
+         * array and the irradiance volume came to be missed when GLView was
+         * fixed. A new scene-derived cache belongs in this function.
+         *
+         * @param resources The frame's resource manager, carrying the epoch.
+         */
+        void onAssetGraphSwapped(const ResourceManager& resources);
+
+        /**
          * @brief Split the frame's drawables into the opaque + transparent buckets once
          * (one material resolve each) so the depth prepass and forward pass share
          * the result instead of re-partitioning the list a pass apiece.
@@ -107,6 +128,10 @@ class GLBackend : public RenderBackend {
     private:
         Core::Context m_context;
         GLView        m_view;
+
+        // Asset-graph identity the scene-derived GPU caches were built against.
+        // See onAssetGraphSwapped.
+        uint64_t      m_assetEpoch = 0;
 
         // Batches the opaque bucket once per frame for both the depth prepass
         // and the forward pass (see GLFrameContext::opaqueBatch).

@@ -47,18 +47,17 @@ void GLView::ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, c
     }
 }
 
-void GLView::invalidateOnEpochChange(const ResourceManager& resources) {
-    const uint64_t epoch = resources.epoch();
-    if (epoch == m_epoch) return;
-
+void GLView::invalidate() {
     // The incoming graph reuses the same handle indices and generations at
     // version 1, so ensure() cannot tell its assets apart from the outgoing
-    // ones. Nothing here is salvageable: drop it all and let this sync repopulate.
+    // ones. Nothing here is salvageable: drop it all and let the next sync
+    // repopulate. m_reportedMissing goes too - a name that failed to load in the
+    // old graph deserves a fresh warning if it fails again in the new one.
     m_meshes.slots.clear();
     m_materials.slots.clear();
     m_textures.slots.clear();
     m_fontAtlases.slots.clear();
-    m_epoch = epoch;
+    m_reportedMissing.clear();
 }
 
 void GLView::reportIfMissing(const TextureHandle& handle, const ResourceManager& resources) {
@@ -77,8 +76,6 @@ void GLView::reportIfMissing(const TextureHandle& handle, const ResourceManager&
 }
 
 void GLView::sync(const RenderView& view, const ResourceManager& resources) {
-    invalidateOnEpochChange(resources);
-
     // One walk: ensure each drawable's mesh + material, then discover the
     // material's textures off the entry we just synced. The material is
     // guaranteed present before its textures are needed, so no second pass.
