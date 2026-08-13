@@ -18,6 +18,7 @@
 #include "io/scene/scene_serializer.h"
 #include "app/engine_app.h"
 #include "example/potion_scene.h"
+#include "example/stress_scene.h"
 
 int main(int argc, char** argv) {
     try {
@@ -60,10 +61,17 @@ int main(int argc, char** argv) {
 
         Engine::Engine engine;
 
-        setupEngineApp(engine,
-            AppConfig{"VKM Engine (Runtime)", false, true, generatePotionRunnerScene});
+        // --stress boots the profiling load (example/stress_scene.h) instead of
+        // the game. It is a flag rather than a scene file because the arena is
+        // generated in code from a fixed seed - there is nothing on disk to load.
+        const bool stress = argc > 1 && std::string(argv[1]) == "--stress";
 
-        if (argc > 1) {
+        setupEngineApp(engine, AppConfig{
+            stress ? "VKM Engine (Stress)" : "VKM Engine (Runtime)",
+            false, true,
+            stress ? generateStressArenaScene : generatePotionRunnerScene});
+
+        if (argc > 1 && !stress) {
             const char* scenePath = argv[1];
             if (Engine::SceneSerializer::load(engine.getScene(), engine.getResources(), scenePath)) {
                 LOG_INFO("Booted scene '%s'", scenePath);
