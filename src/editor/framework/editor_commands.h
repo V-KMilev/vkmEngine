@@ -11,6 +11,7 @@
 #include "ecs/component/transform.h"
 #include "ecs/environment.h"
 #include "ecs/component/mesh.h"
+#include "ecs/component/lod.h"
 #include "ecs/component/light.h"
 #include "ecs/component/camera.h"
 #include "ecs/component/animation.h"
@@ -210,6 +211,7 @@ class ComponentEditCommand : public Command {
 #define VKM_EDITOR_SNAPSHOT_COMPONENTS(X) \
     X(Transform,       transform)         \
     X(Mesh,            mesh)              \
+    X(LOD,             lod)               \
     X(Light,           light)            \
     X(Camera,          camera)           \
     X(Animation,       animation)        \

@@ -36,9 +36,7 @@ namespace GLBindings {
         // shaders/_common/instancing.glsl.
         constexpr uint32_t CullBounds     = 3;
         constexpr uint32_t CullRunIndex   = 4;
-        constexpr uint32_t CullModels     = 5;
-        constexpr uint32_t CullNormals    = 6;
-        constexpr uint32_t CullVisible    = 7;
+        constexpr uint32_t CullVisible    = 7;   // 5, 6 and 8 are free: the cull reads bounds and writes indices, never matrices
         constexpr uint32_t CullCommands   = 9;
 
         constexpr uint32_t InstanceModels  = 10;  ///< Per-instance model matrices, batch order.
