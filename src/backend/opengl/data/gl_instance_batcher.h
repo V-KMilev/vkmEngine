@@ -63,6 +63,18 @@ class GLInstanceBatcher {
         const std::vector<InstanceRun>& buildSequential(
             const std::vector<const DrawableData*>& list, const GLView& view);
 
+        /**
+         * @brief The runs from the most recent build*(), for a consumer that did
+         *        not build them itself.
+         *
+         * Lets a batch built once per frame be drawn by more than one pass (the
+         * opaque bucket, shared by the depth prepass and the forward pass).
+         * Invalidated by the next build*() on this batcher.
+         *
+         * @return The current run list.
+         */
+        const std::vector<InstanceRun>& runs() const { return m_runs; }
+
         void drawRun(const InstanceRun& run);
 
     private:

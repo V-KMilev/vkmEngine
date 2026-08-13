@@ -39,7 +39,6 @@ class GLDepthPrepass : public GLPass {
 
     private:
         std::unique_ptr<Core::Shader> m_shader;
-        GLInstanceBatcher             m_batcher;
 };
 
 } // namespace Engine
