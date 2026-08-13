@@ -55,9 +55,9 @@ constexpr int FILE_FORMAT_VERSION = 2;
 // Every JSON key written by saveComponents, for unknown-key detection on load.
 // Order is incidental here (membership test only); keep it in sync with the
 // save/load lists below.
-constexpr std::array<const char*, 19> COMPONENT_KEYS = {
+constexpr std::array<const char*, 20> COMPONENT_KEYS = {
     "Name", "Transform", "Camera", "Light", "Rigidbody", "Collider",
-    "Mesh", "Decal", "ParticleEmitter", "IrradianceVolume", "ReflectionProbe",
+    "Mesh", "LOD", "Decal", "ParticleEmitter", "IrradianceVolume", "ReflectionProbe",
     "Animation", "Script", "Hierarchy",
     "UICanvas", "UIElement", "UIImage", "UIText", "UIButton",
 };
@@ -72,6 +72,7 @@ void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager&
     if (s.has<Rigidbody>(id))       c["Rigidbody"]    = CS::save(s.get<Rigidbody>(id));
     if (s.has<Collider>(id))        c["Collider"]     = CS::save(s.get<Collider>(id));
     if (s.has<Mesh>(id))            c["Mesh"]         = CS::save(s.get<Mesh>(id), r);
+    if (s.has<LOD>(id))             c["LOD"]          = CS::save(s.get<LOD>(id), r);
     if (s.has<Decal>(id))           c["Decal"]        = CS::save(s.get<Decal>(id), r);
     if (s.has<ParticleEmitter>(id)) c["ParticleEmitter"] = CS::save(s.get<ParticleEmitter>(id));
     if (s.has<IrradianceVolume>(id)) c["IrradianceVolume"] = CS::save(s.get<IrradianceVolume>(id));
@@ -96,6 +97,7 @@ void loadComponents(const json& src, Scene& s, Entity e, const ResourceManager& 
     if (src.contains("Rigidbody"))    { Rigidbody c;       CS::load(src["Rigidbody"], c);       s.add(e, std::move(c)); }
     if (src.contains("Collider"))     { Collider c;        CS::load(src["Collider"], c);        s.add(e, std::move(c)); }
     if (src.contains("Mesh"))         { Mesh c;            CS::load(src["Mesh"], c, r);         s.add(e, std::move(c)); }
+    if (src.contains("LOD"))          { LOD c;             CS::load(src["LOD"], c, r);          s.add(e, std::move(c)); }
     if (src.contains("Decal"))        { Decal c;           CS::load(src["Decal"], c, r);        s.add(e, std::move(c)); }
     if (src.contains("ParticleEmitter")) { ParticleEmitter c; CS::load(src["ParticleEmitter"], c); s.add(e, std::move(c)); }
     if (src.contains("IrradianceVolume")) { IrradianceVolume c; CS::load(src["IrradianceVolume"], c); s.add(e, std::move(c)); }

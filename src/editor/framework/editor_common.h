@@ -20,6 +20,7 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/light.h"
 #include "ecs/component/mesh.h"
+#include "ecs/component/lod.h"
 #include "ecs/component/name.h"
 #include "ecs/component/transform.h"
 #include "ecs/scene.h"

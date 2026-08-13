@@ -70,7 +70,8 @@ class VisibilitySystem : public System {
 
         std::vector<uint8_t>   m_visibleFlags;
         std::vector<uint8_t>   m_casterFlags;
-        std::vector<glm::mat4> m_modelMatrices;
+        std::vector<glm::mat4>  m_modelMatrices;
+        std::vector<MeshHandle> m_meshes;      ///< Geometry chosen per index (LOD level, or the Mesh component's own).
         std::vector<glm::vec3> m_worldMins;
         std::vector<glm::vec3> m_worldMaxs;
 };

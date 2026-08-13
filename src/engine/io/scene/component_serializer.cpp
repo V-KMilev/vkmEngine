@@ -177,7 +177,7 @@ template<typename Asset>
 Handle<Asset> resolveAssetRef(const ResourceManager& r, const std::string& name, const char* what) {
     if (name.empty()) return {};
     Handle<Asset> h = r.findByName<Asset>(name);
-    if (!h) LOG_WARNING("SceneLoad: %s asset '%s' not found - Mesh component left unresolved", what, name.c_str());
+    if (!h) LOG_WARNING("SceneLoad: %s asset '%s' not found - reference left unresolved", what, name.c_str());
     return h;
 }
 } // namespace
@@ -195,6 +195,28 @@ void load(const nlohmann::json& j, Mesh& m, const ResourceManager& resources) {
     m.material    = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material");
     m.visible     = j.value("visible",     m.visible);
     m.castShadows = j.value("castShadows", m.castShadows);
+}
+
+nlohmann::json save(const LOD& l, const ResourceManager& resources) {
+    nlohmann::json levels = nlohmann::json::array();
+    for (const LODLevel& level : l.levels) {
+        if (!level.mesh) continue;   // an unresolved level would load as a hole in the ramp
+        levels.push_back({
+            {"mesh",        resources.get(level.mesh).name},
+            {"maxDistance", level.maxDistance},
+        });
+    }
+    return {{"levels", levels}, {"bias", l.bias}};
+}
+void load(const nlohmann::json& j, LOD& l, const ResourceManager& resources) {
+    l.bias = j.value("bias", l.bias);
+    if (!j.contains("levels")) return;
+    for (const auto& entry : j["levels"]) {
+        MeshHandle mesh = resolveAssetRef<MeshAsset>(
+            resources, entry.value("mesh", std::string{}), "LOD mesh");
+        if (!mesh) continue;
+        l.levels.push_back({mesh, entry.value("maxDistance", 0.0f)});
+    }
 }
 
 nlohmann::json save(const Decal& d, const ResourceManager& resources) {
