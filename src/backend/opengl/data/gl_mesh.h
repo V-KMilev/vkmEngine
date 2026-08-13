@@ -38,15 +38,6 @@ class GLMesh {
         void draw() const;
 
         /**
-         * @brief Install @p buffer's per-instance attributes onto this mesh's VAO,
-         * starting at attribute @p startIndex (a mat4 spans startIndex..+3,
-         * divisor 1). No-op when @p buffer is already installed at that
-         * location: the buffer's GL name is stable across orphan-grows, so the
-         * recorded VAO binding stays valid. Re-points only when a different
-         * buffer takes the slot (the shadow + forward passes share this VAO but
-         * bind different instance buffers at location 4).
-         */
-        /**
          * @brief Install @p buffer's per-instance matrices as vertex attributes.
          *
          * For a pass whose vertex stage is the cost. The shadow pass redraws
@@ -106,8 +97,6 @@ class GLMesh {
          * pointers. Two slots cover the engine convention (model @4, normal @8);
          * reset whenever update() recreates the VAO.
          */
-        struct InstanceSlot { const Core::InstanceBuffer* buffer = nullptr; uint32_t start = 0; };
-        mutable InstanceSlot m_instanceSlots[2];
 };
 
 } // namespace Engine

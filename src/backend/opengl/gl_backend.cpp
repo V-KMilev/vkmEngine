@@ -109,6 +109,9 @@ bool GLBackend::init(WindowManager& window) {
     //   DepthPrepass  - clears the scene target; primes opaque depth + G-buffer.
     //   ResolveDepth  - MSAA only: resolves depth (+ G-buffer when read) for the
     //                   screen-space passes.
+    //   HiZ           - reduces that depth into the hierarchical pyramid.
+    //   OcclusionCull - compute: rejects opaque instances hidden behind it and
+    //                   writes each run's indirect draw command.
     //   GTAO          - occlusion factor + bent normal from resolved depth.
     //   ContactShadow - screen-space sun visibility mask (skips without a sun).
     //   Skybox        - fills the background BEFORE geometry, so sorted
