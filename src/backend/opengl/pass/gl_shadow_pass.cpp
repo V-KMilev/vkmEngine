@@ -4,7 +4,11 @@
 
 #include <algorithm>
 
+#include <algorithm>
+
 #include <GL/glew.h>
+
+#include "debug/profiler.h"
 
 #include "gl_shader.h"
 #include "gl_context.h"
@@ -73,24 +77,42 @@ void GLShadowPass::renderCasters(GLFrameContext& ctx, const glm::mat4& lightVP) 
 
     // The caster set is scene-wide; cull it against this tile/face's frustum, then
     // sort the survivors by mesh so identical meshes batch into one instanced draw.
+    //
+    // The sort looks redundant across the ~18 tiles a frame, but hoisting it into
+    // buildShadowCasters measured as a wash: one sort of the whole list moves
+    // 96-byte caster structs, while these move 4-byte indices over an already
+    // culled subset. Cull below is 5x this cost - optimise that instead.
+    {
+    PROFILE_SCOPE("ShadowCasters/Cull");
     m_order.clear();
     for (uint32_t i = 0; i < casters.size(); ++i) {
         if (Math::frustumIntersectsAABB(frustum, casters[i].aabbMin, casters[i].aabbMax))
             m_order.push_back(i);
     }
+    }
     if (m_order.empty()) return;
+    {
+    PROFILE_SCOPE("ShadowCasters/Sort");
     std::sort(m_order.begin(), m_order.end(), [&](uint32_t a, uint32_t b) {
         return casters[a].mesh.id() < casters[b].mesh.id();
     });
+    }
 
     // Flatten every survivor's model into one buffer and upload it once, then draw
     // each mesh run from its slice via baseInstance (the forward batcher's single-
     // upload pattern). Depth-only, so just the model buffer - no normal matrix.
+    {
+    PROFILE_SCOPE("ShadowCasters/Gather");
     m_models.clear();
     m_models.reserve(m_order.size());
     for (uint32_t idx : m_order) m_models.push_back(casters[idx].model);
+    }
+    {
+    PROFILE_SCOPE("ShadowCasters/Upload");
     m_instances.update(m_models.data(), static_cast<uint32_t>(m_models.size()));
+    }
 
+    PROFILE_SCOPE("ShadowCasters/Draw");
     uint32_t i = 0;
     while (i < m_order.size()) {
         const uint32_t meshId = casters[m_order[i]].mesh.id();
