@@ -247,15 +247,19 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
     // A new UI element defaults to living under the selected canvas / element so
     // it renders immediately; otherwise it starts as a root for the user to
     // parent (a UI element needs a UICanvas ancestor to be laid out and drawn).
+    uint32_t parentSlot = 0;
     if (isUIElement && state.selectedEntity && scene.isAlive(state.selectedEntity)
         && (scene.has<UICanvas>(state.selectedEntity) || scene.has<UIElement>(state.selectedEntity))) {
         HierarchyOperations::setParent(scene, id, state.selectedEntity);
+        parentSlot = state.selectedEntity.index;
     }
 
     // Snapshot the just-created entity so undo can resurrect it intact
     // (CreateEntityCommand::undo destroys; redo re-creates at the same slot).
+    // The parent slot rides along: EntitySnapshot is leaf-only, so without it a
+    // redone UI element comes back as a root and stops being drawn.
     state.commands.push(std::make_unique<CreateEntityCommand>(
-        EntitySnapshot::capture(scene, id), "Create Entity"));
+        EntitySnapshot::capture(scene, id), "Create Entity", parentSlot));
     commitStructureChange(state);
     return id;
 }
