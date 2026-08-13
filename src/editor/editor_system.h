@@ -71,6 +71,12 @@ class EditorSystem : public System {
         void update(FrameContext& ctx) override;
 
     private:
+        // Shader hot reload polls the shader directory on this interval rather
+        // than every frame; a save is a human action, so a second of latency is
+        // imperceptible and the scan stays off the frame budget.
+        static constexpr float SHADER_POLL_INTERVAL = 1.0f;
+        float m_shaderPollTimer = 0.0f;
+
         /**
          * @brief Lay out the root-window panel arrangement.
          *
