@@ -39,11 +39,11 @@ std::string AssetLibrary::uidFor(AssetType type, const std::string& name) {
     return std::string(buf.data());
 }
 
-std::filesystem::path AssetLibrary::recipePath(const Record& record) const {
+std::filesystem::path AssetLibrary::recipePath(const AssetRecord& record) const {
     return ProjectPaths::library() / record.recipeFile;
 }
 
-std::filesystem::path AssetLibrary::cookedPath(const Record& record) const {
+std::filesystem::path AssetLibrary::cookedPath(const AssetRecord& record) const {
     return ProjectPaths::cooked() / record.cookedFile;
 }
 
@@ -70,7 +70,7 @@ void AssetLibrary::load() {
     }
 
     for (const auto& entry : *assets) {
-        Record r;
+        AssetRecord r;
         const std::string typeStr = entry.value("type", std::string{});
         r.type = Reflect::enumFromName<AssetType>(typeStr);
         if (Reflect::enumName(r.type) != typeStr) {   // unknown tag falls back to value 0
@@ -91,12 +91,12 @@ void AssetLibrary::load() {
     LOG_INFO("Asset library: loaded %zu record(s) from %s", m_records.size(), path.string().c_str());
 }
 
-const Record* AssetLibrary::find(AssetType type, const std::string& name) const {
+const AssetRecord* AssetLibrary::find(AssetType type, const std::string& name) const {
     auto it = m_records.find(key(type, name));
     return it == m_records.end() ? nullptr : &it->second;
 }
 
-void AssetLibrary::upsert(Record record) {
+void AssetLibrary::upsert(AssetRecord record) {
     const std::string k = key(record.type, record.name);
     m_records[k] = std::move(record);
 }

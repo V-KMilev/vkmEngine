@@ -36,7 +36,7 @@ CookedRequest<Asset> beginCookedRequest(const std::string& name, AssetType type,
                                         const char* what, ResourceManager& resources) {
     if (auto existing = resources.findByName<Asset>(name)) return {existing};
 
-    const Record* record = AssetLibrary::get().find(type, name);
+    const AssetRecord* record = AssetLibrary::get().find(type, name);
     if (!record || record->cookedFile.empty()) {
         LOG_ERROR("Cooked %s '%s' not found in asset library manifest", what, name.c_str());
         return {};

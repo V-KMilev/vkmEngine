@@ -94,6 +94,28 @@ Enum enumFromName(std::string_view name) {
     return static_cast<Enum>(0);
 }
 
+/**
+ * @brief True iff T has a Traits specialisation (i.e. was VKM_REFLECT-ed).
+ *
+ * Lets generic walkers branch between "descend into a nested reflected struct"
+ * and "handle a leaf" without a hand-maintained type list - derived straight
+ * from whether Traits<T>::fields() is well-formed.
+ */
+template<typename T, typename = void>
+inline constexpr bool IS_REFLECTED = false;
+
+template<typename T>
+inline constexpr bool IS_REFLECTED<T, std::void_t<decltype(Traits<T>::fields())>> = true;
+
+/**
+ * @brief True iff Enum has a VKM_ENUM_NAMES registration (an EnumNames table).
+ */
+template<typename Enum, typename = void>
+inline constexpr bool HAS_ENUM_NAMES = false;
+
+template<typename Enum>
+inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>::count)>> = true;
+
 } // namespace Engine::Reflect
 
 /**

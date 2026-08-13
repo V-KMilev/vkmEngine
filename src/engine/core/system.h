@@ -8,7 +8,9 @@ namespace Engine {
 
     class Scene;
     class ResourceManager;
+    class EventBus;
     struct Visibility;
+    struct UIDrawData;
 }
 
 namespace Engine {
@@ -44,21 +46,32 @@ enum class SystemStage : uint8_t {
 /**
  * @brief Per-frame state bundle passed to every system.
  *
- * A uniform handle to the shared per-frame state: the window, the frame Clock,
- * the Scene and ResourceManager, and the visibility snapshot. Time is read
- * through the Clock - getDeltaTime() for real-time work, getSimDelta() for
- * simulation update(), getFixedStep() in fixedUpdate(). visibility is a
- * non-owning pointer to storage owned by VisibilitySystem (null until that
- * system runs this frame), so systems read culling results without a per-frame
- * allocation.
+ * Two kinds of state share this struct, and the field types encode which is
+ * which:
+ *
+ * References are engine-owned SERVICES - always valid, stable across the whole
+ * session. Time is read through the Clock: getDeltaTime() for real-time work,
+ * getSimDelta() for simulation update(), getFixedStep() in fixedUpdate().
+ * `events` is the gameplay pub/sub bus (owned by the Engine, flushed at the
+ * top of the Simulation stage).
+ *
+ * Pointers are per-frame PRODUCTS - computed by one stage and consumed by a
+ * later one, null until their producer has run this frame. `visibility` points
+ * at the VisibilitySystem's culling result; `ui` at the UISystem's draw list.
+ * Producers own the storage (reused across frames), so consumers read the
+ * results without a per-frame allocation. A consumer of a product must be
+ * registered after its producer - that ordering lives in setupEngineApp.
  */
 struct FrameContext {
-    WindowManager& window;
-    Clock& clock;
-
-    Scene& scene;
+    Scene&           scene;
     ResourceManager& resources;
-    const Visibility* visibility;
+
+    Clock&           clock;
+    EventBus&        events;
+    WindowManager&   window;
+
+    const Visibility* visibility = nullptr;
+    const UIDrawData* ui         = nullptr;
 };
 
 /**
@@ -97,8 +110,8 @@ class System {
         virtual void init(FrameContext& ctx) {}
 
         /**
-          * @brief Called once on engine shutdown.
-          */
+         * @brief Called once on engine shutdown.
+         */
         virtual void shutdown() {}
 
         /**

@@ -15,8 +15,8 @@ namespace Engine {
  *
  * The C++ analogue of Unreal's class registration. Game code registers each
  * behavior type at startup (registerBehavior<T>()); serialization recreates
- * instances by name (create("CubeSpinner")). Mirrors AssetFactories: a single
- * process-wide registry reached through get().
+ * instances by name (create("CubeSpinner")). A single process-wide registry
+ * reached through get() (it must be reachable from game-DLL code).
  */
 class BehaviorRegistry {
     public:
@@ -73,6 +73,13 @@ class BehaviorRegistry {
          * on hot-reload, since the factories close over module code.
          */
         void clear();
+
+    public:
+        BehaviorRegistry(const BehaviorRegistry& other) = delete;
+        BehaviorRegistry& operator=(const BehaviorRegistry& other) = delete;
+
+        BehaviorRegistry(BehaviorRegistry && other) = delete;
+        BehaviorRegistry& operator=(BehaviorRegistry && other) = delete;
 
     private:
         BehaviorRegistry() = default;

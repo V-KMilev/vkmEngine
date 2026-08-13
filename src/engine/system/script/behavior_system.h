@@ -12,7 +12,7 @@ namespace Engine {
 
 class Scene;
 class ResourceManager;
-class EventSystem;
+class EventBus;
 
 /**
  * @brief Drives the lifecycle of every entity's ScriptComponent behaviors.
@@ -37,7 +37,9 @@ class EventSystem;
  */
 class BehaviorSystem : public System, public ISceneObserver {
     public:
-        explicit BehaviorSystem(EventSystem& events) : m_events(events) {}
+        BehaviorSystem() {
+            m_context.pendingDestroy = &m_pendingDestroy;
+        }
         ~BehaviorSystem() override = default;
 
         BehaviorSystem(const BehaviorSystem& other) = delete;
@@ -68,7 +70,7 @@ class BehaviorSystem : public System, public ISceneObserver {
          *
          * Tears down a whole scene's running behaviors: on play stop (before the
          * snapshot swaps the played scene away) and at shutdown (while the
-         * EventSystem is still alive). Static because the editor's stop path has
+         * EventBus is still alive). Static because the editor's stop path has
          * no BehaviorSystem handle - friendship with Behavior is class-wide.
          */
         static void endSession(Scene& scene);
@@ -85,16 +87,15 @@ class BehaviorSystem : public System, public ISceneObserver {
 
     private:
         /**
-         * @brief Fire onStart once on @p behavior, binding the full context first.
+         * @brief Fire onStart once on @p behavior, binding m_context first.
          *
          * No-op if the behavior has already started. Runs under the catch net:
          * a throw is reported and the behavior is disabled.
          *
          * @param behavior The behavior to start.
          * @param entity   The entity owning @p behavior, bound into its context.
-         * @param ctx      Frame context supplying scene/resources/input/events.
          */
-        void ensureStarted(Behavior& behavior, EntityId entity, FrameContext& ctx);
+        void ensureStarted(Behavior& behavior, EntityId entity);
         /**
          * @brief Shared per-tick walk for update/fixedUpdate: skip null/disabled,
          *        ensureStarted, re-check disabled, then guard the @p hook (a
@@ -112,8 +113,7 @@ class BehaviorSystem : public System, public ISceneObserver {
          * @param hookName Human-readable hook name, used in error reporting.
          * @param hook     The void(EntityId) member hook to invoke on each behavior.
          */
-        void dispatchEntityHook(Scene& scene, EntityId target, EntityId other,
-                                const char* hookName, void (Behavior::*hook)(EntityId));
+        void dispatchEntityHook(Scene& scene, EntityId target, EntityId other, const char* hookName, void (Behavior::*hook)(EntityId));
         /**
          * @brief Apply queued destroy() requests via destroyHierarchy.
          *
@@ -147,14 +147,12 @@ class BehaviorSystem : public System, public ISceneObserver {
         static void fireDestroy(Behavior& behavior);
 
     private:
-        EventSystem& m_events;
-
         std::vector<CollisionEvent> m_collisions;
         std::vector<TriggerEvent>   m_triggers;
 
         std::vector<EntityId> m_pendingDestroy;
 
-        Scene* m_scene = nullptr;
+        BehaviorContext m_context;
 };
 
 } // namespace Engine

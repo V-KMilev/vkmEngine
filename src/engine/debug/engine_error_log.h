@@ -21,7 +21,8 @@ namespace Engine {
  */
 class EngineErrorLog {
     public:
-        EngineErrorLog() = default;
+        EngineErrorLog()  = default;
+        ~EngineErrorLog() = default;
 
         EngineErrorLog(const EngineErrorLog& other) = delete;
         EngineErrorLog& operator=(const EngineErrorLog& other) = delete;
