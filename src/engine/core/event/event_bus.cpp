@@ -1,4 +1,4 @@
-#include "system/event/event_system.h"
+#include "core/event/event_bus.h"
 
 #include <vector>
 
@@ -6,8 +6,8 @@
 
 namespace Engine {
 
-void EventSystem::update(FrameContext&) {
-    PROFILE_SCOPE("EventSystem");
+void EventBus::flush() {
+    PROFILE_SCOPE("EventBus::flush");
     // Snapshot the bus pointers before flushing: a listener fired during flush()
     // may enqueue an event of a never-before-seen type, which lazily creates a
     // new bus and can reallocate m_buses - invalidating a live iterator over it.

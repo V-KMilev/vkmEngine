@@ -144,7 +144,10 @@ class SparseSet : public ISparseSet {
             }
         }
 
-        size_t size() const override { return m_data.size(); }  ///< Number of live elements.
+        /**
+         * @brief Number of live elements.
+         */
+        size_t size() const override { return m_data.size(); }
 
         /**
          * @brief Drop every element. The dense and sparse arrays empty;
@@ -220,7 +223,7 @@ class SparseSet : public ISparseSet {
         /**
          * @brief Validate the key, emplace into the dense array, and wire up both mappings.
          *
-         * Shared implementation behind the public add()/emplace() entry points:
+         * Shared implementation behind the public add() entry points:
          * asserts the key is neither the EMPTY sentinel, 0 (reserved), nor already
          * present, then constructs the element in place.
          *

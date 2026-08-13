@@ -9,14 +9,17 @@
 #include "platform/window/window_manager.h"
 #include "core/system.h"
 #include "core/clock.h"
+#include "core/event/event_bus.h"
 
 namespace Engine {
 
 /**
  * @brief Engine context: owns core state and runs the main loop.
  *
- * Owns the Scene, ResourceManager, WindowManager, Clock, and the
- * per-stage system pipeline. Profiling is handled via debug/profiler.h
+ * Owns the Scene, ResourceManager, WindowManager, Clock, the EventBus
+ * (gameplay pub/sub - infrastructure like the Clock; the loop flushes its
+ * queue at the top of the Simulation stage), and the per-stage system
+ * pipeline. Profiling is handled via debug/profiler.h
  * (Tracy facade) - the engine emits FrameMark per loop iteration and
  * a per-stage CPU zone over each stage's update(). GPU collect is the backend's job,
  * done at the tail of each RenderBackend::render() call.
@@ -48,11 +51,14 @@ class Engine {
         ResourceManager& getResources()             { return m_resources; }
         const ResourceManager& getResources() const { return m_resources; }
 
-        WindowManager& getWindow()             { return m_window; }
-        const WindowManager& getWindow() const { return m_window; }
-
         Clock& getClock()             { return m_clock; }
         const Clock& getClock() const { return m_clock; }
+
+        EventBus& getEvents()             { return m_events; }
+        const EventBus& getEvents() const { return m_events; }
+
+        WindowManager& getWindow()             { return m_window; }
+        const WindowManager& getWindow() const { return m_window; }
 
         /**
          * @brief Log "FPS: N (M ms)" to the console once a second.
@@ -60,7 +66,7 @@ class Engine {
          * Opt-in and runtime-facing: the editor shows FPS in its status bar, so
          * it leaves this off to keep the console quiet.
          */
-        void logFPS(bool enabled = true) { m_fpsLog = enabled; }
+        void setFPSLog(bool enabled = true) { m_fpsLog = enabled; }
 
         /**
          * @brief Run the main loop (blocks until the window is closed).
@@ -95,8 +101,9 @@ class Engine {
         Scene m_scene;
         ResourceManager m_resources;
 
-        WindowManager m_window;
         Clock         m_clock;
+        EventBus      m_events;
+        WindowManager m_window;
 
         std::array<std::vector<std::unique_ptr<System>>, static_cast<size_t>(SystemStage::Count)> m_systemsByStage;
 

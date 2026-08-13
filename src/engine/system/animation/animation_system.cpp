@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-#include "logger.h"
-
 #include "core/clock.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"

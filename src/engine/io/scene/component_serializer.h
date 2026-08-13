@@ -5,12 +5,21 @@
 #include "ecs/component/animation.h"
 #include "ecs/component/camera.h"
 #include "ecs/component/collider.h"
+#include "ecs/component/decal.h"
+#include "ecs/component/particle_emitter.h"
+#include "ecs/component/irradiance_volume.h"
+#include "ecs/component/reflection_probe.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/light.h"
 #include "ecs/component/mesh.h"
 #include "ecs/component/rigidbody.h"
 #include "ecs/component/name.h"
 #include "ecs/component/transform.h"
+#include "ecs/component/ui_canvas.h"
+#include "ecs/component/ui_element.h"
+#include "ecs/component/ui_image.h"
+#include "ecs/component/ui_text.h"
+#include "ecs/component/ui_button.h"
 #include "system/script/script_component.h"
 
 namespace Engine {
@@ -21,7 +30,7 @@ class ResourceManager;
  * @brief Per-component (de)serialization to JSON.
  *
  * Each component type has a `save` and `load` overload. Add a new component
- * by adding a pair here. Asset handles (in Mesh) are resolved by
+ * by adding a pair here. Asset handles (Mesh, Decal) are resolved by
  * stable name through ResourceManager::findByName; entity references
  * (Hierarchy::parent) are stored as the saved scene-table index, which
  * resolves directly because SceneSerializer recreates each entity at its
@@ -34,6 +43,16 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const Name&);
     void load(const nlohmann::json&, Name&);
+
+    /**
+     * @brief The scene-global Environment (lighting + fog + physics settings).
+     *
+     * Fully reflected: the field list lives once in environment.h and both
+     * directions walk it, so adding an Environment field never touches the
+     * serializers again. Missing keys keep the current values.
+     */
+    nlohmann::json save(const Environment&);
+    void load(const nlohmann::json&, Environment&);
 
     nlohmann::json save(const Transform&);
     void load(const nlohmann::json&, Transform&);
@@ -57,6 +76,33 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const Mesh&, const ResourceManager&);
     void load(const nlohmann::json&, Mesh&, const ResourceManager&);
+
+    nlohmann::json save(const Decal&, const ResourceManager&);
+    void load(const nlohmann::json&, Decal&, const ResourceManager&);
+
+    nlohmann::json save(const ParticleEmitter&);
+    void load(const nlohmann::json&, ParticleEmitter&);
+
+    nlohmann::json save(const IrradianceVolume&);
+    void load(const nlohmann::json&, IrradianceVolume&);
+
+    nlohmann::json save(const ReflectionProbe&);
+    void load(const nlohmann::json&, ReflectionProbe&);
+
+    nlohmann::json save(const UICanvas&);
+    void load(const nlohmann::json&, UICanvas&);
+
+    nlohmann::json save(const UIElement&);
+    void load(const nlohmann::json&, UIElement&);
+
+    nlohmann::json save(const UIImage&);
+    void load(const nlohmann::json&, UIImage&);
+
+    nlohmann::json save(const UIText&);
+    void load(const nlohmann::json&, UIText&);
+
+    nlohmann::json save(const UIButton&);
+    void load(const nlohmann::json&, UIButton&);
 
     /**
      * @brief Hierarchy: only `parent` is serialized; sibling pointers are rebuilt
