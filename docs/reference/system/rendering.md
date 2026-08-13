@@ -38,7 +38,8 @@ RenderSystem::update(FrameContext)
         |-- GLView::sync      upload/refresh changed GPU resources
         |-- bake IBL          when the HDR path changed, or the procedural
         |                     sky's sun/params moved (persistent GLIBLBaker)
-        |-- shadow plan       assign atlas slots, upload shadow UBO
+        |-- shadow plan       assign atlas slots, cull casters per tile, upload shadow UBO
+        |-- opaque batch      group the opaque bucket into instanced runs (once, shared)
         |-- per-frame UBOs    camera, lights
         |-- partitionDrawables  split into opaque / alpha-mask / transparent
         |-- run the 18 passes in order
@@ -132,8 +133,8 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 
 | # | Pass | Does |
 |---|------|------|
-| 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas each frame |
-| 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (oct view-normal / roughness / metalness) |
+| 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas each frame. Culling and mesh-grouping are **not** done here - `GLShadowData::build` does both on the thread pool, so the pass only gathers, uploads and draws |
+| 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (oct view-normal / roughness / metalness). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses |
 | 3 | ResolveDepth | MSAA only: resolves depth (and the G-buffer when GTAO / decals / a debug view will read it) into `m_sceneHDR` |
 | 4 | GTAO | Full-res ground-truth AO + bent normal into the mask target |
 | 5 | ContactShadow | Screen-space sun visibility raymarch (skips when the scene has no directional light) |
