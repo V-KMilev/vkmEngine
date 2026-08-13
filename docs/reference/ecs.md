@@ -65,13 +65,13 @@ scene.remove<Mesh>(entity);
 | `Name`           | `component/name.h`                | `char value[64]` for editor display and asset look-up by name                                         |
 | `Collider`       | `component/collider.h`            | One or more `ColliderBox` parts (`center`, `halfExtents`) + `isTrigger`                               |
 | `Rigidbody`      | `component/rigidbody.h`           | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags |
-| `PhysicsWorld`   | `component/physics_world.h`       | Scene-level physics config: `gravity`, `solverIterations`                                            |
 | `ReflectionProbe`| `component/reflection_probe.h`    | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
 
 Light gets a full breakdown in [Lighting](system/lighting.md), including
 the area-light fields (`areaWidth`, `areaHeight`, `areaRadius`, `twoSided`)
-introduced for Rect and Disk emitters. `Rigidbody`, `Collider`, and
-`PhysicsWorld` are covered in [Physics](system/physics.md).
+introduced for Rect and Disk emitters. `Rigidbody` and `Collider` are covered in
+[Physics](system/physics.md); the scene-level physics settings (gravity,
+solver iterations) live on the scene-global `Environment`, not a component.
 
 One more component is **not** a plain aggregate: `ScriptComponent`
 (`system/script/script_component.h`) holds

@@ -36,7 +36,7 @@ is whichever subsystem you're about to change.
 5. **The subsystem you're touching** - the matching doc under
    [reference/](reference/) (architecture, ecs, resources, threading, editor, or
    `reference/system/` for rendering, lighting, visibility, hierarchy, animation,
-   events, io, scripting, physics).
+   events, io, scripting, physics, ui).
 
 If you only have time for one thing before a small change: skim the relevant
 reference doc and the development guide.
@@ -89,7 +89,7 @@ docs/
     building.md         CMake targets, modules, flags
     editor.md           panels, gizmos, undo/redo, material preview
     system/
-      rendering.md      the 10-pass forward pipeline + RenderView contract
+      rendering.md      the fixed 18-pass forward pipeline + RenderView contract
       lighting.md       five light types, LTC area lights, shadows, IBL
       visibility.md     frustum / distance / screen-size culling
       hierarchy.md      world-transform resolve, HierarchyOperations
@@ -98,4 +98,5 @@ docs/
       io.md             scene / asset / component serialization, FileWatcherSystem
       scripting.md      Behavior lifecycle, ScriptComponent, DLL hot-reload
       physics.md        fixed-step rigid bodies, box colliders, contact solver
+      ui.md             screen-space in-game UI (canvas/element/image/text/button)
 ```

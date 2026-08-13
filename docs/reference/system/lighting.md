@@ -5,9 +5,9 @@ The engine supports five light types: **Directional**, **Point**,
 light). All are data-only ECS components; light evaluation lives in
 the PBR shader. Shadows go through a shared shadow atlas (2D for
 directional and spot) and a cube atlas (point lights). Image-based
-lighting is baked by a transient `GLIBLBaker` helper (not a pass) from an
-environment map and sampled by the shader through irradiance, prefilter,
-and BRDF LUT maps.
+lighting is baked by a persistent `GLIBLBaker` helper (not a pass) from an
+HDR environment map or the procedural sky, and sampled by the shader
+through irradiance, prefilter, and BRDF LUT maps.
 
 ## Light component
 
@@ -69,8 +69,9 @@ The PBR fragment shader (`shaders/forward/pbr/`) implements:
   BRDF LUT; horizon haze for low-roughness mirrors.
 - **GTAO**: half-res ground-truth ambient occlusion baked by
   `GLGTAOPass` and modulated into the indirect term.
-- **SSR**: screen-space reflections additively blended into the HDR
-  scene after the forward passes.
+- **Contact shadows**: a screen-space raymarch against the resolved depth
+  produces a sun visibility mask the forward pass multiplies into the
+  directional light (small-scale contact darkening the shadow maps miss).
 
 ### Area lights: LTC + representative point
 
@@ -132,9 +133,10 @@ ignored for spot, point, and area lights, which use `radius` as their cutoff.
 
 ## Image-based lighting (IBL)
 
-A transient `GLIBLBaker` runs once per environment-map change (a helper
-invoked from `GLBackend::render`, not a pass). Given the
-`Environment.hdrPath` (an equirectangular HDR image), it produces:
+A persistent `GLIBLBaker` re-bakes when the environment changes (a helper
+invoked from `GLBackend::render`, not a pass): when `Environment.hdrPath`
+(an equirectangular HDR image) is swapped, or - with the procedural sky
+enabled - when the sun direction or a sky parameter moves. It produces:
 
 - The **environment cube**: a sharp cubemap for low-roughness mirror
   reflections.
@@ -144,29 +146,30 @@ invoked from `GLBackend::render`, not a pass). Given the
 - The **BRDF LUT**: split-sum lookup for the analytic specular term.
 
 These are bound to the dedicated IBL texture slots (see the binding note
-in [Rendering](rendering.md)). The baker is skipped when the env-map path
-has not changed: a single comparison and an early-out.
+in [Rendering](rendering.md)). The baker is skipped when nothing changed
+(same env-map path; procedural sun/params unmoved): a comparison and an
+early-out.
 
-## Limits and the must-match-shader contract
+## Limits and the generated-constants contract
 
-| C++ constant (`engine_config.h`) | Value | Shader define (`forward/pbr/fragment.shader`) |
-|----------------------------------|-------|-----------------------------------------------|
-| `Config::MAX_LIGHTS`             | 32    | `MAX_LIGHTS`                                   |
-| `Config::MAX_SHADOW_CASTERS_2D`  | 6     | `SHADOW_MAX_2D`                                |
-| `Config::MAX_SHADOW_CASTERS_CUBE`| 2     | `SHADOW_MAX_CUBE`                              |
-| `Config::NUM_CASCADES`           | 4     | (no shader define; CSM count comes from the shadow UBO `csmCount` / `cascadeSplits`) |
-| `Config::SHADOW_CUBE_NEAR`       | 0.1   | (used only by the shadow pass, not the forward shader) |
+Cross-cutting limits live in `engine_config.h`. At configure time
+`cmake/generate_shader_config.cmake` mirrors them (under the same names) into
+`shaders/_generated/engine_config.glsl`, which the shaders `#include` through
+the engine's shader preprocessor - C++ and GLSL share one source of truth.
+Do not re-define these values in a shader; include the generated file.
+(`_common/shadows.glsl` keeps its short local names as aliases:
+`SHADOW_MAX_2D` = `MAX_SHADOW_CASTERS_2D`, `SHADOW_MAX_CUBE` =
+`MAX_SHADOW_CASTERS_CUBE`.)
 
-If you bump one side, you must bump the other - by hand. The note in
-`engine_config.h` and the shader's `// must match` comments are the only guard:
-**the forward shaders hand-define their own copies**, under different names
-(`SHADOW_MAX_2D` vs the C++ `MAX_SHADOW_CASTERS_2D`).
-
-The build *does* generate `shaders/_generated/engine_config.glsl` from
-`engine_config.h` (with names `MAX_LIGHTS`, `MAX_SHADOW_CASTERS_2D`, ...), the
-intended single source of truth - but no shader `#include`s it yet, so it is
-currently unused. Wiring the forward shaders to include it (and dropping the hand
-defines) is the open follow-up; it needs a render verify.
+| C++ constant (`engine_config.h`) | Value | Consumed by |
+|----------------------------------|-------|-------------|
+| `Config::MAX_LIGHTS`             | 256   | light upload cap; `forward/pbr`, `clustering`, `fog/inject` |
+| `Config::MAX_LIGHTS_PER_CLUSTER` | 64    | Forward+ per-cluster light list cap |
+| `Config::CLUSTER_X/Y/Z`          | 16 x 9 x 24 | Forward+ cluster grid dimensions |
+| `Config::MAX_SHADOW_CASTERS_2D`  | 6     | 2D shadow atlas layers (`SHADOW_MAX_2D`) |
+| `Config::MAX_SHADOW_CASTERS_CUBE`| 2     | point-light cube maps (`SHADOW_MAX_CUBE`) |
+| `Config::NUM_CASCADES`           | 4     | not mirrored to GLSL; the CSM count reaches the shader via the shadow UBO (`csmCount` / `cascadeSplits`) |
+| `Config::SHADOW_CUBE_NEAR`       | 0.1   | shadow pass only (CPU-side cube projection), not mirrored to GLSL |
 
 ## Editor integration
 

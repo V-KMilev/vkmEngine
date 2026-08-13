@@ -9,8 +9,9 @@ an OpenGL implementation detail.
 
 > If you have read older docs or comments: there is no `RenderGraph`,
 > `RenderGraphBuilder`, `RGResource`, `RenderPass`, `EnvironmentConfig`, or shader
-> variant cache. None of those types exist. The renderer also has no TAA, DoF,
-> lens flare, or auto-exposure. What it does have is listed below.
+> variant cache. None of those types exist. The renderer also has no TAA, SSR,
+> FXAA, motion blur, lens flare, or auto-exposure. What it does have is listed
+> below.
 
 ## Key files
 
@@ -35,12 +36,14 @@ RenderSystem::update(FrameContext)
   |     |-- copy RenderSettings and Environment into the view
   |-- backend.render(view, resources)             // GLBackend
         |-- GLView::sync      upload/refresh changed GPU resources
-        |-- bake IBL          only when environment.hdrPath changed
+        |-- bake IBL          when the HDR path changed, or the procedural
+        |                     sky's sun/params moved (persistent GLIBLBaker)
         |-- shadow plan       assign atlas slots, upload shadow UBO
         |-- per-frame UBOs    camera, lights
-        |-- partitionDrawables  split into opaque vs transparent buckets
-        |-- run the 10 passes in order
+        |-- partitionDrawables  split into opaque / alpha-mask / transparent
+        |-- run the 18 passes in order
         |-- probe update      re-bake new/moved/changed reflection probes
+        |-- irradiance update re-bake the SH volume when its box/grid changed
 ```
 
 `GLBackend::render` is the authority for this order
@@ -77,14 +80,20 @@ be drawn.
 `RenderSettings` (in `render_settings.h`) is plain data owned by the RenderSystem,
 mutated by the editor's Render Settings panel, and copied into the view each frame.
 
-- **Toggles:** `gtao`, `ssr`, `motionBlur`, `bloom`, `probes`, `fxaa`, `grid`.
-- **Per-effect params:** GTAO (radius/intensity/power/bias), SSR (intensity/maxDistance),
-  motion blur (intensity/maxVelocity/samples), bloom (strength/threshold/knee/radius).
-- **Shadows:** `shadowResolution` (1024/2048/4096 per atlas tile).
+- **Toggles:** `gtao`, `bloom`, `probes`, `contactShadows`, `grid`.
+- **Per-effect params:** GTAO (radius/intensity/power/bias), bloom
+  (strength/threshold/knee/radius), contact shadows (length/thickness).
+- **Quality:** `msaaSamples` (1/2/4/8), `shadowResolution` (1024/2048/4096 per
+  atlas tile).
 - **`renderMode`:** composite output selector - `Default` (final image) or a debug
-  buffer: `Depth`, `Normals`, `Roughness`, `Metalness`, `AmbientOcclusion`, `Bloom`,
-  `ShadowAtlas`. The integer values must match the `MODE_*` constants in the
-  composite shader.
+  view: `Depth`, `Normals`, `Roughness`, `Metalness`, `AmbientOcclusion`, `Bloom`,
+  `ShadowAtlas`, `ContactShadows`, `Fog`, `GiOnly`, `DirectOnly`, `Clusters`
+  (Forward+ light-count heatmap). The `MODE_*` constants the composite shader
+  switches on are generated from this enum at configure time (`render_modes.glsl`).
+
+Scene-look settings (sky, fog, IBL intensity, physics) live in `Environment`
+and serialize with the scene; `RenderSettings` is machine-quality tuning and
+does not.
 
 ## RenderBackend - the seam
 
@@ -100,11 +109,22 @@ backend-agnostic.
 
 - `Core::Context` - GLEW state + draw helpers (from vkmGL)
 - `GLView` - the GPU resource synchronizer
-- Render targets: `m_sceneHDR`, `m_sceneColor` (opaque snapshot for refraction),
-  `m_ao` (GTAO), `m_bloom`
-- `m_shadowAtlas` + `m_shadowData`, `m_ibl`, the reflection-probe manager `m_probes`
+- Render targets: `m_sceneHDR` (the geometry target: colour + depth + G-buffer),
+  `m_sceneMS` (multisample twin when MSAA is on), `m_postA`/`m_postB`
+  (colour-only post ping-pong scratches), `m_ao` (GTAO), `m_contactShadow`,
+  `m_bloom`
+- `m_shadowAtlas` + `m_shadowData`, `m_ibl` + `m_iblBaker`, `m_clusterGrid`,
+  `m_fog` (froxel volumes, lazily allocated), `m_irradiance` + its baker, the
+  reflection-probe manager `m_probes`
 - `m_preview` - a separate minimal forward+composite path for editor thumbnails
   (it does **not** run the full pass list)
+
+Post passes do not blit results back into `m_sceneHDR`: the frame context
+carries a colour chain (`colorSrc`/`colorDst` + `flipColor()`). A pass samples
+`colorSrc`, writes `colorDst`, and flips; after the first flip the chain
+ping-pongs between the two scratches and the composite reads whichever is
+current. Depth and the G-buffer stay on the geometry target and are sampled
+from there.
 
 ### The passes (fixed order)
 
@@ -112,21 +132,31 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 
 | # | Pass | Does |
 |---|------|------|
-| 1 | Shadow | Renders directional CSM + spot + point-cube shadow maps into the atlas (skips when the shadow signature is unchanged) |
-| 2 | DepthPrepass | Early-Z for opaque geometry; also clears the HDR target and primes the G-buffer (view-space normal/position) for GTAO and SSR |
-| 3 | GTAO | Half-res ground-truth ambient occlusion into the AO target |
-| 4 | Skybox | Fills the background before geometry so transparents blend over it |
-| 5 | Forward | The PBR ubershader: opaque/AlphaMask/Unlit (depth-primed), then transparent buckets that sample the opaque snapshot for refraction |
-| 6 | SSR | Screen-space reflections, additively blended into the HDR scene |
-| 7 | MotionBlur | Camera motion blur over the resolved scene |
-| 8 | Bloom | Bright-pass + mip-chain down/upsample |
-| 9 | Grid | World-space ground grid overlay (debug) |
-| 10 | Composite | Tonemap + optional FXAA to the backbuffer (or a debug buffer per `renderMode`) |
+| 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas each frame |
+| 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (oct view-normal / roughness / metalness) |
+| 3 | ResolveDepth | MSAA only: resolves depth (and the G-buffer when GTAO / decals / a debug view will read it) into `m_sceneHDR` |
+| 4 | GTAO | Full-res ground-truth AO + bent normal into the mask target |
+| 5 | ContactShadow | Screen-space sun visibility raymarch (skips when the scene has no directional light) |
+| 6 | Skybox | Fills the background before geometry so transparents blend over it |
+| 7 | ClusterCull | Compute: culls lights into the Forward+ cluster grid SSBO |
+| 8 | FogCompute | Compute: froxel light inject + front-to-back integration (allocates the volumes on the first fog frame) |
+| 9 | Forward | The PBR ubershader: opaque (depth-primed), alpha-mask (writes depth, alpha-to-coverage under MSAA), then back-to-front transparents sampling an opaque snapshot for refraction |
+| 10 | Particles | CPU billboard particles into the scene target, depth-tested, never depth-writing |
+| 11 | ResolveColor | MSAA only: resolves colour (and re-resolves depth when alpha-mask drew) into `m_sceneHDR` |
+| 12 | Decals | Projected decal boxes blended into the post colour chain, sampling depth + G-buffer |
+| 13 | FogApply | Composites the integrated froxel fog (chain: src -> dst) |
+| 14 | DoF | Circle-of-confusion disk blur driven by the camera's focus distance / amount (chain: src -> dst) |
+| 15 | Bloom | Bright-pass + mip-chain down/upsample off the chain; composite blends it back |
+| 16 | Grid | World-space ground grid overlay into the chain (LEQUAL test done in its shader) |
+| 17 | Composite | Tonemap to the backbuffer viewport (or a debug buffer per `renderMode`) |
+| 18 | UI | Screen-space in-game UI overlay drawn flat on top (no-op when empty). See [ui.md](ui.md) |
 
-IBL is **not** a pass: `bakeEnvironment()` runs a transient `GLIBLBaker` inside
-`render()` only when `environment.hdrPath` changes, producing the irradiance,
-prefilter, and BRDF/DFG products the forward pass samples. Reflection probes are
-baked at frame end and bound per frame into a probe UBO.
+IBL is **not** a pass: the persistent `GLIBLBaker` re-bakes inside `render()`
+when `environment.hdrPath` changes or, for the procedural sky, when the sun
+moves or a sky parameter changes - producing the irradiance, prefilter, and
+BRDF/DFG products the forward pass samples. Reflection probes are baked at
+frame end and bound per frame into a probe UBO; the SH irradiance volume
+re-bakes when its box, grid, or bake version changes.
 
 ### GLView - GPU sync
 
@@ -145,6 +175,7 @@ by the GLSL. Vertex attributes are per-vertex position/normal/uv/tangent (slots 
 plus a per-instance model matrix (slots 4-7, divisor 1). UBO binding points cover
 Material, Lights, Camera, and Shadow blocks; texture slots cover the PBR material
 maps plus the shadow atlas (2D array + cube array), IBL set (irradiance / prefilter /
-BRDF LUT / env cube), the GTAO factor, and the resolved scene-color sampler for
-refraction. Treat `gl_bindings.h` as authoritative rather than hardcoding slot
+BRDF LUT / env cube), the GTAO factor, the contact-shadow mask, the scene
+colour/depth/G-buffer samplers, the froxel fog volume, and the SH irradiance
+volume. Treat `gl_bindings.h` as authoritative rather than hardcoding slot
 numbers from memory.
