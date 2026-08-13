@@ -11,9 +11,10 @@
 namespace Engine {
 
 void CubeSpinner::onUpdate(float dt) {
-    if (!m_scene->has<Transform>(m_entity)) return;
+    Scene& scene = *context().scene;
+    if (!scene.has<Transform>(m_entity)) return;
 
-    Transform& transform = m_scene->get<Transform>(m_entity);
+    Transform& transform = scene.get<Transform>(m_entity);
     const float radians = glm::radians(degreesPerSecond) * dt;
     const glm::quat spin = glm::angleAxis(radians, Math::WORLD_AXIS_Y_UP);
     transform.rotation = glm::normalize(spin * transform.rotation);
@@ -21,7 +22,7 @@ void CubeSpinner::onUpdate(float dt) {
     // Visibility recomputes a non-hierarchical entity's model from its local
     // Transform each frame, but a parented entity reads its WorldTransform -
     // mark dirty so HierarchySystem rebuilds it (a no-op without Hierarchy).
-    HierarchyOperations::markDirty(*m_scene, m_entity);
+    HierarchyOperations::markDirty(scene, m_entity);
 }
 
 } // namespace Engine
