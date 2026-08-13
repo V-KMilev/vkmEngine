@@ -33,10 +33,15 @@ void Engine::run() {
 
         FrameContext ctx{
             m_scene, m_resources,
-            m_clock, m_events, m_window
+            m_clock, m_events, m_window, m_input
         };
 
         m_window.updateInput();
+
+        // Resolve actions once, before any system runs, so every reader in the
+        // frame - and both the fixed and variable updates - sees the same input
+        // state and the same edges.
+        m_input.update(m_window.getInputHandle());
 
         if (!m_initialized) {
             initSystems(ctx);

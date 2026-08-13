@@ -13,6 +13,8 @@
 #include "platform/window/window_manager.h"
 #include "platform/window/input_handle.h"
 #include "platform/window/glfw_include.h"
+#include "platform/input/default_bindings.h"
+#include "platform/input/input_map.h"
 
 #include "debug/profiler.h"
 #include "core/clock.h"
@@ -83,10 +85,11 @@ void CameraControllerSystem::update(FrameContext& ctx) {
         m_lastDrivenId = target;
     }
 
-    updateFlyMode(ctx.window, transform.position, transform.rotation, ctx.clock.getDeltaTime());
+    updateFlyMode(ctx.window, ctx.input, transform.position, transform.rotation, ctx.clock.getDeltaTime());
 }
 
-void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, glm::vec3& position, glm::quat& rotation, float deltaTime) {
+void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, const InputMap& input,
+                                           glm::vec3& position, glm::quat& rotation, float deltaTime) {
     auto& inputHandle   = windowManager.getInputHandle();
     auto& mouse    = inputHandle.getMouse();
     auto& keyboard = inputHandle.getKeyboard();
@@ -123,17 +126,15 @@ void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, glm::ve
 
     // Movement speed with optional boost
     float speed = m_settings.moveSpeed * deltaTime;
-    if (keyboard.isKeyPressed(GLFW_KEY_LEFT_SHIFT)) {
+    if (input.held(InputActions::BOOST)) {
         speed *= m_settings.speedBoost;
     }
 
-    // WASD + QE movement
-    if (keyboard.isKeyPressed(GLFW_KEY_W)) position += forward * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_S)) position -= forward * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_A)) position += right * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_D)) position -= right * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_Q)) position += Math::WORLD_AXIS_Y_UP * speed;
-    if (keyboard.isKeyPressed(GLFW_KEY_E)) position -= Math::WORLD_AXIS_Y_UP * speed;
+    // Axes rather than six key tests: opposing directions already cancel in the
+    // map, and the binding (WASD here) is the project's to change.
+    position += forward                * (input.axis(InputActions::MOVE_FORWARD) * speed);
+    position += right                  * (input.axis(InputActions::MOVE_RIGHT)   * speed);
+    position += Math::WORLD_AXIS_Y_UP  * (input.axis(InputActions::MOVE_UP)      * speed);
 }
 
 void CameraControllerSystem::placeCamera(Transform& transform, const glm::vec3& target,

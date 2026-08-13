@@ -9,6 +9,7 @@
 #include "ecs/scene.h"
 #include "platform/window/window_manager.h"
 #include "core/event/event_bus.h"
+#include "platform/input/input_map.h"
 
 namespace Engine {
 
@@ -35,6 +36,7 @@ struct BehaviorContext {
     ResourceManager*       resources      = nullptr;
     WindowManager*         window         = nullptr;
     EventBus*              events         = nullptr;
+    InputMap*              input          = nullptr;
     std::vector<EntityId>* pendingDestroy = nullptr;
 };
 

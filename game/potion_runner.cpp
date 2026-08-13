@@ -25,6 +25,7 @@
 #include "ecs/component/ui_image.h"
 #include "ecs/component/ui_text.h"
 #include "ecs/component/ui_button.h"
+#include "platform/input/input_map.h"
 #include "platform/window/input_handle.h"
 #include "platform/window/glfw_include.h"
 #include "proc_mesh.h"
@@ -93,6 +94,24 @@ constexpr float TRAIN_TOP = 2.5f;
 // trains carry one at the leading face; running into it walks you up.
 constexpr float RAMP_RUN = 4.2f;
 
+// The runner's actions. The alternate keys for each are bindings, not an ||
+// chain at the read site, which is also what lets them be rebound.
+constexpr const char* ACTION_LEFT    = "Runner/Left";
+constexpr const char* ACTION_RIGHT   = "Runner/Right";
+constexpr const char* ACTION_JUMP    = "Runner/Jump";
+constexpr const char* ACTION_CROUCH  = "Runner/Crouch";
+constexpr const char* ACTION_RESTART = "Runner/Restart";
+
+/** @brief Bind the runner's actions, each to every key that should trigger it. */
+void installRunnerBindings(InputMap& map) {
+    const auto key = [](int code) { return InputBinding{InputSource::Key, code, 1.0f}; };
+    map.define(ACTION_LEFT,    { key(GLFW_KEY_A),     key(GLFW_KEY_LEFT) });
+    map.define(ACTION_RIGHT,   { key(GLFW_KEY_D),     key(GLFW_KEY_RIGHT) });
+    map.define(ACTION_JUMP,    { key(GLFW_KEY_SPACE), key(GLFW_KEY_W), key(GLFW_KEY_UP) });
+    map.define(ACTION_CROUCH,  { key(GLFW_KEY_S),     key(GLFW_KEY_DOWN), key(GLFW_KEY_LEFT_CONTROL) });
+    map.define(ACTION_RESTART, { key(GLFW_KEY_R),     key(GLFW_KEY_ENTER) });
+}
+
 // Every run reseeds the PCG32 with this, so the track deals the same layout
 // each time - a death is always retryable against the identical sequence.
 constexpr uint64_t RUN_SEED = 0x9E3779B9u;
@@ -153,6 +172,8 @@ void PotionRunner::onStart() {
     m_scene     = context().scene;
     m_resources = context().resources;
     m_window    = context().window;
+
+    installRunnerBindings(*context().input);
 
     if (m_built) return;
     buildWorld();
@@ -994,32 +1015,19 @@ void PotionRunner::resetGame() {
 }
 
 void PotionRunner::readInput() {
-    if (!m_window) {
-        m_edgeLeft = m_edgeRight = m_edgeJump = m_edgeRestart = false;
-        m_crouchHeld = false;
-        return;
-    }
-    const KeyboardInputHandle& keys = m_window->getInputHandle().getKeyboard();
+    const InputMap& input = *context().input;
 
-    const bool left    = keys.isKeyPressed(GLFW_KEY_A) || keys.isKeyPressed(GLFW_KEY_LEFT);
-    const bool right   = keys.isKeyPressed(GLFW_KEY_D) || keys.isKeyPressed(GLFW_KEY_RIGHT);
-    const bool jump    = keys.isKeyPressed(GLFW_KEY_SPACE) || keys.isKeyPressed(GLFW_KEY_W) || keys.isKeyPressed(GLFW_KEY_UP);
-    const bool restart = keys.isKeyPressed(GLFW_KEY_R) || keys.isKeyPressed(GLFW_KEY_ENTER);
+    // Each action carries all of its keys, so the alternatives (A or Left,
+    // Space or W or Up) live in the binding table rather than in an || chain
+    // here, and the edges come from the map instead of four cached flags.
+    m_edgeLeft    = input.pressed(ACTION_LEFT);
+    m_edgeRight   = input.pressed(ACTION_RIGHT);
+    m_edgeJump    = input.pressed(ACTION_JUMP);
+    m_edgeRestart = input.pressed(ACTION_RESTART);
 
-    // Crouch / slide is a hold (no edge): stay low under an overhead gantry for as
-    // long as the key is down.
-    m_crouchHeld = keys.isKeyPressed(GLFW_KEY_S) || keys.isKeyPressed(GLFW_KEY_DOWN)
-                || keys.isKeyPressed(GLFW_KEY_LEFT_CONTROL);
-
-    m_edgeLeft    = left    && !m_prevLeft;
-    m_edgeRight   = right   && !m_prevRight;
-    m_edgeJump    = jump    && !m_prevJump;
-    m_edgeRestart = restart && !m_prevRestart;
-
-    m_prevLeft    = left;
-    m_prevRight   = right;
-    m_prevJump    = jump;
-    m_prevRestart = restart;
+    // Crouch / slide is a hold, not an edge: stay low under an overhead gantry
+    // for as long as it is held.
+    m_crouchHeld = input.held(ACTION_CROUCH);
 }
 
 void PotionRunner::updatePlayer(float dt) {

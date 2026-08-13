@@ -368,11 +368,6 @@ class StressArena : public ReflectedBehavior<StressArena> {
         bool m_fogOn        = true;
         bool m_uiOn         = true;
 
-        // Rising-edge state for every key the behavior reads, so a held key
-        // toggles once. Indexed by the same order the key table declares.
-        static constexpr int TOGGLE_COUNT = 10;
-        bool m_prevKey[TOGGLE_COUNT] = {};
-        bool m_prevCameraKey = false;  ///< Rising edge for F, which is not one of the numbered toggles.
 
         /// Fixed seed, and used only while building: the whole world is placed
         /// before the first update, so the layout is identical on every run and

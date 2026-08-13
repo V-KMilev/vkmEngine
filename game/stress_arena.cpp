@@ -30,6 +30,7 @@
 #include "ecs/component/ui_image.h"
 #include "ecs/component/ui_text.h"
 #include "platform/window/glfw_include.h"
+#include "platform/input/input_map.h"
 #include "platform/window/input_handle.h"
 #include "proc_mesh.h"
 #include "resource/resource_manager.h"
@@ -94,14 +95,36 @@ constexpr uint64_t ARENA_SEED = 0xC0FFEEu;
 // Second PCG stream for the runtime churn, so it cannot disturb the layout draw.
 constexpr uint64_t CHURN_STREAM = 0x51ED2701u;
 
-// Keys 1..9 and 0, in the order readInput checks them. Each toggles one
-// subsystem; the HUD lists the same order so the mapping is visible on screen.
-constexpr int TOGGLE_KEYS[] = {
-    GLFW_KEY_1, GLFW_KEY_2, GLFW_KEY_3, GLFW_KEY_4, GLFW_KEY_5,
-    GLFW_KEY_6, GLFW_KEY_7, GLFW_KEY_8, GLFW_KEY_9, GLFW_KEY_0
-};
-static_assert(sizeof(TOGGLE_KEYS) / sizeof(TOGGLE_KEYS[0]) == 10,
-              "TOGGLE_KEYS must match StressArena::TOGGLE_COUNT");
+// The arena's own actions. Named rather than keyed so the bindings below are
+// the only place a key appears, and a capture session can rebind them without
+// touching this file.
+constexpr const char* ACTION_LIGHTS    = "Stress/ToggleLights";
+constexpr const char* ACTION_SHADOWS   = "Stress/ToggleShadows";
+constexpr const char* ACTION_PROPS     = "Stress/ToggleProps";
+constexpr const char* ACTION_PARTICLES = "Stress/ToggleParticles";
+constexpr const char* ACTION_PHYSICS   = "Stress/TogglePhysics";
+constexpr const char* ACTION_ANIM      = "Stress/ToggleAnimation";
+constexpr const char* ACTION_DECALS    = "Stress/ToggleDecals";
+constexpr const char* ACTION_FOG       = "Stress/ToggleFog";
+constexpr const char* ACTION_UI        = "Stress/ToggleUI";
+constexpr const char* ACTION_RESET     = "Stress/ResetToggles";
+constexpr const char* ACTION_CAMERA    = "Stress/ToggleCamera";
+
+/** @brief Bind the arena's actions to the number row, plus F for the camera. */
+void installStressBindings(InputMap& map) {
+    const auto key = [](int code) { return InputBinding{InputSource::Key, code, 1.0f}; };
+    map.define(ACTION_LIGHTS,    { key(GLFW_KEY_1) });
+    map.define(ACTION_SHADOWS,   { key(GLFW_KEY_2) });
+    map.define(ACTION_PROPS,     { key(GLFW_KEY_3) });
+    map.define(ACTION_PARTICLES, { key(GLFW_KEY_4) });
+    map.define(ACTION_PHYSICS,   { key(GLFW_KEY_5) });
+    map.define(ACTION_ANIM,      { key(GLFW_KEY_6) });
+    map.define(ACTION_DECALS,    { key(GLFW_KEY_7) });
+    map.define(ACTION_FOG,       { key(GLFW_KEY_8) });
+    map.define(ACTION_UI,        { key(GLFW_KEY_9) });
+    map.define(ACTION_RESET,     { key(GLFW_KEY_0) });
+    map.define(ACTION_CAMERA,    { key(GLFW_KEY_F) });
+}
 
 /**
  * @brief Place item @p index of @p count evenly across a ground annulus.
@@ -262,6 +285,7 @@ void StressArena::onStart() {
     m_resources = context().resources;
     m_window    = context().window;
     m_rng.seed(ARENA_SEED);
+    installStressBindings(*context().input);
     m_churnRng.seed(ARENA_SEED, CHURN_STREAM);
 
     // Procedural sky rather than an HDR file, for the same reason nothing else
@@ -1252,33 +1276,26 @@ void StressArena::onUpdate(float dt) {
 }
 
 void StressArena::readInput() {
-    if (!m_window) return;
-    const KeyboardInputHandle& input = m_window->getInputHandle().getKeyboard();
+    const InputMap& input = *context().input;
 
-    // Rising edge per key, so holding one does not thrash the toggle every frame.
-    bool edge[TOGGLE_COUNT] = {};
-    for (int i = 0; i < TOGGLE_COUNT; ++i) {
-        const bool down = input.isKeyPressed(TOGGLE_KEYS[i]);
-        edge[i] = down && !m_prevKey[i];
-        m_prevKey[i] = down;
-    }
-
-    if (edge[0]) { m_lightsOn     = !m_lightsOn;     setLightsEnabled(m_lightsOn); }
-    if (edge[1]) { m_shadowsOn    = !m_shadowsOn;    setShadowsEnabled(m_shadowsOn); }
-    if (edge[2]) { m_propsOn      = !m_propsOn;      setPropsVisible(m_propsOn); }
-    if (edge[3]) { m_particlesOn  = !m_particlesOn;  setParticlesEnabled(m_particlesOn); }
-    if (edge[4]) { m_physicsOn    = !m_physicsOn;    setPhysicsEnabled(m_physicsOn); }
-    if (edge[5]) { m_animationsOn = !m_animationsOn; setAnimationsEnabled(m_animationsOn); }
-    if (edge[6]) { m_decalsOn     = !m_decalsOn;     setDecalsEnabled(m_decalsOn); }
-    if (edge[7]) {
+    // Edges come from the map, which samples once a frame for every reader, so
+    // there is no per-key "was it down" state to keep here.
+    if (input.pressed(ACTION_LIGHTS))    { m_lightsOn     = !m_lightsOn;     setLightsEnabled(m_lightsOn); }
+    if (input.pressed(ACTION_SHADOWS))   { m_shadowsOn    = !m_shadowsOn;    setShadowsEnabled(m_shadowsOn); }
+    if (input.pressed(ACTION_PROPS))     { m_propsOn      = !m_propsOn;      setPropsVisible(m_propsOn); }
+    if (input.pressed(ACTION_PARTICLES)) { m_particlesOn  = !m_particlesOn;  setParticlesEnabled(m_particlesOn); }
+    if (input.pressed(ACTION_PHYSICS))   { m_physicsOn    = !m_physicsOn;    setPhysicsEnabled(m_physicsOn); }
+    if (input.pressed(ACTION_ANIM))      { m_animationsOn = !m_animationsOn; setAnimationsEnabled(m_animationsOn); }
+    if (input.pressed(ACTION_DECALS))    { m_decalsOn     = !m_decalsOn;     setDecalsEnabled(m_decalsOn); }
+    if (input.pressed(ACTION_FOG)) {
         m_fogOn = !m_fogOn;
         m_scene->environment().fogEnabled = m_fogOn;
     }
-    if (edge[8]) { m_uiOn = !m_uiOn; setUIVisible(m_uiOn); }
+    if (input.pressed(ACTION_UI)) { m_uiOn = !m_uiOn; setUIVisible(m_uiOn); }
 
     // 0 restores everything, so a capture can be returned to the reference load
     // without restarting play.
-    if (edge[9]) {
+    if (input.pressed(ACTION_RESET)) {
         m_lightsOn = m_shadowsOn = m_propsOn = m_particlesOn = true;
         m_physicsOn = m_animationsOn = m_decalsOn = m_fogOn = m_uiOn = true;
         setLightsEnabled(true);
@@ -1292,14 +1309,11 @@ void StressArena::readInput() {
         m_scene->environment().fogEnabled = true;
     }
 
-    // F hands the camera to the engine's free-fly controller and back. Tracked
-    // here with the other keys, but acted on in updateCamera.
-    const bool fDown = input.isKeyPressed(GLFW_KEY_F);
-    if (fDown && !m_prevCameraKey) {
+    // F hands the camera to the engine's free-fly controller and back.
+    if (input.pressed(ACTION_CAMERA)) {
         scriptedCamera = !scriptedCamera;
         STRESS_LOG("camera: %s", scriptedCamera ? "scripted" : "free");
     }
-    m_prevCameraKey = fDown;
 }
 
 void StressArena::updateCamera(float dt) {

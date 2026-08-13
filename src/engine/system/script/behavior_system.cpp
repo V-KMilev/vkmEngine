@@ -117,6 +117,7 @@ void BehaviorSystem::init(FrameContext& ctx) {
     m_context.resources = &ctx.resources;
     m_context.window    = &ctx.window;
     m_context.events    = &ctx.events;
+    m_context.input     = &ctx.input;
 
     // onDestroy for any entity-deletion path: register as a Scene observer, so
     // Scene fires onEntityDestroyed from destroyEntity (raw or via
