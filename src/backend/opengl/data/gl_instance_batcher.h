@@ -99,4 +99,31 @@ class GLInstanceBatcher {
         Core::InstanceBuffer m_normalBuffer;
 };
 
+/**
+ * @brief Draw-only access to a batch built by someone else.
+ *
+ * A batch built once per frame and drawn by several passes (the opaque bucket,
+ * shared by the depth prepass and the forward pass) must not be rebuilt by any
+ * of them: build*() overwrites the runs and the instance buffers the other pass
+ * is about to draw from. Handing out the batcher itself leaves that as a rule in
+ * a comment; handing out this view makes it a rule the compiler keeps, because
+ * there is no build*() to call.
+ *
+ * Non-owning and cheap to copy. Valid only while the underlying batcher lives
+ * and has not been rebuilt - which, for a frame product, is the frame.
+ */
+class GLInstanceBatchView {
+    public:
+        explicit GLInstanceBatchView(GLInstanceBatcher& batcher) : m_batcher(&batcher) {}
+
+        /** @brief The runs to draw, in batch order. */
+        const std::vector<InstanceRun>& runs() const { return m_batcher->runs(); }
+
+        /** @brief Draw one run: binds its instance buffers and issues the call. */
+        void draw(const InstanceRun& run) const { m_batcher->drawRun(run); }
+
+    private:
+        GLInstanceBatcher* m_batcher;
+};
+
 } // namespace Engine

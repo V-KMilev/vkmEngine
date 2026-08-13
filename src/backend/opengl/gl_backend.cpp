@@ -290,7 +290,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_opaque,
         m_alphaMask,
         m_transparent,
-        m_opaqueBatcher};
+        GLInstanceBatchView(m_opaqueBatcher)};
 
     ctx.sunDir = sunDir;
     ctx.hasSun = hasSun;
