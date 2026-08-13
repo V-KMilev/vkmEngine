@@ -80,9 +80,11 @@ void solveContacts(
         const float restitution = combineRestitution(a, b);
         for (int c = 0; c < manifold.count; ++c) {
             Contact& contact = manifold.contacts[c];
-            const glm::vec3 rA = contact.point - a.position;
-            const glm::vec3 rB = contact.point - b.position;
-            const glm::vec3 relVel = velocityAt(b, rB) - velocityAt(a, rA);
+            contact.rA = contact.point - a.position;
+            contact.rB = contact.point - b.position;
+            contact.normalMass = effectiveMass(a, b, contact.rA, contact.rB, contact.normal);
+
+            const glm::vec3 relVel = velocityAt(b, contact.rB) - velocityAt(a, contact.rA);
             const float vn = glm::dot(relVel, contact.normal);
             contact.restitutionBias =
                 (-vn > params.restitutionThreshold) ? -restitution * vn : 0.0f;
@@ -99,14 +101,13 @@ void solveContacts(
 
             for (int c = 0; c < manifold.count; ++c) {
                 Contact& contact = manifold.contacts[c];
-                const glm::vec3 rA = contact.point - a.position;
-                const glm::vec3 rB = contact.point - b.position;
+                const glm::vec3& rA = contact.rA;
+                const glm::vec3& rB = contact.rB;
 
                 const glm::vec3 relVel = velocityAt(b, rB) - velocityAt(a, rA);
                 const float vn = glm::dot(relVel, contact.normal);
 
-                const float kn = effectiveMass(a, b, rA, rB, contact.normal);
-                float jn = -kn * (vn - contact.restitutionBias);
+                float jn = -contact.normalMass * (vn - contact.restitutionBias);
 
                 // Clamp the *accumulated* normal impulse to be non-negative;
                 // apply only the delta needed to reach the new total.
@@ -153,15 +154,14 @@ void solveContacts(
                 const float depth = contact.penetration - params.penetrationSlop;
                 if (depth <= 0.0f) continue;
 
-                const glm::vec3 rA = contact.point - a.position;
-                const glm::vec3 rB = contact.point - b.position;
+                const glm::vec3& rA = contact.rA;
+                const glm::vec3& rB = contact.rB;
 
                 const glm::vec3 relVel = pseudoVelocityAt(b, rB) - pseudoVelocityAt(a, rA);
                 const float vn = glm::dot(relVel, contact.normal);
                 const float bias = params.baumgarte * depth * invDt;
 
-                const float kn = effectiveMass(a, b, rA, rB, contact.normal);
-                const float jp = kn * (bias - vn);
+                const float jp = contact.normalMass * (bias - vn);
                 if (jp <= 0.0f) continue;
 
                 const glm::vec3 impulse = jp * contact.normal;
