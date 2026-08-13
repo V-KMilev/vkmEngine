@@ -38,6 +38,7 @@ class EditorMenuBar {
         // draw (needs a live GL context); unique_ptr so this header only needs a
         // forward declaration of Core::Texture2D.
         std::unique_ptr<Core::Texture2D> m_logo;
+        bool m_openAbout = false;  ///< About requested this frame; popup opens at menu-bar scope.
 };
 
 } // namespace Engine

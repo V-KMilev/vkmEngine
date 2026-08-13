@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -8,6 +9,7 @@
 
 #include "ecs/entity.h"
 #include "ecs/component/transform.h"
+#include "ecs/environment.h"
 #include "ecs/component/mesh.h"
 #include "ecs/component/light.h"
 #include "ecs/component/camera.h"
@@ -16,7 +18,15 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/name.h"
 #include "ecs/component/reflection_probe.h"
+#include "ecs/component/irradiance_volume.h"
+#include "ecs/component/decal.h"
+#include "ecs/component/particle_emitter.h"
 #include "ecs/component/rigidbody.h"
+#include "ecs/component/ui_canvas.h"
+#include "ecs/component/ui_element.h"
+#include "ecs/component/ui_image.h"
+#include "ecs/component/ui_text.h"
+#include "ecs/component/ui_button.h"
 
 #include "framework/command.h"
 
@@ -51,6 +61,66 @@ class TransformChangeCommand : public Command {
         EntityId    m_entity;
         Transform   m_before;
         Transform   m_after;
+        const char* m_label;
+};
+
+/**
+ * @brief Reverts an edit of the scene-global Environment (sky, fog, physics).
+ *
+ * The Environment is a copyable value on the Scene rather than a component,
+ * so ComponentEditCommand cannot cover it. Coalesces consecutive Environment
+ * edits, so a slider drag in the World inspector collapses to one undo step.
+ */
+class EnvironmentEditCommand : public Command {
+    public:
+        EnvironmentEditCommand(
+            const Environment& before,
+            const Environment& after,
+            const char* label
+        );
+
+        void redo(Scene&, EditorState&) override;
+        void undo(Scene&, EditorState&) override;
+        const char* label() const override { return m_label; }
+        bool tryMerge(Command& incoming) override;
+
+    private:
+        Environment m_before;
+        Environment m_after;
+        const char* m_label;
+};
+
+/**
+ * @brief A group of already-applied commands undone/redone as one step.
+ *
+ * Batch operations over a multi-selection (delete, duplicate, gizmo drags)
+ * build one of these from their per-entity commands: redo replays in order,
+ * undo reverses in reverse order, and the whole batch is a single entry in
+ * the history.
+ */
+class CompositeCommand : public Command {
+    public:
+        explicit CompositeCommand(const char* label) : m_label(label) {}
+
+        /**
+         * @brief Append an already-applied sub-command; execution order is
+         * append order.
+         */
+        void add(std::unique_ptr<Command> cmd) { m_commands.push_back(std::move(cmd)); }
+
+        bool empty() const { return m_commands.empty(); }
+
+        void redo(Scene& scene, EditorState& state) override {
+            for (auto& c : m_commands) c->redo(scene, state);
+        }
+        void undo(Scene& scene, EditorState& state) override {
+            for (auto it = m_commands.rbegin(); it != m_commands.rend(); ++it)
+                (*it)->undo(scene, state);
+        }
+        const char* label() const override { return m_label; }
+
+    private:
+        std::vector<std::unique_ptr<Command>> m_commands;
         const char* m_label;
 };
 
@@ -144,9 +214,17 @@ class ComponentEditCommand : public Command {
     X(Camera,          camera)           \
     X(Animation,       animation)        \
     X(Name,            name)             \
-    X(Rigidbody,       rigidbody)        \
-    X(Collider,        collider)         \
-    X(ReflectionProbe, reflectionProbe)
+    X(Rigidbody,        rigidbody)        \
+    X(Collider,         collider)         \
+    X(ReflectionProbe,  reflectionProbe)  \
+    X(IrradianceVolume, irradianceVolume) \
+    X(Decal,            decal)            \
+    X(ParticleEmitter,  particleEmitter)  \
+    X(UICanvas,         uiCanvas)         \
+    X(UIElement,        uiElement)        \
+    X(UIImage,          uiImage)          \
+    X(UIText,           uiText)           \
+    X(UIButton,         uiButton)
 
 /**
  * @brief Snapshot of every editor-visible component on a single entity.
@@ -358,11 +436,39 @@ extern template class AddComponentCommand<ReflectionProbe>;
 extern template class RemoveComponentCommand<ReflectionProbe>;
 extern template class ComponentEditCommand<ReflectionProbe>;
 
+extern template class AddComponentCommand<Decal>;
+extern template class RemoveComponentCommand<Decal>;
+extern template class ComponentEditCommand<Decal>;
+
+extern template class AddComponentCommand<ParticleEmitter>;
+extern template class RemoveComponentCommand<ParticleEmitter>;
+extern template class ComponentEditCommand<ParticleEmitter>;
+
+extern template class AddComponentCommand<IrradianceVolume>;
+extern template class RemoveComponentCommand<IrradianceVolume>;
+extern template class ComponentEditCommand<IrradianceVolume>;
+
 extern template class ComponentEditCommand<Light>;
 extern template class ComponentEditCommand<Camera>;
 extern template class ComponentEditCommand<Mesh>;
 extern template class ComponentEditCommand<Name>;
 extern template class ComponentEditCommand<Animation>;
+
+extern template class AddComponentCommand<UICanvas>;
+extern template class AddComponentCommand<UIElement>;
+extern template class AddComponentCommand<UIImage>;
+extern template class AddComponentCommand<UIText>;
+extern template class AddComponentCommand<UIButton>;
+extern template class RemoveComponentCommand<UICanvas>;
+extern template class RemoveComponentCommand<UIElement>;
+extern template class RemoveComponentCommand<UIImage>;
+extern template class RemoveComponentCommand<UIText>;
+extern template class RemoveComponentCommand<UIButton>;
+extern template class ComponentEditCommand<UICanvas>;
+extern template class ComponentEditCommand<UIElement>;
+extern template class ComponentEditCommand<UIImage>;
+extern template class ComponentEditCommand<UIText>;
+extern template class ComponentEditCommand<UIButton>;
 
 extern template class RenameAssetCommand<MaterialHandle>;
 extern template class RenameAssetCommand<MeshHandle>;

@@ -7,20 +7,15 @@ namespace Engine {
 
 uint32_t MaterialPreviewSession::texture(
     ResourceManager& resources,
-    const MaterialHandle& material,
-    const MeshHandle& mesh,
-    float yawDeg,
-    float pitchDeg,
-    float distance,
-    uint64_t key,
+    PreviewRequest req,
     uint64_t version,
     bool live
 ) {
     RenderBackend* backend = m_renderSystem.backend();
-    if (!backend || !material || !mesh) return 0;
+    if (!backend || !req.material || !req.mesh) return 0;
 
-    const uint32_t cached = backend->previewTexture(key);
-    const auto it = m_versions.find(key);
+    const uint32_t cached = backend->previewTexture(req.key);
+    const auto it = m_versions.find(req.key);
     if (cached && it != m_versions.end() && it->second == version) {
         return cached;  // up to date
     }
@@ -32,17 +27,10 @@ uint32_t MaterialPreviewSession::texture(
         --m_budget;
     }
 
-    PreviewRequest req;
-    req.key      = key;
-    req.size     = live ? LIVE_SIZE : THUMB_SIZE;
-    req.mesh     = mesh;
-    req.material = material;
-    req.yawDeg   = yawDeg;
-    req.pitchDeg = pitchDeg;
-    req.distance = distance;
+    req.size = live ? LIVE_SIZE : THUMB_SIZE;
 
     const uint32_t tex = backend->renderPreview(req, resources);
-    if (tex) m_versions[key] = version;
+    if (tex) m_versions[req.key] = version;
     return tex ? tex : cached;
 }
 

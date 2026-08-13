@@ -38,11 +38,32 @@ void applyEditorTheme() {
     style.ChildBorderSize   = 1.0f;
     style.CellPadding       = ImVec2(7, 4);
     style.SeparatorTextBorderSize = 2.0f;
+    style.SeparatorTextAlign      = ImVec2(0.0f, 0.5f);
+    style.SeparatorTextPadding    = ImVec2(16.0f, 4.0f);
+    style.PopupBorderSize   = 1.0f;
+    style.TabBarBorderSize  = 1.0f;
+    style.TabBarOverlineSize = 0.0f;  // the selected-tab overline is drawn via TabSelectedOverline below
+    style.WindowMinSize     = ImVec2(220.0f, 140.0f);
     style.DisabledAlpha     = 0.45f;
 
     const ImVec4 A   = EditorStyle::ACCENT;
     const ImVec4 AH  = EditorStyle::ACCENT_HOV;
     auto aA = [](ImVec4 v, float a) { v.w = a; return v; };
+
+    // Slots the base dark theme left with legacy values (orange plots, grey
+    // dimmed tabs) - bring every one onto the palette so no default leaks in.
+    ImVec4* slots = style.Colors;
+    slots[ImGuiCol_TitleBgCollapsed]      = ImVec4(0.085f, 0.090f, 0.105f, 1.00f);
+    slots[ImGuiCol_SeparatorActive]       = A;
+    slots[ImGuiCol_TabSelectedOverline]   = A;
+    slots[ImGuiCol_TabDimmed]             = ImVec4(0.105f, 0.110f, 0.125f, 1.00f);
+    slots[ImGuiCol_TabDimmedSelected]     = ImVec4(0.165f, 0.185f, 0.235f, 1.00f);
+    slots[ImGuiCol_TabDimmedSelectedOverline] = aA(A, 0.45f);
+    slots[ImGuiCol_TextLink]              = AH;
+    slots[ImGuiCol_PlotLinesHovered]      = AH;
+    slots[ImGuiCol_PlotHistogramHovered]  = AH;
+    slots[ImGuiCol_InputTextCursor]       = A;
+    slots[ImGuiCol_TreeLines]             = ImVec4(0.32f, 0.35f, 0.44f, 0.35f);
 
     ImVec4* c = style.Colors;
     c[ImGuiCol_Text]                  = ImVec4(0.92f, 0.93f, 0.95f, 1.00f);

@@ -1,5 +1,8 @@
 #include "framework/editor_menu_bar.h"
 
+#include "ui/editor_style.h"
+
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <memory>
@@ -15,6 +18,7 @@
 #include "framework/scene_io_controller.h"
 #include "framework/editor_actions.h"
 #include "io/project_paths.h"
+#include "platform/window/window_manager.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_system.h"
 #include "ui/editor_widgets.h"
@@ -56,13 +60,11 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
 
     if (ImGui::BeginMenu("File")) {
         const bool haveCurrent = sceneIO.hasPath();
-        if (ImGui::MenuItem("Save Scene", keyLabel(state.keybinds.saveScene), false, haveCurrent)) {
-            sceneIO.save(ctx, state);
+        if (ImGui::MenuItem("New Scene", keyLabel(state.keybinds.newScene))) {
+            if (state.sceneDirty) state.confirmAction = EditorState::PendingSceneAction::New;
+            else                  sceneIO.newScene(ctx, state);
         }
-        if (ImGui::MenuItem("Save Scene As...", keyLabel(state.keybinds.saveSceneAs))) {
-            sceneIO.requestSaveAs();
-        }
-        if (ImGui::MenuItem("Load Scene...", keyLabel(state.keybinds.loadScene))) {
+        if (ImGui::MenuItem("Open Scene...", keyLabel(state.keybinds.loadScene))) {
             sceneIO.requestLoad();
         }
 
@@ -73,13 +75,26 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
             for (const auto& p : state.recentScenes) {
                 const std::string shortName = std::filesystem::path(p).filename().string();
                 ImGui::PushID(p.c_str());
-                if (ImGui::MenuItem(shortName.c_str())) sceneIO.loadPath(ctx, state, p);
+                if (ImGui::MenuItem(shortName.c_str())) sceneIO.requestOpenPath(ctx, state, p);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", p.c_str());
                 ImGui::PopID();
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Clear list")) state.recentScenes.clear();
+            if (ImGui::MenuItem("Clear List")) state.recentScenes.clear();
             ImGui::EndMenu();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Save Scene", keyLabel(state.keybinds.saveScene), false, haveCurrent)) {
+            sceneIO.save(ctx, state);
+        }
+        if (ImGui::MenuItem("Save Scene As...", keyLabel(state.keybinds.saveSceneAs))) {
+            sceneIO.requestSaveAs();
+        }
+        ImGui::Separator();
+        // Hot-reload the gameplay module: rebuild game.dll, then click this to
+        // swap the new code in without restarting (consumed by EditorSystem).
+        if (ImGui::MenuItem("Reload Scripts")) {
+            state.requestScriptReload = true;
         }
 
         if (haveCurrent) {
@@ -88,6 +103,12 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
             const std::string fname = std::filesystem::path(sceneIO.path()).filename().string();
             ImGui::TextDisabled("%s%s", fname.c_str(),
                 state.sceneDirty ? "  (modified)" : "");
+        }
+        ImGui::Separator();
+        // Exit routes through the window-close intercept, so the unsaved-
+        // changes guard applies exactly as it does for the titlebar X.
+        if (ImGui::MenuItem("Exit")) {
+            ctx.window.requestClose();
         }
         ImGui::EndMenu();
     }
@@ -105,15 +126,20 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
             EditorActions::redo(ctx.scene, state);
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Preferences...", keyLabel(state.keybinds.openPreferences),
-                state.showPreferences)) {
-            state.showPreferences = !state.showPreferences;
+        const bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
+        if (ImGui::MenuItem("Duplicate", keyLabel(state.keybinds.duplicate), false, haveSel)) {
+            EditorActions::duplicateSelection(ctx.scene, state);
+        }
+        if (ImGui::MenuItem("Delete", keyLabel(state.keybinds.deleteEntity), false, haveSel)) {
+            EditorActions::deleteSelection(ctx.scene, state);
+        }
+        if (ImGui::MenuItem("Deselect", keyLabel(state.keybinds.deselect), false, haveSel)) {
+            state.deselect();
         }
         ImGui::Separator();
-        // Hot-reload the gameplay module: rebuild game.dll, then click this to
-        // swap the new code in without restarting (consumed by EditorSystem).
-        if (ImGui::MenuItem("Reload Scripts")) {
-            state.requestScriptReload = true;
+        // A dialog action, not a toggle - no checkmark.
+        if (ImGui::MenuItem("Preferences...", keyLabel(state.keybinds.openPreferences))) {
+            state.showPreferences = !state.showPreferences;
         }
         ImGui::EndMenu();
     }
@@ -136,30 +162,46 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     // Window: show/hide every panel and tool window. Docked layout panels
     // first, then the floating tool/settings windows.
     if (ImGui::BeginMenu("Window")) {
-        ImGui::MenuItem("Scene",        keyLabel(state.keybinds.toggleHierarchy), &state.showHierarchy);
+        ImGui::MenuItem("Hierarchy",    keyLabel(state.keybinds.toggleHierarchy), &state.showHierarchy);
         ImGui::MenuItem("Inspector",    keyLabel(state.keybinds.toggleInspector), &state.showInspector);
         ImGui::MenuItem("Bottom Panel", keyLabel(state.keybinds.toggleBottom), &state.showBottom);
         ImGui::Separator();
-        ImGui::MenuItem("Render Settings",  nullptr, &state.showRenderSettings);
-        ImGui::MenuItem("Material Editor",  nullptr, &state.showMaterialEditor);
-        ImGui::MenuItem("Asset Browser",    nullptr, &state.showAssetBrowser);
+        ImGui::MenuItem("Render Settings", keyLabel(state.keybinds.toggleRenderSettings), &state.showRenderSettings);
+        ImGui::MenuItem("Material Editor", keyLabel(state.keybinds.toggleMaterialEditor), &state.showMaterialEditor);
+        ImGui::MenuItem("Asset Browser",   keyLabel(state.keybinds.toggleAssetBrowser),   &state.showAssetBrowser);
         ImGui::EndMenu();
     }
 
     if (ImGui::BeginMenu("Entity")) {
         EditorActions::drawCreateEntityMenu(ctx.scene, ctx.resources, state);
         ImGui::Separator();
-        if (ImGui::MenuItem("Deselect", keyLabel(state.keybinds.deselect))) {
+        const bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
+        if (ImGui::MenuItem("Duplicate", keyLabel(state.keybinds.duplicate), false, haveSel)) {
+            EditorActions::duplicateSelection(ctx.scene, state);
+        }
+        if (ImGui::MenuItem("Delete", keyLabel(state.keybinds.deleteEntity), false, haveSel)) {
+            EditorActions::deleteSelection(ctx.scene, state);
+        }
+        if (ImGui::MenuItem("Deselect", keyLabel(state.keybinds.deselect), false, haveSel)) {
             state.deselect();
         }
         ImGui::EndMenu();
     }
 
     if (ImGui::BeginMenu("Help")) {
-        if (ImGui::MenuItem("About")) ImGui::OpenPopup("##About");
+        // Defer the OpenPopup: calling it inside the menu scope hashes the id
+        // against the menu's popup window, while the Begin below runs at menu-
+        // bar scope - the ids never matched and About could never open.
+        if (ImGui::MenuItem("About")) m_openAbout = true;
         ImGui::EndMenu();
     }
 
+    if (m_openAbout) {
+        ImGui::OpenPopup("##About");
+        m_openAbout = false;
+    }
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     if (ImGui::BeginPopup("##About")) {
         ImGui::Text("%s  v%s", APP_NAME, APP_VERSION);
         ImGui::Separator();
@@ -185,11 +227,14 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     const float rate = ctx.clock.getFrameRate();
     char fps[32];
     snprintf(fps, sizeof(fps), "%.0f FPS", rate);
-    float fpsW = ImGui::CalcTextSize(fps).x;
-    ImGui::SameLine(ImGui::GetWindowWidth() - fpsW - 16.0f);
-    ImVec4 fpsColor = rate >= 60 ? ImVec4(0.4f, 0.8f, 0.4f, 1.0f) :
-                      rate >= 30 ? ImVec4(0.9f, 0.8f, 0.3f, 1.0f) :
-                                   ImVec4(0.9f, 0.3f, 0.3f, 1.0f);
+    const float fpsW    = ImGui::CalcTextSize(fps).x;
+    const float menuEnd = ImGui::GetCursorPosX();
+    // Right-aligned, but never on top of the menus on a narrow window.
+    ImGui::SameLine(std::max(ImGui::GetWindowWidth() - fpsW - EditorStyle::px(16.0f),
+                             menuEnd + EditorStyle::px(12.0f)));
+    ImVec4 fpsColor = rate >= 60 ? EditorStyle::SUCCESS :
+                      rate >= 30 ? EditorStyle::WARNING :
+                                   EditorStyle::DANGER;
     ImGui::PushStyleColor(ImGuiCol_Text, fpsColor);
     ImGui::TextUnformatted(fps);
     ImGui::PopStyleColor();

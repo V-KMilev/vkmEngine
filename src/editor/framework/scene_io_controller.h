@@ -49,6 +49,15 @@ class SceneIOController {
          * Clears EditorState::sceneDirty on success.
          */
         void save(FrameContext& ctx, EditorState& state);
+
+        /**
+         * @brief Replace the scene with a fresh minimal one (a camera + a sun).
+         *
+         * Clears entities, resets the Environment and the current path, and
+         * runs the same post-swap housekeeping as a load (undo stack, preview
+         * cache, selection). Callers guard unsaved changes first.
+         */
+        void newScene(FrameContext& ctx, EditorState& state);
         /**
          * @brief Queue the Save-As prompt to open on the next drawDialogs().
          *
@@ -68,6 +77,16 @@ class SceneIOController {
          * through the same housekeeping as a Load-modal pick.
          */
         void loadPath(FrameContext& ctx, EditorState& state, const std::string& path);
+
+        /**
+         * @brief Open @p path through the unsaved-changes guard.
+         *
+         * Prompts (Save / Don't Save / Cancel) when the current scene is
+         * dirty, otherwise loads immediately. Every open flow - the picker
+         * and Open Recent - routes through this; loading a scene used to
+         * silently discard unsaved work.
+         */
+        void requestOpenPath(FrameContext& ctx, EditorState& state, const std::string& path);
 
         /**
          * @brief Render any pending Save-As / Load modals.
