@@ -11,6 +11,9 @@
 #include "system/camera/camera_controller_system.h"
 #include "ecs/component/collider.h"
 #include "ecs/component/reflection_probe.h"
+#include "ecs/component/irradiance_volume.h"
+#include "ecs/component/decal.h"
+#include "ecs/component/particle_emitter.h"
 #include "ecs/component/world_transform.h"
 #include "core/math/rotation.h"
 
@@ -20,6 +23,15 @@ namespace {
 
 constexpr ImU32 COLLIDER_COL = IM_COL32(80, 220, 120, 200);  // physics green
 constexpr ImU32 BOUNDS_COL   = IM_COL32(230, 200, 60, 160);  // mesh-bounds amber
+
+constexpr ImU32 IRRADIANCE_VOLUME_COL = IM_COL32(235, 150, 77, 200);  // GI orange, against the probe's blue
+
+constexpr ImU32 DECAL_COL   = IM_COL32(200, 120, 220, 200);  // decal violet
+constexpr ImU32 EMITTER_COL = IM_COL32(240, 200, 90, 200);   // particle amber
+
+// A dense volume would bury the viewport under thousands of dots, so past this
+// the box alone has to speak for it.
+constexpr uint32_t MAX_DRAWN_PROBES = 4096;
 
 // RAII scope shared by every viewport gizmo pass: it caches the view-projection
 // and drawlist, and pushes/pops the viewport clip rect. valid() is false when
@@ -70,7 +82,7 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
 
     ec.frame.scene.forEach<Light, Transform>([&](EntityId id, const Light& light, const Transform& tf) {
         if (!light.enabled) return;
-        const bool selected = (ec.state.selectedEntity == id);
+        const bool selected = (ec.state.isSelected(id));
         const ImU32 col = selected
             ? EditorStyle::HIGHLIGHT_U32
             : IM_COL32(static_cast<int>(light.color.r * 220),
@@ -235,7 +247,7 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
     ImDrawList*     dl = scope.dl;
 
     ec.frame.scene.forEach<ReflectionProbe, Transform>([&](EntityId id, const ReflectionProbe& probe, const Transform& tf) {
-        const bool  selected = (ec.state.selectedEntity == id);
+        const bool  selected = (ec.state.isSelected(id));
         const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : IM_COL32(77, 158, 235, 200);
 
         const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
@@ -249,6 +261,87 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
         ImVec2 sp;
         if (projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, sp))
             dl->AddCircleFilled(sp, selected ? 4.0f : 3.0f, col);
+    });
+
+    ec.frame.scene.forEach<IrradianceVolume, Transform>([&](EntityId id, const IrradianceVolume& volume,
+                                                            const Transform& tf) {
+        const bool  selected = (ec.state.isSelected(id));
+        const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : IRRADIANCE_VOLUME_COL;
+
+        const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
+
+        wireBox(dl, vp, pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), volume.halfExtents,
+                ec.viewportPos, ec.viewportSize, col, selected ? 2.0f : 1.5f);
+
+        // The probe grid itself is only worth the clutter for the selected volume -
+        // it is what tells you whether the resolution actually covers the geometry.
+        if (!selected) return;
+
+        const glm::uvec3 res(volume.resolutionX, volume.resolutionY, volume.resolutionZ);
+        if (res.x * res.y * res.z > MAX_DRAWN_PROBES) return;
+
+        const glm::vec3 boxMin  = pos - volume.halfExtents;
+        const glm::vec3 boxSize = volume.halfExtents * 2.0f;
+        const glm::vec3 resf(res);
+
+        for (uint32_t z = 0; z < res.z; ++z) {
+            for (uint32_t y = 0; y < res.y; ++y) {
+                for (uint32_t x = 0; x < res.x; ++x) {
+                    // Texel centres - the exact positions the baker captures from.
+                    const glm::vec3 t = (glm::vec3(x, y, z) + 0.5f) / resf;
+                    ImVec2 pp;
+                    if (projectToViewport(vp, boxMin + boxSize * t, ec.viewportPos, ec.viewportSize, pp))
+                        dl->AddCircleFilled(pp, 2.0f, col);
+                }
+            }
+        }
+    });
+}
+
+void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
+    ViewportOverlayScope scope(ec);
+    if (!scope.valid()) return;
+
+    const glm::mat4 vp = scope.vp;
+    ImDrawList*     dl = scope.dl;
+
+    ec.frame.scene.forEach<Decal, Transform>([&](EntityId id, const Decal&, const Transform& tf) {
+        const bool  selected = (ec.state.isSelected(id));
+        const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : DECAL_COL;
+
+        // The Transform's scale IS the projection box (a unit cube), so the
+        // box gizmo is the decal's whole authoring model.
+        const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
+        wireBox(dl, vp, pos, tf.rotation, tf.scale * 0.5f,
+                ec.viewportPos, ec.viewportSize, col, selected ? 2.0f : 1.5f);
+
+        // Projection direction: decals project along the entity's -Z forward.
+        const glm::vec3 fwd = tf.rotation * glm::vec3(0.0f, 0.0f, -1.0f);
+        ImVec2 a, b;
+        if (projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, a) &&
+            projectToViewport(vp, pos + fwd * (tf.scale.z * 0.75f), ec.viewportPos, ec.viewportSize, b))
+            dl->AddLine(a, b, col, selected ? 2.0f : 1.5f);
+    });
+
+    ec.frame.scene.forEach<ParticleEmitter, Transform>([&](EntityId id, const ParticleEmitter& e,
+                                                           const Transform& tf) {
+        const bool  selected = (ec.state.isSelected(id));
+        const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : EMITTER_COL;
+
+        const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
+        ImVec2 sp;
+        if (!projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, sp)) return;
+        dl->AddCircle(sp, selected ? 6.0f : 5.0f, col, 0, selected ? 2.0f : 1.5f);
+        dl->AddCircleFilled(sp, 2.0f, col);
+
+        // Initial-velocity direction, so the spray's aim reads at a glance.
+        const float speed = glm::length(e.velocity);
+        if (speed > 1e-4f) {
+            ImVec2 tip;
+            if (projectToViewport(vp, pos + (e.velocity / speed) * 0.75f,
+                                  ec.viewportPos, ec.viewportSize, tip))
+                dl->AddLine(sp, tip, col, selected ? 2.0f : 1.5f);
+        }
     });
 }
 
@@ -265,7 +358,7 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
         // there would put a gizmo inside the user's eye. Skip it.
         if (id == activeCamId) return;
 
-        const bool selected = (ec.state.selectedEntity == id);
+        const bool selected = (ec.state.isSelected(id));
         const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : IM_COL32(120, 200, 220, 220);
         // Dimmer fill for the near/far plane "infill" edges so the apex,
         // far rectangle, and the up-tab read as the primary silhouette.
@@ -394,7 +487,8 @@ void GizmoOverlay::drawColliderGizmos(EditorContext& ec) {
     // rotation, no scale (see PhysicsSystem). Draw it the same way so the
     // wireframe is exactly what the solver collides against.
     ec.frame.scene.forEach<Collider, Transform>([&](EntityId id, const Collider& col, const Transform& tf) {
-        const bool   selected = (ec.state.selectedEntity == id);
+        if (!col.enabled) return;   // inert colliders don't collide, so don't draw them
+        const bool   selected = (ec.state.isSelected(id));
         const ImU32  color    = selected ? EditorStyle::HIGHLIGHT_U32 : COLLIDER_COL;
         const glm::mat3 r = glm::mat3_cast(tf.rotation);
         for (const ColliderBox& part : col.parts)
@@ -427,22 +521,24 @@ void GizmoOverlay::drawSelectionOutline(EditorContext& ec) {
     ViewportOverlayScope scope(ec);
     if (!scope.valid()) return;
 
-    const EntityId sel = ec.state.selectedEntity;
-    if (!sel || !ec.frame.scene.isAlive(sel)) return;
+    if (ec.state.selection.empty()) return;
 
     const glm::mat4 vp     = scope.vp;
     const ImVec2    vpMin  = scope.vpMin;
     const ImVec2    vpSize = scope.vpSize;
     ImDrawList*     dl     = scope.dl;
 
-    // Outline the selected entity's world AABB. Only mesh entities are in the
-    // visible set; lights / probes / cameras highlight their own gizmos instead.
+    // Outline every selected entity's world AABB; the active one gets the
+    // full highlight, the rest a dimmer tint. Only mesh entities are in the
+    // visible set; lights / probes / cameras highlight their own gizmos.
+    const ImU32 secondary = IM_COL32(255, 210, 50, 130);
     for (const VisibleEntity& e : ec.frame.visibility->entries) {
-        if (e.id != sel || e.worldMin == e.worldMax) continue;
+        if (e.worldMin == e.worldMax || !ec.state.isSelected(e.id)) continue;
         const glm::vec3 center = (e.worldMin + e.worldMax) * 0.5f;
         const glm::vec3 he     = (e.worldMax - e.worldMin) * 0.5f;
-        wireBox(dl, vp, center, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), he, vpMin, vpSize, EditorStyle::HIGHLIGHT_U32);
-        break;
+        const ImU32 col = (e.id == ec.state.selectedEntity)
+            ? EditorStyle::HIGHLIGHT_U32 : secondary;
+        wireBox(dl, vp, center, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), he, vpMin, vpSize, col);
     }
 }
 
