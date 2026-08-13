@@ -41,7 +41,14 @@ class Bus : public IBus {
          */
         ListenerId subscribe(std::function<void(const EventT&)> cb) {
             const ListenerId id = m_nextId++;
-            m_listeners.push_back({id, std::move(cb)});
+
+            // Appending to m_listeners while a dispatch is walking it can
+            // reallocate, which moves-then-destroys the std::function whose
+            // operator() is on the stack at that moment. Subscribing from a
+            // listener is legitimate - a spawned object registering itself -
+            // so the entry waits in m_pending and joins after the walk.
+            if (m_flushDepth > 0) m_pending.push_back({id, std::move(cb)});
+            else                  m_listeners.push_back({id, std::move(cb)});
             return id;
         }
 
@@ -71,12 +78,11 @@ class Bus : public IBus {
          * @brief Dispatch @p event to every current listener synchronously.
          */
         void emit(const EventT& event) {
-            // Subscribe is allowed (push_back stays valid by index past the
-            // end of the current loop bound). Unsubscribe is banned above.
             ++m_flushDepth;
             const size_t n = m_listeners.size();
             for (size_t i = 0; i < n; ++i) m_listeners[i].cb(event);
             --m_flushDepth;
+            admitPending();
         }
 
         /**
@@ -91,18 +97,23 @@ class Bus : public IBus {
          */
         void flush() override {
             if (m_queue.empty()) return;
-            // Swap the queue so re-entrant enqueues land in fresh storage
-            // and fire next frame. Listeners are iterated by index against
-            // the current bound; subscribe mid-flush is safe (new listeners
-            // join next frame's flush), unsubscribe is asserted against.
-            std::vector<EventT> localEvents;
-            localEvents.swap(m_queue);
+
+            // Swap the queue aside so re-entrant enqueues land in fresh storage
+            // and fire next frame. Swapping with a retained member rather than a
+            // local: a local would take the queue's buffer and free it on scope
+            // exit, so every flush on a hot bus paid an allocation to rebuild
+            // what it had just thrown away. Two buffers ping-pong instead, and a
+            // steady frame allocates nothing.
+            m_dispatch.clear();
+            m_dispatch.swap(m_queue);
+
             ++m_flushDepth;
             const size_t n = m_listeners.size();
-            for (auto& e : localEvents) {
+            for (auto& e : m_dispatch) {
                 for (size_t i = 0; i < n; ++i) m_listeners[i].cb(e);
             }
             --m_flushDepth;
+            admitPending();
         }
 
     private:
@@ -114,8 +125,22 @@ class Bus : public IBus {
             std::function<void(const EventT&)> cb;
         };
 
+        /**
+         * @brief Move listeners that subscribed mid-dispatch into the live list.
+         *
+         * Only once the outermost dispatch has unwound, so a nested emit cannot
+         * grow m_listeners under a walk further up the stack.
+         */
+        void admitPending() {
+            if (m_flushDepth != 0 || m_pending.empty()) return;
+            for (Entry& entry : m_pending) m_listeners.push_back(std::move(entry));
+            m_pending.clear();
+        }
+
         std::vector<Entry>  m_listeners;   ///< Active listeners, walked by index during dispatch.
+        std::vector<Entry>  m_pending;     ///< Subscribed mid-dispatch; admitted when it unwinds.
         std::vector<EventT> m_queue;       ///< Events awaiting the next flush().
+        std::vector<EventT> m_dispatch;    ///< The batch being delivered; swaps with m_queue to keep both buffers.
         ListenerId m_nextId     = 1;       ///< Next listener id to hand out.
         int        m_flushDepth = 0;       ///< >0 while inside emit/flush.
 };
