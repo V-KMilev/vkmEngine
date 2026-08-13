@@ -34,6 +34,7 @@
 #include "data/gl_ibl_baker.h"
 #include "data/gl_material.h"
 #include "system/render/render_view.h"
+#include "resource/resource_manager.h"
 #include "platform/window/window_manager.h"
 
 #include "debug/profiler_gl.h"
@@ -178,6 +179,10 @@ void GLBackend::resize(uint32_t x, uint32_t y, uint32_t width, uint32_t height) 
 void GLBackend::render(const RenderView& view, const ResourceManager& resources) {
     PROFILE_SCOPE("GLBackend::render");
     PROFILE_GPU_SCOPE("GPU.Frame");
+
+    // Before anything reads a cache: if the scene was replaced, none of them
+    // can be trusted, and nothing downstream can tell on its own.
+    onAssetGraphSwapped(resources);
 
     {
         PROFILE_SCOPE("Render/SyncAssets");
@@ -372,6 +377,20 @@ void GLBackend::bakeProceduralSky(const Environment& env, const glm::vec3& sunDi
 
     m_bakedSky = {true, sunDir, env.skySunIntensity, env.skyRayleigh, env.skyMie, env.skyMieG};
     m_bakedEnvPath.clear();  // force an HDR re-bake if the user switches back
+}
+
+void GLBackend::onAssetGraphSwapped(const ResourceManager& resources) {
+    const uint64_t epoch = resources.epoch();
+    if (epoch == m_assetEpoch) return;
+    m_assetEpoch = epoch;
+
+    PROFILE_SCOPE("Render/GraphSwap");
+
+    m_view.invalidate();      // asset mirrors: handles and versions restart
+    m_probes.invalidate();    // cube captures: same probe pose, different scene
+    m_bakedIrradiance = {};   // SH volume: same box and grid, different scene
+
+    LOG_INFO("Asset graph swapped; scene-derived GPU caches dropped");
 }
 
 void GLBackend::partitionDrawables(const RenderView& view) {

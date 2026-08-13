@@ -102,4 +102,8 @@ void GLProbeManager::update(Core::Context& gl, const RenderView& view, const GLV
     }
 }
 
+void GLProbeManager::invalidate() {
+    for (BakeState& st : m_state) st.baked = false;
+}
+
 } // namespace Engine
