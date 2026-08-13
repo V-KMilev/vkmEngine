@@ -14,7 +14,7 @@ uint32_t MaterialPreviewSession::texture(
     RenderBackend* backend = m_renderSystem.backend();
     if (!backend || !req.material || !req.mesh) return 0;
 
-    const uint32_t cached = backend->previewTexture(req.key);
+    const GpuTextureId cached = backend->previewTexture(req.key);
     const auto it = m_versions.find(req.key);
     if (cached && it != m_versions.end() && it->second == version) {
         return cached;  // up to date
@@ -29,7 +29,7 @@ uint32_t MaterialPreviewSession::texture(
 
     req.size = live ? LIVE_SIZE : THUMB_SIZE;
 
-    const uint32_t tex = backend->renderPreview(req, resources);
+    const GpuTextureId tex = backend->renderPreview(req, resources);
     if (tex) m_versions[req.key] = version;
     return tex ? tex : cached;
 }

@@ -413,14 +413,14 @@ void GLBackend::partitionDrawables(const RenderView& view) {
     }
 }
 
-uint32_t GLBackend::renderPreview(const PreviewRequest& request,
+GpuTextureId GLBackend::renderPreview(const PreviewRequest& request,
                                   const ResourceManager& resources) {
     // Runs from the editor after the scene render; like the probe baker it
     // re-binds the camera / lights UBOs, which the next frame re-uploads.
     return m_preview.render(m_context, m_view, m_ibl, request, resources);
 }
 
-uint32_t GLBackend::previewTexture(uint64_t key) const {
+GpuTextureId GLBackend::previewTexture(uint64_t key) const {
     return m_preview.texture(key);
 }
 
@@ -428,7 +428,7 @@ void GLBackend::releasePreview(uint64_t key) {
     m_preview.release(key);
 }
 
-uint32_t GLBackend::textureId(const TextureHandle& handle) const {
+GpuTextureId GLBackend::textureId(const TextureHandle& handle) const {
     const Core::Texture2D* tex = m_view.getTexture(handle);
     return tex ? tex->getID() : 0;
 }

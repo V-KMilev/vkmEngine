@@ -72,6 +72,20 @@ struct PreviewRequest {
  * another: there is no GPU state to migrate, and the new backend re-uploads
  * what it needs from the handles in the next RenderView.
  */
+/**
+ * @brief A GPU texture, as an opaque id the UI layer can hand back to the backend.
+ *
+ * The value means whatever the backend wants it to: OpenGL returns the GL
+ * texture name, and a Vulkan or D3D12 backend would return a descriptor handle.
+ * Nothing outside the backend may interpret it - the only valid operations are
+ * passing it back and testing it against zero, which always means "no texture".
+ *
+ * 64 bits because that is what the wider APIs need. GL names fit in 32, but
+ * VkDescriptorSet and a D3D12 descriptor handle do not, and a type that cannot
+ * represent the second backend's handles is not an abstraction.
+ */
+using GpuTextureId = uint64_t;
+
 class RenderBackend {
     public:
         explicit RenderBackend(RenderBackendType type) : m_type(type) {}
@@ -116,27 +130,25 @@ class RenderBackend {
         /**
          * @brief Editor preview hooks - optional.
          *
-         * renderPreview() draws the request offscreen and returns an opaque
-         * texture id the UI layer can display (for OpenGL: the GL texture
-         * name ImGui samples); previewTexture() returns the last-rendered
+         * renderPreview() draws the request offscreen and returns a GpuTextureId
+         * the UI layer can display; previewTexture() returns the last-rendered
          * texture for a key, or 0 when none exists. A backend without an
          * offscreen path keeps these no-ops and the editor shows no image.
          */
-        virtual uint32_t renderPreview(const PreviewRequest& request,
-                                       const ResourceManager& resources) { return 0; }
-        virtual uint32_t previewTexture(uint64_t key) const { return 0; }
+        virtual GpuTextureId renderPreview(const PreviewRequest& request,
+                                           const ResourceManager& resources) { return 0; }
+        virtual GpuTextureId previewTexture(uint64_t key) const { return 0; }
         virtual void releasePreview(uint64_t key) {}
         virtual void releaseAllPreviews() {}
 
         /**
          * @brief GPU texture id for @p handle - editor thumbnails.
          *
-         * Same opaque id family as renderPreview (for OpenGL: the GL texture
-         * name ImGui samples). Returns 0 while the texture has no GPU mirror
+         * Same opaque id family as renderPreview. Returns 0 while the texture has no GPU mirror
          * yet (never drawn, or still decoding) - the editor shows a
          * placeholder and retries next frame.
          */
-        virtual uint32_t textureId(const TextureHandle& handle) const { return 0; }
+        virtual GpuTextureId textureId(const TextureHandle& handle) const { return 0; }
 
     protected:
         RenderBackendType m_type;
