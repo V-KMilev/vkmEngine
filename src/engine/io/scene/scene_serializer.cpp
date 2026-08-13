@@ -24,6 +24,8 @@
 #include "resource/resource_manager.h"
 #include "resource/asset/font_asset.h"
 #include "system/hierarchy/hierarchy_operations.h"
+#include "io/scene/prefab.h"
+#include "ecs/component/prefab_instance.h"
 
 namespace Engine::SceneSerializer {
 
@@ -59,6 +61,8 @@ constexpr std::array<const char*, 19> COMPONENT_KEYS = {
     "Animation", "Script", "Hierarchy",
     "UICanvas", "UIElement", "UIImage", "UIText", "UIButton",
 };
+
+} // namespace
 
 void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
     if (s.has<Name>(id))            c["Name"]         = CS::save(s.get<Name>(id));
@@ -105,6 +109,26 @@ void loadComponents(const json& src, Scene& s, Entity e, const ResourceManager& 
     if (src.contains("UIButton"))     { UIButton c;        CS::load(src["UIButton"], c);        s.add(e, std::move(c)); }
 }
 
+namespace {
+
+/**
+ * @brief Is @p id inside (but not the root of) a prefab instance?
+ *
+ * Walks up rather than marking every descendant, so the prefab's own entities
+ * carry no bookkeeping and cannot fall out of sync with their root.
+ */
+bool isInsidePrefabInstance(const Scene& scene, EntityId id) {
+    if (!scene.has<Hierarchy>(id)) return false;
+
+    EntityId cursor = scene.get<Hierarchy>(id).parent;
+    for (int depth = 0; depth < 32 && scene.isAlive(cursor); ++depth) {
+        if (scene.has<PrefabInstance>(cursor)) return true;
+        if (!scene.has<Hierarchy>(cursor)) break;
+        cursor = scene.get<Hierarchy>(cursor).parent;
+    }
+    return false;
+}
+
 bool isKnownComponentKey(const std::string& k) {
     for (const char* key : COMPONENT_KEYS) {
         if (k == key) return true;
@@ -124,6 +148,10 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
     doc["entities"] = json::array();
 
     scene.forEachEntity([&](EntityId id) {
+        // Entities inside a prefab instance are not the scene's to describe -
+        // the prefab file defines them, and the loader rebuilds them from it.
+        if (isInsidePrefabInstance(scene, id)) return;
+
         json entity;
         entity["id"] = id.index;
         json components = json::object();
@@ -131,6 +159,18 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
         // WorldTransform is derived from Transform + Hierarchy each frame -
         // not in the component list, not persisted.
         saveComponents(scene, id, components, resources);
+
+        // A prefab root stores its source instead of its contents. Transform
+        // and Hierarchy stay: where the instance sits, and what it hangs off,
+        // belong to the scene rather than to the prefab.
+        if (scene.has<PrefabInstance>(id)) {
+            const json transform  = std::move(components["Transform"]);
+            const json hierarchy  = std::move(components["Hierarchy"]);
+            components = json::object();
+            if (!transform.is_null()) components["Transform"] = std::move(transform);
+            if (!hierarchy.is_null()) components["Hierarchy"] = std::move(hierarchy);
+            entity["prefab"] = scene.get<PrefabInstance>(id).source;
+        }
 
         entity["components"] = std::move(components);
         doc["entities"].push_back(std::move(entity));
@@ -191,6 +231,7 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     // non-relational components. Hierarchy::parent is captured for pass 2
     // because the parent might not have been created yet on first sight.
     std::vector<std::pair<uint32_t, uint32_t>> parentLinks;  // (child idx, parent idx)
+    std::vector<std::pair<Entity, std::string>> prefabRoots;  // instance roots to expand
     size_t entityCount = 0;
     std::set<std::string> unknownKeys;  // dedup warnings - one per drift, not per entity
 
@@ -218,10 +259,25 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
                 }
             }
 
+            if (entry.contains("prefab")) {
+                prefabRoots.emplace_back(entity, entry.value("prefab", std::string{}));
+                staging.add(entity, PrefabInstance{entry.value("prefab", std::string{})});
+            }
+
             if (components.is_object()) {
                 for (const auto& kv : components.items()) {
                     if (!isKnownComponentKey(kv.key())) unknownKeys.insert(kv.key());
                 }
+            }
+        }
+
+        // Pass 2b: expand prefab instances. After the entity pass so the roots
+        // hold their saved slots, and the prefab's own entities take whatever
+        // is free rather than competing for them.
+        for (const auto& [root, prefabPath] : prefabRoots) {
+            if (!Prefab::instantiateInto(staging, stagingResources, prefabPath, root)) {
+                LOG_WARNING("Prefab '%s' failed to expand in '%s'; instance left empty",
+                    prefabPath.c_str(), source);
             }
         }
 
