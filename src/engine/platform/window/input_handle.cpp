@@ -1,4 +1,4 @@
-// GLFW first so its real GLFW_KEY_LAST / GLFW_MOUSE_BUTTON_LAST are defined
+// GLFW first so its real MAX_KEY / MAX_MOUSE_BUTTON are defined
 // before input_handle.h's fallback copies, which would otherwise be redefined
 // by glfw3.h (a warning). The static_assert below pins the two to each other.
 #include "platform/window/glfw_include.h"
@@ -8,14 +8,21 @@
 
 namespace Engine {
 
+// The header sizes its arrays without including GLFW; keep the two in step.
+static_assert(MAX_KEY          == GLFW_KEY_LAST,
+              "MAX_KEY is out of step with this GLFW - resize the key arrays");
+static_assert(MAX_MOUSE_BUTTON == GLFW_MOUSE_BUTTON_LAST,
+              "MAX_MOUSE_BUTTON is out of step with this GLFW - resize the button arrays");
+
+
 // input_handle.h sizes m_keyState[] / m_buttonState[] from fallback copies of
 // these GLFW constants (it only forward-declares GLFWwindow, so the real header
 // may not be in scope there). If a GLFW version ever changed them, the same
 // class would get a different size across translation units - an ODR violation
 // plus a buffer overrun. Pin the fallbacks to the real values here, where the
 // real GLFW header is included.
-static_assert(GLFW_KEY_LAST == 348, "GLFW_KEY_LAST changed; update the fallback in input_handle.h");
-static_assert(GLFW_MOUSE_BUTTON_LAST == 7, "GLFW_MOUSE_BUTTON_LAST changed; update the fallback in input_handle.h");
+static_assert(MAX_KEY == 348, "MAX_KEY changed; update the fallback in input_handle.h");
+static_assert(MAX_MOUSE_BUTTON == 7, "MAX_MOUSE_BUTTON changed; update the fallback in input_handle.h");
 
 namespace {
 // Fetch the bundled callback pointers stored as the GLFW user pointer. Used by
@@ -26,18 +33,18 @@ WindowCallbackData* callbackData(GLFWwindow* w) {
 } // namespace
 
 void KeyboardInputHandle::onKeyEvent(int key, bool pressed) {
-    if (key >= 0 && key <= GLFW_KEY_LAST) {
+    if (key >= 0 && key <= MAX_KEY) {
         m_keyState[key] = pressed;
     }
 }
 
 bool KeyboardInputHandle::isKeyPressed(int key) const {
-    if (key < 0 || key > GLFW_KEY_LAST) return false;
+    if (key < 0 || key > MAX_KEY) return false;
     return m_keyState[key];
 }
 
 void MouseInputHandle::update(GLFWwindow* window) {
-    for (int button = GLFW_MOUSE_BUTTON_1; button <= GLFW_MOUSE_BUTTON_LAST; ++button) {
+    for (int button = GLFW_MOUSE_BUTTON_1; button <= MAX_MOUSE_BUTTON; ++button) {
         int state = glfwGetMouseButton(window, button);
         m_buttonState[button] = (state == GLFW_PRESS);
     }
@@ -53,7 +60,7 @@ void MouseInputHandle::update(GLFWwindow* window) {
 }
 
 bool MouseInputHandle::isButtonPressed(int button) const {
-    if (button < 0 || button > GLFW_MOUSE_BUTTON_LAST) return false;
+    if (button < 0 || button > MAX_MOUSE_BUTTON) return false;
     return m_buttonState[button];
 }
 
