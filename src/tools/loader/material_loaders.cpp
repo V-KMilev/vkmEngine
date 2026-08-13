@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <algorithm>
+#include <cctype>
 
 #include <nlohmann/json.hpp>
 
@@ -21,6 +22,38 @@ std::string toLower(const std::string& str) {
     std::transform(result.begin(), result.end(), result.begin(),
         [](unsigned char c) { return std::tolower(c); });
     return result;
+}
+
+/**
+ * @brief Does @p filename contain @p pattern as a whole word?
+ *
+ * Acronyms are matched on token boundaries, never as bare substrings. "orm"
+ * and "rma" are both inside the word *normal* (n-orm-al, no-rma-l), and "ao"
+ * is inside plenty of ordinary words, so substring matching handed the normal
+ * map to the packed metallic-roughness slot for practically every PBR folder
+ * that has one. Roughness then came out of the normal map's green channel and
+ * metallic out of its blue - which is near 1.0, so the surface read as solid
+ * metal - and the real maps were skipped, because a packed map suppresses them.
+ *
+ * Only short patterns are boundary-checked. The longer ones are words rather
+ * than acronyms, they collide with nothing in practice, and tightening them
+ * would stop matching spellings that work today ("normalmap" no longer
+ * containing a bounded "normal", say).
+ */
+bool nameMatchesPattern(const std::string& filename, const std::string& pattern) {
+    constexpr size_t ACRONYM_MAX = 3;
+    if (pattern.size() > ACRONYM_MAX) return filename.find(pattern) != std::string::npos;
+
+    const auto isWordChar = [](unsigned char c) { return std::isalnum(c) != 0; };
+    for (size_t at = filename.find(pattern); at != std::string::npos;
+         at = filename.find(pattern, at + 1)) {
+        const bool leftOk  = at == 0 || !isWordChar(static_cast<unsigned char>(filename[at - 1]));
+        const size_t after = at + pattern.size();
+        const bool rightOk = after >= filename.size()
+                          || !isWordChar(static_cast<unsigned char>(filename[after]));
+        if (leftOk && rightOk) return true;
+    }
+    return false;
 }
 
 // Scans the folder for the first file whose name contains one of the patterns
@@ -59,7 +92,7 @@ std::optional<std::string> findTexture(
         for (const auto& pattern : patterns) {
             std::string patternLower = toLower(pattern);
 
-            if (filenameLower.find(patternLower) != std::string::npos) {
+            if (nameMatchesPattern(filenameLower, patternLower)) {
                 return entry.path().string();
             }
         }
