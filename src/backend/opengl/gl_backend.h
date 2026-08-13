@@ -5,24 +5,33 @@
 #include <string>
 #include <vector>
 
+#include <glm/glm.hpp>
+
 #include "gl_context.h"
+#include "gl_screen_triangle.h"
 
 #include "system/render/render_backend.h"
 #include "gl_view.h"
 #include "gl_target.h"
-#include "gl_ao_target.h"
+#include "gl_mask_target.h"
 #include "data/gl_camera.h"
 #include "data/gl_lights.h"
 #include "data/gl_shadow_atlas.h"
 #include "data/gl_shadow_data.h"
 #include "data/gl_ibl.h"
+#include "data/gl_ibl_baker.h"
 #include "data/gl_bloom.h"
+#include "data/gl_cluster_grid.h"
+#include "data/gl_fog_volume.h"
+#include "data/gl_irradiance_volume.h"
+#include "data/gl_irradiance_baker.h"
 #include "data/gl_probe_manager.h"
 #include "data/gl_preview.h"
 
 namespace Engine {
     class GLPass;
     struct DrawableData;
+    struct Environment;
 }
 
 namespace Engine {
@@ -66,6 +75,7 @@ class GLBackend : public RenderBackend {
         uint32_t previewTexture(uint64_t key) const override;
         void releasePreview(uint64_t key) override;
         void releaseAllPreviews() override;
+        uint32_t textureId(const TextureHandle& handle) const override;
 
     private:
         /**
@@ -81,12 +91,28 @@ class GLBackend : public RenderBackend {
          */
         void bakeEnvironment(const std::string& path);
 
+        /**
+         * @brief (Re)bake the IBL product set from the procedural atmosphere, with
+         * the sun at @p sunDir (direction to the sun) and @p env's sky params.
+         */
+        void bakeProceduralSky(const Environment& env, const glm::vec3& sunDir);
+
+        /**
+         * @brief True when the procedural sky must be re-baked: the sun moved or a
+         * sky parameter changed since the last procedural bake.
+         */
+        bool skyNeedsRebake(const Environment& env, const glm::vec3& sunDir) const;
+
     private:
         Core::Context m_context;
         GLView        m_view;
-        GLTarget      m_sceneHDR;
-        GLTarget      m_sceneColor;
-        GLAOTarget    m_ao;
+        Core::ScreenTriangle m_screenTri;  ///< Shared fullscreen triangle, referenced by the frame context.
+        GLTarget      m_sceneHDR;    ///< Single-sample resolved scene (sampled by post). At 1x MSAA the geometry passes render straight into it.
+        GLTarget      m_sceneMS;     ///< Multisample scene the geometry passes render into when MSAA is on; resolved into m_sceneHDR.
+        GLTarget      m_postA;   ///< Colour-only post scratch (ping).
+        GLTarget      m_postB;   ///< Colour-only post scratch (pong).
+        GLMaskTarget    m_ao;
+        GLMaskTarget    m_contactShadow;  ///< Screen-space sun contact-shadow mask.
 
         GLCamera      m_camera;
         GLLights      m_lights;
@@ -95,18 +121,51 @@ class GLBackend : public RenderBackend {
         GLShadowData  m_shadowData;
 
         GLIBL         m_ibl;
+        GLIBLBaker    m_iblBaker;   ///< Persistent: the procedural sky re-bakes whenever the sun moves.
         GLBloom       m_bloom;
+        GLClusterGrid m_clusterGrid;  ///< Forward+ per-cluster light lists (compute-filled).
+        GLFogVolume   m_fog;          ///< Froxel volumetric-fog volumes (compute-filled).
+        GLIrradianceVolume m_irradiance;      ///< Baked SH irradiance volume (GI).
+        GLIrradianceBaker  m_irradianceBaker;
 
         GLProbeManager m_probes;   ///< Reflection-probe arrays, baker, bake state, UBO.
         GLPreview      m_preview;  ///< Editor material/mesh preview renders.
 
         // Per-frame draw buckets - cleared + refilled each frame, capacity kept.
         std::vector<const DrawableData*> m_opaque;
+        std::vector<const DrawableData*> m_alphaMask;
         std::vector<const DrawableData*> m_transparent;
 
         std::vector<PassEntry> m_passes;
 
-        std::string m_bakedEnvPath;  ///< HDR path of the currently baked IBL; empty until the first render() bakes it.
+        std::string m_bakedEnvPath;  ///< HDR path of the currently baked IBL; empty when none (or the sky is procedural).
+
+        /**
+         * @brief Signature of the procedural sky currently baked into m_ibl, so a
+         * frame re-bakes only when the sun or a parameter actually changes.
+         */
+        struct BakedSky {
+            bool      active = false;
+            glm::vec3 sunDir{0.0f};
+            float     sunIntensity = 0.0f;
+            float     rayleigh     = 0.0f;
+            float     mie          = 0.0f;
+            float     mieG         = 0.0f;
+        };
+        BakedSky m_bakedSky;
+
+        /**
+         * @brief Signature of the irradiance volume currently baked, so a frame
+         * re-bakes only when the box, grid, or bake version actually changes.
+         */
+        struct BakedIrradiance {
+            bool      valid = false;
+            glm::vec3 center{0.0f};
+            glm::vec3 halfExtents{0.0f};
+            uint32_t  resolutionX = 0, resolutionY = 0, resolutionZ = 0;
+            uint32_t  bakeVersion = 0;
+        };
+        BakedIrradiance m_bakedIrradiance;
 };
 
 } // namespace Engine

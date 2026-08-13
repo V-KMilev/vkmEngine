@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include <glm/glm.hpp>
+
 #include "gl_shader.h"
 #include "gl_screen_triangle.h"
 
@@ -16,12 +18,24 @@ namespace Engine {
 class GLIBL;
 
 /**
- * @brief One-shot baker for the IBL product set (split-sum).
+ * @brief Parameters for the procedural-atmosphere bake (see bakeProcedural).
+ */
+struct SkyParams {
+    glm::vec3 sunDir{0.0f, 1.0f, 0.0f};  ///< Direction TO the sun, normalized.
+    float     sunIntensity = 22.0f;      ///< Top-of-atmosphere sun radiance scale.
+    float     rayleigh     = 1.0f;       ///< Rayleigh (blue-sky) scattering scale.
+    float     mie          = 1.0f;       ///< Mie (haze / sun glow) scattering scale.
+    float     mieG         = 0.76f;      ///< Mie phase asymmetry.
+};
+
+/**
+ * @brief Baker for the IBL product set (split-sum).
  *
  * Owns the four bake programs, a unit cube (the six face captures) and a
  * fullscreen triangle (the BRDF LUT). Construct it where a GL context is
- * current (GLBackend::init), call bake() once, and let it fall out of scope -
- * the bake-only programs/meshes don't linger past startup.
+ * current (GLBackend member). It stays alive for the backend's lifetime:
+ * the procedural sky re-bakes whenever the sun moves, so a transient baker
+ * would recompile all five programs on every rebake.
  *
  * bake(): load the equirect HDR -> render the environment cubemap -> convolve
  * diffuse irradiance -> GGX-prefilter specular mips -> integrate the BRDF/DFG
@@ -46,8 +60,31 @@ class GLIBLBaker {
          */
         void bake(Core::Context& gl, GLIBL& ibl, const std::string& path);
 
+        /**
+         * @brief Bake @p ibl from a procedural Rayleigh + Mie atmosphere.
+         *
+         * Renders the analytic sky into the environment cubemap (in place of the
+         * equirect step), then runs the same irradiance / prefilter / BRDF bake -
+         * so ambient lighting and the skybox follow the atmosphere.
+         */
+        void bakeProcedural(Core::Context& gl, GLIBL& ibl, const SkyParams& sky);
+
     private:
+        /**
+         * @brief Draw the six env-cube faces with the already-bound @p shader
+         * (u_projection + per-face u_view), then build its mip chain. Shared by
+         * the equirect and procedural-sky captures.
+         */
+        void captureEnvFaces(Core::Context& gl, GLIBL& ibl, Core::Shader& shader);
+
+        /**
+         * @brief Convolve the env cube into diffuse irradiance + GGX prefilter and
+         * integrate the split-sum BRDF/DFG LUT. The tail shared by both bakes.
+         */
+        void convolve(Core::Context& gl, GLIBL& ibl);
+
         Core::Shader m_equirect;
+        Core::Shader m_sky;
         Core::Shader m_brdf;
 
         GLCubeConvolver      m_convolver;  ///< Shared irradiance + prefilter convolution (and the unit cube)

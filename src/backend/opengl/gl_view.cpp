@@ -43,8 +43,15 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     // One walk: ensure each drawable's mesh + material, then discover the
     // material's textures off the entry we just synced. The material is
     // guaranteed present before its textures are needed, so no second pass.
+    //
+    // Drawables arrive clustered by material (the draw sort), so consecutive
+    // repeats dominate at scale - skip the material + texture work when the
+    // handle matches the previous drawable's.
+    MaterialHandle lastMaterial;
     for (const DrawableData& d : view.drawables) {
         ensure(m_meshes, d.mesh, resources);
+        if (d.material == lastMaterial) continue;
+        lastMaterial = d.material;
         ensure(m_materials, d.material, resources);
 
         const GLMaterial* material = getMaterial(d.material);
@@ -52,6 +59,12 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         for (const auto& binding : material->getTextureBindings()) {
             ensure(m_textures, binding.handle, resources);
         }
+    }
+
+    // Font atlases live inside FontAssets (not the texture slot), so ensure
+    // them straight off the overlay's text commands.
+    for (const UIDrawCmd& cmd : view.ui.commands) {
+        ensure(m_fontAtlases, cmd.font, resources);
     }
 }
 
@@ -72,6 +85,13 @@ const Core::Texture2D* GLView::getTexture(const TextureHandle& handle) const {
     const uint32_t id = handle.id();
     if (id >= m_textures.slots.size() || !m_textures.slots[id].gl) return nullptr;
     return &m_textures.slots[id].gl->getTexture();
+}
+
+const Core::Texture2D* GLView::getFontAtlas(const FontHandle& handle) const {
+    if (!handle) return nullptr;
+    const uint32_t id = handle.id();
+    if (id >= m_fontAtlases.slots.size() || !m_fontAtlases.slots[id].gl) return nullptr;
+    return &m_fontAtlases.slots[id].gl->getTexture();
 }
 
 } // namespace Engine

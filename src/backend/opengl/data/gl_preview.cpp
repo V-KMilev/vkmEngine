@@ -20,6 +20,7 @@
 #include "data/gl_material.h"
 #include "data/gl_mesh.h"
 #include "convention/gl_bindings.h"
+#include "generator/mesh_generators.h"
 #include "resource/resource_manager.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_view.h"
@@ -34,9 +35,9 @@ namespace {
 // scratch never reallocates when live previews and thumbnails alternate.
 constexpr uint32_t SCENE_SIZE = 512;
 
-// Fixed studio rig: key / fill / rim directionals around the default orbit
+// Studio rig: key / fill / rim directionals around the default orbit
 // (yaw 35, pitch 20), shadowless. Directions are the light's travel direction.
-// Constant, so build it once and hand back a reference per preview request.
+// The base rig is constant; requests rotate a copy around Y (lightYawDeg).
 const std::vector<LightData>& studioLights() {
     static const std::vector<LightData> lights = [] {
         auto directional = [](const glm::vec3& dir, const glm::vec3& color, float intensity) {
@@ -67,6 +68,8 @@ GLPreview::~GLPreview() = default;
 void GLPreview::init() {
     m_pbr       = std::make_unique<Core::Shader>("shaders/forward/pbr");
     m_composite = std::make_unique<Core::Shader>("shaders/composite");
+    m_skybox    = std::make_unique<Core::Shader>("shaders/skybox");
+    m_skyCube   = std::make_unique<GLMesh>(generateCube());
     m_tri       = std::make_unique<Core::ScreenTriangle>();
     m_scratch.resize(SCENE_SIZE, SCENE_SIZE);
 }
@@ -119,6 +122,13 @@ uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
     drawable.castShadows  = false;
     view.drawables.push_back(drawable);
     view.lights = studioLights();
+    if (req.lightYawDeg != 0.0f) {
+        // Rotate the rig around Y so the user can swing the key light across
+        // the material without moving the camera.
+        const float     a = glm::radians(req.lightYawDeg);
+        const glm::mat3 rot(glm::rotate(glm::mat4(1.0f), a, glm::vec3(0.0f, 1.0f, 0.0f)));
+        for (LightData& l : view.lights) l.direction = glm::normalize(rot * l.direction);
+    }
     glView.sync(view, resources);
 
     const GLMesh*     mesh     = glView.getMesh(req.mesh);
@@ -152,6 +162,7 @@ uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
                                       std::max(0.001f * radius, dist - radius * 2.0f),
                                       dist + radius * 4.0f);
     cam.position   = eye;
+    cam.derive();
     m_camera.update(cam);
 
     // m_noShadow is never built, so slotForLight() == -1 and the PBR shader
@@ -164,12 +175,35 @@ uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
     gl.setDepthWrite(true);
     gl.setDepthFunc(GL_LESS);
     gl.setBlending(false);
-    gl.setClearColor({0.028f, 0.028f, 0.033f, 1.0f});  // dark studio backdrop
+    // Backdrop clear colors are linear HDR (pre-tonemap): Grey lands near
+    // mid-grey after the composite pass.
+    gl.setClearColor(req.background == PreviewBackground::Grey
+        ? glm::vec4(0.18f, 0.18f, 0.19f, 1.0f)
+        : glm::vec4(0.028f, 0.028f, 0.033f, 1.0f));
     gl.clear(true, true, false);
-    gl.setFaceCulling(true);
-    gl.setCullFace(GL_BACK);
 
     const bool hasIBL = ibl.isReady();
+
+    // Sky backdrop: the baked environment cube, drawn first (depth writes off,
+    // LEQUAL so it fills the cleared far plane) so a transparent material
+    // blends over it. Before the bake finishes this falls back to the clear.
+    if (req.background == PreviewBackground::Sky && hasIBL && m_skybox) {
+        gl.setDepthWrite(false);
+        gl.setDepthFunc(GL_LEQUAL);
+        gl.setFaceCulling(false);  // viewed from inside the cube
+        m_skybox->bind();
+        m_skybox->setUniformMatrix4fv("u_view", cam.view);
+        m_skybox->setUniformMatrix4fv("u_projection", cam.projection);
+        m_skybox->setUniform1f("u_iblIntensity", 1.0f);
+        m_skybox->setUniform1i("u_hasSun", 0);
+        ibl.bindEnvCube(GLBindings::IBLTextureSlots::EnvCube);
+        m_skyCube->draw();
+        gl.setDepthWrite(true);
+        gl.setDepthFunc(GL_LESS);
+    }
+
+    gl.setFaceCulling(true);
+    gl.setCullFace(GL_BACK);
     m_pbr->bind();
     m_pbr->setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
     if (hasIBL) {
@@ -186,8 +220,11 @@ uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
     // invisible.
     m_pbr->setUniform1f("u_iblIntensity", 1.0f);
     m_pbr->setUniform1i("u_hasSSAO", 0);
+    m_pbr->setUniform1i("u_hasContactShadow", 0);
     m_pbr->setUniform1i("u_hasSceneColor", 0);
     m_pbr->setUniform1i("u_probeCount", 0);
+    m_pbr->setUniform1i("u_useClusters", 0);
+    m_pbr->setUniform1i("u_hasIrradianceVolume", 0);  // no cull pass here: shade the full light list
     m_pbr->setUniform2f("u_screenSize",
         static_cast<float>(SCENE_SIZE), static_cast<float>(SCENE_SIZE));
 

@@ -8,7 +8,7 @@
 #include "data/gl_probe_baker.h"
 #include "convention/gl_bindings.h"
 #include "gl_uniform_buffer.h"
-#include "data/gl_ubo_util.h"
+#include "gl_buffer_upload.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
@@ -20,7 +20,8 @@ void GLProbeManager::init() {
     // Both compile shaders, so this must run with a live GL context.
     m_baker = std::make_unique<GLProbeBaker>();
     m_array = std::make_unique<GLProbeArray>();
-    m_array->createTargets(static_cast<int>(GLBindings::ProbeTextureSlots::MAX_PROBES));
+    m_array->createTargets(static_cast<int>(GLBindings::ProbeTextureSlots::MAX_PROBES),
+                           GLProbeArray::DEFAULT_RESOLUTION);
 }
 
 int GLProbeManager::bind(const RenderView& view) {
@@ -53,8 +54,8 @@ int GLProbeManager::bind(const RenderView& view) {
         block.probes[p].extents = glm::vec4(pd.halfExtents, 0.0f);
         block.probes[p].params  = glm::vec4(pd.falloff, pd.intensity, static_cast<float>(m_active[p].index), 0.0f);
     }
-    uploadUBOIfChanged(m_ubo, m_lastBlock, block);
-    bindUBO(m_ubo, GLBindings::UBOBindingPoints::Probes);
+    Core::uploadIfChanged(m_ubo, m_lastBlock, block);
+    Core::bindUBO(m_ubo, GLBindings::UBOBindingPoints::Probes);
 
     m_array->bindIrradiance(GLBindings::ProbeTextureSlots::Irradiance);
     m_array->bindPrefilter(GLBindings::ProbeTextureSlots::Prefilter);
@@ -64,13 +65,28 @@ int GLProbeManager::bind(const RenderView& view) {
 void GLProbeManager::update(Core::Context& gl, const RenderView& view, const GLView& glView, const GLIBL& ibl) {
     if (!m_baker || !m_array) return;
 
-    // Re-bake probes that are new, moved, or version-bumped. Throttled so several
-    // changing at once don't hitch the frame.
-    constexpr int MAX_REBAKES_PER_FRAME = 1;
     const int capacity = m_array->capacity();
     const int n = std::min(static_cast<int>(view.probes.size()), capacity);
     if (static_cast<int>(m_state.size()) < n) m_state.resize(n);
 
+    // Size the shared cube arrays to the highest resolution any active probe
+    // requests - array textures force one face size across every layer, so a
+    // per-probe request drives the shared build via its maximum. On a change,
+    // rebuild the arrays and force every probe to re-bake into the new size.
+    if (n > 0) {
+        int desired = GLProbeArray::MIN_RESOLUTION;
+        for (int i = 0; i < n; ++i)
+            desired = std::max(desired, static_cast<int>(view.probes[i].resolution));
+        desired = GLProbeArray::clampResolution(desired);
+        if (desired != m_array->resolution()) {
+            m_array->createTargets(capacity, desired);
+            for (BakeState& st : m_state) st.baked = false;
+        }
+    }
+
+    // Re-bake probes that are new, moved, or version-bumped. Throttled so several
+    // changing at once don't hitch the frame.
+    constexpr int MAX_REBAKES_PER_FRAME = 1;
     int rebakes = 0;
     for (int i = 0; i < n && rebakes < MAX_REBAKES_PER_FRAME; ++i) {
         const ProbeData& pd = view.probes[i];

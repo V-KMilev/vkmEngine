@@ -73,7 +73,7 @@ class GLShadowPass : public GLPass {
 
         Core::InstanceBuffer   m_instances;  ///< Per-caster model matrices (loc 4-7).
         std::vector<uint32_t>  m_order;      ///< Frustum-passing caster indices, mesh-sorted.
-        std::vector<glm::mat4> m_models;     ///< Flattened models for the current mesh run.
+        std::vector<glm::mat4> m_models;     ///< Flattened models of every frustum-passing caster this tile/face.
 };
 
 } // namespace Engine

@@ -3,7 +3,6 @@
 #include <memory>
 
 #include "gl_pass.h"
-#include "gl_screen_triangle.h"
 
 namespace Core {
     class Shader;
@@ -18,7 +17,7 @@ namespace Engine {
  * averaged, soft-knee first tap to tame fireflies), then additively upsamples
  * with a 3x3 tent. Mip 0 is left holding the final bloom, which the composite
  * pass blends in before tonemap. Runs after the HDR scene is fully resolved
- * (forward, SSR, motion blur) and before the grid + composite.
+ * (forward, decals, fog, DoF) and before the grid + composite.
  */
 class GLBloomPass : public GLPass {
     public:
@@ -37,7 +36,6 @@ class GLBloomPass : public GLPass {
     private:
         std::unique_ptr<Core::Shader> m_down;
         std::unique_ptr<Core::Shader> m_up;
-        Core::ScreenTriangle          m_tri;
 };
 
 } // namespace Engine
