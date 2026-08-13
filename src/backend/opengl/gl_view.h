@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <unordered_set>
 #include <vector>
 
 #include "resource/asset/mesh_asset.h"
@@ -82,6 +83,23 @@ class GLView {
         const Core::Texture2D* getTexture(const TextureHandle& handle) const;
         const Core::Texture2D* getFontAtlas(const FontHandle& handle) const;
 
+        /**
+         * @brief The magenta/black checkerboard bound wherever a real texture
+         *        should be but isn't.
+         *
+         * A material that references a texture which is still streaming, failed
+         * to decode, or no longer resolves would otherwise sample whatever the
+         * previous draw left in that slot - so a broken asset shows up as some
+         * other object's texture, which reads as a shading bug rather than a
+         * missing file. Binding something deliberately, obviously wrong makes
+         * the failure self-reporting.
+         *
+         * Built on first use, so a frame that never misses never allocates it.
+         *
+         * @return The placeholder texture; never null once the GL context exists.
+         */
+        const Core::Texture2D& missingTexture() const;
+
     private:
         /**
          * @brief Upload or refresh a single asset into its table, version-gated.
@@ -108,11 +126,29 @@ class GLView {
          */
         void invalidateOnEpochChange(const ResourceManager& resources);
 
+        /**
+         * @brief Warn once if @p handle's asset settled with no pixels.
+         *
+         * The placeholder makes a missing texture visible; this names the file,
+         * which is the part the screen cannot tell you. Assets still streaming
+         * are skipped - those are not failures, and they resolve on their own.
+         *
+         * @param handle    The texture to check.
+         * @param resources The resource manager holding it.
+         */
+        void reportIfMissing(const TextureHandle& handle, const ResourceManager& resources);
+
     private:
         GLResourceTable<GLMesh>     m_meshes;
         GLResourceTable<GLMaterial> m_materials;
         GLResourceTable<GLTexture>  m_textures;
         GLResourceTable<GLTexture>  m_fontAtlases;  ///< SDF atlases keyed by FontHandle (fonts carry pixels, not TextureAssets).
+
+        // Not part of the tables: it belongs to no asset and must survive the
+        // epoch flush, since a graph swap is exactly when things are missing.
+        mutable std::unique_ptr<Core::Texture2D> m_missingTexture;
+
+        std::unordered_set<uint32_t> m_reportedMissing;  ///< Texture ids already warned about, so the log stays one line per asset.
 
         uint64_t m_epoch = 0;  ///< Asset-graph identity these tables were built against; 0 = never synced.
 };
