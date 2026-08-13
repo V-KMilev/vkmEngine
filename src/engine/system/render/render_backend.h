@@ -150,6 +150,21 @@ class RenderBackend {
          */
         virtual GpuTextureId textureId(const TextureHandle& handle) const { return 0; }
 
+        /**
+         * @brief Recompile shaders whose source changed on disk - a dev hook.
+         *
+         * Cheap enough to call every frame: the common answer is "nothing
+         * changed", which costs a directory scan and a timestamp compare. A
+         * shader that no longer compiles keeps the program it had and logs the
+         * error, so a half-finished edit never takes the renderer down.
+         *
+         * A backend that compiles shaders ahead of time, or a packaged build
+         * with no sources on disk, leaves this a no-op.
+         *
+         * @return Number of shaders recompiled; 0 when nothing changed.
+         */
+        virtual uint32_t reloadChangedShaders() { return 0; }
+
     protected:
         RenderBackendType m_type;
         BackendInfo m_info;

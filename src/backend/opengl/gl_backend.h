@@ -77,6 +77,7 @@ class GLBackend : public RenderBackend {
         void releasePreview(uint64_t key) override;
         void releaseAllPreviews() override;
         GpuTextureId textureId(const TextureHandle& handle) const override;
+        uint32_t reloadChangedShaders() override;
 
     private:
         /**
