@@ -31,6 +31,7 @@
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
 #include "generator/light_generators.h"
+#include "generator/lod_generator.h"
 #include "io/project_paths.h"
 #include "resource/resource_manager.h"
 #include "system/physics/collider_fit.h"
@@ -207,6 +208,7 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<Decal>(id))          drawDecalSection(scene, ctx.resources, state, id);
     if (scene.has<ParticleEmitter>(id)) drawParticleSection(scene, state, id);
     if (scene.has<IrradianceVolume>(id)) drawIrradianceVolumeSection(scene, state, id);
+    if (scene.has<LOD>(id))            drawLODSection(scene, ctx.resources, state, id);
     if (scene.has<Animation>(id))  drawAnimationSection(scene, state, id);
     if (scene.has<ScriptComponent>(id)) drawScriptSection(scene, state, id);
     if (scene.has<UICanvas>(id))   drawUICanvasSection(scene, state, id);
@@ -417,6 +419,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         addItem("Decal", Decal{}, "Add Decal");
         addItem("Particle Emitter", ParticleEmitter{}, "Add Particle Emitter");
         addItem("Irradiance Volume", IrradianceVolume{}, "Add Irradiance Volume");
+        addItem("LOD", LOD{}, "Add LOD");
         addItem("Animation", Animation{}, "Add Animation");
 
         if (s_componentFilter[0] == '\0') {
@@ -939,6 +942,48 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
 
         if (ImGui::Button("Set as Main Camera", ImVec2(-1, 0))) {
             EditorActions::setActiveCamera(scene, state, id, "Set Main Camera");
+        }
+
+        return changed;
+    });
+}
+
+void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
+                                    EditorState& state, EntityId id) {
+    editComponentCard<LOD>(scene, state, id, "LOD", EditorStyle::Accent::Mesh, "Edit LOD", "Remove LOD",
+                           [&](LOD& lod) {
+        bool changed = false;
+
+        changed |= propSlider("Bias", &lod.bias, 0.1f, 4.0f,
+            "Scales every level's range; above 1 keeps detail further out");
+
+        // The levels themselves, so it is obvious what was generated and where
+        // each one takes over.
+        for (size_t i = 0; i < lod.levels.size(); ++i) {
+            const LODLevel& level = lod.levels[i];
+            const char* name = (level.mesh && resources.isAlive(level.mesh))
+                ? resources.get(level.mesh).name.c_str() : "<unresolved>";
+            const size_t tris = (level.mesh && resources.isAlive(level.mesh))
+                ? resources.get(level.mesh).indices.size() / 3 : 0;
+            ImGui::TextDisabled("%zu: %s  (%zu tris, to %.0fm)", i, name, tris, level.maxDistance);
+        }
+
+        ImGui::Spacing();
+
+        // Generation decimates the Mesh component's geometry. Re-tessellating is
+        // better where the source is procedural, but an imported mesh only has
+        // its triangles to work with.
+        if (scene.has<Mesh>(id) && scene.get<Mesh>(id).mesh) {
+            propSliderInt("Levels", &state.lodGenLevels, 1, 4,
+                "How many coarser levels to build below the source mesh");
+            if (ImGui::Button("Generate Levels", ImVec2(-1.0f, 0.0f))) {
+                LODGenSettings settings;
+                settings.extraLevels = static_cast<uint32_t>(state.lodGenLevels);
+                lod = generateLOD(resources, scene.get<Mesh>(id).mesh, settings);
+                changed = true;
+            }
+        } else {
+            ImGui::TextDisabled("Add a Mesh to generate levels from.");
         }
 
         return changed;

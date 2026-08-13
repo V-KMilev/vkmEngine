@@ -191,6 +191,14 @@ class StressArena : public ReflectedBehavior<StressArena> {
          */
         int pulsingMaterials = 6;
 
+        /**
+         * @brief Give the round props distance-selected geometry.
+         *
+         * Off makes every prop draw its highest level always, which is the
+         * comparison that says what LOD is worth in this scene.
+         */
+        bool lodEnabled = true;
+
         /** @brief Fly the fixed camera loop (F toggles manual control). */
         bool scriptedCamera = true;
         /** @brief Seconds for one full circuit of the scripted path. */
@@ -317,6 +325,10 @@ class StressArena : public ReflectedBehavior<StressArena> {
         MeshHandle m_cube;
         MeshHandle m_sphere;
         MeshHandle m_cylinder;
+        MeshHandle m_sphereMid;   ///< Far LOD levels for the round shapes; cubes have none.
+        MeshHandle m_sphereLow;
+        MeshHandle m_cylMid;
+        MeshHandle m_cylLow;
 
         std::vector<MaterialHandle> m_propMaterials;  ///< The palette props draw from (uniqueMaterials entries).
         MaterialHandle m_matGround;
@@ -403,7 +415,8 @@ VKM_REFLECT_BEGIN(StressArena)
     VKM_F(pulsingMaterials),
     VKM_F(cameraCutInterval),
     VKM_F(scriptedCamera),
-    VKM_F(cameraLoopTime)
+    VKM_F(cameraLoopTime),
+    VKM_F(lodEnabled)
 VKM_REFLECT_END()
 
 } // namespace Engine

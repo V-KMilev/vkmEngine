@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "ecs/component/lod.h"
 #include "ecs/scene.h"
 #include "io/scene/component_serializer.h"
 #include "resource/resource_manager.h"
@@ -128,6 +129,8 @@ template class RemoveComponentCommand<ParticleEmitter>;
 
 template class AddComponentCommand<IrradianceVolume>;
 template class RemoveComponentCommand<IrradianceVolume>;
+template class AddComponentCommand<LOD>;
+template class RemoveComponentCommand<LOD>;
 
 template <typename T>
 void ComponentEditCommand<T>::redo(Scene& scene, EditorState&) {
@@ -162,6 +165,7 @@ template class ComponentEditCommand<ReflectionProbe>;
 template class ComponentEditCommand<Decal>;
 template class ComponentEditCommand<ParticleEmitter>;
 template class ComponentEditCommand<IrradianceVolume>;
+template class ComponentEditCommand<LOD>;
 
 template class AddComponentCommand<UICanvas>;
 template class AddComponentCommand<UIElement>;

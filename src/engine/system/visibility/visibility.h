@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "ecs/entity.h"
+#include "resource/asset/mesh_asset.h"
 
 namespace Engine {
 
@@ -22,6 +23,16 @@ struct VisibleEntity {
     glm::mat4 model;
     glm::vec3 worldMin{0.0f};
     glm::vec3 worldMax{0.0f};
+
+    /**
+     * @brief Geometry to draw, already resolved.
+     *
+     * The Mesh component's handle normally, or the level an LOD component
+     * selected for this frame's distance. Carried here because the cull is
+     * where the distance is known; the consumer would otherwise have to
+     * recompute it to make the same choice.
+     */
+    MeshHandle mesh;
 };
 
 /**
