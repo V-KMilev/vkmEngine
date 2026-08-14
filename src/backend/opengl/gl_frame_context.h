@@ -46,7 +46,7 @@ struct GLFrameContext {
     const GLShadowData& shadowData;   ///< This frame's shadow plan (matrices + slots).
     const GLIBL&      ibl;            ///< Baked IBL product set: sampled by forward (ambient) + skybox.
     GLBloom&          bloom;          ///< Bloom mip chain: written by the bloom pass, blended in composite.
-    GLMaskTarget&       ao;             ///< GTAO factor: written by the GTAO pass, sampled by forward (ambient).
+    GLMaskTarget&     ao;             ///< GTAO factor: written by the GTAO pass, sampled by forward (ambient).
     GLClusterGrid&    clusters;       ///< Forward+ per-cluster light lists: written by the cluster pass, read by forward.
     GLFogVolume&      fog;            ///< Froxel fog volumes: written by the fog compute, applied by the fog-apply pass.
     GLIrradianceVolume& irradiance;   ///< Baked SH irradiance volume, sampled by the forward ambient term.

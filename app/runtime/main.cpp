@@ -110,8 +110,7 @@ int main(int argc, char** argv) {
         const std::string title = project.name;
         setupEngineApp(engine, AppConfig{
             title.c_str(),
-            false, true,
-            nullptr});
+            false, true});
 
         // A scene comes from the project that owns it, never from the command
         // line. The rule is one function so all three hosts open a project the

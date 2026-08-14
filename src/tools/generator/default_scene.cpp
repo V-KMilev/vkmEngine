@@ -1,7 +1,5 @@
 #include "generator/default_scene.h"
 
-#include <utility>
-
 #include <glm/gtc/quaternion.hpp>
 
 #include "resource/resource_manager.h"

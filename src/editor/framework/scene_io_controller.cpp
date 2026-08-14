@@ -120,8 +120,9 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
     pushRecent(state, m_currentScenePath);
 }
 
-void SceneIOController::newScene(FrameContext& ctx, EditorState& state) {
-    // Tear down any live behaviors before their entities vanish.
+void SceneIOController::beginSceneReplace(FrameContext& ctx, EditorState& state) {
+    // Tear down any live behaviors before their entities vanish - and while the
+    // module holding their code is still loaded.
     BehaviorSystem::endSession(ctx.scene);
 
     ctx.scene.clear();
@@ -129,6 +130,10 @@ void SceneIOController::newScene(FrameContext& ctx, EditorState& state) {
     m_currentScenePath.clear();
 
     afterSceneReplace(ctx, state, /*priorSelectionName*/ {}, /*eventPath*/ {});
+}
+
+void SceneIOController::newScene(FrameContext& ctx, EditorState& state) {
+    beginSceneReplace(ctx, state);
 
     // The same seed the engine boots with when a project names no scene: one
     // definition, so New Scene and a fresh start cannot drift apart. Called

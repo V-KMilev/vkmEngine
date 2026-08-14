@@ -17,15 +17,19 @@
 
 namespace Engine {
 
-SceneSource bootProjectScene(const Project& project, ScriptModule& module,
-                             Scene& scene, ResourceManager& resources) {
+void bootProjectScene(
+    const Project& project,
+    ScriptModule& module,
+    Scene& scene,
+    ResourceManager& resources
+) {
     if (!project.entryScene.empty()) {
         const std::filesystem::path path =
             (ProjectPaths::projectRoot() / project.entryScene).lexically_normal();
 
         if (SceneSerializer::load(scene, resources, path.string())) {
             LOG_INFO("Opened scene '%s'", path.string().c_str());
-            return SceneSource::Authored;
+            return;
         }
         // Fall through rather than leave an empty world: the project named a
         // scene, so the miss is worth an error even though it is recoverable.
@@ -33,13 +37,12 @@ SceneSource bootProjectScene(const Project& project, ScriptModule& module,
                   path.string().c_str());
     } else if (module.buildScene(scene)) {
         LOG_INFO("Scene built by the project's module");
-        return SceneSource::Generated;
+        return;
     }
 
     buildDefaultScene(scene, resources);
     LOG_INFO("Project '%s' supplies no scene of its own; opened the default scene",
              project.name.c_str());
-    return SceneSource::Default;
 }
 
 } // namespace Engine

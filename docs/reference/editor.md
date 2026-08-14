@@ -184,7 +184,7 @@ These are rendered by the backend's dedicated preview path
 (`RenderBackend::renderPreview`, backed by `GLPreview`) - **not** the full
 frame pipeline. It is a minimal forward + composite render of the material on
 a preview mesh into a small offscreen target, kept separate from the main
-18-pass path. Results are cached per asset (keyed by handle + version) with a
+19-pass path. Results are cached per asset (keyed by handle + version) with a
 small per-frame bake budget, so the Asset Browser grid amortizes thumbnail
 generation across frames while the Material Editor's live view re-renders each
 frame.
