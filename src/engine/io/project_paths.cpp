@@ -77,9 +77,7 @@ std::filesystem::path projectRoot() {
     // the repo is its own project, and a shipped game keeps its data beside the
     // executable.
     if (!projectOverride().empty()) return projectOverride();
-
-    static const std::filesystem::path resolved = resolveRoot();
-    return resolved;
+    return engineRoot();
 }
 
 } // namespace Engine::ProjectPaths
