@@ -5,20 +5,25 @@
 namespace Engine {
 
 /**
- * @brief Log the build banner (app name, version, branch, commit, date).
+ * @brief Log the build banner: what this binary is, and what it is made of.
  *
- * Reads the APP_* macros injected by CMake as compile definitions; call once
- * at startup.
+ * Mirrors the editor's About dialog - the same versions above, the same
+ * per-module commits below, so a log and a screenshot describe the build the
+ * same way. Each vkm module is its own repository, so one hash per module says
+ * what one tree commit cannot.
+ *
+ * Reads the APP_* and VKM* macros injected by CMake as compile definitions;
+ * call once at startup. The API and renderer strings are absent here because
+ * the GL context does not exist yet - the backend logs those when it opens one.
  */
 inline void printBuildInfo() {
     LOG_INFO_C("BUILD", "------- Build Information -------");
-    LOG_INFO_C("BUILD", "Running '%s' Version %s", APP_NAME, APP_VERSION);
-    LOG_INFO_C("BUILD", "Major version: %s", APP_VERSION_MAJOR);
-    LOG_INFO_C("BUILD", "Minor version: %s", APP_VERSION_MINOR);
-    LOG_INFO_C("BUILD", "Patch version: %s", APP_VERSION_PATCH);
-    LOG_INFO_C("BUILD", "Branch: %s", APP_BRANCH);
-    LOG_INFO_C("BUILD", "Commit Hash: %s", APP_COMMIT_HASH);
-    LOG_INFO_C("BUILD", "Build Date: %s", APP_BUILD_DATE);
+    LOG_INFO_C("BUILD", "Running '%s' v%s", APP_NAME, APP_VERSION);
+    LOG_INFO_C("BUILD", "Build:  %s (%s)", APP_BUILD_DATE, APP_BRANCH);
+    LOG_INFO_C("BUILD", "--------------- Debug -----------");
+    LOG_INFO_C("BUILD", "vkmEngine: %s @ %.8s", APP_VERSION,    APP_COMMIT_HASH);
+    LOG_INFO_C("BUILD", "vkmGL:     %s @ %.8s", VKMGL_VERSION,  VKMGL_COMMIT_HASH);
+    LOG_INFO_C("BUILD", "vkmLog:    %s @ %.8s", VKMLOG_VERSION, VKMLOG_COMMIT_HASH);
     LOG_INFO_C("BUILD", "---------------------------------");
 }
 
