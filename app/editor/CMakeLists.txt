@@ -38,26 +38,4 @@ else()
     target_link_options(engine_editor PRIVATE "-rdynamic")
 endif()
 
-# The game module: gameplay behaviors compiled as a shared library the editor
-# dlopen's for hot-reload. Compiles against EngineHeaders (include-only) and
-# resolves engine symbols from this exe.
-file(GLOB_RECURSE GAME_MODULE_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/game/*.cpp)
-add_library(game_module SHARED ${GAME_MODULE_SOURCES})
-target_include_directories(game_module PRIVATE ${CMAKE_SOURCE_DIR}/game)
-target_link_libraries(game_module PRIVATE EngineHeaders vkm_warnings)
-if(WIN32)
-    target_link_libraries(game_module PRIVATE engine_editor)
-endif()
-# Output as game.dll / libgame.so / libgame.dylib (matches DynamicLibrary::platformName),
-# placed in the unified binary dir (build/bin) where the editor's GAME_MODULE_DIR looks.
-# On Linux a SHARED lib is a LIBRARY artifact, so CMAKE_RUNTIME_OUTPUT_DIRECTORY
-# alone (it governs exes and Windows DLLs only) would leave libgame.so in the target's
-# own build dir and the editor would not find it.
-set_target_properties(game_module PROPERTIES
-    OUTPUT_NAME game
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
-    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
-)
-if(WIN32)
-    set_target_properties(game_module PROPERTIES PREFIX "")
-endif()
+

@@ -89,9 +89,11 @@ if(VKM_WITH_EDITOR)
     add_subdirectory(src/editor)
 endif()
 add_subdirectory(src/backend/opengl)
-# game/ is the gameplay layer (behaviors), kept outside src/ - src/ is the
-# reusable engine; game/ is what's built on top of it.
-add_subdirectory(game)
+# Example projects. Not part of the engine - each is a project in the shape a
+# real one takes, built here only because 1.4 has not yet made them buildable
+# against an installed SDK.
+add_subdirectory(examples/potion_runner)
+add_subdirectory(examples/stress_arena)
 
 # Two thin executables under app/. engine_runtime is the bare engine; engine_editor
 # adds the in-process editor. Both link the engine libs directly and share the

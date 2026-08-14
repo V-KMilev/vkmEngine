@@ -64,6 +64,16 @@ inline std::filesystem::path engineShaders() { return engineRoot() / "shaders"; 
 inline std::filesystem::path engineAssets()  { return engineRoot() / "assets"; }
 inline std::filesystem::path engineFonts()   { return engineAssets() / "fonts"; }
 
+/**
+ * @brief Directory the project keeps its built gameplay module in.
+ *
+ * A project brings its own code: the module is the game, so it lives with the
+ * game rather than with the engine that loads it.
+ *
+ * @return Absolute path to the project's binary directory.
+ */
+inline std::filesystem::path projectBin() { return projectRoot() / "bin"; }
+
 // Project-owned. The game's own content, written by the editor.
 inline std::filesystem::path assets()      { return projectRoot() / "assets"; }
 inline std::filesystem::path scenes()      { return projectRoot() / "scenes"; }
