@@ -176,7 +176,7 @@ by the GLSL. Vertex attributes are per-vertex position/normal/uv/tangent (slots 
 plus a per-instance model matrix (slots 4-7, divisor 1). UBO binding points cover
 Material, Lights, Camera, and Shadow blocks; texture slots cover the PBR material
 maps plus the shadow atlas (2D array + cube array), IBL set (irradiance / prefilter /
-BRDF LUT / env cube), the GTAO factor, the contact-shadow mask, the scene
+BRDF LUT / env cube), the GTAO factor, the scene
 colour/depth/G-buffer samplers, the froxel fog volume, and the SH irradiance
 volume. Treat `gl_bindings.h` as authoritative rather than hardcoding slot
 numbers from memory.

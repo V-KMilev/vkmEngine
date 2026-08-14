@@ -79,24 +79,23 @@ class EditorSystem : public System {
         float m_shaderPollTimer = 0.0f;
 
         /**
-         * @brief Lay out the root-window panel arrangement.
+         * @brief Open the project a menu or dialog chose, after the draw.
          *
-         * Drives the docked panels, the viewport (with its overlays),
-         * border-resize and the status bar. Kept as a method on the shell
-         * (rather than its own unit) so it doesn't need every panel
-         * passed back in.
-         */
-        /**
-         * @brief Execute a guarded destructive scene action (quit / new / open)
-         * once the unsaved-changes flow resolves it.
-         */
-        /**
-         * @brief Open a project picked from the Recent menu, after the draw.
+         * Deferred because opening rebuilds the scene while the UI that asked is
+         * still being drawn, and guarded because it destroys the current scene:
+         * an unsaved one prompts first and this runs once that resolves.
          *
          * @param ec Editor context to re-root.
          */
         void openPendingProject(EditorContext& ec);
 
+        /**
+         * @brief Execute a guarded destructive scene action once the
+         *        unsaved-changes flow resolves it.
+         *
+         * @param ctx Frame context the action operates on.
+         * @param action Which action was confirmed.
+         */
         void performSceneAction(FrameContext& ctx, EditorState::PendingSceneAction action);
 
         void drawWorkspace(EditorContext& ec);

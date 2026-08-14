@@ -170,7 +170,7 @@ Application and gameplay layers sit **outside** the `src/engine/` include root:
 
 | Path                | Contents                                                                  |
 |---------------------|---------------------------------------------------------------------------|
-| `app/engine_app.h`  | `setupEngineApp`: the shared, header-only bootstrap that registers the default systems, installs the GL backend, and seeds the default scene. Both mains include it directly (there is no `EngineApp` library) |
+| `app/engine_app.h`  | `setupEngineApp`: the shared, header-only bootstrap that registers the default systems and installs the GL backend. It seeds no scene - that is the project's answer, given by `bootProjectScene` after it returns. Both mains include it directly (there is no `EngineApp` library) |
 | `app/editor/`       | `engine_editor` entry point; opens a project and loads its module for hot-reload |
 | `app/runtime/`      | `engine_runtime` entry point; opens a project and plays it                 |
 | `app/cooker/`       | `engine_cook` entry point; headless asset cook (no window, no GL, no `Engine`) |

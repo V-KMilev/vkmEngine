@@ -15,12 +15,9 @@ target_link_libraries(engine_editor PRIVATE
     vkm_warnings
 )
 
-# main.cpp includes the shared bootstrap as "app/engine_app.h" (which pulls in
-# "example/default_scene.h"); the repo root puts both prefixes on the include path.
+# main.cpp includes the shared bootstrap as "app/engine_app.h"; the repo root is
+# on the include path so that prefix resolves.
 target_include_directories(engine_editor PRIVATE ${CMAKE_SOURCE_DIR})
-
-# Where the editor looks for the hot-reloadable game module at runtime (the
-# unified output dir, next to the exe).
 
 # Export the exe's symbols so the hot-reloadable game module can resolve engine
 # symbols against it (the module is loaded at runtime, never linked into the exe).

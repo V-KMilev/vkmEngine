@@ -151,13 +151,19 @@ The editor edits *a project*, not the repo it was built in. `ProjectController`
 the **File > Recent Projects** list, and re-roots the whole editor in place - no
 restart. Order matters, because each step depends on the previous one:
 
-1. `ProjectPaths::setProjectRoot(root)` - every path composed after this points
+1. Save the outgoing project's `editor_settings.json`, while its root is still
+   current - otherwise its tuning would land in the project being opened.
+2. `ProjectPaths::setProjectRoot(root)` - every path composed after this points
    at the new project.
-2. Clear the scene - entities from the old project must not outlive it.
-3. `AssetLibrary::get().load()` - the new project's asset database.
-4. Swap the gameplay module to the new project's `bin/`.
-5. Boot its scene: `entryScene` if it names one, else the module's
-   `vkmBuildScene`, else the default scene.
+3. Tear the scene down through `SceneIOController::beginSceneReplace`: behaviors
+   get `onDestroy` while the old module still holds their code, and the undo
+   stack, material previews, play snapshot and saved-scene path all go with it.
+4. Drop the outgoing project's assets - a generated world never swaps the
+   `ResourceManager` the way a scene load does.
+5. `AssetLibrary::get().load()` and the new project's own editor settings.
+6. Swap the gameplay module to the new project's `bin/`, or unload it when the
+   project brings none.
+7. Boot its scene through `bootProjectScene`, the same rule both binaries use.
 
 A path that names a file rather than a directory still works - `findProjectRoot`
 walks up to the owning `project.json`, so dropping in a scene opens its project.
