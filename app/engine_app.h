@@ -1,6 +1,8 @@
 #pragma once
 
+#include <filesystem>
 #include <memory>
+#include <system_error>
 
 #include "core/engine.h"
 #include "io/project_paths.h"
@@ -30,7 +32,7 @@
 inline void ensureDefaultUIFont(Engine::ResourceManager& resources) {
     if (resources.findByName<Engine::FontAsset>("ui:roboto")) return;
     Engine::bakeFontSDF(resources,
-        (Engine::ProjectPaths::assets() / "fonts" / "Roboto-Medium.ttf").string(),
+        (Engine::ProjectPaths::engineFonts() / "Roboto-Medium.ttf").string(),
         "ui:roboto");
 }
 
@@ -70,7 +72,16 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     auto& window = engine.getWindow();
     window.createWindow(config.windowTitle);
     window.setFramerate(0);
-    window.setIcon((Engine::ProjectPaths::assets() / "logo" / "vkm_engine_icon.png").string());
+    // A game's own icon if it ships one, the engine's otherwise. Unlike the UI
+    // font this is worth letting a project override - a shipped game should not
+    // wear the engine's logo - but a project that has not authored one still
+    // gets a window with an icon rather than a blank.
+    const std::filesystem::path projectIcon =
+        Engine::ProjectPaths::assets() / "logo" / "icon.png";
+    std::error_code iconEc;
+    window.setIcon(std::filesystem::exists(projectIcon, iconEc)
+        ? projectIcon.string()
+        : (Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_icon.png").string());
 
     auto& cameraController = engine.addSystem<Engine::CameraControllerSystem>(Engine::SystemStage::Input);
     engine.addSystem<Engine::AsyncLoaderSystem>(Engine::SystemStage::Simulation);
