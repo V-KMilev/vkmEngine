@@ -6,6 +6,7 @@
 #include "debug/engine_error_log.h"
 #include "framework/editor_state.h"
 #include "framework/material_preview_session.h"
+#include "framework/project_controller.h"
 #include "framework/scene_io_controller.h"
 #include "framework/editor_menu_bar.h"
 #include "framework/editor_status_bar.h"
@@ -89,6 +90,13 @@ class EditorSystem : public System {
          * @brief Execute a guarded destructive scene action (quit / new / open)
          * once the unsaved-changes flow resolves it.
          */
+        /**
+         * @brief Open a project picked from the Recent menu, after the draw.
+         *
+         * @param ec Editor context to re-root.
+         */
+        void openPendingProject(EditorContext& ec);
+
         void performSceneAction(FrameContext& ctx, EditorState::PendingSceneAction action);
 
         void drawWorkspace(EditorContext& ec);
@@ -114,6 +122,8 @@ class EditorSystem : public System {
         unsigned long long m_lastErrorTotal = 0;
 
         SceneIOController m_sceneIO;
+        ProjectController m_project;
+        bool              m_notedStartupProject = false;
         EditorMenuBar     m_menuBar;
         EditorStatusBar   m_statusBar;
         EditorShortcuts   m_shortcuts;
