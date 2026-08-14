@@ -7,7 +7,7 @@
 #include <glm/glm.hpp>
 
 #include "gl_pass.h"
-#include "gl_instance_buffer.h"
+#include "data/gl_instance_buffer.h"
 
 #include "data/gl_shadow_data.h"
 

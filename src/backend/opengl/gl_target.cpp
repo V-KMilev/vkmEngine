@@ -10,7 +10,7 @@
 
 #include "gl_context.h"
 #include "texture/gl_texture.h"
-#include "buffer/state/gl_render_buffer.h"
+#include "target/gl_render_buffer.h"
 
 namespace Engine {
 
