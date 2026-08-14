@@ -40,9 +40,9 @@ std::filesystem::path engineRoot();
 /**
  * @brief Point the project root at @p path.
  *
- * Call once at startup, before anything composes a project path - the first
- * projectRoot() call without an override caches the discovered location, and a
- * later override would leave the two disagreeing.
+ * Set before anything composes a project path. The override itself takes effect
+ * immediately - it is checked ahead of the fallback - but a path already built
+ * from the old root is a plain string by then and will not follow.
  *
  * @param path Directory containing the project's project.json.
  */
@@ -51,9 +51,9 @@ void setProjectRoot(const std::filesystem::path& path);
 /**
  * @brief Directory holding the project currently open.
  *
- * The path set by setProjectRoot() when there is one. Otherwise the directory
- * the executable was launched from, which is where a packaged game keeps its
- * data, falling back to the repo root recorded at configure time.
+ * The path set by setProjectRoot() when there is one. Otherwise the engine root:
+ * a development checkout is its own project, and a packaged game keeps its data
+ * beside the executable, so both want the same directory.
  *
  * @return Absolute path to the project root.
  */

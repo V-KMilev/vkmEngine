@@ -13,7 +13,7 @@
 #include "io/asset/asset_library.h"
 #include "io/project.h"
 #include "io/project_paths.h"
-#include "io/scene/scene_serializer.h"
+#include "project_boot.h"
 #include "editor_system.h"
 #include "system/script/script_module.h"
 #include "platform/library/dynamic_library.h"
@@ -101,26 +101,10 @@ int main(int argc, char** argv) {
             engine, engine.getWindow().getWindowContext(),
             sys.camera, sys.visibility, sys.render, scriptModule);
 
-        // The editor opens on the same scene the runtime would boot, by the same
-        // rule and in the same order: the authored entryScene, else the module's
-        // generated world, else the default scene. Exactly one runs.
-        bool booted = false;
-        if (!project.entryScene.empty()) {
-            const std::filesystem::path scene =
-                Engine::ProjectPaths::projectRoot() / project.entryScene;
-            booted = Engine::SceneSerializer::load(
-                engine.getScene(), engine.getResources(), scene.string());
-            if (booted) LOG_INFO("Opened scene '%s'", scene.string().c_str());
-            else        LOG_ERROR("Failed to load scene '%s'", scene.string().c_str());
-        } else if (scriptModule.buildScene(engine.getScene())) {
-            booted = true;
-            LOG_INFO("Scene built by the project's module");
-        }
-
-        if (!booted) {
-            Engine::buildDefaultScene(engine.getScene(), engine.getResources());
-            LOG_INFO("Project supplies no scene of its own; opened the default scene");
-        }
+        // The editor opens on the same scene the runtime would boot, by the
+        // same rule (see tools/project_boot.h).
+        Engine::bootProjectScene(project, scriptModule,
+                                 engine.getScene(), engine.getResources());
 
         engine.run();
 

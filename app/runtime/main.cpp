@@ -16,7 +16,7 @@
 #include "platform/library/dynamic_library.h"
 #include "io/project.h"
 #include "io/project_paths.h"
-#include "io/scene/scene_serializer.h"
+#include "project_boot.h"
 #include "system/script/script_module.h"
 #include "app/engine_app.h"
 
@@ -114,27 +114,10 @@ int main(int argc, char** argv) {
             nullptr});
 
         // A scene comes from the project that owns it, never from the command
-        // line: entryScene names an authored one, a project whose world is
-        // generated says so through its module, and a project supplying neither
-        // opens on the default scene - the same one New Scene produces. Exactly
-        // one of the three runs, so nothing is left sitting under the project's
-        // own world.
-        bool booted = false;
-        if (!project.entryScene.empty()) {
-            const std::filesystem::path scene = root / project.entryScene;
-            booted = Engine::SceneSerializer::load(
-                engine.getScene(), engine.getResources(), scene.string());
-            if (booted) LOG_INFO("Booted scene '%s'", scene.string().c_str());
-            else        LOG_ERROR("Failed to load scene '%s'", scene.string().c_str());
-        } else if (scriptModule.buildScene(engine.getScene())) {
-            booted = true;
-            LOG_INFO("Scene built by the project's module");
-        }
-
-        if (!booted) {
-            Engine::buildDefaultScene(engine.getScene(), engine.getResources());
-            LOG_INFO("Project supplies no scene of its own; opened the default scene");
-        }
+        // line. The rule is one function so all three hosts open a project the
+        // same way (see tools/project_boot.h).
+        Engine::bootProjectScene(project, scriptModule,
+                                 engine.getScene(), engine.getResources());
 
         engine.run();
 

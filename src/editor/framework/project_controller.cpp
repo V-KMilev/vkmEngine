@@ -20,8 +20,7 @@
 #include "system/render/render_system.h"
 #include "io/project.h"
 #include "io/project_paths.h"
-#include "io/scene/scene_serializer.h"
-#include "generator/default_scene.h"
+#include "project_boot.h"
 #include "platform/library/dynamic_library.h"
 #include "system/script/script_module.h"
 #include "ui/editor_dialogs.h"
@@ -76,16 +75,7 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     // 6. Whatever the project says it starts as, by the same rule and in the
     //    same order both binaries boot with: an authored scene, else one its
     //    module generates, else the default scene.
-    bool booted = false;
-    if (!project.entryScene.empty()) {
-        const fs::path scene = root / project.entryScene;
-        booted = SceneSerializer::load(ec.frame.scene, ec.frame.resources, scene.string());
-        if (!booted) LOG_ERROR("Entry scene '%s' failed to load", scene.string().c_str());
-    } else {
-        booted = scriptModule.buildScene(ec.frame.scene);
-    }
-
-    if (!booted) buildDefaultScene(ec.frame.scene, ec.frame.resources);
+    bootProjectScene(project, scriptModule, ec.frame.scene, ec.frame.resources);
 
     ec.frame.window.setTitle(project.name + " - vkmEngine");
     ec.state.sceneDirty = false;
