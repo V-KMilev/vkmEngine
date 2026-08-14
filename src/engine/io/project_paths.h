@@ -5,35 +5,62 @@
 namespace Engine {
 
 /**
- * @brief Canonical on-disk locations for the project.
+ * @brief Canonical on-disk locations, split by who owns them.
  *
- * One place defines the project layout; callers compose specific files from
- * these directories (e.g. ProjectPaths::library() / "_manifest.json") instead
- * of re-deriving the root at each site.
+ * Two roots, because two different things live on disk and they belong to
+ * different people:
  *
- * root() is resolved once at first use: a packaged build ships its data beside
- * the executable (detected by a `shaders/` folder next to the exe) and roots
- * there, so the game is relocatable; otherwise it falls back to the build-time
- * APP_ROOT_DIR (the dev repo root). root() is therefore defined out-of-line in
- * project_paths.cpp - resolving the executable path is platform code - while the
- * composing helpers below stay header-inline.
+ * - **engineRoot()** is what ships with the engine and is read-only to a game:
+ *   shaders, the default UI font, editor icons. One copy serves every project.
+ * - **projectRoot()** is the game being made: its scenes, its art, its asset
+ *   library and the cooked cache derived from it. This is the part a user owns,
+ *   edits, and version-controls.
+ *
+ * Before this split there was one root and the distinction did not exist, which
+ * is why the engine could only ever run the game sitting inside its own repo.
+ * Callers compose specific files from these directories (e.g.
+ * ProjectPaths::library() / "_manifest.json") rather than re-deriving a root.
+ *
+ * Both roots are resolved once at first use and defined out-of-line, since
+ * locating the executable is platform code; the composing helpers stay inline.
  */
 namespace ProjectPaths {
 
-std::filesystem::path root();
+/**
+ * @brief Directory holding the engine's own read-only data.
+ *
+ * A packaged build ships it beside the executable (or one level up, when the
+ * exe sits in bin/); a development build falls back to the repo root recorded
+ * at configure time.
+ *
+ * @return Absolute path to the engine root.
+ */
+std::filesystem::path engineRoot();
 
-inline std::filesystem::path assets()      { return root() / "assets"; }
-inline std::filesystem::path shaders()     { return root() / "shaders"; }
-inline std::filesystem::path scenes()      { return root() / "scenes"; }
-inline std::filesystem::path screenshots() { return root() / "screenshots"; }
+/**
+ * @brief Directory holding the project currently open.
+ *
+ * @return Absolute path to the project root.
+ */
+std::filesystem::path projectRoot();
+
+// Engine-owned. Read-only to a game: one copy serves every project.
+inline std::filesystem::path shaders()      { return engineRoot() / "shaders"; }
+inline std::filesystem::path engineAssets() { return engineRoot() / "assets"; }
+inline std::filesystem::path fonts()        { return engineAssets() / "fonts"; }
+
+// Project-owned. The game's own content, written by the editor.
+inline std::filesystem::path assets()      { return projectRoot() / "assets"; }
+inline std::filesystem::path scenes()      { return projectRoot() / "scenes"; }
+inline std::filesystem::path screenshots() { return projectRoot() / "screenshots"; }
 inline std::filesystem::path envs()        { return assets() / "envs"; }
 
 // Asset database. `library` holds the editable per-asset recipe files (source of
 // truth, version-controlled); `cooked` holds the derived binary cache keyed by
 // recipe hash (regenerable, not version-controlled). The manifest maps an
 // asset's name to its recipe + cooked files.
-inline std::filesystem::path library()         { return root() / "library"; }
-inline std::filesystem::path cooked()          { return root() / "cooked"; }
+inline std::filesystem::path library()         { return projectRoot() / "library"; }
+inline std::filesystem::path cooked()          { return projectRoot() / "cooked"; }
 inline std::filesystem::path libraryManifest() { return library() / "_manifest.json"; }
 
 } // namespace ProjectPaths

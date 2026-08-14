@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
         // Resolve the project root from the executable so a packaged build is
         // relocatable, and ensure logs/ exists - a shipped game has none yet and
         // Logger::init fails if it cannot open the file.
-        const std::filesystem::path root = Engine::ProjectPaths::root();
+        const std::filesystem::path root = Engine::ProjectPaths::projectRoot();
         std::error_code ec;
         // Pin the working directory to that root: some subsystems (shader
         // loading) open CWD-relative paths, so without this the game only runs
