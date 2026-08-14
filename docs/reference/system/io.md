@@ -4,6 +4,49 @@ The engine persists scenes to JSON and watches the filesystem for
 shader hot-reload. The IO layer has three serializers that compose,
 plus a polling file watcher.
 
+## Projects and the two roots
+
+The engine runs *projects*: a directory becomes one by containing a
+`project.json`. That file is what lets a game live nowhere near the engine's own
+repo, and `Engine::Project` (`src/engine/io/project.h`) is everything it says:
+
+| Field | Purpose |
+|-------|---------|
+| `name` | Display name; titles the window, names the packaged exe by default |
+| `engineVersion` | Engine version the project was authored against; logged on load |
+| `entryScene` | Scene to boot, relative to the project root |
+| `exeName` | Packaged executable name; defaults to `name` |
+
+A missing or malformed `project.json` is **not** fatal - the defaults stand and
+an unnamed project opens, which is what a fresh directory should do.
+
+`findProjectRoot(start)` accepts a directory *or any file inside it* and walks up
+looking for `project.json`, so passing a scene finds the project owning it.
+
+### Which root owns a path
+
+`ProjectPaths` (`src/engine/io/project_paths.h`) splits on-disk locations by who
+owns them, because two different things live on disk:
+
+| Root | Owns | Helpers |
+|------|------|---------|
+| `engineRoot()` | What ships with the engine, read-only to a game. One copy serves every project | `engineShaders()`, `engineAssets()`, `engineFonts()` |
+| `projectRoot()` | The game being made: its content, its code, its asset database | `assets()`, `scenes()`, `envs()`, `screenshots()`, `library()`, `cooked()`, `projectBin()` |
+
+Both resolve once at first use. `setProjectRoot()` must be called before anything
+composes a project path - `projectRoot()` caches what it first answers, so a late
+override leaves the two disagreeing. The editor re-roots in that order when it
+opens a project (see [editor.md](../editor.md#opening-a-project)).
+
+Two consequences worth knowing before you add a path:
+
+- **The working directory is the engine root**, in every host. Shaders load
+  CWD-relative, so pinning CWD anywhere else breaks startup.
+- **Engine defaults fall back engine-ward.** A project that ships no UI font, no
+  window icon and no environment map still gets the engine's, rather than
+  silently losing text, an icon, or IBL. Content the project *does* ship always
+  wins. This is the shape to copy for any new default.
+
 ## Components
 
 | Layer               | File                                         | Purpose                                                                                  |
