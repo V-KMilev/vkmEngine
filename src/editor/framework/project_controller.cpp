@@ -166,7 +166,9 @@ void ProjectController::drawDialog(EditorContext& ec, ScriptModule& scriptModule
     // Outside the popup scope: open() rebuilds the scene, and doing that with
     // an ImGui window still on the stack is asking for trouble.
     if (!chosen.empty()) {
-        open(ec, scriptModule, sceneIO, chosen);
+        // Park it rather than open here: the deferred path is the one that asks
+        // about unsaved changes first, and both ways in should ask.
+        ec.state.pendingProjectOpen = chosen;
         m_pathBuffer[0] = '\0';
     }
 }

@@ -75,7 +75,7 @@ struct EditorState {
      * confirming; afterSaveAction is deferred until the next clean save
      * (the "Save" choice); pendingScenePath is the target of a guarded Open.
      */
-    enum class PendingSceneAction : uint8_t { None, Quit, New, Open };
+    enum class PendingSceneAction : uint8_t { None, Quit, New, Open, OpenProject };
     PendingSceneAction confirmAction   = PendingSceneAction::None;
     PendingSceneAction afterSaveAction = PendingSceneAction::None;
     std::string        pendingScenePath;
