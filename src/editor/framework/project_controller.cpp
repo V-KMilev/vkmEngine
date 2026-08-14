@@ -60,10 +60,6 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     //    and saved-scene path all belong to the project being left.
     sceneIO.beginSceneReplace(ec.frame, ec.state);
 
-    //    The outgoing project's meshes, materials and textures go with it. A
-    //    project whose world is generated never swaps the manager the way a
-    //    scene load does, so without this they would follow us into the new one.
-    ec.frame.resources.clear();
 
     // 4. The new project's asset database, and its own editor settings.
     AssetLibrary::get().load();
