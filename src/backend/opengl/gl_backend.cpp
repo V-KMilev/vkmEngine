@@ -13,6 +13,7 @@
 #include "gl_frame_context.h"
 #include "gl_pass.h"
 #include "gl_shader.h"
+#include "gl_shader_preprocess.h"
 #include "texture/gl_texture.h"
 #include "shader/gl_shader_reload.h"
 #include "pass/gl_shadow_pass.h"
@@ -101,7 +102,8 @@ bool GLBackend::init(WindowManager& window) {
 
     // Shaders omit their own #version; inject it from the requested GL context
     // version (single source of truth) before the passes compile their programs.
-    Core::setGraphicsShaderVersion(OPENGL_GLSL_VERSION);
+    // Covers compute stages too - they share the same loader.
+    Core::setShaderVersion(OPENGL_GLSL_VERSION);
 
     // Build the pass list. Passes compile their shaders, so this must run after
     // the context exists. One line per pass, in execution order:

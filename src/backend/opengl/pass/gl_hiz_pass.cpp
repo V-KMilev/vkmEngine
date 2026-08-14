@@ -6,7 +6,7 @@
 
 #include "gl_shader.h"
 #include "gl_context.h"
-#include "gl_screen_triangle.h"
+#include "data/gl_screen_triangle.h"
 
 #include "convention/gl_bindings.h"
 #include "data/gl_hiz.h"
