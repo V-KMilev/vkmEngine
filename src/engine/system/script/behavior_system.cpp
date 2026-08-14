@@ -156,9 +156,12 @@ void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
     if (SceneSerializer::load(ctx.scene, ctx.resources, scenePath.string())) {
         LOG_INFO("Loaded scene '%s' on request", path.c_str());
     } else {
-        // The old scene is already gone by now, so there is nothing to fall back
-        // to; say which scene failed rather than leaving an empty world unexplained.
-        LOG_ERROR("Requested scene '%s' failed to load", scenePath.string().c_str());
+        // The load is transactional, so a failure leaves the current scene
+        // standing rather than an empty world. Its behaviors have already had
+        // onDestroy from the endSession above and will start again on the next
+        // tick, which is the closest thing to a recovery there is.
+        LOG_ERROR("Requested scene '%s' failed to load; staying in the current one",
+                  scenePath.string().c_str());
     }
 }
 

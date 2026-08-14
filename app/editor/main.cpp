@@ -23,7 +23,8 @@ int main(int argc, char** argv) {
     try {
         // Same rule as the runtime: the project is the one beside this
         // executable, unless an argument names a different one. Resolved before
-        // any path is composed, since projectRoot() caches what it first answers.
+        // any path is composed: the override takes effect at once, but a path
+        // already built from the old root will not follow it.
         // A project browser, when it lands, is a GUI for naming one - not a
         // second way of opening it.
         bool argNotAProject = false;
