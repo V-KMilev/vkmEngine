@@ -1,6 +1,5 @@
 {
     "name": "Stress Arena",
     "engineVersion": "1.3.0",
-    "entryScene": "",
-    "exeName": "StressArena"
+    "entryScene": ""
 }

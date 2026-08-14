@@ -13,15 +13,14 @@ namespace Engine {
  * lets the engine run a game that lives nowhere near the engine's own repo.
  *
  * Deliberately small. Every field here is read by something: the name titles
- * the window and names the packaged executable, entryScene is what boots, and
- * engineVersion is checked so a project authored against a different engine
- * says so rather than failing halfway through a scene load.
+ * the window, entryScene is what boots, and engineVersion is compared against
+ * the running engine so a project authored against a different one says so up
+ * front rather than failing halfway through a scene load.
  */
 struct Project {
     std::string name         = "Untitled";  ///< Display name; titles the window.
     std::string engineVersion;              ///< Engine version this was authored against.
     std::string entryScene;                 ///< Scene to boot, relative to the project root.
-    std::string exeName;                    ///< Packaged executable name; defaults to name.
 };
 
 /**
