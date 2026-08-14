@@ -142,6 +142,16 @@ EditorSystem::~EditorSystem() {
     ImGui::DestroyContext();
 }
 
+void EditorSystem::openPendingProject(EditorContext& ec) {
+    if (ec.state.pendingProjectOpen.empty()) return;
+
+    // Deferred out of the menu: opening rebuilds the scene, and the menu that
+    // asked is still being drawn when it asks.
+    const std::string path = ec.state.pendingProjectOpen;
+    ec.state.pendingProjectOpen.clear();
+    m_project.open(ec, m_scriptModule, path);
+}
+
 void EditorSystem::performSceneAction(FrameContext& ctx, EditorState::PendingSceneAction action) {
     switch (action) {
         case EditorState::PendingSceneAction::Quit:
@@ -432,11 +442,19 @@ void EditorSystem::update(FrameContext& ctx) {
 
         PROFILE_SCOPE("Editor/Panels");
         m_menuBar.draw(ec, m_sceneIO);
+        // Once, on the first UI frame: settings have been loaded by now, so the
+        // startup project takes its place at the front of the list.
+        if (!m_notedStartupProject) {
+            m_project.noteCurrentProject(ec);
+            m_notedStartupProject = true;
+        }
+        m_project.drawDialog(ec, m_scriptModule);
         // ModelImportDialog is owned here (not in the menu bar) so it
         // serves all three import-intent sources: the menu, the Inspector
         // empty-state button, and the Hierarchy "+" menu.
         m_modelImport.draw(ctx.scene, ctx.resources, m_state);
         drawWorkspace(ec);
+        openPendingProject(ec);
 
     } else {
         ImGui::PopStyleColor();
