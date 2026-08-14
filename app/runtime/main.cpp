@@ -12,11 +12,12 @@
 #include "core/engine.h"
 #include "debug/build_info.h"
 #include "asset_registration.h"
-#include "game_behaviors.h"
 #include "io/asset/asset_library.h"
+#include "platform/library/dynamic_library.h"
 #include "io/project.h"
 #include "io/project_paths.h"
 #include "io/scene/scene_serializer.h"
+#include "system/script/script_module.h"
 #include "app/engine_app.h"
 #include "example/potion_scene.h"
 #include "example/stress_scene.h"
@@ -77,10 +78,18 @@ int main(int argc, char** argv) {
         // their cooked files on load.
         Engine::AssetLibrary::get().load();
 
-        // The runtime static-links the gameplay module (no hot-reload), so it
-        // registers behaviors directly. Must precede setupEngineApp's default
-        // scene, which creates behaviors through the registry.
-        Engine::registerGameBehaviors();
+        // Load the gameplay module rather than linking it: the same shared
+        // library the editor loads, so a game is data plus a module instead of
+        // a rebuilt engine. Declared before the Engine so it outlives it -
+        // behaviors are destroyed during Engine teardown and their code must
+        // still be mapped then. Must precede setupEngineApp's default scene,
+        // which creates behaviors through the registry.
+        Engine::ScriptModule scriptModule;
+        const std::string modulePath = std::string(GAME_MODULE_DIR) + "/" + Engine::DynamicLibrary::platformName("game");
+        if (!scriptModule.load(modulePath)) {
+            LOG_ERROR("Game module failed to load from '%s' - no behaviors available",
+                      modulePath.c_str());
+        }
 
         // What the project says about itself. Absent or unreadable leaves the
         // defaults, which is a nameless project with no entry scene - so a
