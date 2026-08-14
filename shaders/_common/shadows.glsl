@@ -63,8 +63,18 @@ float sample2DSlot(int slot, vec3 worldPos, vec3 N, float ndotl) {
         return 1.0;
     }
 
-    // Small constant depth bias on top (params.x = the light's shadowBias knob).
-    float bias    = sm.params.x;
+    // Slope-scaled depth bias on top (params.x = the light's shadowBias knob).
+    // One shadow texel spans a depth range proportional to tan(theta) between
+    // the surface and the light, so a constant bias only covers surfaces facing
+    // the light. It is the ground under a low sun that breaks: the normal-offset
+    // above shifts along the surface normal, which at grazing incidence is
+    // perpendicular to the light's view direction and so barely moves the sample
+    // in depth - the acne it is meant to kill reappears as stripes. Clamped, or
+    // a light parallel to the surface would drive the bias to infinity and
+    // detach the shadow from whatever casts it.
+    float nl      = clamp(ndotl, 0.0, 1.0);
+    float slope   = min(sqrt(1.0 - nl * nl) / max(nl, 0.1), 4.0);
+    float bias    = sm.params.x * (1.0 + slope);
     vec2  atlasUV = sm.atlas.xy + proj.xy * sm.atlas.zw;
     vec2  texel   = 1.0 / vec2(textureSize(u_shadowAtlas, 0));
     float lit     = 0.0;
