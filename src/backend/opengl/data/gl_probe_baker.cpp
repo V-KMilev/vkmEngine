@@ -79,7 +79,6 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbeArray& arr, const glm:
         globalIBL.bindBrdf(GLBindings::IBLTextureSlots::BrdfLUT);
     }
     m_pbr.setUniform1i("u_hasSSAO", 0);
-    m_pbr.setUniform1i("u_hasContactShadow", 0);
     m_pbr.setUniform1i("u_hasSceneColor", 0);
     m_pbr.setUniform1i("u_probeCount", 0);
     m_pbr.setUniform1i("u_useClusters", 0);

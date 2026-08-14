@@ -122,9 +122,6 @@ void visitRenderFields(Settings& r, Fn&& f) {
     f("bloomKnee",             r.bloomKnee);
     f("bloomRadius",           r.bloomRadius);
     f("msaaSamples",           r.msaaSamples);
-    f("contactShadows",        r.contactShadows);
-    f("contactShadowLength",   r.contactShadowLength);
-    f("contactShadowThickness", r.contactShadowThickness);
     f("shadowResolution",      r.shadowResolution);
     f("grid",                  r.grid);
 }

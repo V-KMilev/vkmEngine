@@ -69,9 +69,6 @@ The PBR fragment shader (`shaders/forward/pbr/`) implements:
   BRDF LUT; horizon haze for low-roughness mirrors.
 - **GTAO**: half-res ground-truth ambient occlusion baked by
   `GLGTAOPass` and modulated into the indirect term.
-- **Contact shadows**: a screen-space raymarch against the resolved depth
-  produces a sun visibility mask the forward pass multiplies into the
-  directional light (small-scale contact darkening the shadow maps miss).
 
 ### Area lights: LTC + representative point
 
