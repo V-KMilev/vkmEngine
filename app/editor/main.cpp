@@ -21,9 +21,11 @@
 
 int main(int argc, char** argv) {
     try {
-        // The editor edits a project: name one to open it, or run with none and
-        // edit whichever project the engine sits in. Resolved before any path is
-        // composed, since projectRoot() caches what it first answers.
+        // Same rule as the runtime: the project is the one beside this
+        // executable, unless an argument names a different one. Resolved before
+        // any path is composed, since projectRoot() caches what it first answers.
+        // A project browser, when it lands, is a GUI for naming one - not a
+        // second way of opening it.
         if (argc > 1) {
             std::error_code argEc;
             const std::filesystem::path found =
@@ -98,18 +100,6 @@ int main(int argc, char** argv) {
         engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
             engine, engine.getWindow().getWindowContext(),
             sys.camera, sys.visibility, sys.render, scriptModule);
-
-        // An argument naming a scene file opens it; one naming a project has
-        // already been resolved above into the project root.
-        std::error_code sceneEc;
-        if (argc > 1 && std::filesystem::is_regular_file(argv[1], sceneEc)) {
-            const char* scenePath = argv[1];
-            if (Engine::SceneSerializer::load(engine.getScene(), engine.getResources(), scenePath)) {
-                LOG_INFO("Booted scene '%s'", scenePath);
-            } else {
-                LOG_ERROR("Failed to load scene '%s'; using the default scene", scenePath);
-            }
-        }
 
         // A project whose world is generated seeds it through its module, so the
         // editor opens on the same scene the runtime would boot.
