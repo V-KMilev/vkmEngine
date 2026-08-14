@@ -702,7 +702,7 @@ void StressArena::buildLights() {
     // it shines, and this engine's forward is +Z (Math::computeForward), so a
     // positive X rotation tilts +Z downward - the -Z convention most GL code
     // assumes would put the sun under the floor shining up.
-    sunTransform.rotation = glm::quat(glm::vec3(glm::radians(48.0f), glm::radians(35.0f), 0.0f));
+    sunTransform.rotation = glm::quat(glm::vec3(glm::radians(70.0f), glm::radians(35.0f), 0.0f));
     m_scene->add(sun, std::move(sunTransform));
 
     Light sunLight;
