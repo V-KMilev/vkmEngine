@@ -1,8 +1,14 @@
 cmake_minimum_required(VERSION 3.25.0)
 
-project(engine
-    VERSION 1.1.0
-    LANGUAGES C CXX
+set(PROJECT_NAME vkmEngine)
+set(PROJECT_VERSION_MAJOR 1)
+set(PROJECT_VERSION_MINOR 2)
+set(PROJECT_VERSION_PATCH 0)
+
+project(
+  ${PROJECT_NAME}
+  VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}
+  LANGUAGES C CXX
 )
 
 # First-party targets build as strict C++17 (no GNU extensions). Submodules set
@@ -60,20 +66,17 @@ target_compile_options(vkm_warnings INTERFACE
 # can link it where it is defined.
 add_library(BuildInfo INTERFACE)
 target_compile_definitions(BuildInfo INTERFACE
-    APP_VERSION="${PROJECT_VERSION}"
-    APP_VERSION_MAJOR="${PROJECT_VERSION_MAJOR}"
-    APP_VERSION_MINOR="${PROJECT_VERSION_MINOR}"
-    APP_VERSION_PATCH="${PROJECT_VERSION_PATCH}"
     APP_NAME="${PROJECT_NAME}"
     APP_BRANCH="${PROJECT_BRANCH}"
-    APP_COMMIT_HASH="${PROJECT_COMMIT_HASH}"
     APP_BUILD_DATE="${PROJECT_BUILD_DATE}"
     APP_ROOT_DIR="${CMAKE_SOURCE_DIR}"
 
-    # One hash per vkm module: each is its own repository, so a single tree
-    # commit would not say which version of the backend or logger is linked.
+    APP_VERSION="${PROJECT_VERSION}"
+    APP_COMMIT_HASH="${PROJECT_COMMIT_HASH}"
+
     VKMGL_VERSION="${VKMGL_VERSION}"
     VKMGL_COMMIT_HASH="${VKMGL_COMMIT_HASH}"
+
     VKMLOG_VERSION="${VKMLOG_VERSION}"
     VKMLOG_COMMIT_HASH="${VKMLOG_COMMIT_HASH}"
 )
