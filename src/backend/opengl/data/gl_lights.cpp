@@ -40,7 +40,7 @@ void GLLights::update(const std::vector<LightData>& lights, const GLShadowData& 
     // of the fixed-capacity array is never read (shader loops stop at count).
     const size_t activeSize = offsetof(LightsBuffer, lights) + sizeof(GpuLight) * count;
     Core::uploadPrefixIfChanged(m_ssbo, m_last, data, activeSize);
-    Core::bindSSBO(m_ssbo, GLBindings::SSBOBindingPoints::Lights);
+    if (m_ssbo) m_ssbo->bindBase(GLBindings::SSBOBindingPoints::Lights);
 }
 
 } // namespace Engine

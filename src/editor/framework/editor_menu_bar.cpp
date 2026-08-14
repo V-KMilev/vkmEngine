@@ -3,6 +3,7 @@
 #include "ui/editor_style.h"
 
 #include <algorithm>
+#include <cstdarg>
 #include <cstdio>
 #include <filesystem>
 #include <memory>
@@ -203,19 +204,44 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
                             ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     if (ImGui::BeginPopup("##About")) {
+        // Labels share a column so the values line up rather than stepping in
+        // and out with the label width.
+        const float valueX = ImGui::CalcTextSize("vkmEngine:").x + EditorStyle::px(12.0f);
+        const auto row = [valueX](const char* label, const char* fmt, ...) {
+            ImGui::TextDisabled("%s", label);
+            ImGui::SameLine(valueX);
+            va_list args;
+            va_start(args, fmt);
+            ImGui::TextV(fmt, args);
+            va_end(args);
+        };
+
         ImGui::Text("%s  v%s", APP_NAME, APP_VERSION);
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s (%s)", APP_BUILD_DATE, APP_BRANCH);
         ImGui::Separator();
-        ImGui::TextDisabled("Branch:");   ImGui::SameLine(); ImGui::Text("%s", APP_BRANCH);
-        ImGui::TextDisabled("Commit:");   ImGui::SameLine(); ImGui::Text("%.8s", APP_COMMIT_HASH);
-        ImGui::TextDisabled("Built:");    ImGui::SameLine(); ImGui::Text("%s", APP_BUILD_DATE);
+
         // API + device come from the active render backend so this dialog
         // stays correct if the engine ever ships with a non-OpenGL backend.
         const BackendInfo backend = ec.renderSystem.backendInfo();
-        ImGui::TextDisabled("API:");
-        ImGui::SameLine(); ImGui::Text("%s", backend.api.empty() ? "(unknown)" : backend.api.c_str());
-        ImGui::TextDisabled("Renderer:");
-        ImGui::SameLine(); ImGui::Text("%s", backend.device.empty() ? "(unknown)" : backend.device.c_str());
-        ImGui::TextDisabled("ImGui:");    ImGui::SameLine(); ImGui::Text("%s", IMGUI_VERSION);
+        row("API:",             "%s", backend.api.empty()    ? "(unknown)" : backend.api.c_str());
+        row("Renderer:",        "%s", backend.device.empty() ? "(unknown)" : backend.device.c_str());
+
+        ImGui::Separator();
+
+        // Collapsed by default: the hashes answer "exactly which commit of each
+        // module is this?", which matters when reproducing a report and not
+        // otherwise. Each vkm module is its own repository, so one hash per
+        // module rather than one for the tree.
+        ImGui::Spacing();
+        if (ImGui::TreeNode("Debug")) {
+            row("vkmEngine:",    "%s @ %.8s", APP_VERSION,    APP_COMMIT_HASH);
+            row("vkmGL:",        "%s @ %.8s", VKMGL_VERSION,  VKMGL_COMMIT_HASH);
+            row("vkmLog:",       "%s @ %.8s", VKMLOG_VERSION, VKMLOG_COMMIT_HASH);
+            ImGui::Spacing();
+            row("ImGui:",        "%s", IMGUI_VERSION);
+            ImGui::TreePop();
+        }
         ImGui::EndPopup();
     }
 
