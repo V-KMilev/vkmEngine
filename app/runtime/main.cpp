@@ -35,9 +35,11 @@ int main(int argc, char** argv) {
         std::error_code argEc;
         const std::filesystem::path argPath = pathArg ? std::filesystem::absolute(pathArg, argEc) : std::filesystem::path{};
 
+        bool argNotAProject = false;
         if (!argPath.empty()) {
             const std::filesystem::path found = Engine::findProjectRoot(argPath);
-            if (!found.empty()) Engine::ProjectPaths::setProjectRoot(found);
+            if (found.empty()) argNotAProject = true;
+            else                Engine::ProjectPaths::setProjectRoot(found);
         }
 
         // Resolve the project root from the executable so a packaged build is
@@ -56,6 +58,14 @@ int main(int argc, char** argv) {
 
         if (!Logger::init(logFile, "VKM-ENGINE", LogLevel::TRACE)) {
             return -1;
+        }
+
+
+        // Deferred until the logger exists: a mistyped path would otherwise look
+        // like it worked, but this is the first point anything can say so.
+        if (argNotAProject) {
+            LOG_WARNING("'%s' is not a project (no project.json in it or above it); "
+                        "using the project beside this executable instead", argv[1]);
         }
 
         Engine::printBuildInfo();
