@@ -228,7 +228,10 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         if (skyNeedsRebake(view.environment, sunDir)) {
             bakeProceduralSky(view.environment, sunDir);
         }
-    } else if (view.environment.hdrPath != m_bakedEnvPath) {
+    } else if (!view.environment.hdrPath.empty() &&
+               view.environment.hdrPath != m_bakedEnvPath) {
+        // An empty path is a scene that wants no image-based lighting, not a
+        // failed load: only a path the scene actually names is worth an error.
         bakeEnvironment(view.environment.hdrPath);
     }
 

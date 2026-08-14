@@ -104,13 +104,15 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     // boot scene or loaded from a scene file - resolves its font by name.
     ensureDefaultUIFont(engine.getResources());
 
-    // A project that names no scene and generates none still opens on something
-    // worth looking at, and on the same thing New Scene produces. A project that
-    // does supply one replaces this immediately.
-    const Engine::Entity camera = config.buildBootScene
-        ? config.buildBootScene(engine)
-        : Engine::buildDefaultScene(engine.getScene(), engine.getResources());
-    cameraController.setCameraEntity(camera);
+    // Which scene boots is the binary's policy, not the bootstrap's: a project
+    // may author one, generate one from its module, or supply none, and only the
+    // caller knows which. Seeding a scene here would put a stray camera, light
+    // and cube underneath whatever the project then builds on top. Null leaves
+    // the scene empty and the controller free to resolve whichever camera the
+    // project's own scene marks active.
+    if (config.buildBootScene) {
+        cameraController.setCameraEntity(config.buildBootScene(engine));
+    }
 
     engine.getClock().setPaused(config.startPaused);
     engine.setFPSLog(config.logFps);

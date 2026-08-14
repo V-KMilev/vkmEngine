@@ -65,10 +65,12 @@ EditorSystem::EditorSystem(
     // viewport orbiting on the material preview stays put.
     io.ConfigWindowsMoveFromTitleBarOnly = true;
 
-    // ImGui ini lives next to the engine so floating-window positions and
-    // table column widths persist alongside our own editor_settings.json.
+    // ImGui ini lives next to the engine: window positions and table column
+    // widths are how *this user* likes the editor laid out, not something a
+    // project owns - and the path is captured once for ImGui's lifetime, so a
+    // project-rooted one would go stale the moment another project is opened.
     // Static so the c_str pointer stays valid for ImGui's lifetime.
-    static std::string s_iniPath = (ProjectPaths::projectRoot() / "imgui.ini").string();
+    static std::string s_iniPath = (ProjectPaths::engineRoot() / "imgui.ini").string();
     io.IniFilename = s_iniPath.c_str();
 
     // A real TTF instead of ImGui's 13 px bitmap default - the single biggest

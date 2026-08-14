@@ -101,10 +101,25 @@ int main(int argc, char** argv) {
             engine, engine.getWindow().getWindowContext(),
             sys.camera, sys.visibility, sys.render, scriptModule);
 
-        // A project whose world is generated seeds it through its module, so the
-        // editor opens on the same scene the runtime would boot.
-        if (scriptModule.buildScene(engine.getScene())) {
+        // The editor opens on the same scene the runtime would boot, by the same
+        // rule and in the same order: the authored entryScene, else the module's
+        // generated world, else the default scene. Exactly one runs.
+        bool booted = false;
+        if (!project.entryScene.empty()) {
+            const std::filesystem::path scene =
+                Engine::ProjectPaths::projectRoot() / project.entryScene;
+            booted = Engine::SceneSerializer::load(
+                engine.getScene(), engine.getResources(), scene.string());
+            if (booted) LOG_INFO("Opened scene '%s'", scene.string().c_str());
+            else        LOG_ERROR("Failed to load scene '%s'", scene.string().c_str());
+        } else if (scriptModule.buildScene(engine.getScene())) {
+            booted = true;
             LOG_INFO("Scene built by the project's module");
+        }
+
+        if (!booted) {
+            Engine::buildDefaultScene(engine.getScene(), engine.getResources());
+            LOG_INFO("Project supplies no scene of its own; opened the default scene");
         }
 
         engine.run();
