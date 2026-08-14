@@ -48,8 +48,6 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
         ctx.sceneHDR.bindGBuffer(GLBindings::PostTextureSlots::SceneGBuffer);
         ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
         ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
-        if (ctx.contactShadowReady)
-            ctx.contactShadow.bindTexture(GLBindings::PostTextureSlots::ContactShadow);
         if (ctx.fogReady)
             ctx.fog.bindIntegratedSlot(GLBindings::PostTextureSlots::FogVolume);
         m_shader->setUniformMatrix4fv("u_projection", view.camera.projection);

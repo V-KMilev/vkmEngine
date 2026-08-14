@@ -1,6 +1,6 @@
 /*
  * Attribute-less fullscreen triangle - the shared vertex stage of every
- * fullscreen pass (post chain, GTAO, contact shadows, bloom, composite,
+ * fullscreen pass (post chain, GTAO, bloom, composite,
  * BRDF LUT bake).
  *
  * gl_VertexID 0/1/2 expands to one triangle covering the screen twice over,
