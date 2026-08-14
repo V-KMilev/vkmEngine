@@ -131,7 +131,7 @@ void visitRenderFields(Settings& r, Fn&& f) {
 } // namespace
 
 std::string path() {
-    return (ProjectPaths::root() / "editor_settings.json").string();
+    return (ProjectPaths::projectRoot() / "editor_settings.json").string();
 }
 
 bool load(EditorState& state, RenderSettings& render) {
