@@ -38,7 +38,8 @@ class EventBus;
 class BehaviorSystem : public System, public ISceneObserver {
     public:
         BehaviorSystem() {
-            m_context.pendingDestroy = &m_pendingDestroy;
+            m_context.pendingDestroy   = &m_pendingDestroy;
+            m_context.pendingSceneLoad = &m_pendingSceneLoad;
         }
         ~BehaviorSystem() override = default;
 
@@ -123,6 +124,17 @@ class BehaviorSystem : public System, public ISceneObserver {
          * @param scene Scene the pending entities are destroyed from.
          */
         void drainPendingDestroy(Scene& scene);
+
+        /**
+         * @brief Perform a scene load a behavior asked for, if any.
+         *
+         * Runs at the end of the hook pass because the load destroys every
+         * entity - including the one whose behavior requested it - so anywhere
+         * earlier would free a behavior while it is still on the stack.
+         *
+         * @param ctx Frame context supplying the scene and resources to load into.
+         */
+        void drainPendingSceneLoad(FrameContext& ctx);
         /**
          * @brief Run a hook body under the catch net.
          *
@@ -163,6 +175,7 @@ class BehaviorSystem : public System, public ISceneObserver {
         std::vector<EntityId> m_tickList;
 
         std::vector<EntityId> m_pendingDestroy;
+        std::string           m_pendingSceneLoad;  ///< Scene a behavior asked for; empty when none.
 
         BehaviorContext m_context;
 };
