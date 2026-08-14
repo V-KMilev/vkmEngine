@@ -69,6 +69,13 @@ target_compile_definitions(BuildInfo INTERFACE
     APP_COMMIT_HASH="${PROJECT_COMMIT_HASH}"
     APP_BUILD_DATE="${PROJECT_BUILD_DATE}"
     APP_ROOT_DIR="${CMAKE_SOURCE_DIR}"
+
+    # One hash per vkm module: each is its own repository, so a single tree
+    # commit would not say which version of the backend or logger is linked.
+    VKMGL_VERSION="${VKMGL_VERSION}"
+    VKMGL_COMMIT_HASH="${VKMGL_COMMIT_HASH}"
+    VKMLOG_VERSION="${VKMLOG_VERSION}"
+    VKMLOG_COMMIT_HASH="${VKMLOG_COMMIT_HASH}"
 )
 
 add_subdirectory(modules)
