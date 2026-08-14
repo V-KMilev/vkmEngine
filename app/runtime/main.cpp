@@ -14,6 +14,7 @@
 #include "asset_registration.h"
 #include "game_behaviors.h"
 #include "io/asset/asset_library.h"
+#include "io/project.h"
 #include "io/project_paths.h"
 #include "io/scene/scene_serializer.h"
 #include "app/engine_app.h"
@@ -22,6 +23,28 @@
 
 int main(int argc, char** argv) {
     try {
+        // --stress boots the profiling load (example/stress_scene.h) instead of
+        // a game. It is a flag rather than a scene file because the arena is
+        // generated in code from a fixed seed - there is nothing on disk to load.
+        const bool  stress  = argc > 1 && std::string(argv[1]) == "--stress";
+        const char* pathArg = (argc > 1 && !stress) ? argv[1] : nullptr;
+
+        // An explicit argument names either a project directory or a file inside
+        // one; either way the project is the nearest ancestor holding a
+        // project.json. Done before anything composes a path, since projectRoot()
+        // caches whatever it first resolves. Nothing is logged here - the logger
+        // lives under the root we are still deciding.
+        // Resolved against the launch directory now, because current_path() below
+        // moves the CWD to the project root - a relative argument checked after
+        // that would be measured from the wrong place.
+        std::error_code argEc;
+        const std::filesystem::path argPath = pathArg ? std::filesystem::absolute(pathArg, argEc) : std::filesystem::path{};
+
+        if (!argPath.empty()) {
+            const std::filesystem::path found = Engine::findProjectRoot(argPath);
+            if (!found.empty()) Engine::ProjectPaths::setProjectRoot(found);
+        }
+
         // Resolve the project root from the executable so a packaged build is
         // relocatable, and ensure logs/ exists - a shipped game has none yet and
         // Logger::init fails if it cannot open the file.
@@ -59,24 +82,35 @@ int main(int argc, char** argv) {
         // scene, which creates behaviors through the registry.
         Engine::registerGameBehaviors();
 
+        // What the project says about itself. Absent or unreadable leaves the
+        // defaults, which is a nameless project with no entry scene - so a
+        // directory that is not a project still runs, on the generated scene.
+        Engine::Project project;
+        Engine::loadProject(root, project);
+
         Engine::Engine engine;
 
-        // --stress boots the profiling load (example/stress_scene.h) instead of
-        // the game. It is a flag rather than a scene file because the arena is
-        // generated in code from a fixed seed - there is nothing on disk to load.
-        const bool stress = argc > 1 && std::string(argv[1]) == "--stress";
-
+        const std::string title = stress ? "VKM Engine (Stress)" : project.name;
         setupEngineApp(engine, AppConfig{
-            stress ? "VKM Engine (Stress)" : "VKM Engine (Runtime)",
+            title.c_str(),
             false, true,
             stress ? generateStressArenaScene : generatePotionRunnerScene});
 
-        if (argc > 1 && !stress) {
-            const char* scenePath = argv[1];
-            if (Engine::SceneSerializer::load(engine.getScene(), engine.getResources(), scenePath)) {
-                LOG_INFO("Booted scene '%s'", scenePath);
+        // What to boot, most specific first: a scene named on the command line,
+        // then the project's entry scene, then the generated default that
+        // setupEngineApp already built.
+        std::filesystem::path scene;
+        if (!argPath.empty() && std::filesystem::is_regular_file(argPath)) {
+            scene = argPath;
+        } else if (!stress && !project.entryScene.empty()) {
+            scene = root / project.entryScene;
+        }
+
+        if (!scene.empty()) {
+            if (Engine::SceneSerializer::load(engine.getScene(), engine.getResources(), scene.string())) {
+                LOG_INFO("Booted scene '%s'", scene.string().c_str());
             } else {
-                LOG_ERROR("Failed to load scene '%s'; using the default scene", scenePath);
+                LOG_ERROR("Failed to load scene '%s'; using the default scene", scene.string().c_str());
             }
         }
 

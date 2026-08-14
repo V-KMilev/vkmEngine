@@ -38,16 +38,31 @@ namespace ProjectPaths {
 std::filesystem::path engineRoot();
 
 /**
+ * @brief Point the project root at @p path.
+ *
+ * Call once at startup, before anything composes a project path - the first
+ * projectRoot() call without an override caches the discovered location, and a
+ * later override would leave the two disagreeing.
+ *
+ * @param path Directory containing the project's project.json.
+ */
+void setProjectRoot(const std::filesystem::path& path);
+
+/**
  * @brief Directory holding the project currently open.
+ *
+ * The path set by setProjectRoot() when there is one. Otherwise the directory
+ * the executable was launched from, which is where a packaged game keeps its
+ * data, falling back to the repo root recorded at configure time.
  *
  * @return Absolute path to the project root.
  */
 std::filesystem::path projectRoot();
 
 // Engine-owned. Read-only to a game: one copy serves every project.
-inline std::filesystem::path shaders()      { return engineRoot() / "shaders"; }
-inline std::filesystem::path engineAssets() { return engineRoot() / "assets"; }
-inline std::filesystem::path fonts()        { return engineAssets() / "fonts"; }
+inline std::filesystem::path engineShaders() { return engineRoot() / "shaders"; }
+inline std::filesystem::path engineAssets()  { return engineRoot() / "assets"; }
+inline std::filesystem::path engineFonts()   { return engineAssets() / "fonts"; }
 
 // Project-owned. The game's own content, written by the editor.
 inline std::filesystem::path assets()      { return projectRoot() / "assets"; }
