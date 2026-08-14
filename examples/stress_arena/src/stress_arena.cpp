@@ -111,7 +111,9 @@ constexpr const char* ACTION_UI        = "Stress/ToggleUI";
 constexpr const char* ACTION_RESET     = "Stress/ResetToggles";
 constexpr const char* ACTION_CAMERA    = "Stress/ToggleCamera";
 
-/** @brief Bind the arena's actions to the number row, plus F for the camera. */
+/**
+ * @brief Bind the arena's actions to the number row, plus F for the camera.
+ */
 void installStressBindings(InputMap& map) {
     const auto key = [](int code) { return InputBinding{InputSource::Key, code, 1.0f}; };
     map.define(ACTION_LIGHTS,    { key(GLFW_KEY_1) });

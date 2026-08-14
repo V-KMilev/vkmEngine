@@ -67,14 +67,10 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         void onStart() override;
         void onUpdate(float dt) override;
 
-        /** @brief Lateral spacing between the three lanes, in world units. */
-        float laneWidth    = 2.4f;
-        /** @brief Initial forward (world-scroll) speed, in units per second. */
-        float startSpeed   = 16.0f;
-        /** @brief Upper bound the ramping speed is clamped to. */
-        float maxSpeed     = 44.0f;
-        /** @brief Speed ramp, in units per second squared. */
-        float acceleration = 0.7f;
+        float laneWidth    = 2.4f;   ///< Lateral spacing between the three lanes, in world units.
+        float startSpeed   = 16.0f;  ///< Initial forward (world-scroll) speed, in units per second.
+        float maxSpeed     = 44.0f;  ///< Upper bound the ramping speed is clamped to.
+        float acceleration = 0.7f;   ///< Speed ramp, in units per second squared.
         /** @brief Vertical launch velocity applied on jump. The arc apex
          *  (v^2/2g ~ 1.74) clears hurdles and roof-to-roof convoy hops, but
          *  deliberately NOT a train's boarding line - from the ground you
@@ -86,11 +82,12 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
          *  reason arcade runners tune gravity up. Keep jumpSpeed^2 / (2 * g)
          *  ~ 1.74 if you retune either. */
         float gravity      = 26.0f;
-        /** @brief Score awarded per collected coin. */
-        int   coinValue    = 5;
+        int   coinValue    = 5;  ///< Score awarded per collected coin.
 
     private:
-        /** @brief One pooled obstacle: a hurdle, a rideable train, or a barrier. */
+        /**
+         * @brief One pooled obstacle: a hurdle, a rideable train, or a barrier.
+         */
         struct Obstacle {
             Entity entity;
             Entity accent;             ///< Per-type glow detail (train windscreen / hazard bar), placed each frame.
@@ -132,7 +129,9 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
             glm::vec3 auxBOffset{0.0f};
         };
 
-        /** @brief One pooled, collectible coin (its spin/pulse is an Animation). */
+        /**
+         * @brief One pooled, collectible coin (its spin/pulse is an Animation).
+         */
         struct Coin {
             Entity entity;
             float  z      = 0.0f;
@@ -141,7 +140,9 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
             bool   active = true;   ///< False once collected, until it recycles.
         };
 
-        /** @brief One pooled scrolling decoration (sleeper tie / pillar / arch). */
+        /**
+         * @brief One pooled scrolling decoration (sleeper tie / pillar / arch).
+         */
         struct Scenery {
             Entity entity;
             float  z = 0.0f;
@@ -178,9 +179,13 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
             return static_cast<float>(1 - lane) * laneWidth;
         }
         float obstacleHalfX() const { return laneWidth * 0.42f; }
-        /** @brief Deterministic PCG32 draw in [0, 1) (engine Math::Rng). */
+        /**
+         * @brief Deterministic PCG32 draw in [0, 1) (engine Math::Rng).
+         */
         float frand() { return m_rng.nextFloat(); }
-        /** @brief Unbiased uniform lane pick. */
+        /**
+         * @brief Unbiased uniform lane pick.
+         */
         int   randLane() { return m_rng.nextInt(0, 2); }
 
         // Cached engine handles pulled from the BehaviorContext once in onStart.
