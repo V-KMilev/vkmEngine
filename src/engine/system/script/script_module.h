@@ -53,6 +53,23 @@ class ScriptModule {
          */
         bool reload(Scene& scene);
 
+        /**
+         * @brief Let the module seed @p scene, if it wants to.
+         *
+         * Optional second entry, `vkmBuildScene`. A project whose world is
+         * generated rather than authored - a procedural level, a profiling load -
+         * has no scene file for project.json to point at, and the host has no
+         * business carrying one game's content. This lets such a project say in
+         * its own code what it starts as.
+         *
+         * A module without the entry is normal and silent: most projects author
+         * a scene and name it in project.json instead.
+         *
+         * @param scene Scene to seed.
+         * @return True if the module had the entry and it ran.
+         */
+        bool buildScene(Scene& scene);
+
         bool isLoaded() const { return m_lib.isLoaded(); }
 
     private:

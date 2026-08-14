@@ -19,16 +19,10 @@
 #include "io/scene/scene_serializer.h"
 #include "system/script/script_module.h"
 #include "app/engine_app.h"
-#include "example/potion_scene.h"
-#include "example/stress_scene.h"
 
 int main(int argc, char** argv) {
     try {
-        // --stress boots the profiling load (example/stress_scene.h) instead of
-        // a game. It is a flag rather than a scene file because the arena is
-        // generated in code from a fixed seed - there is nothing on disk to load.
-        const bool  stress  = argc > 1 && std::string(argv[1]) == "--stress";
-        const char* pathArg = (argc > 1 && !stress) ? argv[1] : nullptr;
+        const char* pathArg = argc > 1 ? argv[1] : nullptr;
 
         // An explicit argument names either a project directory or a file inside
         // one; either way the project is the nearest ancestor holding a
@@ -84,11 +78,24 @@ int main(int argc, char** argv) {
         // behaviors are destroyed during Engine teardown and their code must
         // still be mapped then. Must precede setupEngineApp's default scene,
         // which creates behaviors through the registry.
+        // The project's own module first - a game brings its code with it - then
+        // the one built beside this executable, which is what a development
+        // checkout has.
         Engine::ScriptModule scriptModule;
-        const std::string modulePath = std::string(GAME_MODULE_DIR) + "/" + Engine::DynamicLibrary::platformName("game");
-        if (!scriptModule.load(modulePath)) {
-            LOG_ERROR("Game module failed to load from '%s' - no behaviors available",
-                      modulePath.c_str());
+        const std::string moduleName = Engine::DynamicLibrary::platformName("game");
+        const std::filesystem::path candidates[] = {
+            Engine::ProjectPaths::projectBin() / moduleName,
+            std::filesystem::path(GAME_MODULE_DIR) / moduleName,
+        };
+
+        bool moduleLoaded = false;
+        for (const std::filesystem::path& candidate : candidates) {
+            if (!std::filesystem::exists(candidate, ec)) continue;
+            moduleLoaded = scriptModule.load(candidate.string());
+            if (moduleLoaded) break;
+        }
+        if (!moduleLoaded) {
+            LOG_WARNING("No gameplay module for this project - no behaviors available");
         }
 
         // What the project says about itself. Absent or unreadable leaves the
@@ -99,11 +106,11 @@ int main(int argc, char** argv) {
 
         Engine::Engine engine;
 
-        const std::string title = stress ? "VKM Engine (Stress)" : project.name;
+        const std::string title = project.name;
         setupEngineApp(engine, AppConfig{
             title.c_str(),
             false, true,
-            stress ? generateStressArenaScene : generatePotionRunnerScene});
+            nullptr});
 
         // What to boot, most specific first: a scene named on the command line,
         // then the project's entry scene, then the generated default that
@@ -111,8 +118,15 @@ int main(int argc, char** argv) {
         std::filesystem::path scene;
         if (!argPath.empty() && std::filesystem::is_regular_file(argPath)) {
             scene = argPath;
-        } else if (!stress && !project.entryScene.empty()) {
+        } else if (!project.entryScene.empty()) {
             scene = root / project.entryScene;
+        }
+
+        // A project whose world is generated says so in its module; one that
+        // authored a scene names it in project.json. Neither is required - an
+        // empty project boots an empty scene.
+        if (scene.empty() && scriptModule.buildScene(engine.getScene())) {
+            LOG_INFO("Scene built by the project's module");
         }
 
         if (!scene.empty()) {
