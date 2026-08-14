@@ -11,17 +11,29 @@
 #include "debug/build_info.h"
 #include "asset_registration.h"
 #include "io/asset/asset_library.h"
+#include "io/project.h"
 #include "io/project_paths.h"
 #include "io/scene/scene_serializer.h"
 #include "editor_system.h"
 #include "system/script/script_module.h"
 #include "platform/library/dynamic_library.h"
 #include "app/engine_app.h"
-#include "app/scenes/stress_scene.h"
 
 int main(int argc, char** argv) {
     try {
-        const std::string rootDir = APP_ROOT_DIR;
+        // The editor edits a project: name one to open it, or run with none and
+        // edit whichever project the engine sits in. Resolved before any path is
+        // composed, since projectRoot() caches what it first answers.
+        if (argc > 1) {
+            std::error_code argEc;
+            const std::filesystem::path found =
+                Engine::findProjectRoot(std::filesystem::absolute(argv[1], argEc));
+            if (!found.empty()) Engine::ProjectPaths::setProjectRoot(found);
+        }
+
+        const std::string rootDir = Engine::ProjectPaths::projectRoot().string();
+        std::error_code logEc;
+        std::filesystem::create_directories(rootDir + "/logs", logEc);
         const std::string logFile = rootDir + "/logs/log.log";
 
         if (!Logger::init(logFile, "VKM-ENGINE", LogLevel::TRACE)) {
@@ -43,6 +55,11 @@ int main(int argc, char** argv) {
         // Load the cooked asset database manifest (empty on a fresh project; the
         // cooker rebuilds it on save).
         Engine::AssetLibrary::get().load();
+
+        // What the open project calls itself; titles the window so two editors
+        // on two projects are tellable apart.
+        Engine::Project project;
+        Engine::loadProject(Engine::ProjectPaths::projectRoot(), project);
 
         // Load the hot-reloadable gameplay module: it registers behaviors into
         // the engine's registry (resolved from this exe). Declared before the
@@ -71,27 +88,33 @@ int main(int argc, char** argv) {
 
         Engine::Engine engine;
 
-        // --stress boots the profiling load (app/scenes/stress_scene.h) instead of
-        // the game. It is a flag rather than a scene file because the arena is
-        // generated in code from a fixed seed - there is nothing on disk to load.
-        const bool stress = argc > 1 && std::string(argv[1]) == "--stress";
 
+        const std::string title = project.name + " - vkmEngine";
         auto sys = setupEngineApp(engine, AppConfig{
-            stress ? "VKM Engine (Stress)" : "VKM Engine (Editor)",
+            title.c_str(),
             true, false,
-            stress ? generateStressArenaScene : nullptr});
+            nullptr});
 
         engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
             engine, engine.getWindow().getWindowContext(),
             sys.camera, sys.visibility, sys.render, scriptModule);
 
-        if (argc > 1 && !stress) {
+        // An argument naming a scene file opens it; one naming a project has
+        // already been resolved above into the project root.
+        std::error_code sceneEc;
+        if (argc > 1 && std::filesystem::is_regular_file(argv[1], sceneEc)) {
             const char* scenePath = argv[1];
             if (Engine::SceneSerializer::load(engine.getScene(), engine.getResources(), scenePath)) {
                 LOG_INFO("Booted scene '%s'", scenePath);
             } else {
                 LOG_ERROR("Failed to load scene '%s'; using the default scene", scenePath);
             }
+        }
+
+        // A project whose world is generated seeds it through its module, so the
+        // editor opens on the same scene the runtime would boot.
+        if (scriptModule.buildScene(engine.getScene())) {
+            LOG_INFO("Scene built by the project's module");
         }
 
         engine.run();
