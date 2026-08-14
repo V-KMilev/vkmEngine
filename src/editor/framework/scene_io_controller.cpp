@@ -25,6 +25,7 @@
 #include "io/scene/scene_serializer.h"
 #include "io/project_paths.h"
 #include "cook/asset_cooker.h"
+#include "generator/default_scene.h"
 #include "system/camera/camera_controller_system.h"
 #include "system/script/behavior_system.h"
 #include "system/render/editor_render_hooks.h"
@@ -129,28 +130,11 @@ void SceneIOController::newScene(FrameContext& ctx, EditorState& state) {
 
     afterSceneReplace(ctx, state, /*priorSelectionName*/ {}, /*eventPath*/ {});
 
-    // Seed the minimal viable scene - an eye and a key light - directly (not
-    // via EditorActions) so no undo entries or selection side effects exist
-    // in a brand-new scene.
-    {
-        auto cam = ctx.scene.createEntity();
-        Transform camTf;
-        camTf.position = {0.0f, 2.0f, 6.0f};
-        ctx.scene.add(cam, camTf);
-        ctx.scene.add(cam, Camera{});
-        Name camName{};
-        snprintf(camName.value, sizeof(camName.value), "Camera");
-        ctx.scene.add(cam, camName);
-
-        auto sun = ctx.scene.createEntity();
-        Transform sunTf;
-        sunTf.position = {0.0f, 8.0f, 0.0f};
-        ctx.scene.add(sun, sunTf);
-        ctx.scene.add(sun, generateDirectionalLight());
-        Name sunName{};
-        snprintf(sunName.value, sizeof(sunName.value), "Sun");
-        ctx.scene.add(sun, sunName);
-    }
+    // The same seed the engine boots with when a project names no scene: one
+    // definition, so New Scene and a fresh start cannot drift apart. Called
+    // directly rather than through EditorActions so a brand-new scene carries
+    // no undo entries or selection side effects.
+    buildDefaultScene(ctx.scene, ctx.resources);
 
     state.sceneDirty = false;
     state.pushToast(EditorState::ToastKind::Info, "New scene");
