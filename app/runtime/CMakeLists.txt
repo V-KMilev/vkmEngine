@@ -22,9 +22,6 @@ target_include_directories(engine_runtime PRIVATE ${CMAKE_SOURCE_DIR})
 # engine. Where to find it, and the symbol export it resolves against:
 # --export-dynamic puts this exe's symbols in the dynamic table so the module
 # binds to the host that loaded it, exactly as it does under the editor.
-target_compile_definitions(engine_runtime PRIVATE
-    GAME_MODULE_DIR="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-)
 set_target_properties(engine_runtime PROPERTIES ENABLE_EXPORTS ON)
 if(WIN32)
     target_link_options(engine_runtime PRIVATE "-Wl,--export-all-symbols")

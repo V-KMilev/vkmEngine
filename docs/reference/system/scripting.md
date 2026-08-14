@@ -181,8 +181,8 @@ engine inside it. It must **not** link `EngineCore` - a second copy would
 duplicate the typeId registry and the singletons, and types registered against
 one copy are invisible to the other.
 
-Search order is the open project's `bin/` first, then `GAME_MODULE_DIR`
-(`build/bin/`): the editor edits a project, so it runs that project's code.
+The module is looked for in the open project's `bin/` and nowhere else: a game
+brings its code with it, and that is the one place a project builds it.
 
 `ScriptModule::reload(scene)` swaps in a freshly built module without
 restarting: it serializes each entity's behaviors (type + reflected fields),

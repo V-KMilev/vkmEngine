@@ -146,6 +146,12 @@ void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
     std::string path;
     path.swap(m_pendingSceneLoad);
 
+    // Give the outgoing scene's behaviors their onDestroy while they are still
+    // alive and their module still holds the code. The load below destroys them
+    // as part of the swap, which would otherwise run their destructors without
+    // the hook they are documented to get.
+    endSession(ctx.scene);
+
     const std::filesystem::path scenePath = ProjectPaths::projectRoot() / path;
     if (SceneSerializer::load(ctx.scene, ctx.resources, scenePath.string())) {
         LOG_INFO("Loaded scene '%s' on request", path.c_str());
