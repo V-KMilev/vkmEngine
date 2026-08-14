@@ -10,13 +10,27 @@ orientation; each subsystem has a deeper doc linked below.
 git submodule update --init --recursive
 cmake -B build -G Ninja
 cmake --build build
-./build/bin/engine_editor     # engine + editor (or engine_runtime for the bare engine)
+./build/bin/engine_editor examples/potion_runner    # edit a project
+./build/bin/engine_runtime examples/potion_runner   # play it
 ```
 
-CMake 3.25+, Ninja, C++17, OpenGL 4.3 core. The build produces two executables -
-`engine_editor` and `engine_runtime` - over a shared header-only bootstrap
-(`setupEngineApp` in `app/engine_app.h`). See [building.md](building.md) for
-targets, modules, and flags.
+CMake 3.25+, Ninja, C++17, OpenGL 4.3 core. The build produces three executables
+- `engine_editor`, `engine_runtime`, and the headless `engine_cook` - over a
+shared header-only bootstrap (`setupEngineApp` in `app/engine_app.h`). See
+[building.md](building.md) for targets, modules, and flags.
+
+## The engine runs projects
+
+The engine holds no game of its own. A game is a **project**: a directory with a
+`project.json`, its own scenes, assets, and gameplay code built into its own
+`bin/`. Every executable finds one by the same rule - *the project beside the
+executable, unless an argument names a different one* - so a shipped game ships
+its exe next to its `project.json` and the player passes nothing.
+
+Two roots keep the halves apart: `engineRoot()` for what ships with the engine
+(shaders, default font, icons; read-only to a game) and `projectRoot()` for what
+the game owns. `examples/potion_runner` and `examples/stress_arena` are complete
+worked examples. See [system/io.md](system/io.md#projects-and-the-two-roots).
 
 ## Core model
 
@@ -61,17 +75,17 @@ does not register; see [io.md](system/io.md).)
 
 The engine builds a backend-agnostic `RenderView` snapshot each frame and hands it
 to a `RenderBackend` through one seam (`init` / `resize` / `render`). The OpenGL
-backend runs a **fixed 18-pass forward pipeline**: Shadow -> DepthPrepass ->
-ResolveDepth -> GTAO -> ContactShadow -> Skybox -> ClusterCull -> FogCompute ->
-Forward (PBR ubershader) -> Particles -> ResolveColor -> Decals ->
+backend runs a **fixed 19-pass forward pipeline**: Shadow -> DepthPrepass ->
+ResolveDepth -> HiZ -> OcclusionCull -> GTAO -> Skybox -> ClusterCull ->
+FogCompute -> Forward (PBR ubershader) -> Particles -> ResolveColor -> Decals ->
 FogApply -> DoF -> Bloom -> Grid -> Composite -> UI (the screen-space overlay).
 There is no render-graph abstraction and no shader variant cache. Real features:
 five light types incl. LTC area lights, Forward+ clustered lighting, CSM + spot +
-point-cube shadows, IBL (HDR or procedural sky), GTAO with bent normals, contact
-shadows, froxel volumetric fog, baked SH irradiance volumes, reflection probes,
+point-cube shadows, IBL (HDR or procedural sky), GTAO with bent normals,
+froxel volumetric fog, baked SH irradiance volumes, reflection probes,
 projected decals, CPU billboard particles, MSAA, DoF, bloom, and a
 screen-space in-game UI (SDF text, buttons). Not present: TAA, SSR, FXAA,
-motion blur, lens flare, auto-exposure. Engine code never includes a `gl_*` header;
+motion blur, lens flare, auto-exposure, contact shadows. Engine code never includes a `gl_*` header;
 `MaterialAsset` is the renderer contract. See [rendering.md](system/rendering.md)
 and [ui.md](system/ui.md).
 

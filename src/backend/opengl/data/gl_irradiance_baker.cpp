@@ -158,7 +158,6 @@ void GLIrradianceBaker::bake(Core::Context& gl, GLIrradianceVolume& volume,
         globalIBL.bindBrdf(GLBindings::IBLTextureSlots::BrdfLUT);
     }
     m_pbr.setUniform1i("u_hasSSAO", 0);
-    m_pbr.setUniform1i("u_hasContactShadow", 0);
     m_pbr.setUniform1i("u_hasSceneColor", 0);
     m_pbr.setUniform1i("u_probeCount", 0);
     m_pbr.setUniform1i("u_useClusters", 0);

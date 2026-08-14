@@ -9,7 +9,6 @@ target_link_libraries(engine_runtime PRIVATE
     EngineRendering
     EngineTools
     BackendOpenGL
-    game
     BuildInfo
     vkm_warnings
 )
@@ -17,6 +16,18 @@ target_link_libraries(engine_runtime PRIVATE
 # main.cpp includes the shared bootstrap as "app/engine_app.h" (which pulls in
 # "example/default_scene.h"); the repo root puts both prefixes on the include path.
 target_include_directories(engine_runtime PRIVATE ${CMAKE_SOURCE_DIR})
+
+# The gameplay module is loaded, not linked - the same module the editor
+# dlopen's, so a game is data plus a shared library rather than a rebuilt
+# engine. Where to find it, and the symbol export it resolves against:
+# --export-dynamic puts this exe's symbols in the dynamic table so the module
+# binds to the host that loaded it, exactly as it does under the editor.
+set_target_properties(engine_runtime PROPERTIES ENABLE_EXPORTS ON)
+if(WIN32)
+    target_link_options(engine_runtime PRIVATE "-Wl,--export-all-symbols")
+else()
+    target_link_options(engine_runtime PRIVATE "-rdynamic")
+endif()
 
 # ----------------------------------------------------------------------------
 # Packaging: assemble a relocatable game under the install prefix.
@@ -30,8 +41,9 @@ target_include_directories(engine_runtime PRIVATE ${CMAKE_SOURCE_DIR})
 #     cmake --install build --prefix dist --component Runtime
 # yielding:  dist/bin/{exe,*.dll}  +  dist/{shaders,scenes,cooked,library,assets}
 #
-# Prerequisite: COOK the assets first (open engine_editor and save once) so
-# library/ + cooked/ are populated - the runtime cannot import or cook. Data
+# Prerequisite: cook the assets first - `engine_cook <project>` - so library/ +
+# cooked/ are populated; the runtime can neither import nor cook. That step
+# needs no window and no GPU, so packaging runs unattended. Data
 # ships the way the runtime consumes it: shaders + HDR envs as SOURCE (compiled
 # / IBL-baked at load), meshes/textures as COOKED binaries, materials as their
 # inline library recipes. The runtime creates logs/ on startup, so it isn't shipped.

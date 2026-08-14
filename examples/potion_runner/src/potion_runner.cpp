@@ -102,7 +102,9 @@ constexpr const char* ACTION_JUMP    = "Runner/Jump";
 constexpr const char* ACTION_CROUCH  = "Runner/Crouch";
 constexpr const char* ACTION_RESTART = "Runner/Restart";
 
-/** @brief Bind the runner's actions, each to every key that should trigger it. */
+/**
+ * @brief Bind the runner's actions, each to every key that should trigger it.
+ */
 void installRunnerBindings(InputMap& map) {
     const auto key = [](int code) { return InputBinding{InputSource::Key, code, 1.0f}; };
     map.define(ACTION_LEFT,    { key(GLFW_KEY_A),     key(GLFW_KEY_LEFT) });

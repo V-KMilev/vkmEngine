@@ -53,7 +53,7 @@ overlays drawn on top.
 | Hierarchy           | `panels/hierarchy_panel.cpp`          | Entity tree; drag a node onto another to reparent (cycle-safe); context-menu Unparent |
 | Inspector           | `panels/inspector_panel.cpp`          | Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent |
 | Bottom              | `panels/bottom_panel.cpp`             | Per-scene working surface: grouped master-detail browser                    |
-| Render Settings     | `panels/render_settings_panel.cpp`    | World-level render tuning: `RenderSettings` (GTAO / contact shadows / bloom / MSAA / shadows / grid) plus the `Environment` (IBL / skybox); opened from Window > Render Settings |
+| Render Settings     | `panels/render_settings_panel.cpp`    | World-level render tuning: `RenderSettings` (GTAO / bloom / MSAA / shadows / grid) plus the `Environment` (IBL / skybox); opened from Window > Render Settings |
 | Physics Settings    | drawn inline in `editor_system.cpp`   | Edits the scene's `PhysicsWorld` singleton (gravity, solver iterations); opened from the Window menu |
 | Material Editor     | `panels/material_editor_panel.cpp`          | Per-material PBR inspector with live preview (renders the real pipeline)    |
 | Asset Browser       | `panels/asset_browser_panel.cpp`            | Thumbnail grid of materials / meshes / textures; pickable into the inspector|
@@ -144,6 +144,33 @@ translation unit doesn't recompile the bodies.
 `CommandStack::push` calls `Command::tryMerge` against the top of the
 undo stack first; that is where transform drag coalescing happens.
 
+## Opening a project
+
+The editor edits *a project*, not the repo it was built in. `ProjectController`
+(`src/editor/framework/project_controller.h`) owns **File > Open Project...** and
+the **File > Recent Projects** list, and re-roots the whole editor in place - no
+restart. Order matters, because each step depends on the previous one:
+
+1. Save the outgoing project's `editor_settings.json`, while its root is still
+   current - otherwise its tuning would land in the project being opened.
+2. `ProjectPaths::setProjectRoot(root)` - every path composed after this points
+   at the new project.
+3. Tear the scene down through `SceneIOController::beginSceneReplace`: behaviors
+   get `onDestroy` while the old module still holds their code, and the undo
+   stack, material previews, play snapshot and saved-scene path all go with it.
+4. Drop the outgoing project's assets - a generated world never swaps the
+   `ResourceManager` the way a scene load does.
+5. `AssetLibrary::get().load()` and the new project's own editor settings.
+6. Swap the gameplay module to the new project's `bin/`, or unload it when the
+   project brings none.
+7. Boot its scene through `bootProjectScene`, the same rule both binaries use.
+
+A path that names a file rather than a directory still works - `findProjectRoot`
+walks up to the owning `project.json`, so dropping in a scene opens its project.
+
+Command-line `engine_editor <project>` does the same thing at startup, before any
+path is composed. See [system/io.md](system/io.md#projects-and-the-two-roots).
+
 ## Scene I/O
 
 `SceneIOController` owns the New / Open / Save / Save-As flow:
@@ -163,7 +190,7 @@ These are rendered by the backend's dedicated preview path
 (`RenderBackend::renderPreview`, backed by `GLPreview`) - **not** the full
 frame pipeline. It is a minimal forward + composite render of the material on
 a preview mesh into a small offscreen target, kept separate from the main
-18-pass path. Results are cached per asset (keyed by handle + version) with a
+19-pass path. Results are cached per asset (keyed by handle + version) with a
 small per-frame bake budget, so the Asset Browser grid amortizes thumbnail
 generation across frames while the Material Editor's live view re-renders each
 frame.

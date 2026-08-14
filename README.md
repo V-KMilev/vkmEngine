@@ -1,6 +1,6 @@
 # vkmEngine Documentation
 
-A C++17 3D rendering engine with an OpenGL backend. Open type-erased ECS, a fixed 18-pass PBR forward renderer (Forward+ clustered lighting, CSM + spot + cube shadows, LTC area lights, IBL from an HDR or procedural sky, reflection probes, GTAO, contact shadows, froxel volumetric fog, decals, particles, DoF, bloom, tonemap), animation, hierarchy, physics, scripting, an event system, screen-space in-game UI (SDF text), an ImGui editor with undo/redo, and a transactional scene serializer.
+A C++17 3D rendering engine with an OpenGL backend. Open type-erased ECS, a fixed 19-pass PBR forward renderer (Forward+ clustered lighting, CSM + spot + cube shadows, LTC area lights, IBL from an HDR or procedural sky, reflection probes, GTAO, froxel volumetric fog, decals, particles, DoF, bloom, tonemap), animation, hierarchy, physics, scripting, an event system, screen-space in-game UI (SDF text), an ImGui editor with undo/redo, and a transactional scene serializer.
 
 ## Quick Start
 
@@ -8,8 +8,15 @@ A C++17 3D rendering engine with an OpenGL backend. Open type-erased ECS, a fixe
 git submodule update --init --recursive
 cmake -B build -G Ninja
 cmake --build build
-./build/bin/engine_editor     # engine + editor (or engine_runtime for the bare engine)
+./build/bin/engine_editor examples/potion_runner    # edit a project
+./build/bin/engine_runtime examples/potion_runner   # play it
+./build/bin/engine_cook examples/potion_runner      # bake its assets, no window
 ```
+
+The engine runs **projects**: a directory with a `project.json`, its own scenes and
+assets, and its gameplay code built into its own `bin/`. All three executables find
+one the same way - the project beside the executable, unless an argument names a
+different one. `examples/` holds two complete ones.
 
 See [Building](docs/reference/building.md) for prerequisites and CMake targets.
 
@@ -26,7 +33,7 @@ Reference docs and contributor guides live under [docs/](docs/).
 
 ### Systems
 
-- [Rendering](docs/reference/system/rendering.md) - Backend seam, the fixed 18-pass forward pipeline, RenderView contract, material preview
+- [Rendering](docs/reference/system/rendering.md) - Backend seam, the fixed 19-pass forward pipeline, RenderView contract, material preview
 - [Lighting](docs/reference/system/lighting.md) - Light types, area lights (Rect/Disk via LTC), shadow atlas + cube shadows, IBL
 - [Visibility](docs/reference/system/visibility.md) - Culling pipeline (frustum / distance / screen-size), parallel dispatch
 - [Hierarchy](docs/reference/system/hierarchy.md) - HierarchySystem, HierarchyOperations, parallel world-transform resolve
@@ -56,16 +63,16 @@ src/
   backend/opengl/  OpenGL backend (flat gl_-prefixed includes)
   editor/          ImGui editor (panels, gizmo, framework, overlays, ui, input)
   tools/           Asset loaders and procedural generators (src/tools/)
-app/               Header-only bootstrap (setupEngineApp) shared by both executables
-game/              Hot-reloadable gameplay modules (Behavior DLLs)
+app/               The three executables + the bootstrap (setupEngineApp) two of them share
+examples/          Complete projects (Potion Runner, Stress Arena) - gameplay lives here
 modules/
-  vkmGL            Submodule: GL utilities + GLFW + GLM + GLEW + stb_image
+  vkmGL            Submodule: GL object wrappers + shader loading (vendors GLEW)
   vkmLog           Submodule: logging + VKM_ASSERT
+  glm / glfw / stb Submodules: math, windowing, image + font decode
   imgui            Submodule: Dear ImGui
-  assimp / freetype / json / stb / tracy
-                   Submodules: model import, font rasterization, JSON, image IO, profiling
+  assimp / freetype / json / tracy
+                   Submodules: model import, font rasterization, JSON, profiling
 shaders/           GLSL source (one folder per program)
-scenes/            Sample scenes (.json) for editor open
 assets/            Textures, materials, meshes referenced by scenes
 example/           Standalone scene generators used at boot
 ```

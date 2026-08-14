@@ -1,18 +1,39 @@
+# Ours.
 [submodule "modules/vkmGL"]
 	path = modules/vkmGL
 	url = https://github.com/V-KMilev/vkmGL.git
+[submodule "modules/vkmLog"]
+	path = modules/vkmLog
+	url = https://github.com/V-KMilev/vkmLog.git
+
+# Shared dependencies the engine owns. glm and glfw appear in engine API and
+# platform code; stb decodes images and bakes font atlases. vkmGL consumes these
+# rather than vendoring its own, so a second backend can too.
+[submodule "modules/glm"]
+	path = modules/glm
+	url = https://github.com/g-truc/glm.git
+[submodule "modules/glfw"]
+	path = modules/glfw
+	url = https://github.com/glfw/glfw.git
+[submodule "modules/stb"]
+	path = modules/stb
+	url = https://github.com/nothings/stb.git
+
+# Editor and asset pipeline. Built only when the editor is.
 [submodule "modules/imgui"]
 	path = modules/imgui
 	url = https://github.com/ocornut/imgui.git
-[submodule "modules/json"]
-	path = modules/json
-	url = https://github.com/nlohmann/json
 [submodule "modules/assimp"]
 	path = modules/assimp
 	url = https://github.com/assimp/assimp.git
-[submodule "modules/tracy"]
-	path = modules/tracy
-	url = https://github.com/wolfpld/tracy.git
 [submodule "modules/freetype"]
 	path = modules/freetype
 	url = https://github.com/freetype/freetype.git
+
+# Serialization and profiling.
+[submodule "modules/json"]
+	path = modules/json
+	url = https://github.com/nlohmann/json
+[submodule "modules/tracy"]
+	path = modules/tracy
+	url = https://github.com/wolfpld/tracy.git

@@ -65,10 +65,12 @@ EditorSystem::EditorSystem(
     // viewport orbiting on the material preview stays put.
     io.ConfigWindowsMoveFromTitleBarOnly = true;
 
-    // ImGui ini lives next to the engine so floating-window positions and
-    // table column widths persist alongside our own editor_settings.json.
+    // ImGui ini lives next to the engine: window positions and table column
+    // widths are how *this user* likes the editor laid out, not something a
+    // project owns - and the path is captured once for ImGui's lifetime, so a
+    // project-rooted one would go stale the moment another project is opened.
     // Static so the c_str pointer stays valid for ImGui's lifetime.
-    static std::string s_iniPath = (ProjectPaths::root() / "imgui.ini").string();
+    static std::string s_iniPath = (ProjectPaths::engineRoot() / "imgui.ini").string();
     io.IniFilename = s_iniPath.c_str();
 
     // A real TTF instead of ImGui's 13 px bitmap default - the single biggest
@@ -81,7 +83,7 @@ EditorSystem::EditorSystem(
         glfwGetWindowContentScale(window, &scaleX, &scaleY);
         const float fontSize = std::floor(15.0f * std::max(scaleX, 1.0f));
         static std::string s_fontPath =
-            (ProjectPaths::root() / "assets" / "fonts" / "Roboto-Medium.ttf").string();
+            (ProjectPaths::engineFonts() / "Roboto-Medium.ttf").string();
         if (!io.Fonts->AddFontFromFileTTF(s_fontPath.c_str(), fontSize)) {
             LOG_WARNING("Editor font %s failed to load; using the ImGui default",
                         s_fontPath.c_str());
@@ -90,7 +92,7 @@ EditorSystem::EditorSystem(
         // The icon font (Lucide). Missing file falls back to the built-in
         // vector glyphs, so this is a soft dependency.
         static std::string s_iconPath =
-            (ProjectPaths::root() / "assets" / "fonts" / "lucide.ttf").string();
+            (ProjectPaths::engineFonts() / "lucide.ttf").string();
         if (!loadEditorIconFont(s_iconPath.c_str())) {
             LOG_WARNING("Icon font %s failed to load; using vector glyphs",
                         s_iconPath.c_str());
@@ -142,6 +144,24 @@ EditorSystem::~EditorSystem() {
     ImGui::DestroyContext();
 }
 
+void EditorSystem::openPendingProject(EditorContext& ec) {
+    if (ec.state.pendingProjectOpen.empty()) return;
+
+    // Opening a project throws the current scene away, so it asks first, the
+    // same way New Scene does. The chosen path stays parked until the prompt is
+    // answered; answering it clears the flag and this runs on the next frame.
+    if (ec.state.sceneDirty) {
+        ec.state.confirmAction = EditorState::PendingSceneAction::OpenProject;
+        return;
+    }
+
+    // Deferred out of the menu: opening rebuilds the scene, and the menu that
+    // asked is still being drawn when it asks.
+    const std::string path = ec.state.pendingProjectOpen;
+    ec.state.pendingProjectOpen.clear();
+    m_project.open(ec, m_scriptModule, m_sceneIO, path);
+}
+
 void EditorSystem::performSceneAction(FrameContext& ctx, EditorState::PendingSceneAction action) {
     switch (action) {
         case EditorState::PendingSceneAction::Quit:
@@ -153,6 +173,11 @@ void EditorSystem::performSceneAction(FrameContext& ctx, EditorState::PendingSce
         case EditorState::PendingSceneAction::Open:
             m_sceneIO.loadPath(ctx, m_state, m_state.pendingScenePath);
             m_state.pendingScenePath.clear();
+            break;
+        case EditorState::PendingSceneAction::OpenProject:
+            // The project is still parked in pendingProjectOpen; dropping the
+            // dirty flag lets the deferred open through on the next frame.
+            m_state.sceneDirty = false;
             break;
         case EditorState::PendingSceneAction::None:
             break;
@@ -336,6 +361,11 @@ void EditorSystem::update(FrameContext& ctx) {
                 case DialogResult::Alt:
                     performSceneAction(ctx, action);
                     break;
+                case DialogResult::Cancel:
+                    // Abandon the project that was waiting on this answer, or
+                    // the prompt reopens next frame and there is no way out.
+                    m_state.pendingProjectOpen.clear();
+                    break;
                 default: break;
             }
             endDialog();
@@ -432,11 +462,19 @@ void EditorSystem::update(FrameContext& ctx) {
 
         PROFILE_SCOPE("Editor/Panels");
         m_menuBar.draw(ec, m_sceneIO);
+        // Once, on the first UI frame: settings have been loaded by now, so the
+        // startup project takes its place at the front of the list.
+        if (!m_notedStartupProject) {
+            m_project.noteCurrentProject(ec);
+            m_notedStartupProject = true;
+        }
+        m_project.drawDialog(ec, m_scriptModule, m_sceneIO);
         // ModelImportDialog is owned here (not in the menu bar) so it
         // serves all three import-intent sources: the menu, the Inspector
         // empty-state button, and the Hierarchy "+" menu.
         m_modelImport.draw(ctx.scene, ctx.resources, m_state);
         drawWorkspace(ec);
+        openPendingProject(ec);
 
     } else {
         ImGui::PopStyleColor();

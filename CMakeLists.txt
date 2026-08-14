@@ -31,11 +31,6 @@ if(NOT DEFINED VKM_PROFILER)
     endif()
 endif()
 
-# Editor toggle. ON (default) builds engine_editor + engine_runtime. OFF builds
-# only engine_runtime and skips src/editor entirely - proving the engine carries
-# no hidden dependency on editor code and matching a shipped game's layout.
-option(VKM_WITH_EDITOR "Build the engine_editor executable + EngineEditor library" ON)
-
 # Branch / commit / build-date -> PROJECT_* variables, recomputed each configure.
 include(cmake/git_metadata.cmake)
 
@@ -58,7 +53,7 @@ set(_vkm_gcc_warnings
 )
 add_library(vkm_warnings INTERFACE)
 target_compile_options(vkm_warnings INTERFACE
-    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:${_vkm_gcc_warnings}>
+    $<$<CXX_COMPILER_ID:GNU,Clang>:${_vkm_gcc_warnings}>
 )
 
 # Compile-time build metadata, baked into the binary through the BuildInfo
@@ -85,19 +80,19 @@ add_subdirectory(modules)
 
 add_subdirectory(src/engine)
 add_subdirectory(src/tools)
-if(VKM_WITH_EDITOR)
-    add_subdirectory(src/editor)
-endif()
+add_subdirectory(src/editor)
 add_subdirectory(src/backend/opengl)
-# game/ is the gameplay layer (behaviors), kept outside src/ - src/ is the
-# reusable engine; game/ is what's built on top of it.
-add_subdirectory(game)
+# Example projects. Not part of the engine - each is a project in the shape a
+# real one takes, built from this tree because there is no installed SDK to
+# build them against yet.
+add_subdirectory(examples/potion_runner)
+add_subdirectory(examples/stress_arena)
 
-# Two thin executables under app/. engine_runtime is the bare engine; engine_editor
-# adds the in-process editor. Both link the engine libs directly and share the
-# header-only bootstrap in app/engine_app.h (setupEngineApp) - the editor's
-# only addition is its EditorSystem.
+# Three thin executables under app/. engine_runtime plays a project, engine_editor
+# adds the in-process editor to edit one, and engine_cook bakes a project's assets
+# with no window at all. The first two link the engine libs directly and share the
+# header-only bootstrap in app/engine_app.h (setupEngineApp) - the editor's only
+# addition is its EditorSystem; the cooker builds no Engine.
 add_subdirectory(app/runtime)
-if(VKM_WITH_EDITOR)
-    add_subdirectory(app/editor)
-endif()
+add_subdirectory(app/cooker)
+add_subdirectory(app/editor)

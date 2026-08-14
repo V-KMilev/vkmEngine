@@ -145,7 +145,6 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GLTarget      m_postA;   ///< Colour-only post scratch (ping).
         GLTarget      m_postB;   ///< Colour-only post scratch (pong).
         GLMaskTarget    m_ao;
-        GLMaskTarget    m_contactShadow;  ///< Screen-space sun contact-shadow mask.
 
         GLCamera      m_camera;
         GLLights      m_lights;

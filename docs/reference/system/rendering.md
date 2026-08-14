@@ -81,14 +81,14 @@ be drawn.
 `RenderSettings` (in `render_settings.h`) is plain data owned by the RenderSystem,
 mutated by the editor's Render Settings panel, and copied into the view each frame.
 
-- **Toggles:** `gtao`, `bloom`, `probes`, `contactShadows`, `grid`.
+- **Toggles:** `gtao`, `bloom`, `probes`, `grid`.
 - **Per-effect params:** GTAO (radius/intensity/power/bias), bloom
-  (strength/threshold/knee/radius), contact shadows (length/thickness).
+  (strength/threshold/knee/radius).
 - **Quality:** `msaaSamples` (1/2/4/8), `shadowResolution` (1024/2048/4096 per
   atlas tile).
 - **`renderMode`:** composite output selector - `Default` (final image) or a debug
   view: `Depth`, `Normals`, `Roughness`, `Metalness`, `AmbientOcclusion`, `Bloom`,
-  `ShadowAtlas`, `ContactShadows`, `Fog`, `GiOnly`, `DirectOnly`, `Clusters`
+  `ShadowAtlas`, `Fog`, `GiOnly`, `DirectOnly`, `Clusters`
   (Forward+ light-count heatmap). The `MODE_*` constants the composite shader
   switches on are generated from this enum at configure time (`render_modes.glsl`).
 
@@ -112,8 +112,7 @@ backend-agnostic.
 - `GLView` - the GPU resource synchronizer
 - Render targets: `m_sceneHDR` (the geometry target: colour + depth + G-buffer),
   `m_sceneMS` (multisample twin when MSAA is on), `m_postA`/`m_postB`
-  (colour-only post ping-pong scratches), `m_ao` (GTAO), `m_contactShadow`,
-  `m_bloom`
+  (colour-only post ping-pong scratches), `m_ao` (GTAO), `m_bloom`
 - `m_shadowAtlas` + `m_shadowData`, `m_ibl` + `m_iblBaker`, `m_clusterGrid`,
   `m_fog` (froxel volumes, lazily allocated), `m_irradiance` + its baker, the
   reflection-probe manager `m_probes`
@@ -139,20 +138,19 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 | 4 | HiZ | Reduces the resolved depth into a hierarchical depth pyramid: each texel the **farthest** depth of the region below it (`GLHiZ`) |
 | 5 | OcclusionCull | Compute: tests every opaque instance's world AABB against the pyramid and writes the survivors' indices plus each run's indirect draw command. The answer stays on the GPU - a readback would stall the frame it is meant to speed up |
 | 6 | GTAO | Full-res ground-truth AO + bent normal into the mask target |
-| 7 | ContactShadow | Screen-space sun visibility raymarch (skips when the scene has no directional light) |
-| 8 | Skybox | Fills the background before geometry so transparents blend over it |
-| 9 | ClusterCull | Compute: culls lights into the Forward+ cluster grid SSBO |
-| 10 | FogCompute | Compute: froxel light inject + front-to-back integration (allocates the volumes on the first fog frame) |
-| 11 | Forward | The PBR ubershader: opaque (depth-primed), alpha-mask (writes depth, alpha-to-coverage under MSAA), then back-to-front transparents sampling an opaque snapshot for refraction |
-| 12 | Particles | CPU billboard particles into the scene target, depth-tested, never depth-writing |
-| 13 | ResolveColor | MSAA only: resolves colour (and re-resolves depth when alpha-mask drew) into `m_sceneHDR` |
-| 14 | Decals | Projected decal boxes blended into the post colour chain, sampling depth + G-buffer |
-| 15 | FogApply | Composites the integrated froxel fog (chain: src -> dst) |
-| 16 | DoF | Circle-of-confusion disk blur driven by the camera's focus distance / amount (chain: src -> dst) |
-| 17 | Bloom | Bright-pass + mip-chain down/upsample off the chain; composite blends it back |
-| 18 | Grid | World-space ground grid overlay into the chain (LEQUAL test done in its shader) |
-| 19 | Composite | Tonemap to the backbuffer viewport (or a debug buffer per `renderMode`) |
-| 20 | UI | Screen-space in-game UI overlay drawn flat on top (no-op when empty). See [ui.md](ui.md) |
+| 7 | Skybox | Fills the background before geometry so transparents blend over it |
+| 8 | ClusterCull | Compute: culls lights into the Forward+ cluster grid SSBO |
+| 9 | FogCompute | Compute: froxel light inject + front-to-back integration (allocates the volumes on the first fog frame) |
+| 10 | Forward | The PBR ubershader: opaque (depth-primed), alpha-mask (writes depth, alpha-to-coverage under MSAA), then back-to-front transparents sampling an opaque snapshot for refraction |
+| 11 | Particles | CPU billboard particles into the scene target, depth-tested, never depth-writing |
+| 12 | ResolveColor | MSAA only: resolves colour (and re-resolves depth when alpha-mask drew) into `m_sceneHDR` |
+| 13 | Decals | Projected decal boxes blended into the post colour chain, sampling depth + G-buffer |
+| 14 | FogApply | Composites the integrated froxel fog (chain: src -> dst) |
+| 15 | DoF | Circle-of-confusion disk blur driven by the camera's focus distance / amount (chain: src -> dst) |
+| 16 | Bloom | Bright-pass + mip-chain down/upsample off the chain; composite blends it back |
+| 17 | Grid | World-space ground grid overlay into the chain (LEQUAL test done in its shader) |
+| 18 | Composite | Tonemap to the backbuffer viewport (or a debug buffer per `renderMode`) |
+| 19 | UI | Screen-space in-game UI overlay drawn flat on top (no-op when empty). See [ui.md](ui.md) |
 
 IBL is **not** a pass: the persistent `GLIBLBaker` re-bakes inside `render()`
 when `environment.hdrPath` changes or, for the procedural sky, when the sun
@@ -178,7 +176,7 @@ by the GLSL. Vertex attributes are per-vertex position/normal/uv/tangent (slots 
 plus a per-instance model matrix (slots 4-7, divisor 1). UBO binding points cover
 Material, Lights, Camera, and Shadow blocks; texture slots cover the PBR material
 maps plus the shadow atlas (2D array + cube array), IBL set (irradiance / prefilter /
-BRDF LUT / env cube), the GTAO factor, the contact-shadow mask, the scene
+BRDF LUT / env cube), the GTAO factor, the scene
 colour/depth/G-buffer samplers, the froxel fog volume, and the SH irradiance
 volume. Treat `gl_bindings.h` as authoritative rather than hardcoding slot
 numbers from memory.

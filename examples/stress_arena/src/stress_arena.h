@@ -32,7 +32,8 @@ namespace Engine {
  * spawns and dies continuously, the physics pile is blasted apart before it can
  * settle, and a few materials are rewritten every frame. See the motion dials.
  *
- * Attach one instance to an otherwise empty entity (see example/stress_scene.h).
+ * Attach one instance to an otherwise empty entity; the project's module
+ * seeds that entity in vkmBuildScene.
  * On the first play tick it generates the world procedurally from three in-code
  * meshes plus whatever the project has cooked, then drives it every frame. The
  * procedural half never touches the disk and the whole scene runs off a fixed
@@ -84,26 +85,16 @@ class StressArena : public ReflectedBehavior<StressArena> {
         // trivially dominates on a mid-range GPU - the state where the profile is
         // actually informative. Raise one at a time; they are read once, at
         // build, so a change needs a play restart.
-        /** @brief Scattered instanced props (cube/sphere/cylinder). */
-        int propCount = 4000;
-        /** @brief Buildings, each a stack of boxes. */
-        int towerCount = 180;
-        /** @brief Point + spot lights bound into the cluster grid. */
-        int lightCount = 220;
-        /** @brief How many of those cast shadows (atlas tiles). */
-        int shadowLights = 6;
-        /** @brief Particle emitters (half additive sparks, half alpha smoke). */
-        int emitterCount = 40;
-        /** @brief Projected decals on the ground plane. */
-        int decalCount = 80;
-        /** @brief Dynamic rigidbodies tumbling in the central pit. */
-        int physicsBodies = 220;
-        /** @brief Props carrying an Animation track (a subset of propCount). */
-        int animatedCount = 1500;
-        /** @brief HUD text/image widgets laid out every frame. */
-        int uiWidgetCount = 48;
-        /** @brief Reflection probes; each re-bakes six faces when it first appears. */
-        int reflectionProbes = 4;
+        int propCount = 4000;      ///< Scattered instanced props (cube/sphere/cylinder).
+        int towerCount = 180;      ///< Buildings, each a stack of boxes.
+        int lightCount = 220;      ///< Point + spot lights bound into the cluster grid.
+        int shadowLights = 6;      ///< How many of those cast shadows (atlas tiles).
+        int emitterCount = 40;     ///< Particle emitters (half additive sparks, half alpha smoke).
+        int decalCount = 80;       ///< Projected decals on the ground plane.
+        int physicsBodies = 220;   ///< Dynamic rigidbodies tumbling in the central pit.
+        int animatedCount = 1500;  ///< Props carrying an Animation track (a subset of propCount).
+        int uiWidgetCount = 48;    ///< HUD text/image widgets laid out every frame.
+        int reflectionProbes = 4;  ///< Reflection probes; each re-bakes six faces when it first appears.
         /**
          * @brief Instances of real cooked models scattered through the arena.
          *
@@ -199,10 +190,8 @@ class StressArena : public ReflectedBehavior<StressArena> {
          */
         bool lodEnabled = true;
 
-        /** @brief Fly the fixed camera loop (F toggles manual control). */
-        bool scriptedCamera = true;
-        /** @brief Seconds for one full circuit of the scripted path. */
-        float cameraLoopTime = 48.0f;
+        bool scriptedCamera = true;    ///< Fly the fixed camera loop (F toggles manual control).
+        float cameraLoopTime = 48.0f;  ///< Seconds for one full circuit of the scripted path.
         /**
          * @brief Seconds between hard camera cuts to another point on the loop.
          *
@@ -248,7 +237,9 @@ class StressArena : public ReflectedBehavior<StressArena> {
             float  phase;
         };
 
-        /** @brief One live debris piece, destroyed when its life runs out. */
+        /**
+         * @brief One live debris piece, destroyed when its life runs out.
+         */
         struct Debris {
             Entity entity;
             float  life;

@@ -47,8 +47,8 @@ class InstanceIndexBuffer {
         InstanceIndexBuffer(const InstanceIndexBuffer& other) = delete;
         InstanceIndexBuffer& operator=(const InstanceIndexBuffer& other) = delete;
 
-        InstanceIndexBuffer(InstanceIndexBuffer&& other) = delete;
-        InstanceIndexBuffer& operator=(InstanceIndexBuffer&& other) = delete;
+        InstanceIndexBuffer(InstanceIndexBuffer && other) = delete;
+        InstanceIndexBuffer& operator=(InstanceIndexBuffer && other) = delete;
 
     public:
         /// Upload @p bytes of indices, growing the storage when it must.
@@ -233,7 +233,9 @@ class GLInstanceBatchView {
     public:
         explicit GLInstanceBatchView(GLInstanceBatcher& batcher) : m_batcher(&batcher) {}
 
-        /** @brief The runs to draw, in batch order. */
+        /**
+         * @brief The runs to draw, in batch order.
+         */
         const std::vector<InstanceRun>& runs() const { return m_batcher->runs(); }
 
         /**

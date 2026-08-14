@@ -74,15 +74,6 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         static const uint32_t    kShadowResValues[] = { 1024u, 2048u, 4096u };
         propValueCombo("Atlas Resolution", kShadowResLabels, kShadowResValues, 3, &s.shadowResolution,
                        "Per-tile shadow map size - usually the frame's main GPU cost lever");
-
-        // Screen-space contact shadows for the sun (small-scale occlusion the
-        // cascades are too coarse for).
-        propCheckbox("Contact Shadows", &s.contactShadows,
-                     "Screen-space sun occlusion the cascades are too coarse for");
-        ImGui::BeginDisabled(!s.contactShadows);
-        propSlider("Contact Length", &s.contactShadowLength, 0.05f, 2.0f, "%.2f", "View-space ray length toward the sun");
-        propSlider("Contact Thickness", &s.contactShadowThickness, 0.05f, 2.0f, "%.2f", "Max occluder thickness counted as shadow");
-        ImGui::EndDisabled();
     }
     endComponentCard();
 

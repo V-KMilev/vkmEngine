@@ -50,7 +50,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     // ImGui's top-left UVs render it upright.
     if (!m_logo) {
         m_logo = std::make_unique<Core::Texture2D>(
-            (ProjectPaths::assets() / "logo" / "vkm_engine_mark.png").string(),
+            (ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string(),
             /*flipVertically*/ false);
     }
     if (m_logo->getWidth() > 0) {
@@ -61,6 +61,21 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
 
     if (ImGui::BeginMenu("File")) {
         const bool haveCurrent = sceneIO.hasPath();
+        // A project is the bigger noun: it decides which scenes exist at all.
+        if (ImGui::MenuItem("Open Project...")) state.showOpenProject = true;
+        if (ImGui::BeginMenu("Recent Projects", !state.recentProjects.empty())) {
+            for (const std::string& p : state.recentProjects) {
+                ImGui::PushID(p.c_str());
+                const std::string shortName = std::filesystem::path(p).filename().string();
+                if (ImGui::MenuItem(shortName.empty() ? p.c_str() : shortName.c_str())) {
+                    state.pendingProjectOpen = p;
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", p.c_str());
+                ImGui::PopID();
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::Separator();
         if (ImGui::MenuItem("New Scene", keyLabel(state.keybinds.newScene))) {
             if (state.sceneDirty) state.confirmAction = EditorState::PendingSceneAction::New;
             else                  sceneIO.newScene(ctx, state);

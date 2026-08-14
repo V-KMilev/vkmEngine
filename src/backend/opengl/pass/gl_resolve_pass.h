@@ -17,7 +17,7 @@ namespace Engine {
 class GLResolvePass : public GLPass {
     public:
         enum class Scope {
-            Geometry,  ///< Depth + G-buffer (read by GTAO / contact shadows / decals / composite).
+            Geometry,  ///< Depth + G-buffer (read by GTAO / decals / composite).
             Color,     ///< The lit HDR colour (read by the post chain: decals, fog, DoF, bloom, composite).
         };
 
