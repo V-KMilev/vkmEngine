@@ -11,13 +11,13 @@
 #include "debug/build_info.h"
 #include "asset_registration.h"
 #include "io/asset/asset_library.h"
+#include "io/project_paths.h"
 #include "io/scene/scene_serializer.h"
 #include "editor_system.h"
 #include "system/script/script_module.h"
 #include "platform/library/dynamic_library.h"
 #include "app/engine_app.h"
-#include "example/potion_scene.h"
-#include "example/stress_scene.h"
+#include "app/scenes/stress_scene.h"
 
 int main(int argc, char** argv) {
     try {
@@ -50,15 +50,28 @@ int main(int argc, char** argv) {
         // teardown and their code must still be loaded then. Must precede
         // setupEngineApp, whose default scene creates behaviors via the registry.
         Engine::ScriptModule scriptModule;
-        const std::string modulePath =
-            std::string(GAME_MODULE_DIR) + "/" + Engine::DynamicLibrary::platformName("game");
-        if (!scriptModule.load(modulePath)) {
-            LOG_ERROR("Game module failed to load from '%s' - scripts unavailable", modulePath.c_str());
+        // The open project's module first, then one built beside this exe: the
+        // editor edits a project, so it runs that project's code.
+        const std::string moduleName = Engine::DynamicLibrary::platformName("game");
+        const std::filesystem::path moduleCandidates[] = {
+            Engine::ProjectPaths::projectBin() / moduleName,
+            std::filesystem::path(GAME_MODULE_DIR) / moduleName,
+        };
+
+        bool moduleLoaded = false;
+        for (const std::filesystem::path& candidate : moduleCandidates) {
+            std::error_code moduleEc;
+            if (!std::filesystem::exists(candidate, moduleEc)) continue;
+            moduleLoaded = scriptModule.load(candidate.string());
+            if (moduleLoaded) break;
+        }
+        if (!moduleLoaded) {
+            LOG_WARNING("No gameplay module for this project - scripts unavailable");
         }
 
         Engine::Engine engine;
 
-        // --stress boots the profiling load (example/stress_scene.h) instead of
+        // --stress boots the profiling load (app/scenes/stress_scene.h) instead of
         // the game. It is a flag rather than a scene file because the arena is
         // generated in code from a fixed seed - there is nothing on disk to load.
         const bool stress = argc > 1 && std::string(argv[1]) == "--stress";
@@ -66,7 +79,7 @@ int main(int argc, char** argv) {
         auto sys = setupEngineApp(engine, AppConfig{
             stress ? "VKM Engine (Stress)" : "VKM Engine (Editor)",
             true, false,
-            stress ? generateStressArenaScene : generatePotionRunnerScene});
+            stress ? generateStressArenaScene : nullptr});
 
         engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
             engine, engine.getWindow().getWindowContext(),

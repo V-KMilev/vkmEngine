@@ -32,7 +32,8 @@ namespace Engine {
  * spawns and dies continuously, the physics pile is blasted apart before it can
  * settle, and a few materials are rewritten every frame. See the motion dials.
  *
- * Attach one instance to an otherwise empty entity (see example/stress_scene.h).
+ * Attach one instance to an otherwise empty entity; the project's module
+ * seeds that entity in vkmBuildScene.
  * On the first play tick it generates the world procedurally from three in-code
  * meshes plus whatever the project has cooked, then drives it every frame. The
  * procedural half never touches the disk and the whole scene runs off a fixed

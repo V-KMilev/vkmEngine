@@ -19,7 +19,8 @@
 namespace Engine {
 
 namespace {
-using RegisterFn = void (*)();
+using RegisterFn   = void (*)();
+using BuildSceneFn = void (*)(Scene&);
 
 // Best-effort sweep of stale "<stem>.loaded.*.<ext>" copies left by previous
 // runs (a clean exit removes its own, but a crash can leave one). A copy still
@@ -154,6 +155,16 @@ bool ScriptModule::reload(Scene& scene) {
         }
     }
     LOG_INFO("Script reload complete (%zu entit(y/ies) restored)", saved.size());
+    return true;
+}
+
+bool ScriptModule::buildScene(Scene& scene) {
+    if (!m_lib.isLoaded()) return false;
+
+    auto buildFn = reinterpret_cast<BuildSceneFn>(m_lib.symbol("vkmBuildScene"));
+    if (!buildFn) return false;  // optional: most projects author a scene instead
+
+    buildFn(scene);
     return true;
 }
 
