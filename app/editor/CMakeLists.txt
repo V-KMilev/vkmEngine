@@ -1,5 +1,5 @@
 # engine_editor - engine + in-process editor (ImGui panels, gizmos, scene I/O
-# dialogs). Built only when VKM_WITH_EDITOR=ON.
+# dialogs).
 add_executable(engine_editor main.cpp)
 
 # The app drives the engine directly (no EngineApp library), so it links the

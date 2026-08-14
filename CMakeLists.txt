@@ -31,11 +31,6 @@ if(NOT DEFINED VKM_PROFILER)
     endif()
 endif()
 
-# Editor toggle. ON (default) builds engine_editor + engine_runtime. OFF builds
-# only engine_runtime and skips src/editor entirely - proving the engine carries
-# no hidden dependency on editor code and matching a shipped game's layout.
-option(VKM_WITH_EDITOR "Build the engine_editor executable + EngineEditor library" ON)
-
 # Branch / commit / build-date -> PROJECT_* variables, recomputed each configure.
 include(cmake/git_metadata.cmake)
 
@@ -85,9 +80,7 @@ add_subdirectory(modules)
 
 add_subdirectory(src/engine)
 add_subdirectory(src/tools)
-if(VKM_WITH_EDITOR)
-    add_subdirectory(src/editor)
-endif()
+add_subdirectory(src/editor)
 add_subdirectory(src/backend/opengl)
 # Example projects. Not part of the engine - each is a project in the shape a
 # real one takes, built here only because 1.4 has not yet made them buildable
@@ -101,6 +94,4 @@ add_subdirectory(examples/stress_arena)
 # only addition is its EditorSystem.
 add_subdirectory(app/runtime)
 add_subdirectory(app/cooker)
-if(VKM_WITH_EDITOR)
-    add_subdirectory(app/editor)
-endif()
+add_subdirectory(app/editor)
