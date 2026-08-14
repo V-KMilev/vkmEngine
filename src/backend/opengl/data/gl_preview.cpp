@@ -220,7 +220,6 @@ uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
     // invisible.
     m_pbr->setUniform1f("u_iblIntensity", 1.0f);
     m_pbr->setUniform1i("u_hasSSAO", 0);
-    m_pbr->setUniform1i("u_hasContactShadow", 0);
     m_pbr->setUniform1i("u_hasSceneColor", 0);
     m_pbr->setUniform1i("u_probeCount", 0);
     m_pbr->setUniform1i("u_useClusters", 0);           // no cull pass here: shade the full light list

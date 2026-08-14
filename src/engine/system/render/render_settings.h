@@ -21,7 +21,6 @@ enum class RenderMode : uint8_t {
     AmbientOcclusion,
     Bloom,
     ShadowAtlas,
-    ContactShadows,
     Fog,
     GiOnly,      ///< Indirect (ambient/IBL/GI) term only, tonemapped.
     DirectOnly,  ///< Direct light sum only, tonemapped.
@@ -31,7 +30,7 @@ enum class RenderMode : uint8_t {
 
 VKM_ENUM_NAMES(RenderMode, "Default", "Depth", "Normals", "Roughness",
                "Metalness", "Ambient Occlusion", "Bloom", "Shadow Atlas",
-               "Contact Shadows", "Fog", "GI Only", "Direct Only", "Light Clusters")
+               "Fog", "GI Only", "Direct Only", "Light Clusters")
 
 /**
  * @brief Editable render tuning: pass toggles + per-effect parameters.
@@ -64,11 +63,6 @@ struct RenderSettings {
 
     // Anti-aliasing
     uint32_t msaaSamples = 4;  ///< Scene-pass MSAA sample count (1 = off, 2/4/8). Multisamples geometry edges; the whole post chain runs on the resolved single-sample buffer.
-
-    // Contact shadows (screen-space, sun only)
-    bool  contactShadows          = true;
-    float contactShadowLength     = 0.35f;  ///< View-space ray length toward the sun.
-    float contactShadowThickness  = 0.6f;   ///< Max occluder thickness counted as shadow (avoids distant-background haloing).
 
     // Shadows
     uint32_t shadowResolution = 4096;  ///< Per-tile shadow-atlas resolution (1024/2048/4096). Higher = crisper but a much heavier shadow pass.

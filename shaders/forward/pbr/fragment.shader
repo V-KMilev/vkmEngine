@@ -103,11 +103,6 @@ uniform vec3  u_ivMin;        // volume box min corner (world)
 uniform vec3  u_ivSize;       // volume box size (world)
 uniform float u_ivIntensity;
 
-// Screen-space sun contact-shadow mask; u_hasContactShadow gates it (0 in the
-// preview / probe bakes, which run no contact-shadow pass).
-layout(binding = 25) uniform sampler2D u_contactShadow;
-uniform int u_hasContactShadow;
-
 // Local reflection probes (parallax-corrected boxes), stored as cube-map arrays
 // (layer = probe index). The backend binds two array samplers + the ProbeBlock
 // UBO; the shader weight-blends the covering probes over the global IBL.
@@ -858,12 +853,6 @@ void main() {
             if (type == LIGHT_DIRECTIONAL) visibility *= sampleCSM(vWorldPos, N, ndotl, u_camera.cameraPosition.xyz);
             else if (type == LIGHT_SPOT)   visibility *= sample2DSlot(sslot, vWorldPos, N, ndotl);
             else if (type == LIGHT_POINT)  visibility *= sampleCube(sslot, vWorldPos, ndotl);
-        }
-
-        // Screen-space contact shadow: catches small-scale sun occlusion the
-        // cascades miss. Sun only, and only where still lit.
-        if (type == LIGHT_DIRECTIONAL && u_hasContactShadow == 1 && visibility > 0.0) {
-            visibility *= texture(u_contactShadow, gl_FragCoord.xy / u_screenSize).r;
         }
 
         // POM self-shadowing: only for the directional sun so the

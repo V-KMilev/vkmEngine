@@ -20,7 +20,6 @@
 #include "pass/gl_depth_prepass.h"
 #include "pass/gl_resolve_pass.h"
 #include "pass/gl_cluster_pass.h"
-#include "pass/gl_contact_shadow_pass.h"
 #include "pass/gl_fog_pass.h"
 #include "pass/gl_fog_apply_pass.h"
 #include "pass/gl_dof_pass.h"
@@ -47,19 +46,15 @@ namespace Engine {
 
 namespace {
 // The procedural sky follows the scene's primary directional light so the sky
-// and the key light agree. Returns the direction TO the sun and sets hasSun; a
-// sensible high sun (hasSun = false) when the scene has no directional light.
-glm::vec3 primarySunDir(const RenderView& view, bool& hasSun) {
+// and the key light agree. Returns the direction TO the sun, falling back to a
+// sensible high sun when the scene has no directional light.
+glm::vec3 primarySunDir(const RenderView& view) {
     for (const LightData& light : view.lights) {
         if (light.type == LightType::Directional) {
             const glm::vec3 toSun = -light.direction;
-            if (glm::dot(toSun, toSun) > 1e-6f) {
-                hasSun = true;
-                return glm::normalize(toSun);
-            }
+            if (glm::dot(toSun, toSun) > 1e-6f) return glm::normalize(toSun);
         }
     }
-    hasSun = false;
     return glm::normalize(glm::vec3(0.3f, 1.0f, 0.2f));
 }
 } // namespace
@@ -115,7 +110,6 @@ bool GLBackend::init(WindowManager& window) {
     //   OcclusionCull - compute: rejects opaque instances hidden behind it and
     //                   writes each run's indirect draw command.
     //   GTAO          - occlusion factor + bent normal from resolved depth.
-    //   ContactShadow - screen-space sun visibility mask (skips without a sun).
     //   Skybox        - fills the background BEFORE geometry, so sorted
     //                   transparents blend over it instead of being overwritten.
     //   ClusterCull   - compute: Forward+ per-cluster light lists.
@@ -136,7 +130,6 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"HiZ",            std::make_unique<GLHiZPass>()});
     m_passes.push_back({"OcclusionCull",  std::make_unique<GLOcclusionCullPass>()});
     m_passes.push_back({"GTAO",           std::make_unique<GLGTAOPass>()});
-    m_passes.push_back({"ContactShadow",  std::make_unique<GLContactShadowPass>()});
     m_passes.push_back({"Skybox",         std::make_unique<GLSkyboxPass>()});
     m_passes.push_back({"ClusterCull",    std::make_unique<GLClusterPass>()});
     m_passes.push_back({"FogCompute",     std::make_unique<GLFogPass>()});
@@ -209,9 +202,6 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // it alive too). Once allocated they stay - toggles flip too often to thrash.
     if (view.settings.gtao || view.settings.renderMode != RenderMode::Default)
         m_ao.resize(view.viewportWidth, view.viewportHeight);
-    if (view.settings.contactShadows)
-        m_contactShadow.resize(view.viewportWidth, view.viewportHeight);
-
     // MSAA: when enabled, the geometry passes render into the multisample target
     // and GLResolvePass resolves it into m_sceneHDR; the whole post chain stays
     // single-sample. When off, they render straight into m_sceneHDR (resolve
@@ -228,8 +218,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
 
     // Direction to the sun (primary directional light); drives the procedural
     // sky bake and the skybox sun disc, so compute it once here.
-    bool hasSun = false;
-    const glm::vec3 sunDir = primarySunDir(view, hasSun);
+    const glm::vec3 sunDir = primarySunDir(view);
 
     // Bake the IBL and re-bake on change. The procedural atmosphere follows the
     // sun (re-baking when it or a sky param moves); otherwise the equirect HDR is
@@ -294,7 +283,6 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_ibl,
         m_bloom,
         m_ao,
-        m_contactShadow,
         m_clusterGrid,
         m_fog,
         m_irradiance,
@@ -305,7 +293,6 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         GLInstanceBatchView(m_opaqueBatcher)};
 
     ctx.sunDir = sunDir;
-    ctx.hasSun = hasSun;
 
     // Post colour chain: the scene starts on the geometry target; the first
     // post pass moves it into a scratch and the chain ping-pongs from there.
