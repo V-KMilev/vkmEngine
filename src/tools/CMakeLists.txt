@@ -24,7 +24,7 @@ target_include_directories(EngineTools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # The stb implementation is provided by the `stb` module, linked transitively via
 # EngineCore, so no explicit stb link is needed here.
 target_include_directories(EngineTools PRIVATE
-    ${PROJECT_SOURCE_DIR}/modules/vkmGL/modules/stb
+    ${PROJECT_SOURCE_DIR}/modules/stb
 )
 
 target_link_libraries(EngineTools PUBLIC
@@ -42,7 +42,7 @@ if(VKM_WITH_EDITOR)
     add_library(EngineCooker STATIC ${ENGINECOOKER_SOURCES})
 
     target_include_directories(EngineCooker PRIVATE
-        ${PROJECT_SOURCE_DIR}/modules/vkmGL/modules/stb
+        ${PROJECT_SOURCE_DIR}/modules/stb
     )
 
     target_link_libraries(EngineCooker PUBLIC

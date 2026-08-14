@@ -29,7 +29,7 @@ target_compile_definitions(engine_editor PRIVATE
 # symbols against it (the module is loaded at runtime, never linked into the exe).
 # Windows: generates an import library (libengine_editor.dll.a) the module links;
 # --export-all-symbols publishes the statically-linked engine symbols too.
-# Linux/macOS: -rdynamic/--export-dynamic puts the exe's symbols in the dynamic
+# Linux: -rdynamic/--export-dynamic puts the exe's symbols in the dynamic
 # table so the dlopen'd module resolves against the host (no link needed there).
 set_target_properties(engine_editor PROPERTIES ENABLE_EXPORTS ON)
 if(WIN32)

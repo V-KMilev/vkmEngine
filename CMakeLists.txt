@@ -58,7 +58,7 @@ set(_vkm_gcc_warnings
 )
 add_library(vkm_warnings INTERFACE)
 target_compile_options(vkm_warnings INTERFACE
-    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:${_vkm_gcc_warnings}>
+    $<$<CXX_COMPILER_ID:GNU,Clang>:${_vkm_gcc_warnings}>
 )
 
 # Compile-time build metadata, baked into the binary through the BuildInfo
