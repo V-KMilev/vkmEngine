@@ -76,9 +76,6 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     if (ctx.aoReady) ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
     m_shader->setUniform1i("u_hasSSAO", ctx.aoReady ? 1 : 0);
 
-    // Screen-space sun contact-shadow mask (multiplied into the directional light).
-    if (ctx.contactShadowReady) ctx.contactShadow.bindTexture(GLBindings::PostTextureSlots::ContactShadow);
-    m_shader->setUniform1i("u_hasContactShadow", ctx.contactShadowReady ? 1 : 0);
     // View -> world, so the GTAO bent normal can be used in world space.
     m_shader->setUniformMatrix4fv("u_invView", view.camera.invView);
 

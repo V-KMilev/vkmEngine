@@ -73,4 +73,4 @@ function(vkm_module_metadata MODULE_PATH OUT_PREFIX)
 endfunction()
 
 vkm_module_metadata("${CMAKE_SOURCE_DIR}/modules/vkmGL"                VKMGL)
-vkm_module_metadata("${CMAKE_SOURCE_DIR}/modules/vkmGL/modules/vkmLog" VKMLOG)
+vkm_module_metadata("${CMAKE_SOURCE_DIR}/modules/vkmLog" VKMLOG)

@@ -21,15 +21,16 @@ namespace Engine {
  */
 struct Environment {
     // Lighting (skybox + image-based lighting)
-    std::string hdrPath    = "assets/envs/environment.hdr";  ///< Equirect HDR baked into IBL + skybox.
-    float       intensity  = 1.0f;                           ///< Indirect-lighting + skybox brightness multiplier.
-    bool        showSkybox = true;                           ///< Draw the skybox background; the IBL still lights the scene when off.
+    std::string hdrPath;                ///< Equirect HDR baked into IBL + skybox; empty = none.
+    float       intensity  = 1.0f;      ///< Indirect-lighting + skybox brightness multiplier.
+    bool        showSkybox = true;      ///< Draw the skybox background; the IBL still lights the scene when off.
 
     // Procedural sky: a Rayleigh + Mie atmosphere baked into the IBL cubemap in
     // place of loading hdrPath. The sun direction follows the scene's primary
     // directional light, so the sky and the key light stay consistent, and the
-    // bake re-runs only when the sun or a parameter below changes.
-    bool  proceduralSky   = false;  ///< Bake the atmosphere instead of loading hdrPath.
+    // bake re-runs only when the sun or a parameter below changes. On by
+    // default so a scene is lit before it owns any assets.
+    bool  proceduralSky   = true;   ///< Bake the atmosphere instead of loading hdrPath.
     float skySunIntensity = 22.0f;  ///< Atmosphere sun radiance scale.
     float skyRayleigh     = 1.0f;   ///< Rayleigh (blue-sky) scattering scale.
     float skyMie          = 1.0f;   ///< Mie (haze / sun glow) scattering scale.

@@ -25,7 +25,7 @@ namespace {
     std::string resolveAssetPath(const std::string& p) {
         std::filesystem::path fp(p);
         if (fp.is_relative()) {
-            return (ProjectPaths::root() / fp).lexically_normal().string();
+            return (ProjectPaths::projectRoot() / fp).lexically_normal().string();
         }
         return p;
     }

@@ -1,11 +1,8 @@
-#pragma once
-
 #include <utility>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include "core/engine.h"
 #include "ecs/scene.h"
 #include "ecs/component/camera.h"
 #include "ecs/component/name.h"
@@ -13,26 +10,32 @@
 #include "system/script/behavior_registry.h"
 #include "system/script/script_component.h"
 
-/**
- * @brief Seed the profiling scene: a camera plus the StressArena behavior.
- *
- * The persisted scene is deliberately two entities. Everything the profile
- * actually measures - thousands of drawables, hundreds of lights, the particle,
- * decal, probe, physics and UI load - is generated procedurally by the behavior
- * on the first play tick, from a fixed seed. Nothing is read from disk, so the
- * load does not depend on which assets a machine has cooked, and two captures of
- * the same build are comparable frame for frame.
- *
- * Run it with `engine_runtime --stress` (auto-plays) or `engine_editor --stress`
- * (press Play). Tune the load through the behavior's fields in the inspector, or
- * by editing the defaults in game/stress_arena.h; they are read once at build, so
- * a change takes effect on the next play.
- *
- * @return The camera entity, for CameraControllerSystem::setCameraEntity.
- */
-inline Engine::Entity generateStressArenaScene(Engine::Engine& engine) {
-    auto& scene    = engine.getScene();
-    auto& registry = Engine::BehaviorRegistry::get();
+#include "stress_arena.h"
+
+// Entries a host resolves after loading this module.
+//
+// vkmRegisterBehaviors is the required one: it populates the host's
+// BehaviorRegistry so scenes can name this project's behaviors.
+extern "C"
+#if defined(_WIN32)
+__declspec(dllexport)
+#endif
+void vkmRegisterBehaviors() {
+    Engine::BehaviorRegistry::get().registerBehavior<Engine::StressArena>();
+}
+
+// vkmBuildScene is the optional one. This project's world is generated rather
+// than authored, so there is no scene file for project.json to point at - the
+// arena is built from a fixed seed by the behavior below. Saying so here keeps
+// the content with the project instead of in whatever executable loads it,
+// which is what the --stress flag used to do.
+extern "C"
+#if defined(_WIN32)
+__declspec(dllexport)
+#endif
+void vkmBuildScene(Engine::Scene& scene) {
+
+        auto& registry = Engine::BehaviorRegistry::get();
 
     // The behavior overwrites these on the first tick; they are set here so the
     // editor frames the arena before Play rather than staring at the origin.
@@ -60,6 +63,4 @@ inline Engine::Entity generateStressArenaScene(Engine::Engine& engine) {
         script.behaviors.push_back(std::move(behavior));
     }
     scene.add(arena, std::move(script));
-
-    return camera;
 }

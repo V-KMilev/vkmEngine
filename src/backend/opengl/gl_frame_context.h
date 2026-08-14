@@ -46,8 +46,7 @@ struct GLFrameContext {
     const GLShadowData& shadowData;   ///< This frame's shadow plan (matrices + slots).
     const GLIBL&      ibl;            ///< Baked IBL product set: sampled by forward (ambient) + skybox.
     GLBloom&          bloom;          ///< Bloom mip chain: written by the bloom pass, blended in composite.
-    GLMaskTarget&       ao;             ///< GTAO factor: written by the GTAO pass, sampled by forward (ambient).
-    GLMaskTarget&       contactShadow;  ///< Sun contact-shadow mask: written by the contact-shadow pass, sampled by forward.
+    GLMaskTarget&     ao;             ///< GTAO factor: written by the GTAO pass, sampled by forward (ambient).
     GLClusterGrid&    clusters;       ///< Forward+ per-cluster light lists: written by the cluster pass, read by forward.
     GLFogVolume&      fog;            ///< Froxel fog volumes: written by the fog compute, applied by the fog-apply pass.
     GLIrradianceVolume& irradiance;   ///< Baked SH irradiance volume, sampled by the forward ambient term.
@@ -126,12 +125,6 @@ struct GLFrameContext {
      */
     glm::vec3 sunDir{0.0f, 1.0f, 0.0f};
 
-    /**
-     * @brief Whether sunDir came from a real directional light this frame (false =
-     * the fabricated default). Sun-only passes (contact shadows) skip when false.
-     */
-    bool hasSun = false;
-
     // --- Pass products: set by an earlier pass, read by later ones ----------
 
     /**
@@ -139,12 +132,6 @@ struct GLFrameContext {
      * binds + samples it; otherwise the indirect term uses no screen-space AO.
      */
     bool aoReady = false;
-
-    /**
-     * @brief Set by the contact-shadow pass when it fills the mask. The forward
-     * pass then multiplies it into the sun; otherwise the sun is un-contact-shadowed.
-     */
-    bool contactShadowReady = false;
 
     /**
      * @brief Set by the fog compute when it fills + integrates the froxel volume.

@@ -76,10 +76,14 @@ class GLIrradianceBaker {
                   const RenderView& view, const GLView& glView, const GLIBL& globalIBL);
 
     private:
-        /** @brief Allocate the capture cube + FBO on first use. */
+        /**
+         * @brief Allocate the capture cube + FBO on first use.
+         */
         void ensureTargets();
 
-        /** @brief Render the scene into the capture cube from @p position. */
+        /**
+         * @brief Render the scene into the capture cube from @p position.
+         */
         void captureProbe(Core::Context& gl, const glm::vec3& position,
                           const std::vector<InstanceRun>& runs,
                           const GLView& glView, const GLIBL& globalIBL);

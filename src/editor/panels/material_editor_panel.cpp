@@ -299,7 +299,7 @@ bool MaterialEditorPanel::textureSlot(
     if (ImGui::SmallButton("Set")) {
         // Configure the panel-owned picker for this slot, then open it.
         // Only one slot's picker is active at a time (single popup).
-        const std::filesystem::path appRoot = ProjectPaths::root();
+        const std::filesystem::path appRoot = ProjectPaths::projectRoot();
         m_texturePicker.options.popupId    = "PickTexture";
         m_texturePicker.options.title      = "Pick Texture";
         m_texturePicker.options.root       = appRoot / "assets";
@@ -332,7 +332,7 @@ bool MaterialEditorPanel::textureSlot(
 
 bool MaterialEditorPanel::pbrFolderBrowse(std::string& outFolder) {
     if (ImGui::SmallButton("Load PBR Folder...")) {
-        const std::filesystem::path appRoot = ProjectPaths::root();
+        const std::filesystem::path appRoot = ProjectPaths::projectRoot();
         m_pbrFolderPicker.options.popupId   = "PBRFolder";
         m_pbrFolderPicker.options.title     = "Load PBR Folder";
         m_pbrFolderPicker.options.root      = appRoot / "assets";
@@ -603,7 +603,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         std::string pickedTex;
         if (m_texturePicker.draw(pickedTex) && m_pendingSlot) {
             if (resources.isAlive(m_pendingMaterial)) {
-                const std::string abs = (ProjectPaths::root() / pickedTex).string();
+                const std::string abs = (ProjectPaths::projectRoot() / pickedTex).string();
                 TextureHandle h = loadTexture(abs, resources, m_pendingTextureSrgb, true);
                 if (h) {
                     resources.edit(m_pendingMaterial).*m_pendingSlot = h;

@@ -52,12 +52,32 @@ std::filesystem::path resolveRoot() {
     return std::filesystem::path(APP_ROOT_DIR);
 }
 
+// Set by setProjectRoot(); empty until then.
+std::filesystem::path& projectOverride() {
+    static std::filesystem::path path;
+    return path;
+}
+
 } // namespace
 
-std::filesystem::path root() {
+std::filesystem::path engineRoot() {
     // Resolved once: the on-disk layout can't change under a running process.
     static const std::filesystem::path resolved = resolveRoot();
     return resolved;
+}
+
+void setProjectRoot(const std::filesystem::path& path) {
+    std::error_code ec;
+    projectOverride() = std::filesystem::absolute(path, ec);
+}
+
+std::filesystem::path projectRoot() {
+    // An explicit project wins. Without one the project is wherever the engine
+    // is, which is what a development checkout and a packaged game both want:
+    // the repo is its own project, and a shipped game keeps its data beside the
+    // executable.
+    if (!projectOverride().empty()) return projectOverride();
+    return engineRoot();
 }
 
 } // namespace Engine::ProjectPaths
