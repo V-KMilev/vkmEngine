@@ -100,6 +100,7 @@ add_subdirectory(examples/stress_arena)
 # header-only bootstrap in app/engine_app.h (setupEngineApp) - the editor's
 # only addition is its EditorSystem.
 add_subdirectory(app/runtime)
+add_subdirectory(app/cooker)
 if(VKM_WITH_EDITOR)
     add_subdirectory(app/editor)
 endif()
