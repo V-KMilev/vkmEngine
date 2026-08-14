@@ -52,6 +52,12 @@ std::filesystem::path resolveRoot() {
     return std::filesystem::path(APP_ROOT_DIR);
 }
 
+// Set by setProjectRoot(); empty until then.
+std::filesystem::path& projectOverride() {
+    static std::filesystem::path path;
+    return path;
+}
+
 } // namespace
 
 std::filesystem::path engineRoot() {
@@ -60,12 +66,18 @@ std::filesystem::path engineRoot() {
     return resolved;
 }
 
+void setProjectRoot(const std::filesystem::path& path) {
+    std::error_code ec;
+    projectOverride() = std::filesystem::absolute(path, ec);
+}
+
 std::filesystem::path projectRoot() {
-    // Still the same directory as the engine root: this version splits the two
-    // names apart so every call site declares which it means, and a later step
-    // gives the project its own location once project.json can say where it is.
-    // Splitting the API first keeps that change from also being a rename of
-    // every path in the engine.
+    // An explicit project wins. Without one the project is wherever the engine
+    // is, which is what a development checkout and a packaged game both want:
+    // the repo is its own project, and a shipped game keeps its data beside the
+    // executable.
+    if (!projectOverride().empty()) return projectOverride();
+
     static const std::filesystem::path resolved = resolveRoot();
     return resolved;
 }

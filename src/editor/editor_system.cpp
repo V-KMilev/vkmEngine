@@ -81,7 +81,7 @@ EditorSystem::EditorSystem(
         glfwGetWindowContentScale(window, &scaleX, &scaleY);
         const float fontSize = std::floor(15.0f * std::max(scaleX, 1.0f));
         static std::string s_fontPath =
-            (ProjectPaths::fonts() / "Roboto-Medium.ttf").string();
+            (ProjectPaths::engineFonts() / "Roboto-Medium.ttf").string();
         if (!io.Fonts->AddFontFromFileTTF(s_fontPath.c_str(), fontSize)) {
             LOG_WARNING("Editor font %s failed to load; using the ImGui default",
                         s_fontPath.c_str());
@@ -90,7 +90,7 @@ EditorSystem::EditorSystem(
         // The icon font (Lucide). Missing file falls back to the built-in
         // vector glyphs, so this is a soft dependency.
         static std::string s_iconPath =
-            (ProjectPaths::fonts() / "lucide.ttf").string();
+            (ProjectPaths::engineFonts() / "lucide.ttf").string();
         if (!loadEditorIconFont(s_iconPath.c_str())) {
             LOG_WARNING("Icon font %s failed to load; using vector glyphs",
                         s_iconPath.c_str());
