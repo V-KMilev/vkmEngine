@@ -68,7 +68,7 @@ EditorSystem::EditorSystem(
     // ImGui ini lives next to the engine so floating-window positions and
     // table column widths persist alongside our own editor_settings.json.
     // Static so the c_str pointer stays valid for ImGui's lifetime.
-    static std::string s_iniPath = (ProjectPaths::root() / "imgui.ini").string();
+    static std::string s_iniPath = (ProjectPaths::projectRoot() / "imgui.ini").string();
     io.IniFilename = s_iniPath.c_str();
 
     // A real TTF instead of ImGui's 13 px bitmap default - the single biggest
@@ -81,7 +81,7 @@ EditorSystem::EditorSystem(
         glfwGetWindowContentScale(window, &scaleX, &scaleY);
         const float fontSize = std::floor(15.0f * std::max(scaleX, 1.0f));
         static std::string s_fontPath =
-            (ProjectPaths::root() / "assets" / "fonts" / "Roboto-Medium.ttf").string();
+            (ProjectPaths::fonts() / "Roboto-Medium.ttf").string();
         if (!io.Fonts->AddFontFromFileTTF(s_fontPath.c_str(), fontSize)) {
             LOG_WARNING("Editor font %s failed to load; using the ImGui default",
                         s_fontPath.c_str());
@@ -90,7 +90,7 @@ EditorSystem::EditorSystem(
         // The icon font (Lucide). Missing file falls back to the built-in
         // vector glyphs, so this is a soft dependency.
         static std::string s_iconPath =
-            (ProjectPaths::root() / "assets" / "fonts" / "lucide.ttf").string();
+            (ProjectPaths::fonts() / "lucide.ttf").string();
         if (!loadEditorIconFont(s_iconPath.c_str())) {
             LOG_WARNING("Icon font %s failed to load; using vector glyphs",
                         s_iconPath.c_str());

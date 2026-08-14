@@ -54,8 +54,18 @@ std::filesystem::path resolveRoot() {
 
 } // namespace
 
-std::filesystem::path root() {
+std::filesystem::path engineRoot() {
     // Resolved once: the on-disk layout can't change under a running process.
+    static const std::filesystem::path resolved = resolveRoot();
+    return resolved;
+}
+
+std::filesystem::path projectRoot() {
+    // Still the same directory as the engine root: this version splits the two
+    // names apart so every call site declares which it means, and a later step
+    // gives the project its own location once project.json can say where it is.
+    // Splitting the API first keeps that change from also being a rename of
+    // every path in the engine.
     static const std::filesystem::path resolved = resolveRoot();
     return resolved;
 }
