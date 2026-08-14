@@ -9,7 +9,6 @@ target_link_libraries(engine_runtime PRIVATE
     EngineRendering
     EngineTools
     BackendOpenGL
-    game
     BuildInfo
     vkm_warnings
 )
@@ -17,6 +16,21 @@ target_link_libraries(engine_runtime PRIVATE
 # main.cpp includes the shared bootstrap as "app/engine_app.h" (which pulls in
 # "example/default_scene.h"); the repo root puts both prefixes on the include path.
 target_include_directories(engine_runtime PRIVATE ${CMAKE_SOURCE_DIR})
+
+# The gameplay module is loaded, not linked - the same module the editor
+# dlopen's, so a game is data plus a shared library rather than a rebuilt
+# engine. Where to find it, and the symbol export it resolves against:
+# --export-dynamic puts this exe's symbols in the dynamic table so the module
+# binds to the host that loaded it, exactly as it does under the editor.
+target_compile_definitions(engine_runtime PRIVATE
+    GAME_MODULE_DIR="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
+set_target_properties(engine_runtime PROPERTIES ENABLE_EXPORTS ON)
+if(WIN32)
+    target_link_options(engine_runtime PRIVATE "-Wl,--export-all-symbols")
+else()
+    target_link_options(engine_runtime PRIVATE "-rdynamic")
+endif()
 
 # ----------------------------------------------------------------------------
 # Packaging: assemble a relocatable game under the install prefix.
