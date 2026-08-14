@@ -14,11 +14,14 @@
 #include "core/engine.h"
 #include "ecs/scene.h"
 #include "framework/editor_context.h"
+#include "framework/editor_settings.h"
 #include "framework/editor_state.h"
 #include "io/asset/asset_library.h"
+#include "system/render/render_system.h"
 #include "io/project.h"
 #include "io/project_paths.h"
 #include "io/scene/scene_serializer.h"
+#include "generator/default_scene.h"
 #include "platform/library/dynamic_library.h"
 #include "system/script/script_module.h"
 #include "ui/editor_dialogs.h"
@@ -40,20 +43,26 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     }
 
     // Order matters, and each step depends on the one before it.
-    // 1. Re-root, so every path composed below resolves in the new project.
+    // 1. Hand the settings over before the root moves. editor_settings.json is
+    //    per project, so the open one's tuning has to be written while its root
+    //    is still current - otherwise it would land in the project being opened.
+    EditorSettings::save(ec.state, ec.renderSystem.getSettings());
+
+    // 2. Re-root, so every path composed below resolves in the new project.
     ProjectPaths::setProjectRoot(root);
 
     Project project;
     loadProject(root, project);
 
-    // 2. Empty the scene before the assets it references go away.
+    // 3. Empty the scene before the assets it references go away.
     ec.state.deselect();
     ec.frame.scene.clear();
 
-    // 3. The new project's asset database.
+    // 4. The new project's asset database, and its own editor settings.
     AssetLibrary::get().load();
+    EditorSettings::load(ec.state, ec.renderSystem.getSettings());
 
-    // 4. The new project's code. Behaviors from the old module are gone with
+    // 5. The new project's code. Behaviors from the old module are gone with
     //    the scene, so nothing is left pointing at code this unloads.
     const fs::path modulePath =
         ProjectPaths::projectBin() / DynamicLibrary::platformName("game");
@@ -64,16 +73,19 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
         LOG_WARNING("Project '%s' has no gameplay module", project.name.c_str());
     }
 
-    // 5. Whatever the project says it starts as: an authored scene, or one its
-    //    module generates.
+    // 6. Whatever the project says it starts as, by the same rule and in the
+    //    same order both binaries boot with: an authored scene, else one its
+    //    module generates, else the default scene.
+    bool booted = false;
     if (!project.entryScene.empty()) {
         const fs::path scene = root / project.entryScene;
-        if (!SceneSerializer::load(ec.frame.scene, ec.frame.resources, scene.string())) {
-            LOG_ERROR("Entry scene '%s' failed to load", scene.string().c_str());
-        }
+        booted = SceneSerializer::load(ec.frame.scene, ec.frame.resources, scene.string());
+        if (!booted) LOG_ERROR("Entry scene '%s' failed to load", scene.string().c_str());
     } else {
-        scriptModule.buildScene(ec.frame.scene);
+        booted = scriptModule.buildScene(ec.frame.scene);
     }
+
+    if (!booted) buildDefaultScene(ec.frame.scene, ec.frame.resources);
 
     ec.frame.window.setTitle(project.name + " - vkmEngine");
     ec.state.sceneDirty = false;

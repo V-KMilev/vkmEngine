@@ -50,7 +50,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     // ImGui's top-left UVs render it upright.
     if (!m_logo) {
         m_logo = std::make_unique<Core::Texture2D>(
-            (ProjectPaths::assets() / "logo" / "vkm_engine_mark.png").string(),
+            (ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string(),
             /*flipVertically*/ false);
     }
     if (m_logo->getWidth() > 0) {

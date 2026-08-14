@@ -114,24 +114,26 @@ int main(int argc, char** argv) {
             nullptr});
 
         // A scene comes from the project that owns it, never from the command
-        // line: entryScene names an authored one, and a project whose world is
-        // generated says so through its module instead.
-        std::filesystem::path scene;
-        if (!project.entryScene.empty()) scene = root / project.entryScene;
-
-        // A project whose world is generated says so in its module; one that
-        // authored a scene names it in project.json. Neither is required - an
-        // empty project boots an empty scene.
-        if (scene.empty() && scriptModule.buildScene(engine.getScene())) {
+        // line: entryScene names an authored one, a project whose world is
+        // generated says so through its module, and a project supplying neither
+        // opens on the default scene - the same one New Scene produces. Exactly
+        // one of the three runs, so nothing is left sitting under the project's
+        // own world.
+        bool booted = false;
+        if (!project.entryScene.empty()) {
+            const std::filesystem::path scene = root / project.entryScene;
+            booted = Engine::SceneSerializer::load(
+                engine.getScene(), engine.getResources(), scene.string());
+            if (booted) LOG_INFO("Booted scene '%s'", scene.string().c_str());
+            else        LOG_ERROR("Failed to load scene '%s'", scene.string().c_str());
+        } else if (scriptModule.buildScene(engine.getScene())) {
+            booted = true;
             LOG_INFO("Scene built by the project's module");
         }
 
-        if (!scene.empty()) {
-            if (Engine::SceneSerializer::load(engine.getScene(), engine.getResources(), scene.string())) {
-                LOG_INFO("Booted scene '%s'", scene.string().c_str());
-            } else {
-                LOG_ERROR("Failed to load scene '%s'; using the default scene", scene.string().c_str());
-            }
+        if (!booted) {
+            Engine::buildDefaultScene(engine.getScene(), engine.getResources());
+            LOG_INFO("Project supplies no scene of its own; opened the default scene");
         }
 
         engine.run();
