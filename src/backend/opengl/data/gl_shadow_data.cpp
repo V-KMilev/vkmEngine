@@ -359,7 +359,7 @@ int GLShadowData::slotForLight(uint32_t lightIndex) const {
 
 void GLShadowData::uploadAndBind() {
     Core::uploadIfChanged(m_ubo, m_last, m_data);
-    Core::bindUBO(m_ubo, GLBindings::UBOBindingPoints::Shadow);
+    if (m_ubo) m_ubo->bindBase(GLBindings::UBOBindingPoints::Shadow);
 }
 
 } // namespace Engine
