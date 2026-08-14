@@ -1,6 +1,8 @@
 #pragma once
 
+#include <filesystem>
 #include <memory>
+#include <system_error>
 
 #include "core/engine.h"
 #include "io/project_paths.h"
@@ -30,7 +32,7 @@
 inline void ensureDefaultUIFont(Engine::ResourceManager& resources) {
     if (resources.findByName<Engine::FontAsset>("ui:roboto")) return;
     Engine::bakeFontSDF(resources,
-        (Engine::ProjectPaths::assets() / "fonts" / "Roboto-Medium.ttf").string(),
+        (Engine::ProjectPaths::engineFonts() / "Roboto-Medium.ttf").string(),
         "ui:roboto");
 }
 
@@ -41,12 +43,6 @@ struct AppConfig {
     const char* windowTitle;
     bool        startPaused;
     bool        logFps;
-
-    // Boot-scene builder: fills the fresh Scene and returns the entity the
-    // camera controller should fly (the binaries pass their game's generator;
-    // null boots an empty scene and leaves the controller to resolve the
-    // active camera). Scene choice is binary policy, not bootstrap policy.
-    Engine::Entity (*buildBootScene)(Engine::Engine&) = nullptr;
 };
 
 // System handles the caller may still need after bootstrap. The editor feeds
@@ -59,10 +55,10 @@ struct AppSystems {
 
 // Stands a ready-to-run engine app up in `engine`: the window, the standard
 // system stack, the GL backend, and the config's boot scene. The caller owns
-// what differs per-binary - gameplay registration (must happen before this so
-// the boot scene can create behaviors through the registry), the boot-scene
-// choice itself (AppConfig::buildBootScene), any extra systems (the editor
-// adds EditorSystem), scene-file overrides, and the run loop.
+// what differs per-binary - gameplay registration (must happen before this, so
+// the scene that follows can create behaviors through the registry), the scene
+// itself (bootProjectScene), any extra systems (the editor adds EditorSystem),
+// and the run loop.
 inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config) {
     // Bindings first: the systems below read input through named actions, and an
     // action with no binding is silently dead rather than an error.
@@ -70,7 +66,16 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     auto& window = engine.getWindow();
     window.createWindow(config.windowTitle);
     window.setFramerate(0);
-    window.setIcon((Engine::ProjectPaths::assets() / "logo" / "vkm_engine_icon.png").string());
+    // A game's own icon if it ships one, the engine's otherwise. Unlike the UI
+    // font this is worth letting a project override - a shipped game should not
+    // wear the engine's logo - but a project that has not authored one still
+    // gets a window with an icon rather than a blank.
+    const std::filesystem::path projectIcon =
+        Engine::ProjectPaths::assets() / "logo" / "icon.png";
+    std::error_code iconEc;
+    window.setIcon(std::filesystem::exists(projectIcon, iconEc)
+        ? projectIcon.string()
+        : (Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_icon.png").string());
 
     auto& cameraController = engine.addSystem<Engine::CameraControllerSystem>(Engine::SystemStage::Input);
     engine.addSystem<Engine::AsyncLoaderSystem>(Engine::SystemStage::Simulation);
@@ -92,10 +97,10 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     // boot scene or loaded from a scene file - resolves its font by name.
     ensureDefaultUIFont(engine.getResources());
 
-    if (config.buildBootScene) {
-        auto cameraEntity = config.buildBootScene(engine);
-        cameraController.setCameraEntity(cameraEntity);
-    }
+    // No scene is seeded here. Which one boots is the project's answer, given by
+    // bootProjectScene after this returns; seeding one would leave a stray
+    // camera, light and cube underneath whatever the project then builds. The
+    // camera controller resolves whichever camera that scene marks active.
 
     engine.getClock().setPaused(config.startPaused);
     engine.setFPSLog(config.logFps);

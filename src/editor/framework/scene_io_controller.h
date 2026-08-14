@@ -58,6 +58,25 @@ class SceneIOController {
          * cache, selection). Callers guard unsaved changes first.
          */
         void newScene(FrameContext& ctx, EditorState& state);
+
+        /**
+         * @brief Empty the scene so something else can take its place.
+         *
+         * The housekeeping a swap needs that Scene::clear() does not do: live
+         * behaviors get onDestroy while their code is still loaded, the undo
+         * stack is dropped because entity ids do not carry across scenes, the
+         * material previews keyed by the outgoing assets are released, and the
+         * saved-scene path is forgotten so a later Save cannot write into
+         * whatever was open before.
+         *
+         * Leaves an empty scene; the caller decides what fills it. Exposed
+         * because opening a project is also a scene swap, and doing this by
+         * hand there is how the two drift apart.
+         *
+         * @param ctx Frame context owning the scene being replaced.
+         * @param state Editor state whose scene-scoped parts are reset.
+         */
+        void beginSceneReplace(FrameContext& ctx, EditorState& state);
         /**
          * @brief Queue the Save-As prompt to open on the next drawDialogs().
          *

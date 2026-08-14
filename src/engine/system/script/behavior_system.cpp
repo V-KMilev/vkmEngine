@@ -1,7 +1,13 @@
+#define VKM_LOG_CATEGORY "SCRIPT"
+
 #include "system/script/behavior_system.h"
+
+#include <filesystem>
 
 #include <exception>
 #include <utility>
+
+#include "logger.h"
 
 #include "core/clock.h"
 #include "debug/engine_error_log.h"
@@ -9,6 +15,8 @@
 #include "ecs/scene.h"
 #include "platform/window/window_manager.h"
 #include "core/event/event_bus.h"
+#include "io/project_paths.h"
+#include "io/scene/scene_serializer.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "system/script/behavior.h"
 #include "system/script/script_component.h"
@@ -129,6 +137,34 @@ void BehaviorSystem::drainPendingDestroy(Scene& scene) {
     }
 }
 
+void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
+    if (m_pendingSceneLoad.empty()) return;
+
+    // Take the request before loading: the load runs behaviors' onDestroy, and
+    // one of those asking for another scene must queue for the next pass rather
+    // than be swallowed by the clear below.
+    std::string path;
+    path.swap(m_pendingSceneLoad);
+
+    // Give the outgoing scene's behaviors their onDestroy while they are still
+    // alive and their module still holds the code. The load below destroys them
+    // as part of the swap, which would otherwise run their destructors without
+    // the hook they are documented to get.
+    endSession(ctx.scene);
+
+    const std::filesystem::path scenePath = ProjectPaths::projectRoot() / path;
+    if (SceneSerializer::load(ctx.scene, ctx.resources, scenePath.string())) {
+        LOG_INFO("Loaded scene '%s' on request", path.c_str());
+    } else {
+        // The load is transactional, so a failure leaves the current scene
+        // standing rather than an empty world. Its behaviors have already had
+        // onDestroy from the endSession above and will start again on the next
+        // tick, which is the closest thing to a recovery there is.
+        LOG_ERROR("Requested scene '%s' failed to load; staying in the current one",
+                  scenePath.string().c_str());
+    }
+}
+
 void BehaviorSystem::init(FrameContext& ctx) {
     // Complete the capability bundle (pendingDestroy was wired at
     // construction): every behavior binds a pointer to it, so its fields must
@@ -185,6 +221,7 @@ void BehaviorSystem::update(FrameContext& ctx) {
     }
 
     drainPendingDestroy(scene);
+    drainPendingSceneLoad(ctx);
 }
 
 void BehaviorSystem::fixedUpdate(FrameContext& ctx) {

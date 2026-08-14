@@ -89,7 +89,7 @@ docs/
     building.md         CMake targets, modules, flags
     editor.md           panels, gizmos, undo/redo, material preview
     system/
-      rendering.md      the fixed 18-pass forward pipeline + RenderView contract
+      rendering.md      the fixed 19-pass forward pipeline + RenderView contract
       lighting.md       five light types, LTC area lights, shadows, IBL
       visibility.md     frustum / distance / screen-size culling
       hierarchy.md      world-transform resolve, HierarchyOperations

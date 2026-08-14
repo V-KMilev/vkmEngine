@@ -73,11 +73,10 @@ namespace GLBindings {
     // Post-process inputs above the IBL slots.
     namespace PostTextureSlots {
         constexpr uint32_t SceneColor = 18;  ///< Scene colour (refraction + post-pass source: fog, DoF, decals).
-        constexpr uint32_t SceneDepth = 19;  ///< Scene depth texture (GTAO / contact shadows / decals / fog / DoF).
+        constexpr uint32_t SceneDepth = 19;  ///< Scene depth texture (GTAO / decals / fog / DoF).
         constexpr uint32_t SceneGBuffer = 20; ///< Scene G-buffer: oct view-normal + roughness + metalness (GTAO / decals).
         constexpr uint32_t SSAO       = 21;  ///< GTAO occlusion factor, sampled by the forward pass.
         constexpr uint32_t FogVolume  = 24;  ///< Integrated froxel fog (sampler3D), sampled by the fog-apply pass.
-        constexpr uint32_t ContactShadow = 25;  ///< Screen-space sun contact-shadow mask, sampled by the forward pass.
         constexpr uint32_t HiZ        = 30;  ///< Hierarchical depth pyramid: reduced by the HiZ pass, tested by the occlusion cull.
     }
 

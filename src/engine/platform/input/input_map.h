@@ -110,13 +110,19 @@ class InputMap {
          */
         void update(const InputHandle& input);
 
-        /** @brief Is the action active this frame? (any binding held) */
+        /**
+         * @brief Is the action active this frame? (any binding held)
+         */
         bool held(const std::string& action) const;
 
-        /** @brief Did it become active this frame? */
+        /**
+         * @brief Did it become active this frame?
+         */
         bool pressed(const std::string& action) const;
 
-        /** @brief Did it stop being active this frame? */
+        /**
+         * @brief Did it stop being active this frame?
+         */
         bool released(const std::string& action) const;
 
         /**

@@ -1,10 +1,48 @@
 # ============================================================================
 # External Dependencies
 # ============================================================================
-# vkmGL is the platform layer: its own modules/CMakeLists adds and exposes glm,
-# glfw, glew, and vkmLog (plus the stb headers, used below). The engine consumes
-# those targets instead of re-declaring the submodules, so each dependency is
-# checked out exactly once. Add vkmGL before anything that needs vkmLog.
+# Shared dependencies the ENGINE owns, added before vkmGL so its own
+# `if (TARGET ...)` guards defer to these.
+#
+# They used to be vkmGL's, and the engine reached through the GL backend to get
+# them - glm is in fifteen behaviour-facing engine headers, and the image
+# decoder was included from vkmGL/modules/stb. That works with one backend and
+# breaks with two: a second backend would either vendor its own glm and risk a
+# version skew across the module boundary, or depend on the GL backend to get
+# one. They belong beside the engine that needs them.
+#
+# vkmGL keeps glew, which is the only genuinely OpenGL-specific one. It expects
+# the rest as targets a parent provides, and hard-errors when they are absent.
+if(NOT TARGET glm)
+    add_subdirectory(glm)
+endif()
+
+set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+if(NOT TARGET glfw)
+    add_subdirectory(glfw)
+endif()
+
+if(NOT TARGET vkmLog)
+    add_subdirectory(vkmLog)
+endif()
+
+# ============================================================================
+# stb (image decoding). Header-only upstream; we compile the implementation
+# once into a tiny static lib so any engine target (not just the GL backend)
+# can decode images - the window icon is the first user. The headers are the
+# engine's own stb submodule now; vkmGL compiles a file-local copy
+# (STB_IMAGE_STATIC), so there is no duplicate-symbol clash.
+# ============================================================================
+if(NOT TARGET stb)
+    set(_stb_impl ${CMAKE_CURRENT_BINARY_DIR}/stb_image_impl.c)
+    file(WRITE ${_stb_impl} "#define STB_IMAGE_IMPLEMENTATION\n#include \"stb_image.h\"\n")
+    add_library(stb STATIC ${_stb_impl})
+    target_include_directories(stb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/stb)
+endif()
+
+# vkmGL: the OpenGL layer. Adds glew, and defers to the targets above.
 if(NOT TARGET vkmGL)
     add_subdirectory(vkmGL)
 endif()
@@ -18,19 +56,6 @@ if(NOT TARGET nlohmann_json)
     add_subdirectory(json)
 endif()
 
-# ============================================================================
-# stb (image decoding). Header-only upstream; we compile the implementation
-# once into a tiny static lib so any engine target (not just the GL backend)
-# can decode images - the window icon is the first user. The headers come from
-# vkmGL's stb submodule (the single checkout); vkmGL itself compiles a
-# file-local copy (STB_IMAGE_STATIC), so there is no duplicate-symbol clash.
-# ============================================================================
-if(NOT TARGET stb)
-    set(_stb_impl ${CMAKE_CURRENT_BINARY_DIR}/stb_image_impl.c)
-    file(WRITE ${_stb_impl} "#define STB_IMAGE_IMPLEMENTATION\n#include \"stb_image.h\"\n")
-    add_library(stb STATIC ${_stb_impl})
-    target_include_directories(stb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/vkmGL/modules/stb)
-endif()
 
 # ============================================================================
 # Assimp (model import: glTF / OBJ / FBX / DAE / STL / PLY / 3DS).

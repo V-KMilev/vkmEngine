@@ -122,16 +122,55 @@ void visitRenderFields(Settings& r, Fn&& f) {
     f("bloomKnee",             r.bloomKnee);
     f("bloomRadius",           r.bloomRadius);
     f("msaaSamples",           r.msaaSamples);
-    f("contactShadows",        r.contactShadows);
-    f("contactShadowLength",   r.contactShadowLength);
-    f("contactShadowThickness", r.contactShadowThickness);
     f("shadowResolution",      r.shadowResolution);
     f("grid",                  r.grid);
 }
 } // namespace
 
 std::string path() {
-    return (ProjectPaths::root() / "editor_settings.json").string();
+    return (ProjectPaths::projectRoot() / "editor_settings.json").string();
+}
+
+/**
+ * @brief Where the recent-projects list lives.
+ *
+ * The engine root, not the open project. A list of projects you have opened is
+ * how you get from one to the next, so keeping it inside a project means each
+ * one remembers only the ones opened while it was open - and opening a second
+ * project hides the list that would take you back to the first.
+ *
+ * @return Absolute path to the recents file.
+ */
+std::string recentsPath() {
+    return (ProjectPaths::engineRoot() / "editor_recents.json").string();
+}
+
+void loadRecentProjects(EditorState& state) {
+    state.recentProjects.clear();
+
+    std::ifstream in(recentsPath());
+    if (!in.good()) return;
+
+    nlohmann::json j;
+    try {
+        in >> j;
+    } catch (const std::exception& e) {
+        LOG_WARNING("Recent projects unreadable (%s); starting empty", e.what());
+        return;
+    }
+
+    if (!j.contains("recentProjects") || !j["recentProjects"].is_array()) return;
+    for (const auto& p : j["recentProjects"]) {
+        if (p.is_string()) state.recentProjects.push_back(p.get<std::string>());
+    }
+}
+
+void saveRecentProjects(const EditorState& state) {
+    nlohmann::json j;
+    j["recentProjects"] = state.recentProjects;
+
+    std::ofstream out(recentsPath());
+    if (out) out << j.dump(4) << "\n";
 }
 
 bool load(EditorState& state, RenderSettings& render) {
@@ -186,7 +225,11 @@ bool load(EditorState& state, RenderSettings& render) {
         });
     }
 
-    // Recent scenes
+    // Which projects you have opened is not one project's business; it is read
+    // from the engine root so every project sees the same list.
+    loadRecentProjects(state);
+
+    // Recent scenes, which genuinely do belong to the open project.
     state.recentScenes.clear();
     if (j.contains("recentScenes") && j["recentScenes"].is_array()) {
         for (const auto& p : j["recentScenes"]) {
@@ -226,6 +269,8 @@ bool save(const EditorState& state, const RenderSettings& render) {
     j["renderSettings"] = std::move(rs);
 
     j["recentScenes"] = state.recentScenes;
+
+    saveRecentProjects(state);
 
     // Atomic write: serialize to a sibling temp file then rename over the
     // target. A crash mid-write leaves the previous settings intact instead

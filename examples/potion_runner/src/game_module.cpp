@@ -1,11 +1,8 @@
-#pragma once
-
 #include <utility>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include "core/engine.h"
 #include "core/math/axes.h"
 #include "ecs/scene.h"
 #include "ecs/component/camera.h"
@@ -14,23 +11,32 @@
 #include "system/script/behavior_registry.h"
 #include "system/script/script_component.h"
 
-/**
- * @brief Seed the Subway-Surfers-style endless runner scene.
- *
- * The persisted scene is deliberately tiny - a chase camera and one
- * logic entity carrying the PotionRunner behavior. Every visible prop (ground,
- * walls, player, obstacles, coins, stripes) and its mesh/material is generated
- * by the behavior at play time, so nothing here references a cooked asset and
- * the editor's play snapshot/restore stays trivial.
- *
- * Press Play (the editor starts paused; the runtime auto-plays) and run:
- * A/D or arrows switch lane, Space/W jump, R or Enter restart.
- *
- * @return The camera entity, for CameraControllerSystem::setCameraEntity.
- */
-inline Engine::Entity generatePotionRunnerScene(Engine::Engine& engine) {
-    auto& scene    = engine.getScene();
-    auto& registry = Engine::BehaviorRegistry::get();
+#include "potion_runner.h"
+
+// Entries a host resolves after loading this module.
+//
+// vkmRegisterBehaviors is the required one: it populates the host's
+// BehaviorRegistry so scenes can name this project's behaviors.
+extern "C"
+#if defined(_WIN32)
+__declspec(dllexport)
+#endif
+void vkmRegisterBehaviors() {
+    Engine::BehaviorRegistry::get().registerBehavior<Engine::PotionRunner>();
+}
+
+// vkmBuildScene is the optional one. This game's world is generated, not
+// authored: the persisted scene is a chase camera and one entity carrying the
+// behavior, and every prop is built at play time. There is nothing for
+// project.json's entryScene to point at, so the project says what it starts as
+// here instead.
+extern "C"
+#if defined(_WIN32)
+__declspec(dllexport)
+#endif
+void vkmBuildScene(Engine::Scene& scene) {
+
+        auto& registry = Engine::BehaviorRegistry::get();
 
     // A real night: the ambient is almost gone so the game's arch washes, trim
     // rims, headlights and glows carve visible pools out of the dark instead of
@@ -65,6 +71,4 @@ inline Engine::Entity generatePotionRunnerScene(Engine::Engine& engine) {
         script.behaviors.push_back(std::move(behavior));
     }
     scene.add(game, std::move(script));
-
-    return camera;
 }

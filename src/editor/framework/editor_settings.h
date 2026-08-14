@@ -44,7 +44,8 @@ bool save(const EditorState& state, const RenderSettings& render);
 /**
  * @brief Filesystem path the loader and saver operate on.
  *
- * Resolved once at startup, defaulting to APP_ROOT_DIR/editor_settings.json.
+ * Recomposed on each call from the open project's root, so it follows the
+ * editor when it switches projects.
  *
  * @return Absolute path to the settings JSON document.
  */

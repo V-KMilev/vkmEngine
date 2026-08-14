@@ -26,18 +26,23 @@ cmake -B build -G Ninja
 # Build
 cmake --build build
 
-# Run (two executables build by default)
-./build/bin/engine_editor          # engine + in-process editor (Linux / macOS)
-./build/bin/engine_runtime         # bare engine, no editor
-./build/bin/engine_runtime scenes/level1.json   # runtime can boot a saved scene
+# Run (three executables build by default)
+./build/bin/engine_editor examples/potion_runner    # edit a project
+./build/bin/engine_runtime examples/potion_runner   # play it
+./build/bin/engine_cook examples/potion_runner      # bake its assets, no window
 build\bin\engine_editor.exe        # Windows (MSYS2 + Clang)
 ```
 
-Both executables (and the game module DLL) land in `build/bin/` - one directory
-so an exe finds its DLLs (set by `CMAKE_RUNTIME_OUTPUT_DIRECTORY` in the
-top-level CMakeLists). `-DVKM_WITH_EDITOR=OFF` builds only `engine_runtime` and
-skips `src/editor` entirely, proving the engine carries no hidden dependency on
-editor code.
+All three take **a project directory**, and all three apply the same rule: the
+project is the one beside the executable, unless an argument names a different
+one. So a shipped game ships its exe next to its `project.json` and the player
+passes nothing. See [system/io.md](system/io.md#projects-and-the-two-roots) for
+what a project is and how the two roots divide engine data from project data.
+
+The executables land in `build/bin/` - one directory so an exe finds its DLLs
+(set by `CMAKE_RUNTIME_OUTPUT_DIRECTORY` in the top-level CMakeLists). Each
+project's gameplay module builds into that project's own `bin/` instead, because
+it belongs to the project rather than to this build tree.
 
 ## CMake Targets
 
@@ -47,12 +52,12 @@ editor code.
 | `EngineRendering` | Static lib | Render system, backend abstraction, render view |
 | `BackendOpenGL` | Static lib | OpenGL backend implementation (GLBackend, GLView, passes, GPU resources) |
 | `EngineTools` | Static lib | Procedural generators + the runtime-safe cooked-asset loaders/factories. No Assimp, no heavy image decode |
-| `EngineCooker` | Static lib | Editor-only: the heavy importers (Assimp model import, stb image decode) + the asset cooker that bakes recipes into the cooked cache (only when `VKM_WITH_EDITOR=ON`) |
-| `EngineEditor` | Static lib | Editor UI, panels, overlays, gizmo, scene I/O (only when `VKM_WITH_EDITOR=ON`) |
-| `game` | Static lib | Concrete gameplay behaviors, static-linked into the runtime (no hot-reload) |
-| `game_module` | Shared lib | The same gameplay sources built as `game.dll`/`libgame.so` for the editor to hot-reload |
-| `engine_runtime` | Executable | Bare engine: the engine libs + static `game`, no editor. Includes `app/engine_app.h` for the shared bootstrap; links no Assimp |
-| `engine_editor` | Executable | Engine libs + `EngineEditor` + `EngineCooker`, loads `game_module` for hot-reload (only when `VKM_WITH_EDITOR=ON`) |
+| `EngineCooker` | Static lib | The heavy importers (Assimp model import, stb image decode) + the asset cooker that bakes recipes into the cooked cache. Linked by `engine_editor` and `engine_cook` only |
+| `EngineEditor` | Static lib | Editor UI, panels, overlays, gizmo, scene I/O |
+| `<project>_module` | Shared lib | One per project (`potion_runner_module`, `stress_arena_module`): that project's gameplay sources built as `game.dll`/`libgame.so` into the project's own `bin/`. The engine ships no gameplay of its own |
+| `engine_runtime` | Executable | Bare engine, no editor. Includes `app/engine_app.h` for the shared bootstrap; links no Assimp and no ImGui |
+| `engine_editor` | Executable | Engine libs + `EngineEditor` + `EngineCooker`; loads the open project's module for hot-reload |
+| `engine_cook` | Executable | Headless asset cook: `EngineCooker` with no window, no GL context and no `Engine`, so it runs over SSH and on CI |
 | `EngineHeaders` | Interface lib | Include-only view of EngineCore's public API; the hot-reload module compiles against it without linking EngineCore's objects |
 | `BuildInfo` | Interface lib | Compile-time build metadata (version, branch, commit hash) |
 | `vkm_warnings` | Interface lib | Shared GCC/Clang warning flags; first-party targets opt in, submodules don't |
@@ -65,17 +70,27 @@ engine_editor (executable)              engine_runtime (executable)
   |-- EngineRendering -- EngineCore       |-- EngineRendering -- EngineCore
   |-- EngineTools -- EngineCore           |-- EngineTools -- EngineCore (generators + cooked loaders; no Assimp)
   |-- BackendOpenGL -- vkmGL, ...         |-- BackendOpenGL -- vkmGL, EngineRendering, EngineTools
-  |-- EngineCooker -- EngineCore,         |-- game -- EngineCore
-  |     EngineTools (+ assimp private)    |-- BuildInfo
-  |-- EngineEditor -- EngineCore,
-  |     EngineTools, EngineCooker, imgui, vkmGL
-  |-- BuildInfo
+  |-- EngineCooker -- EngineCore,         |-- BuildInfo
+  |     EngineTools (+ assimp private)
+  |-- EngineEditor -- EngineCore,        engine_cook (executable)
+  |     EngineTools, EngineCooker,         |-- EngineCooker -- EngineCore, EngineTools
+  |     imgui, vkmGL                       |-- BuildInfo
+  |-- BuildInfo                            (no window, no GL, no Engine)
 
-Both executables #include app/engine_app.h for setupEngineApp (no EngineApp lib).
-Only engine_editor links EngineCooker, so engine_runtime pulls in no Assimp.
+engine_editor and engine_runtime #include app/engine_app.h for setupEngineApp (no
+EngineApp lib). engine_cook does not: it constructs a Scene and a ResourceManager
+directly and never builds an Engine, which is what lets it run headless.
+engine_runtime links neither EngineCooker nor EngineEditor, so it pulls in no
+Assimp and no ImGui - the link lists enforce that, not a build flag.
 
-game_module (shared, editor only) -- EngineHeaders (include-only); resolves engine
-  symbols from the engine_editor exe at load (Windows import lib / Linux -rdynamic).
+<project>_module (shared, per project) -- EngineHeaders (include-only); it must
+  not link EngineCore: a second copy would duplicate the typeId registry and the
+  singletons, and components registered on one copy are invisible to the other.
+  It resolves engine symbols from the host that loaded it. On Linux that is
+  whichever host did, since ENABLE_EXPORTS is set on engine_editor and
+  engine_runtime alike. On Windows a shared library must name an import library
+  at link time, so a module binds to engine_editor specifically and the runtime
+  cannot load it there.
 ```
 
 ## External Modules
@@ -84,9 +99,13 @@ All external dependencies are git submodules under `modules/` (see `.gitmodules`
 
 | Module | Path | Provides |
 |--------|------|----------|
-| **vkmGL** | `modules/vkmGL` | OpenGL utilities, bundles GLFW, GLM, GLEW, stb_image |
+| **vkmGL** | `modules/vkmGL` | OpenGL object wrappers (`Core::`), shader loading/preprocessing. Vendors GLEW privately; everything else it needs is a target the engine supplies |
 | **vkmLog** | `modules/vkmLog` | Logging library (LOG_TRACE..LOG_FATAL), VKM_ASSERT |
+| **glm** | `modules/glm` | Vector/matrix math, used engine-wide and by vkmGL |
+| **glfw** | `modules/glfw` | Window + input platform layer |
+| **stb** | `modules/stb` | `stb_image` (texture decode), `stb_truetype` (SDF font bake) |
 | **imgui** | `modules/imgui` | Dear ImGui for editor UI |
+| **freetype** | `modules/freetype` | Font rasterizer, trimmed to the core; vendored so the build does not depend on a system libfreetype |
 | **json** | `modules/json` | nlohmann/json (`nlohmann_json`); serialization + asset `source` descriptors |
 | **assimp** | `modules/assimp` | Model import (glTF/OBJ/FBX/DAE/STL/PLY/3DS), trimmed to the importers used; linked privately by EngineTools |
 | **tracy** | `modules/tracy` | Tracy profiler client (`TracyClient`), linked by EngineCore only when `VKM_PROFILER` is on |
@@ -101,7 +120,7 @@ shaders/
   forward/      # forward shading: pbr/ (the ubershader), phong/, prepass/
   shadow/       # shadow_2d/, shadow_cube/
   ibl/          # equirect/, irradiance/, prefilter/, brdf/  (IBL bake)
-  gtao/  contact_shadow/  bloom/  skybox/  composite/  grid/
+  gtao/  bloom/  skybox/  composite/  grid/
   clustering/  fog/  dof/  decal/  particle/  irradiance/  ui/
   _generated/   # engine_config.glsl, generated from engine_config.h at configure time
 ```
@@ -126,7 +145,7 @@ The engine's own shader preprocessor resolves `#include` directives between
 `.shader`/`.glsl` files (cycle-safe). `shaders/_generated/engine_config.glsl` is
 derived from `engine_config.h` so cross-language constants have one C++ source -
 though the forward shaders currently still hand-define their copies (see
-[lighting.md](system/lighting.md#limits-and-the-must-match-shader-contract)).
+[lighting.md](system/lighting.md#limits-and-the-generated-constants-contract)).
 
 ## Compiler Flags
 
@@ -148,8 +167,8 @@ First-party code also builds as strict C++17 (`CMAKE_CXX_EXTENSIONS OFF`).
 | `VKM_PROFILER=1` | EngineCore (public) | Enables Tracy CPU+GPU zones via debug/profiler.h. Default ON unless `CMAKE_BUILD_TYPE` is exactly `Release`. Pass `-DVKM_PROFILER=OFF` to force off. |
 | `GLM_ENABLE_EXPERIMENTAL` | EngineCore (public) | GLM experimental features |
 | `GLM_FORCE_INTRINSICS` | EngineCore (public) | GLM SIMD intrinsics |
-| `APP_VERSION` | Executable | Project version string |
-| `APP_ROOT_DIR` | Executable | Absolute path to project root |
+| `APP_VERSION` | Executable | Engine version string |
+| `APP_ROOT_DIR` | Executable | Absolute path to the **engine** root - the fallback `ProjectPaths::engineRoot()` uses to find `shaders/` and `assets/` when the exe is run from a build tree. Not the project root; see [system/io.md](system/io.md#projects-and-the-two-roots) |
 | `APP_BRANCH`, `APP_COMMIT_HASH`, `APP_BUILD_DATE` | BuildInfo | Git metadata |
 
 ### Profiling with Tracy

@@ -11,7 +11,8 @@ class Scene;
 /**
  * @brief Loads the hot-reloadable gameplay module and swaps it at runtime.
  *
- * The editor owns one of these. On load() it copies the built module (so the
+ * Each host owns one of these: the editor to edit a project, the runtime to
+ * play it. On load() it copies the built module (so the
  * original stays writable for rebuilds) and calls its vkmRegisterBehaviors entry
  * to populate the BehaviorRegistry. reload() swaps in a freshly built module
  * without restarting: it serializes each entity's behaviors, destroys them,
@@ -52,6 +53,37 @@ class ScriptModule {
          * subsequent reload() retries the load (recovery after a fixed build).
          */
         bool reload(Scene& scene);
+
+        /**
+         * @brief Let the module seed @p scene, if it wants to.
+         *
+         * Optional second entry, `vkmBuildScene`. A project whose world is
+         * generated rather than authored - a procedural level, a profiling load -
+         * has no scene file for project.json to point at, and the host has no
+         * business carrying one game's content. This lets such a project say in
+         * its own code what it starts as.
+         *
+         * A module without the entry is normal and silent: most projects author
+         * a scene and name it in project.json instead.
+         *
+         * @param scene Scene to seed.
+         * @return True if the module had the entry and it ran.
+         */
+        bool buildScene(Scene& scene);
+
+        /**
+         * @brief Drop the loaded module and the behavior types it registered.
+         *
+         * A host that moves to a project bringing no code of its own has to
+         * unload rather than keep what it had: the old module would still answer
+         * buildScene and its behavior types would stay in the registry, so the
+         * previous project's world could be generated inside the new one.
+         *
+         * Safe to call when nothing is loaded. Entities are untouched - the
+         * caller is expected to have cleared the scene first, since behaviors
+         * outlive this call only as dangling objects.
+         */
+        void unload();
 
         bool isLoaded() const { return m_lib.isLoaded(); }
 

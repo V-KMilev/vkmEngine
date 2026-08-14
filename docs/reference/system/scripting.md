@@ -20,7 +20,7 @@ it (events -> gameplay -> animation -> physics). It opts into `fixedUpdate`.
 - `src/engine/system/script/behavior_system.h/.cpp` - `BehaviorSystem` (the driver)
 - `src/engine/system/script/script_module.h/.cpp` - `ScriptModule` (hot-reload of the gameplay DLL)
 - `src/engine/platform/library/dynamic_library.h/.cpp` - cross-platform `.dll`/`.so`/`.dylib` loader
-- `game/` - the concrete gameplay behaviors (`CubeSpinner`, `PlayerController`, `registerGameBehaviors`)
+- `examples/<project>/src/` - a project's own behaviors + its `vkmRegisterBehaviors` / `vkmBuildScene` entry points. The engine ships none of its own
 
 ## Behavior
 
@@ -42,6 +42,7 @@ class Behavior {
         BehaviorContext& context();     // scene / resources / window / events
         Entity spawn();                 // create a new entity
         void   destroy(EntityId);       // deferred until after the hook pass
+        void   loadScene(const std::string& scenePath);  // deferred until the tick ends
         template<typename E> void subscribe(std::function<void(const E&)>);  // auto-unsubscribes
 
         EntityId m_entity;              // the entity this behavior is attached to
@@ -55,6 +56,7 @@ struct BehaviorContext {
     WindowManager*         window;
     EventBus*              events;
     std::vector<EntityId>* pendingDestroy;
+    std::string*           pendingSceneLoad;
 };
 ```
 
@@ -69,6 +71,10 @@ safely too. Growing the capability surface is one field on `BehaviorContext`;
 - `spawn()` / `destroy()` are the safe structural-edit helpers. `destroy()` is
   deferred to after the current hook pass, so a behavior may destroy its own
   entity from a hook.
+- `loadScene()` requests a scene transition. Like `destroy()` it only records the
+  request; `BehaviorSystem::update` drains it at the end of the tick, swapping the
+  request out before loading. A behavior may therefore ask for the scene that
+  will destroy it, from one of its own hooks. The path is project-relative.
 - `subscribe<E>()` registers an `EventBus` listener bound to the behavior's
   lifetime - it auto-unsubscribes on destroy, so there is nothing to clean up by
   hand (a raw subscribe on the bus would dangle once the instance dies).
@@ -154,18 +160,29 @@ entity deletion (wired through `Scene::setOnEntityDestroy` in `init`), play stop
 and shutdown (`endSession`, static so the editor's stop path can call it without
 a system handle).
 
-## Hot reload and the two binaries
+## The gameplay module
 
-The gameplay layer lives in `game/` and is built two ways (see
-[building.md](../building.md)):
+The engine ships no gameplay of its own: **the project brings its code**. Each
+project builds its sources into `game.dll` / `libgame.so` in its own `bin/`, and
+both hosts load it the same way through `ScriptModule` - `engine_runtime` to play
+it, `engine_editor` to edit it. There is no static-linked variant and no
+editor-only path; the shipped game and the edited game run the same binary.
 
-- **`engine_runtime`** static-links `game` and calls `registerGameBehaviors()`
-  directly. No hot-reload; this is the shipped-game shape.
-- **`engine_editor`** loads the same sources compiled as a shared library
-  (`game_module` -> `game.dll` / `libgame.so`) through `ScriptModule`, which
-  `dlopen`s it and calls its `vkmRegisterBehaviors` entry. The module resolves
-  engine symbols from the host exe (Windows: an import lib; Linux/macOS:
-  `-rdynamic`), so there is no second copy of the engine inside it.
+The host `dlopen`s the module and calls the `extern "C"` entry points it finds:
+
+| Entry | Required? | Purpose |
+|-------|-----------|---------|
+| `vkmRegisterBehaviors` | Yes | Registers the project's behavior types into the engine's `BehaviorRegistry` |
+| `vkmBuildScene` | Optional | Builds the project's world in code. Projects whose scene is generated rather than authored use this instead of `entryScene` |
+
+The module resolves engine symbols from the host that loaded it (Windows: an
+import lib; Linux: `ENABLE_EXPORTS`), so there is no second copy of the
+engine inside it. It must **not** link `EngineCore` - a second copy would
+duplicate the typeId registry and the singletons, and types registered against
+one copy are invisible to the other.
+
+The module is looked for in the open project's `bin/` and nowhere else: a game
+brings its code with it, and that is the one place a project builds it.
 
 `ScriptModule::reload(scene)` swaps in a freshly built module without
 restarting: it serializes each entity's behaviors (type + reflected fields),

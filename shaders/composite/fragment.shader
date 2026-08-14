@@ -11,7 +11,6 @@ layout(binding = 19) uniform sampler2D u_sceneDepth;     // scene depth
 layout(binding = 20) uniform sampler2D u_sceneGBuffer;   // oct view-normal.xy, roughness.z, metalness.w
 layout(binding = 21) uniform sampler2D u_ao;             // GTAO factor
 layout(binding = 11) uniform sampler2D u_shadowAtlas;    // tiled 2D shadow depth
-layout(binding = 25) uniform sampler2D u_contactShadow;  // sun contact-shadow mask
 layout(binding = 24) uniform sampler3D u_fog;            // integrated froxel fog
 uniform int  u_renderMode;   // 0 = final image, else a debug buffer (see MODE_* below)
 uniform mat4 u_projection;   // camera projection, for depth linearization (debug only)
@@ -29,7 +28,6 @@ vec3 debugColor(vec2 uv) {
     if (u_renderMode == MODE_AMBIENT_OCCLUSION)        return vec3(texture(u_ao, uv).r);
     if (u_renderMode == MODE_BLOOM)     return texture(u_bloom, uv).rgb;
     if (u_renderMode == MODE_SHADOW_ATLAS)    return vec3(texture(u_shadowAtlas, uv).r);
-    if (u_renderMode == MODE_CONTACT_SHADOWS) return vec3(texture(u_contactShadow, uv).r);
     if (u_renderMode == MODE_FOG) {
         // In-scattered fog at each pixel's depth: the same slice mapping the
         // fog-apply pass uses, with near/far derived from the projection.

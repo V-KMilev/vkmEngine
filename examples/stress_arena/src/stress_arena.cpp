@@ -111,7 +111,9 @@ constexpr const char* ACTION_UI        = "Stress/ToggleUI";
 constexpr const char* ACTION_RESET     = "Stress/ResetToggles";
 constexpr const char* ACTION_CAMERA    = "Stress/ToggleCamera";
 
-/** @brief Bind the arena's actions to the number row, plus F for the camera. */
+/**
+ * @brief Bind the arena's actions to the number row, plus F for the camera.
+ */
 void installStressBindings(InputMap& map) {
     const auto key = [](int code) { return InputBinding{InputSource::Key, code, 1.0f}; };
     map.define(ACTION_LIGHTS,    { key(GLFW_KEY_1) });
@@ -700,7 +702,7 @@ void StressArena::buildLights() {
     // it shines, and this engine's forward is +Z (Math::computeForward), so a
     // positive X rotation tilts +Z downward - the -Z convention most GL code
     // assumes would put the sun under the floor shining up.
-    sunTransform.rotation = glm::quat(glm::vec3(glm::radians(48.0f), glm::radians(35.0f), 0.0f));
+    sunTransform.rotation = glm::quat(glm::vec3(glm::radians(70.0f), glm::radians(35.0f), 0.0f));
     m_scene->add(sun, std::move(sunTransform));
 
     Light sunLight;

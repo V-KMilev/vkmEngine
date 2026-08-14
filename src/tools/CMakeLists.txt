@@ -24,7 +24,7 @@ target_include_directories(EngineTools PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # The stb implementation is provided by the `stb` module, linked transitively via
 # EngineCore, so no explicit stb link is needed here.
 target_include_directories(EngineTools PRIVATE
-    ${PROJECT_SOURCE_DIR}/modules/vkmGL/modules/stb
+    ${PROJECT_SOURCE_DIR}/modules/stb
 )
 
 target_link_libraries(EngineTools PUBLIC
@@ -35,23 +35,22 @@ target_link_libraries(EngineTools PRIVATE
     BuildInfo          # resolves relative asset paths against APP_ROOT_DIR
 )
 
-# EngineCooker - editor-only heavy importers (Assimp + stb LDR decode) and the
-# asset cooker that bakes recipes into the cooked cache. Linked only by the
-# editor; gated on VKM_WITH_EDITOR so a runtime build never compiles Assimp.
-if(VKM_WITH_EDITOR)
-    add_library(EngineCooker STATIC ${ENGINECOOKER_SOURCES})
+# EngineCooker - the heavy importers (Assimp + stb LDR decode) and the asset
+# cooker that bakes recipes into the cooked cache. Linked by the editor and by
+# engine_cook; never by the runtime, which is what keeps a shipped game free of
+# an importer it cannot use - the link list guarantees that, not a build flag.
+add_library(EngineCooker STATIC ${ENGINECOOKER_SOURCES})
 
-    target_include_directories(EngineCooker PRIVATE
-        ${PROJECT_SOURCE_DIR}/modules/vkmGL/modules/stb
-    )
+target_include_directories(EngineCooker PRIVATE
+    ${PROJECT_SOURCE_DIR}/modules/stb
+)
 
-    target_link_libraries(EngineCooker PUBLIC
-        EngineCore
-        EngineTools        # generators + shared headers on the include path
-    )
-    target_link_libraries(EngineCooker PRIVATE
-        assimp             # model import, used by loader/model_loaders.cpp
-        vkm_warnings
-        BuildInfo
-    )
-endif()
+target_link_libraries(EngineCooker PUBLIC
+    EngineCore
+    EngineTools        # generators + shared headers on the include path
+)
+target_link_libraries(EngineCooker PRIVATE
+    assimp             # model import, used by loader/model_loaders.cpp
+    vkm_warnings
+    BuildInfo
+)

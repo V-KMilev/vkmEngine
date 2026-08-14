@@ -75,11 +75,15 @@ struct EditorState {
      * confirming; afterSaveAction is deferred until the next clean save
      * (the "Save" choice); pendingScenePath is the target of a guarded Open.
      */
-    enum class PendingSceneAction : uint8_t { None, Quit, New, Open };
+    enum class PendingSceneAction : uint8_t { None, Quit, New, Open, OpenProject };
     PendingSceneAction confirmAction   = PendingSceneAction::None;
     PendingSceneAction afterSaveAction = PendingSceneAction::None;
     std::string        pendingScenePath;
-    std::vector<std::string> recentScenes;  ///< MRU list (absolute paths), most-recent first.
+    std::vector<std::string> recentScenes;    ///< MRU list (absolute paths), most-recent first.
+    std::vector<std::string> recentProjects;  ///< MRU project roots, most-recent first.
+
+    bool        showOpenProject = false;  ///< File > Open Project dialog is up.
+    std::string pendingProjectOpen;       ///< Project chosen from a menu; opened after the draw.
     static constexpr size_t MAX_RECENT_SCENES = 8;
 
     // Undo/redo history. Every editor mutation that goes through the
