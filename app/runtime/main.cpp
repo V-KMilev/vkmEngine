@@ -45,11 +45,12 @@ int main(int argc, char** argv) {
         // Logger::init fails if it cannot open the file.
         const std::filesystem::path root = Engine::ProjectPaths::projectRoot();
         std::error_code ec;
-        // Pin the working directory to that root: some subsystems (shader
-        // loading) open CWD-relative paths, so without this the game only runs
-        // when launched FROM the package root - double-clicking the exe in
-        // bin/ would die on 'shaders/...' not existing.
-        std::filesystem::current_path(root, ec);
+        // Pin the working directory to the ENGINE root, not the project's. Shader
+        // loading still opens CWD-relative paths ("shaders/forward/pbr"), and
+        // those files ship with the engine - so a project living anywhere else
+        // would fail to find them. Everything the project owns is addressed
+        // absolutely through ProjectPaths, so nothing here needs the CWD.
+        std::filesystem::current_path(Engine::ProjectPaths::engineRoot(), ec);
         std::filesystem::create_directories(root / "logs", ec);
         const std::string logFile = (root / "logs" / "log.log").string();
 
