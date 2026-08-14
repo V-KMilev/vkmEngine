@@ -29,10 +29,12 @@
 int main(int argc, char** argv) {
     try {
         std::error_code ec;
+        bool argNotAProject = false;
         if (argc > 1) {
             const std::filesystem::path found =
                 Engine::findProjectRoot(std::filesystem::absolute(argv[1], ec));
-            if (!found.empty()) Engine::ProjectPaths::setProjectRoot(found);
+            if (found.empty()) argNotAProject = true;
+            else                Engine::ProjectPaths::setProjectRoot(found);
         }
 
         const std::filesystem::path root = Engine::ProjectPaths::projectRoot();
@@ -40,6 +42,14 @@ int main(int argc, char** argv) {
 
         if (!Logger::init((root / "logs" / "cook.log").string(), "VKM-COOK", LogLevel::TRACE)) {
             return EXIT_FAILURE;
+        }
+
+
+        // Deferred until the logger exists: a mistyped path would otherwise look
+        // like it worked, but this is the first point anything can say so.
+        if (argNotAProject) {
+            LOG_WARNING("'%s' is not a project (no project.json in it or above it); "
+                        "using the project beside this executable instead", argv[1]);
         }
 
         Engine::Project project;

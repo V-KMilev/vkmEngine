@@ -16,6 +16,7 @@
 
 #include "logger.h"
 
+#include "core/clock.h"
 #include "core/system.h"
 #include "ecs/component/camera.h"
 #include "ecs/component/transform.h"
@@ -128,6 +129,13 @@ void SceneIOController::beginSceneReplace(FrameContext& ctx, EditorState& state)
     ctx.scene.clear();
     ctx.scene.environment() = Environment{};
     m_currentScenePath.clear();
+
+    // The play snapshot is a copy of the scene going away. Left behind, the
+    // transport still reads as playing and Stop would restore the outgoing
+    // scene over whatever replaced it. Pausing goes with it: dropping the
+    // snapshot ends the session, and a session that has ended is Edit mode.
+    m_playSnapshot.clear();
+    ctx.clock.setPaused(true);
 
     afterSceneReplace(ctx, state, /*priorSelectionName*/ {}, /*eventPath*/ {});
 }
