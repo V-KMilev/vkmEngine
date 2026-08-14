@@ -11,7 +11,8 @@ class Scene;
 /**
  * @brief Loads the hot-reloadable gameplay module and swaps it at runtime.
  *
- * The editor owns one of these. On load() it copies the built module (so the
+ * Each host owns one of these: the editor to edit a project, the runtime to
+ * play it. On load() it copies the built module (so the
  * original stays writable for rebuilds) and calls its vkmRegisterBehaviors entry
  * to populate the BehaviorRegistry. reload() swaps in a freshly built module
  * without restarting: it serializes each entity's behaviors, destroys them,

@@ -11,8 +11,8 @@
 # version skew across the module boundary, or depend on the GL backend to get
 # one. They belong beside the engine that needs them.
 #
-# vkmGL keeps glew, which is the only genuinely OpenGL-specific one, and still
-# builds standalone: its guards add its own copies when no parent provided them.
+# vkmGL keeps glew, which is the only genuinely OpenGL-specific one. It expects
+# the rest as targets a parent provides, and hard-errors when they are absent.
 if(NOT TARGET glm)
     add_subdirectory(glm)
 endif()

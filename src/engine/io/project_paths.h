@@ -21,8 +21,10 @@ namespace Engine {
  * Callers compose specific files from these directories (e.g.
  * ProjectPaths::library() / "_manifest.json") rather than re-deriving a root.
  *
- * Both roots are resolved once at first use and defined out-of-line, since
- * locating the executable is platform code; the composing helpers stay inline.
+ * engineRoot() is resolved once at first use and defined out-of-line, since
+ * locating the executable is platform code; projectRoot() answers from the
+ * override when one is set and defers to engineRoot() otherwise. The composing
+ * helpers stay inline.
  */
 namespace ProjectPaths {
 
