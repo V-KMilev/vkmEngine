@@ -21,9 +21,6 @@ target_include_directories(engine_editor PRIVATE ${CMAKE_SOURCE_DIR})
 
 # Where the editor looks for the hot-reloadable game module at runtime (the
 # unified output dir, next to the exe).
-target_compile_definitions(engine_editor PRIVATE
-    GAME_MODULE_DIR="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
-)
 
 # Export the exe's symbols so the hot-reloadable game module can resolve engine
 # symbols against it (the module is loaded at runtime, never linked into the exe).

@@ -169,7 +169,6 @@ First-party code also builds as strict C++17 (`CMAKE_CXX_EXTENSIONS OFF`).
 | `GLM_FORCE_INTRINSICS` | EngineCore (public) | GLM SIMD intrinsics |
 | `APP_VERSION` | Executable | Engine version string |
 | `APP_ROOT_DIR` | Executable | Absolute path to the **engine** root - the fallback `ProjectPaths::engineRoot()` uses to find `shaders/` and `assets/` when the exe is run from a build tree. Not the project root; see [system/io.md](system/io.md#projects-and-the-two-roots) |
-| `GAME_MODULE_DIR` | Executable | `build/bin/`, the fallback searched for a gameplay module when the open project has none in its own `bin/` |
 | `APP_BRANCH`, `APP_COMMIT_HASH`, `APP_BUILD_DATE` | BuildInfo | Git metadata |
 
 ### Profiling with Tracy

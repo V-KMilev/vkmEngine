@@ -147,6 +147,14 @@ EditorSystem::~EditorSystem() {
 void EditorSystem::openPendingProject(EditorContext& ec) {
     if (ec.state.pendingProjectOpen.empty()) return;
 
+    // Opening a project throws the current scene away, so it asks first, the
+    // same way New Scene does. The chosen path stays parked until the prompt is
+    // answered; answering it clears the flag and this runs on the next frame.
+    if (ec.state.sceneDirty) {
+        ec.state.confirmAction = EditorState::PendingSceneAction::OpenProject;
+        return;
+    }
+
     // Deferred out of the menu: opening rebuilds the scene, and the menu that
     // asked is still being drawn when it asks.
     const std::string path = ec.state.pendingProjectOpen;
@@ -165,6 +173,11 @@ void EditorSystem::performSceneAction(FrameContext& ctx, EditorState::PendingSce
         case EditorState::PendingSceneAction::Open:
             m_sceneIO.loadPath(ctx, m_state, m_state.pendingScenePath);
             m_state.pendingScenePath.clear();
+            break;
+        case EditorState::PendingSceneAction::OpenProject:
+            // The project is still parked in pendingProjectOpen; dropping the
+            // dirty flag lets the deferred open through on the next frame.
+            m_state.sceneDirty = false;
             break;
         case EditorState::PendingSceneAction::None:
             break;
@@ -347,6 +360,11 @@ void EditorSystem::update(FrameContext& ctx) {
                     break;
                 case DialogResult::Alt:
                     performSceneAction(ctx, action);
+                    break;
+                case DialogResult::Cancel:
+                    // Abandon the project that was waiting on this answer, or
+                    // the prompt reopens next frame and there is no way out.
+                    m_state.pendingProjectOpen.clear();
                     break;
                 default: break;
             }

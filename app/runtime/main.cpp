@@ -79,23 +79,13 @@ int main(int argc, char** argv) {
         // behaviors are destroyed during Engine teardown and their code must
         // still be mapped then. Must precede setupEngineApp's default scene,
         // which creates behaviors through the registry.
-        // The project's own module first - a game brings its code with it - then
-        // the one built beside this executable, which is what a development
-        // checkout has.
+        // A game brings its code with it, so there is one place to look: the
+        // project's own bin/. Every project builds its module there.
         Engine::ScriptModule scriptModule;
-        const std::string moduleName = Engine::DynamicLibrary::platformName("game");
-        const std::filesystem::path candidates[] = {
-            Engine::ProjectPaths::projectBin() / moduleName,
-            std::filesystem::path(GAME_MODULE_DIR) / moduleName,
-        };
+        const std::filesystem::path modulePath =
+            Engine::ProjectPaths::projectBin() / Engine::DynamicLibrary::platformName("game");
 
-        bool moduleLoaded = false;
-        for (const std::filesystem::path& candidate : candidates) {
-            if (!std::filesystem::exists(candidate, ec)) continue;
-            moduleLoaded = scriptModule.load(candidate.string());
-            if (moduleLoaded) break;
-        }
-        if (!moduleLoaded) {
+        if (!std::filesystem::exists(modulePath, ec) || !scriptModule.load(modulePath.string())) {
             LOG_WARNING("No gameplay module for this project - no behaviors available");
         }
 

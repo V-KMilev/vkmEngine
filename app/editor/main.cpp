@@ -77,22 +77,15 @@ int main(int argc, char** argv) {
         // teardown and their code must still be loaded then. Must precede
         // setupEngineApp, whose default scene creates behaviors via the registry.
         Engine::ScriptModule scriptModule;
-        // The open project's module first, then one built beside this exe: the
-        // editor edits a project, so it runs that project's code.
-        const std::string moduleName = Engine::DynamicLibrary::platformName("game");
-        const std::filesystem::path moduleCandidates[] = {
-            Engine::ProjectPaths::projectBin() / moduleName,
-            std::filesystem::path(GAME_MODULE_DIR) / moduleName,
-        };
+        // The editor edits a project, so it runs that project's code, from the
+        // one place a project builds it - the same lookup File > Open Project
+        // does when it switches.
+        const std::filesystem::path modulePath =
+            Engine::ProjectPaths::projectBin() / Engine::DynamicLibrary::platformName("game");
 
-        bool moduleLoaded = false;
-        for (const std::filesystem::path& candidate : moduleCandidates) {
-            std::error_code moduleEc;
-            if (!std::filesystem::exists(candidate, moduleEc)) continue;
-            moduleLoaded = scriptModule.load(candidate.string());
-            if (moduleLoaded) break;
-        }
-        if (!moduleLoaded) {
+        std::error_code moduleEc;
+        if (!std::filesystem::exists(modulePath, moduleEc) ||
+            !scriptModule.load(modulePath.string())) {
             LOG_WARNING("No gameplay module for this project - scripts unavailable");
         }
 
