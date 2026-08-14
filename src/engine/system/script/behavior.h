@@ -37,7 +37,8 @@ struct BehaviorContext {
     WindowManager*         window         = nullptr;
     EventBus*              events         = nullptr;
     InputMap*              input          = nullptr;
-    std::vector<EntityId>* pendingDestroy = nullptr;
+    std::vector<EntityId>* pendingDestroy   = nullptr;
+    std::string*           pendingSceneLoad = nullptr;
 };
 
 /**
@@ -172,6 +173,22 @@ class Behavior {
          * the affected behaviors. Routed through HierarchyOperations.
          */
         void destroy(EntityId entity) { m_ctx->pendingDestroy->push_back(entity); }
+
+        /**
+         * @brief Load @p scenePath, replacing everything currently in the scene.
+         *
+         * Deferred to the end of the hook pass, and it has to be: the load
+         * destroys every entity including the one whose behavior asked for it,
+         * so doing it inline would free this object mid-call. Requesting twice
+         * in one pass keeps the last request - the scene can only become one
+         * thing.
+         *
+         * This is how a game moves between levels, or back to its menu; without
+         * it a game is one scene for the life of the process.
+         *
+         * @param scenePath Scene file, relative to the project root.
+         */
+        void loadScene(const std::string& scenePath) { *m_ctx->pendingSceneLoad = scenePath; }
 
         /**
          * @brief Subscribe to events of type EventT for this behavior's lifetime. The

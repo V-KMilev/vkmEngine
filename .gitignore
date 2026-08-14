@@ -17,3 +17,5 @@ shaders/_generated/
 /scenes/
 /cooked/
 /library/
+# A project's built gameplay module, and the copies ScriptModule loads from.
+examples/*/bin/
