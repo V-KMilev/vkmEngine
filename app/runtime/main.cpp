@@ -24,14 +24,14 @@ int main(int argc, char** argv) {
     try {
         const char* pathArg = argc > 1 ? argv[1] : nullptr;
 
-        // An explicit argument names either a project directory or a file inside
-        // one; either way the project is the nearest ancestor holding a
-        // project.json. Done before anything composes a path, since projectRoot()
-        // caches whatever it first resolves. Nothing is logged here - the logger
-        // lives under the root we are still deciding.
-        // Resolved against the launch directory now, because current_path() below
-        // moves the CWD to the project root - a relative argument checked after
-        // that would be measured from the wrong place.
+        // One rule: the project is the one beside this executable, unless an
+        // argument names a different one. A shipped game never passes anything;
+        // naming one is for running several projects out of one build.
+        //
+        // Resolved against the launch directory, before anything composes a path:
+        // current_path() below moves the CWD, and projectRoot() caches whatever
+        // it first answers. Nothing is logged here - the log file lives under the
+        // root still being decided.
         std::error_code argEc;
         const std::filesystem::path argPath = pathArg ? std::filesystem::absolute(pathArg, argEc) : std::filesystem::path{};
 
@@ -113,15 +113,11 @@ int main(int argc, char** argv) {
             false, true,
             nullptr});
 
-        // What to boot, most specific first: a scene named on the command line,
-        // then the project's entry scene, then the generated default that
-        // setupEngineApp already built.
+        // A scene comes from the project that owns it, never from the command
+        // line: entryScene names an authored one, and a project whose world is
+        // generated says so through its module instead.
         std::filesystem::path scene;
-        if (!argPath.empty() && std::filesystem::is_regular_file(argPath)) {
-            scene = argPath;
-        } else if (!project.entryScene.empty()) {
-            scene = root / project.entryScene;
-        }
+        if (!project.entryScene.empty()) scene = root / project.entryScene;
 
         // A project whose world is generated says so in its module; one that
         // authored a scene names it in project.json. Neither is required - an
