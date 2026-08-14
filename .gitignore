@@ -19,3 +19,5 @@ shaders/_generated/
 /library/
 # A project's built gameplay module, and the copies ScriptModule loads from.
 examples/*/bin/
+# Our own working plan for where the engine is going. Not part of the manual.
+docs/roadmap.md
