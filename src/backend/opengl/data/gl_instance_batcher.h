@@ -233,7 +233,9 @@ class GLInstanceBatchView {
     public:
         explicit GLInstanceBatchView(GLInstanceBatcher& batcher) : m_batcher(&batcher) {}
 
-        /** @brief The runs to draw, in batch order. */
+        /**
+         * @brief The runs to draw, in batch order.
+         */
         const std::vector<InstanceRun>& runs() const { return m_batcher->runs(); }
 
         /**
