@@ -7,7 +7,9 @@ namespace Engine {
 
 namespace {
 
-/** @brief A keyboard binding contributing @p scale to its action's axis. */
+/**
+ * @brief A keyboard binding contributing @p scale to its action's axis.
+ */
 InputBinding key(int code, float scale = 1.0f) {
     return InputBinding{InputSource::Key, code, scale};
 }
