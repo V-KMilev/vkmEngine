@@ -23,6 +23,7 @@
 
 #include "resource/asset/font_asset.h"
 #include "font/font_baker.h"
+#include "generator/default_scene.h"
 
 // Bake the default UI font ("ui:roboto") into @p resources unless it is already
 // present, so every UIText resolves its font by name. Startup-only: scene loads
@@ -103,10 +104,13 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     // boot scene or loaded from a scene file - resolves its font by name.
     ensureDefaultUIFont(engine.getResources());
 
-    if (config.buildBootScene) {
-        auto cameraEntity = config.buildBootScene(engine);
-        cameraController.setCameraEntity(cameraEntity);
-    }
+    // A project that names no scene and generates none still opens on something
+    // worth looking at, and on the same thing New Scene produces. A project that
+    // does supply one replaces this immediately.
+    const Engine::Entity camera = config.buildBootScene
+        ? config.buildBootScene(engine)
+        : Engine::buildDefaultScene(engine.getScene(), engine.getResources());
+    cameraController.setCameraEntity(camera);
 
     engine.getClock().setPaused(config.startPaused);
     engine.setFPSLog(config.logFps);
