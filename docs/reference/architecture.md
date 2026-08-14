@@ -53,8 +53,8 @@ does:
 | Stage      | Systems                                                                         |
 |------------|---------------------------------------------------------------------------------|
 | Input      | `CameraControllerSystem`                                                              |
-| Simulation | (EventBus flush), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `PhysicsSystem` |
-| Transform  | `HierarchySystem`                                                              |
+| Simulation | (EventBus flush), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `ParticleSystem`, `PhysicsSystem` |
+| Transform  | `HierarchySystem`, `UISystem` (the game UI; runs in **both** binaries)         |
 | Visibility | `VisibilitySystem`                                                            |
 | Render     | `RenderSystem`                                                                |
 | UI         | `EditorSystem` (editor binary only)                                           |
@@ -113,7 +113,7 @@ slots; the `FIXED_TIME_STEP` (1/60) and the `MAX_FRAME_ACCUMULATOR` (0.25 s) cap
 The CMake build generates `shaders/_generated/engine_config.glsl` from this header
 so cross-language constants *can* be single-sourced - though the forward shaders
 still hand-define their copies today (see
-[system/lighting.md](system/lighting.md#limits-and-the-must-match-shader-contract)).
+[system/lighting.md](system/lighting.md#limits-and-the-generated-constants-contract)).
 Per-system tunables (cull distance, camera sensitivity) live in a nested
 `Settings` struct on the owning system, not here.
 
@@ -171,9 +171,10 @@ Application and gameplay layers sit **outside** the `src/engine/` include root:
 | Path                | Contents                                                                  |
 |---------------------|---------------------------------------------------------------------------|
 | `app/engine_app.h`  | `setupEngineApp`: the shared, header-only bootstrap that registers the default systems, installs the GL backend, and seeds the default scene. Both mains include it directly (there is no `EngineApp` library) |
-| `app/editor/`       | `engine_editor` entry point; loads the gameplay module for hot-reload      |
-| `app/runtime/`      | `engine_runtime` entry point; static-links gameplay, can boot a saved scene |
-| `game/`             | concrete gameplay `Behavior`s (the reusable engine is `src/`; `game/` is built on top) |
+| `app/editor/`       | `engine_editor` entry point; opens a project and loads its module for hot-reload |
+| `app/runtime/`      | `engine_runtime` entry point; opens a project and plays it                 |
+| `app/cooker/`       | `engine_cook` entry point; headless asset cook (no window, no GL, no `Engine`) |
+| `examples/`         | complete worked projects (Potion Runner, Stress Arena). Gameplay lives in a project, never in the engine |
 
 ## Include conventions
 

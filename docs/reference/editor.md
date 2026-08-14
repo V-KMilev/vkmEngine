@@ -144,6 +144,27 @@ translation unit doesn't recompile the bodies.
 `CommandStack::push` calls `Command::tryMerge` against the top of the
 undo stack first; that is where transform drag coalescing happens.
 
+## Opening a project
+
+The editor edits *a project*, not the repo it was built in. `ProjectController`
+(`src/editor/framework/project_controller.h`) owns **File > Open Project...** and
+the **File > Recent Projects** list, and re-roots the whole editor in place - no
+restart. Order matters, because each step depends on the previous one:
+
+1. `ProjectPaths::setProjectRoot(root)` - every path composed after this points
+   at the new project.
+2. Clear the scene - entities from the old project must not outlive it.
+3. `AssetLibrary::get().load()` - the new project's asset database.
+4. Swap the gameplay module to the new project's `bin/`.
+5. Boot its scene: `entryScene` if it names one, else the module's
+   `vkmBuildScene`, else the default scene.
+
+A path that names a file rather than a directory still works - `findProjectRoot`
+walks up to the owning `project.json`, so dropping in a scene opens its project.
+
+Command-line `engine_editor <project>` does the same thing at startup, before any
+path is composed. See [system/io.md](system/io.md#projects-and-the-two-roots).
+
 ## Scene I/O
 
 `SceneIOController` owns the New / Open / Save / Save-As flow:
