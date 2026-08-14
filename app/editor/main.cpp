@@ -33,6 +33,14 @@ int main(int argc, char** argv) {
             if (!found.empty()) Engine::ProjectPaths::setProjectRoot(found);
         }
 
+        // Pin the working directory to the ENGINE root, not the project's, for
+        // the same reason the runtime does: shaders load CWD-relative and ship
+        // with the engine, while everything a project owns is addressed
+        // absolutely through ProjectPaths. Without this the editor only starts
+        // when launched from the engine root.
+        std::error_code cwdEc;
+        std::filesystem::current_path(Engine::ProjectPaths::engineRoot(), cwdEc);
+
         const std::string rootDir = Engine::ProjectPaths::projectRoot().string();
         std::error_code logEc;
         std::filesystem::create_directories(rootDir + "/logs", logEc);
@@ -94,8 +102,7 @@ int main(int argc, char** argv) {
         const std::string title = project.name + " - vkmEngine";
         auto sys = setupEngineApp(engine, AppConfig{
             title.c_str(),
-            true, false,
-            nullptr});
+            true, false});
 
         engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
             engine, engine.getWindow().getWindowContext(),

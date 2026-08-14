@@ -5,16 +5,18 @@
 # loads, and the project's own scenes and assets beside them. The engine knows
 # none of it by name.
 #
-# Built from the engine's tree for now, against EngineHeaders, exactly as the
-# editor's module is. From 1.4 this becomes find_package(vkmEngine) and the
-# project builds with no engine checkout at all - the CMake here is the only
-# part that changes.
+# Built from the engine's tree against EngineHeaders, exactly as the editor's
+# module is, because there is no installed SDK to build against yet. This file
+# is the only part that changes when there is.
 file(GLOB_RECURSE POTION_RUNNER_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 
 add_library(potion_runner_module SHARED ${POTION_RUNNER_SOURCES})
 
 target_include_directories(potion_runner_module PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(potion_runner_module PRIVATE EngineHeaders vkm_warnings)
+# Windows needs an import library named at link time, which ties the module to
+# one host: it binds to the editor, and engine_runtime cannot load it there.
+# Linux has no such link, so both hosts load it.
 if(WIN32)
     target_link_libraries(potion_runner_module PRIVATE engine_editor)
 endif()

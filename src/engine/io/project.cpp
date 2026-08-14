@@ -35,17 +35,20 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
         return false;
     }
 
+    // Reading the fields is inside the try as well as the parse: value<std::string>
+    // throws on a key that holds a number or an array, and a hand-edited
+    // project.json is exactly where that happens. A bad file leaves the defaults
+    // standing rather than taking the process down.
     nlohmann::json doc;
     try {
         in >> doc;
+        out.name          = doc.value("name",          out.name);
+        out.engineVersion = doc.value("engineVersion", out.engineVersion);
+        out.entryScene    = doc.value("entryScene",    out.entryScene);
     } catch (const std::exception& e) {
         LOG_ERROR("Malformed '%s': %s", file.string().c_str(), e.what());
         return false;
     }
-
-    out.name          = doc.value("name",          out.name);
-    out.engineVersion = doc.value("engineVersion", out.engineVersion);
-    out.entryScene    = doc.value("entryScene",    out.entryScene);
     if (out.engineVersion.empty()) {
         LOG_INFO("Project '%s' (engine version unrecorded)", out.name.c_str());
     } else if (out.engineVersion == APP_VERSION) {

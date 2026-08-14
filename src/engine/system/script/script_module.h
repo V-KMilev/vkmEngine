@@ -70,6 +70,20 @@ class ScriptModule {
          */
         bool buildScene(Scene& scene);
 
+        /**
+         * @brief Drop the loaded module and the behavior types it registered.
+         *
+         * A host that moves to a project bringing no code of its own has to
+         * unload rather than keep what it had: the old module would still answer
+         * buildScene and its behavior types would stay in the registry, so the
+         * previous project's world could be generated inside the new one.
+         *
+         * Safe to call when nothing is loaded. Entities are untouched - the
+         * caller is expected to have cleared the scene first, since behaviors
+         * outlive this call only as dangling objects.
+         */
+        void unload();
+
         bool isLoaded() const { return m_lib.isLoaded(); }
 
     private:

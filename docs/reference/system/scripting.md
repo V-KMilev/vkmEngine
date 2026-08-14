@@ -175,8 +175,8 @@ The host `dlopen`s the module and calls the `extern "C"` entry points it finds:
 | `vkmRegisterBehaviors` | Yes | Registers the project's behavior types into the engine's `BehaviorRegistry` |
 | `vkmBuildScene` | Optional | Builds the project's world in code. Projects whose scene is generated rather than authored use this instead of `entryScene` |
 
-The module resolves engine symbols from whichever host loaded it (Windows: an
-import lib; Linux/macOS: `ENABLE_EXPORTS`), so there is no second copy of the
+The module resolves engine symbols from the host that loaded it (Windows: an
+import lib; Linux: `ENABLE_EXPORTS`), so there is no second copy of the
 engine inside it. It must **not** link `EngineCore` - a second copy would
 duplicate the typeId registry and the singletons, and types registered against
 one copy are invisible to the other.

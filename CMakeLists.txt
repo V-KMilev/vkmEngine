@@ -83,8 +83,8 @@ add_subdirectory(src/tools)
 add_subdirectory(src/editor)
 add_subdirectory(src/backend/opengl)
 # Example projects. Not part of the engine - each is a project in the shape a
-# real one takes, built here only because 1.4 has not yet made them buildable
-# against an installed SDK.
+# real one takes, built from this tree because there is no installed SDK to
+# build them against yet.
 add_subdirectory(examples/potion_runner)
 add_subdirectory(examples/stress_arena)
 
