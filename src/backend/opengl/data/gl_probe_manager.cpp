@@ -55,7 +55,7 @@ int GLProbeManager::bind(const RenderView& view) {
         block.probes[p].params  = glm::vec4(pd.falloff, pd.intensity, static_cast<float>(m_active[p].index), 0.0f);
     }
     Core::uploadIfChanged(m_ubo, m_lastBlock, block);
-    Core::bindUBO(m_ubo, GLBindings::UBOBindingPoints::Probes);
+    if (m_ubo) m_ubo->bindBase(GLBindings::UBOBindingPoints::Probes);
 
     m_array->bindIrradiance(GLBindings::ProbeTextureSlots::Irradiance);
     m_array->bindPrefilter(GLBindings::ProbeTextureSlots::Prefilter);

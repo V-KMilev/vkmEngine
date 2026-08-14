@@ -8,7 +8,7 @@
 #include <glm/glm.hpp>
 
 #include "gl_context.h"
-#include "gl_screen_triangle.h"
+#include "data/gl_screen_triangle.h"
 
 #include "system/render/render_backend.h"
 #include "system/render/editor_render_hooks.h"
