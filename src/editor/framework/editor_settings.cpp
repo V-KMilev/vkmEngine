@@ -187,6 +187,13 @@ bool load(EditorState& state, RenderSettings& render) {
     }
 
     // Recent scenes
+    state.recentProjects.clear();
+    if (j.contains("recentProjects") && j["recentProjects"].is_array()) {
+        for (const auto& p : j["recentProjects"]) {
+            if (p.is_string()) state.recentProjects.push_back(p.get<std::string>());
+        }
+    }
+
     state.recentScenes.clear();
     if (j.contains("recentScenes") && j["recentScenes"].is_array()) {
         for (const auto& p : j["recentScenes"]) {
@@ -225,7 +232,8 @@ bool save(const EditorState& state, const RenderSettings& render) {
     });
     j["renderSettings"] = std::move(rs);
 
-    j["recentScenes"] = state.recentScenes;
+    j["recentScenes"]   = state.recentScenes;
+    j["recentProjects"] = state.recentProjects;
 
     // Atomic write: serialize to a sibling temp file then rename over the
     // target. A crash mid-write leaves the previous settings intact instead
