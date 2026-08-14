@@ -83,11 +83,14 @@ directly and never builds an Engine, which is what lets it run headless.
 engine_runtime links neither EngineCooker nor EngineEditor, so it pulls in no
 Assimp and no ImGui - the link lists enforce that, not a build flag.
 
-<project>_module (shared, per project) -- EngineHeaders (include-only); resolves
-  engine symbols from whichever host loaded it at run time (Windows import lib /
-  Linux ENABLE_EXPORTS, set on engine_editor and engine_runtime alike). It must
+<project>_module (shared, per project) -- EngineHeaders (include-only); it must
   not link EngineCore: a second copy would duplicate the typeId registry and the
   singletons, and components registered on one copy are invisible to the other.
+  It resolves engine symbols from the host that loaded it. On Linux that is
+  whichever host did, since ENABLE_EXPORTS is set on engine_editor and
+  engine_runtime alike. On Windows a shared library must name an import library
+  at link time, so a module binds to engine_editor specifically and the runtime
+  cannot load it there.
 ```
 
 ## External Modules

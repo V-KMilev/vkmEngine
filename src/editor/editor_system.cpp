@@ -151,7 +151,7 @@ void EditorSystem::openPendingProject(EditorContext& ec) {
     // asked is still being drawn when it asks.
     const std::string path = ec.state.pendingProjectOpen;
     ec.state.pendingProjectOpen.clear();
-    m_project.open(ec, m_scriptModule, path);
+    m_project.open(ec, m_scriptModule, m_sceneIO, path);
 }
 
 void EditorSystem::performSceneAction(FrameContext& ctx, EditorState::PendingSceneAction action) {
@@ -450,7 +450,7 @@ void EditorSystem::update(FrameContext& ctx) {
             m_project.noteCurrentProject(ec);
             m_notedStartupProject = true;
         }
-        m_project.drawDialog(ec, m_scriptModule);
+        m_project.drawDialog(ec, m_scriptModule, m_sceneIO);
         // ModelImportDialog is owned here (not in the menu bar) so it
         // serves all three import-intent sources: the menu, the Inspector
         // empty-state button, and the Hierarchy "+" menu.

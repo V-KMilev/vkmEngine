@@ -20,6 +20,7 @@
 #include "system/render/render_system.h"
 #include "io/project.h"
 #include "io/project_paths.h"
+#include "framework/scene_io_controller.h"
 #include "project_boot.h"
 #include "platform/library/dynamic_library.h"
 #include "system/script/script_module.h"
@@ -31,7 +32,7 @@ namespace fs = std::filesystem;
 namespace Engine {
 
 bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
-                             const std::string& projectRoot) {
+                             SceneIOController& sceneIO, const std::string& projectRoot) {
     // findProjectRoot accepts the directory or anything inside it, so a path
     // typed with a trailing file name still resolves.
     const fs::path root = findProjectRoot(projectRoot);
@@ -53,9 +54,16 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     Project project;
     loadProject(root, project);
 
-    // 3. Empty the scene before the assets it references go away.
-    ec.state.deselect();
-    ec.frame.scene.clear();
+    // 3. Empty the scene before the assets it references go away, through the
+    //    same teardown a New Scene runs: behaviors get onDestroy while the old
+    //    module still holds their code, and the undo stack, material previews
+    //    and saved-scene path all belong to the project being left.
+    sceneIO.beginSceneReplace(ec.frame, ec.state);
+
+    //    The outgoing project's meshes, materials and textures go with it. A
+    //    project whose world is generated never swaps the manager the way a
+    //    scene load does, so without this they would follow us into the new one.
+    ec.frame.resources.clear();
 
     // 4. The new project's asset database, and its own editor settings.
     AssetLibrary::get().load();
@@ -69,6 +77,10 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     if (fs::exists(modulePath, ec2)) {
         scriptModule.load(modulePath.string());
     } else {
+        // Unload rather than leave the last project's module in place: it would
+        // still answer buildScene below and generate the previous project's
+        // world inside this one, and its behavior types would stay registered.
+        scriptModule.unload();
         LOG_WARNING("Project '%s' has no gameplay module", project.name.c_str());
     }
 
@@ -99,7 +111,8 @@ void ProjectController::pushRecent(EditorContext& ec, const std::string& project
     }
 }
 
-void ProjectController::drawDialog(EditorContext& ec, ScriptModule& scriptModule) {
+void ProjectController::drawDialog(EditorContext& ec, ScriptModule& scriptModule,
+                                   SceneIOController& sceneIO) {
     if (!beginDialog("Open Project", ec.state.showOpenProject)) return;
 
     ImGui::TextDisabled("A project is a directory with a project.json in it.");
@@ -153,7 +166,7 @@ void ProjectController::drawDialog(EditorContext& ec, ScriptModule& scriptModule
     // Outside the popup scope: open() rebuilds the scene, and doing that with
     // an ImGui window still on the stack is asking for trouble.
     if (!chosen.empty()) {
-        open(ec, scriptModule, chosen);
+        open(ec, scriptModule, sceneIO, chosen);
         m_pathBuffer[0] = '\0';
     }
 }

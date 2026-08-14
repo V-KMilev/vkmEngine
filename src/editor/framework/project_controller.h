@@ -6,6 +6,7 @@ namespace Engine {
 
 struct EditorContext;
 class ScriptModule;
+class SceneIOController;
 
 /**
  * @brief Opening a project from the editor, and remembering the ones opened.
@@ -37,8 +38,9 @@ class ProjectController {
          * @param ec           Editor context; supplies the state flag and what the
          *                     switch re-roots.
          * @param scriptModule The module to swap for the new project's own.
+         * @param sceneIO      Owns the scene-replace teardown the switch runs.
          */
-        void drawDialog(EditorContext& ec, ScriptModule& scriptModule);
+        void drawDialog(EditorContext& ec, ScriptModule& scriptModule, SceneIOController& sceneIO);
 
         /**
          * @brief Switch the editor to the project rooted at @p projectRoot.
@@ -48,10 +50,12 @@ class ProjectController {
          *
          * @param ec           Editor context to re-root.
          * @param scriptModule Module to reload from the new project.
+         * @param sceneIO      Owns the scene-replace teardown the switch runs.
          * @param projectRoot Directory holding the project's project.json.
          * @return True when the directory was a project and the switch ran.
          */
-        bool open(EditorContext& ec, ScriptModule& scriptModule, const std::string& projectRoot);
+        bool open(EditorContext& ec, ScriptModule& scriptModule, SceneIOController& sceneIO,
+                  const std::string& projectRoot);
 
         /**
          * @brief Record the project the editor started in as most-recent.

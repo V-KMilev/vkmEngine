@@ -75,9 +75,9 @@ does not register; see [io.md](system/io.md).)
 
 The engine builds a backend-agnostic `RenderView` snapshot each frame and hands it
 to a `RenderBackend` through one seam (`init` / `resize` / `render`). The OpenGL
-backend runs a **fixed 17-pass forward pipeline**: Shadow -> DepthPrepass ->
-ResolveDepth -> GTAO -> Skybox -> ClusterCull -> FogCompute ->
-Forward (PBR ubershader) -> Particles -> ResolveColor -> Decals ->
+backend runs a **fixed 19-pass forward pipeline**: Shadow -> DepthPrepass ->
+ResolveDepth -> HiZ -> OcclusionCull -> GTAO -> Skybox -> ClusterCull ->
+FogCompute -> Forward (PBR ubershader) -> Particles -> ResolveColor -> Decals ->
 FogApply -> DoF -> Bloom -> Grid -> Composite -> UI (the screen-space overlay).
 There is no render-graph abstraction and no shader variant cache. Real features:
 five light types incl. LTC area lights, Forward+ clustered lighting, CSM + spot +

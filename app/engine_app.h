@@ -23,7 +23,6 @@
 
 #include "resource/asset/font_asset.h"
 #include "font/font_baker.h"
-#include "generator/default_scene.h"
 
 // Bake the default UI font ("ui:roboto") into @p resources unless it is already
 // present, so every UIText resolves its font by name. Startup-only: scene loads
@@ -44,12 +43,6 @@ struct AppConfig {
     const char* windowTitle;
     bool        startPaused;
     bool        logFps;
-
-    // Boot-scene builder: fills the fresh Scene and returns the entity the
-    // camera controller should fly (the binaries pass their game's generator;
-    // null boots an empty scene and leaves the controller to resolve the
-    // active camera). Scene choice is binary policy, not bootstrap policy.
-    Engine::Entity (*buildBootScene)(Engine::Engine&) = nullptr;
 };
 
 // System handles the caller may still need after bootstrap. The editor feeds
@@ -62,10 +55,10 @@ struct AppSystems {
 
 // Stands a ready-to-run engine app up in `engine`: the window, the standard
 // system stack, the GL backend, and the config's boot scene. The caller owns
-// what differs per-binary - gameplay registration (must happen before this so
-// the boot scene can create behaviors through the registry), the boot-scene
-// choice itself (AppConfig::buildBootScene), any extra systems (the editor
-// adds EditorSystem), scene-file overrides, and the run loop.
+// what differs per-binary - gameplay registration (must happen before this, so
+// the scene that follows can create behaviors through the registry), the scene
+// itself (bootProjectScene), any extra systems (the editor adds EditorSystem),
+// and the run loop.
 inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config) {
     // Bindings first: the systems below read input through named actions, and an
     // action with no binding is silently dead rather than an error.
@@ -104,15 +97,10 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     // boot scene or loaded from a scene file - resolves its font by name.
     ensureDefaultUIFont(engine.getResources());
 
-    // Which scene boots is the binary's policy, not the bootstrap's: a project
-    // may author one, generate one from its module, or supply none, and only the
-    // caller knows which. Seeding a scene here would put a stray camera, light
-    // and cube underneath whatever the project then builds on top. Null leaves
-    // the scene empty and the controller free to resolve whichever camera the
-    // project's own scene marks active.
-    if (config.buildBootScene) {
-        cameraController.setCameraEntity(config.buildBootScene(engine));
-    }
+    // No scene is seeded here. Which one boots is the project's answer, given by
+    // bootProjectScene after this returns; seeding one would leave a stray
+    // camera, light and cube underneath whatever the project then builds. The
+    // camera controller resolves whichever camera that scene marks active.
 
     engine.getClock().setPaused(config.startPaused);
     engine.setFPSLog(config.logFps);

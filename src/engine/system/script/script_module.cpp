@@ -158,6 +158,21 @@ bool ScriptModule::reload(Scene& scene) {
     return true;
 }
 
+void ScriptModule::unload() {
+    if (!m_lib.isLoaded()) return;
+
+    BehaviorRegistry::get().clear();
+    m_lib.unload();
+    m_modulePath.clear();
+
+    std::error_code ec;
+    if (!m_loadedCopyPath.empty()) {
+        std::filesystem::remove(m_loadedCopyPath, ec);
+        m_loadedCopyPath.clear();
+    }
+    LOG_INFO("Game module unloaded");
+}
+
 bool ScriptModule::buildScene(Scene& scene) {
     if (!m_lib.isLoaded()) return false;
 

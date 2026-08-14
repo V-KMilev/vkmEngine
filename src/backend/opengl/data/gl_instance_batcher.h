@@ -47,8 +47,8 @@ class InstanceIndexBuffer {
         InstanceIndexBuffer(const InstanceIndexBuffer& other) = delete;
         InstanceIndexBuffer& operator=(const InstanceIndexBuffer& other) = delete;
 
-        InstanceIndexBuffer(InstanceIndexBuffer&& other) = delete;
-        InstanceIndexBuffer& operator=(InstanceIndexBuffer&& other) = delete;
+        InstanceIndexBuffer(InstanceIndexBuffer && other) = delete;
+        InstanceIndexBuffer& operator=(InstanceIndexBuffer && other) = delete;
 
     public:
         /// Upload @p bytes of indices, growing the storage when it must.
