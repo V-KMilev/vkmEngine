@@ -53,7 +53,7 @@ does:
 | Stage      | Systems                                                                         |
 |------------|---------------------------------------------------------------------------------|
 | Input      | `CameraControllerSystem`                                                              |
-| Simulation | (EventBus flush), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `ParticleSystem`, `PhysicsSystem` |
+| Simulation | (EventBus flush), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `ParticleSystem`, `PhysicsSystem`, `SkySystem` |
 | Transform  | `HierarchySystem`, `UISystem` (the game UI; runs in **both** binaries)         |
 | Visibility | `VisibilitySystem`                                                            |
 | Render     | `RenderSystem`                                                                |

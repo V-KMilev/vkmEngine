@@ -42,6 +42,9 @@ class ResourceManager;
  */
 namespace ComponentSerializer {
 
+    nlohmann::json save(const PhysicsSettings&);
+    void load(const nlohmann::json&, PhysicsSettings&);
+
     nlohmann::json save(const Name&);
     void load(const nlohmann::json&, Name&);
 

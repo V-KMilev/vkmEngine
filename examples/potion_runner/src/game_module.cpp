@@ -42,8 +42,8 @@ void vkmBuildScene(Engine::Scene& scene) {
     // rims, headlights and glows carve visible pools out of the dark instead of
     // fighting a daylit scene. PotionRunner::buildWorld enforces the same mood at
     // play time, so the two never drift.
-    scene.environment().intensity  = 0.08f;
-    scene.environment().showSkybox = false;   // underground: tunnel dark, no sky
+    scene.environment().sky.intensity  = 0.08f;
+    scene.environment().sky.showSkybox = false;   // underground: tunnel dark, no sky
 
     // Chase camera, parked where PotionRunner drives it so the editor preview
     // already frames the track before play begins.

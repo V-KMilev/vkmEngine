@@ -5,7 +5,10 @@
  * environment cubemap that feeds IBL + the skybox. Linear radiance out (the
  * composite pass owns tonemap + gamma). Single scattering only - a couple of
  * short ray-marches per texel - which is plenty for an environment bake. The
- * sharp sun disc is added analytically by the skybox pass, not here.
+ * sharp sun disc is added analytically by the skybox pass, not here - and so are
+ * the stars, which are far too fine to survive a 512 cube and its prefiltered
+ * mips. What night contributes *here* is the part that lights the scene: a dim
+ * skyglow floor, so a night world is dark rather than black.
  */
 
 in vec3 vLocalPos;
@@ -17,8 +20,12 @@ uniform float u_sunIntensity;  // top-of-atmosphere sun radiance scale
 uniform float u_rayleigh;      // Rayleigh scattering scale
 uniform float u_mie;           // Mie scattering scale
 uniform float u_mieG;          // Mie phase asymmetry (forward glow)
+uniform vec3  u_nightRadiance; // skyglow the scene is lit by once the sun is down
+uniform vec3  u_moonDir;       // direction TO the moon, normalized
+uniform float u_moonHalo;      // radiance of the glow immediately around the moon
 
 #include "../../_common/constants.glsl"
+#include "../../_common/sky.glsl"
 
 // Earth-like atmosphere (metres). Bruneton's sea-level scattering coefficients.
 const float R_PLANET = 6371000.0;
@@ -98,6 +105,24 @@ vec3 atmosphere(vec3 dir, vec3 sunDir) {
 }
 
 void main() {
-    vec3 dir = normalize(vLocalPos);
-    FragColor = vec4(atmosphere(dir, normalize(u_sunDir)), 1.0);
+    vec3 dir    = normalize(vLocalPos);
+    vec3 sunDir = normalize(u_sunDir);
+
+    // Single scattering with the sun below the horizon is very nearly black -
+    // physically right, and useless as a lighting environment. What lights a
+    // night scene is the flat skyglow; the moon only adds a halo immediately
+    // around itself, so the sky is not uniformly flat.
+    float night = skyNightFactor(sunDir);
+    vec3  color = atmosphere(dir, sunDir);
+
+    if (night > 0.0) {
+        // cos^64 puts the halo at half brightness ~8 degrees out - a few times
+        // the disc's own radius. A low power is a hemisphere, not a halo: cos^2
+        // is still at half brightness 45 degrees away, which lights a quarter of
+        // the sky and reads as the moon bleeding over everything.
+        float halo = pow(max(dot(dir, normalize(u_moonDir)), 0.0), 64.0);
+        color += night * (u_nightRadiance + u_moonHalo * halo * vec3(0.8, 0.85, 1.0));
+    }
+
+    FragColor = vec4(color, 1.0);
 }

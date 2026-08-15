@@ -37,13 +37,13 @@ GLFogPass::~GLFogPass() = default;
 void GLFogPass::execute(GLFrameContext& ctx) {
     const RenderView&  view = ctx.view;
     const Environment& env  = view.environment;
-    if (!env.fogEnabled) return;
+    if (!env.fog.enabled) return;
 
     // Size the froxel volumes to the scene's authored fog resolution
     // (reallocates only when it changes; the first fog-enabled frame allocates).
-    const glm::uvec3 dims(clampFroxel(env.fogResolutionX),
-                          clampFroxel(env.fogResolutionY),
-                          clampFroxel(env.fogResolutionZ));
+    const glm::uvec3 dims(clampFroxel(env.fog.resolutionX),
+                          clampFroxel(env.fog.resolutionY),
+                          clampFroxel(env.fog.resolutionZ));
     ctx.fog.resize(dims.x, dims.y, dims.z);
 
     const float zNear = view.camera.zNear;
@@ -69,11 +69,11 @@ void GLFogPass::execute(GLFrameContext& ctx) {
     m_inject->setUniform3fv("u_cameraPos", view.camera.position);
     m_inject->setUniform1f("u_zNear", zNear);
     m_inject->setUniform1f("u_zFar",  zFar);
-    m_inject->setUniform1f("u_density",       env.fogDensity);
-    m_inject->setUniform1f("u_height",        env.fogHeight);
-    m_inject->setUniform1f("u_heightFalloff", env.fogHeightFalloff);
-    m_inject->setUniform1f("u_anisotropy",    env.fogAnisotropy);
-    m_inject->setUniform3fv("u_albedo",       env.fogAlbedo);
+    m_inject->setUniform1f("u_density",       env.fog.density);
+    m_inject->setUniform1f("u_height",        env.fog.height);
+    m_inject->setUniform1f("u_heightFalloff", env.fog.heightFalloff);
+    m_inject->setUniform1f("u_anisotropy",    env.fog.anisotropy);
+    m_inject->setUniform3fv("u_albedo",       env.fog.albedo);
     m_inject->setUniform3iv("u_froxelDims",   idims);
     m_inject->dispatch(gx, gy, dims.z);
 

@@ -151,7 +151,7 @@ void GLIrradianceBaker::bake(Core::Context& gl, GLIrradianceVolume& volume,
     // Must be set: the shader does `ambient *= u_iblIntensity`, and an unset
     // uniform is 0 - which would bake every shadowed surface black and leave the
     // SH a flat sky average.
-    m_pbr.setUniform1f("u_iblIntensity", view.environment.intensity);
+    m_pbr.setUniform1f("u_iblIntensity", view.environment.sky.intensity);
     if (hasIBL) {
         globalIBL.bindIrradiance(GLBindings::IBLTextureSlots::Irradiance);
         globalIBL.bindPrefilter(GLBindings::IBLTextureSlots::Prefilter);

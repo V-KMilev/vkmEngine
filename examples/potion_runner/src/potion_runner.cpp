@@ -327,8 +327,8 @@ void PotionRunner::buildWorld() {
     // pools and train headlights below do the actual lighting.
     // Matches potion_scene.h, but enforced here so the scene file and the game
     // can't drift apart.
-    m_scene->environment().intensity  = 0.08f;
-    m_scene->environment().showSkybox = false;   // underground: no sky, just the tunnel
+    m_scene->environment().sky.intensity  = 0.08f;
+    m_scene->environment().sky.showSkybox = false;   // underground: no sky, just the tunnel
     // No sun underground - switch off any authored directional light (the saved
     // editor scene still carries one). This frees the whole 2D shadow atlas for
     // the train headlights: without a directional caster no CSM layers are
@@ -338,7 +338,7 @@ void PotionRunner::buildWorld() {
     });
     // The ragdoll should fall with the same weight as the jump arc, not the
     // default earth gravity - the crash reads floaty otherwise.
-    m_scene->environment().gravity = {0.0f, -gravity, 0.0f};
+    m_scene->physics().gravity = {0.0f, -gravity, 0.0f};
 
     m_cubeMesh   = m_resources->add(makeCubeMesh(), "potion:cube");
 
