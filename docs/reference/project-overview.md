@@ -62,7 +62,7 @@ is the scaling lever). The default wiring lives in `setupEngineApp`
 | Stage | Default systems |
 |-------|-----------------|
 | Input | CameraControllerSystem |
-| Simulation | (EventBus flush), AsyncLoaderSystem, BehaviorSystem, AnimationSystem, PhysicsSystem |
+| Simulation | (EventBus flush), AsyncLoaderSystem, BehaviorSystem, AnimationSystem, ParticleSystem, PhysicsSystem, SkySystem |
 | Transform | HierarchySystem (resolves `WorldTransform` from local `Transform` + hierarchy); UISystem (resolves UI layout + builds the screen-space overlay draw list) |
 | Visibility | VisibilitySystem (frustum / distance / screen-size culling -> `Visibility`) |
 | Render | RenderSystem (builds `RenderView`, hands it to the backend) |

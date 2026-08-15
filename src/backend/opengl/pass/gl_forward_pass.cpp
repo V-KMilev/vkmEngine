@@ -69,7 +69,7 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.ibl.bindBrdf(GLBindings::IBLTextureSlots::BrdfLUT);
     }
     m_shader->setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
-    m_shader->setUniform1f("u_iblIntensity", view.environment.intensity);
+    m_shader->setUniform1f("u_iblIntensity", view.environment.sky.intensity);
 
     // Screen-space AO from the GTAO pass: bind + gate it. The shader multiplies
     // it into the indirect term (ambient/IBL). Absent (pass disabled) -> 1.0.

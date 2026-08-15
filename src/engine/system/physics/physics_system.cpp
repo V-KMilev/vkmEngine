@@ -125,11 +125,11 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     const float dt = ctx.clock.getFixedStep();
 
     // Per-scene physics settings live on the scene-global Environment.
-    const Environment& env = scene.environment();
+    const PhysicsSettings& physics = scene.physics();
 
     if (!gatherBodies(scene)) return;
 
-    integrateForces(scene, env, dt);
+    integrateForces(scene, physics, dt);
 
     broadphase();
 
@@ -140,7 +140,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 
     wakeOnImpact(scene);
 
-    solve(env, dt);
+    solve(physics, dt);
 
     writeback(scene, dt, hasContact);
 }
@@ -229,7 +229,7 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
     return !m_bodies.empty();
 }
 
-void PhysicsSystem::integrateForces(Scene& scene, const Environment& env, float dt) {
+void PhysicsSystem::integrateForces(Scene& scene, const PhysicsSettings& physics, float dt) {
     PROFILE_SCOPE("Physics/Integrate");
 
     for (size_t k = 0; k < m_bodies.size(); ++k) {
@@ -237,7 +237,7 @@ void PhysicsSystem::integrateForces(Scene& scene, const Environment& env, float 
         PhysicsBody& pb = m_solverBodies[k];
         if (isFrozen(rb)) continue;
 
-        pb.linearVelocity += env.gravity * rb.gravityScale * dt;
+        pb.linearVelocity += physics.gravity * rb.gravityScale * dt;
         pb.linearVelocity *= 1.0f / (1.0f + rb.linearDamping * dt);
         pb.angularVelocity *= 1.0f / (1.0f + rb.angularDamping * dt);
     }
@@ -352,11 +352,11 @@ void PhysicsSystem::wakeOnImpact(Scene& scene) {
     }
 }
 
-void PhysicsSystem::solve(const Environment& env, float dt) {
+void PhysicsSystem::solve(const PhysicsSettings& physics, float dt) {
     PROFILE_SCOPE("Physics/Solve");
 
     SolverParams params;
-    params.iterations = env.solverIterations;
+    params.iterations = physics.solverIterations;
     params.dt = dt;
     solveContacts(m_solverBodies, m_manifolds, params);
 }

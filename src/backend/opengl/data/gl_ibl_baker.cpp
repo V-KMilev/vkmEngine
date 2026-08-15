@@ -104,6 +104,9 @@ void GLIBLBaker::bakeProcedural(Core::Context& gl, GLIBL& ibl, const SkyParams& 
     m_sky.setUniform1f("u_rayleigh",      sky.rayleigh);
     m_sky.setUniform1f("u_mie",           sky.mie);
     m_sky.setUniform1f("u_mieG",          sky.mieG);
+    m_sky.setUniform3fv("u_nightRadiance", sky.nightRadiance);
+    m_sky.setUniform3fv("u_moonDir",       sky.moonDir);
+    m_sky.setUniform1f("u_moonHalo",       sky.moonHalo);
     captureEnvFaces(gl, ibl, m_sky);
     convolve(gl, ibl);
 

@@ -13,6 +13,8 @@
 
 namespace Engine {
 
+struct PhysicsSettings;
+
 class EventBus;
 class Scene;
 struct Environment;
@@ -78,7 +80,7 @@ class PhysicsSystem : public System {
          * @param env   Scene-global settings (supplies the gravity vector).
          * @param dt    Fixed timestep, in seconds.
          */
-        void integrateForces(Scene& scene, const Environment& env, float dt);
+        void integrateForces(Scene& scene, const PhysicsSettings& physics, float dt);
 
         /**
          * @brief Sort-and-sweep the bodies into candidate collision pairs.
@@ -108,7 +110,7 @@ class PhysicsSystem : public System {
          * @param env Scene-global settings (supplies the solver iteration count).
          * @param dt  Fixed timestep, in seconds.
          */
-        void solve(const Environment& env, float dt);
+        void solve(const PhysicsSettings& physics, float dt);
 
         /**
          * @brief Integrate solved velocities into poses and update sleep state.

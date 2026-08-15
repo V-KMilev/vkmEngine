@@ -44,21 +44,6 @@
 
 namespace Engine {
 
-namespace {
-// The procedural sky follows the scene's primary directional light so the sky
-// and the key light agree. Returns the direction TO the sun, falling back to a
-// sensible high sun when the scene has no directional light.
-glm::vec3 primarySunDir(const RenderView& view) {
-    for (const LightData& light : view.lights) {
-        if (light.type == LightType::Directional) {
-            const glm::vec3 toSun = -light.direction;
-            if (glm::dot(toSun, toSun) > 1e-6f) return glm::normalize(toSun);
-        }
-    }
-    return glm::normalize(glm::vec3(0.3f, 1.0f, 0.2f));
-}
-} // namespace
-
 GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL) {}
 
 GLBackend::~GLBackend() = default;
@@ -218,21 +203,24 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
 
     // Direction to the sun (primary directional light); drives the procedural
     // sky bake and the skybox sun disc, so compute it once here.
-    const glm::vec3 sunDir = primarySunDir(view);
+    // Straight from the Environment's authored angles. SkySystem points the
+    // key light from the same source, so the sky and the shadows agree without
+    // either having to read the other.
+    const glm::vec3 sunDir = view.environment.sunDirection();
 
     // Bake the IBL and re-bake on change. The procedural atmosphere follows the
     // sun (re-baking when it or a sky param moves); otherwise the equirect HDR is
     // baked when hdrPath changes. The skybox samples the baked product, so the
     // background follows too.
-    if (view.environment.proceduralSky) {
+    if (view.environment.sky.procedural) {
         if (skyNeedsRebake(view.environment, sunDir)) {
             bakeProceduralSky(view.environment, sunDir);
         }
-    } else if (!view.environment.hdrPath.empty() &&
-               view.environment.hdrPath != m_bakedEnvPath) {
+    } else if (!view.environment.sky.hdrPath.empty() &&
+               view.environment.sky.hdrPath != m_bakedEnvPath) {
         // An empty path is a scene that wants no image-based lighting, not a
         // failed load: only a path the scene actually names is worth an error.
-        bakeEnvironment(view.environment.hdrPath);
+        bakeEnvironment(view.environment.sky.hdrPath);
     }
 
     // Rebuild the shadow atlas if the editor changed its resolution (a no-op when
@@ -360,24 +348,33 @@ void GLBackend::bakeEnvironment(const std::string& path) {
 bool GLBackend::skyNeedsRebake(const Environment& env, const glm::vec3& sunDir) const {
     const BakedSky& b = m_bakedSky;
     if (!b.active) return true;
-    if (env.skySunIntensity != b.sunIntensity) return true;
-    if (env.skyRayleigh     != b.rayleigh)     return true;
-    if (env.skyMie          != b.mie)          return true;
-    if (env.skyMieG         != b.mieG)         return true;
+    if (env.sky.sunIntensity != b.sunIntensity) return true;
+    if (env.sky.rayleigh     != b.rayleigh)     return true;
+    if (env.sky.mie          != b.mie)          return true;
+    if (env.sky.mieG         != b.mieG)         return true;
+    if (env.night.radiance   != b.nightRadiance) return true;
+    if (env.moonDirection() != b.moonDir)       return true;
+    if (env.night.moonIntensity   != b.moonIntensity) return true;
     return glm::dot(sunDir, b.sunDir) < 0.99995f;  // sun moved enough to matter
 }
 
 void GLBackend::bakeProceduralSky(const Environment& env, const glm::vec3& sunDir) {
     SkyParams sky;
     sky.sunDir       = sunDir;
-    sky.sunIntensity = env.skySunIntensity;
-    sky.rayleigh     = env.skyRayleigh;
-    sky.mie          = env.skyMie;
-    sky.mieG         = env.skyMieG;
+    sky.sunIntensity = env.sky.sunIntensity;
+    sky.rayleigh     = env.sky.rayleigh;
+    sky.mie          = env.sky.mie;
+    sky.mieG         = env.sky.mieG;
+    sky.nightRadiance = env.night.radiance;
+    sky.moonDir       = env.moonDirection();
+    // A fraction of the disc: the halo tracks how bright the moon is without
+    // being as bright as it, so one dial still drives the look.
+    sky.moonHalo      = env.night.moonIntensity * 0.15f;
 
     m_iblBaker.bakeProcedural(m_context, m_ibl, sky);
 
-    m_bakedSky = {true, sunDir, env.skySunIntensity, env.skyRayleigh, env.skyMie, env.skyMieG};
+    m_bakedSky = {true, sunDir, env.sky.sunIntensity, env.sky.rayleigh, env.sky.mie, env.sky.mieG,
+                  env.night.radiance, sky.moonDir, env.night.moonIntensity};
     m_bakedEnvPath.clear();  // force an HDR re-bake if the user switches back
 }
 

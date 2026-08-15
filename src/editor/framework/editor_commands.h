@@ -92,6 +92,32 @@ class EnvironmentEditCommand : public Command {
 };
 
 /**
+ * @brief Undo/redo for the scene's physics-world settings.
+ *
+ * Its own command rather than a case of the environment one: the physics world
+ * is scene-global beside the Environment, not part of it, and an undo that
+ * restored a whole Environment to change gravity would take the sky with it.
+ */
+class PhysicsSettingsEditCommand : public Command {
+    public:
+        PhysicsSettingsEditCommand(
+            const PhysicsSettings& before,
+            const PhysicsSettings& after,
+            const char* label
+        );
+
+        void redo(Scene&, EditorState&) override;
+        void undo(Scene&, EditorState&) override;
+        const char* label() const override { return m_label; }
+        bool tryMerge(Command& incoming) override;
+
+    private:
+        PhysicsSettings m_before;
+        PhysicsSettings m_after;
+        const char*     m_label;
+};
+
+/**
  * @brief A group of already-applied commands undone/redone as one step.
  *
  * Batch operations over a multi-selection (delete, duplicate, gizmo drags)
