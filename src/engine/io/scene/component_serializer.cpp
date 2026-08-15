@@ -88,6 +88,28 @@ inline void fromJson(const nlohmann::json& j, E& v) { v = Reflect::enumFromName<
 // above; new field types only need a matching overload, no template tweak.
 
 template<typename T>
+nlohmann::json saveReflected(const T& obj);
+template<typename T>
+void loadReflected(const nlohmann::json& j, T& obj);
+
+// Nested reflected structs: a settings block that groups its own fields writes
+// as a nested object rather than flattening its names into the parent. This is
+// the branch Reflect::IS_REFLECTED exists for - a struct that has been through
+// VKM_REFLECT is not a leaf, so recurse instead of looking for a toJson that
+// cannot exist. Declared after the driver so the recursion resolves.
+// SFINAE goes in the return type, not a defaulted template parameter: a default
+// argument is not part of the signature, so the enum pair above and this one
+// would be redefinitions of each other.
+template<typename T>
+inline std::enable_if_t<Reflect::IS_REFLECTED<T>, nlohmann::json> toJson(const T& v) {
+    return saveReflected(v);
+}
+template<typename T>
+inline std::enable_if_t<Reflect::IS_REFLECTED<T>> fromJson(const nlohmann::json& j, T& v) {
+    loadReflected(j, v);
+}
+
+template<typename T>
 nlohmann::json saveReflected(const T& obj) {
     nlohmann::json out = nlohmann::json::object();
     ::Engine::Reflect::forEachField(obj, [&](std::string_view name, const auto& val) {
@@ -124,6 +146,9 @@ nlohmann::json save(const Environment& env) {
 void load(const nlohmann::json& j, Environment& env) {
     loadReflected(j, env);
 }
+
+nlohmann::json save(const PhysicsSettings& p)          { return saveReflected(p); }
+void load(const nlohmann::json& j, PhysicsSettings& p) { loadReflected(j, p); }
 
 nlohmann::json save(const Name& n)          { return saveReflected(n); }
 void load(const nlohmann::json& j, Name& n) { loadReflected(j, n); }

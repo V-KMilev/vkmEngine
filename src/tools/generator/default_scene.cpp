@@ -35,14 +35,6 @@ Entity buildDefaultScene(Scene& scene, ResourceManager& resources) {
     Transform sunTransform;
     sunTransform.position = {0.0f, 8.0f, 0.0f};
 
-    // A directional light shines along its Transform's forward, and this
-    // engine's forward is +Z (Math::computeForward), so an unrotated light
-    // lies flat along the ground rather than shining down it. The pitch is
-    // POSITIVE to tilt +Z downward; the yaw puts the shadow off-axis so the
-    // cube reads as a solid rather than a flat front face.
-    sunTransform.rotation =
-        glm::quat(glm::vec3(glm::radians(50.0f), glm::radians(30.0f), 0.0f));
-
     scene.add(sun, sunTransform);
     scene.add(sun, generateDirectionalLight());
     scene.add(sun, makeName("Sun"));

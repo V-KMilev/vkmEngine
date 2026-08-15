@@ -26,6 +26,12 @@ struct SkyParams {
     float     rayleigh     = 1.0f;       ///< Rayleigh (blue-sky) scattering scale.
     float     mie          = 1.0f;       ///< Mie (haze / sun glow) scattering scale.
     float     mieG         = 0.76f;      ///< Mie phase asymmetry.
+
+    // Night. The atmosphere alone is nearly black with the sun down, so what
+    // lights a night scene is authored: a skyglow floor plus a broad moon lobe.
+    glm::vec3 nightRadiance{0.0f};
+    glm::vec3 moonDir{0.0f, 1.0f, 0.0f};  ///< Direction TO the moon, normalized.
+    float     moonHalo = 0.0f;  ///< Radiance of the glow around the moon, not the disc itself.
 };
 
 /**

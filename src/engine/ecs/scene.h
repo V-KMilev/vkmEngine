@@ -286,6 +286,7 @@ class Scene {
             }
             m_entityAllocator.clear();
             m_environment = Environment{};
+            m_physics     = PhysicsSettings{};
         }
 
         /**
@@ -316,6 +317,7 @@ class Scene {
             m_entityAllocator.swap(other.m_entityAllocator);  // non-movable, member swap
             swap(m_components, other.m_components);
             swap(m_environment, other.m_environment);
+            swap(m_physics, other.m_physics);
         }
 
     public:
@@ -326,6 +328,17 @@ class Scene {
          */
         Environment& environment() { return m_environment; }
         const Environment& environment() const { return m_environment; }
+
+        /**
+         * @brief The scene's physics world parameters: scene-global, always
+         *        present, round-trips with the scene.
+         *
+         * Beside the Environment rather than inside it: what a world is lit by
+         * and what it falls at have nothing to do with each other. Read by
+         * PhysicsSystem once per fixed step.
+         */
+        PhysicsSettings& physics() { return m_physics; }
+        const PhysicsSettings& physics() const { return m_physics; }
 
         /**
          * @brief Register an observer, notified at the start of every destroyEntity
@@ -397,7 +410,8 @@ class Scene {
         }
 
     private:
-        Environment m_environment;
+        Environment     m_environment;
+        PhysicsSettings m_physics;
 
         SlotAllocator m_entityAllocator;
         std::vector<std::unique_ptr<ISparseSet>> m_components;

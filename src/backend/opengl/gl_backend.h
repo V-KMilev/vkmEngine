@@ -184,6 +184,9 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
             float     rayleigh     = 0.0f;
             float     mie          = 0.0f;
             float     mieG         = 0.0f;
+            glm::vec3 nightRadiance{0.0f};
+            glm::vec3 moonDir{0.0f};
+            float     moonIntensity = 0.0f;
         };
         BakedSky m_bakedSky;
 

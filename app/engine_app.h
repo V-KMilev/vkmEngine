@@ -10,6 +10,7 @@
 #include "system/camera/camera_controller_system.h"
 #include "system/async/async_loader_system.h"
 #include "system/script/behavior_system.h"
+#include "system/sky/sky_system.h"
 #include "system/animation/animation_system.h"
 #include "system/particle/particle_system.h"
 #include "system/physics/physics_system.h"
@@ -83,6 +84,7 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     engine.addSystem<Engine::AnimationSystem>(Engine::SystemStage::Simulation);
     engine.addSystem<Engine::ParticleSystem>(Engine::SystemStage::Simulation);
     engine.addSystem<Engine::PhysicsSystem>(Engine::SystemStage::Simulation);
+    engine.addSystem<Engine::SkySystem>(Engine::SystemStage::Simulation);
     engine.addSystem<Engine::HierarchySystem>(Engine::SystemStage::Transform);
     engine.addSystem<Engine::UISystem>(Engine::SystemStage::Transform);
     auto& visibilitySystem = engine.addSystem<Engine::VisibilitySystem>(Engine::SystemStage::Visibility);

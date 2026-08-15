@@ -298,33 +298,41 @@ void StressArena::onStart() {
     // (the sun built in buildLights) and re-runs only when it or a sky parameter
     // moves - so it costs one bake at startup, not one per frame.
     Environment& environment = m_scene->environment();
-    environment.showSkybox    = true;
-    environment.proceduralSky = true;
-    environment.intensity     = 1.0f;
+    environment.sky.showSkybox    = true;
+    environment.sky.procedural = true;
+    environment.sky.intensity     = 1.0f;
 
     // Daylight: a mid-morning sun high enough to light the block from above, so
     // the towers read as solid volumes with their own cast shadows rather than
     // as flat silhouettes against a bright horizon. Rayleigh carries the blue,
     // Mie is kept modest - a large Mie term at this elevation washes the whole
     // sky toward white and buries the geometry it is supposed to light.
-    environment.skySunIntensity     = 22.0f;
-    environment.skyRayleigh         = 1.0f;
-    environment.skyMie              = 0.7f;
-    environment.skyMieG             = 0.76f;
-    environment.skySunDiscIntensity = 15.0f;
+    // Mid-morning. High enough that the towers cast shadows down onto the block
+    // instead of across the whole arena, and off-axis so those shadows fall
+    // diagonally and the cascades cover a varied depth range rather than one
+    // flat slab. The key light follows these, so this is the only place it is set.
+    environment.sky.lightColor          = {1.0f, 0.96f, 0.90f};
+    environment.sky.lightIntensity      = 3.2f;
+    environment.sky.sunElevation        = 70.0f;
+    environment.sky.sunAzimuth          = -145.0f;
+    environment.sky.sunIntensity     = 22.0f;
+    environment.sky.rayleigh         = 1.0f;
+    environment.sky.mie              = 0.7f;
+    environment.sky.mieG             = 0.76f;
+    environment.sky.sunDiscIntensity = 15.0f;
 
     // Volumetric fog on by default: one of the heaviest passes in the pipeline
     // and the one most often left out of a benchmark, which is exactly why it
     // belongs in the default load. Thin enough for a clear day - it reads as
     // aerial haze over distance rather than as a ground fog bank, and still
     // costs the same froxel grid either way. Key 8 takes it out.
-    environment.fogEnabled    = true;
-    environment.fogDensity    = 0.006f;
-    environment.fogHeight     = 18.0f;
-    environment.fogHeightFalloff = 0.05f;
-    environment.fogAnisotropy = 0.7f;
+    environment.fog.enabled    = true;
+    environment.fog.density    = 0.006f;
+    environment.fog.height     = 18.0f;
+    environment.fog.heightFalloff = 0.05f;
+    environment.fog.anisotropy = 0.7f;
 
-    environment.gravity = {0.0f, -18.0f, 0.0f};
+    m_scene->physics().gravity = {0.0f, -18.0f, 0.0f};
 
     m_scene->forEach<Camera>([&](EntityId id, Camera& camera) {
         if (!m_camera) {
@@ -693,22 +701,15 @@ void StressArena::buildLights() {
     m_scene->add(sun, makeName("Sun"));
 
     Transform sunTransform;
-    // Mid-morning, matching the daylight atmosphere set in onStart. High enough
-    // that the towers cast shadows down onto the block instead of across the
-    // whole arena, and off-axis in yaw so those shadows fall diagonally and the
-    // cascades cover a genuinely varied depth range rather than one flat slab.
-    //
-    // The pitch is POSITIVE for a sun overhead. A light's direction is the way
-    // it shines, and this engine's forward is +Z (Math::computeForward), so a
-    // positive X rotation tilts +Z downward - the -Z convention most GL code
-    // assumes would put the sun under the floor shining up.
-    sunTransform.rotation = glm::quat(glm::vec3(glm::radians(70.0f), glm::radians(35.0f), 0.0f));
+    // No rotation here: with the procedural sky on, SkySystem points this light
+    // from the environment's sun angles every frame, so setting it would only be
+    // overwritten. Where the sun is, is set in onStart with the rest of the sky.
     m_scene->add(sun, std::move(sunTransform));
 
     Light sunLight;
     sunLight.type           = LightType::Directional;
-    sunLight.color          = {1.0f, 0.96f, 0.90f};   // near-white daylight, faintly warm
-    sunLight.intensity      = 4.5f;
+    // Colour and intensity are the sky's now, set in onStart with the angles:
+    // SkySystem drives this light so it can hand over to moonlight after dark.
     sunLight.castShadows    = true;
     sunLight.shadowDistance = 280.0f;
     m_scene->add(sun, std::move(sunLight));
@@ -1317,7 +1318,7 @@ void StressArena::readInput() {
     if (input.pressed(ACTION_DECALS))    { m_decalsOn     = !m_decalsOn;     setDecalsEnabled(m_decalsOn); }
     if (input.pressed(ACTION_FOG)) {
         m_fogOn = !m_fogOn;
-        m_scene->environment().fogEnabled = m_fogOn;
+        m_scene->environment().fog.enabled = m_fogOn;
     }
     if (input.pressed(ACTION_UI)) { m_uiOn = !m_uiOn; setUIVisible(m_uiOn); }
 
@@ -1334,7 +1335,7 @@ void StressArena::readInput() {
         setAnimationsEnabled(true);
         setDecalsEnabled(true);
         setUIVisible(true);
-        m_scene->environment().fogEnabled = true;
+        m_scene->environment().fog.enabled = true;
     }
 
     // F hands the camera to the engine's free-fly controller and back.
