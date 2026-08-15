@@ -72,7 +72,7 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbeArray& arr, const glm:
     m_pbr.setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
     // Same trap as the irradiance bake: unset, this is 0 and the capture loses
     // its whole indirect term.
-    m_pbr.setUniform1f("u_iblIntensity", view.environment.intensity);
+    m_pbr.setUniform1f("u_iblIntensity", view.environment.sky.intensity);
     if (hasIBL) {
         globalIBL.bindIrradiance(GLBindings::IBLTextureSlots::Irradiance);
         globalIBL.bindPrefilter(GLBindings::IBLTextureSlots::Prefilter);

@@ -133,7 +133,23 @@ ignored for spot, point, and area lights, which use `radius` as their cutoff.
 A persistent `GLIBLBaker` re-bakes when the environment changes (a helper
 invoked from `GLBackend::render`, not a pass): when `Environment.hdrPath`
 (an equirectangular HDR image) is swapped, or - with the procedural sky
-enabled - when the sun direction or a sky parameter moves. It produces:
+enabled - when the sun angles or a sky parameter move. It produces:
+
+**Where the sun is** is authored on the `Environment`, as `sunElevation` and
+`sunAzimuth` in degrees, and nowhere else. The sky is scene-global and has to
+work whether or not a scene has a directional light, so it cannot read one; and
+a sky disagreeing with the light casting the shadows looks broken in a way that
+is hard to diagnose. `SkySystem` (Simulation stage) resolves that by pointing
+the first directional light from those same angles - so with the procedural sky
+on, a light's *rotation* is not yours to animate; write `sunElevation` and the
+light follows. Colour, intensity and shadow settings stay the light's.
+
+Below the horizon is night: the atmosphere is nearly black there, so a skyglow
+floor plus a moon lobe take over across a twilight band (`_common/sky.glsl`,
+shared with the skybox so the two cannot disagree about the time of day). The
+moon is derived - opposite the sun, tilted by `moonTilt` - so dropping the sun
+raises it. Stars are drawn by the **skybox** only: at 512 with prefiltered mips
+the env cube would smear them into a uniform glow.
 
 - The **environment cube**: a sharp cubemap for low-roughness mirror
   reflections.

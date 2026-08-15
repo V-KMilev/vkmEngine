@@ -178,10 +178,11 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
         doc["entities"].push_back(std::move(entity));
     });
 
-    // Scene-global settings (lighting environment + physics world): a
+    // Scene-global settings: the lighting environment and the physics world, a
     // top-level object, not a per-entity component. Fully reflected - the
     // field list lives once, in environment.h.
     doc["environment"] = ComponentSerializer::save(scene.environment());
+    doc["physics"]     = ComponentSerializer::save(scene.physics());
     return doc;
 }
 
@@ -312,10 +313,13 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             k.c_str(), source);
     }
 
-    // Scene-global settings (lighting environment + physics world): a
-    // top-level object. Missing fields keep the staging scene's defaults.
+    // Scene-global settings: two top-level objects, the lighting environment and
+    // the physics world. Missing fields keep the staging scene's defaults.
     if (auto it = doc.find("environment"); it != doc.end() && it->is_object()) {
         ComponentSerializer::load(*it, staging.environment());
+    }
+    if (auto it = doc.find("physics"); it != doc.end() && it->is_object()) {
+        ComponentSerializer::load(*it, staging.physics());
     }
 
     // Commit phase: both stagings swap into place in one step. Until this

@@ -608,7 +608,7 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
         // "assets/envs/<file>.hdr" - exactly what the combo wrote and what the
         // IBL baker loads relative to the working dir.
         drawPropertyLabel("Skybox HDR");
-        ImGui::TextUnformatted(env.hdrPath.empty() ? "(none)" : env.hdrPath.c_str());
+        ImGui::TextUnformatted(env.sky.hdrPath.empty() ? "(none)" : env.sky.hdrPath.c_str());
         ImGui::SameLine();
         if (ImGui::SmallButton("Browse...")) {
             const std::filesystem::path appRoot = ProjectPaths::projectRoot();
@@ -627,14 +627,14 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
             // Normalize to forward slashes so the stored reference matches the
             // combo's generic_string() format across platforms.
             std::string rel = std::filesystem::path(pickedHdr).generic_string();
-            if (rel != env.hdrPath) {
-                env.hdrPath = rel;
+            if (rel != env.sky.hdrPath) {
+                env.sky.hdrPath = rel;
                 changed = true;
             }
         }
 
-        changed |= propCheckbox("Show Skybox", &env.showSkybox);
-        changed |= propSlider("Brightness", &env.intensity, 0.0f, 3.0f, "%.2f",
+        changed |= propCheckbox("Show Skybox", &env.sky.showSkybox);
+        changed |= propSlider("Brightness", &env.sky.intensity, 0.0f, 3.0f, "%.2f",
                               "Indirect (IBL) strength. Swapping the HDR re-bakes the IBL (a brief hitch).");
 
         if (changed) {
@@ -651,16 +651,53 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
         bool changed = false;
         const Environment before = env;
 
-        changed |= propCheckbox("Enabled", &env.proceduralSky,
+        changed |= propCheckbox("Enabled", &env.sky.procedural,
                                 "Bakes a Rayleigh+Mie atmosphere instead of the HDR; the sun follows the scene's directional light");
 
-        ImGui::BeginDisabled(!env.proceduralSky);
-        changed |= propSlider("Sun Intensity", &env.skySunIntensity, 0.0f, 60.0f, "%.1f");
-        changed |= propSlider("Rayleigh", &env.skyRayleigh, 0.0f, 4.0f, "%.2f");
-        changed |= propSlider("Mie", &env.skyMie, 0.0f, 4.0f, "%.2f");
-        changed |= propSlider("Mie Asymmetry", &env.skyMieG, 0.0f, 0.99f, "%.2f");
-        changed |= propSlider("Sun Disc Size", &env.skySunAngularRadius, 0.002f, 0.1f, "%.3f");
-        changed |= propSlider("Sun Disc Intensity", &env.skySunDiscIntensity, 0.0f, 60.0f, "%.1f");
+        ImGui::BeginDisabled(!env.sky.procedural);
+
+        // Where the sun is, and therefore what time of day it is - the sky's one
+        // real control. Drag the elevation below zero and it is night.
+        changed |= propSlider("Sun Elevation", &env.sky.sunElevation, -90.0f, 90.0f, "%.0f deg",
+                              "Degrees above the horizon. Below zero is night; the key light follows this");
+        changed |= propSlider("Sun Azimuth", &env.sky.sunAzimuth, -180.0f, 180.0f, "%.0f deg",
+                              "Degrees around the horizon");
+
+        // The key light is the sky's while the procedural sky is on, so its
+        // daylight look is authored here rather than on the Light.
+        changed |= propColor3("Sun Light", glm::value_ptr(env.sky.lightColor),
+                              ImGuiColorEditFlags_Float,
+                              "Key light colour at midday - the sky drives the light, not the other way round");
+        changed |= propSlider("Sun Light Intensity", &env.sky.lightIntensity, 0.0f, 20.0f, "%.2f");
+        ImGui::Separator();
+
+        changed |= propSlider("Sun Intensity", &env.sky.sunIntensity, 0.0f, 60.0f, "%.1f");
+        changed |= propSlider("Rayleigh", &env.sky.rayleigh, 0.0f, 4.0f, "%.2f");
+        changed |= propSlider("Mie", &env.sky.mie, 0.0f, 4.0f, "%.2f");
+        changed |= propSlider("Mie Asymmetry", &env.sky.mieG, 0.0f, 0.99f, "%.2f");
+        changed |= propSlider("Sun Disc Size", &env.sky.sunAngularRadius, 0.002f, 0.1f, "%.3f");
+        changed |= propSlider("Sun Disc Intensity", &env.sky.sunDiscIntensity, 0.0f, 60.0f, "%.1f");
+
+        // Night takes over on its own once the sun drops below the horizon, so
+        // there is nothing to switch here - only what it looks like when it does.
+        ImGui::Separator();
+        changed |= propColor3("Night Skyglow", glm::value_ptr(env.night.radiance),
+                              ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR,
+                              "Lights the scene once the sun is down - the floor that keeps night dark rather than black");
+        changed |= propSlider("Star Intensity", &env.night.starIntensity, 0.0f, 10.0f, "%.1f",
+                              "0 removes the stars entirely");
+        changed |= propSlider("Star Density", &env.night.starDensity, 20.0f, 400.0f, "%.0f",
+                              "Higher packs in more stars, each smaller");
+        changed |= propSlider("Moon Tilt", &env.night.moonTilt, -60.0f, 60.0f, "%.0f deg",
+                              "How far off the point exactly opposite the sun the moon sits");
+        changed |= propSlider("Moon Size", &env.night.moonAngularRadius, 0.002f, 0.2f, "%.3f");
+        changed |= propSlider("Moon Intensity", &env.night.moonIntensity, 0.0f, 10.0f, "%.1f",
+                              "How bright the moon looks; the halo around it follows");
+        changed |= propColor3("Moonlight", glm::value_ptr(env.night.moonlightColor),
+                              ImGuiColorEditFlags_Float,
+                              "Key light colour after dark - the same light, aimed at the moon");
+        changed |= propSlider("Moonlight Intensity", &env.night.moonlightIntensity, 0.0f, 2.0f, "%.2f",
+                              "How much the moon lights the world. Real moonlight is a tiny fraction of daylight");
         ImGui::EndDisabled();
 
         if (changed) {
@@ -676,22 +713,22 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
         bool changed = false;
         const Environment before = env;
 
-        changed |= propCheckbox("Enabled", &env.fogEnabled,
+        changed |= propCheckbox("Enabled", &env.fog.enabled,
                                 "Froxel fog: scatters the scene lights (incl. local lights) through a height-falloff medium");
 
-        ImGui::BeginDisabled(!env.fogEnabled);
-        changed |= propSlider("Density", &env.fogDensity, 0.0f, 0.3f, "%.3f");
-        changed |= propDrag("Height", &env.fogHeight, 0.2f, -100.0f, 1000.0f, "%.1f");
-        changed |= propSlider("Height Falloff", &env.fogHeightFalloff, 0.0f, 1.0f, "%.3f");
-        changed |= propSlider("Anisotropy", &env.fogAnisotropy, -0.95f, 0.95f, "%.2f");
-        changed |= propColor3("Albedo", glm::value_ptr(env.fogAlbedo));
+        ImGui::BeginDisabled(!env.fog.enabled);
+        changed |= propSlider("Density", &env.fog.density, 0.0f, 0.3f, "%.3f");
+        changed |= propDrag("Height", &env.fog.height, 0.2f, -100.0f, 1000.0f, "%.1f");
+        changed |= propSlider("Height Falloff", &env.fog.heightFalloff, 0.0f, 1.0f, "%.3f");
+        changed |= propSlider("Anisotropy", &env.fog.anisotropy, -0.95f, 0.95f, "%.2f");
+        changed |= propColor3("Albedo", glm::value_ptr(env.fog.albedo));
 
         // Froxel grid dimensions: raise them when point-light shafts look blocky
         // (fog compute cost scales with X*Y*Z). Defaults 160x90x64.
-        changed |= propDragU32("Froxels X", &env.fogResolutionX, 1.0f, 16u, 512u,
+        changed |= propDragU32("Froxels X", &env.fog.resolutionX, 1.0f, 16u, 512u,
                                "Screen-horizontal froxels. More = sharper light shafts.");
-        changed |= propDragU32("Froxels Y", &env.fogResolutionY, 1.0f, 16u, 512u);
-        changed |= propDragU32("Froxels Z", &env.fogResolutionZ, 1.0f, 16u, 512u,
+        changed |= propDragU32("Froxels Y", &env.fog.resolutionY, 1.0f, 16u, 512u);
+        changed |= propDragU32("Froxels Z", &env.fog.resolutionZ, 1.0f, 16u, 512u,
                                "Depth slices. More = smoother fog falloff with distance.");
         ImGui::EndDisabled();
 
@@ -702,17 +739,18 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
     }
     endComponentCard();
 
-    // Physics world parameters - also scene-global Environment state, read by
+    // Physics world parameters - scene-global beside the Environment, read by
     // PhysicsSystem each fixed step.
     if (beginComponentCard("Physics", EditorStyle::Accent::Physics, true)) {
         bool changed = false;
-        const Environment before = env;
+        PhysicsSettings& phys = ec.frame.scene.physics();
+        const PhysicsSettings before = phys;
 
-        changed |= propDrag3("Gravity", glm::value_ptr(env.gravity), 0.05f, -50.0f, 50.0f, "%.2f");
-        changed |= propDragInt("Solver Iterations", &env.solverIterations, 0.1f, 1, 32);
+        changed |= propDrag3("Gravity", glm::value_ptr(phys.gravity), 0.05f, -50.0f, 50.0f, "%.2f");
+        changed |= propDragInt("Solver Iterations", &phys.solverIterations, 0.1f, 1, 32);
 
         if (changed) {
-            state.commands.push(std::make_unique<EnvironmentEditCommand>(before, env, "Edit Physics"));
+            state.commands.push(std::make_unique<PhysicsSettingsEditCommand>(before, phys, "Edit Physics"));
             state.markSceneDirty();
         }
     }
