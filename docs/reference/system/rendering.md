@@ -154,7 +154,7 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 
 IBL is **not** a pass: the persistent `GLIBLBaker` re-bakes inside `render()`
 when `environment.hdrPath` changes or, for the procedural sky, when the sun
-moves or a sky parameter changes - producing the irradiance, prefilter, and
+angles or a sky parameter change - producing the irradiance, prefilter, and
 BRDF/DFG products the forward pass samples. Reflection probes are baked at
 frame end and bound per frame into a probe UBO; the SH irradiance volume
 re-bakes when its box, grid, or bake version changes.

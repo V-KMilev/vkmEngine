@@ -29,7 +29,7 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
     if (!ctx.ibl.isReady()) return;  // no baked environment -> nothing to draw
 
     const RenderView& view = ctx.view;
-    if (!view.environment.showSkybox) return;
+    if (!view.environment.sky.showSkybox) return;
 
     // Draw into the same HDR target as the forward pass (no clear). The vertex
     // shader forces z = w so the cube sits at the far plane; depth func LEQUAL
@@ -45,18 +45,28 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
     m_shader->bind();
     m_shader->setUniformMatrix4fv("u_view", view.camera.view);
     m_shader->setUniformMatrix4fv("u_projection", view.camera.projection);
-    m_shader->setUniform1f("u_iblIntensity", view.environment.intensity);
+    m_shader->setUniform1f("u_iblIntensity", view.environment.sky.intensity);
 
-    // Analytic sun disc: only for the procedural sky (an HDR skybox already has
-    // its own sun). The disc fades over its outer 20% for a soft limb.
-    const bool hasSun = view.environment.proceduralSky;
-    m_shader->setUniform1i("u_hasSun", hasSun ? 1 : 0);
-    if (hasSun) {
-        const float r = view.environment.skySunAngularRadius;
+    // Analytic discs and stars: only for the procedural sky (an HDR skybox
+    // already has its own sky in it). Each disc fades over its outer 20% for a
+    // soft limb. The shader decides how much of night to apply from the sun's
+    // elevation, so nothing here needs to know which half of the day it is.
+    const Environment& env = view.environment;
+    m_shader->setUniform1i("u_hasSun", env.sky.procedural ? 1 : 0);
+    if (env.sky.procedural) {
+        const float r = env.sky.sunAngularRadius;
         m_shader->setUniform3fv("u_sunDir", ctx.sunDir);
         m_shader->setUniform1f("u_sunCosOuter", std::cos(r));
         m_shader->setUniform1f("u_sunCosInner", std::cos(r * 0.8f));
-        m_shader->setUniform1f("u_sunDiscIntensity", view.environment.skySunDiscIntensity);
+        m_shader->setUniform1f("u_sunDiscIntensity", env.sky.sunDiscIntensity);
+
+        const float mr = env.night.moonAngularRadius;
+        m_shader->setUniform3fv("u_moonDir", env.moonDirection());
+        m_shader->setUniform1f("u_moonCosOuter", std::cos(mr));
+        m_shader->setUniform1f("u_moonCosInner", std::cos(mr * 0.8f));
+        m_shader->setUniform1f("u_moonIntensity", env.night.moonIntensity);
+        m_shader->setUniform1f("u_starIntensity", env.night.starIntensity);
+        m_shader->setUniform1f("u_starDensity", env.night.starDensity);
     }
 
     ctx.ibl.bindEnvCube(GLBindings::IBLTextureSlots::EnvCube);

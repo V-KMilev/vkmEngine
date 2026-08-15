@@ -69,7 +69,7 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
                            static_cast<float>(view.viewportHeight));
     m_shader->setUniform3fv("u_sunDir",   ctx.sunDir);
     m_shader->setUniform3fv("u_sunColor", sunRadiance(view));
-    m_shader->setUniform1f("u_ambient",   DECAL_AMBIENT * view.environment.intensity);
+    m_shader->setUniform1f("u_ambient",   DECAL_AMBIENT * view.environment.sky.intensity);
 
     for (const DecalData& decal : view.decals) {
         const GLMaterial* material = glView.getMaterial(decal.material);

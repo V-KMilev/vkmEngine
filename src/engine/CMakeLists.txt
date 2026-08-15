@@ -13,6 +13,7 @@ file(GLOB_RECURSE ENGINECORE_SOURCES CONFIGURE_DEPENDS
     system/visibility/*.cpp
     system/physics/*.cpp
     system/script/*.cpp
+    system/sky/*.cpp
     system/event/*.cpp
     system/hierarchy/*.cpp
     system/ui/*.cpp
