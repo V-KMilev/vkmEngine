@@ -66,6 +66,26 @@ bool EnvironmentEditCommand::tryMerge(Command& incoming) {
     return true;
 }
 
+PhysicsSettingsEditCommand::PhysicsSettingsEditCommand(
+    const PhysicsSettings& before, const PhysicsSettings& after, const char* label)
+    : m_before(before), m_after(after), m_label(label) {}
+
+void PhysicsSettingsEditCommand::redo(Scene& scene, EditorState&) {
+    scene.physics() = m_after;
+}
+
+void PhysicsSettingsEditCommand::undo(Scene& scene, EditorState&) {
+    scene.physics() = m_before;
+}
+
+bool PhysicsSettingsEditCommand::tryMerge(Command& incoming) {
+    auto* p = dynamic_cast<PhysicsSettingsEditCommand*>(&incoming);
+    if (!p) return false;
+    m_after = p->m_after;
+    m_label = p->m_label;
+    return true;
+}
+
 template <typename T>
 void AddComponentCommand<T>::redo(Scene& scene, EditorState& state) {
     if (!scene.isAlive(m_entity) || scene.has<T>(m_entity)) return;
