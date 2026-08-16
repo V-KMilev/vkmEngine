@@ -414,7 +414,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             EditorStyle::TIMELINE_GHOST_U32, 6.0f);
         ImGui::SetCursorScreenPos(bpos);
         if (ImGui::Button("Add Animation Component", ImVec2(bw, bh))) {
-            scene.add(Entity{id}, Animation{});
+            scene.add(id, Animation{});
             Animation& na = scene.get<Animation>(id);
             na.length = 5.0f;
             na.updateDuration();

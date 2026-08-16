@@ -16,8 +16,8 @@
 
 namespace Engine {
 
-Entity buildDefaultScene(Scene& scene, ResourceManager& resources) {
-    const Entity camera = scene.createEntity();
+EntityId buildDefaultScene(Scene& scene, ResourceManager& resources) {
+    const EntityId camera = scene.createEntity();
     Transform cameraTransform;
 
     // Negative Z, because a camera looks along its forward and this engine's
@@ -31,15 +31,15 @@ Entity buildDefaultScene(Scene& scene, ResourceManager& resources) {
     scene.add(camera, Camera{});
     scene.add(camera, makeName("Camera"));
 
-    const Entity sun = scene.createEntity();
+    const EntityId sun = scene.createEntity();
     Transform sunTransform;
     sunTransform.position = {0.0f, 8.0f, 0.0f};
 
     scene.add(sun, sunTransform);
-    scene.add(sun, generateDirectionalLight());
+    scene.add(sun, generateLight(LightType::Directional));
     scene.add(sun, makeName("Sun"));
 
-    const Entity cube = scene.createEntity();
+    const EntityId cube = scene.createEntity();
     scene.add(cube, Transform{});
     scene.add(cube, makeName("Cube"));
     scene.add(cube, Mesh{resources.add(generateCube()), generateDefaultMaterial(resources)});

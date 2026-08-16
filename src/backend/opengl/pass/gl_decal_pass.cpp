@@ -24,7 +24,6 @@ namespace {
 // still reads instead of going black.
 constexpr float DECAL_AMBIENT = 0.25f;
 
-// Sun colour * intensity from the frame's primary directional light.
 glm::vec3 sunRadiance(const RenderView& view) {
     for (const LightData& light : view.lights) {
         if (light.type == LightType::Directional) return light.color * light.intensity;
@@ -44,12 +43,10 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
     const GLView&     glView = ctx.resources;
     if (view.decals.empty()) return;
 
-    // Promote the scene into the colour chain and blend the decals there while
-    // sampling the geometry target's depth + G-buffer - a different FBO, so no
-    // read-while-write feedback. The flip below publishes the result; nothing
-    // is blitted back.
-    ctx.colorDst->blitColorFrom(*ctx.colorSrc);
-    ctx.colorDst->bind(ctx.gl);
+    // Blends into the colour chain while sampling the geometry target's depth +
+    // G-buffer - a different FBO, so no read-while-write feedback.
+    promoteColorChain(ctx);
+    ctx.colorSrc->bind(ctx.gl);
 
     ctx.gl.setDepthTest(false);
     ctx.gl.setBlending(true);
@@ -93,8 +90,6 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
     ctx.gl.setBlending(false);
     ctx.gl.setFaceCulling(false);
     ctx.gl.setDepthTest(true);
-
-    ctx.flipColor();
 }
 
 } // namespace Engine

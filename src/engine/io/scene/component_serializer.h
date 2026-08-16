@@ -37,9 +37,6 @@ class ResourceManager;
  * (Hierarchy::parent) are stored as the saved scene-table index, which
  * resolves directly because SceneSerializer recreates each entity at its
  * saved slot.
- *
- * Animation serializes in full (all three tracks + the per-track easing by
- * stable name); see save/load(Animation) below.
  */
 namespace ComponentSerializer {
 
@@ -69,8 +66,7 @@ namespace ComponentSerializer {
     void load(const nlohmann::json&, Light&);
 
     /**
-     * @brief Rigidbody: dynamics + material fields. inverseMass / invInertiaLocal
-     * are derived from mass + Collider on load, and the runtime sleep state
+     * @brief Rigidbody: dynamics + material fields. The runtime sleep state
      * (sleeping / sleepTimer) is not persisted.
      */
     nlohmann::json save(const Rigidbody&);

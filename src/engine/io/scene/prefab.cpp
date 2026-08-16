@@ -88,20 +88,20 @@ bool save(const Scene& scene, EntityId root, const std::string& path,
     return true;
 }
 
-Entity instantiate(Scene& scene, ResourceManager& resources, const std::string& path,
-                   const Transform& at) {
-    const Entity root = instantiate(scene, resources, path);
+EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string& path,
+                     const Transform& at) {
+    const EntityId root = instantiate(scene, resources, path);
     if (!scene.isAlive(root)) return {};
 
     // Replace the authored pose. The root always carries a Transform: the
     // loader adds one when the prefab did not save it.
     scene.get<Transform>(root) = at;
-    HierarchyOperations::markDirty(scene, root.getID());
+    HierarchyOperations::markDirty(scene, root);
     return root;
 }
 
-Entity instantiate(Scene& scene, ResourceManager& resources, const std::string& path) {
-    Entity root = scene.createEntity();
+EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string& path) {
+    EntityId root = scene.createEntity();
     if (!instantiateInto(scene, resources, path, root)) {
         scene.destroyEntity(root);
         return {};
@@ -110,7 +110,7 @@ Entity instantiate(Scene& scene, ResourceManager& resources, const std::string& 
 }
 
 bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string& path,
-                     Entity root) {
+                     EntityId root) {
     json doc;
     if (!detail::readJsonFile(path, doc, "Prefab")) return false;
 
@@ -129,14 +129,14 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
 
     // Parents precede children in the file, so each link can be wired as its
     // child is created rather than in a second pass.
-    std::vector<Entity> created;
+    std::vector<EntityId> created;
     created.reserve(entities.size());
 
     for (size_t i = 0; i < entities.size(); ++i) {
         const json& entry = entities[i];
 
         // Index 0 is the root, which the caller already owns.
-        Entity entity = (i == 0) ? root : scene.createEntity();
+        EntityId entity = (i == 0) ? root : scene.createEntity();
 
         if (entry.contains("components")) {
             // The root keeps the pose it was placed at; every other component,
@@ -153,8 +153,7 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
         if (i > 0 && entry.contains("parent")) {
             const size_t parentIndex = entry.value("parent", size_t{0});
             if (parentIndex < created.size()) {
-                HierarchyOperations::setParent(scene, entity.getID(),
-                                               created[parentIndex].getID());
+                HierarchyOperations::setParent(scene, entity, created[parentIndex]);
             }
         }
         created.push_back(entity);

@@ -109,10 +109,6 @@ class SlotAllocator {
          *
          * Used by SceneSerializer so loaded entities keep the slot indices they
          * had at save time (eliminates id-remap on Hierarchy::parent etc.).
-         *
-         * - Grows the underlying array with dead placeholders up to `index`.
-         * - Removes `index` from the free list if present.
-         * - Asserts in debug if the slot is already alive (collision).
          */
         StorageIndex allocateAt(uint32_t index) {
             VKM_ASSERT(index > 0, "SlotAllocator::allocateAt: slot 0 is reserved");
@@ -177,9 +173,6 @@ class SlotAllocator {
     private:
         /**
          * @brief Obtain a free slot index, recycling first.
-         *
-         * Pops the most recently freed slot from the free list; when the list is
-         * empty it appends a fresh slot to the generation array and returns it.
          *
          * @return The index of an allocatable slot.
          */

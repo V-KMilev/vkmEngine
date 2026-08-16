@@ -20,11 +20,11 @@ namespace {
 /**
  * @brief Finalise one batch of drained completions against the ResourceManager.
  *
- * Shared skeleton for both asset kinds: skip dropped handles, guard against an
- * asset destroyed between the worker pushing and this drain (editor deletion) -
- * rm.get on a dead handle is UB - then hand the live asset to @p apply. The
- * loading flag is always cleared; the asset is committed (bumping its version so
- * the backend re-uploads) only when @p apply reports success.
+ * Shared skeleton for both asset kinds. The liveness guard is not optional:
+ * rm.get on an asset destroyed between the worker pushing and this drain
+ * (editor deletion) is UB. The loading flag is always cleared; the asset is
+ * committed (bumping its version so the backend re-uploads) only when @p apply
+ * reports success.
  *
  * The handle alone is not enough to identify the target. A scene load swaps the
  * whole asset graph, and the incoming one restarts at the same indices and
@@ -62,8 +62,6 @@ void AsyncLoaderSystem::update(FrameContext& ctx) {
     ResourceManager& rm    = ctx.resources;
     AsyncLoadQueue&  queue = AsyncLoadQueue::get();
 
-    // Textures: pixel data + format, either inferred from channel count or
-    // (for cooked textures) applied verbatim from exact params.
     finalize(rm, queue.drainTextures(), [](TextureAsset& asset, TextureLoadCompletion& c) {
         if (!c.success || c.pixelData.empty()) {
             LOG_WARNING("Async texture decode failed for '%s' - leaving asset empty",
@@ -77,7 +75,6 @@ void AsyncLoaderSystem::update(FrameContext& ctx) {
             asset.srgb   = (c.params.internalFormat == TextureInternalFormat::SRGB8 ||
                             c.params.internalFormat == TextureInternalFormat::SRGBA8);
         } else {
-            // stb-decoded texture: infer format from channel count + sRGB flag.
             asset.params.width          = c.width;
             asset.params.height         = c.height;
             asset.params.internalFormat = inferInternalFormat(c.channels, asset.srgb);
@@ -88,8 +85,7 @@ void AsyncLoaderSystem::update(FrameContext& ctx) {
         return true;
     });
 
-    // Meshes: vertex/index buffers + precomputed bounds. The worker computed
-    // bounds alongside vertex extraction, so this is a pure move.
+    // The worker computed bounds alongside vertex extraction, so this is a pure move.
     finalize(rm, queue.drainMeshes(), [](MeshAsset& asset, MeshLoadCompletion& c) {
         if (!c.success || c.vertices.empty()) {
             LOG_WARNING("Async mesh decode failed for '%s' - leaving asset empty",

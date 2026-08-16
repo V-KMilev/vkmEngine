@@ -28,17 +28,18 @@ struct CookedRequest {
     uint64_t              expectHash = 0;    ///< Recipe hash to match (valid when dispatch).
 };
 
-// Shared preamble for the cooked request functions: returns the existing handle
-// if the asset is already resident (dispatch=false), an invalid handle if the
-// name has no cooked entry, or a fresh loading stub plus the cooked file + recipe
-// hash to read off-thread.
+// Shared preamble: the existing handle if the asset is already resident
+// (dispatch=false), an invalid handle if the name has no cooked entry, or a
+// fresh loading stub plus the file + recipe hash to read off-thread.
 template<typename Asset>
 CookedRequest<Asset> beginCookedRequest(const std::string& name, AssetType type,
                                         const char* what, ResourceManager& resources) {
     if (auto existing = resources.findByName<Asset>(name)) return {existing};
 
+    // A material has no cooked blob - its recipe is its runtime form - so a name
+    // that resolves to one is as unusable here as one the manifest never listed.
     const AssetRecord* record = AssetLibrary::get().find(type, name);
-    if (!record || record->cookedFile.empty()) {
+    if (!record || type == AssetType::Material) {
         LOG_ERROR("Cooked %s '%s' not found in asset library manifest", what, name.c_str());
         return {};
     }
@@ -52,7 +53,7 @@ CookedRequest<Asset> beginCookedRequest(const std::string& name, AssetType type,
     req.handle     = resources.add(std::move(stub));
     req.uid        = resources.get(req.handle).uid;
     req.dispatch   = true;
-    req.path       = AssetLibrary::get().cookedPath(*record);
+    req.path       = AssetLibrary::cookedPath(type, name);
     req.expectHash = record->recipeHash;
     return req;
 }
@@ -61,7 +62,7 @@ CookedRequest<Asset> beginCookedRequest(const std::string& name, AssetType type,
 
 MeshHandle requestCookedMeshAsync(const std::string& name, ResourceManager& resources) {
     // Name is the stable identity: an already-requested mesh returns the same
-    // handle even if its read is still in flight (mirrors requestModelMeshAsync).
+    // handle even if its read is still in flight.
     auto req = beginCookedRequest<MeshAsset>(name, AssetType::Mesh, "mesh", resources);
     if (!req.dispatch) return req.handle;
 

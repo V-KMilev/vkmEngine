@@ -25,13 +25,11 @@ int main(int argc, char** argv) {
         const char* pathArg = argc > 1 ? argv[1] : nullptr;
 
         // One rule: the project is the one beside this executable, unless an
-        // argument names a different one. A shipped game never passes anything;
-        // naming one is for running several projects out of one build.
-        //
-        // Resolved against the launch directory, before anything composes a path:
-        // current_path() below moves the CWD, and projectRoot() caches whatever
-        // it first answers. Nothing is logged here - the log file lives under the
-        // root still being decided.
+        // argument names a different one - which is for running several projects
+        // out of one build. Resolved against the launch directory before
+        // anything composes a path: current_path() below moves the CWD, and
+        // projectRoot() caches whatever it first answers. Nothing is logged yet;
+        // the log file lives under the root still being decided.
         std::error_code argEc;
         const std::filesystem::path argPath = pathArg ? std::filesystem::absolute(pathArg, argEc) : std::filesystem::path{};
 
@@ -47,11 +45,10 @@ int main(int argc, char** argv) {
         // Logger::init fails if it cannot open the file.
         const std::filesystem::path root = Engine::ProjectPaths::projectRoot();
         std::error_code ec;
-        // Pin the working directory to the ENGINE root, not the project's. Shader
-        // loading still opens CWD-relative paths ("shaders/forward/pbr"), and
-        // those files ship with the engine - so a project living anywhere else
-        // would fail to find them. Everything the project owns is addressed
-        // absolutely through ProjectPaths, so nothing here needs the CWD.
+        // Pin the working directory to the ENGINE root, not the project's:
+        // shader loading opens CWD-relative paths ("shaders/forward/pbr") and
+        // those files ship with the engine, so a project living anywhere else
+        // would fail to find them. All project-owned paths are absolute.
         std::filesystem::current_path(Engine::ProjectPaths::engineRoot(), ec);
         std::filesystem::create_directories(root / "logs", ec);
         const std::string logFile = (root / "logs" / "log.log").string();
@@ -79,18 +76,15 @@ int main(int argc, char** argv) {
         // factory set (no Assimp, no image decode). Must precede scene I/O.
         Engine::registerCookedAssetFactories();
 
-        // The cooked asset database manifest resolves scene asset references to
-        // their cooked files on load.
+        // Resolves scene asset references to their cooked files on load.
         Engine::AssetLibrary::get().load();
 
-        // Load the gameplay module rather than linking it: the same shared
-        // library the editor loads, so a game is data plus a module instead of
-        // a rebuilt engine. Declared before the Engine so it outlives it -
-        // behaviors are destroyed during Engine teardown and their code must
-        // still be mapped then. Must precede setupEngineApp's default scene,
-        // which creates behaviors through the registry.
-        // A game brings its code with it, so there is one place to look: the
-        // project's own bin/. Every project builds its module there.
+        // Load the gameplay module rather than linking it, so a game is data
+        // plus a module instead of a rebuilt engine. It registers behaviors into
+        // the registry, so it must precede the scene boot. Declared before the
+        // Engine so it outlives it - behaviors are destroyed during Engine
+        // teardown and their code must still be mapped then. It lives in the
+        // project's own bin/, the one place every project builds it.
         Engine::ScriptModule scriptModule;
         const std::filesystem::path modulePath =
             Engine::ProjectPaths::projectBin() / Engine::DynamicLibrary::platformName("game");
@@ -99,9 +93,9 @@ int main(int argc, char** argv) {
             LOG_WARNING("No gameplay module for this project - no behaviors available");
         }
 
-        // What the project says about itself. Absent or unreadable leaves the
-        // defaults, which is a nameless project with no entry scene - so a
-        // directory that is not a project still runs, on the generated scene.
+        // Absent or unreadable leaves the defaults - a nameless project with no
+        // entry scene - so a directory that is not a project still runs, on the
+        // generated scene.
         Engine::Project project;
         Engine::loadProject(root, project);
 
@@ -113,8 +107,8 @@ int main(int argc, char** argv) {
             false, true});
 
         // A scene comes from the project that owns it, never from the command
-        // line. The rule is one function so all three hosts open a project the
-        // same way (see tools/project_boot.h).
+        // line - one function so all three hosts open a project the same way
+        // (see tools/project_boot.h).
         Engine::bootProjectScene(project, scriptModule,
                                  engine.getScene(), engine.getResources());
 

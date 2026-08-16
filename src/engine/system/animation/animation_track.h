@@ -14,9 +14,9 @@ namespace Engine {
 /**
  * @brief AnimationTrack manages the interpolation of keyframe values of type T over time.
  *
- * This class is templated to support animation tracks of any GLM vector, scalar, or user type
- * where glm::mix is applicable. It stores a sorted list of keyframes (time, value pairs) and
- * provides value sampling (interpolation) at arbitrary time values using configurable easing functions.
+ * Works for any GLM vector, scalar, or user type where glm::mix is applicable.
+ * Keyframes are stored sorted by time and sampled through a configurable easing
+ * function.
  *
  * @tparam T The value type of the animation (e.g., glm::vec3, float).
  */
@@ -71,11 +71,8 @@ class AnimationTrack {
         /**
          * @brief Gets the interpolated value for a given time.
          *
-         * If there are no keyframes, returns the default-constructed value.
-         * If the track has only one keyframe, returns its value.
-         * If time is before the first keyframe, returns the first value.
-         * If time is after the last keyframe, returns the last value.
-         * Otherwise, interpolates between nearest keyframes using the configured easing function.
+         * An empty track returns the default-constructed value; a time outside the
+         * keyframe range holds the nearest end value.
          *
          * @param time The time (in seconds or arbitrary units).
          * @return The interpolated value at the given time.
@@ -97,7 +94,6 @@ class AnimationTrack {
                 return m_values.front();
             }
 
-            // At/after the last key: hold the last value (clamp to track duration).
             if (time >= m_times.back()) {
                 return m_values.back();
             }
@@ -119,7 +115,6 @@ class AnimationTrack {
 
             float eased = m_easing(t);
 
-            // Interpolate using appropriate method (slerp for quaternions, mix for others)
             return interpolate(m_values[prevIndex], m_values[nextIndex], eased);
         }
 

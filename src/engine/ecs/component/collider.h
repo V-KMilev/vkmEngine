@@ -24,10 +24,10 @@ struct ColliderBox {
 /**
  * @brief Collision geometry attached to an entity, evaluated in its Transform frame.
  *
- * Data-only component. The shape is always a set of oriented boxes: one box for
- * a simple collider, many for a mesh-fitted one ("Fit to Mesh"). The narrowphase
- * is box-vs-box only - it runs once per child-box pair. Pose comes from the
- * entity's Transform (root-space == world for physics bodies).
+ * The shape is always a set of oriented boxes: one box for a simple collider,
+ * many for a mesh-fitted one ("Fit to Mesh"). The narrowphase is box-vs-box
+ * only - it runs once per child-box pair. Pose comes from the entity's
+ * Transform (root-space == world for physics bodies).
  */
 struct Collider {
     std::vector<ColliderBox> parts = { ColliderBox{} }; ///< The collision volume: one or more boxes. Default to a single unit box.

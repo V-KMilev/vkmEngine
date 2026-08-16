@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <unordered_map>
 
-#include "system/render/render_backend.h"
+#include "system/render/editor_render_hooks.h"
 
 namespace Engine {
 

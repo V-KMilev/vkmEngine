@@ -37,11 +37,9 @@ inline void localToWorldAABB(
     glm::vec3& worldMin,
     glm::vec3& worldMax
 ) {
-    // Start with translation component
     worldMin = glm::vec3(matrix[3]);
     worldMax = glm::vec3(matrix[3]);
 
-    // For each matrix column (x, y, z basis vectors)
     for (int j = 0; j < 3; ++j) {
         const glm::vec3 col(matrix[j]);
         const glm::vec3 a = col * localMin[j];

@@ -16,7 +16,6 @@ struct Transform;
 /**
  * @brief Camera controller used in the editor, supporting free-fly and look controls.
  *
- * Handles camera movement (WASD, etc.), speed boosting, mouse look, scroll zoom, and pitch/yaw.
  * Designed for use with the Editor camera Entity. Not thread-safe.
  */
 class CameraControllerSystem : public System {
@@ -49,14 +48,14 @@ class CameraControllerSystem : public System {
          * @brief Set the Entity ID of the camera to be controlled.
          * @param cameraEntity The entity representing the camera.
          */
-        void setCameraEntity(Entity cameraEntity) { m_cameraEntity = cameraEntity; }
+        void setCameraEntity(EntityId cameraEntity) { m_cameraEntity = cameraEntity; }
 
         /**
          * @brief The entity the controller is currently flying (the active rendered
          * camera). The editor uses this to suppress the transform gizmo on
          * it - a gizmo there would fight the fly controls.
          */
-        Entity getCameraEntity() const { return m_cameraEntity; }
+        EntityId getCameraEntity() const { return m_cameraEntity; }
 
         /**
          * @brief Notify the controller that the editor UI is capturing input.
@@ -162,7 +161,7 @@ class CameraControllerSystem : public System {
                          const glm::vec3& dirToCamera, float distance);
 
     private:
-        Entity   m_cameraEntity;
+        EntityId m_cameraEntity{};
         EntityId m_lastDrivenId{};   ///< Detects a camera switch -> reseed angles
 
         Settings m_settings;

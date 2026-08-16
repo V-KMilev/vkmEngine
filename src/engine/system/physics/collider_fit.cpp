@@ -82,10 +82,9 @@ std::vector<ColliderBox> fitBoxesToMesh(const MeshAsset& mesh, int detail, const
     std::vector<ColliderBox> boxes;
     std::vector<float>       xs;   // surface crossing x-coords, reused per column
 
-    // For each (y, z) cell, cast one +X ray through its centre, sort the surface
-    // crossings, and pair them into inside spans. Each span is one box - exact
-    // along X, one cell thick in Y/Z - which keeps the count to ~R^2 instead of
-    // a per-cell R^3 sweep.
+    // One +X ray per (y, z) cell, its crossings paired into inside spans. Each
+    // span is one box - exact along X, one cell thick in Y/Z - which keeps the
+    // count to ~R^2 instead of a per-cell R^3 sweep.
     for (int iy = 0; iy < R; ++iy) {
         for (int iz = 0; iz < R; ++iz) {
             const glm::vec3 o(xStart,

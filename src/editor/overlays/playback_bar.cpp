@@ -32,9 +32,8 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(GAP(), 0.0f));
 
     if (ImGui::BeginChild("##PlaybackBar", ImVec2(barW, barH), ImGuiChildFlags_Borders)) {
-        // Play/Pause. In Edit mode this is "Play": snapshot the authored scene
-        // (so Stop can restore it), then run the clock. In a play session it
-        // toggles the clock. The running state is highlighted.
+        // In Edit mode this is "Play": snapshot the authored scene (so Stop can
+        // restore it), then run the clock. In a play session it toggles it.
         const bool running = playing && !paused;
         if (iconButton("vpSim", running ? EditorIcon::Pause : EditorIcon::Play,
                        running, true,

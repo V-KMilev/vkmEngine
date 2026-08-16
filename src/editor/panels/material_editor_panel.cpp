@@ -152,7 +152,6 @@ bool MaterialEditorPanel::drawMaterialBody(
     endComponentCard();
 
     if (beginComponentCard("Textures", EditorStyle::Accent::MatTexture, false)) {
-        // PBR Core: the maps every PBR material is likely to set.
         ImGui::TextDisabled("PBR Core");
         ImGui::Spacing();
         changed |= slot("Albedo",    &MaterialAsset::albedoTexture,    true);
@@ -170,9 +169,8 @@ bool MaterialEditorPanel::drawMaterialBody(
         changed |= slot("Metallic+Roughness",     &MaterialAsset::metallicRoughnessTexture,   false);
         changed |= slot("AO+Metallic+Roughness",  &MaterialAsset::aoMetallicRoughnessTexture, false);
 
-        // Less common: parallax / clearcoat / glass. Pair with the
-        // matching scalar in Surface / Clearcoat / Volume cards to take
-        // effect.
+        // These take effect only paired with the matching scalar in the
+        // Surface / Clearcoat / Volume cards.
         ImGui::Spacing();
         ImGui::TextDisabled("Advanced");
         ImGui::Spacing();
@@ -271,8 +269,6 @@ bool MaterialEditorPanel::textureSlot(
     ImGui::TextUnformatted(cur.c_str());
     ImGui::SameLine();
     if (ImGui::GetCursorPosX() < btnsX) ImGui::SetCursorPosX(btnsX);
-    // Generate a procedural texture (built-in flats or a solid color) for this
-    // slot - the half of the texture pipeline that had no editor surface.
     if (ImGui::SmallButton("Gen")) ImGui::OpenPopup("##genTex");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Generate a procedural texture for this slot");
@@ -296,12 +292,11 @@ bool MaterialEditorPanel::textureSlot(
     }
     ImGui::SameLine();
     if (ImGui::SmallButton("Set")) {
-        // Configure the panel-owned picker for this slot, then open it.
         // Only one slot's picker is active at a time (single popup).
         const std::filesystem::path appRoot = ProjectPaths::projectRoot();
         m_texturePicker.options.popupId    = "PickTexture";
         m_texturePicker.options.title      = "Pick Texture";
-        m_texturePicker.options.root       = appRoot / "assets";
+        m_texturePicker.options.root       = ProjectPaths::assets();
         m_texturePicker.options.recursive  = true;
         m_texturePicker.options.kind       = AssetPicker::Kind::Files;
         m_texturePicker.options.extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp"};
@@ -331,10 +326,9 @@ bool MaterialEditorPanel::textureSlot(
 
 bool MaterialEditorPanel::pbrFolderBrowse(std::string& outFolder) {
     if (ImGui::SmallButton("Load PBR Folder...")) {
-        const std::filesystem::path appRoot = ProjectPaths::projectRoot();
         m_pbrFolderPicker.options.popupId   = "PBRFolder";
         m_pbrFolderPicker.options.title     = "Load PBR Folder";
-        m_pbrFolderPicker.options.root      = appRoot / "assets";
+        m_pbrFolderPicker.options.root      = ProjectPaths::assets();
         m_pbrFolderPicker.options.recursive = false;
         m_pbrFolderPicker.options.kind      = AssetPicker::Kind::Directories;
         m_pbrFolderPicker.options.extensions.clear();
@@ -413,7 +407,6 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         return;
     }
 
-    // Left pane: studio preview + view controls.
     const float PREVIEW_SIZE = EditorStyle::px(320.0f);
     const float PANE_WIDTH   = PREVIEW_SIZE + EditorStyle::px(36.0f);
 
@@ -426,9 +419,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
 
         // live=true uses a dedicated key so the pane survives the Asset
         // Browser baking thumbnails into the shared target later this same
-        // frame (ImGui samples textures at Render). The version stamp gates
-        // re-rendering on actual change so an idle Material Editor doesn't
-        // re-render the preview every frame.
+        // frame (ImGui samples textures at Render).
         const uint64_t version = shape
             ? previewVersion(resources.get(target).version, shape.id(),
                              m_primitive, m_yaw, m_pitch, m_distance,
@@ -452,7 +443,6 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
             const ImVec2 origin = ImGui::GetCursorScreenPos();
             ImGui::Image(imTexture(tex),
                 ImVec2(PREVIEW_SIZE, PREVIEW_SIZE), ImVec2(0, 1), ImVec2(1, 0));
-            // Thin frame around the studio render.
             ImGui::GetWindowDrawList()->AddRect(
                 origin, ImVec2(origin.x + PREVIEW_SIZE, origin.y + PREVIEW_SIZE),
                 ImGui::GetColorU32(ImGuiCol_Border), 3.0f);
@@ -501,7 +491,6 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
 
     ImGui::SameLine();
 
-    // Right pane: identity + parameter cards.
     ImGui::BeginChild("##meParams", ImVec2(0, 0), ImGuiChildFlags_Borders);
     {
         const MaterialAsset& cur = resources.get(target);
@@ -510,9 +499,8 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
                                                 : cur.name.c_str());
         ImGui::PopStyleColor();
 
-        // Who shares this material. Edits apply to every user (materials are
-        // shared by handle), so surface the blast radius next to the name and
-        // let Select turn the user list into the scene selection.
+        // Who shares this material: edits apply to every user (materials are
+        // shared by handle), so the blast radius sits next to the name.
         std::vector<EntityId> users;
         scene.forEach<Mesh>([&](EntityId id, const Mesh& m) {
             if (m.material && m.material.id() == target.id()) users.push_back(id);

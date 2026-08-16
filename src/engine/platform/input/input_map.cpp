@@ -66,8 +66,7 @@ void InputMap::update(const InputHandle& input) {
             if (down) value += binding.scale;
         }
 
-        // Opposing bindings cancel, so holding both directions reads as zero
-        // rather than as whichever was summed last.
+        // Opposing bindings cancel, so holding both directions reads as zero.
         action.value = glm::clamp(value, -1.0f, 1.0f);
     }
 }

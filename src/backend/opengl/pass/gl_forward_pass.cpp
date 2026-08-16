@@ -13,7 +13,6 @@
 #include "gl_target.h"
 #include "data/gl_cluster_grid.h"
 #include "data/gl_irradiance_volume.h"
-#include "gl_mask_target.h"
 #include "data/gl_shadow_atlas.h"
 #include "gl_view.h"
 #include "core/engine_config.h"
@@ -33,9 +32,7 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     const RenderView& view   = ctx.view;
     const GLView&     glView = ctx.resources;
 
-    // Camera + light UBOs are already uploaded and bound by the backend; this
-    // pass renders the lit geometry into the scene target (multisample when MSAA
-    // is on, resolved into sceneHDR afterwards).
+    // Camera + light UBOs are already uploaded and bound by the backend.
     ctx.sceneRender.bind(ctx.gl);
     ctx.gl.setDepthTest(true);
     ctx.gl.setBlending(false);
@@ -52,16 +49,16 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
 
     m_shader->bind();
 
-    // Shadows: the ShadowBlock UBO (binding 3) carries the matrices + slots; here
-    // we only bind the depth textures. The light loop samples per light type via
-    // each light's shadowSlot (GpuLight.spot.w).
+    // The ShadowBlock UBO (binding 3) carries the matrices + slots; here we only
+    // bind the depth textures. The light loop samples per light type via each
+    // light's shadowSlot (GpuLight.spot.w).
     ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
     for (uint32_t s = 0; s < Config::MAX_SHADOW_CASTERS_CUBE; ++s) {
         ctx.shadowAtlas.bindCube(s, GLBindings::ShadowTextureSlots::CubeBase + s);
     }
 
-    // IBL: bind the baked product set when present; u_hasIBL gates the split-sum
-    // ambient in the shader (flat-ambient fallback when no environment baked).
+    // u_hasIBL gates the split-sum ambient in the shader; without a baked
+    // environment it falls back to flat ambient.
     const bool hasIBL = ctx.ibl.isReady();
     if (hasIBL) {
         ctx.ibl.bindIrradiance(GLBindings::IBLTextureSlots::Irradiance);
@@ -71,16 +68,15 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     m_shader->setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
     m_shader->setUniform1f("u_iblIntensity", view.environment.sky.intensity);
 
-    // Screen-space AO from the GTAO pass: bind + gate it. The shader multiplies
-    // it into the indirect term (ambient/IBL). Absent (pass disabled) -> 1.0.
-    if (ctx.aoReady) ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
+    // The shader multiplies the GTAO factor into the indirect term (ambient/IBL);
+    // absent (pass disabled) -> 1.0.
+    if (ctx.aoReady) ctx.ao.bindColor(GLBindings::PostTextureSlots::SSAO);
     m_shader->setUniform1i("u_hasSSAO", ctx.aoReady ? 1 : 0);
 
     // View -> world, so the GTAO bent normal can be used in world space.
     m_shader->setUniformMatrix4fv("u_invView", view.camera.invView);
 
-    // Baked GI: bind the SH volume when one is baked, and hand the shader its box
-    // so a fragment can place itself in the grid.
+    // The shader needs the baked SH volume's box to place a fragment in the grid.
     const bool hasIV = ctx.irradiance.isReady() && !view.irradianceVolumes.empty();
     m_shader->setUniform1i("u_hasIrradianceVolume", hasIV ? 1 : 0);
     if (hasIV) {
@@ -94,28 +90,25 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         m_shader->setUniform1f("u_ivIntensity", iv.intensity);
     }
 
-    // Reflection probes: the backend bound the cube arrays + ProbeBlock UBO; hand
-    // the shader the active count, or 0 when probes are toggled off.
+    // The backend bound the probe cube arrays + ProbeBlock UBO; this only hands
+    // over the active count, or 0 when probes are toggled off.
     m_shader->setUniform1i("u_probeCount", ctx.view.settings.probes ? ctx.probeCount : 0);
 
-    // Refraction is sampled only by the transparent bucket; default it off here
-    // and switch it on after the scene-colour copy below.
+    // Refraction is sampled only by the transparent bucket; switched on after the
+    // scene-colour copy below.
     m_shader->setUniform1i("u_hasSceneColor", 0);
     m_shader->setUniform2f("u_screenSize", static_cast<float>(view.viewportWidth), static_cast<float>(view.viewportHeight));
 
-    // Forward+ cluster light lists: bind the grid the cull compute wrote, and the
-    // near/far (same two-coefficient form as the cull pass) for the fragment's
-    // cluster lookup.
+    // The grid the cull compute wrote; near/far go with it in the same
+    // two-coefficient form as the cull pass, for the fragment's cluster lookup.
     ctx.clusters.bind();
     m_shader->setUniform1i("u_useClusters", 1);
     m_shader->setUniform1i("u_renderMode", static_cast<int>(view.settings.renderMode));
     m_shader->setUniform1f("u_zNear", view.camera.zNear);
     m_shader->setUniform1f("u_zFar",  view.camera.zFar);
 
-    // Opaque / AlphaMask / Unlit (already split out by the backend) keep the
-    // view's order - sorted upstream by material+mesh - and merge into instanced
-    // runs grouped by (material, mesh).
-    // Batched once by the backend; the prepass drew these same runs.
+    // Sorted upstream by material+mesh and batched once by the backend; the
+    // prepass drew these same runs.
     drawRuns(ctx, ctx.opaqueBatch);
 
     if (!ctx.alphaMask.empty()) {
@@ -136,8 +129,7 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     }
 
     if (!ctx.transparent.empty()) {
-        // Key the transparent bucket by squared distance and sort back-to-front
-        // so alpha blending composes correctly.
+        // Back-to-front, so alpha blending composes correctly.
         m_transparent.clear();
         m_transparent.reserve(ctx.transparent.size());
         for (const DrawableData* d : ctx.transparent) {
@@ -152,8 +144,8 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         for (const auto& entry : m_transparent) m_transparentSorted.push_back(entry.second);
 
         // Copy the opaque + sky scene so transmissive surfaces can refract what
-        // is behind them (blitColorFrom resolves the multisample colour into the
-        // single-sample scratch), then resume rendering into the scene target.
+        // is behind them; blitColorFrom resolves the multisample colour into the
+        // single-sample scratch.
         ctx.colorDst->blitColorFrom(ctx.sceneRender);
         ctx.sceneRender.bind(ctx.gl);
         ctx.colorDst->bindColor(GLBindings::PostTextureSlots::SceneColor);
@@ -187,7 +179,6 @@ void GLForwardPass::drawRuns(GLFrameContext& ctx, const GLInstanceBatchView& bat
     const std::vector<InstanceRun>& runs = batch.runs();
     const GLView& glView = ctx.resources;
 
-    // Re-bind material state only when it differs from the last run's.
     const GLMaterial* boundMaterial = nullptr;
 
     for (uint32_t i = 0; i < runs.size(); ++i) {

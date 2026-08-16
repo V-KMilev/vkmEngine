@@ -9,8 +9,7 @@
 namespace Engine {
 
 namespace {
-// The single optional sink. The editor installs its own EngineErrorLog here;
-// the runtime leaves it null so errors only reach the log.
+// The single optional sink; the runtime leaves it null.
 EngineErrorLog* g_sink = nullptr;
 } // namespace
 

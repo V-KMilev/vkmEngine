@@ -33,37 +33,6 @@ struct InstanceRun {
 };
 
 /**
- * @brief Growable buffer of per-instance indices.
- *
- * Vertex storage, because the index arrives as an attribute so that GL's
- * baseInstance offsets it per run; also bound as a storage buffer, because the
- * cull writes into it and the vertex stage reads through it.
- */
-class InstanceIndexBuffer {
-    public:
-        InstanceIndexBuffer() = default;
-        ~InstanceIndexBuffer() = default;
-
-        InstanceIndexBuffer(const InstanceIndexBuffer& other) = delete;
-        InstanceIndexBuffer& operator=(const InstanceIndexBuffer& other) = delete;
-
-        InstanceIndexBuffer(InstanceIndexBuffer && other) = delete;
-        InstanceIndexBuffer& operator=(InstanceIndexBuffer && other) = delete;
-
-    public:
-        /// Upload @p bytes of indices, growing the storage when it must.
-        void update(const void* data, uint32_t bytes);
-
-        const Core::VertexBuffer& buffer() const { return *m_buffer; }
-        bool     valid() const { return m_buffer != nullptr; }
-        uint32_t id()    const;
-
-    private:
-        std::unique_ptr<Core::VertexBuffer> m_buffer;
-        uint32_t m_capacity = 0;
-};
-
-/**
  * @brief One indirect draw, laid out exactly as GL reads it.
  *
  * The GPU cull writes instanceCount and nothing else; the CPU fills the rest
@@ -184,15 +153,6 @@ class GLInstanceBatcher {
          */
         void upload();
 
-        /**
-         * @brief Grow-or-update an SSBO to hold @p bytes of @p data.
-         *
-         * SSBOs size to the frame's instance count, which moves; reallocating
-         * only when it grows keeps a steady scene at one allocation.
-         */
-        static void uploadStorage(std::unique_ptr<Core::ShaderStorageBuffer>& buffer,
-                                  uint32_t& capacity, const void* data, uint32_t bytes);
-
     private:
         std::vector<InstanceRun> m_runs;
         std::vector<uint32_t>    m_order;    ///< sort indices into the input list
@@ -206,12 +166,17 @@ class GLInstanceBatcher {
 
         Core::InstanceBuffer m_modelBuffer;   ///< Every instance's model matrix, batch order.
         Core::InstanceBuffer m_normalBuffer;  ///< Every instance's normal matrix, batch order.
-        InstanceIndexBuffer  m_visibleBuffer; ///< Which of them each drawn instance is.
+
+        /// Which of them each drawn instance is. Vertex storage, because the
+        /// index arrives as an attribute so that GL's baseInstance offsets it
+        /// per run; also bound as storage, because the cull writes into it.
+        std::unique_ptr<Core::VertexBuffer> m_visibleBuffer;
 
         std::unique_ptr<Core::ShaderStorageBuffer> m_boundsBuffer;
         std::unique_ptr<Core::ShaderStorageBuffer> m_runOfBuffer;
         std::unique_ptr<Core::ShaderStorageBuffer> m_commandBuffer;
         bool     m_culled          = false;  ///< A cull filled the commands this frame, so draws go indirect.
+        uint32_t m_visibleCapacity = 0;
         uint32_t m_boundsCapacity  = 0;
         uint32_t m_runOfCapacity   = 0;
         uint32_t m_commandCapacity = 0;
@@ -240,16 +205,6 @@ class GLInstanceBatchView {
         const std::vector<InstanceRun>& runs() const { return m_batcher->runs(); }
 
         /**
-         * @brief The batcher itself, for the cull pass.
-         *
-         * The cull writes into the batch - it compacts the instance buffers and
-         * fills the draw commands - so a draw-only view cannot express it. What
-         * the view protects against is a *rebuild* invalidating the runs another
-         * pass is about to draw, and the cull does not rebuild.
-         */
-        GLInstanceBatcher& batcher() const { return *m_batcher; }
-
-        /**
          * @brief Draw one run: binds its instance buffers and issues the call.
          * @param runIndex Its index in runs(); selects the run's indirect command.
          */
@@ -257,6 +212,21 @@ class GLInstanceBatchView {
 
         /// Bind the batch's transforms and index list; call once before the run loop.
         void bindInstanceData() const { m_batcher->bindInstanceData(); }
+
+        /// Instances in the batch - the cull's dispatch size.
+        uint32_t instanceCount() const { return m_batcher->instanceCount(); }
+
+        /**
+         * @brief Bind the cull's inputs and outputs to their SSBO points.
+         *
+         * The cull writes into the batch - it compacts the instance buffers and
+         * fills the draw commands - which the view still offers, because what it
+         * protects against is a *rebuild* invalidating the runs another pass is
+         * about to draw, and the cull does not rebuild.
+         *
+         * @return False when there is nothing to cull.
+         */
+        bool bindCullBuffers() const { return m_batcher->bindCullBuffers(); }
 
     private:
         GLInstanceBatcher* m_batcher;

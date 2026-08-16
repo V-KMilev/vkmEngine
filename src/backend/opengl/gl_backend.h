@@ -15,7 +15,6 @@
 #include "gl_view.h"
 #include "data/gl_instance_batcher.h"
 #include "gl_target.h"
-#include "gl_mask_target.h"
 #include "data/gl_camera.h"
 #include "data/gl_lights.h"
 #include "data/gl_shadow_atlas.h"
@@ -52,9 +51,9 @@ struct PassEntry {
  * @brief The OpenGL implementation of RenderBackend.
  *
  * Owns the GL context state, the GPU resource mirror (GLView), and an ordered
- * list of passes. render() syncs the frame's resources, then runs each pass in
- * order (clearing is delegated to the passes). The window's buffer swap stays in the engine loop (it must
- * happen after the editor UI draws), so this backend draws but does not present.
+ * list of passes; clearing is delegated to the passes. The window's buffer swap
+ * stays in the engine loop (it must happen after the editor UI draws), so this
+ * backend draws but does not present.
  */
 class GLBackend : public RenderBackend, public EditorRenderHooks {
     public:
@@ -144,7 +143,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GLTarget      m_sceneMS;     ///< Multisample scene the geometry passes render into when MSAA is on; resolved into m_sceneHDR.
         GLTarget      m_postA;   ///< Colour-only post scratch (ping).
         GLTarget      m_postB;   ///< Colour-only post scratch (pong).
-        GLMaskTarget    m_ao;
+        GLTarget      m_ao;      ///< Colour-only GTAO factor target.
 
         GLCamera      m_camera;
         GLLights      m_lights;

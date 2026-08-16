@@ -42,9 +42,8 @@ class InspectorPanel {
         void draw(EditorContext& ec);
 
     private:
-        // The blank-panel and entity-identity rows, factored out of draw() so it
-        // reads as a thin orchestrator (empty-state guard -> identity -> the
-        // component-section dispatch that is its real job).
+        // The blank-panel and entity-identity rows, factored out so draw()
+        // reads as the component-section dispatch that is its real job.
         void drawEmptySelectionState(EditorContext& ec);
         void drawIdentityHeader(Scene& scene, EditorState& state, EntityId id);
 

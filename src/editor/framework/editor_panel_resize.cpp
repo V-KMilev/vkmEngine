@@ -23,7 +23,6 @@ void EditorPanelResize::process(
     const bool   mouseDown = ImGui::IsMouseDown(ImGuiMouseButton_Left);
     const ImVec2 delta     = ImGui::GetIO().MouseDelta;
     const bool   alreadyResizing = m_resizingLeft || m_resizingRight || m_resizingBottom;
-    // Block a *new* resize if an ImGui widget or the gizmo is active.
     const bool   canStartNew = !ImGui::IsAnyItemActive() && !blockNew && !alreadyResizing;
 
     // Mirror the visibility checks that drawWorkspace uses, so the resizer
@@ -63,7 +62,6 @@ void EditorPanelResize::process(
             ImGui::GetForegroundDrawList()->AddRectFilled(a, b, ImGui::GetColorU32(col));
         };
 
-        // Continue an existing resize drag
         if (resizingFlag) {
             ImGui::SetMouseCursor(horizontal ? ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_ResizeEW);
             drawSeam(true);
@@ -73,13 +71,12 @@ void EditorPanelResize::process(
             return;
         }
 
-        // Show the hint when hovering (even if a drag can't start)
+        // The hint shows on hover even when a drag can't start.
         if (nearEdge) {
             ImGui::SetMouseCursor(horizontal ? ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_ResizeEW);
             drawSeam(false);
         }
 
-        // Only start a new resize on click when nothing else is active
         if (nearEdge && canStartNew && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             resizingFlag = true;
         }

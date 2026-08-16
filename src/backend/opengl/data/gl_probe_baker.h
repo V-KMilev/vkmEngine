@@ -1,17 +1,9 @@
 #pragma once
 
-#include <memory>
-#include <vector>
-
 #include <glm/glm.hpp>
 
-#include "gl_shader.h"
-
-#include "data/gl_camera.h"
-#include "data/gl_lights.h"
-#include "data/gl_shadow_data.h"
-#include "data/gl_instance_batcher.h"
 #include "data/gl_cube_convolver.h"
+#include "data/gl_scene_capture.h"
 
 namespace Core {
     class Context;
@@ -70,17 +62,8 @@ class GLProbeBaker {
         void convolve(Core::Context& gl, GLProbeArray& arr, int layer);
 
     private:
-        Core::Shader m_pbr;         ///< capture geometry (full forward PBR)
-        Core::Shader m_skybox;      ///< capture background
-
-        GLCubeConvolver m_convolver;  ///< env cube -> irradiance + prefilter (and the unit cube)
-
-        GLCamera          m_camera;    ///< per-face camera UBO (binding 2)
-        GLLights          m_lights;    ///< no-shadow lights SSBO (binding 0)
-        GLShadowData      m_noShadow;  ///< default-built: slotForLight() == -1 for every light
-        GLInstanceBatcher m_batcher;   ///< instanced capture draws
-
-        std::vector<const DrawableData*> m_opaque;
+        GLSceneCapture  m_capture;    ///< scene -> the six env-cube faces
+        GLCubeConvolver m_convolver;  ///< env cube -> irradiance + prefilter
 };
 
 } // namespace Engine

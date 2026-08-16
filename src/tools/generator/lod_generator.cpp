@@ -21,10 +21,17 @@ namespace {
 // comparison per frame to draw the same thing.
 constexpr float MIN_REDUCTION = 0.8f;   // must drop at least 20% of the triangles
 
+// Halving the decimation grid while roughly doubling the range per level keeps
+// the on-screen size of a level's triangles about constant as it recedes - the
+// property that makes a switch hard to notice.
+constexpr float    FIRST_DISTANCE      = 30.0f;  // range of the source level, in world units
+constexpr float    DISTANCE_MULTIPLIER = 2.5f;   // each level reaches this much further than the last
+constexpr uint32_t FIRST_GRID          = 12;     // decimation grid for the first generated level
+constexpr float    GRID_FALLOFF        = 0.5f;   // grid multiplier per level; lower = coarser faster
+
 } // namespace
 
-LOD generateLOD(ResourceManager& resources, MeshHandle source,
-                const LODGenSettings& settings) {
+LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLevels) {
     LOD lod;
     if (!source) {
         LOG_WARNING("generateLOD: unresolved source mesh");
@@ -41,20 +48,20 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source,
         ? ("mesh:" + std::to_string(source.id()))
         : sourceMesh.name;
 
-    float    distance = std::max(settings.firstDistance, 0.01f);
-    float    grid     = static_cast<float>(std::max(settings.firstGrid, 1u));
+    float    distance = FIRST_DISTANCE;
+    float    grid     = static_cast<float>(FIRST_GRID);
     size_t   previousTriangles = sourceMesh.indices.size() / 3;
 
     lod.levels.push_back({source, distance});
 
-    for (uint32_t level = 1; level <= settings.extraLevels; ++level) {
-        distance *= std::max(settings.distanceMultiplier, 1.01f);
+    for (uint32_t level = 1; level <= extraLevels; ++level) {
+        distance *= DISTANCE_MULTIPLIER;
 
         // Re-read each iteration: adding an asset can reallocate the storage the
         // previous reference pointed into.
         const uint32_t cells = static_cast<uint32_t>(std::max(grid, 1.0f));
         MeshAsset decimated = decimateMesh(resources.get(source), cells);
-        grid *= std::clamp(settings.gridFalloff, 0.05f, 0.99f);
+        grid *= GRID_FALLOFF;
 
         const size_t triangles = decimated.indices.size() / 3;
         if (triangles < 1 || static_cast<float>(triangles) > previousTriangles * MIN_REDUCTION) {

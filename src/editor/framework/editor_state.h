@@ -17,30 +17,25 @@ namespace Engine {
  *
  * This is a plain data struct (no getters/setters) because it is internal
  * editor state shared among tightly-coupled panels. Panels read and write
- * fields directly. The compiler catches all renames immediately.
+ * fields directly.
  *
  * Owned by EditorSystem, passed as EditorState& to each panel's draw().
  */
 struct EditorState {
-    // Selection
     EntityId selectedEntity{};               ///< The ACTIVE entity (last clicked); always in `selection` when set.
     std::vector<EntityId> selection;         ///< Every selected entity (multi-select set), active included.
     bool     worldSelected = false;
 
-    // Gizmo config
     GizmoOperation gizmoOperation = GizmoOperation::Translate;
     GizmoMode      gizmoMode      = GizmoMode::Local;
 
-    // Snap settings
     bool  snapEnabled    = false;
     float snapTranslate  = 1.0f;
     float snapRotate     = 15.0f;    ///< Degrees
     float snapScale      = 0.1f;
 
-    // Keybind configuration
     EditorKeybinds keybinds;
 
-    // Panel visibility
     bool showHierarchy   = true;
     bool showInspector   = true;
     bool showBottom      = true;
@@ -58,7 +53,6 @@ struct EditorState {
     float rightPanelWidth   = 340.0f;
     float bottomPanelHeight = 200.0f;
 
-    // Flags
     bool viewportHovered = false;    ///< Whether mouse is over viewport
     bool hierarchyDirty  = true;     ///< Set by entity ops, consumed by HierarchyPanel
     bool editorVisible   = true;     ///< Toggle entire editor UI (F5)
@@ -66,7 +60,6 @@ struct EditorState {
     int  lodGenLevels = 2;            ///< Levels the LOD card's Generate button builds below the source.
     bool requestScriptReload = false; ///< Set by the Reload Scripts menu item, consumed by EditorSystem (hot-reload)
 
-    // Scene I/O state
     bool sceneDirty = false;    ///< Unsaved edits since last save/load. Title shows '*'.
 
     /**
@@ -85,17 +78,15 @@ struct EditorState {
     bool        showOpenProject = false;  ///< File > Open Project dialog is up.
     std::string pendingProjectOpen;       ///< Project chosen from a menu; opened after the draw.
     std::string projectName;              ///< What the open project calls itself; titles the window.
-    static constexpr size_t MAX_RECENT_SCENES = 8;
+    static constexpr size_t MAX_RECENT_ENTRIES = 8;
 
-    // Undo/redo history. Every editor mutation that goes through the
-    // command path lands here; Ctrl+Z reverses, Ctrl+Shift+Z re-applies.
+    // Undo/redo history for every editor mutation on the command path.
     // Cleared on scene load (entity IDs across scenes aren't comparable).
     CommandStack commands;
 
-    // Floating-toast notification. Set by pushToast(); ticked down each
-    // frame by EditorSystem; rendered as a corner overlay. Keeps save/load
-    // failures (and other transient feedback) on-screen instead of
-    // burying them in the console log.
+    // Floating-toast notification, ticked down each frame by EditorSystem.
+    // Keeps save/load failures (and other transient feedback) on-screen
+    // instead of burying them in the console log.
     enum class ToastKind { Info, Warning, Error };
     std::string toastMessage;
     float       toastTimeRemaining = 0.0f;
@@ -163,5 +154,21 @@ struct EditorState {
         toastTimeRemaining = seconds;
     }
 };
+
+/**
+ * @brief Push @p value to the front of an MRU path list, de-duplicated and capped.
+ *
+ * The recent-scenes and recent-projects lists are the same list under two
+ * names, so "most recent first, no duplicates, at most MAX_RECENT_ENTRIES"
+ * is defined once here rather than once per controller.
+ *
+ * @param mru   The list to promote into, most-recent first.
+ * @param value The path to move to the front.
+ */
+inline void pushRecentPath(std::vector<std::string>& mru, const std::string& value) {
+    mru.erase(std::remove(mru.begin(), mru.end(), value), mru.end());
+    mru.insert(mru.begin(), value);
+    if (mru.size() > EditorState::MAX_RECENT_ENTRIES) mru.resize(EditorState::MAX_RECENT_ENTRIES);
+}
 
 } // namespace Engine

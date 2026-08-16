@@ -1,8 +1,5 @@
 #pragma once
 
-#include <array>
-#include <vector>
-
 #include <glm/glm.hpp>
 
 #include "ecs/scene.h"
@@ -16,9 +13,8 @@ namespace Engine::HierarchyOperations {
  *
  * If the child already has a parent, it is detached first. Both Hierarchy
  * and WorldTransform are added automatically to either endpoint that's
- * missing them - pre-seeding WorldTransform here is what lets
- * resolveWorldTransforms() stay free of structural mutation and parallelise
- * by depth.
+ * missing them - pre-seeding WorldTransform here is what lets the per-frame
+ * resolve pass stay free of structural mutation and parallelise by depth.
  *
  * @param scene The scene containing both entities.
  * @param child The entity to attach as a child.
@@ -55,8 +51,8 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity);
  *
  * Sets Hierarchy::dirty on the entity and propagates to every descendant.
  * No-op if the entity has no Hierarchy component. Call this after mutating
- * a Transform that participates in a hierarchy so the next
- * resolveWorldTransforms() picks up the change.
+ * a Transform that participates in a hierarchy so the next HierarchySystem
+ * tick picks up the change.
  *
  * Not thread-safe - call from the main thread or after any parallel writes.
  *
@@ -68,40 +64,9 @@ void markDirty(Scene& scene, EntityId entity);
 /**
  * @brief Deepest ancestor chain the resolve pass will follow.
  *
- * Public because DepthBuckets is sized by it and the caller owns that storage.
+ * Public because HierarchySystem sizes its per-depth scratch by it.
  */
 constexpr uint32_t MAX_DEPTH = 32;
-
-/**
- * @brief Per-depth scratch for resolveWorldTransforms, owned by the caller.
- *
- * The pass buckets dirty entities by depth, and the buckets want to keep their
- * capacity across frames rather than reallocating 32 vectors every tick. Held
- * by the system that drives the pass, the way every other system here holds its
- * scratch - a function-static would make it process-global state shared between
- * any two Scenes that ever ran the pass.
- */
-using DepthBuckets = std::array<std::vector<EntityId>, MAX_DEPTH>;
-
-/**
- * @brief Resolve world transforms for every dirty hierarchical entity.
- *
- * For each entity with a Hierarchy whose dirty flag is set, computes its
- * world matrix and writes it into the entity's pre-seeded WorldTransform.
- * Dirty entities are bucketed by absolute depth in a serial pass and then
- * each bucket runs through parallelFor; depths are processed in order so a
- * child reads its parent's already-finalised WorldTransform (one matrix
- * multiply, parentWorld * local) rather than re-walking the ancestor chain,
- * and reads of an ancestor's matrix never race a write.
- *
- * This is the per-frame work HierarchySystem runs, exposed here as a
- * free function so editors / loaders / bake passes can trigger it
- * outside the frame loop.
- *
- * @param scene   The scene to resolve.
- * @param buckets Per-depth scratch, kept by the caller so its capacity survives the frame.
- */
-void resolveWorldTransforms(Scene& scene, DepthBuckets& buckets);
 
 /**
  * @brief Iterate over all direct children of an entity.

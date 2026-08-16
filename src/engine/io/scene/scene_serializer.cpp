@@ -43,17 +43,12 @@ constexpr int FILE_FORMAT_VERSION = 2;
  * same order. Adding a component is a localised edit: add a line to each of
  * the two functions plus an entry to COMPONENT_KEYS below.
  *
- * Special cases:
- *  - Mesh, LOD and Decal reference assets by handle, so save/load take a
- *    ResourceManager (resolution happens against the staging RM on load).
- *  - Hierarchy is save-only here: load captures the parent index in pass 1
- *    and wires it up in pass 2 via HierarchyOperations::setParent, because
- *    the parent entity may not exist yet when the child is first seen.
+ * Mesh, LOD and Decal reference assets by handle, so their save/load take a
+ * ResourceManager (resolution happens against the staging RM on load).
  */
 
 // Every JSON key written by saveComponents, for unknown-key detection on load.
-// Order is incidental here (membership test only); keep it in sync with the
-// save/load lists below.
+// Order is incidental here (membership test only).
 constexpr std::array<const char*, 20> COMPONENT_KEYS = {
     "Name", "Transform", "Camera", "Light", "Rigidbody", "Collider",
     "Mesh", "LOD", "Decal", "ParticleEmitter", "IrradianceVolume", "ReflectionProbe",
@@ -75,11 +70,11 @@ constexpr std::array<const char*, 20> COMPONENT_KEYS = {
  * @param src The entity's component block.
  * @param key JSON key the component is stored under.
  * @param s Scene receiving the component.
- * @param e Entity receiving the component.
+ * @param e The entity receiving the component.
  * @param args Forwarded to ComponentSerializer::load.
  */
 template<typename T, typename... Args>
-void loadInto(const json& src, const char* key, Scene& s, Entity e, Args&&... args) {
+void loadInto(const json& src, const char* key, Scene& s, EntityId e, Args&&... args) {
     const auto it = src.find(key);
     if (it == src.end()) return;
 
@@ -116,7 +111,7 @@ void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager&
 
 // Hierarchy is intentionally absent: its parent link is captured by the
 // caller for the pass-2 wire-up, not loaded here.
-void loadComponents(const json& src, Scene& s, Entity e, const ResourceManager& r) {
+void loadComponents(const json& src, Scene& s, EntityId e, const ResourceManager& r) {
     loadInto<Name>(src, "Name", s, e);
     loadInto<Transform>(src, "Transform", s, e);
     loadInto<Camera>(src, "Camera", s, e);
@@ -205,9 +200,8 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
         doc["entities"].push_back(std::move(entity));
     });
 
-    // Scene-global settings: the lighting environment and the physics world, a
-    // top-level object, not a per-entity component. Fully reflected - the
-    // field list lives once, in environment.h.
+    // Scene-global settings: top-level objects, not per-entity components.
+    // Fully reflected - the field list lives once, in environment.h.
     doc["environment"] = ComponentSerializer::save(scene.environment());
     doc["physics"]     = ComponentSerializer::save(scene.physics());
     return doc;
@@ -237,18 +231,16 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
         return false;
     }
 
-    // Transactional load: build both a staging Scene and a staging
-    // ResourceManager. Asset factories that re-create from descriptors
-    // (textures, materials, meshes) write into the staging RM, so a
-    // failure mid-load leaves the live asset graph untouched. On full
-    // success both swap into place in one commit phase.
+    // Transactional load: the asset factories write into the staging
+    // ResourceManager and the entities into the staging Scene, so a failure
+    // mid-load leaves the live scene and asset graph untouched.
     Scene staging;
     ResourceManager stagingResources;
 
     if (doc.contains("assets")) {
         // Inside a guard: a malformed assets block (bad JSON, missing library
         // entry) must log and leave the live scene + assets untouched, not throw
-        // out of load(). The staging RM is discarded on the early return.
+        // out of load().
         try {
             AssetSerializer::loadAssets(doc["assets"], stagingResources);
         } catch (const std::exception& e) {
@@ -261,7 +253,7 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     // non-relational components. Hierarchy::parent is captured for pass 2
     // because the parent might not have been created yet on first sight.
     std::vector<std::pair<uint32_t, uint32_t>> parentLinks;  // (child idx, parent idx)
-    std::vector<std::pair<Entity, std::string>> prefabRoots;  // instance roots to expand
+    std::vector<std::pair<EntityId, std::string>> prefabRoots;  // instance roots to expand
     size_t entityCount = 0;
     std::set<std::string> unknownKeys;  // dedup warnings - one per drift, not per entity
     const json noComponents = json::object();   // stand-in for an entity that has none
@@ -273,7 +265,7 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
                 LOG_WARNING("Entity with id=0 skipped (slot 0 reserved)");
                 continue;
             }
-            const Entity entity = staging.createEntityAt(id);
+            const EntityId entity = staging.createEntityAt(id);
             ++entityCount;
 
             // Referenced, not value()'d: nlohmann returns by value, so asking
@@ -282,10 +274,9 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             const auto it = entry.find("components");
             const json& components = (it != entry.end()) ? *it : noComponents;
 
-            // Run every component's loader. Hierarchy is intentionally skipped
-            // here - its parent index is captured below for the pass-2 wire-up.
             // Components that reference assets (Mesh) look them up in the
-            // staging RM so resolution sees what loadAssets just built.
+            // staging RM, so resolution sees what loadAssets just built.
+            // Hierarchy is skipped: its parent index is captured below.
             loadComponents(components, staging, entity, stagingResources);
             if (components.contains("Hierarchy")) {
                 const uint32_t parentIdx = CS::loadParentIndex(components["Hierarchy"]);
@@ -316,24 +307,23 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             }
         }
 
-        // Pass 2: wire up Hierarchy::parent now that every entity exists at
-        // its saved slot. setParent rebuilds firstChild/nextSibling/
-        // prevSibling on both sides and marks WorldTransform dirty.
+        // Pass 2: wire up Hierarchy::parent now that every entity exists at its
+        // saved slot. setParent rebuilds the sibling links on both sides and
+        // marks WorldTransform dirty.
         for (const auto& [childIdx, parentIdx] : parentLinks) {
             if (!staging.isAliveAtIndex(parentIdx)) {
                 LOG_WARNING("Parent slot %u not found in '%s'; entity %u left as root",
                     parentIdx, source, childIdx);
                 continue;
             }
-            const EntityId childId {childIdx,  staging.generationOf(childIdx)};
-            const EntityId parentId{parentIdx, staging.generationOf(parentIdx)};
+            const EntityId childId  = staging.entityAt(childIdx);
+            const EntityId parentId = staging.entityAt(parentIdx);
             HierarchyOperations::setParent(staging, childId, parentId);
         }
 
-        // Scene-global settings: two top-level objects, the lighting environment
-        // and the physics world. Missing fields keep the staging scene's
-        // defaults; a mistyped one throws, and is caught here like any other
-        // malformed block rather than unwinding out of load().
+        // Missing scene-global fields keep the staging scene's defaults; a
+        // mistyped one throws, and is caught here like any other malformed
+        // block rather than unwinding out of load().
         if (auto it = doc.find("environment"); it != doc.end() && it->is_object()) {
             ComponentSerializer::load(*it, staging.environment());
         }
@@ -351,11 +341,9 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             k.c_str(), source);
     }
 
-    // Commit phase: both stagings swap into place in one step. Until this
-    // point a throw would leave both `scene` and `resources` untouched -
-    // the malformed-file-half-loads-state failure mode is gone for both
-    // entities and assets. Compact the new live scene to reclaim sparse
-    // capacity that grew/shrunk during the staging build.
+    // Commit phase: both stagings swap into place in one step, so up to here a
+    // throw leaves `scene` and `resources` untouched. compact() reclaims the
+    // sparse capacity the staging build grew.
     //
     // Outstanding handles into `resources` from before this call are
     // stale - editor panels that cached handles to hidden previews

@@ -23,10 +23,8 @@ int main(int argc, char** argv) {
     try {
         // Same rule as the runtime: the project is the one beside this
         // executable, unless an argument names a different one. Resolved before
-        // any path is composed: the override takes effect at once, but a path
-        // already built from the old root will not follow it.
-        // A project browser, when it lands, is a GUI for naming one - not a
-        // second way of opening it.
+        // any path is composed - a path already built from the old root will not
+        // follow the override.
         bool argNotAProject = false;
         if (argc > 1) {
             std::error_code argEc;
@@ -36,11 +34,10 @@ int main(int argc, char** argv) {
             else                Engine::ProjectPaths::setProjectRoot(found);
         }
 
-        // Pin the working directory to the ENGINE root, not the project's, for
-        // the same reason the runtime does: shaders load CWD-relative and ship
-        // with the engine, while everything a project owns is addressed
-        // absolutely through ProjectPaths. Without this the editor only starts
-        // when launched from the engine root.
+        // Pin the working directory to the ENGINE root, not the project's:
+        // shaders load CWD-relative and ship with the engine, while everything a
+        // project owns is addressed absolutely through ProjectPaths. Without
+        // this the editor only starts when launched from the engine root.
         std::error_code cwdEc;
         std::filesystem::current_path(Engine::ProjectPaths::engineRoot(), cwdEc);
 
@@ -68,29 +65,25 @@ int main(int argc, char** argv) {
         // Pass true only to pin a GL error to its exact callsite.
         Core::enableGLDebugLogging(false);
 
-        // The editor registers the cooked factory set plus the recipe factories
-        // it needs to (re)cook assets from their source. Must precede scene I/O.
-        Engine::registerCookedAssetFactories();
+        // The editor wires the recipe factories: they (re)cook assets from their
+        // source and fall through to the cooked path for what is already baked.
+        // Must precede scene I/O.
         Engine::registerRecipeAssetFactories();
 
-        // Load the cooked asset database manifest (empty on a fresh project; the
-        // cooker rebuilds it on save).
+        // Empty on a fresh project; the cooker rebuilds it on save.
         Engine::AssetLibrary::get().load();
 
-        // What the open project calls itself; titles the window so two editors
-        // on two projects are tellable apart.
+        // Titles the window, so two editors on two projects are tellable apart.
         Engine::Project project;
         Engine::loadProject(Engine::ProjectPaths::projectRoot(), project);
 
         // Load the hot-reloadable gameplay module: it registers behaviors into
-        // the engine's registry (resolved from this exe). Declared before the
-        // Engine so it outlives it - behaviors are destroyed during Engine
-        // teardown and their code must still be loaded then. Must precede
-        // setupEngineApp, whose default scene creates behaviors via the registry.
+        // the engine's registry, so it must precede the scene boot. Declared
+        // before the Engine so it outlives it - behaviors are destroyed during
+        // Engine teardown and their code must still be loaded then.
         Engine::ScriptModule scriptModule;
-        // The editor edits a project, so it runs that project's code, from the
-        // one place a project builds it - the same lookup File > Open Project
-        // does when it switches.
+        // The editor runs the edited project's code, from the one place a
+        // project builds it - the same lookup File > Open Project does.
         const std::filesystem::path modulePath =
             Engine::ProjectPaths::projectBin() / Engine::DynamicLibrary::platformName("game");
 

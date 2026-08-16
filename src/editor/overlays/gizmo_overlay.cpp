@@ -70,7 +70,7 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
         && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)
         && ctx.visibility && ctx.visibility->hasCamera
         && ctx.scene.has<Transform>(state.selectedEntity)
-        && state.selectedEntity != ec.cameraController.getCameraEntity().getID();
+        && state.selectedEntity != ec.cameraController.getCameraEntity();
 
     // Drag-end is decided before the draw guard, not after it: a shortcut can
     // switch tool or selection mid-drag, and whether the drag is over is not
@@ -126,7 +126,7 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
         // applied the delta twice, so dragging a parent and its child together
         // sent the child twice as far.
         m_dragSelection.clear();
-        const EntityId flown = ec.cameraController.getCameraEntity().getID();
+        const EntityId flown = ec.cameraController.getCameraEntity();
         auto hasSelectedAncestor = [&](EntityId id) {
             EntityId cur = id;
             for (int depth = 0; depth < 32; ++depth) {
@@ -274,7 +274,6 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
     const float vpW = std::max(1.0f, ec.viewportSize.x);
     const float vpH = std::max(1.0f, ec.viewportSize.y);
 
-    // Convert to NDC [-1, 1] in viewport space.
     float ndcX =  (2.0f * (mp.x - vpX) / vpW) - 1.0f;
     float ndcY = -(2.0f * (mp.y - vpY) / vpH) + 1.0f;
 

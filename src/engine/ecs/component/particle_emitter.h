@@ -32,13 +32,11 @@ struct Particle {
  * deliberately outside the reflected (serialized) field list.
  */
 struct ParticleEmitter {
-    // Emission
     bool     emitting     = true;
     float    rate         = 30.0f;  ///< Particles spawned per second.
     float    lifetime     = 1.5f;   ///< Seconds each particle lives.
     uint32_t maxParticles = 256;    ///< Hard cap on simultaneously live particles.
 
-    // Motion
     glm::vec3 velocity{0.0f, 2.0f, 0.0f};      ///< Initial velocity (world).
     float     spread = 1.0f;                    ///< Random velocity spread added per axis.
     glm::vec3 acceleration{0.0f, -2.0f, 0.0f};  ///< Constant acceleration (gravity, drift).

@@ -1,20 +1,15 @@
 #pragma once
 
 #include <memory>
-#include <vector>
 
 #include <glm/glm.hpp>
 
-#include "gl_shader.h"
 #include "gl_compute_shader.h"
 #include "gl_frame_buffer.h"
 #include "gl_render_buffer.h"
 #include "gl_texture_cube.h"
 
-#include "data/gl_camera.h"
-#include "data/gl_lights.h"
-#include "data/gl_shadow_data.h"
-#include "data/gl_instance_batcher.h"
+#include "data/gl_scene_capture.h"
 
 namespace Core {
     class Context;
@@ -25,9 +20,7 @@ namespace Engine {
 class GLIrradianceVolume;
 class GLView;
 class GLIBL;
-class GLMesh;
 struct RenderView;
-struct DrawableData;
 struct IrradianceVolumeData;
 
 /**
@@ -81,29 +74,14 @@ class GLIrradianceBaker {
          */
         void ensureTargets();
 
-        /**
-         * @brief Render the scene into the capture cube from @p position.
-         */
-        void captureProbe(Core::Context& gl, const glm::vec3& position,
-                          const std::vector<InstanceRun>& runs,
-                          const GLView& glView, const GLIBL& globalIBL);
-
     private:
-        Core::Shader        m_pbr;      ///< capture geometry (full forward PBR)
-        Core::Shader        m_skybox;   ///< capture background
         Core::ComputeShader m_project;  ///< cube -> SH-L1 coefficients
 
-        Core::TextureCube               m_cube;   ///< small per-probe capture cube
-        Core::FrameBuffer               m_fbo;
+        Core::TextureCube                   m_cube;   ///< small per-probe capture cube
+        Core::FrameBuffer                   m_fbo;
         std::unique_ptr<Core::RenderBuffer> m_depth;
-        std::unique_ptr<GLMesh>         m_unitCube;  ///< skybox draw
 
-        GLCamera          m_camera;    ///< per-face camera UBO
-        GLLights          m_lights;    ///< no-shadow lights SSBO
-        GLShadowData      m_noShadow;  ///< default-built: every slotForLight() == -1
-        GLInstanceBatcher m_batcher;
-
-        std::vector<const DrawableData*> m_opaque;
+        GLSceneCapture m_capture;  ///< scene -> the six faces of m_cube
 };
 
 } // namespace Engine

@@ -22,22 +22,22 @@ VisibilitySystem::update(ctx)
   2. Build VisibilityContext: frustum planes, camera position and view
      matrix, and the thresholds (pre-squared for the sqrt-free tests).
   3. Resize the persistent flat per-index arrays to the full Mesh count
-     (visible flags, caster flags, model matrices, world AABBs).
+     (visible flags, caster flags, one `VisibleEntity` of scratch per index).
   4. parallelFor over all Mesh entities (each worker writes disjoint indices):
      - Skip if !visible, no mesh, no Transform, or degenerate bounds.
      - Resolve the world matrix inline: read WorldTransform if present, else
        compute from the local Transform (HierarchySystem already ran this stage).
      - Compute world AABB (Arvo's method, 18 mults).
-     - Cache the matrix, AABB, and castShadows flag for EVERY valid mesh
-       (not just camera-visible ones) so the serial caster gather below can
-       reach off-screen occluders. This is why the arrays are sized to the
-       full Mesh set.
+     - Fill the scratch entry (id, matrix, AABB, chosen mesh) and the
+       castShadows flag for EVERY valid mesh (not just camera-visible ones) so
+       the serial caster gather below can reach off-screen occluders. This is
+       why the arrays are sized to the full Mesh set.
      - FrustumCuller::isVisible       - reject if fully outside frustum.
      - DistanceCuller::isVisible      - reject if too far from camera.
      - ScreenSizeCuller::isVisible    - reject if projected size below minPixels.
      - Set the visible flag for survivors.
-  5. Serial gather: walk the flat arrays in Mesh order, pushing visible
-     entries into Visibility.entries and shadow casters into
+  5. Serial gather: walk the flags in Mesh order, copying scratch entries
+     into Visibility.entries and shadow casters into
      Visibility.shadowCasters.
   6. Set FrameContext.visibility to point at the persistent result.
 ```
@@ -174,11 +174,11 @@ Thresholds live in a nested `Settings` struct read/written through
 ## Parallelism
 
 The cull loop uses `ThreadPool::parallelFor()` over persistent flat
-per-index arrays sized to the full Mesh count (visible/caster flags,
-model matrices, world AABBs). Each worker writes only its own indices, so
-there is zero contention and no atomics. After the parallel region a
-serial gather walks those arrays in `Mesh` storage order, pushing visible
-entries and shadow casters into the result vectors - so the final
+per-index arrays sized to the full Mesh count (visible/caster flags, plus
+one `VisibleEntity` of scratch per index). Each worker writes only its own
+indices, so there is zero contention and no atomics. After the parallel
+region a serial gather walks those arrays in `Mesh` storage order, copying
+visible entries and shadow casters into the result vectors - so the final
 `Visibility.entries` stays contiguous and ordered by `Mesh` storage. The
 arrays are `resize`d (not reallocated) each frame, reusing capacity.
 

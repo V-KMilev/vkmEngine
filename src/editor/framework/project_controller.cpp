@@ -2,7 +2,6 @@
 
 #include "framework/project_controller.h"
 
-#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <system_error>
@@ -90,23 +89,14 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     ec.state.projectName = project.name;
     ec.state.sceneDirty  = false;
 
-    pushRecent(ec, root.string());
+    pushRecentPath(ec.state.recentProjects, root.string());
     ec.state.pushToast(EditorState::ToastKind::Info, "Opened " + project.name);
     LOG_INFO("Opened project '%s' at '%s'", project.name.c_str(), root.string().c_str());
     return true;
 }
 
 void ProjectController::noteCurrentProject(EditorContext& ec) {
-    pushRecent(ec, ProjectPaths::projectRoot().string());
-}
-
-void ProjectController::pushRecent(EditorContext& ec, const std::string& projectRoot) {
-    std::vector<std::string>& recents = ec.state.recentProjects;
-    recents.erase(std::remove(recents.begin(), recents.end(), projectRoot), recents.end());
-    recents.insert(recents.begin(), projectRoot);
-    if (recents.size() > EditorState::MAX_RECENT_SCENES) {
-        recents.resize(EditorState::MAX_RECENT_SCENES);
-    }
+    pushRecentPath(ec.state.recentProjects, ProjectPaths::projectRoot().string());
 }
 
 void ProjectController::drawDialog(EditorContext& ec, ScriptModule& scriptModule,

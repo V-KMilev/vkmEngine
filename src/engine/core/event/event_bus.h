@@ -18,9 +18,7 @@ namespace Engine {
  * flush() at the top of the Simulation stage - the fixed, visible point where
  * queued events deliver.
  *
- * Subscribe a typed callback for events of type EventT; emit() fires listeners
- * synchronously, enqueue() buffers events until the next flush(). Per-type
- * listener and queue storage is created lazily on first use.
+ * Per-type listener and queue storage is created lazily on first use.
  *
  * Threading: main-thread only. emit / enqueue / subscribe / unsubscribe must
  * all happen on the frame thread. If a future subsystem (e.g. physics on a

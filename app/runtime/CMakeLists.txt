@@ -2,8 +2,7 @@
 # game binary.
 add_executable(engine_runtime main.cpp)
 
-# The app drives the engine directly (no EngineApp library), so it links the
-# engine libs - the same set EngineApp used to re-export.
+# The app drives the engine directly, so it links the engine libs itself.
 target_link_libraries(engine_runtime PRIVATE
     EngineCore
     EngineRendering
@@ -13,8 +12,8 @@ target_link_libraries(engine_runtime PRIVATE
     vkm_warnings
 )
 
-# main.cpp includes the shared bootstrap as "app/engine_app.h" (which pulls in
-# "example/default_scene.h"); the repo root puts both prefixes on the include path.
+# main.cpp includes the shared bootstrap as "app/engine_app.h"; the repo root is
+# on the include path so that prefix resolves.
 target_include_directories(engine_runtime PRIVATE ${CMAKE_SOURCE_DIR})
 
 # The gameplay module is loaded, not linked - the same module the editor
@@ -29,7 +28,6 @@ else()
     target_link_options(engine_runtime PRIVATE "-rdynamic")
 endif()
 
-# ----------------------------------------------------------------------------
 # Packaging: assemble a relocatable game under the install prefix.
 #
 # The exe + its DLLs go in bin/; the data sits at the package root. The runtime
