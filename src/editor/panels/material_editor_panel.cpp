@@ -301,7 +301,7 @@ bool MaterialEditorPanel::textureSlot(
         const std::filesystem::path appRoot = ProjectPaths::projectRoot();
         m_texturePicker.options.popupId    = "PickTexture";
         m_texturePicker.options.title      = "Pick Texture";
-        m_texturePicker.options.root       = appRoot / "assets";
+        m_texturePicker.options.root       = ProjectPaths::assets();
         m_texturePicker.options.recursive  = true;
         m_texturePicker.options.kind       = AssetPicker::Kind::Files;
         m_texturePicker.options.extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp"};
@@ -331,10 +331,9 @@ bool MaterialEditorPanel::textureSlot(
 
 bool MaterialEditorPanel::pbrFolderBrowse(std::string& outFolder) {
     if (ImGui::SmallButton("Load PBR Folder...")) {
-        const std::filesystem::path appRoot = ProjectPaths::projectRoot();
         m_pbrFolderPicker.options.popupId   = "PBRFolder";
         m_pbrFolderPicker.options.title     = "Load PBR Folder";
-        m_pbrFolderPicker.options.root      = appRoot / "assets";
+        m_pbrFolderPicker.options.root      = ProjectPaths::assets();
         m_pbrFolderPicker.options.recursive = false;
         m_pbrFolderPicker.options.kind      = AssetPicker::Kind::Directories;
         m_pbrFolderPicker.options.extensions.clear();

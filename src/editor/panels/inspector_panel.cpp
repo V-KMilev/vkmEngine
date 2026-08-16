@@ -614,7 +614,7 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
             const std::filesystem::path appRoot = ProjectPaths::projectRoot();
             m_envPicker.options.popupId    = "PickEnvHdr";
             m_envPicker.options.title      = "Pick Environment HDR";
-            m_envPicker.options.root       = appRoot / "assets" / "envs";
+            m_envPicker.options.root       = ProjectPaths::envs();
             m_envPicker.options.recursive  = false;
             m_envPicker.options.kind       = AssetPicker::Kind::Files;
             m_envPicker.options.extensions = {".hdr"};
