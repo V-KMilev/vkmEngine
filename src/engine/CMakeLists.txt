@@ -55,17 +55,33 @@ target_include_directories(EngineCore PRIVATE
     ${PROJECT_SOURCE_DIR}/modules/vkmGL/modules/glew/include
 )
 
+# glm, vkmLog and nlohmann are header-only or shared, so a consumer linking them
+# too costs nothing and resolves to one copy.
 target_link_libraries(EngineCore PUBLIC
     glm
-    glfw
     vkmLog
     nlohmann_json
 )
+
+# Static libraries absorbed INTO this shared library are linked privately, and
+# only their include directories travel outward (below). A consumer must not link
+# them again: their code is already inside libEngineCore, and on Windows - where
+# the export table re-publishes everything the DLL absorbed - linking both the
+# import library and the static archive is a duplicate-definition error at link
+# time. Linux hides this because the dynamic linker picks one; Windows does not.
 target_link_libraries(EngineCore PRIVATE
+    glfw
     glew
     vkm_warnings
     BuildInfo          # io/project_paths.h resolves paths against APP_ROOT_DIR
     stb                # platform/window/window_manager.cpp decodes the window icon
+)
+
+# The headers those private dependencies own are still part of this library's
+# public surface - platform/window/glfw_include.h names GLFW types - so consumers
+# need the include paths without the archives.
+target_include_directories(EngineCore PUBLIC
+    $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
 target_compile_definitions(EngineCore PUBLIC
@@ -84,9 +100,16 @@ target_compile_definitions(EngineCore PUBLIC
 # VKM_PROFILER, so consumers never include Tracy headers themselves. TracyClient
 # stays a PUBLIC link so backend/editor TUs that pull profile macros via the
 # facade get the symbols at link time.
+# Tracy is linked privately for the same reason as glfw: its objects live inside
+# libEngineCore, and a consumer expanding a PROFILE_ macro resolves the symbols
+# from there. Its include path still propagates, because the facade's macros
+# expand into Tracy's header in the consumer's own translation unit.
 if(VKM_PROFILER)
     target_compile_definitions(EngineCore PUBLIC VKM_PROFILER=1)
-    target_link_libraries     (EngineCore PUBLIC TracyClient)
+    target_link_libraries     (EngineCore PRIVATE TracyClient)
+    target_include_directories(EngineCore PUBLIC
+        $<TARGET_PROPERTY:TracyClient,INTERFACE_INCLUDE_DIRECTORIES>
+    )
 endif()
 
 # EngineHeaders - an include-only (INTERFACE) view of EngineCore's public API.
