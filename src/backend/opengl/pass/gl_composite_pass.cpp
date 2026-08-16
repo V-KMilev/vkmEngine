@@ -11,7 +11,6 @@
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
-#include "gl_mask_target.h"
 #include "data/gl_bloom.h"
 #include "data/gl_fog_volume.h"
 #include "data/gl_shadow_atlas.h"
@@ -49,7 +48,7 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
         // The AO target is allocated for any debug view, but only the GTAO pass
         // ever writes it: with GTAO off the AO view would show whatever the
         // allocation happened to contain. Show the unoccluded value instead.
-        if (ctx.aoReady) ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
+        if (ctx.aoReady) ctx.ao.bindColor(GLBindings::PostTextureSlots::SSAO);
         m_shader->setUniform1i("u_hasAO", ctx.aoReady ? 1 : 0);
         ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
         if (ctx.fogReady)

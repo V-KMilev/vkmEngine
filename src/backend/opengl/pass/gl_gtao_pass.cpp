@@ -10,7 +10,6 @@
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
-#include "gl_mask_target.h"
 #include "convention/gl_bindings.h"
 #include "system/render/render_view.h"
 

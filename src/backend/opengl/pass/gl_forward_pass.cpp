@@ -13,7 +13,6 @@
 #include "gl_target.h"
 #include "data/gl_cluster_grid.h"
 #include "data/gl_irradiance_volume.h"
-#include "gl_mask_target.h"
 #include "data/gl_shadow_atlas.h"
 #include "gl_view.h"
 #include "core/engine_config.h"
@@ -73,7 +72,7 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
 
     // Screen-space AO from the GTAO pass: bind + gate it. The shader multiplies
     // it into the indirect term (ambient/IBL). Absent (pass disabled) -> 1.0.
-    if (ctx.aoReady) ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
+    if (ctx.aoReady) ctx.ao.bindColor(GLBindings::PostTextureSlots::SSAO);
     m_shader->setUniform1i("u_hasSSAO", ctx.aoReady ? 1 : 0);
 
     // View -> world, so the GTAO bent normal can be used in world space.

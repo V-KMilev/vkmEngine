@@ -164,14 +164,9 @@ void GLTarget::blitColorFrom(const GLTarget& src) {
 void GLTarget::resolveColorTo(GLTarget& dst) {
     if (m_samples <= 1) return;  // single-sample: the render target already is dst
 
-    // Resolve colour 0 (MS renderbuffer -> dst's colour texture). Same bind
-    // order as blitColorFrom: setDrawBuffer binds dst as the draw framebuffer,
-    // then this binds as read-only; both use the default colour-0 read buffer.
-    const int32_t w = static_cast<int32_t>(m_width);
-    const int32_t h = static_cast<int32_t>(m_height);
-    dst.m_fbo.setDrawBuffer(GL_COLOR_ATTACHMENT0);
-    m_fbo.bind(GL_READ_FRAMEBUFFER);
-    Core::FrameBuffer::blit(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    // A colour blit out of a multisample framebuffer is the resolve - GL does it
+    // in the blit - so the only thing this adds to blitColorFrom is the guard.
+    dst.blitColorFrom(*this);
 }
 
 void GLTarget::resolveGeometryTo(GLTarget& dst, bool gbuffer) {

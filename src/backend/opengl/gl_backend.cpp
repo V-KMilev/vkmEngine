@@ -129,9 +129,9 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"Composite",      std::make_unique<GLCompositePass>()});
     m_passes.push_back({"UI",             std::make_unique<GLUIPass>()});
 
-    // GTAO writes an occlusion factor plus a packed bent normal, so its target
-    // needs more than one channel (the contact-shadow mask stays R16F).
-    m_ao.setFormat(GL_RGBA16F, GL_RGBA);
+    // The GTAO pass is a fullscreen draw that samples the scene depth, so its
+    // own target carries the factor + packed bent normal and no depth buffer.
+    m_ao.setColorOnly();
 
     // Forward+ cluster light grid: allocate its SSBO now the context is live.
     m_clusterGrid.init();
@@ -182,9 +182,9 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     m_bloom.resize(view.viewportWidth, view.viewportHeight);
     m_hiz.resize(view.viewportWidth, view.viewportHeight);
 
-    // Mask targets only exist while something reads them (the composite debug
-    // views sample the AO target unconditionally, so any non-default view keeps
-    // it alive too). Once allocated they stay - toggles flip too often to thrash.
+    // The AO target only exists while something reads it (the composite debug
+    // views sample it unconditionally, so any non-default view keeps it alive
+    // too). Once allocated it stays - toggles flip too often to thrash.
     if (view.settings.gtao || view.settings.renderMode != RenderMode::Default)
         m_ao.resize(view.viewportWidth, view.viewportHeight);
     // MSAA: when enabled, the geometry passes render into the multisample target
