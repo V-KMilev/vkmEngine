@@ -18,17 +18,8 @@ target_link_libraries(engine_editor PRIVATE
 # on the include path so that prefix resolves.
 target_include_directories(engine_editor PRIVATE ${CMAKE_SOURCE_DIR})
 
-# Export the exe's symbols so the hot-reloadable game module can resolve engine
-# symbols against it (the module is loaded at runtime, never linked into the exe).
-# Windows: generates an import library (libengine_editor.dll.a) the module links;
-# --export-all-symbols publishes the statically-linked engine symbols too.
-# Linux: -rdynamic/--export-dynamic puts the exe's symbols in the dynamic
-# table so the dlopen'd module resolves against the host (no link needed there).
-set_target_properties(engine_editor PROPERTIES ENABLE_EXPORTS ON)
-if(WIN32)
-    target_link_options(engine_editor PRIVATE "-Wl,--export-all-symbols")
-else()
-    target_link_options(engine_editor PRIVATE "-rdynamic")
-endif()
+# The gameplay module is loaded, not linked. It resolves engine symbols from the
+# shared engine libraries it links itself, so this executable exports nothing and
+# a module is not bound to whichever host opened it.
 
 

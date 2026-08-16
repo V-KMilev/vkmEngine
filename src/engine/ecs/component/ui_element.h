@@ -48,12 +48,12 @@ struct UIElement {
 
 // screenRect is resolved every frame, so only the authored fields are
 // reflected (and thus serialized).
-VKM_REFLECT_BEGIN(UIElement)
+} // namespace Engine
+
+VKM_REFLECT_BEGIN(::Engine::UIElement)
     VKM_F(anchor),
     VKM_F(pivot),
     VKM_F(position),
     VKM_F(size),
     VKM_F(visible)
 VKM_REFLECT_END()
-
-} // namespace Engine

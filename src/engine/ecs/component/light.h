@@ -23,9 +23,6 @@ enum class LightType {
     Disk        = 4,    ///< Disk area light (areaRadius, faces -direction)
     Count               ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
-
-VKM_ENUM_NAMES(LightType, "Directional", "Point", "Spot", "Rect", "Disk")
-
 /**
  * @brief Component representing a light source in the scene.
  *
@@ -55,8 +52,11 @@ struct Light {
 
     bool enabled = true;
 };
+} // namespace Engine
 
-VKM_REFLECT_BEGIN(Light)
+VKM_ENUM_NAMES(::Engine::LightType, "Directional", "Point", "Spot", "Rect", "Disk")
+
+VKM_REFLECT_BEGIN(::Engine::Light)
     VKM_F(type),
     VKM_F(color),
     VKM_F(intensity),
@@ -72,5 +72,3 @@ VKM_REFLECT_BEGIN(Light)
     VKM_F(shadowDistance),
     VKM_F(enabled)
 VKM_REFLECT_END()
-
-} // namespace Engine

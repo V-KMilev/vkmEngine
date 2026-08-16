@@ -39,7 +39,12 @@ if(NOT TARGET stb)
     set(_stb_impl ${CMAKE_CURRENT_BINARY_DIR}/stb_image_impl.c)
     file(WRITE ${_stb_impl} "#define STB_IMAGE_IMPLEMENTATION\n#include \"stb_image.h\"\n")
     add_library(stb STATIC ${_stb_impl})
-    target_include_directories(stb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/stb)
+    # Split for export: stb travels in the engine's link interface, so its
+    # include path has to resolve against an installed SDK as well as this tree.
+    target_include_directories(stb PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/stb>
+        $<INSTALL_INTERFACE:include>
+    )
 endif()
 
 # vkmGL: the OpenGL layer. Adds glew, and defers to the targets above.
