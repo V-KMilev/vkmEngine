@@ -131,8 +131,12 @@ subscribe<UIClickEvent>([this](const UIClickEvent& e) {
 });
 ```
 
-`UIDrawData::pointerOverUI` is set while the pointer is over an interactable
-widget, so a System reading `ctx.ui` can gate world input on it.
+In the editor the pointer is shared with the editor's own chrome, so
+`EditorSystem` calls `UISystem::setEditorPointerCapture()` each frame with the
+same flag it hands the camera controller. While it is set the layout still runs
+and the overlay still draws, but nothing hit-tests - a click aimed at the
+viewport toolbar, the playbar or a gizmo does not also press the game button
+behind it. The runtime never sets it.
 
 ## The draw seam
 

@@ -22,7 +22,7 @@ namespace Engine {
  * contacts and is never pushed.
  */
 struct PhysicsBody {
-    glm::vec3 position = {0.0f, 0.0f, 0.0f};         ///< Centre of mass (world)
+    glm::vec3 position = {0.0f, 0.0f, 0.0f};         ///< Body origin (entity world position)
 
     glm::vec3 linearVelocity  = {0.0f, 0.0f, 0.0f};
     glm::vec3 angularVelocity = {0.0f, 0.0f, 0.0f};

@@ -34,15 +34,16 @@ nlohmann::json meshGeneratorSource(const char* type, nlohmann::json params = nlo
 }
 
 /**
- * @brief Stamp source + AssetId on a freshly-generated mesh in one call.
+ * @brief Stamp source + name on a freshly-generated mesh in one call.
  *
- * The AssetDatabase key is "mesh:generator:<type>:<param>:<param>..."
- * derived deterministically from the same params so identical generator
- * calls map to the same GUID across runs.
+ * The name is "mesh:generator:<type>:<param>:<param>..." derived from the same
+ * params as the source, so identical generator calls land on one asset: the name
+ * is the serializable identity, and two meshes generated the same way are the
+ * same mesh rather than two copies a scene would save twice.
  *
  * @param mesh Freshly generated mesh to stamp (source + name set in place).
  * @param type Generator type tag (e.g. "cube", "sphere").
- * @param params Generator parameters folded into the deterministic key.
+ * @param params Generator parameters folded into the deterministic name.
  */
 void stampGenerated(MeshAsset& mesh, const char* type, const nlohmann::json& params = {}) {
     mesh.sourceJson() = meshGeneratorSource(type, params);
@@ -356,8 +357,11 @@ MeshAsset generateCone(float radius, float height, uint32_t segments) {
     const glm::vec3 nDown(0.0f, -1.0f, 0.0f);
     const glm::vec4 tangent(1.0f, 0.0f, 0.0f, 1.0f);
 
-    // Add tip vertex
-    glm::vec3 tipNormal = glm::normalize(glm::vec3(0.0f, radius, height));
+    // The apex is one shared vertex for every side triangle, so its normal has to
+    // be the one direction the whole fan agrees on - the axis, which is what the
+    // ring of side normals averages to. Any single side's normal would light the
+    // tip as if it faced that side all the way round.
+    const glm::vec3 tipNormal(0.0f, 1.0f, 0.0f);
     mesh.vertices.push_back(Vertex{ tip, tipNormal, glm::vec2(0.5f, 1.0f), tangent });
     uint32_t tipIndex = 0;
 

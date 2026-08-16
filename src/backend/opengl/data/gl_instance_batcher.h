@@ -193,6 +193,7 @@ class GLInstanceBatcher {
         static void uploadStorage(std::unique_ptr<Core::ShaderStorageBuffer>& buffer,
                                   uint32_t& capacity, const void* data, uint32_t bytes);
 
+    private:
         std::vector<InstanceRun> m_runs;
         std::vector<uint32_t>    m_order;    ///< sort indices into the input list
         std::vector<glm::mat4>   m_models;   ///< flattened model matrices, run order

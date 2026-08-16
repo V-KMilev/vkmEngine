@@ -71,6 +71,12 @@ glm::vec3 worldPosOf(const Scene& scene, EntityId id, const Transform& tf) {
     return tf.position;
 }
 
+glm::quat worldRotationOf(const Scene& scene, EntityId id, const Transform& tf) {
+    if (scene.has<WorldTransform>(id))
+        return Math::worldRotationOf(scene.get<WorldTransform>(id).model);
+    return tf.rotation;
+}
+
 void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
     ViewportOverlayScope scope(ec);
     if (!scope.valid()) return;
@@ -90,7 +96,8 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                        static_cast<int>(light.color.b * 220), 200);
 
         const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
-        const glm::vec3 dir = glm::normalize(Math::computeForward(tf.rotation));
+        const glm::quat rot = worldRotationOf(ec.frame.scene, id, tf);
+        const glm::vec3 dir = glm::normalize(Math::computeForward(rot));
 
         // Billboard icon at the entity origin so a light is always findable
         // even if the wireframe is tiny or pointed away. Drawn first so the
@@ -188,8 +195,8 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                 const bool isRect = (light.type == LightType::Rect);
                 const float ux = isRect ? light.areaWidth  * 0.5f : light.areaRadius;
                 const float uy = isRect ? light.areaHeight * 0.5f : light.areaRadius;
-                const glm::vec3 right = tf.rotation * glm::vec3(1, 0, 0) * ux;
-                const glm::vec3 up    = tf.rotation * glm::vec3(0, 1, 0) * uy;
+                const glm::vec3 right = rot * glm::vec3(1, 0, 0) * ux;
+                const glm::vec3 up    = rot * glm::vec3(0, 1, 0) * uy;
 
                 if (isRect) {
                     const glm::vec3 corners[4] = {
@@ -483,16 +490,19 @@ void GizmoOverlay::drawColliderGizmos(EditorContext& ec) {
     const ImVec2    vpSize = scope.vpSize;
     ImDrawList*     dl     = scope.dl;
 
-    // Physics evaluates a collider in the entity's Transform frame - position +
-    // rotation, no scale (see PhysicsSystem). Draw it the same way so the
-    // wireframe is exactly what the solver collides against.
+    // Physics evaluates a collider in the entity's WORLD frame - position +
+    // rotation, no scale (see PhysicsSystem, which reads the WorldTransform for
+    // a parented body). Draw it the same way so the wireframe is exactly what
+    // the solver collides against.
     ec.frame.scene.forEach<Collider, Transform>([&](EntityId id, const Collider& col, const Transform& tf) {
         if (!col.enabled) return;   // inert colliders don't collide, so don't draw them
         const bool   selected = (ec.state.isSelected(id));
         const ImU32  color    = selected ? EditorStyle::HIGHLIGHT_U32 : COLLIDER_COL;
-        const glm::mat3 r = glm::mat3_cast(tf.rotation);
+        const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
+        const glm::quat rot = worldRotationOf(ec.frame.scene, id, tf);
+        const glm::mat3 r   = glm::mat3_cast(rot);
         for (const ColliderBox& part : col.parts)
-            wireBox(dl, vp, tf.position + r * part.center, tf.rotation,
+            wireBox(dl, vp, pos + r * part.center, rot,
                     part.halfExtents, vpMin, vpSize, color);
     });
 }

@@ -5,7 +5,9 @@
 #include <filesystem>
 #include <algorithm>
 #include <cctype>
+#include <optional>
 
+#include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
@@ -17,6 +19,37 @@
 namespace Engine {
 
 namespace {
+
+/**
+ * @brief Descriptor for building a PBR material from individual texture files.
+ *
+ * The paths are what folder discovery found; the scalars are the values a slot
+ * with no texture falls back to. Local to this file: the folder loader is the
+ * only thing that fills one in.
+ */
+struct MaterialLoadDesc {
+    // Texture file paths (leave empty to use fallback)
+    std::string albedoPath;
+    std::string normalPath;
+    std::string metallicRoughnessPath;  ///< Packed map: B = metallic, G = roughness
+    std::string metallicPath;
+    std::string roughnessPath;
+    std::string aoPath;
+    std::string emissionPath;
+    std::string heightPath;             ///< Height/displacement map for parallax
+
+    // Material base properties (used if no texture is provided or as tint)
+    glm::vec4 albedo = glm::vec4(1.0f);
+    glm::vec3 emission = glm::vec3(0.0f);
+    float metallic = 0.0f;
+    float roughness = 1.0f;
+    float ao = 1.0f;
+    float normalScale = 1.0f;
+    float heightScale = 0.0f;  ///< Parallax depth scale (disabled by default for safety)
+
+    bool generateMipmaps = true;
+};
+
 std::string toLower(const std::string& str) {
     std::string result = str;
     std::transform(result.begin(), result.end(), result.begin(),
@@ -138,9 +171,13 @@ MaterialHandle loadMaterialFromDesc(
 
 MaterialHandle loadMaterialFromFolder(
     const std::string& folderPath,
-    ResourceManager& resourceManager,
-    const MaterialLoadDesc& baseProperties
+    ResourceManager& resourceManager
 ) {
+    // Idempotent by name like every other loader, and the folder path is this
+    // material's name: a second load of the same folder is that same material,
+    // not a second copy of it living under a suffixed name.
+    if (MaterialHandle loaded = resourceManager.findByName<MaterialAsset>(folderPath)) return loaded;
+
     if (!std::filesystem::exists(folderPath)) {
         LOG_ERROR("Material folder not found: '%s'", folderPath.c_str());
         return MaterialHandle{};
@@ -148,7 +185,7 @@ MaterialHandle loadMaterialFromFolder(
 
     LOG_INFO("Loading material from folder: '%s'", folderPath.c_str());
 
-    MaterialLoadDesc desc = baseProperties;
+    MaterialLoadDesc desc;
 
     // Common naming patterns per texture type. findTexture lowercases both the
     // filename and each pattern before matching, so patterns are listed once in

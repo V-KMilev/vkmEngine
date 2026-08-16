@@ -22,6 +22,7 @@ namespace {
 template<typename Asset>
 struct CookedRequest {
     Handle<Asset>         handle{};          ///< Returned to the caller as-is.
+    uint64_t              uid = 0;           ///< Identity of the stub the completion belongs to.
     bool                  dispatch = false;  ///< Kick off the off-thread read?
     std::filesystem::path path{};            ///< Cooked file (valid when dispatch).
     uint64_t              expectHash = 0;    ///< Recipe hash to match (valid when dispatch).
@@ -49,6 +50,7 @@ CookedRequest<Asset> beginCookedRequest(const std::string& name, AssetType type,
 
     CookedRequest<Asset> req;
     req.handle     = resources.add(std::move(stub));
+    req.uid        = resources.get(req.handle).uid;
     req.dispatch   = true;
     req.path       = AssetLibrary::get().cookedPath(*record);
     req.expectHash = record->recipeHash;
@@ -63,9 +65,11 @@ MeshHandle requestCookedMeshAsync(const std::string& name, ResourceManager& reso
     auto req = beginCookedRequest<MeshAsset>(name, AssetType::Mesh, "mesh", resources);
     if (!req.dispatch) return req.handle;
 
-    ThreadPool::get().addTask([handle = req.handle, path = req.path, expectHash = req.expectHash]() {
+    ThreadPool::get().addTask([handle = req.handle, uid = req.uid, path = req.path,
+                               expectHash = req.expectHash]() {
         MeshLoadCompletion completion;
-        completion.handle = handle;
+        completion.handle   = handle;
+        completion.assetUid = uid;
 
         MeshAsset decoded;
         uint64_t gotHash = 0;
@@ -89,9 +93,11 @@ TextureHandle requestCookedTextureAsync(const std::string& name, ResourceManager
     auto req = beginCookedRequest<TextureAsset>(name, AssetType::Texture, "texture", resources);
     if (!req.dispatch) return req.handle;
 
-    ThreadPool::get().addTask([handle = req.handle, path = req.path, expectHash = req.expectHash]() {
+    ThreadPool::get().addTask([handle = req.handle, uid = req.uid, path = req.path,
+                               expectHash = req.expectHash]() {
         TextureLoadCompletion completion;
-        completion.handle = handle;
+        completion.handle   = handle;
+        completion.assetUid = uid;
 
         TextureAsset decoded;
         uint64_t gotHash = 0;

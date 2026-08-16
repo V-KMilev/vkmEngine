@@ -142,11 +142,11 @@ game module is unloaded on hot-reload, since the factories close over module cod
 ## BehaviorSystem
 
 Drives the lifecycle of every entity's `ScriptComponent` behaviors. It ticks
-only while the `SimulationClock` is running (`ctx.simDeltaTime > 0`), so pause /
+only while the `Clock` is running (`ctx.clock.getSimDelta() > 0`), so pause /
 step / Stop apply uniformly:
 
 1. On an instance's first tick, inject context and call `onStart()`.
-2. `onUpdate(simDeltaTime)` every frame; `onFixedUpdate(fixedDeltaTime)` every
+2. `onUpdate(getSimDelta())` every frame; `onFixedUpdate(getFixedStep())` every
    fixed tick.
 3. Dispatch physics `CollisionEvent` / `TriggerEvent` (collected via
    subscriptions) to the involved entities' `onCollision` / `onTrigger` hooks.
@@ -156,7 +156,8 @@ step / Stop apply uniformly:
 Every hook runs under a catch net: a behavior that throws is reported via
 `reportError()` (logged, and captured by the editor-owned `EngineErrorLog`) and
 disabled, never fatal. `onDestroy` fires on three paths -
-entity deletion (wired through `Scene::setOnEntityDestroy` in `init`), play stop,
+entity deletion (wired through `Scene::addObserver` /
+`ISceneObserver::onEntityDestroyed` in `init`, dropped again in `shutdown`), play stop,
 and shutdown (`endSession`, static so the editor's stop path can call it without
 a system handle).
 

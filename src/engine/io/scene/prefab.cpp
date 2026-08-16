@@ -2,7 +2,6 @@
 
 #include "io/scene/prefab.h"
 
-#include <fstream>
 #include <unordered_map>
 #include <vector>
 
@@ -83,12 +82,7 @@ bool save(const Scene& scene, EntityId root, const std::string& path,
         doc["entities"].push_back(std::move(entity));
     }
 
-    std::ofstream out(path);
-    if (!out) {
-        LOG_ERROR("Prefab::save: cannot open '%s' for writing", path.c_str());
-        return false;
-    }
-    out << doc.dump(2);
+    if (!detail::writeJsonFile(path, doc, "Prefab")) return false;
 
     LOG_INFO("Saved prefab '%s' (%zu entities)", path.c_str(), subtree.size());
     return true;

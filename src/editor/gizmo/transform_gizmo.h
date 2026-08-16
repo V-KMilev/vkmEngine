@@ -75,6 +75,20 @@ class TransformGizmo {
         bool isUsing() const { return m_dragging; }
 
         /**
+         * @brief End the current drag from outside, as a mouse release would.
+         *
+         * manipulate() is the only place a drag normally ends, so a caller that
+         * stops drawing the gizmo mid-drag (tool switched, selection changed)
+         * has to say so - otherwise m_dragging latches and the gizmo reports
+         * itself in use forever.
+         */
+        void endDrag() {
+            m_dragging = false;
+            m_active = GizmoElement::None;
+            m_dragRotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        }
+
+        /**
          * @brief Set the rotation snap increment, applied during a rotation drag.
          *
          * @param radians Snap step in radians; 0 disables snapping.

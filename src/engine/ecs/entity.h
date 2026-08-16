@@ -13,10 +13,9 @@ namespace Engine {
  * the same use-after-free protection and ID recycling that resource handles
  * enjoy.
  *
- * Conceptually distinct from StorageIndex (cross-entity reference vs raw ECS
- * slot handle) but currently the same type. A newtype split is deferred until
- * a real second consumer of StorageIndex appears outside this alias and
- * Handle<T>.
+ * Conceptually a cross-entity reference rather than a raw ECS slot handle, but
+ * it is an alias for StorageIndex, not a distinct type: the two are freely
+ * interchangeable wherever either is accepted.
  */
 using EntityId = StorageIndex;
 

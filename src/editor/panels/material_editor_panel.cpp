@@ -1,7 +1,5 @@
 #include "panels/material_editor_panel.h"
 
-#include "system/render/editor_render_hooks.h"
-
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
@@ -26,6 +24,7 @@
 #include "generator/mesh_generators.h"
 #include "generator/texture_generators.h"
 #include "io/project_paths.h"
+#include "system/render/editor_render_hooks.h"
 
 namespace Engine {
 
@@ -363,6 +362,12 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
     if (state.selectedEntity && scene.isAlive(state.selectedEntity)
             && scene.has<Mesh>(state.selectedEntity)) {
         selMesh = &scene.get<Mesh>(state.selectedEntity);
+    }
+    // A pinned target outlives the material it names: the Asset Browser can
+    // delete it, and every get()/edit() below is unguarded. Drop it rather
+    // than fall through to the selection with a dead handle in state.
+    if (state.materialEditorTarget && !resources.isAlive(state.materialEditorTarget)) {
+        state.materialEditorTarget = {};
     }
     MaterialHandle target = state.materialEditorTarget;
     if (!target && selMesh && selMesh->material) target = selMesh->material;

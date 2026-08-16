@@ -66,23 +66,6 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity);
 void markDirty(Scene& scene, EntityId entity);
 
 /**
- * @brief Resolve world transforms for every dirty hierarchical entity.
- *
- * For each entity with a Hierarchy whose dirty flag is set, computes its
- * world matrix and writes it into the entity's pre-seeded WorldTransform.
- * Dirty entities are bucketed by absolute depth in a serial pass and then
- * each bucket runs through parallelFor; depths are processed in order so a
- * child reads its parent's already-finalised WorldTransform (one matrix
- * multiply, parentWorld * local) rather than re-walking the ancestor chain,
- * and reads of an ancestor's matrix never race a write.
- *
- * This is the per-frame work HierarchySystem runs, exposed here as a
- * free function so editors / loaders / bake passes can trigger it
- * outside the frame loop.
- *
- * @param scene The scene to resolve.
- */
-/**
  * @brief Deepest ancestor chain the resolve pass will follow.
  *
  * Public because DepthBuckets is sized by it and the caller owns that storage.
@@ -100,6 +83,24 @@ constexpr uint32_t MAX_DEPTH = 32;
  */
 using DepthBuckets = std::array<std::vector<EntityId>, MAX_DEPTH>;
 
+/**
+ * @brief Resolve world transforms for every dirty hierarchical entity.
+ *
+ * For each entity with a Hierarchy whose dirty flag is set, computes its
+ * world matrix and writes it into the entity's pre-seeded WorldTransform.
+ * Dirty entities are bucketed by absolute depth in a serial pass and then
+ * each bucket runs through parallelFor; depths are processed in order so a
+ * child reads its parent's already-finalised WorldTransform (one matrix
+ * multiply, parentWorld * local) rather than re-walking the ancestor chain,
+ * and reads of an ancestor's matrix never race a write.
+ *
+ * This is the per-frame work HierarchySystem runs, exposed here as a
+ * free function so editors / loaders / bake passes can trigger it
+ * outside the frame loop.
+ *
+ * @param scene   The scene to resolve.
+ * @param buckets Per-depth scratch, kept by the caller so its capacity survives the frame.
+ */
 void resolveWorldTransforms(Scene& scene, DepthBuckets& buckets);
 
 /**

@@ -22,8 +22,11 @@ GLHiZPass::GLHiZPass()
 GLHiZPass::~GLHiZPass() = default;
 
 void GLHiZPass::execute(GLFrameContext& ctx) {
+    // The occlusion cull is the pyramid's only reader, and it reads the same
+    // setting: with the cull off, the whole reduction chain would produce a
+    // texture nothing samples.
     GLHiZ& hiz = ctx.hiz;
-    if (!hiz.isReady()) return;
+    if (!ctx.view.settings.occlusionCulling || !hiz.isReady()) return;
 
     beginFullscreen(ctx.gl);
     ctx.screenTri.bind();

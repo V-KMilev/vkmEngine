@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -58,7 +59,9 @@ class ResourceManager {
 
             StorageIndex key = slot.allocator.allocate();
             std::string indexName = resource.name;  // unique + non-empty now
-            storageOf<T>(slot).add(key.index, std::forward<ResourceType>(resource));
+            // Stamped on the stored asset rather than the argument: insertion may
+            // copy, and a copy is a duplicate that carries no identity of its own.
+            storageOf<T>(slot).add(key.index, std::forward<ResourceType>(resource)).uid = ++s_nextUid;
             slot.nameIndex.emplace(std::move(indexName), key.index);
 
             return Handle<T>{key};
@@ -100,7 +103,16 @@ class ResourceManager {
         }
 
         /**
-         * @brief Remove a resource by handle.
+         * @brief Remove a resource by handle: drops its name mapping, its storage
+         *        and its handle slot.
+         *
+         * The backend mirror is not dropped here and there is no signal that it
+         * should be: GLView reclaims a slot when a new asset recycles the index,
+         * or all of them at once when the epoch moves. Deleting assets without
+         * adding replacements holds their GPU memory until one of those happens.
+         *
+         * @tparam HandleType Handle type identifying the resource type.
+         * @param handle Handle naming the resource to remove; must still be live.
          */
         template<typename HandleType>
         void remove(const HandleType& handle) {
@@ -170,6 +182,15 @@ class ResourceManager {
          * Direct `edit(h).name = ...` only mutates the asset; the per-type
          * name index won't see the change and findByName(newName) keeps
          * returning nothing. Use this whenever a name is assigned after add().
+         *
+         * Holds the same non-empty + unique-per-type guarantee add() gives, so
+         * @p newName may come straight from a text field: an empty string falls
+         * back to the generic base and a taken one picks up a " (N)" suffix.
+         * Two assets sharing a name would share a serialized identity, and the
+         * one that lost the index would be unreachable for the session.
+         *
+         * @param handle Handle naming the asset to rename.
+         * @param newName Desired name; adjusted in place to keep it unique.
          */
         template<typename HandleType>
         void rename(const HandleType& handle, std::string newName) {
@@ -177,11 +198,13 @@ class ResourceManager {
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::rename invalid handle");
             auto& res = storageOf<T>(slot).get(handle.key.index);
+            // Drop the old mapping before the uniqueness check, so renaming an
+            // asset to the name it already holds is a no-op rather than a
+            // collision with itself.
             dropNameIndex(slot, res.name, handle.key.index);
+            ensureUniqueName(slot, newName);
             res.name = std::move(newName);
-            if (!res.name.empty()) {
-                slot.nameIndex[res.name] = handle.key.index;
-            }
+            slot.nameIndex[res.name] = handle.key.index;
         }
 
         /**
@@ -246,13 +269,19 @@ class ResourceManager {
         /**
          * @brief Drop every resource of every registered type.
          *
-         * Used by scene-load flows that want a true cold-start (and by tests).
-         * Does not check refcounts - caller is responsible for clearing the
-         * scene first so no entity is still pointing at a freed handle.
+         * The cold-start counterpart to swap(): where swap() hands the graph to
+         * another manager, this ends it outright. Bumps the epoch for the same
+         * reason swap() does - whatever graph is built next restarts at the same
+         * indices, generations and versions, so a backend cache has no other way
+         * to tell it from the one that just went away.
+         *
+         * Does not check refcounts - the caller clears the scene first so no
+         * entity is still pointing at a freed handle.
          */
         void clear() {
             LOG_INFO_C("RESOURCE", "Clear (dropping %zu asset type(s))", m_slots.size());
             m_slots.clear();
+            ++m_epoch;
         }
 
         /**
@@ -413,6 +442,12 @@ class ResourceManager {
         // Starts at 1 so a cache can hold 0 as "never synced" and repopulate on
         // its first pass without a special case.
         uint64_t m_epoch = 1;
+
+        // Process-wide on purpose: the staging manager a scene load fills is a
+        // second ResourceManager, and its assets have to be distinguishable from
+        // the live ones they are about to replace. A per-manager counter would
+        // hand both graphs the same ids.
+        inline static std::atomic<uint64_t> s_nextUid{0};
 };
 
 } // namespace Engine

@@ -50,6 +50,7 @@ struct AppConfig {
 // these into its EditorSystem; the runtime ignores the return value.
 struct AppSystems {
     Engine::CameraControllerSystem& camera;
+    Engine::UISystem&               ui;
     Engine::VisibilitySystem&       visibility;
     Engine::RenderSystem&           render;
 };
@@ -86,7 +87,7 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     engine.addSystem<Engine::PhysicsSystem>(Engine::SystemStage::Simulation);
     engine.addSystem<Engine::SkySystem>(Engine::SystemStage::Simulation);
     engine.addSystem<Engine::HierarchySystem>(Engine::SystemStage::Transform);
-    engine.addSystem<Engine::UISystem>(Engine::SystemStage::Transform);
+    auto& uiSystem = engine.addSystem<Engine::UISystem>(Engine::SystemStage::Transform);
     auto& visibilitySystem = engine.addSystem<Engine::VisibilitySystem>(Engine::SystemStage::Visibility);
     auto& renderSystem     = engine.addSystem<Engine::RenderSystem>(Engine::SystemStage::Render);
 
@@ -107,5 +108,5 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     engine.getClock().setPaused(config.startPaused);
     engine.setFPSLog(config.logFps);
 
-    return AppSystems{cameraController, visibilitySystem, renderSystem};
+    return AppSystems{cameraController, uiSystem, visibilitySystem, renderSystem};
 }

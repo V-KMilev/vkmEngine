@@ -30,6 +30,27 @@ constexpr uint64_t MESH_FIXED_BYTES = sizeof(glm::vec3) * 2 + sizeof(uint64_t) *
 // Texture body: 2*u32 params + 7 enum bytes + 2 flag bytes + pixelBytes field.
 constexpr uint64_t TEXTURE_FIXED_BYTES = sizeof(uint32_t) * 2 + 7 + 2 + sizeof(uint64_t);
 
+// Bytes one texel occupies in the source pixel data. An out-of-range enum (this
+// comes off disk) falls back to the same reading the backend gives it - RGBA /
+// unsigned byte, see gl_format_conversion.h - so the size checked here is the
+// size the upload will actually read.
+uint64_t bytesPerTexel(TexturePixelFormat format, TexturePixelType type) {
+    uint64_t channels = 4;
+    switch (format) {
+        case TexturePixelFormat::R:    channels = 1; break;
+        case TexturePixelFormat::RG:   channels = 2; break;
+        case TexturePixelFormat::RGB:  channels = 3; break;
+        case TexturePixelFormat::RGBA: channels = 4; break;
+    }
+    uint64_t componentBytes = 1;
+    switch (type) {
+        case TexturePixelType::UnsignedByte: componentBytes = 1; break;
+        case TexturePixelType::HalfFloat:    componentBytes = 2; break;
+        case TexturePixelType::Float:        componentBytes = 4; break;
+    }
+    return channels * componentBytes;
+}
+
 template<typename T>
 void writeRaw(std::ostream& os, const T& v) {
     static_assert(std::is_trivially_copyable_v<T>, "writeRaw needs a trivially-copyable type");
@@ -281,6 +302,19 @@ bool readTexture(const std::filesystem::path& path, TextureAsset& out, uint64_t*
 
     if (pixelBytes != payloadBytes - TEXTURE_FIXED_BYTES) {
         LOG_ERROR("Cooked texture '%s': pixel size inconsistent with payload", p.c_str());
+        return false;
+    }
+
+    // Dimensions are checked as well as sized, for the same reason mesh indices
+    // are: a file can carry the right number of bytes and still declare a size
+    // that does not describe them, and nothing downstream re-checks - the params
+    // reach glTexImage2D verbatim, which then reads width * height texels out of
+    // this buffer. Division rather than multiplication so the math cannot wrap.
+    const uint64_t texelBytes = bytesPerTexel(tp.format, tp.type);
+    const uint64_t texels     = static_cast<uint64_t>(tp.width) * tp.height;
+    if (pixelBytes % texelBytes != 0 || pixelBytes / texelBytes != texels) {
+        LOG_ERROR("Cooked texture '%s': %llu pixel byte(s) do not describe %ux%u texels",
+                  p.c_str(), static_cast<unsigned long long>(pixelBytes), tp.width, tp.height);
         return false;
     }
 
