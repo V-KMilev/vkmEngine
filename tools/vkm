@@ -188,29 +188,37 @@ def cmd_package(args) -> int:
     exe_suffix = ".exe" if os.name == "nt" else ""
     shutil.copy2(host(root, "engine_runtime"), out / "bin" / (name + exe_suffix))
 
-    # The shared engine and everything it loads, beside the executable. The
-    # binaries carry an $ORIGIN rpath, so a package runs wherever it is unzipped.
-    for lib in (root / "bin").glob("*.so*"):
-        shutil.copy2(lib, out / "bin" / lib.name)
-    for lib in (root / "bin").glob("*.dll"):
-        shutil.copy2(lib, out / "bin" / lib.name)
+    # Everything the executable loads, beside it. The binaries carry an $ORIGIN
+    # rpath, so the package runs wherever it is unzipped.
+    for pattern in ("*.so*", "*.dll"):
+        for lib in (root / "bin").glob(pattern):
+            shutil.copy2(lib, out / "bin" / lib.name)
 
-    # Engine data the runtime resolves against its own root.
+    # The gameplay module joins them: the host looks for it under the project's
+    # bin/, and in a package the project root and the package root are the same
+    # directory.
+    if (d / "bin").is_dir():
+        for f in (d / "bin").iterdir():
+            if f.is_file():
+                shutil.copy2(f, out / "bin" / f.name)
+
+    # Engine data. shaders/ is also how the runtime recognises a packaged layout
+    # at all - it roots itself at whichever directory has one.
     shutil.copytree(root / "shaders", out / "shaders")
     if (root / "assets").is_dir():
         shutil.copytree(root / "assets", out / "assets", dirs_exist_ok=True)
 
-    # The project, in the shape the runtime expects to find beside the exe.
-    game = out / name
-    game.mkdir()
-    shutil.copy2(d / "project.json", game / "project.json")
-    for part in ("assets", "scenes", "cooked", "library", "bin"):
+    # The project, at the root rather than in a subdirectory. Both roots resolve
+    # to the package directory, so this is what lets a player start the game
+    # without naming a path - which is the whole point of shipping one.
+    shutil.copy2(d / "project.json", out / "project.json")
+    for part in ("assets", "scenes", "cooked", "library"):
         src = d / part
         if src.is_dir():
-            shutil.copytree(src, game / part)
+            shutil.copytree(src, out / part, dirs_exist_ok=True)
 
     print(f"\npackaged {name} -> {out}")
-    print(f"  run it with: {out / 'bin' / (name + exe_suffix)} {game}")
+    print(f"  run it with: {out / 'bin' / (name + exe_suffix)}")
     return 0
 
 
