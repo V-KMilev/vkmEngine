@@ -24,8 +24,8 @@ namespace Engine {
  * (+ depth) is reused per bake: GLProbeBaker renders the scene into it, then
  * convolves into the target layer of each array.
  *
- * Both arrays are Core::TextureCubeArray and the env cube / depth / FBO are RAII,
- * so this class holds no raw GL handles - only the per-attach viewport sizing.
+ * Everything is RAII, so this class holds no raw GL handles - only the
+ * per-attach viewport sizing.
  */
 class GLProbeArray {
     public:

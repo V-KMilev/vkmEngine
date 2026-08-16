@@ -29,10 +29,9 @@ class GLHiZ;
 /**
  * @brief Everything a GLPass needs for one frame.
  *
- * The backend builds one of these per frame and hands it to each pass: the
- * scene snapshot, the GPU resource mirror, the GL state manager, and the render
- * targets. New targets (a shadow atlas, post buffers) get added here as fields,
- * so the GLPass::execute signature never has to change again.
+ * The backend builds one of these per frame and hands it to each pass. New
+ * targets (a shadow atlas, post buffers) get added here as fields, so the
+ * GLPass::execute signature never has to change again.
  */
 struct GLFrameContext {
     const RenderView& view;           ///< This frame's scene snapshot.

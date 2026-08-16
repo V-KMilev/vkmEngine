@@ -78,8 +78,7 @@ void GLProbeManager::update(Core::Context& gl, const RenderView& view, const GLV
         }
     }
 
-    // Re-bake probes that are new, moved, or version-bumped. Throttled so several
-    // changing at once don't hitch the frame.
+    // Throttled so several probes changing at once don't hitch the frame.
     constexpr int MAX_REBAKES_PER_FRAME = 1;
     int rebakes = 0;
     for (int i = 0; i < n && rebakes < MAX_REBAKES_PER_FRAME; ++i) {

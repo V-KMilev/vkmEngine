@@ -43,8 +43,8 @@ void GLTarget::setSamples(uint32_t samples, const Core::Context& gl) {
 }
 
 void GLTarget::release() {
-    // Deleting the attachments detaches them from the FBO; the FBO object
-    // itself is kept and re-attached by the next resize.
+    // Deleting an attachment detaches it; the FBO object survives for the next
+    // resize to re-attach to.
     m_color.reset();
     m_depth.reset();
     m_gbuffer.reset();
@@ -64,10 +64,9 @@ void GLTarget::resize(uint32_t width, uint32_t height) {
     m_fbo.bind();
 
     if (m_samples > 1) {
-        // Render-only multisample target: renderbuffer attachments (not
-        // sampleable), resolved into a single-sample GLTarget before any pass
-        // samples the scene. Same formats as the single-sample path so the
-        // resolve blit is a straight format match.
+        // Renderbuffer attachments (not sampleable), resolved into a
+        // single-sample GLTarget before any pass samples the scene. Same
+        // formats as that path, so the resolve blit is a straight format match.
         const int32_t s = static_cast<int32_t>(m_samples);
         const int32_t w = static_cast<int32_t>(width);
         const int32_t h = static_cast<int32_t>(height);

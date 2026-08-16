@@ -69,9 +69,8 @@ bool GLBackend::init(WindowManager& window) {
     m_context.setFaceCulling(false);
 
     // The scene target carries a G-buffer (view normal + roughness + metalness),
-    // written by the depth prepass and read by GTAO + the decal pass. Enable before the first
-    // resize, on both the resolved target and the multisample one the geometry
-    // passes render into when MSAA is on.
+    // written by the depth prepass and read by GTAO + the decal pass. Enable
+    // before the first resize, on the multisample target too.
     m_sceneHDR.enableGBuffer();
     m_sceneMS.enableGBuffer();
 
@@ -86,29 +85,16 @@ bool GLBackend::init(WindowManager& window) {
     Core::setShaderVersion(OPENGL_GLSL_VERSION);
 
     // Build the pass list. Passes compile their shaders, so this must run after
-    // the context exists. One line per pass, in execution order:
-    //   Shadow        - depth maps into the shadow atlas (2D tiles + point cubes).
+    // the context exists. Where the order is load-bearing:
     //   DepthPrepass  - clears the scene target; primes opaque depth + G-buffer.
     //   ResolveDepth  - MSAA only: resolves depth (+ G-buffer when read) for the
     //                   screen-space passes.
-    //   HiZ           - reduces that depth into the hierarchical pyramid.
-    //   OcclusionCull - compute: rejects opaque instances hidden behind it and
-    //                   writes each run's indirect draw command.
-    //   GTAO          - occlusion factor + bent normal from resolved depth.
+    //   OcclusionCull - rejects opaque instances hidden behind the HiZ pyramid
+    //                   and writes each run's indirect draw command.
     //   Skybox        - fills the background BEFORE geometry, so sorted
     //                   transparents blend over it instead of being overwritten.
-    //   ClusterCull   - compute: Forward+ per-cluster light lists.
-    //   FogCompute    - compute: froxel inject + integrate (lazy-allocates).
-    //   Forward       - the lit draw: opaque, alpha-mask, then transparents.
-    //   Particles     - billboards into the scene target, depth-tested.
     //   ResolveColor  - MSAA only: resolves colour (+ depth if alpha-mask drew).
-    //   Decals        - projected boxes, blended into the post colour chain.
-    //   FogApply      - composites the integrated fog   (chain: src -> dst).
-    //   DoF           - circle-of-confusion disk blur   (chain: src -> dst).
-    //   Bloom         - mip pyramid off the chain; composite blends it back.
-    //   Grid          - editor overlay into the chain (shader-side depth test).
     //   Composite     - tonemap + debug views, to the backbuffer viewport.
-    //   UI            - the in-game UI overlay, flat on the backbuffer.
     m_passes.push_back({"Shadow",         std::make_unique<GLShadowPass>()});
     m_passes.push_back({"DepthPrepass",   std::make_unique<GLDepthPrepass>()});
     m_passes.push_back({"ResolveDepth",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Geometry)});
@@ -139,12 +125,10 @@ bool GLBackend::init(WindowManager& window) {
     // Froxel fog volumes allocate lazily - the fog pass inits them on the first
     // fog-enabled frame, so scenes that never enable fog never pay the ~15 MB.
 
-    // Reflection probes: the baker + shared cube-map arrays. Compiles shaders, so
-    // build it here (context live).
+    // Compiles shaders, so it needs the live context.
     m_probes.init();
 
-    // Editor previews: compiles the same forward/composite shaders, so it also
-    // needs the live context.
+    // Editor previews: same.
     m_preview.init();
 
     const std::string version = m_context.versionString();
@@ -201,17 +185,13 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     }
     GLTarget& sceneRender = (samples > 1) ? m_sceneMS : m_sceneHDR;
 
-    // Direction to the sun (primary directional light); drives the procedural
-    // sky bake and the skybox sun disc, so compute it once here.
-    // Straight from the Environment's authored angles. SkySystem points the
-    // key light from the same source, so the sky and the shadows agree without
-    // either having to read the other.
+    // Direction to the sun, from the Environment's authored angles. SkySystem
+    // points the key light from the same source, so the sky and the shadows
+    // agree without either having to read the other.
     const glm::vec3 sunDir = view.environment.sunDirection();
 
-    // Bake the IBL and re-bake on change. The procedural atmosphere follows the
-    // sun (re-baking when it or a sky param moves); otherwise the equirect HDR is
-    // baked when hdrPath changes. The skybox samples the baked product, so the
-    // background follows too.
+    // The skybox samples the baked product, so re-baking when the sun or a sky
+    // parameter moves carries the background with it.
     if (view.environment.sky.procedural) {
         if (skyNeedsRebake(view.environment, sunDir)) {
             bakeProceduralSky(view.environment, sunDir);
@@ -223,8 +203,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         bakeEnvironment(view.environment.sky.hdrPath);
     }
 
-    // Rebuild the shadow atlas if the editor changed its resolution (a no-op when
-    // unchanged). Done before the shadow plan so both agree on the tile size.
+    // Before the shadow plan, so both agree on the tile size.
     {
         PROFILE_SCOPE("Render/ShadowAtlasInit");
         m_shadowAtlas.init(view.settings.shadowResolution);
@@ -259,9 +238,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_opaqueBatcher.buildGrouped(m_opaque, m_view);
     }
 
-    // Each pass binds and clears its own target: the shadow pass fills the depth
-    // atlas, the forward pass renders the lit scene into m_sceneHDR sampling it,
-    // and the composite pass tonemaps that to the backbuffer.
+    // Each pass binds and clears its own target.
     GLFrameContext ctx{
         view,
         m_view,
@@ -292,9 +269,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     ctx.colorSrc = &m_sceneHDR;
     ctx.colorDst = &m_postA;
 
-    // Reflection probes: pack the baked probes (nearest MAX_PROBES) into the
-    // ProbeBlock UBO and bind the two cube-map arrays; the forward pass blends
-    // them per fragment over the global IBL.
+    // The forward pass blends the bound probes per fragment over the global IBL.
     ctx.probeCount = m_probes.bind(view);
 
     for (const auto& entry : m_passes) {
@@ -303,8 +278,6 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         entry.pass->execute(ctx);
     }
 
-    // Per-frame counters for the profiler's plot view: how much the frame asked
-    // the GPU to draw. Watch these alongside the pass zones to correlate spikes.
     PROFILE_PLOT("Render/Drawables",   static_cast<int64_t>(view.drawables.size()));
     PROFILE_PLOT("Render/Opaque",      static_cast<int64_t>(m_opaque.size()));
     PROFILE_PLOT("Render/AlphaMask",   static_cast<int64_t>(m_alphaMask.size()));
