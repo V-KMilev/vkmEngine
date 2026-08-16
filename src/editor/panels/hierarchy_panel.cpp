@@ -375,7 +375,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
         const auto& cam = scene.get<Camera>(entity);
         const bool isActive = cam.active;
         if (ImGui::MenuItem("Set as Main Camera", nullptr, false, !isActive)) {
-            EditorActions::setActiveCamera(scene, state, entity, "Set Main Camera");
+            EditorActions::setActiveCamera(scene, state, entity);
         }
     }
 

@@ -2,7 +2,6 @@
 
 #include "framework/scene_io_controller.h"
 
-#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -57,7 +56,7 @@ void SceneIOController::save(FrameContext& ctx, EditorState& state) {
         return;
     }
     state.sceneDirty = false;
-    pushRecent(state, m_currentScenePath);
+    pushRecentPath(state.recentScenes, m_currentScenePath);
     state.pushToast(EditorState::ToastKind::Info, "Saved");
 }
 
@@ -115,7 +114,7 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
     afterSceneReplace(ctx, state, priorSelectionName, m_currentScenePath);
 
     state.sceneDirty = false;
-    pushRecent(state, m_currentScenePath);
+    pushRecentPath(state.recentScenes, m_currentScenePath);
 }
 
 void SceneIOController::beginSceneReplace(FrameContext& ctx, EditorState& state) {
@@ -248,13 +247,6 @@ void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
     state.sceneDirty = m_playSnapshotDirty;
 }
 
-void SceneIOController::pushRecent(EditorState& state, const std::string& path) {
-    auto& mru = state.recentScenes;
-    mru.erase(std::remove(mru.begin(), mru.end(), path), mru.end());
-    mru.insert(mru.begin(), path);
-    if (mru.size() > EditorState::MAX_RECENT_SCENES) mru.resize(EditorState::MAX_RECENT_SCENES);
-}
-
 void SceneIOController::requestOpenPath(FrameContext& ctx, EditorState& state, const std::string& path) {
     if (state.sceneDirty) {
         state.confirmAction    = EditorState::PendingSceneAction::Open;
@@ -315,7 +307,7 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
             AssetCooker::cookAllAssets(ctx.resources);
             if (SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath)) {
                 state.sceneDirty = false;
-                pushRecent(state, m_currentScenePath);
+                pushRecentPath(state.recentScenes, m_currentScenePath);
                 state.pushToast(EditorState::ToastKind::Info, "Saved " + finalName);
             } else {
                 LOG_ERROR("SceneIOController: Save As failed for %s", m_currentScenePath.c_str());
