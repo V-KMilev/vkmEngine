@@ -12,10 +12,10 @@ class InputHandle;
 /**
  * @brief What physically produces an action's value.
  *
- * Only keyboard and mouse exist today. The enum is the extension point: adding
- * gamepad buttons and axes means a new value here and a new case in
- * InputMap::sample, with no change to any gameplay call site - which is the
- * whole reason bindings are data rather than a call to isKeyPressed.
+ * The extension point: adding gamepad buttons and axes means a new value here
+ * and a new case in InputMap::sample, with no change to any gameplay call site
+ * - which is the whole reason bindings are data rather than a call to
+ * isKeyPressed.
  */
 enum class InputSource : uint8_t {
     Key,
@@ -44,8 +44,7 @@ struct InputBinding {
  * several bindings (keyboard and gamepad, or WASD and arrows) without the caller
  * knowing, and gameplay stops including the windowing library's headers.
  *
- * It also removes the edge-detection bookkeeping every input site otherwise
- * writes for itself. Sampling once a frame and keeping the previous value makes
+ * Sampling once a frame and keeping the previous value also makes
  * pressed()/released() correct for everyone, rather than each caller carrying
  * its own "was it down last frame" flag and getting it subtly wrong when two
  * call sites read the same key.

@@ -13,7 +13,6 @@ void FrameLimiter::beginFrame() {
 void FrameLimiter::endFrame() {
     using namespace std::chrono;
 
-    // Frame limiting is disabled (unlimited mode)
     if (m_targetFramerate == 0) {
         return;
     }
@@ -23,12 +22,12 @@ void FrameLimiter::endFrame() {
 
     auto now = steady_clock::now();
 
-    // Already past target, no sleep needed
     if (now >= targetEnd) {
         return;
     }
 
-    // Sleep for most of the remaining time (leave ~1ms for spin-wait precision)
+    // Sleep most of the remaining time; the last ~1ms is spun out below,
+    // because a sleep is not precise enough on its own.
     auto remaining = targetEnd - now;
     auto sleepDuration = remaining - milliseconds(1);
 
@@ -36,7 +35,6 @@ void FrameLimiter::endFrame() {
         std::this_thread::sleep_for(sleepDuration);
     }
 
-    // Spin-wait for precise timing
     while (std::chrono::steady_clock::now() < targetEnd) {
         std::this_thread::yield();
     }

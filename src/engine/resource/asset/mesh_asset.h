@@ -12,9 +12,6 @@ namespace Engine {
 
 /**
  * @brief Represents a single vertex in a mesh.
- *
- * Contains all necessary per-vertex attributes required for rendering and shading,
- * including position, surface normal, UV coordinates, and a tangent vector for normal mapping.
  */
 struct Vertex {
     glm::vec3 position;    ///< 3D position of the vertex in model space (x, y, z).
@@ -33,7 +30,6 @@ struct MeshAsset : public Resource {
     std::vector<Vertex>   vertices = {};  ///< Vertex buffer (geometry)
     std::vector<uint32_t> indices  = {};  ///< Index buffer (triangle indices)
 
-    // Optional metadata
     glm::vec3 boundsMin{0};           ///< Minimum AABB point in local space
     glm::vec3 boundsMax{0};           ///< Maximum AABB point in local space
 
