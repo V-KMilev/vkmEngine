@@ -15,8 +15,7 @@ namespace {
  * @brief Reuse built-in textures via findByName.
  *
  * Built-in textures are stable, immutable, and naturally shared across
- * materials. The same "builtin:white" handle is returned every time the
- * generator is asked for one.
+ * materials, so one asset per name serves every caller.
  *
  * @param rm Resource manager to look up the name in / add the texture to.
  * @param name Stable lookup name (also the findByName dedup key).
@@ -122,7 +121,7 @@ TextureHandle createSolidColorTexture(glm::vec4 color, ResourceManager& rm, bool
     if (auto existing = rm.findByName<TextureAsset>(key)) return existing;
 
     TextureAsset tex = makeSolidColorAsset(color, srgb);
-    tex.name         = key;  // stable, unique per color - the findByName dedup key.
+    tex.name         = key;
     nlohmann::json src;
     src["kind"]  = "solid";
     src["color"] = {color.r, color.g, color.b, color.a};
