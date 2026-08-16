@@ -76,8 +76,6 @@ void BehaviorSystem::tickBehaviors(FrameContext& ctx, float dt, const char* hook
     // Snapshot who to tick before running anything. A hook is free to spawn an
     // entity and script it, which grows this very storage; iterating it live
     // would hand the loop a reference into a buffer that has since moved.
-    // Behaviors added during the pass start next frame, which is the same rule
-    // destroy() already follows in the other direction.
     m_tickList.clear();
     m_tickList.reserve(storage->size());
     storage->forEach([&](uint32_t entityIdx, ScriptComponent&) {

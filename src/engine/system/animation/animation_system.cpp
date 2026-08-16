@@ -34,7 +34,6 @@ void AnimationSystem::update(FrameContext& ctx) {
 
     const size_t grain = std::max<size_t>(128, animCount / (ThreadPool::get().threadCount() * 4));
 
-    // Parallel: advance time and apply tracks to Transform for every playing animation.
     // Safe across threads because each iteration touches a distinct entity's Transform
     // slot and no component types are being added/removed during the loop.
     {
@@ -63,8 +62,7 @@ void AnimationSystem::update(FrameContext& ctx) {
         });
     }
 
-    // Serial post-pass: mark animated subtrees dirty so HierarchySystem
-    // recomputes WorldTransforms. Done outside the parallel loop because
+    // Dirty-marking so HierarchySystem recomputes WorldTransforms. Serial because
     // markDirty walks descendants and would race on Hierarchy::dirty writes.
     {
         PROFILE_SCOPE("Animation/MarkDirty");

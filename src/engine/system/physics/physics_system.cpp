@@ -84,7 +84,6 @@ void computeAABB(
     glm::vec3& outMin,
     glm::vec3& outMax
 ) {
-    // Union of every child box's world AABB.
     if (collider.parts.empty()) { outMin = pos; outMax = pos; return; }
     outMin = glm::vec3(std::numeric_limits<float>::max());
     outMax = glm::vec3(std::numeric_limits<float>::lowest());
@@ -173,10 +172,9 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
         frame.invMass = dynamicInverseMass(rb);
         frame.invInertiaLocal = localInverseInertia(rb, collider);
 
-        // Resolve the body's WORLD pose. A hierarchy root uses its local
-        // Transform directly (fast path); a parented body reads its
-        // WorldTransform and records its parent's frame so writeback can convert
-        // the solved world pose back to local.
+        // A hierarchy root's local Transform is already its world pose; a parented
+        // body reads its WorldTransform and records the parent frame so writeback
+        // can convert the solved world pose back to local.
         glm::vec3 worldPos = t.position;
         glm::quat worldRot = t.rotation;
         if (scene.has<Hierarchy>(id)) {
@@ -310,9 +308,8 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events)
             }
         }
         if (anyContact) {
-            // Surface the overlap to gameplay (enqueued: listeners fire on the
-            // next EventBus flush, never mid-solve). Triggers are queried,
-            // not resolved, so they only produce events.
+            // Enqueued, not emitted: listeners fire on the next EventBus flush,
+            // never mid-solve.
             const EntityId entityA = m_bodies[A.body];
             const EntityId entityB = m_bodies[B.body];
             if (trigger) {
@@ -404,10 +401,9 @@ void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& h
             t.rotation = worldRot;
         }
 
-        // Sleep bookkeeping: rest while supported long enough, otherwise stay
-        // awake. canSleep opts a body out entirely - script-driven characters
-        // must never doze off, or their velocity writes get zeroed and the
-        // solver treats them as immovable mid-gameplay.
+        // canSleep opts a body out of sleeping entirely - script-driven
+        // characters must never doze off, or their velocity writes get zeroed
+        // and the solver treats them as immovable mid-gameplay.
         if (!rb.isKinematic && rb.canSleep) {
             const float linSq = glm::dot(rb.linearVelocity, rb.linearVelocity);
             const float angSq = glm::dot(rb.angularVelocity, rb.angularVelocity);
