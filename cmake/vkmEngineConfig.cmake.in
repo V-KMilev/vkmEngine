@@ -110,10 +110,15 @@ function(vkm_add_gameplay_module TARGET)
     target_link_libraries(${TARGET} PRIVATE vkmEngine::EngineCore)
 
     # Into the project's own bin/, which is the one place a host looks.
+    # All three destinations, because Windows splits a shared library into
+    # game.dll and the import library libgame.dll.a. Leaving the archive to a
+    # global default puts every project's import library in one directory under
+    # the same name, and two projects configured in one tree collide there.
     set_target_properties(${TARGET} PROPERTIES
         OUTPUT_NAME              ${VKM_OUTPUT_NAME}
         RUNTIME_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin
         LIBRARY_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin
+        ARCHIVE_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin
     )
     if(WIN32)
         set_target_properties(${TARGET} PROPERTIES PREFIX "")
