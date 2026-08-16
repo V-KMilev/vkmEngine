@@ -208,6 +208,19 @@ class WindowManager {
         size_t getHeight() const;
 
         /**
+         * @brief Framebuffer pixels per window screen coordinate.
+         *
+         * The two agree on an unscaled display and diverge under fractional /
+         * HiDPI scaling, where GLFW reports window geometry and cursor positions
+         * in screen coords but the drawable in pixels. Anything crossing from
+         * one to the other - an ImGui rect handed to setSceneViewport, a cursor
+         * position hit-tested against it - multiplies by this.
+         *
+         * @return The scale, or 1.0f when there is no window yet.
+         */
+        float framebufferScale() const;
+
+        /**
          * @brief Get the underlying GLFW window pointer.
          * @return Pointer to the GLFWwindow, or nullptr if not initialized.
          */
@@ -233,8 +246,12 @@ class WindowManager {
          * laying out its panels so the next frame's render system sees the
          * viewport rect and sizes its FBOs / projection accordingly.
          *
-         * @param x,y Top-left of the viewport in window-pixel coords (ImGui-style).
-         * @param w,h Viewport size in pixels. 0 falls back to "use the full window".
+         * @param x,y Top-left of the viewport in framebuffer pixels - the unit
+         *            glViewport takes, so a caller working in window screen
+         *            coords (the editor's ImGui rect) converts with
+         *            framebufferScale() first.
+         * @param w,h Viewport size in framebuffer pixels. 0 falls back to "use
+         *            the full window".
          */
         void setSceneViewport(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
         uint32_t sceneViewportX()      const { return m_sceneVpX; }

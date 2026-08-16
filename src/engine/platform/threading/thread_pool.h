@@ -17,8 +17,9 @@ namespace Engine {
  *
  * Process-wide singleton (get()); the constructor/destructor are private.
  * Used to back parallelFor; workers dequeue tasks in FIFO submission order
- * but execute them concurrently (no ordering of completion).
- * waitToFinish() blocks until every submitted task has completed.
+ * but execute them concurrently (no ordering of completion). Waiting is
+ * per-batch (addTasks + waitForBatch), so a caller never blocks on work
+ * someone else queued - the async asset decodes share this pool.
  */
 class ThreadPool {
     public:
@@ -51,23 +52,58 @@ class ThreadPool {
 
         /**
          * @brief Enqueue a batch of tasks under one lock and wake all workers.
-         * Cheaper than repeated addTask for many tasks at once.
+         *
+         * Cheaper than repeated addTask for many tasks at once. @p pending is
+         * raised by the batch size here and dropped as each of its tasks
+         * retires - even one that throws - so waitForBatch() blocks on this
+         * batch alone and not on whatever else is in the queue.
+         *
+         * @param tasks The work to run on worker threads; consumed (moved into
+         *              the queue).
+         * @param pending The caller's completion counter for this batch; it
+         *                must outlive the tasks, which the matching
+         *                waitForBatch() guarantees.
          */
-        void addTasks(std::vector<std::function<void()>> && tasks);
+        void addTasks(std::vector<std::function<void()>> && tasks, std::atomic<size_t>& pending);
 
         /**
-         * @brief Block the caller until the in-flight task count reaches zero.
-         * Counts every task ever submitted (not a per-call barrier), so do
-         * not interleave unrelated submissions across waitToFinish() calls.
+         * @brief Block the caller until every task of one batch has retired.
+         *
+         * Returns immediately when the batch is already done (or was never
+         * submitted), so the serial path of parallelFor pays nothing.
+         *
+         * @param pending The counter handed to addTasks for that batch.
          */
-        void waitToFinish();
+        void waitForBatch(std::atomic<size_t>& pending);
+
+        /**
+         * @brief Join the workers now, ahead of the pool's own destruction.
+         *
+         * Tasks already started run to completion; queued ones are dropped.
+         * Call this while the objects those tasks write into are still alive:
+         * the pool is a function-local static, so its destructor runs after
+         * other singletons' (reverse construction order) and a decode landing
+         * then would push into a destroyed queue. Idempotent; once the workers
+         * are gone parallelFor sweeps serially.
+         */
+        void shutdown();
 
         /**
          * @brief True when called from a thread owned by the pool. parallelFor
-         * must not be re-entered from inside a task body - the calling
-         * worker would spin in waitToFinish() forever on its own slot.
+         * must not be re-entered from inside a task body - with every worker
+         * blocked on chunks queued behind them, nothing is left to run them.
          */
         static bool isWorkerThread();
+
+    private:
+        /**
+         * @brief One queued task plus the batch counter it retires against
+         *        (null for a fire-and-forget addTask).
+         */
+        struct QueuedTask {
+            std::function<void()> function;
+            std::atomic<size_t>*  pending = nullptr;
+        };
 
     private:
         ThreadPool(size_t threadCount);
@@ -88,21 +124,21 @@ class ThreadPool {
         void stop();
 
         /**
-         * @brief Worker loop: pop and run tasks until shutdown, decrementing the
-         * in-flight count (even on exception) and signalling waiters at zero.
+         * @brief Worker loop: pop and run tasks until shutdown, retiring each
+         * against its batch counter (even on exception) and signalling
+         * waiters when a batch reaches zero.
          */
         void process();
 
     private:
         std::atomic<bool> m_running;
-        std::atomic<size_t> m_taskCount;
 
         std::vector<std::thread> m_threads;
-        std::deque<std::function<void()>> m_tasks;
+        std::deque<QueuedTask> m_tasks;
 
         std::mutex m_tasksMutex;
         std::condition_variable m_tasksCV;
-        std::condition_variable m_doneCV;   ///< Signalled when m_taskCount drops to 0
+        std::condition_variable m_doneCV;   ///< Signalled when a batch counter drops to 0
 };
 
 /**
@@ -128,15 +164,27 @@ void parallelFor(size_t count, size_t grain, Function && function) {
         }
     };
 
-    // Re-entering parallelFor from inside a worker would deadlock: the
-    // worker's own slot stays in m_taskCount, so waitToFinish() never
-    // returns. Fall back to a serial sweep on the calling worker thread.
+    // Re-entering parallelFor from inside a worker risks deadlock: every worker
+    // could end up waiting on chunks queued behind the workers themselves. Fall
+    // back to a serial sweep on the calling worker thread.
     if (ThreadPool::isWorkerThread()) {
         for (size_t i = 0; i < count; ++i) invokeAt(i);
         return;
     }
 
     auto& pool = ThreadPool::get();
+
+    // Nobody to hand chunks to once the pool has been shut down (or on a
+    // platform that reported no cores) - a submission there would never retire.
+    if (pool.threadCount() == 0) {
+        for (size_t i = 0; i < count; ++i) invokeAt(i);
+        return;
+    }
+
+    // This call's own completion count: the pool is shared with the async asset
+    // decodes, so waiting on anything global would park the caller behind an
+    // unrelated texture read.
+    std::atomic<size_t> pending{0};
 
     // If there is enough work to justify threading overhead, submit the remaining chunks to the pool
     if (grain < count) {
@@ -152,20 +200,20 @@ void parallelFor(size_t count, size_t grain, Function && function) {
                 }
             });
         }
-        pool.addTasks(std::move(tasks));
+        pool.addTasks(std::move(tasks), pending);
     }
 
     // In case of grain being bigger than count, we need to process the entire range on the main thread
     grain = std::min(grain, count);
 
-    // Main thread processes first chunk instead of spinning idle in waitToFinish,
+    // Main thread processes the first chunk instead of spinning idle in the wait,
     // In case of grain being bigger than count, the main thread will process the entire range
     // This is to avoid the overhead of the threadpool for small ranges
     for (size_t i = 0; i < grain; ++i) {
         invokeAt(i);
     }
 
-    pool.waitToFinish();
+    pool.waitForBatch(pending);
 }
 
 /**

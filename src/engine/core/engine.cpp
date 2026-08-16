@@ -6,6 +6,7 @@
 
 #include "core/engine_config.h"
 #include "debug/profiler.h"
+#include "platform/threading/thread_pool.h"
 
 namespace Engine {
 
@@ -89,6 +90,13 @@ void Engine::run() {
     }
 
     LOG_TRACE("Main loop exited, running shutdown");
+
+    // Join the workers before anything else winds down. The pool is a
+    // function-local static, so left to itself it is destroyed after the
+    // singletons its in-flight decodes push into - a load still running at quit
+    // would hand its result to a queue that no longer exists.
+    ThreadPool::get().shutdown();
+
     shutdownSystems();
 }
 
