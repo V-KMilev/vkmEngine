@@ -66,12 +66,11 @@ constexpr unsigned POST_PROCESS_FLAGS =
 /**
  * @brief LRU cache of parsed Assimp scenes keyed by canonical path.
  *
- * The AssetSerializer loadGroup loop calls loadModelMesh /
- * loadModelMaterial once per asset, so a glTF with N meshes + M
- * materials previously triggered N+M full re-parses of the same
- * file. The Importer owns the aiScene; we hand callers a shared_ptr
- * so a concurrent eviction can't destroy the scene out from under
- * them mid-build.
+ * The recipe factories re-import one aiMesh or one aiMaterial per
+ * call, so a glTF with N meshes + M materials would otherwise be
+ * parsed N+M times over. The Importer owns the aiScene; we hand
+ * callers a shared_ptr so a concurrent eviction can't destroy the
+ * scene out from under them mid-build.
  */
 class ImporterCache {
     public:
@@ -115,13 +114,11 @@ class ImporterCache {
             std::string path;
             std::shared_ptr<Assimp::Importer> importer;
         };
-        // LRU cap. Sized for a typical asset-import batch: the
-        // SceneSerializer load path calls loadModelMesh /
-        // loadModelMaterial once per (mesh, material) referenced by
-        // the file, and a single glTF can split across several
-        // sub-models. 8 entries comfortably covers the common case
-        // while keeping retained aiScene memory bounded - each entry
-        // is a few MB.
+        // LRU cap. Sized for a typical asset-import batch: a file is
+        // re-imported once per (mesh, material) an asset entry names,
+        // and a single model can split across several sub-models. 8
+        // entries comfortably covers the common case while keeping
+        // retained aiScene memory bounded - each entry is a few MB.
         static constexpr size_t MAX_CACHED = 8;
         std::vector<Entry> m_entries;
         std::mutex m_mutex;
@@ -514,14 +511,16 @@ MeshHandle requestModelMeshAsync(
     stub.loading = true;
     stub.sourceJson() = { {"kind", "model"}, {"path", path}, {"mesh", meshIndex} };
     const MeshHandle handle = resources.add(std::move(stub));
+    const uint64_t   uid    = resources.get(handle).uid;
 
-    ThreadPool::get().addTask([handle, path, meshIndex]() {
+    ThreadPool::get().addTask([handle, uid, path, meshIndex]() {
         // ImporterCache is mutex-guarded, so concurrent callers from
         // different workers are safe.
         MeshAsset decoded = loadModelMesh(path, meshIndex);
 
         MeshLoadCompletion completion;
         completion.handle    = handle;
+        completion.assetUid  = uid;
         completion.vertices  = std::move(decoded.vertices);
         completion.indices   = std::move(decoded.indices);
         completion.boundsMin = decoded.boundsMin;
