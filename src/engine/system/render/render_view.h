@@ -53,12 +53,9 @@ struct RenderView {
         /**
          * @brief Refill the snapshot for the current frame.
          *
-         * Copies the scene's environment and the @p ui overlay (independent of
-         * the camera, so it survives the no-camera path), then rebuilds camera,
-         * lights, probes, drawables, and shadow casters from the already-culled
-         * @p visibility set, reusing the vectors' capacity. With no active camera
-         * this frame it emits an empty 3D snapshot (cleared, not stale) and
-         * returns early.
+         * The @p ui overlay is independent of the camera, so it survives the
+         * no-camera path: with no active camera this frame the 3D snapshot is
+         * emitted empty (cleared, not stale) and the rest is skipped.
          *
          * @param ui The UISystem's draw list for this frame, or null if none.
          */

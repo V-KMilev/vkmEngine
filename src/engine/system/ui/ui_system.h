@@ -17,17 +17,16 @@ namespace Engine {
  *
  * Runs in the Transform stage, right after HierarchySystem: UI layout is a
  * screen-space transform resolve, the 2D sibling of resolving WorldTransform.
- * Visible UICanvases are walked in ascending sortOrder; within each canvas the
- * entity hierarchy is walked parent-before-child, resolving every UIElement's
- * screenRect from its anchor / pivot / position / size and the canvas scale and
- * appending the quads for its UIImage / UIButton / UIText into a UIDrawData it
- * owns. Buttons only record hit candidates during the walk; once the whole
- * draw list exists, resolveInteraction() picks the topmost button under the
- * pointer (last in painter order), drives the visual states, and enqueues a
- * UIClickEvent on release through the frame's EventBus (ctx.events). The
- * result is published on the FrameContext (ctx.ui) for the RenderSystem to
- * fold into the RenderView - the same hand-off the VisibilitySystem uses for
- * its culling result. Runs in both the editor and the runtime.
+ * Visible UICanvases are walked in ascending sortOrder, each parent-before-child,
+ * resolving every UIElement's screenRect and appending its quads into a
+ * UIDrawData the system owns. Buttons only record hit candidates during the
+ * walk; once the whole draw list exists, resolveInteraction() picks the topmost
+ * button under the pointer (last in painter order), drives the visual states,
+ * and enqueues a UIClickEvent on release through the frame's EventBus
+ * (ctx.events). The result is published on the FrameContext (ctx.ui) for the
+ * RenderSystem to fold into the RenderView - the same hand-off the
+ * VisibilitySystem uses for its culling result. Runs in both the editor and the
+ * runtime.
  */
 class UISystem : public System {
     public:
@@ -114,10 +113,8 @@ class UISystem : public System {
         /**
          * @brief Lay out @p entity's UIText into glyph quads, if present.
          *
-         * Looks the FontAsset up in the ResourceManager, scales its baked
-         * metrics to the requested size, and appends one quad per visible glyph
-         * along the element's top edge, then a single Text draw command carrying
-         * the font's handle.
+         * One quad per visible glyph, then a single Text draw command carrying
+         * the FontAsset's handle.
          *
          * @param ctx         The frame context (scene + resources).
          * @param entity      The UIText entity to lay out.

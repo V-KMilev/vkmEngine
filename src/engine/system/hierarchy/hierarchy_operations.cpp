@@ -9,9 +9,7 @@
 namespace Engine::HierarchyOperations {
 
 namespace {
-// Maximum supported hierarchy depth; deeper chains are clamped/skipped.
 
-// Add a default-constructed T to `id` only if it doesn't already have one.
 template<typename T>
 void ensure(Scene& scene, EntityId id) {
     if (!scene.has<T>(id)) scene.add(id, T{});
@@ -36,7 +34,7 @@ void setParent(Scene& scene, EntityId child, EntityId parent) {
     VKM_ASSERT(scene.isAlive(parent), "HierarchyOperations::setParent: parent is dead");
     VKM_ASSERT(child != parent, "HierarchyOperations::setParent: entity cannot parent itself");
 
-    // Cycle detection: walk ancestors of new parent to ensure child is not already an ancestor
+    // Cycle: the new parent must not already be a descendant of the child.
     {
         EntityId ancestor = parent;
         uint32_t depth = 0;
@@ -54,10 +52,8 @@ void setParent(Scene& scene, EntityId child, EntityId parent) {
         }
     }
 
-    // Detach from current parent (if any)
     removeFromParent(scene, child);
 
-    // Ensure both entities have Hierarchy + WorldTransform components.
     // Pre-seeding WorldTransform here keeps the per-frame resolve pass free of
     // structural mutation, which is the precondition for parallelising it.
     ensure<Hierarchy>(scene, child);
@@ -79,8 +75,6 @@ void setParent(Scene& scene, EntityId child, EntityId parent) {
     parentH.firstChild = child;
 
     // Reparenting changes the child's world matrix (and all descendants').
-    // markDirty short-circuits if already dirty, which is fine - descendants
-    // were already dirty too in that case.
     markDirty(scene, child);
 }
 
@@ -139,7 +133,6 @@ void removeFromParent(Scene& scene, EntityId entity) {
 }
 
 glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity) {
-    // Collect parent chain (bottom-up) into a fixed-size stack array
     EntityId chain[MAX_DEPTH];
     uint32_t depth = 0;
 
@@ -169,7 +162,7 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity) {
         }
     }
 
-    // Multiply local matrices top-down (root first)
+    // Root first, so the chain is folded top-down.
     glm::mat4 worldMatrix(1.0f);
     for (uint32_t i = depth; i > 0; --i) {
         const auto& transform = scene.get<Transform>(chain[i - 1]);
@@ -187,12 +180,11 @@ void destroyHierarchy(Scene& scene, EntityId entity) {
     // unlinks it) can't strand the walk.
     forEachChild(scene, entity, [&](EntityId child) { destroyHierarchy(scene, child); });
 
-    // Detach from parent before destruction
     removeFromParent(scene, entity);
 
-    // Destroy the entity itself. Per-entity destroy hooks (e.g. script
-    // onDestroy) fire from Scene::destroyEntity, so every destroy path is
-    // covered without this op knowing about them.
+    // Per-entity destroy hooks (e.g. script onDestroy) fire from
+    // Scene::destroyEntity, so every destroy path is covered without this op
+    // knowing about them.
     scene.destroyEntity(entity);
 }
 

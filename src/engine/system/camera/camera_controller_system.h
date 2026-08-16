@@ -16,7 +16,6 @@ struct Transform;
 /**
  * @brief Camera controller used in the editor, supporting free-fly and look controls.
  *
- * Handles camera movement (WASD, etc.), speed boosting, mouse look, scroll zoom, and pitch/yaw.
  * Designed for use with the Editor camera Entity. Not thread-safe.
  */
 class CameraControllerSystem : public System {
