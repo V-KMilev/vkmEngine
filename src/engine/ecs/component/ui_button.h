@@ -47,7 +47,9 @@ struct UIButton {
 };
 
 // `state` is runtime-only (driven by the UISystem), so it is not reflected.
-VKM_REFLECT_BEGIN(UIButton)
+} // namespace Engine
+
+VKM_REFLECT_BEGIN(::Engine::UIButton)
     VKM_F(normalColor),
     VKM_F(hoverColor),
     VKM_F(pressedColor),
@@ -55,5 +57,3 @@ VKM_REFLECT_BEGIN(UIButton)
     VKM_F(eventId),
     VKM_F(interactable)
 VKM_REFLECT_END()
-
-} // namespace Engine

@@ -12,5 +12,3 @@ target_link_libraries(engine_cook PRIVATE
 )
 
 target_include_directories(engine_cook PRIVATE ${CMAKE_SOURCE_DIR})
-
-install(TARGETS engine_cook RUNTIME DESTINATION bin COMPONENT Tools)

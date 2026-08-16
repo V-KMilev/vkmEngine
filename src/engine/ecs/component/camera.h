@@ -15,9 +15,6 @@ enum class ProjectionType {
     Orthographic = 1,   ///< Orthographic (parallel) projection
     Count               ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
-
-VKM_ENUM_NAMES(ProjectionType, "Perspective", "Orthographic")
-
 /**
  * @brief Component representing a camera, containing projection and view parameters.
  *
@@ -52,8 +49,11 @@ struct Camera {
         }
     }
 };
+} // namespace Engine
 
-VKM_REFLECT_BEGIN(Camera)
+VKM_ENUM_NAMES(::Engine::ProjectionType, "Perspective", "Orthographic")
+
+VKM_REFLECT_BEGIN(::Engine::Camera)
     VKM_F(projection),
     VKM_F(fovY),
     VKM_F(orthoHeight),
@@ -64,5 +64,3 @@ VKM_REFLECT_BEGIN(Camera)
     VKM_F(dofAmount),
     VKM_F(active)
 VKM_REFLECT_END()
-
-} // namespace Engine

@@ -13,6 +13,11 @@
 #
 # vkmGL keeps glew, which is the only genuinely OpenGL-specific one. It expects
 # the rest as targets a parent provides, and hard-errors when they are absent.
+# Vendored dependencies install themselves by default, which would scatter their
+# headers, archives and pkgconfig files through the SDK prefix. The engine picks
+# what ships (cmake/install.cmake); each of these is switched off at its own
+# option so nothing lands that we did not choose.
+set(GLM_BUILD_INSTALL OFF CACHE BOOL "" FORCE)
 if(NOT TARGET glm)
     add_subdirectory(glm)
 endif()
@@ -20,6 +25,7 @@ endif()
 set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_INSTALL       OFF CACHE BOOL "" FORCE)
 if(NOT TARGET glfw)
     add_subdirectory(glfw)
 endif()
@@ -39,7 +45,12 @@ if(NOT TARGET stb)
     set(_stb_impl ${CMAKE_CURRENT_BINARY_DIR}/stb_image_impl.c)
     file(WRITE ${_stb_impl} "#define STB_IMAGE_IMPLEMENTATION\n#include \"stb_image.h\"\n")
     add_library(stb STATIC ${_stb_impl})
-    target_include_directories(stb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/stb)
+    # Split for export: stb travels in the engine's link interface, so its
+    # include path has to resolve against an installed SDK as well as this tree.
+    target_include_directories(stb PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/stb>
+        $<INSTALL_INTERFACE:include>
+    )
 endif()
 
 # vkmGL: the OpenGL layer. Adds glew, and defers to the targets above.
@@ -81,6 +92,7 @@ set(ASSIMP_BUILD_ZLIB                     ON  CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_DRACO                    OFF CACHE BOOL "" FORCE)
 set(ASSIMP_WARNINGS_AS_ERRORS             OFF CACHE BOOL "" FORCE)
 if(NOT TARGET assimp)
+    set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
     add_subdirectory(assimp)
 endif()
 
@@ -96,6 +108,7 @@ set(FT_DISABLE_PNG      ON CACHE BOOL "" FORCE)
 set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
 set(FT_DISABLE_BROTLI   ON CACHE BOOL "" FORCE)
 if(NOT TARGET freetype)
+    set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
     add_subdirectory(freetype)
 endif()
 

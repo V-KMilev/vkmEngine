@@ -33,13 +33,13 @@ struct UICanvas {
     bool      visible         = true;                        ///< Skip the canvas and its whole subtree when false.
 };
 
-VKM_ENUM_NAMES(UICanvas::ScaleMode, "Fixed", "ScaleWithHeight")
+} // namespace Engine
 
-VKM_REFLECT_BEGIN(UICanvas)
+VKM_ENUM_NAMES(::Engine::UICanvas::ScaleMode, "Fixed", "ScaleWithHeight")
+
+VKM_REFLECT_BEGIN(::Engine::UICanvas)
     VKM_F(referenceHeight),
     VKM_F(scaleMode),
     VKM_F(sortOrder),
     VKM_F(visible)
 VKM_REFLECT_END()
-
-} // namespace Engine

@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+"""vkm - the command line for a vkmEngine project.
+
+A project is a directory: project.json says what the game is, src/ holds the
+gameplay code that becomes one loadable module, and assets/ scenes/ hold what it
+plays. This tool is the whole interface to that - nobody writing a game should
+have to write CMake, and nothing here does anything the hosts could not be told
+to do by hand.
+
+    vkm new <name>        make a project from the SDK template
+    vkm build <project>   compile the project's gameplay module
+    vkm run <project>     play it
+    vkm edit <project>    open it in the editor
+    vkm cook <project>    bake its assets, no window needed
+    vkm package <project> assemble a standalone game
+
+Run from an installed SDK, the engine sits beside this script. Run from the
+engine's own build tree, it finds that instead, so the tool is testable before
+there is anything installed.
+"""
+
+# Annotations stay lazy so the tool runs on older interpreters than the one it
+# was written with - a user's machine is not ours to pick.
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+# --------------------------------------------------------------------------
+# Locating the SDK
+# --------------------------------------------------------------------------
+
+def sdk_root() -> Path:
+    """The engine root this script belongs to.
+
+    Installed, that is the directory above bin/. In the engine's own tree it is
+    the repo root, with binaries under build/bin. Checked in that order because
+    an installed SDK is the normal case and the build tree is the exception.
+    """
+    if env := os.environ.get("VKM_ENGINE_ROOT"):
+        return Path(env).resolve()
+
+    here = Path(__file__).resolve().parent
+    if (here.parent / "shaders").is_dir() and (here / "engine_runtime").exists():
+        return here.parent                      # <prefix>/bin/vkm
+    if (here.parent / "shaders").is_dir():
+        return here.parent                      # <repo>/tools/vkm
+    die("cannot locate the engine. Set VKM_ENGINE_ROOT to the SDK directory.")
+
+
+def host(root: Path, name: str) -> Path:
+    """Path to one of the three host executables, wherever this SDK keeps them."""
+    exe = name + (".exe" if os.name == "nt" else "")
+    for candidate in (root / "bin" / exe, root / "build" / "bin" / exe):
+        if candidate.exists():
+            return candidate
+    die(f"{name} not found under {root}. Build the engine first, or check the SDK.")
+
+
+# --------------------------------------------------------------------------
+# Small helpers
+# --------------------------------------------------------------------------
+
+def die(msg: str):
+    print(f"vkm: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def run(cmd, **kw) -> int:
+    """Run a command, echoing it first so a failure can be reproduced by hand."""
+    print("+", " ".join(str(c) for c in cmd))
+    return subprocess.call([str(c) for c in cmd], **kw)
+
+
+def project_dir(arg: str | None) -> Path:
+    """Resolve a project argument, defaulting to the working directory.
+
+    Accepts the project directory or any path inside it, the same rule the hosts
+    use, so `vkm run` works from within a project without naming it.
+    """
+    p = Path(arg or ".").resolve()
+    probe = p
+    while True:
+        if (probe / "project.json").is_file():
+            return probe
+        if probe.parent == probe:
+            die(f"no project.json in '{p}' or any directory above it")
+        probe = probe.parent
+
+
+def read_project(d: Path) -> dict:
+    try:
+        return json.loads((d / "project.json").read_text())
+    except json.JSONDecodeError as e:
+        die(f"{d / 'project.json'} is not valid JSON: {e}")
+
+
+# --------------------------------------------------------------------------
+# Commands
+# --------------------------------------------------------------------------
+
+def cmd_new(args) -> int:
+    root = sdk_root()
+    template = root / "templates" / "default"
+    if not template.is_dir():
+        die(f"no project template at {template}")
+
+    dest = Path(args.name).resolve()
+    if dest.exists() and any(dest.iterdir()):
+        die(f"'{dest}' already exists and is not empty")
+
+    shutil.copytree(template, dest, dirs_exist_ok=True)
+
+    # The template is generic; the project is not. Name it after the directory
+    # the user chose rather than making them edit JSON as a first act.
+    pj = dest / "project.json"
+    data = json.loads(pj.read_text())
+    data["name"] = dest.name
+    pj.write_text(json.dumps(data, indent=4) + "\n")
+
+    print(f"created {dest}")
+    print(f"  vkm build {dest.name} && vkm run {dest.name}")
+    return 0
+
+
+def cmd_build(args) -> int:
+    d = project_dir(args.project)
+    root = sdk_root()
+    build = d / "build"
+
+    cmake = shutil.which("cmake")
+    if not cmake:
+        die("cmake is not on PATH")
+
+    # Point find_package straight at this SDK's config directory. CMAKE_PREFIX_PATH
+    # alone would work for an installed layout, but naming vkmEngine_DIR also works
+    # when the tool is run from the engine's build tree.
+    config_dir = root / "lib" / "cmake" / "vkmEngine"
+    if not config_dir.is_dir():
+        config_dir = root / "build" / "lib" / "cmake" / "vkmEngine"
+
+    rc = run([cmake, "-S", d, "-B", build,
+              f"-DvkmEngine_DIR={config_dir}",
+              f"-DCMAKE_PREFIX_PATH={root}"]
+             + (["-G", args.generator] if args.generator else []))
+    if rc:
+        return rc
+    return run([cmake, "--build", build] + (["--config", args.config] if args.config else []))
+
+
+def _host_cmd(args, name) -> int:
+    d = project_dir(args.project)
+    return run([host(sdk_root(), name), d])
+
+
+def cmd_run(args)  -> int: return _host_cmd(args, "engine_runtime")
+def cmd_edit(args) -> int: return _host_cmd(args, "engine_editor")
+def cmd_cook(args) -> int: return _host_cmd(args, "engine_cook")
+
+
+def cmd_package(args) -> int:
+    """Assemble a standalone game.
+
+    A packaged game is a renamed copy of engine_runtime plus the project's data -
+    the engine executable is never rebuilt for a game. Cooking runs first because
+    the runtime can neither import nor cook: it reads what the cooker produced.
+    """
+    d = project_dir(args.project)
+    root = sdk_root()
+    meta = read_project(d)
+    name = args.name or meta.get("name") or d.name
+    out = Path(args.out or (d / "dist" / name)).resolve()
+
+    if not args.no_cook:
+        if rc := run([host(root, "engine_cook"), d]):
+            return rc
+
+    if out.exists():
+        shutil.rmtree(out)
+    (out / "bin").mkdir(parents=True)
+
+    exe_suffix = ".exe" if os.name == "nt" else ""
+    shutil.copy2(host(root, "engine_runtime"), out / "bin" / (name + exe_suffix))
+
+    # The shared engine and everything it loads, beside the executable. The
+    # binaries carry an $ORIGIN rpath, so a package runs wherever it is unzipped.
+    for lib in (root / "bin").glob("*.so*"):
+        shutil.copy2(lib, out / "bin" / lib.name)
+    for lib in (root / "bin").glob("*.dll"):
+        shutil.copy2(lib, out / "bin" / lib.name)
+
+    # Engine data the runtime resolves against its own root.
+    shutil.copytree(root / "shaders", out / "shaders")
+    if (root / "assets").is_dir():
+        shutil.copytree(root / "assets", out / "assets", dirs_exist_ok=True)
+
+    # The project, in the shape the runtime expects to find beside the exe.
+    game = out / name
+    game.mkdir()
+    shutil.copy2(d / "project.json", game / "project.json")
+    for part in ("assets", "scenes", "cooked", "library", "bin"):
+        src = d / part
+        if src.is_dir():
+            shutil.copytree(src, game / part)
+
+    print(f"\npackaged {name} -> {out}")
+    print(f"  run it with: {out / 'bin' / (name + exe_suffix)} {game}")
+    return 0
+
+
+# --------------------------------------------------------------------------
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="vkm", description="vkmEngine project tool")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("new", help="make a project from the SDK template")
+    p.add_argument("name")
+    p.set_defaults(fn=cmd_new)
+
+    p = sub.add_parser("build", help="compile the project's gameplay module")
+    p.add_argument("project", nargs="?")
+    p.add_argument("-G", "--generator")
+    p.add_argument("-c", "--config")
+    p.set_defaults(fn=cmd_build)
+
+    for name, help_text, fn in (
+        ("run",  "play the project",              cmd_run),
+        ("edit", "open the project in the editor", cmd_edit),
+        ("cook", "bake the project's assets",      cmd_cook),
+    ):
+        p = sub.add_parser(name, help=help_text)
+        p.add_argument("project", nargs="?")
+        p.set_defaults(fn=fn)
+
+    p = sub.add_parser("package", help="assemble a standalone game")
+    p.add_argument("project", nargs="?")
+    p.add_argument("-o", "--out", help="output directory")
+    p.add_argument("-n", "--name", help="name for the game executable")
+    p.add_argument("--no-cook", action="store_true", help="skip the cook step")
+    p.set_defaults(fn=cmd_package)
+
+    args = ap.parse_args()
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

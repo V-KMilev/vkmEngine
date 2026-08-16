@@ -27,11 +27,6 @@ enum class RenderMode : uint8_t {
     Clusters,    ///< Forward+ per-cluster light-count heatmap.
     Count,  ///< Enum size marker (reflection); not a selectable mode.
 };
-
-VKM_ENUM_NAMES(RenderMode, "Default", "Depth", "Normals", "Roughness",
-               "Metalness", "Ambient Occlusion", "Bloom", "Shadow Atlas",
-               "Fog", "GI Only", "Direct Only", "Light Clusters")
-
 /**
  * @brief Editable render tuning: pass toggles + per-effect parameters.
  *
@@ -72,3 +67,7 @@ struct RenderSettings {
 };
 
 } // namespace Engine
+
+VKM_ENUM_NAMES(::Engine::RenderMode, "Default", "Depth", "Normals", "Roughness",
+               "Metalness", "Ambient Occlusion", "Bloom", "Shadow Atlas",
+               "Fog", "GI Only", "Direct Only", "Light Clusters")

@@ -1,0 +1,123 @@
+# vkmEngineConfig.cmake - what find_package(vkmEngine) loads.
+#
+# Gives a project the engine's imported targets, the shaders and templates that
+# ship beside them, and a hard error when the compiler that built the SDK is not
+# the compiler about to build against it.
+
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# ---------------------------------------------------------------------------
+# Dependencies the exported targets name
+# ---------------------------------------------------------------------------
+# The engine's vendored libraries ship inside this package, but a few imported
+# targets come from CMake's own find modules and exist only once someone has
+# asked for them. Without these the targets file fails to load with "target not
+# found", which reads like a broken SDK rather than a missing find_package.
+find_dependency(Threads)
+
+# ---------------------------------------------------------------------------
+# Toolchain pin
+# ---------------------------------------------------------------------------
+# The engine ships prebuilt libraries and C++ headers, and a project's gameplay
+# module is compiled against them. That is Unreal's model, and it is a deliberate
+# trade: struct layouts, inline functions and templates may change between engine
+# versions, which buys the freedom to keep improving them. The price is that a
+# module must be built with the same toolchain as the engine it links.
+#
+# So this is a hard error, not a warning. A mismatch does not fail at link time -
+# it fails at run time, as a corrupt object or a crash inside a function that
+# looks innocent, and the cause is invisible by then.
+set(VKMENGINE_BUILD_CXX_COMPILER_ID      "@CMAKE_CXX_COMPILER_ID@")
+set(VKMENGINE_BUILD_CXX_COMPILER_VERSION "@CMAKE_CXX_COMPILER_VERSION@")
+set(VKMENGINE_BUILD_CXX_STANDARD         "@CMAKE_CXX_STANDARD@")
+set(VKMENGINE_BUILD_TYPE                 "@CMAKE_BUILD_TYPE@")
+
+if(NOT VKMENGINE_SKIP_TOOLCHAIN_CHECK)
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL VKMENGINE_BUILD_CXX_COMPILER_ID)
+        message(FATAL_ERROR
+            "vkmEngine was built with ${VKMENGINE_BUILD_CXX_COMPILER_ID} but you are "
+            "building with ${CMAKE_CXX_COMPILER_ID}.\n"
+            "The engine ships prebuilt libraries and is not ABI-stable across "
+            "compilers: a module built this way fails at run time, not at link "
+            "time. Use ${VKMENGINE_BUILD_CXX_COMPILER_ID}, or rebuild the engine "
+            "with your compiler.\n"
+            "To override anyway (you are on your own): "
+            "-DVKMENGINE_SKIP_TOOLCHAIN_CHECK=ON")
+    endif()
+
+    # Major version only: a patch release of the same compiler does not change
+    # the C++ ABI, and demanding an exact match would make the SDK unusable.
+    string(REGEX REPLACE "\\..*" "" _vkm_want_major "${VKMENGINE_BUILD_CXX_COMPILER_VERSION}")
+    string(REGEX REPLACE "\\..*" "" _vkm_have_major "${CMAKE_CXX_COMPILER_VERSION}")
+    if(NOT _vkm_want_major STREQUAL _vkm_have_major)
+        message(FATAL_ERROR
+            "vkmEngine was built with ${VKMENGINE_BUILD_CXX_COMPILER_ID} "
+            "${VKMENGINE_BUILD_CXX_COMPILER_VERSION} but you are building with "
+            "${CMAKE_CXX_COMPILER_VERSION}.\n"
+            "Major compiler versions change the C++ ABI. Use a "
+            "${_vkm_want_major}.x toolchain, or rebuild the engine.\n"
+            "To override anyway: -DVKMENGINE_SKIP_TOOLCHAIN_CHECK=ON")
+    endif()
+    unset(_vkm_want_major)
+    unset(_vkm_have_major)
+endif()
+
+# ---------------------------------------------------------------------------
+# Imported targets
+# ---------------------------------------------------------------------------
+include("${CMAKE_CURRENT_LIST_DIR}/vkmEngineTargets.cmake")
+
+# ---------------------------------------------------------------------------
+# Where the SDK's data lives
+# ---------------------------------------------------------------------------
+# A host resolves shaders relative to the engine root at run time; these let a
+# project's build copy or reference them without hardcoding a layout.
+set_and_check(VKMENGINE_ROOT_DIR      "${PACKAGE_PREFIX_DIR}")
+set_and_check(VKMENGINE_BIN_DIR       "${PACKAGE_PREFIX_DIR}/bin")
+set_and_check(VKMENGINE_INCLUDE_DIR   "${PACKAGE_PREFIX_DIR}/include")
+set_and_check(VKMENGINE_SHADER_DIR    "${PACKAGE_PREFIX_DIR}/shaders")
+set_and_check(VKMENGINE_TEMPLATE_DIR  "${PACKAGE_PREFIX_DIR}/templates")
+
+set(VKMENGINE_RUNTIME "${PACKAGE_PREFIX_DIR}/bin/engine_runtime@CMAKE_EXECUTABLE_SUFFIX@")
+set(VKMENGINE_EDITOR  "${PACKAGE_PREFIX_DIR}/bin/engine_editor@CMAKE_EXECUTABLE_SUFFIX@")
+set(VKMENGINE_COOKER  "${PACKAGE_PREFIX_DIR}/bin/engine_cook@CMAKE_EXECUTABLE_SUFFIX@")
+
+# ---------------------------------------------------------------------------
+# vkm_add_gameplay_module(<name>)
+# ---------------------------------------------------------------------------
+# Every project's module is built the same way, so the SDK provides the recipe
+# rather than asking each project to restate it. The name is what the module is
+# called on disk; the engine looks for "game" in the project's bin/.
+function(vkm_add_gameplay_module TARGET)
+    cmake_parse_arguments(VKM "" "OUTPUT_NAME;PROJECT_DIR" "SOURCES" ${ARGN})
+
+    if(NOT VKM_SOURCES)
+        message(FATAL_ERROR "vkm_add_gameplay_module(${TARGET}): SOURCES is required")
+    endif()
+    if(NOT VKM_OUTPUT_NAME)
+        set(VKM_OUTPUT_NAME game)
+    endif()
+    if(NOT VKM_PROJECT_DIR)
+        set(VKM_PROJECT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+    endif()
+
+    add_library(${TARGET} SHARED ${VKM_SOURCES})
+
+    # Links the engine, never a host executable: the editor and the runtime load
+    # the same file.
+    target_link_libraries(${TARGET} PRIVATE vkmEngine::EngineCore)
+
+    # Into the project's own bin/, which is the one place a host looks.
+    set_target_properties(${TARGET} PROPERTIES
+        OUTPUT_NAME              ${VKM_OUTPUT_NAME}
+        RUNTIME_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin
+        LIBRARY_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin
+    )
+    if(WIN32)
+        set_target_properties(${TARGET} PROPERTIES PREFIX "")
+    endif()
+endfunction()
+
+check_required_components(vkmEngine)
