@@ -20,11 +20,6 @@ namespace Engine {
  * is why the engine could only ever run the game sitting inside its own repo.
  * Callers compose specific files from these directories (e.g.
  * ProjectPaths::library() / "_manifest.json") rather than re-deriving a root.
- *
- * engineRoot() is resolved once at first use and defined out-of-line, since
- * locating the executable is platform code; projectRoot() answers from the
- * override when one is set and defers to engineRoot() otherwise. The composing
- * helpers stay inline.
  */
 namespace ProjectPaths {
 
@@ -61,7 +56,7 @@ void setProjectRoot(const std::filesystem::path& path);
  */
 std::filesystem::path projectRoot();
 
-// Engine-owned. Read-only to a game: one copy serves every project.
+// Engine-owned, read-only to a game.
 inline std::filesystem::path engineShaders() { return engineRoot() / "shaders"; }
 inline std::filesystem::path engineAssets()  { return engineRoot() / "assets"; }
 inline std::filesystem::path engineFonts()   { return engineAssets() / "fonts"; }
@@ -76,7 +71,7 @@ inline std::filesystem::path engineFonts()   { return engineAssets() / "fonts"; 
  */
 inline std::filesystem::path projectBin() { return projectRoot() / "bin"; }
 
-// Project-owned. The game's own content, written by the editor.
+// Project-owned: the game's own content, written by the editor.
 inline std::filesystem::path assets()      { return projectRoot() / "assets"; }
 inline std::filesystem::path scenes()      { return projectRoot() / "scenes"; }
 inline std::filesystem::path screenshots() { return projectRoot() / "screenshots"; }
@@ -84,8 +79,7 @@ inline std::filesystem::path envs()        { return assets() / "envs"; }
 
 // Asset database. `library` holds the editable per-asset recipe files (source of
 // truth, version-controlled); `cooked` holds the derived binary cache keyed by
-// recipe hash (regenerable, not version-controlled). The manifest maps an
-// asset's name to its recipe + cooked files.
+// recipe hash (regenerable, not version-controlled).
 inline std::filesystem::path library()         { return projectRoot() / "library"; }
 inline std::filesystem::path cooked()          { return projectRoot() / "cooked"; }
 inline std::filesystem::path libraryManifest() { return library() / "_manifest.json"; }

@@ -10,9 +10,8 @@
 
 namespace Engine::detail {
 
-// Open and parse a JSON file. On failure (cannot open / malformed JSON) logs an
-// error tagged with @p what and returns false, leaving @p out untouched. Shared
-// by the asset library, asset serializer, and scene serializer load paths.
+// Open and parse a JSON file. On failure logs an error tagged with @p what and
+// returns false, leaving @p out untouched.
 //
 // Uses the explicit-category log variant because this is an inline call in a
 // header (see logger.h): the file's VKM_LOG_CATEGORY isn't reliably in scope, and
@@ -35,8 +34,8 @@ inline bool readJsonFile(const std::filesystem::path& path, nlohmann::json& out,
 // Write @p doc to @p path, creating parent directories as needed. The dump goes
 // to a sibling temp file that is renamed over the target only once the stream
 // says it wrote cleanly, so a full disk or a crash mid-write leaves the previous
-// file intact instead of a truncated one. Logs (tagged with @p what) and returns
-// false on any failure; the caller must not report a save it did not get.
+// file intact instead of a truncated one. Returns false (logging, tagged with
+// @p what) on any failure; the caller must not report a save it did not get.
 inline bool writeJsonFile(const std::filesystem::path& path, const nlohmann::json& doc, const char* what) {
     std::error_code ec;
     if (!path.parent_path().empty()) std::filesystem::create_directories(path.parent_path(), ec);

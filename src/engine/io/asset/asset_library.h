@@ -42,8 +42,7 @@ struct AssetRecord {
  * Where an asset's files live is derived from that identity rather than recorded:
  * recipePath() / cookedPath() name them by an opaque UID (a content hash of
  * type+name) instead of the raw asset name, which may contain path separators or
- * colons. The manifest is the authoritative name->record map; the layout on disk
- * is this class's implementation detail.
+ * colons. The layout on disk is this class's implementation detail.
  */
 class AssetLibrary {
     public:
@@ -80,11 +79,9 @@ class AssetLibrary {
         /**
          * @brief Every registered asset name of @p type, sorted.
          *
-         * The manifest is the authoritative name->record map, so this is how a
-         * caller discovers what a project actually has rather than hardcoding
-         * names. Sorted because the backing store is unordered: callers that
-         * need a reproducible selection (a benchmark picking the same meshes on
-         * every run) would otherwise get a different set per process.
+         * Sorted because the backing store is unordered: callers that need a
+         * reproducible selection (a benchmark picking the same meshes on every
+         * run) would otherwise get a different set per process.
          *
          * @param type Asset type to enumerate.
          * @return Sorted names; empty if the type has no registered records.

@@ -65,9 +65,8 @@ void AssetLibrary::load() {
     nlohmann::json doc;
     if (!detail::readJsonFile(path, doc, "Asset library manifest")) return;
 
-    // The layout is versioned the way scenes and cooked files are: a manifest
-    // this build cannot read is refused outright rather than half-understood.
-    // The library is derived data, so the recovery is to re-cook the project.
+    // Derived data: a manifest this build cannot read is refused outright rather
+    // than half-understood, and the recovery is to re-cook the project.
     const uint32_t version = doc.value("manifestVersion", 0u);
     if (version != MANIFEST_VERSION) {
         LOG_ERROR("Asset library: manifest %s is version %u, not %u; starting empty (re-cook the project)",
