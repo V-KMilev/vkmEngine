@@ -19,6 +19,7 @@
 #include "data/gl_ibl.h"
 #include "data/gl_material.h"
 #include "data/gl_mesh.h"
+#include "data/gl_scene_capture.h"
 #include "convention/gl_bindings.h"
 #include "generator/mesh_generators.h"
 #include "resource/resource_manager.h"
@@ -204,28 +205,10 @@ uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
 
     gl.setFaceCulling(true);
     gl.setCullFace(GL_BACK);
-    m_pbr->bind();
-    m_pbr->setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
-    if (hasIBL) {
-        ibl.bindIrradiance(GLBindings::IBLTextureSlots::Irradiance);
-        ibl.bindPrefilter(GLBindings::IBLTextureSlots::Prefilter);
-        ibl.bindBrdf(GLBindings::IBLTextureSlots::BrdfLUT);
-    }
-    // Indirect-term strength (the shader does `ambient *= u_iblIntensity`, which
-    // scales both IBL and flat ambient). The forward pass drives this from
-    // Environment::intensity; the preview uses full strength so the environment
-    // actually lights and reflects in the material. Without it the uniform
-    // defaults to 0 and the baked environment would not affect the preview at
-    // all - it lights the material whether or not the request asked for the sky
-    // backdrop.
-    m_pbr->setUniform1f("u_iblIntensity", 1.0f);
-    m_pbr->setUniform1i("u_hasSSAO", 0);
-    m_pbr->setUniform1i("u_hasSceneColor", 0);
-    m_pbr->setUniform1i("u_probeCount", 0);
-    m_pbr->setUniform1i("u_useClusters", 0);           // no cull pass here: shade the full light list
-    m_pbr->setUniform1i("u_hasIrradianceVolume", 0);  // and never sample baked GI into a preview
-    m_pbr->setUniform2f("u_screenSize",
-        static_cast<float>(SCENE_SIZE), static_cast<float>(SCENE_SIZE));
+    // The same offline uniform set the bakers use, at full indirect strength:
+    // the forward pass drives that from Environment::intensity, but a preview
+    // should light and reflect the environment whatever the scene asked for.
+    bindOfflinePbrUniforms(*m_pbr, ibl, 1.0f, static_cast<float>(SCENE_SIZE));
 
     // Transparent materials blend over the backdrop; everything else draws
     // opaque. One mesh, so no sorting or partitioning is needed.

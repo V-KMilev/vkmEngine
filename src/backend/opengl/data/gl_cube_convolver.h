@@ -59,8 +59,8 @@ class GLCubeConvolver {
 
         /**
          * @brief The unit cube the captures draw. Reused by the IBL baker's equirect +
-         * env-capture steps and the probe baker's skybox draw, so there is one
-         * cube per baker rather than one per step.
+         * env-capture steps, so they share this one rather than allocating a cube
+         * per step.
          */
         const GLMesh& cube() const { return *m_cube; }
 
