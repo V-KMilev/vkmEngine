@@ -134,8 +134,7 @@ std::ofstream openCookedWrite(const std::filesystem::path& path, const char* wha
 
 // Open `path` and validate its header + declared size against the expected
 // kind/version/fixed-body size. On success `is` is positioned at the body start
-// and outRecipeHash / outPayloadBytes are filled; on any open / magic / endian /
-// version / size mismatch it logs and returns false.
+// and outRecipeHash / outPayloadBytes are filled.
 bool openCookedRead(std::ifstream& is, const std::filesystem::path& path,
                     uint16_t expectKind, uint16_t expectVersion, uint64_t fixedBytes,
                     const char* what, uint64_t& outRecipeHash, uint64_t& outPayloadBytes) {

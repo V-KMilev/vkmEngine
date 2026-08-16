@@ -37,9 +37,6 @@ class ResourceManager;
  * (Hierarchy::parent) are stored as the saved scene-table index, which
  * resolves directly because SceneSerializer recreates each entity at its
  * saved slot.
- *
- * Animation serializes in full (all three tracks + the per-track easing by
- * stable name); see save/load(Animation) below.
  */
 namespace ComponentSerializer {
 

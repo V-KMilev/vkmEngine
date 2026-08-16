@@ -20,9 +20,8 @@ class Scene;
  * re-loads). A name the cooker never wrote to the library cannot be recreated,
  * so the reference it backs is left unresolved.
  *
- * Textures are their own top-level section: saveAssetsForScene emits a
- * `textures` array of every map a material references, and loadAssets
- * recreates them via the texture factory before materials resolve their refs.
+ * Textures are their own top-level section: every map a material references is
+ * emitted there, and recreated before materials resolve their refs.
  */
 namespace AssetSerializer {
     nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources);
@@ -30,8 +29,7 @@ namespace AssetSerializer {
 
     /**
      * @brief Apply an "inline" material descriptor (kind=="inline") to a freshly-
-     * constructed MaterialAsset. Used by the inline-material factory in
-     * tools/asset_registration.cpp.
+     * constructed MaterialAsset.
      */
     void applyInline(const nlohmann::json& source, MaterialAsset& target, const ResourceManager& resources);
 
