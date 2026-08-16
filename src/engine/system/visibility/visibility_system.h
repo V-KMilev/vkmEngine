@@ -2,8 +2,6 @@
 
 #include <vector>
 
-#include <glm/glm.hpp>
-
 #include "core/system.h"
 #include "core/memory/types.h"
 #include "system/visibility/visibility.h"
@@ -71,12 +69,9 @@ class VisibilitySystem : public System {
         Visibility m_result;
         bool m_noCameraLogged = false;  ///< Edge latch so the no-camera warning fires once per gap.
 
-        std::vector<uint8_t>   m_visibleFlags;
-        std::vector<uint8_t>   m_casterFlags;
-        std::vector<glm::mat4>  m_modelMatrices;
-        std::vector<MeshHandle> m_meshes;      ///< Geometry chosen per index (LOD level, or the Mesh component's own).
-        std::vector<glm::vec3> m_worldMins;
-        std::vector<glm::vec3> m_worldMaxs;
+        std::vector<uint8_t>       m_visibleFlags;
+        std::vector<uint8_t>       m_casterFlags;
+        std::vector<VisibleEntity> m_scratch;  ///< Cull result per Mesh index; the flags say which ones the gather may read.
 };
 
 } // namespace Engine

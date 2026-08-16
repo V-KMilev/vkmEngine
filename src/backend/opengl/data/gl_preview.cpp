@@ -22,7 +22,7 @@
 #include "convention/gl_bindings.h"
 #include "generator/mesh_generators.h"
 #include "resource/resource_manager.h"
-#include "system/render/render_backend.h"
+#include "system/render/editor_render_hooks.h"
 #include "system/render/render_view.h"
 #include "system/render/data/camera_data.h"
 
