@@ -110,20 +110,6 @@ class ThreadPool {
         ~ThreadPool();
 
         /**
-         * @brief Spawn the worker threads that drain the task queue.
-         *
-         * @param threadCount Number of worker threads to create.
-         */
-        void start(size_t threadCount);
-
-        /**
-         * @brief Signal shutdown and join all workers.
-         *
-         * Any tasks still queued but not yet started are discarded.
-         */
-        void stop();
-
-        /**
          * @brief Worker loop: pop and run tasks until shutdown, retiring each
          * against its batch counter (even on exception) and signalling
          * waiters when a batch reaches zero.

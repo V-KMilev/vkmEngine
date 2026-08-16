@@ -21,10 +21,12 @@ bool ThreadPool::isWorkerThread() {
 ThreadPool::ThreadPool(
     size_t threadCount
 ) : m_running(true) {
-    start(threadCount);
+    for (size_t i = 0; i < threadCount; ++i) {
+        m_threads.emplace_back([this]() { process(); });
+    }
 }
 ThreadPool::~ThreadPool() {
-    stop();
+    shutdown();
 }
 
 ThreadPool& ThreadPool::get() {
@@ -65,16 +67,6 @@ void ThreadPool::waitForBatch(std::atomic<size_t>& pending) {
 }
 
 void ThreadPool::shutdown() {
-    stop();
-}
-
-void ThreadPool::start(size_t threadCount) {
-    for (size_t i = 0; i < threadCount; ++i) {
-        m_threads.emplace_back([this]() { process(); });
-    }
-}
-
-void ThreadPool::stop() {
     {
         std::lock_guard<std::mutex> lock(m_tasksMutex);
         m_running = false;
