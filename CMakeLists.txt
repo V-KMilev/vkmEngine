@@ -134,7 +134,12 @@ add_subdirectory(examples/stress_arena)
 # adds the in-process editor to edit one, and engine_cook bakes a project's assets
 # with no window at all. The first two link the engine libs directly and share the
 # header-only bootstrap in app/engine_app.h (setupEngineApp) - the editor's only
-# addition is its EditorSystem; the cooker builds no Engine.
+# addition is its EditorSystem; the cooker builds no Engine. Each puts the repo
+# root on its include path so that "app/" prefix resolves.
+#
+# None of them export symbols. A gameplay module links the shared engine itself,
+# so it resolves against that rather than against whichever host opened it - which
+# is what lets one module file serve both the editor and the runtime.
 add_subdirectory(app/runtime)
 add_subdirectory(app/cooker)
 add_subdirectory(app/editor)
