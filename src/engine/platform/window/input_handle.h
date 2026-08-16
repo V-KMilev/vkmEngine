@@ -70,9 +70,8 @@ class KeyboardInputHandle {
 /**
  * @brief Handles mouse input state tracking and querying.
  *
- * Provides methods to update and query the mouse button states, position,
- * movement (delta), and scroll. Scroll is accumulated via the GLFW scroll
- * callback wired up by InputHandle, not by this class directly.
+ * Scroll is accumulated via the GLFW scroll callback wired up by InputHandle,
+ * not by this class directly.
  */
 class MouseInputHandle {
     public:
@@ -154,8 +153,6 @@ class MouseInputHandle {
 
 /**
  * @brief Aggregates keyboard and mouse input handles for unified input state and queries.
- *
- * Provides update and high-level pressed queries for both keyboard and mouse.
  */
 class InputHandle {
     public:

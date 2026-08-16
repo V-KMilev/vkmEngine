@@ -65,7 +65,6 @@ void MouseInputHandle::resetScrollDelta() {
 void InputHandle::setupCallbacks(GLFWwindow* window) {
     if (!window) return;
 
-    // Key callback - updates keyboard state directly, no polling needed
     glfwSetKeyCallback(window, [](GLFWwindow* w, int key, int, int action, int) {
         if (auto* manager = windowManager(w)) {
             const bool pressed = (action == GLFW_PRESS || action == GLFW_REPEAT);
@@ -73,7 +72,7 @@ void InputHandle::setupCallbacks(GLFWwindow* window) {
         }
     });
 
-    // Scroll callback (horizontal scroll unused)
+    // Horizontal scroll is unused.
     glfwSetScrollCallback(window, [](GLFWwindow* w, double, double yOffset) {
         if (auto* manager = windowManager(w)) {
             manager->getInputHandle().m_mouseHandle.setScrollDelta(yOffset);

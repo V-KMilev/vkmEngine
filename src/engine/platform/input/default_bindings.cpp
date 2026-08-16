@@ -17,8 +17,7 @@ InputBinding key(int code, float scale = 1.0f) {
 } // namespace
 
 void installDefaultBindings(InputMap& map) {
-    // Paired keys on one axis, so opposing presses cancel in the map rather
-    // than in every caller.
+    // Paired keys on one axis, so opposing presses cancel in the map.
     map.define(InputActions::MOVE_FORWARD, { key(GLFW_KEY_W,  1.0f), key(GLFW_KEY_S, -1.0f) });
     map.define(InputActions::MOVE_RIGHT,   { key(GLFW_KEY_D,  1.0f), key(GLFW_KEY_A, -1.0f) });
     map.define(InputActions::MOVE_UP,      { key(GLFW_KEY_Q,  1.0f), key(GLFW_KEY_E, -1.0f) });
