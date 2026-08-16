@@ -16,7 +16,6 @@
 #include "io/asset/asset_cook.h"
 #include "io/asset/asset_library.h"
 #include "io/asset/asset_serializer.h"
-#include "io/project_paths.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
@@ -91,19 +90,17 @@ bool cookMesh(const MeshAsset& mesh) {
     AssetLibrary& lib = AssetLibrary::get();
     const nlohmann::json& recipe = mesh.sourceJson();
     const uint64_t hash = hashRecipe(recipe);
-    const std::string uid = AssetLibrary::uidFor(AssetType::Mesh, mesh.name);
-    const std::string recipeRel = "meshes/" + uid + ".json";
-    const std::string cookedRel = "meshes/" + uid + ".vkmc";
 
-    const std::filesystem::path cookedPath = ProjectPaths::cooked() / cookedRel;
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Mesh, mesh.name);
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Mesh, mesh.name);
     const AssetRecord* existing = lib.find(AssetType::Mesh, mesh.name);
     std::error_code ec;
     if (existing && existing->recipeHash == hash && std::filesystem::exists(cookedPath, ec)) return true;
 
-    if (!writeRecipeFile(ProjectPaths::library() / recipeRel, mesh.name, "mesh", recipe)) return false;
+    if (!writeRecipeFile(recipePath, mesh.name, "mesh", recipe)) return false;
     if (!AssetCook::writeMesh(cookedPath, mesh, hash)) return false;
 
-    lib.upsert({AssetType::Mesh, mesh.name, recipeRel, cookedRel, hash});
+    lib.upsert({AssetType::Mesh, mesh.name, hash});
     LOG_INFO("Cooked mesh '%s' (%zu verts, %zu indices)",
              mesh.name.c_str(), mesh.vertices.size(), mesh.indices.size());
     return true;
@@ -121,19 +118,17 @@ bool cookTexture(const TextureAsset& tex) {
     AssetLibrary& lib = AssetLibrary::get();
     const nlohmann::json& recipe = tex.sourceJson();
     const uint64_t hash = hashRecipe(recipe);
-    const std::string uid = AssetLibrary::uidFor(AssetType::Texture, tex.name);
-    const std::string recipeRel = "textures/" + uid + ".json";
-    const std::string cookedRel = "textures/" + uid + ".vkmc";
 
-    const std::filesystem::path cookedPath = ProjectPaths::cooked() / cookedRel;
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Texture, tex.name);
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Texture, tex.name);
     const AssetRecord* existing = lib.find(AssetType::Texture, tex.name);
     std::error_code ec;
     if (existing && existing->recipeHash == hash && std::filesystem::exists(cookedPath, ec)) return true;
 
-    if (!writeRecipeFile(ProjectPaths::library() / recipeRel, tex.name, "texture", recipe)) return false;
+    if (!writeRecipeFile(recipePath, tex.name, "texture", recipe)) return false;
     if (!AssetCook::writeTexture(cookedPath, tex, hash)) return false;
 
-    lib.upsert({AssetType::Texture, tex.name, recipeRel, cookedRel, hash});
+    lib.upsert({AssetType::Texture, tex.name, hash});
     LOG_INFO("Cooked texture '%s' (%ux%u)", tex.name.c_str(), tex.params.width, tex.params.height);
     return true;
 }
@@ -146,15 +141,14 @@ bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
     // its runtime form; no binary cook is needed.
     const nlohmann::json inlineSource = AssetSerializer::materialToInline(mat, resources);
     const uint64_t hash = hashRecipe(inlineSource);
-    const std::string uid = AssetLibrary::uidFor(AssetType::Material, mat.name);
-    const std::string recipeRel = "materials/" + uid + ".json";
 
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Material, mat.name);
     const AssetRecord* existing = lib.find(AssetType::Material, mat.name);
     if (existing && existing->recipeHash == hash) return true;
 
-    if (!writeRecipeFile(ProjectPaths::library() / recipeRel, mat.name, "material", inlineSource)) return false;
+    if (!writeRecipeFile(recipePath, mat.name, "material", inlineSource)) return false;
 
-    lib.upsert({AssetType::Material, mat.name, recipeRel, std::string{}, hash});
+    lib.upsert({AssetType::Material, mat.name, hash});
     LOG_INFO("Cooked material '%s'", mat.name.c_str());
     return true;
 }

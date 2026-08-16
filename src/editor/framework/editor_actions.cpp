@@ -529,7 +529,7 @@ void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
         const std::filesystem::path appRoot = ProjectPaths::projectRoot();
         m_picker.options.popupId    = "Import Model";
         m_picker.options.title      = "Import Model";
-        m_picker.options.root       = appRoot / "assets";
+        m_picker.options.root       = ProjectPaths::assets();
         m_picker.options.recursive  = true;
         m_picker.options.kind       = AssetPicker::Kind::Files;
         m_picker.options.extensions = {
