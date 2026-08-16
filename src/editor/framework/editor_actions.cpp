@@ -389,14 +389,14 @@ void redo(Scene& scene, EditorState& state) {
     state.markSceneDirty();
 }
 
-void setActiveCamera(Scene& scene, EditorState& state, EntityId target, const char* label) {
+void setActiveCamera(Scene& scene, EditorState& state, EntityId target) {
     std::vector<std::pair<uint32_t, bool>> beforeActive;
     scene.forEach<Camera>([&](EntityId other, Camera& c) {
         beforeActive.emplace_back(other.index, c.active);
         c.active = (other == target);
     });
     state.commands.push(std::make_unique<SetActiveCameraCommand>(
-        target, std::move(beforeActive), label));
+        target, std::move(beforeActive), "Set Main Camera"));
     state.markSceneDirty();
 }
 

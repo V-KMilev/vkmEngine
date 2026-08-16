@@ -131,10 +131,9 @@ void focusOnSelected(FrameContext& ctx, EditorState& state, CameraControllerSyst
  * @brief Make @p target the active ("main") camera.
  *
  * Flips the active flag across every Camera and records the prior flags so
- * the multi-entity change is one undoable step. @p label names the undo
- * entry ("Set Main Camera" / "Look Through Camera").
+ * the multi-entity change is one undoable step.
  */
-void setActiveCamera(Scene& scene, EditorState& state, EntityId target, const char* label);
+void setActiveCamera(Scene& scene, EditorState& state, EntityId target);
 
 /**
  * @brief Commit a hierarchy mutation: dirty bits, panel rebuild, scene save flag.

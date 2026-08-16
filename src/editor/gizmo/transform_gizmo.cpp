@@ -163,11 +163,7 @@ bool TransformGizmo::manipulate(
         // Cancel exactly as the release path does, m_dragRotation included: a
         // rotation drag interrupted by the entity going behind the camera would
         // otherwise leave the last angle behind for the next reader.
-        if (m_dragging) {
-            m_dragging = false;
-            m_active = GizmoElement::None;
-            m_dragRotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-        }
+        if (m_dragging) endDrag();
         return false;
     }
 
@@ -203,9 +199,7 @@ bool TransformGizmo::manipulate(
             // Release. m_dragRotation is meaningful only during a rotation
             // drag; clear it unconditionally so non-rotate gizmo modes don't
             // observe a stale quaternion from the previous rotation session.
-            m_dragging = false;
-            m_active = GizmoElement::None;
-            m_dragRotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+            endDrag();
         } else {
             // Continue drag
             switch (operation) {
