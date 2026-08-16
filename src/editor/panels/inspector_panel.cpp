@@ -409,7 +409,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         };
 
         addItem("Mesh", Mesh{}, "Add Mesh");
-        addItem("Light", generatePointLight(), "Add Light");
+        addItem("Light", generateLight(LightType::Point), "Add Light");
         addItem("Rigidbody", Rigidbody{}, "Add Rigidbody");
         addItem("Collider", Collider{}, "Add Collider");
         Camera cam;
@@ -1011,9 +1011,8 @@ void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
             propSliderInt("Levels", &state.lodGenLevels, 1, 4,
                 "How many coarser levels to build below the source mesh");
             if (ImGui::Button("Generate Levels", ImVec2(-1.0f, 0.0f))) {
-                LODGenSettings settings;
-                settings.extraLevels = static_cast<uint32_t>(state.lodGenLevels);
-                lod = generateLOD(resources, scene.get<Mesh>(id).mesh, settings);
+                lod = generateLOD(resources, scene.get<Mesh>(id).mesh,
+                                  static_cast<uint32_t>(state.lodGenLevels));
                 changed = true;
             }
         } else {

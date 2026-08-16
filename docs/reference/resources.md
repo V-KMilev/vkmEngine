@@ -187,7 +187,7 @@ image decoders; the editor registers both and (re)cooks recipes into the cache.
 | `mesh_generators.cpp`   | `generateTriangle/Plane/Cube/Sphere/Pyramid/Cone` free functions, plus `decimateMesh` (LOD) |
 | `texture_generators.cpp`| Solid color, white, black, normal, gray (1x1 fallback)         |
 | `material_generators.cpp`| Default PBR material with the fallback texture suite          |
-| `light_generators.cpp`  | Pre-baked directional / point / spot light components          |
+| `light_generators.cpp`  | `generateLight(LightType)` - a light component with that type's defaults |
 
 The generators are plain free functions; the string dispatch (`"name"` ->
 generator) lives in the `generator`/`decimate` factory lambdas registered in

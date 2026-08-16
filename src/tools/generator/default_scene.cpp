@@ -36,7 +36,7 @@ EntityId buildDefaultScene(Scene& scene, ResourceManager& resources) {
     sunTransform.position = {0.0f, 8.0f, 0.0f};
 
     scene.add(sun, sunTransform);
-    scene.add(sun, generateDirectionalLight());
+    scene.add(sun, generateLight(LightType::Directional));
     scene.add(sun, makeName("Sun"));
 
     const EntityId cube = scene.createEntity();
