@@ -9,11 +9,9 @@ struct EditorContext;
 /**
  * @brief Editor/application Preferences window.
  *
- * A floating, closeable window (opened from Edit > Preferences, Ctrl+,)
- * with a tabbed layout (Camera / Gizmo / Display / Keybinds). Holds user/app
- * configuration as
- * opposed to per-scene data: fly-camera tuning, gizmo snap defaults,
- * window/display options, and keybind rebinding.
+ * A floating, closeable window (opened from Edit > Preferences, Ctrl+,) with a
+ * tabbed layout (Camera / Gizmo / Display / Keybinds). Holds user/app
+ * configuration as opposed to per-scene data.
  */
 class PreferencesPanel {
     public:

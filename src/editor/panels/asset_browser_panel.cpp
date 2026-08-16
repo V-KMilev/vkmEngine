@@ -174,12 +174,10 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
     ImGui::End();
 }
 
-// One grid body for both asset families. Asset selects the type; the
-// material-only behavior (an "Open in Material Editor" context item and
-// left-click-to-edit, plus a sphere preview vs. a neutral-material preview)
-// is selected with `if constexpr`. Everything else - the in-use guard, the
-// assign / rename / delete actions, thumbnail sizing, tooltip text, the
-// deferred eviction, and the column layout - is shared verbatim.
+// One grid body for both asset families. The material-only behavior (an "Open
+// in Material Editor" context item and left-click-to-edit, plus a sphere
+// preview vs. a neutral-material preview) is selected with `if constexpr`;
+// everything else is shared verbatim.
 template<typename Asset>
 void AssetBrowserPanel::drawAssetGrid(EditorContext& ec) {
     static_assert(std::is_same_v<Asset, MaterialAsset> || std::is_same_v<Asset, MeshAsset>,
@@ -227,8 +225,7 @@ void AssetBrowserPanel::drawAssetGrid(EditorContext& ec) {
         if (!matchesFilter(a.name.c_str(), m_filter)) return;
 
         // Material thumbnails render the asset on a shared preview sphere; mesh
-        // thumbnails render the asset under a shared neutral material. The two
-        // preview poses differ, so the texture() call is selected per family.
+        // thumbnails render the asset under a shared neutral material.
         PreviewRequest req;
         if constexpr (isMaterial) {
             req.key      = materialKey(h.id());

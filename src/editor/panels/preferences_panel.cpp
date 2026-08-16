@@ -26,7 +26,7 @@ void PreferencesPanel::draw(EditorContext& ec) {
     }
 
     // Tab bar instead of master-detail: four sections aren't enough to
-    // justify a sidebar. Tabs are more idiomatic for a Preferences window.
+    // justify a sidebar.
     if (ImGui::BeginTabBar("##PrefTabs", ImGuiTabBarFlags_None)) {
         if (ImGui::BeginTabItem("Camera")) {
             ImGui::Spacing();
@@ -89,8 +89,7 @@ void PreferencesPanel::drawDisplaySection(FrameContext& ctx) {
 
     ImGui::Spacing();
     ImGui::SeparatorText("Window Mode");
-    // Stateful: the radios reflect the applied mode (the old stateless button
-    // pair gave no hint which mode was active).
+    // Radios, not buttons: they reflect which mode is actually applied.
     if (ImGui::RadioButton("Windowed", window.mode() == WindowMode::Windowed))
         window.updateMode(WindowMode::Windowed);
     ImGui::SameLine(0, EditorStyle::px(16.0f));
