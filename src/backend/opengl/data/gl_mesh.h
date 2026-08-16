@@ -90,13 +90,6 @@ class GLMesh {
         std::unique_ptr<Core::VertexBuffer> m_vbo;
         std::unique_ptr<Core::IndexBuffer>  m_ibo;
         size_t m_indexCount = 0;
-
-        /**
-         * @brief Which instance buffer is currently bound at each start location, so a
-         * repeated attach of the same buffer skips re-issuing its attribute
-         * pointers. Two slots cover the engine convention (model @4, normal @8);
-         * reset whenever update() recreates the VAO.
-         */
 };
 
 } // namespace Engine

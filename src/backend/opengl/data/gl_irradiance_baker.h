@@ -88,6 +88,7 @@ class GLIrradianceBaker {
                           const std::vector<InstanceRun>& runs,
                           const GLView& glView, const GLIBL& globalIBL);
 
+    private:
         Core::Shader        m_pbr;      ///< capture geometry (full forward PBR)
         Core::Shader        m_skybox;   ///< capture background
         Core::ComputeShader m_project;  ///< cube -> SH-L1 coefficients

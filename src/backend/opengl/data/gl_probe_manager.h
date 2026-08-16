@@ -50,7 +50,7 @@ class GLProbeManager {
         void init();
 
         /**
-         * @brief Select the nearest baked probes, pack the ProbeBlock UBO, and bind it +
+         * @brief Collect the baked probes, pack the ProbeBlock UBO, and bind it +
          * the two cube-map arrays for the forward pass. Returns how many probes
          * were bound (0 = none); the caller forwards this to ctx.probeCount.
          */
@@ -95,16 +95,11 @@ class GLProbeManager {
             GpuProbe probes[GLBindings::ProbeTextureSlots::MAX_PROBES];
         };
 
-        /**
-         * @brief A baked probe in range this frame, with its camera distance (for the
-         * nearest-N selection). Reused across frames to avoid a per-frame alloc.
-         */
-        struct Active { uint32_t index; float dist; };
-
+    private:
         std::unique_ptr<GLProbeBaker>        m_baker;  ///< Bakes probes at frame end.
         std::unique_ptr<GLProbeArray>        m_array;  ///< Shared irradiance + prefilter cube arrays.
         std::vector<BakeState>               m_state;  ///< Per layer: baked + last-baked position/version.
-        std::vector<Active>                  m_active; ///< Scratch active-probe set, cleared each bind().
+        std::vector<uint32_t>                m_active; ///< Scratch baked-probe indices, cleared each bind().
         std::unique_ptr<Core::UniformBuffer> m_ubo;    ///< ProbeBlock: boxes + layers (binding 4).
         ProbeBlock                           m_lastBlock{};  ///< Last uploaded block, for change-gated upload.
 };

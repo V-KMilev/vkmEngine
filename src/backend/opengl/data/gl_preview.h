@@ -100,6 +100,7 @@ class GLPreview {
 
         Entry& ensureEntry(uint64_t key, uint32_t size);
 
+    private:
         std::unique_ptr<Core::Shader>         m_pbr;       ///< forward PBR (scene draw)
         std::unique_ptr<Core::Shader>         m_composite; ///< tonemap HDR -> LDR
         std::unique_ptr<Core::Shader>         m_skybox;    ///< sky backdrop (Background::Sky)
@@ -108,7 +109,7 @@ class GLPreview {
 
         GLTarget          m_scratch;   ///< shared HDR scene target (fixed size)
         GLCamera          m_camera;    ///< orbit camera UBO (binding 2)
-        GLLights          m_lights;    ///< studio rig UBO (binding 1)
+        GLLights          m_lights;    ///< studio rig lights SSBO (binding 0)
         GLShadowData      m_noShadow;  ///< default-built: every light shadowless
         GLInstanceBatcher m_batcher;   ///< single-drawable instanced draw
 
