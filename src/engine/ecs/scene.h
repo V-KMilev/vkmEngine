@@ -269,9 +269,12 @@ class Scene {
 
     public:
         /**
-         * @brief Drop every component set and reset the entity allocator and environment in one pass.
+         * @brief Drop every component set and reset the entity allocator, the
+         *        environment and the physics settings in one pass.
          *
-         * Used for scene load to start from a clean slate.
+         * Used for scene load to start from a clean slate. This is the only
+         * definition of what a cleared scene starts from - callers replacing a
+         * scene reset nothing themselves, or the two drift.
          */
         void clear() {
             // O(types + entities) rather than the previous

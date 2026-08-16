@@ -21,6 +21,7 @@ namespace Engine {
  */
 struct TextureLoadCompletion {
     TextureHandle handle;
+    uint64_t      assetUid = 0;  ///< Resource::uid of the asset this decode was requested for; see AsyncLoaderSystem.
     std::vector<uint8_t> pixelData;
     uint32_t width    = 0;
     uint32_t height   = 0;
@@ -47,6 +48,7 @@ struct TextureLoadCompletion {
  */
 struct MeshLoadCompletion {
     MeshHandle handle;
+    uint64_t   assetUid = 0;     ///< Resource::uid of the asset this decode was requested for; see AsyncLoaderSystem.
     std::vector<Vertex>   vertices;
     std::vector<uint32_t> indices;
     glm::vec3 boundsMin{0};

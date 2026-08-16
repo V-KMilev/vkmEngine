@@ -21,8 +21,9 @@ namespace Engine {
  * the shape takes effect without a separate "apply" step; the solver then rotates
  * it into world space.
  *
- * Bodies are assumed to be hierarchy roots so the local Transform equals the world
- * pose. Parenting a physics body is unsupported in this pass.
+ * A hierarchy root's local Transform is already its world pose, so the solver reads
+ * it directly. A parented body takes its world pose from WorldTransform instead, and
+ * writeback converts the solved pose back into the parent's frame.
  */
 struct Rigidbody {
     glm::vec3 linearVelocity  = {0.0f, 0.0f, 0.0f};  ///< World-space velocity (m/s)
