@@ -48,8 +48,8 @@ TextureHandle generateBlackTexture(ResourceManager& resourceManager);
 /**
  * @brief Generate a default normal map texture.
  *
- * Creates a 1x1 normal map pointing straight up (0.5, 0.5, 1.0 in texture space).
- * This represents a flat surface with no normal perturbation.
+ * 1x1, (0.5, 0.5, 1.0) in texture space: straight up, so a surface sampling it
+ * gets no normal perturbation.
  *
  * @param resourceManager Resource manager to add the texture to.
  * @return Handle to the default normal map.
