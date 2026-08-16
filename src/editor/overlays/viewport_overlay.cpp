@@ -13,6 +13,7 @@ namespace Engine {
 
 void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
     const FrameContext& ctx = ec.frame;
+    m_hovered = false;
     if (!ctx.visibility || !ctx.visibility->hasCamera) return;
 
     const ImVec2 regionMax(ec.viewportPos.x + ec.viewportSize.x,
@@ -118,6 +119,7 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
     }
 
     if (hoverIdx >= 0) {
+        m_hovered = true;
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
         ImGui::SetTooltip("View from %s", endpoints[hoverIdx].label);
     }

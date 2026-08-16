@@ -34,9 +34,9 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         // MSAA sample count for the scene pass (machine-quality). The whole post
         // chain runs on the resolved single-sample buffer, so only geometry-edge
         // cost scales with the sample count.
-        static const char* const kMsaaLabels[] = { "Off", "2x MSAA", "4x MSAA", "8x MSAA" };
-        static const uint32_t    kMsaaValues[] = { 1u, 2u, 4u, 8u };
-        propValueCombo("Anti-Aliasing", kMsaaLabels, kMsaaValues, 4, &s.msaaSamples,
+        static const char* const MSAA_LABELS[] = { "Off", "2x MSAA", "4x MSAA", "8x MSAA" };
+        static const uint32_t    MSAA_VALUES[] = { 1u, 2u, 4u, 8u };
+        propValueCombo("Anti-Aliasing", MSAA_LABELS, MSAA_VALUES, 4, &s.msaaSamples,
                        "Scene-pass MSAA; the post chain runs on the resolved buffer");
     }
     endComponentCard();
@@ -70,9 +70,9 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
     if (beginComponentCard("Shadows", EditorStyle::Accent::Effect, true)) {
         // Per-tile atlas resolution. Higher is crisper but the shadow pass is
         // usually the frame's dominant GPU cost, so this is the main FPS lever.
-        static const char* const kShadowResLabels[] = { "Low (1024)", "Medium (2048)", "High (4096)" };
-        static const uint32_t    kShadowResValues[] = { 1024u, 2048u, 4096u };
-        propValueCombo("Atlas Resolution", kShadowResLabels, kShadowResValues, 3, &s.shadowResolution,
+        static const char* const SHADOW_RES_LABELS[] = { "Low (1024)", "Medium (2048)", "High (4096)" };
+        static const uint32_t    SHADOW_RES_VALUES[] = { 1024u, 2048u, 4096u };
+        propValueCombo("Atlas Resolution", SHADOW_RES_LABELS, SHADOW_RES_VALUES, 3, &s.shadowResolution,
                        "Per-tile shadow map size - usually the frame's main GPU cost lever");
     }
     endComponentCard();

@@ -968,7 +968,6 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
 
         changed |= propDrag("Near Clip", &cam.zNear, 0.01f, 0.001f, cam.zFar, "%.3f");
         changed |= propDrag("Far Clip", &cam.zFar, 1.0f, cam.zNear, 100000.0f, "%.0f");
-        changed |= propDrag("Exposure", &cam.exposure, 0.01f, 0.0f, 10.0f, "%.2f");
 
         // Depth of field: amount 0 disables the blur pass entirely.
         changed |= propDrag("Focus Distance", &cam.focusDistance, 0.1f, 0.01f, 10000.0f, "%.2f");
