@@ -62,6 +62,35 @@ seconds rather than recompiling an engine.
 | `vkm cook` | bake assets into the form the runtime reads - no window needed, so it runs on a build machine |
 | `vkm package` | assemble a standalone game under `dist/` |
 
+## Shipping
+
+```sh
+vkm package
+```
+
+That cooks the assets, then assembles everything a player needs:
+
+```
+dist/mygame/
+    bin/            the game executable, the engine libraries, the gameplay module
+    project.json    what the game is
+    assets/  scenes/  cooked/  library/     its content
+    shaders/        the engine's
+```
+
+The executable is a renamed copy of `engine_runtime` - the engine is never
+rebuilt for a game, which is why this takes seconds. The player runs
+`bin/mygame` and passes nothing: both roots resolve to the package directory, so
+the game finds itself.
+
+Zip that directory and it is the whole product. Nothing needs installing, and it
+runs from wherever it is unpacked - the binaries carry a relative rpath rather
+than a path baked in at build time.
+
+Cook before you ship, which `vkm package` does for you. The runtime can neither
+import nor cook; it reads what the cooker produced. That step needs no window and
+no GPU, so it runs on a build machine.
+
 Each takes an optional project path and otherwise uses the current directory,
 including from any subdirectory of a project.
 
