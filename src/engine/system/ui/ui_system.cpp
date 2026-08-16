@@ -27,14 +27,20 @@ void UISystem::update(FrameContext& ctx) {
     m_buttonHits.clear();
     ctx.ui = &m_drawData;
 
-    // Pointer in viewport-local pixels (the space element rects resolve into),
-    // plus this frame's press / release edges for the click state machine.
+    // Pointer in viewport-local framebuffer pixels (the space element rects
+    // resolve into), plus this frame's press / release edges for the click state
+    // machine. GLFW hands back the cursor in window screen coords, which is the
+    // same thing only on an unscaled display - hence the scale.
     const MouseInputHandle& mouse = ctx.window.getInputHandle().getMouse();
+    const float pointerScale = ctx.window.framebufferScale();
     m_pointer = {
-        static_cast<float>(mouse.getX()) - static_cast<float>(ctx.window.sceneViewportX()),
-        static_cast<float>(mouse.getY()) - static_cast<float>(ctx.window.sceneViewportY())
+        static_cast<float>(mouse.getX()) * pointerScale - static_cast<float>(ctx.window.sceneViewportX()),
+        static_cast<float>(mouse.getY()) * pointerScale - static_cast<float>(ctx.window.sceneViewportY())
     };
-    m_mouseDown     = mouse.isButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
+
+    // While the editor owns the pointer the button reads as up, so a drag that
+    // began over editor chrome cannot resolve into a game click when it ends.
+    m_mouseDown     = !m_editorPointerCapture && mouse.isButtonPressed(GLFW_MOUSE_BUTTON_LEFT);
     m_mouseDownEdge = m_mouseDown && !m_prevMouseDown;
     m_mouseUpEdge   = !m_mouseDown && m_prevMouseDown;
     m_prevMouseDown = m_mouseDown;
@@ -127,7 +133,7 @@ void UISystem::emitButton(FrameContext& ctx, EntityId entity) {
 
     m_buttonHits.push_back(ButtonHit{
         entity, first,
-        button.interactable && element.screenRect.contains(m_pointer)});
+        button.interactable && !m_editorPointerCapture && element.screenRect.contains(m_pointer)});
 }
 
 void UISystem::resolveInteraction(FrameContext& ctx) {
@@ -165,7 +171,6 @@ void UISystem::resolveInteraction(FrameContext& ctx) {
 
     // A release ends any press, whether or not it landed on the pressed button.
     if (m_mouseUpEdge) m_pressedButton = {};
-    m_drawData.pointerOverUI = static_cast<bool>(topmost);
 }
 
 void UISystem::emitText(FrameContext& ctx, EntityId entity, float canvasScale) {

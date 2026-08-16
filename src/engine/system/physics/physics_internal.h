@@ -42,10 +42,14 @@ struct ColliderProxy {
  *        map the solved world pose back to the entity's local Transform.
  *
  * `parented == false` means the body is a hierarchy root (its local Transform is
- * already the world pose - the fast path, no conversion).
+ * already the world pose - the fast path, no conversion). `worldRot` is the
+ * orientation the solver ran in, kept so anything rebuilding a world inertia
+ * tensor mid-tick uses the same rotation gather did rather than the local
+ * Transform's, which is the parent's frame for a parented body.
  */
 struct BodyFrame {
     bool      parented       = false;
+    glm::quat worldRot       = {1.0f, 0.0f, 0.0f, 0.0f};           ///< body world-space rotation this tick
     glm::mat4 parentWorldInv = glm::mat4(1.0f);                    ///< inverse(parent WorldTransform.model)
     glm::quat parentRot      = {1.0f, 0.0f, 0.0f, 0.0f};           ///< parent world-space rotation
 };

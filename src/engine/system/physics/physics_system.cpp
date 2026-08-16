@@ -124,7 +124,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     Scene& scene = ctx.scene;
     const float dt = ctx.clock.getFixedStep();
 
-    // Per-scene physics settings live on the scene-global Environment.
+    // Scene-global like the Environment, but deliberately not part of it.
     const PhysicsSettings& physics = scene.physics();
 
     if (!gatherBodies(scene)) return;
@@ -191,6 +191,8 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
                 frame.parentRot       = Math::worldRotationOf(parentWorld);
             }
         }
+
+        frame.worldRot = worldRot;
 
         const uint32_t bodyIndex = static_cast<uint32_t>(m_bodies.size());
         m_bodies.push_back(id);
@@ -311,9 +313,6 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events)
             }
         }
         if (anyContact) {
-            hasContact[A.body] = true;
-            hasContact[B.body] = true;
-
             // Surface the overlap to gameplay (enqueued: listeners fire on the
             // next EventBus flush, never mid-solve). Triggers are queried,
             // not resolved, so they only produce events.
@@ -323,6 +322,12 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events)
                 if (A.isTrigger) events.enqueue(TriggerEvent{entityA, entityB});
                 if (B.isTrigger) events.enqueue(TriggerEvent{entityB, entityA});
             } else {
+                // Only a resolved contact counts as support for the sleep test.
+                // A trigger holds nothing up, and a body that dozed off inside
+                // one would be stuck: wakeOnImpact walks the manifolds, which
+                // never carry trigger pairs.
+                hasContact[A.body] = true;
+                hasContact[B.body] = true;
                 events.enqueue(CollisionEvent{entityA, entityB, contactPoint, contactNormal});
             }
         }
@@ -344,8 +349,10 @@ void PhysicsSystem::wakeOnImpact(Scene& scene) {
             rb.sleeping = false;
             rb.sleepTimer = 0.0f;
             m_solverBodies[idx].invMass = rb.inverseMass;
+            // The gathered world rotation, not the local Transform's: for a
+            // parented body those differ, and the solver is running in world.
             m_solverBodies[idx].invInertiaWorld =
-                inverseInertiaWorld(rb.invInertiaLocal, scene.get<Transform>(m_bodies[idx]).rotation);
+                inverseInertiaWorld(rb.invInertiaLocal, m_bodyFrames[idx].worldRot);
         };
         if (rbA.sleeping && !rbB.sleeping && speedB > WAKE_SPEED_SQ) wake(a, rbA);
         if (rbB.sleeping && !rbA.sleeping && speedA > WAKE_SPEED_SQ) wake(b, rbB);

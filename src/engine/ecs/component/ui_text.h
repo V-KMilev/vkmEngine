@@ -17,8 +17,9 @@ namespace Engine {
  * asset name - not a handle - so it survives scene load (which swaps the asset
  * graph) and serializes as plain data; the UISystem resolves it through
  * ResourceManager::findByName each frame. The string is laid out as a single
- * line, aligned within the element rect on both axes. Multi-line and word
- * wrapping are intentionally left for a later milestone.
+ * line, aligned within the element rect on both axes; it is neither wrapped nor
+ * broken across lines, so a caller wanting several lines uses several UIText
+ * elements.
  */
 struct UIText {
     enum class Align  : uint8_t { Left, Center, Right, Count };

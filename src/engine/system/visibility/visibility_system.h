@@ -57,8 +57,10 @@ class VisibilitySystem : public System {
          * cameraPosition / hasCamera) and refresh the camera-entity cache.
          *
          * Tries the cached entity first (O(1)); on a miss, scans for the first
-         * active camera. Returns false (m_result.hasCamera left false) when none
-         * is found.
+         * active camera. The pose comes from the camera's WorldTransform when it
+         * has one, so a camera parented to a rig renders from the rig's place
+         * rather than its own local offset. Returns false (m_result.hasCamera
+         * left false) when none is found.
          */
         bool resolveActiveCamera(Scene& scene, float viewportAspect);
 
@@ -67,6 +69,7 @@ class VisibilitySystem : public System {
 
         EntityId m_cachedCameraEntity{};
         Visibility m_result;
+        bool m_noCameraLogged = false;  ///< Edge latch so the no-camera warning fires once per gap.
 
         std::vector<uint8_t>   m_visibleFlags;
         std::vector<uint8_t>   m_casterFlags;

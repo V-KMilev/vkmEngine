@@ -51,20 +51,15 @@ struct UIDrawCmd {
  *
  * Built by the UISystem and copied into the RenderView, mirroring how the 3D
  * scene snapshot reaches the backend. The vectors keep their capacity across
- * frames; clear() resets the contents without freeing. `pointerOverUI` is
- * interaction state co-located with the frame's UI output (not drawn): a System
- * reading ctx.ui can gate world input on it (true while the pointer is over an
- * interactable widget).
+ * frames; clear() resets the contents without freeing.
  */
 struct UIDrawData {
     std::vector<UIVertex>  vertices;
     std::vector<UIDrawCmd> commands;
-    bool                   pointerOverUI = false;
 
     void clear() {
         vertices.clear();
         commands.clear();
-        pointerOverUI = false;
     }
 };
 

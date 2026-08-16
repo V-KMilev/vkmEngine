@@ -20,6 +20,7 @@
 #include "ecs/component/world_transform.h"
 
 #include "core/math/bounds.h"
+#include "core/math/rotation.h"
 #include "system/visibility/visibility_context.h"
 
 #include "system/visibility/culling/frustum_culler.h"
@@ -68,10 +69,21 @@ MeshHandle selectLOD(const Mesh& mesh, const LODStorage* lodStorage, uint32_t en
 } // namespace
 
 bool VisibilitySystem::resolveActiveCamera(Scene& scene, float viewportAspect) {
-    auto setCamera = [&](const Camera& camera, const Transform& transform) {
+    auto setCamera = [&](EntityId id, const Camera& camera, const Transform& transform) {
+        // A camera parented to a rig (player root, boom arm) has to render from
+        // its resolved world pose - the local Transform is only its offset
+        // inside that rig. Same WorldTransform-else-Transform resolve every
+        // other consumer of a placed entity does.
+        Transform pose = transform;
+        if (scene.has<WorldTransform>(id)) {
+            const glm::mat4& world = scene.get<WorldTransform>(id).model;
+            pose.position = glm::vec3(world[3]);
+            pose.rotation = Math::worldRotationOf(world);
+        }
+
         m_result.projection     = Camera::computeProjection(camera, viewportAspect);
-        m_result.view           = Transform::computeView(transform);
-        m_result.cameraPosition = transform.position;
+        m_result.view           = Transform::computeView(pose);
+        m_result.cameraPosition = pose.position;
         m_result.focusDistance  = camera.focusDistance;
         m_result.dofAmount      = camera.dofAmount;
         m_result.hasCamera      = true;
@@ -85,7 +97,7 @@ bool VisibilitySystem::resolveActiveCamera(Scene& scene, float viewportAspect) {
     {
         const Camera& camera = scene.get<Camera>(m_cachedCameraEntity);
         if (camera.active) {
-            setCamera(camera, scene.get<Transform>(m_cachedCameraEntity));
+            setCamera(m_cachedCameraEntity, camera, scene.get<Transform>(m_cachedCameraEntity));
             return true;
         }
     }
@@ -95,7 +107,7 @@ bool VisibilitySystem::resolveActiveCamera(Scene& scene, float viewportAspect) {
     bool found = false;
     scene.forEach<Camera, Transform>([&](EntityId id, const Camera& camera, const Transform& transform) {
         if (found || !camera.active) return;
-        setCamera(camera, transform);
+        setCamera(id, camera, transform);
         m_cachedCameraEntity = id;
         found = true;
     });
@@ -118,10 +130,17 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const float viewportAspect = vpH > 0.0f ? vpW / vpH : 16.0f / 9.0f;
 
     if (!resolveActiveCamera(ctx.scene, viewportAspect)) {
-        LOG_ERROR("No active camera found for visibility");
+        // A supported state, not a failure: the render side has a documented
+        // empty-snapshot path for it. Logged on the edge only - a scene between
+        // cameras would otherwise repeat the line at frame rate.
+        if (!m_noCameraLogged) {
+            LOG_WARNING("No active camera found for visibility");
+            m_noCameraLogged = true;
+        }
         ctx.visibility = &m_result;
         return;
     }
+    m_noCameraLogged = false;
 
     // resolveActiveCamera filled m_result.{view, projection, cameraPosition,
     // hasCamera}; downstream systems read those directly.

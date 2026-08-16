@@ -34,14 +34,6 @@ struct BackendInfo {
 };
 
 /**
- * @brief One editor preview render: draw @p mesh with @p material under a
- *        studio light rig, from an orbit camera, into a per-@p key target.
- *
- * The key identifies the cached output texture across frames (the editor
- * derives it from the asset handle); rendering the same key again overwrites
- * that target. Sizes are square pixels.
- */
-/**
  * @brief What fills the preview behind the mesh.
  */
 enum class PreviewBackground : uint8_t {
@@ -50,6 +42,14 @@ enum class PreviewBackground : uint8_t {
     Sky,   ///< The baked environment cubemap (falls back to Dark before the IBL bakes).
 };
 
+/**
+ * @brief One editor preview render: draw a mesh with a material under a studio
+ *        light rig, from an orbit camera, into a per-key target.
+ *
+ * The key identifies the cached output texture across frames (the editor
+ * derives it from the asset handle); rendering the same key again overwrites
+ * that target. Sizes are square pixels.
+ */
 struct PreviewRequest {
     uint64_t          key      = 0;      ///< Identifies the cached target.
     uint32_t          size     = 256;    ///< Output edge length in pixels.
@@ -62,16 +62,6 @@ struct PreviewRequest {
     float             lightYawDeg = 0.0f;  ///< Studio rig rotation around Y (degrees).
 };
 
-/**
- * @brief The single seam between the engine and the graphics API.
- *
- * The engine hands the backend one POD RenderView per frame; the backend owns
- * everything below this line - the API context, GPU resource mirror, passes,
- * and presentation. Nothing above this interface holds an API object, so
- * swapping backends is just destroying one implementation and constructing
- * another: there is no GPU state to migrate, and the new backend re-uploads
- * what it needs from the handles in the next RenderView.
- */
 /**
  * @brief A GPU texture, as an opaque id the UI layer can hand back to the backend.
  *
@@ -86,6 +76,16 @@ struct PreviewRequest {
  */
 using GpuTextureId = uint64_t;
 
+/**
+ * @brief The single seam between the engine and the graphics API.
+ *
+ * The engine hands the backend one POD RenderView per frame; the backend owns
+ * everything below this line - the API context, GPU resource mirror, passes,
+ * and presentation. Nothing above this interface holds an API object, so
+ * swapping backends is just destroying one implementation and constructing
+ * another: there is no GPU state to migrate, and the new backend re-uploads
+ * what it needs from the handles in the next RenderView.
+ */
 class RenderBackend {
     public:
         explicit RenderBackend(RenderBackendType type) : m_type(type) {}

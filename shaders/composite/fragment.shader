@@ -12,6 +12,7 @@ layout(binding = 20) uniform sampler2D u_sceneGBuffer;   // oct view-normal.xy, 
 layout(binding = 21) uniform sampler2D u_ao;             // GTAO factor
 layout(binding = 11) uniform sampler2D u_shadowAtlas;    // tiled 2D shadow depth
 layout(binding = 24) uniform sampler3D u_fog;            // integrated froxel fog
+uniform int  u_hasAO;        // 0 when GTAO is off and nothing wrote the AO target
 uniform int  u_renderMode;   // 0 = final image, else a debug buffer (see MODE_* below)
 uniform mat4 u_projection;   // camera projection, for depth linearization (debug only)
 
@@ -25,7 +26,7 @@ vec3 debugColor(vec2 uv) {
     if (u_renderMode == MODE_NORMALS)   return octDecode(texture(u_sceneGBuffer, uv).rg) * 0.5 + 0.5;
     if (u_renderMode == MODE_ROUGHNESS) return vec3(texture(u_sceneGBuffer, uv).b);
     if (u_renderMode == MODE_METALNESS) return vec3(texture(u_sceneGBuffer, uv).a);
-    if (u_renderMode == MODE_AMBIENT_OCCLUSION)        return vec3(texture(u_ao, uv).r);
+    if (u_renderMode == MODE_AMBIENT_OCCLUSION)        return vec3(u_hasAO != 0 ? texture(u_ao, uv).r : 1.0);
     if (u_renderMode == MODE_BLOOM)     return texture(u_bloom, uv).rgb;
     if (u_renderMode == MODE_SHADOW_ATLAS)    return vec3(texture(u_shadowAtlas, uv).r);
     if (u_renderMode == MODE_FOG) {
