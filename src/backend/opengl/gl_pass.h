@@ -48,6 +48,22 @@ class GLPass {
         void endFullscreen(Core::Context& gl) const;
 
         /**
+         * @brief Move the scene into the colour chain if it is still on the
+         * geometry target.
+         *
+         * An overlay pass blends over the current scene while sampling the
+         * geometry target's depth / G-buffer, so it cannot draw into that
+         * target - that would be read-while-write feedback. The chain scratches
+         * are colour-only, so once the scene is on one there is nothing to do
+         * and the blit is skipped. Callers blend into ctx.colorSrc afterwards
+         * and do not flip: the promotion has already published the target they
+         * draw into.
+         *
+         * @param ctx The frame context whose colour chain is promoted.
+         */
+        void promoteColorChain(GLFrameContext& ctx) const;
+
+        /**
          * @brief Bind the default framebuffer with the view's window-space
          * viewport rect.
          *

@@ -205,16 +205,6 @@ class GLInstanceBatchView {
         const std::vector<InstanceRun>& runs() const { return m_batcher->runs(); }
 
         /**
-         * @brief The batcher itself, for the cull pass.
-         *
-         * The cull writes into the batch - it compacts the instance buffers and
-         * fills the draw commands - so a draw-only view cannot express it. What
-         * the view protects against is a *rebuild* invalidating the runs another
-         * pass is about to draw, and the cull does not rebuild.
-         */
-        GLInstanceBatcher& batcher() const { return *m_batcher; }
-
-        /**
          * @brief Draw one run: binds its instance buffers and issues the call.
          * @param runIndex Its index in runs(); selects the run's indirect command.
          */
@@ -222,6 +212,21 @@ class GLInstanceBatchView {
 
         /// Bind the batch's transforms and index list; call once before the run loop.
         void bindInstanceData() const { m_batcher->bindInstanceData(); }
+
+        /// Instances in the batch - the cull's dispatch size.
+        uint32_t instanceCount() const { return m_batcher->instanceCount(); }
+
+        /**
+         * @brief Bind the cull's inputs and outputs to their SSBO points.
+         *
+         * The cull writes into the batch - it compacts the instance buffers and
+         * fills the draw commands - which the view still offers, because what it
+         * protects against is a *rebuild* invalidating the runs another pass is
+         * about to draw, and the cull does not rebuild.
+         *
+         * @return False when there is nothing to cull.
+         */
+        bool bindCullBuffers() const { return m_batcher->bindCullBuffers(); }
 
     private:
         GLInstanceBatcher* m_batcher;

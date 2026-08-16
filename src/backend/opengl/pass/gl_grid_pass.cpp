@@ -41,14 +41,8 @@ void GLGridPass::execute(GLFrameContext& ctx) {
 
     // Alpha-blend over the current scene colour. The chain scratches carry no
     // depth attachment, so occlusion moves into the shader: it samples the
-    // geometry target's depth and discards covered fragments (LEQUAL). If the
-    // chain is still on the geometry target (every post pass disabled), promote
-    // first - drawing into it while sampling its own depth would be a
-    // read-while-write feedback.
-    if (ctx.colorSrc == &ctx.sceneHDR) {
-        ctx.colorDst->blitColorFrom(*ctx.colorSrc);
-        ctx.flipColor();
-    }
+    // geometry target's depth and discards covered fragments (LEQUAL).
+    promoteColorChain(ctx);
     ctx.colorSrc->bind(ctx.gl);
     ctx.gl.setDepthTest(false);
     ctx.gl.setDepthWrite(false);
