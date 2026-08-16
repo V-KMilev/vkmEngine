@@ -17,8 +17,6 @@ void CommandStack::push(std::unique_ptr<Command> cmd) {
     m_redo.clear();
 
     if (!m_undo.empty() && m_undo.back()->tryMerge(*cmd)) {
-        // The top of the stack absorbed the incoming command. Drop the
-        // incoming (it goes out of scope here).
         LOG_VERBOSE("Merged into '%s' (undo size %zu)",
             m_undo.back()->label(), m_undo.size());
         return;
@@ -27,7 +25,6 @@ void CommandStack::push(std::unique_ptr<Command> cmd) {
     const char* label = cmd->label();
     m_undo.push_back(std::move(cmd));
 
-    // Bound the history. Drop oldest entries when the cap is exceeded.
     if (m_undo.size() > HISTORY_LIMIT) {
         const size_t dropped = m_undo.size() - HISTORY_LIMIT;
         m_undo.erase(m_undo.begin(), m_undo.begin() + dropped);

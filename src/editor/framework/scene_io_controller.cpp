@@ -318,9 +318,8 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
         endDialog();
     }
 
-    // The Load flow rides the shared AssetPicker (rooted at scenes/, .json
-    // filter): requestLoad() configured + opened it; here we just drive it and
-    // route a pick through the same loadPath() the recent-scenes menu uses.
+    // requestLoad() configured and opened the shared picker; a pick routes
+    // through the same loadPath() the recent-scenes menu uses.
     std::string picked;
     if (m_loadPicker.draw(picked)) {
         requestOpenPath(ctx, state, picked);
