@@ -1,16 +1,15 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 #include <string>
+
+#include "platform/window/frame_limiter.h"
+#include "platform/window/input_handle.h"
 
 struct GLFWwindow;
 struct GLFWmonitor;
 
 namespace Engine {
-
-class InputHandle;
-class FrameLimiter;
 
 // Window-creation defaults. Platform/window-layer constants (WindowManager owns
 // GL-context creation), kept here rather than in engine_config.h - that file
@@ -184,8 +183,8 @@ class WindowManager {
          * @brief Get the current input handle for querying input state.
          * @return Reference to the InputHandle.
          */
-        InputHandle& getInputHandle() { return *m_inputHandle; }
-        const InputHandle& getInputHandle() const { return *m_inputHandle; }
+        InputHandle& getInputHandle() { return m_inputHandle; }
+        const InputHandle& getInputHandle() const { return m_inputHandle; }
 
         /**
          * @brief Get the framebuffer width in pixels.
@@ -281,8 +280,8 @@ class WindowManager {
         int m_width  = 0;    ///< Framebuffer (drawable) width in pixels.
         int m_height = 0;    ///< Framebuffer (drawable) height in pixels.
 
-        std::unique_ptr<InputHandle> m_inputHandle;
-        std::unique_ptr<FrameLimiter> m_frameLimiter;
+        InputHandle  m_inputHandle;
+        FrameLimiter m_frameLimiter;
 
         WindowMode m_windowMode = WindowMode::Windowed;  ///< Last applied mode.
         bool       m_vsync      = false;                 ///< Last applied vsync state.

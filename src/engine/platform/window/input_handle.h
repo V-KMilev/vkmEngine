@@ -4,19 +4,6 @@ struct GLFWwindow;
 
 namespace Engine {
 
-class WindowManager;
-
-/**
- * @brief Bundles pointers needed by GLFW callbacks.
- *
- * Stored as the GLFW user pointer so all callbacks can access both
- * InputHandle (for input events) and WindowManager (for resize events).
- */
-struct WindowCallbackData {
-    class InputHandle* input = nullptr;
-    WindowManager* window = nullptr;
-};
-
 /**
  * @brief Highest key and mouse-button codes this header sizes its arrays for.
  *
@@ -183,15 +170,16 @@ class InputHandle {
 
     public:
         /**
-         * @brief Sets up GLFW callbacks for keyboard, scroll, and window resize.
+         * @brief Sets up the GLFW keyboard and scroll callbacks.
          *
-         * Must be called once after window creation. Key state and scroll delta
-         * are updated via callbacks during glfwPollEvents(); resize forwards to
-         * WindowManager::setSize. Stores both pointers as the GLFW user pointer.
-         * @param window        Pointer to the GLFW window.
-         * @param windowManager Owning Engine::WindowManager, notified on resize.
+         * Must be called once after window creation, and only once the owning
+         * WindowManager is the window's GLFW user pointer - the capture-free
+         * callbacks reach this handle back through it. Key state and scroll
+         * delta are then updated during glfwPollEvents().
+         *
+         * @param window Pointer to the GLFW window.
          */
-        void setupCallbacks(GLFWwindow* window, WindowManager* windowManager);
+        void setupCallbacks(GLFWwindow* window);
 
         /**
          * @brief Update input state from the GLFW window.
@@ -225,7 +213,6 @@ class InputHandle {
     private:
         KeyboardInputHandle m_keyboardHandle;
         MouseInputHandle m_mouseHandle;
-        WindowCallbackData m_callbackData;
 };
 
 } // namespace Engine
