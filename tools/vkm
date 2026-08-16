@@ -174,6 +174,14 @@ def cmd_build(args) -> int:
     # change in place and re-stating the same one is harmless but noisy.
     compiler = args.compiler or sdk_compiler(root)
     if compiler and not (build / "CMakeCache.txt").exists():
+        # An SDK built elsewhere records a path that may not exist here. Say so
+        # rather than handing CMake something that does not resolve - and rather
+        # than falling silently back to whichever compiler it finds, which is the
+        # coin flip this exists to remove.
+        if not Path(compiler).exists() and not shutil.which(compiler):
+            die(f"the engine was built with '{compiler}', which is not on this "
+                f"machine.\n     Install it, or name an equivalent with "
+                f"--compiler, or rebuild the engine here.")
         cfg.append(f"-DCMAKE_CXX_COMPILER={compiler}")
 
     if args.generator:
