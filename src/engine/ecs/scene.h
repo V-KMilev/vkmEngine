@@ -20,11 +20,10 @@ namespace Engine {
 /**
  * @brief Central registry managing entities and an open set of component types.
  *
- * Scene provides efficient creation, component assignment, lookup, and removal
- * for entities. Entity lifetime is managed by a SlotAllocator (generation-safe
- * handles with recycling). Component data is stored in type-erased SparseSet<T>
- * containers that are created on first use - any type can be a component without
- * modifying Scene.
+ * Entity lifetime is managed by a SlotAllocator (generation-safe handles with
+ * recycling). Component data is stored in type-erased SparseSet<T> containers
+ * that are created on first use - any type can be a component without modifying
+ * Scene.
  */
 class Scene {
     public:
@@ -63,9 +62,8 @@ class Scene {
          * @param id The entity to destroy.
          */
         void destroyEntity(EntityId id) {
-            // Notify observers before tear-down (entity + components still intact).
-            // Scene stays system-agnostic; systems register via addObserver -
-            // BehaviorSystem uses this to fire script onDestroy on every destroy path.
+            // Notify observers before tear-down, while the entity and its
+            // components are still intact.
             for (ISceneObserver* observer : m_observers) {
                 observer->onEntityDestroyed(id);
             }
@@ -277,13 +275,11 @@ class Scene {
          * scene reset nothing themselves, or the two drift.
          */
         void clear() {
-            // O(types + entities) rather than the previous
-            // O(entities x types) walk-and-destroy. detachFromHierarchy's
-            // dangling-pointer guard exists for partial deletion (sibling
-            // links pointing at already-freed entities); on a total reset
-            // every entity is going away in a single tear-down, so per-set
-            // clear() + entity-allocator reset gives the same final state
-            // without paying the cross-product cost.
+            // O(types + entities) rather than an O(entities x types)
+            // walk-and-destroy. detachFromHierarchy's dangling-pointer guard is
+            // there for partial deletion; on a total reset every entity goes away
+            // in one tear-down, so per-set clear() + allocator reset reaches the
+            // same final state without paying the cross-product cost.
             for (auto& set : m_components) {
                 if (set) set->clear();
             }
@@ -347,8 +343,6 @@ class Scene {
          * @brief Register an observer, notified at the start of every destroyEntity
          * before components are removed.
          *
-         * Keeps Scene system-agnostic while letting systems react to deletions -
-         * BehaviorSystem registers to fire script onDestroy on every destroy path.
          * Observers are non-owning and belong to this Scene object, so they persist
          * across swap()/clear() (not swapped with scene contents); pair every
          * addObserver with removeObserver before the observer is destroyed.
@@ -373,9 +367,6 @@ class Scene {
         /**
          * @brief Get or create the typed SparseSet for component type T.
          *
-         * Lazily allocates the per-type storage on first use, growing the
-         * type-indexed component table as needed.
-         *
          * @tparam T Component type whose storage is requested.
          * @return Reference to the storage for T (created if it did not exist).
          */
@@ -392,8 +383,8 @@ class Scene {
         /**
          * @brief Find the typed SparseSet for component type T for mutable access.
          *
-         * Non-const overload of findStorage() that hands back a mutable pointer yet,
-         * like the const form, never lazily creates the storage.
+         * Hands back a mutable pointer but, unlike getStorage(), never creates
+         * the storage.
          *
          * @tparam T Component type whose storage is requested.
          * @return Pointer to the storage for T, or nullptr if no T has ever been registered.
