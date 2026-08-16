@@ -24,6 +24,11 @@ set_target_properties(potion_runner_module PROPERTIES
     OUTPUT_NAME game
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin
+    # Windows splits a shared library in two: game.dll and the import library
+    # libgame.dll.a. Without this the import library follows the global archive
+    # directory instead of the project's, and since every project's module is
+    # named `game`, two of them collide there before anything is compiled.
+    ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin
 )
 if(WIN32)
     set_target_properties(potion_runner_module PROPERTIES PREFIX "")
