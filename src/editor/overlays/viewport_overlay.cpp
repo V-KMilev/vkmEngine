@@ -25,7 +25,6 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
     constexpr float edgeInset = gizmoSize * 0.8f + 12.0f;
     ImVec2 center(regionMax.x - edgeInset, regionMax.y - edgeInset);
 
-    // Transform world axes by camera view rotation
     glm::mat3 viewRot = glm::mat3(ctx.visibility->view);
     glm::vec3 axisX = viewRot * Math::WORLD_AXIS_X;
     glm::vec3 axisY = viewRot * Math::WORLD_AXIS_Y;
@@ -56,7 +55,6 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
     std::sort(std::begin(endpoints), std::end(endpoints),
         [](const Endpoint& a, const Endpoint& b) { return a.viewDir.z < b.viewDir.z; });
 
-    // Background disc.
     drawList->AddCircleFilled(center, gizmoSize * 0.5f, EditorStyle::NAV_DISC_U32, 32);
     drawList->AddCircle(center, gizmoSize * 0.5f, EditorStyle::NAV_RING_U32, 32, 1.0f);
 
@@ -103,7 +101,6 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
             drawList->AddLine(center, endPts[i], e.col, 2.0f);
         }
 
-        // Endpoint dot: filled for positive, ring for negative; brighter on hover.
         ImU32 dotCol = e.col;
         if (isHovered) dotCol = EditorStyle::HIGHLIGHT_U32;
         if (isPositive)

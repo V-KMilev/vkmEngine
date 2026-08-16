@@ -16,9 +16,7 @@ class ResourceManager;
  *
  * Opened from Window > Asset Browser. Each cell is a material/mesh preview via
  * MaterialPreviewSession, budgeted so a big grid spreads its bakes over several
- * frames. Click a material to edit it (opens the Material Editor); "Assign"
- * applies a material/mesh to the selected entity's Mesh. "Import Model..."
- * reuses the existing model-import dialog.
+ * frames.
  *
  * Stateless w.r.t. assets - it reads ResourceManager every frame; only the
  * cell size and the two cached helper assets (a preview sphere for material

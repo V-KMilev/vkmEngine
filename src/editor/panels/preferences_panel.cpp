@@ -1,6 +1,7 @@
 #include "panels/preferences_panel.h"
 
 #include <algorithm>
+#include <cstring>
 
 #include "framework/editor_common.h"
 #include "ui/editor_style.h"
@@ -25,7 +26,7 @@ void PreferencesPanel::draw(EditorContext& ec) {
     }
 
     // Tab bar instead of master-detail: four sections aren't enough to
-    // justify a sidebar. Tabs are more idiomatic for a Preferences window.
+    // justify a sidebar.
     if (ImGui::BeginTabBar("##PrefTabs", ImGuiTabBarFlags_None)) {
         if (ImGui::BeginTabItem("Camera")) {
             ImGui::Spacing();
@@ -88,8 +89,7 @@ void PreferencesPanel::drawDisplaySection(FrameContext& ctx) {
 
     ImGui::Spacing();
     ImGui::SeparatorText("Window Mode");
-    // Stateful: the radios reflect the applied mode (the old stateless button
-    // pair gave no hint which mode was active).
+    // Radios, not buttons: they reflect which mode is actually applied.
     if (ImGui::RadioButton("Windowed", window.mode() == WindowMode::Windowed))
         window.updateMode(WindowMode::Windowed);
     ImGui::SameLine(0, EditorStyle::px(16.0f));
@@ -114,31 +114,10 @@ void PreferencesPanel::drawDisplaySection(FrameContext& ctx) {
 }
 
 void PreferencesPanel::drawKeybindsSection(EditorState& state) {
-    // Build a small frequency table of all current bindings so each row
-    // can flag itself as a conflict in O(1). Manually enumerated rather
-    // than iterating the struct - there's no introspection but the list
-    // is short and stable.
-    const KeyBind* all[] = {
-        &state.keybinds.newScene,
-        &state.keybinds.saveScene, &state.keybinds.saveSceneAs, &state.keybinds.loadScene,
-        &state.keybinds.undo, &state.keybinds.redo,
-        &state.keybinds.toggleHierarchy,
-        &state.keybinds.toggleInspector, &state.keybinds.toggleBottom,
-        &state.keybinds.toggleEditor,
-        &state.keybinds.toggleRenderSettings, &state.keybinds.toggleMaterialEditor,
-        &state.keybinds.toggleAssetBrowser,
-        &state.keybinds.openPreferences,
-        &state.keybinds.deleteEntity, &state.keybinds.deselect,
-        &state.keybinds.duplicate, &state.keybinds.focusSelected,
-        &state.keybinds.frameAll,
-        &state.keybinds.gizmoSelect, &state.keybinds.gizmoTranslate,
-        &state.keybinds.gizmoRotate, &state.keybinds.gizmoScale,
-        &state.keybinds.gizmoToggleSpace,
-    };
     auto isConflict = [&](const KeyBind& b) {
         if (b.key == ImGuiKey_None) return false;
         int n = 0;
-        for (const KeyBind* o : all) if (*o == b) ++n;
+        for (const KeybindEntry& e : KEYBINDS) if (state.keybinds.*e.field == b) ++n;
         return n > 1;
     };
 
@@ -186,43 +165,15 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
         }
     };
 
-    sectionLabel("File");
-    drawKeybindRow("New Scene",      state.keybinds.newScene);
-    drawKeybindRow("Save Scene",     state.keybinds.saveScene);
-    drawKeybindRow("Save Scene As",  state.keybinds.saveSceneAs);
-    drawKeybindRow("Load Scene",     state.keybinds.loadScene);
-
-    ImGui::Spacing();
-    sectionLabel("Edit");
-    drawKeybindRow("Undo",           state.keybinds.undo);
-    drawKeybindRow("Redo",           state.keybinds.redo);
-
-    ImGui::Spacing();
-    sectionLabel("Windows & Panels");
-    drawKeybindRow("Toggle Hierarchy", state.keybinds.toggleHierarchy);
-    drawKeybindRow("Toggle Inspector", state.keybinds.toggleInspector);
-    drawKeybindRow("Toggle Bottom",    state.keybinds.toggleBottom);
-    drawKeybindRow("Render Settings",  state.keybinds.toggleRenderSettings);
-    drawKeybindRow("Material Editor",  state.keybinds.toggleMaterialEditor);
-    drawKeybindRow("Asset Browser",    state.keybinds.toggleAssetBrowser);
-    drawKeybindRow("Toggle Editor",    state.keybinds.toggleEditor);
-    drawKeybindRow("Preferences",      state.keybinds.openPreferences);
-
-    ImGui::Spacing();
-    sectionLabel("Entity");
-    drawKeybindRow("Delete",         state.keybinds.deleteEntity);
-    drawKeybindRow("Deselect",       state.keybinds.deselect);
-    drawKeybindRow("Duplicate",      state.keybinds.duplicate);
-    drawKeybindRow("Focus Selected", state.keybinds.focusSelected);
-    drawKeybindRow("Frame All",      state.keybinds.frameAll);
-
-    ImGui::Spacing();
-    sectionLabel("Gizmo (disabled during fly-cam)");
-    drawKeybindRow("Select",      state.keybinds.gizmoSelect);
-    drawKeybindRow("Translate",   state.keybinds.gizmoTranslate);
-    drawKeybindRow("Rotate",      state.keybinds.gizmoRotate);
-    drawKeybindRow("Scale",       state.keybinds.gizmoScale);
-    drawKeybindRow("Local/World", state.keybinds.gizmoToggleSpace);
+    const char* group = nullptr;
+    for (const KeybindEntry& e : KEYBINDS) {
+        if (group == nullptr || std::strcmp(group, e.group) != 0) {
+            if (group != nullptr) ImGui::Spacing();
+            sectionLabel(e.group);
+            group = e.group;
+        }
+        drawKeybindRow(e.label, state.keybinds.*e.field);
+    }
 
     ImGui::Spacing();
     if (ImGui::Button("Reset Keybinds")) {

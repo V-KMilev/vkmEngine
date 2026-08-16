@@ -72,8 +72,7 @@ bool VisibilitySystem::resolveActiveCamera(Scene& scene, float viewportAspect) {
     auto setCamera = [&](EntityId id, const Camera& camera, const Transform& transform) {
         // A camera parented to a rig (player root, boom arm) has to render from
         // its resolved world pose - the local Transform is only its offset
-        // inside that rig. Same WorldTransform-else-Transform resolve every
-        // other consumer of a placed entity does.
+        // inside that rig.
         Transform pose = transform;
         if (scene.has<WorldTransform>(id)) {
             const glm::mat4& world = scene.get<WorldTransform>(id).model;
@@ -117,9 +116,8 @@ bool VisibilitySystem::resolveActiveCamera(Scene& scene, float viewportAspect) {
 void VisibilitySystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("VisibilitySystem");
 
-    // Reuse persistent buffers - clear keeps capacity, avoiding per-frame allocation.
-    // Cleared here, not at the serial gather, so the early-return paths below still
-    // publish an empty result instead of last frame's stale entries/casters.
+    // Cleared here, not at the serial gather, so the early-return paths below
+    // still publish an empty result instead of last frame's stale entries.
     m_result.entries.clear();
     m_result.shadowCasters.clear();
     m_result.hasCamera = false;
@@ -164,7 +162,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
         .screenSizeThresholdSq = screenThresholdSq,
     };
 
-    // Get direct access to sparse sets for index-based parallel iteration
+    // The sparse sets directly: the cull iterates them by index, in parallel.
     auto* meshStorage           = ctx.scene.storage<Mesh>();
     auto* transformStorage      = ctx.scene.storage<Transform>();
     const auto* worldTransformStorage = ctx.scene.storage<WorldTransform>();
@@ -183,10 +181,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
     // Each thread writes to disjoint indices, so zero contention / zero atomics.
     m_visibleFlags.resize(meshCount);
     m_casterFlags.resize(meshCount);
-    m_modelMatrices.resize(meshCount);
-    m_meshes.resize(meshCount);
-    m_worldMins.resize(meshCount);
-    m_worldMaxs.resize(meshCount);
+    m_scratch.resize(meshCount);
 
     std::memset(m_visibleFlags.data(), 0, meshCount);
     std::memset(m_casterFlags.data(), 0, meshCount);
@@ -220,41 +215,40 @@ void VisibilitySystem::update(FrameContext& ctx) {
                 worldMax
             );
 
-            // Stored for every valid mesh (not just camera-visible) so the caster
+            // Filled for every valid mesh (not just camera-visible) so the caster
             // gather below can reach off-screen occluders. castShadows flags it.
-            m_modelMatrices[i] = modelMatrix;
-            m_worldMins[i]     = worldMin;
-            m_worldMaxs[i]     = worldMax;
-            m_casterFlags[i]   = mesh.castShadows ? 1 : 0;
-            // Resolved here because this is where the distance is known. Shadow
-            // casters get the same level as the camera view: a lower-detail
-            // silhouette is exactly as good for a depth map, and picking
-            // separately would mean a second selection with no visible benefit.
-            m_meshes[i]        = selectLOD(mesh, lodStorage, entityIdx, worldMin, worldMax, context);
+            // The LOD level is resolved here because this is where the distance is
+            // known. Shadow casters get the same level as the camera view: a
+            // lower-detail silhouette is exactly as good for a depth map, and
+            // picking separately would mean a second selection with no visible benefit.
+            m_scratch[i] = VisibleEntity{
+                ctx.scene.entityAt(entityIdx),
+                modelMatrix,
+                worldMin,
+                worldMax,
+                selectLOD(mesh, lodStorage, entityIdx, worldMin, worldMax, context)
+            };
+            m_casterFlags[i] = mesh.castShadows ? 1 : 0;
 
             // The camera-visibility culls only set the visible flag.
             if (!FrustumCuller::isVisible(worldMin, worldMax, context)) return;
             if (!DistanceCuller::isVisible(worldMin, worldMax, context)) return;
             if (!ScreenSizeCuller::isVisible(worldMin, worldMax, context)) return;
 
-            m_visibleFlags[i]  = 1;
+            m_visibleFlags[i] = 1;
         });
     }
 
-    // Serial gather - sequential reads, reuses persistent m_result buffer capacity
-    // (entries/shadowCasters were already cleared at the top of update()).
+    // Serial gather: sequential reads into the persistent m_result buffers,
+    // already cleared at the top of update().
     PROFILE_SCOPE("Visibility/Gather");
     for (uint32_t i = 0; i < meshCount; ++i) {
         const bool visible = m_visibleFlags[i] != 0;
         const bool caster  = m_casterFlags[i]  != 0;
         if (!visible && !caster) continue;
 
-        const uint32_t entityIdx = meshStorage->keyAt(i);
-        const EntityId eid{entityIdx, ctx.scene.generationOf(entityIdx)};
-        const VisibleEntity entry{eid, m_modelMatrices[i], m_worldMins[i], m_worldMaxs[i], m_meshes[i]};
-
-        if (visible) m_result.entries.push_back(entry);
-        if (caster)  m_result.shadowCasters.push_back(entry);
+        if (visible) m_result.entries.push_back(m_scratch[i]);
+        if (caster)  m_result.shadowCasters.push_back(m_scratch[i]);
     }
 
     ctx.visibility = &m_result;

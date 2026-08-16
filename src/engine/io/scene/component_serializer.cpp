@@ -26,7 +26,6 @@ namespace Engine::ComponentSerializer {
 
 namespace {
 
-// vec/quat <-> JSON helpers are shared with asset_serializer; see io/json_vec.h.
 using ::Engine::detail::vec2ToJson;
 using ::Engine::detail::vec3ToJson;
 using ::Engine::detail::vec4ToJson;
@@ -39,11 +38,6 @@ using ::Engine::detail::jsonToQuat;
 // toJson / fromJson overload set. The reflection-driven save/load templates
 // (saveReflected / loadReflected) iterate a type's fields and forward each
 // to these helpers; adding a new field type means adding a new pair here.
-// No ADL is required: the templates live in this anon namespace and so do
-// every overload, so unqualified lookup at the saveReflected definition
-// already covers everything.
-
-// Primitives.
 inline nlohmann::json toJson(bool        v) { return v; }
 inline nlohmann::json toJson(int         v) { return v; }
 inline nlohmann::json toJson(uint32_t    v) { return v; }
@@ -82,10 +76,9 @@ inline nlohmann::json toJson(E v) { return Reflect::enumName(v); }
 template<typename E, typename = std::enable_if_t<std::is_enum_v<E>>>
 inline void fromJson(const nlohmann::json& j, E& v) { v = Reflect::enumFromName<E>(j.get<std::string>()); }
 
-// Reflection driver. Iterates a type's reflected fields and forwards each
-// (name, value) through the toJson / fromJson overload set. Phase-1
-// unqualified lookup at this definition site picks up everything declared
-// above; new field types only need a matching overload, no template tweak.
+// Reflection driver. Phase-1 unqualified lookup at this definition site picks
+// up every overload declared above - no ADL needed, they and the templates all
+// live in this anon namespace - so a new field type only needs a matching pair.
 
 template<typename T>
 nlohmann::json saveReflected(const T& obj);
@@ -93,10 +86,10 @@ template<typename T>
 void loadReflected(const nlohmann::json& j, T& obj);
 
 // Nested reflected structs: a settings block that groups its own fields writes
-// as a nested object rather than flattening its names into the parent. This is
-// the branch Reflect::IS_REFLECTED exists for - a struct that has been through
-// VKM_REFLECT is not a leaf, so recurse instead of looking for a toJson that
-// cannot exist. Declared after the driver so the recursion resolves.
+// as a nested object rather than flattening its names into the parent. A struct
+// that has been through VKM_REFLECT is not a leaf, so recurse instead of looking
+// for a toJson that cannot exist. Declared after the driver so the recursion
+// resolves.
 // SFINAE goes in the return type, not a defaulted template parameter: a default
 // argument is not part of the signature, so the enum pair above and this one
 // would be redefinitions of each other.
@@ -133,11 +126,9 @@ void loadReflected(const nlohmann::json& j, T& obj) {
 //   - Mesh:      ResourceManager handle lookup (cross-asset reference).
 //   - Hierarchy: parent stored as raw scene-table index, resolved by
 //                SceneSerializer after the entity table is loaded.
-//   - Animation: AnimationTrack<T> keeps its keyframes private and is driven
-//                through explicit accessors (getTimes / getValues / getEasing
-//                on save; clear / setEasing / addKeyframe on load), and
-//                updateDuration() must be re-derived post load - no clean fit
-//                for the generic field iteration.
+//   - Animation: AnimationTrack<T> keeps its keyframes private and must go
+//                through explicit accessors, and updateDuration() has to be
+//                re-derived post load - no clean fit for field iteration.
 
 nlohmann::json save(const Environment& env) {
     return saveReflected(env);
@@ -400,8 +391,7 @@ class BehaviorJsonReader : public BehaviorFieldVisitor {
         void field(const char* name, int& v)   override { if (cur().contains(name)) v = cur()[name].get<int>(); }
         void field(const char* name, bool& v)  override { if (cur().contains(name)) v = cur()[name].get<bool>(); }
         void field(const char* name, glm::vec3& v) override {
-            // jsonToVec3 validates the array shape and falls back to the current
-            // value (passed as the fallback) on a missing/malformed node.
+            // The current value goes in as the fallback: a malformed node keeps it.
             if (cur().contains(name)) v = jsonToVec3(cur()[name], v);
         }
 

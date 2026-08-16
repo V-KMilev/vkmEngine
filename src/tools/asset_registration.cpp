@@ -13,8 +13,7 @@
 
 namespace Engine {
 
-// Meshes: "cooked" kind. Loaded from the binary cache by name, resolved through
-// AssetLibrary. Async file read + deserialize off the main thread, finalised by
+// Async file read + deserialize off the main thread, finalised by
 // AsyncLoaderSystem.
 MeshHandle createCookedMesh(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
@@ -25,7 +24,6 @@ MeshHandle createCookedMesh(const nlohmann::json& source, ResourceManager& resou
     return {};
 }
 
-// Textures: "cooked" kind. Same cooked-cache path as meshes.
 TextureHandle createCookedTexture(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
     if (kind == "cooked") {
@@ -35,10 +33,8 @@ TextureHandle createCookedTexture(const nlohmann::json& source, ResourceManager&
     return {};
 }
 
-// Materials: "inline" kind - the canonical material form (PBR scalars + texture
-// refs by name). This is what the library stores and the runtime loads; it has
-// no heavy deps. Texture refs resolve via findByName against textures already
-// loaded earlier in the assets block.
+// Texture refs resolve via findByName against textures already loaded earlier
+// in the assets block.
 MaterialHandle createCookedMaterial(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
     if (kind == "inline") {

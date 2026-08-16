@@ -69,7 +69,6 @@ Handle<FontAsset> bakeFontSDF(
     stbtt_GetFontVMetrics(&font, &ascent, &descent, &lineGap);
     const float pixelDistScale = static_cast<float>(SDF_ONEDGE) / static_cast<float>(SDF_PADDING);
 
-    // Render every printable-ASCII glyph to its own SDF bitmap.
     std::vector<BakedGlyph> baked;
     baked.reserve(FontAsset::GLYPH_COUNT);
     for (uint32_t cp = FontAsset::FIRST_CODEPOINT; cp <= FontAsset::LAST_CODEPOINT; ++cp) {
@@ -85,7 +84,6 @@ Handle<FontAsset> bakeFontSDF(
         baked.push_back(g);
     }
 
-    // Pack the non-empty glyph rects into one atlas.
     std::vector<stbrp_rect> rects;
     rects.reserve(baked.size());
     for (size_t i = 0; i < baked.size(); ++i) {
@@ -114,7 +112,6 @@ Handle<FontAsset> bakeFontSDF(
         if (r.was_packed) rectForGlyph[static_cast<size_t>(r.id)] = &r;
     }
 
-    // Blit packed glyphs into the single-channel atlas and record metrics + uv.
     FontAsset fontAsset;
     fontAsset.atlasPixels.assign(static_cast<size_t>(ATLAS_SIZE) * ATLAS_SIZE, 0);
     fontAsset.atlasSize   = ATLAS_SIZE;

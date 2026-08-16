@@ -59,7 +59,6 @@ void GLUIPass::execute(GLFrameContext& ctx) {
     // Draw into the same backbuffer rect Composite resolved to.
     bindBackbufferViewport(ctx);
 
-    // A flat 2D overlay: alpha-blended, no depth, no face culling.
     ctx.gl.setDepthTest(false);
     ctx.gl.setFaceCulling(false);
     ctx.gl.setBlending(true);
@@ -76,9 +75,8 @@ void GLUIPass::execute(GLFrameContext& ctx) {
 
     m_vao->bind();
     for (const UIDrawCmd& cmd : ui.commands) {
-        // Solid fills ignore the sampler; text binds its font's SDF atlas into
-        // slot 0 (skipped when the atlas has not reached the GPU yet, rather
-        // than sampling whatever is bound).
+        // Solid fills ignore the sampler; a text command whose SDF atlas has not
+        // reached the GPU yet is skipped, rather than sampling whatever is bound.
         if (cmd.kind == UIDrawKind::Text) {
             const Core::Texture2D* atlas = ctx.resources.getFontAtlas(cmd.font);
             if (!atlas) continue;

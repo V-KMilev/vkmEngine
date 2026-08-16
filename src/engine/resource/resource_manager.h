@@ -51,10 +51,9 @@ class ResourceManager {
             static_assert(std::is_base_of_v<Resource, T>, "ResourceManager stores only types deriving from Resource.");
             auto& slot = getSlot<T>();
 
-            // The name is the asset's serializable identity, so guarantee it is
-            // non-empty and unique within its type: empty names get a generic
-            // base, collisions get a " (N)" suffix. findByName is then an
-            // unambiguous key and scene files can reference assets by name.
+            // The name is the asset's serializable identity, so it has to be
+            // non-empty and unique within its type for findByName to be an
+            // unambiguous key.
             ensureUniqueName(slot, resource.name);
 
             StorageIndex key = slot.allocator.allocate();
@@ -119,7 +118,6 @@ class ResourceManager {
             using T = typename HandleType::resource_t;
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::remove invalid handle");
-            // Drop the name->index mapping if the asset registered one.
             const T& res = storageOfConst<T>(slot).get(handle.key.index);
             dropNameIndex(slot, res.name, handle.key.index);
             storageOf<T>(slot).remove(handle.key.index);
@@ -231,10 +229,8 @@ class ResourceManager {
          * asset matches.
          *
          * O(1) lookup via a per-type name->index map maintained on
-         * add/remove/rename. Caveat: the index tracks the resource's `name`
-         * only when it is set through this API; a `name` mutated directly via
-         * edit() is not reflected. To rename a registered asset, use
-         * rename(handle, newName) so the index stays consistent.
+         * add/remove/rename. A `name` mutated directly through edit() is not
+         * reflected there; rename(handle, newName) keeps the index consistent.
          */
         template<typename T>
         Handle<T> findByName(const std::string& name) const {

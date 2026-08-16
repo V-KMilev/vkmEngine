@@ -37,11 +37,10 @@ std::filesystem::path executableDir() {
 }
 
 std::filesystem::path resolveRoot() {
-    // A packaged build ships its data beside the executable - or one level up
-    // when the exe lives in a bin/ subfolder. Detect that by a shaders/ folder
-    // (always shipped) and root there so the game is relocatable. Dev runs the
-    // exe from build/bin with no such folder nearby, and falls back to the
-    // build-time repo root.
+    // A packaged layout is detected by a shaders/ folder (always shipped) beside
+    // the executable or one level up, and rooted there so the game is
+    // relocatable. A dev run from build/bin has no such folder nearby and falls
+    // back to the build-time repo root.
     const std::filesystem::path exeDir = executableDir();
     if (!exeDir.empty()) {
         std::error_code ec;
@@ -72,9 +71,8 @@ void setProjectRoot(const std::filesystem::path& path) {
 }
 
 std::filesystem::path projectRoot() {
-    // An explicit project wins. Without one the project is wherever the engine
-    // is, which is what a development checkout and a packaged game both want:
-    // the repo is its own project, and a shipped game keeps its data beside the
+    // Without an explicit project the engine root doubles as one: a development
+    // checkout is its own project, and a shipped game keeps its data beside the
     // executable.
     if (!projectOverride().empty()) return projectOverride();
     return engineRoot();

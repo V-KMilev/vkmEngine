@@ -131,19 +131,17 @@ void focusOnSelected(FrameContext& ctx, EditorState& state, CameraControllerSyst
  * @brief Make @p target the active ("main") camera.
  *
  * Flips the active flag across every Camera and records the prior flags so
- * the multi-entity change is one undoable step. @p label names the undo
- * entry ("Set Main Camera" / "Look Through Camera").
+ * the multi-entity change is one undoable step.
  */
-void setActiveCamera(Scene& scene, EditorState& state, EntityId target, const char* label);
+void setActiveCamera(Scene& scene, EditorState& state, EntityId target);
 
 /**
  * @brief Commit a hierarchy mutation: dirty bits, panel rebuild, scene save flag.
  *
- * Cascades ECS dirty bits, requests a hierarchy panel rebuild, and flags the
- * scene for save. Replaces the HierarchyOperations::markDirty +
- * state.hierarchyDirty + markSceneDirty triplet that used to live at every
- * call site - one missed line dropped the scene-dirty flag, which is the
- * user-trust hazard the editor audit flagged.
+ * Replaces the HierarchyOperations::markDirty + state.hierarchyDirty +
+ * markSceneDirty triplet that used to live at every call site - one missed
+ * line dropped the scene-dirty flag, which is the user-trust hazard the
+ * editor audit flagged.
  */
 void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity);
 
@@ -232,8 +230,7 @@ class ModelImportDialog {
          * @brief Drive the Import Model picker and import the chosen file.
          *
          * Opens the cached picker when EditorState::requestModelImport is set,
-         * then on a pick loads the model into the scene. Call once per frame
-         * from the menu-bar scope so the modal survives the Create menu closing.
+         * then on a pick loads the model into the scene.
          *
          * @param scene Scene the imported model is added to.
          * @param resources Resource manager the imported meshes/materials register with.

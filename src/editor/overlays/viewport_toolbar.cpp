@@ -25,8 +25,6 @@ void tipFor(char* buf, size_t n, const char* name, const KeyBind& bind) {
 void ViewportToolbar::drawViewMode(EditorContext& ec) {
     RenderSettings& settings = ec.renderSystem.getSettings();
 
-    // Small top-left overlay: just the shading/debug view dropdown, styled
-    // like the tool strip.
     ImGui::SetCursorPos(ImVec2(8.0f, 8.0f));
     ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::OVERLAY_BG);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PAD(), PAD()));
@@ -109,7 +107,6 @@ void ViewportToolbar::draw(EditorContext& ec) {
         if (iconButton("del", EditorIcon::Trash, false, haveSel, delTip, BTN()))
             EditorActions::deleteSelection(ctx.scene, state);
 
-        // Right group: scene-wide view actions.
         ImGui::SameLine(0, SEP());
         if (iconButton("frameAll", EditorIcon::FrameAll, false, true,
                        frameTip, BTN()))

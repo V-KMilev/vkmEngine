@@ -23,7 +23,6 @@ namespace {
 MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
 
-    // "generator" kind. type selects which procedural shape.
     // Synchronous: generators are cheap, no benefit to async.
     if (kind == "generator") {
         const std::string type = source.value("type", std::string{});
@@ -49,7 +48,6 @@ MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resou
         return resources.add(std::move(mesh));
     }
 
-    // "model" kind. One aiMesh re-imported via Assimp.
     // Async: Assimp parsing is the slow path - return a stub immediately,
     // worker decodes off-thread, AsyncLoaderSystem patches the live asset
     // with vertices + bounds 1+ frames out.
@@ -59,7 +57,6 @@ MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resou
                                      resources);
     }
 
-    // "decimate" kind. A LOD level produced by vertex-clustering its base mesh.
     // The base (referenced by name) is emitted earlier in the meshes block (it
     // is the entity's Mesh::mesh), so it is already resident when this runs.
     // Re-decimating on load keeps decimated levels out of the scene file (only
@@ -90,20 +87,17 @@ MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resou
 TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
 
-    // "file" kind. Loaded via stb_image.
     if (kind == "file") {
         const std::string path  = source.value("path", std::string{});
         if (path.empty()) return {};
         const bool sRGB         = source.value("sRGB", false);
         const bool genMipmaps   = source.value("generateMipmaps", true);
-        // Scene-load file textures take the async path: returns immediately
-        // with a stub handle, ThreadPool decodes the pixels off the main
-        // thread, AsyncLoaderSystem finalises the asset 1-3 frames later.
-        // Material binding shows a 1x1 gray fallback in the gap.
+        // Async: a stub handle comes back immediately, ThreadPool decodes the
+        // pixels off the main thread, AsyncLoaderSystem finalises the asset 1-3
+        // frames later. Material binding shows a 1x1 gray fallback in the gap.
         return requestTextureAsync(path, resources, sRGB, genMipmaps);
     }
 
-    // "builtin" kind. 1x1 default textures (white/black/normal/gray).
     if (kind == "builtin") {
         const std::string type = source.value("type", std::string{});
         if (type == "white")  return generateWhiteTexture(resources);
@@ -113,8 +107,8 @@ TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager&
         return {};
     }
 
-    // "solid" kind. A user-authored solid-color texture (Material Editor
-    // "Generate texture"). Re-created from the stored RGBA + colorspace.
+    // A user-authored solid-color texture (the Material Editor's "Generate
+    // texture"), re-created from the stored RGBA + colorspace.
     if (kind == "solid") {
         glm::vec4 color(1.0f);
         if (source.contains("color") && source["color"].is_array() && source["color"].size() >= 4) {
@@ -126,9 +120,8 @@ TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager&
         return createSolidColorTexture(color, resources, srgb);
     }
 
-    // "model-image" kind. Re-extract an embedded image from the source model
-    // file. The pixels live in the .glb/.fbx, not in the scene JSON, so
-    // cold-start load reopens the file and pulls the same texture.
+    // The pixels live in the .glb/.fbx, not in the scene JSON, so cold-start
+    // load reopens the model file and pulls the same texture out of it.
     if (kind == "model-image") {
         const std::string path = source.value("path", std::string{});
         const std::string ref  = source.value("ref",  std::string{});
@@ -143,19 +136,17 @@ TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager&
 MaterialHandle createRecipeMaterial(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
 
-    // "folder" kind. Rediscovers textures from disk.
+    // Rediscovers the folder's textures from disk.
     if (kind == "folder") {
         const std::string path = source.value("path", std::string{});
         if (path.empty()) return {};
         return loadMaterialFromFolder(path, resources);
     }
 
-    // "default" kind. A neutral white PBR material.
     if (kind == "default") {
         return generateDefaultMaterial(resources);
     }
 
-    // "model" kind. Re-imported with textures via Assimp.
     if (kind == "model") {
         return loadModelMaterial(source.value("path", std::string{}),
                                  source.value("material", -1), resources);

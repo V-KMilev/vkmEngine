@@ -34,17 +34,14 @@ struct KeyBind {
  * Persisted via EditorSettings so user rebindings survive across sessions.
  */
 struct EditorKeybinds {
-    // File
     KeyBind newScene         = { ImGuiKey_N,      KeyMod_Ctrl };
     KeyBind saveScene        = { ImGuiKey_S,      KeyMod_Ctrl };
     KeyBind saveSceneAs      = { ImGuiKey_S,      KeyMod_Ctrl | KeyMod_Shift };
     KeyBind loadScene        = { ImGuiKey_O,      KeyMod_Ctrl };
 
-    // Edit
     KeyBind undo             = { ImGuiKey_Z,      KeyMod_Ctrl };
     KeyBind redo             = { ImGuiKey_Z,      KeyMod_Ctrl | KeyMod_Shift };
 
-    // Panel toggles
     KeyBind toggleHierarchy  = { ImGuiKey_1,      KeyMod_Ctrl };
     KeyBind toggleInspector  = { ImGuiKey_2,      KeyMod_Ctrl };
     KeyBind toggleBottom     = { ImGuiKey_3,      KeyMod_Ctrl };
@@ -54,7 +51,6 @@ struct EditorKeybinds {
     KeyBind toggleAssetBrowser   = { ImGuiKey_6,  KeyMod_Ctrl };
     KeyBind openPreferences  = { ImGuiKey_Comma,  KeyMod_Ctrl };
 
-    // Entity operations
     KeyBind deleteEntity     = { ImGuiKey_Delete, KeyMod_None };
     KeyBind deselect         = { ImGuiKey_Escape, KeyMod_None };
     KeyBind duplicate        = { ImGuiKey_D,      KeyMod_Ctrl };
@@ -67,6 +63,58 @@ struct EditorKeybinds {
     KeyBind gizmoRotate      = { ImGuiKey_E, KeyMod_None };
     KeyBind gizmoScale       = { ImGuiKey_R, KeyMod_None };
     KeyBind gizmoToggleSpace = { ImGuiKey_X, KeyMod_None };
+};
+
+/**
+ * @brief One keybind's identity: where Preferences shows it, and how it persists.
+ *
+ * The Preferences panel and EditorSettings both walk KEYBINDS, so the row list,
+ * the conflict scan and the settings round-trip cannot drift apart. `label` and
+ * `jsonName` are separate columns deliberately: the label is user-facing prose,
+ * while a changed jsonName silently discards every saved rebinding.
+ */
+struct KeybindEntry {
+    const char* group;                ///< Preferences section heading the row sits under.
+    const char* label;                ///< Row label in Preferences.
+    const char* jsonName;             ///< Key this bind is persisted under.
+    KeyBind EditorKeybinds::* field;  ///< Member of EditorKeybinds the row edits.
+};
+
+/**
+ * @brief Every configurable keybind, in Preferences display order.
+ *
+ * Rows sharing a group are contiguous, so the panel can emit a section heading
+ * whenever the group column changes.
+ */
+inline constexpr KeybindEntry KEYBINDS[] = {
+    { "File", "New Scene",     "newScene",    &EditorKeybinds::newScene    },
+    { "File", "Save Scene",    "saveScene",   &EditorKeybinds::saveScene   },
+    { "File", "Save Scene As", "saveSceneAs", &EditorKeybinds::saveSceneAs },
+    { "File", "Load Scene",    "loadScene",   &EditorKeybinds::loadScene   },
+
+    { "Edit", "Undo", "undo", &EditorKeybinds::undo },
+    { "Edit", "Redo", "redo", &EditorKeybinds::redo },
+
+    { "Windows & Panels", "Toggle Hierarchy", "toggleHierarchy",      &EditorKeybinds::toggleHierarchy      },
+    { "Windows & Panels", "Toggle Inspector", "toggleInspector",      &EditorKeybinds::toggleInspector      },
+    { "Windows & Panels", "Toggle Bottom",    "toggleBottom",         &EditorKeybinds::toggleBottom         },
+    { "Windows & Panels", "Render Settings",  "toggleRenderSettings", &EditorKeybinds::toggleRenderSettings },
+    { "Windows & Panels", "Material Editor",  "toggleMaterialEditor", &EditorKeybinds::toggleMaterialEditor },
+    { "Windows & Panels", "Asset Browser",    "toggleAssetBrowser",   &EditorKeybinds::toggleAssetBrowser   },
+    { "Windows & Panels", "Toggle Editor",    "toggleEditor",         &EditorKeybinds::toggleEditor         },
+    { "Windows & Panels", "Preferences",      "openPreferences",      &EditorKeybinds::openPreferences      },
+
+    { "Entity", "Delete",         "deleteEntity",  &EditorKeybinds::deleteEntity  },
+    { "Entity", "Deselect",       "deselect",      &EditorKeybinds::deselect      },
+    { "Entity", "Duplicate",      "duplicate",     &EditorKeybinds::duplicate     },
+    { "Entity", "Focus Selected", "focusSelected", &EditorKeybinds::focusSelected },
+    { "Entity", "Frame All",      "frameAll",      &EditorKeybinds::frameAll      },
+
+    { "Gizmo (disabled during fly-cam)", "Select",      "gizmoSelect",      &EditorKeybinds::gizmoSelect      },
+    { "Gizmo (disabled during fly-cam)", "Translate",   "gizmoTranslate",   &EditorKeybinds::gizmoTranslate   },
+    { "Gizmo (disabled during fly-cam)", "Rotate",      "gizmoRotate",      &EditorKeybinds::gizmoRotate      },
+    { "Gizmo (disabled during fly-cam)", "Scale",       "gizmoScale",       &EditorKeybinds::gizmoScale       },
+    { "Gizmo (disabled during fly-cam)", "Local/World", "gizmoToggleSpace", &EditorKeybinds::gizmoToggleSpace },
 };
 
 /**

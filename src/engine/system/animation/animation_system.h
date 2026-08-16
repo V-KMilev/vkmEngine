@@ -16,12 +16,9 @@ struct Transform;
  *
  * Registered at SystemStage::Simulation. Skipped entirely when no simulation
  * time elapsed this frame (paused), so an authored Transform is not clobbered
- * by re-sampling the track at an unchanged time. Each update:
- *  - Advances animation.time by simDeltaTime * speed, applying looping/stop.
- *  - Applies positionTrack / rotationTrack / scaleTrack values to the
- *    Transform via easing-aware sampling (only for non-empty tracks).
- *  - Marks the touched subtrees dirty so HierarchySystem rebuilds their
- *    WorldTransforms downstream the same frame.
+ * by re-sampling the track at an unchanged time. Touched subtrees are marked
+ * dirty so HierarchySystem rebuilds their WorldTransforms downstream the same
+ * frame.
  *
  * The evaluate pass (advance time + write Transform) runs in parallel over all
  * animation slots, skipping non-playing ones; the dirty-mark pass stays serial

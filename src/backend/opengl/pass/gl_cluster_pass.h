@@ -14,9 +14,8 @@ namespace Engine {
  * @brief Forward+ light cull: dispatches the cluster-cull compute shader that
  * fills the per-cluster light lists the forward pass reads.
  *
- * Runs before the forward pass. Reads the light SSBO (bound by the backend) and
- * writes the cluster grid, then issues a shader-storage barrier so the forward
- * pass sees the results.
+ * Runs before the forward pass. Reads the light SSBO (bound by the backend),
+ * then issues a shader-storage barrier so the forward pass sees the writes.
  */
 class GLClusterPass : public GLPass {
     public:

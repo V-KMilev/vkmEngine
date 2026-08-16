@@ -13,10 +13,9 @@ class ResourceManager;
 /**
  * @brief Create a mesh from its cooked source descriptor (runtime + editor).
  *
- * The cooked dispatch loads from the cooked asset database with no Assimp and
- * no image decode: cooked meshes/textures and inline materials (loaded from
- * the library). Switches internally on the source `kind`. The editor's recipe
- * dispatch falls through to these for any kind it does not itself handle.
+ * Loads from the cooked asset database with no Assimp and no image decode. The
+ * editor's recipe dispatch falls through to these for any kind it does not
+ * itself handle.
  *
  * @param source JSON source descriptor carrying the asset `kind` and name.
  * @param resources Resource manager the new mesh is added to.
@@ -27,8 +26,8 @@ MeshHandle     createCookedMesh(const nlohmann::json& source, ResourceManager& r
 /**
  * @brief Create a texture from its cooked source descriptor (runtime + editor).
  *
- * Takes the same cooked-cache path as createCookedMesh, switching on the
- * source `kind`; the recipe dispatch falls through to it for unhandled kinds.
+ * Takes the same cooked-cache path as createCookedMesh; the recipe dispatch
+ * falls through to it for unhandled kinds.
  *
  * @param source JSON source descriptor carrying the asset `kind` and name.
  * @param resources Resource manager the new texture is added to.
@@ -40,8 +39,8 @@ TextureHandle  createCookedTexture(const nlohmann::json& source, ResourceManager
  * @brief Create a material from its cooked (inline) source descriptor.
  *
  * Loads the canonical inline material form (PBR scalars + texture refs by
- * name) from the library; texture refs resolve via findByName. The recipe
- * dispatch falls through to it for unhandled kinds.
+ * name) from the library. The recipe dispatch falls through to it for
+ * unhandled kinds.
  *
  * @param source JSON source descriptor carrying the asset `kind` and fields.
  * @param resources Resource manager the new material is added to.
@@ -50,7 +49,7 @@ TextureHandle  createCookedTexture(const nlohmann::json& source, ResourceManager
 MaterialHandle createCookedMaterial(const nlohmann::json& source, ResourceManager& resources);
 
 /**
- * @brief Wire the cooked dispatch into the AssetFactory seam (runtime + editor).
+ * @brief Wire the cooked dispatch into the AssetFactory seam (runtime only).
  *
  * Call once at startup before any scene I/O.
  */
@@ -62,7 +61,9 @@ void registerCookedAssetFactories();
  * The recipe kinds (re)produce assets from their source: procedural mesh
  * generators, Assimp model import, and file/solid/folder textures and
  * materials. These are what the cooker runs to populate the cooked cache; a
- * runtime build does not link them. Call after registerCookedAssetFactories().
+ * runtime build does not link them. Falls through to the cooked dispatch, so a
+ * host calls this instead of registerCookedAssetFactories(), once at startup
+ * before any scene I/O.
  */
 void registerRecipeAssetFactories();
 

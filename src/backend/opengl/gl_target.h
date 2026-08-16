@@ -28,7 +28,7 @@ namespace Engine {
  * attachments become renderbuffers (not sampleable) and the geometry passes
  * draw into it, then resolveColorTo / resolveGeometryTo blit-resolve it into a
  * single-sample GLTarget the screen-space passes sample. A single-sample target
- * (the default) is both drawn into and sampled directly, as before.
+ * (the default) is both drawn into and sampled directly.
  */
 class GLTarget {
     public:
@@ -88,8 +88,7 @@ class GLTarget {
 
         /**
          * @brief Bind for rendering into colour 0 (the common case: skybox, forward,
-         * post blit-back). Sets the viewport and the draw buffer to colour 0.
-         * Non-const: it mutates GL draw-buffer state.
+         * post blit-back). Non-const: it mutates GL draw-buffer state.
          */
         void bind(const Core::Context& gl);
 

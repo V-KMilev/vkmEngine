@@ -86,9 +86,8 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     MaterialHandle lastMaterial;
     MeshHandle     lastMesh;
     for (const DrawableData& d : view.drawables) {
-        // Same repeat-skip the material gets, for the same reason: the draw
-        // sort clusters by (material, mesh), so consecutive drawables share
-        // both and re-ensuring is a resource lookup for an answer already had.
+        // Same repeat-skip, same reason: the sort clusters by (material, mesh),
+        // so consecutive drawables share both.
         if (d.mesh != lastMesh) {
             lastMesh = d.mesh;
             ensure(m_meshes, d.mesh, resources);

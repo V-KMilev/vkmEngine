@@ -35,10 +35,10 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
         return false;
     }
 
-    // Reading the fields is inside the try as well as the parse: value<std::string>
-    // throws on a key that holds a number or an array, and a hand-edited
-    // project.json is exactly where that happens. A bad file leaves the defaults
-    // standing rather than taking the process down.
+    // The field reads are inside the try as well as the parse: value<std::string>
+    // throws on a key that holds a number or an array, which is exactly what a
+    // hand-edited project.json produces. A bad file leaves the defaults standing
+    // rather than taking the process down.
     nlohmann::json doc;
     try {
         in >> doc;
@@ -55,8 +55,7 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
         LOG_INFO("Project '%s' (engine %s)", out.name.c_str(), out.engineVersion.c_str());
     } else {
         // Not fatal: the formats are usually compatible across a minor version,
-        // and refusing to open would be worse than opening with a warning. Said
-        // once here so a later failure is not a mystery.
+        // and refusing to open would be worse than opening with a warning.
         LOG_WARNING("Project '%s' was authored against engine %s; this is %s",
                     out.name.c_str(), out.engineVersion.c_str(), APP_VERSION);
     }
@@ -66,8 +65,7 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
 fs::path findProjectRoot(const fs::path& start) {
     std::error_code ec;
 
-    // Accept a file as well as a directory, so passing a scene finds the
-    // project that owns it rather than requiring the caller to know the root.
+    // Accept a file as well as a directory, so passing a scene finds its project.
     fs::path dir = fs::is_directory(start, ec) ? start : start.parent_path();
     dir = fs::absolute(dir, ec);
 

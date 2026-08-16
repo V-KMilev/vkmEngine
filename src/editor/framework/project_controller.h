@@ -69,10 +69,6 @@ class ProjectController {
         void noteCurrentProject(EditorContext& ec);
 
     private:
-        /// Push @p projectRoot to the front of the MRU, de-duplicated and capped.
-        void pushRecent(EditorContext& ec, const std::string& projectRoot);
-
-    private:
         char m_pathBuffer[512] = {};
 };
 

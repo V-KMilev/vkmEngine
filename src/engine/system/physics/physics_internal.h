@@ -38,30 +38,24 @@ struct ColliderProxy {
 };
 
 /**
- * @brief World-space pose frame for a body, cached at gather so writeback can
- *        map the solved world pose back to the entity's local Transform.
+ * @brief Per-tick body state cached at gather: the mass properties the solver
+ *        runs on, plus the frame writeback maps the solved world pose back through.
  *
  * `parented == false` means the body is a hierarchy root (its local Transform is
  * already the world pose - the fast path, no conversion). `worldRot` is the
  * orientation the solver ran in, kept so anything rebuilding a world inertia
  * tensor mid-tick uses the same rotation gather did rather than the local
- * Transform's, which is the parent's frame for a parented body.
+ * Transform's, which is the parent's frame for a parented body. `invMass` and
+ * `invInertiaLocal` are re-derived from the Rigidbody + Collider every tick, so
+ * editing mass or the shape takes effect without a separate "apply" step.
  */
 struct BodyFrame {
-    bool      parented       = false;
-    glm::quat worldRot       = {1.0f, 0.0f, 0.0f, 0.0f};           ///< body world-space rotation this tick
-    glm::mat4 parentWorldInv = glm::mat4(1.0f);                    ///< inverse(parent WorldTransform.model)
-    glm::quat parentRot      = {1.0f, 0.0f, 0.0f, 0.0f};           ///< parent world-space rotation
-};
-
-/**
- * @brief A box placed in world space - the unit the box-box narrowphase consumes.
- * A collider expands into one of these per child box.
- */
-struct SubShape {
-    glm::vec3 center      = {0.0f, 0.0f, 0.0f};
-    glm::quat rotation    = {1.0f, 0.0f, 0.0f, 0.0f};
-    glm::vec3 halfExtents = {0.5f, 0.5f, 0.5f};
+    bool      parented        = false;
+    float     invMass         = 0.0f;                             ///< 1/mass this tick; 0 = static/kinematic
+    glm::mat3 invInertiaLocal = glm::mat3(0.0f);                  ///< body-local inverse inertia; 0 = no rotational response
+    glm::quat worldRot        = {1.0f, 0.0f, 0.0f, 0.0f};         ///< body world-space rotation this tick
+    glm::mat4 parentWorldInv  = glm::mat4(1.0f);                  ///< inverse(parent WorldTransform.model)
+    glm::quat parentRot       = {1.0f, 0.0f, 0.0f, 0.0f};         ///< parent world-space rotation
 };
 
 } // namespace Engine

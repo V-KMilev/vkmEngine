@@ -59,7 +59,7 @@ Two consequences worth knowing before you add a path:
 | Scene serializer    | `src/engine/io/scene/scene_serializer.h`           | Top-level save/load for a `Scene` + the assets it references. Transactional.             |
 | Prefab              | `src/engine/io/scene/prefab.h`                     | One entity subtree in its own file, instanced by reference from a scene.                 |
 | Asset serializer    | `src/engine/io/asset/asset_serializer.h`           | Save name-only asset references; on load resolve them via the asset library + the `AssetFactory` seam. |
-| Asset library       | `src/engine/io/asset/asset_library.h`              | The cooked-asset database manifest: maps an asset name to its recipe + cooked file + hash. |
+| Asset library       | `src/engine/io/asset/asset_library.h`              | The cooked-asset database manifest: maps an asset name to its type + recipe hash, and derives its file locations. |
 | Asset cooker        | `src/tools/cook/asset_cooker.h` (editor)     | Bakes assets from their recipe into the library + cooked binary cache (`cooked/`).        |
 | Cooked format       | `src/engine/io/asset/asset_cook.h`                 | The `.vkmc` binary reader/writer. Readers are defensive: every count and size is validated before it is used. |
 | Component serializer| `src/engine/io/scene/component_serializer.h`       | Per-component to/from JSON. Mechanical, one save/load pair per component type.           |
@@ -134,11 +134,14 @@ a hash of the recipe. Every asset is its own file:
   `inline` form). The version-controlled source of truth.
 - `cooked/<type>/<uid>.vkmc` - the derived binary blob (mesh vertices/indices;
   decoded texture pixels). Regenerable; git-ignored.
-- `library/_manifest.json` - maps each asset `name` to its recipe + cooked file
-  and recipe hash, under a `manifestVersion` the loader checks. `AssetLibrary`
+- `library/_manifest.json` - maps each asset `name` to its type and recipe hash,
+  under a `manifestVersion` the loader checks. `AssetLibrary`
   is the in-memory view, loaded at startup; a manifest in a version this build
   does not know is refused rather than half-read, because the whole library is
-  derived data and re-cooking costs less than guessing.
+  derived data and re-cooking costs less than guessing. The two filenames above
+  are not recorded: `AssetLibrary::recipePath()` / `cookedPath()` derive them from
+  (type, name), so the cooker that writes a file and the loader that reads it
+  cannot disagree about where it is.
 
 **Save** - `AssetSerializer::saveAssetsForScene` walks the components that name
 assets (`Mesh`, `LOD`, `Decal`) and emits **name-only** references to the

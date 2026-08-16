@@ -43,11 +43,11 @@ float dynamicInverseMass(const Rigidbody& rb) {
 }
 
 // A body the integrator and solver leave alone: asleep or immovable (static,
-// kinematic, or non-positive mass). Relies on rb.inverseMass being current,
-// which holds for every body in m_bodies once gatherBodies has set it -
-// dynamicInverseMass already folds static/kinematic/zero-mass into inverseMass.
-bool isFrozen(const Rigidbody& rb) {
-    return rb.sleeping || rb.inverseMass == 0.0f;
+// kinematic, or non-positive mass). Takes the tick's inverse mass rather than
+// re-deriving it - dynamicInverseMass already folds static/kinematic/zero-mass
+// into the value gatherBodies parked on the body frame.
+bool isFrozen(const Rigidbody& rb, float invMass) {
+    return rb.sleeping || invMass == 0.0f;
 }
 
 glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
@@ -84,7 +84,6 @@ void computeAABB(
     glm::vec3& outMin,
     glm::vec3& outMax
 ) {
-    // Union of every child box's world AABB.
     if (collider.parts.empty()) { outMin = pos; outMax = pos; return; }
     outMin = glm::vec3(std::numeric_limits<float>::max());
     outMax = glm::vec3(std::numeric_limits<float>::lowest());
@@ -106,13 +105,13 @@ bool aabbOverlap(const ColliderProxy& a, const ColliderProxy& b) {
 }
 
 void expandSubShapes(const ColliderProxy& p, const std::vector<ColliderBox>& parts,
-                     std::vector<SubShape>& out) {
+                     std::vector<BoxShape>& out) {
     out.clear();
     out.reserve(p.partsCount);
     const glm::mat3 r = glm::mat3_cast(p.rotation);
     for (uint32_t i = 0; i < p.partsCount; ++i) {
         const ColliderBox& part = parts[p.partsFirst + i];
-        out.push_back({p.position + r * part.center, p.rotation, part.halfExtents});
+        out.push_back({p.position + r * part.center, {r[0], r[1], r[2]}, part.halfExtents});
     }
 }
 
@@ -160,25 +159,24 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
     const uint32_t rbCount = static_cast<uint32_t>(rbStorage->size());
     for (uint32_t i = 0; i < rbCount; ++i) {
         const uint32_t idx = rbStorage->keyAt(i);
-        const EntityId id{idx, scene.generationOf(idx)};
+        const EntityId id = scene.entityAt(idx);
         if (!scene.has<Transform>(id)) continue;
 
         Rigidbody& rb = rbStorage->dataAt(i);
         const Transform& t = scene.get<Transform>(id);
         const Collider* collider = scene.has<Collider>(id) ? &scene.get<Collider>(id) : nullptr;
 
+        BodyFrame frame;
         // Defensively re-derive mass properties so editor edits to mass/collider
         // take effect without an explicit "apply" step.
-        rb.inverseMass = dynamicInverseMass(rb);
-        rb.invInertiaLocal = localInverseInertia(rb, collider);
+        frame.invMass = dynamicInverseMass(rb);
+        frame.invInertiaLocal = localInverseInertia(rb, collider);
 
-        // Resolve the body's WORLD pose. A hierarchy root uses its local
-        // Transform directly (fast path); a parented body reads its
-        // WorldTransform and records its parent's frame so writeback can convert
-        // the solved world pose back to local.
+        // A hierarchy root's local Transform is already its world pose; a parented
+        // body reads its WorldTransform and records the parent frame so writeback
+        // can convert the solved world pose back to local.
         glm::vec3 worldPos = t.position;
         glm::quat worldRot = t.rotation;
-        BodyFrame frame;
         if (scene.has<Hierarchy>(id)) {
             const Hierarchy& h = scene.get<Hierarchy>(id);
             if (h.parent && scene.has<WorldTransform>(id) && scene.has<WorldTransform>(h.parent)) {
@@ -205,10 +203,10 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
         // orientation integrates as identity and stays script-owned.
         pb.angularVelocity = rb.freezeRotation ? glm::vec3(0.0f) : rb.angularVelocity;
         // Sleeping or immovable bodies contribute infinite mass to the solver.
-        const bool frozen = isFrozen(rb);
-        pb.invMass = frozen ? 0.0f : rb.inverseMass;
+        const bool frozen = isFrozen(rb, frame.invMass);
+        pb.invMass = frozen ? 0.0f : frame.invMass;
         pb.invInertiaWorld = frozen ? glm::mat3(0.0f)
-                                    : inverseInertiaWorld(rb.invInertiaLocal, worldRot);
+                                    : inverseInertiaWorld(frame.invInertiaLocal, worldRot);
         pb.restitution = rb.restitution;
         pb.friction = rb.friction;
         m_solverBodies.push_back(pb);
@@ -237,7 +235,7 @@ void PhysicsSystem::integrateForces(Scene& scene, const PhysicsSettings& physics
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         Rigidbody& rb = scene.get<Rigidbody>(m_bodies[k]);
         PhysicsBody& pb = m_solverBodies[k];
-        if (isFrozen(rb)) continue;
+        if (isFrozen(rb, m_bodyFrames[k].invMass)) continue;
 
         pb.linearVelocity += physics.gravity * rb.gravityScale * dt;
         pb.linearVelocity *= 1.0f / (1.0f + rb.linearDamping * dt);
@@ -290,12 +288,9 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events)
         bool anyContact = false;
         glm::vec3 contactPoint(0.0f);
         glm::vec3 contactNormal(0.0f, 1.0f, 0.0f);
-        for (const SubShape& sa : m_subA) {
-            for (const SubShape& sb : m_subB) {
-                const int n = contactBoxes(
-                    sa.center, sa.rotation, sa.halfExtents,
-                    sb.center, sb.rotation, sb.halfExtents,
-                    scratch);
+        for (const BoxShape& sa : m_subA) {
+            for (const BoxShape& sb : m_subB) {
+                const int n = contactBoxes(sa, sb, scratch);
                 if (n == 0) continue;
                 if (!anyContact) {  // keep the first contact as the event's representative
                     contactPoint  = scratch[0].point;
@@ -313,9 +308,8 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events)
             }
         }
         if (anyContact) {
-            // Surface the overlap to gameplay (enqueued: listeners fire on the
-            // next EventBus flush, never mid-solve). Triggers are queried,
-            // not resolved, so they only produce events.
+            // Enqueued, not emitted: listeners fire on the next EventBus flush,
+            // never mid-solve.
             const EntityId entityA = m_bodies[A.body];
             const EntityId entityB = m_bodies[B.body];
             if (trigger) {
@@ -348,11 +342,11 @@ void PhysicsSystem::wakeOnImpact(Scene& scene) {
         auto wake = [&](uint32_t idx, Rigidbody& rb) {
             rb.sleeping = false;
             rb.sleepTimer = 0.0f;
-            m_solverBodies[idx].invMass = rb.inverseMass;
+            m_solverBodies[idx].invMass = m_bodyFrames[idx].invMass;
             // The gathered world rotation, not the local Transform's: for a
             // parented body those differ, and the solver is running in world.
             m_solverBodies[idx].invInertiaWorld =
-                inverseInertiaWorld(rb.invInertiaLocal, m_bodyFrames[idx].worldRot);
+                inverseInertiaWorld(m_bodyFrames[idx].invInertiaLocal, m_bodyFrames[idx].worldRot);
         };
         if (rbA.sleeping && !rbB.sleeping && speedB > WAKE_SPEED_SQ) wake(a, rbA);
         if (rbB.sleeping && !rbA.sleeping && speedA > WAKE_SPEED_SQ) wake(b, rbB);
@@ -407,10 +401,9 @@ void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& h
             t.rotation = worldRot;
         }
 
-        // Sleep bookkeeping: rest while supported long enough, otherwise stay
-        // awake. canSleep opts a body out entirely - script-driven characters
-        // must never doze off, or their velocity writes get zeroed and the
-        // solver treats them as immovable mid-gameplay.
+        // canSleep opts a body out of sleeping entirely - script-driven
+        // characters must never doze off, or their velocity writes get zeroed
+        // and the solver treats them as immovable mid-gameplay.
         if (!rb.isKinematic && rb.canSleep) {
             const float linSq = glm::dot(rb.linearVelocity, rb.linearVelocity);
             const float angSq = glm::dot(rb.angularVelocity, rb.angularVelocity);

@@ -26,7 +26,6 @@ TextureHandle loadTexture(
     bool srgb,
     bool generateMipmaps
 ) {
-    // Load image using stb_image
     stbi_set_flip_vertically_on_load(true);
 
     int width = 0;
@@ -36,10 +35,9 @@ TextureHandle loadTexture(
 
     if (!data) {
         LOG_ERROR("Failed to load texture from '%s': %s", filePath.c_str(), stbi_failure_reason());
-        return TextureHandle{}; // Return invalid handle
+        return TextureHandle{};
     }
 
-    // Create TextureAsset
     TextureAsset texture;
     texture.params.width = static_cast<uint32_t>(width);
     texture.params.height = static_cast<uint32_t>(height);
@@ -50,12 +48,10 @@ TextureHandle loadTexture(
     texture.srgb = srgb;
     texture.filePath = filePath;
 
-    // Copy pixel data
     const size_t dataSize = width * height * channels;
     texture.pixelData.resize(dataSize);
     std::memcpy(texture.pixelData.data(), data, dataSize);
 
-    // Free stb_image data
     stbi_image_free(data);
 
     LOG_VERBOSE("Loaded texture '%s' (%dx%d, %d channels, sRGB: %s)",
@@ -79,10 +75,9 @@ TextureHandle requestTextureAsync(
     bool srgb,
     bool generateMipmaps
 ) {
-    // Path is the stable identity. If we've already requested this exact
-    // path before, return the same handle - even if the prior request is
-    // still in flight. Caller is free to bind/use the handle immediately;
-    // the asset just won't have pixels yet.
+    // Path is the stable identity: a repeat request hands back the same handle
+    // even while the first decode is in flight. The caller can bind it right
+    // away; the asset just won't have pixels yet.
     if (auto existing = resourceManager.findByName<TextureAsset>(filePath)) return existing;
 
     // Stub asset: dimensions filled in by the finaliser once decode is done.
@@ -111,9 +106,9 @@ TextureHandle requestTextureAsync(
     // worker that will read it.
     stbi_set_flip_vertically_on_load(true);
 
-    // Spawn the decode on a worker. We capture only the path + the asset's
-    // identity - everything ResourceManager-touching happens on the main thread
-    // in AsyncLoaderSystem when the completion is drained.
+    // The task captures only the path + the asset's identity: everything
+    // ResourceManager-touching happens on the main thread in AsyncLoaderSystem
+    // when the completion is drained.
     ThreadPool::get().addTask([handle, uid, filePath]() {
         int w = 0, h = 0, channels = 0;
         unsigned char* data = stbi_load(filePath.c_str(), &w, &h, &channels, 0);

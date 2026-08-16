@@ -46,8 +46,7 @@ namespace Engine {
 namespace {
 // Generic reflected-field -> ImGui inspector. The editor only sees a Behavior*,
 // so a behavior's authored fields are edited through this visitor (the same
-// bridge serialization uses). One DragFloat/Checkbox/etc. per field type;
-// `changed` is set the frame any field is edited.
+// bridge serialization uses).
 class BehaviorFieldInspector : public BehaviorFieldVisitor {
     public:
         bool changed = false;
@@ -98,8 +97,7 @@ class BehaviorFieldInspector : public BehaviorFieldVisitor {
 
 // Asset-reference combo: pick which loaded asset of type Asset a handle points
 // at. Snapshots the asset list so ImGuiListClipper can window thousands of rows
-// fluidly. Returns true if the selection changed. Used by the Mesh card's
-// mesh + material pickers.
+// fluidly. Returns true if the selection changed.
 template <typename Asset, typename Handle>
 bool pickAsset(const char* comboId, const char* label, ResourceManager& resources, Handle& currentHandle) {
     const std::string cur = (currentHandle && resources.isAlive(currentHandle))
@@ -134,13 +132,13 @@ bool pickAsset(const char* comboId, const char* label, ResourceManager& resource
     return picked;
 }
 
-// Shared scaffold for a removable, value-edited component card. Owns the
-// remove affordance, the begin/end card pair, the get<T> + `before` snapshot,
-// and the two undo pushes (ComponentEditCommand when a field changed, then
-// RemoveComponentCommand if the card's remove button was pressed). `drawFields`
-// receives the live component and returns whether any field was edited this
-// frame. Behavior-identical to the hand-written sections it replaces: the edit
-// push happens before endComponentCard, the remove push after.
+// Shared scaffold for a removable, value-edited component card: the remove
+// affordance, the begin/end card pair, the get<T> + `before` snapshot, and the
+// two undo pushes (ComponentEditCommand when a field changed, then
+// RemoveComponentCommand if the remove button was pressed). `drawFields`
+// receives the live component and returns whether any field was edited.
+// Ordering matters: the edit push happens before endComponentCard, the remove
+// push after.
 template <typename T, typename DrawFields>
 void editComponentCard(Scene& scene, EditorState& state, EntityId id,
                        const char* title, const ImVec4& accent,
@@ -161,8 +159,8 @@ void editComponentCard(Scene& scene, EditorState& state, EntityId id,
     if (remove) {
         // Snapshot before removal so undo can restore the exact component.
         T snap = scene.get<T>(id);
-        scene.remove<T>(Entity{id});
-        state.commands.push(std::make_unique<RemoveComponentCommand<T>>(id, snap, removeLabel));
+        scene.remove<T>(id);
+        state.commands.push(std::make_unique<RemoveComponentCommand<T>>(id, std::move(snap), removeLabel));
         state.markSceneDirty();
     }
 }
@@ -229,9 +227,8 @@ void InspectorPanel::drawEmptySelectionState(EditorContext& ec) {
     FrameContext& ctx   = ec.frame;
     EditorState&  state = ec.state;
 
-    // Centered empty-state with a large neutral glyph + two-line hint and a
-    // quick "create entity" affordance, so a fresh user has somewhere to go
-    // from a blank panel.
+    // Centered empty state, so a fresh user has somewhere to go from a blank
+    // panel.
     const ImVec2 region = ImGui::GetContentRegionAvail();
     const float glyphSize = EditorStyle::px(56.0f);
     const float lineH     = ImGui::GetTextLineHeightWithSpacing();
@@ -267,7 +264,6 @@ void InspectorPanel::drawEmptySelectionState(EditorContext& ec) {
 }
 
 void InspectorPanel::drawIdentityHeader(Scene& scene, EditorState& state, EntityId id) {
-    // Type badge, then the id, then the name bar filling the rest of the row:
     // [icon] #41 [name...............]. Naming is opt-in - the inspector never
     // adds Name during draw, only on explicit user action, so a glance at an
     // entity doesn't mutate the scene.
@@ -299,7 +295,7 @@ void InspectorPanel::drawIdentityHeader(Scene& scene, EditorState& state, Entity
         ImGui::SameLine();
         if (ImGui::SmallButton("+##addname")) {
             Name n = makeName(fallback);
-            scene.add(Entity{id}, n);
+            scene.add(id, n);
             state.commands.push(std::make_unique<AddComponentCommand<Name>>(id, n, "Add Name"));
             state.markSceneDirty();
         }
@@ -394,22 +390,20 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
                                  s_componentFilter, sizeof(s_componentFilter));
         ImGui::Separator();
         // Each add routes through AddComponentCommand so undo can drop the
-        // component the user just added. The component value captured in
-        // the command is the same one we add to the scene. The generic lambda
-        // collapses the otherwise-identical menu items; the component type is
-        // deduced from the prototype value.
+        // component the user just added; the type is deduced from the
+        // prototype value.
         auto addItem = [&](const char* label, auto value, const char* addLabel) {
             using T = decltype(value);
             if (!matchesFilter(label, s_componentFilter)) return;
             if (!scene.has<T>(id) && ImGui::MenuItem(label)) {
-                scene.add(Entity{id}, value);
+                scene.add(id, value);
                 state.commands.push(std::make_unique<AddComponentCommand<T>>(id, std::move(value), addLabel));
                 state.markSceneDirty();
             }
         };
 
         addItem("Mesh", Mesh{}, "Add Mesh");
-        addItem("Light", generatePointLight(), "Add Light");
+        addItem("Light", generateLight(LightType::Point), "Add Light");
         addItem("Rigidbody", Rigidbody{}, "Add Rigidbody");
         addItem("Collider", Collider{}, "Add Collider");
         Camera cam;
@@ -436,7 +430,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         // AddComponentCommand - add it live, like the World/Physics edits.
         if (matchesFilter("Script", s_componentFilter)
             && !scene.has<ScriptComponent>(id) && ImGui::MenuItem("Script")) {
-            scene.add(Entity{id}, ScriptComponent{});
+            scene.add(id, ScriptComponent{});
             state.markSceneDirty();
         }
         ImGui::EndPopup();
@@ -499,15 +493,13 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
 
         ImGui::Spacing();
 
-        // Asset pickers: swap which loaded mesh / material this component uses.
         changed |= pickAsset<MeshAsset>    ("##MeshPick", "Mesh Asset",     resources, mesh.mesh);
         changed |= pickAsset<MaterialAsset>("##MatPick",  "Material Asset", resources, mesh.material);
 
         ImGui::Spacing();
 
-        // Material - compact reference. Full PBR + texture editing and the
-        // live 3D preview live in the Material Editor (Window > Material
-        // Editor).
+        // Compact reference only - full PBR + texture editing and the live 3D
+        // preview live in the Material Editor (Window > Material Editor).
         if (mesh.material) {
             const MaterialAsset& m = resources.get(mesh.material);
             ImGui::TextDisabled("Material: %s",
@@ -586,7 +578,6 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
     EditorState& state = ec.state;
     Environment& env   = ec.frame.scene.environment();
 
-    // Identity header for the scene's World node.
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("World");
     ImGui::SameLine();
@@ -602,11 +593,9 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
         bool changed = false;
         const Environment before = env;
 
-        // Skybox HDR: browse assets/envs via the shared cached AssetPicker
-        // instead of a bespoke per-open directory scan. The picker returns the
-        // path relative to the project root, so the stored string stays
-        // "assets/envs/<file>.hdr" - exactly what the combo wrote and what the
-        // IBL baker loads relative to the working dir.
+        // The picker returns the path relative to the project root, so the
+        // stored string stays "assets/envs/<file>.hdr" - what the IBL baker
+        // loads relative to the working dir.
         drawPropertyLabel("Skybox HDR");
         ImGui::TextUnformatted(env.sky.hdrPath.empty() ? "(none)" : env.sky.hdrPath.c_str());
         ImGui::SameLine();
@@ -614,7 +603,7 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
             const std::filesystem::path appRoot = ProjectPaths::projectRoot();
             m_envPicker.options.popupId    = "PickEnvHdr";
             m_envPicker.options.title      = "Pick Environment HDR";
-            m_envPicker.options.root       = appRoot / "assets" / "envs";
+            m_envPicker.options.root       = ProjectPaths::envs();
             m_envPicker.options.recursive  = false;
             m_envPicker.options.kind       = AssetPicker::Kind::Files;
             m_envPicker.options.extensions = {".hdr"};
@@ -656,8 +645,6 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
 
         ImGui::BeginDisabled(!env.sky.procedural);
 
-        // Where the sun is, and therefore what time of day it is - the sky's one
-        // real control. Drag the elevation below zero and it is night.
         changed |= propSlider("Sun Elevation", &env.sky.sunElevation, -90.0f, 90.0f, "%.0f deg",
                               "Degrees above the horizon. Below zero is night; the key light follows this");
         changed |= propSlider("Sun Azimuth", &env.sky.sunAzimuth, -180.0f, 180.0f, "%.0f deg",
@@ -678,8 +665,8 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
         changed |= propSlider("Sun Disc Size", &env.sky.sunAngularRadius, 0.002f, 0.1f, "%.3f");
         changed |= propSlider("Sun Disc Intensity", &env.sky.sunDiscIntensity, 0.0f, 60.0f, "%.1f");
 
-        // Night takes over on its own once the sun drops below the horizon, so
-        // there is nothing to switch here - only what it looks like when it does.
+        // Night takes over on its own below the horizon, so there is nothing to
+        // switch here - only what it looks like when it does.
         ImGui::Separator();
         changed |= propColor3("Night Skyglow", glm::value_ptr(env.night.radiance),
                               ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR,
@@ -707,8 +694,6 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
     }
     endComponentCard();
 
-    // Volumetric fog: a froxel compute scatters the scene lights through a
-    // height-falloff medium and applies it to the frame.
     if (beginComponentCard("Volumetric Fog", EditorStyle::Accent::Env, true)) {
         bool changed = false;
         const Environment before = env;
@@ -769,9 +754,8 @@ void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state
         changed |= propSlider("Falloff", &probe.falloff, 0.0f, 1.0f, "%.2f");
         changed |= propDrag("Intensity", &probe.intensity, 0.02f, 0.0f, 8.0f, "%.2f");
 
-        // Capture resolution: the cube face size the probe bakes at (sharper
-        // reflections cost more VRAM + bake time). The probe cubes share one
-        // GPU array, so the highest resolution among all probes drives them all.
+        // Sharper reflections cost more VRAM + bake time, and the probe cubes
+        // share one GPU array, so the highest resolution drives them all.
         static const char*    RES_LABELS[] = {"128", "256", "512", "1024"};
         static const uint32_t RES_VALUES[] = {128u, 256u, 512u, 1024u};
         changed |= propValueCombo("Resolution", RES_LABELS, RES_VALUES, 4, &probe.resolution,
@@ -975,7 +959,7 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
         changed |= propCheckbox("Active", &cam.active);
 
         if (ImGui::Button("Set as Main Camera", ImVec2(-1, 0))) {
-            EditorActions::setActiveCamera(scene, state, id, "Set Main Camera");
+            EditorActions::setActiveCamera(scene, state, id);
         }
 
         return changed;
@@ -991,8 +975,6 @@ void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
         changed |= propSlider("Bias", &lod.bias, 0.1f, 4.0f,
             "Scales every level's range; above 1 keeps detail further out");
 
-        // The levels themselves, so it is obvious what was generated and where
-        // each one takes over.
         for (size_t i = 0; i < lod.levels.size(); ++i) {
             const LODLevel& level = lod.levels[i];
             const char* name = (level.mesh && resources.isAlive(level.mesh))
@@ -1011,9 +993,8 @@ void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
             propSliderInt("Levels", &state.lodGenLevels, 1, 4,
                 "How many coarser levels to build below the source mesh");
             if (ImGui::Button("Generate Levels", ImVec2(-1.0f, 0.0f))) {
-                LODGenSettings settings;
-                settings.extraLevels = static_cast<uint32_t>(state.lodGenLevels);
-                lod = generateLOD(resources, scene.get<Mesh>(id).mesh, settings);
+                lod = generateLOD(resources, scene.get<Mesh>(id).mesh,
+                                  static_cast<uint32_t>(state.lodGenLevels));
                 changed = true;
             }
         } else {
@@ -1025,17 +1006,14 @@ void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
 }
 
 void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, EntityId id) {
-    bool remove = false;
-    const bool open = beginComponentCard("Animation", EditorStyle::Accent::Anim, true, &remove);
-    if (open) {
-        auto& anim = scene.get<Animation>(id);
-        // Undo snapshot. Only authoring edits (length, keyframes) push a command;
-        // play/pause/stop/scrub never set `changed`, so they stay non-undoable.
-        // The snapshot does include time/playing, so undoing an authoring edit
-        // also restores the scrub position - acceptable since edits are normally
-        // made while paused.
-        const Animation before = anim;
-
+    editComponentCard<Animation>(scene, state, id, "Animation", EditorStyle::Accent::Anim,
+                                 "Edit Animation", "Remove Animation",
+                                 [&](Animation& anim) {
+        // Only authoring edits (length, keyframes) push a command; play/pause/
+        // stop/scrub never set `changed`, so they stay non-undoable. The card's
+        // snapshot does include time/playing, so undoing an authoring edit also
+        // restores the scrub position - acceptable since edits are normally made
+        // while paused.
         const float GAP = 8.0f;
         float ih = ImGui::GetFrameHeight();
         if (iconButton("inspPlay", anim.playing ? EditorIcon::Pause : EditorIcon::Play,
@@ -1046,11 +1024,9 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
             anim.playing = false;
             anim.time = 0.0f;
         }
-        // Loop and Speed are authored properties that round-trip with the
-        // scene, so they push an edit like any other field. Play / Stop / the
-        // scrubber do not: they are transport controls, and dirtying the scene
-        // every time someone previews a clip would make the unsaved-changes
-        // prompt meaningless.
+        // Loop and Speed round-trip with the scene, so they push an edit. Play /
+        // Stop / the scrubber do not: dirtying the scene every time someone
+        // previews a clip would make the unsaved-changes prompt meaningless.
         bool changed = false;
 
         ImGui::SameLine(0, GAP);
@@ -1079,10 +1055,8 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
             ImGui::SliderFloat("##ATime", &anim.time, 0.0f, anim.duration, timeFmt);
         }
 
-        // Read-only keyframe summary. The full editable keyframe editor (add /
-        // remove / retime / easing per track) lives in the Bottom panel's track
-        // editor; duplicating it here drifted out of sync, so the inspector now
-        // shows only a per-track digest and points the user at that editor.
+        // Read-only digest. The editable keyframe editor lives in the Bottom
+        // panel's track editor; duplicating it here drifted out of sync.
         ImGui::Spacing();
         ImGui::TextUnformatted("Keyframes");
         auto trackSummary = [](const char* label, size_t count, float dur) {
@@ -1093,19 +1067,8 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
         trackSummary("Scale",    anim.scaleTrack.keyframeCount(),    anim.scaleTrack.getDuration());
         ImGui::TextDisabled("Edit keyframes in Bottom > Animation.");
 
-        if (changed) {
-            state.commands.push(std::make_unique<ComponentEditCommand<Animation>>(id, before, anim, "Edit Animation"));
-            state.markSceneDirty();
-        }
-    }
-    endComponentCard();
-    if (remove) {
-        Animation snap = scene.get<Animation>(id);
-        scene.remove<Animation>(Entity{id});
-        state.commands.push(std::make_unique<RemoveComponentCommand<Animation>>(
-            id, std::move(snap), "Remove Animation"));
-        state.markSceneDirty();
-    }
+        return changed;
+    });
 }
 
 void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityId id) {
@@ -1122,8 +1085,8 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
             if (!behavior) continue;
             ImGui::PushID(static_cast<int>(i));
 
-            // Behavior header row in the card voice: emphasized name, the
-            // remove affordance right-pinned like a card's own x.
+            // Behavior header row: the remove affordance is right-pinned like
+            // a card's own x.
             ImGui::AlignTextToFramePadding();
             ImGui::TextColored(EditorStyle::HEADER_TEXT, "%s", behavior->typeName());
             ImGui::SameLine(ImGui::GetContentRegionAvail().x - EditorStyle::px(14.0f));
@@ -1181,7 +1144,7 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
     }
     endComponentCard();
     if (remove) {
-        scene.remove<ScriptComponent>(Entity{id});
+        scene.remove<ScriptComponent>(id);
         state.markSceneDirty();
     }
 }

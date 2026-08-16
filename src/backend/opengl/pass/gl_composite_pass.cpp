@@ -11,7 +11,6 @@
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
-#include "gl_mask_target.h"
 #include "data/gl_bloom.h"
 #include "data/gl_fog_volume.h"
 #include "data/gl_shadow_atlas.h"
@@ -28,9 +27,8 @@ GLCompositePass::~GLCompositePass() = default;
 void GLCompositePass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
 
-    // Back to the backbuffer, into the window's viewport rect.
     bindBackbufferViewport(ctx);
-    beginFullscreen(ctx.gl);  // depth test / blending / face culling off, like the other post passes
+    beginFullscreen(ctx.gl);
 
     m_shader->bind();
     ctx.colorSrc->bindColor(GLBindings::CompositeTextureSlots::Scene);
@@ -39,8 +37,8 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
         ? view.settings.bloomStrength : 0.0f;
     m_shader->setUniform1f("u_bloomStrength", bloomStrength);
 
-    // Debug views: bind the intermediate buffers the shader samples + the
-    // projection for depth linearization. Default path binds nothing extra.
+    // The debug views sample the intermediate buffers; the projection goes with
+    // them for depth linearization.
     const int mode = static_cast<int>(view.settings.renderMode);
     m_shader->setUniform1i("u_renderMode", mode);
     if (mode != static_cast<int>(RenderMode::Default)) {
@@ -49,7 +47,7 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
         // The AO target is allocated for any debug view, but only the GTAO pass
         // ever writes it: with GTAO off the AO view would show whatever the
         // allocation happened to contain. Show the unoccluded value instead.
-        if (ctx.aoReady) ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
+        if (ctx.aoReady) ctx.ao.bindColor(GLBindings::PostTextureSlots::SSAO);
         m_shader->setUniform1i("u_hasAO", ctx.aoReady ? 1 : 0);
         ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
         if (ctx.fogReady)

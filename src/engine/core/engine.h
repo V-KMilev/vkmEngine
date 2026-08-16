@@ -20,10 +20,8 @@ namespace Engine {
  * Owns the Scene, ResourceManager, WindowManager, Clock, the EventBus
  * (gameplay pub/sub - infrastructure like the Clock; the loop flushes its
  * queue at the top of the Simulation stage), and the per-stage system
- * pipeline. Profiling is handled via debug/profiler.h
- * (Tracy facade) - the engine emits FrameMark per loop iteration and
- * a per-stage CPU zone over each stage's update(). GPU collect is the backend's job,
- * done at the tail of each RenderBackend::render() call.
+ * pipeline. Profiling goes through the debug/profiler.h Tracy facade; GPU
+ * collect is the backend's job, at the tail of each RenderBackend::render().
  *
  * Non-copyable, non-movable, but stack-constructible: tests and
  * headless tooling can spin up their own Engine.

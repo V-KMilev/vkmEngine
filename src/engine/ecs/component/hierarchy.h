@@ -27,7 +27,7 @@ struct Hierarchy {
      * @brief True if this entity's WorldTransform needs to be recomputed.
      *
      * Defaults true so newly-created hierarchical entities resolve on the
-     * first HierarchySystem tick. Cleared by HierarchyOperations::resolveWorldTransforms.
+     * first HierarchySystem tick. Cleared by HierarchySystem's resolve pass.
      * Set by HierarchyOperations::markDirty (cascades to descendants).
      */
     bool dirty = true;

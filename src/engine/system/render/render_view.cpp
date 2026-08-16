@@ -32,12 +32,10 @@ void RenderView::build(
 ) {
     PROFILE_SCOPE("RenderView::build");
 
-    // The scene's lighting environment.
     environment = scene.environment();
 
     // The UI overlay is independent of the 3D camera, so snapshot it before the
     // no-camera early-out (a HUD/menu still draws when nothing 3D is in view).
-    // Vector assignment reuses the destination capacity.
     ui.clear();
     if (uiData) {
         ui.vertices = uiData->vertices;
@@ -81,8 +79,6 @@ void RenderView::buildLights(const Scene& scene) {
     lights.clear();
     lights.reserve(scene.count<Light>());
 
-    // Every enabled light, resolved to world space. Position/rotation come from
-    // the WorldTransform when the light is parented, else its local Transform.
     scene.forEach<Light, Transform>([&](EntityId id, const Light& light, const Transform& transform) {
         if (!light.enabled) return;
 
@@ -112,9 +108,8 @@ void RenderView::buildLights(const Scene& scene) {
         data.shadowBias     = light.shadowBias;
         data.shadowDistance = light.shadowDistance;
 
-        // Area lights: fold rotation + size into world-space half-extent
-        // axes. Disk uses areaRadius on both so cross(U, V) stays a clean
-        // surface normal.
+        // Fold rotation + size into world-space half-extent axes. Disk uses
+        // areaRadius on both so cross(U, V) stays a clean surface normal.
         if (light.type == LightType::Rect || light.type == LightType::Disk) {
             const glm::vec3 right = rotation * glm::vec3(1, 0, 0);
             const glm::vec3 up    = rotation * glm::vec3(0, 1, 0);
@@ -136,8 +131,6 @@ void RenderView::buildLights(const Scene& scene) {
 void RenderView::buildProbes(const Scene& scene) {
     probes.clear();
 
-    // Every reflection probe, resolved to world space. Position comes from the
-    // WorldTransform when the probe is parented, else its local Transform.
     scene.forEach<ReflectionProbe, Transform>(
         [&](EntityId id, const ReflectionProbe& probe, const Transform& transform) {
             glm::vec3 position = transform.position;
@@ -152,8 +145,6 @@ void RenderView::buildProbes(const Scene& scene) {
 void RenderView::buildDecals(const Scene& scene) {
     decals.clear();
 
-    // Every decal, resolved to world space. The box transform comes from the
-    // WorldTransform when the decal is parented, else its local Transform.
     scene.forEach<Decal, Transform>(
         [&](EntityId id, const Decal& decal, const Transform& transform) {
             glm::mat4 model = Transform::computeModelMatrix(transform);
@@ -214,8 +205,8 @@ void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility
     drawables.clear();
     drawables.reserve(visibility.entries.size());
 
-    // One drawable per visible entity. Just snapshot handles + matrix - the
-    // backend resolves the handles and decides how to sort / batch them.
+    // Just handles + matrix: the backend resolves the handles and decides how
+    // to sort / batch them.
     for (const auto& entry : visibility.entries) {
         // deleted between cull and render
         if (!scene.isAlive(entry.id)) continue;
@@ -243,9 +234,8 @@ void RenderView::buildShadowCasters(const Scene& scene, const Visibility& visibi
     shadowCasters.clear();
     shadowCasters.reserve(visibility.shadowCasters.size());
 
-    // The caster set is scene-wide (not camera-culled); resolve each entity's
-    // mesh handle and carry its world AABB so the backend can frustum-cull per
-    // light. The model + bounds were already computed by the VisibilitySystem.
+    // The world AABB is carried so the backend can frustum-cull per light. The
+    // model + bounds were already computed by the VisibilitySystem.
     for (const VisibleEntity& entry : visibility.shadowCasters) {
         // deleted between cull and render
         if (!scene.isAlive(entry.id)) continue;

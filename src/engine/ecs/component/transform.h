@@ -12,9 +12,6 @@ namespace Engine {
 /**
  * @brief Component representing spatial transformation (position, rotation, scale) in 3D space.
  *
- * Simple data-only component. Transform calculations (model matrix, direction vectors) should be
- * handled by systems that process this component, not by the component itself.
- *
  * For pure quat/axis math, use the helpers in core/math/ (rotation.h, axes.h).
  */
 struct Transform {

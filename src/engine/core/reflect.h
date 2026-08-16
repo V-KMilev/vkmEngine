@@ -64,8 +64,7 @@ constexpr void forEachField(T& obj, Fn&& fn) {
  *
  * The unspecialised primary is intentionally incomplete: naming an
  * unregistered enum is then a clear compile error rather than a silent
- * fallback. enumName / enumFromName / the editor's drawEnumCombo all read
- * this one table, so an enum's serialized names and its UI combo cannot drift.
+ * fallback.
  */
 template<typename Enum>
 struct EnumNames;
@@ -169,9 +168,8 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
  *   VKM_ENUM_NAMES(LightType, "Directional", "Point", ...)
  *   }
  *
- * It opens `namespace Reflect` (which, nested in Engine, is Engine::Reflect) and
- * specialises EnumNames there - no global-scope ::Engine:: qualification needed,
- * since the only shadowed name is the class Engine, which this never spells.
+ * It specialises EnumNames inside a nested `namespace Reflect`, exactly as
+ * VKM_REFLECT_BEGIN does above.
  *
  * This one table is what enumName / enumFromName / drawEnumCombo read, so an
  * enum's serialized names and its editor combo cannot drift. The enum must end

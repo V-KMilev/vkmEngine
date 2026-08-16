@@ -8,12 +8,11 @@
 
 namespace Engine::detail {
 
-// Shared GLM <-> JSON conversion helpers for the IO serializers. Vectors and
-// quaternions persist as flat JSON arrays. The jsonTo* helpers take an optional
-// fallback (defaulting to a zero/identity value): a null / absent node returns
-// the fallback silently (the "field omitted, keep the default" path), while a
-// node that is present but the wrong type or too short returns the fallback and
-// logs a warning - genuinely malformed data worth surfacing.
+// Shared GLM <-> JSON conversion helpers for the IO serializers; vectors and
+// quaternions persist as flat JSON arrays. A null / absent node returns the
+// fallback silently (the "field omitted, keep the default" path), while a node
+// that is present but the wrong type or too short returns it with a warning -
+// genuinely malformed data worth surfacing.
 
 inline nlohmann::json vec2ToJson(const glm::vec2& v) { return {v.x, v.y}; }
 inline nlohmann::json vec3ToJson(const glm::vec3& v) { return {v.x, v.y, v.z}; }

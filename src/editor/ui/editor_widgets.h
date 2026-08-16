@@ -41,14 +41,11 @@ void drawPropertyLabel(const char* label);
 /**
  * @brief A full "property row": right-aligned label + a full-width control +
  * optional hover tooltip. propRow is the shared core; the prop* wrappers below
- * each supply one ImGui control. Collapses the repeated drawPropertyLabel +
- * widget + IsItemHovered/SetTooltip triple used across the Inspector / Material
- * / Render Settings / Preferences panels.
+ * each supply one ImGui control.
  *
  * The widget id is scoped by @p label (PushID) with a hidden "##v" handle, so
- * rows with distinct labels never collide. drawPropertyLabel sets the next item
- * to full width, so the control fills the row. @p widget is a callable that
- * draws the control and returns whether it was edited; propRow returns that.
+ * rows with distinct labels never collide. @p widget is a callable that draws
+ * the control and returns whether it was edited; propRow returns that.
  */
 template <typename Widget>
 inline bool propRow(const char* label, const char* tooltip, Widget&& widget) {
@@ -241,9 +238,7 @@ bool iconMenuItem(EditorIcon icon, const char* label, const char* shortcut = nul
  * @brief Modern component "card": a framed, accent-colored collapsible block.
  *
  * Replaces a bare CollapsingHeader so each Inspector component reads as a
- * distinct grouped unit (the Unity / Godot idiom): a left accent strip, a
- * tinted header, indented body with a faint accent guide line, and an
- * optional inline remove affordance.
+ * distinct grouped unit (the Unity / Godot idiom).
  *
  * Always pair with endComponentCard(). When @p removeClicked is non-null a
  * small "x" is drawn on the header row and *removeClicked is set true the
@@ -350,7 +345,7 @@ void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t buf
 
 /**
  * @brief Which entity-type glyph represents @p id (camera / light variant / mesh /
- * animation / generic). Replaces the [C]/[M] ASCII badge.
+ * animation / generic).
  */
 EditorIcon entityIconKind(const Scene& scene, EntityId id);
 
@@ -361,9 +356,9 @@ EditorIcon entityIconKind(const Scene& scene, EntityId id);
 void inlineIcon(EditorIcon icon, float size, ImU32 color);
 
 /**
- * @brief A tree node row prefixed with a type glyph (replaces the [C] ASCII):
- * <arrow> <icon> <name>. Forwards to TreeNodeEx; the caller still handles
- * click / drag / context exactly as before. Returns the TreeNodeEx result.
+ * @brief A tree node row prefixed with a type glyph: <arrow> <icon> <name>.
+ * Forwards to TreeNodeEx; the caller still handles click / drag / context.
+ * Returns the TreeNodeEx result.
  */
 bool entityTreeNode(const void* idPtr, ImGuiTreeNodeFlags flags,
                     EditorIcon icon, const char* name);
