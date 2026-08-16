@@ -72,8 +72,7 @@ bool VisibilitySystem::resolveActiveCamera(Scene& scene, float viewportAspect) {
     auto setCamera = [&](EntityId id, const Camera& camera, const Transform& transform) {
         // A camera parented to a rig (player root, boom arm) has to render from
         // its resolved world pose - the local Transform is only its offset
-        // inside that rig. Same WorldTransform-else-Transform resolve every
-        // other consumer of a placed entity does.
+        // inside that rig.
         Transform pose = transform;
         if (scene.has<WorldTransform>(id)) {
             const glm::mat4& world = scene.get<WorldTransform>(id).model;
@@ -117,9 +116,8 @@ bool VisibilitySystem::resolveActiveCamera(Scene& scene, float viewportAspect) {
 void VisibilitySystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("VisibilitySystem");
 
-    // Reuse persistent buffers - clear keeps capacity, avoiding per-frame allocation.
-    // Cleared here, not at the serial gather, so the early-return paths below still
-    // publish an empty result instead of last frame's stale entries/casters.
+    // Cleared here, not at the serial gather, so the early-return paths below
+    // still publish an empty result instead of last frame's stale entries.
     m_result.entries.clear();
     m_result.shadowCasters.clear();
     m_result.hasCamera = false;
@@ -164,7 +162,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
         .screenSizeThresholdSq = screenThresholdSq,
     };
 
-    // Get direct access to sparse sets for index-based parallel iteration
+    // The sparse sets directly: the cull iterates them by index, in parallel.
     auto* meshStorage           = ctx.scene.storage<Mesh>();
     auto* transformStorage      = ctx.scene.storage<Transform>();
     const auto* worldTransformStorage = ctx.scene.storage<WorldTransform>();
@@ -241,8 +239,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
         });
     }
 
-    // Serial gather - sequential reads, reuses persistent m_result buffer capacity
-    // (entries/shadowCasters were already cleared at the top of update()).
+    // Serial gather: sequential reads into the persistent m_result buffers,
+    // already cleared at the top of update().
     PROFILE_SCOPE("Visibility/Gather");
     for (uint32_t i = 0; i < meshCount; ++i) {
         const bool visible = m_visibleFlags[i] != 0;

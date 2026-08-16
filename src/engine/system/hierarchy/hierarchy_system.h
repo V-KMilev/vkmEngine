@@ -11,13 +11,12 @@ namespace Engine {
 /**
  * @brief Resolves hierarchical transforms into the WorldTransform component.
  *
- * Runs in the Transform stage (before VisibilitySystem). For each dirty
- * entity with a Hierarchy component, computes its world-space model matrix
- * by walking the parent chain and writes the result into its WorldTransform
- * (pre-seeded by HierarchyOperations::setParent so this loop never has to
- * mutate the component graph - which is what lets it parallelise over
- * depth buckets). Downstream systems read WorldTransform when present and
- * fall back to Transform for root entities.
+ * Runs in the Transform stage (before VisibilitySystem). Each dirty entity's
+ * world matrix lands in its WorldTransform, pre-seeded by
+ * HierarchyOperations::setParent so this loop never has to mutate the component
+ * graph - which is what lets it parallelise over depth buckets. Downstream
+ * systems read WorldTransform when present and fall back to Transform for root
+ * entities.
  */
 class HierarchySystem : public System {
     public:
@@ -39,8 +38,6 @@ class HierarchySystem : public System {
         /**
          * @brief Resolve world transforms for every dirty hierarchical entity.
          *
-         * For each entity with a Hierarchy whose dirty flag is set, computes its
-         * world matrix and writes it into the entity's pre-seeded WorldTransform.
          * Dirty entities are bucketed by absolute depth in a serial pass and then
          * each bucket runs through parallelFor; depths are processed in order so a
          * child reads its parent's already-finalised WorldTransform (one matrix
