@@ -98,14 +98,12 @@ endif()
 # Shaders are engine chrome: they ship with the engine and a project never edits
 # them. Everything a project owns - its scenes, its assets, its cooked library -
 # belongs to the project and is not the SDK's to install.
+# _generated included, not excluded: configure writes it into the SOURCE tree
+# (cmake/generate_shader_config.cmake), and the shaders #include from it - so a
+# package without it compiles nothing. It is gitignored because it is derived,
+# which is a different question from whether it ships.
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/shaders
-        DESTINATION . COMPONENT Runtime
-        PATTERN "_generated" EXCLUDE)
-
-# The generated shader config is a build product, not a source file, so it comes
-# from the build tree rather than the source tree.
-install(DIRECTORY ${CMAKE_BINARY_DIR}/shaders/_generated
-        DESTINATION shaders COMPONENT Runtime OPTIONAL)
+        DESTINATION . COMPONENT Runtime)
 
 # The editor's own font and icon. Engine chrome, unlike a project's art.
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/fonts ${CMAKE_SOURCE_DIR}/assets/logo
@@ -114,6 +112,20 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/fonts ${CMAKE_SOURCE_DIR}/assets/lo
 # What `vkm new` copies to make a project.
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/templates
         DESTINATION . COMPONENT Development)
+
+# The compiler's own runtime, which is not an imported target so CMake cannot
+# carry it automatically. The engine's shared libraries link libstdc++
+# dynamically - only targets that link assimp inherit its -static-libstdc++ - so
+# without these a package fails to start with a missing-DLL box and no log.
+if(MINGW)
+    get_filename_component(_vkm_mingw_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    foreach(_dll libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll)
+        if(EXISTS "${_vkm_mingw_bin}/${_dll}")
+            install(FILES "${_vkm_mingw_bin}/${_dll}"
+                    DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
+        endif()
+    endforeach()
+endif()
 
 # The command-line front end, so a user never writes CMake.
 install(PROGRAMS ${CMAKE_SOURCE_DIR}/tools/vkm
