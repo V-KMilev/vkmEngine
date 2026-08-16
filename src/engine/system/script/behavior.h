@@ -183,9 +183,6 @@ class Behavior {
          * in one pass keeps the last request - the scene can only become one
          * thing.
          *
-         * This is how a game moves between levels, or back to its menu; without
-         * it a game is one scene for the life of the process.
-         *
          * @param scenePath Scene file, relative to the project root.
          */
         void loadScene(const std::string& scenePath) { *m_ctx->pendingSceneLoad = scenePath; }

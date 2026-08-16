@@ -124,10 +124,10 @@ bool ScriptModule::reload(Scene& scene) {
         return loadCopyAndRegister();
     }
 
-    // 1. Serialize each entity's behaviors (type + reflected fields) while the
-    //    current module is still loaded (visitFields/typeName are its code), and
-    // 2. destroy the old behavior objects now, before unloading the module that
-    //    owns their code and vtables.
+    // Serialize each entity's behaviors (type + reflected fields) while the
+    // current module is still loaded (visitFields/typeName are its code), and
+    // destroy the old behavior objects before unloading the module that owns
+    // their code and vtables.
     std::vector<std::pair<EntityId, nlohmann::json>> saved;
     if (auto* storage = scene.storage<ScriptComponent>()) {
         storage->forEach([&](uint32_t entityIdx, ScriptComponent& sc) {
@@ -137,18 +137,16 @@ bool ScriptModule::reload(Scene& scene) {
         });
     }
 
-    // 3. Drop the old module's factories, then unload it.
     BehaviorRegistry::get().clear();
     m_lib.unload();
 
-    // 4. Load the rebuilt module + re-register.
     if (!loadCopyAndRegister()) {
         LOG_ERROR("Script reload failed; behaviors were cleared (entities kept). Fix the build and reload again to retry, then reload the scene to restore behaviors.");
         return false;
     }
 
-    // 5. Recreate behaviors from the saved data via the new module's factories.
-    //    Entities/other components were never touched; behaviors start fresh.
+    // Recreated through the new module's factories; entities and other
+    // components were never touched, so behaviors just start fresh.
     for (auto& [id, data] : saved) {
         if (scene.isAlive(id) && scene.has<ScriptComponent>(id)) {
             ComponentSerializer::load(data, scene.get<ScriptComponent>(id));

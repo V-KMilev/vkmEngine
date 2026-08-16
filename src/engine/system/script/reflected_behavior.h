@@ -24,13 +24,9 @@ inline constexpr bool DEPENDENT_FALSE = false;
  * @brief Route one reflected field to a BehaviorFieldVisitor by its type.
  *
  * The single dispatch point behind ReflectedBehavior::visitFields, split out so
- * it can recurse into nested structs. A field is one of three shapes:
- *  - a VKM_ENUM_NAMES enum -> enumField() (by name, via the EnumNames table),
- *  - a leaf with a matching field() overload -> that overload, or
- *  - a VKM_REFLECT-ed struct -> beginStruct()/recurse/endStruct().
- * Anything else is a compile error naming the three ways to make it visitable.
- * The leaf check precedes the struct check, so an explicit field() overload for
- * a reflected type wins (edit it atomically rather than descending into it).
+ * it can recurse into nested structs. The leaf check precedes the struct check,
+ * so an explicit field() overload for a reflected type wins (edit it atomically
+ * rather than descending into it).
  */
 template<typename V>
 void visitField(BehaviorFieldVisitor& visitor, const char* name, V& value) {
