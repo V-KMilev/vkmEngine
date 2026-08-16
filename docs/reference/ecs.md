@@ -156,7 +156,7 @@ HierarchyOperations::markDirty(scene, entity);
 ```
 
 `setParent` pre-seeds both `Hierarchy` and `WorldTransform` on the
-involved entities so the per-frame `HierarchySystem::resolveWorldTransforms()`
+involved entities so the per-frame `HierarchySystem::update()` resolve
 loop has no structural Scene work to do. That is the precondition that
 lets the resolve loop parallelise over depth buckets. See
 [Hierarchy system](system/hierarchy.md) for the full per-frame flow.

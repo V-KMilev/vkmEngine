@@ -183,10 +183,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
     // Each thread writes to disjoint indices, so zero contention / zero atomics.
     m_visibleFlags.resize(meshCount);
     m_casterFlags.resize(meshCount);
-    m_modelMatrices.resize(meshCount);
-    m_meshes.resize(meshCount);
-    m_worldMins.resize(meshCount);
-    m_worldMaxs.resize(meshCount);
+    m_scratch.resize(meshCount);
 
     std::memset(m_visibleFlags.data(), 0, meshCount);
     std::memset(m_casterFlags.data(), 0, meshCount);
@@ -220,24 +217,27 @@ void VisibilitySystem::update(FrameContext& ctx) {
                 worldMax
             );
 
-            // Stored for every valid mesh (not just camera-visible) so the caster
+            // Filled for every valid mesh (not just camera-visible) so the caster
             // gather below can reach off-screen occluders. castShadows flags it.
-            m_modelMatrices[i] = modelMatrix;
-            m_worldMins[i]     = worldMin;
-            m_worldMaxs[i]     = worldMax;
-            m_casterFlags[i]   = mesh.castShadows ? 1 : 0;
-            // Resolved here because this is where the distance is known. Shadow
-            // casters get the same level as the camera view: a lower-detail
-            // silhouette is exactly as good for a depth map, and picking
-            // separately would mean a second selection with no visible benefit.
-            m_meshes[i]        = selectLOD(mesh, lodStorage, entityIdx, worldMin, worldMax, context);
+            // The LOD level is resolved here because this is where the distance is
+            // known. Shadow casters get the same level as the camera view: a
+            // lower-detail silhouette is exactly as good for a depth map, and
+            // picking separately would mean a second selection with no visible benefit.
+            m_scratch[i] = VisibleEntity{
+                ctx.scene.entityAt(entityIdx),
+                modelMatrix,
+                worldMin,
+                worldMax,
+                selectLOD(mesh, lodStorage, entityIdx, worldMin, worldMax, context)
+            };
+            m_casterFlags[i] = mesh.castShadows ? 1 : 0;
 
             // The camera-visibility culls only set the visible flag.
             if (!FrustumCuller::isVisible(worldMin, worldMax, context)) return;
             if (!DistanceCuller::isVisible(worldMin, worldMax, context)) return;
             if (!ScreenSizeCuller::isVisible(worldMin, worldMax, context)) return;
 
-            m_visibleFlags[i]  = 1;
+            m_visibleFlags[i] = 1;
         });
     }
 
@@ -249,12 +249,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
         const bool caster  = m_casterFlags[i]  != 0;
         if (!visible && !caster) continue;
 
-        const uint32_t entityIdx = meshStorage->keyAt(i);
-        const EntityId eid = ctx.scene.entityAt(entityIdx);
-        const VisibleEntity entry{eid, m_modelMatrices[i], m_worldMins[i], m_worldMaxs[i], m_meshes[i]};
-
-        if (visible) m_result.entries.push_back(entry);
-        if (caster)  m_result.shadowCasters.push_back(entry);
+        if (visible) m_result.entries.push_back(m_scratch[i]);
+        if (caster)  m_result.shadowCasters.push_back(m_scratch[i]);
     }
 
     ctx.visibility = &m_result;
