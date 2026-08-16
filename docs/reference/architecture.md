@@ -132,7 +132,7 @@ Engine code, single include root `src/engine/`:
 | `core/`                    | `Engine`, `System`, `FrameContext`, `SystemStage`, `Clock`, `engine_config`, `reflect` |
 | `core/math/`               | math helpers (rotation, axes, random, easing)                            |
 | `core/memory/`             | `TypeId`, `SparseSet`, `SlotAllocator`, `StorageIndex`                   |
-| `ecs/`                     | `Scene`, `Entity`, `Environment`                                        |
+| `ecs/`                     | `Scene`, `EntityId`, `Environment`                                        |
 | `ecs/component/`           | `Transform`, `WorldTransform`, `Camera`, `Mesh`, `Light`, `Animation`, `Hierarchy`, `Name`, `Collider`, `RigidBody`, `PhysicsWorld`, `ReflectionProbe` |
 | `system/animation/`        | `AnimationSystem`, `AnimationTrack`, `Keyframe`                          |
 | `system/async/`            | `AsyncLoaderSystem`                                                      |

@@ -199,12 +199,12 @@ void SceneIOController::afterSceneReplace(
     // multiple cameras claim active (authoring oversight), pick the first
     // by iteration order and warn - silently picking one of several would
     // make the choice look intentional.
-    Entity rebound{};
+    EntityId rebound{};
     int activeCount = 0;
     ctx.scene.forEach<Camera>([&](EntityId id, const Camera& c) {
         if (!c.active) return;
         ++activeCount;
-        if (!rebound.getID()) rebound = Entity{id};
+        if (!rebound) rebound = id;
     });
     if (activeCount > 1) {
         LOG_WARNING("SceneIOController: %d cameras marked active in %s - using the first",

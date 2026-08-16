@@ -60,15 +60,15 @@ namespace Prefab {
      * @param path      Prefab file to read.
      * @param at        Pose for the instance root; the prefab's authored
      *                  Transform is replaced by it.
-     * @return The instance root, or a default (invalid) Entity on failure.
+     * @return The instance root, or a default (invalid) EntityId on failure.
      */
-    Entity instantiate(Scene& scene, ResourceManager& resources,
-                       const std::string& path, const Transform& at);
+    EntityId instantiate(Scene& scene, ResourceManager& resources,
+                         const std::string& path, const Transform& at);
 
     /**
      * @brief Instantiate at the prefab's own authored pose.
      */
-    Entity instantiate(Scene& scene, ResourceManager& resources, const std::string& path);
+    EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string& path);
 
     /**
      * @brief Build a prefab into an entity that already exists.
@@ -88,7 +88,7 @@ namespace Prefab {
      * @return True if the prefab was read and built.
      */
     bool instantiateInto(Scene& scene, ResourceManager& resources,
-                         const std::string& path, Entity root);
+                         const std::string& path, EntityId root);
 
 } // namespace Prefab
 

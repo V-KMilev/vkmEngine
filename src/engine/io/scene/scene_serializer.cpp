@@ -75,11 +75,11 @@ constexpr std::array<const char*, 20> COMPONENT_KEYS = {
  * @param src The entity's component block.
  * @param key JSON key the component is stored under.
  * @param s Scene receiving the component.
- * @param e Entity receiving the component.
+ * @param e The entity receiving the component.
  * @param args Forwarded to ComponentSerializer::load.
  */
 template<typename T, typename... Args>
-void loadInto(const json& src, const char* key, Scene& s, Entity e, Args&&... args) {
+void loadInto(const json& src, const char* key, Scene& s, EntityId e, Args&&... args) {
     const auto it = src.find(key);
     if (it == src.end()) return;
 
@@ -116,7 +116,7 @@ void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager&
 
 // Hierarchy is intentionally absent: its parent link is captured by the
 // caller for the pass-2 wire-up, not loaded here.
-void loadComponents(const json& src, Scene& s, Entity e, const ResourceManager& r) {
+void loadComponents(const json& src, Scene& s, EntityId e, const ResourceManager& r) {
     loadInto<Name>(src, "Name", s, e);
     loadInto<Transform>(src, "Transform", s, e);
     loadInto<Camera>(src, "Camera", s, e);
@@ -261,7 +261,7 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     // non-relational components. Hierarchy::parent is captured for pass 2
     // because the parent might not have been created yet on first sight.
     std::vector<std::pair<uint32_t, uint32_t>> parentLinks;  // (child idx, parent idx)
-    std::vector<std::pair<Entity, std::string>> prefabRoots;  // instance roots to expand
+    std::vector<std::pair<EntityId, std::string>> prefabRoots;  // instance roots to expand
     size_t entityCount = 0;
     std::set<std::string> unknownKeys;  // dedup warnings - one per drift, not per entity
     const json noComponents = json::object();   // stand-in for an entity that has none
@@ -273,7 +273,7 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
                 LOG_WARNING("Entity with id=0 skipped (slot 0 reserved)");
                 continue;
             }
-            const Entity entity = staging.createEntityAt(id);
+            const EntityId entity = staging.createEntityAt(id);
             ++entityCount;
 
             // Referenced, not value()'d: nlohmann returns by value, so asking
@@ -325,8 +325,8 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
                     parentIdx, source, childIdx);
                 continue;
             }
-            const EntityId childId {childIdx,  staging.generationOf(childIdx)};
-            const EntityId parentId{parentIdx, staging.generationOf(parentIdx)};
+            const EntityId childId  = staging.entityAt(childIdx);
+            const EntityId parentId = staging.entityAt(parentIdx);
             HierarchyOperations::setParent(staging, childId, parentId);
         }
 

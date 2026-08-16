@@ -16,9 +16,16 @@ namespace Engine {
 class ISparseSet {
     public:
         virtual ~ISparseSet() = default;
-        virtual void remove(uint32_t key) = 0;
-        virtual bool has(uint32_t key) const = 0;
-        virtual size_t size() const = 0;
+        /**
+         * @brief Remove the element at the given key, if this set holds one.
+         *
+         * Presence test and removal in one dispatch: the only type-erased caller
+         * is the entity destroy walk, which cannot know which of the registered
+         * component sets hold the dying entity.
+         *
+         * @param key External sparse key.
+         */
+        virtual void removeIfPresent(uint32_t key) = 0;
         virtual void compact() = 0;
         /**
          * @brief Drop every element. Used by Scene::clear and shutdown
@@ -33,7 +40,7 @@ class ISparseSet {
  * @brief Dense-packed storage indexed by external uint32_t keys.
  *
  * Maps uint32_t keys to densely packed elements for cache-friendly O(n)
- * iteration. Provides O(1) add, remove, has, and get.
+ * iteration. Provides O(1) add, remove, contains, and get.
  *
  * SparseSet does not manage slot allocation or generation counters - the
  * caller owns the key lifecycle (Scene pairs this with SlotAllocator for
@@ -69,8 +76,8 @@ class SparseSet : public ISparseSet {
          * @brief Remove the element at the given key via swap-and-pop.
          * @param key External sparse key. Must be present (asserts).
          */
-        void remove(uint32_t key) override {
-            VKM_ASSERT(has(key), "SparseSet::remove called with invalid key");
+        void remove(uint32_t key) {
+            VKM_ASSERT(contains(key), "SparseSet::remove called with invalid key");
 
             uint32_t dataIdx = m_dataIndex[key];
             uint32_t lastIdx = static_cast<uint32_t>(m_data.size() - 1);
@@ -92,7 +99,19 @@ class SparseSet : public ISparseSet {
         }
 
         /**
-         * @brief Test whether a key is present (non-virtual, for hot paths).
+         * @brief Remove the element at the given key if one is present.
+         *
+         * Virtual override that folds the presence test into the removal so a
+         * caller holding only an ISparseSet pays one dispatch instead of two.
+         *
+         * @param key External sparse key; absent keys are a no-op.
+         */
+        void removeIfPresent(uint32_t key) override {
+            if (contains(key)) remove(key);
+        }
+
+        /**
+         * @brief Test whether a key is present.
          * @param key External sparse key.
          * @return True if the key maps to a live element.
          */
@@ -101,23 +120,12 @@ class SparseSet : public ISparseSet {
         }
 
         /**
-         * @brief Test whether a key is present via the type-erased interface.
-         *
-         * Virtual override that forwards to contains() so callers holding only an
-         * ISparseSet can do presence checks without knowing T.
-         *
-         * @param key External sparse key.
-         * @return True if the key maps to a live element.
-         */
-        bool has(uint32_t key) const override { return contains(key); }
-
-        /**
          * @brief Access the element at the given key.
          * @param key External sparse key. Must be present (asserts).
          * @return Reference to the stored element.
          */
-        T&       get(uint32_t key)       { VKM_ASSERT(has(key), "SparseSet::get called with invalid key"); return m_data[m_dataIndex[key]]; }
-        const T& get(uint32_t key) const { VKM_ASSERT(has(key), "SparseSet::get called with invalid key"); return m_data[m_dataIndex[key]]; }
+        T&       get(uint32_t key)       { VKM_ASSERT(contains(key), "SparseSet::get called with invalid key"); return m_data[m_dataIndex[key]]; }
+        const T& get(uint32_t key) const { VKM_ASSERT(contains(key), "SparseSet::get called with invalid key"); return m_data[m_dataIndex[key]]; }
 
     public:
         /**
@@ -144,7 +152,7 @@ class SparseSet : public ISparseSet {
         /**
          * @brief Number of live elements.
          */
-        size_t size() const override { return m_data.size(); }
+        size_t size() const { return m_data.size(); }
 
         /**
          * @brief Drop every element. The dense and sparse arrays empty;
@@ -234,7 +242,7 @@ class SparseSet : public ISparseSet {
             VKM_ASSERT(key != EMPTY, "SparseSet::add key cannot be EMPTY sentinel");
             VKM_ASSERT(key != 0, "SparseSet::add key 0 is reserved");
             ensureCapacity(key);
-            VKM_ASSERT(!has(key), "SparseSet::add key already present");
+            VKM_ASSERT(!contains(key), "SparseSet::add key already present");
 
             uint32_t dataIdx = static_cast<uint32_t>(m_data.size());
 

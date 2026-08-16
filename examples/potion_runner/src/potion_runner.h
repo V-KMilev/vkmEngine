@@ -89,37 +89,37 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
          * @brief One pooled obstacle: a hurdle, a rideable train, or a barrier.
          */
         struct Obstacle {
-            Entity entity;
-            Entity accent;             ///< Per-type glow detail (train windscreen / hazard bar), placed each frame.
+            EntityId entity;
+            EntityId accent;           ///< Per-type glow detail (train windscreen / hazard bar), placed each frame.
             // The train headlight spot (the only obstacle light - it has a
             // visible source to shine from). Enabled per recycle, trains only;
             // scrollWorld parks it at the nose each frame.
-            Entity    lamp;
+            EntityId  lamp;
             // The Subway-Surfers boarding ramp: a pale slope at the leading
             // face of steady trains. Run into it and the slope assist in
             // updatePlayer walks you onto the roof - no jump needed.
-            Entity    ramp;
+            EntityId  ramp;
             bool      hasRamp = false;
             // Train dressing (hidden for other types): dark underframe skirt,
             // red tail-light band, a steel nose plow, and the warm headlamp
             // bar the beam shines from.
-            Entity    skirt;
-            Entity    tail;
-            Entity    plow;
-            Entity    lampBar;
+            EntityId  skirt;
+            EntityId  tail;
+            EntityId  plow;
+            EntityId  lampBar;
             bool      isTrain = false;
             // Two extra detail boxes, repurposed per type: a train's roof walk
             // strip + side window band, the gantry's support legs, or a
             // barrier's upper/lower stripes. Hidden for hurdles.
-            Entity auxA;
-            Entity auxB;
-            float  z         = 0.0f;
-            int    lane      = 1;
-            float  top       = 1.4f;   ///< Top of the box (its walkable roof, for rideables).
-            float  bottom    = 0.0f;   ///< Underside of the box; >0 leaves a gap to crouch through (overhead gantry).
-            float  length    = 1.0f;   ///< Z extent.
-            float  relFactor = 0.0f;   ///< 0 scrolls with the track; >0 approaches slower.
-            bool   rideable  = true;   ///< Can the player stand on the roof?
+            EntityId auxA;
+            EntityId auxB;
+            float    z         = 0.0f;
+            int      lane      = 1;
+            float    top       = 1.4f; ///< Top of the box (its walkable roof, for rideables).
+            float    bottom    = 0.0f; ///< Underside of the box; >0 leaves a gap to crouch through (overhead gantry).
+            float    length    = 1.0f; ///< Z extent.
+            float    relFactor = 0.0f; ///< 0 scrolls with the track; >0 approaches slower.
+            bool     rideable  = true; ///< Can the player stand on the roof?
             // Detail placement, set per recycle in randomizeObstacle, applied in
             // scrollWorld. Offsets are from the obstacle box centre (x, y, z).
             glm::vec3 accentScale{0.0f};
@@ -133,25 +133,25 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
          * @brief One pooled, collectible coin (its spin/pulse is an Animation).
          */
         struct Coin {
-            Entity entity;
-            float  z      = 0.0f;
-            int    lane   = 1;
-            float  y      = 1.0f;   ///< Float height; lifted onto a train roof when one is under it.
-            bool   active = true;   ///< False once collected, until it recycles.
+            EntityId entity;
+            float    z      = 0.0f;
+            int      lane   = 1;
+            float    y      = 1.0f; ///< Float height; lifted onto a train roof when one is under it.
+            bool     active = true; ///< False once collected, until it recycles.
         };
 
         /**
          * @brief One pooled scrolling decoration (sleeper tie / pillar / arch).
          */
         struct Scenery {
-            Entity entity;
-            float  z = 0.0f;
+            EntityId entity;
+            float    z = 0.0f;
         };
 
         // Setup
         void buildWorld();
         void buildUI();
-        Entity spawnBox(MeshHandle mesh, MaterialHandle material, const char* name);
+        EntityId spawnBox(MeshHandle mesh, MaterialHandle material, const char* name);
         MaterialHandle makeMaterial(
             const glm::vec3& albedo, float metallic, float roughness,
             const glm::vec3& emission, float emissiveStrength, bool unlit, const char* name);
@@ -221,9 +221,9 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         MaterialHandle m_matArch;
 
         // World entities.
-        Entity                m_player;   ///< Invisible rig root the gameplay drives; visible parts parent under it.
-        std::vector<std::pair<Entity, MaterialHandle>> m_playerParts;  ///< Part entity + its normal material (restored on reset).
-        std::vector<Entity>   m_limbPivots;  ///< Shoulder/hip joints whose Animation swings the limbs; speed follows cadence.
+        EntityId              m_player{};  ///< Invisible rig root the gameplay drives; visible parts parent under it.
+        std::vector<std::pair<EntityId, MaterialHandle>> m_playerParts;  ///< Part entity + its normal material (restored on reset).
+        std::vector<EntityId> m_limbPivots;  ///< Shoulder/hip joints whose Animation swings the limbs; speed follows cadence.
         EntityId              m_camera{};
         std::vector<Obstacle> m_obstacles;
         std::vector<Coin>     m_coins;
@@ -245,17 +245,17 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         // canvas toggled by m_alive. Text entities are cached so refreshUI only
         // rewrites them when their value changes.
         EntityId m_startCanvas{};    ///< Title / "press to start" overlay; shown until the first run begins.
-        Entity   m_uiScore;          ///< HUD score readout.
-        Entity   m_uiDist;           ///< HUD distance readout.
-        Entity   m_uiCoins;          ///< HUD coin readout.
-        Entity   m_uiSpeed;          ///< HUD speed readout.
+        EntityId m_uiScore{};        ///< HUD score readout.
+        EntityId m_uiDist{};         ///< HUD distance readout.
+        EntityId m_uiCoins{};        ///< HUD coin readout.
+        EntityId m_uiSpeed{};        ///< HUD speed readout.
         EntityId m_uiRideTag{};      ///< "ROOF RIDE" pill; UIElement::visible only while on a roof.
-        Entity   m_uiMilestone;      ///< Centre-screen distance flash; visible while m_milestoneTimer > 0.
+        EntityId m_uiMilestone{};    ///< Centre-screen distance flash; visible while m_milestoneTimer > 0.
         EntityId m_gameOverCanvas{}; ///< Toggled visible on death.
-        Entity   m_uiFinalScore;     ///< Game-over screen final score.
-        Entity   m_uiFinalDist;      ///< Game-over screen distance.
-        Entity   m_uiFinalCoins;     ///< Game-over screen coin total.
-        Entity   m_uiFinalBest;      ///< Game-over screen session-best line.
+        EntityId m_uiFinalScore{};   ///< Game-over screen final score.
+        EntityId m_uiFinalDist{};    ///< Game-over screen distance.
+        EntityId m_uiFinalCoins{};   ///< Game-over screen coin total.
+        EntityId m_uiFinalBest{};    ///< Game-over screen session-best line.
         int      m_shownScore = -1;  ///< Last score pushed to the HUD.
         int      m_shownDist  = -1;  ///< Last distance pushed to the HUD.
         int      m_shownCoins = -1;  ///< Last coin count pushed to the HUD.

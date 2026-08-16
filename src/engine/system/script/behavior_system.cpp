@@ -81,7 +81,7 @@ void BehaviorSystem::tickBehaviors(FrameContext& ctx, float dt, const char* hook
     m_tickList.clear();
     m_tickList.reserve(storage->size());
     storage->forEach([&](uint32_t entityIdx, ScriptComponent&) {
-        m_tickList.push_back(EntityId{entityIdx, scene.generationOf(entityIdx)});
+        m_tickList.push_back(scene.entityAt(entityIdx));
     });
 
     for (const EntityId id : m_tickList) {

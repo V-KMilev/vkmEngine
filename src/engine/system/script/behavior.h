@@ -165,7 +165,7 @@ class Behavior {
          * the next one - the same rule destroy() follows in the other
          * direction.
          */
-        Entity spawn() { return m_ctx->scene->createEntity(); }
+        EntityId spawn() { return m_ctx->scene->createEntity(); }
 
         /**
          * @brief Destroy @p entity (and its subtree) - deferred until after the current

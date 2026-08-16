@@ -30,7 +30,7 @@ CameraControllerSystem::CameraControllerSystem() = default;
 
 EntityId CameraControllerSystem::resolveActiveCamera(Scene& scene) {
     // Fast path: keep flying the current camera while it stays the active one.
-    EntityId cur = m_cameraEntity.getID();
+    EntityId cur = m_cameraEntity;
     if (cur && scene.isAlive(cur)
         && scene.has<Camera>(cur) && scene.has<Transform>(cur)
         && scene.get<Camera>(cur).active) {
@@ -75,7 +75,7 @@ void CameraControllerSystem::update(FrameContext& ctx) {
     EntityId target = resolveActiveCamera(ctx.scene);
     if (!target) return;
 
-    m_cameraEntity = Entity{target};
+    m_cameraEntity = target;
     auto& transform = ctx.scene.get<Transform>(target);
 
     // On a camera switch re-derive yaw/pitch from its current orientation so
@@ -145,7 +145,7 @@ void CameraControllerSystem::placeCamera(Transform& transform, const glm::vec3& 
 }
 
 void CameraControllerSystem::focusOn(Scene& scene, const glm::vec3& target, float distance) {
-    EntityId camId = m_cameraEntity.getID();
+    EntityId camId = m_cameraEntity;
     if (!camId || !scene.has<Transform>(camId)) return;
 
     auto& transform = scene.get<Transform>(camId);
@@ -162,7 +162,7 @@ void CameraControllerSystem::focusOn(Scene& scene, const glm::vec3& target, floa
 }
 
 void CameraControllerSystem::viewFrom(Scene& scene, const glm::vec3& target, const glm::vec3& direction, float distance) {
-    EntityId camId = m_cameraEntity.getID();
+    EntityId camId = m_cameraEntity;
     if (!camId || !scene.has<Transform>(camId)) return;
 
     auto& transform = scene.get<Transform>(camId);

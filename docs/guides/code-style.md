@@ -382,7 +382,7 @@ Then `private:` holds the `m_`-prefixed members.
 
 Anything owning a GPU handle, file handle, thread, or unique scene state is
 non-copyable **and** non-movable. Move ownership with `std::unique_ptr<T>`
-instead of writing a move constructor. Lightweight value types (`Entity`,
+instead of writing a move constructor. Lightweight value types (`StorageIndex`,
 `Clock`) `= default` their special members or omit them.
 
 ### 7.4 Virtual override discipline

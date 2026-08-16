@@ -131,7 +131,7 @@ bool ScriptModule::reload(Scene& scene) {
     std::vector<std::pair<EntityId, nlohmann::json>> saved;
     if (auto* storage = scene.storage<ScriptComponent>()) {
         storage->forEach([&](uint32_t entityIdx, ScriptComponent& sc) {
-            const EntityId id{entityIdx, scene.generationOf(entityIdx)};
+            const EntityId id = scene.entityAt(entityIdx);
             saved.emplace_back(id, ComponentSerializer::save(sc));
             sc.behaviors.clear();
         });
