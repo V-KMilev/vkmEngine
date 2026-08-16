@@ -13,6 +13,11 @@
 #
 # vkmGL keeps glew, which is the only genuinely OpenGL-specific one. It expects
 # the rest as targets a parent provides, and hard-errors when they are absent.
+# Vendored dependencies install themselves by default, which would scatter their
+# headers, archives and pkgconfig files through the SDK prefix. The engine picks
+# what ships (cmake/install.cmake); each of these is switched off at its own
+# option so nothing lands that we did not choose.
+set(GLM_BUILD_INSTALL OFF CACHE BOOL "" FORCE)
 if(NOT TARGET glm)
     add_subdirectory(glm)
 endif()
@@ -20,6 +25,7 @@ endif()
 set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_INSTALL       OFF CACHE BOOL "" FORCE)
 if(NOT TARGET glfw)
     add_subdirectory(glfw)
 endif()
@@ -86,6 +92,7 @@ set(ASSIMP_BUILD_ZLIB                     ON  CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_DRACO                    OFF CACHE BOOL "" FORCE)
 set(ASSIMP_WARNINGS_AS_ERRORS             OFF CACHE BOOL "" FORCE)
 if(NOT TARGET assimp)
+    set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
     add_subdirectory(assimp)
 endif()
 
@@ -101,6 +108,7 @@ set(FT_DISABLE_PNG      ON CACHE BOOL "" FORCE)
 set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
 set(FT_DISABLE_BROTLI   ON CACHE BOOL "" FORCE)
 if(NOT TARGET freetype)
+    set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
     add_subdirectory(freetype)
 endif()
 

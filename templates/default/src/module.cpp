@@ -15,11 +15,29 @@
 
 #include "game.h"
 
-extern "C" void vkmRegisterBehaviors() {
+// Reported back to the host at load: it refuses a module built against a
+// different engine rather than letting a layout mismatch surface as a crash
+// somewhere unrelated. VKM_ENGINE_VERSION comes from the engine you linked, so
+// rebuilding against a new SDK is all this ever needs.
+extern "C"
+#if defined(_WIN32)
+__declspec(dllexport)
+#endif
+const char* vkmModuleEngineVersion() { return VKM_ENGINE_VERSION; }
+
+extern "C"
+#if defined(_WIN32)
+__declspec(dllexport)
+#endif
+void vkmRegisterBehaviors() {
     Engine::BehaviorRegistry::get().registerBehavior<Game::Spinner>();
 }
 
-extern "C" void vkmBuildScene(Engine::Scene& scene, Engine::ResourceManager& resources) {
+extern "C"
+#if defined(_WIN32)
+__declspec(dllexport)
+#endif
+void vkmBuildScene(Engine::Scene& scene, Engine::ResourceManager& resources) {
     (void)resources;
 
     // Forward is +Z in this engine, so a camera at -Z looking along +Z faces the

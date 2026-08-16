@@ -8,7 +8,7 @@
  * release builds pay nothing. Switching profiler (Optick, minitrace, custom)
  * only changes this header.
  *
- * GPU zones live in debug/profiler_gl.h because Tracy's OpenGL header inlines
+ * GPU zones live in the GL backend (gl_profiler.h) because Tracy's OpenGL header inlines
  * GL calls into the caller's TU. Including this header is cheap and pulls in
  * no GL state - prefer it everywhere unless you need a GPU zone.
  *
