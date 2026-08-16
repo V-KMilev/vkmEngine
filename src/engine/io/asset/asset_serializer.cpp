@@ -212,8 +212,8 @@ namespace {
  * @brief Load the `source` object from a library recipe file (a material's inline
  * form). Returns false (logging) if the file is missing or malformed.
  */
-bool loadLibrarySource(const AssetRecord& record, nlohmann::json& outSource) {
-    const std::filesystem::path path = AssetLibrary::get().recipePath(record);
+bool loadLibrarySource(AssetType type, const std::string& name, nlohmann::json& outSource) {
+    const std::filesystem::path path = AssetLibrary::recipePath(type, name);
     nlohmann::json doc;
     if (!detail::readJsonFile(path, doc, "Asset library recipe")) return false;
     if (!doc.contains("source")) {
@@ -238,7 +238,7 @@ bool resolveCookedSource(AssetType type, const std::string& name, nlohmann::json
         return false;
     }
     if (type == AssetType::Material) {
-        return loadLibrarySource(*record, outSource);
+        return loadLibrarySource(type, name, outSource);
     }
     outSource = nlohmann::json{{"kind", "cooked"}, {"name", name}};
     return true;

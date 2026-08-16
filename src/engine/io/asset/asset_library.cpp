@@ -21,6 +21,11 @@ namespace {
 
 constexpr uint32_t MANIFEST_VERSION = 1;
 
+// Directory an asset type keeps its files in, under both library() and cooked().
+constexpr const char* TYPE_DIRS[] = {"meshes", "textures", "materials"};
+static_assert(sizeof(TYPE_DIRS) / sizeof(TYPE_DIRS[0]) == static_cast<size_t>(AssetType::Count),
+              "TYPE_DIRS must stay in sync with AssetType");
+
 } // namespace
 
 AssetLibrary& AssetLibrary::get() {
@@ -39,12 +44,12 @@ std::string AssetLibrary::uidFor(AssetType type, const std::string& name) {
     return std::string(buf.data());
 }
 
-std::filesystem::path AssetLibrary::recipePath(const AssetRecord& record) const {
-    return ProjectPaths::library() / record.recipeFile;
+std::filesystem::path AssetLibrary::recipePath(AssetType type, const std::string& name) {
+    return ProjectPaths::library() / TYPE_DIRS[static_cast<size_t>(type)] / (uidFor(type, name) + ".json");
 }
 
-std::filesystem::path AssetLibrary::cookedPath(const AssetRecord& record) const {
-    return ProjectPaths::cooked() / record.cookedFile;
+std::filesystem::path AssetLibrary::cookedPath(AssetType type, const std::string& name) {
+    return ProjectPaths::cooked() / TYPE_DIRS[static_cast<size_t>(type)] / (uidFor(type, name) + ".vkmc");
 }
 
 void AssetLibrary::load() {
@@ -85,8 +90,6 @@ void AssetLibrary::load() {
             continue;
         }
         r.name       = entry.value("name", std::string{});
-        r.recipeFile = entry.value("recipe", std::string{});
-        r.cookedFile = entry.value("cooked", std::string{});
         r.recipeHash = entry.value("hash", uint64_t{0});
         if (r.name.empty()) {
             LOG_WARNING("Asset library: entry with empty name, skipping");
@@ -129,11 +132,9 @@ bool AssetLibrary::save() const {
     for (const auto& [k, r] : m_records) {
         (void)k;
         nlohmann::json entry;
-        entry["name"]   = r.name;
-        entry["type"]   = Reflect::enumName(r.type);
-        entry["recipe"] = r.recipeFile;
-        if (!r.cookedFile.empty()) entry["cooked"] = r.cookedFile;
-        entry["hash"]   = r.recipeHash;
+        entry["name"] = r.name;
+        entry["type"] = Reflect::enumName(r.type);
+        entry["hash"] = r.recipeHash;
         assets.push_back(std::move(entry));
     }
     doc["assets"] = std::move(assets);
