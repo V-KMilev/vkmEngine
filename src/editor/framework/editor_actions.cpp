@@ -200,19 +200,19 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         case EntityKind::Empty:
             break;
         case EntityKind::PointLight:
-            scene.add(entity, generatePointLight());
+            scene.add(entity, generateLight(LightType::Point));
             break;
         case EntityKind::SpotLight:
-            scene.add(entity, generateSpotLight());
+            scene.add(entity, generateLight(LightType::Spot));
             break;
         case EntityKind::DirectionalLight:
-            scene.add(entity, generateDirectionalLight());
+            scene.add(entity, generateLight(LightType::Directional));
             break;
         case EntityKind::RectLight:
-            scene.add(entity, generateRectLight());
+            scene.add(entity, generateLight(LightType::Rect));
             break;
         case EntityKind::DiskLight:
-            scene.add(entity, generateDiskLight());
+            scene.add(entity, generateLight(LightType::Disk));
             break;
         case EntityKind::Cube:     addMesh(generateCube());     break;
         case EntityKind::Sphere:   addMesh(generateSphere());   break;
