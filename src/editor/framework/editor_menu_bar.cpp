@@ -59,9 +59,8 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         }
     };
 
-    // Brand mark at the left of the menu bar, before the menus. Lazy-loaded the
-    // first time we draw (the GL context is live by now). Loaded unflipped so
-    // ImGui's top-left UVs render it upright.
+    // Lazy-loaded the first time we draw (the GL context is live by now).
+    // Loaded unflipped so ImGui's top-left UVs render it upright.
     if (!m_logo) {
         m_logo = std::make_unique<Core::Texture2D>(
             (ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string(),
@@ -144,8 +143,6 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     }
 
     if (ImGui::BeginMenu("Edit")) {
-        // Undo / redo with the top-of-stack label so users see what action
-        // they're reverting (e.g. "Undo Transform", "Redo Create Entity").
         char undoText[80], redoText[80];
         historyItemLabel(undoText, sizeof(undoText), "Undo", state.commands.undoLabel());
         historyItemLabel(redoText, sizeof(redoText), "Redo", state.commands.redoLabel());
@@ -180,8 +177,6 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         ImGui::EndMenu();
     }
 
-    // Window: show/hide every panel and tool window. Docked layout panels
-    // first, then the floating tool/settings windows.
     if (ImGui::BeginMenu("Window")) {
         ImGui::MenuItem("Hierarchy",    keyLabel(state.keybinds.toggleHierarchy), &state.showHierarchy);
         ImGui::MenuItem("Inspector",    keyLabel(state.keybinds.toggleInspector), &state.showInspector);

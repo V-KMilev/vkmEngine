@@ -76,11 +76,10 @@ EditorSystem::EditorSystem(
     static std::string s_iniPath = (ProjectPaths::engineRoot() / "imgui.ini").string();
     io.IniFilename = s_iniPath.c_str();
 
-    // A real TTF instead of ImGui's 13 px bitmap default - the single biggest
-    // visual upgrade every panel inherits. Roboto Medium already ships with the
-    // engine (the in-game UI bakes its SDF font from it), so the editor reuses
-    // it; swap the path to restyle. Sized against the window's content scale
-    // so text stays crisp on HiDPI displays.
+    // A real TTF instead of ImGui's 13 px bitmap default. Roboto Medium already
+    // ships with the engine (the in-game UI bakes its SDF font from it), so the
+    // editor reuses it. Sized against the window's content scale so text stays
+    // crisp on HiDPI displays.
     {
         float scaleX = 1.0f, scaleY = 1.0f;
         glfwGetWindowContentScale(window, &scaleX, &scaleY);
@@ -104,11 +103,9 @@ EditorSystem::EditorSystem(
 
     applyEditorTheme();
 
-    // Restore persisted editor state (panel widths, toggles, snap, keybinds,
-    // recent scenes). Missing/invalid file is non-fatal - defaults apply.
     // The grid defaults off engine-wide (it is an editor aid); the editor
     // wants it on out of the box. Set before the load so a persisted value
-    // still wins.
+    // still wins. A missing/invalid settings file is non-fatal.
     m_renderSystem.getSettings().grid = true;
     EditorSettings::load(m_state, m_renderSystem.getSettings());
 
@@ -163,8 +160,6 @@ void EditorSystem::openPendingProject(EditorContext& ec) {
         return;
     }
 
-    // Deferred out of the menu: opening rebuilds the scene, and the menu that
-    // asked is still being drawn when it asks.
     const std::string path = ec.state.pendingProjectOpen;
     ec.state.pendingProjectOpen.clear();
     m_project.open(ec, m_scriptModule, m_sceneIO, path);
@@ -231,10 +226,9 @@ void drawToast(EditorState& state, float deltaTime) {
 }
 
 // The single writer of the window title: "<project> - <file> [*] - VKM Engine".
-// Which project, which scene and whether it is dirty are all facts the title
-// carries, so one place owns the format - anything else setting the title is
-// overwritten here on the next frame. Compared against its own last output so
-// the GLFW call happens only when the content actually changed.
+// One place owns the format - anything else setting the title is overwritten
+// here on the next frame. Compared against its own last output so the GLFW
+// call happens only when the content actually changed.
 void syncWindowTitle(WindowManager& window, const std::string& project,
                      const std::string& path, bool dirty) {
     static std::string s_last;
@@ -285,8 +279,8 @@ void EditorSystem::update(FrameContext& ctx) {
         }
     }
 
-    // Hot-reload the gameplay module on request (Edit > Reload Scripts):
-    // serialize behaviors, swap the game module, recreate them - entities untouched.
+    // Hot-reload the gameplay module on request (Edit > Reload Scripts);
+    // behaviors are serialized and recreated, entities untouched.
     if (m_state.requestScriptReload) {
         m_state.requestScriptReload = false;
         if (m_scriptModule.reload(ctx.scene)) {
@@ -349,12 +343,11 @@ void EditorSystem::update(FrameContext& ctx) {
         // from continuing while the editor isn't drawing.
         if (!m_state.editorVisible) m_panelResize.resetDragState();
     }
-    // Save-guard modal: top-priority, drawn before anything else so it's
-    // visible whether the editor is shown or hidden. Shared by the window
-    // close-intercept above and File > New Scene - the pending intent is
-    // whichever confirming* flag is set. The dialog scaffold owns the open
-    // handshake (fixing the old bug where OpenPopup re-fired every frame and
-    // Escape could never dismiss it) and the Enter/Escape contract.
+    // Save-guard modal: drawn before anything else so it's visible whether the
+    // editor is shown or hidden. Shared by the window close-intercept above and
+    // File > New Scene. The dialog scaffold owns the open handshake (fixing the
+    // old bug where OpenPopup re-fired every frame and Escape could never
+    // dismiss it) and the Enter/Escape contract.
     {
         bool want = m_state.confirmAction != EditorState::PendingSceneAction::None;
         if (beginDialog("Unsaved Changes", want)) {
@@ -401,8 +394,7 @@ void EditorSystem::update(FrameContext& ctx) {
             static_cast<uint32_t>(ctx.window.getHeight()));
 
         // While the editor is hidden, draw a tiny corner hint so new users
-        // know how to bring it back. Uses the live (rebindable) toggle key
-        // and auto-sizes with the font instead of a fixed 180x28 box.
+        // know how to bring it back, naming the live (rebindable) toggle key.
         {
             const ImGuiViewport* vp = ImGui::GetMainViewport();
             const float pad = EditorStyle::px(10.0f);

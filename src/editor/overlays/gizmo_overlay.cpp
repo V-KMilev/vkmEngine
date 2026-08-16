@@ -274,7 +274,6 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
     const float vpW = std::max(1.0f, ec.viewportSize.x);
     const float vpH = std::max(1.0f, ec.viewportSize.y);
 
-    // Convert to NDC [-1, 1] in viewport space.
     float ndcX =  (2.0f * (mp.x - vpX) / vpW) - 1.0f;
     float ndcY = -(2.0f * (mp.y - vpY) / vpH) + 1.0f;
 

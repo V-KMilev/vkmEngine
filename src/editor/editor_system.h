@@ -45,11 +45,7 @@ class ScriptModule;
  *        and the long-lived editor-state.
  *
  * Constructed once at boot with non-owning pointers to the rendering /
- * input / event collaborators it needs. Each update():
- *  - Routes input intent (capture flags) to CameraControllerSystem and UISystem.
- *  - Drives the menu bar, status bar, shortcut handler and panel resizer.
- *  - Draws the docked panels and the floating preview/overlay panels.
- *  - Lets the SceneIOController emit any pending Save-As / Load dialogs.
+ * input / event collaborators it needs.
  *
  * Everything mutating goes through the EditorContext aggregate; the
  * panels themselves are plain classes that don't know about each other.

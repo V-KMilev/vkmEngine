@@ -34,17 +34,14 @@ struct KeyBind {
  * Persisted via EditorSettings so user rebindings survive across sessions.
  */
 struct EditorKeybinds {
-    // File
     KeyBind newScene         = { ImGuiKey_N,      KeyMod_Ctrl };
     KeyBind saveScene        = { ImGuiKey_S,      KeyMod_Ctrl };
     KeyBind saveSceneAs      = { ImGuiKey_S,      KeyMod_Ctrl | KeyMod_Shift };
     KeyBind loadScene        = { ImGuiKey_O,      KeyMod_Ctrl };
 
-    // Edit
     KeyBind undo             = { ImGuiKey_Z,      KeyMod_Ctrl };
     KeyBind redo             = { ImGuiKey_Z,      KeyMod_Ctrl | KeyMod_Shift };
 
-    // Panel toggles
     KeyBind toggleHierarchy  = { ImGuiKey_1,      KeyMod_Ctrl };
     KeyBind toggleInspector  = { ImGuiKey_2,      KeyMod_Ctrl };
     KeyBind toggleBottom     = { ImGuiKey_3,      KeyMod_Ctrl };
@@ -54,7 +51,6 @@ struct EditorKeybinds {
     KeyBind toggleAssetBrowser   = { ImGuiKey_6,  KeyMod_Ctrl };
     KeyBind openPreferences  = { ImGuiKey_Comma,  KeyMod_Ctrl };
 
-    // Entity operations
     KeyBind deleteEntity     = { ImGuiKey_Delete, KeyMod_None };
     KeyBind deselect         = { ImGuiKey_Escape, KeyMod_None };
     KeyBind duplicate        = { ImGuiKey_D,      KeyMod_Ctrl };
