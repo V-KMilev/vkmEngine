@@ -13,10 +13,12 @@ class Scene;
  * @brief Serialize / deserialize the asset graph referenced by a Scene.
  *
  * Saves emit the meshes, materials, and textures actually referenced by the
- * scene. Loads recreate them by dispatching each descriptor through the
- * AssetFactory seam (io/asset/asset_factory.h); assets with no source are skipped on
- * save (silently - they can't be recreated anyway), and assets already in
- * ResourceManager (by name) are skipped on load (idempotent re-loads).
+ * scene as name-only references; an unnamed asset has no serializable identity
+ * and is skipped. Loads resolve each name through the asset library and
+ * recreate the asset through the AssetFactory seam (io/asset/asset_factory.h);
+ * assets already in ResourceManager (by name) are skipped (idempotent
+ * re-loads). A name the cooker never wrote to the library cannot be recreated,
+ * so the reference it backs is left unresolved.
  *
  * Textures are their own top-level section: saveAssetsForScene emits a
  * `textures` array of every map a material references, and loadAssets

@@ -21,6 +21,8 @@ Resource::~Resource() = default;
 
 // A copy is a DUPLICATE: the caller must give it a distinct name before
 // re-adding (two live assets can't share a name), which is the duplicator's job.
+// The uid is deliberately not among the copied members - identity belongs to the
+// instance in the manager, and add() stamps a fresh one.
 Resource::Resource(const Resource& other)
     : version(other.version)
     , name(other.name)

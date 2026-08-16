@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <string>
 
+#include <nlohmann/json.hpp>
+
 #include "logger.h"
 
 #include "generator/mesh_generators.h"
@@ -50,8 +52,8 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source,
 
         // Re-read each iteration: adding an asset can reallocate the storage the
         // previous reference pointed into.
-        MeshAsset decimated = decimateMesh(resources.get(source),
-                                           static_cast<uint32_t>(std::max(grid, 1.0f)));
+        const uint32_t cells = static_cast<uint32_t>(std::max(grid, 1.0f));
+        MeshAsset decimated = decimateMesh(resources.get(source), cells);
         grid *= std::clamp(settings.gridFalloff, 0.05f, 0.99f);
 
         const size_t triangles = decimated.indices.size() / 3;
@@ -63,6 +65,14 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source,
 
         const std::string name = baseName + ":lod" + std::to_string(level);
         decimated.name = name;
+        // A sourceless asset is one the cooker skips, and an asset that never
+        // reaches the library is a mesh the scene file cannot resolve on load -
+        // which would drop every level but the base on the next round trip.
+        decimated.sourceJson() = {
+            {"kind", "decimate"},
+            {"base", baseName},
+            {"grid", cells},
+        };
 
         // Reuse an existing level of the same name so regenerating does not
         // accumulate a new asset per press.
