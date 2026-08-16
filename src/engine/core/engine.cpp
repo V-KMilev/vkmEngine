@@ -2,6 +2,9 @@
 
 #include "core/engine.h"
 
+#include <atomic>
+#include <csignal>
+
 #include "logger.h"
 
 #include "core/engine_config.h"
@@ -18,6 +21,14 @@ constexpr const char* STAGE_NAMES[] = {
 static_assert(sizeof(STAGE_NAMES) / sizeof(STAGE_NAMES[0]) == static_cast<size_t>(SystemStage::Count),
               "STAGE_NAMES must stay in sync with SystemStage");
 
+// Set from a signal handler, so it must be a lock-free integral type and the
+// handler must touch nothing else - no logging, no allocation. The loop reads it
+// and leaves through its normal exit, which is the point: an interrupt should
+// unload the game module, join the workers and flush the log, not skip all three.
+std::atomic<bool> g_interrupted{false};
+
+extern "C" void onInterrupt(int) { g_interrupted.store(true, std::memory_order_relaxed); }
+
 } // namespace
 
 Engine::Engine()  = default;
@@ -27,9 +38,15 @@ void Engine::run() {
     constexpr float FPS_LOG_INTERVAL = 1.0f;
     float fpsLogTimer = 0.0f;
 
+    // Ctrl+C in the terminal that launched the engine. Without this the signal
+    // has nowhere to land: the loop only ends when the window reports itself
+    // closed, so a headless or unresponsive session had to be killed.
+    std::signal(SIGINT,  onInterrupt);
+    std::signal(SIGTERM, onInterrupt);
+
     LOG_TRACE("Entering main loop");
 
-    while (m_window.beginFrame()) {
+    while (!g_interrupted.load(std::memory_order_relaxed) && m_window.beginFrame()) {
         m_clock.beginFrame();
 
         FrameContext ctx{
@@ -84,6 +101,9 @@ void Engine::run() {
         PROFILE_FRAME_MARK();
     }
 
+    if (g_interrupted.load(std::memory_order_relaxed)) {
+        LOG_INFO("Interrupted - shutting down");
+    }
     LOG_TRACE("Main loop exited, running shutdown");
 
     // Join the workers before anything else winds down. The pool is a

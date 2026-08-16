@@ -73,6 +73,22 @@ if(NOT DEFINED VKM_PROFILER)
     endif()
 endif()
 
+# The compiler's runtime DLLs, beside the binaries in the BUILD tree. Not just at
+# install time: the engine's shared libraries link libstdc++ dynamically, so
+# running straight out of build/bin needs them there too, and their absence shows
+# up as a system dialog with no log line to explain it. Only targets that link
+# assimp inherit its -static-libstdc++, which is why the executables used to work
+# while the libraries did not.
+if(MINGW)
+    get_filename_component(_vkm_mingw_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    foreach(_dll libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll)
+        if(EXISTS "${_vkm_mingw_bin}/${_dll}")
+            file(COPY "${_vkm_mingw_bin}/${_dll}"
+                 DESTINATION "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+        endif()
+    endforeach()
+endif()
+
 # Branch / commit / build-date -> PROJECT_* variables, recomputed each configure.
 include(cmake/git_metadata.cmake)
 
