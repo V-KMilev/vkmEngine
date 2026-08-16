@@ -106,13 +106,13 @@ bool aabbOverlap(const ColliderProxy& a, const ColliderProxy& b) {
 }
 
 void expandSubShapes(const ColliderProxy& p, const std::vector<ColliderBox>& parts,
-                     std::vector<SubShape>& out) {
+                     std::vector<BoxShape>& out) {
     out.clear();
     out.reserve(p.partsCount);
     const glm::mat3 r = glm::mat3_cast(p.rotation);
     for (uint32_t i = 0; i < p.partsCount; ++i) {
         const ColliderBox& part = parts[p.partsFirst + i];
-        out.push_back({p.position + r * part.center, p.rotation, part.halfExtents});
+        out.push_back({p.position + r * part.center, {r[0], r[1], r[2]}, part.halfExtents});
     }
 }
 
@@ -290,12 +290,9 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events)
         bool anyContact = false;
         glm::vec3 contactPoint(0.0f);
         glm::vec3 contactNormal(0.0f, 1.0f, 0.0f);
-        for (const SubShape& sa : m_subA) {
-            for (const SubShape& sb : m_subB) {
-                const int n = contactBoxes(
-                    sa.center, sa.rotation, sa.halfExtents,
-                    sb.center, sb.rotation, sb.halfExtents,
-                    scratch);
+        for (const BoxShape& sa : m_subA) {
+            for (const BoxShape& sb : m_subB) {
+                const int n = contactBoxes(sa, sb, scratch);
                 if (n == 0) continue;
                 if (!anyContact) {  // keep the first contact as the event's representative
                     contactPoint  = scratch[0].point;

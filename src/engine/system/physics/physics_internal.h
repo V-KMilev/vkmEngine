@@ -58,14 +58,4 @@ struct BodyFrame {
     glm::quat parentRot       = {1.0f, 0.0f, 0.0f, 0.0f};         ///< parent world-space rotation
 };
 
-/**
- * @brief A box placed in world space - the unit the box-box narrowphase consumes.
- * A collider expands into one of these per child box.
- */
-struct SubShape {
-    glm::vec3 center      = {0.0f, 0.0f, 0.0f};
-    glm::quat rotation    = {1.0f, 0.0f, 0.0f, 0.0f};
-    glm::vec3 halfExtents = {0.5f, 0.5f, 0.5f};
-};
-
 } // namespace Engine

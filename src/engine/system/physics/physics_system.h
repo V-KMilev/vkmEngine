@@ -8,6 +8,7 @@
 #include "ecs/entity.h"
 #include "system/physics/physics_internal.h"
 #include "system/physics/collision/contact.h"
+#include "system/physics/collision/narrowphase.h"
 #include "system/physics/collision/solver.h"
 
 namespace Engine {
@@ -134,8 +135,8 @@ class PhysicsSystem : public System {
         std::vector<uint32_t>                      m_sorted;  ///< X-sorted proxy order (broadphase)
         std::vector<std::pair<uint32_t, uint32_t>> m_pairs;   ///< Candidate proxy-index pairs (broadphase)
 
-        std::vector<SubShape> m_subA;  ///< A's child boxes expanded to world space (narrowphase)
-        std::vector<SubShape> m_subB;  ///< B's child boxes expanded to world space (narrowphase)
+        std::vector<BoxShape> m_subA;  ///< A's child boxes expanded to world space (narrowphase)
+        std::vector<BoxShape> m_subB;  ///< B's child boxes expanded to world space (narrowphase)
 };
 
 } // namespace Engine
