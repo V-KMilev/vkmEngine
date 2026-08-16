@@ -14,9 +14,8 @@ namespace Engine {
 /**
  * @brief One completed asynchronous texture decode.
  *
- * Workers push these onto the queue once stb_image returns. The main-
- * thread AsyncLoaderSystem drains the queue each frame and applies the
- * decoded pixel data to the live TextureAsset (created up-front in a
+ * Workers push these once stb_image returns; the main-thread AsyncLoaderSystem
+ * drains them each frame into the live TextureAsset (created up-front in a
  * loading state by requestTextureAsync).
  */
 struct TextureLoadCompletion {
@@ -40,11 +39,9 @@ struct TextureLoadCompletion {
 /**
  * @brief One completed asynchronous mesh decode (Assimp + vertex extraction).
  *
- * Same shape as the texture variant: worker fills it after parsing
- * finishes, main-thread AsyncLoaderSystem patches the live MeshAsset
- * (created in a loading state by requestModelMeshAsync). Verts/indices
- * move into the asset; bounds are already computed on the worker so the
- * finaliser is a pure copy.
+ * Same shape as the texture variant, drained into the live MeshAsset (created
+ * in a loading state by requestModelMeshAsync). Bounds are already computed on
+ * the worker, so the finaliser is a pure copy.
  */
 struct MeshLoadCompletion {
     MeshHandle handle;
@@ -60,10 +57,10 @@ struct MeshLoadCompletion {
  * @brief Thread-safe drop-box for async-loaded assets awaiting main-thread
  *        finalisation.
  *
- * Workers (run on the ThreadPool) push completions; AsyncLoaderSystem on
- * the main thread drains them. The queue is a singleton because the same
- * worker code is invoked from many call sites and threading them all
- * through a context pointer would be noise.
+ * Workers (run on the ThreadPool) push completions; AsyncLoaderSystem on the
+ * main thread drains them. A singleton because the same worker code is invoked
+ * from many call sites and threading a context pointer through them all would
+ * be noise.
  */
 class AsyncLoadQueue {
     public:
