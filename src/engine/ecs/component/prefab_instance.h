@@ -22,9 +22,8 @@ namespace Engine {
 struct PrefabInstance {
     std::string source;  ///< Prefab file path, e.g. "prefabs/lamp_post.json".
 };
+} // namespace Engine
 
-VKM_REFLECT_BEGIN(PrefabInstance)
+VKM_REFLECT_BEGIN(::Engine::PrefabInstance)
     VKM_F(source)
 VKM_REFLECT_END()
-
-} // namespace Engine

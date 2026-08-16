@@ -311,7 +311,9 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
 // Invoked inside namespace Engine with the unqualified name (like every other
 // behavior) - the macro opens namespace Reflect, which nested here resolves to
 // Engine::Reflect, so no ::Engine:: qualification is needed.
-VKM_REFLECT_BEGIN(PotionRunner)
+} // namespace Engine
+
+VKM_REFLECT_BEGIN(::Engine::PotionRunner)
     VKM_F(laneWidth),
     VKM_F(startSpeed),
     VKM_F(maxSpeed),
@@ -320,5 +322,3 @@ VKM_REFLECT_BEGIN(PotionRunner)
     VKM_F(gravity),
     VKM_F(coinValue)
 VKM_REFLECT_END()
-
-} // namespace Engine

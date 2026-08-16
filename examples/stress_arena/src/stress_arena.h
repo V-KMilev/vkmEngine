@@ -371,7 +371,6 @@ class StressArena : public ReflectedBehavior<StressArena> {
         bool m_fogOn        = true;
         bool m_uiOn         = true;
 
-
         /// Fixed seed, and used only while building: the whole world is placed
         /// before the first update, so the layout is identical on every run and
         /// two captures of the same build are comparable frame for frame.
@@ -384,8 +383,9 @@ class StressArena : public ReflectedBehavior<StressArena> {
         /// streams keeps the build-time layout provably untouched by timing.
         Math::Rng m_churnRng;
 };
+} // namespace Engine
 
-VKM_REFLECT_BEGIN(StressArena)
+VKM_REFLECT_BEGIN(::Engine::StressArena)
     VKM_F(propCount),
     VKM_F(towerCount),
     VKM_F(lightCount),
@@ -409,5 +409,3 @@ VKM_REFLECT_BEGIN(StressArena)
     VKM_F(cameraLoopTime),
     VKM_F(lodEnabled)
 VKM_REFLECT_END()
-
-} // namespace Engine

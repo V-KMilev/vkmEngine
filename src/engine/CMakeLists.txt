@@ -43,7 +43,12 @@ set_target_properties(EngineCore PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
-target_include_directories(EngineCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# The engine include root. Split so the same "ecs/scene.h" resolves against the
+# source tree during development and against <prefix>/include from an SDK.
+target_include_directories(EngineCore PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 
 # GLEW headers for window_manager.cpp's glewInit (glew uses old-style include dirs).
 target_include_directories(EngineCore PRIVATE
@@ -86,7 +91,8 @@ endif()
 # (e.g. CollisionEvent), so both sides must agree on glm's layout.
 add_library(EngineHeaders INTERFACE)
 target_include_directories(EngineHeaders INTERFACE
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:include>
     $<TARGET_PROPERTY:glm,INTERFACE_INCLUDE_DIRECTORIES>
     $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>
     $<TARGET_PROPERTY:vkmLog,INTERFACE_INCLUDE_DIRECTORIES>
@@ -109,7 +115,10 @@ set_target_properties(EngineRendering PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
-target_include_directories(EngineRendering PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(EngineRendering PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 
 target_link_libraries(EngineRendering
     PUBLIC  EngineCore

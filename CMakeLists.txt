@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.25.0)
 
 set(PROJECT_NAME vkmEngine)
 set(PROJECT_VERSION_MAJOR 1)
-set(PROJECT_VERSION_MINOR 3)
-set(PROJECT_VERSION_PATCH 3)
+set(PROJECT_VERSION_MINOR 4)
+set(PROJECT_VERSION_PATCH 0)
 
 project(
   ${PROJECT_NAME}
@@ -138,3 +138,6 @@ add_subdirectory(examples/stress_arena)
 add_subdirectory(app/runtime)
 add_subdirectory(app/cooker)
 add_subdirectory(app/editor)
+
+# Every install rule lives in one file, after the targets it installs.
+include(cmake/install.cmake)

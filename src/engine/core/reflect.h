@@ -132,17 +132,19 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
  *   VKM_REFLECT_END()
  *   }
  *
- * It opens `namespace Reflect` (which, nested in Engine, is Engine::Reflect) and
- * specialises Traits there - no global-scope ::Engine:: dance, since the only
- * shadowed name is the class Engine, which this never spells. VKM_F() looks up
- * the `vkm_reflect_self` alias the macro injects so each field needn't repeat
- * the type name.
+ * USE IT AT GLOBAL SCOPE, and name the type in full. The macro opens
+ * Engine::Reflect itself, so it works from any namespace - which is the point: a
+ * game's own types live in the game's namespace, and reflection has to reach
+ * them there. Written inside a namespace it would specialise that namespace's
+ * Reflect instead, which compiles into a confusing error about an incomplete
+ * Traits. VKM_F() looks up the `vkm_reflect_self` alias the macro injects, so
+ * each field needn't repeat the type name.
  *
  * Fields omitted from the macro are NOT serialised - that's the mechanism for
  * "internal only" data.
  */
 #define VKM_REFLECT_BEGIN(Type)                                              \
-    namespace Reflect {                                                      \
+    namespace Engine { namespace Reflect {                                   \
     template<> struct Traits<Type> {                                         \
         using vkm_reflect_self = Type;                                       \
         static constexpr auto fields() {                                     \
@@ -155,7 +157,7 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
             );                                                               \
         }                                                                    \
     };                                                                       \
-    }
+    }}
 
 /**
  * @brief Register an enum's value-ordered names in one place.
@@ -177,11 +179,11 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
  * so adding a value without a name fails to compile.
  */
 #define VKM_ENUM_NAMES(EnumType, ...)                                            \
-    namespace Reflect {                                                          \
+    namespace Engine { namespace Reflect {                                       \
     template<> struct EnumNames<EnumType> {                                      \
         static constexpr const char* const values[] = { __VA_ARGS__ };           \
         static constexpr std::size_t count = sizeof(values) / sizeof(values[0]); \
         static_assert(count == static_cast<std::size_t>(EnumType::Count),        \
                       #EnumType " names out of sync with its Count sentinel");   \
     };                                                                           \
-    }
+    }}

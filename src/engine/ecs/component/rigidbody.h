@@ -47,7 +47,9 @@ struct Rigidbody {
 };
 
 // sleeping / sleepTimer are runtime-only, and intentionally absent.
-VKM_REFLECT_BEGIN(Rigidbody)
+} // namespace Engine
+
+VKM_REFLECT_BEGIN(::Engine::Rigidbody)
     VKM_F(linearVelocity),
     VKM_F(angularVelocity),
     VKM_F(mass),
@@ -61,5 +63,3 @@ VKM_REFLECT_BEGIN(Rigidbody)
     VKM_F(freezeRotation),
     VKM_F(canSleep)
 VKM_REFLECT_END()
-
-} // namespace Engine

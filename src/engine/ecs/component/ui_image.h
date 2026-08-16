@@ -15,9 +15,8 @@ namespace Engine {
 struct UIImage {
     glm::vec4 color = {1.0f, 1.0f, 1.0f, 1.0f};  ///< Straight (non-premultiplied) RGBA tint.
 };
+} // namespace Engine
 
-VKM_REFLECT_BEGIN(UIImage)
+VKM_REFLECT_BEGIN(::Engine::UIImage)
     VKM_F(color)
 VKM_REFLECT_END()
-
-} // namespace Engine
