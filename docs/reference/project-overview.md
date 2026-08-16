@@ -41,15 +41,17 @@ worked examples. See [system/io.md](system/io.md#projects-and-the-two-roots).
 - **`System`** - per-frame unit with `init` / `update` / `fixedUpdate` / `shutdown`.
   Each registers at exactly one `SystemStage`.
 - **`Engine`** - stack-constructible owner of the `Scene`, `ResourceManager`,
-  `WindowManager`, `SimulationClock`, and the per-stage system list. **No
+  `WindowManager`, `Clock`, `EventBus`, `InputMap`, and the per-stage system list. **No
   `Engine::get()` singleton.** Singletons are limited to a few process-wide
   registries accessed via a static `get()`: `ThreadPool`, `AsyncLoadQueue`, and
   `BehaviorRegistry`. Asset construction uses the `AssetFactory` function-pointer
   seam; recoverable errors use the `reportError()` sink (captured by the
   editor-owned `EngineErrorLog`).
-- **`FrameContext`** - the per-frame bundle passed to every system. Carries three
-  deltas: `deltaTime` (real), `simDeltaTime` (clock-scaled, pause/step-aware),
-  `fixedDeltaTime` (1/60). Simulation systems read `simDeltaTime`.
+- **`FrameContext`** - the per-frame bundle passed to every system. Services come
+  as references (scene, resources, clock, events, window, input), per-frame
+  products as pointers (`visibility`, `ui`). Time comes off the clock:
+  `getDeltaTime()` (real), `getSimDelta()` (clock-scaled, pause/step-aware),
+  `getFixedStep()` (1/60). Simulation systems read the sim delta.
 
 ## System execution order
 
