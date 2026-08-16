@@ -39,8 +39,7 @@ class ISparseSet {
  * @class SparseSet
  * @brief Dense-packed storage indexed by external uint32_t keys.
  *
- * Maps uint32_t keys to densely packed elements for cache-friendly O(n)
- * iteration. Provides O(1) add, remove, contains, and get.
+ * Iteration is dense and cache-friendly; add, remove, contains and get are O(1).
  *
  * SparseSet does not manage slot allocation or generation counters - the
  * caller owns the key lifecycle (Scene pairs this with SlotAllocator for
@@ -84,11 +83,9 @@ class SparseSet : public ISparseSet {
 
             if (dataIdx != lastIdx) {
                 // Move-assign covers both cases: for a trivially copyable T the
-                // compiler emits the same memcpy an explicit branch would, so
-                // the branch only cost a header and a reading of it.
+                // compiler emits the same memcpy an explicit branch would.
                 m_data[dataIdx] = std::move(m_data[lastIdx]);
 
-                // Update reverse and forward mappings for moved element
                 m_dataId[dataIdx]              = m_dataId[lastIdx];
                 m_dataIndex[m_dataId[dataIdx]] = dataIdx;
             }
@@ -100,9 +97,6 @@ class SparseSet : public ISparseSet {
 
         /**
          * @brief Remove the element at the given key if one is present.
-         *
-         * Virtual override that folds the presence test into the removal so a
-         * caller holding only an ISparseSet pays one dispatch instead of two.
          *
          * @param key External sparse key; absent keys are a no-op.
          */
@@ -162,15 +156,13 @@ class SparseSet : public ISparseSet {
         void clear() override {
             m_data.clear();
             m_dataId.clear();
-            // Mark every sparse slot empty without reallocating.
             std::fill(m_dataIndex.begin(), m_dataIndex.end(), EMPTY);
         }
 
         /**
          * @brief Shrink the sparse array to fit only live keys, reclaiming wasted memory.
          *
-         * Resizes the sparse-to-dense map down to the highest live key (+1) and
-         * releases the surplus capacity. The dense arrays are unaffected.
+         * The dense arrays are unaffected.
          */
         void compact() override {
             if (m_data.empty()) {
@@ -216,8 +208,6 @@ class SparseSet : public ISparseSet {
         /**
          * @brief Grow the sparse array so it can index @p key.
          *
-         * No-op when @p key already fits; otherwise resizes with EMPTY fill.
-         *
          * @param key External sparse key that must become addressable.
          */
         void ensureCapacity(uint32_t key) {
@@ -228,9 +218,7 @@ class SparseSet : public ISparseSet {
         /**
          * @brief Validate the key, emplace into the dense array, and wire up both mappings.
          *
-         * Shared implementation behind the public add() entry points:
-         * asserts the key is neither the EMPTY sentinel, 0 (reserved), nor already
-         * present, then constructs the element in place.
+         * Shared implementation behind the public add() entry points.
          *
          * @tparam Args Constructor argument types forwarded to the element.
          * @param key External sparse key to associate with the new element.

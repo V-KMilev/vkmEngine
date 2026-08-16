@@ -15,9 +15,6 @@ namespace Engine {
  * failure) and, when an editor has installed a sink via setErrorSink(), also
  * appends here for display in the editor's Errors tab. The runtime installs no
  * sink, so it carries no buffer - errors only reach the log.
- *
- * Consecutive duplicates (same category + source + message) bump a count on the
- * existing entry instead of growing the buffer.
  */
 class EngineErrorLog {
     public:
@@ -80,9 +77,6 @@ void reportError(const char* category, std::string source, std::string message);
 
 /**
  * @brief Install the sink that reportError() appends recorded errors into.
- *
- * Typically the editor installs its owned log; the headless runtime leaves no
- * sink so errors only reach the log.
  *
  * @param sink The error log to receive future reports, or nullptr to clear the
  *             current sink.
