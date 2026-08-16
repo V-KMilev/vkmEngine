@@ -17,6 +17,16 @@
 //
 // vkmRegisterBehaviors is the required one: it populates the host's
 // BehaviorRegistry so scenes can name this project's behaviors.
+// Reported back to the host at load. It refuses a module built against a
+// different engine rather than letting a layout mismatch surface later as a
+// crash somewhere unrelated. VKM_ENGINE_VERSION comes from the engine this
+// module linked, so rebuilding against a new SDK is all it ever needs.
+extern "C"
+#if defined(_WIN32)
+__declspec(dllexport)
+#endif
+const char* vkmModuleEngineVersion() { return VKM_ENGINE_VERSION; }
+
 extern "C"
 #if defined(_WIN32)
 __declspec(dllexport)

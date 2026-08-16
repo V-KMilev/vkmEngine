@@ -48,11 +48,10 @@ struct Transform {
         );
     }
 };
+} // namespace Engine
 
-VKM_REFLECT_BEGIN(Transform)
+VKM_REFLECT_BEGIN(::Engine::Transform)
     VKM_F(position),
     VKM_F(rotation),
     VKM_F(scale)
 VKM_REFLECT_END()
-
-} // namespace Engine

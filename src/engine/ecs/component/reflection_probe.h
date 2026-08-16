@@ -33,13 +33,12 @@ struct ReflectionProbe {
      */
     uint32_t bakeVersion = 0;
 };
+} // namespace Engine
 
-VKM_REFLECT_BEGIN(ReflectionProbe)
+VKM_REFLECT_BEGIN(::Engine::ReflectionProbe)
     VKM_F(halfExtents),
     VKM_F(falloff),
     VKM_F(intensity),
     VKM_F(resolution),
     VKM_F(bakeVersion)
 VKM_REFLECT_END()
-
-} // namespace Engine

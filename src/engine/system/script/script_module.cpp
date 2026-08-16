@@ -2,6 +2,7 @@
 
 #include "system/script/script_module.h"
 
+#include <cstring>
 #include <filesystem>
 #include <system_error>
 #include <utility>
@@ -20,6 +21,7 @@ namespace Engine {
 
 namespace {
 using RegisterFn   = void (*)();
+using VersionFn    = const char* (*)();
 using BuildSceneFn = void (*)(Scene&);
 
 // Best-effort sweep of stale "<stem>.loaded.*.<ext>" copies left by previous
@@ -97,6 +99,28 @@ bool ScriptModule::loadCopyAndRegister() {
     m_loadedCopyPath = copy.string();
 
     if (!m_lib.load(m_loadedCopyPath)) return false;
+
+    // The engine ships prebuilt libraries and is not ABI-stable between versions:
+    // struct layouts, inline functions and templates are free to change, which is
+    // what lets them keep improving. A module built against a different version
+    // therefore disagrees with the host about memory it both reads and writes,
+    // and the symptom is a crash somewhere unrelated rather than a load failure.
+    // Refusing here turns that into a sentence. A module with no version at all
+    // predates the guard, so it is refused too rather than assumed compatible.
+    auto versionFn = reinterpret_cast<VersionFn>(m_lib.symbol("vkmModuleEngineVersion"));
+    if (!versionFn) {
+        LOG_ERROR("Game module '%s' declares no engine version. Rebuild it against "
+                  "vkmEngine %s.", m_modulePath.c_str(), VKM_ENGINE_VERSION);
+        m_lib.unload();
+        return false;
+    }
+    if (const char* built = versionFn(); std::strcmp(built, VKM_ENGINE_VERSION) != 0) {
+        LOG_ERROR("Game module '%s' was built against vkmEngine %s but this is %s. "
+                  "Rebuild the module (vkm build).",
+                  m_modulePath.c_str(), built, VKM_ENGINE_VERSION);
+        m_lib.unload();
+        return false;
+    }
 
     auto registerFn = reinterpret_cast<RegisterFn>(m_lib.symbol("vkmRegisterBehaviors"));
     if (!registerFn) {
