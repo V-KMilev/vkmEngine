@@ -10,17 +10,6 @@
 namespace Engine {
 
 /**
- * @brief The scene's global settings: the lighting environment (equirectangular
- *        HDR baked into the IBL product set and drawn as the skybox, plus
- *        brightness + visibility) together with the physics-world parameters.
- *
- * Scene-global state, NOT an entity/component - one per Scene, always present
- * (owned by Scene::environment()), and it round-trips with the scene. The
- * backend re-bakes the IBL whenever hdrPath changes; the skybox samples that
- * baked product, so the visible background follows the swap automatically. The
- * physics fields are read once per fixed step by PhysicsSystem.
- */
-/**
  * @brief Sky and image-based lighting: what the world is lit by and set against.
  */
 struct SkySettings {
@@ -114,10 +103,55 @@ struct PhysicsSettings {
     int       solverIterations = 8;                     ///< PGS solver passes per fixed step.
 };
 
+/**
+ * @brief Where a celestial body sits, in the authored angle form.
+ *
+ * The sun is authored as this pair and the moon is derived as one, so anything
+ * that needs a body's placement - a direction vector, a light's rotation - can
+ * take the angles rather than re-deriving them from the raw fields.
+ */
+struct SkyAngles {
+    float elevation = 0.0f;  ///< Degrees above the horizon. Negative is below it.
+    float azimuth   = 0.0f;  ///< Degrees around the horizon, from +Z toward +X.
+};
+
+/**
+ * @brief The scene's lighting environment: sky, night sky and fog.
+ *
+ * Scene-global state, NOT an entity/component - one per Scene, always present
+ * (owned by Scene::environment()), and it round-trips with the scene. The
+ * backend re-bakes the IBL whenever the sky changes; the skybox samples that
+ * baked product, so the visible background follows automatically. The physics
+ * world is deliberately not here - see PhysicsSettings above.
+ */
 struct Environment {
     SkySettings      sky;
     NightSkySettings night;
     FogSettings      fog;
+
+    /**
+     * @brief Where the sun sits, straight off the authored fields.
+     *
+     * @return The sun's elevation/azimuth in degrees.
+     */
+    SkyAngles sunAngles() const {
+        return {sky.sunElevation, sky.sunAzimuth};
+    }
+
+    /**
+     * @brief Where the moon sits: opposite the sun, tilted off that axis.
+     *
+     * Derived rather than authored: a moon is only interesting relative to the
+     * sun, and tying them means dropping the sun below the horizon raises the
+     * moon by itself. moonTilt keeps the two from being an exact mirror. This is
+     * the one place that derivation lives, so the drawn moon and the light aimed
+     * at it cannot drift apart.
+     *
+     * @return The moon's elevation/azimuth in degrees.
+     */
+    SkyAngles moonAngles() const {
+        return {-sky.sunElevation + night.moonTilt, sky.sunAzimuth + 180.0f};
+    }
 
     /**
      * @brief Direction TO the sun from the authored angles.
@@ -129,20 +163,21 @@ struct Environment {
      * @return Unit direction pointing at the sun.
      */
     glm::vec3 sunDirection() const {
-        return directionFromAngles(sky.sunElevation, sky.sunAzimuth);
+        const SkyAngles a = sunAngles();
+        return directionFromAngles(a.elevation, a.azimuth);
     }
 
     /**
-     * @brief Direction TO the moon, opposite the sun and tilted off that axis.
+     * @brief Direction TO the moon.
      *
-     * Derived rather than authored: a moon is only interesting relative to the
-     * sun, and tying them means dropping the sun below the horizon raises the
-     * moon by itself. moonTilt keeps the two from being an exact mirror.
+     * The vector form of moonAngles(), which is where the placement itself is
+     * decided; this only turns it into a direction.
      *
      * @return Unit direction pointing at the moon.
      */
     glm::vec3 moonDirection() const {
-        return directionFromAngles(-sky.sunElevation + night.moonTilt, sky.sunAzimuth + 180.0f);
+        const SkyAngles a = moonAngles();
+        return directionFromAngles(a.elevation, a.azimuth);
     }
 
     /**

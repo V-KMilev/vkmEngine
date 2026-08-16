@@ -18,11 +18,11 @@ namespace Engine {
  * At night the same light aims at the moon instead, so night has real direction,
  * shadows and speculars rather than a painted disc over flat ambient. The two
  * bodies are opposite each other, so this is a swap, not a blend - and it
- * happens while the light is contributing nothing, because the sun's own
- * contribution fades out before it reaches the horizon.
+ * happens while the light is contributing nothing, because each body's own
+ * contribution fades out as it reaches the horizon.
  *
  * Consequences worth knowing:
- * - With `proceduralSky` on, the key light is the sky's: its rotation, colour
+ * - With `sky.procedural` on, the key light is the sky's: its rotation, colour
  *   and intensity are all overwritten every frame, from `sky.lightColor` /
  *   `sky.lightIntensity` by day and the `night.moonlight*` pair after dark.
  *   Author those, not the Light. Shadow settings stay the light's.

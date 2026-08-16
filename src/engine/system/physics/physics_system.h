@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "core/system.h"
-#include "core/memory/types.h"
 #include "ecs/entity.h"
 #include "system/physics/physics_internal.h"
 #include "system/physics/collision/contact.h"
@@ -17,7 +16,6 @@ struct PhysicsSettings;
 
 class EventBus;
 class Scene;
-struct Environment;
 
 /**
  * @brief Fixed-step rigid-body dynamics: integrates velocities, detects and
@@ -76,9 +74,9 @@ class PhysicsSystem : public System {
          *
          * Frozen (kinematic / sleeping) bodies are left untouched.
          *
-         * @param scene Scene providing the gathered bodies.
-         * @param env   Scene-global settings (supplies the gravity vector).
-         * @param dt    Fixed timestep, in seconds.
+         * @param scene   Scene providing the gathered bodies.
+         * @param physics Scene's physics settings (supplies the gravity vector).
+         * @param dt      Fixed timestep, in seconds.
          */
         void integrateForces(Scene& scene, const PhysicsSettings& physics, float dt);
 
@@ -107,8 +105,8 @@ class PhysicsSystem : public System {
         /**
          * @brief Resolve the contact manifolds with a sequential-impulse solver.
          *
-         * @param env Scene-global settings (supplies the solver iteration count).
-         * @param dt  Fixed timestep, in seconds.
+         * @param physics Scene's physics settings (supplies the solver iteration count).
+         * @param dt      Fixed timestep, in seconds.
          */
         void solve(const PhysicsSettings& physics, float dt);
 
