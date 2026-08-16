@@ -383,7 +383,7 @@ Then `private:` holds the `m_`-prefixed members.
 Anything owning a GPU handle, file handle, thread, or unique scene state is
 non-copyable **and** non-movable. Move ownership with `std::unique_ptr<T>`
 instead of writing a move constructor. Lightweight value types (`Entity`,
-`SimulationClock`) `= default` their special members or omit them.
+`Clock`) `= default` their special members or omit them.
 
 ### 7.4 Virtual override discipline
 
@@ -587,9 +587,3 @@ Authored fields on `Behavior` subclasses (`CubeSpinner::degreesPerSecond`)
 are bare public members on a class, violating 4.1 deliberately: the field
 name is the serialized identity (scene JSON + inspector label), and an `m_`
 prefix would leak into both. Runtime-only state on behaviors still uses `m_`.
-
-### 13.8 `glfw_include.h` precedes the own-header in `input_handle.cpp`
-
-GLFW's header must be configured (macro guards) before anything else includes
-it transitively, so `input_handle.cpp` puts `glfw_include.h` first, ahead of
-its own header - the one file exempt from the own-header-first rule.

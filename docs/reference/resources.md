@@ -1,7 +1,7 @@
 # Resource Management
 
 `ResourceManager` is the single owner of every GPU-uploadable asset:
-meshes, textures, materials, and shaders. Assets are referenced from
+meshes, textures, materials, and fonts. Assets are referenced from
 components and the render view through type-safe generational handles,
 and they sync to the GPU through a per-resource version counter.
 
@@ -19,7 +19,7 @@ and they sync to the GPU through a per-resource version counter.
 using MeshHandle     = Handle<MeshAsset>;
 using TextureHandle  = Handle<TextureAsset>;
 using MaterialHandle = Handle<MaterialAsset>;
-using ShaderHandle   = Handle<ShaderAsset>;
+using FontHandle     = Handle<FontAsset>;
 ```
 
 Each handle wraps a `StorageIndex` (index + generation), so stale handles
@@ -67,6 +67,7 @@ Every asset inherits `Resource`:
 |----------------|---------------------------------------|---------------------------------------------------------------------------------------------|
 | `name`         | `std::string`                         | Stable identity for serialization and look-up                                               |
 | `version`      | `uint64_t`                            | Bumped on `commit()`; backends compare to skip re-upload                                    |
+| `uid`          | `uint64_t`                            | Process-unique instance id stamped by `add()`. A handle names a slot; this names the asset in it, which is how an async completion knows the graph did not change under it |
 | `hidden`       | `bool`                                | When true, filtered from pickers / Asset Browser / scene save (previews, fallbacks). Set via `addPrivate()` |
 | `source`       | `std::unique_ptr<nlohmann::json>`     | The asset's recipe (loader/generator descriptor). The editor cooker bakes it into the library + cooked cache; scenes reference the asset by `name`, not by this descriptor |
 
@@ -131,12 +132,15 @@ draw time. There is no feature bitset and no per-variant compiled shaders; see
 (Opaque/AlphaMask/Unlit) ahead of Transparent so the per-batch HDR snapshot for
 refraction sees a complete opaque pass.
 
-### ShaderAsset
+### FontAsset
 
-`ShaderAsset` carries the path prefix to a folder under `shaders/`
-(e.g. `forward/pbr`). Each shader compiles to one program shared by every
-material that uses it; optional PBR features are runtime uniform toggles,
-not compiled variants.
+A baked SDF glyph atlas: the atlas pixels, its dimension, the vertical
+metrics, and a per-glyph table. Self-contained on purpose - it owns its texels
+rather than a `TextureHandle` - which is what lets it survive a scene load: the
+font is engine-owned (baked once at startup, never written to a scene file), so
+`SceneSerializer::load` swaps its slot back out of the displaced manager with
+`swapSlot<FontAsset>` instead of letting the scene-level swap drop it. See
+[In-game UI](system/ui.md).
 
 ## Versioning
 
@@ -144,8 +148,12 @@ not compiled variants.
 global or per-type version counter - those mechanisms were removed.) `GLView`
 keys on this per-asset version: it keeps a per-asset cached version and rebuilds
 GPU state only when the cached value diverges from the asset's `version`.
-Hot-reloading a shader file (via `FileWatcherSystem`) bumps the shader version, which
-drops its compiled program; the next draw recompiles lazily.
+
+`version` only tracks edits *within* one asset graph. A wholesale replacement
+(scene load, editor play-stop restore) is what `epoch()` is for: the incoming
+graph restarts at the same indices, generations and versions, so the backend
+compares the epoch and drops every mirror when it moves. `swap()`, `swapSlot()`
+and `clear()` all bump it.
 
 ## Storage
 
@@ -198,8 +206,11 @@ generator) lives in the `generator`/`decimate` factory lambdas registered in
 
 See [IO and serialization](system/io.md) for the full flow.
 `AssetSerializer::saveAssetsForScene` emits only the assets actually
-referenced by the scene's `Mesh` components (plus their material's
-texture references) and skips any with `hidden = true`. On load,
+referenced by the scene - `Mesh` (mesh + material), `LOD` (every level's
+mesh) and `Decal` (its material), plus the textures those materials
+reference - and skips any with `hidden = true`. A component that writes an
+asset name into the scene file has to be walked there, or the name has
+nothing to resolve against on load. On load,
 assets with the same `name` already in the manager are skipped (loads
 are idempotent), and new assets go through the `AssetFactory` dispatch
 by `kind`.
