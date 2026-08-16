@@ -50,7 +50,7 @@ TextureHandle  createCookedTexture(const nlohmann::json& source, ResourceManager
 MaterialHandle createCookedMaterial(const nlohmann::json& source, ResourceManager& resources);
 
 /**
- * @brief Wire the cooked dispatch into the AssetFactory seam (runtime + editor).
+ * @brief Wire the cooked dispatch into the AssetFactory seam (runtime only).
  *
  * Call once at startup before any scene I/O.
  */
@@ -62,7 +62,9 @@ void registerCookedAssetFactories();
  * The recipe kinds (re)produce assets from their source: procedural mesh
  * generators, Assimp model import, and file/solid/folder textures and
  * materials. These are what the cooker runs to populate the cooked cache; a
- * runtime build does not link them. Call after registerCookedAssetFactories().
+ * runtime build does not link them. Wires all three seam entries itself and
+ * falls through to the cooked dispatch, so a host calls this instead of
+ * registerCookedAssetFactories(), once at startup before any scene I/O.
  */
 void registerRecipeAssetFactories();
 
