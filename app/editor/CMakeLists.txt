@@ -2,8 +2,7 @@
 # dialogs).
 add_executable(engine_editor main.cpp)
 
-# The app drives the engine directly (no EngineApp library), so it links the
-# engine libs - the same set EngineApp used to re-export - plus EngineEditor.
+# The app drives the engine directly, so it links the engine libs itself.
 target_link_libraries(engine_editor PRIVATE
     EngineCore
     EngineRendering

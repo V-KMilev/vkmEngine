@@ -18,14 +18,13 @@
 
 // Cooks a project's assets without opening a window.
 //
-// Producing a shippable build used to require opening the editor and saving,
-// because that was the only thing that ran the cooker - a GUI step, on a machine
-// with a GPU, in the middle of what should be an unattended build. Nothing about
-// cooking needs either: it imports source art, writes binaries, and updates the
-// manifest, all on the CPU.
+// Producing a shippable build used to mean opening the editor and saving, since
+// that was the only thing that ran the cooker - a GUI step, on a machine with a
+// GPU, in the middle of an unattended build. Cooking needs neither: it imports
+// source art, writes binaries, and updates the manifest, all on the CPU.
 //
-// Follows the same rule as the other two binaries: the project is the one beside
-// this executable, unless an argument names a different one.
+// Same rule as the other two binaries: the project is the one beside this
+// executable, unless an argument names a different one.
 int main(int argc, char** argv) {
     try {
         std::error_code ec;
@@ -68,8 +67,7 @@ int main(int argc, char** argv) {
         Engine::AssetLibrary::get().load();
 
         // Loading the scene is what pulls its assets in; cooking then bakes
-        // exactly what the scene references, which is what the editor does on
-        // save and what a shipped build actually needs.
+        // exactly what it references, which is what a shipped build needs.
         Engine::Scene scene;
         Engine::ResourceManager resources;
 

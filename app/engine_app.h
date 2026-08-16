@@ -25,11 +25,10 @@
 #include "resource/asset/font_asset.h"
 #include "font/font_baker.h"
 
-// Bake the default UI font ("ui:roboto") into @p resources unless it is already
-// present, so every UIText resolves its font by name. Startup-only: scene loads
-// carry the FontAsset slot across the asset-graph swap (SceneSerializer swaps it
-// back, like shaders), so the bake never has to be repeated. The baker no-ops
-// gracefully if the .ttf is gone.
+// Bake the default UI font ("ui:roboto") unless it is already present, so every
+// UIText resolves its font by name. Startup-only: SceneSerializer swaps the
+// FontAsset slot across a scene load's asset-graph swap (like shaders), so the
+// bake is never repeated. The baker no-ops if the .ttf is gone.
 inline void ensureDefaultUIFont(Engine::ResourceManager& resources) {
     if (resources.findByName<Engine::FontAsset>("ui:roboto")) return;
     Engine::bakeFontSDF(resources,
@@ -56,11 +55,10 @@ struct AppSystems {
 };
 
 // Stands a ready-to-run engine app up in `engine`: the window, the standard
-// system stack, the GL backend, and the config's boot scene. The caller owns
-// what differs per-binary - gameplay registration (must happen before this, so
-// the scene that follows can create behaviors through the registry), the scene
-// itself (bootProjectScene), any extra systems (the editor adds EditorSystem),
-// and the run loop.
+// system stack, and the GL backend. The caller owns what differs per-binary -
+// gameplay registration (must happen before this, so the scene that follows can
+// create behaviors through the registry), the scene itself (bootProjectScene),
+// any extra systems (the editor adds EditorSystem), and the run loop.
 inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config) {
     // Bindings first: the systems below read input through named actions, and an
     // action with no binding is silently dead rather than an error.
@@ -68,10 +66,9 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     auto& window = engine.getWindow();
     window.createWindow(config.windowTitle);
     window.setFramerate(0);
-    // A game's own icon if it ships one, the engine's otherwise. Unlike the UI
-    // font this is worth letting a project override - a shipped game should not
-    // wear the engine's logo - but a project that has not authored one still
-    // gets a window with an icon rather than a blank.
+    // A game's own icon if it ships one, the engine's otherwise: a shipped game
+    // should not wear the engine's logo, but one that authored no icon still
+    // gets an icon rather than a blank.
     const std::filesystem::path projectIcon =
         Engine::ProjectPaths::assets() / "logo" / "icon.png";
     std::error_code iconEc;
@@ -91,19 +88,15 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     auto& visibilitySystem = engine.addSystem<Engine::VisibilitySystem>(Engine::SystemStage::Visibility);
     auto& renderSystem     = engine.addSystem<Engine::RenderSystem>(Engine::SystemStage::Render);
 
-    // The OpenGL backend compiles its own shaders (shaders/) and owns its
-    // fixed forward pass pipeline - no shader-asset registration or pass
-    // wiring is needed here at the app level.
+    // The backend compiles its own shaders and owns its pass pipeline, so no
+    // shader-asset registration or pass wiring is needed at the app level.
     renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
 
-    // Bake the default UI font up front so every UIText - whether built by the
-    // boot scene or loaded from a scene file - resolves its font by name.
     ensureDefaultUIFont(engine.getResources());
 
-    // No scene is seeded here. Which one boots is the project's answer, given by
-    // bootProjectScene after this returns; seeding one would leave a stray
-    // camera, light and cube underneath whatever the project then builds. The
-    // camera controller resolves whichever camera that scene marks active.
+    // No scene is seeded here: which one boots is the project's answer, given by
+    // bootProjectScene after this returns. Seeding one would leave a stray
+    // camera, light and cube underneath whatever the project then builds.
 
     engine.getClock().setPaused(config.startPaused);
     engine.setFPSLog(config.logFps);
