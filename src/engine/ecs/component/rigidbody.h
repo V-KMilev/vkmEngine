@@ -10,10 +10,9 @@ namespace Engine {
  * @brief Dynamics state for a physics body: linear + angular motion, material
  *        response, and mass properties.
  *
- * Data-only component. PhysicsSystem integrates this each fixed tick and writes
- * the resulting pose back to the entity's Transform. A static or kinematic body
- * has infinite mass: forces never move it, but it still acts as an immovable
- * wall during collision.
+ * PhysicsSystem integrates this each fixed tick and writes the resulting pose
+ * back to the entity's Transform. A static or kinematic body has infinite mass:
+ * forces never move it, but it still acts as an immovable wall during collision.
  *
  * The derived mass properties (inverse mass, body-local inverse inertia tensor)
  * are not stored here - PhysicsSystem re-derives them from mass + Collider into

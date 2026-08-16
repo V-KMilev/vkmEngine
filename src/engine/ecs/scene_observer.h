@@ -13,9 +13,8 @@ namespace Engine {
  * deletions (BehaviorSystem fires script onDestroy this way) without Scene
  * depending on that system.
  *
- * The interface lives in the ecs layer; implementers live wherever they like
- * (e.g. BehaviorSystem in system/script), which keeps Scene a pure registry
- * with no dependency back on the systems that observe it.
+ * The interface lives in the ecs layer; implementers live outside it (e.g.
+ * BehaviorSystem in system/script).
  */
 struct ISceneObserver {
     virtual ~ISceneObserver() = default;

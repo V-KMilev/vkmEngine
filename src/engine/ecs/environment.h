@@ -21,7 +21,7 @@ struct SkySettings {
     // Procedural sky: a Rayleigh + Mie atmosphere baked into the IBL cubemap in
     // place of loading hdrPath. On by default so a scene is lit before it owns
     // any assets.
-    bool  procedural       = true;   ///< Bake the atmosphere instead of loading hdrPath.
+    bool  procedural       = true;
     float sunIntensity     = 22.0f;  ///< Atmosphere sun radiance scale.
     float rayleigh         = 1.0f;   ///< Rayleigh (blue-sky) scattering scale.
     float mie              = 1.0f;   ///< Mie (haze / sun glow) scattering scale.
@@ -170,8 +170,7 @@ struct Environment {
     /**
      * @brief Direction TO the moon.
      *
-     * The vector form of moonAngles(), which is where the placement itself is
-     * decided; this only turns it into a direction.
+     * The vector form of moonAngles(), which is where the placement is decided.
      *
      * @return Unit direction pointing at the moon.
      */
