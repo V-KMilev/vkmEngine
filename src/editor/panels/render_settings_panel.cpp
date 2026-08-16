@@ -31,9 +31,8 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         propEnumCombo("Debug View", s.renderMode);
         propCheckbox("World Grid", &s.grid, "World-space ground grid overlay (editor aid)");
 
-        // MSAA sample count for the scene pass (machine-quality). The whole post
-        // chain runs on the resolved single-sample buffer, so only geometry-edge
-        // cost scales with the sample count.
+        // The post chain runs on the resolved single-sample buffer, so only
+        // geometry-edge cost scales with the sample count.
         static const char* const MSAA_LABELS[] = { "Off", "2x MSAA", "4x MSAA", "8x MSAA" };
         static const uint32_t    MSAA_VALUES[] = { 1u, 2u, 4u, 8u };
         propValueCombo("Anti-Aliasing", MSAA_LABELS, MSAA_VALUES, 4, &s.msaaSamples,
@@ -68,8 +67,6 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
     endComponentCard();
 
     if (beginComponentCard("Shadows", EditorStyle::Accent::Effect, true)) {
-        // Per-tile atlas resolution. Higher is crisper but the shadow pass is
-        // usually the frame's dominant GPU cost, so this is the main FPS lever.
         static const char* const SHADOW_RES_LABELS[] = { "Low (1024)", "Medium (2048)", "High (4096)" };
         static const uint32_t    SHADOW_RES_VALUES[] = { 1024u, 2048u, 4096u };
         propValueCombo("Atlas Resolution", SHADOW_RES_LABELS, SHADOW_RES_VALUES, 3, &s.shadowResolution,
@@ -88,9 +85,8 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
     endComponentCard();
 
     if (beginComponentCard("Culling", EditorStyle::Accent::Quality, true)) {
-        // VisibilitySystem thresholds applied before anything reaches the
-        // render pipeline: entities past the distance, or smaller than the
-        // screen-size floor, are skipped. The cheapest FPS lever in a dense scene.
+        // VisibilitySystem thresholds, applied before anything reaches the
+        // render pipeline - the cheapest FPS lever in a dense scene.
         VisibilitySystem::Settings& vis = ec.visibilitySystem.getSettings();
         ImGui::PushID("cull");
         propDrag("Max Distance", &vis.maxDistance, 5.0f, 1.0f, 10000.0f, "%.0f",
