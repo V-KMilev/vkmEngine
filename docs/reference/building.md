@@ -19,6 +19,10 @@ git submodule update --init --recursive
 
 ## Build Commands
 
+An in-source build is refused rather than warned about, and a configure that
+names no build type gets `RelWithDebInfo` - an unset one silently means neither
+optimisation nor debug info.
+
 ```bash
 # Configure
 cmake -B build -G Ninja
@@ -48,8 +52,8 @@ it belongs to the project rather than to this build tree.
 
 | Target | Type | Description |
 |--------|------|-------------|
-| `EngineCore` | Static lib | Core engine: ECS, resources, IO, the non-render systems (animation/visibility/event/physics/script/hierarchy/...), platform, debug |
-| `EngineRendering` | Static lib | Render system, backend abstraction, render view |
+| `EngineCore` | **Shared lib** | Core engine: ECS, resources, IO, the non-render systems (animation/visibility/event/physics/script/hierarchy/...), platform, debug |
+| `EngineRendering` | **Shared lib** | Render system, backend abstraction, render view |
 | `BackendOpenGL` | Static lib | OpenGL backend implementation (GLBackend, GLView, passes, GPU resources) |
 | `EngineTools` | Static lib | Procedural generators + the runtime-safe cooked-asset loaders/factories. No Assimp, no heavy image decode |
 | `EngineCooker` | Static lib | The heavy importers (Assimp model import, stb image decode) + the asset cooker that bakes recipes into the cooked cache. Linked by `engine_editor` and `engine_cook` only |
@@ -58,6 +62,43 @@ it belongs to the project rather than to this build tree.
 | `engine_runtime` | Executable | Bare engine, no editor. Includes `app/engine_app.h` for the shared bootstrap; links no Assimp and no ImGui |
 | `engine_editor` | Executable | Engine libs + `EngineEditor` + `EngineCooker`; loads the open project's module for hot-reload |
 | `engine_cook` | Executable | Headless asset cook: `EngineCooker` with no window, no GL context and no `Engine`, so it runs over SSH and on CI |
+
+`EngineCore` and `EngineRendering` are shared on purpose. A gameplay module has
+to reach engine symbols without carrying a second copy - two copies mean two
+typeId registries and two sets of singletons - and a static engine can only
+manage that by having the module resolve symbols from the host executable. That
+works on Linux and binds a module to one specific exe on Windows, so a module
+built for the editor could not be loaded by the runtime. One shared library both
+link against removes the question.
+
+## Installing an SDK
+
+Building the engine and shipping it are different things. `cmake --install`
+produces an **SDK**, not a game:
+
+```bash
+cmake --install build --prefix /path/to/sdk
+```
+
+```
+<prefix>/bin/       the three hosts, the shared engine, and the vkm command
+<prefix>/include/   the engine's public headers plus the third-party headers
+                    they reach into
+<prefix>/lib/cmake/vkmEngine/   what find_package(vkmEngine) loads
+<prefix>/shaders/   engine shaders
+<prefix>/templates/ what `vkm new` copies
+```
+
+A downloadable archive comes from CPack, and carries the compiler in its name
+because the engine is not ABI-stable across compilers:
+
+```bash
+cmake --build build --target package
+# -> vkmEngine-1.4.0-Linux-x86_64-GNU-12.3.0.tar.xz
+```
+
+Building a game *with* that SDK is [getting-started.md](../guides/getting-started.md).
+Nothing there involves writing CMake.
 | `EngineHeaders` | Interface lib | Include-only view of EngineCore's public API; the hot-reload module compiles against it without linking EngineCore's objects |
 | `BuildInfo` | Interface lib | Compile-time build metadata (version, branch, commit hash) |
 | `vkm_warnings` | Interface lib | Shared GCC/Clang warning flags; first-party targets opt in, submodules don't |
