@@ -28,9 +28,6 @@ enum class MaterialType : uint8_t {
     AlphaMask   = 3,
     Count
 };
-
-VKM_ENUM_NAMES(MaterialType, "Opaque", "Transparent", "Unlit", "AlphaMask")
-
 /**
  * @brief A complete PBR material.
  *
@@ -102,7 +99,11 @@ using MaterialHandle = Handle<MaterialAsset>;
 // Plain (non-texture) fields, driven by reflection in AssetSerializer's
 // materialToInline / applyInline. Texture handles are intentionally
 // absent - they serialize separately as name refs.
-VKM_REFLECT_BEGIN(MaterialAsset)
+} // namespace Engine
+
+VKM_ENUM_NAMES(::Engine::MaterialType, "Opaque", "Transparent", "Unlit", "AlphaMask")
+
+VKM_REFLECT_BEGIN(::Engine::MaterialAsset)
     VKM_F(type),
     VKM_F(alphaCutoff),
     VKM_F(albedo),
@@ -127,5 +128,3 @@ VKM_REFLECT_BEGIN(MaterialAsset)
     VKM_F(attenuationColor),
     VKM_F(heightScale)
 VKM_REFLECT_END()
-
-} // namespace Engine

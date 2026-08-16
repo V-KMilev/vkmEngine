@@ -33,10 +33,13 @@ struct UIText {
     VAlign      valign    = VAlign::Top;               ///< Vertical alignment within the element rect.
 };
 
-VKM_ENUM_NAMES(UIText::Align, "Left", "Center", "Right")
-VKM_ENUM_NAMES(UIText::VAlign, "Top", "Middle", "Bottom")
+} // namespace Engine
 
-VKM_REFLECT_BEGIN(UIText)
+VKM_ENUM_NAMES(::Engine::UIText::Align, "Left", "Center", "Right")
+
+VKM_ENUM_NAMES(::Engine::UIText::VAlign, "Top", "Middle", "Bottom")
+
+VKM_REFLECT_BEGIN(::Engine::UIText)
     VKM_F(text),
     VKM_F(font),
     VKM_F(pixelSize),
@@ -44,5 +47,3 @@ VKM_REFLECT_BEGIN(UIText)
     VKM_F(align),
     VKM_F(valign)
 VKM_REFLECT_END()
-
-} // namespace Engine

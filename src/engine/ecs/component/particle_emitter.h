@@ -53,8 +53,9 @@ struct ParticleEmitter {
     std::vector<Particle> particles;
     float                 spawnAccumulator = 0.0f;
 };
+} // namespace Engine
 
-VKM_REFLECT_BEGIN(ParticleEmitter)
+VKM_REFLECT_BEGIN(::Engine::ParticleEmitter)
     VKM_F(emitting),
     VKM_F(rate),
     VKM_F(lifetime),
@@ -69,5 +70,3 @@ VKM_REFLECT_BEGIN(ParticleEmitter)
     VKM_F(softness),
     VKM_F(additive)
 VKM_REFLECT_END()
-
-} // namespace Engine

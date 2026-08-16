@@ -21,9 +21,6 @@ enum class AssetType : uint8_t {
 
     Count
 };
-
-VKM_ENUM_NAMES(AssetType, "mesh", "texture", "material")
-
 struct AssetRecord {
     AssetType   type = AssetType::Mesh;
     std::string name;
@@ -133,3 +130,5 @@ class AssetLibrary {
 };
 
 } // namespace Engine
+
+VKM_ENUM_NAMES(::Engine::AssetType, "mesh", "texture", "material")
