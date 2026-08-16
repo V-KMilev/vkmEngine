@@ -40,7 +40,7 @@
 #include "resource/resource_manager.h"
 #include "platform/window/window_manager.h"
 
-#include "debug/profiler_gl.h"
+#include "gl_profiler.h"
 
 namespace Engine {
 

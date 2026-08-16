@@ -76,6 +76,10 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/json/single_include/nlohmann
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT Development)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/glfw/include/GLFW
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT Development)
+
+# No GL headers: the one public header that included glew was the GPU profiler,
+# and it belongs to the backend rather than the engine. Nothing a project can
+# reach names an OpenGL type.
 install(FILES ${CMAKE_SOURCE_DIR}/modules/vkmLog/src/logger.h
               ${CMAKE_SOURCE_DIR}/modules/vkmLog/src/l_assert.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT Development)
