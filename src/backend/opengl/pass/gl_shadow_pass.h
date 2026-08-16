@@ -43,9 +43,8 @@ class GLShadowPass : public GLPass {
         /**
          * @brief Fill the 2D depth atlas for directional cascades and spots.
          *
-         * Clears the atlas once, then rasterises every shadow caster into each
-         * cascade / spot tile with the projected-depth shader. A no-op when the
-         * frame has no 2D casters.
+         * Clears the atlas once, then fills one tile per job with the
+         * projected-depth shader. A no-op when the frame has no 2D casters.
          */
         void render2D(GLFrameContext& ctx);
 

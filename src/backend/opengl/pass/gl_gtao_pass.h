@@ -14,9 +14,9 @@ namespace Engine {
  * @brief Ground-Truth Ambient Occlusion (horizon-slice integral).
  *
  * Reads the opaque depth + G-buffer (oct view-normal) the depth prepass laid
- * down, reconstructs view-space position, and integrates cosine-weighted
- * visibility over a few screen-space slices. Writes a single AO factor into the
- * frame's AO target; the forward pass multiplies it into the indirect term.
+ * down and integrates cosine-weighted visibility over a few screen-space
+ * slices. Writes a single AO factor into the frame's AO target; the forward
+ * pass multiplies it into the indirect term.
  * Runs after the prepass and before the forward draw, so it must see the primed
  * depth + G-buffer but not yet the lit colour.
  */

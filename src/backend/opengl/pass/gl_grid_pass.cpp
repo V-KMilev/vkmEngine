@@ -39,9 +39,9 @@ void GLGridPass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
     const glm::mat4& viewProj = view.camera.viewProjection;
 
-    // Alpha-blend over the current scene colour. The chain scratches carry no
-    // depth attachment, so occlusion moves into the shader: it samples the
-    // geometry target's depth and discards covered fragments (LEQUAL).
+    // The chain scratches carry no depth attachment, so occlusion moves into the
+    // shader: it samples the geometry target's depth and discards covered
+    // fragments (LEQUAL).
     promoteColorChain(ctx);
     ctx.colorSrc->bind(ctx.gl);
     ctx.gl.setDepthTest(false);
@@ -59,7 +59,7 @@ void GLGridPass::execute(GLFrameContext& ctx) {
     m_quad->draw();
 
     // Restore the engine-default depth/blend state so nothing downstream
-    // inherits this pass's no-test, blended overlay setup.
+    // inherits this overlay's no-test, blended setup.
     ctx.gl.setBlending(false);
     ctx.gl.setDepthTest(true);
     ctx.gl.setDepthWrite(true);

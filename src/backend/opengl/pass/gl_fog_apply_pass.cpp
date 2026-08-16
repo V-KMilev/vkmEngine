@@ -26,8 +26,8 @@ void GLFogApplyPass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
     if (!ctx.fogReady) return;
 
-    // Render "scene + fog" into the free scratch while sampling the current
-    // scene colour + the geometry target's depth, then flip the chain.
+    // Into the free scratch while sampling the current colour, then flip the
+    // chain.
     ctx.colorDst->bind(ctx.gl);
     beginFullscreen(ctx.gl);
 

@@ -37,8 +37,8 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
 
     const int mips = bloom.mipCount();
 
-    // Progressive downsample: HDR scene -> mip 0 -> ... -> mip N-1. The first
-    // tap soft-knee prefilters + Karis-averages; the rest are plain 13-tap.
+    // The first tap soft-knee prefilters + Karis-averages; the rest are plain
+    // 13-tap.
     m_down->bind();
     for (int mip = 0; mip < mips; ++mip) {
         if (mip == 0) {
@@ -56,7 +56,6 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
         ctx.screenTri.emit();
     }
 
-    // Additive upsample back up the chain (tent filter).
     m_up->bind();
     m_up->setUniform1f("u_filterRadius", settings.bloomRadius);
     bloom.bind(GLBindings::BloomTextureSlots::Source);
