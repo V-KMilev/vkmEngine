@@ -21,14 +21,11 @@ VKM_ENUM_NAMES(ProjectionType, "Perspective", "Orthographic")
 /**
  * @brief Component representing a camera, containing projection and view parameters.
  *
- * Simple data-only component. Supports both perspective and orthographic projection.
- * Camera calculations (view/projection matrices) should be handled by systems that process this component.
- *
  * For raw projection-matrix construction without a Camera instance, use the
  * builders in core/math/projection.h.
  */
 struct Camera {
-    ProjectionType projection = ProjectionType::Perspective;    ///< Type of projection
+    ProjectionType projection = ProjectionType::Perspective;
     float fovY                = glm::radians(70.0f);            ///< Vertical field of view in radians (default: ~70 degrees)
     float orthoHeight         = 10.0f;                          ///< Orthographic half-height in world units
     float aspect              = 0.0f;                           ///< Aspect ratio (width / height); <= 0 = derive from the viewport each frame
@@ -36,7 +33,7 @@ struct Camera {
     float zFar                = 1000.0f;                        ///< Far clip plane distance
     float focusDistance       = 10.0f;                          ///< Depth of field: world distance held in sharp focus
     float dofAmount           = 0.0f;                           ///< Depth of field strength (0 = off)
-    bool active               = true;                           ///< Is this camera active?
+    bool active               = true;
 
     /**
      * @brief Compute the projection matrix for this camera.

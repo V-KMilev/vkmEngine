@@ -29,16 +29,13 @@ VKM_ENUM_NAMES(LightType, "Directional", "Point", "Spot", "Rect", "Disk")
 /**
  * @brief Component representing a light source in the scene.
  *
- * Simple data-only component. Light calculations and culling should be handled
- * by systems that process this component.
- *
  * For directional lights, use the Transform component's rotation to define direction.
  * For point, spot, and area lights, use the Transform component's position.
  * Area lights face along -direction (i.e. their surface normal is -direction,
  * matching how spotlights are oriented).
  */
 struct Light {
-    LightType type  = LightType::Directional;  ///< Type of light
+    LightType type  = LightType::Directional;
     glm::vec3 color = {1.0f, 1.0f, 1.0f};      ///< Light color (RGB)
     float intensity = 1.0f;                    ///< Light intensity multiplier
 
@@ -52,11 +49,11 @@ struct Light {
     float areaRadius = 0.5f;                   ///< Disk radius
     bool  twoSided   = false;                  ///< Area lights: emit from both faces
 
-    bool  castShadows    = true;               ///< Should this light cast shadows?
+    bool  castShadows    = true;
     float shadowBias     = 0.005f;             ///< Depth comparison bias (slope-scaled for 2D, constant for cube)
     float shadowDistance = 100.0f;             ///< Directional only: max world distance the cascades cover.
 
-    bool enabled = true;                       ///< Is this light enabled?
+    bool enabled = true;
 };
 
 VKM_REFLECT_BEGIN(Light)
