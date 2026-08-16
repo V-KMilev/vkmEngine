@@ -213,6 +213,7 @@ class GLShadowData {
         void fitSpot(const LightData& light, uint32_t lightIndex, uint32_t& next2D);
         void fitPoint(const LightData& light, uint32_t lightIndex, uint32_t& nextCube);
 
+    private:
         std::unique_ptr<Core::UniformBuffer> m_ubo;
         ShadowUBOData m_data{};
         ShadowUBOData m_last{};

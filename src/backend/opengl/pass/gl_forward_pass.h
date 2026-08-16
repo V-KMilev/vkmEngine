@@ -20,12 +20,12 @@ namespace Engine {
 /**
  * @brief The lit forward draw - the one geometry pass the backend runs.
  *
- * Splits the frame's drawables by material type: Opaque / AlphaMask / Unlit
- * draw first, then Transparent draws back-to-front with alpha blending and
- * depth writes off. With the depth prepass in front (the standard pipeline) the
- * opaque draw runs LEQUAL with depth writes off for early-Z; in the no-prepass
- * fallback it owns the depth/colour clear and writes depth itself. Back faces
- * are culled (all materials are single-sided). The camera and light UBOs are
+ * Draws the three buckets the backend partitioned, in order: Opaque / Unlit
+ * against the depth the prepass primed (LEQUAL, writes off, for early-Z), then
+ * AlphaMask with writes back on so it primes its own depth, then Transparent
+ * back-to-front with alpha blending and writes off. The prepass is
+ * unconditional and owns the clear, so this pass never clears. Back faces are
+ * culled (all materials are single-sided). The camera and light UBOs are
  * uploaded by the backend before this pass runs.
  */
 class GLForwardPass : public GLPass {

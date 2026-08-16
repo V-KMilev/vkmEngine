@@ -19,7 +19,9 @@ namespace Engine {
  * from the scene depth, each later level from the one before.
  *
  * The pyramid is what the GPU occlusion cull tests against, and it is the only
- * thing this pass produces - nothing is drawn to the screen.
+ * thing this pass produces - nothing is drawn to the screen. It follows that
+ * the pass runs only while occlusion culling is on; the chain's storage stays
+ * allocated across a toggle rather than thrashing on it.
  */
 class GLHiZPass : public GLPass {
     public:

@@ -46,6 +46,7 @@ class GLParticlePass : public GLPass {
          */
         void drawBatch(const std::vector<ParticleData>& batch);
 
+    private:
         std::unique_ptr<Core::Shader>              m_shader;
         std::unique_ptr<Core::ShaderStorageBuffer> m_instances;
         uint32_t                                   m_capacity = 0;  ///< Instances the SSBO can hold.

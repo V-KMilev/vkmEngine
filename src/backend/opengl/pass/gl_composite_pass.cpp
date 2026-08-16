@@ -46,7 +46,11 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
     if (mode != static_cast<int>(RenderMode::Default)) {
         ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SceneDepth);
         ctx.sceneHDR.bindGBuffer(GLBindings::PostTextureSlots::SceneGBuffer);
-        ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
+        // The AO target is allocated for any debug view, but only the GTAO pass
+        // ever writes it: with GTAO off the AO view would show whatever the
+        // allocation happened to contain. Show the unoccluded value instead.
+        if (ctx.aoReady) ctx.ao.bindTexture(GLBindings::PostTextureSlots::SSAO);
+        m_shader->setUniform1i("u_hasAO", ctx.aoReady ? 1 : 0);
         ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
         if (ctx.fogReady)
             ctx.fog.bindIntegratedSlot(GLBindings::PostTextureSlots::FogVolume);

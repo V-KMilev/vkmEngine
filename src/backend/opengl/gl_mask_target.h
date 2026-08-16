@@ -17,10 +17,10 @@ namespace Engine {
 /**
  * @brief Screen-space mask target - one small-format texture in its own FBO.
  *
- * Backs the GTAO factor (RGBA16F via setFormat, to carry a packed bent normal)
- * (the default lone R16F channel); a pass
- * renders its mask into this and the forward pass samples it. Deliberately
- * lighter than GLTarget: no depth, no G-buffer, no HDR colour - just the mask,
+ * Backs the GTAO factor: RGBA16F via setFormat, to carry a packed bent normal
+ * alongside the occlusion (a plain single-channel mask is the R16F default).
+ * A pass renders into it and the forward pass samples it. Deliberately lighter
+ * than GLTarget: no depth, no G-buffer, no HDR colour - just the mask,
  * linear-filtered so a future half-res variant can upsample cleanly.
  */
 class GLMaskTarget {
