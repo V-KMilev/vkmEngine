@@ -68,9 +68,9 @@ int main(int argc, char** argv) {
         // Pass true only to pin a GL error to its exact callsite.
         Core::enableGLDebugLogging(false);
 
-        // The editor registers the cooked factory set plus the recipe factories
-        // it needs to (re)cook assets from their source. Must precede scene I/O.
-        Engine::registerCookedAssetFactories();
+        // The editor wires the recipe factories: they (re)cook assets from their
+        // source and fall through to the cooked path for what is already baked.
+        // Must precede scene I/O.
         Engine::registerRecipeAssetFactories();
 
         // Load the cooked asset database manifest (empty on a fresh project; the

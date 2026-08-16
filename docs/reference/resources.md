@@ -178,7 +178,8 @@ The tools split by dependency weight:
   and the asset cooker (`cook/`), plus `registerRecipeAssetFactories`.
 
 The runtime registers only the cooked set, so it links neither Assimp nor the
-image decoders; the editor registers both and (re)cooks recipes into the cache.
+image decoders; the editor registers the recipe set instead, which falls through
+to the cooked functions and (re)cooks recipes into the cache.
 
 ### Generators (`src/tools/generator/`)
 

@@ -62,9 +62,8 @@ int main(int argc, char** argv) {
             return EXIT_SUCCESS;
         }
 
-        // Both factory sets: the cooked ones to read what is already baked, the
-        // recipe ones to import source art for what is not.
-        Engine::registerCookedAssetFactories();
+        // The recipe factories import source art for what is not baked yet, and
+        // fall through to the cooked path for what is.
         Engine::registerRecipeAssetFactories();
         Engine::AssetLibrary::get().load();
 
