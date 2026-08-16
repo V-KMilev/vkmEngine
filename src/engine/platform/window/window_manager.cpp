@@ -22,6 +22,15 @@ namespace Engine {
 WindowManager::WindowManager() = default;
 
 namespace {
+// GLFW parks the reason for a failure in its per-thread error state, and nothing
+// reads it unless asked - so a startup that dies here says what actually failed
+// instead of naming the call that returned null.
+const char* glfwErrorDescription() {
+    const char* description = nullptr;
+    glfwGetError(&description);
+    return description ? description : "no description";
+}
+
 GLFWmonitor* getCurrentMonitor(GLFWwindow* window) {
     int windowX, windowY, windowWidth, windowHeight;
     glfwGetWindowPos(window, &windowX, &windowY);
@@ -72,7 +81,7 @@ void WindowManager::createWindow(const std::string& title) {
     m_title = title;
 
     if (!glfwInit()) {
-        LOG_ERROR("Failed to initialize GLFW");
+        LOG_ERROR("Failed to initialize GLFW: %s", glfwErrorDescription());
         throw std::runtime_error("Failed to initialize GLFW");
     }
 
@@ -90,7 +99,11 @@ void WindowManager::createWindow(const std::string& title) {
     );
 
     if (!m_windowHandle) {
-        LOG_ERROR("Failed to create window");
+        // Usually a driver that cannot serve the core context hinted above, but
+        // "no display" and "GLFW built without this platform" land here too -
+        // only GLFW's own description tells them apart.
+        LOG_ERROR("Failed to create window (requested OpenGL %d.%d core): %s",
+            OPENGL_MAJOR_VERSION, OPENGL_MINOR_VERSION, glfwErrorDescription());
         throw std::runtime_error("Failed to create window");
     }
 
@@ -99,8 +112,9 @@ void WindowManager::createWindow(const std::string& title) {
 
     // Initialize GLEW to load GL function pointers (must happen after context is current).
     // Version / device strings are logged by the OpenGL backend when it constructs.
-    if (glewInit() != GLEW_OK) {
-        LOG_ERROR("Failed to initialize GLEW");
+    if (const GLenum glewError = glewInit(); glewError != GLEW_OK) {
+        LOG_ERROR("Failed to initialize GLEW: %s",
+            reinterpret_cast<const char*>(glewGetErrorString(glewError)));
         throw std::runtime_error("Failed to initialize GLEW");
     }
 
@@ -336,6 +350,18 @@ int WindowManager::getRefreshRate() const {
     }
 
     return mode->refreshRate;
+}
+
+float WindowManager::framebufferScale() const {
+    // Silent on a missing window: this runs per frame, and 1.0f is the honest
+    // answer for the unscaled case a caller falls back to anyway.
+    if (!m_windowHandle) return 1.0f;
+
+    int windowWidth = 0;
+    glfwGetWindowSize(m_windowHandle, &windowWidth, nullptr);
+    if (windowWidth <= 0) return 1.0f;
+
+    return static_cast<float>(m_width) / static_cast<float>(windowWidth);
 }
 
 GLFWwindow* WindowManager::getWindowContext() const {

@@ -1,28 +1,18 @@
-// GLFW first so its real MAX_KEY / MAX_MOUSE_BUTTON are defined
-// before input_handle.h's fallback copies, which would otherwise be redefined
-// by glfw3.h (a warning). The static_assert below pins the two to each other.
+#include "platform/window/input_handle.h"
+
 #include "platform/window/glfw_include.h"
 
-#include "platform/window/input_handle.h"
 #include "platform/window/window_manager.h"
 
 namespace Engine {
 
-// The header sizes its arrays without including GLFW; keep the two in step.
+// The header sizes m_keyState[] / m_buttonState[] without including GLFW, so a
+// GLFW that grows a key would leave every array short. This is the one place
+// the real header is in scope to say so.
 static_assert(MAX_KEY          == GLFW_KEY_LAST,
               "MAX_KEY is out of step with this GLFW - resize the key arrays");
 static_assert(MAX_MOUSE_BUTTON == GLFW_MOUSE_BUTTON_LAST,
               "MAX_MOUSE_BUTTON is out of step with this GLFW - resize the button arrays");
-
-
-// input_handle.h sizes m_keyState[] / m_buttonState[] from fallback copies of
-// these GLFW constants (it only forward-declares GLFWwindow, so the real header
-// may not be in scope there). If a GLFW version ever changed them, the same
-// class would get a different size across translation units - an ODR violation
-// plus a buffer overrun. Pin the fallbacks to the real values here, where the
-// real GLFW header is included.
-static_assert(MAX_KEY == 348, "MAX_KEY changed; update the fallback in input_handle.h");
-static_assert(MAX_MOUSE_BUTTON == 7, "MAX_MOUSE_BUTTON changed; update the fallback in input_handle.h");
 
 namespace {
 // Fetch the bundled callback pointers stored as the GLFW user pointer. Used by

@@ -20,8 +20,7 @@ bool ThreadPool::isWorkerThread() {
 
 ThreadPool::ThreadPool(
     size_t threadCount
-) : m_running(true),
-    m_taskCount(0) {
+) : m_running(true) {
     start(threadCount);
 }
 ThreadPool::~ThreadPool() {
@@ -29,35 +28,44 @@ ThreadPool::~ThreadPool() {
 }
 
 ThreadPool& ThreadPool::get() {
-    static ThreadPool instance(std::thread::hardware_concurrency());
+    // hardware_concurrency() is allowed to answer 0 when it cannot tell. One
+    // worker still drains the queue; zero would strand every task in it.
+    static ThreadPool instance(std::max<size_t>(1, std::thread::hardware_concurrency()));
     return instance;
 }
 
 void ThreadPool::addTask(std::function<void()> && task) {
     {
         std::lock_guard<std::mutex> lock(m_tasksMutex);
-        ++m_taskCount;
-        m_tasks.emplace_back(std::move(task));
+        m_tasks.push_back(QueuedTask{std::move(task), nullptr});
     }
 
     m_tasksCV.notify_one();
 }
 
-void ThreadPool::addTasks(std::vector<std::function<void()>> && tasks) {
+void ThreadPool::addTasks(std::vector<std::function<void()>> && tasks, std::atomic<size_t>& pending) {
     {
         std::lock_guard<std::mutex> lock(m_tasksMutex);
-        m_taskCount += tasks.size();
+        pending += tasks.size();
         for (auto& task : tasks) {
-            m_tasks.emplace_back(std::move(task));
+            m_tasks.push_back(QueuedTask{std::move(task), &pending});
         }
     }
 
     m_tasksCV.notify_all();
 }
 
-void ThreadPool::waitToFinish() {
+void ThreadPool::waitForBatch(std::atomic<size_t>& pending) {
+    // A batch counter only ever falls, so a zero read here is final and needs
+    // no lock - that is the whole cost of a parallelFor that submitted nothing.
+    if (pending.load() == 0) return;
+
     std::unique_lock<std::mutex> lock(m_tasksMutex);
-    m_doneCV.wait(lock, [this]() { return m_taskCount == 0; });
+    m_doneCV.wait(lock, [&pending]() { return pending.load() == 0; });
+}
+
+void ThreadPool::shutdown() {
+    stop();
 }
 
 void ThreadPool::start(size_t threadCount) {
@@ -86,7 +94,7 @@ void ThreadPool::stop() {
 void ThreadPool::process() {
     t_isWorker = true;
     while (m_running) {
-        std::function<void()> task;
+        QueuedTask queued;
         {
             std::unique_lock<std::mutex> lock(m_tasksMutex);
             m_tasksCV.wait(lock, [this]() {
@@ -95,25 +103,29 @@ void ThreadPool::process() {
 
             if (m_tasks.empty() || !m_running) continue;
 
-            task = std::move(m_tasks.front());
+            queued = std::move(m_tasks.front());
             m_tasks.pop_front();
         }
 
-        // A throwing task must NOT skip the decrement: waitToFinish() would
+        // A throwing task must NOT skip the retire below: waitForBatch() would
         // block forever on a count that never reaches zero. Swallow and log;
         // task bodies are responsible for their own error reporting.
         try {
-            task();
+            queued.function();
         } catch (const std::exception& e) {
             LOG_ERROR("ThreadPool task threw: %s", e.what());
         } catch (...) {
             LOG_ERROR("ThreadPool task threw unknown exception");
         }
 
+        if (!queued.pending) continue;
+
+        // Under the queue lock, so a waiter evaluating its predicate cannot
+        // miss the drop to zero and sleep through the notify.
         size_t remaining;
         {
             std::lock_guard<std::mutex> lock(m_tasksMutex);
-            remaining = --m_taskCount;
+            remaining = --(*queued.pending);
         }
         if (remaining == 0) m_doneCV.notify_all();
     }
