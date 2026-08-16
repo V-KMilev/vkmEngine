@@ -109,8 +109,6 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildSequential(
     m_models.reserve(list.size());
     m_normals.reserve(list.size());
 
-    // One instance per drawable, input order preserved (depth order for
-    // transparents). Each is its own single-instance run.
     for (const DrawableData* d : list) {
         const GLMesh* mesh = view.getMesh(d->mesh);
         if (!mesh) continue;
