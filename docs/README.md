@@ -7,6 +7,8 @@ and structure instead of guessing from whatever file you happen to open first.
 It has two halves:
 
 - **`guides/`** - how we work: the rules and judgment that apply to every change.
+  Start at [getting-started.md](guides/getting-started.md) if you are building a
+  game *with* the engine rather than working *on* it.
 - **`reference/`** - how the engine works: a deep-dive per subsystem.
 
 > **The code is the source of truth.** These docs are kept current, but code

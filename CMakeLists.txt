@@ -141,3 +141,7 @@ add_subdirectory(app/editor)
 
 # Every install rule lives in one file, after the targets it installs.
 include(cmake/install.cmake)
+
+# CPack, which turns that install tree into a downloadable archive. After the
+# install rules because it packages what they produce.
+include(cmake/package.cmake)

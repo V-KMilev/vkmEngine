@@ -71,6 +71,13 @@ target_link_libraries(EngineCore PRIVATE
 target_compile_definitions(EngineCore PUBLIC
     GLM_ENABLE_EXPERIMENTAL
     GLM_FORCE_INTRINSICS
+
+    # The engine version, visible to anything that links EngineCore - including a
+    # gameplay module built against an installed SDK, which does not link
+    # BuildInfo. A module reports this back through vkmModuleEngineVersion() and
+    # the host compares it with its own, so a module built against a different
+    # engine is refused at load with a sentence instead of crashing later.
+    VKM_ENGINE_VERSION="${PROJECT_VERSION}"
 )
 
 # Tracy plumbing. The facade (debug/profiler.h) gates every macro on
