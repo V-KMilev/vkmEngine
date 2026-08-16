@@ -74,11 +74,10 @@ void drawPropertyLabel(const char* label) {
     ImGui::AlignTextToFramePadding();
 
     // The label lives in a fixed column measured from the ROW's start - i.e.
-    // including any card indent. (It used to be measured from the window edge,
-    // so inside indented cards a wide label slid underneath its widget:
-    // "Focus Distance" behind the slider.) A long label ellipsizes inside the
-    // column (full text on hover) instead of pushing the widget; the widget
-    // always starts at the column edge with the remaining width.
+    // including any card indent. (Measured from the window edge, a wide label
+    // inside an indented card slid underneath its widget: "Focus Distance"
+    // behind the slider.) A long label ellipsizes inside the column instead of
+    // pushing the widget.
     const float startX = ImGui::GetCursorPosX();
     const float colW   = EditorStyle::labelWidth();
     const float maxW   = colW - ImGui::GetStyle().ItemSpacing.x;
@@ -111,11 +110,9 @@ struct CardState {
     float  lineX  = 0.0f;   // left accent-line x, screen-space
     bool   open   = false;
 };
-// Accessor instead of a bare global: keeps the stack a single instance
-// (cards never nest deeply, but the stack still enforces balanced
-// begin/end pairs) while making the lifetime explicit. thread_local
-// so this is honest about the only context where the stack is valid:
-// the ImGui-owning thread.
+// Accessor instead of a bare global: the stack enforces balanced begin/end
+// pairs while keeping the lifetime explicit. thread_local because the only
+// context where it is valid is the ImGui-owning thread.
 std::vector<CardState>& cardStack() {
     thread_local std::vector<CardState> s;
     return s;
@@ -201,8 +198,8 @@ void endComponentCard() {
 }
 
 namespace {
-// A crisp full-width accent rule under the current cursor - replaces the
-// flat default Separator so every panel/section reads the same way.
+// A full-width accent rule under the current cursor - the flat default
+// Separator in the panel/section voice.
 void accentRule() {
     const ImVec2 p = ImGui::GetCursorScreenPos();
     const float  w = ImGui::GetContentRegionAvail().x;

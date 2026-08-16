@@ -12,13 +12,9 @@ namespace Engine {
  * @brief Shared modal-dialog scaffold: one look and one keyboard contract for
  * every editor dialog.
  *
- * beginDialog owns the open handshake (open once, never re-fire while showing,
- * drop the intent when the popup is dismissed any other way) and centers the
- * modal. dialogButtons draws the right-aligned button row at one size, styles
- * the confirm button as the accent default, and maps Escape -> cancel and
- * Enter -> confirm (when no text field is capturing input; a field that should
- * commit on Enter uses ImGuiInputTextFlags_EnterReturnsTrue and the caller
- * treats that as confirm). endDialog closes the scope.
+ * Escape cancels and Enter confirms, the latter only when no text field is
+ * capturing input; a field that should commit on Enter uses
+ * ImGuiInputTextFlags_EnterReturnsTrue and the caller treats that as confirm.
  *
  * Usage:
  *   if (beginDialog("Rename Asset", m_renameOpen)) {

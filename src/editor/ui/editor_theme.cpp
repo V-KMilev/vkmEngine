@@ -6,11 +6,10 @@
 
 namespace Engine {
 
-// Bolder, modern dark theme. A cool-tinted neutral ramp gives panels a sense
-// of elevation (window < child < popup, frames recessed), and a single vivid
-// accent (EditorStyle::ACCENT) drives every interactive/selected surface so
-// the whole editor reads as one designed system. Generous spacing/rounding
-// for breathing room in a feature-dense UI.
+// A cool-tinted neutral ramp gives panels a sense of elevation (window <
+// child < popup, frames recessed), and a single accent (EditorStyle::ACCENT)
+// drives every interactive/selected surface, so the editor reads as one
+// designed system.
 void applyEditorTheme() {
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
@@ -20,7 +19,7 @@ void applyEditorTheme() {
     style.WindowPadding     = ImVec2(10, 8);
     style.WindowTitleAlign  = ImVec2(0.0f, 0.5f);
     style.FrameRounding     = 5.0f;
-    style.FramePadding      = ImVec2(8, 4);  // comfortable, not chunky
+    style.FramePadding      = ImVec2(8, 4);
     style.FrameBorderSize   = 0.0f;
     style.PopupRounding     = 6.0f;
     style.GrabRounding      = 4.0f;
@@ -42,7 +41,7 @@ void applyEditorTheme() {
     style.SeparatorTextPadding    = ImVec2(16.0f, 4.0f);
     style.PopupBorderSize   = 1.0f;
     style.TabBarBorderSize  = 1.0f;
-    style.TabBarOverlineSize = 0.0f;  // the selected-tab overline is drawn via TabSelectedOverline below
+    style.TabBarOverlineSize = 0.0f;  // drawn via TabSelectedOverline below
     style.WindowMinSize     = ImVec2(220.0f, 140.0f);
     style.DisabledAlpha     = 0.45f;
 
