@@ -38,7 +38,6 @@ void GLShadowPass::execute(GLFrameContext& ctx) {
 }
 
 void GLShadowPass::render2D(GLFrameContext& ctx) {
-    // Directional cascades + spot maps. One clear, then one tile per job.
     const std::vector<Shadow2DJob>& jobs = ctx.shadowData.jobs2D();
     if (jobs.empty()) return;
 
@@ -52,7 +51,6 @@ void GLShadowPass::render2D(GLFrameContext& ctx) {
 }
 
 void GLShadowPass::renderCube(GLFrameContext& ctx) {
-    // Point lights, six faces each (linear distance depth).
     m_depthCube->bind();
     const std::vector<ShadowCubeJob>& jobs = ctx.shadowData.jobsCube();
     for (size_t j = 0; j < jobs.size(); ++j) {
@@ -75,11 +73,9 @@ void GLShadowPass::renderCasters(GLFrameContext& ctx, const ShadowCasterBatch& b
     const std::vector<uint32_t>&         order   = batch.order;
 
     // Culling and mesh-sorting already happened on the thread pool (see
-    // GLShadowData::cullCasters), so this is submission only.
-    //
-    // Flatten every survivor's model into one buffer and upload it once, then draw
-    // each mesh run from its slice via baseInstance (the forward batcher's single-
-    // upload pattern). Depth-only, so just the model buffer - no normal matrix.
+    // GLShadowData::cullCasters), so this is submission only: one upload, then
+    // one draw per mesh run from its slice via baseInstance. Depth-only, so the
+    // instance data is just the model matrix - no normal matrix.
     {
     PROFILE_SCOPE("ShadowCasters/Gather");
     m_models.clear();

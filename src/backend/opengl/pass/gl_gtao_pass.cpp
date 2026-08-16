@@ -25,8 +25,8 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
 
     const RenderView& view = ctx.view;
 
-    // Render the AO factor into its own target while sampling the scene depth +
-    // G-buffer (a different FBO, so no read-while-write feedback).
+    // Into the AO target while sampling the scene depth + G-buffer - a different
+    // FBO, so no read-while-write feedback.
     ctx.ao.bind(ctx.gl);
     beginFullscreen(ctx.gl);
 

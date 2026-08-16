@@ -25,11 +25,10 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
     const RenderView& view   = ctx.view;
     const GLView&     glView = ctx.resources;
 
-    // First pass to touch the HDR target: clear all of its attachments (colour,
-    // G-buffer, depth) for the frame, then render the opaque G-buffer (view
-    // normal + roughness + metalness) into colour attachment 1 while priming
-    // depth. The skybox + forward run after and never clear colour, so a
-    // transparent surface is never wiped by a later background fill.
+    // First pass to touch the HDR target, so it clears all of the attachments
+    // (colour, G-buffer, depth) for the frame. The skybox + forward run after
+    // and never clear colour, so a transparent surface is never wiped by a later
+    // background fill.
     // Re-assert the scene clear colour: offscreen renderers (material previews,
     // probe bakes) set their own backdrop between frames, and the stored colour
     // is applied at clear.
@@ -46,11 +45,8 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
     m_shader->bind();
     m_shader->setUniformMatrix4fv("u_view", view.camera.view);
 
-    // The backend routes only opaque / unlit drawables here (alpha-masked and
-    // transparent geometry draws in the forward pass); prime their depth +
-    // G-buffer instanced, grouped by (material, mesh). No albedo texture is
-    // sampled - the prepass writes normal/roughness/metalness from the UBO - so
-    // binding the material UBO is enough.
+    // No albedo texture is sampled - the prepass writes normal/roughness/
+    // metalness from the UBO - so binding the material UBO is enough.
     const GLMaterial* boundMaterial = nullptr;
     ctx.opaqueBatch.bindInstanceData();
 

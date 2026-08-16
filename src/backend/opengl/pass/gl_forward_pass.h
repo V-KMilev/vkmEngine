@@ -22,10 +22,9 @@ namespace Engine {
  *
  * Draws the three buckets the backend partitioned, in order: Opaque / Unlit
  * against the depth the prepass primed (LEQUAL, writes off, for early-Z), then
- * AlphaMask with writes back on so it primes its own depth, then Transparent
- * back-to-front with alpha blending and writes off. The prepass is
- * unconditional and owns the clear, so this pass never clears. Back faces are
- * culled (all materials are single-sided). The camera and light UBOs are
+ * AlphaMask, which primes its own, then Transparent back-to-front. The prepass
+ * is unconditional and owns the clear, so this pass never clears. Back faces
+ * are culled (all materials are single-sided). The camera and light UBOs are
  * uploaded by the backend before this pass runs.
  */
 class GLForwardPass : public GLPass {
@@ -55,8 +54,8 @@ class GLForwardPass : public GLPass {
         std::unique_ptr<Core::Shader> m_shader;
         GLInstanceBatcher             m_batcher;
 
-        // Transparent bucket sorted back-to-front - cleared + refilled each
-        // frame, capacity kept. The opaque bucket comes from the frame context.
+        // Sorted back-to-front, cleared + refilled each frame with the capacity
+        // kept. The opaque bucket comes from the frame context.
         std::vector<std::pair<float, const DrawableData*>>  m_transparent;
         std::vector<const DrawableData*>                    m_transparentSorted;
 };

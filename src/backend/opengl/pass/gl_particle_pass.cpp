@@ -37,8 +37,7 @@ void GLParticlePass::drawBatch(const std::vector<ParticleData>& batch) {
     }
     m_instances->bindBase(GLBindings::SSBOBindingPoints::Particles);
 
-    // Attribute-less instanced quad: 4 verts as a triangle strip, per-particle
-    // data read from the SSBO by gl_InstanceID.
+    // Attribute-less: per-particle data is read from the SSBO by gl_InstanceID.
     m_vao.bind();
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, static_cast<GLsizei>(count));
 }
@@ -47,9 +46,8 @@ void GLParticlePass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
     if (view.particlesAdditive.empty() && view.particlesAlpha.empty()) return;
 
-    // Into the scene target (multisample when MSAA is on), depth-tested against
-    // the geometry already drawn but never writing depth - particles occlude
-    // nothing.
+    // Depth-tested against the geometry already drawn but never writing depth -
+    // particles occlude nothing.
     ctx.sceneRender.bind(ctx.gl);
     ctx.gl.setDepthTest(true);
     ctx.gl.setDepthFunc(GL_LEQUAL);

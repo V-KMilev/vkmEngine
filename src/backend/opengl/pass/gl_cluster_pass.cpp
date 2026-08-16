@@ -24,8 +24,8 @@ void GLClusterPass::execute(GLFrameContext& ctx) {
     const float zNear = view.camera.zNear;
     const float zFar  = view.camera.zFar;
 
-    // Light SSBO (binding 0) is already bound by the backend; bind the grid we
-    // write (binding 1).
+    // The light SSBO (binding 0) is already bound by the backend; this binds the
+    // grid the dispatch writes (binding 1).
     ctx.clusters.bind();
 
     m_compute->bind();

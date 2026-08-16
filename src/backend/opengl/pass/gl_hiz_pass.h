@@ -15,8 +15,7 @@ namespace Engine {
  *
  * Runs after the depth prepass has laid down opaque depth and the resolve has
  * flattened it to a single sample, so the pyramid describes real geometry
- * rather than a cleared buffer. One reduction shader walks the chain: level 0
- * from the scene depth, each later level from the one before.
+ * rather than a cleared buffer.
  *
  * The pyramid is what the GPU occlusion cull tests against, and it is the only
  * thing this pass produces - nothing is drawn to the screen. It follows that
