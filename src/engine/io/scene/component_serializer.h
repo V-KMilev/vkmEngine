@@ -69,8 +69,7 @@ namespace ComponentSerializer {
     void load(const nlohmann::json&, Light&);
 
     /**
-     * @brief Rigidbody: dynamics + material fields. inverseMass / invInertiaLocal
-     * are derived from mass + Collider on load, and the runtime sleep state
+     * @brief Rigidbody: dynamics + material fields. The runtime sleep state
      * (sleeping / sleepTimer) is not persisted.
      */
     nlohmann::json save(const Rigidbody&);

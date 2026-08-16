@@ -55,7 +55,7 @@ void AnimationSystem::update(FrameContext& ctx) {
             }
 
             const uint32_t entityIdx = animStorage->keyAt(static_cast<uint32_t>(i));
-            const EntityId id{entityIdx, scene.generationOf(entityIdx)};
+            const EntityId id = scene.entityAt(entityIdx);
             if (scene.has<Transform>(id)) {
                 applyAnimation(animation, scene.get<Transform>(id));
                 m_appliedFlags[i] = 1;
@@ -72,7 +72,7 @@ void AnimationSystem::update(FrameContext& ctx) {
             if (!m_appliedFlags[i]) continue;
 
             const uint32_t entityIdx = animStorage->keyAt(static_cast<uint32_t>(i));
-            const EntityId id{entityIdx, scene.generationOf(entityIdx)};
+            const EntityId id = scene.entityAt(entityIdx);
             if (!scene.has<Hierarchy>(id)) continue;
             HierarchyOperations::markDirty(scene, id);
         }

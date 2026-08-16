@@ -196,7 +196,7 @@ void PotionRunner::onStart() {
     // `normal` points a -> b, so flip it when the player is `a` to get the
     // surface normal as the player feels it.
     subscribe<CollisionEvent>([this](const CollisionEvent& e) {
-        const EntityId player = m_player.getID();
+        const EntityId player = m_player;
         const bool playerIsA = (e.a == player);
         if (!playerIsA && e.b != player) return;
 
@@ -205,7 +205,7 @@ void PotionRunner::onStart() {
         const float    up    = playerIsA ? -e.normal.y : e.normal.y;
         const EntityId other = playerIsA ? e.b : e.a;
         for (const auto& o : m_obstacles) {
-            if (other != o.entity.getID()) continue;
+            if (other != o.entity) continue;
             // A non-top contact is a crash - UNLESS the feet are already
             // near the roof line. That grace covers the ramp-to-roof seam
             // (the box grazes the hull face just under the roof on the way
@@ -230,9 +230,9 @@ void PotionRunner::onStart() {
     // Coin pickup rides the physics trigger pipeline: the coin's trigger
     // volume overlaps the dynamic player and the narrowphase reports it.
     subscribe<TriggerEvent>([this](const TriggerEvent& e) {
-        if (!m_alive || e.other != m_player.getID()) return;
+        if (!m_alive || e.other != m_player) return;
         for (auto& c : m_coins) {
-            if (e.trigger != c.entity.getID()) continue;
+            if (e.trigger != c.entity) continue;
             if (!c.active) return;
             c.active = false;
             m_scene->get<Mesh>(c.entity).visible = false;
@@ -257,7 +257,7 @@ void PotionRunner::onUpdate(float dt) {
     // whole rig each frame; the flag set here (Simulation stage) survives until the
     // later Transform stage resolves it. Without this the runner would sit frozen
     // at its start pose in the centre lane.
-    HierarchyOperations::markDirty(*m_scene, m_player.getID());
+    HierarchyOperations::markDirty(*m_scene, m_player);
 
     // Hold on the start screen until the player gives any run input (a lane move,
     // a jump, or a click on the START button).
@@ -311,10 +311,10 @@ MaterialHandle PotionRunner::makeMaterial(
     return m_resources->add(std::move(material), name);
 }
 
-Entity PotionRunner::spawnBox(MeshHandle mesh, MaterialHandle material, const char* name) {
+EntityId PotionRunner::spawnBox(MeshHandle mesh, MaterialHandle material, const char* name) {
     // spawn() is just m_scene->createEntity(); call it directly so the editor's
     // hot-reload module needn't import that (otherwise GC'd) host-exe symbol.
-    Entity entity = m_scene->createEntity();
+    EntityId entity = m_scene->createEntity();
     m_scene->add(entity, makeName(name));
     m_scene->add(entity, Mesh{mesh, material});
     m_scene->add(entity, Transform{});
@@ -406,7 +406,7 @@ void PotionRunner::buildWorld() {
 
     // Static scenery: a long ground slab and two side walls framing the track.
     {
-        Entity ground = spawnBox(m_cubeMesh, m_matGround, "Ground");
+        EntityId ground = spawnBox(m_cubeMesh, m_matGround, "Ground");
         Transform& t = m_scene->get<Transform>(ground);
         t.position = {0.0f, -0.2f, GROUND_CENTER_Z};   // top face sits at y = 0
         t.scale    = {trackWidth, 0.4f, GROUND_LEN};
@@ -423,7 +423,7 @@ void PotionRunner::buildWorld() {
         m_scene->add(ground, std::move(col));
     }
     for (int side = -1; side <= 1; side += 2) {
-        Entity wall = spawnBox(m_cubeMesh, m_matWall, "Wall");
+        EntityId wall = spawnBox(m_cubeMesh, m_matWall, "Wall");
         Transform& t = m_scene->get<Transform>(wall);
         t.position = {static_cast<float>(side) * (m_wallX + 0.3f), 3.2f, GROUND_CENTER_Z};
         t.scale    = {0.4f, 7.7f, GROUND_LEN};   // below grade up to the raised ceiling, no gap
@@ -432,7 +432,7 @@ void PotionRunner::buildWorld() {
         // Two service pipes running the tunnel's length high on each wall - the
         // horizontal detail lines every real cut-and-cover tunnel carries.
         for (float pipeY : {2.05f, 4.35f}) {
-            Entity pipe = spawnBox(m_cubeMesh, m_matPillar, "Wall Pipe");
+            EntityId pipe = spawnBox(m_cubeMesh, m_matPillar, "Wall Pipe");
             Transform& pt = m_scene->get<Transform>(pipe);
             pt.position = {static_cast<float>(side) * (m_wallX + 0.04f), pipeY, GROUND_CENTER_Z};
             pt.scale    = {0.13f, 0.13f, GROUND_LEN};
@@ -445,7 +445,7 @@ void PotionRunner::buildWorld() {
     // static scenery it stays out of the shadow pass - only the moving pieces
     // (player, obstacles) are worth a caster's cost.
     {
-        Entity ceiling = spawnBox(m_cubeMesh, m_matWall, "Ceiling");
+        EntityId ceiling = spawnBox(m_cubeMesh, m_matWall, "Ceiling");
         Transform& t = m_scene->get<Transform>(ceiling);
         t.position = {0.0f, ARCH_Y + 0.42f, GROUND_CENTER_Z};
         t.scale    = {2.0f * m_wallX + 1.4f, 0.3f, GROUND_LEN};
@@ -456,7 +456,7 @@ void PotionRunner::buildWorld() {
     // grey stone a real permanent way sits on. Static like the rails; the
     // sleepers and rails ride on top of it.
     for (int lane = 0; lane < 3; ++lane) {
-        Entity bed = spawnBox(m_cubeMesh, m_matBallast, "Ballast Bed");
+        EntityId bed = spawnBox(m_cubeMesh, m_matBallast, "Ballast Bed");
         Transform& t = m_scene->get<Transform>(bed);
         t.position = {laneX(lane), 0.015f, GROUND_CENTER_Z};   // top face just proud of the ground
         t.scale    = {laneWidth * 0.88f, 0.07f, GROUND_LEN};
@@ -471,7 +471,7 @@ void PotionRunner::buildWorld() {
     constexpr float RAIL_W = 0.12f, RAIL_H = 0.14f;
     for (int lane = 0; lane < 3; ++lane) {
         for (int s = -1; s <= 1; s += 2) {
-            Entity rail = spawnBox(m_cubeMesh, m_matRail, "Rail");
+            EntityId rail = spawnBox(m_cubeMesh, m_matRail, "Rail");
             Transform& t = m_scene->get<Transform>(rail);
             t.position = {laneX(lane) + static_cast<float>(s) * RAIL_GAUGE_HALF,
                           0.04f + RAIL_H * 0.5f, GROUND_CENTER_Z};
@@ -484,7 +484,7 @@ void PotionRunner::buildWorld() {
     // 'cool' accent: a bright streak receding to the horizon. Set just inside the
     // pillars so the columns pass in front of it.
     for (int side = -1; side <= 1; side += 2) {
-        Entity trim = spawnBox(m_cubeMesh, m_matTrim, "Wall Trim");
+        EntityId trim = spawnBox(m_cubeMesh, m_matTrim, "Wall Trim");
         Transform& t = m_scene->get<Transform>(trim);
         t.position = {static_cast<float>(side) * (m_wallX - 0.25f), 3.1f, GROUND_CENTER_Z};
         t.scale    = {0.10f, 0.18f, GROUND_LEN};
@@ -521,17 +521,17 @@ void PotionRunner::buildWorld() {
     m_limbPivots.clear();
     auto addPart = [&](const char* name, MaterialHandle mat,
                        const glm::vec3& scale, const glm::vec3& offset, EntityId parent) {
-        Entity e = spawnBox(m_cubeMesh, mat, name);
+        EntityId e = spawnBox(m_cubeMesh, mat, name);
         Transform& t = m_scene->get<Transform>(e);
         t.position = offset;
         t.scale    = scale;
-        HierarchyOperations::setParent(*m_scene, e.getID(), parent);
+        HierarchyOperations::setParent(*m_scene, e, parent);
         m_playerParts.emplace_back(e, mat);
     };
-    addPart("Torso",   m_matPlayer,     {0.74f, 0.78f, 0.52f}, { 0.00f,  0.08f,  0.00f}, m_player.getID());
-    addPart("Head",    m_matPlayer,     {0.46f, 0.42f, 0.46f}, { 0.00f,  0.66f,  0.00f}, m_player.getID());
-    addPart("Visor",   m_matPlayerGlow, {0.50f, 0.12f, 0.50f}, { 0.00f,  0.74f,  0.00f}, m_player.getID());
-    addPart("Pack",    m_matPlayerGlow, {0.46f, 0.62f, 0.18f}, { 0.00f,  0.10f, -0.36f}, m_player.getID());  // on the back, toward the camera
+    addPart("Torso",   m_matPlayer,     {0.74f, 0.78f, 0.52f}, { 0.00f,  0.08f,  0.00f}, m_player);
+    addPart("Head",    m_matPlayer,     {0.46f, 0.42f, 0.46f}, { 0.00f,  0.66f,  0.00f}, m_player);
+    addPart("Visor",   m_matPlayerGlow, {0.50f, 0.12f, 0.50f}, { 0.00f,  0.74f,  0.00f}, m_player);
+    addPart("Pack",    m_matPlayerGlow, {0.46f, 0.62f, 0.18f}, { 0.00f,  0.10f, -0.36f}, m_player);  // on the back, toward the camera
     // Limbs hang from meshless pivot entities at the shoulder/hip joints, so
     // the AnimationSystem's swing (see makeSwing) rotates them about the joint
     // instead of paddling them about their own centres. Opposing limbs (and the
@@ -539,13 +539,13 @@ void PotionRunner::buildWorld() {
     // real stride. updatePlayer drives Animation::speed with the run cadence.
     auto addLimb = [&](const char* name, const glm::vec3& scale, const glm::vec3& joint,
                        float amplitude, float phase) {
-        Entity pivot = m_scene->createEntity();
+        EntityId pivot = m_scene->createEntity();
         m_scene->add(pivot, makeName(name));
         m_scene->add(pivot, Transform{joint, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(1.0f)});
-        HierarchyOperations::setParent(*m_scene, pivot.getID(), m_player.getID());
+        HierarchyOperations::setParent(*m_scene, pivot, m_player);
         m_scene->add(pivot, makeSwing(amplitude, phase));
         m_limbPivots.push_back(pivot);
-        addPart(name, m_matPlayer, scale, {0.0f, -scale.y * 0.5f + 0.04f, 0.0f}, pivot.getID());
+        addPart(name, m_matPlayer, scale, {0.0f, -scale.y * 0.5f + 0.04f, 0.0f}, pivot);
     };
     addLimb("Arm L", {0.15f, 0.56f, 0.28f}, {-0.46f,  0.30f, 0.00f}, 0.9f, 0.0f);
     addLimb("Arm R", {0.15f, 0.56f, 0.28f}, { 0.46f,  0.30f, 0.00f}, 0.9f, RUN_PERIOD * 0.5f);
@@ -1101,7 +1101,7 @@ void PotionRunner::updatePlayer(float dt) {
     // Stride cadence follows the run: the limb swings quicken as the track
     // speeds up, and nearly freeze mid-pose while airborne.
     const float cadence = m_grounded ? (0.85f + 1.15f * (m_speed / maxSpeed)) : 0.30f;
-    for (const Entity& pivot : m_limbPivots) {
+    for (const EntityId& pivot : m_limbPivots) {
         m_scene->get<Animation>(pivot).speed = cadence;
     }
 
@@ -1289,18 +1289,18 @@ void PotionRunner::buildUI() {
     // Create a UIElement entity parented under `parent`.
     auto makeElement = [&](const char* name, glm::vec2 anchor, glm::vec2 pivot,
                            glm::vec2 pos, glm::vec2 size, EntityId parent) {
-        Entity e = m_scene->createEntity();
+        EntityId e = m_scene->createEntity();
         m_scene->add(e, makeName(name));
         UIElement el;
         el.anchor = anchor; el.pivot = pivot; el.position = pos; el.size = size;
         m_scene->add(e, std::move(el));
-        HierarchyOperations::setParent(*m_scene, e.getID(), parent);
+        HierarchyOperations::setParent(*m_scene, e, parent);
         return e;
     };
     auto makeText = [&](const char* name, std::string text, float px, glm::vec4 color,
                         UIText::Align align, glm::vec2 anchor, glm::vec2 pivot,
                         glm::vec2 pos, glm::vec2 size, EntityId parent) {
-        Entity e = makeElement(name, anchor, pivot, pos, size, parent);
+        EntityId e = makeElement(name, anchor, pivot, pos, size, parent);
         UIText t;
         t.text = std::move(text); t.pixelSize = px; t.color = color; t.align = align;
         m_scene->add(e, std::move(t));
@@ -1322,7 +1322,7 @@ void PotionRunner::buildUI() {
     // A flat colour quad on its own element.
     auto makeImage = [&](const char* name, glm::vec4 color, glm::vec2 anchor, glm::vec2 pivot,
                          glm::vec2 pos, glm::vec2 size, EntityId parent) {
-        Entity e = makeElement(name, anchor, pivot, pos, size, parent);
+        EntityId e = makeElement(name, anchor, pivot, pos, size, parent);
         m_scene->add(e, UIImage{color});
         return e;
     };
@@ -1341,7 +1341,7 @@ void PotionRunner::buildUI() {
                               EntityId parent) {
         makeImage("Btn Glow", glm::vec4(hot.r, hot.g, hot.b, 0.30f), TC, TC,
                   pos - glm::vec2(0.0f, 7.0f), size + glm::vec2(16.0f, 14.0f), parent);
-        Entity b = makeElement(name, TC, TC, pos, size, parent);
+        EntityId b = makeElement(name, TC, TC, pos, size, parent);
         UIButton btn;
         btn.eventId      = event;
         btn.normalColor  = base;
@@ -1350,101 +1350,101 @@ void PotionRunner::buildUI() {
         m_scene->add(b, std::move(btn));
         // The label centres itself through anchor/pivot + Middle valign - no
         // hand-tuned pixel offsets.
-        Entity lbl = makeText("Btn Label", label, size.y * 0.45f, WHITE, UIText::Align::Center,
-                              C, C, {0.0f, 0.0f}, {size.x, size.y}, b.getID());
+        EntityId lbl = makeText("Btn Label", label, size.y * 0.45f, WHITE, UIText::Align::Center,
+                                C, C, {0.0f, 0.0f}, {size.x, size.y}, b);
         m_scene->get<UIText>(lbl).valign = UIText::VAlign::Middle;
         return b;
     };
 
     // ---- HUD: score / distance / coins, top-left, always visible ----
-    Entity hud = m_scene->createEntity();
+    EntityId hud = m_scene->createEntity();
     m_scene->add(hud, makeName("Potion HUD"));
     m_scene->add(hud, UICanvas{});
 
-    Entity hudPanel = makeImage("HUD Panel", INK, TL, TL, {20.0f, 18.0f}, {326.0f, 158.0f}, hud.getID());
-    makeImage("HUD Edge Glow", glm::vec4(CYAN.r, CYAN.g, CYAN.b, 0.25f), TL, TL, {0.0f, 0.0f}, {10.0f, 158.0f}, hudPanel.getID());
-    makeImage("HUD Edge",      CYAN,                                      TL, TL, {0.0f, 0.0f}, {4.0f, 158.0f},  hudPanel.getID());
-    makeImage("HUD Top",       glm::vec4(CYAN.r, CYAN.g, CYAN.b, 0.55f),  TL, TL, {0.0f, 0.0f}, {326.0f, 3.0f},  hudPanel.getID());
+    EntityId hudPanel = makeImage("HUD Panel", INK, TL, TL, {20.0f, 18.0f}, {326.0f, 158.0f}, hud);
+    makeImage("HUD Edge Glow", glm::vec4(CYAN.r, CYAN.g, CYAN.b, 0.25f), TL, TL, {0.0f, 0.0f}, {10.0f, 158.0f}, hudPanel);
+    makeImage("HUD Edge",      CYAN,                                      TL, TL, {0.0f, 0.0f}, {4.0f, 158.0f},  hudPanel);
+    makeImage("HUD Top",       glm::vec4(CYAN.r, CYAN.g, CYAN.b, 0.55f),  TL, TL, {0.0f, 0.0f}, {326.0f, 3.0f},  hudPanel);
 
     m_uiScore = makeText("HUD Score", "SCORE  0", 30.0f, WHITE, UIText::Align::Left,
-                         TL, TL, {22.0f, 10.0f}, {296.0f, 38.0f}, hudPanel.getID());
+                         TL, TL, {22.0f, 10.0f}, {296.0f, 38.0f}, hudPanel);
     m_uiDist  = makeText("HUD Dist", "DIST  0 m", 22.0f, CYAN, UIText::Align::Left,
-                         TL, TL, {22.0f, 54.0f}, {296.0f, 30.0f}, hudPanel.getID());
-    makeImage("HUD Coin Pip", GOLD, TL, TL, {23.0f, 93.0f}, {15.0f, 15.0f}, hudPanel.getID());   // little coin
+                         TL, TL, {22.0f, 54.0f}, {296.0f, 30.0f}, hudPanel);
+    makeImage("HUD Coin Pip", GOLD, TL, TL, {23.0f, 93.0f}, {15.0f, 15.0f}, hudPanel);   // little coin
     m_uiCoins = makeText("HUD Coins", "0", 24.0f, GOLD, UIText::Align::Left,
-                         TL, TL, {48.0f, 88.0f}, {270.0f, 30.0f}, hudPanel.getID());
+                         TL, TL, {48.0f, 88.0f}, {270.0f, 30.0f}, hudPanel);
     m_uiSpeed = makeText("HUD Speed", "SPEED  0", 20.0f, GREY, UIText::Align::Left,
-                         TL, TL, {22.0f, 124.0f}, {296.0f, 26.0f}, hudPanel.getID());
+                         TL, TL, {22.0f, 124.0f}, {296.0f, 26.0f}, hudPanel);
 
     // A "ROOF RIDE" pill, top-centre, that exists permanently but only shows
     // while the runner is up on a roof - per-element visibility (which hides
     // the pill's whole subtree, label included), not canvas churn.
-    Entity ride = makeImage("Ride Tag", glm::vec4(GOLD.r, GOLD.g, GOLD.b, 0.18f),
-                            TC, TC, {0.0f, 16.0f}, {200.0f, 38.0f}, hud.getID());
+    EntityId ride = makeImage("Ride Tag", glm::vec4(GOLD.r, GOLD.g, GOLD.b, 0.18f),
+                              TC, TC, {0.0f, 16.0f}, {200.0f, 38.0f}, hud);
     m_scene->get<UIElement>(ride).visible = false;
-    m_uiRideTag = ride.getID();
-    Entity rideText = makeText("Ride Tag Text", "ROOF RIDE  2x", 20.0f, GOLD, UIText::Align::Center,
-                               C, C, {0.0f, 0.0f}, {200.0f, 38.0f}, ride.getID());
+    m_uiRideTag = ride;
+    EntityId rideText = makeText("Ride Tag Text", "ROOF RIDE  2x", 20.0f, GOLD, UIText::Align::Center,
+                                 C, C, {0.0f, 0.0f}, {200.0f, 38.0f}, ride);
     m_scene->get<UIText>(rideText).valign = UIText::VAlign::Middle;
 
     // Distance milestone flash: a big centre-screen readout that onUpdate arms
     // every 500 m and refreshUI shows while its timer runs.
     m_uiMilestone = makeText("Milestone", "500 m", 46.0f, CYAN, UIText::Align::Center,
-                             TC, TC, {0.0f, 78.0f}, {420.0f, 56.0f}, hud.getID());
+                             TC, TC, {0.0f, 78.0f}, {420.0f, 56.0f}, hud);
     m_scene->get<UIElement>(m_uiMilestone).visible = false;
 
     // ---- Start screen ----
-    Entity start = m_scene->createEntity();
+    EntityId start = m_scene->createEntity();
     m_scene->add(start, makeName("Potion Start"));
     UICanvas startCanvas;
     startCanvas.sortOrder = 5;
     m_scene->add(start, std::move(startCanvas));
-    m_startCanvas = start.getID();
+    m_startCanvas = start;
 
-    Entity startPanel = makeImage("Start Panel", INK2, C, C, {0.0f, 0.0f}, {680.0f, 380.0f}, start.getID());
-    makeGlowBar(CYAN, TC, TC, {0.0f,   0.0f}, {680.0f, 4.0f}, startPanel.getID());   // top edge
-    makeGlowBar(MAG,  TC, TC, {0.0f, 376.0f}, {680.0f, 4.0f}, startPanel.getID());   // bottom edge
+    EntityId startPanel = makeImage("Start Panel", INK2, C, C, {0.0f, 0.0f}, {680.0f, 380.0f}, start);
+    makeGlowBar(CYAN, TC, TC, {0.0f,   0.0f}, {680.0f, 4.0f}, startPanel);   // top edge
+    makeGlowBar(MAG,  TC, TC, {0.0f, 376.0f}, {680.0f, 4.0f}, startPanel);   // bottom edge
     makeText("Start Title", "POTION RUNNER", 60.0f, CYAN, UIText::Align::Center,
-             TC, TC, {0.0f, 44.0f}, {660.0f, 70.0f}, startPanel.getID());
-    makeGlowBar(MAG, TC, TC, {0.0f, 120.0f}, {300.0f, 4.0f}, startPanel.getID());    // title underline
+             TC, TC, {0.0f, 44.0f}, {660.0f, 70.0f}, startPanel);
+    makeGlowBar(MAG, TC, TC, {0.0f, 120.0f}, {300.0f, 4.0f}, startPanel);    // title underline
     makeText("Start Subtitle", "ENDLESS RUNNER", 22.0f, GREY, UIText::Align::Center,
-             TC, TC, {0.0f, 134.0f}, {660.0f, 28.0f}, startPanel.getID());
+             TC, TC, {0.0f, 134.0f}, {660.0f, 28.0f}, startPanel);
     makeNeonButton("Start Button", "START", "potion:start",
                    glm::vec4(0.06f, 0.44f, 0.42f, 0.96f), glm::vec4(0.14f, 0.78f, 0.72f, 0.98f),
-                   {0.0f, 196.0f}, {260.0f, 64.0f}, startPanel.getID());
+                   {0.0f, 196.0f}, {260.0f, 64.0f}, startPanel);
     makeText("Start Hint", "A / D  move      SPACE  jump      S  slide      R  restart", 17.0f,
-             GREY, UIText::Align::Center, TC, TC, {0.0f, 296.0f}, {660.0f, 24.0f}, startPanel.getID());
+             GREY, UIText::Align::Center, TC, TC, {0.0f, 296.0f}, {660.0f, 24.0f}, startPanel);
     makeText("Start Tip", "run up the white ramps to ride the trains  -  roof coins pay double", 15.0f,
-             GOLD, UIText::Align::Center, TC, TC, {0.0f, 326.0f}, {660.0f, 22.0f}, startPanel.getID());
+             GOLD, UIText::Align::Center, TC, TC, {0.0f, 326.0f}, {660.0f, 22.0f}, startPanel);
 
     // ---- Game over ----
-    Entity over = m_scene->createEntity();
+    EntityId over = m_scene->createEntity();
     m_scene->add(over, makeName("Potion Game Over"));
     UICanvas overCanvas;
     overCanvas.sortOrder = 10;
     overCanvas.visible   = false;
     m_scene->add(over, std::move(overCanvas));
-    m_gameOverCanvas = over.getID();
+    m_gameOverCanvas = over;
 
-    Entity panel = makeImage("Game Over Panel", INK2, C, C, {0.0f, 0.0f}, {600.0f, 400.0f}, over.getID());
-    makeGlowBar(REDH, TC, TC, {0.0f,   0.0f}, {600.0f, 4.0f}, panel.getID());
-    makeGlowBar(MAG,  TC, TC, {0.0f, 396.0f}, {600.0f, 4.0f}, panel.getID());
+    EntityId panel = makeImage("Game Over Panel", INK2, C, C, {0.0f, 0.0f}, {600.0f, 400.0f}, over);
+    makeGlowBar(REDH, TC, TC, {0.0f,   0.0f}, {600.0f, 4.0f}, panel);
+    makeGlowBar(MAG,  TC, TC, {0.0f, 396.0f}, {600.0f, 4.0f}, panel);
     makeText("Game Over Title", "GAME OVER", 60.0f, REDH, UIText::Align::Center,
-             TC, TC, {0.0f, 40.0f}, {560.0f, 70.0f}, panel.getID());
-    makeGlowBar(REDH, TC, TC, {0.0f, 116.0f}, {300.0f, 4.0f}, panel.getID());
+             TC, TC, {0.0f, 40.0f}, {560.0f, 70.0f}, panel);
+    makeGlowBar(REDH, TC, TC, {0.0f, 116.0f}, {300.0f, 4.0f}, panel);
     m_uiFinalScore = makeText("Game Over Score", "SCORE  0", 34.0f, WHITE, UIText::Align::Center,
-             TC, TC, {0.0f, 138.0f}, {560.0f, 40.0f}, panel.getID());
+             TC, TC, {0.0f, 138.0f}, {560.0f, 40.0f}, panel);
     m_uiFinalDist  = makeText("Game Over Dist", "DIST  0 m", 24.0f, CYAN, UIText::Align::Center,
-             TC, TC, {0.0f, 186.0f}, {560.0f, 32.0f}, panel.getID());
+             TC, TC, {0.0f, 186.0f}, {560.0f, 32.0f}, panel);
     m_uiFinalCoins = makeText("Game Over Coins", "COINS  0", 24.0f, GOLD, UIText::Align::Center,
-             TC, TC, {0.0f, 222.0f}, {560.0f, 32.0f}, panel.getID());
+             TC, TC, {0.0f, 222.0f}, {560.0f, 32.0f}, panel);
     m_uiFinalBest  = makeText("Game Over Best", "BEST  0", 24.0f, GREY, UIText::Align::Center,
-             TC, TC, {0.0f, 254.0f}, {560.0f, 30.0f}, panel.getID());
+             TC, TC, {0.0f, 254.0f}, {560.0f, 30.0f}, panel);
     makeNeonButton("Restart Button", "RESTART", "potion:restart",
                    glm::vec4(0.08f, 0.40f, 0.62f, 0.96f), glm::vec4(0.16f, 0.60f, 0.86f, 0.98f),
-                   {0.0f, 292.0f}, {240.0f, 56.0f}, panel.getID());
+                   {0.0f, 292.0f}, {240.0f, 56.0f}, panel);
     makeText("Restart Hint", "or press  R / Enter", 17.0f, GREY, UIText::Align::Center,
-             TC, TC, {0.0f, 360.0f}, {560.0f, 24.0f}, panel.getID());
+             TC, TC, {0.0f, 360.0f}, {560.0f, 24.0f}, panel);
 }
 
 void PotionRunner::refreshUI() {

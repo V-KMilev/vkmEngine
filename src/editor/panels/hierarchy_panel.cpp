@@ -206,7 +206,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
 
         if (committed && m_renameBuf[0] != '\0') {
             if (!scene.has<Name>(entity)) {
-                scene.add(Entity{entity}, makeName(m_renameBuf));
+                scene.add(entity, makeName(m_renameBuf));
                 // Adding a Name where none existed: undo removes it (reverts to
                 // the default display name).
                 state.commands.push(std::make_unique<AddComponentCommand<Name>>(

@@ -58,10 +58,10 @@ namespace SceneSerializer {
      *
      * @param src       JSON object written by saveComponents.
      * @param scene     Scene to add into.
-     * @param entity    Entity receiving the components.
+     * @param entity    The entity receiving the components.
      * @param resources Resolves asset names back to handles.
      */
-    void loadComponents(const nlohmann::json& src, Scene& scene, Entity entity,
+    void loadComponents(const nlohmann::json& src, Scene& scene, EntityId entity,
                         const ResourceManager& resources);
 
     /**

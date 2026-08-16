@@ -161,7 +161,7 @@ void editComponentCard(Scene& scene, EditorState& state, EntityId id,
     if (remove) {
         // Snapshot before removal so undo can restore the exact component.
         T snap = scene.get<T>(id);
-        scene.remove<T>(Entity{id});
+        scene.remove<T>(id);
         state.commands.push(std::make_unique<RemoveComponentCommand<T>>(id, snap, removeLabel));
         state.markSceneDirty();
     }
@@ -299,7 +299,7 @@ void InspectorPanel::drawIdentityHeader(Scene& scene, EditorState& state, Entity
         ImGui::SameLine();
         if (ImGui::SmallButton("+##addname")) {
             Name n = makeName(fallback);
-            scene.add(Entity{id}, n);
+            scene.add(id, n);
             state.commands.push(std::make_unique<AddComponentCommand<Name>>(id, n, "Add Name"));
             state.markSceneDirty();
         }
@@ -402,7 +402,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
             using T = decltype(value);
             if (!matchesFilter(label, s_componentFilter)) return;
             if (!scene.has<T>(id) && ImGui::MenuItem(label)) {
-                scene.add(Entity{id}, value);
+                scene.add(id, value);
                 state.commands.push(std::make_unique<AddComponentCommand<T>>(id, std::move(value), addLabel));
                 state.markSceneDirty();
             }
@@ -436,7 +436,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         // AddComponentCommand - add it live, like the World/Physics edits.
         if (matchesFilter("Script", s_componentFilter)
             && !scene.has<ScriptComponent>(id) && ImGui::MenuItem("Script")) {
-            scene.add(Entity{id}, ScriptComponent{});
+            scene.add(id, ScriptComponent{});
             state.markSceneDirty();
         }
         ImGui::EndPopup();
@@ -1101,7 +1101,7 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
     endComponentCard();
     if (remove) {
         Animation snap = scene.get<Animation>(id);
-        scene.remove<Animation>(Entity{id});
+        scene.remove<Animation>(id);
         state.commands.push(std::make_unique<RemoveComponentCommand<Animation>>(
             id, std::move(snap), "Remove Animation"));
         state.markSceneDirty();
@@ -1181,7 +1181,7 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
     }
     endComponentCard();
     if (remove) {
-        scene.remove<ScriptComponent>(Entity{id});
+        scene.remove<ScriptComponent>(id);
         state.markSceneDirty();
     }
 }

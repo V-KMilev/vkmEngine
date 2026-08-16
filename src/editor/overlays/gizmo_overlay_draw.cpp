@@ -358,7 +358,7 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
 
     const glm::mat4 vp = scope.vp;
     ImDrawList*     dl = scope.dl;
-    const EntityId activeCamId = ec.cameraController.getCameraEntity().getID();
+    const EntityId activeCamId = ec.cameraController.getCameraEntity();
 
     ec.frame.scene.forEach<Camera, Transform>([&](EntityId id, const Camera& cam, const Transform& tf) {
         // The active editor camera *is* the viewer - drawing a frustum

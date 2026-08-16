@@ -43,11 +43,11 @@ float dynamicInverseMass(const Rigidbody& rb) {
 }
 
 // A body the integrator and solver leave alone: asleep or immovable (static,
-// kinematic, or non-positive mass). Relies on rb.inverseMass being current,
-// which holds for every body in m_bodies once gatherBodies has set it -
-// dynamicInverseMass already folds static/kinematic/zero-mass into inverseMass.
-bool isFrozen(const Rigidbody& rb) {
-    return rb.sleeping || rb.inverseMass == 0.0f;
+// kinematic, or non-positive mass). Takes the tick's inverse mass rather than
+// re-deriving it - dynamicInverseMass already folds static/kinematic/zero-mass
+// into the value gatherBodies parked on the body frame.
+bool isFrozen(const Rigidbody& rb, float invMass) {
+    return rb.sleeping || invMass == 0.0f;
 }
 
 glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
@@ -160,17 +160,18 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
     const uint32_t rbCount = static_cast<uint32_t>(rbStorage->size());
     for (uint32_t i = 0; i < rbCount; ++i) {
         const uint32_t idx = rbStorage->keyAt(i);
-        const EntityId id{idx, scene.generationOf(idx)};
+        const EntityId id = scene.entityAt(idx);
         if (!scene.has<Transform>(id)) continue;
 
         Rigidbody& rb = rbStorage->dataAt(i);
         const Transform& t = scene.get<Transform>(id);
         const Collider* collider = scene.has<Collider>(id) ? &scene.get<Collider>(id) : nullptr;
 
+        BodyFrame frame;
         // Defensively re-derive mass properties so editor edits to mass/collider
         // take effect without an explicit "apply" step.
-        rb.inverseMass = dynamicInverseMass(rb);
-        rb.invInertiaLocal = localInverseInertia(rb, collider);
+        frame.invMass = dynamicInverseMass(rb);
+        frame.invInertiaLocal = localInverseInertia(rb, collider);
 
         // Resolve the body's WORLD pose. A hierarchy root uses its local
         // Transform directly (fast path); a parented body reads its
@@ -178,7 +179,6 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
         // the solved world pose back to local.
         glm::vec3 worldPos = t.position;
         glm::quat worldRot = t.rotation;
-        BodyFrame frame;
         if (scene.has<Hierarchy>(id)) {
             const Hierarchy& h = scene.get<Hierarchy>(id);
             if (h.parent && scene.has<WorldTransform>(id) && scene.has<WorldTransform>(h.parent)) {
@@ -205,10 +205,10 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
         // orientation integrates as identity and stays script-owned.
         pb.angularVelocity = rb.freezeRotation ? glm::vec3(0.0f) : rb.angularVelocity;
         // Sleeping or immovable bodies contribute infinite mass to the solver.
-        const bool frozen = isFrozen(rb);
-        pb.invMass = frozen ? 0.0f : rb.inverseMass;
+        const bool frozen = isFrozen(rb, frame.invMass);
+        pb.invMass = frozen ? 0.0f : frame.invMass;
         pb.invInertiaWorld = frozen ? glm::mat3(0.0f)
-                                    : inverseInertiaWorld(rb.invInertiaLocal, worldRot);
+                                    : inverseInertiaWorld(frame.invInertiaLocal, worldRot);
         pb.restitution = rb.restitution;
         pb.friction = rb.friction;
         m_solverBodies.push_back(pb);
@@ -237,7 +237,7 @@ void PhysicsSystem::integrateForces(Scene& scene, const PhysicsSettings& physics
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         Rigidbody& rb = scene.get<Rigidbody>(m_bodies[k]);
         PhysicsBody& pb = m_solverBodies[k];
-        if (isFrozen(rb)) continue;
+        if (isFrozen(rb, m_bodyFrames[k].invMass)) continue;
 
         pb.linearVelocity += physics.gravity * rb.gravityScale * dt;
         pb.linearVelocity *= 1.0f / (1.0f + rb.linearDamping * dt);
@@ -348,11 +348,11 @@ void PhysicsSystem::wakeOnImpact(Scene& scene) {
         auto wake = [&](uint32_t idx, Rigidbody& rb) {
             rb.sleeping = false;
             rb.sleepTimer = 0.0f;
-            m_solverBodies[idx].invMass = rb.inverseMass;
+            m_solverBodies[idx].invMass = m_bodyFrames[idx].invMass;
             // The gathered world rotation, not the local Transform's: for a
             // parented body those differ, and the solver is running in world.
             m_solverBodies[idx].invInertiaWorld =
-                inverseInertiaWorld(rb.invInertiaLocal, m_bodyFrames[idx].worldRot);
+                inverseInertiaWorld(m_bodyFrames[idx].invInertiaLocal, m_bodyFrames[idx].worldRot);
         };
         if (rbA.sleeping && !rbB.sleeping && speedB > WAKE_SPEED_SQ) wake(a, rbA);
         if (rbB.sleeping && !rbA.sleeping && speedA > WAKE_SPEED_SQ) wake(b, rbB);

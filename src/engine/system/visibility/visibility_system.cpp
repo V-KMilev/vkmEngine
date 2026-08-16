@@ -250,7 +250,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
         if (!visible && !caster) continue;
 
         const uint32_t entityIdx = meshStorage->keyAt(i);
-        const EntityId eid{entityIdx, ctx.scene.generationOf(entityIdx)};
+        const EntityId eid = ctx.scene.entityAt(entityIdx);
         const VisibleEntity entry{eid, m_modelMatrices[i], m_worldMins[i], m_worldMaxs[i], m_meshes[i]};
 
         if (visible) m_result.entries.push_back(entry);

@@ -24,16 +24,17 @@ and **before** `HierarchySystem`, so physics-updated transforms propagate into
 
 All three are plain data structs; see [ecs.md](../ecs.md) for the field tables.
 
-- **`Rigidbody`** - dynamics state: `linearVelocity`, `angularVelocity`, `mass`
-  (cached `inverseMass`), `linearDamping` / `angularDamping`, `restitution`,
-  `friction`, `gravityScale`, and the `isKinematic` / `isStatic` /
-  `freezeRotation` / `sleeping` flags. `inverseMass == 0` means static/kinematic
-  (infinite mass): forces never move it, but it is an immovable wall in
-  collisions. `freezeRotation` zeroes the inverse inertia of a dynamic body so
-  contacts can never torque it - the character-controller case: the body
-  translates under the solver while its orientation stays script-owned.
-  `invInertiaLocal` is re-derived from `mass` + `Collider` every tick, so
-  editing either takes effect without an "apply" step.
+- **`Rigidbody`** - dynamics state: `linearVelocity`, `angularVelocity`, `mass`,
+  `linearDamping` / `angularDamping`, `restitution`, `friction`, `gravityScale`,
+  and the `isKinematic` / `isStatic` / `freezeRotation` / `sleeping` flags. A
+  static or kinematic body has infinite mass: forces never move it, but it is an
+  immovable wall in collisions. `freezeRotation` zeroes the inverse inertia of a
+  dynamic body so contacts can never torque it - the character-controller case:
+  the body translates under the solver while its orientation stays script-owned.
+  The derived mass properties (inverse mass, body-local inverse inertia) are not
+  stored on the component: `PhysicsSystem` re-derives them from `mass` +
+  `Collider` into its per-tick `BodyFrame`, so editing either takes effect
+  without an "apply" step.
 - **`Collider`** - one or more `ColliderBox` parts (`center`, `halfExtents`),
   evaluated in the entity's `Transform` frame. The narrowphase is **box-vs-box
   only**, run per child-box pair. `isTrigger` makes it generate events without an
@@ -54,8 +55,8 @@ PhysicsSystem::fixedUpdate(ctx)
   1. Read the physics settings off the scene's Environment.
   2. Gather: snapshot every live Rigidbody + Transform into PhysicsBody solver
      state; build a ColliderProxy (world AABB + sub-boxes) per body with a Collider.
-     Re-derive inverseMass + invInertiaLocal. Sleeping / immovable bodies enter
-     the solver with invMass 0.
+     Re-derive the tick's inverse mass + local inverse inertia onto the BodyFrame.
+     Sleeping / immovable bodies enter the solver with invMass 0.
   3. Integrate forces -> velocities: gravity * gravityScale, then damping
      (skips sleeping / static / kinematic).
   4. Broadphase: sort-and-sweep on X; AABB-overlap surviving pairs (static-vs-static culled).

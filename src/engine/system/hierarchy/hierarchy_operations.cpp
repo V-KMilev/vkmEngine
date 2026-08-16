@@ -20,7 +20,7 @@ namespace {
 // Add a default-constructed T to `id` only if it doesn't already have one.
 template<typename T>
 void ensure(Scene& scene, EntityId id) {
-    if (!scene.has<T>(id)) scene.add(Entity(id), T{});
+    if (!scene.has<T>(id)) scene.add(id, T{});
 }
 } // namespace
 
@@ -139,8 +139,8 @@ void removeFromParent(Scene& scene, EntityId entity) {
     // No children left -> drop the now-pointless Hierarchy + WorldTransform.
     // After this call `h` is dangling (swap-and-pop); no further reads of it.
     if (isLeaf) {
-        scene.remove<Hierarchy>(Entity(entity));
-        scene.remove<WorldTransform>(Entity(entity));
+        scene.remove<Hierarchy>(entity);
+        scene.remove<WorldTransform>(entity);
     }
 }
 
@@ -207,7 +207,7 @@ void resolveWorldTransforms(Scene& scene, DepthBuckets& buckets) {
     const uint32_t count = static_cast<uint32_t>(hierarchyStorage->size());
     for (uint32_t i = 0; i < count; ++i) {
         const uint32_t entityIdx = hierarchyStorage->keyAt(i);
-        const EntityId id{entityIdx, scene.generationOf(entityIdx)};
+        const EntityId id = scene.entityAt(entityIdx);
 
         if (!scene.has<Transform>(id)) continue;
 
@@ -286,7 +286,7 @@ void destroyHierarchy(Scene& scene, EntityId entity) {
     // Destroy the entity itself. Per-entity destroy hooks (e.g. script
     // onDestroy) fire from Scene::destroyEntity, so every destroy path is
     // covered without this op knowing about them.
-    scene.destroyEntity(Entity(entity));
+    scene.destroyEntity(entity);
 }
 
 } // namespace Engine::HierarchyOperations
