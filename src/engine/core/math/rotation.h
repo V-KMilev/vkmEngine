@@ -22,13 +22,14 @@ inline glm::vec3 computeUp(const glm::quat& rotation) {
 }
 
 /**
- * @brief Rotate the +X basis by the quaternion and normalize.
+ * @brief Rotate the -X basis by the quaternion and normalize.
+ *
+ * The negation is deliberate. Forward is +Z and the maths is right-handed, so a
+ * right-handed camera basis (right x up = -forward) puts right at -X, not +X.
+ * Returning the raw +X axis here is what inverted the fly camera's strafe; see
+ * axes.h.
  */
 inline glm::vec3 computeRight(const glm::quat& rotation) {
-    // Negated deliberately. Forward is +Z and the maths is right-handed, so a
-    // right-handed camera basis (right x up = -forward) puts right at -X, not
-    // +X. Returning the raw +X axis here is what inverted the fly camera's
-    // strafe; see axes.h.
     return glm::normalize(rotation * -WORLD_AXIS_X);
 }
 

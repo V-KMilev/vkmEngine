@@ -2,8 +2,6 @@
 
 #include <cstdint>
 
-#include "platform/input/input_map.h"
-
 namespace Engine {
     class WindowManager;
     class Clock;
@@ -11,9 +9,10 @@ namespace Engine {
     class Scene;
     class ResourceManager;
     class EventBus;
+    class InputMap;
     struct Visibility;
     struct UIDrawData;
-}
+} // namespace Engine
 
 namespace Engine {
 
@@ -101,10 +100,12 @@ class System {
          * @brief Whether this system implements fixedUpdate().
          *
          * Override and return true in any system that provides a real
-         * fixedUpdate body. The fixed-step accumulator loop checks this so it
-         * skips systems with no real fixedUpdate body instead of dispatching an
-         * empty virtual across every registered system every tick. Default false
-         * matches the default empty fixedUpdate.
+         * fixedUpdate body; the fixed-step accumulator loop calls fixedUpdate()
+         * only on the systems that answer true. It is a declaration, not an
+         * optimisation - the predicate costs the same virtual call the empty
+         * fixedUpdate would have - so what it buys is a fixed loop whose
+         * participants are stated rather than inferred. Default false matches
+         * the default empty fixedUpdate.
          */
         virtual bool hasFixedUpdate() const { return false; }
 
@@ -132,9 +133,9 @@ class System {
          * loop. Use ctx.clock.getFixedStep() for the step length. Intended for deterministic
          * simulation (physics, networking tick). Empty default; opt in by override.
          *
-         * Note: fixedUpdate runs BEFORE update each frame, so ctx.visibility is
-         * either null (first frame) or stale (previous frame's result). Don't
-         * rely on it from fixedUpdate.
+         * Note: the frame context is rebuilt each frame and the fixed-step loop
+         * runs before any producer stage, so ctx.visibility and ctx.ui are always
+         * null here. Read per-frame products from update() only.
          */
         virtual void fixedUpdate(FrameContext& ctx) {}
 

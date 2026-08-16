@@ -58,7 +58,9 @@ inline void localToWorldAABB(
  * @param invDir    Component-wise inverse of ray direction (1/dir).
  * @param worldMin  AABB minimum corner in world space.
  * @param worldMax  AABB maximum corner in world space.
- * @param[out] tHit Distance along the ray to the nearest intersection point.
+ * @param[out] tHit Distance along the ray to the first intersection ahead of the
+ *                  origin - the entry point, or the exit point when the origin is
+ *                  already inside the box.
  * @return True if the ray intersects the AABB (with tMax >= 0).
  */
 inline bool rayIntersectsAABB(
@@ -77,7 +79,11 @@ inline bool rayIntersectsAABB(
     float tMin = glm::max(glm::max(tMinV.x, tMinV.y), tMinV.z);
     float tMax = glm::min(glm::min(tMaxV.x, tMaxV.y), tMaxV.z);
 
-    tHit = tMin;
+    // An origin inside the box puts tMin behind the ray, so the nearest hit in
+    // front is the exit at tMax. Reporting the negative tMin instead lets any
+    // box enclosing the camera - a room, a ground plane, a big trigger volume -
+    // undercut every genuine hit in a `t < nearest` ranking.
+    tHit = tMin > 0.0f ? tMin : tMax;
     return tMax >= tMin && tMax >= 0.0f;
 }
 
