@@ -83,7 +83,7 @@ void WindowManager::createWindow(const std::string& title) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, OPENGL_MINOR_VERSION);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    // Create a windowed mode window by default (pass NULL for monitor)
+    // Null monitor = windowed mode.
     m_windowHandle = glfwCreateWindow(
         DEFAULT_WINDOW_WIDTH,
         DEFAULT_WINDOW_HEIGHT,
@@ -101,10 +101,9 @@ void WindowManager::createWindow(const std::string& title) {
         throw std::runtime_error("Failed to create window");
     }
 
-    // Make the context current (required for glewInit and glfwSwapInterval)
+    // Required before glewInit and glfwSwapInterval below.
     glfwMakeContextCurrent(m_windowHandle);
 
-    // Initialize GLEW to load GL function pointers (must happen after context is current).
     // Version / device strings are logged by the OpenGL backend when it constructs.
     if (const GLenum glewError = glewInit(); glewError != GLEW_OK) {
         LOG_ERROR("Failed to initialize GLEW: %s",
@@ -115,9 +114,8 @@ void WindowManager::createWindow(const std::string& title) {
     // VSync off at creation (0 = uncapped). Set later via setVSync.
     glfwSwapInterval(0);
 
-    // Cache the framebuffer size in pixels - the unit GL viewports and render
-    // targets use, which differs from the window size (screen coords) on HiDPI /
-    // scaled displays. The framebuffer-size callback keeps it current.
+    // Framebuffer pixels, not window screen coords: the two differ on a HiDPI /
+    // scaled display, and GL viewports and render targets want the former.
     glfwGetFramebufferSize(m_windowHandle, &m_width, &m_height);
 
     LOG_TRACE("Constructed Window '%s'", m_title.c_str());
@@ -128,9 +126,8 @@ void WindowManager::createWindow(const std::string& title) {
     // first glfwPollEvents() that could dispatch one.
     glfwSetWindowUserPointer(m_windowHandle, this);
 
-    // Framebuffer-size callback - tracks the drawable size in pixels (what GL
-    // viewports use), which also covers HiDPI / DPI changes a window-size callback
-    // would miss. Instant updates on resize, no polling needed.
+    // Framebuffer, not window, size: this also catches the HiDPI / DPI changes a
+    // window-size callback would miss.
     glfwSetFramebufferSizeCallback(m_windowHandle, [](GLFWwindow* w, int width, int height) {
         if (auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w))) {
             manager->setSize(width, height);
@@ -249,17 +246,14 @@ void WindowManager::updateMode(WindowMode windowMode) {
 
     m_windowMode = windowMode;
 
-    // Log the rect actually applied (Windowed is a 75% centred rect, not the
-    // full monitor mode); targetRefresh is 0 for windowed.
     LOG_INFO("Mode -> %s (%dx%d @ %dHz)",
         toString(windowMode), targetW, targetH, targetRefresh);
 }
 
 void WindowManager::updateInput() {
-    // Reset scroll delta before polling new events
+    // Cleared before the poll, because the scroll callback accumulates into it.
     m_inputHandle.getMouse().resetScrollDelta();
 
-    // Process GLFW events - key/scroll callbacks fire here
     glfwPollEvents();
 
     m_inputHandle.update(m_windowHandle);
@@ -272,22 +266,19 @@ bool WindowManager::beginFrame() {
 }
 
 void WindowManager::setVSync(bool enabled) {
-    // VSync and the software FPS cap are independent knobs. Set only what
-    // the caller asked for; leave the framelimiter alone.
+    // Independent of the software FPS cap: leave the framelimiter alone.
     if (!hasWindow("setVSync")) return;
 
     glfwMakeContextCurrent(m_windowHandle);
-    // 0 = Uncapped framerate
-    // 1 = VSync enabled
+    // 0 = uncapped, 1 = vsync.
     glfwSwapInterval(enabled ? 1 : 0);
     m_vsync = enabled;
     LOG_INFO("VSync %s", enabled ? "ON" : "OFF");
 }
 
 void WindowManager::setFramerate(int framerate) {
-    // VSync and the software FPS cap are independent. Setting a software
-    // cap does not touch the swap interval; if both are active the lower
-    // effective rate wins, which is the usual expectation.
+    // Does not touch the swap interval: vsync is the independent knob, and with
+    // both active the lower effective rate wins.
     m_frameLimiter.setTargetFramerate(framerate);
     if (framerate > 0) {
         LOG_INFO("FPS cap = %d", framerate);
@@ -343,7 +334,7 @@ bool WindowManager::hasWindow(const char* action) const {
 int WindowManager::getRefreshRate() const {
     GLFWmonitor* monitor = glfwGetWindowMonitor(m_windowHandle);
 
-    // If windowed, fall back to the primary monitor
+    // Null when windowed - fall back to the primary monitor.
     if (!monitor) {
         monitor = glfwGetPrimaryMonitor();
     }

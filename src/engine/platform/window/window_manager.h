@@ -23,13 +23,6 @@ inline constexpr int DEFAULT_WINDOW_HEIGHT = 1080;  ///< Initial window height i
 
 /**
  * @brief Enumerates supported window modes for the application window.
- *
- * WindowMode is used to specify how the application window should be displayed on the user's monitor.
- *
- * - Fullscreen: The window occupies the entire screen, with no window borders or decorations;
- *               typically used for immersive applications and games.
- * - Windowed:   The window operates within a resizable and movable container, allowing it to share the
- *               desktop with other applications; contains standard OS borders and controls.
  */
 enum class WindowMode {
     Fullscreen = 1,    ///< Window occupies the entire screen.
