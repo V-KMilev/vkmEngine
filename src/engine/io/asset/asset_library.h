@@ -29,7 +29,7 @@ struct AssetRecord {
     std::string name;
     std::string recipeFile;          ///< Relative to ProjectPaths::library().
     std::string cookedFile;          ///< Relative to ProjectPaths::cooked(); empty for materials.
-    uint64_t    recipeHash = 0;      ///< hash(recipe + cookerVersion); guards staleness.
+    uint64_t    recipeHash = 0;      ///< hash(recipe + the cooker's COOKER_VERSION); guards staleness.
 };
 
 /**
@@ -59,8 +59,12 @@ class AssetLibrary {
         static AssetLibrary& get();
 
         /**
-         * @brief (Re)load the manifest from disk, replacing current state. A missing
-         * manifest is not an error - an empty library is a valid fresh project.
+         * @brief (Re)load the manifest from disk, replacing current state.
+         *
+         * A missing manifest is not an error - an empty library is a valid fresh
+         * project. One written in a layout version this build does not know is
+         * refused the same way: the library is derived data, and re-cooking is
+         * cheaper than guessing at what an unknown layout meant.
          */
         void load();
 
@@ -121,7 +125,6 @@ class AssetLibrary {
 
     private:
         std::unordered_map<std::string, AssetRecord> m_records;  ///< keyed by key(type,name)
-        uint32_t m_cookerVersion = 0;                       ///< cooker version recorded in the manifest
 };
 
 } // namespace Engine
