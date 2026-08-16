@@ -206,9 +206,9 @@ MeshAsset buildMesh(const aiScene* scene, const std::string& path, int meshIdx) 
     return out;
 }
 
-// Decode raw RGBA8 bytes into a (cached, idempotent) TextureAsset.
-// @p source is stamped onto the asset so cold-start load can recreate
-// the same texture via the recipe texture dispatch.
+// Decode raw RGBA8 bytes into a (cached, idempotent) TextureAsset. The source
+// is stamped onto the asset so cold-start load can recreate the same texture
+// via the recipe texture dispatch.
 TextureHandle addTexture(
     ResourceManager& res,
     const std::string& name,
@@ -285,8 +285,7 @@ TextureHandle decodeEmbedded(
     return addTexture(res, name, w, hh, rgba.data(), srgb, std::move(source));
 }
 
-// Resolve one material texture slot (embedded or external file) to a
-// TextureHandle, decoded with the engine's flip convention (see below).
+// Resolve one material texture slot, embedded or external file, to a handle.
 TextureHandle textureFor(
     const aiScene* scene,
     const aiMaterial* mat,

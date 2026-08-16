@@ -89,27 +89,23 @@ bool nameMatchesPattern(const std::string& filename, const std::string& pattern)
     return false;
 }
 
-// Scans the folder for the first file whose name contains one of the patterns
-// (case-insensitive) and carries one of the extensions. Pattern "Color" matches
-// "PavingStones_Color.jpg", "brick_color.png", etc.
+// First file matching one of the patterns (case-insensitive) and carrying one
+// of the extensions: "color" finds "PavingStones_Color.jpg" or "brick_color.png".
 std::optional<std::string> findTexture(
     const std::string& folderPath,
     const std::vector<std::string>& patterns,
     const std::vector<std::string>& extensions = {".jpg", ".jpeg", ".png", ".tga", ".bmp"}
 ) {
-    // Check if folder exists
     if (!std::filesystem::exists(folderPath) || !std::filesystem::is_directory(folderPath)) {
         return std::nullopt;
     }
 
-    // Iterate through all files in the folder
     for (const auto& entry : std::filesystem::directory_iterator(folderPath)) {
         if (!entry.is_regular_file()) continue;
 
         std::string filename = entry.path().filename().string();
         std::string extension = entry.path().extension().string();
 
-        // Check if file has one of the target extensions (case-insensitive)
         std::string extensionLower = toLower(extension);
         bool hasValidExtension = false;
         for (const auto& ext : extensions) {
@@ -120,7 +116,6 @@ std::optional<std::string> findTexture(
         }
         if (!hasValidExtension) continue;
 
-        // Check if filename contains any of the patterns (case-insensitive)
         std::string filenameLower = toLower(filename);
         for (const auto& pattern : patterns) {
             std::string patternLower = toLower(pattern);
@@ -218,7 +213,6 @@ MaterialHandle loadMaterialFromFolder(
         "height", "displacement", "disp", "parallax"
     });
 
-    // Assign found textures
     if (findAlbedo) desc.albedoPath = *findAlbedo;
     if (findNormal) desc.normalPath = *findNormal;
     if (findMetallicRoughness) desc.metallicRoughnessPath = *findMetallicRoughness;
@@ -251,7 +245,6 @@ MaterialHandle loadMaterialFromDesc(
 ) {
     MaterialAsset material;
 
-    // Set base properties
     material.albedo = desc.albedo;
     material.emission = desc.emission;
     material.metallic = desc.metallic;
@@ -260,13 +253,10 @@ MaterialHandle loadMaterialFromDesc(
     material.normalScale = desc.normalScale;
     material.heightScale = desc.heightScale;
 
-    // Generate fallback textures
     auto whiteTex = generateWhiteTexture(resourceManager);
     auto blackTex = generateBlackTexture(resourceManager);
     auto normalTex = generateNormalTexture(resourceManager);
 
-    // Load or fallback for each texture
-    // Albedo (sRGB)
     material.albedoTexture = loadOrFallback(
         desc.albedoPath,
         resourceManager,
@@ -275,7 +265,6 @@ MaterialHandle loadMaterialFromDesc(
         whiteTex
     );
 
-    // Normal map (linear)
     material.normalTexture = loadOrFallback(
         desc.normalPath,
         resourceManager,
@@ -284,8 +273,6 @@ MaterialHandle loadMaterialFromDesc(
         normalTex
     );
 
-    // Metallic and Roughness
-    // Check if we have a combined texture first
     if (!desc.metallicRoughnessPath.empty()) {
         // Packed glTF map (G = roughness, B = metallic). Bind it to the dedicated
         // packed slot so the shader samples the right channels; binding it to the
@@ -299,7 +286,6 @@ MaterialHandle loadMaterialFromDesc(
             blackTex
         );
     } else {
-        // Load separate textures
         material.metallicTexture = loadOrFallback(
             desc.metallicPath,
             resourceManager,
@@ -316,7 +302,6 @@ MaterialHandle loadMaterialFromDesc(
         );
     }
 
-    // Ambient Occlusion (linear)
     material.aoTexture = loadOrFallback(
         desc.aoPath,
         resourceManager,
@@ -325,7 +310,6 @@ MaterialHandle loadMaterialFromDesc(
         whiteTex
     );
 
-    // Emission (sRGB)
     material.emissionTexture = loadOrFallback(
         desc.emissionPath,
         resourceManager,
@@ -334,7 +318,6 @@ MaterialHandle loadMaterialFromDesc(
         blackTex
     );
 
-    // Height/Displacement (linear)
     material.heightTexture = loadOrFallback(
         desc.heightPath,
         resourceManager,

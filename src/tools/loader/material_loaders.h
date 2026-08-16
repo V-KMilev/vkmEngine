@@ -12,16 +12,10 @@ class ResourceManager;
 /**
  * @brief Load a PBR material from a texture folder with automatic file detection.
  *
- * Searches for common PBR texture naming patterns in the specified folder:
- * - Color/Albedo/BaseColor/Diffuse (sRGB)
- * - Normal/NormalGL (linear)
- * - Roughness (linear)
- * - Metallic/Metalness (linear)
- * - AO/AmbientOcclusion/Occlusion (linear)
- * - Emission/Emissive (sRGB)
- * - MetallicRoughness/ORM (linear, packed)
- *
- * Common file extensions are checked: .jpg, .jpeg, .png, .tga, .bmp
+ * Searches the folder for the common PBR naming patterns - Color/Albedo/
+ * BaseColor/Diffuse and Emission/Emissive (sRGB), Normal, Roughness, Metallic,
+ * AO and packed MetallicRoughness/ORM (linear) - across .jpg, .jpeg, .png,
+ * .tga and .bmp.
  *
  * The folder path is the material's name, and the load is idempotent by it:
  * loading the same folder twice hands back the material from the first load.

@@ -65,7 +65,6 @@ MeshAsset generateTriangle(float size) {
     const glm::vec3 normal(0.0f, 1.0f, 0.0f);
     const glm::vec4 tangent(1.0f, 0.0f, 0.0f, 1.0f);
 
-    // Canonical unit triangle (size 1.0), scaled uniformly by size.
     mesh.vertices = {
         Vertex{ glm::vec3( 0.0f, 0.0f,  0.433f) * size, normal, glm::vec2(0.5f, 1.0f), tangent },  // Top
         Vertex{ glm::vec3(-0.5f, 0.0f, -0.25f) * size, normal, glm::vec2(0.0f, 0.0f), tangent },  // Bottom-left
@@ -86,10 +85,8 @@ MeshAsset generatePlane(float width, float height, uint32_t widthSegments, uint3
     const glm::vec3 normal(0.0f, 1.0f, 0.0f);
     const glm::vec4 tangent(1.0f, 0.0f, 0.0f, 1.0f);
 
-    // Tessellated grid: width x height (full dimensions, centred on origin),
-    // subdivided into widthSegments x heightSegments quads. u runs along x,
-    // v along z; each cell is wound CCW seen from +Y so the lit face is the
-    // normal (+Y) side under back-face culling.
+    // u runs along x, v along z; each cell is wound CCW seen from +Y so the lit
+    // face is the normal (+Y) side under back-face culling.
     const uint32_t nx = widthSegments  > 0 ? widthSegments  : 1;
     const uint32_t nz = heightSegments > 0 ? heightSegments : 1;
     const float halfW = width  * 0.5f;
@@ -201,7 +198,7 @@ MeshAsset generateCube() {
 
 MeshAsset generateSphere(uint32_t xSegments, uint32_t ySegments) {
     MeshAsset mesh;
-    const float radius = 0.5f;  // Unit sphere (-0.5 to 0.5)
+    const float radius = 0.5f;
 
     // Cube-sphere (quad-sphere): six subdivided cube faces pushed onto the
     // sphere. Unlike a lat-long sphere it has NO poles, so there is no vertex
@@ -283,7 +280,6 @@ MeshAsset generatePyramid(float baseSize, float height) {
     const float h = baseSize * 0.5f;
     const glm::vec4 tangent(1.0f, 0.0f, 0.0f, 1.0f);
 
-    // Square base on the y=0 plane (edge = baseSize), apex at y = height.
     const glm::vec3 bl(-h, 0.0f, -h);
     const glm::vec3 br( h, 0.0f, -h);
     const glm::vec3 fr( h, 0.0f,  h);
@@ -365,7 +361,6 @@ MeshAsset generateCone(float radius, float height, uint32_t segments) {
     mesh.vertices.push_back(Vertex{ tip, tipNormal, glm::vec2(0.5f, 1.0f), tangent });
     uint32_t tipIndex = 0;
 
-    // Add base circle vertices
     uint32_t baseStartIndex = static_cast<uint32_t>(mesh.vertices.size());
     for (uint32_t i = 0; i < segments; ++i) {
         float angle = static_cast<float>(i) / static_cast<float>(segments) * glm::two_pi<float>();
@@ -373,7 +368,6 @@ MeshAsset generateCone(float radius, float height, uint32_t segments) {
         float z = std::sin(angle) * radius;
         glm::vec3 position(x, -halfHeight, z);
 
-        // Normal for cone side (pointing outward from center)
         glm::vec3 sideNormal = glm::normalize(glm::vec3(x, 0.0f, z));
         glm::vec3 coneNormal = glm::normalize(glm::vec3(sideNormal.x, radius / height, sideNormal.z));
 
@@ -381,13 +375,12 @@ MeshAsset generateCone(float radius, float height, uint32_t segments) {
         mesh.vertices.push_back(Vertex{ position, coneNormal, glm::vec2(u, 0.0f), tangent });
     }
 
-    // Add base center vertex
     mesh.vertices.push_back(Vertex{ baseCenter, nDown, glm::vec2(0.5f, 0.5f), tangent });
     uint32_t baseCenterIndex = static_cast<uint32_t>(mesh.vertices.size()) - 1;
 
-    // Cone side triangles (tip to base circle). The base ring runs CCW seen
-    // from +Y, so (tip, next, i) gives cross(v1-v0, v2-v0) pointing radially
-    // outward - the side normals' direction. (tip, i, next) would face inward.
+    // The base ring runs CCW seen from +Y, so (tip, next, i) gives
+    // cross(v1-v0, v2-v0) pointing radially outward - the side normals'
+    // direction. (tip, i, next) would face inward.
     for (uint32_t i = 0; i < segments; ++i) {
         uint32_t nextI = (i + 1) % segments;
         mesh.indices.push_back(tipIndex);
