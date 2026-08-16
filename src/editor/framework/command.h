@@ -27,8 +27,6 @@ class Command {
         /**
          * @brief Re-apply the change after an undo.
          *
-         * Called when the user presses redo.
-         *
          * @param scene Scene the change is replayed against.
          * @param state Editor state updated alongside the change (e.g. selection).
          */
@@ -36,8 +34,6 @@ class Command {
 
         /**
          * @brief Reverse the previously applied change.
-         *
-         * Called when the user presses undo.
          *
          * @param scene Scene the reverse operation mutates.
          * @param state Editor state restored alongside the reversal (e.g. selection).

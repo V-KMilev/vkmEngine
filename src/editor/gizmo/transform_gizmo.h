@@ -104,7 +104,6 @@ class TransformGizmo {
         glm::quat getDragRotation() const { return m_dragRotation; }
 
     private:
-        // Math utilities
         ImVec2 worldToScreen(const glm::vec3& worldPos) const;
         glm::vec3 screenToRay(ImVec2 screenPos) const;
         float computeScreenFactor(const glm::vec3& gizmoOrigin) const;
@@ -112,22 +111,19 @@ class TransformGizmo {
                                        const glm::vec3& planePoint, const glm::vec3& planeNormal);
         static float distPointToSegment2D(ImVec2 p, ImVec2 a, ImVec2 b);
 
-        // Hit testing
         GizmoElement hitTestTranslation(const glm::vec3 axes[3], const ImVec2 screenAxes[3]) const;
         GizmoElement hitTestRotation(const glm::vec3 axes[3]) const;
         GizmoElement hitTestScale(const ImVec2 screenAxes[3]) const;
 
-        // Drawing
         void drawTranslationGizmo(ImDrawList* dl, const ImVec2 screenAxes[3]);
         void drawRotationGizmo(ImDrawList* dl, const glm::vec3 axes[3]);
         void drawScaleGizmo(ImDrawList* dl, const ImVec2 screenAxes[3]);
 
-        // Drag handling - return true if model was modified
+        // Return true if model was modified.
         bool handleTranslationDrag(glm::mat4& model, const glm::vec3 axes[3]);
         bool handleRotationDrag(glm::mat4& model, const glm::vec3 axes[3]);
         bool handleScaleDrag(glm::mat4& model, const glm::vec3 axes[3]);
 
-        // Helpers
         glm::vec3 getAxisDirection(GizmoElement elem, const glm::vec3 axes[3]) const;
         glm::vec3 getDragPlaneNormal(GizmoElement elem, const glm::vec3 axes[3]) const;
         ImU32 colorForElement(GizmoElement elem, GizmoElement highlight) const;
@@ -163,7 +159,6 @@ class TransformGizmo {
         GizmoElement m_active   = GizmoElement::None;
         bool         m_dragging = false;
 
-        // Drag state
         glm::vec3 m_dragPlaneNormal{0.0f};
         glm::vec3 m_dragPlanePoint{0.0f};
         glm::vec3 m_dragStartWorldHit{0.0f};
@@ -176,20 +171,16 @@ class TransformGizmo {
         glm::quat m_dragStartRot{1.0f, 0.0f, 0.0f, 0.0f};
         glm::vec3 m_dragStartScale{1.0f};
 
-        // Rotation-specific
         glm::vec3 m_rotationAxis{0.0f};
         glm::vec3 m_rotationStartDir{0.0f};
 
-        // Scale-specific
         float m_scaleStartDist = 1.0f;
 
-        // Snap
         float m_snapAngle = 0.0f;
 
         // Delta rotation from current drag (set by handleRotationDrag)
         glm::quat m_dragRotation{1.0f, 0.0f, 0.0f, 0.0f};
 
-        // Style constants
         static constexpr float GIZMO_SIZE_PIXELS  = 110.0f;
         static constexpr float AXIS_HIT_RADIUS    = 10.0f;
         static constexpr float PLANE_QUAD_FRAC    = 0.28f;

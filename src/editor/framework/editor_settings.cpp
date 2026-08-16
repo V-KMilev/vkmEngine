@@ -174,9 +174,7 @@ bool load(EditorState& state, RenderSettings& render) {
         return false;
     }
 
-    // Panel visibility / sizes, gizmo defaults, snap - read each field from j,
-    // leaving the in-struct default when the key is absent. Enums round-trip
-    // through their underlying int.
+    // An absent key leaves the in-struct default; enums round-trip through int.
     visitScalarFields(state, [&](const char* key, auto& member) {
         using M = std::decay_t<decltype(member)>;
         if constexpr (std::is_enum_v<M>)

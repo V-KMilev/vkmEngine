@@ -101,8 +101,7 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
 
         // Billboard icon at the entity origin so a light is always findable
         // even if the wireframe is tiny or pointed away. Drawn first so the
-        // wireframe overlays it; for the user the dot reads as "the light
-        // lives here".
+        // wireframe overlays it.
         {
             ImVec2 sp;
             if (projectToViewport(vp, pos, vpMin, vpSize, sp)) {
@@ -142,7 +141,6 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                 // light origin distinctly from the rays.
                 wireCircle(dl, vp, pos, right, udir, discR, 16, vpMin, vpSize, col, 1.5f);
 
-                // Three parallel arrows from the disc plane forward.
                 for (const glm::vec3& off : offsets) {
                     const glm::vec3 start = pos + off;
                     arrowLine(dl, vp, start, start + dir * L, vpMin, vpSize,
@@ -151,7 +149,6 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                 break;
             }
             case LightType::Point: {
-                // Three orthogonal great-circle wireframes at radius.
                 const float r = std::max(0.05f, light.radius);
                 wireSphere(dl, vp, pos, r, 32, vpMin, vpSize, col, 1.0f);
                 break;
@@ -448,7 +445,6 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
                 dl->AddLine(nearSp[i], nearSp[j], colDim, 1.0f);
         }
 
-        // 4 edges connecting near and far corners (the frustum sides).
         for (int i = 0; i < 4; ++i) {
             if (haveNear[i] && haveFar[i])
                 dl->AddLine(nearSp[i], farSp[i], col, 1.0f);
@@ -472,7 +468,6 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
                 ImVec2(mid.x + 5.0f, mid.y), col);
         }
 
-        // Billboard camera icon at the position.
         if (haveApex) {
             const float r = 8.0f;
             dl->AddCircleFilled(apexSp, r + 1.0f, IM_COL32(15, 15, 18, 180), 16);

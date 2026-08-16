@@ -47,8 +47,7 @@ void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity) 
 
 namespace {
 // Write a model matrix back into a local Transform (TRS), matching the gizmo's
-// decomposition: translation from the last column, per-axis scale from the
-// basis-column lengths, rotation from the scale-normalised basis.
+// decomposition.
 void setTransformFromMatrix(Transform& t, const glm::mat4& m) {
     const glm::vec3 cx(m[0]), cy(m[1]), cz(m[2]);
     t.position = glm::vec3(m[3]);
