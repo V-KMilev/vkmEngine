@@ -40,11 +40,10 @@ class Scene {
     public:
         /**
          * @brief Create a new entity and assign a unique EntityId.
-         * @return The created Entity.
+         * @return The created entity's id.
          */
-        Entity createEntity() {
-            StorageIndex id = m_entityAllocator.allocate();
-            return Entity{id};
+        EntityId createEntity() {
+            return m_entityAllocator.allocate();
         }
 
         /**
@@ -55,17 +54,15 @@ class Scene {
          * indices (and editor selection mementos) directly valid after a
          * load, without any id-remap step.
          */
-        Entity createEntityAt(uint32_t index) {
-            StorageIndex id = m_entityAllocator.allocateAt(index);
-            return Entity{id};
+        EntityId createEntityAt(uint32_t index) {
+            return m_entityAllocator.allocateAt(index);
         }
 
         /**
          * @brief Destroy an entity by removing all of its components and recycling its slot.
-         * @param entity The entity to destroy.
+         * @param id The entity to destroy.
          */
-        void destroyEntity(Entity entity) {
-            EntityId id = entity.getID();
+        void destroyEntity(EntityId id) {
             // Notify observers before tear-down (entity + components still intact).
             // Scene stays system-agnostic; systems register via addObserver -
             // BehaviorSystem uses this to fire script onDestroy on every destroy path.
@@ -75,18 +72,28 @@ class Scene {
             detachFromHierarchy(*this, id);
 
             for (auto& set : m_components) {
-                if (set && set->has(id.index)) {
-                    set->remove(id.index);
-                }
+                if (set) set->removeIfPresent(id.index);
             }
             m_entityAllocator.free(id);
         }
 
-        bool isAlive(Entity entity)           const { return isAlive(entity.getID()); }
-        bool isAlive(EntityId id)             const { return m_entityAllocator.has(id); }
-        bool isAliveAtIndex(uint32_t index)   const { return m_entityAllocator.isAliveAtIndex(index); }
-        size_t entityCount()                  const { return m_entityAllocator.size(); }
-        uint32_t generationOf(uint32_t index) const { return m_entityAllocator.generationOf(index); }
+        bool isAlive(EntityId id)           const { return m_entityAllocator.has(id); }
+        bool isAliveAtIndex(uint32_t index) const { return m_entityAllocator.isAliveAtIndex(index); }
+        size_t entityCount()                const { return m_entityAllocator.size(); }
+
+        /**
+         * @brief The full id of the entity in slot @p index, generation included.
+         *
+         * The one way to turn a bare slot index - which is what a SparseSet key
+         * and a serialized parent link are - back into an EntityId systems can
+         * pass around.
+         *
+         * @param index Slot index; must be within the allocator's reach.
+         * @return The entity id for that slot.
+         */
+        EntityId entityAt(uint32_t index) const {
+            return {index, m_entityAllocator.generationOf(index)};
+        }
 
     public:
         /**
@@ -97,10 +104,10 @@ class Scene {
          * @return Reference to the added component in storage.
          */
         template<typename T>
-        auto& add(Entity entity, T && component) {
+        auto& add(EntityId entity, T && component) {
             VKM_ASSERT(isAlive(entity), "Scene::add called with dead/stale entity");
             using U = std::remove_cv_t<std::remove_reference_t<T>>;
-            return getStorage<U>().add(entity.getID().index, std::forward<T>(component));
+            return getStorage<U>().add(entity.index, std::forward<T>(component));
         }
 
         /**
@@ -109,23 +116,20 @@ class Scene {
          * @param entity The entity whose component will be removed.
          */
         template<typename T>
-        void remove(Entity entity) {
+        void remove(EntityId entity) {
             VKM_ASSERT(isAlive(entity), "Scene::remove called with dead/stale entity");
             auto* store = findStorage<T>();
-            if (store && store->contains(entity.getID().index)) {
-                store->remove(entity.getID().index);
+            if (store && store->contains(entity.index)) {
+                store->remove(entity.index);
             }
         }
 
         /**
          * @brief Check if an entity has a component of type T.
          * @tparam T Component type.
-         * @param entity Entity or EntityId to query.
+         * @param entity The entity to query.
          * @return true if the component exists for the entity, false otherwise.
          */
-        template<typename T>
-        bool has(Entity entity) const { return has<T>(entity.getID()); }
-
         template<typename T>
         bool has(EntityId entity) const {
             VKM_ASSERT(isAlive(entity), "Scene::has called with dead/stale entity");
@@ -136,27 +140,23 @@ class Scene {
         /**
          * @brief Get a mutable reference to an entity's component of type T.
          * @tparam T Component type.
-         * @param entity Entity or EntityId from which to get the component.
+         * @param entity The entity from which to get the component.
          * @return Reference to the component.
          */
         template<typename T>
-        T& get(Entity entity) { return get<T>(entity.getID()); }
-
-        template<typename T>
         T& get(EntityId entity) {
             VKM_ASSERT(isAlive(entity), "Scene::get called with dead/stale entity");
-            return getStorage<T>().get(entity.index);
+            auto* store = findStorage<T>();
+            VKM_ASSERT(store, "Scene::get called for unregistered component type");
+            return store->get(entity.index);
         }
 
         /**
          * @brief Get a const reference to an entity's component of type T.
          * @tparam T Component type.
-         * @param entity Entity or EntityId from which to get the component.
+         * @param entity The entity from which to get the component.
          * @return Const reference to the component.
          */
-        template<typename T>
-        const T& get(Entity entity) const { return get<T>(entity.getID()); }
-
         template<typename T>
         const T& get(EntityId entity) const {
             VKM_ASSERT(isAlive(entity), "Scene::get called with dead/stale entity");
@@ -197,7 +197,7 @@ class Scene {
 
             if constexpr (sizeof...(Rest) == 0) {
                 firstStorage->forEach([&](uint32_t entityIdx, First& first) {
-                    EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
+                    EntityId eid = entityAt(entityIdx);
                     fn(eid, first);
                 });
             } else {
@@ -207,7 +207,7 @@ class Scene {
                 firstStorage->forEach([&](uint32_t entityIdx, First& first) {
                     if (!(std::get<SparseSet<Rest>*>(restStorages)->contains(entityIdx) && ...)) return;
 
-                    EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
+                    EntityId eid = entityAt(entityIdx);
                     fn(eid, first, std::get<SparseSet<Rest>*>(restStorages)->get(entityIdx)...);
                 });
             }
@@ -220,7 +220,7 @@ class Scene {
 
             if constexpr (sizeof...(Rest) == 0) {
                 firstStorage->forEach([&](uint32_t entityIdx, const First& first) {
-                    EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
+                    EntityId eid = entityAt(entityIdx);
                     fn(eid, first);
                 });
             } else {
@@ -230,7 +230,7 @@ class Scene {
                 firstStorage->forEach([&](uint32_t entityIdx, const First& first) {
                     if (!(std::get<const SparseSet<Rest>*>(restStorages)->contains(entityIdx) && ...)) return;
 
-                    EntityId eid{entityIdx, m_entityAllocator.generationOf(entityIdx)};
+                    EntityId eid = entityAt(entityIdx);
                     fn(eid, first, std::get<const SparseSet<Rest>*>(restStorages)->get(entityIdx)...);
                 });
             }
@@ -246,7 +246,7 @@ class Scene {
         template<typename Fn>
         void forEachEntity(Fn&& fn) const {
             m_entityAllocator.forEach([&](uint32_t idx) {
-                fn(EntityId{idx, m_entityAllocator.generationOf(idx)});
+                fn(entityAt(idx));
             });
         }
 

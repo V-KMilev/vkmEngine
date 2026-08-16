@@ -6,7 +6,7 @@ any type can be a component without modifying Scene.
 ## Key files
 
 - `src/engine/ecs/scene.h` for the Scene registry
-- `src/engine/ecs/entity.h` for the Entity wrapper
+- `src/engine/ecs/entity.h` for the `EntityId` alias
 - `src/engine/ecs/component/` for all component types
 - `src/engine/core/memory/slot_allocator.h` for the entity handle allocator
 - `src/engine/core/memory/sparse_set.h` for component storage
@@ -27,8 +27,8 @@ using EntityId = StorageIndex;             // { uint32_t index, uint32_t generat
   `index != 0`.
 
 ```cpp
-Entity entity = scene.createEntity();
-bool   alive  = scene.isAlive(entity);
+EntityId entity = scene.createEntity();
+bool     alive  = scene.isAlive(entity);
 scene.destroyEntity(entity);              // removes all components, recycles slot
 ```
 

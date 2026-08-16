@@ -603,16 +603,16 @@ EntityId importModelIntoScene(
         return h;
     };
 
-    Entity root = scene.createEntity();
+    EntityId root = scene.createEntity();
     scene.add(root, Transform{});
     scene.add(root, makeName(stemOf(path).c_str()));
 
     std::function<void(const aiNode*, EntityId)> spawn =
         [&](const aiNode* node, EntityId parent) {
-        Entity e = scene.createEntity();
+        EntityId e = scene.createEntity();
         scene.add(e, transformOf(node->mTransformation));
         scene.add(e, makeName(node->mName.length ? node->mName.C_Str() : "node"));
-        HierarchyOperations::setParent(scene, e.getID(), parent);
+        HierarchyOperations::setParent(scene, e, parent);
 
         for (unsigned i = 0; i < node->mNumMeshes; ++i) {
             const int mi = static_cast<int>(node->mMeshes[i]);
@@ -623,23 +623,23 @@ EntityId importModelIntoScene(
             if (node->mNumMeshes == 1) {
                 scene.add(e, Mesh{mh, mat});
             } else {
-                Entity sub = scene.createEntity();
+                EntityId sub = scene.createEntity();
                 scene.add(sub, Transform{});
                 scene.add(sub, makeName(("mesh" + std::to_string(mi)).c_str()));
                 scene.add(sub, Mesh{mh, mat});
-                HierarchyOperations::setParent(scene, sub.getID(), e.getID());
+                HierarchyOperations::setParent(scene, sub, e);
             }
         }
         for (unsigned c = 0; c < node->mNumChildren; ++c)
-            spawn(node->mChildren[c], e.getID());
+            spawn(node->mChildren[c], e);
     };
 
     if (aScene->mRootNode)
-        spawn(aScene->mRootNode, root.getID());
+        spawn(aScene->mRootNode, root);
 
     LOG_INFO("Imported model '%s' (%u meshes, %u materials)",
         path.c_str(), aScene->mNumMeshes, aScene->mNumMaterials);
-    return root.getID();
+    return root;
 }
 
 } // namespace Engine
