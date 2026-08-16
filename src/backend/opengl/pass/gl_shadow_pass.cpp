@@ -2,10 +2,6 @@
 
 #include "pass/gl_shadow_pass.h"
 
-#include <algorithm>
-
-#include <algorithm>
-
 #include <GL/glew.h>
 
 #include "debug/profiler.h"
@@ -15,7 +11,6 @@
 
 #include "gl_frame_context.h"
 #include "gl_view.h"
-#include "core/math/frustum.h"
 #include "data/gl_mesh.h"
 #include "data/gl_shadow_atlas.h"
 #include "data/gl_shadow_data.h"
