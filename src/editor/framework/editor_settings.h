@@ -16,9 +16,10 @@ struct RenderSettings;
  * the engine owns (panel sizes, gizmo defaults, snap step sizes, key
  * rebindings, recent scenes).
  *
- * Path defaults to `APP_ROOT_DIR/editor_settings.json`. Failures are non-fatal:
- * load() returns false on missing/invalid files and the editor starts with
- * built-in defaults.
+ * The file lives in the open project's root (see path()); the recent-projects
+ * list is the one exception, kept at the engine root so it survives switching
+ * projects. Failures are non-fatal: load() returns false on missing/invalid
+ * files and the editor starts with built-in defaults.
  */
 namespace EditorSettings {
 
@@ -36,7 +37,8 @@ bool load(EditorState& state, RenderSettings& render);
 /**
  * @brief Write the editor-owned settings to the settings file.
  *
- * @param state Editor state whose persistent fields are serialized.
+ * @param state  Editor state whose persistent fields are serialized.
+ * @param render Render settings written to the file's renderSettings block.
  * @return false on write failure, true on success.
  */
 bool save(const EditorState& state, const RenderSettings& render);

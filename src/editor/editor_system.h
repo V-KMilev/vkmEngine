@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include <imgui.h>
 
 #include "core/system.h"
@@ -33,6 +35,7 @@ struct EditorContext;
 class Engine;
 class CameraControllerSystem;
 class Scene;
+class UISystem;
 class VisibilitySystem;
 class RenderSystem;
 class ScriptModule;
@@ -43,7 +46,7 @@ class ScriptModule;
  *
  * Constructed once at boot with non-owning pointers to the rendering /
  * input / event collaborators it needs. Each update():
- *  - Routes input intent (capture flags) to CameraControllerSystem.
+ *  - Routes input intent (capture flags) to CameraControllerSystem and UISystem.
  *  - Drives the menu bar, status bar, shortcut handler and panel resizer.
  *  - Draws the docked panels and the floating preview/overlay panels.
  *  - Lets the SceneIOController emit any pending Save-As / Load dialogs.
@@ -57,9 +60,11 @@ class EditorSystem : public System {
             Engine& engine,
             GLFWwindow* window,
             CameraControllerSystem& cameraController,
+            UISystem& uiSystem,
             VisibilitySystem& visibilitySystem,
             RenderSystem& renderSystem,
-            ScriptModule& scriptModule
+            ScriptModule& scriptModule,
+            const std::string& projectName
         );
         ~EditorSystem() override;
 
@@ -104,6 +109,7 @@ class EditorSystem : public System {
         Engine&           m_engine;
         GLFWwindow*       m_window;
         CameraControllerSystem& m_cameraController;
+        UISystem&         m_uiSystem;
         RenderSystem&     m_renderSystem;
         VisibilitySystem& m_visibilitySystem;
         ScriptModule&     m_scriptModule;

@@ -14,6 +14,24 @@
 
 namespace Engine {
 
+namespace {
+
+// Re-resolve a captured entity id through its slot.
+//
+// Undoing a delete resurrects the entity at its original slot but with a
+// fresh generation, so any older command still holding the pre-delete id
+// would fail its isAlive guard and silently no-op forever after. The slot
+// index is the half of the id that survives a resurrection, which is why
+// Create/Destroy already key off it. Safe for the rest because the stack is
+// LIFO: an older command can only run once everything pushed after it has
+// been undone, and by then its slot holds the entity it was made against.
+EntityId liveEntity(const Scene& scene, EntityId captured) {
+    if (!captured || !scene.isAliveAtIndex(captured.index)) return {};
+    return EntityId{captured.index, scene.generationOf(captured.index)};
+}
+
+} // namespace
+
 TransformChangeCommand::TransformChangeCommand(
     EntityId e,
     const Transform& before,
@@ -23,15 +41,17 @@ TransformChangeCommand::TransformChangeCommand(
     : m_entity(e), m_before(before), m_after(after), m_label(label) {}
 
 void TransformChangeCommand::redo(Scene& scene, EditorState&) {
-    if (!scene.isAlive(m_entity) || !scene.has<Transform>(m_entity)) return;
-    scene.get<Transform>(m_entity) = m_after;
-    HierarchyOperations::markDirty(scene, m_entity);
+    const EntityId e = liveEntity(scene, m_entity);
+    if (!e || !scene.has<Transform>(e)) return;
+    scene.get<Transform>(e) = m_after;
+    HierarchyOperations::markDirty(scene, e);
 }
 
 void TransformChangeCommand::undo(Scene& scene, EditorState&) {
-    if (!scene.isAlive(m_entity) || !scene.has<Transform>(m_entity)) return;
-    scene.get<Transform>(m_entity) = m_before;
-    HierarchyOperations::markDirty(scene, m_entity);
+    const EntityId e = liveEntity(scene, m_entity);
+    if (!e || !scene.has<Transform>(e)) return;
+    scene.get<Transform>(e) = m_before;
+    HierarchyOperations::markDirty(scene, e);
 }
 
 bool TransformChangeCommand::tryMerge(Command& incoming) {
@@ -88,33 +108,37 @@ bool PhysicsSettingsEditCommand::tryMerge(Command& incoming) {
 
 template <typename T>
 void AddComponentCommand<T>::redo(Scene& scene, EditorState& state) {
-    if (!scene.isAlive(m_entity) || scene.has<T>(m_entity)) return;
+    const EntityId e = liveEntity(scene, m_entity);
+    if (!e || scene.has<T>(e)) return;
     // Pass a fresh copy via move - Scene::add's T&& is a forwarding
     // reference but an explicit-template-arg call would force rvalue bind.
     T copy = m_value;
-    scene.add(Entity{m_entity}, std::move(copy));
+    scene.add(Entity{e}, std::move(copy));
     state.hierarchyDirty = true;
 }
 
 template <typename T>
 void AddComponentCommand<T>::undo(Scene& scene, EditorState& state) {
-    if (!scene.isAlive(m_entity) || !scene.has<T>(m_entity)) return;
-    scene.remove<T>(Entity{m_entity});
+    const EntityId e = liveEntity(scene, m_entity);
+    if (!e || !scene.has<T>(e)) return;
+    scene.remove<T>(Entity{e});
     state.hierarchyDirty = true;
 }
 
 template <typename T>
 void RemoveComponentCommand<T>::redo(Scene& scene, EditorState& state) {
-    if (!scene.isAlive(m_entity) || !scene.has<T>(m_entity)) return;
-    scene.remove<T>(Entity{m_entity});
+    const EntityId e = liveEntity(scene, m_entity);
+    if (!e || !scene.has<T>(e)) return;
+    scene.remove<T>(Entity{e});
     state.hierarchyDirty = true;
 }
 
 template <typename T>
 void RemoveComponentCommand<T>::undo(Scene& scene, EditorState& state) {
-    if (!scene.isAlive(m_entity) || scene.has<T>(m_entity)) return;
+    const EntityId e = liveEntity(scene, m_entity);
+    if (!e || scene.has<T>(e)) return;
     T copy = m_snapshot;
-    scene.add(Entity{m_entity}, std::move(copy));
+    scene.add(Entity{e}, std::move(copy));
     state.hierarchyDirty = true;
 }
 
@@ -154,14 +178,16 @@ template class RemoveComponentCommand<LOD>;
 
 template <typename T>
 void ComponentEditCommand<T>::redo(Scene& scene, EditorState&) {
-    if (!scene.isAlive(m_entity) || !scene.has<T>(m_entity)) return;
-    scene.get<T>(m_entity) = m_after;
+    const EntityId e = liveEntity(scene, m_entity);
+    if (!e || !scene.has<T>(e)) return;
+    scene.get<T>(e) = m_after;
 }
 
 template <typename T>
 void ComponentEditCommand<T>::undo(Scene& scene, EditorState&) {
-    if (!scene.isAlive(m_entity) || !scene.has<T>(m_entity)) return;
-    scene.get<T>(m_entity) = m_before;
+    const EntityId e = liveEntity(scene, m_entity);
+    if (!e || !scene.has<T>(e)) return;
+    scene.get<T>(e) = m_before;
 }
 
 template <typename T>
@@ -364,9 +390,10 @@ namespace {
 // Re-link `child` under `parent` (null = root) and restore the stored local
 // transform, so undo/redo land on the exact world-preserving state the
 // interactive reparent produced.
-void applyReparent(Scene& scene, EntityId child, EntityId parent, const Transform& local) {
-    if (parent) {
-        if (!scene.isAlive(parent)) return;
+void applyReparent(Scene& scene, EntityId child, EntityId capturedParent, const Transform& local) {
+    if (capturedParent) {
+        const EntityId parent = liveEntity(scene, capturedParent);
+        if (!parent) return;
         HierarchyOperations::setParent(scene, child, parent);
     } else {
         HierarchyOperations::removeFromParent(scene, child);
@@ -377,19 +404,23 @@ void applyReparent(Scene& scene, EntityId child, EntityId parent, const Transfor
 } // namespace
 
 void ReparentCommand::redo(Scene& scene, EditorState& state) {
-    if (!scene.isAlive(m_child)) return;
-    applyReparent(scene, m_child, m_newParent, m_after);
+    const EntityId child = liveEntity(scene, m_child);
+    if (!child) return;
+    applyReparent(scene, child, m_newParent, m_after);
     state.hierarchyDirty = true;
 }
 
 void ReparentCommand::undo(Scene& scene, EditorState& state) {
-    if (!scene.isAlive(m_child)) return;
-    applyReparent(scene, m_child, m_oldParent, m_before);
+    const EntityId child = liveEntity(scene, m_child);
+    if (!child) return;
+    applyReparent(scene, child, m_oldParent, m_before);
     state.hierarchyDirty = true;
 }
 
 void SetActiveCameraCommand::redo(Scene& scene, EditorState&) {
-    scene.forEach<Camera>([&](EntityId id, Camera& c) { c.active = (id == m_target); });
+    // Compare by slot: m_before is keyed by slot for the same reason, and the
+    // target may have been resurrected since with a newer generation.
+    scene.forEach<Camera>([&](EntityId id, Camera& c) { c.active = (id.index == m_target.index); });
 }
 
 void SetActiveCameraCommand::undo(Scene& scene, EditorState&) {

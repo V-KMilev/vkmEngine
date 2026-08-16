@@ -1,13 +1,12 @@
 #include "framework/editor_panel_resize.h"
 
-#include "ui/editor_style.h"
-
 #include <algorithm>
 #include <cmath>
 
 #include <imgui.h>
 
 #include "framework/editor_state.h"
+#include "ui/editor_style.h"
 
 namespace Engine {
 
