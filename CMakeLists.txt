@@ -17,8 +17,50 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Place all binaries (exe + DLLs) in one directory so an exe finds its DLLs.
+# Every target is position-independent. The engine libraries are shared, and a
+# static dependency linked into a shared library has to be PIC or the link fails
+# outright on a thread-local relocation (stb was the one that found this).
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# One place for executables, one for libraries. Keeping the shared engine beside
+# the exes means the build tree needs no rpath tricks to run in place.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+
+# An installed SDK is relocatable: binaries find their libraries relative to
+# themselves rather than through an absolute path baked at build time. The build
+# tree keeps CMake's own generated rpath, which is why this is not applied there.
+set(CMAKE_SKIP_BUILD_RPATH OFF)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+if(APPLE)
+    set(CMAKE_INSTALL_RPATH "@loader_path;@loader_path/../lib")
+else()
+    set(CMAKE_INSTALL_RPATH "$ORIGIN;$ORIGIN/../lib")
+endif()
+
+# Written to the build dir for clangd, IDEs, and any tool that wants to know how
+# a translation unit is actually compiled.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# An in-source build scatters generated files through the tree and makes a clean
+# checkout impossible to tell from a dirty one. Refuse rather than warn.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
+    message(FATAL_ERROR
+        "In-source builds are not supported. Configure into a subdirectory:\n"
+        "  cmake -B build -G Ninja")
+endif()
+
+# Single-config generators leave CMAKE_BUILD_TYPE empty, which silently means
+# "no optimisation and no debug info". Name the default instead of inheriting it.
+get_property(_vkm_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(NOT _vkm_multi_config AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+        Debug Release RelWithDebInfo MinSizeRel)
+    message(STATUS "No build type specified - defaulting to RelWithDebInfo")
+endif()
 
 # Profiler (Tracy) toggle. Defaults ON except for explicit Release builds, where
 # debug/profiler.h expands every macro to a zero-cost no-op and Tracy compiles
