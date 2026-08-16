@@ -32,9 +32,8 @@ class RenderSystem : public System {
         /**
          * @brief Run one frame of rendering.
          *
-         * Applies any pending backend swap, snapshots the visible scene into the
-         * RenderView (reused across frames for its capacity), and hands that to
-         * the active backend to draw. A no-op until a backend is installed.
+         * Applies any pending backend swap first. A no-op until a backend is
+         * installed.
          */
         void update(FrameContext& ctx) override;
 
@@ -74,9 +73,8 @@ class RenderSystem : public System {
         /**
          * @brief Apply a queued backend swap, if one is pending.
          *
-         * Inits the queued backend against the window and, on success, makes it
-         * current (destroying the previous one). Runs at the top of update() so
-         * a swap from setup or the editor lands on the next frame.
+         * Runs at the top of update() so a swap from setup or the editor lands
+         * on the next frame.
          */
         void installPending(FrameContext& ctx);
 

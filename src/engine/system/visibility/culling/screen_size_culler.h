@@ -47,7 +47,6 @@ inline bool isVisible(
         return true;
     }
 
-    // worldRadiusSq / depthSq >= thresholdSq  (both sides positive, sqrt-free)
     return worldRadiusSq >= context.screenSizeThresholdSq * (depth * depth);
 }
 

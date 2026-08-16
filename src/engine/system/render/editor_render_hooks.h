@@ -77,9 +77,6 @@ class EditorRenderHooks {
         /**
          * @brief Draw @p request offscreen and return the texture to display.
          *
-         * The request's key identifies the cached output across frames;
-         * rendering the same key again overwrites that target.
-         *
          * @param request   What to draw, at what size, under which key.
          * @param resources Resolves the request's handles.
          */

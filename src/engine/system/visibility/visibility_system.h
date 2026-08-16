@@ -13,11 +13,10 @@ namespace Engine {
  *
  * Runs in the Visibility stage. Finds the active camera (cached for O(1)
  * re-lookup, falling back to a scene scan), then culls every Mesh in parallel
- * through frustum -> distance -> screen-size tests, transforming each mesh's
- * local AABB to world space via WorldTransform when present (else Transform).
- * The result is published on FrameContext::visibility for the render side
- * (RenderSystem, editor picking). Shadow casters are gathered separately so off-screen
- * occluders survive frustum culling.
+ * through frustum -> distance -> screen-size tests. The result is published on
+ * FrameContext::visibility for the render side (RenderSystem, editor picking).
+ * Shadow casters are gathered separately so off-screen occluders survive
+ * frustum culling.
  */
 class VisibilitySystem : public System {
     public:

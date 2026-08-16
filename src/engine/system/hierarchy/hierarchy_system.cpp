@@ -21,18 +21,11 @@ void HierarchySystem::resolve(Scene& scene) {
     auto* hierarchyStorage = scene.storage<Hierarchy>();
     if (!hierarchyStorage) return;
 
-    // Bucket dirty entities by their absolute depth from a root. Within a
-    // single depth, entities are mutually independent (no parent-child links
-    // between siblings or cousins) so a parallelFor over the bucket is safe.
-    // Depths are processed in order, so a child at depth d+1 always observes
-    // its parent's finalised WorldTransform.
-    //
-    // Invariant relied on here: every entity with Hierarchy also has
-    // WorldTransform (pre-seeded by setParent) - no structural mutation
-    // happens inside the parallel section.
-    //
-    // Cleared, not freed: the buckets live on the system so their capacity
-    // survives the frame and the pass constructs nothing.
+    // Within a single depth, entities are mutually independent (no parent-child
+    // links between siblings or cousins) so a parallelFor over the bucket is
+    // safe. Invariant relied on here: every entity with Hierarchy also has
+    // WorldTransform (pre-seeded by setParent) - no structural mutation happens
+    // inside the parallel section.
     for (auto& b : m_buckets) b.clear();
 
     const uint32_t count = static_cast<uint32_t>(hierarchyStorage->size());
@@ -67,10 +60,10 @@ void HierarchySystem::resolve(Scene& scene) {
         m_buckets[depth].push_back(id);
     }
 
-    // Depth-bucket invariant lets each child read its parent's already-final
-    // WorldTransform instead of re-walking the ancestor chain. parent_world
-    // * local is one matrix multiply per dirty entity vs. depth-many in
-    // computeWorldMatrix - a real win on shallow-but-wide scenes.
+    // Depths in order, so each child reads its parent's already-final
+    // WorldTransform instead of re-walking the ancestor chain: one matrix
+    // multiply per dirty entity vs. depth-many in computeWorldMatrix - a real
+    // win on shallow-but-wide scenes.
     for (uint32_t d = 0; d < HierarchyOperations::MAX_DEPTH; ++d) {
         const auto& bucket = m_buckets[d];
         if (bucket.empty()) continue;
