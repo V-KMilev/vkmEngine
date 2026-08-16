@@ -29,6 +29,12 @@ find_dependency(Threads)
 # So this is a hard error, not a warning. A mismatch does not fail at link time -
 # it fails at run time, as a corrupt object or a crash inside a function that
 # looks innocent, and the cause is invisible by then.
+# The compiler itself, not just its name: `vkm build` passes this back to CMake
+# so a project is configured with the toolchain that built the engine instead of
+# whichever one CMake happens to find first. On a machine with both GCC and Clang
+# installed - every MSYS2 install - that is otherwise a coin flip the check below
+# has to catch.
+set(VKMENGINE_BUILD_CXX_COMPILER         "@CMAKE_CXX_COMPILER@")
 set(VKMENGINE_BUILD_CXX_COMPILER_ID      "@CMAKE_CXX_COMPILER_ID@")
 set(VKMENGINE_BUILD_CXX_COMPILER_VERSION "@CMAKE_CXX_COMPILER_VERSION@")
 set(VKMENGINE_BUILD_CXX_STANDARD         "@CMAKE_CXX_STANDARD@")
@@ -43,6 +49,8 @@ if(NOT VKMENGINE_SKIP_TOOLCHAIN_CHECK)
             "compilers: a module built this way fails at run time, not at link "
             "time. Use ${VKMENGINE_BUILD_CXX_COMPILER_ID}, or rebuild the engine "
             "with your compiler.\n"
+            "The engine was built with: ${VKMENGINE_BUILD_CXX_COMPILER}\n"
+            "  vkm build --compiler \"${VKMENGINE_BUILD_CXX_COMPILER}\"\n"
             "To override anyway (you are on your own): "
             "-DVKMENGINE_SKIP_TOOLCHAIN_CHECK=ON")
     endif()
