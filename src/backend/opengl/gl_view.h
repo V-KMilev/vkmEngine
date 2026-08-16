@@ -113,9 +113,6 @@ class GLView {
         /**
          * @brief Upload or refresh a single asset into its table, version-gated.
          *
-         * Upload `handle`'s asset into `table` on first sight, or update it when
-         * the asset's version has moved on since the cached copy.
-         *
          * @tparam GLT The type of the GL resource.
          * @tparam AssetT The type of the asset.
          * @param table The table to ensure.

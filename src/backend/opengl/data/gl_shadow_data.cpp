@@ -74,8 +74,6 @@ void GLShadowData::build(const RenderView& view) {
 
     m_data.camForward = glm::vec4(camFwd, 0.0f);
 
-    // One pass over the shadow casters, each fitted into the next free atlas
-    // slot(s) for its light type.
     uint32_t next2D   = 0;
     uint32_t nextCube = 0;
     bool     haveSun  = false;

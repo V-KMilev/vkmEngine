@@ -71,7 +71,6 @@ void GLSceneCapture::captureCube(Core::Context& gl, const glm::vec3& position, f
         gl.setClearColor({0.0f, 0.0f, 0.0f, 1.0f});
         gl.clear(true, true, false);
 
-        // Camera UBO for this face (binding 2): viewProjection + capture position.
         CameraData cam;
         cam.view       = viewM;
         cam.projection = proj;

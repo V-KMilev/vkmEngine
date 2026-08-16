@@ -170,7 +170,6 @@ uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
     // skips shadow sampling entirely (same trick as the probe baker).
     m_lights.update(view.lights, m_noShadow);
 
-    // Scene pass: the single mesh into the HDR scratch, lit by the rig + IBL.
     m_scratch.bind(gl);
     gl.setDepthTest(true);
     gl.setDepthWrite(true);
@@ -210,8 +209,8 @@ uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
     // should light and reflect the environment whatever the scene asked for.
     bindOfflinePbrUniforms(*m_pbr, ibl, 1.0f, static_cast<float>(SCENE_SIZE));
 
-    // Transparent materials blend over the backdrop; everything else draws
-    // opaque. One mesh, so no sorting or partitioning is needed.
+    // Transparent materials blend over the backdrop. One mesh, so no sorting or
+    // partitioning is needed.
     const bool transparent = material->getType() == MaterialType::Transparent;
     if (transparent) {
         gl.setBlending(true);
@@ -228,9 +227,8 @@ uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
 
     if (transparent) gl.setBlending(false);
 
-    // Tonemap pass: resolve the HDR scratch into this key's LDR texture with
-    // the scene's own composite shader (bloom off, default view) so previews
-    // match the viewport's color response.
+    // Tonemap with the scene's own composite shader (bloom off, default view)
+    // so previews match the viewport's color response.
     Entry& entry = ensureEntry(req.key, req.size);
     entry.fbo.bind();
     entry.fbo.setDrawBuffer(GL_COLOR_ATTACHMENT0);
