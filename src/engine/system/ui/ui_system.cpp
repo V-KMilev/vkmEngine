@@ -27,10 +27,9 @@ void UISystem::update(FrameContext& ctx) {
     m_buttonHits.clear();
     ctx.ui = &m_drawData;
 
-    // Pointer in viewport-local framebuffer pixels (the space element rects
-    // resolve into), plus this frame's press / release edges for the click state
-    // machine. GLFW hands back the cursor in window screen coords, which is the
-    // same thing only on an unscaled display - hence the scale.
+    // Element rects resolve in viewport-local framebuffer pixels; GLFW hands
+    // back the cursor in window screen coords, which is the same thing only on
+    // an unscaled display - hence the scale.
     const MouseInputHandle& mouse = ctx.window.getInputHandle().getMouse();
     const float pointerScale = ctx.window.framebufferScale();
     m_pointer = {
@@ -62,8 +61,7 @@ void UISystem::update(FrameContext& ctx) {
             return a.entity.index < b.entity.index;
         });
 
-    // Each canvas spans the whole viewport and seeds the top-down layout walk
-    // over its UIElement children.
+    // Each canvas spans the whole viewport.
     const UIRect viewport{glm::vec2(0.0f), glm::vec2(vpW, vpH)};
     for (const CanvasRef& ref : m_canvases) {
         const UICanvas& canvas = ctx.scene.get<UICanvas>(ref.entity);
@@ -144,8 +142,8 @@ void UISystem::resolveInteraction(FrameContext& ctx) {
         if (hit.inside) topmost = hit.entity;
     }
 
-    // A press starts a click candidate on the topmost button (or clears it when
-    // the press missed); releasing over that same button fires the click.
+    // A press starts a click candidate (cleared when the press missed);
+    // releasing over that same button fires the click.
     if (m_mouseDownEdge) m_pressedButton = topmost;
 
     for (const ButtonHit& hit : m_buttonHits) {

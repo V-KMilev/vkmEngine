@@ -71,7 +71,6 @@ void GLIBLBaker::bake(Core::Context& gl, GLIBL& ibl, const std::string& path) {
 
     ibl.bindCaptureFbo();
 
-    // Equirectangular HDR -> environment cubemap, then convolve + BRDF LUT.
     m_equirect.bind();
     ibl.bindEquirect(0);
     captureEnvFaces(gl, ibl, m_equirect);

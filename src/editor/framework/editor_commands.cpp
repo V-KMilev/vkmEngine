@@ -27,7 +27,7 @@ namespace {
 // been undone, and by then its slot holds the entity it was made against.
 EntityId liveEntity(const Scene& scene, EntityId captured) {
     if (!captured || !scene.isAliveAtIndex(captured.index)) return {};
-    return EntityId{captured.index, scene.generationOf(captured.index)};
+    return scene.entityAt(captured.index);
 }
 
 } // namespace
@@ -113,7 +113,7 @@ void AddComponentCommand<T>::redo(Scene& scene, EditorState& state) {
     // Pass a fresh copy via move - Scene::add's T&& is a forwarding
     // reference but an explicit-template-arg call would force rvalue bind.
     T copy = m_value;
-    scene.add(Entity{e}, std::move(copy));
+    scene.add(e, std::move(copy));
     state.hierarchyDirty = true;
 }
 
@@ -121,7 +121,7 @@ template <typename T>
 void AddComponentCommand<T>::undo(Scene& scene, EditorState& state) {
     const EntityId e = liveEntity(scene, m_entity);
     if (!e || !scene.has<T>(e)) return;
-    scene.remove<T>(Entity{e});
+    scene.remove<T>(e);
     state.hierarchyDirty = true;
 }
 
@@ -129,7 +129,7 @@ template <typename T>
 void RemoveComponentCommand<T>::redo(Scene& scene, EditorState& state) {
     const EntityId e = liveEntity(scene, m_entity);
     if (!e || !scene.has<T>(e)) return;
-    scene.remove<T>(Entity{e});
+    scene.remove<T>(e);
     state.hierarchyDirty = true;
 }
 
@@ -138,7 +138,7 @@ void RemoveComponentCommand<T>::undo(Scene& scene, EditorState& state) {
     const EntityId e = liveEntity(scene, m_entity);
     if (!e || scene.has<T>(e)) return;
     T copy = m_snapshot;
-    scene.add(Entity{e}, std::move(copy));
+    scene.add(e, std::move(copy));
     state.hierarchyDirty = true;
 }
 
@@ -260,36 +260,35 @@ EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
 }
 
 void EntitySnapshot::apply(Scene& scene, EntityId id) const {
-    Entity e{id};
     // Construct a fresh copy before forwarding - Scene::add's T&& binds an
     // rvalue and the optionals hold lvalues. Only add what's missing so apply
     // onto a half-populated entity is a no-op for components already present.
 #define VKM_SNAPSHOT_APPLY(Type, fieldName) \
-    if (fieldName && !scene.has<Type>(id)) { Type v = *fieldName; scene.add(e, std::move(v)); }
+    if (fieldName && !scene.has<Type>(id)) { Type v = *fieldName; scene.add(id, std::move(v)); }
     VKM_EDITOR_SNAPSHOT_COMPONENTS(VKM_SNAPSHOT_APPLY)
 #undef VKM_SNAPSHOT_APPLY
     if (scriptJson && !scene.has<ScriptComponent>(id)) {
         ScriptComponent sc;
         ComponentSerializer::load(nlohmann::json::parse(*scriptJson), sc);
-        scene.add(e, std::move(sc));
+        scene.add(id, std::move(sc));
     }
 }
 
 void CreateEntityCommand::redo(Scene& scene, EditorState& state) {
-    Entity e = scene.createEntityAt(m_snap.slotIndex);
-    m_snap.apply(scene, e.getID());
+    EntityId e = scene.createEntityAt(m_snap.slotIndex);
+    m_snap.apply(scene, e);
     if (m_parentSlot && scene.isAliveAtIndex(m_parentSlot)) {
-        const EntityId parent{m_parentSlot, scene.generationOf(m_parentSlot)};
-        HierarchyOperations::setParent(scene, e.getID(), parent);
+        const EntityId parent = scene.entityAt(m_parentSlot);
+        HierarchyOperations::setParent(scene, e, parent);
     }
     state.hierarchyDirty = true;
-    state.selectEntity(e.getID());
+    state.selectEntity(e);
 }
 
 void CreateEntityCommand::undo(Scene& scene, EditorState& state) {
-    EntityId id{m_snap.slotIndex, scene.generationOf(m_snap.slotIndex)};
+    EntityId id = scene.entityAt(m_snap.slotIndex);
     if (!scene.isAlive(id)) return;
-    scene.destroyEntity(Entity{id});
+    scene.destroyEntity(id);
     state.hierarchyDirty = true;
     if (state.selectedEntity == id) state.deselect();
 }
@@ -340,8 +339,8 @@ void SubtreeSnapshot::apply(Scene& scene) const {
     // components. Slot recycling means generations are bumped, but the
     // slot index is stable.
     for (const auto& node : nodes) {
-        Entity e = scene.createEntityAt(node.snap.slotIndex);
-        node.snap.apply(scene, e.getID());
+        EntityId e = scene.createEntityAt(node.snap.slotIndex);
+        node.snap.apply(scene, e);
     }
     // Pass 2: link parents. setParent PREPENDS to the parent's child list,
     // so to restore the original firstChild-first order we walk the nodes
@@ -349,12 +348,12 @@ void SubtreeSnapshot::apply(Scene& scene) const {
     // first-captured (leftmost) child links last and ends up at firstChild.
     for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
         const auto& node = *it;
-        EntityId child{node.snap.slotIndex, scene.generationOf(node.snap.slotIndex)};
+        EntityId child = scene.entityAt(node.snap.slotIndex);
         if (!scene.isAlive(child)) continue;
 
         const uint32_t parentSlot = (node.parentSlot != 0) ? node.parentSlot : rootParentSlot;
         if (parentSlot == 0) continue;  // top-level
-        EntityId parent{parentSlot, scene.generationOf(parentSlot)};
+        EntityId parent = scene.entityAt(parentSlot);
         if (!scene.isAlive(parent)) continue;  // external parent died in the meantime
         HierarchyOperations::setParent(scene, child, parent);
     }
@@ -363,7 +362,7 @@ void SubtreeSnapshot::apply(Scene& scene) const {
 void DestroySubtreeCommand::redo(Scene& scene, EditorState& state) {
     if (m_snap.nodes.empty()) return;
     const uint32_t rootSlot = m_snap.nodes.front().snap.slotIndex;
-    EntityId root{rootSlot, scene.generationOf(rootSlot)};
+    EntityId root = scene.entityAt(rootSlot);
     if (!scene.isAlive(root)) return;
     HierarchyOperations::destroyHierarchy(scene, root);
     state.hierarchyDirty = true;
@@ -378,8 +377,7 @@ void DestroySubtreeCommand::undo(Scene& scene, EditorState& state) {
         // resurrected subtree (the common case is the root itself).
         for (const auto& node : m_snap.nodes) {
             if (node.snap.slotIndex == m_priorSelection.index) {
-                state.selectEntity(EntityId{node.snap.slotIndex,
-                    scene.generationOf(node.snap.slotIndex)});
+                state.selectEntity(scene.entityAt(node.snap.slotIndex));
                 break;
             }
         }
@@ -425,7 +423,7 @@ void SetActiveCameraCommand::redo(Scene& scene, EditorState&) {
 
 void SetActiveCameraCommand::undo(Scene& scene, EditorState&) {
     for (const auto& [slot, wasActive] : m_before) {
-        EntityId id{slot, scene.generationOf(slot)};
+        EntityId id = scene.entityAt(slot);
         if (scene.isAlive(id) && scene.has<Camera>(id)) scene.get<Camera>(id).active = wasActive;
     }
 }

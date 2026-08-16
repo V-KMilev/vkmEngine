@@ -15,12 +15,9 @@ namespace Engine {
 /**
  * @brief GPU-side image-based lighting product set (split-sum).
  *
- * Owns every texture the IBL path needs and the shared capture FBO: the
- * source equirectangular HDR (Core::Texture2D), the environment cubemap
- * (mipped, also feeds the skybox), the diffuse irradiance cubemap, the
- * prefiltered specular cubemap (roughness mips), and the BRDF/DFG lookup
- * (Core::Texture2D). The three cubemaps are Core::TextureCube; everything
- * is RAII, so there is no manual GL cleanup.
+ * Owns every texture the split-sum path needs plus the shared capture FBO; the
+ * environment cubemap also feeds the skybox. Everything is RAII, so there is no
+ * manual GL cleanup.
  *
  * GLIBLBaker calls createTargets() once, then drives the bake purely through
  * the bindX() / attachXFace() / generateEnvMips() ops below - it never touches

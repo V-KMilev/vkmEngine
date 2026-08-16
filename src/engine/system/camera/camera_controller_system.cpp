@@ -30,7 +30,7 @@ CameraControllerSystem::CameraControllerSystem() = default;
 
 EntityId CameraControllerSystem::resolveActiveCamera(Scene& scene) {
     // Fast path: keep flying the current camera while it stays the active one.
-    EntityId cur = m_cameraEntity.getID();
+    EntityId cur = m_cameraEntity;
     if (cur && scene.isAlive(cur)
         && scene.has<Camera>(cur) && scene.has<Transform>(cur)
         && scene.get<Camera>(cur).active) {
@@ -67,15 +67,14 @@ void CameraControllerSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("CameraControllerSystem");
     if (!m_enabled) return;
 
-    // Always drive the active rendered camera. This keeps the fly controls
-    // working after "Set as Main Camera" / a scene load (the old code flew a
-    // fixed entity while the renderer used a different one).
-    // resolveActiveCamera only ever returns {} or a live entity that has a
-    // Transform, so a non-empty result needs no further validation here.
+    // Always drive the active rendered camera, so the fly controls keep working
+    // after "Set as Main Camera" / a scene load. resolveActiveCamera only ever
+    // returns {} or a live entity that has a Transform, so a non-empty result
+    // needs no further validation here.
     EntityId target = resolveActiveCamera(ctx.scene);
     if (!target) return;
 
-    m_cameraEntity = Entity{target};
+    m_cameraEntity = target;
     auto& transform = ctx.scene.get<Transform>(target);
 
     // On a camera switch re-derive yaw/pitch from its current orientation so
@@ -93,10 +92,8 @@ void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, const I
     auto& inputHandle = windowManager.getInputHandle();
     auto& mouse       = inputHandle.getMouse();
 
-    // Right mouse: Look around (skip if editor UI wants mouse)
     bool isRightMousePressed = !m_editorWantsMouse && mouse.isButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
 
-    // Only update cursor mode when state changes
     if (isRightMousePressed != m_isRightMousePressed) {
         windowManager.setCursorMode(isRightMousePressed ? CursorMode::Disabled : CursorMode::Normal);
         m_isRightMousePressed = isRightMousePressed;
@@ -120,10 +117,8 @@ void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, const I
         position += forward * scrollDelta * m_settings.zoomSensitivity * m_settings.scrollMultiplier;
     }
 
-    // Skip keyboard movement if editor UI wants keyboard
     if (m_editorWantsKeyboard) return;
 
-    // Movement speed with optional boost
     float speed = m_settings.moveSpeed * deltaTime;
     if (input.held(InputActions::BOOST)) {
         speed *= m_settings.speedBoost;
@@ -145,7 +140,7 @@ void CameraControllerSystem::placeCamera(Transform& transform, const glm::vec3& 
 }
 
 void CameraControllerSystem::focusOn(Scene& scene, const glm::vec3& target, float distance) {
-    EntityId camId = m_cameraEntity.getID();
+    EntityId camId = m_cameraEntity;
     if (!camId || !scene.has<Transform>(camId)) return;
 
     auto& transform = scene.get<Transform>(camId);
@@ -162,7 +157,7 @@ void CameraControllerSystem::focusOn(Scene& scene, const glm::vec3& target, floa
 }
 
 void CameraControllerSystem::viewFrom(Scene& scene, const glm::vec3& target, const glm::vec3& direction, float distance) {
-    EntityId camId = m_cameraEntity.getID();
+    EntityId camId = m_cameraEntity;
     if (!camId || !scene.has<Transform>(camId)) return;
 
     auto& transform = scene.get<Transform>(camId);
@@ -177,11 +172,10 @@ void CameraControllerSystem::viewFrom(Scene& scene, const glm::vec3& target, con
 }
 
 void CameraControllerSystem::updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch) {
-    // Yaw rotates around world up axis
     glm::quat yawQuat = glm::angleAxis(yaw, Math::WORLD_AXIS_Y);
-    // Pitch rotates around local right axis (negative because mouse Y is inverted)
+    // Negative right axis because mouse Y is inverted.
     glm::quat pitchQuat = glm::angleAxis(pitch, -Math::WORLD_AXIS_X);
-    // Apply yaw first, then pitch (order matters for correct behavior)
+    // Yaw first, then pitch - swapping causes roll drift.
     rotation = yawQuat * pitchQuat;
 }
 

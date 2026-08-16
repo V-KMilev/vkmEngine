@@ -99,8 +99,8 @@ bool loadEditorIconFont(const char* path) {
 }
 
 void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 col) {
-    // The designed set: draw the mapped Lucide glyph, centered in the same
-    // (c, r) frame the vector glyphs used, hinted by FreeType like the text.
+    // The designed set: the mapped Lucide glyph, centered in the same (c, r)
+    // frame the vector glyphs use.
     if (s_iconFont) {
         if (const ImWchar cp = iconCodepoint(icon)) {
             // Lucide art fills ~20/24 of its em; 2.3r compensates so the glyph
@@ -129,8 +129,7 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
     }
 
     // Vector fallback (icon font missing). Pixel-snap the glyph frame: a
-    // half-pixel center keeps stroked primitives crisp; radius and stroke
-    // width snap to whole pixels.
+    // half-pixel center keeps stroked primitives crisp.
     r = std::max(3.0f, std::round(r));
     c = ImVec2(std::floor(c.x) + 0.5f, std::floor(c.y) + 0.5f);
     const float th = std::max(1.0f, std::round(r * 0.20f));
@@ -235,8 +234,7 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
         case EditorIcon::Scale: {
             // Build ONE arrowhead (bottom-left) from fully pixel-snapped
             // points, then derive the other as its exact integer mirror about
-            // the snapped centre - so the two heads are byte-identical, and
-            // smaller than before with a longer clear shaft between them.
+            // the snapped centre - so the two heads are byte-identical.
             const float u = 0.65f;
             float cx = std::round(c.x), cy = std::round(c.y);
             float e  = std::round(0.7f * r);
@@ -251,10 +249,9 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
 
             ImVec2 B = mir(A), b1 = mir(a1), b2 = mir(a2);
 
-            // Shaft = the full A->B diagonal. That line passes through each
-            // tip and the centre, i.e. it IS the symmetry axis of both heads,
-            // so it is exactly centred on them. Draw it first; the filled
-            // triangles on top cap the ends, leaving a centred connector.
+            // Shaft = the full A->B diagonal: it passes through each tip and
+            // the centre, so it IS the symmetry axis of both heads. Draw it
+            // first; the filled triangles cap its ends.
             dl->AddLine(A, B, col, th);
             dl->AddTriangleFilled(A, a1, a2, col);
             dl->AddTriangleFilled(B, b1, b2, col);
@@ -275,7 +272,6 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
             // 3x3 grid: inner lines first (full length so they reach/connect
             // to the frame), then a single AddRect frame on top. AddRect is a
             // closed path so its corners join cleanly - no stubs, no plugs.
-            // All coords pixel-snapped and symmetric.
             float cx = std::round(c.x), cy = std::round(c.y);
             float half  = std::round(0.8f * r);
             float inner = std::round(half / 4.0f);
@@ -365,9 +361,9 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
         case EditorIcon::Import:
         case EditorIcon::Colliders:
         case EditorIcon::Entity: {
-            // Generic transform entity: a hollow diamond with a smaller
-            // filled diamond inside. Symmetric, reads at any size, and
-            // doesn't compete visually with the type-specific glyphs.
+            // Generic transform entity: a hollow diamond with a smaller filled
+            // diamond inside - reads at any size without competing with the
+            // type-specific glyphs.
             const ImVec2 outer[4] = { P(0,-0.78f), P(0.78f,0), P(0,0.78f), P(-0.78f,0) };
             dl->AddPolyline(outer, 4, col, ImDrawFlags_Closed, th);
             const ImVec2 inner[4] = { P(0,-0.32f), P(0.32f,0), P(0,0.32f), P(-0.32f,0) };
@@ -375,10 +371,9 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
             break;
         }
         case EditorIcon::Camera: {
-            // Camera body (rounded rectangle) + a small viewfinder bump on
-            // top + a filled lens trapezoid on the right + a hollow lens
-            // glass. Drawn as a single body + a closed polyline for the lens
-            // so every seam joins cleanly at small sizes.
+            // Camera body, viewfinder tab and lens. A single body rect plus a
+            // closed polyline for the lens, so every seam joins cleanly at
+            // small sizes.
             const ImVec2 bMin = P(-0.62f, -0.32f);
             const ImVec2 bMax = P( 0.30f,  0.40f);
             dl->AddRect(bMin, bMax, col, r * 0.14f, 0, th);
@@ -400,32 +395,23 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
         case EditorIcon::LightPoint:
         case EditorIcon::LightSpot: {
             // One canonical lightbulb for every light type. At icon size the
-            // directional/point/spot differences never read clearly; the
-            // row label and the viewport wireframe already convey type. A
-            // single confident bulb with emission rays is much more legible.
-            //
-            // Geometry (pixel-snapped, symmetric about the vertical axis):
-            //   * Tall ellipse bulb (A-shape silhouette - taller than wide)
-            //   * 5 emission rays in the upper hemisphere
-            //   * Soft halo behind the bulb for the "glow" cue
-            //   * Trapezoid neck joining bulb to base
-            //   * Screw cap with two faint thread lines
+            // directional/point/spot differences never read clearly; the row
+            // label and the viewport wireframe already convey type.
             const float cx     = std::round(c.x);
             const float bulbRx = std::round(r * 0.32f);
             const float bulbRy = std::round(r * 0.44f);
             const ImVec2 bulbC(cx, std::round(c.y - r * 0.22f));
 
-            // Soft halo - underplays the bulb as "lit" without competing
-            // with the rays.
+            // Soft halo - the "lit" cue, without competing with the rays.
             const ImU32 halo = (col & 0x00FFFFFF) | (0x28u << 24);
             dl->AddEllipseFilled(bulbC,
                 ImVec2(bulbRx + std::round(r * 0.10f),
                        bulbRy + std::round(r * 0.10f)),
                 halo, 0.0f, 24);
 
-            // Five emission rays in the upper hemisphere (left -> up -> right).
-            // Even angular spacing with a small inset from the horizontal so
-            // the side rays don't graze the bulb's equator.
+            // Emission rays, evenly spaced across the upper hemisphere with a
+            // small inset from the horizontal so the side rays don't graze the
+            // bulb's equator.
             constexpr float PI_F = 3.14159265f;
             const float rayGap = std::max(2.0f, std::round(r * 0.16f));
             const float rayLen = std::round(r * 0.22f);
@@ -479,9 +465,8 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
             break;
         }
         case EditorIcon::Anim: {
-            // Timeline with three keyframes (small / large / small),
-            // centred on the entity's icon row. The horizontal rule
-            // is drawn first so the diamond fills sit cleanly over it.
+            // Timeline with three keyframes. The horizontal rule is drawn
+            // first so the diamond fills sit cleanly over it.
             dl->AddLine(P(-0.78f, 0.0f), P(0.78f, 0.0f), col, th);
             auto diamond = [&](float x, float s) {
                 const ImVec2 d[4] = {

@@ -212,13 +212,13 @@ class StressArena : public ReflectedBehavior<StressArena> {
          * point is to move it every single frame.
          */
         struct PatrolLight {
-            Entity entity;
-            Entity fixture;   ///< The emissive source, kept at the light's position.
-            float  radius;
-            float  height;
-            float  speed;     ///< Radians per second around the arena centre.
-            float  phase;
-            float  bobAmp;    ///< Vertical sway, so the orbit is not a flat circle.
+            EntityId entity;
+            EntityId fixture; ///< The emissive source, kept at the light's position.
+            float    radius;
+            float    height;
+            float    speed;   ///< Radians per second around the arena centre.
+            float    phase;
+            float    bobAmp;  ///< Vertical sway, so the orbit is not a flat circle.
         };
 
         /**
@@ -229,20 +229,20 @@ class StressArena : public ReflectedBehavior<StressArena> {
          * the whole subtree, which is the load this is here for.
          */
         struct Drone {
-            Entity body;
-            Entity lamp;      ///< Spot light child; default-constructed when this one is unlit.
-            float  radius;
-            float  height;
-            float  speed;
-            float  phase;
+            EntityId body;
+            EntityId lamp;  ///< Spot light child; default-constructed when this one is unlit.
+            float    radius;
+            float    height;
+            float    speed;
+            float    phase;
         };
 
         /**
          * @brief One live debris piece, destroyed when its life runs out.
          */
         struct Debris {
-            Entity entity;
-            float  life;
+            EntityId entity;
+            float    life;
         };
 
         /**
@@ -254,10 +254,10 @@ class StressArena : public ReflectedBehavior<StressArena> {
          * why the scale is not simply baked in at spawn.
          */
         struct ModelKind {
-            MeshHandle          mesh;
-            std::vector<Entity> instances;
-            std::vector<float>  sizes;    ///< Per-instance target size in world units, applied on fit.
-            bool                fitted = false;
+            MeshHandle            mesh;
+            std::vector<EntityId> instances;
+            std::vector<float>    sizes;  ///< Per-instance target size in world units, applied on fit.
+            bool                  fitted = false;
         };
 
         // Setup
@@ -274,8 +274,8 @@ class StressArena : public ReflectedBehavior<StressArena> {
         void buildDrones();
         void buildUI();
 
-        Entity spawnMesh(MeshHandle mesh, MaterialHandle material, const char* name,
-                         const glm::vec3& position, const glm::vec3& scale);
+        EntityId spawnMesh(MeshHandle mesh, MaterialHandle material, const char* name,
+                           const glm::vec3& position, const glm::vec3& scale);
         MaterialHandle makeMaterial(const MaterialAsset& source, const char* name);
 
         // Per-frame steps
@@ -331,23 +331,23 @@ class StressArena : public ReflectedBehavior<StressArena> {
 
         // World entities, kept in flat pools so a toggle is one linear walk.
         std::vector<ModelKind> m_models;
-        std::vector<Entity> m_props;
-        std::vector<Entity> m_lights;
-        std::vector<Entity> m_emitters;
-        std::vector<Entity> m_decals;
-        std::vector<Entity> m_spinners;  ///< Props carrying an Animation track.
-        std::vector<Entity> m_bodies;    ///< The rigidbodies in the pit (not the debris).
+        std::vector<EntityId> m_props;
+        std::vector<EntityId> m_lights;
+        std::vector<EntityId> m_emitters;
+        std::vector<EntityId> m_decals;
+        std::vector<EntityId> m_spinners;  ///< Props carrying an Animation track.
+        std::vector<EntityId> m_bodies;    ///< The rigidbodies in the pit (not the debris).
         std::vector<PatrolLight> m_patrol;
         std::vector<Drone> m_drones;
         std::vector<Debris> m_debris;
-        std::vector<Entity> m_uiWidgets;
+        std::vector<EntityId> m_uiWidgets;
 
         EntityId m_camera{};
         EntityId m_hudCanvas{};
         // Two elements rather than one two-line string: UISystem lays a UIText
         // out as a single run and has no newline handling.
-        Entity   m_uiStats;    ///< Frame timing, rewritten each second.
-        Entity   m_uiToggles;  ///< Live toggle state, rewritten with it.
+        EntityId m_uiStats{};    ///< Frame timing, rewritten each second.
+        EntityId m_uiToggles{};  ///< Live toggle state, rewritten with it.
 
         // Runtime state.
         bool  m_built = false;

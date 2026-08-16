@@ -10,21 +10,6 @@ namespace Engine {
 class ResourceManager;
 
 /**
- * @brief How many levels to build and how fast they coarsen.
- *
- * The defaults halve the decimation grid and roughly double the range per level,
- * which keeps the on-screen size of a level's triangles about constant as it
- * recedes - the property that makes a switch hard to notice.
- */
-struct LODGenSettings {
-    uint32_t extraLevels        = 2;      ///< Levels built below the source; the source is always level 0.
-    float    firstDistance      = 30.0f;  ///< Range of the source level, in world units.
-    float    distanceMultiplier = 2.5f;   ///< Each level reaches this much further than the last.
-    uint32_t firstGrid          = 12;     ///< Decimation grid for the first generated level.
-    float    gridFalloff        = 0.5f;   ///< Grid multiplier per level; lower = coarser faster.
-};
-
-/**
  * @brief Build an LOD component for @p source by decimating it.
  *
  * For geometry the engine generated itself, re-tessellating at a lower
@@ -40,12 +25,11 @@ struct LODGenSettings {
  * collapsed) is dropped rather than added, so a simple mesh does not gain
  * levels that cost a comparison and change nothing.
  *
- * @param resources Registers the generated meshes; also resolves @p source.
- * @param source    Mesh to build levels from; becomes level 0.
- * @param settings  Level count and coarsening curve.
+ * @param resources   Registers the generated meshes; also resolves @p source.
+ * @param source      Mesh to build levels from; becomes level 0.
+ * @param extraLevels Levels built below the source; the source is always level 0.
  * @return The component to attach. Empty levels when @p source is unresolvable.
  */
-LOD generateLOD(ResourceManager& resources, MeshHandle source,
-                const LODGenSettings& settings = {});
+LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLevels);
 
 } // namespace Engine

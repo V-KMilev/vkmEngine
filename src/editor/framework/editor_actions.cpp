@@ -47,8 +47,7 @@ void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity) 
 
 namespace {
 // Write a model matrix back into a local Transform (TRS), matching the gizmo's
-// decomposition: translation from the last column, per-axis scale from the
-// basis-column lengths, rotation from the scale-normalised basis.
+// decomposition.
 void setTransformFromMatrix(Transform& t, const glm::mat4& m) {
     const glm::vec3 cx(m[0]), cy(m[1]), cz(m[2]);
     t.position = glm::vec3(m[3]);
@@ -177,8 +176,7 @@ const char* defaultName(EntityKind k) {
 }
 
 EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& state, EntityKind kind) {
-    auto entity = scene.createEntity();
-    EntityId id = entity.getID();
+    const EntityId entity = scene.createEntity();
 
     // UI entities are screen-space: a canvas gets a UICanvas, a UI element gets a
     // UIElement; everything else gets a 3D Transform.
@@ -201,19 +199,19 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         case EntityKind::Empty:
             break;
         case EntityKind::PointLight:
-            scene.add(entity, generatePointLight());
+            scene.add(entity, generateLight(LightType::Point));
             break;
         case EntityKind::SpotLight:
-            scene.add(entity, generateSpotLight());
+            scene.add(entity, generateLight(LightType::Spot));
             break;
         case EntityKind::DirectionalLight:
-            scene.add(entity, generateDirectionalLight());
+            scene.add(entity, generateLight(LightType::Directional));
             break;
         case EntityKind::RectLight:
-            scene.add(entity, generateRectLight());
+            scene.add(entity, generateLight(LightType::Rect));
             break;
         case EntityKind::DiskLight:
-            scene.add(entity, generateDiskLight());
+            scene.add(entity, generateLight(LightType::Disk));
             break;
         case EntityKind::Cube:     addMesh(generateCube());     break;
         case EntityKind::Sphere:   addMesh(generateSphere());   break;
@@ -251,7 +249,7 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
     uint32_t parentSlot = 0;
     if (isUIElement && state.selectedEntity && scene.isAlive(state.selectedEntity)
         && (scene.has<UICanvas>(state.selectedEntity) || scene.has<UIElement>(state.selectedEntity))) {
-        HierarchyOperations::setParent(scene, id, state.selectedEntity);
+        HierarchyOperations::setParent(scene, entity, state.selectedEntity);
         parentSlot = state.selectedEntity.index;
     }
 
@@ -260,9 +258,9 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
     // The parent slot rides along: EntitySnapshot is leaf-only, so without it a
     // redone UI element comes back as a root and stops being drawn.
     state.commands.push(std::make_unique<CreateEntityCommand>(
-        EntitySnapshot::capture(scene, id), "Create Entity", parentSlot));
+        EntitySnapshot::capture(scene, entity), "Create Entity", parentSlot));
     commitStructureChange(state);
-    return id;
+    return entity;
 }
 
 namespace {
@@ -275,8 +273,7 @@ EntityId duplicateOne(Scene& scene, EntityId source) {
     if (snap.camera)    snap.camera->active = false;
     if (snap.animation) snap.animation->playing = false;
 
-    Entity entity = scene.createEntity();
-    EntityId newId = entity.getID();
+    const EntityId newId = scene.createEntity();
     snap.apply(scene, newId);
     return newId;
 }
@@ -391,14 +388,14 @@ void redo(Scene& scene, EditorState& state) {
     state.markSceneDirty();
 }
 
-void setActiveCamera(Scene& scene, EditorState& state, EntityId target, const char* label) {
+void setActiveCamera(Scene& scene, EditorState& state, EntityId target) {
     std::vector<std::pair<uint32_t, bool>> beforeActive;
     scene.forEach<Camera>([&](EntityId other, Camera& c) {
         beforeActive.emplace_back(other.index, c.active);
         c.active = (other == target);
     });
     state.commands.push(std::make_unique<SetActiveCameraCommand>(
-        target, std::move(beforeActive), label));
+        target, std::move(beforeActive), "Set Main Camera"));
     state.markSceneDirty();
 }
 
@@ -531,7 +528,7 @@ void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
         const std::filesystem::path appRoot = ProjectPaths::projectRoot();
         m_picker.options.popupId    = "Import Model";
         m_picker.options.title      = "Import Model";
-        m_picker.options.root       = appRoot / "assets";
+        m_picker.options.root       = ProjectPaths::assets();
         m_picker.options.recursive  = true;
         m_picker.options.kind       = AssetPicker::Kind::Files;
         m_picker.options.extensions = {

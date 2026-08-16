@@ -38,43 +38,6 @@ void keybindFromJson(const json& j, KeyBind& k) {
 }
 
 /**
- * @brief One (json name, member) row per configurable keybind.
- *
- * Load and save both iterate this table, so the two directions can never
- * drift apart - adding a keybind to EditorKeybinds only needs one new row here.
- */
-struct KeybindField {
-    const char* name;
-    KeyBind EditorKeybinds::* field;
-};
-constexpr KeybindField KEYBIND_FIELDS[] = {
-    { "newScene",         &EditorKeybinds::newScene         },
-    { "saveScene",        &EditorKeybinds::saveScene        },
-    { "saveSceneAs",      &EditorKeybinds::saveSceneAs      },
-    { "loadScene",        &EditorKeybinds::loadScene        },
-    { "undo",             &EditorKeybinds::undo             },
-    { "redo",             &EditorKeybinds::redo             },
-    { "toggleHierarchy",  &EditorKeybinds::toggleHierarchy  },
-    { "toggleInspector",  &EditorKeybinds::toggleInspector  },
-    { "toggleBottom",     &EditorKeybinds::toggleBottom     },
-    { "toggleEditor",     &EditorKeybinds::toggleEditor     },
-    { "toggleRenderSettings", &EditorKeybinds::toggleRenderSettings },
-    { "toggleMaterialEditor", &EditorKeybinds::toggleMaterialEditor },
-    { "toggleAssetBrowser",   &EditorKeybinds::toggleAssetBrowser   },
-    { "openPreferences",  &EditorKeybinds::openPreferences  },
-    { "deleteEntity",     &EditorKeybinds::deleteEntity     },
-    { "deselect",         &EditorKeybinds::deselect         },
-    { "duplicate",        &EditorKeybinds::duplicate        },
-    { "focusSelected",    &EditorKeybinds::focusSelected    },
-    { "frameAll",         &EditorKeybinds::frameAll         },
-    { "gizmoSelect",      &EditorKeybinds::gizmoSelect      },
-    { "gizmoTranslate",   &EditorKeybinds::gizmoTranslate   },
-    { "gizmoRotate",      &EditorKeybinds::gizmoRotate      },
-    { "gizmoScale",       &EditorKeybinds::gizmoScale       },
-    { "gizmoToggleSpace", &EditorKeybinds::gizmoToggleSpace },
-};
-
-/**
  * @brief Visit each persisted (json-key, member) scalar in one list.
  *
  * Both load and save walk this single function, so the two directions can
@@ -211,9 +174,7 @@ bool load(EditorState& state, RenderSettings& render) {
         return false;
     }
 
-    // Panel visibility / sizes, gizmo defaults, snap - read each field from j,
-    // leaving the in-struct default when the key is absent. Enums round-trip
-    // through their underlying int.
+    // An absent key leaves the in-struct default; enums round-trip through int.
     visitScalarFields(state, [&](const char* key, auto& member) {
         using M = std::decay_t<decltype(member)>;
         if constexpr (std::is_enum_v<M>)
@@ -225,8 +186,8 @@ bool load(EditorState& state, RenderSettings& render) {
     // Keybinds (per field; missing keys leave defaults)
     if (j.contains("keybinds")) {
         const auto& kb = j["keybinds"];
-        for (const KeybindField& f : KEYBIND_FIELDS) {
-            if (kb.contains(f.name)) keybindFromJson(kb[f.name], state.keybinds.*f.field);
+        for (const KeybindEntry& e : KEYBINDS) {
+            if (kb.contains(e.jsonName)) keybindFromJson(kb[e.jsonName], state.keybinds.*e.field);
         }
     }
 
@@ -247,7 +208,7 @@ bool load(EditorState& state, RenderSettings& render) {
     if (j.contains("recentScenes") && j["recentScenes"].is_array()) {
         for (const auto& p : j["recentScenes"]) {
             if (p.is_string()) state.recentScenes.push_back(p.get<std::string>());
-            if (state.recentScenes.size() >= EditorState::MAX_RECENT_SCENES) break;
+            if (state.recentScenes.size() >= EditorState::MAX_RECENT_ENTRIES) break;
         }
     }
 
@@ -266,8 +227,8 @@ bool save(const EditorState& state, const RenderSettings& render) {
     });
 
     json kb;
-    for (const KeybindField& f : KEYBIND_FIELDS) {
-        kb[f.name] = keybindToJson(state.keybinds.*f.field);
+    for (const KeybindEntry& e : KEYBINDS) {
+        kb[e.jsonName] = keybindToJson(state.keybinds.*e.field);
     }
     j["keybinds"] = std::move(kb);
 

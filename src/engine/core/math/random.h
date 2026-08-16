@@ -18,9 +18,6 @@ namespace Engine::Math {
  * Deterministic and seedable, so a render reproduces exactly and each thread /
  * pixel / sample can own its own stream.
  *
- * This is the low-level engine - it produces scalars. The free functions in the
- * Random namespace below layer the ray-tracing vector sampling on top.
- *
  * Reference: M.E. O'Neill, "PCG: A Family of Simple Fast Space-Efficient
  * Statistically Good Algorithms for Random Number Generation" (2014).
  */

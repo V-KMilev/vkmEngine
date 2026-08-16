@@ -56,8 +56,7 @@ inline Frustum extractFrustum(const glm::mat4& viewProjection) {
  * @brief True if the world-space AABB is inside or intersects the frustum.
  *
  * Center + half-extent half-space test: for each plane, the box is outside when
- * the signed center distance plus the projected AABB radius is negative. Six
- * branchless dot products, no per-corner selects.
+ * the signed center distance plus the projected AABB radius is negative.
  *
  * @param boundsMin World-space AABB minimum.
  * @param boundsMax World-space AABB maximum.

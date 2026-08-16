@@ -14,8 +14,7 @@
 namespace Engine {
 
 namespace {
-// One click policy for every hierarchy row: plain replaces, Ctrl toggles,
-// Shift adds.
+// One click policy for every hierarchy row.
 void rowClickSelect(EditorState& state, EntityId id) {
     if (ImGui::GetIO().KeyCtrl)       state.toggleSelection(id);
     else if (ImGui::GetIO().KeyShift) state.addToSelection(id);
@@ -104,8 +103,8 @@ void HierarchyPanel::draw(EditorContext& ec) {
         }
 
         // The scene's World node: not an entity, just the handle for editing
-        // scene-global settings (Environment now; fog/gravity later). Pinned at
-        // the top; selecting it shows those settings in the Inspector.
+        // scene-global settings. Pinned at the top; selecting it shows those
+        // settings in the Inspector.
         if (!hasFilter) {
             static char worldNodeId = 0;   // stable address -> a unique ImGui id for this non-entity row
             // FramePadding matches the entity rows' height - without it this
@@ -166,7 +165,6 @@ void HierarchyPanel::draw(EditorContext& ec) {
             state.deselect();
         }
 
-        // Right-click on empty space
         if (ImGui::BeginPopupContextWindow("##HierarchyCtx", ImGuiPopupFlags_NoOpenOverItems | ImGuiPopupFlags_MouseButtonRight)) {
             EditorActions::drawCreateEntityMenu(scene, ctx.resources, state);
             ImGui::EndPopup();
@@ -189,9 +187,8 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
     char name[64];
     getEntityDisplayName(scene, entity, name, sizeof(name));
 
-    // Inline rename: when this entity is the rename target, replace the
-    // tree-node label with an InputText. Commit on Enter / focus loss,
-    // cancel on Escape. F2 / double-click on the row starts a session.
+    // Inline rename: the tree-node label becomes an InputText. Commit on
+    // Enter / focus loss, cancel on Escape; F2 / double-click starts a session.
     if (m_renameTarget == entity) {
         ImGui::PushID(static_cast<int>(entity.index));
         if (m_renameFocusNeeded) {
@@ -206,7 +203,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
 
         if (committed && m_renameBuf[0] != '\0') {
             if (!scene.has<Name>(entity)) {
-                scene.add(Entity{entity}, makeName(m_renameBuf));
+                scene.add(entity, makeName(m_renameBuf));
                 // Adding a Name where none existed: undo removes it (reverts to
                 // the default display name).
                 state.commands.push(std::make_unique<AddComponentCommand<Name>>(
@@ -231,7 +228,6 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
         reinterpret_cast<void*>(static_cast<uintptr_t>(entity.index)),
         flags, entityIconKind(scene, entity), name);
 
-    // F2 or double-click on a selected, hovered row -> start rename.
     if (state.selectedEntity == entity && ImGui::IsItemHovered()
             && (ImGui::IsKeyPressed(ImGuiKey_F2)
              || ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))) {
@@ -241,8 +237,8 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
         m_renameBuf[sizeof(m_renameBuf) - 1] = '\0';
     }
 
-    // Hover tooltip: full name, id, and a component digest. Covers truncated
-    // names in narrow panels and gives an at-a-glance summary.
+    // Hover tooltip: covers names truncated in a narrow panel, plus a
+    // component digest.
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !ImGui::IsItemToggledOpen()) {
         ImGui::BeginTooltip();
         ImGui::TextUnformatted(name);
@@ -286,8 +282,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
     if (ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("VKM_ENTITY")) {
             EntityId dragged = *static_cast<const EntityId*>(pl->Data);
-            // Reject dropping onto self or onto one of the dragged node's
-            // own descendants (would create a hierarchy cycle).
+            // Dropping onto self or onto a descendant would create a cycle.
             if (scene.isAlive(dragged) && !isSelfOrAncestor(scene, entity, dragged)) {
                 EditorActions::reparentKeepingWorld(scene, state, dragged, entity, "Reparent Entity");
             }
@@ -375,7 +370,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
         const auto& cam = scene.get<Camera>(entity);
         const bool isActive = cam.active;
         if (ImGui::MenuItem("Set as Main Camera", nullptr, false, !isActive)) {
-            EditorActions::setActiveCamera(scene, state, entity, "Set Main Camera");
+            EditorActions::setActiveCamera(scene, state, entity);
         }
     }
 

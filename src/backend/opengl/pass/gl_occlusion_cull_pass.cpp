@@ -32,11 +32,9 @@ void GLOcclusionCullPass::execute(GLFrameContext& ctx) {
     const GLHiZ& hiz = ctx.hiz;
     if (!ctx.view.settings.occlusionCulling || !hiz.isBuilt()) return;
 
-    GLInstanceBatcher& batch = ctx.opaqueBatch.batcher();
-
-    const uint32_t instances = batch.instanceCount();
+    const uint32_t instances = ctx.opaqueBatch.instanceCount();
     if (instances == 0) return;
-    if (!batch.bindCullBuffers()) return;
+    if (!ctx.opaqueBatch.bindCullBuffers()) return;
 
     hiz.bind(GLBindings::PostTextureSlots::HiZ);
 

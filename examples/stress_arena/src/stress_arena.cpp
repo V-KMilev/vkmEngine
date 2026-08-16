@@ -469,9 +469,9 @@ void StressArena::buildMaterials() {
     m_matDecal = makeMaterial(decal, "stress:decal");
 }
 
-Entity StressArena::spawnMesh(MeshHandle mesh, MaterialHandle material, const char* name,
-                              const glm::vec3& position, const glm::vec3& scale) {
-    Entity entity = m_scene->createEntity();
+EntityId StressArena::spawnMesh(MeshHandle mesh, MaterialHandle material, const char* name,
+                                const glm::vec3& position, const glm::vec3& scale) {
+    EntityId entity = m_scene->createEntity();
     m_scene->add(entity, makeName(name));
     m_scene->add(entity, Mesh{mesh, material});
 
@@ -483,16 +483,15 @@ Entity StressArena::spawnMesh(MeshHandle mesh, MaterialHandle material, const ch
 }
 
 void StressArena::buildGround() {
-    Entity ground = spawnMesh(m_cube, m_matGround, "Ground",
-                              {0.0f, GROUND_Y - 0.5f, 0.0f},
-                              {ARENA_HALF * 2.0f, 1.0f, ARENA_HALF * 2.0f});
+    EntityId ground = spawnMesh(m_cube, m_matGround, "Ground",
+                                {0.0f, GROUND_Y - 0.5f, 0.0f},
+                                {ARENA_HALF * 2.0f, 1.0f, ARENA_HALF * 2.0f});
     // The ground can never occlude anything from a light above it, so keeping it
     // out of the shadow pass costs nothing and saves a full-extent draw per tile.
     m_scene->get<Mesh>(ground).castShadows = false;
 
     Rigidbody rb;
-    rb.isStatic    = true;
-    rb.inverseMass = 0.0f;
+    rb.isStatic = true;
     m_scene->add(ground, std::move(rb));
 
     Collider col;
@@ -501,14 +500,13 @@ void StressArena::buildGround() {
 
     // Pit floor and four walls, so the physics pile has something to pack
     // against instead of scattering across the whole block.
-    Entity floor = spawnMesh(m_cube, m_matTower, "Pit Floor",
-                             {0.0f, GROUND_Y - PIT_DEPTH, 0.0f},
-                             {PIT_HALF * 2.0f, 0.5f, PIT_HALF * 2.0f});
+    EntityId floor = spawnMesh(m_cube, m_matTower, "Pit Floor",
+                               {0.0f, GROUND_Y - PIT_DEPTH, 0.0f},
+                               {PIT_HALF * 2.0f, 0.5f, PIT_HALF * 2.0f});
     m_scene->get<Mesh>(floor).castShadows = false;
 
     Rigidbody floorBody;
-    floorBody.isStatic    = true;
-    floorBody.inverseMass = 0.0f;
+    floorBody.isStatic = true;
     m_scene->add(floor, std::move(floorBody));
 
     Collider floorCol;
@@ -525,12 +523,11 @@ void StressArena::buildGround() {
             ? glm::vec3(0.5f, PIT_DEPTH * 0.5f, PIT_HALF)
             : glm::vec3(PIT_HALF, PIT_DEPTH * 0.5f, 0.5f);
 
-        Entity wall = spawnMesh(m_cube, m_matTower, "Pit Wall", position, half * 2.0f);
+        EntityId wall = spawnMesh(m_cube, m_matTower, "Pit Wall", position, half * 2.0f);
         m_scene->get<Mesh>(wall).castShadows = false;
 
         Rigidbody wallBody;
-        wallBody.isStatic    = true;
-        wallBody.inverseMass = 0.0f;
+        wallBody.isStatic = true;
         m_scene->add(wall, std::move(wallBody));
 
         Collider wallCol;
@@ -589,7 +586,7 @@ void StressArena::buildProps() {
             ? m_matChrome
             : m_propMaterials[static_cast<size_t>(i) % m_propMaterials.size()];
 
-        Entity prop = spawnMesh(mesh, material, "Prop",
+        EntityId prop = spawnMesh(mesh, material, "Prop",
             {spot.x, GROUND_Y + scale * 0.5f, spot.z}, glm::vec3(scale));
 
         m_props.push_back(prop);
@@ -645,7 +642,7 @@ void StressArena::buildLights() {
         const float height  = inField ? frand(4.0f, 18.0f) : frand(8.0f, 34.0f);
         const glm::vec3 position(spot.x, GROUND_Y + height, spot.z);
 
-        Entity entity = m_scene->createEntity();
+        EntityId entity = m_scene->createEntity();
         m_scene->add(entity, makeName("Light"));
 
         Transform transform;
@@ -674,8 +671,8 @@ void StressArena::buildLights() {
         // Every light gets a visible emissive fixture. Without one the frame
         // reads as light with no source, and the bloom pass has nothing to
         // threshold where the brightness actually comes from.
-        Entity fixture = spawnMesh(m_sphere, m_matEmissive, "Light Fixture",
-                                   position, glm::vec3(0.45f));
+        EntityId fixture = spawnMesh(m_sphere, m_matEmissive, "Light Fixture",
+                                     position, glm::vec3(0.45f));
         m_scene->get<Mesh>(fixture).castShadows = false;
 
         m_lights.push_back(entity);
@@ -697,7 +694,7 @@ void StressArena::buildLights() {
     // shadow pass, neither of which any point or spot light reaches - and the
     // procedural sky bakes its atmosphere around this direction, so the sky and
     // the key light stay consistent.
-    Entity sun = m_scene->createEntity();
+    EntityId sun = m_scene->createEntity();
     m_scene->add(sun, makeName("Sun"));
 
     Transform sunTransform;
@@ -724,7 +721,7 @@ void StressArena::buildEmitters() {
         const glm::vec3 spot = scatterOnGround(i, emitterCount, PIT_HALF + 4.0f,
                                               PROP_ZONE_OUTER, m_rng);
 
-        Entity entity = m_scene->createEntity();
+        EntityId entity = m_scene->createEntity();
         m_scene->add(entity, makeName("Emitter"));
 
         Transform transform;
@@ -753,7 +750,7 @@ void StressArena::buildEmitters() {
         m_scene->add(entity, std::move(emitter));
 
         // The brazier the sparks come off.
-        Entity source = spawnMesh(m_cylinder, m_matEmissive, "Brazier",
+        EntityId source = spawnMesh(m_cylinder, m_matEmissive, "Brazier",
             {spot.x, GROUND_Y + 0.4f, spot.z}, {1.1f, 0.8f, 1.1f});
         m_scene->get<Mesh>(source).castShadows = false;
 
@@ -768,7 +765,7 @@ void StressArena::buildDecals() {
         const glm::vec3 spot = scatterOnGround(i, decalCount, PIT_HALF,
                                               PROP_ZONE_OUTER, m_rng);
 
-        Entity entity = m_scene->createEntity();
+        EntityId entity = m_scene->createEntity();
         m_scene->add(entity, makeName("Decal"));
 
         Transform transform;
@@ -798,7 +795,7 @@ void StressArena::buildProbes() {
         const float angle  = glm::two_pi<float>() * static_cast<float>(i) / static_cast<float>(std::max(1, reflectionProbes));
         const float radius = ARENA_HALF * 0.45f;
 
-        Entity entity = m_scene->createEntity();
+        EntityId entity = m_scene->createEntity();
         m_scene->add(entity, makeName("Reflection Probe"));
 
         Transform transform;
@@ -814,7 +811,7 @@ void StressArena::buildProbes() {
 
     // One irradiance volume over the whole block, so the diffuse GI path is
     // exercised alongside the specular probes.
-    Entity volume = m_scene->createEntity();
+    EntityId volume = m_scene->createEntity();
     m_scene->add(volume, makeName("Irradiance Volume"));
 
     Transform transform;
@@ -842,7 +839,7 @@ void StressArena::buildPhysics() {
         const MaterialHandle material =
             m_propMaterials[static_cast<size_t>(i) % m_propMaterials.size()];
 
-        Entity entity = spawnMesh(m_cube, material, "Body", position, glm::vec3(size));
+        EntityId entity = spawnMesh(m_cube, material, "Body", position, glm::vec3(size));
 
         Rigidbody rb;
         rb.mass        = size * size * size * 8.0f;
@@ -933,7 +930,7 @@ void StressArena::buildModels() {
                                               PIT_HALF + 8.0f, PROP_ZONE_OUTER, m_rng);
         const float size = frand(2.5f, 7.0f);
 
-        Entity entity = spawnMesh(kind.mesh,
+        EntityId entity = spawnMesh(kind.mesh,
             materials[static_cast<size_t>(i) % materials.size()], "Model",
             {spot.x, GROUND_Y, spot.z}, glm::vec3(1.0f));
 
@@ -992,22 +989,22 @@ void StressArena::buildDrones() {
         const float height = frand(10.0f, 30.0f);
 
         // Body: the only part this behavior moves.
-        Entity body = spawnMesh(m_cube, m_matChrome, "Drone",
-                                {radius, height, 0.0f}, {1.6f, 0.5f, 2.4f});
+        EntityId body = spawnMesh(m_cube, m_matChrome, "Drone",
+                                  {radius, height, 0.0f}, {1.6f, 0.5f, 2.4f});
 
         // Arm, then rotor: the chain exists so the rig is three deep. The
         // scattered props are all hierarchy roots, so without something like
         // this the depth-bucketed resolve in HierarchySystem never runs on
         // anything but depth 0 and its cost stays invisible.
-        Entity arm = spawnMesh(m_cube, m_matTower, "Drone Arm",
-                               {0.0f, 0.0f, 0.0f}, {0.25f, 0.9f, 0.25f});
+        EntityId arm = spawnMesh(m_cube, m_matTower, "Drone Arm",
+                                 {0.0f, 0.0f, 0.0f}, {0.25f, 0.9f, 0.25f});
         m_scene->get<Transform>(arm).position = {0.0f, 0.6f, 0.0f};
-        HierarchyOperations::setParent(*m_scene, arm.getID(), body.getID());
+        HierarchyOperations::setParent(*m_scene, arm, body);
 
-        Entity rotor = spawnMesh(m_cylinder, m_matEmissive, "Drone Rotor",
-                                 {0.0f, 0.0f, 0.0f}, {2.6f, 0.08f, 2.6f});
+        EntityId rotor = spawnMesh(m_cylinder, m_matEmissive, "Drone Rotor",
+                                   {0.0f, 0.0f, 0.0f}, {2.6f, 0.08f, 2.6f});
         m_scene->get<Transform>(rotor).position = {0.0f, 0.55f, 0.0f};
-        HierarchyOperations::setParent(*m_scene, rotor.getID(), arm.getID());
+        HierarchyOperations::setParent(*m_scene, rotor, arm);
         // Spun by the AnimationSystem, not by hand: an animated node inside a
         // moved subtree is the realistic case, and it dirties the chain from
         // two different sources in the same frame.
@@ -1016,11 +1013,11 @@ void StressArena::buildDrones() {
         // A quarter carry a downward spot. These are the only shadow casters in
         // the scene that move, so their atlas tile re-renders a different
         // frustum every frame rather than the same one.
-        Drone drone{body, Entity{}, radius, height,
+        Drone drone{body, EntityId{}, radius, height,
                     frand(0.12f, 0.42f) * (i % 2 == 0 ? 1.0f : -1.0f),
                     frand(0.0f, glm::two_pi<float>())};
         if (i % 4 == 0) {
-            Entity lamp = m_scene->createEntity();
+            EntityId lamp = m_scene->createEntity();
             m_scene->add(lamp, makeName("Drone Lamp"));
 
             Transform lampTransform;
@@ -1040,7 +1037,7 @@ void StressArena::buildDrones() {
             spot.castShadows    = false;   // promoted below, within the atlas budget
             m_scene->add(lamp, std::move(spot));
 
-            HierarchyOperations::setParent(*m_scene, lamp.getID(), body.getID());
+            HierarchyOperations::setParent(*m_scene, lamp, body);
             drone.lamp = lamp;
         }
 
@@ -1095,7 +1092,7 @@ void StressArena::updateDrones() {
 
         // The subtree is stale until this is called - the arm, rotor and lamp
         // all hang off this transform, and nothing else marks it.
-        HierarchyOperations::markDirty(*m_scene, drone.body.getID());
+        HierarchyOperations::markDirty(*m_scene, drone.body);
     }
 }
 
@@ -1111,7 +1108,7 @@ void StressArena::updateDebris(float dt) {
             continue;
         }
 
-        if (m_scene->isAlive(piece.entity)) destroy(piece.entity.getID());
+        if (m_scene->isAlive(piece.entity)) destroy(piece.entity);
         // Swap-and-pop: order carries no meaning here and this keeps the
         // per-frame cost flat no matter how many are live.
         m_debris[i] = m_debris.back();
@@ -1142,7 +1139,7 @@ void StressArena::updateDebris(float dt) {
 
         // The shared cube: the churn being measured is entity lifetime, not
         // geometry upload, so every piece batches with the props.
-        Entity piece = spawnMesh(m_cube,
+        EntityId piece = spawnMesh(m_cube,
             m_propMaterials[static_cast<size_t>(m_debris.size()) % m_propMaterials.size()],
             "Debris",
             {std::cos(angle) * radius,
@@ -1188,7 +1185,7 @@ void StressArena::updateBlast(float dt) {
     // contacts stabilise, and the solver coasts - so the physics zone would
     // report the cost of a settled stack rather than a working one.
     const glm::vec3 origin(0.0f, GROUND_Y - PIT_DEPTH, 0.0f);
-    for (Entity body : m_bodies) {
+    for (EntityId body : m_bodies) {
         if (!m_scene->isAlive(body)) continue;
 
         const glm::vec3 offset = m_scene->get<Transform>(body).position - origin;
@@ -1223,15 +1220,15 @@ void StressArena::updateMaterialPulse() {
 }
 
 void StressArena::buildUI() {
-    Entity canvas = m_scene->createEntity();
+    EntityId canvas = m_scene->createEntity();
     m_scene->add(canvas, makeName("HUD"));
     m_scene->add(canvas, UICanvas{});
-    m_hudCanvas = canvas.getID();
+    m_hudCanvas = canvas;
 
     // The two readout lines, rewritten once a second in refreshUI. Anchored to
     // the top-left so they stay clear of the toggle grid on the right.
     auto addLine = [&](const char* name, float y, float pixelSize, const glm::vec4& color) {
-        Entity line = m_scene->createEntity();
+        EntityId line = m_scene->createEntity();
         m_scene->add(line, makeName(name));
 
         UIElement element;
@@ -1247,7 +1244,7 @@ void StressArena::buildUI() {
         text.color     = color;
         m_scene->add(line, std::move(text));
 
-        HierarchyOperations::setParent(*m_scene, line.getID(), canvas.getID());
+        HierarchyOperations::setParent(*m_scene, line, canvas);
         return line;
     };
 
@@ -1258,7 +1255,7 @@ void StressArena::buildUI() {
     // pass real work - a HUD of two labels measures nothing.
     m_uiWidgets.reserve(static_cast<size_t>(uiWidgetCount));
     for (int i = 0; i < uiWidgetCount; ++i) {
-        Entity widget = m_scene->createEntity();
+        EntityId widget = m_scene->createEntity();
         m_scene->add(widget, makeName("Widget"));
 
         UIElement element;
@@ -1282,7 +1279,7 @@ void StressArena::buildUI() {
             m_scene->add(widget, std::move(text));
         }
 
-        HierarchyOperations::setParent(*m_scene, widget.getID(), canvas.getID());
+        HierarchyOperations::setParent(*m_scene, widget, canvas);
         m_uiWidgets.push_back(widget);
     }
 }
@@ -1400,7 +1397,7 @@ void StressArena::updatePhysics() {
     // Relaunch anything that has left the pit or come to rest at the bottom.
     // The pile must stay agitated: a settled stack drops out of the solver's
     // active set, and the physics zone quietly stops measuring anything.
-    for (Entity body : m_bodies) {
+    for (EntityId body : m_bodies) {
         if (!m_scene->isAlive(body)) continue;
 
         Transform& transform = m_scene->get<Transform>(body);
@@ -1466,7 +1463,7 @@ void StressArena::refreshUI(float dt) {
 }
 
 void StressArena::setLightsEnabled(bool enabled) {
-    for (Entity light : m_lights) {
+    for (EntityId light : m_lights) {
         if (m_scene->isAlive(light)) m_scene->get<Light>(light).enabled = enabled;
     }
     // Drone lamps live on the rigs, not in m_lights, and would otherwise stay
@@ -1500,13 +1497,13 @@ void StressArena::setShadowsEnabled(bool enabled) {
 }
 
 void StressArena::setPropsVisible(bool visible) {
-    for (Entity prop : m_props) {
+    for (EntityId prop : m_props) {
         if (m_scene->isAlive(prop)) m_scene->get<Mesh>(prop).visible = visible;
     }
 }
 
 void StressArena::setParticlesEnabled(bool enabled) {
-    for (Entity emitter : m_emitters) {
+    for (EntityId emitter : m_emitters) {
         if (m_scene->isAlive(emitter)) m_scene->get<ParticleEmitter>(emitter).emitting = enabled;
     }
 }
@@ -1515,7 +1512,7 @@ void StressArena::setPhysicsEnabled(bool enabled) {
     // Disabling the collider drops the body out of the broadphase entirely,
     // which is what takes the solver cost to zero; leaving the Rigidbody alone
     // means re-enabling resumes from the pose it stopped at.
-    for (Entity body : m_bodies) {
+    for (EntityId body : m_bodies) {
         if (m_scene->isAlive(body)) m_scene->get<Collider>(body).enabled = enabled;
     }
     // Debris carries bodies too. New pieces read m_physicsOn at spawn, so this
@@ -1526,13 +1523,13 @@ void StressArena::setPhysicsEnabled(bool enabled) {
 }
 
 void StressArena::setAnimationsEnabled(bool enabled) {
-    for (Entity spinner : m_spinners) {
+    for (EntityId spinner : m_spinners) {
         if (m_scene->isAlive(spinner)) m_scene->get<Animation>(spinner).playing = enabled;
     }
     // Rotors are animated but are not props, so they are not in m_spinners.
     for (Drone& drone : m_drones) {
         if (!m_scene->isAlive(drone.body)) continue;
-        HierarchyOperations::forEachChild(*m_scene, drone.body.getID(), [&](EntityId arm) {
+        HierarchyOperations::forEachChild(*m_scene, drone.body, [&](EntityId arm) {
             HierarchyOperations::forEachChild(*m_scene, arm, [&](EntityId rotor) {
                 if (m_scene->has<Animation>(rotor)) m_scene->get<Animation>(rotor).playing = enabled;
             });
@@ -1544,7 +1541,7 @@ void StressArena::setDecalsEnabled(bool enabled) {
     // Decal carries no enable flag, so the component itself comes and goes -
     // which is the only way to take the projector out of the pass rather than
     // just making it invisible while still paying for it.
-    for (Entity decal : m_decals) {
+    for (EntityId decal : m_decals) {
         if (!m_scene->isAlive(decal)) continue;
 
         if (enabled && !m_scene->has<Decal>(decal)) {

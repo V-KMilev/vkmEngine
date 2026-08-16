@@ -110,20 +110,6 @@ class ThreadPool {
         ~ThreadPool();
 
         /**
-         * @brief Spawn the worker threads that drain the task queue.
-         *
-         * @param threadCount Number of worker threads to create.
-         */
-        void start(size_t threadCount);
-
-        /**
-         * @brief Signal shutdown and join all workers.
-         *
-         * Any tasks still queued but not yet started are discarded.
-         */
-        void stop();
-
-        /**
          * @brief Worker loop: pop and run tasks until shutdown, retiring each
          * against its batch counter (even on exception) and signalling
          * waiters when a batch reaches zero.
@@ -186,9 +172,7 @@ void parallelFor(size_t count, size_t grain, Function && function) {
     // unrelated texture read.
     std::atomic<size_t> pending{0};
 
-    // If there is enough work to justify threading overhead, submit the remaining chunks to the pool
     if (grain < count) {
-        // Build all tasks, then submit in one batch (single lock + notify_all)
         std::vector<std::function<void()>> tasks;
         for (size_t i = grain; i < count; i += grain) {
             size_t start = i;
@@ -203,12 +187,10 @@ void parallelFor(size_t count, size_t grain, Function && function) {
         pool.addTasks(std::move(tasks), pending);
     }
 
-    // In case of grain being bigger than count, we need to process the entire range on the main thread
     grain = std::min(grain, count);
 
-    // Main thread processes the first chunk instead of spinning idle in the wait,
-    // In case of grain being bigger than count, the main thread will process the entire range
-    // This is to avoid the overhead of the threadpool for small ranges
+    // The calling thread takes the first chunk instead of spinning idle in the
+    // wait; with grain >= count that is the whole range, and the pool is unused.
     for (size_t i = 0; i < grain; ++i) {
         invokeAt(i);
     }
@@ -227,9 +209,8 @@ void parallelFor(size_t count, Function && function) {
 
     // Below this many items the pool's dispatch cost (mutex + notify_all wake
     // of every worker + done-CV round trip) dwarfs the per-item work, so run
-    // the range inline. grain == count makes the call below submit zero tasks
-    // and sweep serially on the calling thread - no parallelism tax for the
-    // small workloads that dominate typical scenes.
+    // the range inline: grain == count makes the call below submit zero tasks
+    // and sweep serially on the calling thread.
     constexpr size_t MIN_PARALLEL = 2048;
 
     // The +1 is for the main thread.

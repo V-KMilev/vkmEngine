@@ -5,7 +5,6 @@
 #include <limits>
 
 #include <glm/glm.hpp>
-#include <glm/gtc/quaternion.hpp>
 
 namespace Engine {
 
@@ -13,24 +12,10 @@ namespace {
 
 constexpr float EPS = 1e-6f;
 
-/**
- * @brief Oriented bounding box: centre, three unit world axes, half extents.
- */
-struct OBB {
-    glm::vec3 c;
-    glm::vec3 u[3];
-    glm::vec3 e;
-};
-
-OBB makeOBB(const glm::vec3& center, const glm::quat& rotation, const glm::vec3& halfExtents) {
-    const glm::mat3 r = glm::mat3_cast(rotation);
-    return OBB{center, {r[0], r[1], r[2]}, halfExtents};
-}
-
-float projectRadius(const OBB& box, const glm::vec3& axis) {
-    return box.e.x * std::fabs(glm::dot(box.u[0], axis))
-         + box.e.y * std::fabs(glm::dot(box.u[1], axis))
-         + box.e.z * std::fabs(glm::dot(box.u[2], axis));
+float projectRadius(const BoxShape& box, const glm::vec3& axis) {
+    return box.halfExtents.x * std::fabs(glm::dot(box.axes[0], axis))
+         + box.halfExtents.y * std::fabs(glm::dot(box.axes[1], axis))
+         + box.halfExtents.z * std::fabs(glm::dot(box.axes[2], axis));
 }
 
 /**
@@ -45,12 +30,12 @@ float projectRadius(const OBB& box, const glm::vec3& axis) {
  * @param toCentre Vector from a's centre to b's centre.
  * @return Signed overlap along the axis; positive == overlapping.
  */
-float overlapOnAxis(const OBB& a, const OBB& b, const glm::vec3& axis, const glm::vec3& toCentre) {
+float overlapOnAxis(const BoxShape& a, const BoxShape& b, const glm::vec3& axis, const glm::vec3& toCentre) {
     return projectRadius(a, axis) + projectRadius(b, axis) - std::fabs(glm::dot(toCentre, axis));
 }
 
 /**
- * @brief Compute the four world-space vertices of one face of an OBB.
+ * @brief Compute the four world-space vertices of one face of a box.
  *
  * The face is selected by the local axis it is perpendicular to and the outward
  * direction along that axis.
@@ -60,12 +45,12 @@ float overlapOnAxis(const OBB& a, const OBB& b, const glm::vec3& axis, const glm
  * @param sign Outward direction along that axis (+1 or -1).
  * @return The four face corners in world space, wound consistently.
  */
-std::array<glm::vec3, 4> faceVertices(const OBB& box, int axis, float sign) {
+std::array<glm::vec3, 4> faceVertices(const BoxShape& box, int axis, float sign) {
     const int a = (axis + 1) % 3;
     const int b = (axis + 2) % 3;
-    const glm::vec3 center = box.c + box.u[axis] * (box.e[axis] * sign);
-    const glm::vec3 ua = box.u[a] * box.e[a];
-    const glm::vec3 ub = box.u[b] * box.e[b];
+    const glm::vec3 center = box.center + box.axes[axis] * (box.halfExtents[axis] * sign);
+    const glm::vec3 ua = box.axes[a] * box.halfExtents[a];
+    const glm::vec3 ub = box.axes[b] * box.halfExtents[b];
     return {
         center + ua + ub,
         center + ua - ub,
@@ -162,25 +147,27 @@ void closestSegmentSegment(
  * @param axis    Contact normal, oriented A -> B.
  * @param overlap Penetration depth along @p axis.
  */
-int edgeEdgeContact(const OBB& a, const OBB& b, int caseIndex,
+int edgeEdgeContact(const BoxShape& a, const BoxShape& b, int caseIndex,
                     const glm::vec3& axis, float overlap, Contact* out) {
     const int ia = (caseIndex - 6) / 3;
     const int jb = (caseIndex - 6) % 3;
 
     // Walk each centre out to the contacting edge: the two non-edge axes pick the
     // extreme corner along the normal, the edge axis itself spans the edge below.
-    glm::vec3 pA = a.c;
+    glm::vec3 pA = a.center;
     for (int k = 0; k < 3; ++k)
-        if (k != ia) pA += a.u[k] * (glm::dot(a.u[k], axis) > 0.0f ? a.e[k] : -a.e[k]);
-    glm::vec3 pB = b.c;
+        if (k != ia)
+            pA += a.axes[k] * (glm::dot(a.axes[k], axis) > 0.0f ? a.halfExtents[k] : -a.halfExtents[k]);
+    glm::vec3 pB = b.center;
     for (int k = 0; k < 3; ++k)
-        if (k != jb) pB += b.u[k] * (glm::dot(b.u[k], axis) > 0.0f ? -b.e[k] : b.e[k]);
+        if (k != jb)
+            pB += b.axes[k] * (glm::dot(b.axes[k], axis) > 0.0f ? -b.halfExtents[k] : b.halfExtents[k]);
 
     glm::vec3 c1;
     glm::vec3 c2;
     closestSegmentSegment(
-        pA - a.u[ia] * a.e[ia], pA + a.u[ia] * a.e[ia],
-        pB - b.u[jb] * b.e[jb], pB + b.u[jb] * b.e[jb],
+        pA - a.axes[ia] * a.halfExtents[ia], pA + a.axes[ia] * a.halfExtents[ia],
+        pB - b.axes[jb] * b.halfExtents[jb], pB + b.axes[jb] * b.halfExtents[jb],
         c1, c2);
 
     out[0].point = (c1 + c2) * 0.5f;
@@ -196,19 +183,19 @@ int edgeEdgeContact(const OBB& a, const OBB& b, int caseIndex,
  * @param caseIndex 0..5; selects which box owns the reference face (0..2 -> A).
  * @param axis      Contact normal, oriented A -> B.
  */
-int faceContact(const OBB& a, const OBB& b, int caseIndex, const glm::vec3& axis, Contact* out) {
+int faceContact(const BoxShape& a, const BoxShape& b, int caseIndex, const glm::vec3& axis, Contact* out) {
     const bool refIsA = caseIndex < 3;
-    const OBB& ref = refIsA ? a : b;
-    const OBB& inc = refIsA ? b : a;
+    const BoxShape& ref = refIsA ? a : b;
+    const BoxShape& inc = refIsA ? b : a;
     const int refAxis = refIsA ? caseIndex : caseIndex - 3;
     const glm::vec3 refNormal = refIsA ? axis : -axis;  // outward from ref toward inc
-    const float refSign = glm::dot(ref.u[refAxis], refNormal) >= 0.0f ? 1.0f : -1.0f;
+    const float refSign = glm::dot(ref.axes[refAxis], refNormal) >= 0.0f ? 1.0f : -1.0f;
 
     // Incident face: the face of inc whose outward normal most opposes refNormal.
     int incAxis = 0;
-    float maxAbsDot = glm::dot(inc.u[0], refNormal);
+    float maxAbsDot = glm::dot(inc.axes[0], refNormal);
     for (int i = 1; i < 3; ++i) {
-        const float d = glm::dot(inc.u[i], refNormal);
+        const float d = glm::dot(inc.axes[i], refNormal);
         if (std::fabs(d) > std::fabs(maxAbsDot)) { maxAbsDot = d; incAxis = i; }
     }
     const float incSign = maxAbsDot > 0.0f ? -1.0f : 1.0f;
@@ -219,11 +206,11 @@ int faceContact(const OBB& a, const OBB& b, int caseIndex, const glm::vec3& axis
 
     // Clip against the reference face's four side planes (both directions along
     // each of its two in-face tangents).
-    const glm::vec3 refCenter = ref.c + ref.u[refAxis] * (ref.e[refAxis] * refSign);
+    const glm::vec3 refCenter = ref.center + ref.axes[refAxis] * (ref.halfExtents[refAxis] * refSign);
     const int tangents[2] = {(refAxis + 1) % 3, (refAxis + 2) % 3};
     for (int t : tangents) {
-        clipToPlane(poly, refCenter + ref.u[t] * ref.e[t],  ref.u[t]);
-        clipToPlane(poly, refCenter - ref.u[t] * ref.e[t], -ref.u[t]);
+        clipToPlane(poly, refCenter + ref.axes[t] * ref.halfExtents[t],  ref.axes[t]);
+        clipToPlane(poly, refCenter - ref.axes[t] * ref.halfExtents[t], -ref.axes[t]);
     }
 
     int count = 0;
@@ -240,16 +227,14 @@ int faceContact(const OBB& a, const OBB& b, int caseIndex, const glm::vec3& axis
     return count;
 }
 
-/**
- * @brief Box-box contact generation via the separating-axis test (SAT).
- *
- * Scans the 15 candidate axes (3 face normals per box + 9 edge-edge cross
- * products); a negative overlap on any axis means no collision. The axis of
- * minimum overlap classifies the contact as edge-edge or face, which is then
- * dispatched to the matching builder.
- */
-int contactBoxBox(const OBB& a, const OBB& b, Contact* out) {
-    const glm::vec3 toCentre = b.c - a.c;
+} // namespace
+
+int contactBoxes(const BoxShape& a, const BoxShape& b, Contact* out) {
+    // Separating-axis test (SAT): scan the 15 candidate axes (3 face normals per
+    // box + 9 edge-edge cross products); a negative overlap on any axis means no
+    // collision. The axis of minimum overlap classifies the contact as edge-edge
+    // or face, which is then dispatched to the matching builder.
+    const glm::vec3 toCentre = b.center - a.center;
 
     float bestOverlap = std::numeric_limits<float>::max();
     int bestCase = -1;          // 0..2 face A, 3..5 face B, 6..14 edge-edge
@@ -269,28 +254,17 @@ int contactBoxBox(const OBB& a, const OBB& b, Contact* out) {
         return true;
     };
 
-    for (int i = 0; i < 3; ++i) if (!tryAxis(a.u[i], i)) return 0;
-    for (int i = 0; i < 3; ++i) if (!tryAxis(b.u[i], 3 + i)) return 0;
+    for (int i = 0; i < 3; ++i) if (!tryAxis(a.axes[i], i)) return 0;
+    for (int i = 0; i < 3; ++i) if (!tryAxis(b.axes[i], 3 + i)) return 0;
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
-            if (!tryAxis(glm::cross(a.u[i], b.u[j]), 6 + i * 3 + j)) return 0;
+            if (!tryAxis(glm::cross(a.axes[i], b.axes[j]), 6 + i * 3 + j)) return 0;
 
     if (bestCase < 0) return 0;
 
     return bestCase >= 6
         ? edgeEdgeContact(a, b, bestCase, bestAxis, bestOverlap, out)
         : faceContact(a, b, bestCase, bestAxis, out);
-}
-
-} // namespace
-
-int contactBoxes(
-    const glm::vec3& centerA, const glm::quat& rotA, const glm::vec3& halfA,
-    const glm::vec3& centerB, const glm::quat& rotB, const glm::vec3& halfB,
-    Contact* out
-) {
-    return contactBoxBox(makeOBB(centerA, rotA, halfA),
-                         makeOBB(centerB, rotB, halfB), out);
 }
 
 } // namespace Engine

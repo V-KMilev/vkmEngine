@@ -22,6 +22,6 @@ class ResourceManager;
  * @param resources Owns the cube's mesh and material.
  * @return The camera entity, for whoever drives the view.
  */
-Entity buildDefaultScene(Scene& scene, ResourceManager& resources);
+EntityId buildDefaultScene(Scene& scene, ResourceManager& resources);
 
 } // namespace Engine

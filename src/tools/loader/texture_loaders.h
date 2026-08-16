@@ -12,8 +12,7 @@ class ResourceManager;
 /**
  * @brief Load a texture from a file.
  *
- * Supports common image formats: PNG, JPG, TGA, BMP, etc.
- * Uses stb_image internally for loading.
+ * Decoded with stb_image: PNG, JPG, TGA, BMP and the rest of its formats.
  *
  * @param filePath Path to the image file.
  * @param resourceManager Resource manager to add the texture to.

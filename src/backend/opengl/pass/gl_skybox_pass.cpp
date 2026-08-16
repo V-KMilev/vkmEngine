@@ -26,7 +26,7 @@ GLSkyboxPass::GLSkyboxPass()
 GLSkyboxPass::~GLSkyboxPass() = default;
 
 void GLSkyboxPass::execute(GLFrameContext& ctx) {
-    if (!ctx.ibl.isReady()) return;  // no baked environment -> nothing to draw
+    if (!ctx.ibl.isReady()) return;
 
     const RenderView& view = ctx.view;
     if (!view.environment.sky.showSkybox) return;
@@ -72,9 +72,8 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
     ctx.ibl.bindEnvCube(GLBindings::IBLTextureSlots::EnvCube);
     m_cube->draw();
 
-    // Restore the engine-default depth state (LEQUAL compare, writes on) so
-    // nothing downstream inherits this pass's no-write background fill. The
-    // forward/prepass set their own each frame regardless.
+    // Restore the engine-default depth state so nothing downstream inherits this
+    // pass's no-write background fill.
     ctx.gl.setDepthFunc(GL_LEQUAL);
     ctx.gl.setDepthWrite(true);
 }

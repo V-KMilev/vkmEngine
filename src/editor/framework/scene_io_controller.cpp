@@ -2,7 +2,6 @@
 
 #include "framework/scene_io_controller.h"
 
-#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -57,7 +56,7 @@ void SceneIOController::save(FrameContext& ctx, EditorState& state) {
         return;
     }
     state.sceneDirty = false;
-    pushRecent(state, m_currentScenePath);
+    pushRecentPath(state.recentScenes, m_currentScenePath);
     state.pushToast(EditorState::ToastKind::Info, "Saved");
 }
 
@@ -115,7 +114,7 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
     afterSceneReplace(ctx, state, priorSelectionName, m_currentScenePath);
 
     state.sceneDirty = false;
-    pushRecent(state, m_currentScenePath);
+    pushRecentPath(state.recentScenes, m_currentScenePath);
 }
 
 void SceneIOController::beginSceneReplace(FrameContext& ctx, EditorState& state) {
@@ -199,12 +198,12 @@ void SceneIOController::afterSceneReplace(
     // multiple cameras claim active (authoring oversight), pick the first
     // by iteration order and warn - silently picking one of several would
     // make the choice look intentional.
-    Entity rebound{};
+    EntityId rebound{};
     int activeCount = 0;
     ctx.scene.forEach<Camera>([&](EntityId id, const Camera& c) {
         if (!c.active) return;
         ++activeCount;
-        if (!rebound.getID()) rebound = Entity{id};
+        if (!rebound) rebound = id;
     });
     if (activeCount > 1) {
         LOG_WARNING("SceneIOController: %d cameras marked active in %s - using the first",
@@ -246,13 +245,6 @@ void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
     m_playSnapshot.clear();
     afterSceneReplace(ctx, state, priorSelectionName, m_currentScenePath);
     state.sceneDirty = m_playSnapshotDirty;
-}
-
-void SceneIOController::pushRecent(EditorState& state, const std::string& path) {
-    auto& mru = state.recentScenes;
-    mru.erase(std::remove(mru.begin(), mru.end(), path), mru.end());
-    mru.insert(mru.begin(), path);
-    if (mru.size() > EditorState::MAX_RECENT_SCENES) mru.resize(EditorState::MAX_RECENT_SCENES);
 }
 
 void SceneIOController::requestOpenPath(FrameContext& ctx, EditorState& state, const std::string& path) {
@@ -315,7 +307,7 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
             AssetCooker::cookAllAssets(ctx.resources);
             if (SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath)) {
                 state.sceneDirty = false;
-                pushRecent(state, m_currentScenePath);
+                pushRecentPath(state.recentScenes, m_currentScenePath);
                 state.pushToast(EditorState::ToastKind::Info, "Saved " + finalName);
             } else {
                 LOG_ERROR("SceneIOController: Save As failed for %s", m_currentScenePath.c_str());
@@ -326,9 +318,8 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
         endDialog();
     }
 
-    // The Load flow rides the shared AssetPicker (rooted at scenes/, .json
-    // filter): requestLoad() configured + opened it; here we just drive it and
-    // route a pick through the same loadPath() the recent-scenes menu uses.
+    // requestLoad() configured and opened the shared picker; a pick routes
+    // through the same loadPath() the recent-scenes menu uses.
     std::string picked;
     if (m_loadPicker.draw(picked)) {
         requestOpenPath(ctx, state, picked);

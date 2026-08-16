@@ -11,11 +11,9 @@ namespace Engine {
  * A project is a directory with a project.json at its root. That file is what
  * makes a directory a project rather than a folder of loose files, and what
  * lets the engine run a game that lives nowhere near the engine's own repo.
- *
- * Deliberately small. Every field here is read by something: the name titles
- * the window, entryScene is what boots, and engineVersion is compared against
- * the running engine so a project authored against a different one says so up
- * front rather than failing halfway through a scene load.
+ * engineVersion is compared against the running engine so a project authored
+ * against a different one says so up front rather than failing halfway through
+ * a scene load.
  */
 struct Project {
     std::string name         = "Untitled";  ///< Display name; titles the window.

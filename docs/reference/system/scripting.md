@@ -40,9 +40,9 @@ class Behavior {
 
     protected:
         BehaviorContext& context();     // scene / resources / window / events
-        Entity spawn();                 // create a new entity
-        void   destroy(EntityId);       // deferred until after the hook pass
-        void   loadScene(const std::string& scenePath);  // deferred until the tick ends
+        EntityId spawn();               // create a new entity
+        void     destroy(EntityId);     // deferred until after the hook pass
+        void     loadScene(const std::string& scenePath);  // deferred until the tick ends
         template<typename E> void subscribe(std::function<void(const E&)>);  // auto-unsubscribes
 
         EntityId m_entity;              // the entity this behavior is attached to

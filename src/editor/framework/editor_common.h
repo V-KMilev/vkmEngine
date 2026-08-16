@@ -11,7 +11,7 @@
 #include <imgui.h>
 #include <glm/glm.hpp>
 
-#include "system/render/render_backend.h"  // GpuTextureId, for imTexture below
+#include "system/render/editor_render_hooks.h"  // GpuTextureId, for imTexture below
 #include <glm/gtc/type_ptr.hpp>
 
 #include "core/system.h"

@@ -14,19 +14,31 @@ namespace Engine {
 namespace {
 
 namespace SSBO = GLBindings::SSBOBindingPoints;
-} // namespace
 
-void InstanceIndexBuffer::update(const void* data, uint32_t bytes) {
+/**
+ * @brief Grow-or-update a stream buffer to hold @p bytes of @p data.
+ *
+ * The batch buffers size to the frame's instance count, which moves;
+ * reallocating only when it grows keeps a steady scene at one allocation.
+ *
+ * @tparam BufferT   Core buffer type to allocate (vertex or shader storage).
+ * @param buffer     The buffer, allocated on first use and on every grow.
+ * @param capacity   Bytes currently allocated; updated when it grows.
+ * @param data       Source bytes to upload.
+ * @param bytes      How many of them; 0 leaves the buffer untouched.
+ */
+template <typename BufferT>
+void growAndUpload(std::unique_ptr<BufferT>& buffer, uint32_t& capacity,
+                   const void* data, uint32_t bytes) {
     if (bytes == 0) return;
-
-    if (!m_buffer || bytes > m_capacity) {
-        m_capacity = bytes + bytes / 2;   // headroom, so a growing frame stops reallocating
-        m_buffer = std::make_unique<Core::VertexBuffer>(nullptr, m_capacity, GL_STREAM_DRAW);
+    if (!buffer || bytes > capacity) {
+        capacity = bytes + bytes / 2;   // headroom, so a growing frame does not realloc every time
+        buffer = std::make_unique<BufferT>(nullptr, capacity, GL_STREAM_DRAW);
     }
-    m_buffer->update(data, bytes, 0);
+    buffer->update(data, bytes, 0);
 }
 
-uint32_t InstanceIndexBuffer::id() const { return m_buffer ? m_buffer->getID() : 0; }
+} // namespace
 
 void GLInstanceBatcher::append(const DrawableData& d, uint32_t runIndex) {
     m_models.push_back(d.model);
@@ -97,8 +109,6 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildSequential(
     m_models.reserve(list.size());
     m_normals.reserve(list.size());
 
-    // One instance per drawable, input order preserved (depth order for
-    // transparents). Each is its own single-instance run.
     for (const DrawableData* d : list) {
         const GLMesh* mesh = view.getMesh(d->mesh);
         if (!mesh) continue;
@@ -122,11 +132,12 @@ void GLInstanceBatcher::upload() {
     // anything culled.
     m_visible.resize(count);
     for (uint32_t i = 0; i < count; ++i) m_visible[i] = i;
-    m_visibleBuffer.update(m_visible.data(), count * sizeof(uint32_t));
+    growAndUpload(m_visibleBuffer, m_visibleCapacity, m_visible.data(),
+                  static_cast<uint32_t>(count * sizeof(uint32_t)));
 
-    uploadStorage(m_boundsBuffer, m_boundsCapacity, m_bounds.data(),
+    growAndUpload(m_boundsBuffer, m_boundsCapacity, m_bounds.data(),
                   static_cast<uint32_t>(m_bounds.size() * sizeof(glm::vec4)));
-    uploadStorage(m_runOfBuffer, m_runOfCapacity, m_runOf.data(),
+    growAndUpload(m_runOfBuffer, m_runOfCapacity, m_runOf.data(),
                   static_cast<uint32_t>(m_runOf.size() * sizeof(uint32_t)));
 
     resetCommands();
@@ -146,27 +157,18 @@ void GLInstanceBatcher::resetCommands() {
             run.first,       // the run's slice, which compaction stays inside
         };
     }
-    uploadStorage(m_commandBuffer, m_commandCapacity, m_commands.data(),
+    growAndUpload(m_commandBuffer, m_commandCapacity, m_commands.data(),
                   static_cast<uint32_t>(m_commands.size() * sizeof(DrawCommand)));
 }
 
-void GLInstanceBatcher::uploadStorage(std::unique_ptr<Core::ShaderStorageBuffer>& buffer,
-                                      uint32_t& capacity, const void* data, uint32_t bytes) {
-    if (bytes == 0) return;
-    if (!buffer || bytes > capacity) {
-        capacity = bytes + bytes / 2;   // headroom, so a growing frame does not realloc every time
-        buffer = std::make_unique<Core::ShaderStorageBuffer>(nullptr, capacity, GL_STREAM_DRAW);
-    }
-    buffer->update(data, bytes, 0);
-}
-
 bool GLInstanceBatcher::bindCullBuffers() {
-    if (m_models.empty() || !m_boundsBuffer || !m_runOfBuffer || !m_commandBuffer) return false;
+    if (m_models.empty() || !m_visibleBuffer || !m_boundsBuffer || !m_runOfBuffer
+        || !m_commandBuffer) return false;
 
     m_boundsBuffer->bindBase(SSBO::CullBounds);
     m_runOfBuffer->bindBase(SSBO::CullRunIndex);
     m_commandBuffer->bindBase(SSBO::CullCommands);
-    VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CullVisible, m_visibleBuffer.id()));
+    VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CullVisible, m_visibleBuffer->getID()));
 
     // From here the frame's draws read the index list the cull is about to write.
     m_culled = true;
@@ -182,7 +184,7 @@ void GLInstanceBatcher::bindInstanceData() const {
 }
 
 void GLInstanceBatcher::drawRun(const InstanceRun& run, uint32_t runIndex) {
-    run.mesh->attachInstanceIndex(m_visibleBuffer.buffer());
+    run.mesh->attachInstanceIndex(*m_visibleBuffer);
 
     if (m_culled && m_commandBuffer && runIndex < m_commands.size()) {
         m_commandBuffer->bind(GL_DRAW_INDIRECT_BUFFER);

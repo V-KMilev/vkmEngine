@@ -23,20 +23,17 @@ void ParticleSystem::update(FrameContext& ctx) {
 
     scene.forEach<ParticleEmitter, Transform>(
         [&](EntityId id, ParticleEmitter& emitter, const Transform& transform) {
-            // Spawn origin: the emitter's world position (parented or not).
             glm::vec3 origin = transform.position;
             if (scene.has<WorldTransform>(id)) {
                 origin = glm::vec3(scene.get<WorldTransform>(id).model[3]);
             }
 
-            // Age + integrate the live particles.
             for (Particle& p : emitter.particles) {
                 p.age      += dt;
                 p.velocity += emitter.acceleration * dt;
                 p.position += p.velocity * dt;
             }
 
-            // Retire the expired ones.
             emitter.particles.erase(
                 std::remove_if(emitter.particles.begin(), emitter.particles.end(),
                                [](const Particle& p) { return p.age >= p.lifetime; }),
@@ -44,8 +41,8 @@ void ParticleSystem::update(FrameContext& ctx) {
 
             if (!emitter.emitting || emitter.rate <= 0.0f) return;
 
-            // Spawn at the authored rate, capped. The accumulator carries the
-            // fractional remainder so a low rate still emits evenly.
+            // The accumulator carries the fractional remainder so a low rate
+            // still emits evenly.
             emitter.spawnAccumulator += emitter.rate * dt;
             while (emitter.spawnAccumulator >= 1.0f) {
                 // At capacity the accumulator keeps only its fraction. Banking

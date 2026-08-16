@@ -4,6 +4,7 @@
 #include "gl_frame_buffer.h"
 
 #include "gl_frame_context.h"
+#include "gl_target.h"
 #include "system/render/render_view.h"
 
 namespace Engine {
@@ -16,6 +17,12 @@ void GLPass::beginFullscreen(Core::Context& gl) const {
 
 void GLPass::endFullscreen(Core::Context& gl) const {
     gl.setDepthTest(true);
+}
+
+void GLPass::promoteColorChain(GLFrameContext& ctx) const {
+    if (ctx.colorSrc != &ctx.sceneHDR) return;
+    ctx.colorDst->blitColorFrom(*ctx.colorSrc);
+    ctx.flipColor();
 }
 
 void GLPass::bindBackbufferViewport(GLFrameContext& ctx) const {

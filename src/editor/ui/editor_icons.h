@@ -18,8 +18,7 @@ enum class EditorIcon {
     SpaceLocal, SpaceWorld, Snap,
     Duplicate, Focus, Trash,
     Play, Pause, Stop, Step, Loop, Key, Plus, Cross,
-    // Entity-type glyphs (Hierarchy / Inspector identity) - replace the old
-    // [C]/[M]/[D] ASCII badges.
+    // Entity-type glyphs (Hierarchy / Inspector identity).
     Entity, Mesh, Camera, LightDir, LightPoint, LightSpot, Anim,
     Probe, Volume, Decal, Particle, UIWidget,
     // Fine-grained entity glyphs (icon-font set; vector path falls back to
@@ -28,7 +27,6 @@ enum class EditorIcon {
     LightRect, LightDisk,
     Cube, Sphere, Plane, Pyramid, Cone, Triangle,
     Empty, Import, Colliders,
-    // Viewport actions
     FrameAll
 };
 
