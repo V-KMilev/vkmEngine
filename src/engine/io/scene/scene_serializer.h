@@ -14,17 +14,16 @@ class ResourceManager;
 /**
  * @brief Save / load a Scene + the assets it references to/from JSON.
  *
- * Both entities and their referenced assets persist: SceneSerializer emits
- * an `assets` block (textures, materials, meshes) alongside the `entities`
- * block, and the loader uses AssetSerializer factories to recreate them on
- * the way back in. Asset references inside components (Mesh handles,
- * material texture refs) resolve by `name` through ResourceManager - the
- * stable identity across save/load.
+ * Both entities and their referenced assets persist: an `assets` block
+ * (textures, materials, meshes) sits alongside the `entities` block, and the
+ * loader recreates them through the AssetSerializer factories. Asset references
+ * inside components (Mesh handles, material texture refs) resolve by `name`
+ * through ResourceManager - the stable identity across save/load.
  *
  * Load is transactional for BOTH entities and assets: entities deserialise
  * into a staging Scene and assets into a staging ResourceManager, and both
  * commit via swap only on full success - so a malformed file leaves the live
- * scene AND the live asset graph untouched (documented inline in the .cpp).
+ * scene AND the live asset graph untouched.
  *
  * Slot indices survive a save -> load round trip - the loader recreates
  * each entity at the same slot via Scene::createEntityAt, so cross-entity
@@ -74,10 +73,9 @@ namespace SceneSerializer {
     /**
      * @brief Load a scene from @p path, replacing the live @p scene atomically.
      *
-     * Assets and entities both deserialise into staging containers (a staging
-     * ResourceManager + a staging Scene) and commit via swap only on full
-     * success - a failure leaves @p scene and the live asset graph unchanged,
-     * with no orphaned assets (documented in the .cpp).
+     * Assets and entities both deserialise into staging containers and commit
+     * via swap only on full success, so a failure leaves @p scene and the live
+     * asset graph unchanged, with no orphaned assets.
      *
      * @return true on success; false (and a logged error) on failure, with
      *         the live scene untouched.

@@ -51,7 +51,6 @@ constexpr std::array<TexField, 11> MATERIAL_TEXTURE_FIELDS = {{
     {"transmission",        &MaterialAsset::transmissionTexture},
 }};
 
-// vec/quat <-> JSON helpers are shared with component_serializer; see io/json_vec.h.
 using ::Engine::detail::vec3ToJson;
 using ::Engine::detail::vec4ToJson;
 using ::Engine::detail::jsonToVec3;
@@ -65,8 +64,8 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
 
     // Scalar / vector / enum fields are driven by reflection (the VKM_REFLECT
     // block in resource/asset/material_asset.h), so adding a MaterialAsset field
-    // can't silently fall out of the save/load round trip. Texture refs are
-    // special (resolved by name) and handled below.
+    // can't silently fall out of the save/load round trip. Texture refs resolve
+    // by name instead, below.
     Reflect::forEachField(m, [&](std::string_view name, const auto& val) {
         using V = std::decay_t<decltype(val)>;
         if      constexpr (std::is_same_v<V, MaterialType>) src[std::string(name)] = Reflect::enumName(val);
@@ -94,9 +93,8 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
  * @brief Apply an "inline" material descriptor to an existing MaterialAsset,
  * resolving texture refs via findByName.
  *
- * Public (declared in asset_serializer.h) so asset_registration.cpp can hand
- * it to the inline material factory - it used to sit behind a pure forwarding
- * wrapper for that.
+ * Public (declared in asset_serializer.h) so asset_registration.cpp can hand it
+ * to the inline material factory.
  */
 void applyInline(const nlohmann::json& src, MaterialAsset& m, const ResourceManager& resources) {
     // Mirror of materialToInline: reflection drives the scalar / vector / enum
@@ -180,8 +178,8 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
         // Name-only reference; the cooker has already written the material's
         // canonical inline form to the library under this name.
         emitDescriptor(materials, asset);
-        // Pull every texture this material references into the texture
-        // reference list too, so the loader cooks/loads them first.
+        // Pull the material's textures into the reference list too, so the
+        // loader recreates them first.
         for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
     };
 

@@ -14,9 +14,9 @@ class ResourceManager;
  * @brief The io<->tools dispatch seam.
  *
  * tools wires these at startup; the runtime wires the cooked dispatch, the
- * editor wires the cooked+recipe dispatch. Replaces the old std::function-map
- * AssetFactories registry: each scene-load asset is recreated by calling the
- * matching function pointer, which switches internally on the source `kind`.
+ * editor wires the cooked+recipe dispatch. Each scene-load asset is recreated
+ * by calling the matching function pointer, which switches internally on the
+ * source `kind`.
  */
 struct AssetFactory {
     MeshHandle     (*createMesh)    (const nlohmann::json&, ResourceManager&) = nullptr;
