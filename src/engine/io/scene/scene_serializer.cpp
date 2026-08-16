@@ -3,7 +3,6 @@
 #include "io/scene/scene_serializer.h"
 
 #include <array>
-#include <fstream>
 #include <limits>
 #include <set>
 #include <string>
@@ -45,8 +44,8 @@ constexpr int FILE_FORMAT_VERSION = 2;
  * the two functions plus an entry to COMPONENT_KEYS below.
  *
  * Special cases:
- *  - Mesh references assets by handle, so save/load take a ResourceManager
- *    (resolution happens against the staging RM on load).
+ *  - Mesh, LOD and Decal reference assets by handle, so save/load take a
+ *    ResourceManager (resolution happens against the staging RM on load).
  *  - Hierarchy is save-only here: load captures the parent index in pass 1
  *    and wires it up in pass 2 via HierarchyOperations::setParent, because
  *    the parent entity may not exist yet when the child is first seen.
@@ -61,6 +60,34 @@ constexpr std::array<const char*, 20> COMPONENT_KEYS = {
     "Animation", "Script", "Hierarchy",
     "UICanvas", "UIElement", "UIImage", "UIText", "UIButton",
 };
+
+/**
+ * @brief Read one component from @p src, when @p key is present, into @p e.
+ *
+ * Overwrites the component the entity already carries rather than adding a
+ * second one: a prefab instance root is loaded twice - once from the scene
+ * block that placed it, once from the prefab file - and SparseSet::add on a key
+ * it already holds appends a second dense entry that outlives the entity.
+ *
+ * @tparam T Component type to read.
+ * @tparam Args Extra arguments this component's loader takes (a ResourceManager
+ *              for the ones that reference assets by name).
+ * @param src The entity's component block.
+ * @param key JSON key the component is stored under.
+ * @param s Scene receiving the component.
+ * @param e Entity receiving the component.
+ * @param args Forwarded to ComponentSerializer::load.
+ */
+template<typename T, typename... Args>
+void loadInto(const json& src, const char* key, Scene& s, Entity e, Args&&... args) {
+    const auto it = src.find(key);
+    if (it == src.end()) return;
+
+    T component;
+    CS::load(*it, component, std::forward<Args>(args)...);
+    if (s.has<T>(e)) s.get<T>(e) = std::move(component);
+    else             s.add(e, std::move(component));
+}
 
 } // namespace
 
@@ -90,25 +117,25 @@ void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager&
 // Hierarchy is intentionally absent: its parent link is captured by the
 // caller for the pass-2 wire-up, not loaded here.
 void loadComponents(const json& src, Scene& s, Entity e, const ResourceManager& r) {
-    if (src.contains("Name"))         { Name c;            CS::load(src["Name"], c);            s.add(e, std::move(c)); }
-    if (src.contains("Transform"))    { Transform c;       CS::load(src["Transform"], c);       s.add(e, std::move(c)); }
-    if (src.contains("Camera"))       { Camera c;          CS::load(src["Camera"], c);          s.add(e, std::move(c)); }
-    if (src.contains("Light"))        { Light c;           CS::load(src["Light"], c);           s.add(e, std::move(c)); }
-    if (src.contains("Rigidbody"))    { Rigidbody c;       CS::load(src["Rigidbody"], c);       s.add(e, std::move(c)); }
-    if (src.contains("Collider"))     { Collider c;        CS::load(src["Collider"], c);        s.add(e, std::move(c)); }
-    if (src.contains("Mesh"))         { Mesh c;            CS::load(src["Mesh"], c, r);         s.add(e, std::move(c)); }
-    if (src.contains("LOD"))          { LOD c;             CS::load(src["LOD"], c, r);          s.add(e, std::move(c)); }
-    if (src.contains("Decal"))        { Decal c;           CS::load(src["Decal"], c, r);        s.add(e, std::move(c)); }
-    if (src.contains("ParticleEmitter")) { ParticleEmitter c; CS::load(src["ParticleEmitter"], c); s.add(e, std::move(c)); }
-    if (src.contains("IrradianceVolume")) { IrradianceVolume c; CS::load(src["IrradianceVolume"], c); s.add(e, std::move(c)); }
-    if (src.contains("ReflectionProbe"))  { ReflectionProbe c;  CS::load(src["ReflectionProbe"], c);  s.add(e, std::move(c)); }
-    if (src.contains("Animation"))    { Animation c;       CS::load(src["Animation"], c);       s.add(e, std::move(c)); }
-    if (src.contains("Script"))       { ScriptComponent c; CS::load(src["Script"], c);          s.add(e, std::move(c)); }
-    if (src.contains("UICanvas"))     { UICanvas c;        CS::load(src["UICanvas"], c);        s.add(e, std::move(c)); }
-    if (src.contains("UIElement"))    { UIElement c;       CS::load(src["UIElement"], c);       s.add(e, std::move(c)); }
-    if (src.contains("UIImage"))      { UIImage c;         CS::load(src["UIImage"], c);         s.add(e, std::move(c)); }
-    if (src.contains("UIText"))       { UIText c;          CS::load(src["UIText"], c);          s.add(e, std::move(c)); }
-    if (src.contains("UIButton"))     { UIButton c;        CS::load(src["UIButton"], c);        s.add(e, std::move(c)); }
+    loadInto<Name>(src, "Name", s, e);
+    loadInto<Transform>(src, "Transform", s, e);
+    loadInto<Camera>(src, "Camera", s, e);
+    loadInto<Light>(src, "Light", s, e);
+    loadInto<Rigidbody>(src, "Rigidbody", s, e);
+    loadInto<Collider>(src, "Collider", s, e);
+    loadInto<Mesh>(src, "Mesh", s, e, r);
+    loadInto<LOD>(src, "LOD", s, e, r);
+    loadInto<Decal>(src, "Decal", s, e, r);
+    loadInto<ParticleEmitter>(src, "ParticleEmitter", s, e);
+    loadInto<IrradianceVolume>(src, "IrradianceVolume", s, e);
+    loadInto<ReflectionProbe>(src, "ReflectionProbe", s, e);
+    loadInto<Animation>(src, "Animation", s, e);
+    loadInto<ScriptComponent>(src, "Script", s, e);
+    loadInto<UICanvas>(src, "UICanvas", s, e);
+    loadInto<UIElement>(src, "UIElement", s, e);
+    loadInto<UIImage>(src, "UIImage", s, e);
+    loadInto<UIText>(src, "UIText", s, e);
+    loadInto<UIButton>(src, "UIButton", s, e);
 }
 
 namespace {
@@ -302,6 +329,17 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             const EntityId parentId{parentIdx, staging.generationOf(parentIdx)};
             HierarchyOperations::setParent(staging, childId, parentId);
         }
+
+        // Scene-global settings: two top-level objects, the lighting environment
+        // and the physics world. Missing fields keep the staging scene's
+        // defaults; a mistyped one throws, and is caught here like any other
+        // malformed block rather than unwinding out of load().
+        if (auto it = doc.find("environment"); it != doc.end() && it->is_object()) {
+            ComponentSerializer::load(*it, staging.environment());
+        }
+        if (auto it = doc.find("physics"); it != doc.end() && it->is_object()) {
+            ComponentSerializer::load(*it, staging.physics());
+        }
     } catch (const std::exception& e) {
         LOG_ERROR("Aborted while reading '%s': %s (live scene unchanged)",
             source, e.what());
@@ -311,15 +349,6 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     for (const std::string& k : unknownKeys) {
         LOG_WARNING("Unknown component key '%s' in '%s' (schema drift; dropped)",
             k.c_str(), source);
-    }
-
-    // Scene-global settings: two top-level objects, the lighting environment and
-    // the physics world. Missing fields keep the staging scene's defaults.
-    if (auto it = doc.find("environment"); it != doc.end() && it->is_object()) {
-        ComponentSerializer::load(*it, staging.environment());
-    }
-    if (auto it = doc.find("physics"); it != doc.end() && it->is_object()) {
-        ComponentSerializer::load(*it, staging.physics());
     }
 
     // Commit phase: both stagings swap into place in one step. Until this
@@ -355,12 +384,8 @@ bool save(const Scene& scene, const ResourceManager& resources, const std::strin
     PROFILE_SCOPE("SceneSerializer::save");
     const json doc = buildSceneJson(scene, resources);
 
-    std::ofstream out(path);
-    if (!out) {
-        LOG_ERROR("Failed to open '%s' for writing", path.c_str());
-        return false;
-    }
-    out << doc.dump(2);
+    if (!detail::writeJsonFile(path, doc, "Scene")) return false;
+
     const auto& assets = doc["assets"];
     const size_t numTex = assets.contains("textures")  ? assets["textures"].size()  : 0;
     const size_t numMat = assets.contains("materials") ? assets["materials"].size() : 0;

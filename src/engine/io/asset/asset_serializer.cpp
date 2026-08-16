@@ -10,6 +10,8 @@
 
 #include "logger.h"
 
+#include "ecs/component/decal.h"
+#include "ecs/component/lod.h"
 #include "ecs/component/mesh.h"
 #include "ecs/scene.h"
 #include "resource/resource_manager.h"
@@ -62,9 +64,9 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     src["kind"] = "inline";
 
     // Scalar / vector / enum fields are driven by reflection (the VKM_REFLECT
-    // block at the bottom of this file), so adding a MaterialAsset field can't
-    // silently fall out of the save/load round trip. Texture refs are special
-    // (resolved by name) and handled below.
+    // block in resource/asset/material_asset.h), so adding a MaterialAsset field
+    // can't silently fall out of the save/load round trip. Texture refs are
+    // special (resolved by name) and handled below.
     Reflect::forEachField(m, [&](std::string_view name, const auto& val) {
         using V = std::decay_t<decltype(val)>;
         if      constexpr (std::is_same_v<V, MaterialType>) src[std::string(name)] = Reflect::enumName(val);
@@ -163,23 +165,38 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
         emitDescriptor(textures, resources.get(h));
     };
 
+    auto emitMesh = [&](const MeshHandle& h) {
+        if (!h || !seenMeshes.insert(h.id()).second) return;
+        const auto& asset = resources.get(h);
+        // Hidden assets (editor preview primitives etc.) never serialize:
+        // they belong to the running editor, not to the user's scene.
+        if (!asset.hidden) emitDescriptor(meshes, asset);
+    };
+
+    auto emitMaterial = [&](const MaterialHandle& h) {
+        if (!h || !seenMaterials.insert(h.id()).second) return;
+        const auto& asset = resources.get(h);
+        if (asset.hidden) return;
+        // Name-only reference; the cooker has already written the material's
+        // canonical inline form to the library under this name.
+        emitDescriptor(materials, asset);
+        // Pull every texture this material references into the texture
+        // reference list too, so the loader cooks/loads them first.
+        for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
+    };
+
+    // Every component that writes an asset name into the scene file has to be
+    // walked here: a name the assets block never lists is a name loadAssets
+    // never recreates, and the component's reference resolves to nothing.
     scene.forEach<Mesh>([&](EntityId, const Mesh& m) {
-        if (m.mesh && seenMeshes.insert(m.mesh.id()).second) {
-            const auto& asset = resources.get(m.mesh);
-            // Hidden assets (editor preview primitives etc.) never serialize:
-            // they belong to the running editor, not to the user's scene.
-            if (!asset.hidden) emitDescriptor(meshes, asset);
-        }
-        if (m.material && seenMaterials.insert(m.material.id()).second) {
-            const auto& asset = resources.get(m.material);
-            if (asset.hidden) return;
-            // Name-only reference; the cooker has already written the material's
-            // canonical inline form to the library under this name.
-            emitDescriptor(materials, asset);
-            // Pull every texture this material references into the texture
-            // reference list too, so the loader cooks/loads them first.
-            for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
-        }
+        emitMesh(m.mesh);
+        emitMaterial(m.material);
+    });
+    scene.forEach<LOD>([&](EntityId, const LOD& l) {
+        for (const LODLevel& level : l.levels) emitMesh(level.mesh);
+    });
+    scene.forEach<Decal>([&](EntityId, const Decal& d) {
+        emitMaterial(d.material);
     });
 
     nlohmann::json out;
