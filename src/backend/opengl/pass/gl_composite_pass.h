@@ -14,8 +14,8 @@ namespace Engine {
  * @brief Resolves the HDR scene target to the backbuffer.
  *
  * Runs last: binds the default framebuffer, samples the frame's HDR target, and
- * tonemaps + gamma-corrects it across a fullscreen triangle. This is where the
- * pipeline goes from linear HDR back to a displayable image.
+ * tonemaps + gamma-corrects it across a fullscreen triangle - where the pipeline
+ * goes from linear HDR back to a displayable image.
  */
 class GLCompositePass : public GLPass {
     public:

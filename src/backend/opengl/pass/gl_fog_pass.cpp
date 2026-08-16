@@ -39,8 +39,8 @@ void GLFogPass::execute(GLFrameContext& ctx) {
     const Environment& env  = view.environment;
     if (!env.fog.enabled) return;
 
-    // Size the froxel volumes to the scene's authored fog resolution
-    // (reallocates only when it changes; the first fog-enabled frame allocates).
+    // Reallocates only when the authored resolution changes; the first
+    // fog-enabled frame allocates.
     const glm::uvec3 dims(clampFroxel(env.fog.resolutionX),
                           clampFroxel(env.fog.resolutionY),
                           clampFroxel(env.fog.resolutionZ));
@@ -54,7 +54,6 @@ void GLFogPass::execute(GLFrameContext& ctx) {
     const uint32_t gx = (dims.x + 7u) / 8u;
     const uint32_t gy = (dims.y + 7u) / 8u;
 
-    // Injection: scatter each froxel's cluster lights into the scatter volume.
     // The light SSBO (binding 0) and cluster grid (binding 1) are already bound.
     // The 2D shadow atlas is not - the forward pass usually binds it and it runs
     // later - so bind it here for the sun's cascade lookup. The inject shader
@@ -79,7 +78,6 @@ void GLFogPass::execute(GLFrameContext& ctx) {
 
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-    // Integration: march each column front-to-back into the integrated volume.
     ctx.fog.bindScatterImage(0, GL_READ_ONLY);
     ctx.fog.bindIntegratedImage(1, GL_WRITE_ONLY);
     m_integrate->bind();
