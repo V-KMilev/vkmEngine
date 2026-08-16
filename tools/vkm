@@ -98,6 +98,30 @@ def run(cmd, **kw) -> int:
     return subprocess.call([str(c) for c in cmd], **kw)
 
 
+def warn_if_offpath(compiler: Path):
+    """Warn when a Windows compiler's own directory is not on PATH.
+
+    A compiler needs its runtime DLLs, and on Windows those are found through
+    PATH rather than through anything recorded in the binary. Invoke one whose
+    directory is absent - the usual cause is driving a UCRT64 toolchain from an
+    MSYS2 MINGW64 shell, or the reverse - and it loads a sibling's DLLs and dies
+    before printing anything. CMake reports only that the compiler "is not able
+    to compile a simple test program", with an empty error, which sends people
+    looking at the compiler rather than at the shell they launched it from.
+    """
+    if os.name != "nt":
+        return
+    d = compiler.parent.resolve()
+    on_path = any(Path(p).resolve() == d
+                  for p in os.environ.get("PATH", "").split(os.pathsep) if p)
+    if not on_path:
+        print(f"vkm: warning: {d} is not on PATH.\n"
+              f"     {compiler.name} may fail to load its own runtime and report a\n"
+              f"     broken compiler with no error text. Build from the shell that\n"
+              f"     owns this toolchain, or put its bin directory on PATH.",
+              file=sys.stderr)
+
+
 def project_dir(arg: str | None) -> Path:
     """Resolve a project argument, defaulting to the working directory.
 
@@ -182,6 +206,7 @@ def cmd_build(args) -> int:
             die(f"the engine was built with '{compiler}', which is not on this "
                 f"machine.\n     Install it, or name an equivalent with "
                 f"--compiler, or rebuild the engine here.")
+        warn_if_offpath(Path(compiler))
         cfg.append(f"-DCMAKE_CXX_COMPILER={compiler}")
 
     if args.generator:
