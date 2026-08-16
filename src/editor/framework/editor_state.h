@@ -85,7 +85,7 @@ struct EditorState {
     bool        showOpenProject = false;  ///< File > Open Project dialog is up.
     std::string pendingProjectOpen;       ///< Project chosen from a menu; opened after the draw.
     std::string projectName;              ///< What the open project calls itself; titles the window.
-    static constexpr size_t MAX_RECENT_SCENES = 8;
+    static constexpr size_t MAX_RECENT_ENTRIES = 8;
 
     // Undo/redo history. Every editor mutation that goes through the
     // command path lands here; Ctrl+Z reverses, Ctrl+Shift+Z re-applies.
@@ -163,5 +163,21 @@ struct EditorState {
         toastTimeRemaining = seconds;
     }
 };
+
+/**
+ * @brief Push @p value to the front of an MRU path list, de-duplicated and capped.
+ *
+ * The recent-scenes and recent-projects lists are the same list under two
+ * names, so "most recent first, no duplicates, at most MAX_RECENT_ENTRIES"
+ * is defined once here rather than once per controller.
+ *
+ * @param mru   The list to promote into, most-recent first.
+ * @param value The path to move to the front.
+ */
+inline void pushRecentPath(std::vector<std::string>& mru, const std::string& value) {
+    mru.erase(std::remove(mru.begin(), mru.end(), value), mru.end());
+    mru.insert(mru.begin(), value);
+    if (mru.size() > EditorState::MAX_RECENT_ENTRIES) mru.resize(EditorState::MAX_RECENT_ENTRIES);
+}
 
 } // namespace Engine

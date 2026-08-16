@@ -170,11 +170,6 @@ class SceneIOController {
             const std::string& priorSelectionName,
             const std::string& eventPath
         );
-        /**
-         * @brief Push a saved/loaded scene path to the top of the recent-scenes
-         * MRU list, deduplicating and trimming to MAX_RECENT_SCENES.
-         */
-        static void pushRecent(EditorState& state, const std::string& path);
 
         CameraControllerSystem& m_cameraController;
         MaterialPreviewSession& m_materialPreviews;

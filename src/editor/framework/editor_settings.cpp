@@ -247,7 +247,7 @@ bool load(EditorState& state, RenderSettings& render) {
     if (j.contains("recentScenes") && j["recentScenes"].is_array()) {
         for (const auto& p : j["recentScenes"]) {
             if (p.is_string()) state.recentScenes.push_back(p.get<std::string>());
-            if (state.recentScenes.size() >= EditorState::MAX_RECENT_SCENES) break;
+            if (state.recentScenes.size() >= EditorState::MAX_RECENT_ENTRIES) break;
         }
     }
 

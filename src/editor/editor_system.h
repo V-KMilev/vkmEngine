@@ -107,7 +107,6 @@ class EditorSystem : public System {
 
     private:
         Engine&           m_engine;
-        GLFWwindow*       m_window;
         CameraControllerSystem& m_cameraController;
         UISystem&         m_uiSystem;
         RenderSystem&     m_renderSystem;

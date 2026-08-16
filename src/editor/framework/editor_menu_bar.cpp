@@ -44,6 +44,21 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     FrameContext& ctx   = ec.frame;
     EditorState&  state = ec.state;
 
+    // The Edit and Entity menus both offer the selection trio on purpose, so
+    // it is emitted from one place - the two used to drift apart by hand.
+    const auto selectionItems = [&] {
+        const bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
+        if (ImGui::MenuItem("Duplicate", keyLabel(state.keybinds.duplicate), false, haveSel)) {
+            EditorActions::duplicateSelection(ctx.scene, state);
+        }
+        if (ImGui::MenuItem("Delete", keyLabel(state.keybinds.deleteEntity), false, haveSel)) {
+            EditorActions::deleteSelection(ctx.scene, state);
+        }
+        if (ImGui::MenuItem("Deselect", keyLabel(state.keybinds.deselect), false, haveSel)) {
+            state.deselect();
+        }
+    };
+
     // Brand mark at the left of the menu bar, before the menus. Lazy-loaded the
     // first time we draw (the GL context is live by now). Loaded unflipped so
     // ImGui's top-left UVs render it upright.
@@ -141,16 +156,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
             EditorActions::redo(ctx.scene, state);
         }
         ImGui::Separator();
-        const bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
-        if (ImGui::MenuItem("Duplicate", keyLabel(state.keybinds.duplicate), false, haveSel)) {
-            EditorActions::duplicateSelection(ctx.scene, state);
-        }
-        if (ImGui::MenuItem("Delete", keyLabel(state.keybinds.deleteEntity), false, haveSel)) {
-            EditorActions::deleteSelection(ctx.scene, state);
-        }
-        if (ImGui::MenuItem("Deselect", keyLabel(state.keybinds.deselect), false, haveSel)) {
-            state.deselect();
-        }
+        selectionItems();
         ImGui::Separator();
         // A dialog action, not a toggle - no checkmark.
         if (ImGui::MenuItem("Preferences...", keyLabel(state.keybinds.openPreferences))) {
@@ -190,16 +196,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     if (ImGui::BeginMenu("Entity")) {
         EditorActions::drawCreateEntityMenu(ctx.scene, ctx.resources, state);
         ImGui::Separator();
-        const bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
-        if (ImGui::MenuItem("Duplicate", keyLabel(state.keybinds.duplicate), false, haveSel)) {
-            EditorActions::duplicateSelection(ctx.scene, state);
-        }
-        if (ImGui::MenuItem("Delete", keyLabel(state.keybinds.deleteEntity), false, haveSel)) {
-            EditorActions::deleteSelection(ctx.scene, state);
-        }
-        if (ImGui::MenuItem("Deselect", keyLabel(state.keybinds.deselect), false, haveSel)) {
-            state.deselect();
-        }
+        selectionItems();
         ImGui::EndMenu();
     }
 

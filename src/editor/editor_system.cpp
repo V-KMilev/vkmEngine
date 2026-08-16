@@ -50,7 +50,6 @@ EditorSystem::EditorSystem(
     const std::string& projectName
 )
     : m_engine(engine)
-    , m_window(window)
     , m_cameraController(cameraController)
     , m_uiSystem(uiSystem)
     , m_renderSystem(renderSystem)

@@ -975,7 +975,7 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
         changed |= propCheckbox("Active", &cam.active);
 
         if (ImGui::Button("Set as Main Camera", ImVec2(-1, 0))) {
-            EditorActions::setActiveCamera(scene, state, id, "Set Main Camera");
+            EditorActions::setActiveCamera(scene, state, id);
         }
 
         return changed;
