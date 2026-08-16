@@ -15,10 +15,10 @@ static_assert(MAX_MOUSE_BUTTON == GLFW_MOUSE_BUTTON_LAST,
               "MAX_MOUSE_BUTTON is out of step with this GLFW - resize the button arrays");
 
 namespace {
-// Fetch the bundled callback pointers stored as the GLFW user pointer. Used by
-// the (necessarily capture-free) GLFW callbacks below.
-WindowCallbackData* callbackData(GLFWwindow* w) {
-    return static_cast<WindowCallbackData*>(glfwGetWindowUserPointer(w));
+// Fetch the WindowManager stored as the GLFW user pointer; it owns the
+// InputHandle the (necessarily capture-free) callbacks below have to reach.
+WindowManager* windowManager(GLFWwindow* w) {
+    return static_cast<WindowManager*>(glfwGetWindowUserPointer(w));
 }
 } // namespace
 
@@ -62,35 +62,21 @@ void MouseInputHandle::resetScrollDelta() {
     m_scrollY = 0.0;
 }
 
-void InputHandle::setupCallbacks(GLFWwindow* window, WindowManager* windowManager) {
+void InputHandle::setupCallbacks(GLFWwindow* window) {
     if (!window) return;
-
-    // Bundle both pointers so all GLFW callbacks can access input + window
-    m_callbackData.input = this;
-    m_callbackData.window = windowManager;
-    glfwSetWindowUserPointer(window, &m_callbackData);
 
     // Key callback - updates keyboard state directly, no polling needed
     glfwSetKeyCallback(window, [](GLFWwindow* w, int key, int, int action, int) {
-        if (auto* data = callbackData(w); data && data->input) {
+        if (auto* manager = windowManager(w)) {
             const bool pressed = (action == GLFW_PRESS || action == GLFW_REPEAT);
-            data->input->m_keyboardHandle.onKeyEvent(key, pressed);
+            manager->getInputHandle().m_keyboardHandle.onKeyEvent(key, pressed);
         }
     });
 
     // Scroll callback (horizontal scroll unused)
     glfwSetScrollCallback(window, [](GLFWwindow* w, double, double yOffset) {
-        if (auto* data = callbackData(w); data && data->input) {
-            data->input->m_mouseHandle.setScrollDelta(yOffset);
-        }
-    });
-
-    // Framebuffer-size callback - tracks the drawable size in pixels (what GL
-    // viewports use), which also covers HiDPI / DPI changes a window-size callback
-    // would miss. Instant updates on resize, no polling needed.
-    glfwSetFramebufferSizeCallback(window, [](GLFWwindow* w, int width, int height) {
-        if (auto* data = callbackData(w); data && data->window) {
-            data->window->setSize(width, height);
+        if (auto* manager = windowManager(w)) {
+            manager->getInputHandle().m_mouseHandle.setScrollDelta(yOffset);
         }
     });
 }

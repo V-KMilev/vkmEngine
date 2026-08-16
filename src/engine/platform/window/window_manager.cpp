@@ -62,12 +62,6 @@ GLFWmonitor* getCurrentMonitor(GLFWwindow* window) {
 } // namespace
 
 WindowManager::~WindowManager() {
-    // Teardown order preserved from the former Window dtor + WindowManager dtor:
-    // input/frame-limiter first (they outranked the window in member-destruction
-    // order), then glfwDestroyWindow, then a single glfwTerminate.
-    m_frameLimiter.reset();
-    m_inputHandle.reset();
-
     if (m_windowHandle) {
         glfwDestroyWindow(m_windowHandle);
         m_windowHandle = nullptr;
@@ -128,10 +122,22 @@ void WindowManager::createWindow(const std::string& title) {
 
     LOG_TRACE("Constructed Window '%s'", m_title.c_str());
 
-    m_inputHandle = std::make_unique<InputHandle>();
-    m_frameLimiter = std::make_unique<FrameLimiter>();
+    // Every GLFW callback below reaches its target through this one pointer:
+    // the framebuffer-size one lands here, the input ones carry on to
+    // getInputHandle(). Registered before any of them, and well before the
+    // first glfwPollEvents() that could dispatch one.
+    glfwSetWindowUserPointer(m_windowHandle, this);
 
-    m_inputHandle->setupCallbacks(m_windowHandle, this);
+    // Framebuffer-size callback - tracks the drawable size in pixels (what GL
+    // viewports use), which also covers HiDPI / DPI changes a window-size callback
+    // would miss. Instant updates on resize, no polling needed.
+    glfwSetFramebufferSizeCallback(m_windowHandle, [](GLFWwindow* w, int width, int height) {
+        if (auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w))) {
+            manager->setSize(width, height);
+        }
+    });
+
+    m_inputHandle.setupCallbacks(m_windowHandle);
     LOG_INFO("Created window '%s' (%dx%d, refresh %dHz)",
         title.c_str(), m_width, m_height, getRefreshRate());
 }
@@ -185,7 +191,7 @@ void WindowManager::swapBuffers() {
         // Deliberate cap sleep (only when setFramerate > 0); a separate zone so
         // a throttle sleep is never mistaken for a GPU-bound swap stall.
         PROFILE_SCOPE("FrameLimiter");
-        m_frameLimiter->endFrame();
+        m_frameLimiter.endFrame();
     }
 }
 
@@ -251,16 +257,16 @@ void WindowManager::updateMode(WindowMode windowMode) {
 
 void WindowManager::updateInput() {
     // Reset scroll delta before polling new events
-    m_inputHandle->getMouse().resetScrollDelta();
+    m_inputHandle.getMouse().resetScrollDelta();
 
     // Process GLFW events - key/scroll callbacks fire here
     glfwPollEvents();
 
-    m_inputHandle->update(m_windowHandle);
+    m_inputHandle.update(m_windowHandle);
 }
 
 bool WindowManager::beginFrame() {
-    m_frameLimiter->beginFrame();
+    m_frameLimiter.beginFrame();
 
     return !shouldClose();
 }
@@ -282,7 +288,7 @@ void WindowManager::setFramerate(int framerate) {
     // VSync and the software FPS cap are independent. Setting a software
     // cap does not touch the swap interval; if both are active the lower
     // effective rate wins, which is the usual expectation.
-    m_frameLimiter->setTargetFramerate(framerate);
+    m_frameLimiter.setTargetFramerate(framerate);
     if (framerate > 0) {
         LOG_INFO("FPS cap = %d", framerate);
     } else {
