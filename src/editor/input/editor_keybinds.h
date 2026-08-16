@@ -70,6 +70,58 @@ struct EditorKeybinds {
 };
 
 /**
+ * @brief One keybind's identity: where Preferences shows it, and how it persists.
+ *
+ * The Preferences panel and EditorSettings both walk KEYBINDS, so the row list,
+ * the conflict scan and the settings round-trip cannot drift apart. `label` and
+ * `jsonName` are separate columns deliberately: the label is user-facing prose,
+ * while a changed jsonName silently discards every saved rebinding.
+ */
+struct KeybindEntry {
+    const char* group;                ///< Preferences section heading the row sits under.
+    const char* label;                ///< Row label in Preferences.
+    const char* jsonName;             ///< Key this bind is persisted under.
+    KeyBind EditorKeybinds::* field;  ///< Member of EditorKeybinds the row edits.
+};
+
+/**
+ * @brief Every configurable keybind, in Preferences display order.
+ *
+ * Rows sharing a group are contiguous, so the panel can emit a section heading
+ * whenever the group column changes.
+ */
+inline constexpr KeybindEntry KEYBINDS[] = {
+    { "File", "New Scene",     "newScene",    &EditorKeybinds::newScene    },
+    { "File", "Save Scene",    "saveScene",   &EditorKeybinds::saveScene   },
+    { "File", "Save Scene As", "saveSceneAs", &EditorKeybinds::saveSceneAs },
+    { "File", "Load Scene",    "loadScene",   &EditorKeybinds::loadScene   },
+
+    { "Edit", "Undo", "undo", &EditorKeybinds::undo },
+    { "Edit", "Redo", "redo", &EditorKeybinds::redo },
+
+    { "Windows & Panels", "Toggle Hierarchy", "toggleHierarchy",      &EditorKeybinds::toggleHierarchy      },
+    { "Windows & Panels", "Toggle Inspector", "toggleInspector",      &EditorKeybinds::toggleInspector      },
+    { "Windows & Panels", "Toggle Bottom",    "toggleBottom",         &EditorKeybinds::toggleBottom         },
+    { "Windows & Panels", "Render Settings",  "toggleRenderSettings", &EditorKeybinds::toggleRenderSettings },
+    { "Windows & Panels", "Material Editor",  "toggleMaterialEditor", &EditorKeybinds::toggleMaterialEditor },
+    { "Windows & Panels", "Asset Browser",    "toggleAssetBrowser",   &EditorKeybinds::toggleAssetBrowser   },
+    { "Windows & Panels", "Toggle Editor",    "toggleEditor",         &EditorKeybinds::toggleEditor         },
+    { "Windows & Panels", "Preferences",      "openPreferences",      &EditorKeybinds::openPreferences      },
+
+    { "Entity", "Delete",         "deleteEntity",  &EditorKeybinds::deleteEntity  },
+    { "Entity", "Deselect",       "deselect",      &EditorKeybinds::deselect      },
+    { "Entity", "Duplicate",      "duplicate",     &EditorKeybinds::duplicate     },
+    { "Entity", "Focus Selected", "focusSelected", &EditorKeybinds::focusSelected },
+    { "Entity", "Frame All",      "frameAll",      &EditorKeybinds::frameAll      },
+
+    { "Gizmo (disabled during fly-cam)", "Select",      "gizmoSelect",      &EditorKeybinds::gizmoSelect      },
+    { "Gizmo (disabled during fly-cam)", "Translate",   "gizmoTranslate",   &EditorKeybinds::gizmoTranslate   },
+    { "Gizmo (disabled during fly-cam)", "Rotate",      "gizmoRotate",      &EditorKeybinds::gizmoRotate      },
+    { "Gizmo (disabled during fly-cam)", "Scale",       "gizmoScale",       &EditorKeybinds::gizmoScale       },
+    { "Gizmo (disabled during fly-cam)", "Local/World", "gizmoToggleSpace", &EditorKeybinds::gizmoToggleSpace },
+};
+
+/**
  * @brief Check whether a keybind was just pressed this frame.
  *
  * Requires an exact modifier match: a Ctrl-only bind does not fire while Shift

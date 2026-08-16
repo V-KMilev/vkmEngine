@@ -162,7 +162,7 @@ void editComponentCard(Scene& scene, EditorState& state, EntityId id,
         // Snapshot before removal so undo can restore the exact component.
         T snap = scene.get<T>(id);
         scene.remove<T>(id);
-        state.commands.push(std::make_unique<RemoveComponentCommand<T>>(id, snap, removeLabel));
+        state.commands.push(std::make_unique<RemoveComponentCommand<T>>(id, std::move(snap), removeLabel));
         state.markSceneDirty();
     }
 }
@@ -1024,17 +1024,14 @@ void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
 }
 
 void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, EntityId id) {
-    bool remove = false;
-    const bool open = beginComponentCard("Animation", EditorStyle::Accent::Anim, true, &remove);
-    if (open) {
-        auto& anim = scene.get<Animation>(id);
-        // Undo snapshot. Only authoring edits (length, keyframes) push a command;
-        // play/pause/stop/scrub never set `changed`, so they stay non-undoable.
-        // The snapshot does include time/playing, so undoing an authoring edit
-        // also restores the scrub position - acceptable since edits are normally
-        // made while paused.
-        const Animation before = anim;
-
+    editComponentCard<Animation>(scene, state, id, "Animation", EditorStyle::Accent::Anim,
+                                 "Edit Animation", "Remove Animation",
+                                 [&](Animation& anim) {
+        // Only authoring edits (length, keyframes) push a command; play/pause/
+        // stop/scrub never set `changed`, so they stay non-undoable. The card's
+        // snapshot does include time/playing, so undoing an authoring edit also
+        // restores the scrub position - acceptable since edits are normally made
+        // while paused.
         const float GAP = 8.0f;
         float ih = ImGui::GetFrameHeight();
         if (iconButton("inspPlay", anim.playing ? EditorIcon::Pause : EditorIcon::Play,
@@ -1092,19 +1089,8 @@ void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, Enti
         trackSummary("Scale",    anim.scaleTrack.keyframeCount(),    anim.scaleTrack.getDuration());
         ImGui::TextDisabled("Edit keyframes in Bottom > Animation.");
 
-        if (changed) {
-            state.commands.push(std::make_unique<ComponentEditCommand<Animation>>(id, before, anim, "Edit Animation"));
-            state.markSceneDirty();
-        }
-    }
-    endComponentCard();
-    if (remove) {
-        Animation snap = scene.get<Animation>(id);
-        scene.remove<Animation>(id);
-        state.commands.push(std::make_unique<RemoveComponentCommand<Animation>>(
-            id, std::move(snap), "Remove Animation"));
-        state.markSceneDirty();
-    }
+        return changed;
+    });
 }
 
 void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityId id) {
