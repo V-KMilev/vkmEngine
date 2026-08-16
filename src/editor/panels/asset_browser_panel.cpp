@@ -1,7 +1,5 @@
 #include "panels/asset_browser_panel.h"
 
-#include "ui/editor_dialogs.h"
-
 #include <algorithm>
 #include <cstdint>
 #include <memory>
@@ -9,12 +7,14 @@
 #include <type_traits>
 #include <unordered_set>
 
+#include "ecs/component/decal.h"
 #include "framework/editor_common.h"
 #include "framework/editor_actions.h"
 #include "framework/editor_commands.h"
 #include "framework/material_preview_session.h"
 #include "system/render/render_system.h"
 #include "generator/mesh_generators.h"
+#include "ui/editor_dialogs.h"
 
 namespace Engine {
 
@@ -199,13 +199,26 @@ void AssetBrowserPanel::drawAssetGrid(EditorContext& ec) {
                             ImGui::GetContentRegionAvail().x / step));
 
     // Assets referenced by any entity - delete is disabled for these so we
-    // never leave a Mesh component pointing at a freed handle (the render path
-    // get()s the asset with no liveness guard).
+    // never leave a component pointing at a freed handle (the render path
+    // get()s the asset with no liveness guard). Every component that stores a
+    // handle of this family has to be walked, not just Mesh: a decal-only
+    // material or an LOD-only mesh is just as live to the renderer.
     std::unordered_set<uint32_t> used;
     scene.forEach<Mesh>([&](EntityId, const Mesh& m) {
         if constexpr (isMaterial) { if (m.material) used.insert(m.material.id()); }
         else                      { if (m.mesh)     used.insert(m.mesh.id()); }
     });
+    if constexpr (isMaterial) {
+        scene.forEach<Decal>([&](EntityId, const Decal& d) {
+            if (d.material) used.insert(d.material.id());
+        });
+    } else {
+        scene.forEach<LOD>([&](EntityId, const LOD& l) {
+            for (const LODLevel& level : l.levels) {
+                if (level.mesh) used.insert(level.mesh.id());
+            }
+        });
+    }
     AssetHandle toDelete{};
 
     int i = 0;

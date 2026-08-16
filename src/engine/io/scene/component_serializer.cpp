@@ -312,7 +312,10 @@ void loadTrack(const nlohmann::json& j, AnimationTrack<T>& track, ValueReader re
     }
     if (j.contains("keyframes") && j["keyframes"].is_array()) {
         for (const auto& kf : j["keyframes"]) {
-            track.addKeyframe(kf.value("t", 0.0f), readValue(kf["v"]));
+            // at(), not operator[]: const operator[] on a missing key only
+            // asserts, which is nothing in release, and then reads the map's end
+            // node. The throw is caught by the scene loader's guard.
+            track.addKeyframe(kf.value("t", 0.0f), readValue(kf.at("v")));
         }
     }
 }

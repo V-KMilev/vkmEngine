@@ -1,8 +1,9 @@
 # IO and Serialization
 
-The engine persists scenes to JSON and watches the filesystem for
-shader hot-reload. The IO layer has three serializers that compose,
-plus a polling file watcher.
+The engine persists scenes and prefabs to JSON, and resolves the assets they
+name through a cooked asset database. The IO layer is three serializers that
+compose - scene, component, asset - plus the library that maps an asset name to
+the files holding it.
 
 ## Projects and the two roots
 
@@ -56,24 +57,36 @@ Two consequences worth knowing before you add a path:
 | Layer               | File                                         | Purpose                                                                                  |
 |---------------------|----------------------------------------------|------------------------------------------------------------------------------------------|
 | Scene serializer    | `src/engine/io/scene/scene_serializer.h`           | Top-level save/load for a `Scene` + the assets it references. Transactional.             |
+| Prefab              | `src/engine/io/scene/prefab.h`                     | One entity subtree in its own file, instanced by reference from a scene.                 |
 | Asset serializer    | `src/engine/io/asset/asset_serializer.h`           | Save name-only asset references; on load resolve them via the asset library + the `AssetFactory` seam. |
 | Asset library       | `src/engine/io/asset/asset_library.h`              | The cooked-asset database manifest: maps an asset name to its recipe + cooked file + hash. |
 | Asset cooker        | `src/tools/cook/asset_cooker.h` (editor)     | Bakes assets from their recipe into the library + cooked binary cache (`cooked/`).        |
+| Cooked format       | `src/engine/io/asset/asset_cook.h`                 | The `.vkmc` binary reader/writer. Readers are defensive: every count and size is validated before it is used. |
 | Component serializer| `src/engine/io/scene/component_serializer.h`       | Per-component to/from JSON. Mechanical, one save/load pair per component type.           |
 | Shader reload       | `modules/vkmGL/src/shader/gl_shader_reload.h`      | Live-shader registry + `reloadChangedShaders`; rebuilds a program whose source's `mtime` moved, keeping the old one on a compile error. |
 
+Every JSON write in this layer - scene, prefab, manifest - goes through
+`detail::writeJsonFile` (`src/engine/io/json_file.h`): the dump lands in a
+sibling `.tmp` and is renamed over the target only once the stream reports a
+clean write, so a full disk cannot leave a truncated file where a good one was.
+`detail::readJsonFile` is the matching read.
+
 ## SceneSerializer
 
-`SceneSerializer::save` emits a JSON object with two top-level blocks:
+`SceneSerializer::save` emits a JSON object with four top-level blocks:
 
-- `assets`: name-only references to every mesh / material referenced by a
-  `Mesh` component, plus the textures the materials use. The asset *data* lives
-  in the cooked library (keyed by name), not in the scene file, so the scene
-  stays tiny and diff-friendly. Assets marked `hidden = true` are skipped
-  (editor previews, fallback textures, bundled primitives).
+- `assets`: name-only references to every mesh / material a component names -
+  `Mesh`, `LOD` levels, `Decal` - plus the textures those materials use. A
+  component reference the assets block never lists is one the loader never
+  recreates, so every component that names an asset has to be walked there. The
+  asset *data* lives in the cooked library (keyed by name), not in the scene
+  file, so the scene stays tiny and diff-friendly. Assets marked `hidden = true`
+  are skipped (editor previews, fallback textures, bundled primitives).
 - `entities`: one record per entity. Entities are stored at their slot
   index, and each component is keyed by its short name (see Component
   serializer below).
+- `environment` and `physics`: the scene-global `Environment` and
+  `PhysicsSettings`, each a single reflected object rather than a component.
 
 `SceneSerializer::load` is **transactional for both entities and assets**:
 
@@ -83,11 +96,16 @@ Two consequences worth knowing before you add a path:
    their cooked binary, materials from their library `inline` form. Idempotent:
    assets already present by `name` are skipped. Runs inside a guard so a
    malformed assets block logs and aborts the load with the live state intact.
-3. Deserialise every entity into a **staging** `Scene` (not the live
-   one). Failures here also leave the live scene untouched.
+3. Deserialise every entity into a **staging** `Scene` (not the live one),
+   expand each prefab instance into it, wire the parent links, then read the
+   `environment` and `physics` blocks. All of it sits inside one guard, so a
+   drifted field anywhere - a string where a number belongs - fails the load
+   instead of unwinding out of it.
 4. On full success, swap both staging containers in one step:
-   `Scene::swap` for the scene, and `ResourceManager::swap` (plus
-   `swapSlot<ShaderAsset>`) for the assets.
+   `Scene::swap` for the scene, and `ResourceManager::swap` for the assets. The
+   font slot swaps *back* (`swapSlot<FontAsset>`): fonts are baked at startup
+   and never enter a scene file, so the staging RM has none, and without that
+   step every `UIText` loses its font on load.
 
 `Scene::createEntityAt(slotIndex)` is what makes step 3 possible:
 entities recreate at their saved slot, so `Hierarchy::parent` indices
@@ -117,10 +135,14 @@ a hash of the recipe. Every asset is its own file:
 - `cooked/<type>/<uid>.vkmc` - the derived binary blob (mesh vertices/indices;
   decoded texture pixels). Regenerable; git-ignored.
 - `library/_manifest.json` - maps each asset `name` to its recipe + cooked file
-  and recipe hash. `AssetLibrary` is the in-memory view, loaded at startup.
+  and recipe hash, under a `manifestVersion` the loader checks. `AssetLibrary`
+  is the in-memory view, loaded at startup; a manifest in a version this build
+  does not know is refused rather than half-read, because the whole library is
+  derived data and re-cooking costs less than guessing.
 
-**Save** - `AssetSerializer::saveAssetsForScene` walks `Mesh` components and emits
-**name-only** references to the meshes/materials/textures used. In the editor,
+**Save** - `AssetSerializer::saveAssetsForScene` walks the components that name
+assets (`Mesh`, `LOD`, `Decal`) and emits **name-only** references to the
+meshes/materials/textures used. In the editor,
 `SceneIOController` first calls `AssetCooker::cookAllAssets`, which bakes every
 non-hidden asset in the `ResourceManager` into the library + cooked cache and
 rewrites the manifest (skipping assets whose hash is unchanged).
@@ -158,62 +180,85 @@ For every component, there is a `save(const T&) -> json` and a
 `load(const json&, T&)`. They are intentionally mechanical, one pair
 per component.
 
-Today's coverage (the `SerializedComponents` tuple in `scene_serializer.cpp`):
+Today's coverage, the flat list in `scene_serializer.cpp`:
 
-- `Name`, `Transform`, `Camera`, `Light`, `Mesh`, `Animation`
-- `Rigidbody`, `Collider`, `PhysicsWorld` (physics; runtime sleep state and
-  derived mass properties are not persisted - see [Physics](physics.md)).
+- `Name`, `Transform`, `Camera`, `Light`, `Animation`
+- `Mesh`, `LOD`, `Decal` - the ones that name assets, so their save/load also
+  takes the `ResourceManager` that turns a handle into a name and back.
+- `ParticleEmitter`, `IrradianceVolume`, `ReflectionProbe`
+- `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton` (see [UI](ui.md))
+- `Rigidbody`, `Collider` (physics; runtime sleep state and derived mass
+  properties are not persisted - see [Physics](physics.md)).
 - `ScriptComponent` (JSON key `"Script"`): each behavior stored by its registered
   type name and recreated through `BehaviorRegistry` on load (unknown types are
-  dropped). Per-behavior fields are not yet written to the scene file - see
+  dropped), with its authored fields in a `properties` object beside it -
+  `Behavior::visitFields` walks them in both directions, and enums are written by
+  name so reordering one does not invalidate saved scenes. See
   [Scripting](scripting.md).
 - `Hierarchy` (only `parent` is serialized; sibling pointers are
   rebuilt on load by re-running `HierarchyOperations::setParent`).
 
-`Environment` (the scene's lighting environment: HDR path, intensity, skybox
-toggle) is serialized separately, alongside the entities. Render tuning (GTAO /
-bloom / MSAA / ...) lives in `RenderSettings` on the RenderSystem, not in a
-serialized component.
+`Environment` (sky / night / fog groups) and `PhysicsSettings` are scene-global
+rather than per-entity, so they are written as their own top-level objects.
+Both are fully reflected: the field list lives once in `ecs/environment.h` and
+both directions walk it. Render tuning (GTAO / bloom / MSAA / ...) lives in
+`RenderSettings` on the RenderSystem, not in a serialized component.
 
 `Mesh` references handles by `name` rather than by `Storage` index;
 that is what makes assets a stable identity across save/load.
 `Hierarchy::parent` stores the old-file entity slot index, which the
 loader uses directly because entities are recreated at the same slot.
 
-### Trait-based fold
+### Adding a component to the round trip
 
-`scene_serializer.cpp` defines a `SerializerTraits<T>` specialization
-for each component type that just calls
-`ComponentSerializer::save`/`load`. A `SerializedComponents` tuple
-lists every supported component type, and the entity save/load loop
-folds across the tuple at compile time. Adding a new component to the
-save/load coverage is three lines:
+Three localised edits, no registry table, no virtual dispatch, no macros:
 
-1. A new save/load overload in `component_serializer.h`.
-2. A `SerializerTraits` specialization in `scene_serializer.cpp`.
-3. The component type appended to the `SerializedComponents` tuple.
+1. A `save` / `load` overload pair in `component_serializer.h` (+ `.cpp`). If the
+   component has nothing but plain reflected fields, both bodies are one call to
+   `saveReflected` / `loadReflected`.
+2. A line in `saveComponents` and a matching `loadInto<T>` line in
+   `loadComponents`, both in `scene_serializer.cpp`, in the same order.
+3. The JSON key added to `COMPONENT_KEYS` in the same file - the membership test
+   behind the "unknown component key" warning that catches schema drift.
 
-No registry tables, no virtual dispatch, no macros.
+`loadInto` overwrites a component the entity already carries instead of adding a
+second one. That is not a nicety: a prefab instance root is loaded twice, once
+from the scene block that placed it and once from the prefab file.
 
-## FileWatcherSystem
+## Prefabs
 
-`FileWatcherSystem` is a `System` for `SystemStage::Input`. It polls registered
-directories on a configurable interval (default 0.5 s), `stat()`s each
-file, and fires the registered `OnChange` callback the next time a
-file's `mtime` differs from the last seen value.
+A prefab is a scene fragment - one entity and its descendants, with the same
+per-entity component shape a scene uses, in its own file:
 
-It is provided by the engine but **not** registered by the default
-`setupEngineApp` wiring today; an app opts in explicitly:
-
-```cpp
-auto& watcher = engine.addSystem<FileWatcherSystem>(SystemStage::Input);
-watcher.watch("shaders/forward/pbr", [&]{ resources.commitShader(pbrHandle); });
+```json
+{"version": 1, "entities": [{"components": {...}}, {"parent": 0, "components": {...}}]}
 ```
 
-The typical use is shader hot-reload: when a `.shader` source file
-changes, `commit` on the corresponding `ShaderAsset` bumps its version,
-which drops its compiled program, and the next draw recompiles lazily.
+Parents precede children and a child names its parent by *index into this
+file's own array*, because entity ids mean nothing outside the scene that issued
+them. `Prefab::save` drops the `Hierarchy` block for that reason and rewrites
+the link as an index.
 
-It's polling-based, not platform-specific (no `inotify`/`fsnotify`), so
-it works the same on every host. The poll cost is tiny because each
-entry only `stat()`s its own file list, batched per tick.
+A scene stores an instance as a `PrefabInstance` (the source path) plus the
+root's `Transform` and `Hierarchy` - where it sits and what it hangs off belong
+to the scene - and the saver skips the whole subtree beneath it. The loader
+expands it after the entity pass, so the roots keep their saved slots and the
+prefab's own entities take whatever is free. Editing the prefab therefore
+changes every instance the next time a scene loads, which is the point.
+
+Only the root `Transform` varies per instance; per-field overrides are
+deliberately not designed yet (see the header for why).
+
+## Shader hot reload
+
+Shaders are not assets and not part of the library - they are source files read
+CWD-relative from `shaders/`, so hot reload is a matter of noticing that one
+changed. `Core::reloadChangedShaders` (`modules/vkmGL/src/shader/gl_shader_reload.h`)
+takes the newest write time under a directory and, when it moves, recompiles
+every live shader; a program that no longer compiles keeps its previous one and
+logs the error.
+
+The editor drives it, polling once a second (`EditorSystem::SHADER_POLL_INTERVAL`)
+and toasting what it reloaded. There is no file-watcher system: a per-platform
+watcher is a dependency for something a directory scan of a few dozen files
+already answers, and the runtime has no shader sources to watch anyway.

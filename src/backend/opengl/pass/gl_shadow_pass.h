@@ -58,14 +58,16 @@ class GLShadowPass : public GLPass {
         void renderCube(GLFrameContext& ctx);
 
         /**
-         * @brief Draw the scene's shadow casters that fall inside @p lightVP.
+         * @brief Draw one tile's or face's pre-culled shadow casters.
          *
-         * Frustum-culls RenderView::shadowCasters against @p lightVP (the caster
-         * set is scene-wide, so off-screen occluders still cast), groups the
-         * survivors by mesh, and issues one instanced depth draw per mesh. The
-         * caller has already bound the depth shader and set its view matrix.
+         * Submission only: the culling against the light's clip space and the
+         * mesh sort both happened on the thread pool (GLShadowData::cullCasters),
+         * so this flattens the batch's models into one upload and issues one
+         * instanced depth draw per mesh run. The caller has already bound the
+         * depth shader and set its matrices.
          *
-         * @param lightVP The light clip-space matrix to cull and draw against.
+         * @param ctx   The frame context, for the GL view and the caster list.
+         * @param batch The tile's / face's surviving caster indices, mesh-sorted.
          */
         void renderCasters(GLFrameContext& ctx, const ShadowCasterBatch& batch);
 
@@ -74,8 +76,7 @@ class GLShadowPass : public GLPass {
         std::unique_ptr<Core::Shader> m_depthCube;  ///< Linear distance depth (point faces).
 
         Core::InstanceBuffer   m_instances;  ///< Per-caster model matrices (loc 4-7).
-        std::vector<uint32_t>  m_order;      ///< Frustum-passing caster indices, mesh-sorted.
-        std::vector<glm::mat4> m_models;     ///< Flattened models of every frustum-passing caster this tile/face.
+        std::vector<glm::mat4> m_models;     ///< Flattened models of every surviving caster this tile/face.
 };
 
 } // namespace Engine

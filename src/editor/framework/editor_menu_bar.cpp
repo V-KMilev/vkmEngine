@@ -1,7 +1,5 @@
 #include "framework/editor_menu_bar.h"
 
-#include "ui/editor_style.h"
-
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
@@ -22,6 +20,7 @@
 #include "platform/window/window_manager.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_system.h"
+#include "ui/editor_style.h"
 #include "ui/editor_widgets.h"
 
 namespace Engine {

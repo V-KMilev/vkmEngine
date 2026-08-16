@@ -43,6 +43,20 @@ class UISystem : public System {
     public:
         void update(FrameContext& ctx) override;
 
+        /**
+         * @brief Notify the UI that the editor is capturing the pointer.
+         *
+         * The editor draws chrome (viewport toolbar, playbar, transform gizmo)
+         * over the same rect the game UI lays out in, so a click aimed at that
+         * chrome must not also press the button behind it. While capture is set
+         * the walk still runs and the overlay still draws - only the hit-test is
+         * suppressed. Called by EditorSystem each frame; the runtime leaves it
+         * false.
+         *
+         * @param capture True while the editor owns the pointer this frame.
+         */
+        void setEditorPointerCapture(bool capture) { m_editorPointerCapture = capture; }
+
     private:
         /**
          * @brief A visible canvas queued for this frame's walk, sortable by draw order.
@@ -133,6 +147,7 @@ class UISystem : public System {
             const glm::vec4& color
         );
 
+    private:
         UIDrawData m_drawData;            ///< Reused frame draw list; published through ctx.ui.
 
         std::vector<CanvasRef> m_canvases;    ///< This frame's visible canvases, sorted; capacity reused.
@@ -145,6 +160,8 @@ class UISystem : public System {
         bool      m_mouseDown     = false;  ///< Primary button held this frame.
         bool      m_mouseDownEdge = false;  ///< Pressed this frame (was up).
         bool      m_mouseUpEdge   = false;  ///< Released this frame (was down).
+
+        bool      m_editorPointerCapture = false;  ///< Editor owns the pointer; skip hit-testing.
 };
 
 } // namespace Engine

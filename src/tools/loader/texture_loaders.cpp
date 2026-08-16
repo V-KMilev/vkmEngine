@@ -101,6 +101,7 @@ TextureHandle requestTextureAsync(
         {"generateMipmaps", generateMipmaps},
     };
     const TextureHandle handle = resourceManager.add(std::move(stub));
+    const uint64_t      uid    = resourceManager.get(handle).uid;
 
     // stb's orientation flag is a process-wide global, so it is set here on the
     // main thread rather than inside the task. Two decodes racing on it would
@@ -110,15 +111,16 @@ TextureHandle requestTextureAsync(
     // worker that will read it.
     stbi_set_flip_vertically_on_load(true);
 
-    // Spawn the decode on a worker. We capture only the path + handle -
-    // everything ResourceManager-touching happens on the main thread in
-    // AsyncLoaderSystem when the completion is drained.
-    ThreadPool::get().addTask([handle, filePath]() {
+    // Spawn the decode on a worker. We capture only the path + the asset's
+    // identity - everything ResourceManager-touching happens on the main thread
+    // in AsyncLoaderSystem when the completion is drained.
+    ThreadPool::get().addTask([handle, uid, filePath]() {
         int w = 0, h = 0, channels = 0;
         unsigned char* data = stbi_load(filePath.c_str(), &w, &h, &channels, 0);
 
         TextureLoadCompletion completion;
-        completion.handle = handle;
+        completion.handle   = handle;
+        completion.assetUid = uid;
         if (!data) {
             LOG_ERROR("Async texture decode failed for '%s': %s",
                 filePath.c_str(), stbi_failure_reason());

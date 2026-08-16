@@ -79,7 +79,7 @@ struct GLFrameContext {
      */
     GLInstanceBatchView opaqueBatch;
 
-    // --- Filled by the backend before the pass loop -------------------------
+    // The fields below are filled by the backend before the pass loop runs.
 
     /**
      * @brief The post-processing colour chain.
@@ -125,7 +125,7 @@ struct GLFrameContext {
      */
     glm::vec3 sunDir{0.0f, 1.0f, 0.0f};
 
-    // --- Pass products: set by an earlier pass, read by later ones ----------
+    // The fields below are pass products: set by an earlier pass, read by later ones.
 
     /**
      * @brief Set by the GTAO pass when it fills the AO target. The forward pass then

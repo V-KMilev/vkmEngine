@@ -103,14 +103,16 @@ int main(int argc, char** argv) {
         Engine::Engine engine;
 
 
-        const std::string title = project.name + " - vkmEngine";
+        // Same convention EditorSystem's per-frame title uses; it takes over on
+        // the first frame and adds the scene.
+        const std::string title = project.name + " - VKM Engine";
         auto sys = setupEngineApp(engine, AppConfig{
             title.c_str(),
             true, false});
 
         engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
             engine, engine.getWindow().getWindowContext(),
-            sys.camera, sys.visibility, sys.render, scriptModule);
+            sys.camera, sys.ui, sys.visibility, sys.render, scriptModule, project.name);
 
         // The editor opens on the same scene the runtime would boot, by the
         // same rule (see tools/project_boot.h).

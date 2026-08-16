@@ -69,13 +69,14 @@ class GLProbeBaker {
                           const RenderView& view, const GLView& glView, const GLIBL& globalIBL);
         void convolve(Core::Context& gl, GLProbeArray& arr, int layer);
 
+    private:
         Core::Shader m_pbr;         ///< capture geometry (full forward PBR)
         Core::Shader m_skybox;      ///< capture background
 
         GLCubeConvolver m_convolver;  ///< env cube -> irradiance + prefilter (and the unit cube)
 
         GLCamera          m_camera;    ///< per-face camera UBO (binding 2)
-        GLLights          m_lights;    ///< no-shadow lights UBO (binding 1)
+        GLLights          m_lights;    ///< no-shadow lights SSBO (binding 0)
         GLShadowData      m_noShadow;  ///< default-built: slotForLight() == -1 for every light
         GLInstanceBatcher m_batcher;   ///< instanced capture draws
 

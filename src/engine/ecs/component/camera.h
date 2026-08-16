@@ -34,7 +34,6 @@ struct Camera {
     float aspect              = 0.0f;                           ///< Aspect ratio (width / height); <= 0 = derive from the viewport each frame
     float zNear               = 0.1f;                           ///< Near clip plane distance
     float zFar                = 1000.0f;                        ///< Far clip plane distance
-    float exposure            = 1.0f;                           ///< Camera exposure (linear multiplier for final output)
     float focusDistance       = 10.0f;                          ///< Depth of field: world distance held in sharp focus
     float dofAmount           = 0.0f;                           ///< Depth of field strength (0 = off)
     bool active               = true;                           ///< Is this camera active?
@@ -64,7 +63,6 @@ VKM_REFLECT_BEGIN(Camera)
     VKM_F(aspect),
     VKM_F(zNear),
     VKM_F(zFar),
-    VKM_F(exposure),
     VKM_F(focusDistance),
     VKM_F(dofAmount),
     VKM_F(active)

@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "ecs/environment.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/camera.h"
 #include "ecs/component/collider.h"

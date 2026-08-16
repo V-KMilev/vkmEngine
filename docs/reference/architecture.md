@@ -4,9 +4,9 @@
 
 vkmEngine is built around an open, type-erased ECS and a stage-based system
 pipeline. The `Engine` class owns the `Scene`, `ResourceManager`, `WindowManager`,
-a `SimulationClock`, and a per-stage list of systems. Each frame, stages run in
-declaration order; **within a stage, systems run sequentially in registration
-order.** There is no parallel layer scheduler - per-system data parallelism (via
+the `Clock`, the `EventBus`, the `InputMap`, and a per-stage list of systems. Each
+frame, stages run in declaration order; **within a stage, systems run sequentially
+in registration order.** There is no parallel layer scheduler - per-system data parallelism (via
 `ThreadPool`) is the scaling lever, not framework-level system parallelism.
 
 There is no `Engine::get()` singleton. Engine is stack-constructible, so tests and
@@ -22,11 +22,12 @@ statistics registry.
 ```
 Engine
   Scene             (ECS registry, open type-erased)
-  ResourceManager   (meshes, materials, textures, shaders)
+  ResourceManager   (meshes, materials, textures, fonts)
   WindowManager     (GLFW window, input handle, frame limiter)
-  SimulationClock   (play / pause / step / time-scale)
+  Clock             (real + sim time, play / pause / step / time-scale)
+  EventBus          (typed pub/sub, flushed at the top of Simulation)
+  InputMap          (named actions, resolved once per frame)
   m_systemsByStage  (one vector per SystemStage)
-  m_fixedUpdaters   (opt-in subset of systems with a real fixedUpdate)
 ```
 
 ## SystemStage
@@ -69,44 +70,49 @@ Place a new system by responsibility and let stage order schedule it - see
 
 `System::fixedUpdate(FrameContext&)` runs on an accumulator clocked at the fixed
 timestep (1/60 s), clamped at a max accumulator (0.25 s) to prevent the
-spiral-of-death after a frame hitch (the clamp warning is throttled to once per
-second). It is the deterministic-simulation hook (physics, networking tick); read
-`ctx.fixedDeltaTime`, not `deltaTime`. `System::hasFixedUpdate()` opts a system into
-the filtered `m_fixedUpdaters` list so the empty virtual isn't dispatched across
-every system every tick.
+spiral-of-death after a frame hitch. It is the deterministic-simulation hook
+(physics, networking tick); take the step length from `ctx.clock.getFixedStep()`,
+never from the frame delta. `System::hasFixedUpdate()` declares that a system has
+a real fixedUpdate body, and the loop calls `fixedUpdate()` only on the systems
+that answer true.
 
 ## FrameContext
 
-The per-frame bundle passed to every system (`core/system.h`). Note the **three**
-time deltas:
+The per-frame bundle passed to every system (`core/system.h`). The field type says
+which kind of state it is: **references are engine-owned services**, valid for the
+whole session; **pointers are per-frame products**, null until the stage that
+produces them has run:
 
 ```cpp
 struct FrameContext {
-    Scene&            scene;
-    ResourceManager&  resources;
-    WindowManager&    window;
-    FrameTracker&     frameTracker;
+    Scene&           scene;
+    ResourceManager& resources;
 
-    float deltaTime;       // real elapsed seconds (input, camera, UI, file watching)
-    float simDeltaTime;    // simulation time: deltaTime scaled by SimulationClock
-                           //   (0 while paused, one step while single-stepping)
-    float fixedDeltaTime;  // constant fixed-step (1/60), read in fixedUpdate()
+    Clock&           clock;
+    EventBus&        events;
+    WindowManager&   window;
+    InputMap&        input;
 
-    uint32_t viewportX, viewportY, viewportWidth, viewportHeight;
-
-    const Visibility* visibility = nullptr;  // populated by VisibilitySystem;
-                                             // null before that stage / first frame
+    const Visibility* visibility = nullptr;  // VisibilitySystem's culling result
+    const UIDrawData* ui         = nullptr;  // UISystem's draw list
 };
 ```
 
-Simulation systems read `simDeltaTime` so pause, time-scale, and single-step apply
-uniformly; anything that must advance regardless of play state (camera, UI) reads
-`deltaTime`.
+Time is read off the clock, not the context: `ctx.clock.getDeltaTime()` is real
+elapsed seconds (input, camera, UI, file watching), `getSimDelta()` is that delta
+scaled by play state (0 while paused, exactly one step while single-stepping), and
+`getFixedStep()` is the constant 1/60 to use in `fixedUpdate()`. Simulation systems
+read the sim delta so pause, time-scale, and single-step apply uniformly; anything
+that must advance regardless of play state reads the real delta.
+
+The context is rebuilt from scratch each frame and the fixed-step loop runs before
+any producer stage, so `visibility` and `ui` are always null inside
+`fixedUpdate()` - read products from `update()` only.
 
 ## Engine config constants
 
 Cross-cutting compile-time limits live in `core/engine_config.h` (treat it as the
-source of truth for exact names/values): `MAX_LIGHTS = 32`;
+source of truth for exact names/values): `MAX_LIGHTS = 256`;
 `MAX_SHADOW_CASTERS_2D = 6` 2D atlas tiles (4 reserved for the first directional
 light's CSM cascades via `NUM_CASCADES`) + `MAX_SHADOW_CASTERS_CUBE = 2` cube
 slots; the `FIXED_TIME_STEP` (1/60) and the `MAX_FRAME_ACCUMULATOR` (0.25 s) cap.
@@ -123,7 +129,7 @@ Engine code, single include root `src/engine/`:
 
 | Path                       | Contents                                                                 |
 |----------------------------|--------------------------------------------------------------------------|
-| `core/`                    | `Engine`, `System`, `FrameContext`, `SystemStage`, `SimulationClock`, `engine_config`, `reflect` |
+| `core/`                    | `Engine`, `System`, `FrameContext`, `SystemStage`, `Clock`, `engine_config`, `reflect` |
 | `core/math/`               | math helpers (rotation, axes, random, easing)                            |
 | `core/memory/`             | `TypeId`, `SparseSet`, `SlotAllocator`, `StorageIndex`                   |
 | `ecs/`                     | `Scene`, `Entity`, `Environment`                                        |
@@ -140,14 +146,15 @@ Engine code, single include root `src/engine/`:
 | `system/visibility/`       | `VisibilitySystem`, `Visibility`, `VisibilityContext`, `BoundsUtils`    |
 | `system/visibility/culling/` | `FrustumCuller`, `DistanceCulling`, `ScreenSizeCulling`                |
 | `resource/`                | `ResourceManager`, `Resource`, `Handle`, `texture_format`               |
-| `resource/asset/`          | `MeshAsset`, `MaterialAsset`, `TextureAsset`, `ShaderAsset`             |
+| `resource/asset/`          | `MeshAsset`, `MaterialAsset`, `TextureAsset`, `FontAsset`               |
 | `io/`                      | `json_vec`, `project_paths` (shared I/O helpers)                          |
 | `io/asset/`                | `AssetLibrary`, `AssetFactory`, `AssetCooker`, `CookedLoader`, `AssetSerializer` |
 | `io/scene/`                | `SceneSerializer`, `ComponentSerializer`                                  |
-| `platform/window/`         | `WindowManager`, `Window`, input handles, `FrameLimiter`                |
-| `platform/threading/`      | `ThreadPool`, `Task` (shared-deque pool, see [threading.md](threading.md)) |
+| `platform/window/`         | `WindowManager`, `InputHandle` (raw keyboard/mouse state), `FrameLimiter` |
+| `platform/input/`          | `InputMap`, `InputBinding`, `InputSource`, `default_bindings` (the named actions gameplay reads) |
+| `platform/threading/`      | `ThreadPool` + `parallelFor` (shared-deque pool, see [threading.md](threading.md)) |
 | `platform/library/`        | `DynamicLibrary` (cross-platform `.dll`/`.so` loader for gameplay hot-reload) |
-| `debug/`                   | `FrameTracker`, `FrameRateInfo`, `profiler` (Tracy facade), error logs   |
+| `debug/`                   | `build_info`, `engine_error_log`, `profiler` (Tracy facade)              |
 
 OpenGL backend, `src/backend/opengl/` (flat `gl_`-prefixed includes):
 
@@ -156,7 +163,7 @@ OpenGL backend, `src/backend/opengl/` (flat `gl_`-prefixed includes):
 | (top level)   | `GLBackend`, `GLView`, `GLTarget`, `GLPass`, `GLFrameContext`             |
 | `convention/` | `gl_bindings` (UBO/sampler contract), `gl_format_conversion`              |
 | `data/`       | `GLMesh`, `GLMaterial`, `GLTexture`, `GLLights`, `GLCamera`, `GLShadowAtlas`/`Data`, `GLIBL`, `GLBloom`, probe + preview helpers |
-| `pass/`       | the passes: shadow, depth-prepass, resolve, gtao, contact-shadow, skybox, cluster-cull, fog (compute + apply), forward, particle, decal, motion-blur, dof, bloom, grid, composite, ui |
+| `pass/`       | the passes: shadow, depth-prepass, resolve (depth + colour scopes), hi-z, occlusion-cull, gtao, skybox, cluster-cull, fog (compute + apply), forward, particle, decal, dof, bloom, grid, composite, ui |
 
 Editor (`src/editor/`): `EditorSystem` at the root; `framework/`, `panels/`,
 `overlays/`, `gizmo/`, `input/`, `ui/`. Tools (`src/tools/`): `generator/` plus

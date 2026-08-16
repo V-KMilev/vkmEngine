@@ -43,6 +43,7 @@ class GLUIPass : public GLPass {
          */
         void ensureCapacity(uint32_t vertexCount);
 
+    private:
         std::unique_ptr<Core::Shader>       m_shader;
         std::unique_ptr<Core::VertexArray>  m_vao;
         std::unique_ptr<Core::VertexBuffer> m_vbo;

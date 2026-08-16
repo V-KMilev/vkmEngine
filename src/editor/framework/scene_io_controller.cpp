@@ -1,11 +1,6 @@
 #define VKM_LOG_CATEGORY "EDITOR"
 
 #include "framework/scene_io_controller.h"
-#include "ecs/environment.h"
-#include "generator/light_generators.h"
-
-#include "ui/editor_style.h"
-#include "ui/editor_dialogs.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -23,23 +18,25 @@
 #include "ecs/component/name.h"
 #include "ecs/scene.h"
 #include "framework/editor_state.h"
+#include "framework/material_preview_session.h"
 #include "io/scene/scene_serializer.h"
 #include "io/project_paths.h"
 #include "cook/asset_cooker.h"
 #include "generator/default_scene.h"
+#include "generator/light_generators.h"
 #include "system/camera/camera_controller_system.h"
 #include "system/script/behavior_system.h"
-#include "system/render/editor_render_hooks.h"
-#include "system/render/render_system.h"
+#include "ui/editor_style.h"
+#include "ui/editor_dialogs.h"
 
 namespace Engine {
 
 SceneIOController::SceneIOController(
     CameraControllerSystem& cameraController,
-    RenderSystem& renderSystem
+    MaterialPreviewSession& materialPreviews
 )
     : m_cameraController(cameraController)
-    , m_renderSystem(renderSystem)
+    , m_materialPreviews(materialPreviews)
 {}
 
 SceneIOController::~SceneIOController() = default;
@@ -127,7 +124,6 @@ void SceneIOController::beginSceneReplace(FrameContext& ctx, EditorState& state)
     BehaviorSystem::endSession(ctx.scene);
 
     ctx.scene.clear();
-    ctx.scene.environment() = Environment{};
     m_currentScenePath.clear();
 
     // The play snapshot is a copy of the scene going away. Left behind, the
@@ -171,12 +167,21 @@ void SceneIOController::afterSceneReplace(
     // operate on slots that now hold unrelated entities.
     state.commands.clear();
 
+    // Same for the Hierarchy panel's cached root list. It otherwise only
+    // rebuilds when the entity count moves, so reloading the same scene (or
+    // Stop after a play session that spawned nothing) would keep drawing the
+    // outgoing scene's ids.
+    state.hierarchyDirty = true;
+
     // The swap replaced the ResourceManager wholesale, so preview targets
     // keyed by the old asset handles are stale. Drop them; the Material
     // Editor / Asset Browser re-bake lazily on their next draw.
-    if (EditorRenderHooks* backend = editorRenderHooks(m_renderSystem.backend())) {
-        backend->releaseAllPreviews();
-    }
+    m_materialPreviews.clear();
+
+    // Same reason: the pinned material is a handle into the manager that just
+    // went away. The Material Editor falls back to the selection until the
+    // user pins another one.
+    state.materialEditorTarget = {};
 
     // Selection survives only when an entity with the same Name exists in
     // the new scene. Anonymous selections (no Name) are dropped rather than

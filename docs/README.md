@@ -95,7 +95,7 @@ docs/
       hierarchy.md      world-transform resolve, HierarchyOperations
       animation.md      tracks, keyframes, easing
       events.md         typed pub/sub
-      io.md             scene / asset / component serialization, FileWatcherSystem
+      io.md             scene / prefab / asset / component serialization, cooked library
       scripting.md      Behavior lifecycle, ScriptComponent, DLL hot-reload
       physics.md        fixed-step rigid bodies, box colliders, contact solver
       ui.md             screen-space in-game UI (canvas/element/image/text/button)

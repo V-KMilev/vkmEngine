@@ -21,10 +21,16 @@ namespace {
  * @brief Finalise one batch of drained completions against the ResourceManager.
  *
  * Shared skeleton for both asset kinds: skip dropped handles, guard against an
- * asset destroyed between the worker pushing and this drain (scene swap, editor
- * deletion) - rm.get on a dead handle is UB - then hand the live asset to
- * @p apply. The loading flag is always cleared; the asset is committed (bumping
- * its version so the backend re-uploads) only when @p apply reports success.
+ * asset destroyed between the worker pushing and this drain (editor deletion) -
+ * rm.get on a dead handle is UB - then hand the live asset to @p apply. The
+ * loading flag is always cleared; the asset is committed (bumping its version so
+ * the backend re-uploads) only when @p apply reports success.
+ *
+ * The handle alone is not enough to identify the target. A scene load swaps the
+ * whole asset graph, and the incoming one restarts at the same indices and
+ * generations, so a completion minted against the outgoing graph still looks
+ * alive - it just names a stranger. The uid recorded at request time is what
+ * tells the two apart.
  */
 template <typename Completion, typename Apply>
 void finalize(ResourceManager& rm, std::vector<Completion> completions, Apply apply) {
@@ -36,6 +42,12 @@ void finalize(ResourceManager& rm, std::vector<Completion> completions, Apply ap
         }
 
         auto& asset = rm.edit(c.handle);
+        if (asset.uid != c.assetUid) {
+            LOG_VERBOSE("Async completion for a replaced asset (slot %u, now '%s') - dropping",
+                c.handle.id(), asset.name.c_str());
+            continue;
+        }
+
         const bool applied = apply(asset, c);
         asset.loading = false;
         if (applied) rm.commit(c.handle);

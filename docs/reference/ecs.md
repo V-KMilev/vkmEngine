@@ -57,7 +57,7 @@ scene.remove<Mesh>(entity);
 |------------------|-----------------------------------|-------------------------------------------------------------------------------------------------------|
 | `Transform`      | `component/transform.h`           | `vec3 position`, `quat rotation`, `vec3 scale`                                                        |
 | `WorldTransform` | `component/world_transform.h`     | `mat4 model` (resolved each frame by `HierarchySystem`)                                               |
-| `Camera`         | `component/camera.h`              | `projection` (`ProjectionType`), `fovY`, `aspect`, `orthoHeight`, `zNear`, `zFar`, `exposure`, `active` |
+| `Camera`         | `component/camera.h`              | `projection` (`ProjectionType`), `fovY`, `aspect`, `orthoHeight`, `zNear`, `zFar`, `focusDistance`, `dofAmount`, `active` |
 | `Mesh`           | `component/mesh.h`                | `MeshHandle mesh`, `MaterialHandle material`, `bool visible`, `bool castShadows`                      |
 | `Light`          | `component/light.h`               | `LightType` (Directional, Point, Spot, Rect, Disk), color, intensity, attenuation, cone, area, shadow |
 | `Animation`      | `component/animation.h`           | Three tracks (position vec3, rotation quat, scale vec3) plus playback state and explicit `length`     |
@@ -71,7 +71,10 @@ Light gets a full breakdown in [Lighting](system/lighting.md), including
 the area-light fields (`areaWidth`, `areaHeight`, `areaRadius`, `twoSided`)
 introduced for Rect and Disk emitters. `Rigidbody` and `Collider` are covered in
 [Physics](system/physics.md); the scene-level physics settings (gravity,
-solver iterations) live on the scene-global `Environment`, not a component.
+solver iterations) are not a component either - they live in `PhysicsSettings`,
+reached through `Scene::physics()`. It sits *beside* the `Environment` rather
+than inside it: what a world is lit by and what it falls at are unrelated, so
+they are owned and serialized separately.
 
 One more component is **not** a plain aggregate: `ScriptComponent`
 (`system/script/script_component.h`) holds
@@ -86,8 +89,12 @@ Components are data-only structs with static math helpers when useful:
 ```cpp
 glm::mat4 model = Transform::computeModelMatrix(transform);
 glm::mat4 view  = Transform::computeView(transform);
-glm::mat4 proj  = Camera::computeProjection(camera);   // aspect is read from camera.aspect
+glm::mat4 proj  = Camera::computeProjection(camera, viewportAspect);
 ```
+
+`computeProjection` takes the viewport's aspect as a fallback: `camera.aspect`
+wins when it is positive, and `camera.aspect <= 0` (the default) means "track
+whatever viewport I am rendering into".
 
 ## Queries
 

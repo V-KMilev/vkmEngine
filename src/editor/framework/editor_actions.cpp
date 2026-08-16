@@ -1,8 +1,8 @@
 #include "framework/editor_actions.h"
 
-#include "ui/editor_widgets.h"
-
+#include <algorithm>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <string>
 
@@ -34,6 +34,7 @@
 #include "generator/material_generators.h"
 #include "loader/model_loaders.h"
 #include "io/project_paths.h"
+#include "ui/editor_widgets.h"
 
 namespace Engine {
 namespace EditorActions {
@@ -326,13 +327,16 @@ void deleteSelection(Scene& scene, EditorState& state) {
 
     // Roots only: an entity whose ancestor is also selected dies with that
     // ancestor's subtree - deleting it separately would double-destroy.
+    // Test against the captured copy, not state.selection: the deselect below
+    // has to happen before the destroys, so by the time the loop runs the live
+    // selection is empty.
     const std::vector<EntityId> sel = state.selection;
     auto hasSelectedAncestor = [&](EntityId id) {
         EntityId cur = id;
         while (scene.isAlive(cur) && scene.has<Hierarchy>(cur)) {
             cur = scene.get<Hierarchy>(cur).parent;
             if (!cur) break;
-            if (state.isSelected(cur)) return true;
+            if (std::find(sel.begin(), sel.end(), cur) != sel.end()) return true;
         }
         return false;
     };
@@ -373,11 +377,16 @@ void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
 }
 
 void undo(Scene& scene, EditorState& state) {
+    // An empty history is not an edit. The keyboard path is ungated (the Edit
+    // menu is not), so without this Ctrl+Z on a freshly loaded scene would put
+    // the '*' in the title and raise the save guard on quit.
+    if (!state.commands.canUndo()) return;
     state.commands.undo(scene, state);
     state.markSceneDirty();
 }
 
 void redo(Scene& scene, EditorState& state) {
+    if (!state.commands.canRedo()) return;
     state.commands.redo(scene, state);
     state.markSceneDirty();
 }

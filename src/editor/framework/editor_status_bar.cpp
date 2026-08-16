@@ -52,20 +52,22 @@ void EditorStatusBar::draw(EditorContext& ec) {
             char chain[192] = {};
             size_t off = 0;
             EntityId stack[6] = {};
-            int depth = 0;
+            // Count the entry as stored, not as stepped over: the walk leaves
+            // through a break as often as through the loop condition.
+            int count = 0;
             EntityId cur = state.selectedEntity;
-            for (; cur && depth < 6; ++depth) {
-                stack[depth] = cur;
+            while (cur && count < 6) {
+                stack[count++] = cur;
                 if (!ctx.scene.has<Hierarchy>(cur)) break;
                 EntityId p = ctx.scene.get<Hierarchy>(cur).parent;
                 if (!p) break;
                 cur = p;
             }
-            for (int i = depth - 1; i >= 0; --i) {
+            for (int i = count - 1; i >= 0; --i) {
                 char buf[64];
                 getEntityDisplayName(ctx.scene, stack[i], buf, sizeof(buf));
                 int n = snprintf(chain + off, sizeof(chain) - off,
-                    i == depth - 1 ? "%s" : " > %s", buf);
+                    i == count - 1 ? "%s" : " > %s", buf);
                 if (n > 0) off += static_cast<size_t>(n);
                 if (off >= sizeof(chain) - 4) { strcpy(chain + sizeof(chain) - 4, "..."); break; }
             }
