@@ -84,26 +84,6 @@ class InstanceBuffer {
             }
         }
 
-        /**
-         * @brief Allocate storage for @p count instances without uploading any.
-         *
-         * For a buffer a compute shader fills: the draw needs the storage to
-         * exist and the VAO bindings to be valid, but there is nothing on the
-         * CPU to put in it.
-         */
-        void reserve(uint32_t count) {
-            m_instanceCount = count;
-            if (count == 0 || count <= m_capacity) return;
-
-            m_capacity = std::max(MIN_CAPACITY, count);
-            if (!m_buffer) {
-                m_buffer = std::make_unique<Core::VertexBuffer>(
-                    nullptr, m_capacity * sizeof(glm::mat4), GL_STREAM_DRAW);
-            } else {
-                m_buffer->allocate(m_capacity * sizeof(glm::mat4));
-            }
-        }
-
         /// GL name, for binding the same storage as an SSBO a compute stage reads or writes.
         uint32_t id() const { return m_buffer ? m_buffer->getID() : 0; }
 

@@ -3,8 +3,8 @@
 `VisibilitySystem` determines which entities are visible each frame
 through a multi-stage culling pipeline. Results land in
 `FrameContext.visibility` and are consumed by `RenderSystem` (which
-builds the per-frame `RenderView`) and `AnimationSystem` (which applies
-per-track interpolated values only to visible entities).
+builds the per-frame `RenderView`) and by the editor's picking and
+overlays.
 
 ## Key files
 
@@ -19,7 +19,8 @@ per-track interpolated values only to visible entities).
 ```
 VisibilitySystem::update(ctx)
   1. Find the active camera (cached EntityId; full scan only on miss).
-  2. Build VisibilityContext: frustum planes, viewport dims, thresholds.
+  2. Build VisibilityContext: frustum planes, camera position and view
+     matrix, and the thresholds (pre-squared for the sqrt-free tests).
   3. Resize the persistent flat per-index arrays to the full Mesh count
      (visible flags, caster flags, model matrices, world AABBs).
   4. parallelFor over all Mesh entities (each worker writes disjoint indices):
@@ -43,6 +44,8 @@ VisibilitySystem::update(ctx)
 
 `Visibility.view`, `projection`, and `cameraPosition` are filled from the
 active camera so downstream consumers do not have to look the camera back up.
+The pose comes from the camera's `WorldTransform` when it has one, so a camera
+parented to a rig renders from where the rig puts it.
 
 ## Output
 
@@ -61,6 +64,8 @@ struct Visibility {
     glm::mat4 view           = glm::mat4(1.0f);
     glm::mat4 projection     = glm::mat4(1.0f);
     glm::vec3 cameraPosition = glm::vec3(0.0f);
+    float     focusDistance  = 10.0f;   // depth of field: distance held in focus
+    float     dofAmount      = 0.0f;    // depth of field strength (0 = off)
     bool      hasCamera      = false;
 };
 ```

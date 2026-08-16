@@ -17,6 +17,43 @@
 
 namespace Engine {
 
+void GizmoOverlay::finishDrag(EditorContext& ec) {
+    FrameContext& ctx   = ec.frame;
+    EditorState&  state = ec.state;
+
+    auto changedOf = [&](EntityId id, const Transform& bef, const Transform*& after) {
+        if (!id || !ctx.scene.isAlive(id) || !ctx.scene.has<Transform>(id)) return false;
+        after = &ctx.scene.get<Transform>(id);
+        return bef.position != after->position
+            || bef.rotation != after->rotation
+            || bef.scale    != after->scale;
+    };
+
+    if (m_dragSelection.size() > 1) {
+        // One history entry for the whole selection's motion.
+        auto batch = std::make_unique<CompositeCommand>("Transform Selection");
+        for (const auto& [id, bef] : m_dragSelection) {
+            const Transform* after = nullptr;
+            if (changedOf(id, bef, after)) {
+                batch->add(std::make_unique<TransformChangeCommand>(
+                    id, bef, *after, "Transform"));
+            }
+        }
+        if (!batch->empty()) state.commands.push(std::move(batch));
+    } else {
+        const Transform* after = nullptr;
+        if (changedOf(m_dragEntity, m_dragStartTransform, after)) {
+            state.commands.push(std::make_unique<TransformChangeCommand>(
+                m_dragEntity, m_dragStartTransform, *after, "Transform"));
+        }
+    }
+    m_gizmo.endDrag();
+    m_dragActive             = false;
+    m_dragActiveIsDescendant = false;
+    m_dragEntity             = {};
+    m_dragSelection.clear();
+}
+
 void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
     FrameContext& ctx     = ec.frame;
     EditorState&  state   = ec.state;
@@ -24,16 +61,24 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
     float  vpWidth        = ec.viewportSize.x;
     float  vpHeight       = ec.viewportSize.y;
 
-    if (state.gizmoOperation == GizmoOperation::Select) return;  // pick-only, no handles
-    if (!state.selectedEntity || !ctx.scene.isAlive(state.selectedEntity)) return;
-    if (!ctx.visibility || !ctx.visibility->hasCamera) return;
-    if (!ctx.scene.has<Transform>(state.selectedEntity)) return;
+    // The flown camera is excluded because it *is* the viewport eye: a transform
+    // gizmo on it would fight the fly controller (both write its Transform every
+    // frame). It can still be selected - Camera params stay editable in the
+    // Inspector.
+    const bool canManipulate =
+           state.gizmoOperation != GizmoOperation::Select   // Select is pick-only, no handles
+        && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)
+        && ctx.visibility && ctx.visibility->hasCamera
+        && ctx.scene.has<Transform>(state.selectedEntity)
+        && state.selectedEntity != ec.cameraController.getCameraEntity().getID();
 
-    // The camera you fly *is* the viewport eye: a transform gizmo on it would
-    // fight the fly controller (both write its Transform every frame). It can
-    // still be selected - Camera params stay editable in the Inspector.
-    if (state.selectedEntity == ec.cameraController.getCameraEntity().getID())
-        return;
+    // Drag-end is decided before the draw guard, not after it: a shortcut can
+    // switch tool or selection mid-drag, and whether the drag is over is not
+    // the same question as whether the handles are drawn this frame. Only push
+    // if the transform actually changed (a no-op click on the gizmo does not
+    // deserve an undo entry).
+    if (m_dragActive && (!canManipulate || !m_gizmo.isUsing())) finishDrag(ec);
+    if (!canManipulate) return;
 
     // The 3D pass now renders into viewport-sized FBOs and composite
     // blits to the viewport sub-rect of the backbuffer (gl_composite_pass).
@@ -101,40 +146,6 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
         m_dragActiveIsDescendant = m_dragSelection.size() > 1
                                 && hasSelectedAncestor(state.selectedEntity);
     }
-    // Drag-end: only push if the transform actually changed during the drag
-    // (no-op clicks on the gizmo don't deserve an undo entry).
-    if (!m_gizmo.isUsing() && m_dragActive) {
-        auto changedOf = [&](EntityId id, const Transform& bef, const Transform*& after) {
-            if (!id || !ctx.scene.isAlive(id) || !ctx.scene.has<Transform>(id)) return false;
-            after = &ctx.scene.get<Transform>(id);
-            return bef.position != after->position
-                || bef.rotation != after->rotation
-                || bef.scale    != after->scale;
-        };
-
-        if (m_dragSelection.size() > 1) {
-            // One history entry for the whole selection's motion.
-            auto batch = std::make_unique<CompositeCommand>("Transform Selection");
-            for (const auto& [id, bef] : m_dragSelection) {
-                const Transform* after = nullptr;
-                if (changedOf(id, bef, after)) {
-                    batch->add(std::make_unique<TransformChangeCommand>(
-                        id, bef, *after, "Transform"));
-                }
-            }
-            if (!batch->empty()) state.commands.push(std::move(batch));
-        } else {
-            const Transform* after = nullptr;
-            if (changedOf(m_dragEntity, m_dragStartTransform, after)) {
-                state.commands.push(std::make_unique<TransformChangeCommand>(
-                    m_dragEntity, m_dragStartTransform, *after, "Transform"));
-            }
-        }
-        m_dragActive = false;
-        m_dragEntity = {};
-        m_dragSelection.clear();
-    }
-
     if (m_gizmo.manipulate(drawList, ctx.visibility->view, subProj,
                             state.gizmoOperation, state.gizmoMode, model,
                             vpMin, vpWidth, vpHeight)) {

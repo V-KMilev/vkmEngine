@@ -125,11 +125,6 @@ void visitRenderFields(Settings& r, Fn&& f) {
     f("shadowResolution",      r.shadowResolution);
     f("grid",                  r.grid);
 }
-} // namespace
-
-std::string path() {
-    return (ProjectPaths::projectRoot() / "editor_settings.json").string();
-}
 
 /**
  * @brief Where the recent-projects list lives.
@@ -145,6 +140,11 @@ std::string recentsPath() {
     return (ProjectPaths::engineRoot() / "editor_recents.json").string();
 }
 
+/**
+ * @brief Read the engine-wide recent-projects list into @p state.
+ *
+ * @param state Editor state whose recentProjects list is replaced.
+ */
 void loadRecentProjects(EditorState& state) {
     state.recentProjects.clear();
 
@@ -165,6 +165,11 @@ void loadRecentProjects(EditorState& state) {
     }
 }
 
+/**
+ * @brief Write the engine-wide recent-projects list back out.
+ *
+ * @param state Editor state supplying the list to persist.
+ */
 void saveRecentProjects(const EditorState& state) {
     nlohmann::json j;
     j["recentProjects"] = state.recentProjects;
@@ -172,8 +177,20 @@ void saveRecentProjects(const EditorState& state) {
     std::ofstream out(recentsPath());
     if (out) out << j.dump(4) << "\n";
 }
+} // namespace
+
+std::string path() {
+    return (ProjectPaths::projectRoot() / "editor_settings.json").string();
+}
 
 bool load(EditorState& state, RenderSettings& render) {
+    // Separate file, separate lifetime: which projects you have opened is not
+    // one project's business, so reading it must not sit behind this project's
+    // settings file existing and parsing. Gated, the first open of a fresh
+    // project would start with an empty list and the shutdown save - which
+    // writes the recents unconditionally - would clobber the real history.
+    loadRecentProjects(state);
+
     std::ifstream in(path());
     if (!in.good()) return false;
     json j;
@@ -224,10 +241,6 @@ bool load(EditorState& state, RenderSettings& render) {
                 member = rs.value(key, member);
         });
     }
-
-    // Which projects you have opened is not one project's business; it is read
-    // from the engine root so every project sees the same list.
-    loadRecentProjects(state);
 
     // Recent scenes, which genuinely do belong to the open project.
     state.recentScenes.clear();

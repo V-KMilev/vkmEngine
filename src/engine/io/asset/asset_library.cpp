@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
-#include <fstream>
 #include <system_error>
 
 #include <nlohmann/json.hpp>
@@ -50,7 +49,6 @@ std::filesystem::path AssetLibrary::cookedPath(const AssetRecord& record) const 
 
 void AssetLibrary::load() {
     m_records.clear();
-    m_cookerVersion = 0;
 
     const std::filesystem::path path = ProjectPaths::libraryManifest();
     std::error_code ec;
@@ -62,7 +60,15 @@ void AssetLibrary::load() {
     nlohmann::json doc;
     if (!detail::readJsonFile(path, doc, "Asset library manifest")) return;
 
-    m_cookerVersion = doc.value("cookerVersion", 0u);
+    // The layout is versioned the way scenes and cooked files are: a manifest
+    // this build cannot read is refused outright rather than half-understood.
+    // The library is derived data, so the recovery is to re-cook the project.
+    const uint32_t version = doc.value("manifestVersion", 0u);
+    if (version != MANIFEST_VERSION) {
+        LOG_ERROR("Asset library: manifest %s is version %u, not %u; starting empty (re-cook the project)",
+            path.string().c_str(), version, MANIFEST_VERSION);
+        return;
+    }
 
     const auto assets = doc.find("assets");
     if (assets == doc.end() || !assets->is_array()) {
@@ -118,7 +124,6 @@ void AssetLibrary::remove(AssetType type, const std::string& name) {
 bool AssetLibrary::save() const {
     nlohmann::json doc;
     doc["manifestVersion"] = MANIFEST_VERSION;
-    doc["cookerVersion"]   = m_cookerVersion;
 
     nlohmann::json assets = nlohmann::json::array();
     for (const auto& [k, r] : m_records) {
@@ -133,32 +138,7 @@ bool AssetLibrary::save() const {
     }
     doc["assets"] = std::move(assets);
 
-    const std::filesystem::path path = ProjectPaths::libraryManifest();
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-
-    // Atomic write: serialize to a sibling temp file then rename over the target,
-    // mirroring EditorSettings::save so a crash mid-write can't truncate it.
-    const std::filesystem::path tmp = std::filesystem::path(path).concat(".tmp");
-    {
-        std::ofstream out(tmp);
-        if (!out) {
-            LOG_ERROR("Asset library: cannot open %s for write", tmp.string().c_str());
-            return false;
-        }
-        out << doc.dump(2);
-        if (!out) {
-            LOG_ERROR("Asset library: write to %s failed", tmp.string().c_str());
-            return false;
-        }
-    }
-    std::filesystem::rename(tmp, path, ec);
-    if (ec) {
-        LOG_ERROR("Asset library: rename %s -> %s failed: %s",
-                  tmp.string().c_str(), path.string().c_str(), ec.message().c_str());
-        return false;
-    }
-    return true;
+    return detail::writeJsonFile(ProjectPaths::libraryManifest(), doc, "Asset library manifest");
 }
 
 } // namespace Engine

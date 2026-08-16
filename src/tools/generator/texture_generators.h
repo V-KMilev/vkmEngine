@@ -12,10 +12,11 @@ class ResourceManager;
 /**
  * @brief Create a persistent solid-color texture (serializes into the scene).
  *
- * Stamps a `{"kind":"solid","color":[r,g,b,a],"srgb":bool}` source descriptor
- * and a deterministic AssetId so the texture round-trips through save/load
- * (re-created by the "solid" AssetFactory). Use for user-authored procedural
- * textures (the Material Editor's "Generate texture" action).
+ * Stamps a `{"kind":"solid","color":[r,g,b,a],"srgb":bool}` source descriptor -
+ * the recipe the cooker records in the asset library - and a deterministic name
+ * keyed on the same color, which is the identity a scene reference resolves by.
+ * Use for user-authored procedural textures (the Material Editor's "Generate
+ * texture" action).
  *
  * @param color RGBA color (0-1 range).
  * @param resourceManager Resource manager to add the texture to.

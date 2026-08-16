@@ -36,6 +36,16 @@ struct IBus {
 template<typename EventT>
 class Bus : public IBus {
     public:
+        Bus() = default;
+        ~Bus() override = default;
+
+        Bus(const Bus& other) = delete;
+        Bus& operator=(const Bus& other) = delete;
+
+        Bus(Bus && other) = delete;
+        Bus& operator=(Bus && other) = delete;
+
+    public:
         /**
          * @brief Append a listener and return its new id.
          */
@@ -137,6 +147,7 @@ class Bus : public IBus {
             m_pending.clear();
         }
 
+    private:
         std::vector<Entry>  m_listeners;   ///< Active listeners, walked by index during dispatch.
         std::vector<Entry>  m_pending;     ///< Subscribed mid-dispatch; admitted when it unwinds.
         std::vector<EventT> m_queue;       ///< Events awaiting the next flush().

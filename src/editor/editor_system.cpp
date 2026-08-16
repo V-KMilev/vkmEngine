@@ -27,6 +27,7 @@
 #include "ui/editor_icons.h"
 #include "platform/window/window_manager.h"
 #include "system/camera/camera_controller_system.h"
+#include "system/ui/ui_system.h"
 #include "system/render/render_system.h"
 #include "system/render/editor_render_hooks.h"
 #include "system/script/script_module.h"
@@ -42,18 +43,21 @@ EditorSystem::EditorSystem(
     Engine& engine,
     GLFWwindow* window,
     CameraControllerSystem& cameraController,
+    UISystem& uiSystem,
     VisibilitySystem& visibilitySystem,
     RenderSystem& renderSystem,
-    ScriptModule& scriptModule
+    ScriptModule& scriptModule,
+    const std::string& projectName
 )
     : m_engine(engine)
     , m_window(window)
     , m_cameraController(cameraController)
+    , m_uiSystem(uiSystem)
     , m_renderSystem(renderSystem)
     , m_visibilitySystem(visibilitySystem)
     , m_scriptModule(scriptModule)
     , m_materialPreviews(renderSystem)
-    , m_sceneIO(cameraController, renderSystem)
+    , m_sceneIO(cameraController, m_materialPreviews)
 {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -108,6 +112,11 @@ EditorSystem::EditorSystem(
     // still wins.
     m_renderSystem.getSettings().grid = true;
     EditorSettings::load(m_state, m_renderSystem.getSettings());
+
+    // Handed in rather than re-read: loadProject deliberately reports the
+    // project once per open. Opening another one refreshes this
+    // (ProjectController::open).
+    m_state.projectName = projectName;
 
     const size_t recentBefore = m_state.recentScenes.size();
 
@@ -222,13 +231,18 @@ void drawToast(EditorState& state, float deltaTime) {
     ImGui::PopStyleColor(2);
 }
 
-// Keep the window title in sync with the scene state: "<file> [*] - VKM Engine".
-// Updates only when the title content actually changes to avoid OS churn.
-void syncWindowTitle(WindowManager& window, const std::string& path, bool dirty) {
+// The single writer of the window title: "<project> - <file> [*] - VKM Engine".
+// Which project, which scene and whether it is dirty are all facts the title
+// carries, so one place owns the format - anything else setting the title is
+// overwritten here on the next frame. Compared against its own last output so
+// the GLFW call happens only when the content actually changed.
+void syncWindowTitle(WindowManager& window, const std::string& project,
+                     const std::string& path, bool dirty) {
     static std::string s_last;
     const std::string fname = path.empty()
         ? "untitled" : std::filesystem::path(path).filename().string();
-    std::string title = fname + (dirty ? " *" : "") + " - VKM Engine";
+    std::string title = (project.empty() ? std::string() : project + " - ")
+                      + fname + (dirty ? " *" : "") + " - VKM Engine";
     if (title != s_last) {
         window.setTitle(title);
         s_last = std::move(title);
@@ -238,7 +252,7 @@ void syncWindowTitle(WindowManager& window, const std::string& path, bool dirty)
 
 void EditorSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("EditorSystem");
-    syncWindowTitle(ctx.window, m_sceneIO.path(), m_state.sceneDirty);
+    syncWindowTitle(ctx.window, m_state.projectName, m_sceneIO.path(), m_state.sceneDirty);
 
     m_materialPreviews.onFrameBegin();
 
@@ -379,6 +393,7 @@ void EditorSystem::update(FrameContext& ctx) {
 
     if (!m_state.editorVisible) {
         m_cameraController.setEditorInputCapture(false, false);
+        m_uiSystem.setEditorPointerCapture(false);
 
         // No panels to layout this frame - let the 3D pipeline fill the
         // whole window next frame, not the stale viewport sub-rect.
@@ -420,6 +435,9 @@ void EditorSystem::update(FrameContext& ctx) {
                        || m_viewportToolbar.isHovered()
                        || m_playbar.isHovered();
         m_cameraController.setEditorInputCapture(blockMouse, ImGui::GetIO().WantTextInput);
+        // The game UI lays out inside the same viewport rect the chrome above is
+        // drawn over, so it needs the same answer about who owns the pointer.
+        m_uiSystem.setEditorPointerCapture(blockMouse);
     }
 
     EditorContext ec{
@@ -555,12 +573,14 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
             ec.viewportSize = ImVec2(centerW, mainH);
             // Tell the engine the viewport rect so next frame's render
             // pipeline sizes its FBOs and projection to this rect instead
-            // of the full GLFW window.
+            // of the full GLFW window. The rect is ImGui's, in window screen
+            // coords; the engine wants framebuffer pixels.
+            const float vpScale = ec.frame.window.framebufferScale();
             ec.frame.window.setSceneViewport(
-                static_cast<uint32_t>(std::max(0.0f, vpMin.x)),
-                static_cast<uint32_t>(std::max(0.0f, vpMin.y)),
-                static_cast<uint32_t>(std::max(1.0f, centerW)),
-                static_cast<uint32_t>(std::max(1.0f, mainH)));
+                static_cast<uint32_t>(std::max(0.0f, vpMin.x * vpScale)),
+                static_cast<uint32_t>(std::max(0.0f, vpMin.y * vpScale)),
+                static_cast<uint32_t>(std::max(1.0f, centerW * vpScale)),
+                static_cast<uint32_t>(std::max(1.0f, mainH   * vpScale)));
             m_state.viewportHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
             m_viewportOverlay.drawNavigationGizmo(ec);
             m_gizmoOverlay.drawLightGizmos(ec);
@@ -574,7 +594,8 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
             m_viewportToolbar.draw(ec);
             m_viewportToolbar.drawViewMode(ec);
             m_playbar.draw(ec, m_sceneIO);
-            if (!m_viewportToolbar.isHovered() && !m_playbar.isHovered())
+            if (!m_viewportToolbar.isHovered() && !m_playbar.isHovered()
+                    && !m_viewportOverlay.isHovered())
                 m_gizmoOverlay.handleViewportPick(ec);
         } else {
             m_state.viewportHovered = false;

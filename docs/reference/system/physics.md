@@ -7,7 +7,7 @@ the resulting poses back to `Transform`.
 `PhysicsSystem` runs in `SystemStage::Simulation`, **after** `AnimationSystem`
 and **before** `HierarchySystem`, so physics-updated transforms propagate into
 `WorldTransform` the same frame. All work happens in `fixedUpdate()` against
-`ctx.fixedDeltaTime`; `update()` is a no-op. It opts into `fixedUpdate`.
+`ctx.clock.getFixedStep()`; `update()` is a no-op. It opts into `fixedUpdate`.
 
 ## Key files
 
@@ -68,9 +68,11 @@ PhysicsSystem::fixedUpdate(ctx)
      markDirty so HierarchySystem re-resolves WorldTransform.
 ```
 
-Bodies are assumed to be **hierarchy roots**, so an entity's local `Transform`
-equals its world pose. Parenting a physics body is unsupported in this pass;
-children parented *to* a body still follow it (the `markDirty` cascade carries
+A **hierarchy root**'s local `Transform` is already its world pose, so
+`gatherBodies` reads it straight. A **parented** body takes its world pose from
+its `WorldTransform` and records the parent's frame alongside it; writeback maps
+the solved world pose back through that frame into the local `Transform`. Either
+way, children parented *to* a body follow it (the `markDirty` cascade carries
 into the subtree).
 
 ## The solver

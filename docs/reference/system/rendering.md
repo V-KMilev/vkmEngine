@@ -135,7 +135,7 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 | 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas each frame. Culling and mesh-grouping are **not** done here - `GLShadowData::build` does both on the thread pool, so the pass only gathers, uploads and draws |
 | 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (oct view-normal / roughness / metalness). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses |
 | 3 | ResolveDepth | MSAA only: resolves depth (and the G-buffer when GTAO / decals / a debug view will read it) into `m_sceneHDR` |
-| 4 | HiZ | Reduces the resolved depth into a hierarchical depth pyramid: each texel the **farthest** depth of the region below it (`GLHiZ`) |
+| 4 | HiZ | Reduces the resolved depth into a hierarchical depth pyramid: each texel the **farthest** depth of the region below it (`GLHiZ`). Runs only while occlusion culling is on - the cull is the pyramid's only reader |
 | 5 | OcclusionCull | Compute: tests every opaque instance's world AABB against the pyramid and writes the survivors' indices plus each run's indirect draw command. The answer stays on the GPU - a readback would stall the frame it is meant to speed up |
 | 6 | GTAO | Full-res ground-truth AO + bent normal into the mask target |
 | 7 | Skybox | Fills the background before geometry so transparents blend over it |
@@ -161,12 +161,18 @@ re-bakes when its box, grid, or bake version changes.
 
 ### GLView - GPU sync
 
-Holds per-type tables keyed by handle id (mesh / material / texture / shader) plus
-the per-frame UBOs and the shadow/IBL sets. `sync(view, resources)` reconciles each
-table against the RenderView and only does work when that resource type's `version`
-bumped or the drawable count changed (see [resources.md](../resources.md) for the
-version mechanism). All materials share one compiled PBR program; features are
-runtime uniform toggles, not compiled `#ifdef` variants.
+Holds four tables keyed by handle id - mesh, material, texture, font atlas - each
+slot remembering the version and handle generation it was uploaded at.
+`sync(view, resources)` walks the frame's drawables once (skipping a consecutive
+repeat of the same handle, which the draw sort makes the common case) and
+`ensure()`s each asset, uploading only when the version moved on or the
+generation says the slot was recycled (see [resources.md](../resources.md) for
+the version mechanism). A scene load or play-stop restore swaps the whole asset
+graph and restarts its handles and versions, which no per-asset gate can see, so
+the backend calls `invalidate()` and the next sync repopulates. The per-frame
+UBOs and the shadow / IBL sets are not here - GLBackend owns those. All materials
+share one compiled PBR program; features are runtime uniform toggles, not
+compiled `#ifdef` variants.
 
 ### Shader binding contract
 

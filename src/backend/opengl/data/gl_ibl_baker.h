@@ -37,11 +37,12 @@ struct SkyParams {
 /**
  * @brief Baker for the IBL product set (split-sum).
  *
- * Owns the four bake programs, a unit cube (the six face captures) and a
- * fullscreen triangle (the BRDF LUT). Construct it where a GL context is
- * current (GLBackend member). It stays alive for the backend's lifetime:
- * the procedural sky re-bakes whenever the sun moves, so a transient baker
- * would recompile all five programs on every rebake.
+ * Owns three bake programs (equirect, procedural sky, BRDF) plus the two the
+ * convolver holds, a unit cube (the six face captures) and a fullscreen triangle
+ * (the BRDF LUT). Construct it where a GL context is current (GLBackend member).
+ * It stays alive for the backend's lifetime: the procedural sky re-bakes
+ * whenever the sun moves, so a transient baker would recompile all five programs
+ * on every rebake.
  *
  * bake(): load the equirect HDR -> render the environment cubemap -> convolve
  * diffuse irradiance -> GGX-prefilter specular mips -> integrate the BRDF/DFG
@@ -89,6 +90,7 @@ class GLIBLBaker {
          */
         void convolve(Core::Context& gl, GLIBL& ibl);
 
+    private:
         Core::Shader m_equirect;
         Core::Shader m_sky;
         Core::Shader m_brdf;

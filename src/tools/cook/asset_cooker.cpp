@@ -12,6 +12,7 @@
 #include "logger.h"
 
 #include "core/hash/fnv1a.h"
+#include "core/reflect.h"
 #include "io/asset/asset_cook.h"
 #include "io/asset/asset_library.h"
 #include "io/asset/asset_serializer.h"
@@ -26,8 +27,9 @@ namespace Engine::AssetCooker {
 namespace {
 
 // Bump when the cook OUTPUT changes (vertex layout, mip policy, importer flags)
-// to force every asset to re-cook on next save without touching recipes - it is
-// folded into the recipe hash, so all stored hashes go stale at once.
+// to force assets to re-cook from their recipes on next save without touching
+// those recipes - it is folded into the recipe hash, so all stored hashes go
+// stale at once.
 constexpr uint32_t COOKER_VERSION = 1;
 
 uint64_t hashRecipe(const nlohmann::json& recipe) {
@@ -35,6 +37,23 @@ uint64_t hashRecipe(const nlohmann::json& recipe) {
     const uint64_t recipeHash = fnv1a64(dump);
     const uint32_t version = COOKER_VERSION;
     return fnv1a64(&version, sizeof(version), recipeHash);
+}
+
+// An asset that came back from the cooked cache carries the loader's stand-in
+// source, which records the name it was read by and nothing about where it came
+// from. It is not a recipe: cooking it would overwrite the library's account of
+// the import - the version-controlled source of truth - with a self-reference.
+bool isCookedPlaceholder(const nlohmann::json& source) {
+    return source.value("kind", std::string{}) == "cooked";
+}
+
+// An asset that cannot be cooked and that the library does not already hold is
+// one the save writes a name-only reference to and the next load cannot resolve.
+// Say so now, while whoever pressed save can still act on it.
+void warnUnlisted(AssetType type, const std::string& name) {
+    if (AssetLibrary::get().find(type, name)) return;
+    LOG_WARNING("Cooker: %s '%s' has nothing to cook and no library entry; a scene "
+                "referencing it will not load", Reflect::enumName(type), name.c_str());
 }
 
 bool writeRecipeFile(const std::filesystem::path& path, const std::string& name,
@@ -55,10 +74,19 @@ bool writeRecipeFile(const std::filesystem::path& path, const std::string& name,
 }
 
 // The cook* helpers return false only on a real cook failure (recipe / cooked
-// write); a skip - unnamed, still loading, no source, or already up to date -
-// returns true, so cookAllAssets can distinguish failures from no-ops.
+// write); a skip - unnamed, nothing to bake, or already up to date - returns
+// true, so cookAllAssets can distinguish failures from no-ops.
 bool cookMesh(const MeshAsset& mesh) {
-    if (mesh.name.empty() || mesh.loading || !mesh.hasSource() || mesh.vertices.empty()) return true;
+    if (mesh.name.empty()) return true;
+
+    // Nothing to bake: still streaming in, never had a recipe, its decode failed,
+    // or it was read back from the cooked cache and the library already holds the
+    // recipe it was baked from.
+    if (mesh.loading || !mesh.hasSource() || mesh.vertices.empty()
+        || isCookedPlaceholder(mesh.sourceJson())) {
+        warnUnlisted(AssetType::Mesh, mesh.name);
+        return true;
+    }
 
     AssetLibrary& lib = AssetLibrary::get();
     const nlohmann::json& recipe = mesh.sourceJson();
@@ -82,7 +110,13 @@ bool cookMesh(const MeshAsset& mesh) {
 }
 
 bool cookTexture(const TextureAsset& tex) {
-    if (tex.name.empty() || tex.loading || !tex.hasSource() || tex.pixelData.empty()) return true;
+    if (tex.name.empty()) return true;
+
+    if (tex.loading || !tex.hasSource() || tex.pixelData.empty()
+        || isCookedPlaceholder(tex.sourceJson())) {
+        warnUnlisted(AssetType::Texture, tex.name);
+        return true;
+    }
 
     AssetLibrary& lib = AssetLibrary::get();
     const nlohmann::json& recipe = tex.sourceJson();

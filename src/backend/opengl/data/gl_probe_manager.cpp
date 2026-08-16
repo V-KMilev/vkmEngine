@@ -27,21 +27,15 @@ void GLProbeManager::init() {
 int GLProbeManager::bind(const RenderView& view) {
     if (!m_array) return 0;
 
-    // Collect the baked probes within array capacity, with their camera distance.
+    // Collect the baked probes, in scene order. A probe's layer in the cube
+    // arrays is its scene index, and the arrays hold MAX_PROBES layers - the
+    // same bound as the shader's per-fragment blend loop - so anything past the
+    // capacity has nowhere to have been baked and nothing to be bound into.
     m_active.clear();
     const int capacity = m_array->capacity();
     for (size_t i = 0; i < view.probes.size() && static_cast<int>(i) < capacity; ++i) {
         if (i >= m_state.size() || !m_state[i].baked) continue;
-        m_active.push_back({ static_cast<uint32_t>(i),
-            glm::distance(view.camera.position, view.probes[i].position) });
-    }
-
-    // Keep the nearest MAX_PROBES (the shader's per-fragment blend loop bound).
-    const size_t maxP = GLBindings::ProbeTextureSlots::MAX_PROBES;
-    if (m_active.size() > maxP) {
-        std::partial_sort(m_active.begin(), m_active.begin() + maxP, m_active.end(),
-            [](const Active& a, const Active& b) { return a.dist < b.dist; });
-        m_active.resize(maxP);
+        m_active.push_back(static_cast<uint32_t>(i));
     }
 
     // Pack the ProbeBlock UBO; params.z carries the cube-array layer index. The
@@ -49,10 +43,10 @@ int GLProbeManager::bind(const RenderView& view) {
     // still camera), so it costs no GPU write per frame.
     ProbeBlock block{};
     for (size_t p = 0; p < m_active.size(); ++p) {
-        const ProbeData& pd = view.probes[m_active[p].index];
+        const ProbeData& pd = view.probes[m_active[p]];
         block.probes[p].center  = glm::vec4(pd.position, 0.0f);
         block.probes[p].extents = glm::vec4(pd.halfExtents, 0.0f);
-        block.probes[p].params  = glm::vec4(pd.falloff, pd.intensity, static_cast<float>(m_active[p].index), 0.0f);
+        block.probes[p].params  = glm::vec4(pd.falloff, pd.intensity, static_cast<float>(m_active[p]), 0.0f);
     }
     Core::uploadIfChanged(m_ubo, m_lastBlock, block);
     if (m_ubo) m_ubo->bindBase(GLBindings::UBOBindingPoints::Probes);

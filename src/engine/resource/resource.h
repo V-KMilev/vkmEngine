@@ -52,6 +52,7 @@ struct Resource {
 
     public:
         uint64_t    version    = 1;
+        uint64_t    uid        = 0;             ///< Process-unique instance id stamped by ResourceManager::add. Identifies the asset itself, where a handle only identifies the slot it sits in.
         std::string name;                       ///< Serializable identity: scene files reference assets by name, resolved via ResourceManager::findByName. Kept unique within a type by add().
         bool        hidden     = false;         ///< Filtered from pickers / Asset Browser / scene save. See ResourceManager::addPrivate.
         std::unique_ptr<nlohmann::json> source; ///< Origin descriptor JSON, lazy-allocated.

@@ -10,7 +10,7 @@ namespace Engine {
 struct FrameContext;
 struct EditorState;
 class CameraControllerSystem;
-class RenderSystem;
+class MaterialPreviewSession;
 
 /**
  * @brief Owns editor scene replacement: file I/O and the play-mode snapshot.
@@ -34,7 +34,7 @@ class SceneIOController {
     public:
         SceneIOController(
             CameraControllerSystem& cameraController,
-            RenderSystem& renderSystem
+            MaterialPreviewSession& materialPreviews
         );
         ~SceneIOController();
 
@@ -143,8 +143,8 @@ class SceneIOController {
          * @brief True while a Save-As prompt is either queued for opening or currently visible.
          *
          * Used by the save-on-quit flow to detect whether the user cancelled
-         * mid-Save (state.closeAfterSave is cleared on cancel; left set on
-         * success).
+         * mid-Save (EditorState::afterSaveAction is cleared on cancel; left
+         * set on success).
          */
         bool isSaveDialogActive() const;
 
@@ -177,7 +177,7 @@ class SceneIOController {
         static void pushRecent(EditorState& state, const std::string& path);
 
         CameraControllerSystem& m_cameraController;
-        RenderSystem&     m_renderSystem;
+        MaterialPreviewSession& m_materialPreviews;
 
         std::string m_currentScenePath;  ///< Empty until the user saves/loads once.
 
