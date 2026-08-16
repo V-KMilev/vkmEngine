@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -52,6 +53,25 @@ def sdk_root() -> Path:
     if (here.parent / "shaders").is_dir():
         return here.parent                      # <repo>/tools/vkm
     die("cannot locate the engine. Set VKM_ENGINE_ROOT to the SDK directory.")
+
+
+def sdk_compiler(root: Path) -> str | None:
+    """The C++ compiler the engine was built with, as its config records it.
+
+    The engine is not ABI-stable across compilers, so a project has to use the
+    same one. CMake picks a compiler before it ever reads find_package's config,
+    which means the check there can only report the mismatch after the fact - on
+    a machine with both GCC and Clang installed it is a coin flip. Reading it out
+    here and passing it back makes the right choice the default.
+    """
+    for cfg in (root / "lib" / "cmake" / "vkmEngine" / "vkmEngineConfig.cmake",
+                root / "build" / "lib" / "cmake" / "vkmEngine" / "vkmEngineConfig.cmake"):
+        if not cfg.is_file():
+            continue
+        m = re.search(r'set\(VKMENGINE_BUILD_CXX_COMPILER\s+"([^"]+)"\)', cfg.read_text())
+        if m:
+            return m.group(1)
+    return None
 
 
 def host(root: Path, name: str) -> Path:
@@ -145,10 +165,22 @@ def cmd_build(args) -> int:
     if not config_dir.is_dir():
         config_dir = root / "build" / "lib" / "cmake" / "vkmEngine"
 
-    rc = run([cmake, "-S", d, "-B", build,
-              f"-DvkmEngine_DIR={config_dir}",
-              f"-DCMAKE_PREFIX_PATH={root}"]
-             + (["-G", args.generator] if args.generator else []))
+    cfg = [cmake, "-S", d, "-B", build,
+           f"-DvkmEngine_DIR={config_dir}",
+           f"-DCMAKE_PREFIX_PATH={root}"]
+
+    # Configure with the engine's own compiler unless told otherwise. Skipped
+    # once a build directory exists, because CMake will not accept a compiler
+    # change in place and re-stating the same one is harmless but noisy.
+    compiler = args.compiler or sdk_compiler(root)
+    if compiler and not (build / "CMakeCache.txt").exists():
+        cfg.append(f"-DCMAKE_CXX_COMPILER={compiler}")
+
+    if args.generator:
+        cfg += ["-G", args.generator]
+    cfg += args.cmake_args
+
+    rc = run(cfg)
     if rc:
         return rc
     return run([cmake, "--build", build] + (["--config", args.config] if args.config else []))
@@ -236,6 +268,8 @@ def main() -> int:
     p.add_argument("project", nargs="?")
     p.add_argument("-G", "--generator")
     p.add_argument("-c", "--config")
+    p.add_argument("--compiler", help="C++ compiler to use (default: the one the engine was built with)")
+    p.add_argument("cmake_args", nargs="*", help="extra arguments passed straight to cmake")
     p.set_defaults(fn=cmd_build)
 
     for name, help_text, fn in (
