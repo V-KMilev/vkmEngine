@@ -5,11 +5,13 @@
 namespace Engine {
 
 /**
- * @brief Vector icon set drawn with ImDrawList (no icon-font dependency).
+ * @brief The editor's icon set, drawn through ImDrawList.
  *
- * Shared across the viewport toolbar, playback bar and panels so
- * iconography stays consistent. Strictly ASCII source per the style guide -
- * glyphs are stroked/filled primitives, not font characters.
+ * Shared across the viewport toolbar, playback bar and panels so iconography
+ * stays consistent. Each icon renders as a glyph from the Lucide font when
+ * loadEditorIconFont() succeeded, and as a stroked/filled vector primitive
+ * otherwise - so a stripped install still has icons. Strictly ASCII source
+ * per the style guide.
  */
 enum class EditorIcon {
     Select, Move, Rotate, Scale,

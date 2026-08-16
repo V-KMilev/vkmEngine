@@ -19,6 +19,12 @@ struct EditorContext;
 // draw and picking paths so both agree on the rule.
 glm::vec3 worldPosOf(const Scene& scene, EntityId id, const Transform& tf);
 
+// World rotation of a (possibly parented) entity, by the same rule. The
+// renderer and the physics solver both resolve aim and collider orientation
+// this way, so a gizmo that used the local rotation would point somewhere the
+// entity does not.
+glm::quat worldRotationOf(const Scene& scene, EntityId id, const Transform& tf);
+
 /**
  * @brief Viewport overlay for the transform gizmo and entity picking.
  *
@@ -101,6 +107,15 @@ class GizmoOverlay {
         void handleViewportPick(EditorContext& ec);
         bool isGizmoOver() const  { return m_gizmo.isOver(); }
         bool isGizmoUsing() const { return m_gizmo.isUsing(); }
+
+    private:
+        /**
+         * @brief Close out an active gizmo drag: push its undo entry and reset
+         * both the overlay's drag state and the gizmo's.
+         *
+         * @param ec Editor context supplying the scene and the command stack.
+         */
+        void finishDrag(EditorContext& ec);
 
     private:
         TransformGizmo m_gizmo;

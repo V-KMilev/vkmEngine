@@ -84,6 +84,7 @@ struct EditorState {
 
     bool        showOpenProject = false;  ///< File > Open Project dialog is up.
     std::string pendingProjectOpen;       ///< Project chosen from a menu; opened after the draw.
+    std::string projectName;              ///< What the open project calls itself; titles the window.
     static constexpr size_t MAX_RECENT_SCENES = 8;
 
     // Undo/redo history. Every editor mutation that goes through the

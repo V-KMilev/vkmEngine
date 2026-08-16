@@ -85,8 +85,10 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     //    module generates, else the default scene.
     bootProjectScene(project, scriptModule, ec.frame.scene, ec.frame.resources);
 
-    ec.frame.window.setTitle(project.name + " - vkmEngine");
-    ec.state.sceneDirty = false;
+    // The window title is composed once per frame from the editor state (see
+    // EditorSystem); setting it here as well would be overwritten next frame.
+    ec.state.projectName = project.name;
+    ec.state.sceneDirty  = false;
 
     pushRecent(ec, root.string());
     ec.state.pushToast(EditorState::ToastKind::Info, "Opened " + project.name);
