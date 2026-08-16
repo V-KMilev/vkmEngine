@@ -5,21 +5,18 @@
 # loads, and the project's own scenes and assets beside them. The engine knows
 # none of it by name.
 #
-# Built from the engine's tree against EngineHeaders, exactly as the editor's
-# module is, because there is no installed SDK to build against yet. This file
-# is the only part that changes when there is.
+# Built from the engine's tree against the engine libraries, exactly as an
+# installed SDK will be linked against once find_package(vkmEngine) exists.
 file(GLOB_RECURSE POTION_RUNNER_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 
 add_library(potion_runner_module SHARED ${POTION_RUNNER_SOURCES})
 
 target_include_directories(potion_runner_module PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(potion_runner_module PRIVATE EngineHeaders vkm_warnings)
-# Windows needs an import library named at link time, which ties the module to
-# one host: it binds to the editor, and engine_runtime cannot load it there.
-# Linux has no such link, so both hosts load it.
-if(WIN32)
-    target_link_libraries(potion_runner_module PRIVATE engine_editor)
-endif()
+# Links the engine itself, not a host executable. EngineCore is shared, so this
+# is a reference to the one copy rather than a second one, and the module is not
+# bound to whichever exe loads it - the editor and the runtime both load this
+# same file.
+target_link_libraries(potion_runner_module PRIVATE EngineCore vkm_warnings)
 
 # Named `game` and placed in the project's own bin/, which is where the runtime
 # looks first: the module belongs to the project, not to whoever loads it.

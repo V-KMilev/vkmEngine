@@ -40,8 +40,9 @@ struct IrradianceVolume {
      */
     uint32_t bakeVersion = 0;
 };
+} // namespace Engine
 
-VKM_REFLECT_BEGIN(IrradianceVolume)
+VKM_REFLECT_BEGIN(::Engine::IrradianceVolume)
     VKM_F(halfExtents),
     VKM_F(resolutionX),
     VKM_F(resolutionY),
@@ -49,5 +50,3 @@ VKM_REFLECT_BEGIN(IrradianceVolume)
     VKM_F(intensity),
     VKM_F(bakeVersion)
 VKM_REFLECT_END()
-
-} // namespace Engine
