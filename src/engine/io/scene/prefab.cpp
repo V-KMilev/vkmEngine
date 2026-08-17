@@ -33,6 +33,53 @@ using nlohmann::json;
 constexpr int PREFAB_FORMAT_VERSION = 2;
 
 /**
+ * @brief Where a prefab reference points on disk.
+ *
+ * A prefab path in a scene names project content, and the working directory is
+ * the engine root, so a bare open would look beside the engine. An absolute path
+ * passes through for a caller that already resolved one.
+ */
+std::filesystem::path resolvePath(const std::string& path) {
+    return std::filesystem::path(path).is_absolute()
+        ? std::filesystem::path(path)
+        : (ProjectPaths::projectRoot() / path).lexically_normal();
+}
+
+/**
+ * @brief Read @p path and check it is a prefab this build can build from.
+ *
+ * @param path Prefab reference, project-relative or absolute.
+ * @param doc Receives the document on success.
+ * @return True when the file parsed, its version is readable and it holds entities.
+ */
+bool readPrefab(const std::string& path, json& doc) {
+    if (!detail::readJsonFile(resolvePath(path).string(), doc, "Prefab")) return false;
+
+    const int version = doc.value("version", 0);
+    if (version <= 0 || version > PREFAB_FORMAT_VERSION) {
+        LOG_ERROR("Prefab '%s' version %d is unreadable by this build (%d)",
+                  path.c_str(), version, PREFAB_FORMAT_VERSION);
+        return false;
+    }
+    if (!doc.contains("entities") || !doc["entities"].is_array() || doc["entities"].empty()) {
+        LOG_ERROR("Prefab '%s' has no entities", path.c_str());
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief The identity of the entity stored at @p index.
+ *
+ * Index 0 is the root by contract, so a file that disagrees is repaired rather
+ * than trusted.
+ */
+uint32_t uidAt(const json& entities, size_t index) {
+    if (index == 0) return PrefabEntity::ROOT;
+    return entities[index].value("uid", static_cast<uint32_t>(index));
+}
+
+/**
  * @brief Collect @p root and every descendant, parents before children.
  *
  * Ordering matters on load: a child's parent must already exist when the link
@@ -237,26 +284,8 @@ EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string
 bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string& path,
                      EntityId root, const std::vector<PrefabOverride>& overrides,
                      std::set<std::string>* drift) {
-    // A prefab path in a scene names project content, and the working directory
-    // is the engine root, so a bare open would look beside the engine. Absolute
-    // paths pass through for a caller that already resolved one.
-    const std::filesystem::path file = std::filesystem::path(path).is_absolute()
-        ? std::filesystem::path(path)
-        : (ProjectPaths::projectRoot() / path).lexically_normal();
-
     json doc;
-    if (!detail::readJsonFile(file.string(), doc, "Prefab")) return false;
-
-    const int version = doc.value("version", 0);
-    if (version <= 0 || version > PREFAB_FORMAT_VERSION) {
-        LOG_ERROR("Prefab '%s' version %d is unreadable by this build (%d)",
-                  path.c_str(), version, PREFAB_FORMAT_VERSION);
-        return false;
-    }
-    if (!doc.contains("entities") || !doc["entities"].is_array() || doc["entities"].empty()) {
-        LOG_ERROR("Prefab '%s' has no entities", path.c_str());
-        return false;
-    }
+    if (!readPrefab(path, doc)) return false;
 
     const json& entities = doc["entities"];
 
@@ -271,10 +300,8 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
         // Index 0 is the root, which the caller already owns.
         EntityId entity = (i == 0) ? root : scene.createEntity();
 
-        // The identity an override addresses. Index 0 is the root by contract,
-        // so a file that disagrees is repaired rather than trusted.
-        const uint32_t uid = (i == 0) ? PrefabEntity::ROOT
-                                      : entry.value("uid", static_cast<uint32_t>(i));
+        // The identity an override addresses.
+        const uint32_t uid = uidAt(entities, i);
         if (!scene.has<PrefabEntity>(entity)) scene.add(entity, PrefabEntity{});
         scene.get<PrefabEntity>(entity).uid = uid;
 
@@ -303,6 +330,31 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
     }
 
     return true;
+}
+
+bool reloadComponent(Scene& scene, ResourceManager& resources, const std::string& path,
+                     EntityId entity, uint32_t uid, const std::string& component,
+                     const std::vector<PrefabOverride>& overrides) {
+    if (!scene.isAlive(entity)) return false;
+
+    json doc;
+    if (!readPrefab(path, doc)) return false;
+
+    const json& entities = doc["entities"];
+    for (size_t i = 0; i < entities.size(); ++i) {
+        if (uidAt(entities, i) != uid) continue;
+        if (!entities[i].contains("components")) return false;
+
+        const json patched = applyOverrides(entities[i]["components"], uid, overrides, path, nullptr);
+        if (!patched.contains(component)) return false;
+
+        // One key, so loadComponents runs this component's loader and no other.
+        json one = json::object();
+        one[component] = patched[component];
+        SceneSerializer::loadComponents(one, scene, entity, resources);
+        return true;
+    }
+    return false;
 }
 
 } // namespace Engine::Prefab

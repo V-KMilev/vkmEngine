@@ -234,7 +234,8 @@ A prefab is a scene fragment - one entity and its descendants, with the same
 per-entity component shape a scene uses, in its own file:
 
 ```json
-{"version": 1, "entities": [{"components": {...}}, {"parent": 0, "components": {...}}]}
+{"version": 2, "nextUid": 3,
+ "entities": [{"uid": 0, "components": {...}}, {"uid": 1, "parent": 0, "components": {...}}]}
 ```
 
 Parents precede children and a child names its parent by *index into this
@@ -249,8 +250,35 @@ expands it after the entity pass, so the roots keep their saved slots and the
 prefab's own entities take whatever is free. Editing the prefab therefore
 changes every instance the next time a scene loads, which is the point.
 
-Only the root `Transform` varies per instance; per-field overrides are
-deliberately not designed yet (see the header for why).
+### Per-instance overrides
+
+What varies per instance is the root's `Transform` and any number of *overrides*:
+one field of one component of one entity in the subtree, stored on the root's
+`PrefabInstance` and written beside the reference as `uid -> component -> field`.
+
+The entity half of that address is why the file carries a `uid` per entity and a
+`nextUid` high-water mark. Ids are runtime slots, array position moves when the
+prefab is re-saved, and `Name` is user-editable and not unique, so none of them
+survives an edit to the prefab; a uid is handed out once and never reused.
+`PrefabEntity` carries it at runtime, and a scene never writes it - a scene never
+writes a prefab's entities at all.
+
+The value is the field's own serialized JSON as text, and the merge happens on
+the document before `loadComponents`, not as a patch on a built component: the
+loaders construct a fresh component and assign, and several cannot be run twice.
+
+Overrides are stored, never re-derived by diffing an instance against its file.
+`load(save(x))` is not `x` here - an unresolvable asset name comes back as `""` -
+so a diff would manufacture overrides out of load failures. When the prefab
+changes underneath an override (the uid, component, field or type is gone, or it
+addresses the root's `Transform`, which is the instance's own pose) the entry is
+kept, reported once, and not applied, so renaming a field and renaming it back
+does not lose the edit.
+
+They are authored in the inspector: editing a component on an entity that
+belongs to an instance records the changed fields there and then
+(`src/editor/framework/prefab_overrides.h`), each card marks the fields the
+instance owns, and `Prefab::reloadComponent` gives one back to the prefab.
 
 ## Shader hot reload
 

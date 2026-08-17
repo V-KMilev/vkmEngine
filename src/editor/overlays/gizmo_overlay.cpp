@@ -9,6 +9,7 @@
 
 #include "framework/editor_common.h"
 #include "framework/editor_commands.h"
+#include "framework/prefab_overrides.h"
 #include "system/visibility/visibility.h"
 #include "core/math/bounds.h"
 #include "system/camera/camera_controller_system.h"
@@ -29,22 +30,31 @@ void GizmoOverlay::finishDrag(EditorContext& ec) {
             || bef.scale    != after->scale;
     };
 
+    // Inside a prefab instance the pose is an override on the instance rather
+    // than a value the scene keeps for the entity, so a plain transform step
+    // would be undoable but not saved: the next load rebuilds the subtree from
+    // the prefab and the drag is gone. The instance root is the exception - the
+    // scene stores that pose itself - and record says so by returning null.
+    auto stepFor = [&](EntityId id, const Transform& bef,
+                       const Transform& after) -> std::unique_ptr<Command> {
+        auto step = PrefabOverrides::record<Transform>(ctx.scene, ctx.resources, id, bef, after,
+                                                       "Transform");
+        if (step) return step;
+        return std::make_unique<TransformChangeCommand>(id, bef, after, "Transform");
+    };
+
     if (m_dragSelection.size() > 1) {
         // One history entry for the whole selection's motion.
         auto batch = std::make_unique<CompositeCommand>("Transform Selection");
         for (const auto& [id, bef] : m_dragSelection) {
             const Transform* after = nullptr;
-            if (changedOf(id, bef, after)) {
-                batch->add(std::make_unique<TransformChangeCommand>(
-                    id, bef, *after, "Transform"));
-            }
+            if (changedOf(id, bef, after)) batch->add(stepFor(id, bef, *after));
         }
         if (!batch->empty()) state.commands.push(std::move(batch));
     } else {
         const Transform* after = nullptr;
         if (changedOf(m_dragEntity, m_dragStartTransform, after)) {
-            state.commands.push(std::make_unique<TransformChangeCommand>(
-                m_dragEntity, m_dragStartTransform, *after, "Transform"));
+            state.commands.push(stepFor(m_dragEntity, m_dragStartTransform, *after));
         }
     }
     m_gizmo.endDrag();

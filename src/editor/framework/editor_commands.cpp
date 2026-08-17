@@ -11,6 +11,7 @@
 #include "io/scene/prefab.h"
 #include "resource/resource_manager.h"
 #include "framework/editor_state.h"
+#include "framework/prefab_overrides.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "system/script/script_component.h"
 
@@ -413,6 +414,26 @@ void PlacePrefabCommand::undo(Scene& scene, EditorState& state) {
     HierarchyOperations::destroyHierarchy(scene, root);
     state.hierarchyDirty = true;
     if (state.selectedEntity.index == m_rootSlot) state.deselect();
+}
+
+void PrefabOverrideCommand::redo(Scene& scene, EditorState&) {
+    PrefabOverrides::apply(scene, *m_resources, liveEntity(scene, m_root),
+                           liveEntity(scene, m_target), m_component, m_after);
+}
+
+void PrefabOverrideCommand::undo(Scene& scene, EditorState&) {
+    PrefabOverrides::apply(scene, *m_resources, liveEntity(scene, m_root),
+                           liveEntity(scene, m_target), m_component, m_before);
+}
+
+bool PrefabOverrideCommand::tryMerge(Command& incoming) {
+    // Coalesce only with another change to the same entity's same component -
+    // one drag over one card. The chain start (m_before) stays; only m_after
+    // slides forward to the newest entry set.
+    auto* p = dynamic_cast<PrefabOverrideCommand*>(&incoming);
+    if (!p || p->m_target != m_target || p->m_component != m_component) return false;
+    m_after = p->m_after;
+    return true;
 }
 
 namespace {
