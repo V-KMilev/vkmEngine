@@ -18,6 +18,7 @@
 #include "ecs/component/collider.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/name.h"
+#include "ecs/component/prefab_entity.h"
 #include "ecs/component/prefab_instance.h"
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/irradiance_volume.h"
@@ -234,6 +235,12 @@ class ComponentEditCommand : public Command {
  * vocabulary is one new row here. ScriptComponent is deliberately absent: it is
  * move-only and stored as serialized JSON (see EntitySnapshot::scriptJson),
  * handled as an explicit special case in capture/apply.
+ *
+ * PrefabInstance and PrefabEntity are on the list because they are what makes a
+ * resurrected instance an instance rather than the entities it expanded to:
+ * without the marker the scene writes the subtree out inline and stops naming
+ * the prefab, and without the uids every override addresses an entity that no
+ * longer answers to its number.
  */
 #define VKM_EDITOR_SNAPSHOT_COMPONENTS(X) \
     X(Transform,       transform)         \
@@ -253,7 +260,9 @@ class ComponentEditCommand : public Command {
     X(UIElement,        uiElement)        \
     X(UIImage,          uiImage)          \
     X(UIText,           uiText)           \
-    X(UIButton,         uiButton)
+    X(UIButton,         uiButton)         \
+    X(PrefabEntity,     prefabEntity)     \
+    X(PrefabInstance,   prefabInstance)
 
 /**
  * @brief Snapshot of every editor-visible component on a single entity.
@@ -371,11 +380,10 @@ class DestroySubtreeCommand : public Command {
 /**
  * @brief Place an instance of a prefab into the scene, undoable.
  *
- * Redo rebuilds the instance from the prefab file instead of from a snapshot.
- * EntitySnapshot carries components, not the PrefabInstance marker and not the
- * uids instancing stamps on the subtree, so a snapshot round-trip would bring
- * the instance back as loose entities that the scene then writes out inline -
- * the same reason SceneSerializer expands a prefab rather than storing it.
+ * Redo rebuilds the instance from the prefab file rather than from a snapshot of
+ * the entities the placement expanded to, because that is what a placement is:
+ * the scene keeps a reference, a pose and the overrides against it, and building
+ * the subtree from the file is what a scene load does with them.
  *
  * Reaches the ResourceManager through a pointer captured at construction, like
  * RenameAssetCommand: the prefab resolves its assets by name on every rebuild,
@@ -388,15 +396,16 @@ class PlacePrefabCommand : public Command {
          * @brief Record a placement that has already happened.
          *
          * @param resources Manager the rebuild resolves the prefab's assets against.
-         * @param path Prefab file, as it is stored on the instance.
+         * @param instance The instance as the scene stores it: which prefab, and
+         *                 the overrides the rebuild reapplies to its subtree.
          * @param root Instance root; only its slot is kept, so redo can rebuild
          *             at the same index a later command may refer to.
          * @param at Pose the instance was placed at.
          * @param label History entry text.
          */
-        PlacePrefabCommand(ResourceManager& resources, std::string path, EntityId root,
+        PlacePrefabCommand(ResourceManager& resources, PrefabInstance instance, EntityId root,
                            const Transform& at, const char* label)
-            : m_resources(&resources), m_path(std::move(path)), m_rootSlot(root.index),
+            : m_resources(&resources), m_instance(std::move(instance)), m_rootSlot(root.index),
               m_at(at), m_label(label) {}
 
         void redo(Scene&, EditorState&) override;
@@ -405,7 +414,7 @@ class PlacePrefabCommand : public Command {
 
     private:
         ResourceManager* m_resources;
-        std::string      m_path;
+        PrefabInstance   m_instance;
         uint32_t         m_rootSlot;
         Transform        m_at;
         const char*      m_label;

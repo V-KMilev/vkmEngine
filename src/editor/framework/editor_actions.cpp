@@ -268,33 +268,78 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
 }
 
 namespace {
+// How far along X a copy lands from its source, so it is visible rather than
+// hidden inside the original.
+constexpr float DUPLICATE_OFFSET_X = 1.0f;
+
+// A copy and the step that removes it again, handed back together because the
+// batch path needs that step inside the composite it pushes for the whole set.
+struct Duplicate {
+    EntityId                 entity;
+    std::unique_ptr<Command> step;
+};
+
 // The duplicate core shared by the single and batch paths: clone @p source
 // via the snapshot machinery (so "what makes up an entity" lives in one
 // place), nudged off the original, never stealing active-camera/auto-play.
-EntityId duplicateOne(Scene& scene, EntityId source) {
+//
+// An instance root is instanced from its prefab again instead, carrying its
+// overrides over. Its interior belongs to the prefab, so copying the root's
+// components alone yields an instance with nothing under it, and copying the
+// whole subtree yields the loose entity block the feature exists to replace.
+Duplicate duplicateOne(Scene& scene, ResourceManager& resources, EditorState& state,
+                       EntityId source) {
+    if (scene.has<PrefabInstance>(source)) {
+        const PrefabInstance instance = scene.get<PrefabInstance>(source);
+
+        Transform at = scene.has<Transform>(source) ? scene.get<Transform>(source) : Transform{};
+        at.position.x += DUPLICATE_OFFSET_X;
+
+        const EntityId copy = scene.createEntity();
+        scene.add(copy, Transform{at});
+        scene.add(copy, PrefabInstance{instance});
+        if (!Prefab::instantiateInto(scene, resources, instance.source, copy,
+                                     instance.overrides)) {
+            // The subtree, not the root: a build that stopped partway has already
+            // parented whatever it managed to create under it.
+            HierarchyOperations::destroyHierarchy(scene, copy);
+            const std::string name = std::filesystem::path(instance.source).filename().string();
+            state.pushToast(EditorState::ToastKind::Error,
+                            "Could not duplicate the instance of '" + name + "'");
+            return {};
+        }
+        return {copy, std::make_unique<PlacePrefabCommand>(
+                          resources, instance, copy, at, "Duplicate Entity")};
+    }
+
     EntitySnapshot snap = EntitySnapshot::capture(scene, source);
-    if (snap.transform) snap.transform->position += glm::vec3(1.0f, 0.0f, 0.0f);
+    if (snap.transform) snap.transform->position.x += DUPLICATE_OFFSET_X;
     if (snap.camera)    snap.camera->active = false;
     if (snap.animation) snap.animation->playing = false;
+    // A uid names an entity inside a prefab and the copy is a scene entity of
+    // its own, so keeping the number would point the original's overrides at it.
+    snap.prefabEntity.reset();
 
     const EntityId newId = scene.createEntity();
     snap.apply(scene, newId);
-    return newId;
+    return {newId, std::make_unique<CreateEntityCommand>(
+                       EntitySnapshot::capture(scene, newId), "Duplicate Entity")};
 }
 } // namespace
 
-void duplicateEntity(Scene& scene, EditorState& state, EntityId source) {
-    const EntityId newId = duplicateOne(scene, source);
-    // Same path as createEntity: snapshot the result so undo destroys it.
-    state.commands.push(std::make_unique<CreateEntityCommand>(
-        EntitySnapshot::capture(scene, newId), "Duplicate Entity"));
+void duplicateEntity(Scene& scene, ResourceManager& resources, EditorState& state,
+                     EntityId source) {
+    Duplicate copy = duplicateOne(scene, resources, state, source);
+    if (!copy.entity) return;
+
+    state.commands.push(std::move(copy.step));
     commitStructureChange(state);
-    state.selectEntity(newId);
+    state.selectEntity(copy.entity);
 }
 
-void duplicateSelection(Scene& scene, EditorState& state) {
+void duplicateSelection(Scene& scene, ResourceManager& resources, EditorState& state) {
     if (state.selection.size() <= 1) {
-        if (state.selectedEntity) duplicateEntity(scene, state, state.selectedEntity);
+        if (state.selectedEntity) duplicateEntity(scene, resources, state, state.selectedEntity);
         return;
     }
 
@@ -304,10 +349,10 @@ void duplicateSelection(Scene& scene, EditorState& state) {
     clones.reserve(sources.size());
     for (EntityId src : sources) {
         if (!scene.isAlive(src)) continue;
-        const EntityId newId = duplicateOne(scene, src);
-        batch->add(std::make_unique<CreateEntityCommand>(
-            EntitySnapshot::capture(scene, newId), "Duplicate Entity"));
-        clones.push_back(newId);
+        Duplicate copy = duplicateOne(scene, resources, state, src);
+        if (!copy.entity) continue;
+        batch->add(std::move(copy.step));
+        clones.push_back(copy.entity);
     }
     if (clones.empty()) return;
 
@@ -427,7 +472,7 @@ EntityId placePrefab(Scene& scene, ResourceManager& resources, EditorState& stat
     }
 
     state.commands.push(std::make_unique<PlacePrefabCommand>(
-        resources, path, root, at, "Place Prefab"));
+        resources, scene.get<PrefabInstance>(root), root, at, "Place Prefab"));
     commitStructureChange(state);
     state.selectEntity(root);
     return root;

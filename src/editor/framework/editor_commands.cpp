@@ -396,10 +396,10 @@ void PlacePrefabCommand::redo(Scene& scene, EditorState& state) {
     // The pose goes on first because instantiateInto keeps a Transform the root
     // already carries and takes the prefab's authored one otherwise.
     scene.add(root, Transform{m_at});
-    scene.add(root, PrefabInstance{});
-    scene.get<PrefabInstance>(root).source = m_path;
+    scene.add(root, PrefabInstance{m_instance});
 
-    if (!Prefab::instantiateInto(scene, *m_resources, m_path, root)) {
+    if (!Prefab::instantiateInto(scene, *m_resources, m_instance.source, root,
+                                 m_instance.overrides)) {
         // The subtree, not the root: a build that stopped partway has already
         // parented whatever it managed to create under it.
         HierarchyOperations::destroyHierarchy(scene, root);
