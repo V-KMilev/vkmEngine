@@ -26,10 +26,13 @@
 #include "ecs/component/ui_image.h"
 #include "ecs/component/ui_text.h"
 #include "ecs/component/ui_button.h"
+#include "ecs/component/prefab_entity.h"
+#include "ecs/component/prefab_instance.h"
 #include "ecs/environment.h"
 #include "framework/editor_actions.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
+#include "framework/prefab_overrides.h"
 #include "generator/light_generators.h"
 #include "generator/lod_generator.h"
 #include "io/project_paths.h"
@@ -132,6 +135,32 @@ bool pickAsset(const char* comboId, const char* label, ResourceManager& resource
     return picked;
 }
 
+// The fields of one component this prefab instance has taken over, as a row
+// each: the mark that a value is the instance's own rather than the prefab's,
+// and the way to give it back. Nothing is drawn for an entity outside an
+// instance, which is every entity in most scenes.
+//
+// Drawn before the fields below it, because a revert re-reads the component
+// from the prefab and those widgets must show the restored value.
+void drawOverrideRows(Scene& scene, ResourceManager& resources, EditorState& state,
+                      EntityId id, const char* component) {
+    const std::vector<std::string> fields =
+        PrefabOverrides::overriddenFields(scene, id, component);
+    if (fields.empty()) return;
+
+    std::string revert;
+    ImGui::TextColored(EditorStyle::Accent::Prefab, "Overridden by this instance");
+    for (const std::string& field : fields) {
+        drawPropertyLabel(field.c_str());
+        ImGui::PushID(field.c_str());
+        if (ImGui::Button("Revert to prefab", ImVec2(-1.0f, 0.0f))) revert = field;
+        ImGui::PopID();
+    }
+    ImGui::Separator();
+
+    if (!revert.empty()) PrefabOverrides::revert(scene, resources, state, id, component, revert);
+}
+
 // Shared scaffold for a removable, value-edited component card: the remove
 // affordance, the begin/end card pair, the get<T> + `before` snapshot, and the
 // two undo pushes (ComponentEditCommand when a field changed, then
@@ -140,18 +169,26 @@ bool pickAsset(const char* comboId, const char* label, ResourceManager& resource
 // Ordering matters: the edit push happens before endComponentCard, the remove
 // push after.
 template <typename T, typename DrawFields>
-void editComponentCard(Scene& scene, EditorState& state, EntityId id,
+void editComponentCard(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id,
                        const char* title, const ImVec4& accent,
                        const char* editLabel, const char* removeLabel,
                        DrawFields drawFields) {
     bool remove = false;
     const bool open = beginComponentCard(title, accent, true, &remove);
     if (open) {
+        drawOverrideRows(scene, resources, state, id, PrefabOverrides::COMPONENT_KEY<T>);
+
         auto& component = scene.get<T>(id);
         const T before = component;  // pre-edit value for the undo command
         const bool changed = drawFields(component);
         if (changed) {
-            state.commands.push(std::make_unique<ComponentEditCommand<T>>(id, before, component, editLabel));
+            // On an instance the edit is an override, and undoing it means
+            // undoing the entry rather than restoring a stored value.
+            auto step = PrefabOverrides::record<T>(scene, resources, id, before, component, editLabel);
+            if (!step) {
+                step = std::make_unique<ComponentEditCommand<T>>(id, before, component, editLabel);
+            }
+            state.commands.push(std::move(step));
             state.markSceneDirty();
         }
     }
@@ -190,30 +227,32 @@ void InspectorPanel::draw(EditorContext& ec) {
     Scene& scene = ctx.scene;
     EntityId id  = state.selectedEntity;
 
-    drawIdentityHeader(scene, state, id);
+    drawIdentityHeader(scene, ctx.resources, state, id);
 
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    if (scene.has<Transform>(id))  drawTransformSection(scene, state, id);
+    drawPrefabSection(scene, state, id);
+
+    if (scene.has<Transform>(id))  drawTransformSection(scene, ctx.resources, state, id);
     if (scene.has<Mesh>(id))       drawMeshSection(scene, ctx.resources, state, id);
-    if (scene.has<Light>(id))      drawLightSection(scene, state, id);
-    if (scene.has<Rigidbody>(id))  drawRigidbodySection(scene, state, id);
+    if (scene.has<Light>(id))      drawLightSection(scene, ctx.resources, state, id);
+    if (scene.has<Rigidbody>(id))  drawRigidbodySection(scene, ctx.resources, state, id);
     if (scene.has<Collider>(id))   drawColliderSection(scene, ctx.resources, state, id);
-    if (scene.has<Camera>(id))     drawCameraSection(scene, state, id);
-    if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, state, id);
+    if (scene.has<Camera>(id))     drawCameraSection(scene, ctx.resources, state, id);
+    if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, ctx.resources, state, id);
     if (scene.has<Decal>(id))          drawDecalSection(scene, ctx.resources, state, id);
-    if (scene.has<ParticleEmitter>(id)) drawParticleSection(scene, state, id);
-    if (scene.has<IrradianceVolume>(id)) drawIrradianceVolumeSection(scene, state, id);
+    if (scene.has<ParticleEmitter>(id)) drawParticleSection(scene, ctx.resources, state, id);
+    if (scene.has<IrradianceVolume>(id)) drawIrradianceVolumeSection(scene, ctx.resources, state, id);
     if (scene.has<LOD>(id))            drawLODSection(scene, ctx.resources, state, id);
-    if (scene.has<Animation>(id))  drawAnimationSection(scene, state, id);
+    if (scene.has<Animation>(id))  drawAnimationSection(scene, ctx.resources, state, id);
     if (scene.has<ScriptComponent>(id)) drawScriptSection(scene, state, id);
-    if (scene.has<UICanvas>(id))   drawUICanvasSection(scene, state, id);
-    if (scene.has<UIElement>(id))  drawUIElementSection(scene, state, id);
-    if (scene.has<UIImage>(id))    drawUIImageSection(scene, state, id);
-    if (scene.has<UIText>(id))     drawUITextSection(scene, state, id);
-    if (scene.has<UIButton>(id))   drawUIButtonSection(scene, state, id);
+    if (scene.has<UICanvas>(id))   drawUICanvasSection(scene, ctx.resources, state, id);
+    if (scene.has<UIElement>(id))  drawUIElementSection(scene, ctx.resources, state, id);
+    if (scene.has<UIImage>(id))    drawUIImageSection(scene, ctx.resources, state, id);
+    if (scene.has<UIText>(id))     drawUITextSection(scene, ctx.resources, state, id);
+    if (scene.has<UIButton>(id))   drawUIButtonSection(scene, ctx.resources, state, id);
     if (scene.has<Hierarchy>(id))  drawHierarchySection(scene, state, id);
 
     ImGui::Spacing();
@@ -263,7 +302,8 @@ void InspectorPanel::drawEmptySelectionState(EditorContext& ec) {
     }
 }
 
-void InspectorPanel::drawIdentityHeader(Scene& scene, EditorState& state, EntityId id) {
+void InspectorPanel::drawIdentityHeader(Scene& scene, ResourceManager& resources,
+                                        EditorState& state, EntityId id) {
     // [icon] #41 [name...............]. Naming is opt-in - the inspector never
     // adds Name during draw, only on explicit user action, so a glance at an
     // entity doesn't mutate the scene.
@@ -283,10 +323,14 @@ void InspectorPanel::drawIdentityHeader(Scene& scene, EditorState& state, Entity
             // tryMerge coalesces the keystroke stream into one undo step, and
             // markSceneDirty stops the rename from being silently lost on close
             // (it used to do neither).
-            state.commands.push(std::make_unique<ComponentEditCommand<Name>>(
-                id, before, name, "Rename"));
+            auto step = PrefabOverrides::record<Name>(scene, resources, id, before, name, "Rename");
+            if (!step) {
+                step = std::make_unique<ComponentEditCommand<Name>>(id, before, name, "Rename");
+            }
+            state.commands.push(std::move(step));
             state.markSceneDirty();
         }
+        drawOverrideRows(scene, resources, state, id, PrefabOverrides::COMPONENT_KEY<Name>);
     } else {
         char fallback[64];
         getEntityDisplayName(scene, id, fallback, sizeof(fallback));
@@ -303,8 +347,10 @@ void InspectorPanel::drawIdentityHeader(Scene& scene, EditorState& state, Entity
     }
 }
 
-void InspectorPanel::drawUICanvasSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<UICanvas>(scene, state, id, "UI Canvas", EditorStyle::Accent::UI, "Edit UI Canvas", "Remove UI Canvas",
+void InspectorPanel::drawUICanvasSection(Scene& scene, ResourceManager& resources,
+                                         EditorState& state, EntityId id) {
+    editComponentCard<UICanvas>(scene, resources, state, id, "UI Canvas", EditorStyle::Accent::UI,
+                                "Edit UI Canvas", "Remove UI Canvas",
         [&](UICanvas& c) {
             bool changed = false;
             changed |= propEnumCombo("Scale Mode", c.scaleMode);
@@ -317,8 +363,10 @@ void InspectorPanel::drawUICanvasSection(Scene& scene, EditorState& state, Entit
         });
 }
 
-void InspectorPanel::drawUIElementSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<UIElement>(scene, state, id, "UI Element", EditorStyle::Accent::UI, "Edit UI Element", "Remove UI Element",
+void InspectorPanel::drawUIElementSection(Scene& scene, ResourceManager& resources,
+                                          EditorState& state, EntityId id) {
+    editComponentCard<UIElement>(scene, resources, state, id, "UI Element", EditorStyle::Accent::UI,
+                                 "Edit UI Element", "Remove UI Element",
         [&](UIElement& e) {
             bool changed = false;
             changed |= propRow("Anchor", "Parent anchor point, 0..1 (top-left to bottom-right).",
@@ -334,15 +382,19 @@ void InspectorPanel::drawUIElementSection(Scene& scene, EditorState& state, Enti
         });
 }
 
-void InspectorPanel::drawUIImageSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<UIImage>(scene, state, id, "UI Image", EditorStyle::Accent::UI, "Edit UI Image", "Remove UI Image",
+void InspectorPanel::drawUIImageSection(Scene& scene, ResourceManager& resources,
+                                        EditorState& state, EntityId id) {
+    editComponentCard<UIImage>(scene, resources, state, id, "UI Image", EditorStyle::Accent::UI,
+                               "Edit UI Image", "Remove UI Image",
         [&](UIImage& i) {
             return propColor4("Color", glm::value_ptr(i.color));
         });
 }
 
-void InspectorPanel::drawUITextSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<UIText>(scene, state, id, "UI Text", EditorStyle::Accent::UI, "Edit UI Text", "Remove UI Text",
+void InspectorPanel::drawUITextSection(Scene& scene, ResourceManager& resources,
+                                       EditorState& state, EntityId id) {
+    editComponentCard<UIText>(scene, resources, state, id, "UI Text", EditorStyle::Accent::UI,
+                              "Edit UI Text", "Remove UI Text",
         [&](UIText& t) {
             bool changed = false;
             changed |= propString("Text", t.text);
@@ -355,8 +407,10 @@ void InspectorPanel::drawUITextSection(Scene& scene, EditorState& state, EntityI
         });
 }
 
-void InspectorPanel::drawUIButtonSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<UIButton>(scene, state, id, "UI Button", EditorStyle::Accent::UI, "Edit UI Button", "Remove UI Button",
+void InspectorPanel::drawUIButtonSection(Scene& scene, ResourceManager& resources,
+                                         EditorState& state, EntityId id) {
+    editComponentCard<UIButton>(scene, resources, state, id, "UI Button", EditorStyle::Accent::UI,
+                                "Edit UI Button", "Remove UI Button",
         [&](UIButton& b) {
             bool changed = false;
             changed |= propString("Event Id", b.eventId, "Identifier the UIClickEvent carries when this button fires.");
@@ -437,10 +491,58 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
     }
 }
 
-void InspectorPanel::drawTransformSection(Scene& scene, EditorState& state, EntityId id) {
+void InspectorPanel::drawPrefabSection(Scene& scene, EditorState& state, EntityId id) {
+    const EntityId root = PrefabOverrides::instanceRoot(scene, id);
+    if (!root) return;
+
+    const bool open = beginComponentCard("Prefab Instance", EditorStyle::Accent::Prefab, true);
+    if (open) {
+        const PrefabInstance& instance = scene.get<PrefabInstance>(root);
+
+        drawPropertyLabel("Source");
+        ImGui::TextUnformatted(instance.source.c_str());
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", instance.source.c_str());
+
+        // Inside the subtree the override list is on the root, which is where
+        // the total below counts and where the file is named.
+        if (root != id) {
+            drawPropertyLabel("Root");
+            char rootName[64];
+            getEntityDisplayName(scene, root, rootName, sizeof(rootName));
+            if (ImGui::SmallButton(rootName)) state.selectEntity(root);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Select the instance root");
+        }
+
+        if (!scene.has<PrefabEntity>(id)) {
+            // Nothing here can be stored: the scene writes the instance as a
+            // reference and skips its subtree, and the prefab has no entity to
+            // rebuild this one from.
+            ImGui::TextWrapped("Added to the scene, not to the prefab - this entity is "
+                               "dropped when the scene is loaded again.");
+        } else {
+            const uint32_t uid = scene.get<PrefabEntity>(id).uid;
+            size_t here = 0;
+            for (const PrefabOverride& o : instance.overrides) {
+                if (o.uid == uid) ++here;
+            }
+            if (instance.overrides.empty()) {
+                ImGui::TextDisabled("No overrides. Editing a field here makes one.");
+            } else {
+                ImGui::TextDisabled("%zu override(s) here, %zu in the instance.",
+                                    here, instance.overrides.size());
+            }
+        }
+    }
+    endComponentCard();
+}
+
+void InspectorPanel::drawTransformSection(Scene& scene, ResourceManager& resources,
+                                          EditorState& state, EntityId id) {
     // Transform is intrinsic - no remove affordance.
     const bool open = beginComponentCard("Transform", EditorStyle::Accent::Transform, true);
     if (open) {
+        drawOverrideRows(scene, resources, state, id, PrefabOverrides::COMPONENT_KEY<Transform>);
+
         auto& t = scene.get<Transform>(id);
         const Transform before = t;  // pre-edit value for the coalescing undo command
         bool changed = false;
@@ -456,8 +558,14 @@ void InspectorPanel::drawTransformSection(Scene& scene, EditorState& state, Enti
 
         if (changed) {
             // Coalescing command - tryMerge collapses the per-frame drag stream
-            // into one undo step, mirroring the gizmo's drag-end push.
-            state.commands.push(std::make_unique<TransformChangeCommand>(id, before, t, "Transform"));
+            // into one undo step, mirroring the gizmo's drag-end push. An
+            // instance child's pose is an override instead; the instance root's
+            // is not, because the scene stores that one itself.
+            auto step = PrefabOverrides::record<Transform>(scene, resources, id, before, t, "Transform");
+            if (!step) {
+                step = std::make_unique<TransformChangeCommand>(id, before, t, "Transform");
+            }
+            state.commands.push(std::move(step));
             HierarchyOperations::markDirty(scene, id);
             state.markSceneDirty();
         }
@@ -474,7 +582,8 @@ void InspectorPanel::drawTransformSection(Scene& scene, EditorState& state, Enti
 
 void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
                                      EditorState& state, EntityId id) {
-    editComponentCard<Mesh>(scene, state, id, "Mesh", EditorStyle::Accent::Mesh, "Edit Mesh", "Remove Mesh",
+    editComponentCard<Mesh>(scene, resources, state, id, "Mesh", EditorStyle::Accent::Mesh,
+                            "Edit Mesh", "Remove Mesh",
                             [&](Mesh& mesh) {
         bool changed = false;
 
@@ -528,8 +637,10 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
     });
 }
 
-void InspectorPanel::drawLightSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<Light>(scene, state, id, "Light", EditorStyle::Accent::Light, "Edit Light", "Remove Light",
+void InspectorPanel::drawLightSection(Scene& scene, ResourceManager& resources,
+                                      EditorState& state, EntityId id) {
+    editComponentCard<Light>(scene, resources, state, id, "Light", EditorStyle::Accent::Light,
+                             "Edit Light", "Remove Light",
                              [&](Light& light) {
         bool changed = false;
 
@@ -742,8 +853,9 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
     endComponentCard();
 }
 
-void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<ReflectionProbe>(scene, state, id, "Reflection Probe", EditorStyle::Accent::Probe,
+void InspectorPanel::drawReflectionProbeSection(Scene& scene, ResourceManager& resources,
+                                                EditorState& state, EntityId id) {
+    editComponentCard<ReflectionProbe>(scene, resources, state, id, "Reflection Probe", EditorStyle::Accent::Probe,
                                        "Edit Reflection Probe", "Remove Reflection Probe",
                                        [&](ReflectionProbe& probe) {
         bool changed = false;
@@ -776,7 +888,8 @@ void InspectorPanel::drawReflectionProbeSection(Scene& scene, EditorState& state
 
 void InspectorPanel::drawDecalSection(Scene& scene, ResourceManager& resources,
                                      EditorState& state, EntityId id) {
-    editComponentCard<Decal>(scene, state, id, "Decal", EditorStyle::Accent::Mesh, "Edit Decal", "Remove Decal",
+    editComponentCard<Decal>(scene, resources, state, id, "Decal", EditorStyle::Accent::Mesh,
+                             "Edit Decal", "Remove Decal",
                              [&](Decal& decal) {
         bool changed = false;
 
@@ -790,8 +903,9 @@ void InspectorPanel::drawDecalSection(Scene& scene, ResourceManager& resources,
     });
 }
 
-void InspectorPanel::drawParticleSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<ParticleEmitter>(scene, state, id, "Particle Emitter", EditorStyle::Accent::Light,
+void InspectorPanel::drawParticleSection(Scene& scene, ResourceManager& resources,
+                                         EditorState& state, EntityId id) {
+    editComponentCard<ParticleEmitter>(scene, resources, state, id, "Particle Emitter", EditorStyle::Accent::Light,
                                        "Edit Particle Emitter", "Remove Particle Emitter",
                                        [&](ParticleEmitter& e) {
         bool changed = false;
@@ -824,8 +938,9 @@ void InspectorPanel::drawParticleSection(Scene& scene, EditorState& state, Entit
     });
 }
 
-void InspectorPanel::drawIrradianceVolumeSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<IrradianceVolume>(scene, state, id, "Irradiance Volume", EditorStyle::Accent::Probe,
+void InspectorPanel::drawIrradianceVolumeSection(Scene& scene, ResourceManager& resources,
+                                                 EditorState& state, EntityId id) {
+    editComponentCard<IrradianceVolume>(scene, resources, state, id, "Irradiance Volume", EditorStyle::Accent::Probe,
                                         "Edit Irradiance Volume", "Remove Irradiance Volume",
                                         [&](IrradianceVolume& v) {
         bool changed = false;
@@ -849,8 +964,9 @@ void InspectorPanel::drawIrradianceVolumeSection(Scene& scene, EditorState& stat
     });
 }
 
-void InspectorPanel::drawRigidbodySection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<Rigidbody>(scene, state, id, "Rigidbody", EditorStyle::Accent::Physics,
+void InspectorPanel::drawRigidbodySection(Scene& scene, ResourceManager& resources,
+                                          EditorState& state, EntityId id) {
+    editComponentCard<Rigidbody>(scene, resources, state, id, "Rigidbody", EditorStyle::Accent::Physics,
                                  "Edit Rigidbody", "Remove Rigidbody",
                                  [&](Rigidbody& rb) {
         bool changed = false;
@@ -884,7 +1000,7 @@ void InspectorPanel::drawRigidbodySection(Scene& scene, EditorState& state, Enti
 }
 
 void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id) {
-    editComponentCard<Collider>(scene, state, id, "Collider", EditorStyle::Accent::Collider,
+    editComponentCard<Collider>(scene, resources, state, id, "Collider", EditorStyle::Accent::Collider,
                                 "Edit Collider", "Remove Collider",
                                 [&](Collider& col) {
         bool changed = false;
@@ -928,8 +1044,10 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
     });
 }
 
-void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<Camera>(scene, state, id, "Camera", EditorStyle::Accent::Camera, "Edit Camera", "Remove Camera",
+void InspectorPanel::drawCameraSection(Scene& scene, ResourceManager& resources,
+                                       EditorState& state, EntityId id) {
+    editComponentCard<Camera>(scene, resources, state, id, "Camera", EditorStyle::Accent::Camera,
+                              "Edit Camera", "Remove Camera",
                               [&](Camera& cam) {
         bool changed = false;
 
@@ -968,7 +1086,7 @@ void InspectorPanel::drawCameraSection(Scene& scene, EditorState& state, EntityI
 
 void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
                                     EditorState& state, EntityId id) {
-    editComponentCard<LOD>(scene, state, id, "LOD", EditorStyle::Accent::Mesh, "Edit LOD", "Remove LOD",
+    editComponentCard<LOD>(scene, resources, state, id, "LOD", EditorStyle::Accent::Mesh, "Edit LOD", "Remove LOD",
                            [&](LOD& lod) {
         bool changed = false;
 
@@ -1005,8 +1123,9 @@ void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
     });
 }
 
-void InspectorPanel::drawAnimationSection(Scene& scene, EditorState& state, EntityId id) {
-    editComponentCard<Animation>(scene, state, id, "Animation", EditorStyle::Accent::Anim,
+void InspectorPanel::drawAnimationSection(Scene& scene, ResourceManager& resources,
+                                          EditorState& state, EntityId id) {
+    editComponentCard<Animation>(scene, resources, state, id, "Animation", EditorStyle::Accent::Anim,
                                  "Edit Animation", "Remove Animation",
                                  [&](Animation& anim) {
         // Only authoring edits (length, keyframes) push a command; play/pause/
@@ -1106,6 +1225,14 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
         }
 
         if (sc.behaviors.empty()) ImGui::TextDisabled("No behaviors attached.");
+
+        // A behavior list serializes as one field holding every behavior, so a
+        // per-field override cannot address a single one - and an instance's
+        // components come back from the prefab on the next load.
+        if (PrefabOverrides::instanceRoot(scene, id)) {
+            ImGui::TextWrapped("Behavior fields are not per-instance overrides: "
+                               "edit them in the prefab.");
+        }
 
         ImGui::Spacing();
         if (ImGui::Button("+  Add Behavior", ImVec2(-1, 0))) ImGui::OpenPopup("##AddBehavior");
