@@ -170,6 +170,14 @@ std::unique_ptr<Command> recordFields(Scene& scene, ResourceManager& resources, 
         resources, root, uid, component, restore, std::move(entries), label);
 }
 
+void warnComponentIsPrefabs(const Scene& scene, EditorState& state, EntityId id,
+                            const char* component, const char* fate) {
+    if (!instanceRoot(scene, id)) return;
+    state.pushToast(EditorState::ToastKind::Warning,
+                    std::string("'") + component + "' " + fate
+                        + " - Save as Prefab to put it in the prefab");
+}
+
 void revert(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id,
             const char* component, const std::string& field) {
     const EntityId root = instanceRoot(scene, id);
