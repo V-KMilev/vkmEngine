@@ -459,10 +459,8 @@ class PrefabOverrideCommand : public Command {
          * @param label     History entry text.
          */
         PrefabOverrideCommand(ResourceManager& resources, EntityId root, uint32_t targetUid,
-                              std::string component,
-                              std::vector<PrefabOverride> before,
-                              std::vector<PrefabOverride> after,
-                              const char* label)
+                              std::string component, std::vector<PrefabOverride> before,
+                              std::vector<PrefabOverride> after, const char* label)
             : m_resources(&resources), m_root(root), m_targetUid(targetUid),
               m_component(std::move(component)), m_before(std::move(before)),
               m_after(std::move(after)), m_label(label) {}

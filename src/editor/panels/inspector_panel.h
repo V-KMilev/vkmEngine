@@ -63,10 +63,12 @@ class InspectorPanel {
         void drawRigidbodySection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawCameraSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawReflectionProbeSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawReflectionProbeSection(Scene& scene, ResourceManager& resources,
+                                        EditorState& state, EntityId id);
         void drawDecalSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawParticleSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawIrradianceVolumeSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawIrradianceVolumeSection(Scene& scene, ResourceManager& resources,
+                                         EditorState& state, EntityId id);
         void drawWorldInspector(EditorContext& ec);
         void drawLODSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawAnimationSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
