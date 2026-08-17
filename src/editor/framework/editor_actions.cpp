@@ -386,6 +386,23 @@ bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& s
     return true;
 }
 
+EntityId placePrefab(Scene& scene, ResourceManager& resources, EditorState& state,
+                     const std::string& path) {
+    const Transform at{};
+    const EntityId root = Prefab::instantiate(scene, resources, path, at);
+    if (!root) {
+        const std::string name = std::filesystem::path(path).filename().string();
+        state.pushToast(EditorState::ToastKind::Error, "Could not place prefab '" + name + "'");
+        return {};
+    }
+
+    state.commands.push(std::make_unique<PlacePrefabCommand>(
+        resources, path, root, at, "Place Prefab"));
+    commitStructureChange(state);
+    state.selectEntity(root);
+    return root;
+}
+
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
     const EntityId priorSel = state.selectedEntity;
     if (state.selectedEntity == entity) state.deselect();
@@ -547,8 +564,9 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
             ImGui::EndMenu();
         }
         ImGui::Separator();
-        // The modal can't live here: the menu closes on click and this
-        // function stops being called. Defer to drawModelImportDialog().
+        // Neither modal can live here: the menu closes on click and this
+        // function stops being called. Defer to the dialogs EditorSystem owns.
+        if (iconMenuItem(EditorIcon::Duplicate, "Prefab")) state.requestPlacePrefab = true;
         if (iconMenuItem(EditorIcon::Import, "Import Model")) state.requestModelImport = true;
         ImGui::EndMenu();
     }
@@ -581,6 +599,48 @@ void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
             commitStructureChange(state);
         }
     }
+}
+
+namespace {
+// Whether the project has a prefab to offer. A project with none is the normal
+// starting state, and the picker cannot say so itself: on a missing prefabs/ it
+// warns about a root it could not iterate and then shows the same empty list a
+// real empty directory produces.
+bool hasAnyPrefab() {
+    std::error_code ec;
+    // Recursive, because that is what the picker below lists: a check that only
+    // looked at the top level would report "none" on a project that keeps its
+    // prefabs in folders.
+    for (const auto& entry :
+            std::filesystem::recursive_directory_iterator(ProjectPaths::prefabs(), ec)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".json") return true;
+    }
+    return false;
+}
+} // namespace
+
+void PlacePrefabDialog::draw(Scene& scene, ResourceManager& resources, EditorState& state) {
+    if (state.requestPlacePrefab) {
+        state.requestPlacePrefab = false;
+        if (hasAnyPrefab()) {
+            m_picker.options.popupId    = "Place Prefab";
+            m_picker.options.title      = "Place Prefab";
+            m_picker.options.root       = ProjectPaths::prefabs();
+            m_picker.options.recursive  = true;
+            m_picker.options.kind       = AssetPicker::Kind::Files;
+            m_picker.options.extensions = {".json"};
+            // Project-relative, because that is what the instance stores and
+            // what a scene carrying it has to resolve on another machine.
+            m_picker.options.relativeTo = ProjectPaths::projectRoot();
+            m_picker.open();
+        } else {
+            state.pushToast(EditorState::ToastKind::Info,
+                            "No prefabs yet - right-click an entity and Save as Prefab");
+        }
+    }
+
+    std::string picked;
+    if (m_picker.draw(picked)) placePrefab(scene, resources, state, picked);
 }
 
 } // namespace EditorActions

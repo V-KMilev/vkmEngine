@@ -223,6 +223,14 @@ EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string
         scene.destroyEntity(root);
         return {};
     }
+
+    // What makes the result an instance rather than a loose copy of the prefab's
+    // entities: without it a scene save writes the whole subtree inline and the
+    // link to the file is gone. A caller that brings its own root marks it
+    // itself - the scene loader has to, because the overrides it read belong on
+    // the component before the subtree is built from it.
+    scene.add(root, PrefabInstance{});
+    scene.get<PrefabInstance>(root).source = path;
     return root;
 }
 

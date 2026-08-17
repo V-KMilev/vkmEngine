@@ -129,6 +129,7 @@ class EditorSystem : public System {
         EditorShortcuts   m_shortcuts;
         EditorPanelResize m_panelResize;
         EditorActions::ModelImportDialog m_modelImport;
+        EditorActions::PlacePrefabDialog m_placePrefab;
 
         EditorState      m_state;
         HierarchyPanel   m_hierarchy;

@@ -5,8 +5,10 @@
 #include <nlohmann/json.hpp>
 
 #include "ecs/component/lod.h"
+#include "ecs/component/prefab_instance.h"
 #include "ecs/scene.h"
 #include "io/scene/component_serializer.h"
+#include "io/scene/prefab.h"
 #include "resource/resource_manager.h"
 #include "framework/editor_state.h"
 #include "system/hierarchy/hierarchy_operations.h"
@@ -382,6 +384,35 @@ void DestroySubtreeCommand::undo(Scene& scene, EditorState& state) {
             }
         }
     }
+}
+
+void PlacePrefabCommand::redo(Scene& scene, EditorState& state) {
+    // Rebuilt into a root reclaimed at its original slot, the way the scene
+    // loader restores an instance: a command pushed after this one addresses
+    // the placed entity by index, so the index has to still be that entity's.
+    const EntityId root = scene.createEntityAt(m_rootSlot);
+
+    // The pose goes on first because instantiateInto keeps a Transform the root
+    // already carries and takes the prefab's authored one otherwise.
+    scene.add(root, Transform{m_at});
+    scene.add(root, PrefabInstance{});
+    scene.get<PrefabInstance>(root).source = m_path;
+
+    if (!Prefab::instantiateInto(scene, *m_resources, m_path, root)) {
+        scene.destroyEntity(root);
+        return;
+    }
+
+    state.hierarchyDirty = true;
+    state.selectEntity(root);
+}
+
+void PlacePrefabCommand::undo(Scene& scene, EditorState& state) {
+    const EntityId root = scene.entityAt(m_rootSlot);
+    if (!scene.isAlive(root)) return;
+    HierarchyOperations::destroyHierarchy(scene, root);
+    state.hierarchyDirty = true;
+    if (state.selectedEntity.index == m_rootSlot) state.deselect();
 }
 
 namespace {
