@@ -8,6 +8,18 @@ Mechanics (naming, layout) are in [code-style.md](code-style.md).
 The one-sentence version: **write the simplest thing that solves today's
 problem cleanly, and would still fit if the engine doubled in size.**
 
+Simplicity is the means, not the end. The end is code that is still right in
+three years, because this engine is built to last rather than to be rewritten
+each time it grows ([development.md](development.md#1-the-goal-you-are-building-toward)).
+Simple designs earn their place by staying correct as things pile on top of
+them; clever ones fail quietly the moment the assumption they were built around
+stops holding.
+
+Which means smaller is not automatically better. If the explicit version is the
+one that stays correct under load, it wins over the compact one that reads
+well today and breaks the first time something unexpected leans on it. Fewer
+lines is evidence of a simpler design, not a substitute for one.
+
 ---
 
 ## 1. Solve today's problem, not tomorrow's
@@ -114,8 +126,11 @@ Before committing a non-trivial change, ask:
 2. **If the engine doubles in size,** does this still fit, or will it have to be
    rewritten?
 3. **If you deleted the comments,** is the code still understandable?
+4. **If a hundred things end up depending on this,** is it still the right
+   shape - or does it become the thing everything has to work around?
 
-If the answer to any of these is "no," the change is not done yet.
+If the answer to any of these is "no," the change is not done yet. Question 4
+matters most for anything other code will build on, and least for a leaf.
 
 ---
 
