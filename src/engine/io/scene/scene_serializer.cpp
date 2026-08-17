@@ -4,6 +4,7 @@
 
 #include <array>
 #include <limits>
+#include <cstdlib>
 #include <set>
 #include <string>
 #include <utility>
@@ -193,7 +194,26 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
             components = json::object();
             if (!transform.is_null()) components["Transform"] = std::move(transform);
             if (!hierarchy.is_null()) components["Hierarchy"] = std::move(hierarchy);
-            entity["prefab"] = scene.get<PrefabInstance>(id).source;
+            const PrefabInstance& instance = scene.get<PrefabInstance>(id);
+            entity["prefab"] = instance.source;
+
+            // uid -> component -> field. The nesting is the address, and object
+            // keys make a duplicate (uid, component, field) unrepresentable.
+            // Omitted when empty, so an instance with no edits reads exactly as
+            // it did before overrides existed.
+            if (!instance.overrides.empty()) {
+                json overrides = json::object();
+                for (const PrefabOverride& o : instance.overrides) {
+                    json value;
+                    try {
+                        value = json::parse(o.value);
+                    } catch (const std::exception&) {
+                        continue;  // read-side already rejected these; belt and braces
+                    }
+                    overrides[std::to_string(o.uid)][o.component][o.field] = std::move(value);
+                }
+                if (!overrides.empty()) entity["overrides"] = std::move(overrides);
+            }
         }
 
         entity["components"] = std::move(components);
@@ -286,8 +306,29 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             }
 
             if (entry.contains("prefab")) {
-                prefabRoots.emplace_back(entity, entry.value("prefab", std::string{}));
-                staging.add(entity, PrefabInstance{entry.value("prefab", std::string{})});
+                PrefabInstance instance;
+                instance.source = entry.value("prefab", std::string{});
+
+                // Flatten uid -> component -> field back into the stored list.
+                // A value that will not parse is the one drift case that drops:
+                // it cannot be held in memory as text we could write back, and
+                // it can only come from a hand-edit.
+                if (entry.contains("overrides") && entry["overrides"].is_object()) {
+                    for (const auto& [uidKey, comps] : entry["overrides"].items()) {
+                        if (!comps.is_object()) continue;
+                        for (const auto& [comp, fields] : comps.items()) {
+                            if (!fields.is_object()) continue;
+                            for (const auto& [field, value] : fields.items()) {
+                                instance.overrides.push_back(PrefabOverride{
+                                    static_cast<uint32_t>(std::strtoul(uidKey.c_str(), nullptr, 10)),
+                                    comp, field, value.dump()});
+                            }
+                        }
+                    }
+                }
+
+                prefabRoots.emplace_back(entity, instance.source);
+                staging.add(entity, std::move(instance));
             }
 
             if (components.is_object()) {
@@ -300,11 +341,20 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
         // Pass 2b: expand prefab instances. After the entity pass so the roots
         // hold their saved slots, and the prefab's own entities take whatever
         // is free rather than competing for them.
+        static const std::vector<PrefabOverride> NO_OVERRIDES;
+        std::set<std::string> prefabDrift;
         for (const auto& [root, prefabPath] : prefabRoots) {
-            if (!Prefab::instantiateInto(staging, stagingResources, prefabPath, root)) {
+            const std::vector<PrefabOverride>& overrides =
+                staging.has<PrefabInstance>(root) ? staging.get<PrefabInstance>(root).overrides
+                                                  : NO_OVERRIDES;
+            if (!Prefab::instantiateInto(staging, stagingResources, prefabPath, root,
+                                         overrides, &prefabDrift)) {
                 LOG_WARNING("Prefab '%s' failed to expand in '%s'; instance left empty",
                     prefabPath.c_str(), source);
             }
+        }
+        for (const std::string& message : prefabDrift) {
+            LOG_WARNING("%s (kept, not applied)", message.c_str());
         }
 
         // Pass 2: wire up Hierarchy::parent now that every entity exists at its
