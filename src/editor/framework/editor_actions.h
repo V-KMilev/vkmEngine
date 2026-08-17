@@ -92,6 +92,26 @@ void duplicateEntity(Scene& scene, EditorState& state, EntityId source);
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity);
 
 /**
+ * @brief Write @p entity and its subtree to the project's prefabs/ as a prefab.
+ *
+ * The file is named after the entity, so saving the same entity again updates
+ * the prefab it came from rather than making a second one - which is what makes
+ * this the way to edit a prefab: instance it, change it, save it back.
+ *
+ * On success @p entity becomes an instance of what it just wrote, so the scene
+ * stores it as a reference from then on and every other instance picks the
+ * change up on its next load.
+ *
+ * @param scene     Scene holding the subtree.
+ * @param resources Resolves asset handles to names.
+ * @param state     Editor state, for the toast and the dirty flag.
+ * @param entity    Root of the subtree to save.
+ * @return True when the prefab was written.
+ */
+bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& state,
+                  EntityId entity);
+
+/**
  * @brief Delete every selected entity as ONE undo step.
  *
  * Entities whose ancestor is also selected are skipped (they die with the

@@ -48,7 +48,8 @@ bool isHierarchyNode(const Scene& scene, EntityId id) {
 void HierarchyPanel::draw(EditorContext& ec) {
     FrameContext& ctx   = ec.frame;
     EditorState&  state = ec.state;
-    auto& scene = ctx.scene;
+    auto& scene     = ctx.scene;
+    auto& resources = ctx.resources;
 
     float btnW = ImGui::GetFrameHeight();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - btnW - ImGui::GetStyle().ItemSpacing.x);
@@ -153,9 +154,9 @@ void HierarchyPanel::draw(EditorContext& ec) {
                     entityTreeNode(reinterpret_cast<void*>(static_cast<uintptr_t>(id.index)),
                                    f, entityIconKind(scene, id), name);
                     if (ImGui::IsItemClicked()) rowClickSelect(state, id);
-                    drawEntityContextMenu(scene, state, id);
+                    drawEntityContextMenu(scene, resources, state, id);
                 } else {
-                    drawEntityNode(scene, state, id);
+                    drawEntityNode(scene, resources, state, id);
                 }
             }
         }
@@ -175,7 +176,8 @@ void HierarchyPanel::draw(EditorContext& ec) {
     ImGui::TextDisabled("%zu entities", scene.entityCount());
 }
 
-void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId entity) {
+void HierarchyPanel::drawEntityNode(Scene& scene, ResourceManager& resources,
+                                    EditorState& state, EntityId entity) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow
                              | ImGuiTreeNodeFlags_SpanAvailWidth
                              | ImGuiTreeNodeFlags_FramePadding;
@@ -292,17 +294,18 @@ void HierarchyPanel::drawEntityNode(Scene& scene, EditorState& state, EntityId e
 
     if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) rowClickSelect(state, entity);
 
-    drawEntityContextMenu(scene, state, entity);
+    drawEntityContextMenu(scene, resources, state, entity);
 
     if (nodeOpen && hasChildren) {
         HierarchyOperations::forEachChild(scene, entity, [&](EntityId child) {
-            drawEntityNode(scene, state, child);
+            drawEntityNode(scene, resources, state, child);
         });
         ImGui::TreePop();
     }
 }
 
-void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, EntityId entity) {
+void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resources,
+                                           EditorState& state, EntityId entity) {
     if (!ImGui::BeginPopupContextItem()) return;
 
     char ctxName[64];
@@ -321,6 +324,12 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, EditorState& state, Ent
     if (ImGui::MenuItem("Delete", keyLabel(state.keybinds.deleteEntity))) {
         if (onSelection) EditorActions::deleteSelection(scene, state);
         else             EditorActions::deleteEntity(scene, state, entity);
+    }
+
+    // Saving an instance back over its own prefab is how a prefab is edited, so
+    // this is offered whether or not the entity already is one.
+    if (ImGui::MenuItem("Save as Prefab")) {
+        EditorActions::saveAsPrefab(scene, resources, state, entity);
     }
 
     if (scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).parent) {
