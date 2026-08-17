@@ -1,6 +1,8 @@
 #include "framework/editor_commands.h"
 
 #include <algorithm>
+#include <filesystem>
+#include <string>
 
 #include <nlohmann/json.hpp>
 
@@ -403,6 +405,12 @@ void PlacePrefabCommand::redo(Scene& scene, EditorState& state) {
         // The subtree, not the root: a build that stopped partway has already
         // parented whatever it managed to create under it.
         HierarchyOperations::destroyHierarchy(scene, root);
+        // The prefab is read again on every rebuild, so it can be gone or
+        // unreadable by the time a redo asks for it. Without this the redo is a
+        // keypress that does nothing to a scene that visibly lost an entity.
+        const std::string name = std::filesystem::path(m_instance.source).filename().string();
+        state.pushToast(EditorState::ToastKind::Error,
+                        "Could not rebuild the instance of '" + name + "'");
         return;
     }
 
@@ -418,14 +426,27 @@ void PlacePrefabCommand::undo(Scene& scene, EditorState& state) {
     if (state.selectedEntity.index == m_rootSlot) state.deselect();
 }
 
-void PrefabOverrideCommand::redo(Scene& scene, EditorState&) {
-    PrefabOverrides::apply(scene, *m_resources, liveEntity(scene, m_root),
-                           m_targetUid, m_component, m_after);
+// The entry list is what the scene stores, so it moves either way; the value
+// beside it comes back from the prefab, and a prefab that has since lost the
+// component has none to give. Say so rather than leave the number on screen
+// disagreeing with the list that no longer claims it.
+void PrefabOverrideCommand::step(Scene& scene, EditorState& state,
+                                 const std::vector<PrefabOverride>& entries) {
+    if (PrefabOverrides::apply(scene, *m_resources, liveEntity(scene, m_root),
+                               m_targetUid, m_component, entries)) {
+        return;
+    }
+    state.pushToast(EditorState::ToastKind::Warning,
+                    "The prefab no longer defines " + m_component
+                        + " - the value here is stale until the scene is loaded again");
 }
 
-void PrefabOverrideCommand::undo(Scene& scene, EditorState&) {
-    PrefabOverrides::apply(scene, *m_resources, liveEntity(scene, m_root),
-                           m_targetUid, m_component, m_before);
+void PrefabOverrideCommand::redo(Scene& scene, EditorState& state) {
+    step(scene, state, m_after);
+}
+
+void PrefabOverrideCommand::undo(Scene& scene, EditorState& state) {
+    step(scene, state, m_before);
 }
 
 bool PrefabOverrideCommand::tryMerge(Command& incoming) {
