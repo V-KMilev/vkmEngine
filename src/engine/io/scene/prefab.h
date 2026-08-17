@@ -28,13 +28,9 @@ class ResourceManager;
  * the expanded entities. That keeps the scene file small, and keeps the prefab
  * the single definition of what the thing is.
  *
- * **Only the root Transform varies per instance.** Anything else that differs -
- * a different colour, a different mesh - is a different prefab. Per-field
- * overrides are the obvious extension, and the format leaves room for them (an
- * `overrides` object beside the transform), but they need a way to name a field
- * on a specific entity inside the subtree and a policy for what happens when the
- * prefab's shape changes underneath an override. That is the expensive half of
- * the design and it is deliberately not guessed at here.
+ * **What varies per instance** is the root's Transform and the fields an
+ * override names. Everything else belongs to the prefab, so changing it in the
+ * file changes every instance at once.
  *
  * Prefabs are referenced by path rather than through the AssetLibrary because
  * nothing cooks them - they are authored JSON, read as-is, like scenes.
@@ -123,6 +119,30 @@ namespace Prefab {
                          const std::string& path, EntityId root,
                          const std::vector<PrefabOverride>& overrides = {},
                          std::set<std::string>* drift = nullptr);
+
+    /**
+     * @brief Re-read one component of one instance entity from the prefab.
+     *
+     * A component on an instance is the prefab's value patched by the
+     * instance's overrides, so dropping an override is not an undo of the edit
+     * that made it - it is a re-read of that definition, which is what this
+     * does. Only @p component is touched; the rest of the entity is left alone.
+     *
+     * Reads the file per call, which suits the interactive edits it serves and
+     * not a per-frame path.
+     *
+     * @param scene     Scene holding the entity.
+     * @param resources Resolves asset names to handles.
+     * @param path      Prefab the instance was built from.
+     * @param entity    Entity receiving the component.
+     * @param uid       That entity's identity inside the prefab.
+     * @param component Component key, as SceneSerializer writes it.
+     * @param overrides Every override on the instance; only this uid's apply.
+     * @return True when the prefab defines the component and it was loaded.
+     */
+    bool reloadComponent(Scene& scene, ResourceManager& resources, const std::string& path,
+                         EntityId entity, uint32_t uid, const std::string& component,
+                         const std::vector<PrefabOverride>& overrides);
 
 } // namespace Prefab
 

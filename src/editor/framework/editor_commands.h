@@ -18,6 +18,7 @@
 #include "ecs/component/collider.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/name.h"
+#include "ecs/component/prefab_instance.h"
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/irradiance_volume.h"
 #include "ecs/component/decal.h"
@@ -408,6 +409,62 @@ class PlacePrefabCommand : public Command {
         uint32_t         m_rootSlot;
         Transform        m_at;
         const char*      m_label;
+};
+
+/**
+ * @brief Change what one instance overrides on one component, undoable.
+ *
+ * Takes the place of ComponentEditCommand for an entity inside a prefab
+ * instance: the component's value there is the prefab's, patched by the
+ * instance's overrides, so the edit that has to be reversed is the override
+ * entry rather than the value. Restoring the entries and re-reading the
+ * component from the file lands on exactly what a reload of the scene would
+ * show, which a stored component value could disagree with.
+ *
+ * Entries are carried whole per (entity, component) rather than as a delta, so
+ * the two directions are the same operation with different data - and so
+ * coalescing a drag is just taking the newer set.
+ *
+ * Reaches the ResourceManager through a pointer captured at construction, like
+ * PlacePrefabCommand: the prefab resolves its assets by name on every re-read,
+ * and the command stack is cleared on scene load, so the pointer never outlives
+ * the manager it was taken from.
+ */
+class PrefabOverrideCommand : public Command {
+    public:
+        /**
+         * @brief Record an override change that has already been applied.
+         *
+         * @param resources Manager the re-read resolves the prefab's assets against.
+         * @param root      Instance root carrying the override list.
+         * @param target    Entity whose component the entries address.
+         * @param component Component key, as SceneSerializer writes it.
+         * @param before    The entries for that pair before the edit.
+         * @param after     The entries for it now.
+         * @param label     History entry text.
+         */
+        PrefabOverrideCommand(ResourceManager& resources, EntityId root, EntityId target,
+                              std::string component,
+                              std::vector<PrefabOverride> before,
+                              std::vector<PrefabOverride> after,
+                              const char* label)
+            : m_resources(&resources), m_root(root), m_target(target),
+              m_component(std::move(component)), m_before(std::move(before)),
+              m_after(std::move(after)), m_label(label) {}
+
+        void redo(Scene&, EditorState&) override;
+        void undo(Scene&, EditorState&) override;
+        const char* label() const override { return m_label; }
+        bool tryMerge(Command& incoming) override;
+
+    private:
+        ResourceManager*            m_resources;
+        EntityId                    m_root;
+        EntityId                    m_target;
+        std::string                 m_component;
+        std::vector<PrefabOverride> m_before;
+        std::vector<PrefabOverride> m_after;
+        const char*                 m_label;
 };
 
 /**

@@ -51,7 +51,7 @@ overlays drawn on top.
 | Panel               | File                                  | Description                                                                 |
 |---------------------|---------------------------------------|-----------------------------------------------------------------------------|
 | Hierarchy           | `panels/hierarchy_panel.cpp`          | Entity tree; drag a node onto another to reparent (cycle-safe); context-menu Unparent |
-| Inspector           | `panels/inspector_panel.cpp`          | Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent |
+| Inspector           | `panels/inspector_panel.cpp`          | Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent; prefab-instance overrides |
 | Bottom              | `panels/bottom_panel.cpp`             | Per-scene working surface: grouped master-detail browser                    |
 | Render Settings     | `panels/render_settings_panel.cpp`    | World-level render tuning: `RenderSettings` (GTAO / bloom / MSAA / shadows / grid) plus the `Environment` (IBL / skybox); opened from Window > Render Settings |
 | Physics Settings    | drawn inline in `editor_system.cpp`   | Edits the scene's `PhysicsWorld` singleton (gravity, solver iterations); opened from the Window menu |
@@ -134,6 +134,13 @@ Available commands (in `framework/editor_commands.h`):
 - `ReparentCommand`: (child, oldParent, newParent), inverse via
   `HierarchyOperations::setParent` / `removeFromParent`.
 - `SetActiveCameraCommand`: backs the inspector's "Set as Main" camera action.
+- `PlacePrefabCommand`: redo rebuilds the instance from the prefab file into a
+  root reclaimed at its original slot - a snapshot carries components but not
+  the instance marker or the uids an override addresses.
+- `PrefabOverrideCommand`: takes the place of `ComponentEditCommand` on an
+  entity inside a prefab instance. The value there is the prefab's, patched by
+  the instance's overrides, so both directions restore an entry set and re-read
+  the component from the file; it coalesces a drag the same way.
 - `RenameAssetCommand<HandleType>`: undoable asset rename (routes through
   `ResourceManager::rename` so the name index stays consistent).
 
@@ -255,6 +262,9 @@ Light and camera entities show their own gizmos in `gizmo_overlay.cpp`
 - Click in the viewport to pick entities (ray-AABB against the visible
   set's cached world AABBs).
 - The hierarchy panel highlights the selection.
-- The inspector shows components of the selected entity.
+- The inspector shows components of the selected entity. Entities inside a
+  prefab instance are selected and edited like any other; an edit to one becomes
+  a per-instance override, the card marks the fields the instance owns, and each
+  offers "Revert to prefab" (`framework/prefab_overrides.h`).
 - Focus, duplicate, delete, undo, redo, save, save-as, open, preferences
   have dedicated keybinds; the full list lives in `input/editor_keybinds.h`.

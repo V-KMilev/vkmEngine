@@ -26,6 +26,10 @@ struct EditorContext;
  * selected instead of an entity, shows the scene-global Environment settings.
  * Edits route through the command stack so they are undoable. The compact Mesh
  * card links out to the standalone Material Editor for full PBR editing.
+ *
+ * Entities belonging to a prefab instance are edited here like any other, and
+ * an edit to one becomes a per-instance override (see PrefabOverrides): each
+ * card marks the fields this instance owns and offers them back to the prefab.
  */
 class InspectorPanel {
     public:
@@ -45,30 +49,34 @@ class InspectorPanel {
         // The blank-panel and entity-identity rows, factored out so draw()
         // reads as the component-section dispatch that is its real job.
         void drawEmptySelectionState(EditorContext& ec);
-        void drawIdentityHeader(Scene& scene, EditorState& state, EntityId id);
+        void drawIdentityHeader(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
 
         // Each section takes the EditorState so it can flag the scene as dirty
         // when the user edits anything. Centralizing this avoids missing edits.
-        void drawTransformSection(Scene& scene, EditorState& state, EntityId id);
+        // The ResourceManager rides along wherever a card can produce a prefab
+        // override: the override's value is the field's serialized JSON, and
+        // serializing an asset reference resolves its handle to a name.
+        void drawPrefabSection(Scene& scene, EditorState& state, EntityId id);
+        void drawTransformSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawMeshSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawLightSection(Scene& scene, EditorState& state, EntityId id);
-        void drawRigidbodySection(Scene& scene, EditorState& state, EntityId id);
+        void drawLightSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawRigidbodySection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawCameraSection(Scene& scene, EditorState& state, EntityId id);
-        void drawReflectionProbeSection(Scene& scene, EditorState& state, EntityId id);
+        void drawCameraSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawReflectionProbeSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawDecalSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawParticleSection(Scene& scene, EditorState& state, EntityId id);
-        void drawIrradianceVolumeSection(Scene& scene, EditorState& state, EntityId id);
+        void drawParticleSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawIrradianceVolumeSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawWorldInspector(EditorContext& ec);
         void drawLODSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawAnimationSection(Scene& scene, EditorState& state, EntityId id);
+        void drawAnimationSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawScriptSection(Scene& scene, EditorState& state, EntityId id);
         void drawHierarchySection(Scene& scene, EditorState& state, EntityId id);
-        void drawUICanvasSection(Scene& scene, EditorState& state, EntityId id);
-        void drawUIElementSection(Scene& scene, EditorState& state, EntityId id);
-        void drawUIImageSection(Scene& scene, EditorState& state, EntityId id);
-        void drawUITextSection(Scene& scene, EditorState& state, EntityId id);
-        void drawUIButtonSection(Scene& scene, EditorState& state, EntityId id);
+        void drawUICanvasSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawUIElementSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawUIImageSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawUITextSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawUIButtonSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawAddComponentMenu(Scene& scene, EditorState& state, EntityId id);
 
         // Euler-angle edit cache for the Transform Rotation field, keyed by
