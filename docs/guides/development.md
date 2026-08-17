@@ -10,16 +10,29 @@ itself is in [implementation.md](implementation.md).
 
 ## 1. The goal you are building toward
 
-vkmEngine is a long-term 3D rendering engine that grows month by month. Every
-system, component, and abstraction you add will be read, extended, and
-refactored later - by other people and by your future self after you have
-forgotten the details. The cost of a bad fit is paid every time someone touches
-the code; the cost of a good fit is paid once, today.
+vkmEngine is a long-term engine, measured in years rather than releases. The
+point is not to build something easy to change later - it is to build something
+that does not need changing. Rewriting a subsystem every six months is the
+failure this project is trying to avoid.
+
+That target changes what "good" means, because **the cost of a design is paid by
+everything built on top of it.** A wrong call in a leaf is an afternoon's work
+whenever you get to it. A wrong call in a foundation is not one problem, it is
+the hundred things that assumed it, and by the time the cost is obvious the
+foundation is load-bearing and cannot be moved. Three years in, you are not
+fixing the mistake, you are fighting everything standing on it.
 
 So the prime directive is: **make the engine more predictable, not less.** A
 change that follows the existing grain leaves the codebase easier to reason
 about. A change that invents its own conventions, seams, or layering makes the
 next person's job harder even if it works.
+
+And scrutiny scales with load. The ECS, `FrameContext`, `Handle<T>` and the
+`ResourceManager` it indexes, the scene and asset formats, the `RenderBackend`
+seam - these carry everything else, and a design flaw in one of them compounds
+for the life of the project. Spend the thinking there. A helper with three
+callers does not deserve the same argument, and treating every change as equally
+weighty is its own way of getting the important ones wrong.
 
 ---
 
