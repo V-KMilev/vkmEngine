@@ -1,13 +1,11 @@
 #pragma once
 
 #include <set>
+#include <string>
 #include <vector>
 
-#include "ecs/component/prefab_instance.h"
-
-#include <string>
-
 #include "ecs/entity.h"
+#include "ecs/component/prefab_instance.h"
 #include "ecs/component/transform.h"
 
 namespace Engine {
@@ -35,6 +33,11 @@ class ResourceManager;
  * Prefabs are referenced by path rather than through the AssetLibrary because
  * nothing cooks them - they are authored JSON, read as-is, like scenes.
  *
+ * Which makes reading one reading a file a person can write. Every entry point
+ * here reports a document it cannot use and returns, rather than letting the
+ * failure out as an exception: the callers are an editor showing a toast beside
+ * its file picker and a scene load that has other entities to build.
+ *
  * **Per-instance overrides.** A scene may store field deltas against an
  * instance, addressed by @ref PrefabEntity uid, component key and field key.
  * They are stored, never re-derived by diffing the built subtree against the
@@ -53,20 +56,59 @@ class ResourceManager;
 namespace Prefab {
 
     /**
+     * @brief Is @p id inside (but not the root of) a prefab instance?
+     *
+     * Walks up rather than marking every descendant, so the prefab's own
+     * entities carry no bookkeeping that could fall out of sync with their
+     * root. The scene serializer asks this to decide which entities it may
+     * describe, and @ref save to refuse a subtree that is not its own to give
+     * away.
+     *
+     * @param scene Scene holding the entity.
+     * @param id    Entity to test.
+     * @return True when an ancestor of @p id carries PrefabInstance.
+     */
+    bool isInsideInstance(const Scene& scene, EntityId id);
+
+    /**
      * @brief Write @p root and its descendants to @p path as a prefab.
      *
      * The root's own Transform is saved with it as the prefab's authored pose;
      * an instance replaces it. Parent links are stored as indices within the
      * file, so the subtree survives independently of the entity ids it had.
      *
+     * @p path is resolved for the write and stored on the root verbatim, so a
+     * project-relative one is what a scene carrying the instance goes on to
+     * write - the form that still names the same file on another machine.
+     *
+     * The subtree becomes an instance of what it wrote, and its overrides are
+     * dropped: the file now holds those values, so keeping them would pin the
+     * instance to them and stop every later edit of the prefab from reaching it.
+     *
      * @param scene     Scene holding the subtree.
      * @param root      Entity whose subtree becomes the prefab.
-     * @param path      Destination file path.
+     * @param path      Destination file, project-relative or absolute.
      * @param resources Resolves asset handles to names.
-     * @return True on success; false if the entity is dead or the write fails.
+     * @return True on success; false if the entity is dead, the subtree touches
+     *         another instance, or the write fails.
      */
     bool save(Scene& scene, EntityId root, const std::string& path,
               const ResourceManager& resources);
+
+    /**
+     * @brief Does the prefab at @p path give the entity @p uid names a
+     *        @p component?
+     *
+     * The prefab's own component block is the schema an override is checked
+     * against, so this answers whether one addressing that pair could ever be
+     * applied. Reads the file per call, like @ref reloadComponent.
+     *
+     * @param path      Prefab file to read.
+     * @param uid       Entity identity inside the prefab.
+     * @param component Component key, as SceneSerializer writes it.
+     * @return True when the prefab holds that entity and that component on it.
+     */
+    bool definesComponent(const std::string& path, uint32_t uid, const std::string& component);
 
     /**
      * @brief Instantiate @p path into @p scene, placing the root at @p at.
@@ -138,7 +180,9 @@ namespace Prefab {
      * @param uid       That entity's identity inside the prefab.
      * @param component Component key, as SceneSerializer writes it.
      * @param overrides Every override on the instance; only this uid's apply.
-     * @return True when the prefab defines the component and it was loaded.
+     * @return True when the prefab defines the component and it was loaded;
+     *         false for the root's Transform, which is the instance's own pose
+     *         and would be replaced by the prefab's authored one.
      */
     bool reloadComponent(Scene& scene, ResourceManager& resources, const std::string& path,
                          EntityId entity, uint32_t uid, const std::string& component,

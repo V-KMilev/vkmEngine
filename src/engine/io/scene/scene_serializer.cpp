@@ -3,10 +3,11 @@
 #include "io/scene/scene_serializer.h"
 
 #include <array>
+#include <charconv>
 #include <limits>
-#include <cstdlib>
 #include <set>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -136,24 +137,6 @@ void loadComponents(const json& src, Scene& s, EntityId e, const ResourceManager
 
 namespace {
 
-/**
- * @brief Is @p id inside (but not the root of) a prefab instance?
- *
- * Walks up rather than marking every descendant, so the prefab's own entities
- * carry no bookkeeping and cannot fall out of sync with their root.
- */
-bool isInsidePrefabInstance(const Scene& scene, EntityId id) {
-    if (!scene.has<Hierarchy>(id)) return false;
-
-    EntityId cursor = scene.get<Hierarchy>(id).parent;
-    for (int depth = 0; depth < 32 && scene.isAlive(cursor); ++depth) {
-        if (scene.has<PrefabInstance>(cursor)) return true;
-        if (!scene.has<Hierarchy>(cursor)) break;
-        cursor = scene.get<Hierarchy>(cursor).parent;
-    }
-    return false;
-}
-
 bool isKnownComponentKey(const std::string& k) {
     for (const char* key : COMPONENT_KEYS) {
         if (k == key) return true;
@@ -175,7 +158,7 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
     scene.forEachEntity([&](EntityId id) {
         // Entities inside a prefab instance are not the scene's to describe -
         // the prefab file defines them, and the loader rebuilds them from it.
-        if (isInsidePrefabInstance(scene, id)) return;
+        if (Prefab::isInsideInstance(scene, id)) return;
 
         json entity;
         entity["id"] = id.index;
@@ -273,7 +256,7 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     // non-relational components. Hierarchy::parent is captured for pass 2
     // because the parent might not have been created yet on first sight.
     std::vector<std::pair<uint32_t, uint32_t>> parentLinks;  // (child idx, parent idx)
-    std::vector<std::pair<EntityId, std::string>> prefabRoots;  // instance roots to expand
+    std::vector<EntityId> prefabRoots;  // instance roots to expand
     size_t entityCount = 0;
     std::set<std::string> unknownKeys;  // dedup warnings - one per drift, not per entity
     const json noComponents = json::object();   // stand-in for an entity that has none
@@ -316,18 +299,31 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
                 if (entry.contains("overrides") && entry["overrides"].is_object()) {
                     for (const auto& [uidKey, comps] : entry["overrides"].items()) {
                         if (!comps.is_object()) continue;
+
+                        // The key is the address, so a key that is not a uid
+                        // addresses nothing. Parsed whole rather than as far as
+                        // it goes: strtoul's answer for "head" is 0, which is
+                        // the root, and the override would land there.
+                        uint32_t uid = 0;
+                        const char* last = uidKey.data() + uidKey.size();
+                        const auto [stop, ec] = std::from_chars(uidKey.data(), last, uid);
+                        if (ec != std::errc{} || stop != last) {
+                            LOG_WARNING("Override key '%s' in '%s' is not an entity uid; dropped",
+                                uidKey.c_str(), source);
+                            continue;
+                        }
+
                         for (const auto& [comp, fields] : comps.items()) {
                             if (!fields.is_object()) continue;
                             for (const auto& [field, value] : fields.items()) {
-                                instance.overrides.push_back(PrefabOverride{
-                                    static_cast<uint32_t>(std::strtoul(uidKey.c_str(), nullptr, 10)),
-                                    comp, field, value.dump()});
+                                instance.overrides.push_back(
+                                    PrefabOverride{uid, comp, field, value.dump()});
                             }
                         }
                     }
                 }
 
-                prefabRoots.emplace_back(entity, instance.source);
+                prefabRoots.push_back(entity);
                 staging.add(entity, std::move(instance));
             }
 
@@ -341,16 +337,16 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
         // Pass 2b: expand prefab instances. After the entity pass so the roots
         // hold their saved slots, and the prefab's own entities take whatever
         // is free rather than competing for them.
-        static const std::vector<PrefabOverride> NO_OVERRIDES;
         std::set<std::string> prefabDrift;
-        for (const auto& [root, prefabPath] : prefabRoots) {
-            const std::vector<PrefabOverride>& overrides =
-                staging.has<PrefabInstance>(root) ? staging.get<PrefabInstance>(root).overrides
-                                                  : NO_OVERRIDES;
-            if (!Prefab::instantiateInto(staging, stagingResources, prefabPath, root,
-                                         overrides, &prefabDrift)) {
+        for (const EntityId root : prefabRoots) {
+            // Held across the expansion, which is safe because nothing it does
+            // adds a PrefabInstance: the prefab's own entities carry
+            // PrefabEntity, and nesting is refused at save time.
+            const PrefabInstance& instance = staging.get<PrefabInstance>(root);
+            if (!Prefab::instantiateInto(staging, stagingResources, instance.source, root,
+                                         instance.overrides, &prefabDrift)) {
                 LOG_WARNING("Prefab '%s' failed to expand in '%s'; instance left empty",
-                    prefabPath.c_str(), source);
+                    instance.source.c_str(), source);
             }
         }
         for (const std::string& message : prefabDrift) {
