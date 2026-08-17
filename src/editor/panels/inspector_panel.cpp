@@ -142,8 +142,12 @@ bool pickAsset(const char* comboId, const char* label, ResourceManager& resource
 //
 // Drawn before the fields below it, because a revert re-reads the component
 // from the prefab and those widgets must show the restored value.
+//
+// A row is labelled by its serializer field key, which is what the widget below
+// it is called on every card that has one. `rowLabel` is for the one place that
+// has none: the name box in the identity header, whose field key is "value".
 void drawOverrideRows(Scene& scene, ResourceManager& resources, EditorState& state,
-                      EntityId id, const char* component) {
+                      EntityId id, const char* component, const char* rowLabel = nullptr) {
     const std::vector<std::string> fields =
         PrefabOverrides::overriddenFields(scene, id, component);
     if (fields.empty()) return;
@@ -151,7 +155,7 @@ void drawOverrideRows(Scene& scene, ResourceManager& resources, EditorState& sta
     std::string revert;
     ImGui::TextColored(EditorStyle::Accent::Prefab, "Overridden by this instance");
     for (const std::string& field : fields) {
-        drawPropertyLabel(field.c_str());
+        drawPropertyLabel(rowLabel ? rowLabel : field.c_str());
         ImGui::PushID(field.c_str());
         if (ImGui::Button("Revert to prefab", ImVec2(-1.0f, 0.0f))) revert = field;
         ImGui::PopID();
@@ -330,7 +334,7 @@ void InspectorPanel::drawIdentityHeader(Scene& scene, ResourceManager& resources
             state.commands.push(std::move(step));
             state.markSceneDirty();
         }
-        drawOverrideRows(scene, resources, state, id, PrefabOverrides::COMPONENT_KEY<Name>);
+        drawOverrideRows(scene, resources, state, id, PrefabOverrides::COMPONENT_KEY<Name>, "Name");
     } else {
         char fallback[64];
         getEntityDisplayName(scene, id, fallback, sizeof(fallback));
@@ -499,8 +503,11 @@ void InspectorPanel::drawPrefabSection(Scene& scene, EditorState& state, EntityI
     if (open) {
         const PrefabInstance& instance = scene.get<PrefabInstance>(root);
 
+        // Wrapped, not clipped: the path is the prefab's identity, and two
+        // prefabs in different folders share a file name, so the tail is the
+        // half a reader needs. A nested one is longer than the column.
         drawPropertyLabel("Source");
-        ImGui::TextUnformatted(instance.source.c_str());
+        ImGui::TextWrapped("%s", instance.source.c_str());
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", instance.source.c_str());
 
         // Inside the subtree the override list is on the root, which is where

@@ -435,20 +435,26 @@ class PrefabOverrideCommand : public Command {
         /**
          * @brief Record an override change that has already been applied.
          *
+         * The entity is named by its prefab uid rather than by its own slot,
+         * because the instance's entities are rebuilt - by a scene load, by the
+         * redo of the placement - into whatever slots are free at the time, and
+         * only the root's is pinned. The uid is the identity the override uses
+         * everywhere else, and the one that survives the rebuild.
+         *
          * @param resources Manager the re-read resolves the prefab's assets against.
          * @param root      Instance root carrying the override list.
-         * @param target    Entity whose component the entries address.
+         * @param targetUid Prefab uid of the entity the entries address.
          * @param component Component key, as SceneSerializer writes it.
          * @param before    The entries for that pair before the edit.
          * @param after     The entries for it now.
          * @param label     History entry text.
          */
-        PrefabOverrideCommand(ResourceManager& resources, EntityId root, EntityId target,
+        PrefabOverrideCommand(ResourceManager& resources, EntityId root, uint32_t targetUid,
                               std::string component,
                               std::vector<PrefabOverride> before,
                               std::vector<PrefabOverride> after,
                               const char* label)
-            : m_resources(&resources), m_root(root), m_target(target),
+            : m_resources(&resources), m_root(root), m_targetUid(targetUid),
               m_component(std::move(component)), m_before(std::move(before)),
               m_after(std::move(after)), m_label(label) {}
 
@@ -460,7 +466,7 @@ class PrefabOverrideCommand : public Command {
     private:
         ResourceManager*            m_resources;
         EntityId                    m_root;
-        EntityId                    m_target;
+        uint32_t                    m_targetUid;
         std::string                 m_component;
         std::vector<PrefabOverride> m_before;
         std::vector<PrefabOverride> m_after;
