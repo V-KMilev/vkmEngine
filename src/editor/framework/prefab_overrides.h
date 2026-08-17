@@ -81,8 +81,10 @@ namespace PrefabOverrides {
      * @param uid       Prefab uid of the entity the entries address.
      * @param component Component key, as SceneSerializer writes it.
      * @param entries   The entries that should remain for that pair.
+     * @return True when the component was re-read; false when the prefab could
+     *         not answer for it, which leaves the value on screen stale.
      */
-    void apply(Scene& scene, ResourceManager& resources, EntityId root, uint32_t uid,
+    bool apply(Scene& scene, ResourceManager& resources, EntityId root, uint32_t uid,
                const std::string& component, const std::vector<PrefabOverride>& entries);
 
     /**
@@ -120,6 +122,11 @@ namespace PrefabOverrides {
 
     /**
      * @brief Drop one override and give the field back the prefab's value.
+     *
+     * Refused, with a toast and the entry left alone, when the prefab no longer
+     * defines that component: there is no value to give back, and dropping the
+     * entry regardless would leave the overridden number in place with nothing
+     * recording that it was ever an override.
      *
      * @param scene     Scene holding the entity.
      * @param resources Resolves the prefab's asset names to handles.

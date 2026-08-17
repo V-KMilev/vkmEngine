@@ -13,6 +13,7 @@
 
 #include "framework/editor_commands.h"
 #include "framework/editor_state.h"
+#include "framework/prefab_overrides.h"
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/mesh.h"
@@ -68,6 +69,25 @@ void setTransformFromMatrix(Transform& t, const glm::mat4& m) {
 void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
                           EntityId newParent, const char* label) {
     if (!scene.isAlive(child) || !scene.has<Transform>(child)) return;
+
+    // An instance's interior belongs to its prefab: the scene stores the
+    // instance as a reference and rebuilds the subtree from the file, so an
+    // entity dropped inside one is never written, and one dragged out of one is
+    // put back where the prefab has it. Both moves look like they worked and
+    // are gone by the next load, so say no while there is still someone to tell.
+    if (PrefabOverrides::instanceRoot(scene, newParent)) {
+        state.pushToast(EditorState::ToastKind::Warning,
+                        "A prefab instance is built from its prefab - an entity moved "
+                        "into one is not saved with the scene");
+        return;
+    }
+    const EntityId owningInstance = PrefabOverrides::instanceRoot(scene, child);
+    if (owningInstance && owningInstance != child) {
+        state.pushToast(EditorState::ToastKind::Warning,
+                        "This entity belongs to a prefab - move the instance root, or "
+                        "change the prefab and save it");
+        return;
+    }
 
     EntityId oldParent{};
     if (scene.has<Hierarchy>(child)) oldParent = scene.get<Hierarchy>(child).parent;
@@ -253,8 +273,19 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
     uint32_t parentSlot = 0;
     if (isUIElement && state.selectedEntity && scene.isAlive(state.selectedEntity)
         && (scene.has<UICanvas>(state.selectedEntity) || scene.has<UIElement>(state.selectedEntity))) {
-        HierarchyOperations::setParent(scene, entity, state.selectedEntity);
-        parentSlot = state.selectedEntity.index;
+        // Unless that canvas belongs to a prefab instance. The scene stores an
+        // instance as a reference and rebuilds its subtree from the file, so an
+        // element parented in there is never written: it would draw until the
+        // next load and then be gone. Leave it outside and say why - the same
+        // answer reparentKeepingWorld gives a drag that aims there.
+        if (PrefabOverrides::instanceRoot(scene, state.selectedEntity)) {
+            state.pushToast(EditorState::ToastKind::Warning,
+                            "A prefab instance is built from its prefab - the new element is "
+                            "left outside it, and needs a canvas the scene owns");
+        } else {
+            HierarchyOperations::setParent(scene, entity, state.selectedEntity);
+            parentSlot = state.selectedEntity.index;
+        }
     }
 
     // Snapshot the just-created entity so undo can resurrect it intact
@@ -365,6 +396,19 @@ void duplicateSelection(Scene& scene, ResourceManager& resources, EditorState& s
     state.selectedEntity = clones.front();
 }
 
+namespace {
+// An instance's interior comes back from the prefab on every load, so a delete
+// aimed there is undone by the next one. It is still the way an entity leaves a
+// prefab - delete it, then write the instance back - so the gesture stands and
+// says what it needs, the same answer Add Component gives inside an instance.
+void warnDeleteInsideInstance(const Scene& scene, EditorState& state, EntityId entity) {
+    if (!Prefab::isInsideInstance(scene, entity)) return;
+    state.pushToast(EditorState::ToastKind::Warning,
+                    "This entity belongs to a prefab - it comes back on the next load "
+                    "unless the instance root is saved as a prefab");
+}
+} // namespace
+
 void deleteSelection(Scene& scene, EditorState& state) {
     if (state.selection.size() <= 1) {
         if (state.selectedEntity) deleteEntity(scene, state, state.selectedEntity);
@@ -393,6 +437,7 @@ void deleteSelection(Scene& scene, EditorState& state) {
     auto batch = std::make_unique<CompositeCommand>("Delete Selection");
     for (EntityId id : sel) {
         if (!scene.isAlive(id) || hasSelectedAncestor(id)) continue;
+        warnDeleteInsideInstance(scene, state, id);
         SubtreeSnapshot snap = SubtreeSnapshot::capture(scene, id);
         HierarchyOperations::destroyHierarchy(scene, id);
         batch->add(std::make_unique<DestroySubtreeCommand>(
@@ -431,6 +476,21 @@ std::string uniquePrefabStem(const std::string& base) {
 bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& state,
                   EntityId entity) {
     if (!scene.isAlive(entity)) return false;
+
+    // A subtree inside somebody else's instance is not a file's to define, and
+    // Prefab::save refuses it. Answered here, where the instance root is still
+    // in reach to be named: everything the editor says about a component added
+    // inside an instance sends the user to Save as Prefab, and on an entity in
+    // there this is the one that writes it.
+    const EntityId owner = PrefabOverrides::instanceRoot(scene, entity);
+    if (owner && owner != entity) {
+        char rootName[64];
+        getEntityDisplayName(scene, owner, rootName, sizeof(rootName));
+        state.pushToast(EditorState::ToastKind::Warning,
+                        std::string("This entity belongs to a prefab - Save as Prefab on '")
+                            + rootName + "', the instance root, writes it with the rest");
+        return false;
+    }
 
     // An instance saves back over the prefab it came from - that is how a prefab
     // is edited. Anything else becomes a new file, because overwriting a
@@ -479,6 +539,8 @@ EntityId placePrefab(Scene& scene, ResourceManager& resources, EditorState& stat
 }
 
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
+    warnDeleteInsideInstance(scene, state, entity);
+
     const EntityId priorSel = state.selectedEntity;
     if (state.selectedEntity == entity) state.deselect();
 

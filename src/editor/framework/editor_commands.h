@@ -473,6 +473,20 @@ class PrefabOverrideCommand : public Command {
         bool tryMerge(Command& incoming) override;
 
     private:
+        /**
+         * @brief Make @p entries the instance's entries for this pair, and warn
+         * when the prefab can no longer answer for the component.
+         *
+         * The two directions differ only in which entry set they install, so
+         * they are the same call with different data.
+         *
+         * @param scene Scene holding the instance.
+         * @param state Receives the warning when the value could not be re-read.
+         * @param entries The entry set this direction installs.
+         */
+        void step(Scene& scene, EditorState& state, const std::vector<PrefabOverride>& entries);
+
+    private:
         ResourceManager*            m_resources;
         EntityId                    m_root;
         uint32_t                    m_targetUid;

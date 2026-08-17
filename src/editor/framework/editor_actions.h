@@ -201,6 +201,10 @@ void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity);
  * must re-base the local Transform itself - otherwise the entity visibly jumps
  * by the old/new parent's world contribution. Decomposes the preserved world
  * matrix into the new parent's space (same math the transform gizmo uses).
+ *
+ * A move that crosses into or out of a prefab instance is refused with a toast
+ * instead: the instance's interior is the prefab's, and the scene stores none
+ * of it, so either move would be lost on the next load without a word.
  */
 void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
                           EntityId newParent, const char* label);

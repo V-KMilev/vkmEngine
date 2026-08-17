@@ -76,8 +76,11 @@ EntityId instanceRoot(const Scene& scene, EntityId id) {
     if (!scene.isAlive(id)) return {};
     if (scene.has<PrefabInstance>(id)) return id;
 
+    // The walk Prefab::isInsideInstance makes, bounded the same way, because the
+    // two have to give the same answer: an edit recorded against an entity the
+    // saver leaves out of the file is an edit that disappears on the next load.
     EntityId cursor = scene.has<Hierarchy>(id) ? scene.get<Hierarchy>(id).parent : EntityId{};
-    for (int depth = 0; depth < 32 && scene.isAlive(cursor); ++depth) {
+    for (size_t step = 0; step <= scene.entityCount() && scene.isAlive(cursor); ++step) {
         if (scene.has<PrefabInstance>(cursor)) return cursor;
         if (!scene.has<Hierarchy>(cursor)) break;
         cursor = scene.get<Hierarchy>(cursor).parent;
@@ -106,19 +109,20 @@ std::vector<std::string> overriddenFields(const Scene& scene, EntityId id,
     return fields;
 }
 
-void apply(Scene& scene, ResourceManager& resources, EntityId root, uint32_t uid,
+bool apply(Scene& scene, ResourceManager& resources, EntityId root, uint32_t uid,
            const std::string& component, const std::vector<PrefabOverride>& entries) {
-    if (!scene.isAlive(root) || !scene.has<PrefabInstance>(root)) return;
+    if (!scene.isAlive(root) || !scene.has<PrefabInstance>(root)) return false;
 
     const EntityId target = entityWithUid(scene, root, uid);
-    if (!target) return;
+    if (!target) return false;
 
     PrefabInstance& instance = scene.get<PrefabInstance>(root);
     replaceEntries(instance.overrides, uid, component, entries);
 
-    Prefab::reloadComponent(scene, resources, instance.source, target, uid, component,
-                            instance.overrides);
+    const bool reread = Prefab::reloadComponent(scene, resources, instance.source, target, uid,
+                                                component, instance.overrides);
     if (component == "Transform") HierarchyOperations::markDirty(scene, target);
+    return reread;
 }
 
 std::unique_ptr<Command> recordFields(Scene& scene, ResourceManager& resources, EntityId id,
@@ -180,6 +184,18 @@ void revert(Scene& scene, ResourceManager& resources, EditorState& state, Entity
         return o.field == field;
     }), entries.end());
     if (entries.size() == restore.size()) return;
+
+    // Dropping an override is a re-read of the prefab's definition, so there has
+    // to be one left to re-read. A prefab that has since lost the component - or
+    // the entity carrying it - has no value to hand the field back, and clearing
+    // the entry on its own would leave the overridden number on screen with
+    // nothing left saying it was ever an override.
+    if (!Prefab::definesComponent(scene.get<PrefabInstance>(root).source, uid, component)) {
+        state.pushToast(EditorState::ToastKind::Warning,
+                        std::string("The prefab no longer defines ") + component
+                            + " - the override is kept");
+        return;
+    }
 
     apply(scene, resources, root, uid, component, entries);
     state.commands.push(std::make_unique<PrefabOverrideCommand>(
