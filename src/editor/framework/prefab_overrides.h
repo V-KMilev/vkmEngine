@@ -64,21 +64,25 @@ namespace PrefabOverrides {
                                               const char* component);
 
     /**
-     * @brief Make @p entries the instance's overrides for (@p target, @p component).
+     * @brief Make @p entries the instance's overrides for (@p uid, @p component).
      *
      * Every entry addressing that entity and component is replaced, and the
      * component is re-read from the prefab so the live value matches what a
      * reload of the scene would produce. Used by the undo command in both
      * directions, which is why it takes the entry set whole rather than a delta.
      *
+     * The entity is named by its prefab uid because that is what survives the
+     * instance being rebuilt; it is resolved to a live entity by walking @p root
+     * for the one carrying it.
+     *
      * @param scene     Scene holding the instance.
      * @param resources Resolves the prefab's asset names to handles.
      * @param root      Instance root carrying the override list.
-     * @param target    Entity the entries address.
+     * @param uid       Prefab uid of the entity the entries address.
      * @param component Component key, as SceneSerializer writes it.
      * @param entries   The entries that should remain for that pair.
      */
-    void apply(Scene& scene, ResourceManager& resources, EntityId root, EntityId target,
+    void apply(Scene& scene, ResourceManager& resources, EntityId root, uint32_t uid,
                const std::string& component, const std::vector<PrefabOverride>& entries);
 
     /**
@@ -104,9 +108,11 @@ namespace PrefabOverrides {
      * @param after     The component's serialized value after it.
      * @param label     History entry text.
      * @return The undo step for the recorded override, or null when the edit is
-     *         not an override at all - @p id is not part of an instance, or it
-     *         is the root's Transform, which is the instance's own pose - and
-     *         the caller should record the edit the way it normally would.
+     *         not an override at all - @p id is not part of an instance, it is
+     *         the root's Transform, which is the instance's own pose, or the
+     *         prefab does not define that component and so has no value for an
+     *         override to differ from - and the caller should record the edit
+     *         the way it normally would.
      */
     std::unique_ptr<Command> recordFields(Scene& scene, ResourceManager& resources, EntityId id,
                                           const char* component, const nlohmann::json& before,
