@@ -370,11 +370,14 @@ bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& s
     }
     if (stem.empty()) stem = "prefab";
 
-    std::error_code ec;
-    std::filesystem::create_directories(ProjectPaths::prefabs(), ec);
-    const std::filesystem::path path = ProjectPaths::prefabs() / (stem + ".json");
+    // Project-relative, because the instance stores this path and a scene
+    // carrying it has to name the same file on another machine. The write
+    // resolves it and makes the directory.
+    const std::string path = (ProjectPaths::prefabs() / (stem + ".json"))
+                                 .lexically_relative(ProjectPaths::projectRoot())
+                                 .generic_string();
 
-    if (!Prefab::save(scene, entity, path.string(), resources)) {
+    if (!Prefab::save(scene, entity, path, resources)) {
         state.pushToast(EditorState::ToastKind::Error, "Could not save prefab '" + stem + "'");
         return false;
     }
