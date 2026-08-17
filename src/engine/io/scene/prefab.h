@@ -96,8 +96,8 @@ namespace Prefab {
               const ResourceManager& resources);
 
     /**
-     * @brief Does the prefab at @p path give the entity @p uid names a
-     *        @p component?
+     * @brief Does the prefab at @p path define @p component on the entity
+     *        @p uid names?
      *
      * The prefab's own component block is the schema an override is checked
      * against, so this answers whether one addressing that pair could ever be

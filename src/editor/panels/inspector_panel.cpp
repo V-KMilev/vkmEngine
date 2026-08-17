@@ -890,7 +890,8 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
 
 void InspectorPanel::drawReflectionProbeSection(Scene& scene, ResourceManager& resources,
                                                 EditorState& state, EntityId id) {
-    editComponentCard<ReflectionProbe>(scene, resources, state, id, "Reflection Probe", EditorStyle::Accent::Probe,
+    editComponentCard<ReflectionProbe>(scene, resources, state, id, "Reflection Probe",
+                                       EditorStyle::Accent::Probe,
                                        "Edit Reflection Probe", "Remove Reflection Probe",
                                        [&](ReflectionProbe& probe) {
         bool changed = false;
@@ -940,7 +941,8 @@ void InspectorPanel::drawDecalSection(Scene& scene, ResourceManager& resources,
 
 void InspectorPanel::drawParticleSection(Scene& scene, ResourceManager& resources,
                                          EditorState& state, EntityId id) {
-    editComponentCard<ParticleEmitter>(scene, resources, state, id, "Particle Emitter", EditorStyle::Accent::Light,
+    editComponentCard<ParticleEmitter>(scene, resources, state, id, "Particle Emitter",
+                                       EditorStyle::Accent::Light,
                                        "Edit Particle Emitter", "Remove Particle Emitter",
                                        [&](ParticleEmitter& e) {
         bool changed = false;
@@ -975,7 +977,8 @@ void InspectorPanel::drawParticleSection(Scene& scene, ResourceManager& resource
 
 void InspectorPanel::drawIrradianceVolumeSection(Scene& scene, ResourceManager& resources,
                                                  EditorState& state, EntityId id) {
-    editComponentCard<IrradianceVolume>(scene, resources, state, id, "Irradiance Volume", EditorStyle::Accent::Probe,
+    editComponentCard<IrradianceVolume>(scene, resources, state, id, "Irradiance Volume",
+                                        EditorStyle::Accent::Probe,
                                         "Edit Irradiance Volume", "Remove Irradiance Volume",
                                         [&](IrradianceVolume& v) {
         bool changed = false;
@@ -1121,7 +1124,8 @@ void InspectorPanel::drawCameraSection(Scene& scene, ResourceManager& resources,
 
 void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
                                     EditorState& state, EntityId id) {
-    editComponentCard<LOD>(scene, resources, state, id, "LOD", EditorStyle::Accent::Mesh, "Edit LOD", "Remove LOD",
+    editComponentCard<LOD>(scene, resources, state, id, "LOD", EditorStyle::Accent::Mesh,
+                           "Edit LOD", "Remove LOD",
                            [&](LOD& lod) {
         bool changed = false;
 
