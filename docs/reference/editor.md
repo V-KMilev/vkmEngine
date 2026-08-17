@@ -130,17 +130,22 @@ Available commands (in `framework/editor_commands.h`):
   recreates at the same slot.
 - `DestroySubtreeCommand`: captures the entire subtree (entity plus
   every descendant) including parent/child wiring, so undo can
-  resurrect a non-leaf delete exactly.
+  resurrect a non-leaf delete exactly. `PrefabInstance` and `PrefabEntity` are on
+  the snapshot's component list, so a deleted instance comes back as an instance
+  rather than as the entities it had expanded to.
 - `ReparentCommand`: (child, oldParent, newParent), inverse via
   `HierarchyOperations::setParent` / `removeFromParent`.
 - `SetActiveCameraCommand`: backs the inspector's "Set as Main" camera action.
-- `PlacePrefabCommand`: redo rebuilds the instance from the prefab file into a
-  root reclaimed at its original slot - a snapshot carries components but not
-  the instance marker or the uids an override addresses.
+- `PlacePrefabCommand`: redo rebuilds the instance from the prefab file - source,
+  overrides and all - into a root reclaimed at its original slot, because that is
+  what a placement is: a reference, a pose, and the entries against it.
+  Duplicating an instance pushes one of these too.
 - `PrefabOverrideCommand`: takes the place of `ComponentEditCommand` on an
   entity inside a prefab instance. The value there is the prefab's, patched by
   the instance's overrides, so both directions restore an entry set and re-read
-  the component from the file; it coalesces a drag the same way.
+  the component from the file; it coalesces a drag the same way. It names its
+  target by prefab uid rather than by slot, because redoing a placement pins
+  only the root's slot and rebuilds the rest into whatever is free.
 - `RenameAssetCommand<HandleType>`: undoable asset rename (routes through
   `ResourceManager::rename` so the name index stays consistent).
 
@@ -268,3 +273,43 @@ Light and camera entities show their own gizmos in `gizmo_overlay.cpp`
   offers "Revert to prefab" (`framework/prefab_overrides.h`).
 - Focus, duplicate, delete, undo, redo, save, save-as, open, preferences
   have dedicated keybinds; the full list lives in `input/editor_keybinds.h`.
+
+## What an instance will not let you do
+
+A scene stores a prefab instance as a reference, a pose and its overrides, and
+skips the subtree underneath it - so anything done inside an instance that is
+not an override is not written at all. The editor either makes the gesture mean
+what it looks like, or refuses it where it happens:
+
+- **Duplicate** instances the prefab again, carrying the overrides over, instead
+  of copying the root's components into a childless entity.
+- **Undo of a delete** restores the marker and the uids with the rest of the
+  subtree, so the instance comes back whole with its overrides intact.
+- **Re-parenting into or out of an instance** is refused with a toast in
+  `EditorActions::reparentKeepingWorld`, which is where every interactive move
+  goes. The root itself still moves anywhere: its `Hierarchy` is the scene's.
+- **Add Component** on an instance entity works and warns, because saving the
+  instance back over its file is how a component is added to a prefab. The
+  inspector carries the rule above the button and toasts it on the add.
+- **Revert to prefab** on a field whose component the prefab no longer defines is
+  refused and the entry kept - there is no value left to give the field back.
+- **Save as Prefab** on an entity inside an instance is refused: that subtree is
+  not the new file's to define, and writing it would renumber the entity's uid
+  and stamp an instance inside an instance. Save the instance root instead.
+
+## Save as Prefab
+
+`EditorActions::saveAsPrefab` writes the selected subtree to the project's
+`prefabs/` and turns it into an instance of what it wrote, so the scene stores it
+as a reference from then on. Two consequences to know before reaching for it:
+
+- **No existing prefab is overwritten because a name collided.** An entity that
+  is already an instance saves back over its own source - that is how a prefab is
+  edited - and anything else takes the first free file name (`Enemy`,
+  `Enemy 2`, ...). Overwriting a stranger's file would re-point every instance of
+  it at a different subtree, so the toast names the file that was actually
+  written.
+- **A successful save drops the undo history.** The subtree's entities are
+  rebuilt from the file on the next load, so nothing already on the stack
+  describes the scene any more - the same reason a scene load clears it. A
+  refused save leaves the history alone.

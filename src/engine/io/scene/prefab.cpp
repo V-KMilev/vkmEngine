@@ -247,8 +247,13 @@ json applyOverrides(const json& base, uint32_t uid,
 bool isInsideInstance(const Scene& scene, EntityId id) {
     if (!scene.has<Hierarchy>(id)) return false;
 
+    // Bounded by the live entity count rather than by a depth: a chain longer
+    // than that has already revisited an entity, so a hand-edited file that made
+    // a cycle still terminates, and no real subtree is cut short. A walk that
+    // stopped early would answer "not inside an instance" for an entity that is,
+    // and the scene serializer writes what this says.
     EntityId cursor = scene.get<Hierarchy>(id).parent;
-    for (int depth = 0; depth < 32 && scene.isAlive(cursor); ++depth) {
+    for (size_t step = 0; step <= scene.entityCount() && scene.isAlive(cursor); ++step) {
         if (scene.has<PrefabInstance>(cursor)) return true;
         if (!scene.has<Hierarchy>(cursor)) break;
         cursor = scene.get<Hierarchy>(cursor).parent;
