@@ -482,6 +482,9 @@ void EditorSystem::update(FrameContext& ctx) {
         // serves all three import-intent sources: the menu, the Inspector
         // empty-state button, and the Hierarchy "+" menu.
         m_modelImport.draw(ctx.scene, ctx.resources, m_state);
+        // Same reason for the prefab picker: the Create menu it hangs off is
+        // drawn from the menu bar, the Hierarchy and the Inspector alike.
+        m_placePrefab.draw(ctx.scene, ctx.resources, m_state);
         drawWorkspace(ec);
         openPendingProject(ec);
 

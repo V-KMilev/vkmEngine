@@ -87,6 +87,15 @@ namespace Prefab {
 
     /**
      * @brief Instantiate at the prefab's own authored pose.
+     *
+     * The root is created here and marked as a @ref PrefabInstance of @p path,
+     * so the scene stores it as a reference to the file rather than as the
+     * entities it expanded to.
+     *
+     * @param scene     Scene to build into.
+     * @param resources Resolves asset names to handles.
+     * @param path      Prefab file to read, project-relative or absolute.
+     * @return The instance root, or a default (invalid) EntityId on failure.
      */
     EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string& path);
 
