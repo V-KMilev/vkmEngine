@@ -318,8 +318,8 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resour
     // a right-click on an unselected row stays single-entity.
     const bool onSelection = state.isSelected(entity) && state.selection.size() > 1;
     if (ImGui::MenuItem("Duplicate", keyLabel(state.keybinds.duplicate))) {
-        if (onSelection) EditorActions::duplicateSelection(scene, state);
-        else             EditorActions::duplicateEntity(scene, state, entity);
+        if (onSelection) EditorActions::duplicateSelection(scene, resources, state);
+        else             EditorActions::duplicateEntity(scene, resources, state, entity);
     }
     if (ImGui::MenuItem("Delete", keyLabel(state.keybinds.deleteEntity))) {
         if (onSelection) EditorActions::deleteSelection(scene, state);

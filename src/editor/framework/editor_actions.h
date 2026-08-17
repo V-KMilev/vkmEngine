@@ -75,11 +75,17 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
  * undoable step and selects the copy. Script behaviors carry over through the
  * snapshot serializer.
  *
+ * A prefab instance is instanced from its file again rather than copied, so the
+ * copy is an instance of the same prefab with the same overrides instead of a
+ * root with nothing under it.
+ *
  * @param scene Scene holding the source and receiving the copy.
+ * @param resources Resolves the prefab's asset names when the source is an instance.
  * @param state Editor state whose command stack, dirty flag and selection are updated.
  * @param source Entity to copy from.
  */
-void duplicateEntity(Scene& scene, EditorState& state, EntityId source);
+void duplicateEntity(Scene& scene, ResourceManager& resources, EditorState& state,
+                     EntityId source);
 /**
  * @brief Delete an entity (and its subtree) as a single undoable step.
  *
@@ -144,7 +150,7 @@ void deleteSelection(Scene& scene, EditorState& state);
  * @brief Duplicate every selected entity as ONE undo step; the clones become
  * the new selection. Falls back to duplicateEntity for a single selection.
  */
-void duplicateSelection(Scene& scene, EditorState& state);
+void duplicateSelection(Scene& scene, ResourceManager& resources, EditorState& state);
 
 /**
  * @brief Apply the command stack's undo / redo, then flag the scene dirty.
