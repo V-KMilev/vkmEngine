@@ -8,6 +8,7 @@
 namespace Engine {
 
 class Scene;
+class ResourceManager;
 struct EditorState;
 struct EditorContext;
 
@@ -33,8 +34,10 @@ class HierarchyPanel {
         void draw(EditorContext& ec);
 
     private:
-        void drawEntityNode(Scene& scene, EditorState& state, EntityId entity);
-        void drawEntityContextMenu(Scene& scene, EditorState& state, EntityId entity);
+        void drawEntityNode(Scene& scene, ResourceManager& resources,
+                            EditorState& state, EntityId entity);
+        void drawEntityContextMenu(Scene& scene, ResourceManager& resources,
+                                   EditorState& state, EntityId entity);
 
         char m_filter[64] = {};
         char m_lastFilter[64] = {};
