@@ -9,6 +9,7 @@
 #include "ui/editor_style.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_actions.h"
+#include "framework/prefab_overrides.h"
 #include "system/script/script_component.h"
 
 namespace Engine {
@@ -210,12 +211,26 @@ void HierarchyPanel::drawEntityNode(Scene& scene, ResourceManager& resources,
                 // the default display name).
                 state.commands.push(std::make_unique<AddComponentCommand<Name>>(
                     entity, makeName(m_renameBuf), "Rename"));
+                // A Name the prefab does not define cannot be an override, so
+                // inside an instance this one lives only until the next load.
+                PrefabOverrides::warnComponentIsPrefabs(scene, state, entity, "Name",
+                                                        "is not stored in the scene");
             } else {
                 auto& n = scene.get<Name>(entity);
                 const Name before = n;
                 n = makeName(m_renameBuf);
-                state.commands.push(std::make_unique<ComponentEditCommand<Name>>(
-                    entity, before, n, "Rename"));
+                // Inside an instance the name belongs to the prefab, so the
+                // rename is an override or it is nothing: the scene does not
+                // store the interior, and a plain edit would stay undoable
+                // right up to the save that drops it. The Inspector's name box
+                // answers the same way.
+                auto step = PrefabOverrides::record<Name>(scene, resources, entity, before, n,
+                                                          "Rename");
+                if (!step) {
+                    step = std::make_unique<ComponentEditCommand<Name>>(entity, before, n,
+                                                                        "Rename");
+                }
+                state.commands.push(std::move(step));
             }
             state.markSceneDirty();
             m_renameTarget = {};
@@ -346,8 +361,17 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resour
             t.position = glm::vec3(0.0f);
             t.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
             t.scale    = glm::vec3(1.0f);
-            state.commands.push(std::make_unique<TransformChangeCommand>(
-                entity, before, t, "Reset Transform"));
+            // Inside an instance a pose is an override or it is nothing, the
+            // same answer the gizmo and the Inspector's Transform card give.
+            // The instance root is the exception: the scene stores that pose
+            // itself, so record declines it and the plain edit is right.
+            auto step = PrefabOverrides::record<Transform>(scene, resources, entity, before, t,
+                                                           "Reset Transform");
+            if (!step) {
+                step = std::make_unique<TransformChangeCommand>(entity, before, t,
+                                                               "Reset Transform");
+            }
+            state.commands.push(std::move(step));
             EditorActions::commitHierarchyMutation(scene, state, entity);
         }
     }
@@ -357,8 +381,13 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resour
         if (ImGui::MenuItem(light.enabled ? "Disable Light" : "Enable Light")) {
             const Light before = light;
             light.enabled = !light.enabled;
-            state.commands.push(std::make_unique<ComponentEditCommand<Light>>(
-                entity, before, light, "Toggle Light"));
+            auto step = PrefabOverrides::record<Light>(scene, resources, entity, before, light,
+                                                       "Toggle Light");
+            if (!step) {
+                step = std::make_unique<ComponentEditCommand<Light>>(entity, before, light,
+                                                                     "Toggle Light");
+            }
+            state.commands.push(std::move(step));
             state.markSceneDirty();
         }
     }
@@ -368,8 +397,13 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resour
         if (ImGui::MenuItem(mesh.visible ? "Hide" : "Show")) {
             const Mesh before = mesh;
             mesh.visible = !mesh.visible;
-            state.commands.push(std::make_unique<ComponentEditCommand<Mesh>>(
-                entity, before, mesh, "Toggle Mesh Visibility"));
+            auto step = PrefabOverrides::record<Mesh>(scene, resources, entity, before, mesh,
+                                                      "Toggle Mesh Visibility");
+            if (!step) {
+                step = std::make_unique<ComponentEditCommand<Mesh>>(entity, before, mesh,
+                                                                    "Toggle Mesh Visibility");
+            }
+            state.commands.push(std::move(step));
             state.markSceneDirty();
         }
     }

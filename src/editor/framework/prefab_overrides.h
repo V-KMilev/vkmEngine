@@ -139,6 +139,28 @@ namespace PrefabOverrides {
                 const char* component, const std::string& field);
 
     /**
+     * @brief Say that a component added to or removed from an instance lives in
+     *        the prefab, not in the scene.
+     *
+     * Which components an entity carries is the prefab's answer for everything
+     * inside an instance: the scene stores the instance as a reference and
+     * rebuilds the subtree from the file, so a component added here is in the
+     * prefab or it is nowhere. Both gestures stand, because writing the prefab
+     * back is how one is authored - this is what says where the change lives.
+     *
+     * Does nothing for an entity outside an instance, which is every entity in
+     * most scenes.
+     *
+     * @param scene     Scene holding the entity.
+     * @param state     Editor state receiving the toast.
+     * @param id        Entity the component was added to or removed from.
+     * @param component Component name, as the user was shown it.
+     * @param fate      What becomes of it, completing "'<component>' <fate>".
+     */
+    void warnComponentIsPrefabs(const Scene& scene, EditorState& state, EntityId id,
+                                const char* component, const char* fate);
+
+    /**
      * @brief The JSON key SceneSerializer writes @p T under.
      *
      * Specialized for the components the inspector edits field by field.
