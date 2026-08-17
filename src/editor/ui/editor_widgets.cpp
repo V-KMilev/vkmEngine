@@ -197,19 +197,6 @@ void endComponentCard() {
     ImGui::Spacing();
 }
 
-namespace {
-// A full-width accent rule under the current cursor - the flat default
-// Separator in the panel/section voice.
-void accentRule() {
-    const ImVec2 p = ImGui::GetCursorScreenPos();
-    const float  w = ImGui::GetContentRegionAvail().x;
-    ImGui::GetWindowDrawList()->AddRectFilled(
-        ImVec2(p.x, p.y + 1.0f), ImVec2(p.x + w, p.y + 2.5f),
-        ImGui::GetColorU32(EditorStyle::ACCENT));
-    ImGui::Dummy(ImVec2(0.0f, 5.0f));
-}
-}
-
 bool drawEasingCombo(const char* id, EasingFunction& easing) {
     const int current = Easing::indexOf(easing);
     ImGui::SetNextItemWidth(-1);
