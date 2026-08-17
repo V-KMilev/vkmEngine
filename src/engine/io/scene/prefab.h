@@ -1,5 +1,10 @@
 #pragma once
 
+#include <set>
+#include <vector>
+
+#include "ecs/component/prefab_instance.h"
+
 #include <string>
 
 #include "ecs/entity.h"
@@ -33,6 +38,21 @@ class ResourceManager;
  *
  * Prefabs are referenced by path rather than through the AssetLibrary because
  * nothing cooks them - they are authored JSON, read as-is, like scenes.
+ *
+ * **Per-instance overrides.** A scene may store field deltas against an
+ * instance, addressed by @ref PrefabEntity uid, component key and field key.
+ * They are stored, never re-derived by diffing the built subtree against the
+ * file: a load that could not resolve an asset name writes a different value
+ * than it read, so a diff would manufacture overrides out of load failures, and
+ * a missing prefab file would erase every override in the scene.
+ *
+ * **When the prefab changes underneath an override** the override is kept,
+ * reported once, and not applied - the prefab's own component block is the
+ * schema, so "is this still a field of Light" is a key lookup in the file. The
+ * cases are: the uid is gone, the component is gone, the field is gone, the
+ * value's type no longer matches, and the root's Transform (which is the
+ * instance's own pose and could never have taken effect). Keeping the entry
+ * means renaming a field and renaming it back does not lose the user's edit.
  */
 namespace Prefab {
 
@@ -49,7 +69,7 @@ namespace Prefab {
      * @param resources Resolves asset handles to names.
      * @return True on success; false if the entity is dead or the write fails.
      */
-    bool save(const Scene& scene, EntityId root, const std::string& path,
+    bool save(Scene& scene, EntityId root, const std::string& path,
               const ResourceManager& resources);
 
     /**
@@ -85,10 +105,15 @@ namespace Prefab {
      * @param resources Resolves asset names to handles.
      * @param path      Prefab file to read.
      * @param root      Existing entity to become the instance root.
+     * @param overrides Per-instance field deltas, addressed by PrefabEntity uid.
+     * @param drift     Optional: receives one message per override the prefab no
+     *                  longer has a home for. The override itself is kept.
      * @return True if the prefab was read and built.
      */
     bool instantiateInto(Scene& scene, ResourceManager& resources,
-                         const std::string& path, EntityId root);
+                         const std::string& path, EntityId root,
+                         const std::vector<PrefabOverride>& overrides = {},
+                         std::set<std::string>* drift = nullptr);
 
 } // namespace Prefab
 
