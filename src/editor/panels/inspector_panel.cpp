@@ -290,11 +290,16 @@ void InspectorPanel::drawEmptySelectionState(EditorContext& ec) {
     ImGui::Spacing();
     const char* line1 = "No entity selected";
     const char* line2 = "Pick one in the Hierarchy, or click in the viewport.";
-    ImGui::SetCursorPosX((region.x - ImGui::CalcTextSize(line1).x) * 0.5f);
+    // Centring a line wider than the panel puts its start left of the panel,
+    // where the head of the sentence is clipped away rather than the tail.
+    const auto centre = [&](const char* text) {
+        ImGui::SetCursorPosX(std::max(0.0f, (region.x - ImGui::CalcTextSize(text).x) * 0.5f));
+    };
+    centre(line1);
     ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
     ImGui::TextUnformatted(line1);
     ImGui::PopStyleColor();
-    ImGui::SetCursorPosX((region.x - ImGui::CalcTextSize(line2).x) * 0.5f);
+    centre(line2);
     ImGui::TextDisabled("%s", line2);
 
     ImGui::Spacing();
