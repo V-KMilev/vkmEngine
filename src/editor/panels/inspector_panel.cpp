@@ -203,6 +203,8 @@ void editComponentCard(Scene& scene, ResourceManager& resources, EditorState& st
         scene.remove<T>(id);
         state.commands.push(std::make_unique<RemoveComponentCommand<T>>(id, std::move(snap), removeLabel));
         state.markSceneDirty();
+        PrefabOverrides::warnComponentIsPrefabs(scene, state, id, title,
+                                                "comes back from the prefab on the next load");
     }
 }
 }
@@ -346,6 +348,8 @@ void InspectorPanel::drawIdentityHeader(Scene& scene, ResourceManager& resources
             scene.add(id, n);
             state.commands.push(std::make_unique<AddComponentCommand<Name>>(id, n, "Add Name"));
             state.markSceneDirty();
+            PrefabOverrides::warnComponentIsPrefabs(scene, state, id, "Name",
+                                                    "is not stored in the scene");
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add a Name component to rename this entity");
     }
@@ -428,6 +432,16 @@ void InspectorPanel::drawUIButtonSection(Scene& scene, ResourceManager& resource
 }
 
 void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, EntityId id) {
+    // What an instance is made of comes from its prefab: the scene keeps a
+    // reference, a pose and the overrides, and rebuilds the subtree from the
+    // file. So a component added here is in the prefab or it is nowhere, and
+    // the button stays because writing the prefab back is how one is authored.
+    const bool inInstance = PrefabOverrides::instanceRoot(scene, id) != EntityId{};
+    if (inInstance) {
+        ImGui::TextWrapped("Components on an instance belong to the prefab. Save as Prefab "
+                           "keeps what you add here; saving the scene does not.");
+    }
+
     ImGui::PushStyleColor(ImGuiCol_Button, EditorStyle::ACCENT);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, EditorStyle::ACCENT_HOV);
     const bool clicked = ImGui::Button("+  Add Component", ImVec2(-1, 0));
@@ -447,6 +461,13 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         ImGui::InputTextWithHint("##compFilter", "Search...",
                                  s_componentFilter, sizeof(s_componentFilter));
         ImGui::Separator();
+        // The line above the button is gone by the time the menu is open, so the
+        // add says it again, naming what was added.
+        const auto warnPrefabOnly = [&](const char* label) {
+            PrefabOverrides::warnComponentIsPrefabs(scene, state, id, label,
+                                                    "is not stored in the scene");
+        };
+
         // Each add routes through AddComponentCommand so undo can drop the
         // component the user just added; the type is deduced from the
         // prototype value.
@@ -457,6 +478,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
                 scene.add(id, value);
                 state.commands.push(std::make_unique<AddComponentCommand<T>>(id, std::move(value), addLabel));
                 state.markSceneDirty();
+                warnPrefabOnly(label);
             }
         };
 
@@ -490,6 +512,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
             && !scene.has<ScriptComponent>(id) && ImGui::MenuItem("Script")) {
             scene.add(id, ScriptComponent{});
             state.markSceneDirty();
+            warnPrefabOnly("Script");
         }
         ImGui::EndPopup();
     }
@@ -1203,6 +1226,16 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
     if (open) {
         auto& sc = scene.get<ScriptComponent>(id);
 
+        // A behavior list is move-only, so ScriptComponent has no field-level
+        // override - it serializes as one value holding every behavior. Inside
+        // an instance that leaves nowhere for an edit here to be stored, and
+        // the field widgets below write straight into the live behavior, so say
+        // it once while the card is open rather than per keystroke.
+        if (PrefabOverrides::instanceRoot(scene, id)) {
+            ImGui::TextWrapped("Script values on an instance belong to the prefab. Save as "
+                               "Prefab keeps what you change here; saving the scene does not.");
+        }
+
         // Script edits are applied live (no undo command): a behavior list is
         // move-only, so it can't ride the value-copying command stack.
         int removeIndex = -1;
@@ -1280,6 +1313,8 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
     if (remove) {
         scene.remove<ScriptComponent>(id);
         state.markSceneDirty();
+        PrefabOverrides::warnComponentIsPrefabs(scene, state, id, "Script",
+                                                "comes back from the prefab on the next load");
     }
 }
 
