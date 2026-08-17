@@ -368,6 +368,49 @@ class DestroySubtreeCommand : public Command {
 };
 
 /**
+ * @brief Place an instance of a prefab into the scene, undoable.
+ *
+ * Redo rebuilds the instance from the prefab file instead of from a snapshot.
+ * EntitySnapshot carries components, not the PrefabInstance marker and not the
+ * uids instancing stamps on the subtree, so a snapshot round-trip would bring
+ * the instance back as loose entities that the scene then writes out inline -
+ * the same reason SceneSerializer expands a prefab rather than storing it.
+ *
+ * Reaches the ResourceManager through a pointer captured at construction, like
+ * RenameAssetCommand: the prefab resolves its assets by name on every rebuild,
+ * and the command stack is cleared on scene load, so the pointer never outlives
+ * the manager it was taken from.
+ */
+class PlacePrefabCommand : public Command {
+    public:
+        /**
+         * @brief Record a placement that has already happened.
+         *
+         * @param resources Manager the rebuild resolves the prefab's assets against.
+         * @param path Prefab file, as it is stored on the instance.
+         * @param root Instance root; only its slot is kept, so redo can rebuild
+         *             at the same index a later command may refer to.
+         * @param at Pose the instance was placed at.
+         * @param label History entry text.
+         */
+        PlacePrefabCommand(ResourceManager& resources, std::string path, EntityId root,
+                           const Transform& at, const char* label)
+            : m_resources(&resources), m_path(std::move(path)), m_rootSlot(root.index),
+              m_at(at), m_label(label) {}
+
+        void redo(Scene&, EditorState&) override;
+        void undo(Scene&, EditorState&) override;
+        const char* label() const override { return m_label; }
+
+    private:
+        ResourceManager* m_resources;
+        std::string      m_path;
+        uint32_t         m_rootSlot;
+        Transform        m_at;
+        const char*      m_label;
+};
+
+/**
  * @brief Re-parent an entity, undoable.
  *
  * Records (child, oldParent, newParent) plus the child's local Transform on
