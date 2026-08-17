@@ -1,12 +1,12 @@
 #include "framework/editor_actions.h"
-#include <cctype>
-#include "io/scene/prefab.h"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <limits>
 #include <memory>
 #include <string>
+#include <system_error>
 
 #include <imgui.h>
 #include <glm/glm.hpp>
@@ -25,6 +25,8 @@
 #include "ecs/component/irradiance_volume.h"
 #include "ecs/component/decal.h"
 #include "ecs/component/particle_emitter.h"
+#include "ecs/component/prefab_instance.h"
+#include "io/scene/prefab.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
@@ -357,35 +359,60 @@ void deleteSelection(Scene& scene, EditorState& state) {
     commitStructureChange(state);
 }
 
-bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& state,
-                  EntityId entity) {
-    if (!scene.isAlive(entity)) return false;
-
-    // Named after the entity, so saving it again updates the same prefab. A name
-    // is free text, so keep only what is safe in a filename and fall back rather
-    // than write something unopenable.
+namespace {
+// A name as a filename: free text, so keep only what is safe in one and fall
+// back rather than compose something unopenable.
+std::string prefabStem(const Scene& scene, EntityId entity) {
     std::string stem = scene.has<Name>(entity) ? scene.get<Name>(entity).value : "";
     for (char& c : stem) {
         if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_') c = '_';
     }
-    if (stem.empty()) stem = "prefab";
+    return stem.empty() ? "prefab" : stem;
+}
 
-    // Project-relative, because the instance stores this path and a scene
-    // carrying it has to name the same file on another machine. The write
+// First prefab file name not already on disk: `base`, then "base 2", ... A
+// prefab's path is its identity - it is what every instance in every scene
+// resolves - so a new one must not land on a name another already answers to.
+std::string uniquePrefabStem(const std::string& base) {
+    std::error_code ec;
+    std::string stem = base;
+    for (int n = 2; std::filesystem::exists(ProjectPaths::prefabs() / (stem + ".json"), ec); ++n) {
+        stem = base + " " + std::to_string(n);
+    }
+    return stem;
+}
+} // namespace
+
+bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& state,
+                  EntityId entity) {
+    if (!scene.isAlive(entity)) return false;
+
+    // An instance saves back over the prefab it came from - that is how a prefab
+    // is edited. Anything else becomes a new file, because overwriting a
+    // stranger's prefab would silently re-point every instance of it at this
+    // subtree. Project-relative, because the instance stores this path and a
+    // scene carrying it has to name the same file on another machine; the write
     // resolves it and makes the directory.
-    const std::string path = (ProjectPaths::prefabs() / (stem + ".json"))
-                                 .lexically_relative(ProjectPaths::projectRoot())
-                                 .generic_string();
+    const bool editsItsOwn = scene.has<PrefabInstance>(entity)
+                          && !scene.get<PrefabInstance>(entity).source.empty();
+    const std::string path = editsItsOwn
+        ? scene.get<PrefabInstance>(entity).source
+        : (ProjectPaths::prefabs() / (uniquePrefabStem(prefabStem(scene, entity)) + ".json"))
+              .lexically_relative(ProjectPaths::projectRoot())
+              .generic_string();
 
+    const std::string shown = std::filesystem::path(path).stem().string();
     if (!Prefab::save(scene, entity, path, resources)) {
-        state.pushToast(EditorState::ToastKind::Error, "Could not save prefab '" + stem + "'");
+        state.pushToast(EditorState::ToastKind::Error, "Could not save prefab '" + shown + "'");
         return false;
     }
 
-    // The subtree is now stored as a reference, which changes what the scene
-    // writes for it.
-    state.sceneDirty = true;
-    state.pushToast(EditorState::ToastKind::Info, "Saved prefab '" + stem + "'");
+    // The subtree is stored as a reference now, and its entities are rebuilt
+    // from the file on the next load - so nothing already on the command stack
+    // still describes the scene, the same reason a scene load clears it.
+    state.commands.clear();
+    state.markSceneDirty();
+    state.pushToast(EditorState::ToastKind::Info, "Saved prefab '" + shown + "'");
     return true;
 }
 

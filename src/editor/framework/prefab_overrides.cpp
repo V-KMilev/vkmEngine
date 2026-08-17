@@ -51,6 +51,25 @@ void setEntry(std::vector<PrefabOverride>& entries, uint32_t uid, const char* co
     entries.push_back(PrefabOverride{uid, component, field, std::move(value)});
 }
 
+// The entity carrying @p uid inside the instance rooted at @p root. Breadth
+// first, because an instance is a handful of entities and the walk runs once per
+// undo step rather than per frame.
+EntityId entityWithUid(const Scene& scene, EntityId root, uint32_t uid) {
+    if (!scene.isAlive(root)) return {};
+
+    std::vector<EntityId> pending{root};
+    for (size_t i = 0; i < pending.size(); ++i) {
+        if (scene.has<PrefabEntity>(pending[i]) &&
+            scene.get<PrefabEntity>(pending[i]).uid == uid) {
+            return pending[i];
+        }
+        HierarchyOperations::forEachChild(scene, pending[i], [&](EntityId child) {
+            if (scene.isAlive(child)) pending.push_back(child);
+        });
+    }
+    return {};
+}
+
 } // namespace
 
 EntityId instanceRoot(const Scene& scene, EntityId id) {
@@ -74,18 +93,26 @@ std::vector<std::string> overriddenFields(const Scene& scene, EntityId id,
     if (!root || !scene.has<PrefabEntity>(id)) return fields;
 
     const uint32_t uid = scene.get<PrefabEntity>(id).uid;
+
+    // The root's Transform is the instance's own pose, so an entry against it is
+    // drift the prefab never applies - see the table in prefab.h. Offering it
+    // would mark a field as the instance's when it always was, beside a control
+    // that gives it back to nothing.
+    if (uid == PrefabEntity::ROOT && std::strcmp(component, "Transform") == 0) return fields;
+
     for (const PrefabOverride& o : scene.get<PrefabInstance>(root).overrides) {
         if (o.uid == uid && o.component == component) fields.push_back(o.field);
     }
     return fields;
 }
 
-void apply(Scene& scene, ResourceManager& resources, EntityId root, EntityId target,
+void apply(Scene& scene, ResourceManager& resources, EntityId root, uint32_t uid,
            const std::string& component, const std::vector<PrefabOverride>& entries) {
     if (!scene.isAlive(root) || !scene.has<PrefabInstance>(root)) return;
-    if (!scene.isAlive(target) || !scene.has<PrefabEntity>(target)) return;
 
-    const uint32_t uid = scene.get<PrefabEntity>(target).uid;
+    const EntityId target = entityWithUid(scene, root, uid);
+    if (!target) return;
+
     PrefabInstance& instance = scene.get<PrefabInstance>(root);
     replaceEntries(instance.overrides, uid, component, entries);
 
@@ -107,8 +134,18 @@ std::unique_ptr<Command> recordFields(Scene& scene, ResourceManager& resources, 
     // override on it could never take effect.
     if (uid == PrefabEntity::ROOT && std::strcmp(component, "Transform") == 0) return nullptr;
 
-    std::vector<PrefabOverride>& list = scene.get<PrefabInstance>(root).overrides;
+    PrefabInstance& instance = scene.get<PrefabInstance>(root);
+    std::vector<PrefabOverride>& list = instance.overrides;
     const std::vector<PrefabOverride> restore = entriesFor(list, uid, component);
+
+    // An override is a delta against the prefab's own value, so a component the
+    // prefab does not define cannot carry one: the entry would be reported as
+    // drift on the next load, and undoing it would restore nothing. Asked once,
+    // as the first entry for this pair is about to be made, so a drag pays the
+    // file read on its first frame rather than on every one.
+    if (restore.empty() && !Prefab::definesComponent(instance.source, uid, component)) {
+        return nullptr;
+    }
 
     std::vector<PrefabOverride> entries = restore;
     bool changed = false;
@@ -126,7 +163,7 @@ std::unique_ptr<Command> recordFields(Scene& scene, ResourceManager& resources, 
     replaceEntries(list, uid, component, entries);
 
     return std::make_unique<PrefabOverrideCommand>(
-        resources, root, id, component, restore, std::move(entries), label);
+        resources, root, uid, component, restore, std::move(entries), label);
 }
 
 void revert(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id,
@@ -144,9 +181,9 @@ void revert(Scene& scene, ResourceManager& resources, EditorState& state, Entity
     }), entries.end());
     if (entries.size() == restore.size()) return;
 
-    apply(scene, resources, root, id, component, entries);
+    apply(scene, resources, root, uid, component, entries);
     state.commands.push(std::make_unique<PrefabOverrideCommand>(
-        resources, root, id, component, restore, std::move(entries), "Revert Override"));
+        resources, root, uid, component, restore, std::move(entries), "Revert Override"));
     state.markSceneDirty();
 }
 

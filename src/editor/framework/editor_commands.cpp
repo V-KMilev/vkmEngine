@@ -400,7 +400,9 @@ void PlacePrefabCommand::redo(Scene& scene, EditorState& state) {
     scene.get<PrefabInstance>(root).source = m_path;
 
     if (!Prefab::instantiateInto(scene, *m_resources, m_path, root)) {
-        scene.destroyEntity(root);
+        // The subtree, not the root: a build that stopped partway has already
+        // parented whatever it managed to create under it.
+        HierarchyOperations::destroyHierarchy(scene, root);
         return;
     }
 
@@ -418,12 +420,12 @@ void PlacePrefabCommand::undo(Scene& scene, EditorState& state) {
 
 void PrefabOverrideCommand::redo(Scene& scene, EditorState&) {
     PrefabOverrides::apply(scene, *m_resources, liveEntity(scene, m_root),
-                           liveEntity(scene, m_target), m_component, m_after);
+                           m_targetUid, m_component, m_after);
 }
 
 void PrefabOverrideCommand::undo(Scene& scene, EditorState&) {
     PrefabOverrides::apply(scene, *m_resources, liveEntity(scene, m_root),
-                           liveEntity(scene, m_target), m_component, m_before);
+                           m_targetUid, m_component, m_before);
 }
 
 bool PrefabOverrideCommand::tryMerge(Command& incoming) {
@@ -431,7 +433,10 @@ bool PrefabOverrideCommand::tryMerge(Command& incoming) {
     // one drag over one card. The chain start (m_before) stays; only m_after
     // slides forward to the newest entry set.
     auto* p = dynamic_cast<PrefabOverrideCommand*>(&incoming);
-    if (!p || p->m_target != m_target || p->m_component != m_component) return false;
+    if (!p || p->m_root != m_root || p->m_targetUid != m_targetUid
+        || p->m_component != m_component) {
+        return false;
+    }
     m_after = p->m_after;
     return true;
 }
