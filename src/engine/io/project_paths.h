@@ -74,6 +74,7 @@ inline std::filesystem::path projectBin() { return projectRoot() / "bin"; }
 // Project-owned: the game's own content, written by the editor.
 inline std::filesystem::path assets()      { return projectRoot() / "assets"; }
 inline std::filesystem::path scenes()      { return projectRoot() / "scenes"; }
+inline std::filesystem::path prefabs()     { return projectRoot() / "prefabs"; }
 inline std::filesystem::path screenshots() { return projectRoot() / "screenshots"; }
 inline std::filesystem::path envs()        { return assets() / "envs"; }
 

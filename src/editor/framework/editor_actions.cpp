@@ -1,4 +1,6 @@
 #include "framework/editor_actions.h"
+#include <cctype>
+#include "io/scene/prefab.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -353,6 +355,35 @@ void deleteSelection(Scene& scene, EditorState& state) {
 
     state.commands.push(std::move(batch));
     commitStructureChange(state);
+}
+
+bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& state,
+                  EntityId entity) {
+    if (!scene.isAlive(entity)) return false;
+
+    // Named after the entity, so saving it again updates the same prefab. A name
+    // is free text, so keep only what is safe in a filename and fall back rather
+    // than write something unopenable.
+    std::string stem = scene.has<Name>(entity) ? scene.get<Name>(entity).value : "";
+    for (char& c : stem) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_') c = '_';
+    }
+    if (stem.empty()) stem = "prefab";
+
+    std::error_code ec;
+    std::filesystem::create_directories(ProjectPaths::prefabs(), ec);
+    const std::filesystem::path path = ProjectPaths::prefabs() / (stem + ".json");
+
+    if (!Prefab::save(scene, entity, path.string(), resources)) {
+        state.pushToast(EditorState::ToastKind::Error, "Could not save prefab '" + stem + "'");
+        return false;
+    }
+
+    // The subtree is now stored as a reference, which changes what the scene
+    // writes for it.
+    state.sceneDirty = true;
+    state.pushToast(EditorState::ToastKind::Info, "Saved prefab '" + stem + "'");
+    return true;
 }
 
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
