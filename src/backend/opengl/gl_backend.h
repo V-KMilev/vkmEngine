@@ -70,7 +70,6 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
 
     public:
         bool init(WindowManager& window) override;
-        void resize(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;
         void render(const RenderView& view, const ResourceManager& resources) override;
 
         // Editor previews: offscreen studio renders, cached per key (GLPreview).

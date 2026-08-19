@@ -99,7 +99,7 @@ does not.
 ## RenderBackend - the seam
 
 Abstract interface (`render_backend.h`). The engine only ever sees this; it never
-includes a `gl_*` header. Core methods: `init`, `resize`, `render(view, resources)`,
+includes a `gl_*` header. Core methods: `init`, `render(view, resources)`,
 plus offscreen `renderPreview` hooks the editor uses for material/asset thumbnails.
 One implementation exists today (OpenGL); Optix/CPU are the reason the seam is
 backend-agnostic.

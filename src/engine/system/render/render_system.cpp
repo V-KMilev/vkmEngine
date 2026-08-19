@@ -16,26 +16,15 @@ void RenderSystem::update(FrameContext& ctx) {
     installPending(ctx);
     if (!m_backend || !ctx.visibility) return;
 
-    // m_view holds the size we last rendered at; installPending() zeroes it
-    // after a swap so a freshly installed backend is sized on its first frame.
-    const uint32_t vpX = ctx.window.sceneViewportX();
-    const uint32_t vpY = ctx.window.sceneViewportY();
-    const uint32_t vpW = ctx.window.sceneViewportWidth();
-    const uint32_t vpH = ctx.window.sceneViewportHeight();
-    if (vpX != m_view.viewportX || vpY != m_view.viewportY ||
-        vpW != m_view.viewportWidth || vpH != m_view.viewportHeight) {
-        m_view.viewportX      = vpX;
-        m_view.viewportY      = vpY;
-        m_view.viewportWidth  = vpW;
-        m_view.viewportHeight = vpH;
-        m_backend->resize(vpX, vpY, vpW, vpH);
-    }
-
-    // The full backbuffer height lets a bottom-left backend flip the top-left
-    // viewport rect. Refreshed every frame so a window resize that leaves the
-    // rect unchanged still lands the blit correctly.
-    m_view.surfaceHeight = static_cast<uint32_t>(ctx.window.getHeight());
-    m_view.settings      = m_settings;
+    // The rect the scene draws into, plus the full backbuffer height a
+    // bottom-left backend needs to flip it. The view is the only channel that
+    // carries them, so they are simply refreshed every frame.
+    m_view.viewportX      = ctx.window.sceneViewportX();
+    m_view.viewportY      = ctx.window.sceneViewportY();
+    m_view.viewportWidth  = ctx.window.sceneViewportWidth();
+    m_view.viewportHeight = ctx.window.sceneViewportHeight();
+    m_view.surfaceHeight  = static_cast<uint32_t>(ctx.window.getHeight());
+    m_view.settings       = m_settings;
 
     m_view.build(ctx.scene, *ctx.visibility, ctx.ui);
     m_backend->render(m_view, ctx.resources);
@@ -59,12 +48,6 @@ void RenderSystem::installPending(FrameContext& ctx) {
     // dropped and the current one keeps rendering.
     if (m_pending->init(ctx.window)) {
         m_backend = std::move(m_pending);
-        // Force a resize onto the new backend: zero the cached viewport so the
-        // next update()'s change check fires.
-        m_view.viewportX      = 0;
-        m_view.viewportY      = 0;
-        m_view.viewportWidth  = 0;
-        m_view.viewportHeight = 0;
         LOG_INFO("Render backend active: %s", m_backend->info().api.c_str());
     } else {
         LOG_ERROR("Incoming render backend failed to init; keeping the current one");
