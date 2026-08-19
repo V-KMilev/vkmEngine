@@ -6,7 +6,7 @@
 
 #include "ui/editor_style.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Shared modal-dialog scaffold: one look and one keyboard contract for
@@ -170,4 +170,4 @@ inline DialogResult dialogButtons(bool& wantOpen, const char* confirmLabel,
  */
 inline void endDialog() { ImGui::EndPopup(); }
 
-} // namespace Engine
+} // namespace Vkm::Engine

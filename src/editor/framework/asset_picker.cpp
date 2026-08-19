@@ -14,7 +14,7 @@
 #include "ui/editor_style.h"
 #include "ui/editor_widgets.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 std::string lowerExt(const std::filesystem::path& p) {
@@ -208,4 +208,4 @@ bool AssetPicker::draw(std::string& outPath) {
     return picked;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

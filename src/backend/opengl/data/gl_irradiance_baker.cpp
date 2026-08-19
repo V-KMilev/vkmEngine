@@ -12,7 +12,7 @@
 #include "data/gl_scene_capture.h"
 #include "system/render/data/irradiance_volume_data.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 constexpr float CAPTURE_FAR = 500.0f;
@@ -29,7 +29,7 @@ void GLIrradianceBaker::ensureTargets() {
 
     m_cube.create(CAPTURE_SIZE, 1, GL_RGB16F, GL_RGB, GL_FLOAT, false);
 
-    m_depth = std::make_unique<Core::RenderBuffer>();
+    m_depth = std::make_unique<Vkm::GL::RenderBuffer>();
     m_depth->storage(GL_DEPTH_COMPONENT24, CAPTURE_SIZE, CAPTURE_SIZE);
 
     m_fbo.bind();
@@ -37,7 +37,7 @@ void GLIrradianceBaker::ensureTargets() {
     m_fbo.unbind();
 }
 
-void GLIrradianceBaker::bake(Core::Context& gl, GLIrradianceVolume& volume,
+void GLIrradianceBaker::bake(Vkm::GL::Context& gl, GLIrradianceVolume& volume,
                              const IrradianceVolumeData& data,
                              const RenderView& view, const GLView& glView, const GLIBL& globalIBL) {
     const uint32_t rx = data.resolutionX;
@@ -93,4 +93,4 @@ void GLIrradianceBaker::bake(Core::Context& gl, GLIrradianceVolume& volume,
              rx, ry, rz, data.center.x, data.center.y, data.center.z);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

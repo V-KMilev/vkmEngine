@@ -10,10 +10,10 @@
 #include "data/gl_cluster_grid.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLClusterPass::GLClusterPass()
-    : m_compute(std::make_unique<Core::ComputeShader>("shaders/clustering")) {}
+    : m_compute(std::make_unique<Vkm::GL::ComputeShader>("shaders/clustering")) {}
 
 GLClusterPass::~GLClusterPass() = default;
 
@@ -46,4 +46,4 @@ void GLClusterPass::execute(GLFrameContext& ctx) {
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

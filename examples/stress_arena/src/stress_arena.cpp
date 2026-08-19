@@ -42,7 +42,7 @@
 // Logger lives in a DLL the exe cannot re-export (same reason as potion_runner).
 #define STRESS_LOG(...) (std::fprintf(stderr, "[Stress] " __VA_ARGS__), std::fputc('\n', stderr))
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -1554,4 +1554,4 @@ void StressArena::setUIVisible(bool visible) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

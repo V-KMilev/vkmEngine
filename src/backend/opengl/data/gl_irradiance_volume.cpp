@@ -4,7 +4,7 @@
 
 #include "texture/gl_texture_3d.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLIrradianceVolume::GLIrradianceVolume()  = default;
 GLIrradianceVolume::~GLIrradianceVolume() = default;
@@ -18,7 +18,7 @@ void GLIrradianceVolume::resize(uint32_t x, uint32_t y, uint32_t z) {
     m_z = z;
 
     for (int i = 0; i < SH_COEFFS; ++i) {
-        Core::Texture3DParams p;
+        Vkm::GL::Texture3DParams p;
         p.width  = x;
         p.height = y;
         p.depth  = z;
@@ -27,10 +27,10 @@ void GLIrradianceVolume::resize(uint32_t x, uint32_t y, uint32_t z) {
         p.type           = GL_FLOAT;
         // Linear so the lookup blends between neighbouring probes; clamp so a
         // sample at the box edge holds the border probe instead of wrapping.
-        p.minFilter = Core::TextureMinFilter::Linear;
-        p.magFilter = Core::TextureMagFilter::Linear;
-        p.wrap      = Core::TextureWrap::ClampToEdge;
-        m_sh[i] = std::make_unique<Core::Texture3D>("irradiance_sh", p);
+        p.minFilter = Vkm::GL::TextureMinFilter::Linear;
+        p.magFilter = Vkm::GL::TextureMagFilter::Linear;
+        p.wrap      = Vkm::GL::TextureWrap::ClampToEdge;
+        m_sh[i] = std::make_unique<Vkm::GL::Texture3D>("irradiance_sh", p);
     }
 
     // Contents are undefined until a bake fills every cell.
@@ -45,4 +45,4 @@ void GLIrradianceVolume::bindSlot(int i, uint32_t slot) const {
     if (i >= 0 && i < SH_COEFFS && m_sh[i]) m_sh[i]->bindSlot(slot);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

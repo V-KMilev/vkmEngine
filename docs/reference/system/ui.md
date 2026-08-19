@@ -4,7 +4,7 @@ In-game, screen-space UI modelled as ECS. A UI element is an entity with
 plain-struct components; the `UISystem` resolves 2D layout, hit-tests the
 pointer, and builds a batched draw list that rides the **existing `RenderView`
 seam** into the backend, where one `GLUIPass` draws it on top after Composite.
-It runs identically in `engine_runtime` and `engine_editor` and pulls in **no
+It runs identically in `vkm_runtime` and `vkm_editor` and pulls in **no
 ImGui** - ImGui stays the editor's own tooling, never the shipped game UI.
 
 > The one idea: **UI is just more ECS.** Because a UI element is an entity,
@@ -95,7 +95,7 @@ valign, no hand-tuned offsets. Stretch-to-fill anchors, layout containers, and
 `FontAsset` is a `ResourceManager` asset holding the single-channel
 signed-distance atlas **as pixels**, plus per-glyph metrics (and
 ascent/descent/lineHeight) for printable ASCII. `bakeFontSDF` (in
-`EngineTools`) renders each glyph with `stbtt_GetCodepointSDF` and packs them
+`vkm_tools`) renders each glyph with `stbtt_GetCodepointSDF` and packs them
 with `stb_rect_pack` (warning if any glyph does not fit). Because the atlas
 stores distance, **one bake stays crisp at any size**; the UISystem just scales
 the metrics by `requestedSize / bakedHeight`, and the shader anti-aliases the

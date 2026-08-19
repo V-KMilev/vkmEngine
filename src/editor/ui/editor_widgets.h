@@ -15,7 +15,7 @@
 #include "ui/editor_style.h"
 #include "ui/editor_icons.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 
@@ -373,4 +373,4 @@ bool entityTreeNode(const void* idPtr, ImGuiTreeNodeFlags flags,
 bool entitySelectable(const char* idStr, bool selected,
                       EditorIcon icon, const char* name);
 
-} // namespace Engine
+} // namespace Vkm::Engine

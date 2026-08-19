@@ -89,7 +89,7 @@ single source of authoring state - they drive the inspector, serialization, and
 duplication uniformly.
 
 ```cpp
-namespace Engine {
+namespace Vkm::Engine {
 
 class CubeSpinner : public ReflectedBehavior<CubeSpinner> {
     public:
@@ -98,9 +98,9 @@ class CubeSpinner : public ReflectedBehavior<CubeSpinner> {
         float degreesPerSecond = 90.0f;   // authored, reflected
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::CubeSpinner)
+VKM_REFLECT_BEGIN(::Vkm::Engine::CubeSpinner)
     VKM_F(degreesPerSecond)
 VKM_REFLECT_END()
 ```
@@ -165,8 +165,8 @@ a system handle).
 
 The engine ships no gameplay of its own: **the project brings its code**. Each
 project builds its sources into `game.dll` / `libgame.so` in its own `bin/`, and
-both hosts load it the same way through `ScriptModule` - `engine_runtime` to play
-it, `engine_editor` to edit it. There is no static-linked variant and no
+both hosts load it the same way through `ScriptModule` - `vkm_runtime` to play
+it, `vkm_editor` to edit it. There is no static-linked variant and no
 editor-only path; the shipped game and the edited game run the same binary.
 
 The host `dlopen`s the module and calls the `extern "C"` entry points it finds:
@@ -178,7 +178,7 @@ The host `dlopen`s the module and calls the `extern "C"` entry points it finds:
 
 The module resolves engine symbols from the host that loaded it (Windows: an
 import lib; Linux: `ENABLE_EXPORTS`), so there is no second copy of the
-engine inside it. It must **not** link `EngineCore` - a second copy would
+engine inside it. It must **not** link `vkm_core` - a second copy would
 duplicate the typeId registry and the singletons, and types registered against
 one copy are invisible to the other.
 

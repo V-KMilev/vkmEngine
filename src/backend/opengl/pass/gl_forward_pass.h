@@ -7,15 +7,15 @@
 #include "gl_pass.h"
 #include "data/gl_instance_batcher.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
     struct DrawableData;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief The lit forward draw - the one geometry pass the backend runs.
@@ -51,8 +51,8 @@ class GLForwardPass : public GLPass {
         void drawRuns(GLFrameContext& ctx, const GLInstanceBatchView& batch);
 
     private:
-        std::unique_ptr<Core::Shader> m_shader;
-        GLInstanceBatcher             m_batcher;
+        std::unique_ptr<Vkm::GL::Shader> m_shader;
+        GLInstanceBatcher              m_batcher;
 
         // Sorted back-to-front, cleared + refilled each frame with the capacity
         // kept. The opaque bucket comes from the frame context.
@@ -60,4 +60,4 @@ class GLForwardPass : public GLPass {
         std::vector<const DrawableData*>                    m_transparentSorted;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

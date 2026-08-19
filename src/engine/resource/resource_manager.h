@@ -17,7 +17,7 @@
 #include "resource/resource.h"
 #include "resource/resource_handle.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Open type-erased resource registry with typed handles and generational lifetimes.
@@ -453,4 +453,4 @@ class ResourceManager {
         inline static std::atomic<uint64_t> s_nextUid{0};
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

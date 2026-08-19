@@ -10,7 +10,7 @@
 #include "resource/asset/material_asset.h"
 #include "system/script/reflected_behavior.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief A profiling load: one scene that drives every engine subsystem at once.
@@ -383,9 +383,9 @@ class StressArena : public ReflectedBehavior<StressArena> {
         /// streams keeps the build-time layout provably untouched by timing.
         Math::Rng m_churnRng;
 };
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::StressArena)
+VKM_REFLECT_BEGIN(::Vkm::Engine::StressArena)
     VKM_F(propCount),
     VKM_F(towerCount),
     VKM_F(lightCount),

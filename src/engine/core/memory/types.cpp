@@ -4,7 +4,7 @@
 #include <typeindex>
 #include <unordered_map>
 
-namespace Engine::detail {
+namespace Vkm::Engine::detail {
 
 TypeId typeIdFromInfo(const std::type_info& info) {
     // One registry for the whole process. Keyed by std::type_index (RTTI), so a
@@ -21,4 +21,4 @@ TypeId typeIdFromInfo(const std::type_info& info) {
     return it->second;
 }
 
-} // namespace Engine::detail
+} // namespace Vkm::Engine::detail

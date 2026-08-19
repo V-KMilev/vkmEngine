@@ -9,7 +9,7 @@
 #include "resource/resource.h"
 #include "resource/resource_handle.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief One glyph's atlas placement and layout metrics, in baked pixels.
@@ -68,4 +68,4 @@ struct FontAsset : public Resource {
 
 using FontHandle = Handle<FontAsset>;
 
-} // namespace Engine
+} // namespace Vkm::Engine

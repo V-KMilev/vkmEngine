@@ -26,7 +26,7 @@
 #include "io/project_paths.h"
 #include "system/render/editor_render_hooks.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Fold everything that changes the live preview image into one version stamp
@@ -629,4 +629,4 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
     ImGui::End();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

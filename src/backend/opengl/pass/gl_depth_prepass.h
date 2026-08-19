@@ -5,11 +5,11 @@
 #include "gl_pass.h"
 #include "data/gl_instance_batcher.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Lays down opaque depth before the forward pass for early-Z.
@@ -39,7 +39,7 @@ class GLDepthPrepass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Core::Shader> m_shader;
+        std::unique_ptr<Vkm::GL::Shader> m_shader;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

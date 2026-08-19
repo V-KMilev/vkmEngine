@@ -16,11 +16,11 @@
 #include "data/gl_shadow_data.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLShadowPass::GLShadowPass()
-    : m_depth2D(std::make_unique<Core::Shader>("shaders/shadow/shadow_2d"))
-    , m_depthCube(std::make_unique<Core::Shader>("shaders/shadow/shadow_cube")) {}
+    : m_depth2D(std::make_unique<Vkm::GL::Shader>("shaders/shadow/shadow_2d"))
+    , m_depthCube(std::make_unique<Vkm::GL::Shader>("shaders/shadow/shadow_cube")) {}
 
 GLShadowPass::~GLShadowPass() = default;
 
@@ -104,4 +104,4 @@ void GLShadowPass::renderCasters(GLFrameContext& ctx, const ShadowCasterBatch& b
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

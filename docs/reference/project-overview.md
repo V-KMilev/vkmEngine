@@ -10,12 +10,12 @@ orientation; each subsystem has a deeper doc linked below.
 git submodule update --init --recursive
 cmake -B build -G Ninja
 cmake --build build
-./build/bin/engine_editor examples/potion_runner    # edit a project
-./build/bin/engine_runtime examples/potion_runner   # play it
+./build/bin/vkm_editor examples/potion_runner    # edit a project
+./build/bin/vkm_runtime examples/potion_runner   # play it
 ```
 
 CMake 3.25+, Ninja, C++17, OpenGL 4.3 core. The build produces three executables
-- `engine_editor`, `engine_runtime`, and the headless `engine_cook` - over a
+- `vkm_editor`, `vkm_runtime`, and the headless `vkm_cook` - over a
 shared header-only bootstrap (`setupEngineApp` in `app/engine_app.h`). See
 [building.md](building.md) for targets, modules, and flags.
 
@@ -58,7 +58,7 @@ worked examples. See [system/io.md](system/io.md#projects-and-the-two-roots).
 Stages run in declaration order; within a stage, systems run **sequentially** in
 registration order (there is no parallel layer scheduler - per-system `parallelFor`
 is the scaling lever). The default wiring lives in `setupEngineApp`
-(`app/engine_app.h`, a header both executables include); `engine_editor` adds
+(`app/engine_app.h`, a header both executables include); `vkm_editor` adds
 `EditorSystem` on top.
 
 | Stage | Default systems |
@@ -105,7 +105,8 @@ unchanged uploads. See [resources.md](resources.md).
 - `src/backend/opengl/` - OpenGL backend, flat `gl_`-prefixed includes.
 - `src/editor/` - ImGui editor (panels, gizmo, undo/redo).
 - `src/tools/` - asset loaders + generators.
-- Namespaces: `Engine::` for engine code, `Core::` for vkmGL wrappers.
+- Namespaces: `Vkm::Engine::` for engine code, `Vkm::GL::` for vkmGL wrappers,
+  `Vkm::Log::` for vkmLog.
 
 Full tree and design patterns: [architecture.md](architecture.md). House style:
 [../guides/code-style.md](../guides/code-style.md).

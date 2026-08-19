@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorContext;
 class ScriptModule;
@@ -72,4 +72,4 @@ class ProjectController {
         char m_pathBuffer[512] = {};
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

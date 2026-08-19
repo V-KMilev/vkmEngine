@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief CPU-side equirectangular HDR image (linear RGB, 3 floats/texel).
@@ -32,4 +32,4 @@ struct HDRImage {
  */
 HDRImage loadHDRImage(const std::string& filePath);
 
-} // namespace Engine
+} // namespace Vkm::Engine

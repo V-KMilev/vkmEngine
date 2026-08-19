@@ -5,7 +5,7 @@
 #include "resource/asset/material_asset.h"
 #include "resource/resource_handle.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 
@@ -29,4 +29,4 @@ MaterialHandle loadMaterialFromFolder(
     ResourceManager& resourceManager
 );
 
-} // namespace Engine
+} // namespace Vkm::Engine

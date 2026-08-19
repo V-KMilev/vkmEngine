@@ -11,7 +11,7 @@
 #include "gl_buffer_upload.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLProbeManager::GLProbeManager() = default;
 GLProbeManager::~GLProbeManager() = default;
@@ -48,7 +48,7 @@ int GLProbeManager::bind(const RenderView& view) {
         block.probes[p].extents = glm::vec4(pd.halfExtents, 0.0f);
         block.probes[p].params  = glm::vec4(pd.falloff, pd.intensity, static_cast<float>(m_active[p]), 0.0f);
     }
-    Core::uploadIfChanged(m_ubo, m_lastBlock, block);
+    Vkm::GL::uploadIfChanged(m_ubo, m_lastBlock, block);
     if (m_ubo) m_ubo->bindBase(GLBindings::UBOBindingPoints::Probes);
 
     m_array->bindIrradiance(GLBindings::ProbeTextureSlots::Irradiance);
@@ -56,7 +56,7 @@ int GLProbeManager::bind(const RenderView& view) {
     return static_cast<int>(m_active.size());
 }
 
-void GLProbeManager::update(Core::Context& gl, const RenderView& view, const GLView& glView, const GLIBL& ibl) {
+void GLProbeManager::update(Vkm::GL::Context& gl, const RenderView& view, const GLView& glView, const GLIBL& ibl) {
     if (!m_baker || !m_array) return;
 
     const int capacity = m_array->capacity();
@@ -99,4 +99,4 @@ void GLProbeManager::invalidate() {
     for (BakeState& st : m_state) st.baked = false;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

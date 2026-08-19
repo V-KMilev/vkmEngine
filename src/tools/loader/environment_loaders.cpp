@@ -9,12 +9,12 @@
 
 // stb_image is header-only; this TU includes declarations only. The
 // STB_IMAGE_IMPLEMENTATION symbols are provided by the stb module, linked
-// transitively via EngineCore (vkmGL also instantiates the implementation).
+// transitively via vkm_core (vkmGL also instantiates the implementation).
 #include "stb_image.h"
 
 #include "io/project_paths.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 HDRImage loadHDRImage(const std::string& filePath) {
     HDRImage image;
@@ -48,4 +48,4 @@ HDRImage loadHDRImage(const std::string& filePath) {
     return image;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

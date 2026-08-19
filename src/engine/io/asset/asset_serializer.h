@@ -7,7 +7,7 @@
 #include "ecs/entity.h"
 #include "resource/asset/material_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 class Scene;
@@ -61,4 +61,4 @@ namespace AssetSerializer {
 
 } // namespace AssetSerializer
 
-} // namespace Engine
+} // namespace Vkm::Engine

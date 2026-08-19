@@ -6,7 +6,7 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/transform.h"
 
-namespace Engine::HierarchyOperations {
+namespace Vkm::Engine::HierarchyOperations {
 
 /**
  * @brief Attach a child entity to a parent entity.
@@ -87,4 +87,4 @@ void forEachChild(const Scene& scene, EntityId parent, Fn&& fn) {
  */
 void destroyHierarchy(Scene& scene, EntityId entity);
 
-} // namespace Engine::HierarchyOperations
+} // namespace Vkm::Engine::HierarchyOperations

@@ -8,7 +8,7 @@
 
 #include "logger.h"
 
-namespace Engine::detail {
+namespace Vkm::Engine::detail {
 
 // Open and parse a JSON file. On failure logs an error tagged with @p what and
 // returns false, leaving @p out untouched.
@@ -65,4 +65,4 @@ inline bool writeJsonFile(const std::filesystem::path& path, const nlohmann::jso
     return true;
 }
 
-} // namespace Engine::detail
+} // namespace Vkm::Engine::detail

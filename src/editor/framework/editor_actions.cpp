@@ -41,7 +41,7 @@
 #include "io/project_paths.h"
 #include "ui/editor_widgets.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 namespace EditorActions {
 
 void commitHierarchyMutation(EditorState& state) {
@@ -783,4 +783,4 @@ void PlacePrefabDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
 }
 
 } // namespace EditorActions
-} // namespace Engine
+} // namespace Vkm::Engine

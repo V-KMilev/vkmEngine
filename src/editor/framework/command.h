@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 struct EditorState;
@@ -65,4 +65,4 @@ class Command {
         virtual bool tryMerge(Command& incoming) { return false; }
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

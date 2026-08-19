@@ -10,7 +10,7 @@
 #include "gl_texture_cube.h"
 #include "gl_context.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief GPU-side image-based lighting product set (split-sum).
@@ -88,7 +88,7 @@ class GLIBL {
          * @param gl   Live GL context whose viewport is set to the env face size.
          * @param face Cube face index (0..5) attached as the colour-0 target.
          */
-        void attachEnvFace(const Core::Context& gl, int face) const {
+        void attachEnvFace(const Vkm::GL::Context& gl, int face) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_envCube.id(), 0);
             gl.setViewport(0, 0, ENV_SIZE, ENV_SIZE);
@@ -104,7 +104,7 @@ class GLIBL {
          * @param gl   Live GL context whose viewport is set to the irradiance face size.
          * @param face Cube face index (0..5) attached as the colour-0 target.
          */
-        void attachIrradianceFace(const Core::Context& gl, int face) const {
+        void attachIrradianceFace(const Vkm::GL::Context& gl, int face) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_irradiance.id(), 0);
             gl.setViewport(0, 0, IRRADIANCE_SIZE, IRRADIANCE_SIZE);
@@ -117,7 +117,7 @@ class GLIBL {
          * @param face Cube face index (0..5) attached as the colour-0 target.
          * @param mip  Roughness mip level being baked; halves the viewport per level.
          */
-        void attachPrefilterFace(const Core::Context& gl, int face, int mip) const {
+        void attachPrefilterFace(const Vkm::GL::Context& gl, int face, int mip) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_prefilter.id(), mip);
             const int s = PREFILTER_SIZE >> mip;
@@ -129,7 +129,7 @@ class GLIBL {
          *
          * @param gl Live GL context whose viewport is set to the LUT size.
          */
-        void attachBrdf(const Core::Context& gl) const {
+        void attachBrdf(const Vkm::GL::Context& gl) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_2D, m_brdf ? m_brdf->getID() : 0, 0);
             gl.setViewport(0, 0, BRDF_SIZE, BRDF_SIZE);
@@ -146,14 +146,14 @@ class GLIBL {
         void bindBrdf(uint32_t slot)       const { if (m_brdf) m_brdf->bindSlot(slot); }
 
     private:
-        std::unique_ptr<Core::Texture2D>   m_equirect;
-        Core::TextureCube                  m_envCube;
-        Core::TextureCube                  m_irradiance;
-        Core::TextureCube                  m_prefilter;
-        std::unique_ptr<Core::Texture2D>   m_brdf;
-        std::unique_ptr<Core::FrameBuffer> m_captureFbo;
+        std::unique_ptr<Vkm::GL::Texture2D>   m_equirect;
+        Vkm::GL::TextureCube                  m_envCube;
+        Vkm::GL::TextureCube                  m_irradiance;
+        Vkm::GL::TextureCube                  m_prefilter;
+        std::unique_ptr<Vkm::GL::Texture2D>   m_brdf;
+        std::unique_ptr<Vkm::GL::FrameBuffer> m_captureFbo;
 
         bool m_ready = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

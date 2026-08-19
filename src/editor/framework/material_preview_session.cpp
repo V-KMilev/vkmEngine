@@ -3,7 +3,7 @@
 #include "system/render/editor_render_hooks.h"
 #include "system/render/render_system.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 uint32_t MaterialPreviewSession::texture(
     ResourceManager& resources,
@@ -48,4 +48,4 @@ void MaterialPreviewSession::clear() {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

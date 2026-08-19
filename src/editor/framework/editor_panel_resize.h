@@ -2,7 +2,7 @@
 
 #include <imgui.h>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorState;
 
@@ -43,4 +43,4 @@ class EditorPanelResize {
         bool m_resizingBottom = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

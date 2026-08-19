@@ -15,7 +15,7 @@
 #include "generator/mesh_generators.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -28,7 +28,7 @@ constexpr float GRID_EXTENT = 200.0f;
 } // namespace
 
 GLGridPass::GLGridPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/grid"))
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/grid"))
     , m_quad(std::make_unique<GLMesh>(generatePlane(2.0f, 2.0f))) {}
 
 GLGridPass::~GLGridPass() = default;
@@ -66,4 +66,4 @@ void GLGridPass::execute(GLFrameContext& ctx) {
     ctx.gl.setDepthFunc(GL_LEQUAL);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

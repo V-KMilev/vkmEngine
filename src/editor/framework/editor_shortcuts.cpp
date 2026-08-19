@@ -9,7 +9,7 @@
 #include "core/system.h"
 #include "system/camera/camera_controller_system.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
     if (ImGui::GetIO().WantTextInput) return;
@@ -72,4 +72,4 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

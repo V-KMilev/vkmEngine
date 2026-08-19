@@ -6,7 +6,7 @@
 
 #include "ecs/component/world_transform.h"
 
-namespace Engine::HierarchyOperations {
+namespace Vkm::Engine::HierarchyOperations {
 
 namespace {
 
@@ -169,4 +169,4 @@ void destroyHierarchy(Scene& scene, EntityId entity) {
     scene.destroyEntity(entity);
 }
 
-} // namespace Engine::HierarchyOperations
+} // namespace Vkm::Engine::HierarchyOperations

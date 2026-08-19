@@ -11,7 +11,7 @@
 #include "gl_texture_cube.h"
 #include "gl_texture_cube_array.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Shared GPU storage for every reflection probe: two cube-map arrays.
@@ -79,7 +79,7 @@ class GLProbeArray {
          * @param gl   Live GL context whose viewport is set to the env-capture size.
          * @param face Cube face index (0..5) attached as the colour-0 target.
          */
-        void attachEnvFace(const Core::Context& gl, int face) const {
+        void attachEnvFace(const Vkm::GL::Context& gl, int face) const {
             m_fbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_env.id(), 0);
             gl.setViewport(0, 0, m_envSize, m_envSize);
@@ -93,7 +93,7 @@ class GLProbeArray {
          * @param layer Cube-array layer (the probe slot) being baked.
          * @param face  Cube face index (0..5) attached as the colour-0 target.
          */
-        void attachIrradianceFace(const Core::Context& gl, int layer, int face) const {
+        void attachIrradianceFace(const Vkm::GL::Context& gl, int layer, int face) const {
             m_irradiance.attachFace(GL_COLOR_ATTACHMENT0, layer, face, 0);
             gl.setViewport(0, 0, m_irradianceSize, m_irradianceSize);
         }
@@ -105,7 +105,7 @@ class GLProbeArray {
          * @param face  Cube face index (0..5) attached as the colour-0 target.
          * @param mip   Roughness mip level being baked; halves the viewport per level.
          */
-        void attachPrefilterFace(const Core::Context& gl, int layer, int face, int mip) const {
+        void attachPrefilterFace(const Vkm::GL::Context& gl, int layer, int face, int mip) const {
             m_prefilter.attachFace(GL_COLOR_ATTACHMENT0, layer, face, mip);
             const int s = m_prefilterSize >> mip;
             gl.setViewport(0, 0, s, s);
@@ -117,12 +117,12 @@ class GLProbeArray {
         void bindEnvCube(uint32_t slot)    const { m_env.bindSlot(slot); }
 
     private:
-        Core::TextureCubeArray m_irradiance;  ///< Diffuse irradiance, 1 mip per cube
-        Core::TextureCubeArray m_prefilter;   ///< GGX specular, PREFILTER_MIPS per cube
-        Core::TextureCube      m_env;         ///< Transient capture cube (reused per bake)
+        Vkm::GL::TextureCubeArray m_irradiance;  ///< Diffuse irradiance, 1 mip per cube
+        Vkm::GL::TextureCubeArray m_prefilter;   ///< GGX specular, PREFILTER_MIPS per cube
+        Vkm::GL::TextureCube      m_env;         ///< Transient capture cube (reused per bake)
 
-        std::unique_ptr<Core::Texture2D>   m_depth;
-        std::unique_ptr<Core::FrameBuffer> m_fbo;
+        std::unique_ptr<Vkm::GL::Texture2D>   m_depth;
+        std::unique_ptr<Vkm::GL::FrameBuffer> m_fbo;
         int m_capacity   = 0;
         int m_resolution = 0;  ///< Current build's capture face size (0 = not built).
         int m_envSize        = 0;
@@ -130,4 +130,4 @@ class GLProbeArray {
         int m_prefilterSize  = 0;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

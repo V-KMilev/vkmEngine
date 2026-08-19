@@ -4,7 +4,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Dynamics state for a physics body: linear + angular motion, material
@@ -47,9 +47,9 @@ struct Rigidbody {
 };
 
 // sleeping / sleepTimer are runtime-only, and intentionally absent.
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::Rigidbody)
+VKM_REFLECT_BEGIN(::Vkm::Engine::Rigidbody)
     VKM_F(linearVelocity),
     VKM_F(angularVelocity),
     VKM_F(mass),

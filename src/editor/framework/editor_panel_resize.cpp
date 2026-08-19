@@ -8,7 +8,7 @@
 #include "framework/editor_state.h"
 #include "ui/editor_style.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void EditorPanelResize::process(
     EditorState& state,
@@ -115,4 +115,4 @@ void EditorPanelResize::process(
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

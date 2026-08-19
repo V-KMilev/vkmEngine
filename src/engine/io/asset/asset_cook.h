@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct MeshAsset;
 struct TextureAsset;
@@ -47,4 +47,4 @@ bool readTexture(const std::filesystem::path& path, TextureAsset& out, uint64_t*
 
 } // namespace AssetCook
 
-} // namespace Engine
+} // namespace Vkm::Engine

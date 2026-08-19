@@ -7,7 +7,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief An interactive, hit-tested button drawn over its element's rect.
@@ -47,9 +47,9 @@ struct UIButton {
 };
 
 // `state` is runtime-only (driven by the UISystem), so it is not reflected.
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::UIButton)
+VKM_REFLECT_BEGIN(::Vkm::Engine::UIButton)
     VKM_F(normalColor),
     VKM_F(hoverColor),
     VKM_F(pressedColor),

@@ -4,14 +4,14 @@
 
 #include "resource/asset/mesh_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Procedural primitives for gameplay code, built without the tools module.
  *
  * The engine's real generators (tools/generator/mesh_generators.h) live in the
  * editor/runtime-side tools target, which `game` deliberately does not link -
- * gameplay depends on EngineCore only, so the same sources compile into both the
+ * gameplay depends on vkm_core only, so the same sources compile into both the
  * static runtime library and the editor's hot-reload module. These mirror the
  * generators' winding, normals and tangents exactly, so a procedural prop shades
  * and face-culls identically to a cooked one.
@@ -52,4 +52,4 @@ MeshAsset makeSphereMesh(uint32_t xSegments = 24, uint32_t ySegments = 12);
  */
 MeshAsset makeCylinderMesh(uint32_t segments = 20);
 
-} // namespace Engine
+} // namespace Vkm::Engine

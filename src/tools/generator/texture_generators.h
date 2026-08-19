@@ -5,7 +5,7 @@
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_handle.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 
@@ -66,4 +66,4 @@ TextureHandle generateNormalTexture(ResourceManager& resourceManager);
  */
 TextureHandle generateGrayTexture(ResourceManager& resourceManager);
 
-} // namespace Engine
+} // namespace Vkm::Engine

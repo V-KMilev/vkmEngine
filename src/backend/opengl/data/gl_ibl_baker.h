@@ -7,11 +7,11 @@
 #include "gl_shader.h"
 #include "gl_screen_triangle.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Context;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class GLCubeConvolver;
 class GLIBL;
@@ -71,7 +71,7 @@ class GLIBLBaker {
          * @brief Bake @p ibl from the HDR at @p path. No-op (GLIBL stays not-ready)
          * if the file fails to load.
          */
-        void bake(Core::Context& gl, GLIBL& ibl, const std::string& path);
+        void bake(Vkm::GL::Context& gl, GLIBL& ibl, const std::string& path);
 
         /**
          * @brief Bake @p ibl from a procedural Rayleigh + Mie atmosphere.
@@ -80,7 +80,7 @@ class GLIBLBaker {
          * equirect step), then runs the same irradiance / prefilter / BRDF bake -
          * so ambient lighting and the skybox follow the atmosphere.
          */
-        void bakeProcedural(Core::Context& gl, GLIBL& ibl, const SkyParams& sky);
+        void bakeProcedural(Vkm::GL::Context& gl, GLIBL& ibl, const SkyParams& sky);
 
     private:
         /**
@@ -88,21 +88,21 @@ class GLIBLBaker {
          * (u_projection + per-face u_view), then build its mip chain. Shared by
          * the equirect and procedural-sky captures.
          */
-        void captureEnvFaces(Core::Context& gl, GLIBL& ibl, Core::Shader& shader);
+        void captureEnvFaces(Vkm::GL::Context& gl, GLIBL& ibl, Vkm::GL::Shader& shader);
 
         /**
          * @brief Convolve the env cube into diffuse irradiance + GGX prefilter and
          * integrate the split-sum BRDF/DFG LUT. The tail shared by both bakes.
          */
-        void convolve(Core::Context& gl, GLIBL& ibl);
+        void convolve(Vkm::GL::Context& gl, GLIBL& ibl);
 
     private:
-        Core::Shader m_equirect;
-        Core::Shader m_sky;
-        Core::Shader m_brdf;
+        Vkm::GL::Shader m_equirect;
+        Vkm::GL::Shader m_sky;
+        Vkm::GL::Shader m_brdf;
 
-        GLCubeConvolver&     m_convolver;  ///< Shared irradiance + prefilter convolution (and the unit cube)
-        Core::ScreenTriangle m_brdfTri;    ///< Attribute-less fullscreen triangle for the BRDF LUT
+        GLCubeConvolver&        m_convolver;  ///< Shared irradiance + prefilter convolution (and the unit cube)
+        Vkm::GL::ScreenTriangle m_brdfTri;    ///< Attribute-less fullscreen triangle for the BRDF LUT
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -9,7 +9,7 @@ the files holding it.
 
 The engine runs *projects*: a directory becomes one by containing a
 `project.json`. That file is what lets a game live nowhere near the engine's own
-repo, and `Engine::Project` (`src/engine/io/project.h`) is everything it says:
+repo, and `Vkm::Engine::Project` (`src/engine/io/project.h`) is everything it says:
 
 | Field | Purpose |
 |-------|---------|
@@ -178,7 +178,7 @@ switch dispatch on the `kind` field:
 The runtime wires only the cooked dispatch (`registerCookedAssetFactories` sets
 the pointers to `createCookedMesh/Texture/Material`), so it links neither Assimp
 nor the image decoders. The editor instead wires the recipe dispatch
-(`registerRecipeAssetFactories`, built into the editor-only `EngineCooker`),
+(`registerRecipeAssetFactories`, built into the editor-only `vkm_cook`),
 whose switches fall through to the cooked functions for cooked/inline kinds.
 Engine code never reaches into `src/tools/`; the dispatch is wired at startup in
 `src/tools/asset_registration.cpp` (cooked) and
@@ -353,10 +353,10 @@ instance owns, and `Prefab::reloadComponent` gives one back to the prefab.
 
 Shaders are not assets and not part of the library - they are source files read
 CWD-relative from `shaders/`, so hot reload is a matter of noticing that one
-changed. `Core::reloadChangedShaders` (`modules/vkmGL/src/shader/gl_shader_reload.h`)
-takes the newest write time under a directory and, when it moves, recompiles
-every live shader; a program that no longer compiles keeps its previous one and
-logs the error.
+changed. `Vkm::GL::reloadChangedShaders`
+(`modules/vkmGL/src/shader/gl_shader_reload.h`) takes the newest write time
+under a directory and, when it moves, recompiles every live shader; a program
+that no longer compiles keeps its previous one and logs the error.
 
 The editor drives it, polling once a second (`EditorSystem::SHADER_POLL_INTERVAL`)
 and toasting what it reloaded. There is no file-watcher system: a per-platform

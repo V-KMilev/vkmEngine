@@ -6,7 +6,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Local reflection + irradiance probe.
@@ -33,9 +33,9 @@ struct ReflectionProbe {
      */
     uint32_t bakeVersion = 0;
 };
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::ReflectionProbe)
+VKM_REFLECT_BEGIN(::Vkm::Engine::ReflectionProbe)
     VKM_F(halfExtents),
     VKM_F(falloff),
     VKM_F(intensity),

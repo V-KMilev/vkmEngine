@@ -8,7 +8,7 @@
 #include "resource/resource.h"
 #include "resource/resource_handle.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Represents a single vertex in a mesh.
@@ -55,4 +55,4 @@ struct MeshAsset : public Resource {
 
 using MeshHandle = Handle<MeshAsset>;
 
-} // namespace Engine
+} // namespace Vkm::Engine

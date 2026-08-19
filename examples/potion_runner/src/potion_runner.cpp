@@ -40,7 +40,7 @@
 // the exe can't re-export. stderr is unbuffered, so messages show immediately.
 #define POTION_LOG(...) (std::fprintf(stderr, "[Potion] " __VA_ARGS__), std::fputc('\n', stderr))
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -1493,4 +1493,4 @@ void PotionRunner::refreshUI() {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

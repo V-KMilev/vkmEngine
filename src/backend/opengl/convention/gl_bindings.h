@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief The fixed contract between the OpenGL backend and its GLSL shaders.
@@ -135,4 +135,4 @@ namespace GLBindings {
 
 } // namespace GLBindings
 
-} // namespace Engine
+} // namespace Vkm::Engine

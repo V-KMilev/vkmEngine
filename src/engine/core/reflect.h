@@ -5,7 +5,7 @@
 #include <tuple>
 #include <type_traits>
 
-namespace Engine::Reflect {
+namespace Vkm::Engine::Reflect {
 
 /**
  * @brief One (name, pointer-to-member) pair, the unit of compile-time
@@ -115,7 +115,7 @@ inline constexpr bool HAS_ENUM_NAMES = false;
 template<typename Enum>
 inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>::count)>> = true;
 
-} // namespace Engine::Reflect
+} // namespace Vkm::Engine::Reflect
 
 /**
  * @brief Macro shorthand for declaring a Traits specialisation.
@@ -123,18 +123,18 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
  * Invoke at GLOBAL SCOPE, after the type's namespace has closed, naming the
  * type in full (mirrors VKM_ENUM_NAMES):
  *
- *   namespace Engine {
+ *   namespace Vkm::Engine {
  *   struct Transform { ... };
- *   } // namespace Engine
+ *   } // namespace Vkm::Engine
  *
- *   VKM_REFLECT_BEGIN(::Engine::Transform)
+ *   VKM_REFLECT_BEGIN(::Vkm::Engine::Transform)
  *       VKM_F(position),
  *       VKM_F(rotation),
  *       VKM_F(scale)
  *   VKM_REFLECT_END()
  *
- * The macro opens Engine::Reflect itself, which is why it can reach a type in
- * any namespace - a game's own types live in the game's namespace, and
+ * The macro opens Vkm::Engine::Reflect itself, which is why it can reach a
+ * type in any namespace - a game's own types live in the game's namespace, and
  * reflection has to reach them there. Written inside a namespace it specialises
  * that namespace's Reflect instead, and the compiler says "'Traits' is not a
  * class template". VKM_F() looks up the `vkm_reflect_self` alias the macro
@@ -144,20 +144,20 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
  * "internal only" data.
  */
 #define VKM_REFLECT_BEGIN(Type)                                              \
-    namespace Engine { namespace Reflect {                                   \
+    namespace Vkm::Engine::Reflect {                                         \
     template<> struct Traits<Type> {                                         \
         using vkm_reflect_self = Type;                                       \
         static constexpr auto fields() {                                     \
             return std::make_tuple(
 
 #define VKM_F(name) \
-    ::Engine::Reflect::Field{#name, &vkm_reflect_self::name}
+    ::Vkm::Engine::Reflect::Field{#name, &vkm_reflect_self::name}
 
 #define VKM_REFLECT_END()                                                    \
             );                                                               \
         }                                                                    \
     };                                                                       \
-    }}
+    }
 
 /**
  * @brief Register an enum's value-ordered names in one place.
@@ -165,13 +165,13 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
  * Invoke at GLOBAL SCOPE, after the enum's namespace has closed, naming the
  * type in full and the names in value order:
  *
- *   namespace Engine {
+ *   namespace Vkm::Engine {
  *   enum class LightType { Directional, Point, ... , Count };
- *   } // namespace Engine
+ *   } // namespace Vkm::Engine
  *
- *   VKM_ENUM_NAMES(::Engine::LightType, "Directional", "Point", ...)
+ *   VKM_ENUM_NAMES(::Vkm::Engine::LightType, "Directional", "Point", ...)
  *
- * It specialises EnumNames inside a nested `namespace Reflect`, exactly as
+ * It specialises EnumNames inside Vkm::Engine::Reflect, exactly as
  * VKM_REFLECT_BEGIN does above, and for the same reason: written inside a
  * namespace it specialises that namespace's Reflect instead.
  *
@@ -181,11 +181,11 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
  * so adding a value without a name fails to compile.
  */
 #define VKM_ENUM_NAMES(EnumType, ...)                                            \
-    namespace Engine { namespace Reflect {                                       \
+    namespace Vkm::Engine::Reflect {                                             \
     template<> struct EnumNames<EnumType> {                                      \
         static constexpr const char* const values[] = { __VA_ARGS__ };           \
         static constexpr std::size_t count = sizeof(values) / sizeof(values[0]); \
         static_assert(count == static_cast<std::size_t>(EnumType::Count),        \
                       #EnumType " names out of sync with its Count sentinel");   \
     };                                                                           \
-    }}
+    }

@@ -16,7 +16,7 @@
 #include "loader/texture_loaders.h"
 #include "generator/texture_generators.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -297,4 +297,4 @@ MaterialHandle loadMaterialFromFolder(
     return handle;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

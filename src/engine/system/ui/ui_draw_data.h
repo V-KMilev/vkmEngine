@@ -7,7 +7,7 @@
 
 #include "resource/asset/font_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief One vertex of the UI's 2D triangle stream.
@@ -63,4 +63,4 @@ struct UIDrawData {
     }
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

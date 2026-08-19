@@ -6,7 +6,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorContext;
 class ResourceManager;
@@ -81,4 +81,4 @@ class AssetBrowserPanel {
         bool           m_renameOpen = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

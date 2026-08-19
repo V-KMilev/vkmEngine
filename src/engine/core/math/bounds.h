@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-namespace Engine::Math {
+namespace Vkm::Engine::Math {
 
 // Minimum squared extent for a valid AABB. glm::epsilon (~1.19e-7) is too small
 // for world-space coordinates in range [-1000, 1000]. 1e-4 squared = 1e-8.
@@ -85,4 +85,4 @@ inline bool rayIntersectsAABB(
     return tMax >= tMin && tMax >= 0.0f;
 }
 
-} // namespace Engine::Math
+} // namespace Vkm::Engine::Math

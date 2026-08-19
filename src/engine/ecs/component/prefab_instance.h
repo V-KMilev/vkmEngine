@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief One field of one component of one entity, differing from the prefab.
@@ -48,4 +48,4 @@ struct PrefabInstance {
     std::vector<PrefabOverride> overrides;  ///< Per-instance deltas; written by SceneSerializer.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

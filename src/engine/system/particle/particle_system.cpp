@@ -12,7 +12,7 @@
 
 #include "debug/profiler.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void ParticleSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("ParticleSystem::update");
@@ -66,4 +66,4 @@ void ParticleSystem::update(FrameContext& ctx) {
         });
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

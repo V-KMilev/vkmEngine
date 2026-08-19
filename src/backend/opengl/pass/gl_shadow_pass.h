@@ -11,11 +11,11 @@
 
 #include "data/gl_shadow_data.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Renders all shadow depth maps for the frame, ahead of the forward pass.
@@ -71,11 +71,11 @@ class GLShadowPass : public GLPass {
         void renderCasters(GLFrameContext& ctx, const ShadowCasterBatch& batch);
 
     private:
-        std::unique_ptr<Core::Shader> m_depth2D;    ///< Projected depth (cascades + spots).
-        std::unique_ptr<Core::Shader> m_depthCube;  ///< Linear distance depth (point faces).
+        std::unique_ptr<Vkm::GL::Shader> m_depth2D;    ///< Projected depth (cascades + spots).
+        std::unique_ptr<Vkm::GL::Shader> m_depthCube;  ///< Linear distance depth (point faces).
 
-        Core::InstanceBuffer   m_instances;  ///< Per-caster model matrices (loc 4-7).
-        std::vector<glm::mat4> m_models;     ///< Flattened models of every surviving caster this tile/face.
+        Vkm::GL::InstanceBuffer  m_instances;  ///< Per-caster model matrices (loc 4-7).
+        std::vector<glm::mat4>   m_models;     ///< Flattened models of every surviving caster this tile/face.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

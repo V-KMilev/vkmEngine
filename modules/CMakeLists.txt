@@ -27,9 +27,9 @@ set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_INSTALL        OFF CACHE BOOL "" FORCE)
 
-# Shared, because two different things call into glfw: EngineCore owns the window,
+# Shared, because two different things call into glfw: vkm_core owns the window,
 # and ImGui's GLFW backend inside the editor drives input. A static glfw would be
-# absorbed into libEngineCore and, since the shared engine re-exports what it
+# absorbed into libvkm_core and, since the shared engine re-exports what it
 # absorbs, the editor would end up with glfw defined twice - once through the
 # engine's import library and once through the archive ImGui links. Windows makes
 # that a link error; Linux merely hides it. One shared glfw means one copy, and
@@ -39,7 +39,7 @@ if(NOT TARGET glfw)
     add_subdirectory(glfw)
 endif()
 
-if(NOT TARGET vkmLog)
+if(NOT TARGET vkm_log)
     add_subdirectory(vkmLog)
 endif()
 
@@ -63,7 +63,7 @@ if(NOT TARGET stb)
 endif()
 
 # vkmGL: the OpenGL layer. Adds glew, and defers to the targets above.
-if(NOT TARGET vkmGL)
+if(NOT TARGET vkm_gl)
     add_subdirectory(vkmGL)
 endif()
 

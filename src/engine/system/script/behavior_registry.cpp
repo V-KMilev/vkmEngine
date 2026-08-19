@@ -6,7 +6,7 @@
 
 #include "logger.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 BehaviorRegistry& BehaviorRegistry::get() {
     static BehaviorRegistry instance;
@@ -45,4 +45,4 @@ void BehaviorRegistry::clear() {
     m_factories.clear();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

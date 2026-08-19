@@ -3,7 +3,7 @@
 #include "platform/input/input_map.h"
 #include "platform/window/glfw_include.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -24,4 +24,4 @@ void installDefaultBindings(InputMap& map) {
     map.define(InputActions::BOOST,        { key(GLFW_KEY_LEFT_SHIFT) });
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

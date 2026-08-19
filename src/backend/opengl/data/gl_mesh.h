@@ -4,14 +4,14 @@
 #include <cstdint>
 #include <memory>
 
-namespace Core {
+namespace Vkm::GL {
     class VertexArray;
     class VertexBuffer;
     class IndexBuffer;
     class InstanceBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct MeshAsset;
 
@@ -51,7 +51,7 @@ class GLMesh {
          * @param buffer     Per-instance matrices, in draw order.
          * @param startIndex First of the four attribute slots the mat4 spans.
          */
-        void attachInstances(Core::InstanceBuffer& buffer, uint32_t startIndex) const;
+        void attachInstances(Vkm::GL::InstanceBuffer& buffer, uint32_t startIndex) const;
 
         /**
          * @brief Point the VAO's instance-index attribute at @p buffer.
@@ -64,7 +64,7 @@ class GLMesh {
          *
          * @param buffer Instance-index buffer; one uint per drawn instance.
          */
-        void attachInstanceIndex(const Core::VertexBuffer& buffer) const;
+        void attachInstanceIndex(const Vkm::GL::VertexBuffer& buffer) const;
 
         /**
          * @brief Draw @p count instances, reading per-instance attributes from
@@ -86,10 +86,10 @@ class GLMesh {
         uint32_t indexCount() const { return static_cast<uint32_t>(m_indexCount); }
 
     private:
-        std::unique_ptr<Core::VertexArray>  m_vao;
-        std::unique_ptr<Core::VertexBuffer> m_vbo;
-        std::unique_ptr<Core::IndexBuffer>  m_ibo;
+        std::unique_ptr<Vkm::GL::VertexArray>  m_vao;
+        std::unique_ptr<Vkm::GL::VertexBuffer> m_vbo;
+        std::unique_ptr<Vkm::GL::IndexBuffer>  m_ibo;
         size_t m_indexCount = 0;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

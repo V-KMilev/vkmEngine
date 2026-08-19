@@ -2,7 +2,7 @@
 
 #include "core/memory/types.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Opaque, type-safe handle for resources, distinguished by ResourceType.
@@ -44,4 +44,4 @@ struct Handle {
     constexpr uint32_t id() const noexcept { return key.index; }
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -6,7 +6,7 @@
 
 #include "ecs/entity.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 class ResourceManager;
@@ -106,4 +106,4 @@ namespace SceneSerializer {
 
 } // namespace SceneSerializer
 
-} // namespace Engine
+} // namespace Vkm::Engine

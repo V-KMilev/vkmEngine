@@ -21,7 +21,7 @@
 #include "system/script/behavior.h"
 #include "system/script/script_component.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -261,4 +261,4 @@ void BehaviorSystem::destroyEntityBehaviors(Scene& scene, EntityId entity) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -14,10 +14,10 @@
 #include "gl_target.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLHiZPass::GLHiZPass()
-    : m_reduce(std::make_unique<Core::Shader>("shaders/hiz/reduce")) {}
+    : m_reduce(std::make_unique<Vkm::GL::Shader>("shaders/hiz/reduce")) {}
 
 GLHiZPass::~GLHiZPass() = default;
 
@@ -66,4 +66,4 @@ void GLHiZPass::execute(GLFrameContext& ctx) {
     hiz.markBuilt();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

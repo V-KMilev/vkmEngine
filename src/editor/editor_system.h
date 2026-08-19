@@ -29,7 +29,7 @@
 
 struct GLFWwindow;
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorContext;
 class CameraControllerSystem;
@@ -142,4 +142,4 @@ class EditorSystem : public System {
         RenderSettingsPanel m_renderSettings;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

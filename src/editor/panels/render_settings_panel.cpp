@@ -11,7 +11,7 @@
 #include "system/render/render_system.h"
 #include "system/visibility/visibility_system.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void RenderSettingsPanel::draw(EditorContext& ec) {
     EditorState& state = ec.state;
@@ -119,4 +119,4 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
     ImGui::End();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

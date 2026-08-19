@@ -4,7 +4,7 @@
 
 #include "resource/asset/mesh_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief One shadow-casting object: geometry, world placement, and world bounds.
@@ -20,4 +20,4 @@ struct ShadowCasterData {
     glm::vec3  aabbMax;    ///< The world-space AABB maximum of the shadow caster.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

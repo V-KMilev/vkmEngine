@@ -16,7 +16,7 @@
 
 #include "loader/environment_loaders.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLIBLBaker::GLIBLBaker(GLCubeConvolver& convolver)
     : m_equirect("shaders/ibl/equirect")
@@ -28,7 +28,7 @@ GLIBLBaker::GLIBLBaker(GLCubeConvolver& convolver)
 
 GLIBLBaker::~GLIBLBaker() = default;
 
-void GLIBLBaker::captureEnvFaces(Core::Context& gl, GLIBL& ibl, Core::Shader& shader) {
+void GLIBLBaker::captureEnvFaces(Vkm::GL::Context& gl, GLIBL& ibl, Vkm::GL::Shader& shader) {
     // Reuse the convolver's unit cube + 90deg face basis (the env capture shares
     // the convolution projection). The caller has bound @p shader and set its own
     // source uniforms.
@@ -41,7 +41,7 @@ void GLIBLBaker::captureEnvFaces(Core::Context& gl, GLIBL& ibl, Core::Shader& sh
     ibl.generateEnvMips();
 }
 
-void GLIBLBaker::convolve(Core::Context& gl, GLIBL& ibl) {
+void GLIBLBaker::convolve(Vkm::GL::Context& gl, GLIBL& ibl) {
     // Diffuse irradiance + GGX prefilter, the loops shared with the probe baker.
     m_convolver.irradiance(
         [&] { ibl.bindEnvCube(0); },
@@ -56,7 +56,7 @@ void GLIBLBaker::convolve(Core::Context& gl, GLIBL& ibl) {
     m_brdfTri.draw();
 }
 
-void GLIBLBaker::bake(Core::Context& gl, GLIBL& ibl, const std::string& path) {
+void GLIBLBaker::bake(Vkm::GL::Context& gl, GLIBL& ibl, const std::string& path) {
     HDRImage img = loadHDRImage(path);
     if (!img.isValid()) {
         LOG_ERROR("GLIBLBaker: could not load '%s' - IBL stays off", path.c_str());
@@ -87,7 +87,7 @@ void GLIBLBaker::bake(Core::Context& gl, GLIBL& ibl, const std::string& path) {
     LOG_INFO("IBL baked from '%s'", path.c_str());
 }
 
-void GLIBLBaker::bakeProcedural(Core::Context& gl, GLIBL& ibl, const SkyParams& sky) {
+void GLIBLBaker::bakeProcedural(Vkm::GL::Context& gl, GLIBL& ibl, const SkyParams& sky) {
     ibl.createTargets();
 
     const bool prevDepth = gl.isDepthTestEnabled();
@@ -120,4 +120,4 @@ void GLIBLBaker::bakeProcedural(Core::Context& gl, GLIBL& ibl, const SkyParams& 
     LOG_INFO("IBL baked from procedural sky");
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

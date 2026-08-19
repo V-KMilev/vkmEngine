@@ -5,11 +5,11 @@
 
 #include "core/engine_config.h"
 
-namespace Core {
+namespace Vkm::GL {
     class ShaderStorageBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief The Forward+ cluster light grid: one GPU buffer holding, per cluster,
@@ -49,7 +49,7 @@ class GLClusterGrid {
         void bind() const;
 
     private:
-        std::unique_ptr<Core::ShaderStorageBuffer> m_ssbo;
+        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_ssbo;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

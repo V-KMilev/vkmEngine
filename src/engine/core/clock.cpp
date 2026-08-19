@@ -4,7 +4,7 @@
 
 #include "core/engine_config.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void Clock::beginFrame() {
     const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
@@ -36,4 +36,4 @@ float Clock::simDeltaFor(float realDelta) {
     return 0.0f;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine
