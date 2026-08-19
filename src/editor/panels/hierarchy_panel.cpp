@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "framework/component_edit.h"
 #include "framework/editor_common.h"
 #include "ui/editor_style.h"
 #include "framework/editor_commands.h"
@@ -219,18 +220,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, ResourceManager& resources,
                 auto& n = scene.get<Name>(entity);
                 const Name before = n;
                 n = makeName(m_renameBuf);
-                // Inside an instance the name belongs to the prefab, so the
-                // rename is an override or it is nothing: the scene does not
-                // store the interior, and a plain edit would stay undoable
-                // right up to the save that drops it. The Inspector's name box
-                // answers the same way.
-                auto step = PrefabOverrides::record<Name>(scene, resources, entity, before, n,
-                                                          "Rename");
-                if (!step) {
-                    step = std::make_unique<ComponentEditCommand<Name>>(entity, before, n,
-                                                                        "Rename");
-                }
-                state.commands.push(std::move(step));
+                pushEdit<Name>(scene, resources, state, entity, before, n, "Rename");
             }
             state.markSceneDirty();
             m_renameTarget = {};
@@ -361,17 +351,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resour
             t.position = glm::vec3(0.0f);
             t.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
             t.scale    = glm::vec3(1.0f);
-            // Inside an instance a pose is an override or it is nothing, the
-            // same answer the gizmo and the Inspector's Transform card give.
-            // The instance root is the exception: the scene stores that pose
-            // itself, so record declines it and the plain edit is right.
-            auto step = PrefabOverrides::record<Transform>(scene, resources, entity, before, t,
-                                                           "Reset Transform");
-            if (!step) {
-                step = std::make_unique<TransformChangeCommand>(entity, before, t,
-                                                               "Reset Transform");
-            }
-            state.commands.push(std::move(step));
+            pushEdit<Transform>(scene, resources, state, entity, before, t, "Reset Transform");
             EditorActions::commitHierarchyMutation(state);
         }
     }
@@ -381,14 +361,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resour
         if (ImGui::MenuItem(light.enabled ? "Disable Light" : "Enable Light")) {
             const Light before = light;
             light.enabled = !light.enabled;
-            auto step = PrefabOverrides::record<Light>(scene, resources, entity, before, light,
-                                                       "Toggle Light");
-            if (!step) {
-                step = std::make_unique<ComponentEditCommand<Light>>(entity, before, light,
-                                                                     "Toggle Light");
-            }
-            state.commands.push(std::move(step));
-            state.markSceneDirty();
+            pushEdit<Light>(scene, resources, state, entity, before, light, "Toggle Light");
         }
     }
 
@@ -397,14 +370,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resour
         if (ImGui::MenuItem(mesh.visible ? "Hide" : "Show")) {
             const Mesh before = mesh;
             mesh.visible = !mesh.visible;
-            auto step = PrefabOverrides::record<Mesh>(scene, resources, entity, before, mesh,
-                                                      "Toggle Mesh Visibility");
-            if (!step) {
-                step = std::make_unique<ComponentEditCommand<Mesh>>(entity, before, mesh,
-                                                                    "Toggle Mesh Visibility");
-            }
-            state.commands.push(std::move(step));
-            state.markSceneDirty();
+            pushEdit<Mesh>(scene, resources, state, entity, before, mesh, "Toggle Mesh Visibility");
         }
     }
 

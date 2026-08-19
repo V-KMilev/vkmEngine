@@ -29,6 +29,7 @@
 #include "ecs/component/prefab_entity.h"
 #include "ecs/component/prefab_instance.h"
 #include "ecs/environment.h"
+#include "framework/component_edit.h"
 #include "framework/editor_actions.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
@@ -186,14 +187,7 @@ void editComponentCard(Scene& scene, ResourceManager& resources, EditorState& st
         const T before = component;  // pre-edit value for the undo command
         const bool changed = drawFields(component);
         if (changed) {
-            // On an instance the edit is an override, and undoing it means
-            // undoing the entry rather than restoring a stored value.
-            auto step = PrefabOverrides::record<T>(scene, resources, id, before, component, editLabel);
-            if (!step) {
-                step = std::make_unique<ComponentEditCommand<T>>(id, before, component, editLabel);
-            }
-            state.commands.push(std::move(step));
-            state.markSceneDirty();
+            pushEdit<T>(scene, resources, state, id, before, component, editLabel);
         }
     }
     endComponentCard();
@@ -334,12 +328,7 @@ void InspectorPanel::drawIdentityHeader(Scene& scene, ResourceManager& resources
             // tryMerge coalesces the keystroke stream into one undo step, and
             // markSceneDirty stops the rename from being silently lost on close
             // (it used to do neither).
-            auto step = PrefabOverrides::record<Name>(scene, resources, id, before, name, "Rename");
-            if (!step) {
-                step = std::make_unique<ComponentEditCommand<Name>>(id, before, name, "Rename");
-            }
-            state.commands.push(std::move(step));
-            state.markSceneDirty();
+            pushEdit<Name>(scene, resources, state, id, before, name, "Rename");
         }
         drawOverrideRows(scene, resources, state, id, PrefabOverrides::COMPONENT_KEY<Name>, "Name");
     } else {
@@ -592,16 +581,9 @@ void InspectorPanel::drawTransformSection(Scene& scene, ResourceManager& resourc
         changed |= drawVec3Control("Scale", glm::value_ptr(t.scale), 1.0f, 0.01f);
 
         if (changed) {
-            // Coalescing command - tryMerge collapses the per-frame drag stream
-            // into one undo step, mirroring the gizmo's drag-end push. An
-            // instance child's pose is an override instead; the instance root's
-            // is not, because the scene stores that one itself.
-            auto step = PrefabOverrides::record<Transform>(scene, resources, id, before, t, "Transform");
-            if (!step) {
-                step = std::make_unique<TransformChangeCommand>(id, before, t, "Transform");
-            }
-            state.commands.push(std::move(step));
-            state.markSceneDirty();
+            // tryMerge collapses the per-frame drag stream into one undo step,
+            // mirroring the gizmo's drag-end push.
+            pushEdit<Transform>(scene, resources, state, id, before, t, "Transform");
         }
 
         if (scene.has<Hierarchy>(id) && scene.get<Hierarchy>(id).parent) {
