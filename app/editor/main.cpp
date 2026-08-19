@@ -1,14 +1,15 @@
 #define VKM_LOG_CATEGORY "MAIN"
 
 #include <cstdlib>
+#include <filesystem>
 #include <string>
+#include <system_error>
 
 #include "logger.h"
 
 #include "gl_debug.h"
 
 #include "core/engine.h"
-#include "debug/build_info.h"
 #include "asset_registration.h"
 #include "io/asset/asset_library.h"
 #include "io/project.h"
@@ -21,44 +22,10 @@
 
 int main(int argc, char** argv) {
     try {
-        // Same rule as the runtime: the project is the one beside this
-        // executable, unless an argument names a different one. Resolved before
-        // any path is composed - a path already built from the old root will not
-        // follow the override.
-        bool argNotAProject = false;
-        if (argc > 1) {
-            std::error_code argEc;
-            const std::filesystem::path found =
-                Engine::findProjectRoot(std::filesystem::absolute(argv[1], argEc));
-            if (found.empty()) argNotAProject = true;
-            else                Engine::ProjectPaths::setProjectRoot(found);
-        }
+        // Project root, working directory and log file, in the one order that
+        // works (see tools/project_boot.h).
+        if (!Engine::bootHost(argc, argv, "log.log", "VKM-ENGINE")) return EXIT_FAILURE;
 
-        // Pin the working directory to the ENGINE root, not the project's:
-        // shaders load CWD-relative and ship with the engine, while everything a
-        // project owns is addressed absolutely through ProjectPaths. Without
-        // this the editor only starts when launched from the engine root.
-        std::error_code cwdEc;
-        std::filesystem::current_path(Engine::ProjectPaths::engineRoot(), cwdEc);
-
-        const std::string rootDir = Engine::ProjectPaths::projectRoot().string();
-        std::error_code logEc;
-        std::filesystem::create_directories(rootDir + "/logs", logEc);
-        const std::string logFile = rootDir + "/logs/log.log";
-
-        if (!Logger::init(logFile, "VKM-ENGINE", LogLevel::TRACE)) {
-            return -1;
-        }
-
-
-        // Deferred until the logger exists: a mistyped path would otherwise look
-        // like it worked, but this is the first point anything can say so.
-        if (argNotAProject) {
-            LOG_WARNING("'%s' is not a project (no project.json in it or above it); "
-                        "using the project beside this executable instead", argv[1]);
-        }
-
-        Engine::printBuildInfo();
         // Async GL debug logging: catches and logs GL errors without forcing
         // GL_DEBUG_OUTPUT_SYNCHRONOUS, which validates every GL call on the
         // calling thread (a real CPU cost across pass + ImGui submission).
