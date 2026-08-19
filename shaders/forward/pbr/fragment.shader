@@ -74,7 +74,6 @@ layout(binding = 16) uniform sampler2D   u_brdfLUT;      // split-sum BRDF/DFG L
 uniform int u_hasIBL;
 uniform float u_iblIntensity;  // environment intensity: scales the indirect (IBL / flat ambient) term
 uniform int   u_renderMode;    // MODE_* debug view; 0 (default) everywhere but the main view
-// Highest prefilter mip index; matches GLIBL::PREFILTER_MIPS - 1 (C++).
 
 // Scene-color copy (opaque + sky) for screen-space transmission refraction.
 // The forward pass binds it for the transparent bucket; u_hasSceneColor gates it.
@@ -147,9 +146,7 @@ bool hasTex(int flag) {
     return (u_material.textureFlags & flag) != 0;
 }
 
-// ---------------------------------------------------------------------------
 // Parallax-occlusion mapping
-// ---------------------------------------------------------------------------
 
 // Ray-march the height field along the tangent-space view direction, then
 // interpolate the crossing for a smooth silhouette. More layers at grazing
@@ -217,10 +214,6 @@ float parallaxShadow(vec2 uv, vec3 lightDirTS) {
 
     return clamp(1.0 - maxBlocker * 8.0, 0.0, 1.0);
 }
-
-// ---------------------------------------------------------------------------
-// Surface
-// ---------------------------------------------------------------------------
 
 struct Surface {
     vec3  albedo;
@@ -299,9 +292,7 @@ float specularAA(vec3 N, float roughness) {
     return sqrt(sqrt(a2));   // back to perceptual roughness
 }
 
-// ---------------------------------------------------------------------------
 // BRDF lobes
-// ---------------------------------------------------------------------------
 
 #include "../../_common/brdf.glsl"  // distributionGGX (takes the GGX alpha)
 #include "../../_common/sh_l1.glsl"  // SH_Y*/SH_A*: the irradiance-volume projection <-> evaluation contract
@@ -349,10 +340,6 @@ vec3 fresnelSchlick(float u, vec3 f0) {
     float f = pow(clamp(1.0 - u, 0.0, 1.0), 5.0);
     return f0 + (vec3(1.0) - f0) * f;
 }
-
-// ---------------------------------------------------------------------------
-// Lights
-// ---------------------------------------------------------------------------
 
 // LTC area-light integration - diffuse / Lambertian only.
 //
@@ -483,10 +470,6 @@ vec3 areaDiskClosestPoint(vec3 rayOrigin, vec3 rayDir,
 float areaBroadenedAlpha(float alpha, float sourceRadius, float dist) {
     return clamp(alpha + sourceRadius / max(3.0 * dist, 1e-4), 0.0, 1.0);
 }
-
-// ---------------------------------------------------------------------------
-// Per-light shading
-// ---------------------------------------------------------------------------
 
 vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, vec3 radiance) {
     vec3 H = normalize(V + L);
@@ -628,8 +611,6 @@ float specularOcclusion(float NoV, float ao, float roughness) {
     return clamp(pow(NoV + ao, exp2(-16.0 * roughness - 1.0)) - 1.0 + ao, 0.0, 1.0);
 }
 
-// ---------------------------------------------------------------------------
-
 // Which cluster this fragment falls in: screen tile from gl_FragCoord, depth
 // slice from the linear view depth (matches the cull compute's exponential
 // slicing). Must agree with the grid the compute pass wrote.
@@ -756,9 +737,7 @@ void main() {
                 // that the silhouette reads as circular.
                 const int N_DISK = 12;
                 vec3 verts[12];
-                // Named apart from the enclosing light loop's k: shadowing a
-                // counter inside maths this dense is a trap for whoever edits
-                // it next, even though the scopes are distinct.
+                // Named apart from the light loop's k, though the scopes are distinct.
                 for (int dv = 0; dv < N_DISK; ++dv) {
                     float t = -float(dv) / float(N_DISK) * 6.2831853;  // CW order
                     vec3 worldP = lightPos + cos(t) * U + sin(t) * Vv;

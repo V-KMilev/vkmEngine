@@ -1,7 +1,7 @@
 /*
  * Screen-space UI: positions arrive in viewport pixels (top-left origin) and are
- * mapped straight to clip space by an orthographic projection. Colour passes
- * through; uv rides along for the sprite / text paths added later.
+ * mapped straight to clip space by an orthographic projection. Colour and uv
+ * pass through to the fragment stage.
  */
 
 layout(location = 0) in vec2 aPos;

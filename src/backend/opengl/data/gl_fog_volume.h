@@ -36,10 +36,6 @@ class GLFogVolume {
          * @p y by @p z froxels. A no-op when the dimensions already match, so
          * the fog pass may call it every frame; reallocates when the fog
          * quality changes. A live GL context must exist.
-         *
-         * @param x Froxel grid width.
-         * @param y Froxel grid height.
-         * @param z Froxel grid depth (slices).
          */
         void resize(uint32_t x, uint32_t y, uint32_t z);
 

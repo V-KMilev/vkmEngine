@@ -22,8 +22,11 @@ bool bootHost(int argc, char** argv, const char* logFileName, const char* logger
     std::error_code ec;
 
     // Resolved first, and against the launch directory: current_path() below
-    // moves the CWD, and absolute(argv[1]) would then answer differently.
-    // Nothing is logged yet - the log file lives under the root being decided.
+    // moves the CWD, and absolute(argv[1]) would then answer differently. The
+    // root is also set before anything composes a project path, because a
+    // composed path is a plain string by then and will not follow a later
+    // override. Nothing is logged yet - the log file lives under the root being
+    // decided.
     bool argNotAProject = false;
     if (argc > 1) {
         const std::filesystem::path found = findProjectRoot(std::filesystem::absolute(argv[1], ec));
@@ -69,8 +72,6 @@ void bootProjectScene(
             LOG_INFO("Opened scene '%s'", path.string().c_str());
             return;
         }
-        // Fall through rather than leave an empty world: the project named a
-        // scene, so the miss is worth an error even though it is recoverable.
         LOG_ERROR("Entry scene '%s' failed to load; opening the default scene",
                   path.string().c_str());
     } else if (module.buildScene(scene)) {

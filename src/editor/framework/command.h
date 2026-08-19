@@ -16,9 +16,6 @@ struct EditorState;
  *
  * Commands are passed both Scene (the data they mutate) and EditorState (for
  * cross-cutting bits like selection restoration on undo of a destroy).
- *
- * tryMerge lets a stream of micro-changes (e.g. an inspector drag-float over
- * many frames) collapse into a single undoable step.
  */
 class Command {
     public:

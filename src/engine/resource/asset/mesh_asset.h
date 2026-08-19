@@ -14,9 +14,9 @@ namespace Vkm::Engine {
  * @brief Represents a single vertex in a mesh.
  */
 struct Vertex {
-    glm::vec3 position;    ///< 3D position of the vertex in model space (x, y, z).
-    glm::vec3 normal;      ///< Surface normal at the vertex (used for lighting).
-    glm::vec2 uv;          ///< 2D texture coordinates (u, v) for mapping textures.
+    glm::vec3 position;    ///< Model-space position.
+    glm::vec3 normal;      ///< Surface normal, model space.
+    glm::vec2 uv;          ///< Texture coordinates.
     glm::vec4 tangent;     ///< Tangent vector (x, y, z, w), used for normal mapping; w is handedness.
 };
 

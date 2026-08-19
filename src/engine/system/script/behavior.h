@@ -28,8 +28,7 @@ class BehaviorFieldVisitor;
  * This is also the gameplay capability surface: a field belongs here exactly
  * when behaviors are meant to use it (which is why the Clock, for example, is
  * absent - a behavior that pauses the sim stops ticking and can never
- * unpause). Growing it costs one field here plus one accessor on Behavior;
- * bindContext() never changes again.
+ * unpause).
  */
 struct BehaviorContext {
     Scene*                 scene          = nullptr;
@@ -208,8 +207,7 @@ class Behavior {
          *
          * Called by BehaviorSystem before onStart. The context is the system's
          * own session-stable BehaviorContext, so one pointer covers everything
-         * the accessors and helpers reach - growing the surface never changes
-         * this signature.
+         * the accessors and helpers reach.
          *
          * @param entity  The entity this behavior is attached to.
          * @param context The BehaviorSystem's stable capability bundle.

@@ -57,51 +57,43 @@ inline bool propRow(const char* label, const char* tooltip, Widget&& widget) {
     return changed;
 }
 
-/// Property row backed by a SliderFloat over [lo, hi].
 inline bool propSlider(const char* label, float* v, float lo, float hi,
                        const char* fmt = "%.3f", const char* tooltip = nullptr) {
     return propRow(label, tooltip, [&] { return ImGui::SliderFloat("##v", v, lo, hi, fmt); });
 }
 
-/// Property row backed by an integer SliderInt over [lo, hi].
 inline bool propSliderInt(const char* label, int* v, int lo, int hi,
                           const char* tooltip = nullptr) {
     return propRow(label, tooltip, [&] { return ImGui::SliderInt("##v", v, lo, hi); });
 }
 
-/// Property row backed by a DragFloat with the given drag speed and clamp.
 inline bool propDrag(const char* label, float* v, float speed, float lo, float hi,
                      const char* fmt = "%.3f", const char* tooltip = nullptr) {
     return propRow(label, tooltip, [&] { return ImGui::DragFloat("##v", v, speed, lo, hi, fmt); });
 }
 
-/// Property row backed by an integer DragInt with the given drag speed and clamp.
 inline bool propDragInt(const char* label, int* v, float speed, int lo, int hi,
                         const char* tooltip = nullptr) {
     return propRow(label, tooltip, [&] { return ImGui::DragInt("##v", v, speed, lo, hi); });
 }
 
-/// Property row backed by a 3-component DragFloat3 (shared clamp/speed per axis).
 inline bool propDrag3(const char* label, float* v, float speed, float lo, float hi,
                       const char* fmt = "%.3f", const char* tooltip = nullptr) {
     return propRow(label, tooltip, [&] { return ImGui::DragFloat3("##v", v, speed, lo, hi, fmt); });
 }
 
-/// Property row backed by an RGB ColorEdit3.
 inline bool propColor3(const char* label, float* v,
                        ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float,
                        const char* tooltip = nullptr) {
     return propRow(label, tooltip, [&] { return ImGui::ColorEdit3("##v", v, flags); });
 }
 
-/// Property row backed by an RGBA ColorEdit4.
 inline bool propColor4(const char* label, float* v,
                        ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float,
                        const char* tooltip = nullptr) {
     return propRow(label, tooltip, [&] { return ImGui::ColorEdit4("##v", v, flags); });
 }
 
-/// Property row backed by a Checkbox (the box sits right after the label column).
 inline bool propCheckbox(const char* label, bool* v, const char* tooltip = nullptr) {
     return propRow(label, tooltip, [&] { return ImGui::Checkbox("##v", v); });
 }
@@ -203,8 +195,7 @@ inline bool rebakeButton(uint32_t& bakeVersion) {
  * @brief Section heading inside a panel or popup.
  *
  * One treatment for group headings (Preferences keybind groups, popup
- * headers), distinct from TextDisabled - which stays for hints and metadata
- * so the three no longer share one grey.
+ * headers), distinct from TextDisabled, which is for hints and metadata.
  */
 inline void sectionLabel(const char* text) {
     ImGui::TextColored(EditorStyle::HEADER_TEXT, "%s", text);
@@ -237,9 +228,6 @@ bool iconMenuItem(EditorIcon icon, const char* label, const char* shortcut = nul
 /**
  * @brief Modern component "card": a framed, accent-colored collapsible block.
  *
- * Replaces a bare CollapsingHeader so each Inspector component reads as a
- * distinct grouped unit (the Unity / Godot idiom).
- *
  * Always pair with endComponentCard(). When @p removeClicked is non-null a
  * small "x" is drawn on the header row and *removeClicked is set true the
  * frame it is pressed (caller does the actual removal AFTER endComponentCard).
@@ -260,7 +248,7 @@ bool drawEasingCombo(const char* id, EasingFunction& easing);
 /**
  * @brief Enum dropdown: one row per name, writes the picked index back into
  * @p value. Returns true on change. Fills the row, so it pairs with
- * drawPropertyLabel. Replaces the int-cast/Combo/cast-back boilerplate.
+ * drawPropertyLabel.
  *
  * Names + count come from the enum's VKM_ENUM_NAMES registration, so the combo
  * and the JSON (de)serialization share one source and cannot drift.
