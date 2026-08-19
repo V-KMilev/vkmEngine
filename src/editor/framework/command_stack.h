@@ -19,8 +19,7 @@ struct EditorState;
  * "any edit invalidates redo history"). undo()/redo() move commands between
  * the two stacks while calling Command::undo / Command::redo on Scene+State.
  *
- * Owned by EditorState. Cleared on scene load - entity IDs and component
- * topology are no longer comparable across a scene swap.
+ * Owned by EditorState.
  */
 class CommandStack {
     public:

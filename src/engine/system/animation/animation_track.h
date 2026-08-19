@@ -86,10 +86,10 @@ class AnimationTrack {
                 return m_values[0];
             }
 
-            // At/before the first key: hold the first value. The guard used to
-            // be `time < 0.0f`, which let a track whose first key sits past 0
-            // reach the interpolation below with upper_bound == begin() - the
-            // prevIndex then underflowed size_t and read m_times[SIZE_MAX].
+            // At/before the first key: hold the first value. `time < 0.0f` is not
+            // enough: a track whose first key sits past 0 would then reach the
+            // interpolation below with upper_bound == begin(), underflowing
+            // prevIndex to SIZE_MAX.
             if (time <= m_times.front()) {
                 return m_values.front();
             }
@@ -120,7 +120,6 @@ class AnimationTrack {
 
         /**
          * @brief Gets the total duration of the track (the last keyframe's time, or 0.0 if empty).
-         * @return The duration.
          */
         float getDuration() const {
             if (m_times.empty()) {
@@ -129,41 +128,23 @@ class AnimationTrack {
             return m_times.back();
         }
 
-        /**
-         * @brief Whether the track contains no keyframes.
-         * @return True if empty, false otherwise.
-         */
         bool isEmpty() const {
             return m_times.empty();
         }
 
-        /**
-         * @brief Set the interpolation easing function.
-         * @param easing The easing function to use.
-         */
         void setEasing(EasingFunction easing) {
             m_easing = easing;
         }
 
-        /**
-         * @brief Get the easing function currently used.
-         * @return The easing function.
-         */
         EasingFunction getEasing() const {
             return m_easing;
         }
 
-        /**
-         * @brief Removes all keyframes from the track.
-         */
         void clear() {
             m_times.clear();
             m_values.clear();
         }
 
-        /**
-         * @brief Number of keyframes in the track.
-         */
         size_t keyframeCount() const {
             return m_times.size();
         }

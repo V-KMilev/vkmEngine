@@ -47,21 +47,17 @@ struct PreviewRequest {
  * Nothing outside the backend may interpret it - the only valid operations are
  * passing it back and testing it against zero, which always means "no texture".
  *
- * 64 bits because that is what the wider APIs need. GL names fit in 32, but
- * VkDescriptorSet and a D3D12 descriptor handle do not, and a type that cannot
- * represent the second backend's handles is not an abstraction.
+ * 64 bits because GL names fit in 32 but VkDescriptorSet and a D3D12 descriptor
+ * handle do not.
  */
 using GpuTextureId = uint64_t;
 
 /**
  * @brief Offscreen rendering a backend may offer for authoring tools.
  *
- * Separate from RenderBackend on purpose. Drawing a frame is what a backend is
- * *for*; rendering an asset thumbnail is a convenience for whoever is editing
- * the scene, and a shipped game never asks for one. Folding these into the
- * runtime interface meant every backend, and every runtime build, carried the
- * concept of a material preview - the one place the engine's otherwise strict
- * layering bent inward.
+ * Separate from RenderBackend on purpose: drawing a frame is what a backend is
+ * *for*, while an asset thumbnail is an authoring convenience a shipped game
+ * never asks for.
  *
  * It lives under system/render rather than in the editor because the backend
  * has to implement it and cannot see editor code. Nothing in the frame path

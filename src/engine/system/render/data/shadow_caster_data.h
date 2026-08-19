@@ -14,10 +14,10 @@ namespace Vkm::Engine {
  * casters per light / cascade before drawing their depth.
  */
 struct ShadowCasterData {
-    MeshHandle mesh;       ///< The mesh to cast shadows.
-    glm::mat4  model;      ///< The model matrix to cast shadows.
-    glm::vec3  aabbMin;    ///< The world-space AABB minimum of the shadow caster.
-    glm::vec3  aabbMax;    ///< The world-space AABB maximum of the shadow caster.
+    MeshHandle mesh;
+    glm::mat4  model;
+    glm::vec3  aabbMin;
+    glm::vec3  aabbMax;
 };
 
 } // namespace Vkm::Engine

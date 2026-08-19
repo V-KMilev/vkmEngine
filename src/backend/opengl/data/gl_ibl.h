@@ -43,9 +43,6 @@ class GLIBL {
         static constexpr int PREFILTER_MIPS  = 7;    ///< Roughness mip count (512..8). MAX_REFLECTION_LOD in pbr shader = this - 1
         static constexpr int BRDF_SIZE       = 512;  ///< BRDF/DFG LUT size
 
-        /**
-         * @brief Record a successful bake so isReady() reports true.
-         */
         void markReady() { m_ready = true; }
 
         bool isReady() const { return m_ready; }
@@ -137,8 +134,6 @@ class GLIBL {
 
         /**
          * @brief Sampler binds for the forward + skybox passes.
-         *
-         * @param slot Texture unit the forward/skybox shader samples the env cube from.
          */
         void bindEnvCube(uint32_t slot)    const { m_envCube.bindSlot(slot); }
         void bindIrradiance(uint32_t slot) const { m_irradiance.bindSlot(slot); }

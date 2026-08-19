@@ -29,18 +29,18 @@ struct Visibility;
  * capacity across frames.
  */
 struct RenderView {
-    uint32_t viewportX      = 0;                   ///< The x-coordinate of the viewport.
-    uint32_t viewportY      = 0;                   ///< The y-coordinate of the viewport.
-    uint32_t viewportWidth  = 0;                   ///< The width of the viewport.
-    uint32_t viewportHeight = 0;                   ///< The height of the viewport.
+    uint32_t viewportX      = 0;
+    uint32_t viewportY      = 0;
+    uint32_t viewportWidth  = 0;
+    uint32_t viewportHeight = 0;
     uint32_t surfaceHeight  = 0;                   ///< Full backbuffer height the viewport rect sits within (lets a bottom-left backend flip the rect).
 
-    CameraData camera;                             ///< The camera data for the view.
-    std::vector<DrawableData>     drawables;       ///< The drawables for the view.
-    std::vector<ShadowCasterData> shadowCasters;   ///< The shadow casters for the view.
-    std::vector<LightData>        lights;          ///< The lights for the view.
-    std::vector<ProbeData>        probes;          ///< The reflection probes in the scene.
-    std::vector<DecalData>        decals;          ///< The projected decals in the scene.
+    CameraData camera;
+    std::vector<DrawableData>     drawables;
+    std::vector<ShadowCasterData> shadowCasters;
+    std::vector<LightData>        lights;
+    std::vector<ProbeData>        probes;
+    std::vector<DecalData>        decals;
     std::vector<ParticleData>     particlesAdditive;  ///< Billboard particles from additive emitters (order-independent).
     std::vector<ParticleData>     particlesAlpha;     ///< Billboard particles from alpha emitters, sorted back-to-front.
     std::vector<IrradianceVolumeData> irradianceVolumes;  ///< Baked-GI volumes in the scene.

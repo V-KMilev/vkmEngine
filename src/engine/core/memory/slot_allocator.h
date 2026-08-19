@@ -10,7 +10,6 @@
 namespace Vkm::Engine {
 
 /**
- * @class SlotAllocator
  * @brief Lightweight slot allocator that issues generation-safe handles.
  *
  * Manages a pool of indices with generation counters for stale-handle detection
@@ -54,7 +53,7 @@ class SlotAllocator {
         }
 
         /**
-         * @brief Free a handle, bumping its generation and recycling the slot. @param id The handle to free.
+         * @brief Free a handle, bumping its generation and recycling the slot.
          *
          * Must be alive (asserts). A handle that is not is refused rather than
          * acted on, because the damage is not confined to the caller: freeing a
@@ -106,9 +105,11 @@ class SlotAllocator {
         }
 
         /**
-         * @brief Check whether `index` currently holds a live slot, with bounds tolerance - returns false for indices past the allocator's reach.
+         * @brief Check whether @p index currently holds a live slot.
          *
-         * Slot 0 is reserved and always reports false.
+         * Tolerant of indices past the allocator's reach - they report false
+         * rather than reading out of bounds. Slot 0 is reserved and always
+         * reports false.
          */
         bool isAliveAtIndex(uint32_t index) const {
             return index > 0
