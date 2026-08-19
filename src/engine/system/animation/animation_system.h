@@ -35,11 +35,6 @@ class AnimationSystem : public System {
         void update(FrameContext& ctx) override;
 
     private:
-        /**
-         * @brief Apply animation values to a Transform component.
-         * @param animation The animation component.
-         * @param transform The transform component to update.
-         */
         static void applyAnimation(const Animation& animation, Transform& transform);
 };
 

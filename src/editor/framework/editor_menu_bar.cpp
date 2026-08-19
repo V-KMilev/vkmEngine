@@ -128,7 +128,6 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
 
         if (haveCurrent) {
             ImGui::Separator();
-            // Just the scene file name - the "Current:" prefix was noise.
             const std::string fname = std::filesystem::path(sceneIO.path()).filename().string();
             ImGui::TextDisabled("%s%s", fname.c_str(),
                 state.sceneDirty ? "  (modified)" : "");

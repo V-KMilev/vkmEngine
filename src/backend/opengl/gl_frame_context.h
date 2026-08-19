@@ -39,7 +39,7 @@ struct GLFrameContext {
     Vkm::GL::Context&  gl;               ///< GL state manager (viewport / depth / clear).
     Vkm::GL::ScreenTriangle& screenTri;  ///< Shared attribute-less fullscreen triangle (every post pass draws it).
     GLTarget&          sceneHDR;         ///< Single-sample resolved scene: sampled by the screen-space + post passes.
-    GLTarget&          sceneRender;      ///< Where the geometry passes draw (the multisample target, or sceneHDR itself when MSAA is off). Resolved into sceneHDR by GLResolvePass.
+    GLTarget&          sceneRender;      ///< Where the geometry passes draw (the multisample target, or sceneHDR when MSAA is off).
     GLShadowAtlas&     shadowAtlas;      ///< Depth atlas: written by shadow pass, sampled by forward.
     const GLShadowData& shadowData;      ///< This frame's shadow plan (matrices + slots).
     const GLIBL&       ibl;              ///< Baked IBL product set: sampled by forward (ambient) + skybox.

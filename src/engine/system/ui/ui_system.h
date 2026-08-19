@@ -17,16 +17,12 @@ namespace Vkm::Engine {
  *
  * Runs in the Transform stage, right after HierarchySystem: UI layout is a
  * screen-space transform resolve, the 2D sibling of resolving WorldTransform.
- * Visible UICanvases are walked in ascending sortOrder, each parent-before-child,
- * resolving every UIElement's screenRect and appending its quads into a
- * UIDrawData the system owns. Buttons only record hit candidates during the
- * walk; once the whole draw list exists, resolveInteraction() picks the topmost
- * button under the pointer (last in painter order), drives the visual states,
- * and enqueues a UIClickEvent on release through the frame's EventBus
- * (ctx.events). The result is published on the FrameContext (ctx.ui) for the
- * RenderSystem to fold into the RenderView - the same hand-off the
- * VisibilitySystem uses for its culling result. Runs in both the editor and the
- * runtime.
+ * Visible UICanvases are walked in ascending sortOrder, parent before child,
+ * resolving each UIElement's screenRect and appending its quads to a UIDrawData
+ * the system owns. Interaction is deferred: buttons record hit candidates during
+ * the walk, and resolveInteraction() then picks the topmost one under the
+ * pointer (last in painter order) and enqueues a UIClickEvent on release. The
+ * result is published on ctx.ui for the RenderSystem. Runs in both hosts.
  */
 class UISystem : public System {
     public:

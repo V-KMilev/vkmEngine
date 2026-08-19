@@ -91,8 +91,7 @@ void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
     EntityId oldParent{};
     if (scene.has<Hierarchy>(child)) oldParent = scene.get<Hierarchy>(child).parent;
 
-    // Capture the state to preserve: the world matrix (fixed across the move)
-    // and the current local transform (for undo).
+    // The world matrix is what stays fixed across the move; `before` is for undo.
     const Transform before = scene.get<Transform>(child);
     const glm::mat4 world   = HierarchyOperations::computeWorldMatrix(scene, child);
 

@@ -33,11 +33,6 @@ struct WorldTransform {
  * answers for the scene as it stands right now; this reads what HierarchySystem
  * resolved during the Transform stage, so a Transform written after that stage
  * is not reflected until the next frame.
- *
- * @param scene  The scene the entity belongs to.
- * @param entity The entity whose world matrix is wanted.
- * @param local  The entity's Transform, used when it has no WorldTransform.
- * @return The world-space model matrix.
  */
 glm::mat4 resolvedWorldMatrix(const Scene& scene, EntityId entity, const Transform& local);
 
@@ -46,11 +41,6 @@ glm::mat4 resolvedWorldMatrix(const Scene& scene, EntityId entity, const Transfo
  *
  * Same rule as resolvedWorldMatrix, reading only the translation - so a root
  * entity costs no matrix construction.
- *
- * @param scene  The scene the entity belongs to.
- * @param entity The entity whose world position is wanted.
- * @param local  The entity's Transform, used when it has no WorldTransform.
- * @return The world-space position.
  */
 glm::vec3 resolvedWorldPosition(const Scene& scene, EntityId entity, const Transform& local);
 
@@ -60,11 +50,6 @@ glm::vec3 resolvedWorldPosition(const Scene& scene, EntityId entity, const Trans
  * Same rule as resolvedWorldMatrix, extracting the rotation via
  * Math::worldRotationOf - so a root entity yields its authored quaternion
  * exactly rather than one round-tripped through a matrix.
- *
- * @param scene  The scene the entity belongs to.
- * @param entity The entity whose world rotation is wanted.
- * @param local  The entity's Transform, used when it has no WorldTransform.
- * @return The world-space rotation.
  */
 glm::quat resolvedWorldRotation(const Scene& scene, EntityId entity, const Transform& local);
 

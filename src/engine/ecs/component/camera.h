@@ -14,8 +14,8 @@ class Scene;
  * @brief Enumeration of camera projection types.
  */
 enum class ProjectionType {
-    Perspective  = 0,   ///< Perspective projection
-    Orthographic = 1,   ///< Orthographic (parallel) projection
+    Perspective  = 0,
+    Orthographic = 1,   ///< Parallel projection.
     Count               ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
 /**

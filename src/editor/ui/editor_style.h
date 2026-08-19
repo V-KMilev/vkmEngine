@@ -59,8 +59,8 @@ inline constexpr ImU32 TIMELINE_GHOST_U32 = IM_COL32( 25,  25,  28, 200);
 // Destructive actions (delete / remove). One color, used everywhere.
 inline const ImVec4 DANGER      = ImVec4(0.86f, 0.34f, 0.34f, 1.00f);
 
-// Cautions (unsaved overwrite, keybind conflicts, mid FPS). One orange - the
-// editor previously grew three near-identical ad-hoc ones.
+// Cautions (unsaved overwrite, keybind conflicts, mid FPS). One orange for all
+// three.
 inline const ImVec4 WARNING     = ImVec4(0.95f, 0.68f, 0.25f, 1.00f);
 
 // Positive states (healthy FPS, success toasts).
