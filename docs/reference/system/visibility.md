@@ -31,7 +31,9 @@ VisibilitySystem::update(ctx)
      - Resolve the world matrix inline, through raw storage pointers rather
        than resolvedWorldMatrix: read WorldTransform if present, else compute
        from the local Transform (HierarchySystem already ran this stage).
-     - Compute world AABB (Arvo's method, 18 mults).
+     - Pick the local box: the mesh's own bounds, or - for a skinned mesh the
+       frame posed - the posed one (see below), then transform it to a world
+       AABB (Arvo's method, 18 mults).
      - Fill the scratch entry (id, matrix, AABB, chosen mesh) and the
        castShadows flag for EVERY valid mesh (not just camera-visible ones) so
        the serial caster gather below can reach off-screen occluders. This is
@@ -154,6 +156,37 @@ depth buffer - a well-established technique, and what Godot and Unreal's mobile
 path still do - but it could only ever see the geometry someone had remembered
 to mark. The pyramid is built from the real depth buffer, so every opaque
 surface occludes, and the component is gone.
+
+## Posed bounds
+
+A skinned mesh's stored bounds describe its bind pose, and a posed character
+leaves that box - an arm goes up, a leg swings out. That is not a
+cosmetic problem: the GPU occlusion cull keeps **conservatively**, so an
+under-sized box does not over-draw, it deletes geometry that was visible. A
+character would vanish for raising an arm.
+
+So a skinned mesh with a pose this frame is bounded by the pose instead:
+
+```cpp
+const PoseSlice* slice = ctx.poses->sliceOf(entityIdx);
+const glm::vec3 pad(mesh.skinRadius * slice->maxBoneScale);
+localMin = slice->originMin - pad;
+localMax = slice->originMax + pad;
+```
+
+The split is deliberate. The pose publishes only what *it* knows - the box of
+the posed bone origins in rig space, and the largest scale any bone carries -
+because skin hangs off a bone by a distance no pose can see. `VisibilitySystem`
+already has the mesh in hand, so it supplies the rest: `MeshAsset::skinRadius`
+is the furthest a vertex sits from a bone that moves it, measured at import. The
+scale multiplies the radius, because a bone scaled 2x stretches its skin twice
+as far from the joint; it is floored at 1, so the product only ever inflates.
+
+The result is exact while the bind transform between mesh space and rig space is
+rigid, which it is in every real rig, and conservative otherwise.
+
+Unskinned meshes, and skinned ones with no rig above them, take the stored
+bounds unchanged - which is the right box for both, since neither moves.
 
 ## AABB helpers
 
