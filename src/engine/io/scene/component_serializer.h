@@ -4,6 +4,7 @@
 
 #include "ecs/environment.h"
 #include "ecs/component/animation.h"
+#include "ecs/component/animator.h"
 #include "ecs/component/camera.h"
 #include "ecs/component/collider.h"
 #include "ecs/component/decal.h"
@@ -77,6 +78,17 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const Mesh&, const ResourceManager&);
     void load(const nlohmann::json&, Mesh&, const ResourceManager&);
+
+    /**
+     * @brief Animator: the rig, the clip and where playback stands.
+     *
+     * Blend state is deliberately absent and stays absent. A crossfade is a
+     * second clip and a countdown, and a scene row holding that shape would
+     * outlive the blend system that wrote it in a project with no migration
+     * path; the six fields here are what any future blend system still needs.
+     */
+    nlohmann::json save(const Animator&, const ResourceManager&);
+    void load(const nlohmann::json&, Animator&, const ResourceManager&);
 
     nlohmann::json save(const LOD&, const ResourceManager&);
     void load(const nlohmann::json&, LOD&, const ResourceManager&);

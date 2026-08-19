@@ -75,8 +75,9 @@ clean write, so a full disk cannot leave a truncated file where a good one was.
 
 `SceneSerializer::save` emits a JSON object with four top-level blocks:
 
-- `assets`: name-only references to every mesh / material a component names -
-  `Mesh`, `LOD` levels, `Decal` - plus the textures those materials use. A
+- `assets`: name-only references to every asset a component names - `Mesh`,
+  `LOD` levels, `Decal`, and the rig plus clip an `Animator` names - plus the
+  textures those materials use. A
   component reference the assets block never lists is one the loader never
   recreates, so every component that names an asset has to be walked there. The
   asset *data* lives in the cooked library (keyed by name), not in the scene
@@ -230,8 +231,10 @@ get wrong, because nothing downstream re-checks:
 Skeletons and clips are read **synchronously** (`loadCookedSkeleton` /
 `loadCookedAnimationClip`). A rig is a few tens of kilobytes, well under what
 earns a completion type, an `AsyncLoadQueue` lane and a drain in
-`AsyncLoaderSystem`. Nothing in a scene references one yet - the component that
-does is what adds their sections to the assets block.
+`AsyncLoaderSystem`. The component that names them is `Animator`, so a scene's
+assets block carries a `skeletons` and a `clips` section beside the other three;
+they load after materials and before meshes, because a clip names the rig its
+bone indices address.
 
 `MESH_FORMAT_VERSION` is **2**: the mesh body carries the skin stream, the skin
 radius and the rig name. Every mesh cooked before it is refused on read, and the
@@ -311,7 +314,8 @@ per-entity component shape a scene uses, in its own file:
 ```json
 {"version": 3, "nextUid": 3,
  "entities": [{"uid": 0, "components": {...}}, {"uid": 1, "parent": 0, "components": {...}}],
- "assets": {"textures": [...], "meshes": [...], "materials": [...]}}
+ "assets": {"textures": [...], "meshes": [...], "materials": [...],
+            "skeletons": [...], "clips": [...]}}
 ```
 
 The `assets` block is the same one a scene carries, for the subtree this file

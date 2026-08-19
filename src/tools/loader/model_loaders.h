@@ -154,6 +154,11 @@ AnimationClipHandle loadModelAnimationClip(
  * (Transform from the node matrix, a Mesh component per referenced mesh),
  * preserving the node hierarchy.
  *
+ * A rigged file also gets one Animator, on the entity whose frame the rig's
+ * bones are composed in - the parent of the root bone's node, or the import
+ * root when the rig is rooted at the scene node itself. That entity is the rig:
+ * SkeletalAnimationSystem poses it and everything under it.
+ *
  * @param path Path to the model file to import.
  * @param resources Resource manager the imported meshes/materials are added to.
  * @param scene Scene the entity hierarchy is spawned into.
