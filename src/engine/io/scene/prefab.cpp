@@ -67,12 +67,24 @@ uint32_t numberOr(const json& from, const char* key, uint32_t fallback) {
 }
 
 /**
+ * @brief The identity of the entity stored at @p index.
+ *
+ * Index 0 is the root by contract, so a file that disagrees is repaired rather
+ * than trusted.
+ */
+uint32_t uidAt(const json& entities, size_t index) {
+    if (index == 0) return PrefabEntity::ROOT;
+    return numberOr(entities[index], "uid", static_cast<uint32_t>(index));
+}
+
+/**
  * @brief Read @p path and check it is a prefab this build can build from.
  *
- * The one place a prefab document is read, so it is the one place its shape is
- * established: past here an entry is an object and its component block, if it
- * has one, is an object too. A file that disagrees is refused whole rather than
- * half-built, because it was hand-edited into something that describes nothing.
+ * The one place a prefab document is read, so it is the one place its shape and
+ * its identities are established: past here an entry is an object, its component
+ * block (if it has one) is an object too, and no two entries answer to the same
+ * uid. A file that disagrees is refused whole rather than half-built, because it
+ * was hand-edited into something that describes nothing.
  *
  * @param path Prefab reference, project-relative or absolute.
  * @param doc Receives the document on success.
@@ -97,6 +109,7 @@ bool readPrefab(const std::string& path, json& doc) {
     }
 
     const json& entities = doc["entities"];
+    std::set<uint32_t> seen;
     for (size_t i = 0; i < entities.size(); ++i) {
         const auto components = entities[i].find("components");
         if (!entities[i].is_object() ||
@@ -104,19 +117,17 @@ bool readPrefab(const std::string& path, json& doc) {
             LOG_ERROR("Prefab '%s' entry %zu does not describe an entity", path.c_str(), i);
             return false;
         }
+        // The uid is the address half of every override, so two entries wearing
+        // one number leave an override addressing both and neither: applying it
+        // patches every match, while re-reading it stops at the first.
+        const uint32_t uid = uidAt(entities, i);
+        if (!seen.insert(uid).second) {
+            LOG_ERROR("Prefab '%s' gives uid %u to two entities; an override addresses one",
+                      path.c_str(), uid);
+            return false;
+        }
     }
     return true;
-}
-
-/**
- * @brief The identity of the entity stored at @p index.
- *
- * Index 0 is the root by contract, so a file that disagrees is repaired rather
- * than trusted.
- */
-uint32_t uidAt(const json& entities, size_t index) {
-    if (index == 0) return PrefabEntity::ROOT;
-    return numberOr(entities[index], "uid", static_cast<uint32_t>(index));
 }
 
 /**
@@ -363,11 +374,18 @@ bool save(Scene& scene, EntityId root, const std::string& path,
     // subtree left carrying numbers no file answers to would hand one of them
     // out twice the next time a prefab was written over it. The root's is fixed,
     // so an override on it needs no lookup.
+    // A number is kept only if it is this entity's alone. Two entities carrying
+    // one uid, or a child carrying the root's, would write a file this build's
+    // own reader refuses - a save that reported success and left an unloadable
+    // prefab behind. Renumbering one entity is the smaller loss.
     nextUid = std::max(nextUid, uint32_t{1});
+    std::set<uint32_t> taken{PrefabEntity::ROOT};
     std::vector<uint32_t> uids(subtree.size(), PrefabEntity::ROOT);
     for (size_t i = 1; i < subtree.size(); ++i) {
-        uids[i] = scene.has<PrefabEntity>(subtree[i]) ? scene.get<PrefabEntity>(subtree[i]).uid
-                                                      : nextUid++;
+        const bool keep = scene.has<PrefabEntity>(subtree[i])
+            && scene.get<PrefabEntity>(subtree[i]).uid != PrefabEntity::ROOT
+            && taken.insert(scene.get<PrefabEntity>(subtree[i]).uid).second;
+        uids[i] = keep ? scene.get<PrefabEntity>(subtree[i]).uid : nextUid++;
     }
 
     for (size_t i = 0; i < subtree.size(); ++i) {
