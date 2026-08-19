@@ -25,12 +25,6 @@ namespace Vkm::Engine {
  *
  * Non-copyable, non-movable, but stack-constructible: tests and
  * headless tooling can spin up their own Engine.
- *
- * Usage:
- *   Vkm::Engine::Engine engine;
- *   engine.addSystem<CameraControllerSystem>(SystemStage::Input);
- *   engine.addSystem<RenderSystem>(SystemStage::Render);
- *   engine.run();  // blocks until window closes
  */
 class Engine {
     public:

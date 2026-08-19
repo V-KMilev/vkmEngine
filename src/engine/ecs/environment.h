@@ -94,9 +94,9 @@ struct FogSettings {
 /**
  * @brief The physics world's own parameters, read once per fixed step.
  *
- * Scene-global like the Environment, and deliberately NOT part of it: what the
- * world is lit by and what it falls at are unrelated, and every engine that has
- * both keeps them apart. Owned by Scene, beside the Environment.
+ * Scene-global like the Environment and deliberately not part of it: what the
+ * world is lit by and what it falls at are unrelated. Owned by Scene, beside
+ * the Environment.
  */
 struct PhysicsSettings {
     glm::vec3 gravity          = {0.0f, -9.81f, 0.0f};  ///< World gravity (m/s^2).
@@ -121,8 +121,7 @@ struct SkyAngles {
  * Scene-global state, NOT an entity/component - one per Scene, always present
  * (owned by Scene::environment()), and it round-trips with the scene. The
  * backend re-bakes the IBL whenever the sky changes; the skybox samples that
- * baked product, so the visible background follows automatically. The physics
- * world is deliberately not here - see PhysicsSettings above.
+ * baked product, so the visible background follows automatically.
  */
 struct Environment {
     SkySettings      sky;

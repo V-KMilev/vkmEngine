@@ -15,11 +15,7 @@ struct StorageIndex {
     uint32_t index      = 0; ///< Sparse slot index (0 = null/invalid)
     uint32_t generation = 0; ///< Generation at time of creation, compared against slot to detect staleness
 
-    /**
-     * @brief Test whether this handle refers to a real slot.
-     *
-     * @return True when index is non-zero (0 is the reserved null sentinel).
-     */
+    /// True when index is non-zero (0 is the reserved null sentinel).
     constexpr explicit operator bool() const noexcept { return index != 0; }
 
     /**
@@ -55,8 +51,6 @@ struct GenerationIndex {
 
     /**
      * @brief Set the alive/dead status, leaving the generation untouched.
-     *
-     * @param alive True marks the slot live, false marks it dead.
      */
     void setAlive(bool alive) { value = (value & GEN_MASK) | (alive ? ALIVE_BIT : 0); }
     /**
@@ -67,17 +61,10 @@ struct GenerationIndex {
      */
     void bumpGeneration()     { value = (value & ALIVE_BIT) | (((value & GEN_MASK) + 1) & GEN_MASK); }
 
-    /**
-     * @brief Query the alive flag.
-     *
-     * @return True when the alive bit is set.
-     */
+    /// True when the alive bit is set.
     bool alive()          const { return value & ALIVE_BIT; }
-    /**
-     * @brief Query the current generation counter.
-     *
-     * @return The generation value with the alive bit masked off.
-     */
+
+    /// The generation counter, alive bit masked off.
     uint32_t generation() const { return value & GEN_MASK; }
 };
 
