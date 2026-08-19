@@ -54,26 +54,30 @@ inline bool beginDialog(const char* title, bool& wantOpen) {
 }
 
 /**
- * @brief The standard dialog button row: [alt] [cancel] [Confirm], right-aligned.
+ * @brief The three-way dialog button row: [alt] [Cancel] [Confirm], right-aligned.
  *
  * Closes the popup and clears @p wantOpen when any result fires. Escape always
  * cancels; Enter confirms while @p confirmEnabled and either no text field has
  * the keyboard or @p fieldCommitted says one just committed.
  *
+ * The alt label has no default and stands ahead of both flags, so nothing but a
+ * label can land in its slot and it cannot be reached past one; the old order,
+ * with a flag ahead of the label, is refused below rather than silently drawing
+ * two buttons. A surplus label in a flag's slot does still convert to true, so
+ * what the compiler settles is the row, not the whole argument list.
+ *
  * @param wantOpen       The same intent flag beginDialog received.
  * @param confirmLabel   Rightmost (accent, default) action.
+ * @param altLabel       Third action drawn left of Cancel, or nullptr for none.
  * @param confirmEnabled Gates the button and both Enter paths.
  * @param fieldCommitted A text field in this dialog returned true from
  *                       EnterReturnsTrue this frame.
- * @param cancelLabel    The dismiss action (default "Cancel").
- * @param altLabel       Optional third action drawn left of cancel.
  * @return What fired this frame (None while the dialog stays open).
  */
 inline DialogResult dialogButtons(bool& wantOpen, const char* confirmLabel,
+                                  const char* altLabel,
                                   bool confirmEnabled = true,
-                                  bool fieldCommitted = false,
-                                  const char* cancelLabel = "Cancel",
-                                  const char* altLabel = nullptr) {
+                                  bool fieldCommitted = false) {
     const ImGuiStyle& style = ImGui::GetStyle();
 
     // One width for the whole row: the widest label, floored at 96 design px.
@@ -81,7 +85,7 @@ inline DialogResult dialogButtons(bool& wantOpen, const char* confirmLabel,
     auto fit = [&](const char* label) {
         if (label) bw = std::max(bw, ImGui::CalcTextSize(label).x + style.FramePadding.x * 4.0f);
     };
-    fit(confirmLabel); fit(cancelLabel); fit(altLabel);
+    fit(confirmLabel); fit("Cancel"); fit(altLabel);
 
     const int   n     = altLabel ? 3 : 2;
     const float total = n * bw + (n - 1) * style.ItemSpacing.x;
@@ -95,7 +99,7 @@ inline DialogResult dialogButtons(bool& wantOpen, const char* confirmLabel,
         if (ImGui::Button(altLabel, ImVec2(bw, 0))) r = DialogResult::Alt;
         ImGui::SameLine();
     }
-    if (ImGui::Button(cancelLabel, ImVec2(bw, 0))) r = DialogResult::Cancel;
+    if (ImGui::Button("Cancel", ImVec2(bw, 0))) r = DialogResult::Cancel;
     ImGui::SameLine();
     ImGui::BeginDisabled(!confirmEnabled);
     ImGui::PushStyleColor(ImGuiCol_Button,        EditorStyle::ACCENT);
@@ -123,6 +127,43 @@ inline DialogResult dialogButtons(bool& wantOpen, const char* confirmLabel,
     }
     return r;
 }
+
+/**
+ * @brief The two-button dialog button row: [Cancel] [Confirm], right-aligned.
+ *
+ * The common case, and the reason the alt action is a separate overload rather
+ * than a trailing default: reaching a defaulted label past a defaulted flag is
+ * what lets a mistyped call bind a label to the flag and lose a button.
+ *
+ * @param wantOpen       The same intent flag beginDialog received.
+ * @param confirmLabel   Rightmost (accent, default) action.
+ * @param confirmEnabled Gates the button and both Enter paths.
+ * @param fieldCommitted A text field in this dialog returned true from
+ *                       EnterReturnsTrue this frame.
+ * @return What fired this frame (None while the dialog stays open).
+ */
+inline DialogResult dialogButtons(bool& wantOpen, const char* confirmLabel,
+                                  bool confirmEnabled = true,
+                                  bool fieldCommitted = false) {
+    return dialogButtons(wantOpen, confirmLabel, nullptr, confirmEnabled, fieldCommitted);
+}
+
+/**
+ * @brief Refuse the old parameter order, which put a flag ahead of the labels.
+ *
+ * dialogButtons(want, "Save", true, "Don't Save") is the shape a call written
+ * against that order keeps: no overload takes a bool third, so it would resolve
+ * to the two-button one, bind the label to fieldCommitted and draw a dialog
+ * missing its third button with Enter confirming unprompted. An exact match on
+ * const char* outranks that bool conversion, so the call lands here and fails.
+ *
+ * @param wantOpen       The same intent flag beginDialog received.
+ * @param confirmLabel   Rightmost (accent, default) action.
+ * @param confirmEnabled Gates the button and both Enter paths.
+ * @param altLabel       Third action, which belongs before the flags.
+ */
+inline DialogResult dialogButtons(bool& wantOpen, const char* confirmLabel,
+                                  bool confirmEnabled, const char* altLabel) = delete;
 
 /**
  * @brief End the modal begun by a true-returning beginDialog.
