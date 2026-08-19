@@ -194,22 +194,19 @@ void SceneIOController::afterSceneReplace(
         });
     }
 
-    // Re-bind the camera controller to the new scene's active Camera. If
-    // multiple cameras claim active (authoring oversight), pick the first
-    // by iteration order and warn - silently picking one of several would
-    // make the choice look intentional.
-    EntityId rebound{};
+    // Re-bind the camera controller to the new scene's active Camera, by the
+    // same rule the renderer uses. If multiple cameras claim active (authoring
+    // oversight), that rule picks the first by iteration order - warn, because
+    // silently picking one of several would make the choice look intentional.
     int activeCount = 0;
-    ctx.scene.forEach<Camera>([&](EntityId id, const Camera& c) {
-        if (!c.active) return;
-        ++activeCount;
-        if (!rebound) rebound = id;
+    ctx.scene.forEach<Camera, Transform>([&](EntityId, const Camera& c, const Transform&) {
+        if (c.active) ++activeCount;
     });
     if (activeCount > 1) {
         LOG_WARNING("SceneIOController: %d cameras marked active in %s - using the first",
             activeCount, eventPath.c_str());
     }
-    m_cameraController.setCameraEntity(rebound);
+    m_cameraController.setCameraEntity(findActiveCamera(ctx.scene));
 }
 
 void SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {
