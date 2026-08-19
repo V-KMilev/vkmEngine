@@ -59,9 +59,18 @@ class Scene {
 
         /**
          * @brief Destroy an entity by removing all of its components and recycling its slot.
+         *
+         * Every step below is keyed on the bare slot index, which a stale handle
+         * still names correctly, so the generation has to be checked up front:
+         * without it a recycled handle tears down whatever entity now holds the
+         * slot. Destroying an already-dead entity is a no-op.
+         *
          * @param id The entity to destroy.
          */
         void destroyEntity(EntityId id) {
+            VKM_ASSERT(isAlive(id), "Scene::destroyEntity called with dead/stale entity");
+            if (!isAlive(id)) return;
+
             // Notify observers before tear-down, while the entity and its
             // components are still intact.
             for (ISceneObserver* observer : m_observers) {
@@ -86,11 +95,16 @@ class Scene {
          * and a serialized parent link are - back into an EntityId systems can
          * pass around.
          *
-         * @param index Slot index; must be within the allocator's reach.
-         * @return The entity id for that slot.
+         * Total, so an untrusted index can be converted first and validated
+         * after: an index past the allocator's reach yields the null id, and one
+         * naming a slot that has since been recycled yields an id that fails
+         * isAlive().
+         *
+         * @param index Slot index; any value is accepted.
+         * @return The entity id for that slot, null when the slot is out of reach.
          */
         EntityId entityAt(uint32_t index) const {
-            return {index, m_entityAllocator.generationOf(index)};
+            return m_entityAllocator.handleAt(index);
         }
 
     public:
