@@ -148,7 +148,7 @@ All external dependencies are git submodules under `modules/` (see `.gitmodules`
 | Module | Path | Provides |
 |--------|------|----------|
 | **vkmGL** | `modules/vkmGL` | OpenGL object wrappers (`Vkm::GL::`), shader loading/preprocessing. Vendors GLEW privately; everything else it needs is a target the engine supplies |
-| **vkmLog** | `modules/vkmLog` | Logging library (LOG_TRACE..LOG_FATAL), VKM_ASSERT |
+| **vkmLog** | `modules/vkmLog` | Logging library (`Vkm::Log::`): LOG_TRACE..LOG_FATAL, VKM_ASSERT |
 | **glm** | `modules/glm` | Vector/matrix math, used engine-wide and by vkmGL |
 | **glfw** | `modules/glfw` | Window + input platform layer |
 | **stb** | `modules/stb` | `stb_image` (texture decode), `stb_truetype` (SDF font bake) |
