@@ -49,11 +49,31 @@ MaterialHandle createCookedMaterial(const nlohmann::json& source, ResourceManage
     return {};
 }
 
+SkeletonHandle createCookedSkeleton(const nlohmann::json& source, ResourceManager& resources) {
+    const std::string kind = source.value("kind", std::string{});
+    if (kind == "cooked") {
+        return loadCookedSkeleton(source.value("name", std::string{}), resources);
+    }
+    LOG_ERROR("No cooked skeleton dispatch for kind '%s'", kind.c_str());
+    return {};
+}
+
+AnimationClipHandle createCookedAnimationClip(const nlohmann::json& source, ResourceManager& resources) {
+    const std::string kind = source.value("kind", std::string{});
+    if (kind == "cooked") {
+        return loadCookedAnimationClip(source.value("name", std::string{}), resources);
+    }
+    LOG_ERROR("No cooked clip dispatch for kind '%s'", kind.c_str());
+    return {};
+}
+
 void registerCookedAssetFactories() {
-    LOG_INFO("Registering cooked asset factories (mesh/texture: cooked, material: inline)");
-    assetFactory().createMesh     = &createCookedMesh;
-    assetFactory().createTexture  = &createCookedTexture;
-    assetFactory().createMaterial = &createCookedMaterial;
+    LOG_INFO("Registering cooked asset factories (mesh/texture/skeleton/clip: cooked, material: inline)");
+    assetFactory().createMesh          = &createCookedMesh;
+    assetFactory().createTexture       = &createCookedTexture;
+    assetFactory().createMaterial      = &createCookedMaterial;
+    assetFactory().createSkeleton      = &createCookedSkeleton;
+    assetFactory().createAnimationClip = &createCookedAnimationClip;
 }
 
 } // namespace Vkm::Engine
