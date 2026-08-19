@@ -160,12 +160,21 @@ assets (`Mesh`, `LOD`, `Decal`) and emits **name-only** references to the
 meshes/materials/textures used. In the editor,
 `SceneIOController` first calls `AssetCooker::cookAllAssets`, which bakes every
 non-hidden asset in the `ResourceManager` into the library + cooked cache and
-rewrites the manifest (skipping assets whose hash is unchanged).
+rewrites the manifest (skipping assets whose hash is unchanged and whose cooked
+file this build can still read). It waits for anything still importing first,
+through `finalizeAsyncLoads`, the frame-independent half of
+`AsyncLoaderSystem`: an asset that has not landed yet has no vertices to bake,
+and `vkm_cook` has no frame loop to land it. It returns false when any asset failed
+to cook, which is what `vkm_cook`'s exit code carries.
 
-**Load** - `AssetSerializer::loadAssets` resolves each name through the manifest:
-meshes/textures get a synthesized `{"kind":"cooked","name":...}` source, materials
-load their `inline` descriptor from the library file. Both go through the
-`AssetFactory` dispatch seam (`io/asset/asset_factory.h`) - five function pointers
+**Load** - `AssetSerializer::loadAssets` resolves each name through the manifest,
+**cache first and recipe on a miss**. `resolveCookedSource` probes the cooked
+file with `AssetCook::isCookedCurrent`; when it answers yes the asset gets a
+synthesized `{"kind":"cooked","name":...}` source, and when it answers no the
+asset gets the `source` object out of its library recipe instead - the same
+`model` / `generator` / `file` descriptor the import wrote. A material skips the
+probe: it has no cooked binary, so its recipe is always what loads. All of them
+go through the `AssetFactory` dispatch seam (`io/asset/asset_factory.h`) - five function pointers
 (mesh / texture / material / skeleton / animation clip) that each binary wires at
 startup, with plain switch dispatch on the `kind` field:
 
@@ -242,16 +251,45 @@ cooked file is a derived cache and there are no migration read paths in this
 project, by policy. `COOKER_VERSION` moves with it, because `POST_PROCESS_FLAGS`
 changed and every stored recipe hash has to go stale at once.
 
-**The recovery is re-import, not re-cook**, and that is worth stating plainly
-because the obvious assumption is the other way round. `resolveCookedSource`
-consults the library recipe **only for materials**; for a mesh or a texture it
-synthesises `{"kind":"cooked", "name": ...}` unconditionally, so a scene load
-goes straight to the cooked binary, the version check refuses it, and the asset
-stays empty. `vkm_cook` then cooks what the scene loaded, sees an empty mesh, and
-skips it. The recipe file beside the cooked one still records the model or
-generator the mesh came from, but nothing reads it back for a mesh, so the loop
-cannot close on its own. Re-importing the source art through the editor is what
-rebuilds a v2 mesh.
+### What a format bump costs, and why the recipe is reachable
+
+**A format bump costs a re-cook, not a re-import.** That is the whole point of
+keeping the recipe: refusing an old file is only affordable because something
+can still produce a new one. Run `vkm_cook` (or open the project and save) and
+the library rebuilds the binaries the manifest promises.
+
+The mechanism is one probe, used from both ends so the two cannot disagree:
+
+```
+isCookedCurrent(type, path, recipeHash)   // header only: 28 bytes, no body
+```
+
+- **The loader** asks it before resolving a name (`resolveCookedSource`). A file
+  that is absent, foreign, of another kind, of a format version this build does
+  not read, or baked from another recipe is not current, and the recipe loads
+  instead. That fallback is what makes `cooked/` genuinely regenerable rather
+  than regenerable on paper.
+- **The cooker** asks it before skipping an asset (`isUpToDate`). Presence is not
+  enough: a file this build cannot read is not an output that can be skipped.
+
+Both ends have to move together. If only the loader fell back, a bump that left
+recipe hashes untouched would have the cooker call the stale binary current and
+never rewrite it, so every load would re-import from source art forever. If only
+the cooker rewrote, a stale project would still fail to load until someone
+thought to run the cooker.
+
+The probe is deliberately silent - a stale cache is normal and recoverable, so it
+logs nothing and the caller reports what the miss meant. In a host that links no
+importers (the runtime) the fallback still happens, the dispatch refuses the
+recipe kind it gets, and the pair of log lines names the asset and the reason: a
+shipped build cannot rebuild a cache, it needs one cooked for it.
+
+The one thing this does not recover is a recipe whose **source art is gone**. The
+cook then has a recipe and nothing to bake from, which is an error rather than a
+skip: it fails the cook and `vkm_cook` exits non-zero, because the manifest is
+about to promise a file nothing produced. An asset that never had a recipe at all
+is a different case and still only a warning - a project is free to build meshes
+in code and name them, and both examples do.
 
 ## ComponentSerializer
 
