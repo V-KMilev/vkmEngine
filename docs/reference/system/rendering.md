@@ -137,7 +137,7 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 
 | # | Pass | Does |
 |---|------|------|
-| 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas each frame. Culling and mesh-grouping are **not** done here - `GLShadowData::build` does both on the thread pool, so the pass only gathers, uploads and draws |
+| 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas each frame. Culling and mesh-grouping are **not** done here - `GLShadowData::build` does both on the thread pool, so the pass only gathers, uploads and draws. Skinned casters take a second pair of programs and draw one at a time, because the palette base is a uniform on this path (see [animation.md](animation.md#the-gpu-path)) |
 | 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (oct view-normal / roughness / metalness). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses. Two programs (`prepass` / `prepass_skinned`), switched once at the skinned boundary |
 | 3 | ResolveDepth | MSAA only: resolves depth (and the G-buffer when GTAO / decals / a debug view will read it) into `m_sceneHDR` |
 | 4 | HiZ | Reduces the resolved depth into a hierarchical depth pyramid: each texel the **farthest** depth of the region below it (`GLHiZ`). Runs only while occlusion culling is on - the cull is the pyramid's only reader |
