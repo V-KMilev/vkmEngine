@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
             true, false});
 
         engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
-            engine, engine.getWindow().getWindowContext(),
+            engine.getWindow().getWindowContext(),
             sys.camera, sys.ui, sys.visibility, sys.render, scriptModule, project.name);
 
         // The editor opens on the same scene the runtime would boot, by the
