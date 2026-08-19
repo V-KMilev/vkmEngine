@@ -7,6 +7,7 @@
 
 #include <glm/gtc/quaternion.hpp>
 
+#include "framework/editor_actions.h"
 #include "framework/editor_common.h"
 #include "framework/editor_commands.h"
 #include "framework/prefab_overrides.h"
@@ -130,31 +131,21 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
         // Snapshot every selected transform so the drag moves the whole set
         // and drag-end can build one batch undo.
         //
-        // Roots of the selection only, the same rule deleteSelection follows.
-        // An entity whose ancestor is also selected already inherits that
-        // ancestor's motion through the hierarchy; moving it again on its own
-        // applied the delta twice, so dragging a parent and its child together
-        // sent the child twice as far.
+        // Roots of the selection only. An entity whose ancestor is also selected
+        // already inherits that ancestor's motion through the hierarchy; moving
+        // it again on its own applied the delta twice, so dragging a parent and
+        // its child together sent the child twice as far.
         m_dragSelection.clear();
         const EntityId flown = ec.cameraController.getCameraEntity();
-        auto hasSelectedAncestor = [&](EntityId id) {
-            EntityId cur = id;
-            for (int depth = 0; depth < 32; ++depth) {
-                if (!ctx.scene.isAlive(cur) || !ctx.scene.has<Hierarchy>(cur)) return false;
-                cur = ctx.scene.get<Hierarchy>(cur).parent;
-                if (!cur) return false;
-                if (state.isSelected(cur)) return true;
-            }
-            return false;
-        };
         for (EntityId id : state.selection) {
             if (!ctx.scene.isAlive(id) || !ctx.scene.has<Transform>(id)) continue;
             if (id == flown) continue;
-            if (hasSelectedAncestor(id)) continue;
+            if (EditorActions::hasSelectedAncestor(ctx.scene, state.selection, id)) continue;
             m_dragSelection.emplace_back(id, ctx.scene.get<Transform>(id));
         }
-        m_dragActiveIsDescendant = m_dragSelection.size() > 1
-                                && hasSelectedAncestor(state.selectedEntity);
+        m_dragActiveIsDescendant =
+            m_dragSelection.size() > 1
+            && EditorActions::hasSelectedAncestor(ctx.scene, state.selection, state.selectedEntity);
     }
     if (m_gizmo.manipulate(drawList, ctx.visibility->view, subProj,
                             state.gizmoOperation, state.gizmoMode, model,
