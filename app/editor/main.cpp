@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
 
         // Same convention EditorSystem's per-frame title uses; it takes over on
         // the first frame and adds the scene.
-        const std::string title = project.name + " - VKM Engine";
+        const std::string title = project.name + " - vkmEngine";
         auto sys = setupEngineApp(engine, AppConfig{
             title.c_str(),
             true, false});
