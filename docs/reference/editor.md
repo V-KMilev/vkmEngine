@@ -277,6 +277,14 @@ All are rebindable from the Preferences > Keybinds tab.
 Light and camera entities show their own gizmos in `gizmo_overlay.cpp`
 (directional rays, cone projections, frustum lines, area-light edges).
 
+The `View` menu adds three overlays that are off by default because they draw
+for every matching entity rather than the selection: **Show Colliders** (the
+boxes the solver collides against), **Show Bounds** (the world AABB of every
+visible entity) and **Show Skeletons** (each posed rig's bones, straight out of
+`FrameContext::poses` - segments joint to joint, plus an axis triad per bone on
+the selected rig, which is what makes a bone's *orientation* visible and not
+just its position).
+
 ## Entity selection and shortcuts
 
 - Click in the viewport to pick entities (ray-AABB against the visible

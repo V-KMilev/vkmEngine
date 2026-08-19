@@ -61,11 +61,18 @@ scene.remove<Mesh>(entity);
 | `Mesh`           | `component/mesh.h`                | `MeshHandle mesh`, `MaterialHandle material`, `bool visible`, `bool castShadows`                      |
 | `Light`          | `component/light.h`               | `LightType` (Directional, Point, Spot, Rect, Disk), color, intensity, attenuation, cone, area, shadow |
 | `Animation`      | `component/animation.h`           | Three tracks (position vec3, rotation quat, scale vec3) plus playback state and explicit `length`     |
+| `Animator`       | `component/animator.h`            | `SkeletonHandle skeleton`, `AnimationClipHandle clip`, `time`, `speed`, `playing`, `looping` - one per rigged character, not per mesh |
 | `Hierarchy`      | `component/hierarchy.h`           | `EntityId parent`, `firstChild`, `nextSibling`, `prevSibling`                                         |
 | `Name`           | `component/name.h`                | `char value[64]` for editor display and asset look-up by name                                         |
 | `Collider`       | `component/collider.h`            | One or more `ColliderBox` parts (`center`, `halfExtents`) + `isTrigger`                               |
 | `Rigidbody`      | `component/rigidbody.h`           | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags |
 | `ReflectionProbe`| `component/reflection_probe.h`    | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
+
+`Animation` and `Animator` are both covered in [Animation](system/animation.md):
+the first drives one entity's own `Transform`, the second poses a whole rig and
+publishes the result on `FrameContext::poses`. There is deliberately no skinned-
+mesh component - a mesh is skinned when its asset carries skin weights, and the
+rig driving it is the nearest `Animator` above it in the hierarchy.
 
 Light gets a full breakdown in [Lighting](system/lighting.md), including
 the area-light fields (`areaWidth`, `areaHeight`, `areaRadius`, `twoSided`)

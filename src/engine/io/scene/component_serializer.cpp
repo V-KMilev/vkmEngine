@@ -124,6 +124,8 @@ void loadReflected(const nlohmann::json& j, T& obj) {
 // Component save / load. Reflectable components are one-line passthroughs
 // into the reflection driver. The exceptions are intentional:
 //   - Mesh:      ResourceManager handle lookup (cross-asset reference).
+//   - Animator:  the same, plus a persisted surface narrower than the struct -
+//                blend state is transient by design.
 //   - Hierarchy: parent stored as raw scene-table index, resolved by
 //                SceneSerializer after the entity table is loaded.
 //   - Animation: AnimationTrack<T> keeps its keyframes private and must go
@@ -210,6 +212,25 @@ void load(const nlohmann::json& j, Mesh& m, const ResourceManager& resources) {
     m.material    = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material");
     m.visible     = j.value("visible",     m.visible);
     m.castShadows = j.value("castShadows", m.castShadows);
+}
+
+nlohmann::json save(const Animator& a, const ResourceManager& resources) {
+    return {
+        {"skeleton", a.skeleton ? resources.get(a.skeleton).name : std::string{}},
+        {"clip",     a.clip     ? resources.get(a.clip).name     : std::string{}},
+        {"time",     a.time},
+        {"speed",    a.speed},
+        {"playing",  a.playing},
+        {"looping",  a.looping},
+    };
+}
+void load(const nlohmann::json& j, Animator& a, const ResourceManager& resources) {
+    a.skeleton = resolveAssetRef<SkeletonAsset>     (resources, j.value("skeleton", std::string{}), "skeleton");
+    a.clip     = resolveAssetRef<AnimationClipAsset>(resources, j.value("clip",     std::string{}), "clip");
+    a.time     = j.value("time",    a.time);
+    a.speed    = j.value("speed",   a.speed);
+    a.playing  = j.value("playing", a.playing);
+    a.looping  = j.value("looping", a.looping);
 }
 
 nlohmann::json save(const LOD& l, const ResourceManager& resources) {

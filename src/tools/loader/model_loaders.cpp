@@ -49,6 +49,7 @@
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/name.h"
+#include "ecs/component/animator.h"
 #include "ecs/component/mesh.h"
 #include "system/async/async_load_queue.h"
 #include "system/hierarchy/hierarchy_operations.h"
@@ -984,20 +985,24 @@ EntityId importModelIntoScene(
     };
 
     // The rig and its clips belong to the file rather than to any one node, so
-    // they are built once, here. Nothing drives them yet - what will is the
-    // component that names a rig - but a skinned mesh whose skeleton name
-    // resolved to nothing would be a character with no way to be posed.
+    // they are built once, here.
     const SkeletonAsset rig = buildSkeleton(aScene, ref);
+    SkeletonHandle      rigHandle;
+    AnimationClipHandle firstClip;
     if (!rig.bones.empty()) {
-        if (!resources.findByName<SkeletonAsset>(rig.name)) {
+        rigHandle = resources.findByName<SkeletonAsset>(rig.name);
+        if (!rigHandle) {
             SkeletonAsset copy = rig;
-            resources.add(std::move(copy));
+            rigHandle = resources.add(std::move(copy));
         }
         for (unsigned i = 0; i < aScene->mNumAnimations; ++i) {
             const int clipIdx = static_cast<int>(i);
-            if (resources.findByName<AnimationClipAsset>(clipName(ref, clipIdx))) continue;
-            AnimationClipAsset clip = buildClip(aScene, ref, clipIdx, rig);
-            if (!clip.bones.empty()) resources.add(std::move(clip));
+            AnimationClipHandle handle = resources.findByName<AnimationClipAsset>(clipName(ref, clipIdx));
+            if (!handle) {
+                AnimationClipAsset clip = buildClip(aScene, ref, clipIdx, rig);
+                if (!clip.bones.empty()) handle = resources.add(std::move(clip));
+            }
+            if (handle && !firstClip) firstClip = handle;
         }
     }
 
@@ -1005,12 +1010,14 @@ EntityId importModelIntoScene(
     scene.add(root, Transform{});
     scene.add(root, makeName(stemOf(ref).c_str()));
 
+    std::unordered_map<const aiNode*, EntityId> nodeEntity;
     std::function<void(const aiNode*, EntityId)> spawn =
         [&](const aiNode* node, EntityId parent) {
         EntityId e = scene.createEntity();
         scene.add(e, transformOf(node->mTransformation));
         scene.add(e, makeName(node->mName.length ? node->mName.C_Str() : "node"));
         HierarchyOperations::setParent(scene, e, parent);
+        nodeEntity[node] = e;
 
         for (unsigned i = 0; i < node->mNumMeshes; ++i) {
             const int mi = static_cast<int>(node->mMeshes[i]);
@@ -1034,6 +1041,20 @@ EntityId importModelIntoScene(
 
     if (aScene->mRootNode)
         spawn(aScene->mRootNode, root);
+
+    // The rig's frame is the PARENT of its root bone, because buildSkeleton
+    // composes bone 0 from its own local transform down - so a bone's model
+    // matrix is expressed in the space its root sits in. Putting the Animator
+    // anywhere else would offset the whole pose by one node transform, which
+    // looks plausible until the character is compared with its own mesh.
+    if (rigHandle) {
+        const aiNode* rootBone = aScene->mRootNode->FindNode(rig.bones[0].name.c_str());
+        const aiNode* rigFrame = rootBone ? rootBone->mParent : nullptr;
+        const auto it = rigFrame ? nodeEntity.find(rigFrame) : nodeEntity.end();
+        // No parent means the rig is rooted at the scene node itself, whose own
+        // transform bone 0 already carries: the import root is that frame.
+        scene.add(it != nodeEntity.end() ? it->second : root, Animator{rigHandle, firstClip});
+    }
 
     LOG_INFO("Imported model '%s' (%u meshes, %u materials, %zu bones, %u clips)",
         ref.c_str(), aScene->mNumMeshes, aScene->mNumMaterials,

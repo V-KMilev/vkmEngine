@@ -2,13 +2,17 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <vector>
 
 #include <glm/gtc/quaternion.hpp>
 
 #include "framework/editor_common.h"
 #include "overlays/wire_draw.h"
 #include "system/visibility/visibility.h"
+#include "system/animation/pose_buffer.h"
 #include "system/camera/camera_controller_system.h"
+#include "ecs/component/animator.h"
 #include "ecs/component/collider.h"
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/irradiance_volume.h"
@@ -16,6 +20,7 @@
 #include "ecs/component/particle_emitter.h"
 #include "ecs/component/world_transform.h"
 #include "core/math/rotation.h"
+#include "resource/resource_manager.h"
 
 namespace Vkm::Engine {
 
@@ -25,6 +30,16 @@ constexpr ImU32 COLLIDER_COL = IM_COL32(80, 220, 120, 200);  // physics green
 constexpr ImU32 BOUNDS_COL   = IM_COL32(230, 200, 60, 160);  // mesh-bounds amber
 
 constexpr ImU32 IRRADIANCE_VOLUME_COL = IM_COL32(235, 150, 77, 200);  // GI orange, against the probe's blue
+
+constexpr ImU32 SKELETON_COL = IM_COL32(120, 190, 255, 230);  // rig blue
+
+// A bone's own X / Y / Z, in the editor's axis colours - so a bone triad reads
+// against the navigation gizmo and the transform handles without a legend.
+constexpr ImU32 AXIS_COLS[3] = {
+    EditorStyle::AXIS_X_U32,
+    EditorStyle::AXIS_Y_U32,
+    EditorStyle::AXIS_Z_U32,
+};
 
 constexpr ImU32 DECAL_COL   = IM_COL32(200, 120, 220, 200);  // decal violet
 constexpr ImU32 EMITTER_COL = IM_COL32(240, 200, 90, 200);   // particle amber
@@ -487,6 +502,85 @@ void GizmoOverlay::drawColliderGizmos(EditorContext& ec) {
         for (const ColliderBox& part : col.parts)
             wireBox(dl, vp, pos + r * part.center, rot,
                     part.halfExtents, vpMin, vpSize, color);
+    });
+}
+
+void GizmoOverlay::drawSkeletonGizmos(EditorContext& ec) {
+    ViewportOverlayScope scope(ec);
+    if (!scope.valid()) return;
+
+    const PoseBuffer* poses = ec.frame.poses;
+    if (!poses) return;
+
+    const glm::mat4 vp     = scope.vp;
+    const ImVec2    vpMin  = scope.vpMin;
+    const ImVec2    vpSize = scope.vpSize;
+    ImDrawList*     dl     = scope.dl;
+
+    const ResourceManager& resources = ec.frame.resources;
+    const std::vector<glm::mat4>& global = poses->global();
+
+    // Reused across rigs, so the overlay allocates once per frame rather than
+    // once per character.
+    std::vector<glm::mat4> world;
+    std::vector<ImVec2>    screen;
+    std::vector<uint8_t>   onScreen;
+
+    ec.frame.scene.forEach<Animator, Transform>(
+            [&](EntityId id, const Animator& animator, const Transform& tf) {
+        const PoseSlice* slice = poses->sliceOf(id.index);
+        if (!slice || slice->count == 0) return;
+        if (!animator.skeleton || !resources.isAlive(animator.skeleton)) return;
+        const SkeletonAsset& skeleton = resources.get(animator.skeleton);
+        if (skeleton.bones.size() != slice->count) return;
+
+        // The pose is in the rig's model space, so the rig entity's world
+        // matrix is what puts it in the world - the same matrix that will
+        // multiply the skinned vertices.
+        const glm::mat4 model = resolvedWorldMatrix(ec.frame.scene, id, tf);
+        const bool  selected = ec.state.isSelected(id);
+        const ImU32 col      = selected ? EditorStyle::HIGHLIGHT_U32 : SKELETON_COL;
+
+        world.resize(slice->count);
+        screen.resize(slice->count);
+        onScreen.resize(slice->count);
+
+        glm::vec3 boneMin(std::numeric_limits<float>::max());
+        glm::vec3 boneMax(std::numeric_limits<float>::lowest());
+        for (uint32_t b = 0; b < slice->count; ++b) {
+            world[b] = model * global[slice->first + b];
+            const glm::vec3 origin(world[b][3]);
+            boneMin = glm::min(boneMin, origin);
+            boneMax = glm::max(boneMax, origin);
+            onScreen[b] = projectToViewport(vp, origin, vpMin, vpSize, screen[b]) ? 1 : 0;
+        }
+
+        for (uint32_t b = 0; b < slice->count; ++b) {
+            if (!onScreen[b]) continue;
+            const int32_t parent = skeleton.bones[b].parent;
+            if (parent >= 0 && onScreen[parent]) dl->AddLine(screen[parent], screen[b], col, 1.5f);
+            // A joint dot as well as the segments, because a leaf bone and a
+            // root have no segment of their own to be seen by.
+            dl->AddCircleFilled(screen[b], 2.5f, col, 6);
+        }
+
+        // Segments show where the joints are; only axes show which way they
+        // face, which is what a composition or bind-inverse mistake actually
+        // corrupts. Drawn on the selected rig alone - a hundred triads per
+        // character would bury the viewport.
+        if (!selected) return;
+        const glm::vec3 extent = boneMax - boneMin;
+        const float axisLength = std::max(0.05f * std::max({extent.x, extent.y, extent.z}), 1e-3f);
+        for (uint32_t b = 0; b < slice->count; ++b) {
+            const glm::vec3 origin(world[b][3]);
+            for (int axis = 0; axis < 3; ++axis) {
+                const glm::vec3 dir = glm::vec3(world[b][axis]);
+                const float len = glm::length(dir);
+                if (len <= 1e-6f) continue;
+                wireSegment(dl, vp, origin, origin + dir * (axisLength / len),
+                            vpMin, vpSize, AXIS_COLS[axis], 1.5f);
+            }
+        }
     });
 }
 
