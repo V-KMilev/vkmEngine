@@ -18,7 +18,10 @@ overlays.
 
 ```
 VisibilitySystem::update(ctx)
-  1. Find the active camera (cached EntityId; full scan only on miss).
+  1. Find the active camera via `findActiveCamera` (`ecs/component/camera.h`):
+     a cached EntityId as the O(1) hint, full scan only on a miss. The same
+     function answers for the editor's fly controls and for a scene load, so
+     what you fly and what renders cannot drift apart.
   2. Build VisibilityContext: frustum planes, camera position and view
      matrix, and the thresholds (pre-squared for the sqrt-free tests).
   3. Resize the persistent flat per-index arrays to the full Mesh count
