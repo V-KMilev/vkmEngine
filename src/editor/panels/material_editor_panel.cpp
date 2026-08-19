@@ -332,7 +332,7 @@ bool MaterialEditorPanel::pbrFolderBrowse(std::string& outFolder) {
         m_pbrFolderPicker.options.recursive = false;
         m_pbrFolderPicker.options.kind      = AssetPicker::Kind::Directories;
         m_pbrFolderPicker.options.extensions.clear();
-        m_pbrFolderPicker.options.relativeTo.clear();  // return absolute path
+        m_pbrFolderPicker.options.relativeTo = ProjectPaths::projectRoot();
         m_pbrFolderPicker.options.hint.clear();
         m_pbrFolderPicker.open();
     }
@@ -596,8 +596,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         std::string pickedTex;
         if (m_texturePicker.draw(pickedTex) && m_pendingSlot) {
             if (resources.isAlive(m_pendingMaterial)) {
-                const std::string abs = (ProjectPaths::projectRoot() / pickedTex).string();
-                TextureHandle h = loadTexture(abs, resources, m_pendingTextureSrgb, true);
+                TextureHandle h = loadTexture(pickedTex, resources, m_pendingTextureSrgb, true);
                 if (h) {
                     resources.edit(m_pendingMaterial).*m_pendingSlot = h;
                     resources.commit(m_pendingMaterial);
