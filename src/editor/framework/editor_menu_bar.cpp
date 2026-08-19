@@ -242,7 +242,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         ImGui::Spacing();
         if (ImGui::TreeNode("Debug")) {
             row("vkmEngine:",    "%s @ %.8s", APP_VERSION,     APP_COMMIT_HASH);
-            row("vkmGL:",        "%s @ %.8s", VKMGL_VERSION,   VKMGL_COMMIT_HASH);
+            row("vkm_gl:",       "%s @ %.8s", VKM_GL_VERSION,  VKM_GL_COMMIT_HASH);
             row("vkm_log:",      "%s @ %.8s", VKM_LOG_VERSION, VKM_LOG_COMMIT_HASH);
             ImGui::Spacing();
             row("ImGui:",        "%s", IMGUI_VERSION);
