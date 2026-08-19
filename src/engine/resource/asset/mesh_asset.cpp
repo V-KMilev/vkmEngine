@@ -1,6 +1,6 @@
 #include "resource/asset/mesh_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void MeshAsset::computeAndSetBounds() {
     if (vertices.empty()) {
@@ -17,4 +17,4 @@ void MeshAsset::computeAndSetBounds() {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

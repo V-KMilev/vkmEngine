@@ -8,7 +8,7 @@
 #include "core/memory/types.h"
 #include "core/event/bus.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Typed pub/sub event dispatcher.
@@ -119,4 +119,4 @@ class EventBus {
         std::vector<std::unique_ptr<IBus>> m_buses;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

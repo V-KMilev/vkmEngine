@@ -35,7 +35,7 @@
 #include "ui/editor_theme.h"
 #include "io/project_paths.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 EditorSystem::EditorSystem(
     GLFWwindow* window,
@@ -631,4 +631,4 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

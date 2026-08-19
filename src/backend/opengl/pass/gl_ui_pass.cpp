@@ -19,7 +19,7 @@
 #include "system/render/render_view.h"
 #include "system/ui/ui_draw_data.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLUIPass::GLUIPass()
     : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/ui"))
@@ -90,4 +90,4 @@ void GLUIPass::execute(GLFrameContext& ctx) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

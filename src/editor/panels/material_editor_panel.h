@@ -9,7 +9,7 @@
 #include "resource/asset/texture_asset.h"
 #include "framework/asset_picker.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class EditorRenderHooks;
 
@@ -121,4 +121,4 @@ class MaterialEditorPanel {
         std::string m_renameOldName;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

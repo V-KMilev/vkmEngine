@@ -2,7 +2,7 @@
 
 #include <imgui.h>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorContext;
 
@@ -29,4 +29,4 @@ class ViewportOverlay {
         bool m_hovered = false;  ///< An axis endpoint was under the cursor this frame.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -24,7 +24,7 @@
 #include "io/scene/scene_serializer.h"
 #include "system/hierarchy/hierarchy_operations.h"
 
-namespace Engine::Prefab {
+namespace Vkm::Engine::Prefab {
 
 namespace {
 
@@ -608,4 +608,4 @@ bool definesComponent(const std::string& path, uint32_t uid, const std::string& 
     return false;
 }
 
-} // namespace Engine::Prefab
+} // namespace Vkm::Engine::Prefab

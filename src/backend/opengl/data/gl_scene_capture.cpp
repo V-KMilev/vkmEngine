@@ -17,7 +17,7 @@
 #include "system/render/data/camera_data.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 constexpr float CAPTURE_NEAR = 0.05f;
@@ -137,4 +137,4 @@ void bindOfflinePbrUniforms(Vkm::GL::Shader& pbr, const GLIBL& ibl, float iblInt
     pbr.setUniform2f("u_screenSize", faceSize, faceSize);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

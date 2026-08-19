@@ -10,7 +10,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Fixed-size pool of worker threads draining a shared task queue.
@@ -221,4 +221,4 @@ void parallelFor(size_t count, Function && function) {
     parallelFor(count, grain, function);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

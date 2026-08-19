@@ -9,7 +9,7 @@ the files holding it.
 
 The engine runs *projects*: a directory becomes one by containing a
 `project.json`. That file is what lets a game live nowhere near the engine's own
-repo, and `Engine::Project` (`src/engine/io/project.h`) is everything it says:
+repo, and `Vkm::Engine::Project` (`src/engine/io/project.h`) is everything it says:
 
 | Field | Purpose |
 |-------|---------|

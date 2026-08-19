@@ -12,7 +12,7 @@ namespace Vkm::GL {
     class ShaderStorageBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct ParticleData;
 
@@ -53,4 +53,4 @@ class GLParticlePass : public GLPass {
         Vkm::GL::VertexArray                          m_vao;           ///< Empty VAO: core profile needs one bound to draw.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -11,7 +11,7 @@
 #include "gl_buffer_upload.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLProbeManager::GLProbeManager() = default;
 GLProbeManager::~GLProbeManager() = default;
@@ -99,4 +99,4 @@ void GLProbeManager::invalidate() {
     for (BakeState& st : m_state) st.baked = false;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

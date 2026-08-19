@@ -8,7 +8,7 @@ namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Ground-Truth Ambient Occlusion (horizon-slice integral).
@@ -38,4 +38,4 @@ class GLGTAOPass : public GLPass {
         std::unique_ptr<Vkm::GL::Shader> m_shader;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

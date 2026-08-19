@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_access.hpp>
 
-namespace Engine::Math {
+namespace Vkm::Engine::Math {
 
 /**
  * @brief View frustum for culling: six planes from a view-projection matrix.
@@ -76,4 +76,4 @@ inline bool frustumIntersectsAABB(
     return true;
 }
 
-} // namespace Engine::Math
+} // namespace Vkm::Engine::Math

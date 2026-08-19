@@ -17,7 +17,7 @@
 #include "generator/mesh_generators.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLSkyboxPass::GLSkyboxPass()
     : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/skybox"))
@@ -78,4 +78,4 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
     ctx.gl.setDepthWrite(true);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

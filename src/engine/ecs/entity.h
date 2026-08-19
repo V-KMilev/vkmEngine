@@ -4,7 +4,7 @@
 
 #include "core/memory/types.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Entity identifier backed by a generational StorageIndex.
@@ -19,4 +19,4 @@ namespace Engine {
  */
 using EntityId = StorageIndex;
 
-} // namespace Engine
+} // namespace Vkm::Engine

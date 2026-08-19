@@ -12,7 +12,7 @@
 #include "data/gl_probe.h"
 #include "data/gl_scene_capture.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 constexpr float CAPTURE_FAR = 1000.0f;
@@ -65,4 +65,4 @@ void GLProbeBaker::convolve(Vkm::GL::Context& gl, GLProbeArray& arr, int layer) 
     gl.setDepthTest(true);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -11,7 +11,7 @@
 
 namespace fs = std::filesystem;
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -78,4 +78,4 @@ fs::path findProjectRoot(const fs::path& start) {
     return {};
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

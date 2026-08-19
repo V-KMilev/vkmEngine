@@ -89,7 +89,7 @@ single source of authoring state - they drive the inspector, serialization, and
 duplication uniformly.
 
 ```cpp
-namespace Engine {
+namespace Vkm::Engine {
 
 class CubeSpinner : public ReflectedBehavior<CubeSpinner> {
     public:
@@ -98,9 +98,9 @@ class CubeSpinner : public ReflectedBehavior<CubeSpinner> {
         float degreesPerSecond = 90.0f;   // authored, reflected
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::CubeSpinner)
+VKM_REFLECT_BEGIN(::Vkm::Engine::CubeSpinner)
     VKM_F(degreesPerSecond)
 VKM_REFLECT_END()
 ```

@@ -11,7 +11,7 @@
 #include "core/event/event_bus.h"
 #include "platform/input/input_map.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 class BehaviorSystem;
@@ -240,4 +240,4 @@ class Behavior {
         bool m_disabled = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

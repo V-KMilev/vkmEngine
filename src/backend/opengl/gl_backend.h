@@ -32,13 +32,13 @@
 #include "data/gl_probe_manager.h"
 #include "data/gl_preview.h"
 
-namespace Engine {
+namespace Vkm::Engine {
     class GLPass;
     struct DrawableData;
     struct Environment;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 /**
  * @brief An ordered pass plus its profiler/debug label. The label rides with
  * the pass so the render loop names its CPU + GPU zones without a parallel name
@@ -213,4 +213,4 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         BakedIrradiance m_bakedIrradiance;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -11,7 +11,7 @@ namespace Vkm::GL {
     class VertexBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Draws the UI overlay on top of the composited scene.
@@ -50,4 +50,4 @@ class GLUIPass : public GLPass {
         uint32_t                               m_capacity = 0;  ///< VBO capacity in vertices.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

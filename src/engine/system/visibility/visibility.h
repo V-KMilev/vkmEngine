@@ -7,7 +7,7 @@
 #include "ecs/entity.h"
 #include "resource/asset/mesh_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief A single visible entity, its world model matrix, and world-space AABB.
@@ -57,4 +57,4 @@ struct Visibility {
     bool hasCamera           = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

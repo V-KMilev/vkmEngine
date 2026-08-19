@@ -2,7 +2,7 @@
 
 #include "resource/asset/mesh_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Generate a triangle mesh.
@@ -81,4 +81,4 @@ MeshAsset generateCone(float radius = 0.5f, float height = 1.0f, uint32_t segmen
  */
 MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution);
 
-} // namespace Engine
+} // namespace Vkm::Engine

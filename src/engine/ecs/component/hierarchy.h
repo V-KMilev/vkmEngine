@@ -2,7 +2,7 @@
 
 #include "ecs/entity.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 
@@ -37,4 +37,4 @@ struct Hierarchy {
  */
 void detachFromHierarchy(Scene& scene, EntityId entity);
 
-} // namespace Engine
+} // namespace Vkm::Engine

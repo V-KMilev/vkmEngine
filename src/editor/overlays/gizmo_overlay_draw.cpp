@@ -17,7 +17,7 @@
 #include "ecs/component/world_transform.h"
 #include "core/math/rotation.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -535,4 +535,4 @@ void GizmoOverlay::drawSelectionOutline(EditorContext& ec) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

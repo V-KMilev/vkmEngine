@@ -4,7 +4,7 @@
 
 #include <glm/glm.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Flattened irradiance volume for the frame.
@@ -25,4 +25,4 @@ struct IrradianceVolumeData {
     uint32_t bakeVersion;   ///< Re-bake trigger (snapshot of the component's bakeVersion).
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

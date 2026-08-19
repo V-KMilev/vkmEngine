@@ -6,7 +6,7 @@
 
 #include "logger.h"
 
-namespace Engine::detail {
+namespace Vkm::Engine::detail {
 
 // Shared GLM <-> JSON conversion helpers for the IO serializers; vectors and
 // quaternions persist as flat JSON arrays. A null / absent node returns the
@@ -53,4 +53,4 @@ inline glm::quat jsonToQuat(const nlohmann::json& j, const glm::quat& fallback =
                      static_cast<float>(j[2]), static_cast<float>(j[3]));
 }
 
-} // namespace Engine::detail
+} // namespace Vkm::Engine::detail

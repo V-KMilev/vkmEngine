@@ -6,7 +6,7 @@
 #include "core/reflect.h"
 #include "ecs/entity.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 
@@ -72,11 +72,11 @@ struct Camera {
  */
 EntityId findActiveCamera(const Scene& scene, EntityId cached = {});
 
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Engine::ProjectionType, "Perspective", "Orthographic")
+VKM_ENUM_NAMES(::Vkm::Engine::ProjectionType, "Perspective", "Orthographic")
 
-VKM_REFLECT_BEGIN(::Engine::Camera)
+VKM_REFLECT_BEGIN(::Vkm::Engine::Camera)
     VKM_F(projection),
     VKM_F(fovY),
     VKM_F(orthoHeight),

@@ -27,7 +27,7 @@
 #include "io/scene/prefab.h"
 #include "ecs/component/prefab_instance.h"
 
-namespace Engine::SceneSerializer {
+namespace Vkm::Engine::SceneSerializer {
 
 namespace {
 
@@ -490,4 +490,4 @@ bool loadFromString(const std::string& text, Scene& scene, ResourceManager& reso
     return readSceneJson(doc, scene, resources, "<memory snapshot>");
 }
 
-} // namespace Engine::SceneSerializer
+} // namespace Vkm::Engine::SceneSerializer

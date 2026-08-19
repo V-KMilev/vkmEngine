@@ -7,7 +7,7 @@
 
 #include "l_assert.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @class ISparseSet
@@ -247,4 +247,4 @@ class SparseSet : public ISparseSet {
         std::vector<T>        m_data;      ///< Dense: packed element storage
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

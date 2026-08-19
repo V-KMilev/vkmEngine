@@ -11,7 +11,7 @@ namespace Vkm::GL {
     class RenderBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief An off-screen render target - an HDR colour texture + sampleable depth
@@ -156,4 +156,4 @@ class GLTarget {
         std::unique_ptr<Vkm::GL::RenderBuffer> m_gbufferRB;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

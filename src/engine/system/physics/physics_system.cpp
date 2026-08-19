@@ -25,7 +25,7 @@
 #include "system/physics/collision/narrowphase.h"
 #include "core/math/bounds.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -421,4 +421,4 @@ void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& h
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

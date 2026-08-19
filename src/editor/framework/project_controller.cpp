@@ -27,7 +27,7 @@
 
 namespace fs = std::filesystem;
 
-namespace Engine {
+namespace Vkm::Engine {
 
 bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
                              SceneIOController& sceneIO, const std::string& projectRoot) {
@@ -156,4 +156,4 @@ void ProjectController::drawDialog(EditorContext& ec, ScriptModule& scriptModule
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

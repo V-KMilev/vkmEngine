@@ -4,7 +4,7 @@
 
 #include "system/physics/collision/contact.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief An oriented box in world space: centre, three unit axes, half extents.
@@ -29,4 +29,4 @@ struct BoxShape {
  */
 int contactBoxes(const BoxShape& a, const BoxShape& b, Contact* out);
 
-} // namespace Engine
+} // namespace Vkm::Engine

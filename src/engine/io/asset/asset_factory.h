@@ -6,7 +6,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/texture_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 
@@ -26,4 +26,4 @@ struct AssetFactory {
 
 AssetFactory& assetFactory();
 
-} // namespace Engine
+} // namespace Vkm::Engine

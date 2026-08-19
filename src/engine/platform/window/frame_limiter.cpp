@@ -2,7 +2,7 @@
 
 #include <thread>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void FrameLimiter::beginFrame() {
     // steady_clock like Clock: monotonic, so a wall-clock adjustment mid-frame
@@ -40,4 +40,4 @@ void FrameLimiter::endFrame() {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

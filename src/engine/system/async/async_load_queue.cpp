@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 AsyncLoadQueue& AsyncLoadQueue::get() {
     static AsyncLoadQueue instance;
@@ -37,4 +37,4 @@ std::vector<MeshLoadCompletion> AsyncLoadQueue::drainMeshes() {
     return out;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

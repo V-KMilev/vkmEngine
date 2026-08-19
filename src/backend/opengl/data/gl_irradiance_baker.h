@@ -13,7 +13,7 @@ namespace Vkm::GL {
     class Context;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class GLIBL;
 class GLIrradianceVolume;
@@ -90,4 +90,4 @@ class GLIrradianceBaker {
         GLSceneCapture& m_capture;  ///< scene -> the six faces of m_cube
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -4,7 +4,7 @@
 
 #include "resource/asset/mesh_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Procedural primitives for gameplay code, built without the tools module.
@@ -52,4 +52,4 @@ MeshAsset makeSphereMesh(uint32_t xSegments = 24, uint32_t ySegments = 12);
  */
 MeshAsset makeCylinderMesh(uint32_t segments = 20);
 
-} // namespace Engine
+} // namespace Vkm::Engine

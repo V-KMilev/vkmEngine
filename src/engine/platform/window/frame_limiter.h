@@ -2,7 +2,7 @@
 
 #include <chrono>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Utility class for limiting frame rate in a render loop.
@@ -50,4 +50,4 @@ class FrameLimiter {
         std::chrono::steady_clock::time_point m_frameStart;  ///< Monotonic - immune to wall-clock jumps.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -17,7 +17,7 @@
 #include "system/script/behavior_registry.h"
 #include "system/script/script_component.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 using RegisterFn   = void (*)();
@@ -205,4 +205,4 @@ bool ScriptModule::buildScene(Scene& scene) {
     return true;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

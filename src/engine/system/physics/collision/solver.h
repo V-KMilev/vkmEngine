@@ -6,7 +6,7 @@
 
 #include "system/physics/collision/contact.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Per-tick dynamic state the solver reads and writes, by index.
@@ -62,4 +62,4 @@ void solveContacts(
     const SolverParams& params
 );
 
-} // namespace Engine
+} // namespace Vkm::Engine

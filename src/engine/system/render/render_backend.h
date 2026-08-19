@@ -3,13 +3,13 @@
 #include <cstdint>
 #include <string>
 
-namespace Engine {
+namespace Vkm::Engine {
     struct RenderView;
     class ResourceManager;
     class WindowManager;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Which graphics API a backend speaks.
@@ -98,4 +98,4 @@ class RenderBackend {
         BackendInfo m_info;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

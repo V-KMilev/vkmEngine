@@ -9,7 +9,7 @@
 #include "ecs/component/transform.h"
 #include "gizmo/transform_gizmo.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorContext;
 
@@ -133,4 +133,4 @@ class GizmoOverlay {
         bool m_dragActiveIsDescendant = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

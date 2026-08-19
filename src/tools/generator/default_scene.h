@@ -2,7 +2,7 @@
 
 #include "ecs/entity.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 class ResourceManager;
@@ -24,4 +24,4 @@ class ResourceManager;
  */
 EntityId buildDefaultScene(Scene& scene, ResourceManager& resources);
 
-} // namespace Engine
+} // namespace Vkm::Engine

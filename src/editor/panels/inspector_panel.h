@@ -10,7 +10,7 @@
 #include "framework/asset_picker.h"
 #include "ui/editor_widgets.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 class ResourceManager;
@@ -94,4 +94,4 @@ class InspectorPanel {
         int m_lodGenLevels      = 2;  ///< Levels the LOD card's Generate button builds below the source.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

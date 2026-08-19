@@ -7,7 +7,7 @@ namespace Vkm::GL {
     class Texture2D;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct TextureAsset;
 struct FontAsset;
@@ -52,4 +52,4 @@ class GLTexture {
         bool                              m_hasPixels = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

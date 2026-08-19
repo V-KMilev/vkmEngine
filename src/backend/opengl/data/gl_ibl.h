@@ -10,7 +10,7 @@
 #include "gl_texture_cube.h"
 #include "gl_context.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief GPU-side image-based lighting product set (split-sum).
@@ -156,4 +156,4 @@ class GLIBL {
         bool m_ready = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

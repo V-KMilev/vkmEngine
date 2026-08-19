@@ -14,7 +14,7 @@ namespace Vkm::GL {
     class TextureCube;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // SHADOW_ATLAS_COLS * SHADOW_ATLAS_ROWS must be >= Config::MAX_SHADOW_CASTERS_2D (6).
 constexpr uint32_t SHADOW_ATLAS_COLS     = 3;
@@ -94,4 +94,4 @@ class GLShadowAtlas {
         std::vector<std::unique_ptr<Vkm::GL::TextureCube>> m_cubes;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

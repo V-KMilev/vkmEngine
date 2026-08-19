@@ -19,7 +19,7 @@
 #include "platform/threading/thread_pool.h"
 #include "core/math/frustum.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLShadowData::GLShadowData() {
     for (int& s : m_lightSlot) s = -1;
@@ -360,4 +360,4 @@ void GLShadowData::uploadAndBind() {
     if (m_ubo) m_ubo->bindBase(GLBindings::UBOBindingPoints::Shadow);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -21,7 +21,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/texture_asset.h"
 
-namespace Engine::AssetCooker {
+namespace Vkm::Engine::AssetCooker {
 
 namespace {
 
@@ -198,4 +198,4 @@ void cookAllAssets(ResourceManager& resources) {
     }
 }
 
-} // namespace Engine::AssetCooker
+} // namespace Vkm::Engine::AssetCooker

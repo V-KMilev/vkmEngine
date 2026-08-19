@@ -15,7 +15,7 @@
 #include "system/render/data/particle_data.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLParticlePass::GLParticlePass()
     : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/particle")) {}
@@ -78,4 +78,4 @@ void GLParticlePass::execute(GLFrameContext& ctx) {
     ctx.gl.setDepthWrite(true);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

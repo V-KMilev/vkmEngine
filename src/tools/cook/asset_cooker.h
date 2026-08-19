@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 
@@ -29,4 +29,4 @@ void cookAllAssets(ResourceManager& resources);
 
 } // namespace AssetCooker
 
-} // namespace Engine
+} // namespace Vkm::Engine

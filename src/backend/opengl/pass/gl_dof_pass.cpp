@@ -14,7 +14,7 @@
 #include "convention/gl_bindings.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Blur radius (pixels) at full circle of confusion.
@@ -53,4 +53,4 @@ void GLDoFPass::execute(GLFrameContext& ctx) {
     endFullscreen(ctx.gl);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

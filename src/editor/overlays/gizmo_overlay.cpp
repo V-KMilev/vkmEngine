@@ -17,7 +17,7 @@
 #include "resource/resource_manager.h"
 #include "ecs/component/world_transform.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void GizmoOverlay::finishDrag(EditorContext& ec) {
     FrameContext& ctx   = ec.frame;
@@ -345,4 +345,4 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
     state.hierarchyDirty = true;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -7,7 +7,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Sky and image-based lighting: what the world is lit by and set against.
@@ -189,9 +189,9 @@ struct Environment {
     static glm::vec3 directionFromAngles(float elevationDeg, float azimuthDeg);
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::SkySettings)
+VKM_REFLECT_BEGIN(::Vkm::Engine::SkySettings)
     VKM_F(hdrPath),
     VKM_F(intensity),
     VKM_F(showSkybox),
@@ -208,7 +208,7 @@ VKM_REFLECT_BEGIN(::Engine::SkySettings)
     VKM_F(lightIntensity)
 VKM_REFLECT_END()
 
-VKM_REFLECT_BEGIN(::Engine::NightSkySettings)
+VKM_REFLECT_BEGIN(::Vkm::Engine::NightSkySettings)
     VKM_F(radiance),
     VKM_F(moonTilt),
     VKM_F(moonAngularRadius),
@@ -219,7 +219,7 @@ VKM_REFLECT_BEGIN(::Engine::NightSkySettings)
     VKM_F(moonlightIntensity)
 VKM_REFLECT_END()
 
-VKM_REFLECT_BEGIN(::Engine::FogSettings)
+VKM_REFLECT_BEGIN(::Vkm::Engine::FogSettings)
     VKM_F(enabled),
     VKM_F(density),
     VKM_F(height),
@@ -231,12 +231,12 @@ VKM_REFLECT_BEGIN(::Engine::FogSettings)
     VKM_F(resolutionZ)
 VKM_REFLECT_END()
 
-VKM_REFLECT_BEGIN(::Engine::PhysicsSettings)
+VKM_REFLECT_BEGIN(::Vkm::Engine::PhysicsSettings)
     VKM_F(gravity),
     VKM_F(solverIterations)
 VKM_REFLECT_END()
 
-VKM_REFLECT_BEGIN(::Engine::Environment)
+VKM_REFLECT_BEGIN(::Vkm::Engine::Environment)
     VKM_F(sky),
     VKM_F(night),
     VKM_F(fog)

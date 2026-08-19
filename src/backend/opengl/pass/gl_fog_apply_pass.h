@@ -8,7 +8,7 @@ namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Applies the integrated froxel fog to the resolved scene.
@@ -35,4 +35,4 @@ class GLFogApplyPass : public GLPass {
         std::unique_ptr<Vkm::GL::Shader> m_shader;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

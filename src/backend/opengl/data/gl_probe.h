@@ -11,7 +11,7 @@
 #include "gl_texture_cube.h"
 #include "gl_texture_cube_array.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Shared GPU storage for every reflection probe: two cube-map arrays.
@@ -130,4 +130,4 @@ class GLProbeArray {
         int m_prefilterSize  = 0;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

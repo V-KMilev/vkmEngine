@@ -4,7 +4,7 @@
 
 #include "l_assert.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Deep-copy the source descriptor so a copied Resource owns its own json
@@ -52,4 +52,4 @@ const nlohmann::json& Resource::sourceJson() const {
     return *source;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

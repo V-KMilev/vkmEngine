@@ -12,7 +12,7 @@
 #include "texture/gl_texture.h"
 #include "target/gl_render_buffer.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLTarget::GLTarget() = default;
 GLTarget::~GLTarget() = default;
@@ -192,4 +192,4 @@ void GLTarget::resolveGeometryTo(GLTarget& dst, bool gbuffer) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

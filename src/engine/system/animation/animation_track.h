@@ -9,7 +9,7 @@
 
 #include "core/math/easing.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief AnimationTrack manages the interpolation of keyframe values of type T over time.
@@ -225,5 +225,5 @@ class AnimationTrack {
         EasingFunction     m_easing = Easing::linear;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine
 

@@ -6,7 +6,7 @@
 
 #include "ui/editor_style.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -160,4 +160,4 @@ bool iconButton(
     return pressed;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -4,7 +4,7 @@
 
 #include <glm/gtc/constants.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 MeshAsset makeCubeMesh() {
     MeshAsset mesh;
@@ -187,4 +187,4 @@ MeshAsset makeCylinderMesh(uint32_t segments) {
     return mesh;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

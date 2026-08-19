@@ -25,9 +25,9 @@ int main(int argc, char** argv) {
         // names a different one - which is for running several projects out of
         // one build. Root, working directory and log file all get settled here,
         // in the one order that works (see tools/project_boot.h).
-        if (!Engine::bootHost(argc, argv, "log.log", "VKM-ENGINE")) return EXIT_FAILURE;
+        if (!Vkm::Engine::bootHost(argc, argv, "log.log", "VKM-ENGINE")) return EXIT_FAILURE;
 
-        const std::filesystem::path root = Engine::ProjectPaths::projectRoot();
+        const std::filesystem::path root = Vkm::Engine::ProjectPaths::projectRoot();
         std::error_code ec;
 
         // Async GL debug logging: catches and logs GL errors without forcing
@@ -38,10 +38,10 @@ int main(int argc, char** argv) {
 
         // The runtime loads only cooked assets, so it registers just the cooked
         // factory set (no Assimp, no image decode). Must precede scene I/O.
-        Engine::registerCookedAssetFactories();
+        Vkm::Engine::registerCookedAssetFactories();
 
         // Resolves scene asset references to their cooked files on load.
-        Engine::AssetLibrary::get().load();
+        Vkm::Engine::AssetLibrary::get().load();
 
         // Load the gameplay module rather than linking it, so a game is data
         // plus a module instead of a rebuilt engine. It registers behaviors into
@@ -49,9 +49,9 @@ int main(int argc, char** argv) {
         // Engine so it outlives it - behaviors are destroyed during Engine
         // teardown and their code must still be mapped then. It lives in the
         // project's own bin/, the one place every project builds it.
-        Engine::ScriptModule scriptModule;
+        Vkm::Engine::ScriptModule scriptModule;
         const std::filesystem::path modulePath =
-            Engine::ProjectPaths::projectBin() / Engine::DynamicLibrary::platformName("game");
+            Vkm::Engine::ProjectPaths::projectBin() / Vkm::Engine::DynamicLibrary::platformName("game");
 
         if (!std::filesystem::exists(modulePath, ec) || !scriptModule.load(modulePath.string())) {
             LOG_WARNING("No gameplay module for this project - no behaviors available");
@@ -60,10 +60,10 @@ int main(int argc, char** argv) {
         // Absent or unreadable leaves the defaults - a nameless project with no
         // entry scene - so a directory that is not a project still runs, on the
         // generated scene.
-        Engine::Project project;
-        Engine::loadProject(root, project);
+        Vkm::Engine::Project project;
+        Vkm::Engine::loadProject(root, project);
 
-        Engine::Engine engine;
+        Vkm::Engine::Engine engine;
 
         const std::string title = project.name;
         setupEngineApp(engine, AppConfig{
@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
         // A scene comes from the project that owns it, never from the command
         // line - one function so all three hosts open a project the same way
         // (see tools/project_boot.h).
-        Engine::bootProjectScene(project, scriptModule,
+        Vkm::Engine::bootProjectScene(project, scriptModule,
                                  engine.getScene(), engine.getResources());
 
         engine.run();

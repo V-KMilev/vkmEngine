@@ -11,7 +11,7 @@
 #include "io/asset/cooked_loader.h"
 #include "resource/resource_manager.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // Async file read + deserialize off the main thread, finalised by
 // AsyncLoaderSystem.
@@ -56,4 +56,4 @@ void registerCookedAssetFactories() {
     assetFactory().createMaterial = &createCookedMaterial;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

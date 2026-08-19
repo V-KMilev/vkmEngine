@@ -11,7 +11,7 @@ namespace Vkm::GL {
     class ScreenTriangle;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct RenderView;
 struct DrawableData;
@@ -139,4 +139,4 @@ struct GLFrameContext {
     bool fogReady = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

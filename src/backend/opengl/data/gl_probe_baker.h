@@ -6,7 +6,7 @@ namespace Vkm::GL {
     class Context;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class GLCubeConvolver;
 class GLIBL;
@@ -72,4 +72,4 @@ class GLProbeBaker {
         GLCubeConvolver& m_convolver;  ///< env cube -> irradiance + prefilter
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

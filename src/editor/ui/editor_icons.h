@@ -2,7 +2,7 @@
 
 #include <imgui.h>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief The editor's icon set, drawn through ImDrawList.
@@ -71,4 +71,4 @@ bool iconButton(
     float size = 26.0f
 );
 
-} // namespace Engine
+} // namespace Vkm::Engine

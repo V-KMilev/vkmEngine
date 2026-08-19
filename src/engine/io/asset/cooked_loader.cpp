@@ -15,7 +15,7 @@
 #include "resource/resource_manager.h"
 #include "system/async/async_load_queue.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -117,4 +117,4 @@ TextureHandle requestCookedTextureAsync(const std::string& name, ResourceManager
     return req.handle;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

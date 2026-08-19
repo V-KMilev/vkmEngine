@@ -6,7 +6,7 @@
 
 #include "framework/command.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 struct EditorState;
@@ -91,4 +91,4 @@ class CommandStack {
         static constexpr size_t HISTORY_LIMIT = 200;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

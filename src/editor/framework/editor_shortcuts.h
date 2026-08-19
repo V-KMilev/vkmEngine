@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorContext;
 class SceneIOController;
@@ -31,4 +31,4 @@ class EditorShortcuts {
         void process(EditorContext& ec, SceneIOController& sceneIO);
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine
