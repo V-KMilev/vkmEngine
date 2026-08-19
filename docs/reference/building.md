@@ -107,7 +107,7 @@ Nothing there involves writing CMake.
 
 ```
 engine_editor (executable)              engine_runtime (executable)
-  |-- EngineCore                          |-- EngineCore (glm, glfw, vkmLog, nlohmann_json; glew private)
+  |-- EngineCore                          |-- EngineCore (glm, glfw, vkm_log, nlohmann_json; glew private)
   |-- EngineRendering -- EngineCore       |-- EngineRendering -- EngineCore
   |-- EngineTools -- EngineCore           |-- EngineTools -- EngineCore (generators + cooked loaders; no Assimp)
   |-- BackendOpenGL -- vkmGL, ...         |-- BackendOpenGL -- vkmGL, EngineRendering, EngineTools

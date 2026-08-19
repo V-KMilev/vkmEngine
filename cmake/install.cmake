@@ -29,7 +29,7 @@ set(VKM_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/vkmEngine)
 # export set. What has to be here besides EngineCore is its own link interface:
 # CMake refuses to export a target whose dependencies are not exported with it,
 # and for a shared library that includes the private ones.
-set(VKM_EXPORTED_DEPS glm glm-header-only glfw vkmLog nlohmann_json glew stb BuildInfo vkm_warnings)
+set(VKM_EXPORTED_DEPS glm glm-header-only glfw vkm_log nlohmann_json glew stb BuildInfo vkm_warnings)
 if(VKM_PROFILER)
     list(APPEND VKM_EXPORTED_DEPS TracyClient)
 endif()
