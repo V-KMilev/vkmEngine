@@ -22,11 +22,11 @@ set(VKM_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/vkmEngine)
 # ---------------------------------------------------------------------------
 # Targets
 # ---------------------------------------------------------------------------
-# A project links exactly one engine target: EngineCore, through the
+# A project links exactly one engine target: vkm_core, through the
 # vkm_add_gameplay_module() helper the config file defines. Everything else the
 # engine is made of - the render system, the GL backend, the cooker, the editor -
 # is reached by running a host, not by linking, so none of it belongs in the
-# export set. What has to be here besides EngineCore is its own link interface:
+# export set. What has to be here besides vkm_core is its own link interface:
 # CMake refuses to export a target whose dependencies are not exported with it,
 # and for a shared library that includes the private ones.
 set(VKM_EXPORTED_DEPS glm glm-header-only glfw vkm_log nlohmann_json glew stb BuildInfo vkm_warnings)
@@ -34,7 +34,7 @@ if(VKM_PROFILER)
     list(APPEND VKM_EXPORTED_DEPS TracyClient)
 endif()
 
-install(TARGETS EngineCore ${VKM_EXPORTED_DEPS}
+install(TARGETS vkm_core ${VKM_EXPORTED_DEPS}
         EXPORT  vkmEngineTargets
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
         LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
@@ -43,7 +43,7 @@ install(TARGETS EngineCore ${VKM_EXPORTED_DEPS}
 
 # Shared libraries the hosts load but a project never links: they ship as files,
 # not as imported targets.
-install(TARGETS EngineRendering vkm_gl
+install(TARGETS vkm_render vkm_gl
         LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
 

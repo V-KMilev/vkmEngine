@@ -4,12 +4,12 @@ add_executable(engine_editor main.cpp)
 
 # The app drives the engine directly, so it links the engine libs itself.
 target_link_libraries(engine_editor PRIVATE
-    EngineCore
-    EngineRendering
-    EngineTools
-    EngineCooker
+    vkm_core
+    vkm_render
+    vkm_tools
+    vkm_cook
     BackendOpenGL
-    EngineEditor
+    vkm_editor
     BuildInfo
     vkm_warnings
 )

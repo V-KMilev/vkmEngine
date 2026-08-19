@@ -4,9 +4,9 @@
 add_executable(engine_cook main.cpp)
 
 target_link_libraries(engine_cook PRIVATE
-    EngineCore
-    EngineTools
-    EngineCooker
+    vkm_core
+    vkm_tools
+    vkm_cook
     BuildInfo
     vkm_warnings
 )
