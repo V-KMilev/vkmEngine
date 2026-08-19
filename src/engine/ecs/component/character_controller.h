@@ -26,16 +26,16 @@ namespace Vkm::Engine {
  * shapecast query the engine does not have) and no crouch or platform riding.
  */
 struct CharacterController {
-    glm::vec3 moveInput = {0.0f, 0.0f, 0.0f};   ///< World-space desired horizontal velocity, m/s. Written by gameplay.
-    bool jumpRequested  = false;                ///< Consumed and cleared every tick, whether or not it could be honoured.
+    glm::vec3 moveInput = {0.0f, 0.0f, 0.0f};   ///< Desired horizontal velocity, world space, m/s.
+    bool jumpRequested  = false;                ///< Consumed and cleared every tick, honoured or not.
 
     float jumpSpeed     = 5.0f;    ///< Upward speed a jump starts at, m/s.
     float acceleration  = 40.0f;   ///< How fast velocity closes on moveInput, m/s^2.
     float airControl    = 0.25f;   ///< Fraction of acceleration available while airborne.
     float maxSlopeAngle = 50.0f;   ///< Degrees; a steeper surface holds nothing up.
 
-    bool grounded = false;                       ///< Read-only: standing on a surface no steeper than maxSlopeAngle.
-    glm::vec3 groundNormal = {0.0f, 1.0f, 0.0f}; ///< Read-only: that surface's normal, world up when airborne.
+    bool grounded = false;                       ///< Read-only: on a surface within maxSlopeAngle.
+    glm::vec3 groundNormal = {0.0f, 1.0f, 0.0f}; ///< Read-only: its normal; world up when airborne.
 };
 
 } // namespace Vkm::Engine

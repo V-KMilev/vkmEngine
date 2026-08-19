@@ -95,10 +95,10 @@ docs/
       lighting.md       five light types, LTC area lights, shadows, IBL
       visibility.md     frustum / distance / screen-size culling
       hierarchy.md      world-transform resolve, HierarchyOperations
-      animation.md      tracks, keyframes, easing
+      animation.md      keyframe tracks, skeletal rigs, poses, GPU skinning
       events.md         typed pub/sub
       io.md             scene / prefab / asset / component serialization, cooked library
       scripting.md      Behavior lifecycle, ScriptComponent, DLL hot-reload
-      physics.md        fixed-step rigid bodies, box colliders, contact solver
+      physics.md        fixed-step rigid bodies, box + capsule colliders, solver, character controller
       ui.md             screen-space in-game UI (canvas/element/image/text/button)
 ```

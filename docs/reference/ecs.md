@@ -66,7 +66,7 @@ scene.remove<Mesh>(entity);
 | `Name`           | `component/name.h`                | `char value[64]` for editor display and asset look-up by name                                         |
 | `Collider`       | `component/collider.h`            | One or more `ColliderPart`s (a `ColliderShape` tag + box / capsule fields) + `isTrigger`              |
 | `CharacterController` | `component/character_controller.h` | `moveInput` + `jumpRequested` in, tuning, `grounded` + `groundNormal` out                    |
-| `Rigidbody`      | `component/rigidbody.h`           | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags |
+| `Rigidbody`      | `component/rigidbody.h`           | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags, plus the `supported` / `supportNormal` outputs |
 | `ReflectionProbe`| `component/reflection_probe.h`    | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
 
 `Animation` and `Animator` are both covered in [Animation](system/animation.md):
@@ -77,8 +77,11 @@ rig driving it is the nearest `Animator` above it in the hierarchy.
 
 Light gets a full breakdown in [Lighting](system/lighting.md), including
 the area-light fields (`areaWidth`, `areaHeight`, `areaRadius`, `twoSided`)
-introduced for Rect and Disk emitters. `Rigidbody` and `Collider` are covered in
-[Physics](system/physics.md); the scene-level physics settings (gravity,
+introduced for Rect and Disk emitters. `Rigidbody`, `Collider` and
+`CharacterController` are covered in [Physics](system/physics.md) - including why
+"am I standing on something" is answered on the `Rigidbody` rather than on the
+controller, which is what keeps `PhysicsSystem` from knowing characters exist;
+the scene-level physics settings (gravity,
 solver iterations) are not a component either - they live in `PhysicsSettings`,
 reached through `Scene::physics()`. It sits *beside* the `Environment` rather
 than inside it: what a world is lit by and what it falls at are unrelated, so
