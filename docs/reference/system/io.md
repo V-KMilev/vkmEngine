@@ -237,11 +237,21 @@ they load after materials and before meshes, because a clip names the rig its
 bone indices address.
 
 `MESH_FORMAT_VERSION` is **2**: the mesh body carries the skin stream, the skin
-radius and the rig name. Every mesh cooked before it is refused on read, and the
-recovery is to re-cook the project - a cooked file is a derived cache and there
-are no migration read paths in this project, by policy. `COOKER_VERSION` moves
-with it, because `POST_PROCESS_FLAGS` changed and every stored recipe hash has
-to go stale at once.
+radius and the rig name. Every mesh cooked before it is refused on read - a
+cooked file is a derived cache and there are no migration read paths in this
+project, by policy. `COOKER_VERSION` moves with it, because `POST_PROCESS_FLAGS`
+changed and every stored recipe hash has to go stale at once.
+
+**The recovery is re-import, not re-cook**, and that is worth stating plainly
+because the obvious assumption is the other way round. `resolveCookedSource`
+consults the library recipe **only for materials**; for a mesh or a texture it
+synthesises `{"kind":"cooked", "name": ...}` unconditionally, so a scene load
+goes straight to the cooked binary, the version check refuses it, and the asset
+stays empty. `vkm_cook` then cooks what the scene loaded, sees an empty mesh, and
+skips it. The recipe file beside the cooked one still records the model or
+generator the mesh came from, but nothing reads it back for a mesh, so the loop
+cannot close on its own. Re-importing the source art through the editor is what
+rebuilds a v2 mesh.
 
 ## ComponentSerializer
 
