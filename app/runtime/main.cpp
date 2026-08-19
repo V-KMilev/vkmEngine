@@ -10,7 +10,6 @@
 #include "gl_debug.h"
 
 #include "core/engine.h"
-#include "debug/build_info.h"
 #include "asset_registration.h"
 #include "io/asset/asset_library.h"
 #include "platform/library/dynamic_library.h"
@@ -22,50 +21,15 @@
 
 int main(int argc, char** argv) {
     try {
-        const char* pathArg = argc > 1 ? argv[1] : nullptr;
+        // The project is the one beside this executable, unless an argument
+        // names a different one - which is for running several projects out of
+        // one build. Root, working directory and log file all get settled here,
+        // in the one order that works (see tools/project_boot.h).
+        if (!Engine::bootHost(argc, argv, "log.log", "VKM-ENGINE")) return EXIT_FAILURE;
 
-        // One rule: the project is the one beside this executable, unless an
-        // argument names a different one - which is for running several projects
-        // out of one build. Resolved against the launch directory before
-        // anything composes a path: current_path() below moves the CWD, and
-        // projectRoot() caches whatever it first answers. Nothing is logged yet;
-        // the log file lives under the root still being decided.
-        std::error_code argEc;
-        const std::filesystem::path argPath = pathArg ? std::filesystem::absolute(pathArg, argEc) : std::filesystem::path{};
-
-        bool argNotAProject = false;
-        if (!argPath.empty()) {
-            const std::filesystem::path found = Engine::findProjectRoot(argPath);
-            if (found.empty()) argNotAProject = true;
-            else                Engine::ProjectPaths::setProjectRoot(found);
-        }
-
-        // Resolve the project root from the executable so a packaged build is
-        // relocatable, and ensure logs/ exists - a shipped game has none yet and
-        // Logger::init fails if it cannot open the file.
         const std::filesystem::path root = Engine::ProjectPaths::projectRoot();
         std::error_code ec;
-        // Pin the working directory to the ENGINE root, not the project's:
-        // shader loading opens CWD-relative paths ("shaders/forward/pbr") and
-        // those files ship with the engine, so a project living anywhere else
-        // would fail to find them. All project-owned paths are absolute.
-        std::filesystem::current_path(Engine::ProjectPaths::engineRoot(), ec);
-        std::filesystem::create_directories(root / "logs", ec);
-        const std::string logFile = (root / "logs" / "log.log").string();
 
-        if (!Logger::init(logFile, "VKM-ENGINE", LogLevel::TRACE)) {
-            return -1;
-        }
-
-
-        // Deferred until the logger exists: a mistyped path would otherwise look
-        // like it worked, but this is the first point anything can say so.
-        if (argNotAProject) {
-            LOG_WARNING("'%s' is not a project (no project.json in it or above it); "
-                        "using the project beside this executable instead", argv[1]);
-        }
-
-        Engine::printBuildInfo();
         // Async GL debug logging: catches and logs GL errors without forcing
         // GL_DEBUG_OUTPUT_SYNCHRONOUS, which validates every GL call on the
         // calling thread (a real CPU cost across draw submission). Pass true
