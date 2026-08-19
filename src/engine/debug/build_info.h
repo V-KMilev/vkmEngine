@@ -21,9 +21,9 @@ inline void printBuildInfo() {
     LOG_INFO_C("BUILD", "Running '%s' v%s", APP_NAME, APP_VERSION);
     LOG_INFO_C("BUILD", "Build:  %s (%s)", APP_BUILD_DATE, APP_BRANCH);
     LOG_INFO_C("BUILD", "--------------- Debug -----------");
-    LOG_INFO_C("BUILD", "vkmEngine: %s @ %.8s", APP_VERSION,    APP_COMMIT_HASH);
-    LOG_INFO_C("BUILD", "vkmGL:     %s @ %.8s", VKMGL_VERSION,  VKMGL_COMMIT_HASH);
-    LOG_INFO_C("BUILD", "vkmLog:    %s @ %.8s", VKMLOG_VERSION, VKMLOG_COMMIT_HASH);
+    LOG_INFO_C("BUILD", "vkmEngine: %s @ %.8s", APP_VERSION,     APP_COMMIT_HASH);
+    LOG_INFO_C("BUILD", "vkmGL:     %s @ %.8s", VKMGL_VERSION,   VKMGL_COMMIT_HASH);
+    LOG_INFO_C("BUILD", "vkm_log:   %s @ %.8s", VKM_LOG_VERSION, VKM_LOG_COMMIT_HASH);
     LOG_INFO_C("BUILD", "---------------------------------");
 }
 
