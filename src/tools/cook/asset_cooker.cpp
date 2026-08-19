@@ -31,7 +31,7 @@ namespace {
 // to force assets to re-cook from their recipes on next save without touching
 // those recipes - it is folded into the recipe hash, so all stored hashes go
 // stale at once.
-constexpr uint32_t COOKER_VERSION = 1;
+constexpr uint32_t COOKER_VERSION = 2;
 
 uint64_t hashRecipe(const nlohmann::json& recipe) {
     const std::string dump = recipe.dump();

@@ -93,10 +93,13 @@ void AsyncLoaderSystem::update(FrameContext& ctx) {
             return false;
         }
 
-        asset.vertices  = std::move(c.vertices);
-        asset.indices   = std::move(c.indices);
-        asset.boundsMin = c.boundsMin;
-        asset.boundsMax = c.boundsMax;
+        asset.vertices   = std::move(c.vertices);
+        asset.indices    = std::move(c.indices);
+        asset.skin       = std::move(c.skin);
+        asset.skeleton   = std::move(c.skeleton);
+        asset.boundsMin  = c.boundsMin;
+        asset.boundsMax  = c.boundsMax;
+        asset.skinRadius = c.skinRadius;
         return true;
     });
 }

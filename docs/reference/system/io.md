@@ -173,7 +173,7 @@ startup, with plain switch dispatch on the `kind` field:
 | `cooked`               | runtime + editor | A mesh/texture read from its cooked binary (async), or a skeleton/clip read from its own (synchronously) |
 | `inline`               | runtime + editor | A `MaterialAsset` from PBR scalars + texture refs   |
 | `generator` / `decimate` | editor only    | Procedural / LOD meshes (run by the cooker)         |
-| `file` / `model` / `model-image` | editor only | stb / Assimp texture + mesh import          |
+| `file` / `model` / `model-image` | editor only | stb / Assimp texture, mesh, rig and clip import |
 | `folder` / `model` / `default` / `builtin` / `solid` | editor only | material + texture recipes |
 
 The runtime wires only the cooked dispatch (`registerCookedAssetFactories` sets
@@ -198,7 +198,7 @@ guarded by the `static_assert` in `asset_library.cpp`.
 
 | Body | Holds |
 |------|-------|
-| Mesh | Bounds, then bulk vertices and indices |
+| Mesh | Bounds, the four counts, the skin radius, then bulk vertices, indices and skin, then the rig name |
 | Texture | The `TextureParams` fields, then the decoded pixels |
 | Skeleton | Bone count, a `{parent, nameLen}` record per bone, bulk inverse-bind matrices, bulk bind-pose TRS, then the concatenated names |
 | Animation clip | Bone count, duration, the six key-array counts, the skeleton name length, then the bulk `ClipBone` table, the six key arrays and the name |
@@ -220,12 +220,25 @@ get wrong, because nothing downstream re-checks:
 - A bone count past `MAX_SKELETON_BONES` is refused. It is a corruption
   threshold rather than a capability limit: raising it later accepts strictly
   more files, so it starts tight.
+- A mesh's skin stream must be parallel to its vertices or absent, and every
+  bone index in it must be under `MAX_SKELETON_BONES`. That second check earns
+  its keep for a sharper reason than the index check beside it: a bone index is
+  never read by the CPU at all, it addresses the pose palette in the vertex
+  stage, so a corrupt one is an out-of-range buffer read on every vertex of
+  every frame and nothing else would notice.
 
 Skeletons and clips are read **synchronously** (`loadCookedSkeleton` /
 `loadCookedAnimationClip`). A rig is a few tens of kilobytes, well under what
 earns a completion type, an `AsyncLoadQueue` lane and a drain in
 `AsyncLoaderSystem`. Nothing in a scene references one yet - the component that
 does is what adds their sections to the assets block.
+
+`MESH_FORMAT_VERSION` is **2**: the mesh body carries the skin stream, the skin
+radius and the rig name. Every mesh cooked before it is refused on read, and the
+recovery is to re-cook the project - a cooked file is a derived cache and there
+are no migration read paths in this project, by policy. `COOKER_VERSION` moves
+with it, because `POST_PROCESS_FLAGS` changed and every stored recipe hash has
+to go stale at once.
 
 ## ComponentSerializer
 

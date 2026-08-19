@@ -2,8 +2,10 @@
 
 #include <string>
 
+#include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
+#include "resource/asset/skeleton_asset.h"
 #include "resource/resource_handle.h"
 #include "ecs/entity.h"
 
@@ -24,8 +26,10 @@ class Scene;
  * Mesh components re-link by name:
  *   mesh     "<stem>:mesh<index>"
  *   material "<stem>:mat<index>"   (or "<stem>:mat_default")
+ *   skeleton "<stem>:skeleton"     (one rig per file)
+ *   clip     "<stem>:clip<index>"
  * where <stem> is the model file name without extension and the indices
- * are Assimp's global mesh / material indices.
+ * are Assimp's global mesh / material / animation indices.
  */
 
 /**
@@ -102,10 +106,51 @@ TextureHandle loadModelEmbeddedTexture(
 );
 
 /**
+ * @brief Build and register the rig a model file's skinned meshes are bound to.
+ *
+ * One skeleton per file, named "<stem>:skeleton": the union of every bone named
+ * by any of the file's meshes, plus their ancestor nodes down from the joint
+ * that is common to all of them, emitted depth-first so a bone's parent always
+ * precedes it. A file holding two disjoint rigs is refused rather than merged
+ * into one with an invented shared root.
+ *
+ * Idempotent by name. Synchronous: a rig is small enough that the async path
+ * would cost more than it saves.
+ *
+ * @param path Path to the model file to parse with Assimp.
+ * @param resources Resource manager the skeleton is added to.
+ * @return Handle to the built or existing skeleton, or an empty handle when the
+ *         file has no bones or its rig cannot be resolved.
+ */
+SkeletonHandle loadModelSkeleton(const std::string& path, ResourceManager& resources);
+
+/**
+ * @brief Build and register one of a model file's animations, bound to its rig.
+ *
+ * Named "<stem>:clip<index>" by Assimp's global animation index, so a re-import
+ * relinks. Channels are resolved to bone indices here, against the same
+ * skeleton loadModelSkeleton builds; one naming a node the rig does not hold is
+ * dropped and counted.
+ *
+ * Idempotent by name.
+ *
+ * @param path Path to the model file to parse with Assimp.
+ * @param clipIndex Assimp global animation index to extract.
+ * @param resources Resource manager the clip (and the rig it names) is added to.
+ * @return Handle to the built or existing clip, or an empty handle on failure.
+ */
+AnimationClipHandle loadModelAnimationClip(
+    const std::string& path,
+    int clipIndex,
+    ResourceManager& resources
+);
+
+/**
  * @brief Import a whole model file into @p scene.
  *
  * Adds every aiMesh's MeshAsset + MaterialAsset to @p resources (idempotent
- * by name), then spawns a root entity with one child entity per aiNode
+ * by name), plus the file's skeleton and animation clips when it is rigged,
+ * then spawns a root entity with one child entity per aiNode
  * (Transform from the node matrix, a Mesh component per referenced mesh),
  * preserving the node hierarchy.
  *

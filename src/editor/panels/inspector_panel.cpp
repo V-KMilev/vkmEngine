@@ -38,6 +38,7 @@
 #include "generator/lod_generator.h"
 #include "io/project_paths.h"
 #include "resource/resource_manager.h"
+#include "resource/asset/skeleton_asset.h"
 #include "system/physics/collider_fit.h"
 #include "system/script/behavior.h"
 #include "system/script/behavior_field_visitor.h"
@@ -612,6 +613,19 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
             if (Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) {
                 glm::vec3 ext = asset.boundsMax - asset.boundsMin;
                 ImGui::TextDisabled("Bounds: %.1f x %.1f x %.1f", ext.x, ext.y, ext.z);
+            }
+            // A skinned mesh names the rig it was bound to. Reporting the bone
+            // count of the rig actually resolved is what separates "the import
+            // produced a skeleton" from "the mesh remembers a name nothing
+            // answers to" - the two look identical without it.
+            if (!asset.skin.empty()) {
+                const SkeletonHandle rig = resources.findByName<SkeletonAsset>(asset.skeleton);
+                if (rig) {
+                    ImGui::TextDisabled("Skinned: %zu bones (%s)",
+                        resources.get(rig).bones.size(), asset.skeleton.c_str());
+                } else {
+                    ImGui::TextDisabled("Skinned: rig '%s' not loaded", asset.skeleton.c_str());
+                }
             }
         }
 
