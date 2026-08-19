@@ -163,11 +163,18 @@ re-bakes when its box, grid, or bake version changes.
 
 Holds four tables keyed by handle id - mesh, material, texture, font atlas - each
 slot remembering the version and handle generation it was uploaded at.
-`sync(view, resources)` walks the frame's drawables once (skipping a consecutive
-repeat of the same handle, which the draw sort makes the common case) and
+`sync(view, resources)` walks every array on `RenderView` that carries a handle -
+drawables (mesh, material and the material's textures), shadow casters (mesh),
+decals (material and its textures) and the UI draw commands (font atlas) - and
 `ensure()`s each asset, uploading only when the version moved on or the
 generation says the slot was recycled (see [resources.md](../resources.md) for
-the version mechanism). A scene load or play-stop restore swaps the whole asset
+the version mechanism). Drawables and casters skip a consecutive repeat of the
+same handle, which the draw sort makes the common case.
+
+That list is the whole rule, and it has to be, because three of the four are
+gathered scene-wide rather than from the visible set: an off-screen occluder's
+mesh and a decal's own material need never appear among the drawables, and every
+pass answers a GPU object it cannot resolve by silently skipping the draw. A scene load or play-stop restore swaps the whole asset
 graph and restarts its handles and versions, which no per-asset gate can see, so
 the backend calls `invalidate()` and the next sync repopulates. The per-frame
 UBOs and the shadow / IBL sets are not here - GLBackend owns those. All materials
