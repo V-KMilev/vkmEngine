@@ -329,18 +329,32 @@ instance. A skinned mesh with no rig above it fails the second, draws through th
 static program, and renders the vertices it stored, which *is* its bind pose. No
 per-instance branch in any vertex stage decides that.
 
-The four programs are plain path-constructed shaders, so hot reload tracks them
-with no new code:
+The skinned programs are plain path-constructed shaders, so hot reload tracks
+them with no new code:
 
-| Program | Vertex stage | Fragment stage |
-|---------|--------------|----------------|
-| `shaders/forward/pbr` | static | the ubershader |
-| `shaders/forward/pbr_skinned` | skinned | `#include "../pbr/fragment.shader"` |
-| `shaders/forward/prepass` | static | the G-buffer write |
-| `shaders/forward/prepass_skinned` | skinned | `#include "../prepass/fragment.shader"` |
+| Program | Pairs with | Fragment stage |
+|---------|-----------|----------------|
+| `shaders/forward/pbr_skinned` | `forward/pbr` | `#include "../pbr/fragment.shader"` |
+| `shaders/forward/prepass_skinned` | `forward/prepass` | `#include "../prepass/fragment.shader"` |
+| `shaders/shadow/shadow_2d_skinned` | `shadow/shadow_2d` | `#include "../shadow_2d/fragment.shader"` |
+| `shaders/shadow/shadow_cube_skinned` | `shadow/shadow_cube` | `#include "../shadow_cube/fragment.shader"` |
 
 The fragment stages are includes rather than copies: a lobe added to the
 ubershader can never reach only half the scene.
+
+**The shadow pass finds its palettes differently, and is forced to.** It takes
+its transforms as vertex attributes rather than out of storage, and
+`gl_InstanceID` does not include `baseInstance` before GL 4.6 - so there is no
+instance slot to index a base array by. The base arrives as a `u_skinBase`
+uniform instead, and a uniform describes one draw, so skinned casters are drawn
+one at a time. That costs N draws per cascade tile and per cube face, for skinned
+casters only; an unskinned run is still one instanced draw. The palettes
+themselves are the same buffer at the same binding, because the shadow pass runs
+after the backend has uploaded it and before anything else reads it.
+
+Both shadow variants reach the position through the same
+`skinnedWorldPosition` the camera path uses, so a character's shadow is cast by
+the geometry the camera sees rather than by something standing near it.
 
 Both skinned vertex stages take their position from one expression,
 `skinnedWorldPosition(model, base)` in `shaders/_common/skinning.glsl`. That is
@@ -352,6 +366,28 @@ compute it from.
 Uniform state is per program in GL, so `GLForwardPass::bindFrameUniforms` gives
 both programs the identical frame set from one place. A uniform added to only one
 of them would go silently missing on characters and nowhere else.
+
+### Two limits the vertex stage carries on purpose
+
+**Normals are exact under uniform bone scale, approximate under non-uniform.**
+The skinned stages compute `instanceNormalMatrix() * (mat3(skinMatrix) * aNormal)`
+- the inverse-transpose covers the *model* matrix, and the skin matrix reaches
+the normal directly. A bone scaled evenly only changes the vector's length, which
+the following `normalize` absorbs, so the common case is exact. A bone scaled
+unevenly tilts the normal off the posed surface, and the lighting is wrong by
+that much. Inverse-transposing the skin matrix means a 3x3 inverse per vertex in
+four programs on a frame that is already GPU-bound, to correct a case rigs
+essentially never author. Clips keep their scale tracks, and this is the price.
+
+**A bone index is bounds-checked at cook time, not in the shader.** `readMesh`
+refuses any index past `MAX_SKELETON_BONES`, but the shader reads
+`b_skin[base + aBones.x]` with no clamp against the rig's own bone count. That is
+sound for a mesh under the rig it was skinned to, which is the only arrangement
+import produces. Move a skinned mesh under a *different* rig and its indices
+address that rig's slice, or run off the end of the palette entirely - the same
+misuse `SkeletalAnimationSystem` already names in the log ("its bone indices
+address the wrong joints"). It reads garbage bones, not memory outside the
+buffer's allocation; the fix is the warning, not a per-vertex clamp.
 
 ## Seeing it
 
