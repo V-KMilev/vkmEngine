@@ -17,6 +17,7 @@
 #include "ecs/component/mesh.h"
 #include "ecs/scene.h"
 #include "resource/resource_manager.h"
+#include "io/asset/asset_cook.h"
 #include "io/asset/asset_factory.h"
 #include "io/asset/asset_library.h"
 #include "io/json_file.h"
@@ -272,10 +273,17 @@ bool loadLibrarySource(AssetType type, const std::string& name, nlohmann::json& 
 }
 
 /**
- * @brief Resolve a name-only asset reference to the source its factory needs: meshes
- * and textures load from the cooked cache by name; materials load their inline
- * descriptor from the library file. Returns false if the name is not in the
- * manifest.
+ * @brief Resolve a name-only asset reference to the source its factory needs: the
+ * cooked binary when the cache can still serve it, otherwise the recipe it was
+ * baked from. Returns false if the name is not in the manifest.
+ *
+ * The cooked file is a cache and the recipe is the source of truth, so the cache
+ * is asked first and the recipe answers whenever it cannot. That order is what
+ * makes `cooked/` regenerable in practice rather than only on paper: a build
+ * that bumped a format version reads the recipe instead, the cooker bakes a
+ * current binary from it, and the project repairs itself. Resolving straight to
+ * the cooked file would leave the recipe written and never read, and the only
+ * way back would be re-importing the source art by hand.
  */
 bool resolveCookedSource(AssetType type, const std::string& name, nlohmann::json& outSource) {
     const AssetRecord* record = AssetLibrary::get().find(type, name);
@@ -284,11 +292,22 @@ bool resolveCookedSource(AssetType type, const std::string& name, nlohmann::json
             name.c_str(), Reflect::enumName(type));
         return false;
     }
+    // A material has no cooked binary to prefer - its recipe is its runtime form.
     if (type == AssetType::Material) {
         return loadLibrarySource(type, name, outSource);
     }
-    outSource = nlohmann::json{{"kind", "cooked"}, {"name", name}};
-    return true;
+    if (AssetCook::isCookedCurrent(type, AssetLibrary::cookedPath(type, name), record->recipeHash)) {
+        outSource = nlohmann::json{{"kind", "cooked"}, {"name", name}};
+        return true;
+    }
+    // Not an error on its own: whether it can be recovered from is the factory's
+    // answer to give. An editor or a cook re-imports and re-bakes; the runtime,
+    // which links no importers, refuses the recipe kind on the next line and
+    // that pair of lines is the diagnosis - a shipped build cannot rebuild a
+    // stale cache, it needs one cooked for it.
+    LOG_INFO("%s '%s': no cooked file this build can use; falling back to its recipe",
+        Reflect::enumName(type), name.c_str());
+    return loadLibrarySource(type, name, outSource);
 }
 
 /**
