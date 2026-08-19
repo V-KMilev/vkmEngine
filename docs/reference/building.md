@@ -52,18 +52,21 @@ it belongs to the project rather than to this build tree.
 
 | Target | Type | Description |
 |--------|------|-------------|
-| `EngineCore` | **Shared lib** | Core engine: ECS, resources, IO, the non-render systems (animation/visibility/event/physics/script/hierarchy/...), platform, debug |
-| `EngineRendering` | **Shared lib** | Render system, backend abstraction, render view |
+| `vkm_core` | **Shared lib** | Core engine: ECS, resources, IO, the non-render systems (animation/visibility/event/physics/script/hierarchy/...), platform, debug |
+| `vkm_render` | **Shared lib** | Render system, backend abstraction, render view |
 | `BackendOpenGL` | Static lib | OpenGL backend implementation (GLBackend, GLView, passes, GPU resources) |
-| `EngineTools` | Static lib | Procedural generators + the runtime-safe cooked-asset loaders/factories. No Assimp, no heavy image decode |
-| `EngineCooker` | Static lib | The heavy importers (Assimp model import, stb image decode) + the asset cooker that bakes recipes into the cooked cache. Linked by `engine_editor` and `engine_cook` only |
-| `EngineEditor` | Static lib | Editor UI, panels, overlays, gizmo, scene I/O |
+| `vkm_tools` | Static lib | Procedural generators + the runtime-safe cooked-asset loaders/factories. No Assimp, no heavy image decode |
+| `vkm_cook` | Static lib | The heavy importers (Assimp model import, stb image decode) + the asset cooker that bakes recipes into the cooked cache. Linked by `engine_editor` and `engine_cook` only |
+| `vkm_editor` | Static lib | Editor UI, panels, overlays, gizmo, scene I/O |
+| `vkm_headers` | Interface lib | Include-only view of vkm_core's public API; the hot-reload module compiles against it without linking vkm_core's objects |
+| `BuildInfo` | Interface lib | Compile-time build metadata (version, branch, commit hash) |
+| `vkm_warnings` | Interface lib | Shared GCC/Clang warning flags; first-party targets opt in, submodules don't |
 | `<project>_module` | Shared lib | One per project (`potion_runner_module`, `stress_arena_module`): that project's gameplay sources built as `game.dll`/`libgame.so` into the project's own `bin/`. The engine ships no gameplay of its own |
 | `engine_runtime` | Executable | Bare engine, no editor. Includes `app/engine_app.h` for the shared bootstrap; links no Assimp and no ImGui |
-| `engine_editor` | Executable | Engine libs + `EngineEditor` + `EngineCooker`; loads the open project's module for hot-reload |
-| `engine_cook` | Executable | Headless asset cook: `EngineCooker` with no window, no GL context and no `Engine`, so it runs over SSH and on CI |
+| `engine_editor` | Executable | Engine libs + `vkm_editor` + `vkm_cook`; loads the open project's module for hot-reload |
+| `engine_cook` | Executable | Headless asset cook: `vkm_cook` with no window, no GL context and no `Engine`, so it runs over SSH and on CI |
 
-`EngineCore` and `EngineRendering` are shared on purpose. A gameplay module has
+`vkm_core` and `vkm_render` are shared on purpose. A gameplay module has
 to reach engine symbols without carrying a second copy - two copies mean two
 typeId registries and two sets of singletons - and a static engine can only
 manage that by having the module resolve symbols from the host executable. That
@@ -99,33 +102,30 @@ cmake --build build --target package
 
 Building a game *with* that SDK is [getting-started.md](../guides/getting-started.md).
 Nothing there involves writing CMake.
-| `EngineHeaders` | Interface lib | Include-only view of EngineCore's public API; the hot-reload module compiles against it without linking EngineCore's objects |
-| `BuildInfo` | Interface lib | Compile-time build metadata (version, branch, commit hash) |
-| `vkm_warnings` | Interface lib | Shared GCC/Clang warning flags; first-party targets opt in, submodules don't |
 
 ### Dependency Graph
 
 ```
 engine_editor (executable)              engine_runtime (executable)
-  |-- EngineCore                          |-- EngineCore (glm, glfw, vkm_log, nlohmann_json; glew private)
-  |-- EngineRendering -- EngineCore       |-- EngineRendering -- EngineCore
-  |-- EngineTools -- EngineCore           |-- EngineTools -- EngineCore (generators + cooked loaders; no Assimp)
-  |-- BackendOpenGL -- vkm_gl, ...        |-- BackendOpenGL -- vkm_gl, EngineRendering, EngineTools
-  |-- EngineCooker -- EngineCore,         |-- BuildInfo
-  |     EngineTools (+ assimp private)
-  |-- EngineEditor -- EngineCore,        engine_cook (executable)
-  |     EngineTools, EngineCooker,         |-- EngineCooker -- EngineCore, EngineTools
-  |     imgui, vkm_gl                      |-- BuildInfo
-  |-- BuildInfo                            (no window, no GL, no Engine)
+  |-- vkm_core                            |-- vkm_core (glm, glfw, vkm_log, nlohmann_json; glew private)
+  |-- vkm_render -- vkm_core              |-- vkm_render -- vkm_core
+  |-- vkm_tools -- vkm_core               |-- vkm_tools -- vkm_core (generators + cooked loaders; no Assimp)
+  |-- BackendOpenGL -- vkm_gl, ...        |-- BackendOpenGL -- vkm_gl, vkm_render, vkm_tools
+  |-- vkm_cook -- vkm_core,               |-- BuildInfo
+  |     vkm_tools (+ assimp private)
+  |-- vkm_editor -- vkm_core,           engine_cook (executable)
+  |     vkm_tools, vkm_cook,              |-- vkm_cook -- vkm_core, vkm_tools
+  |     imgui, vkm_gl                     |-- BuildInfo
+  |-- BuildInfo                           (no window, no GL, no Engine)
 
 engine_editor and engine_runtime #include app/engine_app.h for setupEngineApp (no
 EngineApp lib). engine_cook does not: it constructs a Scene and a ResourceManager
 directly and never builds an Engine, which is what lets it run headless.
-engine_runtime links neither EngineCooker nor EngineEditor, so it pulls in no
+engine_runtime links neither vkm_cook nor vkm_editor, so it pulls in no
 Assimp and no ImGui - the link lists enforce that, not a build flag.
 
-<project>_module (shared, per project) -- EngineHeaders (include-only); it must
-  not link EngineCore: a second copy would duplicate the typeId registry and the
+<project>_module (shared, per project) -- vkm_headers (include-only); it must
+  not link vkm_core: a second copy would duplicate the typeId registry and the
   singletons, and components registered on one copy are invisible to the other.
   It resolves engine symbols from the host that loaded it. On Linux that is
   whichever host did, since ENABLE_EXPORTS is set on engine_editor and
@@ -148,8 +148,8 @@ All external dependencies are git submodules under `modules/` (see `.gitmodules`
 | **imgui** | `modules/imgui` | Dear ImGui for editor UI |
 | **freetype** | `modules/freetype` | Font rasterizer, trimmed to the core; vendored so the build does not depend on a system libfreetype |
 | **json** | `modules/json` | nlohmann/json (`nlohmann_json`); serialization + asset `source` descriptors |
-| **assimp** | `modules/assimp` | Model import (glTF/OBJ/FBX/DAE/STL/PLY/3DS), trimmed to the importers used; linked privately by EngineTools |
-| **tracy** | `modules/tracy` | Tracy profiler client (`TracyClient`), linked by EngineCore only when `VKM_PROFILER` is on |
+| **assimp** | `modules/assimp` | Model import (glTF/OBJ/FBX/DAE/STL/PLY/3DS), trimmed to the importers used; linked privately by vkm_tools |
+| **tracy** | `modules/tracy` | Tracy profiler client (`TracyClient`), linked by vkm_core only when `VKM_PROFILER` is on |
 
 ## Shaders
 
@@ -205,9 +205,9 @@ First-party code also builds as strict C++17 (`CMAKE_CXX_EXTENSIONS OFF`).
 
 | Define | Scope | Purpose |
 |--------|-------|---------|
-| `VKM_PROFILER=1` | EngineCore (public) | Enables Tracy CPU+GPU zones via debug/profiler.h. Default ON unless `CMAKE_BUILD_TYPE` is exactly `Release`. Pass `-DVKM_PROFILER=OFF` to force off. |
-| `GLM_ENABLE_EXPERIMENTAL` | EngineCore (public) | GLM experimental features |
-| `GLM_FORCE_INTRINSICS` | EngineCore (public) | GLM SIMD intrinsics |
+| `VKM_PROFILER=1` | vkm_core (public) | Enables Tracy CPU+GPU zones via debug/profiler.h. Default ON unless `CMAKE_BUILD_TYPE` is exactly `Release`. Pass `-DVKM_PROFILER=OFF` to force off. |
+| `GLM_ENABLE_EXPERIMENTAL` | vkm_core (public) | GLM experimental features |
+| `GLM_FORCE_INTRINSICS` | vkm_core (public) | GLM SIMD intrinsics |
 | `APP_VERSION` | Executable | Engine version string |
 | `APP_ROOT_DIR` | Executable | Absolute path to the **engine** root - the fallback `ProjectPaths::engineRoot()` uses to find `shaders/` and `assets/` when the exe is run from a build tree. Not the project root; see [system/io.md](system/io.md#projects-and-the-two-roots) |
 | `APP_BRANCH`, `APP_COMMIT_HASH`, `APP_BUILD_DATE` | BuildInfo | Git metadata |

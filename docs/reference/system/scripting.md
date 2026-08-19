@@ -178,7 +178,7 @@ The host `dlopen`s the module and calls the `extern "C"` entry points it finds:
 
 The module resolves engine symbols from the host that loaded it (Windows: an
 import lib; Linux: `ENABLE_EXPORTS`), so there is no second copy of the
-engine inside it. It must **not** link `EngineCore` - a second copy would
+engine inside it. It must **not** link `vkm_core` - a second copy would
 duplicate the typeId registry and the singletons, and types registered against
 one copy are invisible to the other.
 

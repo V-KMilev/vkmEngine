@@ -95,7 +95,7 @@ valign, no hand-tuned offsets. Stretch-to-fill anchors, layout containers, and
 `FontAsset` is a `ResourceManager` asset holding the single-channel
 signed-distance atlas **as pixels**, plus per-glyph metrics (and
 ascent/descent/lineHeight) for printable ASCII. `bakeFontSDF` (in
-`EngineTools`) renders each glyph with `stbtt_GetCodepointSDF` and packs them
+`vkm_tools`) renders each glyph with `stbtt_GetCodepointSDF` and packs them
 with `stb_rect_pack` (warning if any glyph does not fit). Because the atlas
 stores distance, **one bake stays crisp at any size**; the UISystem just scales
 the metrics by `requestedSize / bakedHeight`, and the shader anti-aliases the

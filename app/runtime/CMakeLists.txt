@@ -4,9 +4,9 @@ add_executable(engine_runtime main.cpp)
 
 # The app drives the engine directly, so it links the engine libs itself.
 target_link_libraries(engine_runtime PRIVATE
-    EngineCore
-    EngineRendering
-    EngineTools
+    vkm_core
+    vkm_render
+    vkm_tools
     BackendOpenGL
     BuildInfo
     vkm_warnings
