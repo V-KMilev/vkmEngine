@@ -319,8 +319,8 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
         wireBox(dl, vp, pos, tf.rotation, tf.scale * 0.5f,
                 ec.viewportPos, ec.viewportSize, col, selected ? 2.0f : 1.5f);
 
-        // Projection direction: decals project along the entity's -Z forward.
-        const glm::vec3 fwd = tf.rotation * glm::vec3(0.0f, 0.0f, -1.0f);
+        // Projection direction: decals project along the entity's forward.
+        const glm::vec3 fwd = Math::computeForward(tf.rotation);
         ImVec2 a, b;
         if (projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, a) &&
             projectToViewport(vp, pos + fwd * (tf.scale.z * 0.75f), ec.viewportPos, ec.viewportSize, b))
