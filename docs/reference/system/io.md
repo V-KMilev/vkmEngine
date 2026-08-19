@@ -234,13 +234,21 @@ A prefab is a scene fragment - one entity and its descendants, with the same
 per-entity component shape a scene uses, in its own file:
 
 ```json
-{"version": 1, "entities": [{"components": {...}}, {"parent": 0, "components": {...}}]}
+{"version": 2, "nextUid": 3,
+ "entities": [{"uid": 0, "components": {...}}, {"uid": 1, "parent": 0, "components": {...}}]}
 ```
 
 Parents precede children and a child names its parent by *index into this
 file's own array*, because entity ids mean nothing outside the scene that issued
 them. `Prefab::save` drops the `Hierarchy` block for that reason and rewrites
 the link as an index.
+
+That file is one a person can write, so `readPrefab` establishes its shape once
+and every entry point reports what it cannot use rather than raising: the
+callers are an editor showing a toast beside its own file picker and a scene
+load with other entities to build. Past that check an entry is an object and its
+component block is one too, and the numbers still read out of it - `version`,
+`uid`, `parent` - treat a key of the wrong type as an absent one.
 
 A scene stores an instance as a `PrefabInstance` (the source path) plus the
 root's `Transform` and `Hierarchy` - where it sits and what it hangs off belong
@@ -249,8 +257,51 @@ expands it after the entity pass, so the roots keep their saved slots and the
 prefab's own entities take whatever is free. Editing the prefab therefore
 changes every instance the next time a scene loads, which is the point.
 
-Only the root `Transform` varies per instance; per-field overrides are
-deliberately not designed yet (see the header for why).
+`Prefab::save` turns the subtree it wrote into an instance of the file, so the
+master copy is not a loose subtree the next scene save would inline. Saving an
+instance back over its own source is how a prefab is edited; its overrides are
+baked into the file and then cleared, because keeping them would pin that one
+instance to the values every other instance just adopted. Nesting is refused in
+both directions - a subtree containing an instance, and a root inside one.
+
+### Per-instance overrides
+
+What varies per instance is the root's `Transform` and any number of *overrides*:
+one field of one component of one entity in the subtree, stored on the root's
+`PrefabInstance` and written beside the reference as `uid -> component -> field`.
+
+The entity half of that address is why the file carries a `uid` per entity and a
+`nextUid` high-water mark. Ids are runtime slots, array position moves when the
+prefab is re-saved, and `Name` is user-editable and not unique, so none of them
+survives an edit to the prefab; a uid is handed out once and never reused.
+`PrefabEntity` carries it at runtime, and a scene never writes it - a scene never
+writes a prefab's entities at all. `nextUid` is seeded from the file being
+overwritten, because the entity that held the highest number may be the one just
+deleted and only the file still remembers it.
+
+The value is the field's own serialized JSON as text, and the merge happens on
+the document before `loadComponents`, not as a patch on a built component: the
+loaders construct a fresh component and assign, and several cannot be run twice.
+
+Overrides are stored, never re-derived by diffing an instance against its file.
+`load(save(x))` is not `x` here - an unresolvable asset name comes back as `""` -
+so a diff would manufacture overrides out of load failures. When the prefab
+changes underneath an override (the uid, component, field or type is gone, or it
+addresses the root's `Transform`, which is the instance's own pose) the entry is
+kept, reported once, and not applied, so renaming a field and renaming it back
+does not lose the edit.
+
+The type check walks the prefab's value and the override's together rather than
+comparing their top-level kinds, because an array of the right kind holding the
+wrong elements throws inside the component loader - the failure the check exists
+to prevent. Only a numeric array is length-checked: that is a fixed-width vector
+whose length is part of its type, where `Collider::parts` and `LOD::levels` are
+lists their loaders read at whatever length they find.
+
+They are authored in the inspector: editing a component on an entity that
+belongs to an instance records the changed fields there and then
+(`src/editor/framework/prefab_overrides.h`), each card marks the fields the
+instance owns, and `Prefab::reloadComponent` gives one back to the prefab.
 
 ## Shader hot reload
 

@@ -1,14 +1,19 @@
 #include "framework/editor_commands.h"
 
 #include <algorithm>
+#include <filesystem>
+#include <string>
 
 #include <nlohmann/json.hpp>
 
 #include "ecs/component/lod.h"
+#include "ecs/component/prefab_instance.h"
 #include "ecs/scene.h"
 #include "io/scene/component_serializer.h"
+#include "io/scene/prefab.h"
 #include "resource/resource_manager.h"
 #include "framework/editor_state.h"
+#include "framework/prefab_overrides.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "system/script/script_component.h"
 
@@ -382,6 +387,79 @@ void DestroySubtreeCommand::undo(Scene& scene, EditorState& state) {
             }
         }
     }
+}
+
+void PlacePrefabCommand::redo(Scene& scene, EditorState& state) {
+    // Rebuilt into a root reclaimed at its original slot, the way the scene
+    // loader restores an instance: a command pushed after this one addresses
+    // the placed entity by index, so the index has to still be that entity's.
+    const EntityId root = scene.createEntityAt(m_rootSlot);
+
+    // The pose goes on first because instantiateInto keeps a Transform the root
+    // already carries and takes the prefab's authored one otherwise.
+    scene.add(root, Transform{m_at});
+    scene.add(root, PrefabInstance{m_instance});
+
+    if (!Prefab::instantiateInto(scene, *m_resources, m_instance.source, root,
+                                 m_instance.overrides)) {
+        // The subtree, not the root: a build that stopped partway has already
+        // parented whatever it managed to create under it.
+        HierarchyOperations::destroyHierarchy(scene, root);
+        // The prefab is read again on every rebuild, so it can be gone or
+        // unreadable by the time a redo asks for it. Without this the redo is a
+        // keypress that does nothing to a scene that visibly lost an entity.
+        const std::string name = std::filesystem::path(m_instance.source).filename().string();
+        state.pushToast(EditorState::ToastKind::Error,
+                        "Could not rebuild the instance of '" + name + "'");
+        return;
+    }
+
+    state.hierarchyDirty = true;
+    state.selectEntity(root);
+}
+
+void PlacePrefabCommand::undo(Scene& scene, EditorState& state) {
+    const EntityId root = scene.entityAt(m_rootSlot);
+    if (!scene.isAlive(root)) return;
+    HierarchyOperations::destroyHierarchy(scene, root);
+    state.hierarchyDirty = true;
+    if (state.selectedEntity.index == m_rootSlot) state.deselect();
+}
+
+// The entry list is what the scene stores, so it moves either way; the value
+// beside it comes back from the prefab, and a prefab that has since lost the
+// component has none to give. Say so rather than leave the number on screen
+// disagreeing with the list that no longer claims it.
+void PrefabOverrideCommand::step(Scene& scene, EditorState& state,
+                                 const std::vector<PrefabOverride>& entries) {
+    if (PrefabOverrides::apply(scene, *m_resources, liveEntity(scene, m_root),
+                               m_targetUid, m_component, entries)) {
+        return;
+    }
+    state.pushToast(EditorState::ToastKind::Warning,
+                    "The prefab no longer defines " + m_component
+                        + " - the value here is stale until the scene is loaded again");
+}
+
+void PrefabOverrideCommand::redo(Scene& scene, EditorState& state) {
+    step(scene, state, m_after);
+}
+
+void PrefabOverrideCommand::undo(Scene& scene, EditorState& state) {
+    step(scene, state, m_before);
+}
+
+bool PrefabOverrideCommand::tryMerge(Command& incoming) {
+    // Coalesce only with another change to the same entity's same component -
+    // one drag over one card. The chain start (m_before) stays; only m_after
+    // slides forward to the newest entry set.
+    auto* p = dynamic_cast<PrefabOverrideCommand*>(&incoming);
+    if (!p || p->m_root != m_root || p->m_targetUid != m_targetUid
+        || p->m_component != m_component) {
+        return false;
+    }
+    m_after = p->m_after;
+    return true;
 }
 
 namespace {
