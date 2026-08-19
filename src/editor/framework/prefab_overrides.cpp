@@ -97,7 +97,7 @@ std::vector<std::string> overriddenFields(const Scene& scene, EntityId id,
     const uint32_t uid = scene.get<PrefabEntity>(id).uid;
 
     // The root's Transform is the instance's own pose, so an entry against it is
-    // drift the prefab never applies - see the table in prefab.h.
+    // drift the prefab never applies - see the drift rules in prefab.h.
     if (uid == PrefabEntity::ROOT && std::strcmp(component, "Transform") == 0) return fields;
 
     for (const PrefabOverride& o : scene.get<PrefabInstance>(root).overrides) {
