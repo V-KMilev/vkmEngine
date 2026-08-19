@@ -178,7 +178,7 @@ switch dispatch on the `kind` field:
 The runtime wires only the cooked dispatch (`registerCookedAssetFactories` sets
 the pointers to `createCookedMesh/Texture/Material`), so it links neither Assimp
 nor the image decoders. The editor instead wires the recipe dispatch
-(`registerRecipeAssetFactories`, built into the editor-only `EngineCooker`),
+(`registerRecipeAssetFactories`, built into the editor-only `vkm_cook`),
 whose switches fall through to the cooked functions for cooked/inline kinds.
 Engine code never reaches into `src/tools/`; the dispatch is wired at startup in
 `src/tools/asset_registration.cpp` (cooked) and

@@ -11,7 +11,7 @@ namespace Engine {
  *
  * The engine's real generators (tools/generator/mesh_generators.h) live in the
  * editor/runtime-side tools target, which `game` deliberately does not link -
- * gameplay depends on EngineCore only, so the same sources compile into both the
+ * gameplay depends on vkm_core only, so the same sources compile into both the
  * static runtime library and the editor's hot-reload module. These mirror the
  * generators' winding, normals and tangents exactly, so a procedural prop shades
  * and face-culls identically to a cooked one.

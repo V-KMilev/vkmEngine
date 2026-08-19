@@ -90,7 +90,7 @@ static_assert(sizeof(GenerationIndex) == 4, "GenerationIndex must be 4 bytes");
  * stable within a single program execution but not across runs.
  *
  * The id is resolved through a single RTTI-keyed registry (typeIdFromInfo,
- * defined once in EngineCore) rather than a per-template counter, so the same
+ * defined once in vkm_core) rather than a per-template counter, so the same
  * type maps to the same id across module boundaries - required so hot-reloaded
  * game code in a separate DLL agrees with the engine on component / event /
  * resource type ids.
@@ -100,7 +100,7 @@ using TypeId = uint32_t;
 namespace detail {
     /**
      * @brief Stable id for @p info from one process-wide registry (single definition
-     * in EngineCore - one instance even when EngineCore is a shared library).
+     * in vkm_core - one instance even when vkm_core is a shared library).
      */
     TypeId typeIdFromInfo(const std::type_info& info);
 }

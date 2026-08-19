@@ -7,7 +7,7 @@ class ResourceManager;
 /**
  * @brief Bakes assets from their in-memory (recipe-derived) form into the on-disk asset database.
  *
- * Editor-only (lives in EngineCooker).
+ * Editor-only (lives in vkm_cook).
  */
 namespace AssetCooker {
 

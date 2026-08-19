@@ -168,9 +168,9 @@ OpenGL backend, `src/backend/opengl/` (flat `gl_`-prefixed includes):
 Editor (`src/editor/`): `EditorSystem` at the root; `framework/`, `panels/`,
 `overlays/`, `gizmo/`, `input/`, `ui/`. Tools (`src/tools/`): `generator/` plus
 the runtime-safe cooked loaders and `asset_registration.cpp` (the `cooked`/
-`inline` runtime factories) build into `EngineTools`; the heavy importers
+`inline` runtime factories) build into `vkm_tools`; the heavy importers
 (`loader/model_loaders`, `texture_loaders`, `material_loaders`) and the asset
-cooker (`cook/`) build into the editor-only `EngineCooker`, so the runtime links
+cooker (`cook/`) build into the editor-only `vkm_cook`, so the runtime links
 neither Assimp nor the heavy image decode.
 
 Application and gameplay layers sit **outside** the `src/engine/` include root:
