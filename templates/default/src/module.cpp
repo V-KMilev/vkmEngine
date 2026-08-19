@@ -30,38 +30,40 @@ extern "C"
 __declspec(dllexport)
 #endif
 void vkmRegisterBehaviors() {
-    Engine::BehaviorRegistry::get().registerBehavior<Game::Spinner>();
+    Vkm::Engine::BehaviorRegistry::get().registerBehavior<Game::Spinner>();
 }
 
 extern "C"
 #if defined(_WIN32)
 __declspec(dllexport)
 #endif
-void vkmBuildScene(Engine::Scene& scene, Engine::ResourceManager& resources) {
+void vkmBuildScene(Vkm::Engine::Scene& scene, Vkm::Engine::ResourceManager& resources) {
     (void)resources;
 
     // Forward is +Z in this engine, so a camera at -Z looking along +Z faces the
     // origin. glm::quatLookAt aims the other way; do not reach for it here.
-    const Engine::EntityId camera = scene.createEntity();
-    scene.add(camera, Engine::makeName("Camera"));
-    scene.add(camera, Engine::Transform{{0.0f, 1.5f, -6.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}});
-    scene.add(camera, Engine::Camera{});
+    const Vkm::Engine::EntityId camera = scene.createEntity();
+    scene.add(camera, Vkm::Engine::makeName("Camera"));
+    scene.add(camera, Vkm::Engine::Transform{
+        {0.0f, 1.5f, -6.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}
+    });
+    scene.add(camera, Vkm::Engine::Camera{});
 
     // A directional light needs a positive pitch to come from above, for the
     // same reason.
-    const Engine::EntityId sun = scene.createEntity();
-    scene.add(sun, Engine::makeName("Sun"));
-    Engine::Transform sunTransform{};
+    const Vkm::Engine::EntityId sun = scene.createEntity();
+    scene.add(sun, Vkm::Engine::makeName("Sun"));
+    Vkm::Engine::Transform sunTransform{};
     sunTransform.rotation = glm::quat(glm::vec3(glm::radians(50.0f), glm::radians(30.0f), 0.0f));
     scene.add(sun, sunTransform);
-    Engine::Light sunLight{};
-    sunLight.type = Engine::LightType::Directional;
+    Vkm::Engine::Light sunLight{};
+    sunLight.type = Vkm::Engine::LightType::Directional;
     scene.add(sun, sunLight);
 
-    const Engine::EntityId spinner = scene.createEntity();
-    scene.add(spinner, Engine::makeName("Spinner"));
-    scene.add(spinner, Engine::Transform{});
-    Engine::ScriptComponent script{};
-    script.behaviors.push_back(Engine::BehaviorRegistry::get().create("Spinner"));
+    const Vkm::Engine::EntityId spinner = scene.createEntity();
+    scene.add(spinner, Vkm::Engine::makeName("Spinner"));
+    scene.add(spinner, Vkm::Engine::Transform{});
+    Vkm::Engine::ScriptComponent script{};
+    script.behaviors.push_back(Vkm::Engine::BehaviorRegistry::get().create("Spinner"));
     scene.add(spinner, std::move(script));
 }
