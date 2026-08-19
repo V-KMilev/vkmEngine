@@ -104,11 +104,14 @@ MeshHandle requestCookedMeshAsync(const std::string& name, ResourceManager& reso
         uint64_t gotHash = 0;
         const bool ok = AssetCook::readMesh(path, decoded, &gotHash);
         if (ok && gotHash == expectHash) {
-            completion.vertices  = std::move(decoded.vertices);
-            completion.indices   = std::move(decoded.indices);
-            completion.boundsMin = decoded.boundsMin;
-            completion.boundsMax = decoded.boundsMax;
-            completion.success   = !completion.vertices.empty();
+            completion.vertices   = std::move(decoded.vertices);
+            completion.indices    = std::move(decoded.indices);
+            completion.skin       = std::move(decoded.skin);
+            completion.skeleton   = std::move(decoded.skeleton);
+            completion.boundsMin  = decoded.boundsMin;
+            completion.boundsMax  = decoded.boundsMax;
+            completion.skinRadius = decoded.skinRadius;
+            completion.success    = !completion.vertices.empty();
         } else if (ok) {
             LOG_ERROR("Cooked mesh '%s': recipe hash mismatch - cache is stale", path.string().c_str());
         }

@@ -31,8 +31,10 @@ constexpr uint16_t KIND_CLIP       = 4;
 // recipeHash + payloadBytes.
 constexpr std::streamoff HEADER_BYTES = 4 + sizeof(uint32_t) + sizeof(uint16_t) * 2 + sizeof(uint64_t) * 2;
 
-// Mesh body: boundsMin + boundsMax + vertexCount + indexCount, then bulk data.
-constexpr uint64_t MESH_FIXED_BYTES = sizeof(glm::vec3) * 2 + sizeof(uint64_t) * 2;
+// Mesh body: boundsMin + boundsMax + vertexCount + indexCount + skinCount +
+// skinRadius + skeletonNameLen, then bulk vertices, indices, skin and the name.
+constexpr uint64_t MESH_FIXED_BYTES = sizeof(glm::vec3) * 2 + sizeof(uint64_t) * 3
+                                    + sizeof(float) + sizeof(uint32_t);
 // Texture body: 2*u32 params + 7 enum bytes + 2 flag bytes + pixelBytes field.
 constexpr uint64_t TEXTURE_FIXED_BYTES = sizeof(uint32_t) * 2 + 7 + 2 + sizeof(uint64_t);
 // Skeleton body: boneCount, then per bone a {parent, nameLen} record, an
@@ -76,6 +78,21 @@ template<typename T>
 bool readRaw(std::istream& is, T& v) {
     static_assert(std::is_trivially_copyable_v<T>, "readRaw needs a trivially-copyable type");
     return static_cast<bool>(is.read(reinterpret_cast<char*>(&v), sizeof(T)));
+}
+
+// Bound one count by division against what is left of the payload, before it is
+// multiplied by anything, and consume the bytes it claims. The size math then
+// cannot wrap and resize() cannot be handed a bogus huge count off a corrupt or
+// truncated file.
+bool takeCount(uint64_t count, uint64_t elementBytes, uint64_t& remaining,
+               const std::string& path, const char* what, const char* field) {
+    if (count > remaining / elementBytes) {
+        LOG_ERROR("Cooked %s '%s': implausible %s count %llu", what, path.c_str(), field,
+                  static_cast<unsigned long long>(count));
+        return false;
+    }
+    remaining -= count * elementBytes;
+    return true;
 }
 
 // A clip channel addresses [first, first + count) of an array of `size` keys.
@@ -195,21 +212,37 @@ bool writeMesh(const std::filesystem::path& path, const MeshAsset& mesh, uint64_
     static_assert(sizeof(Vertex) == 48, "Vertex layout changed - bump MESH_FORMAT_VERSION and the cook format");
     static_assert(std::is_trivially_copyable_v<Vertex>, "Vertex must be trivially copyable to bulk-write");
 
+    const uint64_t vertexCount = mesh.vertices.size();
+    const uint64_t indexCount  = mesh.indices.size();
+    const uint64_t skinCount   = mesh.skin.size();
+    // The skin stream is parallel to the vertices or absent; there is no third
+    // state, and the vertex stage reads them by the same index.
+    if (skinCount != 0 && skinCount != vertexCount) {
+        LOG_ERROR("Cooked mesh '%s': %llu skin entries against %llu vertices",
+                  path.string().c_str(), static_cast<unsigned long long>(skinCount),
+                  static_cast<unsigned long long>(vertexCount));
+        return false;
+    }
+
     std::ofstream os = openCookedWrite(path, "mesh");
     if (!os) return false;
 
-    const uint64_t vertexCount = mesh.vertices.size();
-    const uint64_t indexCount  = mesh.indices.size();
-    const uint64_t payloadBytes =
-        MESH_FIXED_BYTES + vertexCount * sizeof(Vertex) + indexCount * sizeof(uint32_t);
+    const uint64_t payloadBytes = MESH_FIXED_BYTES
+        + vertexCount * sizeof(Vertex) + indexCount * sizeof(uint32_t)
+        + skinCount * sizeof(SkinVertex) + mesh.skeleton.size();
 
     writeHeader(os, KIND_MESH, MESH_FORMAT_VERSION, recipeHash, payloadBytes);
     writeRaw(os, mesh.boundsMin);
     writeRaw(os, mesh.boundsMax);
     writeRaw(os, vertexCount);
     writeRaw(os, indexCount);
-    if (vertexCount) os.write(reinterpret_cast<const char*>(mesh.vertices.data()), vertexCount * sizeof(Vertex));
-    if (indexCount)  os.write(reinterpret_cast<const char*>(mesh.indices.data()),  indexCount * sizeof(uint32_t));
+    writeRaw(os, skinCount);
+    writeRaw(os, mesh.skinRadius);
+    writeRaw(os, static_cast<uint32_t>(mesh.skeleton.size()));
+    writeBulk(os, mesh.vertices);
+    writeBulk(os, mesh.indices);
+    writeBulk(os, mesh.skin);
+    os.write(mesh.skeleton.data(), static_cast<std::streamsize>(mesh.skeleton.size()));
 
     if (!os) {
         LOG_ERROR("Cooked mesh '%s': write failed", path.string().c_str());
@@ -230,39 +263,53 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHa
     glm::vec3 boundsMax{0};
     uint64_t vertexCount = 0;
     uint64_t indexCount  = 0;
+    uint64_t skinCount   = 0;
+    float    skinRadius  = 0.0f;
+    uint32_t skeletonNameLen = 0;
     if (!readRaw(is, boundsMin) || !readRaw(is, boundsMax) ||
-        !readRaw(is, vertexCount) || !readRaw(is, indexCount)) {
+        !readRaw(is, vertexCount) || !readRaw(is, indexCount) ||
+        !readRaw(is, skinCount) || !readRaw(is, skinRadius) || !readRaw(is, skeletonNameLen)) {
         LOG_ERROR("Cooked mesh '%s': truncated body", p.c_str());
         return false;
     }
 
-    // Bound each count against the remaining payload before multiplying, so the
-    // size math can't overflow and resize() can't be handed a bogus huge count.
-    const uint64_t afterFixed = payloadBytes - MESH_FIXED_BYTES;
-    if (vertexCount > afterFixed / sizeof(Vertex)) {
-        LOG_ERROR("Cooked mesh '%s': implausible vertex count %llu", p.c_str(), static_cast<unsigned long long>(vertexCount));
-        return false;
-    }
-    const uint64_t afterVerts = afterFixed - vertexCount * sizeof(Vertex);
-    if (indexCount > afterVerts / sizeof(uint32_t)) {
-        LOG_ERROR("Cooked mesh '%s': implausible index count %llu", p.c_str(), static_cast<unsigned long long>(indexCount));
-        return false;
-    }
-    if (vertexCount * sizeof(Vertex) + indexCount * sizeof(uint32_t) != afterFixed) {
+    uint64_t remaining = payloadBytes - MESH_FIXED_BYTES;
+    if (!takeCount(vertexCount,     sizeof(Vertex),     remaining, p, "mesh", "vertex")   ||
+        !takeCount(indexCount,      sizeof(uint32_t),   remaining, p, "mesh", "index")    ||
+        !takeCount(skinCount,       sizeof(SkinVertex), remaining, p, "mesh", "skin")     ||
+        !takeCount(skeletonNameLen, 1,                  remaining, p, "mesh", "rig name")) return false;
+    if (remaining != 0) {
         LOG_ERROR("Cooked mesh '%s': payload size inconsistent with counts", p.c_str());
         return false;
     }
-
-    out.boundsMin = boundsMin;
-    out.boundsMax = boundsMax;
-    out.vertices.resize(static_cast<size_t>(vertexCount));
-    out.indices.resize(static_cast<size_t>(indexCount));
-    if (vertexCount && !is.read(reinterpret_cast<char*>(out.vertices.data()), vertexCount * sizeof(Vertex))) {
-        LOG_ERROR("Cooked mesh '%s': vertex read failed", p.c_str());
+    // Parallel or absent, checked here as well as at write: the vertex stage
+    // reads both streams by the same index, so a short skin stream is an
+    // out-of-bounds fetch on every draw.
+    if (skinCount != 0 && skinCount != vertexCount) {
+        LOG_ERROR("Cooked mesh '%s': %llu skin entries against %llu vertices", p.c_str(),
+                  static_cast<unsigned long long>(skinCount), static_cast<unsigned long long>(vertexCount));
         return false;
     }
-    if (indexCount && !is.read(reinterpret_cast<char*>(out.indices.data()), indexCount * sizeof(uint32_t))) {
-        LOG_ERROR("Cooked mesh '%s': index read failed", p.c_str());
+    if (!std::isfinite(skinRadius) || skinRadius < 0.0f) {
+        LOG_ERROR("Cooked mesh '%s': implausible skin radius %f", p.c_str(), static_cast<double>(skinRadius));
+        return false;
+    }
+
+    out.boundsMin  = boundsMin;
+    out.boundsMax  = boundsMax;
+    out.skinRadius = skinRadius;
+    readBulk(is, out.vertices, vertexCount);
+    readBulk(is, out.indices, indexCount);
+    readBulk(is, out.skin, skinCount);
+    out.skeleton.resize(skeletonNameLen);
+    if (skeletonNameLen) is.read(out.skeleton.data(), skeletonNameLen);
+    // One check for the whole body: the reconciliation above already proved the
+    // bytes are there, so a failure here is an IO error, and failbit is sticky.
+    if (!is) {
+        LOG_ERROR("Cooked mesh '%s': body read failed", p.c_str());
+        out.vertices.clear();
+        out.indices.clear();
+        out.skin.clear();
         return false;
     }
 
@@ -277,7 +324,25 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHa
                       p.c_str(), index, vertexTotal);
             out.vertices.clear();
             out.indices.clear();
+            out.skin.clear();
             return false;
+        }
+    }
+
+    // Bone indices get the same treatment, and for a sharper reason: they are
+    // not read by the CPU at all, they address the pose palette in the vertex
+    // stage. A corrupt one is an out-of-range buffer read on every vertex of
+    // every frame, and the palette is the only thing that would notice.
+    for (const SkinVertex& skin : out.skin) {
+        for (const uint16_t bone : skin.bones) {
+            if (bone >= MAX_SKELETON_BONES) {
+                LOG_ERROR("Cooked mesh '%s': bone index %u is past the %u a rig can hold",
+                          p.c_str(), bone, MAX_SKELETON_BONES);
+                out.vertices.clear();
+                out.indices.clear();
+                out.skin.clear();
+                return false;
+            }
         }
     }
 
@@ -627,26 +692,16 @@ bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& ou
         return false;
     }
 
-    // Each count is bounded by division against what is left of the payload
-    // before it is multiplied by anything, in the order the arrays are written.
+    // Every count is bounded in the order the arrays are written.
     uint64_t remaining = payloadBytes - CLIP_FIXED_BYTES;
-    auto take = [&](uint64_t count, uint64_t elementBytes, const char* what) {
-        if (count > remaining / elementBytes) {
-            LOG_ERROR("Cooked clip '%s': implausible %s count %llu", p.c_str(), what,
-                      static_cast<unsigned long long>(count));
-            return false;
-        }
-        remaining -= count * elementBytes;
-        return true;
-    };
-    if (!take(boneCount,         sizeof(ClipBone),  "bone")           ||
-        !take(positionTimeCount, sizeof(float),     "position time")  ||
-        !take(positionCount,     sizeof(glm::vec3), "position")       ||
-        !take(rotationTimeCount, sizeof(float),     "rotation time")  ||
-        !take(rotationCount,     sizeof(glm::quat), "rotation")       ||
-        !take(scaleTimeCount,    sizeof(float),     "scale time")     ||
-        !take(scaleCount,        sizeof(glm::vec3), "scale")          ||
-        !take(skeletonNameLen,   1,                 "skeleton name")) return false;
+    if (!takeCount(boneCount,         sizeof(ClipBone),  remaining, p, "clip", "bone")          ||
+        !takeCount(positionTimeCount, sizeof(float),     remaining, p, "clip", "position time") ||
+        !takeCount(positionCount,     sizeof(glm::vec3), remaining, p, "clip", "position")      ||
+        !takeCount(rotationTimeCount, sizeof(float),     remaining, p, "clip", "rotation time") ||
+        !takeCount(rotationCount,     sizeof(glm::quat), remaining, p, "clip", "rotation")      ||
+        !takeCount(scaleTimeCount,    sizeof(float),     remaining, p, "clip", "scale time")    ||
+        !takeCount(scaleCount,        sizeof(glm::vec3), remaining, p, "clip", "scale")         ||
+        !takeCount(skeletonNameLen,   1,                 remaining, p, "clip", "rig name")) return false;
     if (remaining != 0) {
         LOG_ERROR("Cooked clip '%s': payload size inconsistent with counts", p.c_str());
         return false;
