@@ -7,6 +7,7 @@
 #include <string>
 #include <type_traits>
 #include <unordered_set>
+#include <vector>
 
 #include "logger.h"
 
@@ -148,7 +149,8 @@ void emitDescriptor(nlohmann::json& target, const Resource& asset) {
 
 } // namespace
 
-nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources) {
+nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<EntityId>& entities,
+                                     const ResourceManager& resources) {
     nlohmann::json meshes    = nlohmann::json::array();
     nlohmann::json textures  = nlohmann::json::array();
     nlohmann::json materials = nlohmann::json::array();
@@ -183,25 +185,37 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
         for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
     };
 
-    // Every component that writes an asset name into the scene file has to be
+    // Every component that writes an asset name into the document has to be
     // walked here: a name the assets block never lists is a name loadAssets
     // never recreates, and the component's reference resolves to nothing.
-    scene.forEach<Mesh>([&](EntityId, const Mesh& m) {
-        emitMesh(m.mesh);
-        emitMaterial(m.material);
-    });
-    scene.forEach<LOD>([&](EntityId, const LOD& l) {
-        for (const LODLevel& level : l.levels) emitMesh(level.mesh);
-    });
-    scene.forEach<Decal>([&](EntityId, const Decal& d) {
-        emitMaterial(d.material);
-    });
+    for (EntityId id : entities) {
+        if (scene.has<Mesh>(id)) {
+            const Mesh& m = scene.get<Mesh>(id);
+            emitMesh(m.mesh);
+            emitMaterial(m.material);
+        }
+        if (scene.has<LOD>(id)) {
+            for (const LODLevel& level : scene.get<LOD>(id).levels) emitMesh(level.mesh);
+        }
+        if (scene.has<Decal>(id)) emitMaterial(scene.get<Decal>(id).material);
+    }
 
     nlohmann::json out;
     out["textures"]  = std::move(textures);
     out["meshes"]    = std::move(meshes);
     out["materials"] = std::move(materials);
     return out;
+}
+
+nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources) {
+    // Including the entities inside prefab instances, which the scene file does
+    // not describe and the prefab file now carries its own block for. They stay
+    // because an instance may override a Mesh or a Decal at an asset the prefab
+    // never names, and this walk is the only one that sees that.
+    std::vector<EntityId> entities;
+    entities.reserve(scene.entityCount());
+    scene.forEachEntity([&](EntityId id) { entities.push_back(id); });
+    return saveAssetsForEntities(scene, entities, resources);
 }
 
 namespace {
@@ -300,8 +314,13 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
     const auto [matC, matS] = loadAssetSection<MaterialAsset>(assetsJson, "materials", AssetType::Material, assetFactory().createMaterial, "Material", resources);
     const auto [mshC, mshS] = loadAssetSection<MeshAsset    >(assetsJson, "meshes",    AssetType::Mesh,     assetFactory().createMesh,     "Mesh",     resources);
 
-    LOG_INFO("%zu texture(s), %zu material(s), %zu mesh(es) created; %zu+%zu+%zu skipped (already loaded)",
-        texC, matC, mshC, texS, matS, mshS);
+    // Silent when the block asked for nothing new: a prefab carries its own
+    // assets and is instantiated once per instance, per scene load, per
+    // duplicate and per undo of one.
+    if (texC + matC + mshC > 0) {
+        LOG_INFO("%zu texture(s), %zu material(s), %zu mesh(es) created; %zu+%zu+%zu skipped (already loaded)",
+            texC, matC, mshC, texS, matS, mshS);
+    }
     return true;
 }
 

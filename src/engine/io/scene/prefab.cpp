@@ -18,6 +18,7 @@
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/prefab_entity.h"
 #include "ecs/component/prefab_instance.h"
+#include "io/asset/asset_serializer.h"
 #include "io/project_paths.h"
 #include "io/json_file.h"
 #include "io/scene/scene_serializer.h"
@@ -31,7 +32,7 @@ using nlohmann::json;
 
 // Bumped when the layout below changes. A prefab written by a newer build is
 // refused rather than half-read, the same contract scenes use.
-constexpr int PREFAB_FORMAT_VERSION = 2;
+constexpr int PREFAB_FORMAT_VERSION = 3;
 
 /**
  * @brief Where a prefab reference points on disk.
@@ -90,6 +91,10 @@ bool readPrefab(const std::string& path, json& doc) {
         LOG_ERROR("Prefab '%s' has no entities", path.c_str());
         return false;
     }
+    if (const auto assets = doc.find("assets"); assets != doc.end() && !assets->is_object()) {
+        LOG_ERROR("Prefab '%s' has an assets block that is not an object", path.c_str());
+        return false;
+    }
 
     const json& entities = doc["entities"];
     for (size_t i = 0; i < entities.size(); ++i) {
@@ -112,6 +117,36 @@ bool readPrefab(const std::string& path, json& doc) {
 uint32_t uidAt(const json& entities, size_t index) {
     if (index == 0) return PrefabEntity::ROOT;
     return numberOr(entities[index], "uid", static_cast<uint32_t>(index));
+}
+
+/**
+ * @brief Bring the assets @p doc names into @p resources before it is read.
+ *
+ * A prefab describes entities that reference meshes, materials and textures by
+ * name, and a name resolves to nothing unless something already loaded it. Which
+ * made a prefab instantiable only where a scene happened to have loaded the same
+ * assets first: dropped into a scene that never held its mesh, it built entities
+ * that draw nothing. So the file lists what it references, the way a scene does,
+ * and every path that reads components out of it comes through here.
+ *
+ * A version-2 prefab has no block and keeps behaving as it did. A block that
+ * cannot be loaded is reported and does not stop the build - an instance with a
+ * missing mesh is a better answer than an instance with no entities.
+ *
+ * @param doc Prefab document, already accepted by readPrefab.
+ * @param path Prefab reference, for the message.
+ * @param resources Receives the assets; the live manager in the editor, the
+ *                  staging one during a scene load.
+ */
+void ensureAssets(const json& doc, const std::string& path, ResourceManager& resources) {
+    const auto assets = doc.find("assets");
+    if (assets == doc.end()) return;
+
+    try {
+        AssetSerializer::loadAssets(*assets, resources);
+    } catch (const std::exception& e) {
+        LOG_ERROR("Prefab '%s': assets could not be loaded: %s", path.c_str(), e.what());
+    }
 }
 
 /**
@@ -358,6 +393,7 @@ bool save(Scene& scene, EntityId root, const std::string& path,
     }
 
     doc["nextUid"] = nextUid;
+    doc["assets"]  = AssetSerializer::saveAssetsForEntities(scene, subtree, resources);
 
     if (!detail::writeJsonFile(resolvePath(path), doc, "Prefab")) return false;
 
@@ -420,6 +456,7 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
                      std::set<std::string>* drift) {
     json doc;
     if (!readPrefab(path, doc)) return false;
+    ensureAssets(doc, path, resources);
 
     const json& entities = doc["entities"];
 
@@ -516,6 +553,7 @@ bool reloadComponent(Scene& scene, ResourceManager& resources, const std::string
 
     json doc;
     if (!readPrefab(path, doc)) return false;
+    ensureAssets(doc, path, resources);
 
     const json& entities = doc["entities"];
     for (size_t i = 0; i < entities.size(); ++i) {

@@ -244,9 +244,20 @@ A prefab is a scene fragment - one entity and its descendants, with the same
 per-entity component shape a scene uses, in its own file:
 
 ```json
-{"version": 2, "nextUid": 3,
- "entities": [{"uid": 0, "components": {...}}, {"uid": 1, "parent": 0, "components": {...}}]}
+{"version": 3, "nextUid": 3,
+ "entities": [{"uid": 0, "components": {...}}, {"uid": 1, "parent": 0, "components": {...}}],
+ "assets": {"textures": [...], "meshes": [...], "materials": [...]}}
 ```
+
+The `assets` block is the same one a scene carries, for the subtree this file
+describes, and it is what makes a prefab instantiable anywhere. Component
+references are asset *names*, and a name resolves to nothing unless something
+already loaded it, so without the block a prefab only built correctly where a
+scene happened to have loaded the same assets first - dragging one into a scene
+that never held its mesh produced entities that draw nothing. Every path that
+reads components out of a prefab loads the block first, `Prefab::reloadComponent`
+included, since reverting an override re-reads an asset name too. Loading is
+idempotent by name, so an instance after the first costs a lookup per entry.
 
 Parents precede children and a child names its parent by *index into this
 file's own array*, because entity ids mean nothing outside the scene that issued
@@ -259,6 +270,10 @@ callers are an editor showing a toast beside its own file picker and a scene
 load with other entities to build. Past that check an entry is an object and its
 component block is one too, and the numbers still read out of it - `version`,
 `uid`, `parent` - treat a key of the wrong type as an absent one.
+
+A scene's own `assets` block still walks the entities inside its instances, even
+though the prefab now lists them: an instance may override a `Mesh` or a `Decal`
+at an asset the prefab file never names, and only the scene's walk sees that.
 
 A scene stores an instance as a `PrefabInstance` (the source path) plus the
 root's `Transform` and `Hierarchy` - where it sits and what it hangs off belong
