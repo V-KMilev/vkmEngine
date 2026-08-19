@@ -55,6 +55,27 @@ void warnUnlisted(AssetType type, const std::string& name) {
                 "referencing it will not load", Reflect::enumName(type), name.c_str());
 }
 
+// Whether a type's cook writes a binary beside its recipe. A material's recipe
+// IS its runtime form - AssetSerializer reads that file straight back - so it has
+// none, and nothing is ever written where its cookedPath() points.
+enum class CookedOutput { None, Binary };
+
+// Whether an already-recorded asset can be skipped this save. A manifest record
+// asserts that the recipe was written and, for the types that have one, the
+// cooked binary too, so both are checked rather than the hash alone: a record
+// whose files have since gone missing would otherwise report success over a
+// project that no longer loads. The hash stays the first test because it is what
+// makes an unchanged asset free; what it adds is one stat per asset per save.
+bool isUpToDate(AssetType type, const std::string& name, uint64_t hash, CookedOutput cooked) {
+    const AssetRecord* existing = AssetLibrary::get().find(type, name);
+    if (!existing || existing->recipeHash != hash) return false;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(AssetLibrary::recipePath(type, name), ec)) return false;
+    if (cooked == CookedOutput::None) return true;
+    return std::filesystem::exists(AssetLibrary::cookedPath(type, name), ec);
+}
+
 bool writeRecipeFile(const std::filesystem::path& path, const std::string& name,
                      const char* typeTag, const nlohmann::json& source) {
     std::error_code ec;
@@ -93,9 +114,7 @@ bool cookMesh(const MeshAsset& mesh) {
 
     const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Mesh, mesh.name);
     const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Mesh, mesh.name);
-    const AssetRecord* existing = lib.find(AssetType::Mesh, mesh.name);
-    std::error_code ec;
-    if (existing && existing->recipeHash == hash && std::filesystem::exists(cookedPath, ec)) return true;
+    if (isUpToDate(AssetType::Mesh, mesh.name, hash, CookedOutput::Binary)) return true;
 
     if (!writeRecipeFile(recipePath, mesh.name, "mesh", recipe)) return false;
     if (!AssetCook::writeMesh(cookedPath, mesh, hash)) return false;
@@ -121,9 +140,7 @@ bool cookTexture(const TextureAsset& tex) {
 
     const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Texture, tex.name);
     const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Texture, tex.name);
-    const AssetRecord* existing = lib.find(AssetType::Texture, tex.name);
-    std::error_code ec;
-    if (existing && existing->recipeHash == hash && std::filesystem::exists(cookedPath, ec)) return true;
+    if (isUpToDate(AssetType::Texture, tex.name, hash, CookedOutput::Binary)) return true;
 
     if (!writeRecipeFile(recipePath, tex.name, "texture", recipe)) return false;
     if (!AssetCook::writeTexture(cookedPath, tex, hash)) return false;
@@ -143,8 +160,7 @@ bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
     const uint64_t hash = hashRecipe(inlineSource);
 
     const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Material, mat.name);
-    const AssetRecord* existing = lib.find(AssetType::Material, mat.name);
-    if (existing && existing->recipeHash == hash) return true;
+    if (isUpToDate(AssetType::Material, mat.name, hash, CookedOutput::None)) return true;
 
     if (!writeRecipeFile(recipePath, mat.name, "material", inlineSource)) return false;
 
