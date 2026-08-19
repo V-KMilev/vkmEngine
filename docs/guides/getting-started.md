@@ -33,7 +33,7 @@ vkm run
 
 A spinning cube under a directional light. `vkm new` copied the SDK's template,
 `vkm build` compiled `src/` into `bin/game`, and `vkm run` handed the project to
-`engine_runtime`, which loaded that module and ran it.
+`vkm_runtime`, which loaded that module and ran it.
 
 ## What a project is
 
@@ -48,7 +48,7 @@ mygame/
 ```
 
 The engine is never rebuilt for your game. A packaged game is a renamed copy of
-`engine_runtime` plus your project's data, which is why `vkm package` takes
+`vkm_runtime` plus your project's data, which is why `vkm package` takes
 seconds rather than recompiling an engine.
 
 ## The commands
@@ -78,7 +78,7 @@ dist/mygame/
     shaders/        the engine's
 ```
 
-The executable is a renamed copy of `engine_runtime` - the engine is never
+The executable is a renamed copy of `vkm_runtime` - the engine is never
 rebuilt for a game, which is why this takes seconds. The player runs
 `bin/mygame` and passes nothing: both roots resolve to the package directory, so
 the game finds itself.

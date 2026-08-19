@@ -31,10 +31,10 @@ cmake -B build -G Ninja
 cmake --build build
 
 # Run (three executables build by default)
-./build/bin/engine_editor examples/potion_runner    # edit a project
-./build/bin/engine_runtime examples/potion_runner   # play it
-./build/bin/engine_cook examples/potion_runner      # bake its assets, no window
-build\bin\engine_editor.exe        # Windows (MSYS2 + Clang)
+./build/bin/vkm_editor examples/potion_runner    # edit a project
+./build/bin/vkm_runtime examples/potion_runner   # play it
+./build/bin/vkm_cook examples/potion_runner      # bake its assets, no window
+build\bin\vkm_editor.exe        # Windows (MSYS2 + Clang)
 ```
 
 All three take **a project directory**, and all three apply the same rule: the
@@ -56,15 +56,22 @@ it belongs to the project rather than to this build tree.
 | `vkm_render` | **Shared lib** | Render system, backend abstraction, render view |
 | `BackendOpenGL` | Static lib | OpenGL backend implementation (GLBackend, GLView, passes, GPU resources) |
 | `vkm_tools` | Static lib | Procedural generators + the runtime-safe cooked-asset loaders/factories. No Assimp, no heavy image decode |
-| `vkm_cook` | Static lib | The heavy importers (Assimp model import, stb image decode) + the asset cooker that bakes recipes into the cooked cache. Linked by `engine_editor` and `engine_cook` only |
+| `vkm_cook` | Static lib | The heavy importers (Assimp model import, stb image decode) + the asset cooker that bakes recipes into the cooked cache. Linked by `vkm_editor_app` and `vkm_cook_app` only |
 | `vkm_editor` | Static lib | Editor UI, panels, overlays, gizmo, scene I/O |
 | `vkm_headers` | Interface lib | Include-only view of vkm_core's public API; the hot-reload module compiles against it without linking vkm_core's objects |
 | `BuildInfo` | Interface lib | Compile-time build metadata (version, branch, commit hash) |
 | `vkm_warnings` | Interface lib | Shared GCC/Clang warning flags; first-party targets opt in, submodules don't |
 | `<project>_module` | Shared lib | One per project (`potion_runner_module`, `stress_arena_module`): that project's gameplay sources built as `game.dll`/`libgame.so` into the project's own `bin/`. The engine ships no gameplay of its own |
-| `engine_runtime` | Executable | Bare engine, no editor. Includes `app/engine_app.h` for the shared bootstrap; links no Assimp and no ImGui |
-| `engine_editor` | Executable | Engine libs + `vkm_editor` + `vkm_cook`; loads the open project's module for hot-reload |
-| `engine_cook` | Executable | Headless asset cook: `vkm_cook` with no window, no GL context and no `Engine`, so it runs over SSH and on CI |
+| `vkm_runtime_app` | Executable | Bare engine, no editor. Includes `app/engine_app.h` for the shared bootstrap; links no Assimp and no ImGui. Runs as `vkm_runtime` |
+| `vkm_editor_app` | Executable | Engine libs + `vkm_editor` + `vkm_cook`; loads the open project's module for hot-reload. Runs as `vkm_editor` |
+| `vkm_cook_app` | Executable | Headless asset cook: `vkm_cook` with no window, no GL context and no `Engine`, so it runs over SSH and on CI. Runs as `vkm_cook` |
+
+Only the executable targets carry a suffix, and all three carry it so it reads
+as "this is the application" rather than "this one had a clash". A CMake target
+name must be unique across the project and two of the three are already library
+names; the files never collide - `vkm_editor` sits beside `libvkm_editor.a`, and
+`vkm_editor.exe` beside `vkm_editor.dll` - so `OUTPUT_NAME` drops the suffix and
+nobody types it outside these build files.
 
 `vkm_core` and `vkm_render` are shared on purpose. A gameplay module has
 to reach engine symbols without carrying a second copy - two copies mean two
@@ -106,31 +113,31 @@ Nothing there involves writing CMake.
 ### Dependency Graph
 
 ```
-engine_editor (executable)              engine_runtime (executable)
+vkm_editor_app (executable)             vkm_runtime_app (executable)
   |-- vkm_core                            |-- vkm_core (glm, glfw, vkm_log, nlohmann_json; glew private)
   |-- vkm_render -- vkm_core              |-- vkm_render -- vkm_core
   |-- vkm_tools -- vkm_core               |-- vkm_tools -- vkm_core (generators + cooked loaders; no Assimp)
   |-- BackendOpenGL -- vkm_gl, ...        |-- BackendOpenGL -- vkm_gl, vkm_render, vkm_tools
   |-- vkm_cook -- vkm_core,               |-- BuildInfo
   |     vkm_tools (+ assimp private)
-  |-- vkm_editor -- vkm_core,           engine_cook (executable)
+  |-- vkm_editor -- vkm_core,           vkm_cook_app (executable)
   |     vkm_tools, vkm_cook,              |-- vkm_cook -- vkm_core, vkm_tools
   |     imgui, vkm_gl                     |-- BuildInfo
   |-- BuildInfo                           (no window, no GL, no Engine)
 
-engine_editor and engine_runtime #include app/engine_app.h for setupEngineApp (no
-EngineApp lib). engine_cook does not: it constructs a Scene and a ResourceManager
-directly and never builds an Engine, which is what lets it run headless.
-engine_runtime links neither vkm_cook nor vkm_editor, so it pulls in no
-Assimp and no ImGui - the link lists enforce that, not a build flag.
+vkm_editor_app and vkm_runtime_app #include app/engine_app.h for setupEngineApp
+(no EngineApp lib). vkm_cook_app does not: it constructs a Scene and a
+ResourceManager directly and never builds an Engine, which is what lets it run
+headless. vkm_runtime_app links neither vkm_cook nor vkm_editor, so it pulls in
+no Assimp and no ImGui - the link lists enforce that, not a build flag.
 
 <project>_module (shared, per project) -- vkm_headers (include-only); it must
   not link vkm_core: a second copy would duplicate the typeId registry and the
   singletons, and components registered on one copy are invisible to the other.
   It resolves engine symbols from the host that loaded it. On Linux that is
-  whichever host did, since ENABLE_EXPORTS is set on engine_editor and
-  engine_runtime alike. On Windows a shared library must name an import library
-  at link time, so a module binds to engine_editor specifically and the runtime
+  whichever host did, since ENABLE_EXPORTS is set on vkm_editor_app and
+  vkm_runtime_app alike. On Windows a shared library must name an import library
+  at link time, so a module binds to vkm_editor_app specifically and the runtime
   cannot load it there.
 ```
 

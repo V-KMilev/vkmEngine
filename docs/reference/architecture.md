@@ -47,8 +47,8 @@ enum class SystemStage : uint8_t {
 ```
 
 Default wiring lives in `setupEngineApp` (`app/engine_app.h`, a header-only
-inline bootstrap both executables include and call). `engine_editor` adds
-`EditorSystem` from its own `main()` after that returns; `engine_runtime` never
+inline bootstrap both executables include and call). `vkm_editor` adds
+`EditorSystem` from its own `main()` after that returns; `vkm_runtime` never
 does:
 
 | Stage      | Systems                                                                         |
@@ -178,9 +178,9 @@ Application and gameplay layers sit **outside** the `src/engine/` include root:
 | Path                | Contents                                                                  |
 |---------------------|---------------------------------------------------------------------------|
 | `app/engine_app.h`  | `setupEngineApp`: the shared, header-only bootstrap that registers the default systems and installs the GL backend. It seeds no scene - that is the project's answer, given by `bootProjectScene` after it returns. Both mains include it directly (there is no `EngineApp` library) |
-| `app/editor/`       | `engine_editor` entry point; opens a project and loads its module for hot-reload |
-| `app/runtime/`      | `engine_runtime` entry point; opens a project and plays it                 |
-| `app/cooker/`       | `engine_cook` entry point; headless asset cook (no window, no GL, no `Engine`) |
+| `app/editor/`       | `vkm_editor` entry point; opens a project and loads its module for hot-reload |
+| `app/runtime/`      | `vkm_runtime` entry point; opens a project and plays it                 |
+| `app/cooker/`       | `vkm_cook` entry point; headless asset cook (no window, no GL, no `Engine`) |
 | `examples/`         | complete worked projects (Potion Runner, Stress Arena). Gameplay lives in a project, never in the engine |
 
 ## Include conventions

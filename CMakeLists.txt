@@ -146,8 +146,8 @@ add_subdirectory(src/backend/opengl)
 add_subdirectory(examples/potion_runner)
 add_subdirectory(examples/stress_arena)
 
-# Three thin executables under app/. engine_runtime plays a project, engine_editor
-# adds the in-process editor to edit one, and engine_cook bakes a project's assets
+# Three thin executables under app/. vkm_runtime plays a project, vkm_editor
+# adds the in-process editor to edit one, and vkm_cook bakes a project's assets
 # with no window at all. The first two link the engine libs directly and share the
 # header-only bootstrap in app/engine_app.h (setupEngineApp) - the editor's only
 # addition is its EditorSystem; the cooker builds no Engine. Each puts the repo

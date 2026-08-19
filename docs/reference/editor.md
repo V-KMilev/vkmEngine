@@ -195,7 +195,7 @@ restart. Order matters, because each step depends on the previous one:
 A path that names a file rather than a directory still works - `findProjectRoot`
 walks up to the owning `project.json`, so dropping in a scene opens its project.
 
-Command-line `engine_editor <project>` does the same thing at startup, before any
+Command-line `vkm_editor <project>` does the same thing at startup, before any
 path is composed. See [system/io.md](system/io.md#projects-and-the-two-roots).
 
 ## Scene I/O

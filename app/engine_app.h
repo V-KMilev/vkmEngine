@@ -37,7 +37,7 @@ inline void ensureDefaultUIFont(Engine::ResourceManager& resources) {
 }
 
 // Per-binary policy for the shared bootstrap: everything that genuinely differs
-// between engine_editor and engine_runtime, and nothing more - so the system
+// between vkm_editor and vkm_runtime, and nothing more - so the system
 // stack itself is defined in exactly one place.
 struct AppConfig {
     const char* windowTitle;
