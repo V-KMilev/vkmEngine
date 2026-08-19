@@ -17,7 +17,7 @@
 namespace Engine {
 
 GLHiZPass::GLHiZPass()
-    : m_reduce(std::make_unique<Core::Shader>("shaders/hiz/reduce")) {}
+    : m_reduce(std::make_unique<Vkm::GL::Shader>("shaders/hiz/reduce")) {}
 
 GLHiZPass::~GLHiZPass() = default;
 

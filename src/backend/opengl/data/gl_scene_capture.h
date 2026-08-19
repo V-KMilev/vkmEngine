@@ -13,7 +13,7 @@
 #include "data/gl_shadow_data.h"
 #include "data/gl_instance_batcher.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Context;
 }
 
@@ -79,12 +79,12 @@ class GLSceneCapture {
          * @param farPlane Capture far plane; geometry beyond it misses the cube.
          * @param attach   Attaches the destination face + its viewport, once per face.
          */
-        void captureCube(Core::Context& gl, const glm::vec3& position, float farPlane,
+        void captureCube(Vkm::GL::Context& gl, const glm::vec3& position, float farPlane,
                          const AttachFace& attach);
 
     private:
-        Core::Shader m_pbr;     ///< capture geometry (full forward PBR)
-        Core::Shader m_skybox;  ///< capture background
+        Vkm::GL::Shader m_pbr;     ///< capture geometry (full forward PBR)
+        Vkm::GL::Shader m_skybox;  ///< capture background
 
         std::unique_ptr<GLMesh> m_cube;  ///< unit cube the skybox draws
 
@@ -115,6 +115,6 @@ class GLSceneCapture {
  * @param iblIntensity Strength of that indirect term.
  * @param faceSize     Square render size, reported as u_screenSize.
  */
-void bindOfflinePbrUniforms(Core::Shader& pbr, const GLIBL& ibl, float iblIntensity, float faceSize);
+void bindOfflinePbrUniforms(Vkm::GL::Shader& pbr, const GLIBL& ibl, float iblIntensity, float faceSize);
 
 } // namespace Engine

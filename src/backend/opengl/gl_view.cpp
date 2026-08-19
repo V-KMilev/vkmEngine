@@ -141,7 +141,7 @@ const GLMaterial* GLView::getMaterial(const MaterialHandle& handle) const {
     return id < m_materials.slots.size() ? m_materials.slots[id].gl.get() : nullptr;
 }
 
-const Core::Texture2D* GLView::getTexture(const TextureHandle& handle) const {
+const Vkm::GL::Texture2D* GLView::getTexture(const TextureHandle& handle) const {
     if (!handle) return nullptr;
     const uint32_t id = handle.id();
     if (id >= m_textures.slots.size() || !m_textures.slots[id].gl) return nullptr;
@@ -152,7 +152,7 @@ const Core::Texture2D* GLView::getTexture(const TextureHandle& handle) const {
     return &m_textures.slots[id].gl->getTexture();
 }
 
-const Core::Texture2D& GLView::missingTexture() const {
+const Vkm::GL::Texture2D& GLView::missingTexture() const {
     if (m_missingTexture) return *m_missingTexture;
 
     // 8x8 magenta-on-black checker. Magenta because nothing in a PBR scene is
@@ -172,26 +172,26 @@ const Core::Texture2D& GLView::missingTexture() const {
         }
     }
 
-    Core::Texture2DParams params;
+    Vkm::GL::Texture2DParams params;
     params.width           = SIZE;
     params.height          = SIZE;
     params.internalFormat  = GL_SRGB8_ALPHA8;  // sampled as colour, like any albedo map
     params.format          = GL_RGBA;
     params.type            = GL_UNSIGNED_BYTE;
-    params.wrapS           = Core::TextureWrap::Repeat;
-    params.wrapT           = Core::TextureWrap::Repeat;
+    params.wrapS           = Vkm::GL::TextureWrap::Repeat;
+    params.wrapT           = Vkm::GL::TextureWrap::Repeat;
     // Nearest, and no mips: the point is to stay a hard-edged grid at every
     // distance rather than blurring into flat magenta far away.
-    params.minFilter       = Core::TextureMinFilter::Nearest;
-    params.magFilter       = Core::TextureMagFilter::Nearest;
+    params.minFilter       = Vkm::GL::TextureMinFilter::Nearest;
+    params.magFilter       = Vkm::GL::TextureMagFilter::Nearest;
     params.generateMipmaps = false;
     params.data            = pixels.data();
 
-    m_missingTexture = std::make_unique<Core::Texture2D>("missing", params);
+    m_missingTexture = std::make_unique<Vkm::GL::Texture2D>("missing", params);
     return *m_missingTexture;
 }
 
-const Core::Texture2D* GLView::getFontAtlas(const FontHandle& handle) const {
+const Vkm::GL::Texture2D* GLView::getFontAtlas(const FontHandle& handle) const {
     if (!handle) return nullptr;
     const uint32_t id = handle.id();
     if (id >= m_fontAtlases.slots.size() || !m_fontAtlases.slots[id].gl) return nullptr;

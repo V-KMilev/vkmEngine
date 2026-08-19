@@ -8,7 +8,7 @@
 
 #include "core/engine_config.h"
 
-namespace Core {
+namespace Vkm::GL {
     class UniformBuffer;
 }
 
@@ -214,7 +214,7 @@ class GLShadowData {
         void fitPoint(const LightData& light, uint32_t lightIndex, uint32_t& nextCube);
 
     private:
-        std::unique_ptr<Core::UniformBuffer> m_ubo;
+        std::unique_ptr<Vkm::GL::UniformBuffer> m_ubo;
         ShadowUBOData m_data{};
         ShadowUBOData m_last{};
 

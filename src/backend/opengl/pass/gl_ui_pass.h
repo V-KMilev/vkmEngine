@@ -5,7 +5,7 @@
 
 #include "gl_pass.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Shader;
     class VertexArray;
     class VertexBuffer;
@@ -44,10 +44,10 @@ class GLUIPass : public GLPass {
         void ensureCapacity(uint32_t vertexCount);
 
     private:
-        std::unique_ptr<Core::Shader>       m_shader;
-        std::unique_ptr<Core::VertexArray>  m_vao;
-        std::unique_ptr<Core::VertexBuffer> m_vbo;
-        uint32_t                            m_capacity = 0;  ///< VBO capacity in vertices.
+        std::unique_ptr<Vkm::GL::Shader>       m_shader;
+        std::unique_ptr<Vkm::GL::VertexArray>  m_vao;
+        std::unique_ptr<Vkm::GL::VertexBuffer> m_vbo;
+        uint32_t                               m_capacity = 0;  ///< VBO capacity in vertices.
 };
 
 } // namespace Engine

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <memory>
 
-namespace Core {
+namespace Vkm::GL {
     class Texture2D;
 }
 
@@ -13,7 +13,7 @@ struct TextureAsset;
 struct FontAsset;
 
 /**
- * @brief GPU copy of a 2D texture-shaped asset (wraps Core::Texture2D).
+ * @brief GPU copy of a 2D texture-shaped asset (wraps Vkm::GL::Texture2D).
  *
  * Uploads either a TextureAsset or a FontAsset's SDF atlas (fonts carry their
  * atlas as raw pixels, not as a TextureAsset), so GLView can table both behind
@@ -35,7 +35,7 @@ class GLTexture {
         void update(const TextureAsset& texture);
         void update(const FontAsset& font);
 
-        const Core::Texture2D& getTexture() const { return *m_texture; }
+        const Vkm::GL::Texture2D& getTexture() const { return *m_texture; }
 
         /**
          * @brief Whether real pixels have ever been uploaded into this texture.
@@ -48,8 +48,8 @@ class GLTexture {
         bool hasPixels() const { return m_hasPixels; }
 
     private:
-        std::unique_ptr<Core::Texture2D> m_texture;
-        bool                             m_hasPixels = false;
+        std::unique_ptr<Vkm::GL::Texture2D> m_texture;
+        bool                              m_hasPixels = false;
 };
 
 } // namespace Engine

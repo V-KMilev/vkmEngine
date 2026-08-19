@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
         // GL_DEBUG_OUTPUT_SYNCHRONOUS, which validates every GL call on the
         // calling thread (a real CPU cost across pass + ImGui submission).
         // Pass true only to pin a GL error to its exact callsite.
-        Core::enableGLDebugLogging(false);
+        Vkm::GL::enableGLDebugLogging(false);
 
         // The editor wires the recipe factories: they (re)cook assets from their
         // source and fall through to the cooked path for what is already baked.

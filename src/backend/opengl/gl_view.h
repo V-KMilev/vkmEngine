@@ -14,7 +14,7 @@
 #include "data/gl_material.h"
 #include "data/gl_texture.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Texture2D;
 }
 
@@ -100,8 +100,8 @@ class GLView {
          */
         const GLMesh*     getMesh(const MeshHandle& handle) const;
         const GLMaterial* getMaterial(const MaterialHandle& handle) const;
-        const Core::Texture2D* getTexture(const TextureHandle& handle) const;
-        const Core::Texture2D* getFontAtlas(const FontHandle& handle) const;
+        const Vkm::GL::Texture2D* getTexture(const TextureHandle& handle) const;
+        const Vkm::GL::Texture2D* getFontAtlas(const FontHandle& handle) const;
 
         /**
          * @brief The magenta/black checkerboard bound wherever a real texture
@@ -118,7 +118,7 @@ class GLView {
          *
          * @return The placeholder texture; never null once the GL context exists.
          */
-        const Core::Texture2D& missingTexture() const;
+        const Vkm::GL::Texture2D& missingTexture() const;
 
     private:
         /**
@@ -165,7 +165,7 @@ class GLView {
 
         // Not part of the tables: it belongs to no asset and must survive the
         // epoch flush, since a graph swap is exactly when things are missing.
-        mutable std::unique_ptr<Core::Texture2D> m_missingTexture;
+        mutable std::unique_ptr<Vkm::GL::Texture2D> m_missingTexture;
 
         std::unordered_set<uint32_t> m_reportedMissing;  ///< Texture ids already warned about, so the log stays one line per asset.
 

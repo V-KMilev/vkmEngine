@@ -17,8 +17,8 @@
 namespace Engine {
 
 GLBloomPass::GLBloomPass()
-    : m_down(std::make_unique<Core::Shader>("shaders/bloom/down"))
-    , m_up(std::make_unique<Core::Shader>("shaders/bloom/up")) {}
+    : m_down(std::make_unique<Vkm::GL::Shader>("shaders/bloom/down"))
+    , m_up(std::make_unique<Vkm::GL::Shader>("shaders/bloom/up")) {}
 
 GLBloomPass::~GLBloomPass() = default;
 

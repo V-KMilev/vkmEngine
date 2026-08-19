@@ -20,7 +20,7 @@
 namespace Engine {
 
 GLSkyboxPass::GLSkyboxPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/skybox"))
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/skybox"))
     , m_cube(std::make_unique<GLMesh>(generateCube())) {}
 
 GLSkyboxPass::~GLSkyboxPass() = default;

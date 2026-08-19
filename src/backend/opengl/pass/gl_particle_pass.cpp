@@ -18,7 +18,7 @@
 namespace Engine {
 
 GLParticlePass::GLParticlePass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/particle")) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/particle")) {}
 
 GLParticlePass::~GLParticlePass() = default;
 
@@ -30,7 +30,7 @@ void GLParticlePass::drawBatch(const std::vector<ParticleData>& batch) {
 
     // Grow the instance buffer on demand; steady state re-uploads in place.
     if (!m_instances || count > m_capacity) {
-        m_instances = std::make_unique<Core::ShaderStorageBuffer>(batch.data(), bytes, GL_DYNAMIC_DRAW);
+        m_instances = std::make_unique<Vkm::GL::ShaderStorageBuffer>(batch.data(), bytes, GL_DYNAMIC_DRAW);
         m_capacity  = count;
     } else {
         m_instances->update(batch.data(), bytes);

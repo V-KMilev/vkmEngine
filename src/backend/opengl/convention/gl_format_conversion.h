@@ -7,7 +7,7 @@
 
 namespace Engine {
 
-// Map the engine's backend-agnostic texture enums to the GL / Core::Texture2D
+// Map the engine's backend-agnostic texture enums to the GL / Vkm::GL::Texture2D
 // equivalents for upload. Each falls back to a sane default on an unhandled
 // value rather than asserting, so a new enum case degrades instead of crashing.
 
@@ -44,41 +44,41 @@ inline GLenum toGLenum(TexturePixelType type) {
     return GL_UNSIGNED_BYTE;
 }
 
-inline Core::TextureWrap toGLWrap(TextureWrapMode wrap) {
+inline Vkm::GL::TextureWrap toGLWrap(TextureWrapMode wrap) {
     switch (wrap) {
-        case TextureWrapMode::Repeat:         return Core::TextureWrap::Repeat;
-        case TextureWrapMode::MirroredRepeat: return Core::TextureWrap::MirroredRepeat;
-        case TextureWrapMode::ClampToEdge:    return Core::TextureWrap::ClampToEdge;
-        case TextureWrapMode::ClampToBorder:  return Core::TextureWrap::ClampToBorder;
+        case TextureWrapMode::Repeat:         return Vkm::GL::TextureWrap::Repeat;
+        case TextureWrapMode::MirroredRepeat: return Vkm::GL::TextureWrap::MirroredRepeat;
+        case TextureWrapMode::ClampToEdge:    return Vkm::GL::TextureWrap::ClampToEdge;
+        case TextureWrapMode::ClampToBorder:  return Vkm::GL::TextureWrap::ClampToBorder;
     }
-    return Core::TextureWrap::ClampToEdge;
+    return Vkm::GL::TextureWrap::ClampToEdge;
 }
 
-inline Core::TextureMinFilter toGLMinFilter(TextureMinFilter filter) {
+inline Vkm::GL::TextureMinFilter toGLMinFilter(TextureMinFilter filter) {
     switch (filter) {
-        case TextureMinFilter::Nearest:              return Core::TextureMinFilter::Nearest;
-        case TextureMinFilter::Linear:               return Core::TextureMinFilter::Linear;
-        case TextureMinFilter::NearestMipmapNearest: return Core::TextureMinFilter::NearestMipmapNearest;
-        case TextureMinFilter::LinearMipmapNearest:  return Core::TextureMinFilter::LinearMipmapNearest;
-        case TextureMinFilter::NearestMipmapLinear:  return Core::TextureMinFilter::NearestMipmapLinear;
-        case TextureMinFilter::LinearMipmapLinear:   return Core::TextureMinFilter::LinearMipmapLinear;
+        case TextureMinFilter::Nearest:              return Vkm::GL::TextureMinFilter::Nearest;
+        case TextureMinFilter::Linear:               return Vkm::GL::TextureMinFilter::Linear;
+        case TextureMinFilter::NearestMipmapNearest: return Vkm::GL::TextureMinFilter::NearestMipmapNearest;
+        case TextureMinFilter::LinearMipmapNearest:  return Vkm::GL::TextureMinFilter::LinearMipmapNearest;
+        case TextureMinFilter::NearestMipmapLinear:  return Vkm::GL::TextureMinFilter::NearestMipmapLinear;
+        case TextureMinFilter::LinearMipmapLinear:   return Vkm::GL::TextureMinFilter::LinearMipmapLinear;
     }
-    return Core::TextureMinFilter::LinearMipmapLinear;
+    return Vkm::GL::TextureMinFilter::LinearMipmapLinear;
 }
 
-inline Core::TextureMagFilter toGLMagFilter(TextureMagFilter filter) {
+inline Vkm::GL::TextureMagFilter toGLMagFilter(TextureMagFilter filter) {
     switch (filter) {
-        case TextureMagFilter::Nearest: return Core::TextureMagFilter::Nearest;
-        case TextureMagFilter::Linear:  return Core::TextureMagFilter::Linear;
+        case TextureMagFilter::Nearest: return Vkm::GL::TextureMagFilter::Nearest;
+        case TextureMagFilter::Linear:  return Vkm::GL::TextureMagFilter::Linear;
     }
-    return Core::TextureMagFilter::Linear;
+    return Vkm::GL::TextureMagFilter::Linear;
 }
 
 /**
- * @brief Convert engine TextureParams to Core::Texture2DParams for GPU upload.
+ * @brief Convert engine TextureParams to Vkm::GL::Texture2DParams for GPU upload.
  */
-inline Core::Texture2DParams toGLParams(const TextureParams& params, const void* data) {
-    Core::Texture2DParams gl;
+inline Vkm::GL::Texture2DParams toGLParams(const TextureParams& params, const void* data) {
+    Vkm::GL::Texture2DParams gl;
     gl.width          = params.width;
     gl.height         = params.height;
     gl.internalFormat = toGLenum(params.internalFormat);

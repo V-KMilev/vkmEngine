@@ -20,7 +20,7 @@
 namespace Engine {
 
 GLCompositePass::GLCompositePass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/composite")) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/composite")) {}
 
 GLCompositePass::~GLCompositePass() = default;
 

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Core {
+namespace Vkm::GL {
     class Context;
 }
 
@@ -38,14 +38,14 @@ class GLPass {
          * culling all off. The post passes route through this so they can't
          * drift apart on which states they set.
          */
-        void beginFullscreen(Core::Context& gl) const;
+        void beginFullscreen(Vkm::GL::Context& gl) const;
 
         /**
          * @brief Shared fullscreen-pass epilogue: re-enable depth testing (the
          * following geometry pass sets its own func / write / cull). Mirrors
          * beginFullscreen so the post passes don't each open-code the restore.
          */
-        void endFullscreen(Core::Context& gl) const;
+        void endFullscreen(Vkm::GL::Context& gl) const;
 
         /**
          * @brief Move the scene into the colour chain if it is still on the

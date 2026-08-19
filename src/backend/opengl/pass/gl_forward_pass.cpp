@@ -24,7 +24,7 @@
 namespace Engine {
 
 GLForwardPass::GLForwardPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/forward/pbr")) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/forward/pbr")) {}
 
 GLForwardPass::~GLForwardPass() = default;
 

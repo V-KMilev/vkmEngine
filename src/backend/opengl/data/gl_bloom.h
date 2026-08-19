@@ -12,7 +12,7 @@ namespace Engine {
 /**
  * @brief Mip-chain render target for energy-conserving bloom (COD/Jimenez).
  *
- * An RGBA16F explicit mip chain (Core::MipChainTexture). The bloom pass
+ * An RGBA16F explicit mip chain (Vkm::GL::MipChainTexture). The bloom pass
  * progressively downsamples the HDR scene into the chain, then additively
  * upsamples back up; mip 0 holds the final bloom the composite pass blends in.
  * Sized to half the viewport, rebuilt on resize. This class owns only the
@@ -74,7 +74,7 @@ class GLBloom {
         void attachMip(int mip) const { m_chain.attachMip(mip); }
 
     private:
-        Core::MipChainTexture m_chain;
+        Vkm::GL::MipChainTexture m_chain;
         int m_baseW = 0;
         int m_baseH = 0;
 };

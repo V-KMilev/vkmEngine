@@ -4,7 +4,7 @@
 
 #include "gl_pass.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Shader;
 }
 
@@ -37,7 +37,7 @@ class GLHiZPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Core::Shader> m_reduce;
+        std::unique_ptr<Vkm::GL::Shader> m_reduce;
 };
 
 } // namespace Engine

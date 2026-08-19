@@ -85,7 +85,7 @@ bool GLBackend::init(WindowManager& window) {
     // Shaders omit their own #version; inject it from the requested GL context
     // version (single source of truth) before the passes compile their programs.
     // Covers compute stages too - they share the same loader.
-    Core::setShaderVersion(OPENGL_GLSL_VERSION);
+    Vkm::GL::setShaderVersion(OPENGL_GLSL_VERSION);
 
     // Build the pass list. Passes compile their shaders, so this must run after
     // the context exists. Where the order is load-bearing:
@@ -395,14 +395,14 @@ void GLBackend::releasePreview(uint64_t key) {
 }
 
 GpuTextureId GLBackend::textureId(const TextureHandle& handle) const {
-    const Core::Texture2D* tex = m_view.getTexture(handle);
+    const Vkm::GL::Texture2D* tex = m_view.getTexture(handle);
     return tex ? tex->getID() : 0;
 }
 
 uint32_t GLBackend::reloadChangedShaders() {
-    // Every Core::Shader registers itself, so this reaches the passes, the
+    // Every Vkm::GL::Shader registers itself, so this reaches the passes, the
     // bakers and the editor previews without any of them opting in.
-    return Core::reloadChangedShaders("shaders");
+    return Vkm::GL::reloadChangedShaders("shaders");
 }
 
 void GLBackend::releaseAllPreviews() {

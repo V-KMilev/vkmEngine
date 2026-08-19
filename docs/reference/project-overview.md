@@ -105,7 +105,7 @@ unchanged uploads. See [resources.md](resources.md).
 - `src/backend/opengl/` - OpenGL backend, flat `gl_`-prefixed includes.
 - `src/editor/` - ImGui editor (panels, gizmo, undo/redo).
 - `src/tools/` - asset loaders + generators.
-- Namespaces: `Engine::` for engine code, `Core::` for vkmGL wrappers.
+- Namespaces: `Engine::` for engine code, `Vkm::GL::` for vkmGL wrappers.
 
 Full tree and design patterns: [architecture.md](architecture.md). House style:
 [../guides/code-style.md](../guides/code-style.md).

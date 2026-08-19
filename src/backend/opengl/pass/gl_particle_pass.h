@@ -7,7 +7,7 @@
 #include "gl_pass.h"
 #include "gl_vertex_array.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Shader;
     class ShaderStorageBuffer;
 }
@@ -47,10 +47,10 @@ class GLParticlePass : public GLPass {
         void drawBatch(const std::vector<ParticleData>& batch);
 
     private:
-        std::unique_ptr<Core::Shader>              m_shader;
-        std::unique_ptr<Core::ShaderStorageBuffer> m_instances;
-        uint32_t                                   m_capacity = 0;  ///< Instances the SSBO can hold.
-        Core::VertexArray                          m_vao;           ///< Empty VAO: core profile needs one bound to draw.
+        std::unique_ptr<Vkm::GL::Shader>              m_shader;
+        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_instances;
+        uint32_t                                      m_capacity = 0;  ///< Instances the SSBO can hold.
+        Vkm::GL::VertexArray                          m_vao;           ///< Empty VAO: core profile needs one bound to draw.
 };
 
 } // namespace Engine

@@ -178,7 +178,7 @@ Helpers inside an anonymous namespace get no extra prefix (`detail_`,
 | Enum class value | PascalCase                   | `SystemStage::Render`                |
 | Type alias       | PascalCase                   | `EntityId`, `MeshHandle`             |
 | Template param   | single letter or PascalCase  | `T`, `ResourceType`                  |
-| Namespace        | PascalCase                   | `Engine`, `Core`, `FrustumCuller`    |
+| Namespace        | PascalCase                   | `Engine`, `Vkm::GL`, `FrustumCuller` |
 | File name        | snake_case                   | `render_view.h`, `gl_forward_pass.cpp` |
 
 ### 4.1 The struct/class member rule

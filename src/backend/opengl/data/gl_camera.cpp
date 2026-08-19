@@ -18,7 +18,7 @@ void GLCamera::update(const CameraData& camera) {
     data.viewProjection = camera.viewProjection;
     data.cameraPosition = glm::vec4(camera.position, 1.0f);
 
-    Core::uploadIfChanged(m_ubo, m_last, data);
+    Vkm::GL::uploadIfChanged(m_ubo, m_last, data);
     if (m_ubo) m_ubo->bindBase(GLBindings::UBOBindingPoints::Camera);
 }
 

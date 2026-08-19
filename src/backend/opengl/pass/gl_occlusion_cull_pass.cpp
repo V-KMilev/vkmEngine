@@ -19,7 +19,7 @@ constexpr uint32_t GROUP_SIZE = 64;   // matches local_size_x in the shader
 } // namespace
 
 GLOcclusionCullPass::GLOcclusionCullPass()
-    : m_compute(std::make_unique<Core::ComputeShader>("shaders/occlusion_cull")) {}
+    : m_compute(std::make_unique<Vkm::GL::ComputeShader>("shaders/occlusion_cull")) {}
 
 GLOcclusionCullPass::~GLOcclusionCullPass() = default;
 

@@ -17,7 +17,7 @@
 namespace Engine {
 
 GLDepthPrepass::GLDepthPrepass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/forward/prepass")) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/forward/prepass")) {}
 
 GLDepthPrepass::~GLDepthPrepass() = default;
 
