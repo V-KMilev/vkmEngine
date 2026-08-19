@@ -10,7 +10,7 @@ target_link_libraries(EngineEditor PUBLIC
     EngineTools
     EngineCooker       # model import + asset cooking (editor-only heavy deps)
     imgui
-    vkmGL
+    vkm_gl
 )
 target_link_libraries(EngineEditor PRIVATE
     EngineRendering    # editor_system uses backend()/renderPreview(); headers only forward-declare it

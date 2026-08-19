@@ -63,7 +63,7 @@ if(NOT TARGET stb)
 endif()
 
 # vkmGL: the OpenGL layer. Adds glew, and defers to the targets above.
-if(NOT TARGET vkmGL)
+if(NOT TARGET vkm_gl)
     add_subdirectory(vkmGL)
 endif()
 

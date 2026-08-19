@@ -7,7 +7,7 @@ target_include_directories(BackendOpenGL PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(BackendOpenGL
     PUBLIC
-        vkmGL
+        vkm_gl
         EngineRendering
         EngineTools
     PRIVATE
