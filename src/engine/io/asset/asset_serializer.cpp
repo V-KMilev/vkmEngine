@@ -20,7 +20,6 @@
 #include "io/asset/asset_library.h"
 #include "io/json_file.h"
 #include "io/json_vec.h"
-#include "io/project_paths.h"
 #include "core/reflect.h"
 
 namespace Engine {

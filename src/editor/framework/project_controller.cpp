@@ -10,7 +10,6 @@
 
 #include "logger.h"
 
-#include "core/engine.h"
 #include "ecs/scene.h"
 #include "framework/editor_context.h"
 #include "framework/editor_settings.h"
