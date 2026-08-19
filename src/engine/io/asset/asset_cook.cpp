@@ -10,6 +10,7 @@
 
 #include "logger.h"
 
+#include "io/asset/asset_library.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
@@ -127,49 +128,111 @@ void writeHeader(std::ostream& os, uint16_t assetKind, uint16_t formatVersion,
     writeRaw(os, payloadBytes);
 }
 
+/**
+ * @brief The header as written, before anything has judged it.
+ */
+struct CookedHeader {
+    uint32_t sentinel      = 0;
+    uint16_t assetKind     = 0;
+    uint16_t formatVersion = 0;
+    uint64_t recipeHash    = 0;
+    uint64_t payloadBytes  = 0;
+};
+
+// How far the header got before it stopped making sense. The kind, the version
+// and the hash are deliberately not judged here: a reader refuses a mismatch and
+// says why, while isCookedCurrent only wants a yes or a no and must stay silent
+// doing it, so the two disagree about everything except how the bytes are laid
+// out - which is the only thing worth sharing.
+enum class HeaderRead { Ok, BadMagic, ForeignEndian, Truncated };
+
+HeaderRead readHeaderFields(std::istream& is, CookedHeader& out) {
+    char magic[4] = {};
+    if (!is.read(magic, 4) || std::memcmp(magic, MAGIC, 4) != 0) return HeaderRead::BadMagic;
+    if (!readRaw(is, out.sentinel))                              return HeaderRead::Truncated;
+    if (out.sentinel != ENDIAN_SENTINEL)                         return HeaderRead::ForeignEndian;
+    if (!readRaw(is, out.assetKind) || !readRaw(is, out.formatVersion) ||
+        !readRaw(is, out.recipeHash) || !readRaw(is, out.payloadBytes)) return HeaderRead::Truncated;
+    return HeaderRead::Ok;
+}
+
+// The kind tag and format version a type's cooked file must carry. False for a
+// material, which has no cooked binary at all - its recipe is its runtime form.
+bool cookedIdentity(AssetType type, uint16_t& outKind, uint16_t& outVersion) {
+    switch (type) {
+        case AssetType::Mesh:          outKind = KIND_MESH;     outVersion = MESH_FORMAT_VERSION;           return true;
+        case AssetType::Texture:       outKind = KIND_TEXTURE;  outVersion = TEXTURE_FORMAT_VERSION;        return true;
+        case AssetType::Skeleton:      outKind = KIND_SKELETON; outVersion = SKELETON_FORMAT_VERSION;       return true;
+        case AssetType::AnimationClip: outKind = KIND_CLIP;     outVersion = ANIMATION_CLIP_FORMAT_VERSION; return true;
+        case AssetType::Material:
+        case AssetType::Count:         return false;
+    }
+    return false;
+}
+
 // Reads and validates the header, leaving the get pointer at the body start.
 bool readHeader(std::istream& is, const std::filesystem::path& path,
                 uint16_t expectKind, uint16_t expectVersion,
                 uint64_t& outRecipeHash, uint64_t& outPayloadBytes) {
     const std::string p = path.string();
-    char magic[4] = {};
-    if (!is.read(magic, 4) || std::memcmp(magic, MAGIC, 4) != 0) {
-        LOG_ERROR("Cooked asset '%s': bad magic", p.c_str());
+    CookedHeader header;
+    switch (readHeaderFields(is, header)) {
+        case HeaderRead::Ok: break;
+        case HeaderRead::BadMagic:
+            LOG_ERROR("Cooked asset '%s': bad magic", p.c_str());
+            return false;
+        case HeaderRead::ForeignEndian:
+            LOG_ERROR("Cooked asset '%s': endian/sentinel mismatch (0x%08x)", p.c_str(), header.sentinel);
+            return false;
+        case HeaderRead::Truncated:
+            LOG_ERROR("Cooked asset '%s': truncated header", p.c_str());
+            return false;
+    }
+    if (header.assetKind != expectKind) {
+        LOG_ERROR("Cooked asset '%s': wrong asset kind %u (expected %u)", p.c_str(),
+                  header.assetKind, expectKind);
         return false;
     }
-    uint32_t sentinel = 0;
-    if (!readRaw(is, sentinel) || sentinel != ENDIAN_SENTINEL) {
-        LOG_ERROR("Cooked asset '%s': endian/sentinel mismatch (0x%08x)", p.c_str(), sentinel);
+    if (header.formatVersion != expectVersion) {
+        LOG_ERROR("Cooked asset '%s': unsupported format version %u (expected %u)", p.c_str(),
+                  header.formatVersion, expectVersion);
         return false;
     }
-    uint16_t kind = 0;
-    uint16_t version = 0;
-    if (!readRaw(is, kind) || kind != expectKind) {
-        LOG_ERROR("Cooked asset '%s': wrong asset kind %u (expected %u)", p.c_str(), kind, expectKind);
-        return false;
-    }
-    if (!readRaw(is, version) || version != expectVersion) {
-        LOG_ERROR("Cooked asset '%s': unsupported format version %u (expected %u)", p.c_str(), version, expectVersion);
-        return false;
-    }
-    if (!readRaw(is, outRecipeHash) || !readRaw(is, outPayloadBytes)) {
-        LOG_ERROR("Cooked asset '%s': truncated header", p.c_str());
-        return false;
-    }
+    outRecipeHash   = header.recipeHash;
+    outPayloadBytes = header.payloadBytes;
     return true;
+}
+
+// Whether the bytes after the header are exactly the payload the header
+// declares. Says nothing and leaves the get pointer at the end, so both the
+// reader (which reports the mismatch and then reads the body) and the staleness
+// probe (which only wants a yes or a no) can ask it.
+//
+// The file is measured against the payload by subtraction, never by adding the
+// payload to the header. payloadBytes is read off disk before anything has
+// vouched for it, and a count near the top of the range overflows a signed file
+// offset when the header is added to it - undefined behaviour on the one path
+// whose whole job is to refuse a damaged file. Both operands below are known
+// non-negative before they meet.
+bool payloadFillsFile(std::istream& is, uint64_t payloadBytes, std::streamoff& outFileSize) {
+    is.seekg(0, std::ios::end);
+    outFileSize = is.tellg();
+    return outFileSize >= HEADER_BYTES
+        && payloadBytes == static_cast<uint64_t>(outFileSize - HEADER_BYTES);
 }
 
 // The bytes after the header must exactly equal the declared payload, so a
 // corrupt count can never drive an oversized allocation. Repositions the get
 // pointer to the body start.
 bool verifyFileSize(std::istream& is, const std::filesystem::path& path, uint64_t payloadBytes) {
-    is.seekg(0, std::ios::end);
-    const std::streamoff fileSize = is.tellg();
+    std::streamoff fileSize = 0;
+    const bool fills = payloadFillsFile(is, payloadBytes, fileSize);
     is.seekg(HEADER_BYTES, std::ios::beg);
-    const std::streamoff expected = HEADER_BYTES + static_cast<std::streamoff>(payloadBytes);
-    if (fileSize < HEADER_BYTES || fileSize != expected) {
-        LOG_ERROR("Cooked asset '%s': size mismatch (file %lld, header+payload %lld)",
-                  path.string().c_str(), static_cast<long long>(fileSize), static_cast<long long>(expected));
+    if (!fills) {
+        LOG_ERROR("Cooked asset '%s': size mismatch (file %lld, header %lld + payload %llu)",
+                  path.string().c_str(), static_cast<long long>(fileSize),
+                  static_cast<long long>(HEADER_BYTES),
+                  static_cast<unsigned long long>(payloadBytes));
         return false;
     }
     return true;
@@ -249,6 +312,29 @@ bool writeMesh(const std::filesystem::path& path, const MeshAsset& mesh, uint64_
         return false;
     }
     return true;
+}
+
+bool isCookedCurrent(AssetType type, const std::filesystem::path& path, uint64_t recipeHash) {
+    uint16_t expectKind = 0;
+    uint16_t expectVersion = 0;
+    if (!cookedIdentity(type, expectKind, expectVersion)) return false;
+
+    std::ifstream is(path, std::ios::binary);
+    if (!is) return false;
+
+    CookedHeader header;
+    if (readHeaderFields(is, header) != HeaderRead::Ok) return false;
+    if (header.assetKind != expectKind || header.formatVersion != expectVersion
+        || header.recipeHash != recipeHash) return false;
+
+    // The body is measured, not read. The header is written before the body, so
+    // an interrupted write or a partial copy leaves a file that identifies
+    // itself perfectly and is short - and identifying itself is all the rest of
+    // this function asks. Without this the reader refuses that file while the
+    // cooker calls it current and never rewrites it, which is precisely the
+    // project neither end repairs. One seek answers it; nothing is allocated.
+    std::streamoff fileSize = 0;
+    return payloadFillsFile(is, header.payloadBytes, fileSize);
 }
 
 bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHash) {
