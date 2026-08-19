@@ -1,16 +1,19 @@
 #include "framework/editor_actions.h"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <limits>
 #include <memory>
 #include <string>
+#include <system_error>
 
 #include <imgui.h>
 #include <glm/glm.hpp>
 
 #include "framework/editor_commands.h"
 #include "framework/editor_state.h"
+#include "framework/prefab_overrides.h"
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
 #include "ecs/component/mesh.h"
@@ -23,6 +26,8 @@
 #include "ecs/component/irradiance_volume.h"
 #include "ecs/component/decal.h"
 #include "ecs/component/particle_emitter.h"
+#include "ecs/component/prefab_instance.h"
+#include "io/scene/prefab.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
@@ -64,6 +69,25 @@ void setTransformFromMatrix(Transform& t, const glm::mat4& m) {
 void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
                           EntityId newParent, const char* label) {
     if (!scene.isAlive(child) || !scene.has<Transform>(child)) return;
+
+    // An instance's interior belongs to its prefab: the scene stores the
+    // instance as a reference and rebuilds the subtree from the file, so an
+    // entity dropped inside one is never written, and one dragged out of one is
+    // put back where the prefab has it. Both moves look like they worked and
+    // are gone by the next load, so say no while there is still someone to tell.
+    if (PrefabOverrides::instanceRoot(scene, newParent)) {
+        state.pushToast(EditorState::ToastKind::Warning,
+                        "A prefab instance is built from its prefab - an entity moved "
+                        "into one is not saved with the scene");
+        return;
+    }
+    const EntityId owningInstance = PrefabOverrides::instanceRoot(scene, child);
+    if (owningInstance && owningInstance != child) {
+        state.pushToast(EditorState::ToastKind::Warning,
+                        "This entity belongs to a prefab - move the instance root, or "
+                        "change the prefab and save it");
+        return;
+    }
 
     EntityId oldParent{};
     if (scene.has<Hierarchy>(child)) oldParent = scene.get<Hierarchy>(child).parent;
@@ -249,8 +273,19 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
     uint32_t parentSlot = 0;
     if (isUIElement && state.selectedEntity && scene.isAlive(state.selectedEntity)
         && (scene.has<UICanvas>(state.selectedEntity) || scene.has<UIElement>(state.selectedEntity))) {
-        HierarchyOperations::setParent(scene, entity, state.selectedEntity);
-        parentSlot = state.selectedEntity.index;
+        // Unless that canvas belongs to a prefab instance. The scene stores an
+        // instance as a reference and rebuilds its subtree from the file, so an
+        // element parented in there is never written: it would draw until the
+        // next load and then be gone. Leave it outside and say why - the same
+        // answer reparentKeepingWorld gives a drag that aims there.
+        if (PrefabOverrides::instanceRoot(scene, state.selectedEntity)) {
+            state.pushToast(EditorState::ToastKind::Warning,
+                            "A prefab instance is built from its prefab - the new element is "
+                            "left outside it, and needs a canvas the scene owns");
+        } else {
+            HierarchyOperations::setParent(scene, entity, state.selectedEntity);
+            parentSlot = state.selectedEntity.index;
+        }
     }
 
     // Snapshot the just-created entity so undo can resurrect it intact
@@ -264,33 +299,78 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
 }
 
 namespace {
+// How far along X a copy lands from its source, so it is visible rather than
+// hidden inside the original.
+constexpr float DUPLICATE_OFFSET_X = 1.0f;
+
+// A copy and the step that removes it again, handed back together because the
+// batch path needs that step inside the composite it pushes for the whole set.
+struct Duplicate {
+    EntityId                 entity;
+    std::unique_ptr<Command> step;
+};
+
 // The duplicate core shared by the single and batch paths: clone @p source
 // via the snapshot machinery (so "what makes up an entity" lives in one
 // place), nudged off the original, never stealing active-camera/auto-play.
-EntityId duplicateOne(Scene& scene, EntityId source) {
+//
+// An instance root is instanced from its prefab again instead, carrying its
+// overrides over. Its interior belongs to the prefab, so copying the root's
+// components alone yields an instance with nothing under it, and copying the
+// whole subtree yields the loose entity block the feature exists to replace.
+Duplicate duplicateOne(Scene& scene, ResourceManager& resources, EditorState& state,
+                       EntityId source) {
+    if (scene.has<PrefabInstance>(source)) {
+        const PrefabInstance instance = scene.get<PrefabInstance>(source);
+
+        Transform at = scene.has<Transform>(source) ? scene.get<Transform>(source) : Transform{};
+        at.position.x += DUPLICATE_OFFSET_X;
+
+        const EntityId copy = scene.createEntity();
+        scene.add(copy, Transform{at});
+        scene.add(copy, PrefabInstance{instance});
+        if (!Prefab::instantiateInto(scene, resources, instance.source, copy,
+                                     instance.overrides)) {
+            // The subtree, not the root: a build that stopped partway has already
+            // parented whatever it managed to create under it.
+            HierarchyOperations::destroyHierarchy(scene, copy);
+            const std::string name = std::filesystem::path(instance.source).filename().string();
+            state.pushToast(EditorState::ToastKind::Error,
+                            "Could not duplicate the instance of '" + name + "'");
+            return {};
+        }
+        return {copy, std::make_unique<PlacePrefabCommand>(
+                          resources, instance, copy, at, "Duplicate Entity")};
+    }
+
     EntitySnapshot snap = EntitySnapshot::capture(scene, source);
-    if (snap.transform) snap.transform->position += glm::vec3(1.0f, 0.0f, 0.0f);
+    if (snap.transform) snap.transform->position.x += DUPLICATE_OFFSET_X;
     if (snap.camera)    snap.camera->active = false;
     if (snap.animation) snap.animation->playing = false;
+    // A uid names an entity inside a prefab and the copy is a scene entity of
+    // its own, so keeping the number would point the original's overrides at it.
+    snap.prefabEntity.reset();
 
     const EntityId newId = scene.createEntity();
     snap.apply(scene, newId);
-    return newId;
+    return {newId, std::make_unique<CreateEntityCommand>(
+                       EntitySnapshot::capture(scene, newId), "Duplicate Entity")};
 }
 } // namespace
 
-void duplicateEntity(Scene& scene, EditorState& state, EntityId source) {
-    const EntityId newId = duplicateOne(scene, source);
-    // Same path as createEntity: snapshot the result so undo destroys it.
-    state.commands.push(std::make_unique<CreateEntityCommand>(
-        EntitySnapshot::capture(scene, newId), "Duplicate Entity"));
+void duplicateEntity(Scene& scene, ResourceManager& resources, EditorState& state,
+                     EntityId source) {
+    Duplicate copy = duplicateOne(scene, resources, state, source);
+    if (!copy.entity) return;
+
+    state.commands.push(std::move(copy.step));
     commitStructureChange(state);
-    state.selectEntity(newId);
+    state.selectEntity(copy.entity);
 }
 
-void duplicateSelection(Scene& scene, EditorState& state) {
+void duplicateSelection(Scene& scene, ResourceManager& resources, EditorState& state) {
     if (state.selection.size() <= 1) {
-        if (state.selectedEntity) duplicateEntity(scene, state, state.selectedEntity);
+        if (state.selectedEntity) duplicateEntity(scene, resources, state, state.selectedEntity);
         return;
     }
 
@@ -300,10 +380,10 @@ void duplicateSelection(Scene& scene, EditorState& state) {
     clones.reserve(sources.size());
     for (EntityId src : sources) {
         if (!scene.isAlive(src)) continue;
-        const EntityId newId = duplicateOne(scene, src);
-        batch->add(std::make_unique<CreateEntityCommand>(
-            EntitySnapshot::capture(scene, newId), "Duplicate Entity"));
-        clones.push_back(newId);
+        Duplicate copy = duplicateOne(scene, resources, state, src);
+        if (!copy.entity) continue;
+        batch->add(std::move(copy.step));
+        clones.push_back(copy.entity);
     }
     if (clones.empty()) return;
 
@@ -315,6 +395,19 @@ void duplicateSelection(Scene& scene, EditorState& state) {
     for (size_t i = 1; i < clones.size(); ++i) state.addToSelection(clones[i]);
     state.selectedEntity = clones.front();
 }
+
+namespace {
+// An instance's interior comes back from the prefab on every load, so a delete
+// aimed there is undone by the next one. It is still the way an entity leaves a
+// prefab - delete it, then write the instance back - so the gesture stands and
+// says what it needs, the same answer Add Component gives inside an instance.
+void warnDeleteInsideInstance(const Scene& scene, EditorState& state, EntityId entity) {
+    if (!Prefab::isInsideInstance(scene, entity)) return;
+    state.pushToast(EditorState::ToastKind::Warning,
+                    "This entity belongs to a prefab - it comes back on the next load "
+                    "unless the instance root is saved as a prefab");
+}
+} // namespace
 
 void deleteSelection(Scene& scene, EditorState& state) {
     if (state.selection.size() <= 1) {
@@ -344,6 +437,7 @@ void deleteSelection(Scene& scene, EditorState& state) {
     auto batch = std::make_unique<CompositeCommand>("Delete Selection");
     for (EntityId id : sel) {
         if (!scene.isAlive(id) || hasSelectedAncestor(id)) continue;
+        warnDeleteInsideInstance(scene, state, id);
         SubtreeSnapshot snap = SubtreeSnapshot::capture(scene, id);
         HierarchyOperations::destroyHierarchy(scene, id);
         batch->add(std::make_unique<DestroySubtreeCommand>(
@@ -355,7 +449,98 @@ void deleteSelection(Scene& scene, EditorState& state) {
     commitStructureChange(state);
 }
 
+namespace {
+// A name as a filename: free text, so keep only what is safe in one and fall
+// back rather than compose something unopenable.
+std::string prefabStem(const Scene& scene, EntityId entity) {
+    std::string stem = scene.has<Name>(entity) ? scene.get<Name>(entity).value : "";
+    for (char& c : stem) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_') c = '_';
+    }
+    return stem.empty() ? "prefab" : stem;
+}
+
+// First prefab file name not already on disk: `base`, then "base 2", ... A
+// prefab's path is its identity - it is what every instance in every scene
+// resolves - so a new one must not land on a name another already answers to.
+std::string uniquePrefabStem(const std::string& base) {
+    std::error_code ec;
+    std::string stem = base;
+    for (int n = 2; std::filesystem::exists(ProjectPaths::prefabs() / (stem + ".json"), ec); ++n) {
+        stem = base + " " + std::to_string(n);
+    }
+    return stem;
+}
+} // namespace
+
+bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& state,
+                  EntityId entity) {
+    if (!scene.isAlive(entity)) return false;
+
+    // A subtree inside somebody else's instance is not a file's to define, and
+    // Prefab::save refuses it. Answered here, where the instance root is still
+    // in reach to be named: everything the editor says about a component added
+    // inside an instance sends the user to Save as Prefab, and on an entity in
+    // there this is the one that writes it.
+    const EntityId owner = PrefabOverrides::instanceRoot(scene, entity);
+    if (owner && owner != entity) {
+        char rootName[64];
+        getEntityDisplayName(scene, owner, rootName, sizeof(rootName));
+        state.pushToast(EditorState::ToastKind::Warning,
+                        std::string("This entity belongs to a prefab - Save as Prefab on '")
+                            + rootName + "', the instance root, writes it with the rest");
+        return false;
+    }
+
+    // An instance saves back over the prefab it came from - that is how a prefab
+    // is edited. Anything else becomes a new file, because overwriting a
+    // stranger's prefab would silently re-point every instance of it at this
+    // subtree. Project-relative, because the instance stores this path and a
+    // scene carrying it has to name the same file on another machine; the write
+    // resolves it and makes the directory.
+    const bool editsItsOwn = scene.has<PrefabInstance>(entity)
+                          && !scene.get<PrefabInstance>(entity).source.empty();
+    const std::string path = editsItsOwn
+        ? scene.get<PrefabInstance>(entity).source
+        : (ProjectPaths::prefabs() / (uniquePrefabStem(prefabStem(scene, entity)) + ".json"))
+              .lexically_relative(ProjectPaths::projectRoot())
+              .generic_string();
+
+    const std::string shown = std::filesystem::path(path).stem().string();
+    if (!Prefab::save(scene, entity, path, resources)) {
+        state.pushToast(EditorState::ToastKind::Error, "Could not save prefab '" + shown + "'");
+        return false;
+    }
+
+    // The subtree is stored as a reference now, and its entities are rebuilt
+    // from the file on the next load - so nothing already on the command stack
+    // still describes the scene, the same reason a scene load clears it.
+    state.commands.clear();
+    state.markSceneDirty();
+    state.pushToast(EditorState::ToastKind::Info, "Saved prefab '" + shown + "'");
+    return true;
+}
+
+EntityId placePrefab(Scene& scene, ResourceManager& resources, EditorState& state,
+                     const std::string& path) {
+    const Transform at{};
+    const EntityId root = Prefab::instantiate(scene, resources, path, at);
+    if (!root) {
+        const std::string name = std::filesystem::path(path).filename().string();
+        state.pushToast(EditorState::ToastKind::Error, "Could not place prefab '" + name + "'");
+        return {};
+    }
+
+    state.commands.push(std::make_unique<PlacePrefabCommand>(
+        resources, scene.get<PrefabInstance>(root), root, at, "Place Prefab"));
+    commitStructureChange(state);
+    state.selectEntity(root);
+    return root;
+}
+
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
+    warnDeleteInsideInstance(scene, state, entity);
+
     const EntityId priorSel = state.selectedEntity;
     if (state.selectedEntity == entity) state.deselect();
 
@@ -516,8 +701,9 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
             ImGui::EndMenu();
         }
         ImGui::Separator();
-        // The modal can't live here: the menu closes on click and this
-        // function stops being called. Defer to drawModelImportDialog().
+        // Neither modal can live here: the menu closes on click and this
+        // function stops being called. Defer to the dialogs EditorSystem owns.
+        if (iconMenuItem(EditorIcon::Duplicate, "Prefab")) state.requestPlacePrefab = true;
         if (iconMenuItem(EditorIcon::Import, "Import Model")) state.requestModelImport = true;
         ImGui::EndMenu();
     }
@@ -550,6 +736,48 @@ void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
             commitStructureChange(state);
         }
     }
+}
+
+namespace {
+// Whether the project has a prefab to offer. A project with none is the normal
+// starting state, and the picker cannot say so itself: on a missing prefabs/ it
+// warns about a root it could not iterate and then shows the same empty list a
+// real empty directory produces.
+bool hasAnyPrefab() {
+    std::error_code ec;
+    // Recursive, because that is what the picker below lists: a check that only
+    // looked at the top level would report "none" on a project that keeps its
+    // prefabs in folders.
+    for (const auto& entry :
+            std::filesystem::recursive_directory_iterator(ProjectPaths::prefabs(), ec)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".json") return true;
+    }
+    return false;
+}
+} // namespace
+
+void PlacePrefabDialog::draw(Scene& scene, ResourceManager& resources, EditorState& state) {
+    if (state.requestPlacePrefab) {
+        state.requestPlacePrefab = false;
+        if (hasAnyPrefab()) {
+            m_picker.options.popupId    = "Place Prefab";
+            m_picker.options.title      = "Place Prefab";
+            m_picker.options.root       = ProjectPaths::prefabs();
+            m_picker.options.recursive  = true;
+            m_picker.options.kind       = AssetPicker::Kind::Files;
+            m_picker.options.extensions = {".json"};
+            // Project-relative, because that is what the instance stores and
+            // what a scene carrying it has to resolve on another machine.
+            m_picker.options.relativeTo = ProjectPaths::projectRoot();
+            m_picker.open();
+        } else {
+            state.pushToast(EditorState::ToastKind::Info,
+                            "No prefabs yet - right-click an entity and Save as Prefab");
+        }
+    }
+
+    std::string picked;
+    if (m_picker.draw(picked)) placePrefab(scene, resources, state, picked);
 }
 
 } // namespace EditorActions

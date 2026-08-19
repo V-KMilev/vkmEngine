@@ -10,6 +10,7 @@
 #include "debug/engine_error_log.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
+#include "framework/prefab_overrides.h"
 #include "ui/editor_style.h"
 
 namespace Engine {
@@ -386,9 +387,17 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
 
         if (changed) {
             // Coalescing command - tryMerge collapses per-frame drag edits
-            // (timeline dots, speed) into one undo step.
-            state.commands.push(std::make_unique<ComponentEditCommand<Animation>>(
-                id, before, anim, "Edit Animation"));
+            // (timeline dots, speed) into one undo step. Inside a prefab
+            // instance the edit is an override instead: the scene rebuilds the
+            // interior from the file, so a plain edit here would play until the
+            // next load and then be gone.
+            auto step = PrefabOverrides::record<Animation>(scene, ctx.resources, id, before, anim,
+                                                           "Edit Animation");
+            if (!step) {
+                step = std::make_unique<ComponentEditCommand<Animation>>(id, before, anim,
+                                                                         "Edit Animation");
+            }
+            state.commands.push(std::move(step));
             state.markSceneDirty();
         }
     };
@@ -422,6 +431,8 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             state.commands.push(std::make_unique<AddComponentCommand<Animation>>(
                 id, na, "Add Animation"));
             state.markSceneDirty();
+            PrefabOverrides::warnComponentIsPrefabs(scene, state, id, "Animation",
+                                                    "is not stored in the scene");
         }
         return;
     }

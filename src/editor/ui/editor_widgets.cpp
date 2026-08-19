@@ -33,8 +33,13 @@ bool drawVec3Control(const char* label, float* values,
 
     float lineHeight = ImGui::GetFrameHeight();
     ImVec2 buttonSize(lineHeight + 2.0f, lineHeight);
-    float inputWidth = (ImGui::GetContentRegionAvail().x - EditorStyle::labelWidth()
-                        - buttonSize.x * 3 - ImGui::GetStyle().ItemSpacing.x * 5) / 3.0f;
+    // Floored, because the share left over goes to zero on a narrow panel and
+    // the three drags disappear entirely - a Transform card reduced to a row of
+    // axis buttons with no number to read or drag. Overflowing the column is the
+    // lesser failure, and the panel is resizable.
+    float inputWidth = std::max((ImGui::GetContentRegionAvail().x - EditorStyle::labelWidth()
+                                 - buttonSize.x * 3 - ImGui::GetStyle().ItemSpacing.x * 5) / 3.0f,
+                                ImGui::GetFontSize() * 2.5f);
 
     // Column measured from the row's start (card-indent aware), like
     // drawPropertyLabel.
@@ -195,19 +200,6 @@ void endComponentCard() {
     }
     ImGui::PopID();
     ImGui::Spacing();
-}
-
-namespace {
-// A full-width accent rule under the current cursor - the flat default
-// Separator in the panel/section voice.
-void accentRule() {
-    const ImVec2 p = ImGui::GetCursorScreenPos();
-    const float  w = ImGui::GetContentRegionAvail().x;
-    ImGui::GetWindowDrawList()->AddRectFilled(
-        ImVec2(p.x, p.y + 1.0f), ImVec2(p.x + w, p.y + 2.5f),
-        ImGui::GetColorU32(EditorStyle::ACCENT));
-    ImGui::Dummy(ImVec2(0.0f, 5.0f));
-}
 }
 
 bool drawEasingCombo(const char* id, EasingFunction& easing) {

@@ -99,7 +99,7 @@ void ViewportToolbar::draw(EditorContext& ec) {
 
         ImGui::SameLine(0, SEP());
         if (iconButton("dup", EditorIcon::Duplicate, false, haveSel, dupTip, BTN()))
-            EditorActions::duplicateSelection(ctx.scene, state);
+            EditorActions::duplicateSelection(ctx.scene, ctx.resources, state);
         ImGui::SameLine();
         if (iconButton("foc", EditorIcon::Focus, false, haveSel, focTip, BTN()))
             EditorActions::focusOnSelected(ctx, state, camera);
