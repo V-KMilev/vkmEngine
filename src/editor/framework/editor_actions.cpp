@@ -728,9 +728,7 @@ void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
     }
     std::string picked;
     if (m_picker.draw(picked)) {
-        EntityId rootId = importModelIntoScene(
-            (ProjectPaths::projectRoot() / picked).string(),
-            resources, scene);
+        EntityId rootId = importModelIntoScene(picked, resources, scene);
         if (rootId) {
             state.selectEntity(rootId);
             commitStructureChange(state);

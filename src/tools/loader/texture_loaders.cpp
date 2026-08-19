@@ -9,6 +9,7 @@
 
 #include "logger.h"
 
+#include "io/project_paths.h"
 #include "platform/threading/thread_pool.h"
 #include "resource/resource_manager.h"
 #include "resource/texture_format.h"
@@ -26,15 +27,21 @@ TextureHandle loadTexture(
     bool srgb,
     bool generateMipmaps
 ) {
+    // The reference is what the asset is named and recorded by; the resolved
+    // path is only what stb opens. An absolute name would bake the authoring
+    // machine's directory tree into every scene, material and library filename.
+    const std::string  ref      = ProjectPaths::toProjectRelative(filePath);
+    const std::string  resolved = ProjectPaths::resolveProjectPath(ref).string();
+
     stbi_set_flip_vertically_on_load(true);
 
     int width = 0;
     int height = 0;
     int channels = 0;
-    unsigned char* data = stbi_load(filePath.c_str(), &width, &height, &channels, 0);
+    unsigned char* data = stbi_load(resolved.c_str(), &width, &height, &channels, 0);
 
     if (!data) {
-        LOG_ERROR("Failed to load texture from '%s': %s", filePath.c_str(), stbi_failure_reason());
+        LOG_ERROR("Failed to load texture from '%s': %s", resolved.c_str(), stbi_failure_reason());
         return TextureHandle{};
     }
 
@@ -46,7 +53,7 @@ TextureHandle loadTexture(
     texture.params.type = TexturePixelType::UnsignedByte;
     texture.params.generateMipmaps = generateMipmaps;
     texture.srgb = srgb;
-    texture.filePath = filePath;
+    texture.filePath = ref;
 
     const size_t dataSize = width * height * channels;
     texture.pixelData.resize(dataSize);
@@ -55,14 +62,14 @@ TextureHandle loadTexture(
     stbi_image_free(data);
 
     LOG_VERBOSE("Loaded texture '%s' (%dx%d, %d channels, sRGB: %s)",
-        filePath.c_str(), width, height, channels, srgb ? "yes" : "no");
+        ref.c_str(), width, height, channels, srgb ? "yes" : "no");
 
-    // The file path is the texture's name: the stable identity scene + material
+    // The reference is the texture's name: the stable identity scene + material
     // references resolve by, and the path used to reload it.
-    texture.name         = filePath;
+    texture.name         = ref;
     texture.sourceJson() = {
         {"kind",           "file"},
-        {"path",           filePath},
+        {"path",           ref},
         {"sRGB",           srgb},
         {"generateMipmaps", generateMipmaps},
     };
@@ -75,10 +82,13 @@ TextureHandle requestTextureAsync(
     bool srgb,
     bool generateMipmaps
 ) {
-    // Path is the stable identity: a repeat request hands back the same handle
-    // even while the first decode is in flight. The caller can bind it right
-    // away; the asset just won't have pixels yet.
-    if (auto existing = resourceManager.findByName<TextureAsset>(filePath)) return existing;
+    // The reference is the stable identity: a repeat request hands back the same
+    // handle even while the first decode is in flight. The caller can bind it
+    // right away; the asset just won't have pixels yet. Relativised before the
+    // lookup, or one file requested under two spellings becomes two assets.
+    const std::string ref      = ProjectPaths::toProjectRelative(filePath);
+    const std::string resolved = ProjectPaths::resolveProjectPath(ref).string();
+    if (auto existing = resourceManager.findByName<TextureAsset>(ref)) return existing;
 
     // Stub asset: dimensions filled in by the finaliser once decode is done.
     // The mipmap + sRGB flags do need to be set up-front since the asset
@@ -87,11 +97,11 @@ TextureHandle requestTextureAsync(
     stub.params.generateMipmaps = generateMipmaps;
     stub.srgb                   = srgb;
     stub.loading                = true;
-    stub.filePath               = filePath;
-    stub.name                   = filePath;
+    stub.filePath               = ref;
+    stub.name                   = ref;
     stub.sourceJson() = {
         {"kind",            "file"},
-        {"path",            filePath},
+        {"path",            ref},
         {"sRGB",            srgb},
         {"generateMipmaps", generateMipmaps},
     };
@@ -106,19 +116,20 @@ TextureHandle requestTextureAsync(
     // worker that will read it.
     stbi_set_flip_vertically_on_load(true);
 
-    // The task captures only the path + the asset's identity: everything
-    // ResourceManager-touching happens on the main thread in AsyncLoaderSystem
-    // when the completion is drained.
-    ThreadPool::get().addTask([handle, uid, filePath]() {
+    // The task captures only the resolved path + the asset's identity:
+    // everything ResourceManager-touching happens on the main thread in
+    // AsyncLoaderSystem when the completion is drained, and the project root a
+    // reference resolves against is main-thread state.
+    ThreadPool::get().addTask([handle, uid, resolved]() {
         int w = 0, h = 0, channels = 0;
-        unsigned char* data = stbi_load(filePath.c_str(), &w, &h, &channels, 0);
+        unsigned char* data = stbi_load(resolved.c_str(), &w, &h, &channels, 0);
 
         TextureLoadCompletion completion;
         completion.handle   = handle;
         completion.assetUid = uid;
         if (!data) {
             LOG_ERROR("Async texture decode failed for '%s': %s",
-                filePath.c_str(), stbi_failure_reason());
+                resolved.c_str(), stbi_failure_reason());
             completion.success = false;
             AsyncLoadQueue::get().pushTexture(std::move(completion));
             return;
