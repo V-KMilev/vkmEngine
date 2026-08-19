@@ -36,9 +36,6 @@ class GLBloom {
          * @brief (Re)allocate the chain for a viewport size. Base is half-res.
          *
          * No-op if the half-res base already matches the requested size.
-         *
-         * @param viewportWidth  Full viewport width in pixels; the chain base is half this.
-         * @param viewportHeight Full viewport height in pixels; the chain base is half this.
          */
         void resize(uint32_t viewportWidth, uint32_t viewportHeight) {
             const int w = static_cast<int>(viewportWidth) / 2;
