@@ -4,7 +4,7 @@ In-game, screen-space UI modelled as ECS. A UI element is an entity with
 plain-struct components; the `UISystem` resolves 2D layout, hit-tests the
 pointer, and builds a batched draw list that rides the **existing `RenderView`
 seam** into the backend, where one `GLUIPass` draws it on top after Composite.
-It runs identically in `engine_runtime` and `engine_editor` and pulls in **no
+It runs identically in `vkm_runtime` and `vkm_editor` and pulls in **no
 ImGui** - ImGui stays the editor's own tooling, never the shipped game UI.
 
 > The one idea: **UI is just more ECS.** Because a UI element is an entity,

@@ -8,9 +8,9 @@ A C++17 3D rendering engine with an OpenGL backend. Open type-erased ECS, a fixe
 git submodule update --init --recursive
 cmake -B build -G Ninja
 cmake --build build
-./build/bin/engine_editor examples/potion_runner    # edit a project
-./build/bin/engine_runtime examples/potion_runner   # play it
-./build/bin/engine_cook examples/potion_runner      # bake its assets, no window
+./build/bin/vkm_editor examples/potion_runner    # edit a project
+./build/bin/vkm_runtime examples/potion_runner   # play it
+./build/bin/vkm_cook examples/potion_runner      # bake its assets, no window
 ```
 
 The engine runs **projects**: a directory with a `project.json`, its own scenes and

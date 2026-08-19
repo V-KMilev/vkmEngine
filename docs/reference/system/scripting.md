@@ -165,8 +165,8 @@ a system handle).
 
 The engine ships no gameplay of its own: **the project brings its code**. Each
 project builds its sources into `game.dll` / `libgame.so` in its own `bin/`, and
-both hosts load it the same way through `ScriptModule` - `engine_runtime` to play
-it, `engine_editor` to edit it. There is no static-linked variant and no
+both hosts load it the same way through `ScriptModule` - `vkm_runtime` to play
+it, `vkm_editor` to edit it. There is no static-linked variant and no
 editor-only path; the shipped game and the edited game run the same binary.
 
 The host `dlopen`s the module and calls the `extern "C"` entry points it finds:
