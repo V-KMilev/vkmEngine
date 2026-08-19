@@ -7,10 +7,10 @@
 
 #include <glm/gtc/quaternion.hpp>
 
+#include "framework/component_edit.h"
 #include "framework/editor_actions.h"
 #include "framework/editor_common.h"
 #include "framework/editor_commands.h"
-#include "framework/prefab_overrides.h"
 #include "system/visibility/visibility.h"
 #include "core/math/bounds.h"
 #include "system/camera/camera_controller_system.h"
@@ -31,17 +31,11 @@ void GizmoOverlay::finishDrag(EditorContext& ec) {
             || bef.scale    != after->scale;
     };
 
-    // Inside a prefab instance the pose is an override on the instance rather
-    // than a value the scene keeps for the entity, so a plain transform step
-    // would be undoable but not saved: the next load rebuilds the subtree from
-    // the prefab and the drag is gone. The instance root is the exception - the
-    // scene stores that pose itself - and record says so by returning null.
+    // The step, not the push: the drag marks the scene dirty as it goes and a
+    // multi-entity drag collects its steps into one CompositeCommand.
     auto stepFor = [&](EntityId id, const Transform& bef,
                        const Transform& after) -> std::unique_ptr<Command> {
-        auto step = PrefabOverrides::record<Transform>(ctx.scene, ctx.resources, id, bef, after,
-                                                       "Transform");
-        if (step) return step;
-        return std::make_unique<TransformChangeCommand>(id, bef, after, "Transform");
+        return editStep<Transform>(ctx.scene, ctx.resources, id, bef, after, "Transform");
     };
 
     if (m_dragSelection.size() > 1) {
