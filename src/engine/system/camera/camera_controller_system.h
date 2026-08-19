@@ -15,8 +15,6 @@ struct Transform;
 
 /**
  * @brief Camera controller used in the editor, supporting free-fly and look controls.
- *
- * Designed for use with the Editor camera Entity. Not thread-safe.
  */
 class CameraControllerSystem : public System {
     public:
@@ -44,10 +42,6 @@ class CameraControllerSystem : public System {
         CameraControllerSystem& operator=(CameraControllerSystem && other) = delete;
 
     public:
-        /**
-         * @brief Set the Entity ID of the camera to be controlled.
-         * @param cameraEntity The entity representing the camera.
-         */
         void setCameraEntity(EntityId cameraEntity) { m_cameraEntity = cameraEntity; }
 
         /**
@@ -111,13 +105,6 @@ class CameraControllerSystem : public System {
         void viewFrom(Scene& scene, const glm::vec3& target, const glm::vec3& direction, float distance);
 
     private:
-        /**
-         * @brief Update camera transform based on fly mode controls.
-         * @param position Reference to the camera's position vector.
-         * @param input    Resolved actions for movement and boost.
-         * @param rotation Reference to the camera's rotation quaternion.
-         * @param deltaTime Time elapsed since last update.
-         */
         void updateFlyMode(WindowManager& window, const InputMap& input,
                            glm::vec3& position, glm::quat& rotation, float deltaTime);
 

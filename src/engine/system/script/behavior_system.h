@@ -31,9 +31,7 @@ class EventBus;
  *
  * Every hook runs under a catch net: a throwing behavior is reported via
  * reportError() and disabled, never fatal. onDestroy fires via endSession()
- * (play stop / shutdown) and destroyEntityBehaviors() (entity deletion - this
- * system registers as a Scene ISceneObserver via Scene::addObserver() in
- * init()).
+ * (play stop / shutdown) and destroyEntityBehaviors() (entity deletion).
  */
 class BehaviorSystem : public System, public ISceneObserver {
     public:
@@ -98,10 +96,10 @@ class BehaviorSystem : public System, public ISceneObserver {
          */
         void ensureStarted(Behavior& behavior, EntityId entity);
         /**
-         * @brief Shared per-tick walk for update/fixedUpdate: skip null/disabled,
-         *        ensureStarted, re-check disabled, then guard the @p hook (a
-         *        void(float) per-frame hook) with @p dt. Caller drains deferred
-         *        destroys at its own (callsite-specific) point afterwards.
+         * @brief Drive @p hook on every enabled behavior in the scene, starting
+         *        any that has not run onStart yet.
+         *
+         * The caller drains deferred destroys afterwards, at its own point.
          */
         void tickBehaviors(FrameContext& ctx, float dt, const char* hookName, void (Behavior::*hook)(float));
         /**

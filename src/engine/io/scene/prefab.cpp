@@ -50,11 +50,9 @@ std::filesystem::path resolvePath(const std::string& path) {
 /**
  * @brief The unsigned number @p from stores at @p key, or @p fallback.
  *
- * A prefab is authored JSON, so every key in it may be missing, or hold a value
- * of any type. json::value converts what it finds, and converting a string to a
- * number throws out of whoever asked - the editor, on a file its own picker
- * offered it. A key of the wrong type reads here as an absent one, which is what
- * the rest of the reader already does with a key it does not find.
+ * A prefab is authored JSON, so every key may be missing or hold a value of any
+ * type, and json::value throws when it cannot convert. A key of the wrong type
+ * reads here as an absent one, like a key the reader does not find at all.
  *
  * @param from Object to read; a value that is not an object holds no keys.
  * @param key Key to look for.
@@ -140,9 +138,9 @@ bool readPrefab(const std::string& path, json& doc) {
  * that draw nothing. So the file lists what it references, the way a scene does,
  * and every path that reads components out of it comes through here.
  *
- * A version-2 prefab has no block and keeps behaving as it did. A block that
- * cannot be loaded is reported and does not stop the build - an instance with a
- * missing mesh is a better answer than an instance with no entities.
+ * A prefab with no assets block is left alone. A block that cannot be loaded is
+ * reported and does not stop the build - an instance with a missing mesh is a
+ * better answer than an instance with no entities.
  *
  * @param doc Prefab document, already accepted by readPrefab.
  * @param path Prefab reference, for the message.
@@ -177,7 +175,7 @@ std::vector<EntityId> collectSubtree(const Scene& scene, EntityId root) {
 }
 
 /**
- * @brief One drift line, in the shape the table in prefab.h describes.
+ * @brief One drift line, in the shape prefab.h describes.
  */
 std::string driftMessage(const std::string& what, const PrefabOverride& o, const char* reason) {
     return "Override in '" + what + "' on entity " + std::to_string(o.uid) +
@@ -235,7 +233,7 @@ bool sameShape(const json& was, const json& value) {
  * the document and let each loader run exactly once, as it already does.
  *
  * An override that no longer fits the prefab is kept in memory and reported
- * rather than applied - see the drift table in prefab.h.
+ * rather than applied - see the drift rules in prefab.h.
  *
  * @param base The entity's components object from the prefab document.
  * @param uid The entity being built.
@@ -370,14 +368,11 @@ bool save(Scene& scene, EntityId root, const std::string& path,
     }
 
     // Decided here and stamped onto the scene only once the file is on disk, so
-    // a save that could not be written leaves the subtree as it found it. A
-    // subtree left carrying numbers no file answers to would hand one of them
-    // out twice the next time a prefab was written over it. The root's is fixed,
-    // so an override on it needs no lookup.
-    // A number is kept only if it is this entity's alone. Two entities carrying
-    // one uid, or a child carrying the root's, would write a file this build's
-    // own reader refuses - a save that reported success and left an unloadable
-    // prefab behind. Renumbering one entity is the smaller loss.
+    // a save that could not be written leaves the subtree as it found it: a
+    // subtree carrying numbers no file answers to would hand one out twice the
+    // next time a prefab was written over it. A number is kept only if it is
+    // this entity's alone - two entities on one uid, or a child on the root's,
+    // would write a file this build's own reader refuses.
     nextUid = std::max(nextUid, uint32_t{1});
     std::set<uint32_t> taken{PrefabEntity::ROOT};
     std::vector<uint32_t> uids(subtree.size(), PrefabEntity::ROOT);
@@ -443,8 +438,8 @@ EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string
     const EntityId root = instantiate(scene, resources, path);
     if (!scene.isAlive(root)) return {};
 
-    // Replace the authored pose. The root always carries a Transform: the
-    // loader adds one when the prefab did not save it.
+    // The root always carries a Transform: the loader adds one when the prefab
+    // did not save it.
     scene.get<Transform>(root) = at;
     return root;
 }
@@ -477,8 +472,6 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
 
     const json& entities = doc["entities"];
 
-    // Parents precede children in the file, so each link can be wired as its
-    // child is created rather than in a second pass.
     std::vector<EntityId> created;
     created.reserve(entities.size());
     std::set<uint32_t> built;
