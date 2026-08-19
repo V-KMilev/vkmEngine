@@ -30,10 +30,11 @@ namespace GLBindings {
         constexpr uint32_t Particles   = 2;  ///< Billboard particle instances, indexed by the particle vertex stage.
 
         // The GPU occlusion cull's working set (3-9) and the per-instance
-        // transforms every geometry vertex stage reads (10-12). Instance data
-        // lives in storage rather than vertex attributes so the cull can pick
-        // instances by writing an index instead of copying their matrices; see
-        // shaders/_common/instancing.glsl.
+        // transforms the camera batch's vertex stages read (10-12). Instance
+        // data lives in storage rather than vertex attributes so the cull can
+        // pick instances by writing an index instead of copying their matrices;
+        // see shaders/_common/instancing.glsl. The shadow pass is the deliberate
+        // exception and takes its matrices as attributes.
         constexpr uint32_t CullBounds     = 3;
         constexpr uint32_t CullRunIndex   = 4;
         constexpr uint32_t CullVisible    = 7;   // 5, 6 and 8 are free: the cull reads bounds and writes indices, never matrices

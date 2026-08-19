@@ -56,11 +56,11 @@ class GLMesh {
         /**
          * @brief Point the VAO's instance-index attribute at @p buffer.
          *
-         * The only per-instance vertex attribute in the engine: one uint naming
-         * which instance this is. Everything else about an instance is read
-         * from storage buffers, so a pass that draws a subset supplies an index
-         * list rather than a reordered copy of the transforms, and the GPU cull
-         * settles an instance by writing 4 bytes instead of 128.
+         * One uint naming which instance this is, and on this path the only
+         * per-instance attribute: everything else about an instance is read from
+         * storage buffers, so the GPU cull settles one by writing 4 bytes instead
+         * of 128, and a run draws its survivors in place. The alternative is
+         * attachInstances above, which the shadow pass takes.
          *
          * @param buffer Instance-index buffer; one uint per drawn instance.
          */
