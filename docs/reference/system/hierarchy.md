@@ -15,7 +15,7 @@ It runs in `SystemStage::Transform`, between `Simulation` and
 - `src/engine/system/hierarchy/hierarchy_operations.h` for the
   free-function mutation API.
 - `src/engine/ecs/component/hierarchy.h` for the `Hierarchy` component
-  (`parent`, `firstChild`, `nextSibling`, `prevSibling`, `dirty`).
+  (`parent`, `firstChild`, `nextSibling`, `prevSibling`).
 - `src/engine/ecs/component/world_transform.h` for the resolved
   `WorldTransform` (a single `glm::mat4 model`).
 
@@ -32,7 +32,6 @@ component writes are not.
 | `destroyHierarchy(scene, entity)`         | Destroy `entity` plus every descendant. Used by editor `DestroySubtreeCommand`.        |
 | `forEachChild(scene, entity, fn)`         | Walk the direct children of `entity` and call `fn(childId)`.                           |
 | `computeWorldMatrix(scene, entity)`       | Walk the parent chain and compose the world matrix without writing `WorldTransform`.   |
-| `markDirty(scene, entity)`                | Flag the subtree rooted at `entity` so the per-frame resolve recomputes it.            |
 
 ### Why pre-seeding matters
 
@@ -50,11 +49,17 @@ hazard, so do not bypass it.
 
 `HierarchySystem::update` does the following:
 
-1. Bucket all dirty parented entities by hierarchy depth.
+1. Bucket every entity that has both `Hierarchy` and `Transform` by
+   hierarchy depth.
 2. For each depth bucket from 0 (roots) outward, `parallelFor` over
    the bucket: read the local `Transform` and the parent's
    `WorldTransform`, compose, write into `WorldTransform`.
-3. Clear the dirty flag.
+
+Every hierarchical entity resolves every frame; there is no dirty flag.
+A flag would be correct only while every writer of a `Transform` - in the
+engine, in the editor and in every game - remembered to set it, and a
+forgotten one is a silently stale world matrix rather than an error. The
+work it would save is the matrix multiply itself, on a GPU-bound frame.
 
 By processing depth 0, then depth 1, then depth 2, ..., each level
 sees its parent's `WorldTransform` already up to date. Within a depth

@@ -446,7 +446,6 @@ EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string
     // Replace the authored pose. The root always carries a Transform: the
     // loader adds one when the prefab did not save it.
     scene.get<Transform>(root) = at;
-    HierarchyOperations::markDirty(scene, root);
     return root;
 }
 

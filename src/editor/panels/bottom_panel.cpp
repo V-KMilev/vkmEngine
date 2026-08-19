@@ -108,7 +108,6 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             if (!anim.positionTrack.isEmpty()) tf.position = anim.positionTrack.getValue(anim.time);
             if (!anim.rotationTrack.isEmpty()) tf.rotation = anim.rotationTrack.getValue(anim.time);
             if (!anim.scaleTrack.isEmpty())    tf.scale    = anim.scaleTrack.getValue(anim.time);
-            HierarchyOperations::markDirty(scene, id);
         };
 
         float ih = ImGui::GetFrameHeight();

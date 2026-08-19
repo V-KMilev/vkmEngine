@@ -1089,10 +1089,6 @@ void StressArena::updateDrones() {
         transform.rotation =
             glm::angleAxis(-angle, Math::WORLD_AXIS_Y) *
             glm::angleAxis(std::sin(angle * 1.9f) * 0.25f, Math::WORLD_AXIS_Z);
-
-        // The subtree is stale until this is called - the arm, rotor and lamp
-        // all hang off this transform, and nothing else marks it.
-        HierarchyOperations::markDirty(*m_scene, drone.body);
     }
 }
 

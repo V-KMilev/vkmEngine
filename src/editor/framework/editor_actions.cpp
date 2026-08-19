@@ -44,8 +44,7 @@
 namespace Engine {
 namespace EditorActions {
 
-void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity) {
-    HierarchyOperations::markDirty(scene, entity);
+void commitHierarchyMutation(EditorState& state) {
     state.hierarchyDirty = true;
     state.markSceneDirty();
 }
@@ -115,7 +114,7 @@ void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
 
     state.commands.push(std::make_unique<ReparentCommand>(
         child, oldParent, toParent ? newParent : EntityId{}, before, t, label));
-    commitHierarchyMutation(scene, state, child);
+    commitHierarchyMutation(state);
 }
 
 void commitStructureChange(EditorState& state) {
