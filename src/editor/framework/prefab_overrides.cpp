@@ -30,7 +30,6 @@ std::vector<PrefabOverride> entriesFor(const std::vector<PrefabOverride>& list,
     return out;
 }
 
-// Make @p entries the whole of what @p list says about (uid, component).
 void replaceEntries(std::vector<PrefabOverride>& list, uint32_t uid, const std::string& component,
                     const std::vector<PrefabOverride>& entries) {
     list.erase(std::remove_if(list.begin(), list.end(), [&](const PrefabOverride& o) {
@@ -98,9 +97,7 @@ std::vector<std::string> overriddenFields(const Scene& scene, EntityId id,
     const uint32_t uid = scene.get<PrefabEntity>(id).uid;
 
     // The root's Transform is the instance's own pose, so an entry against it is
-    // drift the prefab never applies - see the table in prefab.h. Offering it
-    // would mark a field as the instance's when it always was, beside a control
-    // that gives it back to nothing.
+    // drift the prefab never applies - see the table in prefab.h.
     if (uid == PrefabEntity::ROOT && std::strcmp(component, "Transform") == 0) return fields;
 
     for (const PrefabOverride& o : scene.get<PrefabInstance>(root).overrides) {
@@ -192,11 +189,9 @@ void revert(Scene& scene, ResourceManager& resources, EditorState& state, Entity
     }), entries.end());
     if (entries.size() == restore.size()) return;
 
-    // Dropping an override is a re-read of the prefab's definition, so there has
-    // to be one left to re-read. A prefab that has since lost the component - or
-    // the entity carrying it - has no value to hand the field back, and clearing
-    // the entry on its own would leave the overridden number on screen with
-    // nothing left saying it was ever an override.
+    // A prefab that has since lost the component has no value to hand the field
+    // back, and clearing the entry alone would leave the overridden number on
+    // screen with nothing saying it was ever an override.
     if (!Prefab::definesComponent(scene.get<PrefabInstance>(root).source, uid, component)) {
         state.pushToast(EditorState::ToastKind::Warning,
                         std::string("The prefab no longer defines ") + component

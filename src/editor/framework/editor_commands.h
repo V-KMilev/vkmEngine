@@ -123,9 +123,8 @@ class PhysicsSettingsEditCommand : public Command {
  * @brief A group of already-applied commands undone/redone as one step.
  *
  * Batch operations over a multi-selection (delete, duplicate, gizmo drags)
- * build one of these from their per-entity commands: redo replays in order,
- * undo reverses in reverse order, and the whole batch is a single entry in
- * the history.
+ * build one of these from their per-entity commands, and the whole batch is a
+ * single entry in the history.
  */
 class CompositeCommand : public Command {
     public:
@@ -156,9 +155,8 @@ class CompositeCommand : public Command {
 /**
  * @brief Add a component of type T to an entity.
  *
- * Stored value is what gets re-added on redo. Undo removes it. Templated so
- * each component type (Mesh, Light, Camera, Animation, Name) gets its own
- * concrete command without runtime type erasure.
+ * Templated so each component type gets its own concrete command without
+ * runtime type erasure.
  */
 template <typename T>
 class AddComponentCommand : public Command {
@@ -416,10 +414,10 @@ class DestroySubtreeCommand : public Command {
  * the scene keeps a reference, a pose and the overrides against it, and building
  * the subtree from the file is what a scene load does with them.
  *
- * Reaches the ResourceManager through a pointer captured at construction, like
- * RenameAssetCommand: the prefab resolves its assets by name on every rebuild,
- * and the command stack is cleared on scene load, so the pointer never outlives
- * the manager it was taken from.
+ * Reaches the ResourceManager through a pointer captured at construction: the
+ * prefab resolves its assets by name on every rebuild, and the command stack is
+ * cleared on scene load, so the pointer never outlives the manager it was taken
+ * from.
  */
 class PlacePrefabCommand : public Command {
     public:
@@ -465,10 +463,8 @@ class PlacePrefabCommand : public Command {
  * the two directions are the same operation with different data - and so
  * coalescing a drag is just taking the newer set.
  *
- * Reaches the ResourceManager through a pointer captured at construction, like
- * PlacePrefabCommand: the prefab resolves its assets by name on every re-read,
- * and the command stack is cleared on scene load, so the pointer never outlives
- * the manager it was taken from.
+ * Holds the ResourceManager by pointer for the same reason PlacePrefabCommand
+ * does.
  */
 class PrefabOverrideCommand : public Command {
     public:
@@ -505,9 +501,6 @@ class PrefabOverrideCommand : public Command {
         /**
          * @brief Make @p entries the instance's entries for this pair, and warn
          * when the prefab can no longer answer for the component.
-         *
-         * The two directions differ only in which entry set they install, so
-         * they are the same call with different data.
          *
          * @param scene Scene holding the instance.
          * @param state Receives the warning when the value could not be re-read.
@@ -583,11 +576,10 @@ class SetActiveCameraCommand : public Command {
  *
  * Records the asset handle plus its before/after names; redo/undo call
  * ResourceManager::rename (which keeps the per-type findByName index in sync).
- * Reaches the manager through a pointer captured at construction - there is no
- * Engine singleton, and the command stack is cleared on scene load, so the
- * pointer never outlives the manager it was taken from. An isAlive guard makes
- * the op a no-op if the asset was deleted after the rename (delete is not
- * itself undoable, so it can strand a rename on the stack).
+ * Holds the manager by pointer (there is no Engine singleton), safe for the
+ * same reason PlacePrefabCommand's is. An isAlive guard makes the op a no-op if
+ * the asset was deleted after the rename (delete is not itself undoable, so it
+ * can strand a rename on the stack).
  */
 template <typename HandleType>
 class RenameAssetCommand : public Command {

@@ -500,8 +500,7 @@ void GizmoOverlay::drawBoundsGizmos(EditorContext& ec) {
     ImDrawList*     dl     = scope.dl;
 
     // World-space AABB of every visible entity, already computed by the
-    // visibility pass. This used to be an engine render pass; it's an editor
-    // overlay now (an axis-aligned box is wireBox with no rotation).
+    // visibility pass (an axis-aligned box is wireBox with no rotation).
     for (const VisibleEntity& e : ec.frame.visibility->entries) {
         if (e.worldMin == e.worldMax) continue;
         const glm::vec3 center = (e.worldMin + e.worldMax) * 0.5f;
