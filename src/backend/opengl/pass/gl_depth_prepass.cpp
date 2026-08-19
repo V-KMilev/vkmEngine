@@ -12,12 +12,14 @@
 #include "gl_view.h"
 #include "convention/gl_bindings.h"
 #include "data/gl_material.h"
+#include "data/gl_skin_palette.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
 GLDepthPrepass::GLDepthPrepass()
-    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/forward/prepass")) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/forward/prepass"))
+    , m_skinnedShader(std::make_unique<Vkm::GL::Shader>("shaders/forward/prepass_skinned")) {}
 
 GLDepthPrepass::~GLDepthPrepass() = default;
 
@@ -42,17 +44,33 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
     ctx.gl.setCullFace(GL_BACK);
     ctx.sceneRender.bindGBufferPass(ctx.gl);
 
+    // Uniform state is per program in GL, so the view matrix has to be set on
+    // each of them, not once on whichever happens to be bound.
     m_shader->bind();
     m_shader->setUniformMatrix4fv("u_view", view.camera.view);
+    m_skinnedShader->bind();
+    m_skinnedShader->setUniformMatrix4fv("u_view", view.camera.view);
+
+    ctx.skinPalette.bind();
 
     // No albedo texture is sampled - the prepass writes normal/roughness/
-    // metalness from the UBO - so binding the material UBO is enough.
+    // metalness from the UBO - so binding the material UBO is enough. The
+    // material bindings are context state, not program state, so the cache
+    // below survives a program switch.
     const GLMaterial* boundMaterial = nullptr;
+    const Vkm::GL::Shader* boundProgram = nullptr;
     ctx.opaqueBatch.bindInstanceData();
 
     const std::vector<InstanceRun>& runs = ctx.opaqueBatch.runs();
     for (uint32_t i = 0; i < runs.size(); ++i) {
         const InstanceRun& run = runs[i];
+
+        Vkm::GL::Shader& program = run.skinned ? *m_skinnedShader : *m_shader;
+        if (&program != boundProgram) {
+            program.bind();
+            boundProgram = &program;
+        }
+
         const GLMaterial* material = glView.getMaterial(run.material);
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::Material);

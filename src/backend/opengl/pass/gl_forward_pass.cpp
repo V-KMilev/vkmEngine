@@ -19,12 +19,14 @@
 #include "convention/gl_bindings.h"
 #include "data/gl_material.h"
 #include "data/gl_ibl.h"
+#include "data/gl_skin_palette.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
 GLForwardPass::GLForwardPass()
-    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/forward/pbr")) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/forward/pbr"))
+    , m_skinnedShader(std::make_unique<Vkm::GL::Shader>("shaders/forward/pbr_skinned")) {}
 
 GLForwardPass::~GLForwardPass() = default;
 
@@ -47,8 +49,9 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     ctx.gl.setDepthFunc(GL_LEQUAL);
     ctx.gl.setDepthWrite(false);
 
-    m_shader->bind();
-
+    // Everything below binds context state - texture units, UBOs, the storage
+    // buffers - which both programs then see. The per-program uniforms follow.
+    //
     // The ShadowBlock UBO (binding 3) carries the matrices + slots; here we only
     // bind the depth textures. The light loop samples per light type via each
     // light's shadowSlot (GpuLight.spot.w).
@@ -57,55 +60,29 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.shadowAtlas.bindCube(s, GLBindings::ShadowTextureSlots::CubeBase + s);
     }
 
-    // u_hasIBL gates the split-sum ambient in the shader; without a baked
-    // environment it falls back to flat ambient.
-    const bool hasIBL = ctx.ibl.isReady();
-    if (hasIBL) {
+    if (ctx.ibl.isReady()) {
         ctx.ibl.bindIrradiance(GLBindings::IBLTextureSlots::Irradiance);
         ctx.ibl.bindPrefilter(GLBindings::IBLTextureSlots::Prefilter);
         ctx.ibl.bindBrdf(GLBindings::IBLTextureSlots::BrdfLUT);
     }
-    m_shader->setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
-    m_shader->setUniform1f("u_iblIntensity", view.environment.sky.intensity);
 
     // The shader multiplies the GTAO factor into the indirect term (ambient/IBL);
     // absent (pass disabled) -> 1.0.
     if (ctx.aoReady) ctx.ao.bindColor(GLBindings::PostTextureSlots::SSAO);
-    m_shader->setUniform1i("u_hasSSAO", ctx.aoReady ? 1 : 0);
 
-    // View -> world, so the GTAO bent normal can be used in world space.
-    m_shader->setUniformMatrix4fv("u_invView", view.camera.invView);
-
-    // The shader needs the baked SH volume's box to place a fragment in the grid.
-    const bool hasIV = ctx.irradiance.isReady() && !view.irradianceVolumes.empty();
-    m_shader->setUniform1i("u_hasIrradianceVolume", hasIV ? 1 : 0);
-    if (hasIV) {
-        const IrradianceVolumeData& iv = view.irradianceVolumes[0];
+    if (ctx.irradiance.isReady() && !view.irradianceVolumes.empty()) {
         ctx.irradiance.bindSlot(0, GLBindings::IrradianceVolumeSlots::SH0);
         ctx.irradiance.bindSlot(1, GLBindings::IrradianceVolumeSlots::SH1);
         ctx.irradiance.bindSlot(2, GLBindings::IrradianceVolumeSlots::SH2);
         ctx.irradiance.bindSlot(3, GLBindings::IrradianceVolumeSlots::SH3);
-        m_shader->setUniform3fv("u_ivMin",  iv.center - iv.halfExtents);
-        m_shader->setUniform3fv("u_ivSize", iv.halfExtents * 2.0f);
-        m_shader->setUniform1f("u_ivIntensity", iv.intensity);
     }
 
-    // The backend bound the probe cube arrays + ProbeBlock UBO; this only hands
-    // over the active count, or 0 when probes are toggled off.
-    m_shader->setUniform1i("u_probeCount", ctx.view.settings.probes ? ctx.probeCount : 0);
-
-    // Refraction is sampled only by the transparent bucket; switched on after the
-    // scene-colour copy below.
-    m_shader->setUniform1i("u_hasSceneColor", 0);
-    m_shader->setUniform2f("u_screenSize", static_cast<float>(view.viewportWidth), static_cast<float>(view.viewportHeight));
-
-    // The grid the cull compute wrote; near/far go with it in the same
-    // two-coefficient form as the cull pass, for the fragment's cluster lookup.
+    // The grid the cull compute wrote, and the frame's bone palettes.
     ctx.clusters.bind();
-    m_shader->setUniform1i("u_useClusters", 1);
-    m_shader->setUniform1i("u_renderMode", static_cast<int>(view.settings.renderMode));
-    m_shader->setUniform1f("u_zNear", view.camera.zNear);
-    m_shader->setUniform1f("u_zFar",  view.camera.zFar);
+    ctx.skinPalette.bind();
+
+    bindFrameUniforms(*m_shader, ctx, false);
+    bindFrameUniforms(*m_skinnedShader, ctx, false);
 
     // Sorted upstream by material+mesh and batched once by the backend; the
     // prepass drew these same runs.
@@ -149,7 +126,12 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.colorDst->blitColorFrom(ctx.sceneRender);
         ctx.sceneRender.bind(ctx.gl);
         ctx.colorDst->bindColor(GLBindings::PostTextureSlots::SceneColor);
-        m_shader->setUniform1i("u_hasSceneColor", 1);
+        // Both programs sample the grab, and both are given the whole frame set
+        // again rather than the one uniform that changed: re-setting a dozen
+        // uniforms once a frame costs nothing, and it leaves exactly one place
+        // where a program learns what the frame looks like.
+        bindFrameUniforms(*m_shader, ctx, true);
+        bindFrameUniforms(*m_skinnedShader, ctx, true);
 
         // Blended, depth-tested against the opaque scene but not written, so
         // transparent surfaces never occlude each other in the depth buffer.
@@ -179,10 +161,21 @@ void GLForwardPass::drawRuns(GLFrameContext& ctx, const GLInstanceBatchView& bat
     const std::vector<InstanceRun>& runs = batch.runs();
     const GLView& glView = ctx.resources;
 
-    const GLMaterial* boundMaterial = nullptr;
+    const GLMaterial*      boundMaterial = nullptr;
+    const Vkm::GL::Shader* boundProgram  = nullptr;
 
     for (uint32_t i = 0; i < runs.size(); ++i) {
         const InstanceRun& run = runs[i];
+
+        // Grouped batches sort skinned runs together, so this switches once; a
+        // sequential (transparent) batch may alternate, which is correct and no
+        // worse than the depth order it is preserving.
+        Vkm::GL::Shader& program = run.skinned ? *m_skinnedShader : *m_shader;
+        if (&program != boundProgram) {
+            program.bind();
+            boundProgram = &program;
+        }
+
         const GLMaterial* material = glView.getMaterial(run.material);
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::Material);
@@ -191,6 +184,51 @@ void GLForwardPass::drawRuns(GLFrameContext& ctx, const GLInstanceBatchView& bat
         }
         batch.draw(run, i);
     }
+}
+
+void GLForwardPass::bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx,
+                                      bool hasSceneColor) const {
+    const RenderView& view = ctx.view;
+
+    shader.bind();
+
+    // u_hasIBL gates the split-sum ambient in the shader; without a baked
+    // environment it falls back to flat ambient.
+    const bool hasIBL = ctx.ibl.isReady();
+    shader.setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
+    shader.setUniform1f("u_iblIntensity", view.environment.sky.intensity);
+
+    shader.setUniform1i("u_hasSSAO", ctx.aoReady ? 1 : 0);
+
+    // View -> world, so the GTAO bent normal can be used in world space.
+    shader.setUniformMatrix4fv("u_invView", view.camera.invView);
+
+    // The shader needs the baked SH volume's box to place a fragment in the grid.
+    const bool hasIV = ctx.irradiance.isReady() && !view.irradianceVolumes.empty();
+    shader.setUniform1i("u_hasIrradianceVolume", hasIV ? 1 : 0);
+    if (hasIV) {
+        const IrradianceVolumeData& iv = view.irradianceVolumes[0];
+        shader.setUniform3fv("u_ivMin",  iv.center - iv.halfExtents);
+        shader.setUniform3fv("u_ivSize", iv.halfExtents * 2.0f);
+        shader.setUniform1f("u_ivIntensity", iv.intensity);
+    }
+
+    // The backend bound the probe cube arrays + ProbeBlock UBO; this only hands
+    // over the active count, or 0 when probes are toggled off.
+    shader.setUniform1i("u_probeCount", view.settings.probes ? ctx.probeCount : 0);
+
+    // Refraction is sampled only by the transparent bucket, after the
+    // scene-colour copy.
+    shader.setUniform1i("u_hasSceneColor", hasSceneColor ? 1 : 0);
+    shader.setUniform2f("u_screenSize", static_cast<float>(view.viewportWidth),
+                                        static_cast<float>(view.viewportHeight));
+
+    // near/far go with the cluster grid in the same two-coefficient form as the
+    // cull pass, for the fragment's cluster lookup.
+    shader.setUniform1i("u_useClusters", 1);
+    shader.setUniform1i("u_renderMode", static_cast<int>(view.settings.renderMode));
+    shader.setUniform1f("u_zNear", view.camera.zNear);
+    shader.setUniform1f("u_zFar",  view.camera.zFar);
 }
 
 } // namespace Vkm::Engine

@@ -20,6 +20,8 @@ time-scale / single-step apply uniformly. They do not overlap:
 - `src/engine/system/animation/pose_evaluator.h` - `advancePlayback` + `composePose`
 - `src/engine/system/animation/pose_buffer.h` - PoseSlice, PoseWrite, PoseBuffer
 - `src/engine/ecs/component/animator.h` - Animator component
+- `src/backend/opengl/data/gl_skin_palette.h` - GLSkinPalette (the frame's palettes, SSBO 5)
+- `shaders/_common/skinning.glsl` - the vertex-stage skinning contract
 
 # Keyframe animation
 
@@ -253,11 +255,100 @@ posed character in the world is the **rig entity's** world matrix:
 worldOfBone[b] == rigWorldMatrix * poses->global()[slice->first + b]
 ```
 
-Import guarantees it by putting the `Animator` on the entity whose frame the
-bones are composed in - the parent of the root bone's node, or the import root
-when the rig is rooted at the scene node itself. One node off and every bone is
-displaced by exactly that node's transform, which looks entirely plausible until
-it is compared against something.
+Import guarantees it twice over:
+
+- the `Animator` goes on the entity whose frame the bones are composed in - the
+  parent of the root bone's node, or the import root when the rig is rooted at
+  the scene node itself. One node off and every bone is displaced by exactly that
+  node's transform, which looks entirely plausible until it is compared against
+  something;
+- every **skinned mesh gets its own entity, parented to that rig entity at
+  identity**. The inverse-bind matrices already carry whatever placed the mesh in
+  rig space, so a mesh left under its own node would be transformed twice.
+
+Bone nodes themselves spawn no entities. A bone is an index in the skeleton
+asset, and an entity per bone would put a hundred of them per character into the
+hierarchy panel, the Transform walk and the scene file for data nobody authors.
+Pruning is by whole subtree - a node is dropped only when it and everything under
+it is a bone with no mesh - so a prop parented to a hand keeps the chain of bones
+that places it, and nothing is ever re-parented to an ancestor it did not sit
+under.
+
+Hand-authoring can still break either invariant, so the pose system names both,
+once per gap:
+
+| Fault | What it does if unnamed |
+|-------|------------------------|
+| A skinned mesh whose `MeshAsset::skeleton` is not the rig above it | Its bone indices address the wrong joints - a character that moves *nearly* right |
+| A skinned mesh sitting off its rig's origin | Its own transform is applied on top of a palette that already resolved into rig space |
+
+## The GPU path
+
+Skinning is a vertex-stage difference and nothing else, expressed as two extra
+programs rather than one program with a branch.
+
+**The rig binding is a second vertex buffer**, at locations 8/9 with divisor 0,
+built by `GLMesh::update` when `MeshAsset::skin` is non-empty. It is not four
+more fields on `Vertex`, which stays 48 bytes: folding it in would cost every
+vertex of every mesh in the engine 25% more bandwidth, paid hardest by the shadow
+pass, which reads only `aPos` and replays the geometry per cascade tile and per
+cube face. A rock does not pay for skinning.
+
+Because the stream is exactly `vertices.size()` long at divisor 0, leaving 8/9
+enabled costs nothing when a program that never declares them draws the same VAO.
+`GLSceneCapture` and `GLPreview` do exactly that, so a character bakes into GI
+and thumbnails in bind pose - the right answer for both.
+
+**The palettes travel as one flat array.** `RenderView::skinMatrices` holds every
+skinned item's palette end to end, and both `DrawableData` and `ShadowCasterData`
+carry a `skinFirst` / `skinCount` range into it. Both, and not just the first:
+the two lists are gathered from different sets, and a character standing just
+off-screen and casting into view appears only in the caster list.
+
+```
+RenderView::build(scene, visibility, ui, poses)
+  |-- buildDrawables      appends each visible entity's palette, stamps its range
+  |-- buildShadowCasters  the same, for the scene-wide caster set
+GLBackend::render
+  |-- GLSkinPalette::update(view.skinMatrices)   one upload, SSBO binding 5
+  |-- GLInstanceBatcher                           per-instance skinFirst, SSBO binding 6
+```
+
+The per-instance base is indexed by the **instance slot**, never by draw
+position: the GPU occlusion cull settles an instance by rewriting that slot, so a
+divisor-1 attribute would be fetched by position and hand a compacted batch
+another character's bones.
+
+**A run is skinned or it is not**, and `InstanceRun::skinned` leads the batch sort
+key ahead of material and mesh, so a bucket switches program once. It takes two
+things to be true - the GPU mesh carries a skin stream, and the frame posed this
+instance. A skinned mesh with no rig above it fails the second, draws through the
+static program, and renders the vertices it stored, which *is* its bind pose. No
+per-instance branch in any vertex stage decides that.
+
+The four programs are plain path-constructed shaders, so hot reload tracks them
+with no new code:
+
+| Program | Vertex stage | Fragment stage |
+|---------|--------------|----------------|
+| `shaders/forward/pbr` | static | the ubershader |
+| `shaders/forward/pbr_skinned` | skinned | `#include "../pbr/fragment.shader"` |
+| `shaders/forward/prepass` | static | the G-buffer write |
+| `shaders/forward/prepass_skinned` | skinned | `#include "../prepass/fragment.shader"` |
+
+The fragment stages are includes rather than copies: a lobe added to the
+ubershader can never reach only half the scene.
+
+Both skinned vertex stages take their position from one expression,
+`skinnedWorldPosition(model, base)` in `shaders/_common/skinning.glsl`. That is
+what makes the depth agreement structural - the forward pass draws against the
+depth the prepass primed under LEQUAL with writes off, so the two programs must
+compute `gl_Position` identically, and there is only one expression for them to
+compute it from.
+
+Uniform state is per program in GL, so `GLForwardPass::bindFrameUniforms` gives
+both programs the identical frame set from one place. A uniform added to only one
+of them would go silently missing on characters and nowhere else.
 
 ## Seeing it
 

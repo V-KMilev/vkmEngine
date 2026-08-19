@@ -1010,9 +1010,34 @@ EntityId importModelIntoScene(
     scene.add(root, Transform{});
     scene.add(root, makeName(stemOf(ref).c_str()));
 
+    // A bone is an index in the skeleton asset, not an entity, so a node that is
+    // only a bone has nothing to be. Pruned as whole subtrees rather than node by
+    // node: a prop parented to a hand keeps the chain of bones that places it,
+    // and nothing is ever re-parented to an ancestor it did not sit under.
+    std::unordered_set<std::string> boneNames;
+    for (const Bone& bone : rig.bones) boneNames.insert(bone.name);
+
+    std::unordered_map<const aiNode*, bool> boneOnlyCache;
+    std::function<bool(const aiNode*)> boneOnly = [&](const aiNode* node) -> bool {
+        const auto cached = boneOnlyCache.find(node);
+        if (cached != boneOnlyCache.end()) return cached->second;
+
+        bool answer = node->mNumMeshes == 0
+                   && boneNames.count(node->mName.C_Str()) != 0;
+        for (unsigned c = 0; answer && c < node->mNumChildren; ++c)
+            answer = boneOnly(node->mChildren[c]);
+
+        boneOnlyCache[node] = answer;
+        return answer;
+    };
+
     std::unordered_map<const aiNode*, EntityId> nodeEntity;
+    std::vector<EntityId> skinnedMeshes;
+
     std::function<void(const aiNode*, EntityId)> spawn =
         [&](const aiNode* node, EntityId parent) {
+        if (boneOnly(node)) return;
+
         EntityId e = scene.createEntity();
         scene.add(e, transformOf(node->mTransformation));
         scene.add(e, makeName(node->mName.length ? node->mName.C_Str() : "node"));
@@ -1025,7 +1050,11 @@ EntityId importModelIntoScene(
             if (!mh) continue;
             MaterialHandle mat = materialFor(
                 static_cast<int>(aScene->mMeshes[mi]->mMaterialIndex));
-            if (node->mNumMeshes == 1) {
+            // A skinned mesh always gets an entity of its own, because it is
+            // about to be moved onto the rig and its node may carry children
+            // that must not move with it.
+            const bool skinned = aScene->mMeshes[mi]->HasBones();
+            if (node->mNumMeshes == 1 && !skinned) {
                 scene.add(e, Mesh{mh, mat});
             } else {
                 EntityId sub = scene.createEntity();
@@ -1033,6 +1062,7 @@ EntityId importModelIntoScene(
                 scene.add(sub, makeName(("mesh" + std::to_string(mi)).c_str()));
                 scene.add(sub, Mesh{mh, mat});
                 HierarchyOperations::setParent(scene, sub, e);
+                if (skinned) skinnedMeshes.push_back(sub);
             }
         }
         for (unsigned c = 0; c < node->mNumChildren; ++c)
@@ -1053,7 +1083,19 @@ EntityId importModelIntoScene(
         const auto it = rigFrame ? nodeEntity.find(rigFrame) : nodeEntity.end();
         // No parent means the rig is rooted at the scene node itself, whose own
         // transform bone 0 already carries: the import root is that frame.
-        scene.add(it != nodeEntity.end() ? it->second : root, Animator{rigHandle, firstClip});
+        const EntityId rigEntity = (it != nodeEntity.end()) ? it->second : root;
+        scene.add(rigEntity, Animator{rigHandle, firstClip});
+
+        // Skinned vertices resolve into the rig's own space - the inverse-bind
+        // matrices already carry whatever placed the mesh there - so the matrix
+        // multiplying them must be the rig's world matrix and nothing else.
+        // Parenting each skinned mesh to the rig at identity makes that true by
+        // construction instead of by convention; a mesh left under its own node
+        // would be transformed twice, which looks plausible for exactly one pose.
+        for (EntityId skinned : skinnedMeshes) {
+            HierarchyOperations::setParent(scene, skinned, rigEntity);
+            scene.get<Transform>(skinned) = Transform{};
+        }
     }
 
     LOG_INFO("Imported model '%s' (%u meshes, %u materials, %zu bones, %u clips)",

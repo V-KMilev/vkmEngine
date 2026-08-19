@@ -19,16 +19,52 @@
 #include "ecs/component/transform.h"
 #include "ecs/component/world_transform.h"
 #include "ecs/environment.h"
+#include "system/animation/pose_buffer.h"
 #include "system/visibility/visibility.h"
 
 #include "debug/profiler.h"
 
 namespace Vkm::Engine {
 
+namespace {
+
+/**
+ * @brief Copy one entity's bone palette into the frame's flat array.
+ *
+ * Shared by both gather loops because both need it and they walk different
+ * sets: the visible entities and the scene-wide shadow casters. An entity that
+ * poses nothing - which is every rock in the scene, and a skinned mesh with no
+ * rig above it - answers a count of 0 and copies nothing.
+ *
+ * @param poses This frame's poses, or null when nothing posed anything.
+ * @param id    Entity the item was gathered for.
+ * @param out   The frame's flat palette array, appended to.
+ * @param first Set to the item's first matrix in @p out.
+ * @param count Set to how many bones it has, 0 when it is not posed.
+ */
+void appendPose(const PoseBuffer* poses, EntityId id, std::vector<glm::mat4>& out,
+                uint32_t& first, uint32_t& count) {
+    first = 0;
+    count = 0;
+    if (!poses) return;
+
+    const PoseSlice* slice = poses->sliceOf(id.index);
+    if (!slice || slice->count == 0) return;
+
+    const std::vector<glm::mat4>& palette = poses->palette();
+    first = static_cast<uint32_t>(out.size());
+    count = slice->count;
+    out.insert(out.end(), palette.begin() + slice->first,
+                          palette.begin() + slice->first + slice->count);
+}
+
+} // namespace
+
 void RenderView::build(
     const Scene& scene,
     const Visibility& visibility,
-    const UIDrawData* uiData
+    const UIDrawData* uiData,
+    const PoseBuffer* poses
 ) {
     PROFILE_SCOPE("RenderView::build");
 
@@ -52,6 +88,7 @@ void RenderView::build(
         particlesAdditive.clear();
         particlesAlpha.clear();
         irradianceVolumes.clear();
+        skinMatrices.clear();
         return;
     }
 
@@ -61,8 +98,13 @@ void RenderView::build(
     buildDecals(scene);
     buildParticles(scene);
     buildIrradianceVolumes(scene);
-    buildDrawables(scene, visibility);
-    buildShadowCasters(scene, visibility);
+
+    // Cleared here rather than in either gather below: both append to it and
+    // neither owns it, so clearing inside one would make their call order
+    // load-bearing for no stated reason.
+    skinMatrices.clear();
+    buildDrawables(scene, visibility, poses);
+    buildShadowCasters(scene, visibility, poses);
 }
 
 void RenderView::buildCamera(const Visibility& visibility) {
@@ -181,7 +223,8 @@ void RenderView::buildIrradianceVolumes(const Scene& scene) {
         });
 }
 
-void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility) {
+void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility,
+                                const PoseBuffer* poses) {
     PROFILE_SCOPE("RenderView::buildDrawables");
 
     // Reuse capacity from the previous frame; only grows, never shrinks.
@@ -205,11 +248,13 @@ void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility
         drawable.worldMin     = entry.worldMin;
         drawable.worldMax     = entry.worldMax;
         drawable.castShadows  = mesh.castShadows;
+        appendPose(poses, entry.id, skinMatrices, drawable.skinFirst, drawable.skinCount);
         drawables.push_back(drawable);
     }
 }
 
-void RenderView::buildShadowCasters(const Scene& scene, const Visibility& visibility) {
+void RenderView::buildShadowCasters(const Scene& scene, const Visibility& visibility,
+                                    const PoseBuffer* poses) {
     PROFILE_SCOPE("RenderView::buildShadowCasters");
 
     shadowCasters.clear();
@@ -223,7 +268,13 @@ void RenderView::buildShadowCasters(const Scene& scene, const Visibility& visibi
         // unresolved slot
         if (!entry.mesh) continue;
 
-        shadowCasters.push_back({ entry.mesh, entry.model, entry.worldMin, entry.worldMax });
+        ShadowCasterData caster;
+        caster.mesh    = entry.mesh;
+        caster.model   = entry.model;
+        caster.aabbMin = entry.worldMin;
+        caster.aabbMax = entry.worldMax;
+        appendPose(poses, entry.id, skinMatrices, caster.skinFirst, caster.skinCount);
+        shadowCasters.push_back(caster);
     }
 }
 

@@ -7,6 +7,7 @@
 #include "convention/gl_bindings.h"
 #include "gl_view.h"
 #include "data/gl_mesh.h"
+#include "data/gl_stream_upload.h"
 #include "system/render/data/drawable_data.h"
 
 namespace Vkm::Engine {
@@ -14,29 +15,6 @@ namespace Vkm::Engine {
 namespace {
 
 namespace SSBO = GLBindings::SSBOBindingPoints;
-
-/**
- * @brief Grow-or-update a stream buffer to hold @p bytes of @p data.
- *
- * The batch buffers size to the frame's instance count, which moves;
- * reallocating only when it grows keeps a steady scene at one allocation.
- *
- * @tparam BufferT   vkmGL buffer type to allocate (vertex or shader storage).
- * @param buffer     The buffer, allocated on first use and on every grow.
- * @param capacity   Bytes currently allocated; updated when it grows.
- * @param data       Source bytes to upload.
- * @param bytes      How many of them; 0 leaves the buffer untouched.
- */
-template <typename BufferT>
-void growAndUpload(std::unique_ptr<BufferT>& buffer, uint32_t& capacity,
-                   const void* data, uint32_t bytes) {
-    if (bytes == 0) return;
-    if (!buffer || bytes > capacity) {
-        capacity = bytes + bytes / 2;   // headroom, so a growing frame does not realloc every time
-        buffer = std::make_unique<BufferT>(nullptr, capacity, GL_STREAM_DRAW);
-    }
-    buffer->update(data, bytes, 0);
-}
 
 } // namespace
 
@@ -46,6 +24,19 @@ void GLInstanceBatcher::append(const DrawableData& d, uint32_t runIndex) {
     m_bounds.emplace_back(d.worldMin, 0.0f);
     m_bounds.emplace_back(d.worldMax, 0.0f);
     m_runOf.push_back(runIndex);
+    m_skinBase.push_back(d.skinFirst);
+}
+
+void GLInstanceBatcher::resolveSkinned(const std::vector<const DrawableData*>& list,
+                                       const GLView& view) {
+    m_skinned.resize(list.size());
+    for (size_t i = 0; i < list.size(); ++i) {
+        const GLMesh* mesh = view.getMesh(list[i]->mesh);
+        // Both halves are needed: the GPU layout has to carry a skin stream, and
+        // the frame has to have posed this instance. Either missing and the
+        // static program draws the bind pose the vertices already hold.
+        m_skinned[i] = (mesh && mesh->isSkinned() && list[i]->skinCount > 0) ? 1u : 0u;
+    }
 }
 
 const std::vector<InstanceRun>& GLInstanceBatcher::buildGrouped(
@@ -55,16 +46,21 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildGrouped(
     m_normals.clear();
     m_bounds.clear();
     m_runOf.clear();
+    m_skinBase.clear();
     if (list.empty()) return m_runs;
 
-    // Sort indices by (material id, mesh id) so identical draws sit contiguously
-    // and merge into one instanced call each. Sorting indices keeps the input
-    // list untouched.
+    resolveSkinned(list, view);
+
+    // Sort indices by (skinned, material id, mesh id) so identical draws sit
+    // contiguously and merge into one instanced call each. Skinnedness leads the
+    // key because it selects the program, and a batch should switch program once
+    // rather than per run. Sorting indices keeps the input list untouched.
     m_order.resize(list.size());
     for (uint32_t i = 0; i < list.size(); ++i) m_order[i] = i;
     std::sort(m_order.begin(), m_order.end(), [&](uint32_t a, uint32_t b) {
         const DrawableData* da = list[a];
         const DrawableData* db = list[b];
+        if (m_skinned[a] != m_skinned[b]) return m_skinned[a] < m_skinned[b];
         if (da->material.id() != db->material.id()) return da->material.id() < db->material.id();
         return da->mesh.id() < db->mesh.id();
     });
@@ -76,6 +72,7 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildGrouped(
     while (i < m_order.size()) {
         const DrawableData* head   = list[m_order[i]];
         const GLMesh*       mesh   = view.getMesh(head->mesh);
+        const uint8_t       skin   = m_skinned[m_order[i]];
         const uint32_t      matId  = head->material.id();
         const uint32_t      meshId = head->mesh.id();
         const uint32_t      first  = static_cast<uint32_t>(m_models.size());
@@ -83,6 +80,7 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildGrouped(
         uint32_t j = i;
         while (j < m_order.size()) {
             const DrawableData* d = list[m_order[j]];
+            if (m_skinned[m_order[j]] != skin) break;
             if (d->material.id() != matId || d->mesh.id() != meshId) break;
             // A group with no GL mesh pushes no run below, so its instances must
             // not enter the flattened arrays either: append stamps them with the
@@ -92,7 +90,7 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildGrouped(
         }
 
         const uint32_t count = static_cast<uint32_t>(m_models.size()) - first;
-        if (mesh && count > 0) m_runs.push_back({ mesh, head->material, first, count });
+        if (mesh && count > 0) m_runs.push_back({ mesh, head->material, first, count, skin != 0 });
         i = j;
     }
 
@@ -107,17 +105,21 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildSequential(
     m_normals.clear();
     m_bounds.clear();
     m_runOf.clear();
+    m_skinBase.clear();
     if (list.empty()) return m_runs;
+
+    resolveSkinned(list, view);
 
     m_models.reserve(list.size());
     m_normals.reserve(list.size());
 
-    for (const DrawableData* d : list) {
-        const GLMesh* mesh = view.getMesh(d->mesh);
+    for (size_t i = 0; i < list.size(); ++i) {
+        const DrawableData* d    = list[i];
+        const GLMesh*       mesh = view.getMesh(d->mesh);
         if (!mesh) continue;
         const uint32_t first = static_cast<uint32_t>(m_models.size());
         append(*d, static_cast<uint32_t>(m_runs.size()));
-        m_runs.push_back({ mesh, d->material, first, 1 });
+        m_runs.push_back({ mesh, d->material, first, 1, m_skinned[i] != 0 });
     }
 
     upload();
@@ -142,6 +144,8 @@ void GLInstanceBatcher::upload() {
                   static_cast<uint32_t>(m_bounds.size() * sizeof(glm::vec4)));
     growAndUpload(m_runOfBuffer, m_runOfCapacity, m_runOf.data(),
                   static_cast<uint32_t>(m_runOf.size() * sizeof(uint32_t)));
+    growAndUpload(m_skinBaseBuffer, m_skinBaseCapacity, m_skinBase.data(),
+                  static_cast<uint32_t>(m_skinBase.size() * sizeof(uint32_t)));
 
     resetCommands();
 
@@ -179,11 +183,12 @@ bool GLInstanceBatcher::bindCullBuffers() {
 }
 
 void GLInstanceBatcher::bindInstanceData() const {
-    // Just the transforms. The index buffer is bound as a vertex attribute, not
-    // as storage - the fetch resolves the indirection, so the shader never
-    // reads it.
+    // The transforms, and where each instance's bones start. The index buffer is
+    // bound as a vertex attribute, not as storage - the fetch resolves the
+    // indirection, so the shader never reads it.
     VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::InstanceModels,  m_modelBuffer.id()));
     VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::InstanceNormals, m_normalBuffer.id()));
+    if (m_skinBaseBuffer) m_skinBaseBuffer->bindBase(SSBO::InstanceSkinBase);
 }
 
 void GLInstanceBatcher::drawRun(const InstanceRun& run, uint32_t runIndex) {

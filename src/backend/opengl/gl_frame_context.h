@@ -25,6 +25,7 @@ class GLClusterGrid;
 class GLFogVolume;
 class GLIrradianceVolume;
 class GLHiZ;
+class GLSkinPalette;
 
 /**
  * @brief Everything a GLPass needs for one frame.
@@ -49,6 +50,7 @@ struct GLFrameContext {
     GLFogVolume&       fog;              ///< Froxel fog volumes: written by the fog compute, applied by the fog-apply pass.
     GLIrradianceVolume& irradiance;      ///< Baked SH irradiance volume, sampled by the forward ambient term.
     GLHiZ&             hiz;              ///< Hierarchical depth pyramid: built after the prepass, tested by the occlusion cull.
+    GLSkinPalette&     skinPalette;      ///< Every skinned item's bone palette: uploaded once per frame, bound by every pass that draws one.
 
     /**
      * @brief The frame's drawables split by draw bucket, once per frame by the
