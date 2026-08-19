@@ -601,7 +601,6 @@ void InspectorPanel::drawTransformSection(Scene& scene, ResourceManager& resourc
                 step = std::make_unique<TransformChangeCommand>(id, before, t, "Transform");
             }
             state.commands.push(std::move(step));
-            HierarchyOperations::markDirty(scene, id);
             state.markSceneDirty();
         }
 

@@ -20,8 +20,10 @@ The system makes a single pass over **every** entity with an `Animation` compone
 2. Handles the end of the timeline - wraps when `looping`, otherwise clamps and
    stops.
 3. Samples each track and writes `Transform.position` / `.rotation` / `.scale`.
-4. Marks the entity's subtree dirty so `HierarchySystem` recomputes the affected
-   `WorldTransform`s downstream.
+
+`HierarchySystem` runs later in the same frame and rebuilds every
+`WorldTransform`, so an animated entity inside a hierarchy needs nothing
+recorded here.
 
 Because it applies to all animated entities (not just visible ones), off-screen
 animation stays in sync; the cost is bounded by the number of *animated* entities,

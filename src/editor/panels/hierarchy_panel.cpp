@@ -372,7 +372,7 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resour
                                                                "Reset Transform");
             }
             state.commands.push(std::move(step));
-            EditorActions::commitHierarchyMutation(scene, state, entity);
+            EditorActions::commitHierarchyMutation(state);
         }
     }
 

@@ -183,14 +183,13 @@ void focusOnSelected(FrameContext& ctx, EditorState& state, CameraControllerSyst
 void setActiveCamera(Scene& scene, EditorState& state, EntityId target);
 
 /**
- * @brief Commit a hierarchy mutation: dirty bits, panel rebuild, scene save flag.
+ * @brief Commit a hierarchy mutation: panel rebuild plus scene save flag.
  *
- * Replaces the HierarchyOperations::markDirty + state.hierarchyDirty +
- * markSceneDirty triplet that used to live at every call site - one missed
- * line dropped the scene-dirty flag, which is the user-trust hazard the
- * editor audit flagged.
+ * Names the pair every structural edit owes the editor, because a call site
+ * that remembered the panel rebuild and forgot markSceneDirty lost the user's
+ * work at the next load with nothing said.
  */
-void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity);
+void commitHierarchyMutation(EditorState& state);
 
 /**
  * @brief Reparent @p child under @p newParent (null = unparent to root) while

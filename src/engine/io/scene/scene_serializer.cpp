@@ -385,7 +385,7 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
 
         // Pass 2: wire up Hierarchy::parent now that every entity exists at its
         // saved slot. setParent rebuilds the sibling links on both sides and
-        // marks WorldTransform dirty.
+        // seeds the WorldTransform the first HierarchySystem tick fills in.
         for (const auto& [childIdx, parentIdx] : parentLinks) {
             if (!staging.isAliveAtIndex(parentIdx)) {
                 LOG_WARNING("Parent slot %u not found in '%s'; entity %u left as root",

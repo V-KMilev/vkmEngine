@@ -11,12 +11,17 @@ namespace Engine {
 /**
  * @brief Resolves hierarchical transforms into the WorldTransform component.
  *
- * Runs in the Transform stage (before VisibilitySystem). Each dirty entity's
- * world matrix lands in its WorldTransform, pre-seeded by
+ * Runs in the Transform stage (before VisibilitySystem). Every hierarchical
+ * entity's world matrix lands in its WorldTransform, pre-seeded by
  * HierarchyOperations::setParent so this loop never has to mutate the component
  * graph - which is what lets it parallelise over depth buckets. Downstream
  * systems read WorldTransform when present and fall back to Transform for root
  * entities.
+ *
+ * Resolving unconditionally is what makes the result trustworthy: a per-entity
+ * dirty flag can only be correct if every writer of a Transform anywhere in the
+ * engine or in a game remembers to set it, and a forgotten one shows up as a
+ * silently stale world matrix rather than an error.
  */
 class HierarchySystem : public System {
     public:
@@ -36,10 +41,10 @@ class HierarchySystem : public System {
         using DepthBuckets = std::array<std::vector<EntityId>, HierarchyOperations::MAX_DEPTH>;
 
         /**
-         * @brief Resolve world transforms for every dirty hierarchical entity.
+         * @brief Resolve world transforms for every hierarchical entity.
          *
-         * Dirty entities are bucketed by absolute depth in a serial pass and then
-         * each bucket runs through parallelFor; depths are processed in order so a
+         * Entities are bucketed by absolute depth in a serial pass and then each
+         * bucket runs through parallelFor; depths are processed in order so a
          * child reads its parent's already-finalised WorldTransform (one matrix
          * multiply, parentWorld * local) rather than re-walking the ancestor chain,
          * and reads of an ancestor's matrix never race a write.

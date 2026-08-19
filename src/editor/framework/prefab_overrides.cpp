@@ -121,7 +121,6 @@ bool apply(Scene& scene, ResourceManager& resources, EntityId root, uint32_t uid
 
     const bool reread = Prefab::reloadComponent(scene, resources, instance.source, target, uid,
                                                 component, instance.overrides);
-    if (component == "Transform") HierarchyOperations::markDirty(scene, target);
     return reread;
 }
 
