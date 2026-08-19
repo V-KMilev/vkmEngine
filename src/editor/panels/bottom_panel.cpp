@@ -127,7 +127,6 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             anim.positionTrack.setKeyframe(anim.time, tf.position);
             anim.rotationTrack.setKeyframe(anim.time, tf.rotation);
             anim.scaleTrack.setKeyframe(anim.time, tf.scale);
-            anim.updateDuration();
             changed = true;
         }
         ImGui::SameLine(0, GAP);
@@ -145,14 +144,12 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
         float lengthEdit = anim.length;
         if (ImGui::InputFloat("Length", &lengthEdit, 0.1f, 1.0f, "%.2f s")) {
             anim.length = std::max(0.0f, lengthEdit);
-            anim.updateDuration();
             changed = true;
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Animation length in seconds (0 = auto from the last keyframe)");
 
-        anim.updateDuration();
-        float dur = anim.duration;
+        const float dur = Animation::computeDuration(anim);
 
         ImGui::Spacing();
         {
@@ -218,7 +215,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
                 if (m_animDotTrack == 0)      moveDot(anim.positionTrack, m_animDotIdx, mt);
                 else if (m_animDotTrack == 1) moveDot(anim.rotationTrack, m_animDotIdx, mt);
                 else if (m_animDotTrack == 2) moveDot(anim.scaleTrack,    m_animDotIdx, mt);
-                if (m_animDotTrack >= 0) { anim.updateDuration(); changed = true; }
+                if (m_animDotTrack >= 0) changed = true;
                 else { anim.time = mt; anim.playing = false; }
                 previewPose();
             }
@@ -285,7 +282,6 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             if (iconButton(addId, EditorIcon::Plus, false, true,
                            "Add/replace a keyframe at the current time from the live transform", ih2)) {
                 track.setKeyframe(anim.time, recordVal());
-                anim.updateDuration();
                 previewPose();
                 changed = true;
             }
@@ -295,7 +291,6 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             if (iconButton(clrId, EditorIcon::Trash, false, track.keyframeCount() > 0,
                            "Clear every keyframe on this track", ih2)) {
                 track.clear();
-                anim.updateDuration();
                 changed = true;
             }
             ImGui::SameLine(0, 12);
@@ -363,12 +358,10 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
 
                 if (deleteIdx >= 0) {
                     track.removeKeyframe(static_cast<size_t>(deleteIdx));
-                    anim.updateDuration();
                     previewPose();
                     changed = true;
                 } else if (retimeIdx >= 0) {
                     track.setKeyframeTime(static_cast<size_t>(retimeIdx), std::max(0.0f, retimeVal));
-                    anim.updateDuration();
                     previewPose();
                     changed = true;
                 } else if (valueIdx >= 0) {
@@ -425,7 +418,6 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             scene.add(id, Animation{});
             Animation& na = scene.get<Animation>(id);
             na.length = 5.0f;
-            na.updateDuration();
             // Same undo path as the Inspector's Add Component menu.
             state.commands.push(std::make_unique<AddComponentCommand<Animation>>(
                 id, na, "Add Animation"));

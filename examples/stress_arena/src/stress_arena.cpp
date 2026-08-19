@@ -193,7 +193,6 @@ Animation makeSpin(float period, float phase) {
     anim.time    = phase;
     anim.playing = true;
     anim.looping = true;
-    anim.updateDuration();
     return anim;
 }
 
@@ -210,7 +209,6 @@ Animation makeBob(float period, float height, float phase) {
     anim.time    = phase;
     anim.playing = true;
     anim.looping = true;
-    anim.updateDuration();
     return anim;
 }
 
@@ -231,7 +229,6 @@ Animation makePulse(float period, float amount, float phase) {
     anim.time    = phase;
     anim.playing = true;
     anim.looping = true;
-    anim.updateDuration();
     return anim;
 }
 
@@ -274,7 +271,6 @@ Animation makeOrbitHop(float period, float radius, float height, float phase) {
     anim.time    = phase;
     anim.playing = true;
     anim.looping = true;
-    anim.updateDuration();
     return anim;
 }
 
