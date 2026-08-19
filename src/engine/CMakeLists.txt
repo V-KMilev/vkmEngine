@@ -55,11 +55,11 @@ target_include_directories(EngineCore PRIVATE
     ${PROJECT_SOURCE_DIR}/modules/vkmGL/modules/glew/include
 )
 
-# glm, vkmLog and nlohmann are header-only or shared, so a consumer linking them
+# glm, vkm_log and nlohmann are header-only or shared, so a consumer linking them
 # too costs nothing and resolves to one copy.
 target_link_libraries(EngineCore PUBLIC
     glm
-    vkmLog
+    vkm_log
     nlohmann_json
 )
 
@@ -125,7 +125,7 @@ target_include_directories(EngineHeaders INTERFACE
     $<INSTALL_INTERFACE:include>
     $<TARGET_PROPERTY:glm,INTERFACE_INCLUDE_DIRECTORIES>
     $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:vkmLog,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:vkm_log,INTERFACE_INCLUDE_DIRECTORIES>
     $<TARGET_PROPERTY:nlohmann_json,INTERFACE_INCLUDE_DIRECTORIES>
 )
 target_compile_definitions(EngineHeaders INTERFACE

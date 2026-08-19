@@ -39,7 +39,7 @@ if(NOT TARGET glfw)
     add_subdirectory(glfw)
 endif()
 
-if(NOT TARGET vkmLog)
+if(NOT TARGET vkm_log)
     add_subdirectory(vkmLog)
 endif()
 
