@@ -110,12 +110,12 @@ engine_editor (executable)              engine_runtime (executable)
   |-- EngineCore                          |-- EngineCore (glm, glfw, vkm_log, nlohmann_json; glew private)
   |-- EngineRendering -- EngineCore       |-- EngineRendering -- EngineCore
   |-- EngineTools -- EngineCore           |-- EngineTools -- EngineCore (generators + cooked loaders; no Assimp)
-  |-- BackendOpenGL -- vkmGL, ...         |-- BackendOpenGL -- vkmGL, EngineRendering, EngineTools
+  |-- BackendOpenGL -- vkm_gl, ...        |-- BackendOpenGL -- vkm_gl, EngineRendering, EngineTools
   |-- EngineCooker -- EngineCore,         |-- BuildInfo
   |     EngineTools (+ assimp private)
   |-- EngineEditor -- EngineCore,        engine_cook (executable)
   |     EngineTools, EngineCooker,         |-- EngineCooker -- EngineCore, EngineTools
-  |     imgui, vkmGL                       |-- BuildInfo
+  |     imgui, vkm_gl                      |-- BuildInfo
   |-- BuildInfo                            (no window, no GL, no Engine)
 
 engine_editor and engine_runtime #include app/engine_app.h for setupEngineApp (no

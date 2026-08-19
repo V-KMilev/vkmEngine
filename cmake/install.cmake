@@ -43,7 +43,7 @@ install(TARGETS EngineCore ${VKM_EXPORTED_DEPS}
 
 # Shared libraries the hosts load but a project never links: they ship as files,
 # not as imported targets.
-install(TARGETS EngineRendering vkmGL
+install(TARGETS EngineRendering vkm_gl
         LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
 

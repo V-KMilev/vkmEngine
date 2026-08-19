@@ -72,5 +72,5 @@ function(vkm_module_metadata MODULE_PATH OUT_PREFIX)
     set(${OUT_PREFIX}_VERSION     ${_version} PARENT_SCOPE)
 endfunction()
 
-vkm_module_metadata("${CMAKE_SOURCE_DIR}/modules/vkmGL"  VKMGL)
+vkm_module_metadata("${CMAKE_SOURCE_DIR}/modules/vkmGL"  VKM_GL)
 vkm_module_metadata("${CMAKE_SOURCE_DIR}/modules/vkmLog" VKM_LOG)
