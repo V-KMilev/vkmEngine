@@ -18,10 +18,9 @@
 
 // Cooks a project's assets without opening a window.
 //
-// Producing a shippable build used to mean opening the editor and saving, since
-// that was the only thing that ran the cooker - a GUI step, on a machine with a
-// GPU, in the middle of an unattended build. Cooking needs neither: it imports
-// source art, writes binaries, and updates the manifest, all on the CPU.
+// Cooking needs no window and no GPU - it imports source art, writes binaries
+// and updates the manifest, all on the CPU - so an unattended build does not
+// have to open the editor and save to get a shippable one.
 //
 // Same rule as the other two binaries: the project is the one beside this
 // executable, unless an argument names a different one.

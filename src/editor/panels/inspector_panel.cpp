@@ -426,10 +426,9 @@ void InspectorPanel::drawUIButtonSection(Scene& scene, ResourceManager& resource
 }
 
 void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, EntityId id) {
-    // What an instance is made of comes from its prefab: the scene keeps a
-    // reference, a pose and the overrides, and rebuilds the subtree from the
-    // file. So a component added here is in the prefab or it is nowhere, and
-    // the button stays because writing the prefab back is how one is authored.
+    // A component added inside an instance is in the prefab or it is nowhere,
+    // and the button stays because writing the prefab back is how one is
+    // authored - the same rule PrefabOverrides::warnComponentIsPrefabs states.
     const bool inInstance = PrefabOverrides::instanceRoot(scene, id) != EntityId{};
     if (inInstance) {
         ImGui::TextWrapped("Components on an instance belong to the prefab. Save as Prefab "
@@ -1255,9 +1254,6 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
 
         if (sc.behaviors.empty()) ImGui::TextDisabled("No behaviors attached.");
 
-        // A behavior list serializes as one field holding every behavior, so a
-        // per-field override cannot address a single one - and an instance's
-        // components come back from the prefab on the next load.
         if (PrefabOverrides::instanceRoot(scene, id)) {
             ImGui::TextWrapped("Behavior fields are not per-instance overrides: "
                                "edit them in the prefab.");

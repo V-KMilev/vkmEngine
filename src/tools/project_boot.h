@@ -10,20 +10,12 @@ struct Project;
 /**
  * @brief Resolve the project, pin the working directory, and open the log file.
  *
- * The process prologue all three hosts share. The order is the whole of it, and
- * it is not free to change: argv[1] is resolved against the launch directory, so
- * the project root has to be decided before current_path() moves that directory;
- * setProjectRoot has to run before anything composes a project path, because a
- * composed path is a plain string by then and will not follow a later override;
- * and the "that is not a project" warning has to wait for the logger, which is
- * the first thing able to report it.
+ * The process prologue all three hosts share, and the order inside it is not
+ * free to change - each step carries its reason where it stands in the .cpp.
  *
  * The working directory becomes the ENGINE root rather than the project's:
  * shaders load CWD-relative and ship with the engine, while everything a project
  * owns is addressed absolutely through ProjectPaths.
- *
- * This decides where a host reads and writes; bootProjectScene below decides
- * which world it then opens. Neither calls the other.
  *
  * @param argc        Argument count, as main received it.
  * @param argv        Argument vector; argv[1], when given, names the project.

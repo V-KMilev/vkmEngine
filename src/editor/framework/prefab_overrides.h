@@ -22,18 +22,12 @@ struct EditorState;
 /**
  * @brief Reading and writing the overrides a prefab instance carries.
  *
- * The engine applies overrides when it builds an instance; this is the half
- * that makes them. Editing a component on an entity that belongs to an
- * instance records the changed fields as overrides there and then, rather than
- * waiting for an explicit "make this an override" step: a scene stores an
- * instance as a reference and rebuilds its entities from the prefab, so an edit
- * that is not an override is not stored at all, and an explicit step would
- * silently discard everything done before someone pressed it.
- *
- * A call site does not choose between an override and a plain edit: editStep in
- * framework/component_edit.h asks @ref record first and falls back to a plain
- * component command when it declines. Only that fallback lives elsewhere - what
- * counts as an override is decided here.
+ * A scene stores an instance as a reference and rebuilds its entities from the
+ * prefab, so an edit that is not recorded as an override is not stored at all.
+ * That is why an edit inside an instance records the changed fields here and
+ * then, with no explicit "make this an override" step to forget. Call sites do
+ * not choose: editStep in framework/component_edit.h asks @ref record first and
+ * falls back to a plain component command when it declines.
  *
  * An override is addressed (uid, component, field) with the value stored as the
  * field's own serialized JSON, so the keys here are the scene serializer's and
@@ -44,11 +38,6 @@ namespace PrefabOverrides {
 
     /**
      * @brief The instance root @p id belongs to - itself, or an ancestor.
-     *
-     * Walking up rather than marking every descendant is what keeps the
-     * prefab's own entities free of bookkeeping that could fall out of sync
-     * with their root, which is how the scene serializer decides the same
-     * question.
      *
      * @param scene Scene holding the entity.
      * @param id    Entity to resolve.
@@ -101,11 +90,9 @@ namespace PrefabOverrides {
      * load that could not resolve an asset name into an override that bakes the
      * failure into the scene.
      *
-     * The entries are written here and the undo step handed back rather than
-     * pushed, because for an instance the value is the prefab patched by these
-     * entries: undoing the edit means undoing the entry, and a gizmo drag over a
-     * multi-selection needs that step inside the composite it pushes for the
-     * whole motion.
+     * The undo step is handed back rather than pushed: for an instance the value
+     * is the prefab patched by these entries, and a gizmo drag over a
+     * multi-selection needs that step inside the composite it pushes.
      *
      * @param scene     Scene holding the entity.
      * @param resources Resolves asset names to handles.
@@ -147,14 +134,12 @@ namespace PrefabOverrides {
      * @brief Say that a component added to or removed from an instance lives in
      *        the prefab, not in the scene.
      *
-     * Which components an entity carries is the prefab's answer for everything
-     * inside an instance: the scene stores the instance as a reference and
-     * rebuilds the subtree from the file, so a component added here is in the
-     * prefab or it is nowhere. Both gestures stand, because writing the prefab
-     * back is how one is authored - this is what says where the change lives.
+     * The scene rebuilds an instance's subtree from the file, so a component
+     * added or removed here is in the prefab or it is nowhere. The gesture still
+     * stands - writing the prefab back is how one is authored - and this is what
+     * says where the change lives.
      *
-     * Does nothing for an entity outside an instance, which is every entity in
-     * most scenes.
+     * No-op outside an instance.
      *
      * @param scene     Scene holding the entity.
      * @param state     Editor state receiving the toast.

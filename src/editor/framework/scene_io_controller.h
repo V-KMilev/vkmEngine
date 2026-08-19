@@ -24,11 +24,6 @@ class MaterialPreviewSession;
  * swaps it back. Both go through the same post-swap housekeeping as load(),
  * since a restore is just an in-memory reload - that shared path is why the
  * snapshot lives here rather than in the playbar.
- *
- * Extracted from EditorSystem (god-file decomposition). EditorSystem owns one
- * of these and forwards menu/keybind intents to it; drawDialogs() must be
- * called once per frame from the same scope the modals were drawn before
- * (inside the menu-bar window) to keep popup behavior identical.
  */
 class SceneIOController {
     public:
@@ -80,15 +75,12 @@ class SceneIOController {
         /**
          * @brief Queue the Save-As prompt to open on the next drawDialogs().
          *
-         * Deferred so the modal is opened from the menu-bar scope, keeping its
-         * popup behavior identical to where it was historically drawn.
+         * Deferred so the modal is opened from the menu-bar scope, which is what
+         * keeps it alive past the menu closing.
          */
         void requestSaveAs();
         /**
          * @brief Queue the Load-Scene picker to open on the next drawDialogs().
-         *
-         * Configures the cached load picker (scenes root, .json filter) and
-         * flags it to open; the actual popup is issued from drawDialogs().
          */
         void requestLoad();
         /**
@@ -111,7 +103,7 @@ class SceneIOController {
          * @brief Render any pending Save-As / Load modals.
          *
          * Must be called once per frame from the menu-bar scope so the modals
-         * survive the menu closing and behave as before the controller split.
+         * survive the menu closing.
          *
          * @param ctx Frame context supplying the scene and resources to save/load.
          * @param state Editor state read for paths/flags and updated on a completed pick.

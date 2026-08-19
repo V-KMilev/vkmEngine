@@ -56,9 +56,8 @@ enum class EntityKind {
 /**
  * @brief Create a new entity of the given kind and push it as an undoable step.
  *
- * Adds a Transform and Name to a fresh entity, then composes the kind-specific
- * components (mesh + default material, light, camera, reflection probe). The
- * creation is snapshotted so undo can destroy it and redo re-create it intact.
+ * The creation is snapshotted so undo can destroy it and redo re-create it
+ * intact.
  *
  * @param scene Scene the entity is created in.
  * @param resources Resource manager that meshes/materials for the kind are registered with.
@@ -70,11 +69,9 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
 /**
  * @brief Duplicate an entity, copying its components onto a fresh one.
  *
- * Captures the source via EntitySnapshot (so the component set stays single-
- * sourced), nudges the copy off the source on X, leaves a duplicated camera
- * inactive and a duplicated animation paused, then pushes the result as an
- * undoable step and selects the copy. Script behaviors carry over through the
- * snapshot serializer.
+ * Captured via EntitySnapshot, so the component set stays single-sourced and
+ * script behaviors carry over. The copy is nudged off the source on X, and a
+ * duplicated camera comes back inactive, a duplicated animation paused.
  *
  * A prefab instance is instanced from its file again rather than copied, so the
  * copy is an instance of the same prefab with the same overrides instead of a
@@ -146,8 +143,7 @@ EntityId placePrefab(Scene& scene, ResourceManager& resources, EditorState& stat
  * also selected is already carried by that ancestor, so acting on it again is
  * acting twice - a delete aims at an entity the ancestor's subtree already
  * destroyed, a gizmo drag applies the same delta a second time and sends the
- * child twice as far. Both are silent when they go wrong, which is why the two
- * call sites share one definition instead of one comment pointing at the other.
+ * child twice as far. Both are silent when they go wrong.
  *
  * The selection is passed rather than read from EditorState because
  * deleteSelection deselects before it destroys and must test against the copy
@@ -182,8 +178,8 @@ void duplicateSelection(Scene& scene, ResourceManager& resources, EditorState& s
 /**
  * @brief Apply the command stack's undo / redo, then flag the scene dirty.
  *
- * Shared by the Edit menu and the keyboard shortcuts so the "run it, then mark
- * dirty" step lives in one place instead of being copy-pasted at both sites.
+ * Shared by the Edit menu and the keyboard shortcuts so neither can forget the
+ * dirty flag.
  */
 void undo(Scene& scene, EditorState& state);
 void redo(Scene& scene, EditorState& state);
@@ -244,10 +240,9 @@ void commitStructureChange(EditorState& state);
 /**
  * @brief Fork a material asset for safe per-entity edits.
  *
- * Copies the asset's params + texture refs, suffixes the name with " copy",
- * resets the version, and registers the clone in @p resources. If
- * @p assignTo is non-null, also overwrites its material handle with the clone.
- * Returns the new handle, or a null handle on registration failure.
+ * Registers a clone of the asset under a " copy" name. If @p assignTo is
+ * non-null, also overwrites its material handle with the clone. Returns the new
+ * handle, or a null handle on registration failure.
  *
  * Marks the scene dirty when @p assignTo is non-null (asset add alone does
  * not modify any entity, so the caller can decide if a scene-level edit
@@ -280,10 +275,9 @@ void frameAll(FrameContext& ctx, CameraControllerSystem& camera);
 /**
  * @brief Draw the "Create" submenu and create+select the chosen entity kind.
  *
- * Lists every EntityKind as a menu item; clicking one calls createEntity and
- * selects the result. The "Import Model..." item only flags
- * EditorState::requestModelImport because its modal must be drawn outside the
- * menu (which closes on click) - see ModelImportDialog::draw.
+ * The "Import Model..." item only flags EditorState::requestModelImport because
+ * its modal must be drawn outside the menu, which closes on click - see
+ * ModelImportDialog::draw.
  *
  * @param scene Scene new entities are created in.
  * @param resources Resource manager passed through to createEntity.
@@ -304,14 +298,8 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
 class ModelImportDialog {
     public:
         /**
-         * @brief Drive the Import Model picker and import the chosen file.
-         *
-         * Opens the cached picker when EditorState::requestModelImport is set,
-         * then on a pick loads the model into the scene.
-         *
-         * @param scene Scene the imported model is added to.
-         * @param resources Resource manager the imported meshes/materials register with.
-         * @param state Editor state holding the import request and updated on import.
+         * @brief Open the picker when EditorState::requestModelImport is set,
+         *        and import what the user chooses.
          */
         void draw(Scene& scene, ResourceManager& resources, EditorState& state);
 
@@ -332,16 +320,11 @@ class ModelImportDialog {
 class PlacePrefabDialog {
     public:
         /**
-         * @brief Drive the prefab picker and instance the chosen file.
+         * @brief Open the picker when EditorState::requestPlacePrefab is set,
+         *        and instance the prefab through placePrefab.
          *
-         * Opens the cached picker when EditorState::requestPlacePrefab is set,
-         * then on a pick builds the instance through placePrefab. A project with
-         * no prefabs yet gets a toast saying where they come from instead of an
-         * empty list.
-         *
-         * @param scene Scene the instance is built in.
-         * @param resources Resource manager the prefab's assets resolve against.
-         * @param state Editor state holding the request and updated on a placement.
+         * A project with no prefabs yet gets a toast saying where they come from
+         * instead of an empty list.
          */
         void draw(Scene& scene, ResourceManager& resources, EditorState& state);
 
