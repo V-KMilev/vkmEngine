@@ -7,14 +7,13 @@
 #include "gl_shader.h"
 #include "gl_screen_triangle.h"
 
-#include "data/gl_cube_convolver.h"
-
 namespace Core {
     class Context;
 }
 
 namespace Engine {
 
+class GLCubeConvolver;
 class GLIBL;
 
 /**
@@ -37,12 +36,12 @@ struct SkyParams {
 /**
  * @brief Baker for the IBL product set (split-sum).
  *
- * Owns three bake programs (equirect, procedural sky, BRDF) plus the two the
- * convolver holds, a unit cube (the six face captures) and a fullscreen triangle
- * (the BRDF LUT). Construct it where a GL context is current (GLBackend member).
- * It stays alive for the backend's lifetime: the procedural sky re-bakes
- * whenever the sun moves, so a transient baker would recompile all five programs
- * on every rebake.
+ * Owns three bake programs (equirect, procedural sky, BRDF) plus a fullscreen
+ * triangle (the BRDF LUT), and borrows the backend's convolver for the
+ * irradiance / prefilter loops and the unit cube the face captures draw.
+ * Construct it where a GL context is current (GLBackend member). It stays alive
+ * for the backend's lifetime: the procedural sky re-bakes whenever the sun
+ * moves, so a transient baker would recompile its programs on every rebake.
  *
  * bake(): load the equirect HDR -> render the environment cubemap -> convolve
  * diffuse irradiance -> GGX-prefilter specular mips -> integrate the BRDF/DFG
@@ -52,7 +51,14 @@ struct SkyParams {
  */
 class GLIBLBaker {
     public:
-        GLIBLBaker();
+        /**
+         * @brief Compile the bake programs, borrowing @p convolver for the
+         * irradiance / prefilter loops.
+         *
+         * @param convolver Shared cube convolver, owned by the backend and
+         *                  outliving every baker that borrows it.
+         */
+        explicit GLIBLBaker(GLCubeConvolver& convolver);
         ~GLIBLBaker();
 
         GLIBLBaker(const GLIBLBaker& other) = delete;
@@ -95,7 +101,7 @@ class GLIBLBaker {
         Core::Shader m_sky;
         Core::Shader m_brdf;
 
-        GLCubeConvolver      m_convolver;  ///< Shared irradiance + prefilter convolution (and the unit cube)
+        GLCubeConvolver&     m_convolver;  ///< Shared irradiance + prefilter convolution (and the unit cube)
         Core::ScreenTriangle m_brdfTri;    ///< Attribute-less fullscreen triangle for the BRDF LUT
 };
 

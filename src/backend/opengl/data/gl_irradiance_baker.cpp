@@ -9,6 +9,7 @@
 #include "gl_context.h"
 
 #include "data/gl_irradiance_volume.h"
+#include "data/gl_scene_capture.h"
 #include "system/render/data/irradiance_volume_data.h"
 
 namespace Engine {
@@ -17,8 +18,9 @@ namespace {
 constexpr float CAPTURE_FAR = 500.0f;
 } // namespace
 
-GLIrradianceBaker::GLIrradianceBaker()
-    : m_project("shaders/irradiance/project") {}
+GLIrradianceBaker::GLIrradianceBaker(GLSceneCapture& capture)
+    : m_project("shaders/irradiance/project")
+    , m_capture(capture) {}
 
 GLIrradianceBaker::~GLIrradianceBaker() = default;
 
