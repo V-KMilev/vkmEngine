@@ -10,7 +10,7 @@ target_link_libraries(vkm_cook_app PRIVATE
     vkm_core
     vkm_tools
     vkm_cook
-    BuildInfo
+    vkm_build_info
     vkm_warnings
 )
 
