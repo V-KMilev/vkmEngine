@@ -32,7 +32,7 @@ target_link_libraries(vkm_tools PUBLIC
 )
 target_link_libraries(vkm_tools PRIVATE
     vkm_warnings
-    BuildInfo          # resolves relative asset paths against APP_ROOT_DIR
+    vkm_build_info     # resolves relative asset paths against APP_ROOT_DIR
 )
 
 # vkm_cook - the heavy importers (Assimp + stb LDR decode) and the asset
@@ -52,5 +52,5 @@ target_link_libraries(vkm_cook PUBLIC
 target_link_libraries(vkm_cook PRIVATE
     assimp             # model import, used by loader/model_loaders.cpp
     vkm_warnings
-    BuildInfo
+    vkm_build_info
 )

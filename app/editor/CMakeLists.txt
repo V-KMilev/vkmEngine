@@ -12,9 +12,9 @@ target_link_libraries(vkm_editor_app PRIVATE
     vkm_render
     vkm_tools
     vkm_cook
-    BackendOpenGL
+    vkm_backend_gl
     vkm_editor
-    BuildInfo
+    vkm_build_info
     vkm_warnings
 )
 
