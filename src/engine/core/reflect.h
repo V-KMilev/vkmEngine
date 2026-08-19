@@ -120,25 +120,25 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
 /**
  * @brief Macro shorthand for declaring a Traits specialisation.
  *
- * Invoke INSIDE namespace Engine, right after the type, with the unqualified
- * name (mirrors VKM_ENUM_NAMES):
+ * Invoke at GLOBAL SCOPE, after the type's namespace has closed, naming the
+ * type in full (mirrors VKM_ENUM_NAMES):
  *
  *   namespace Engine {
  *   struct Transform { ... };
- *   VKM_REFLECT_BEGIN(Transform)
+ *   } // namespace Engine
+ *
+ *   VKM_REFLECT_BEGIN(::Engine::Transform)
  *       VKM_F(position),
  *       VKM_F(rotation),
  *       VKM_F(scale)
  *   VKM_REFLECT_END()
- *   }
  *
- * USE IT AT GLOBAL SCOPE, and name the type in full. The macro opens
- * Engine::Reflect itself, so it works from any namespace - which is the point: a
- * game's own types live in the game's namespace, and reflection has to reach
- * them there. Written inside a namespace it would specialise that namespace's
- * Reflect instead, which compiles into a confusing error about an incomplete
- * Traits. VKM_F() looks up the `vkm_reflect_self` alias the macro injects, so
- * each field needn't repeat the type name.
+ * The macro opens Engine::Reflect itself, which is why it can reach a type in
+ * any namespace - a game's own types live in the game's namespace, and
+ * reflection has to reach them there. Written inside a namespace it specialises
+ * that namespace's Reflect instead, and the compiler says "'Traits' is not a
+ * class template". VKM_F() looks up the `vkm_reflect_self` alias the macro
+ * injects, so each field needn't repeat the type name.
  *
  * Fields omitted from the macro are NOT serialised - that's the mechanism for
  * "internal only" data.
@@ -162,16 +162,18 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
 /**
  * @brief Register an enum's value-ordered names in one place.
  *
- * Invoke INSIDE namespace Engine, right after the enum, with the unqualified
- * type and the names in value order:
+ * Invoke at GLOBAL SCOPE, after the enum's namespace has closed, naming the
+ * type in full and the names in value order:
  *
  *   namespace Engine {
  *   enum class LightType { Directional, Point, ... , Count };
- *   VKM_ENUM_NAMES(LightType, "Directional", "Point", ...)
- *   }
+ *   } // namespace Engine
+ *
+ *   VKM_ENUM_NAMES(::Engine::LightType, "Directional", "Point", ...)
  *
  * It specialises EnumNames inside a nested `namespace Reflect`, exactly as
- * VKM_REFLECT_BEGIN does above.
+ * VKM_REFLECT_BEGIN does above, and for the same reason: written inside a
+ * namespace it specialises that namespace's Reflect instead.
  *
  * This one table is what enumName / enumFromName / drawEnumCombo read, so an
  * enum's serialized names and its editor combo cannot drift. The enum must end
