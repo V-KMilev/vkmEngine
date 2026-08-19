@@ -17,8 +17,10 @@
 #include "io/asset/asset_library.h"
 #include "io/asset/asset_serializer.h"
 #include "resource/resource_manager.h"
+#include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
+#include "resource/asset/skeleton_asset.h"
 #include "resource/asset/texture_asset.h"
 
 namespace Vkm::Engine::AssetCooker {
@@ -150,6 +152,55 @@ bool cookTexture(const TextureAsset& tex) {
     return true;
 }
 
+bool cookSkeleton(const SkeletonAsset& skeleton) {
+    if (skeleton.name.empty()) return true;
+
+    if (!skeleton.hasSource() || skeleton.bones.empty() || isCookedPlaceholder(skeleton.sourceJson())) {
+        warnUnlisted(AssetType::Skeleton, skeleton.name);
+        return true;
+    }
+
+    AssetLibrary& lib = AssetLibrary::get();
+    const nlohmann::json& recipe = skeleton.sourceJson();
+    const uint64_t hash = hashRecipe(recipe);
+
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Skeleton, skeleton.name);
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Skeleton, skeleton.name);
+    if (isUpToDate(AssetType::Skeleton, skeleton.name, hash, CookedOutput::Binary)) return true;
+
+    if (!writeRecipeFile(recipePath, skeleton.name, "skeleton", recipe)) return false;
+    if (!AssetCook::writeSkeleton(cookedPath, skeleton, hash)) return false;
+
+    lib.upsert({AssetType::Skeleton, skeleton.name, hash});
+    LOG_INFO("Cooked skeleton '%s' (%zu bones)", skeleton.name.c_str(), skeleton.bones.size());
+    return true;
+}
+
+bool cookAnimationClip(const AnimationClipAsset& clip) {
+    if (clip.name.empty()) return true;
+
+    if (!clip.hasSource() || clip.bones.empty() || isCookedPlaceholder(clip.sourceJson())) {
+        warnUnlisted(AssetType::AnimationClip, clip.name);
+        return true;
+    }
+
+    AssetLibrary& lib = AssetLibrary::get();
+    const nlohmann::json& recipe = clip.sourceJson();
+    const uint64_t hash = hashRecipe(recipe);
+
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::AnimationClip, clip.name);
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::AnimationClip, clip.name);
+    if (isUpToDate(AssetType::AnimationClip, clip.name, hash, CookedOutput::Binary)) return true;
+
+    if (!writeRecipeFile(recipePath, clip.name, "animationClip", recipe)) return false;
+    if (!AssetCook::writeAnimationClip(cookedPath, clip, hash)) return false;
+
+    lib.upsert({AssetType::AnimationClip, clip.name, hash});
+    LOG_INFO("Cooked clip '%s' (%.2fs, %zu bones)", clip.name.c_str(),
+             static_cast<double>(clip.duration), clip.bones.size());
+    return true;
+}
+
 bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
     if (mat.name.empty()) return true;
 
@@ -175,13 +226,20 @@ void cookAllAssets(ResourceManager& resources) {
     LOG_INFO("Cooking assets into the library...");
 
     // Textures first, then materials (which reference textures by name), then
-    // meshes - matching the load order so a downstream consumer is consistent.
+    // skeletons, then the clips and meshes that name one - matching the load
+    // order so a downstream consumer is consistent.
     size_t failed = 0;
     resources.forEachOfType<TextureAsset>([&](TextureHandle, const TextureAsset& tex) {
         if (!tex.hidden && !cookTexture(tex)) ++failed;
     });
     resources.forEachOfType<MaterialAsset>([&](MaterialHandle, const MaterialAsset& mat) {
         if (!mat.hidden && !cookMaterial(mat, resources)) ++failed;
+    });
+    resources.forEachOfType<SkeletonAsset>([&](SkeletonHandle, const SkeletonAsset& skeleton) {
+        if (!skeleton.hidden && !cookSkeleton(skeleton)) ++failed;
+    });
+    resources.forEachOfType<AnimationClipAsset>([&](AnimationClipHandle, const AnimationClipAsset& clip) {
+        if (!clip.hidden && !cookAnimationClip(clip)) ++failed;
     });
     resources.forEachOfType<MeshAsset>([&](MeshHandle, const MeshAsset& mesh) {
         if (!mesh.hidden && !cookMesh(mesh)) ++failed;
