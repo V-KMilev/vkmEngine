@@ -110,6 +110,11 @@ class ResourceManager {
          * or all of them at once when the epoch moves. Deleting assets without
          * adding replacements holds their GPU memory until one of those happens.
          *
+         * Everything after the generation check addresses the resource by slot
+         * index alone, which a stale handle still names correctly, so a handle
+         * whose slot has been recycled would drop the current occupant's name
+         * mapping and storage. Removing an already-removed handle is a no-op.
+         *
          * @tparam HandleType Handle type identifying the resource type.
          * @param handle Handle naming the resource to remove; must still be live.
          */
@@ -118,6 +123,8 @@ class ResourceManager {
             using T = typename HandleType::resource_t;
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::remove invalid handle");
+            if (!slot.allocator.has(handle.key)) return;
+
             const T& res = storageOfConst<T>(slot).get(handle.key.index);
             dropNameIndex(slot, res.name, handle.key.index);
             storageOf<T>(slot).remove(handle.key.index);
@@ -244,7 +251,7 @@ class ResourceManager {
             // remove() erases the mapping, but guards against rename-after-
             // add drift), fall back to invalid.
             if (!storageOfConst<T>(*slot).contains(index)) return {};
-            return Handle<T>{StorageIndex{index, slot->allocator.generationOf(index)}};
+            return Handle<T>{slot->allocator.handleAt(index)};
         }
 
         /**
@@ -258,7 +265,7 @@ class ResourceManager {
             const TypedSlot* slot = trySlot<T>();
             if (!slot) return;
             storageOfConst<T>(*slot).forEach([&](uint32_t index, const T& res) {
-                fn(Handle<T>{StorageIndex{index, slot->allocator.generationOf(index)}}, res);
+                fn(Handle<T>{slot->allocator.handleAt(index)}, res);
             });
         }
 

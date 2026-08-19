@@ -56,10 +56,15 @@ class SlotAllocator {
         /**
          * @brief Free a handle, bumping its generation and recycling the slot. @param id The handle to free.
          *
-         * Must be alive (asserts).
+         * Must be alive (asserts). A handle that is not is refused rather than
+         * acted on, because the damage is not confined to the caller: freeing a
+         * slot twice underflows m_liveCount, and size() is what the prefab and
+         * override walks bound their iteration by.
          */
         void free(StorageIndex id) {
             VKM_ASSERT(has(id), "SlotAllocator::free called with invalid handle");
+            if (!has(id)) return;
+
             m_generation[id.index].setAlive(false);
             m_generation[id.index].bumpGeneration();
             m_freeList.push_back(id.index);
@@ -84,13 +89,20 @@ class SlotAllocator {
         size_t size() const { return m_liveCount; }
 
         /**
-         * @brief Get the current generation for a sparse slot index. @param index The sparse slot index.
+         * @brief Rebuild the handle naming a sparse slot, generation included.
          *
-         * Must be in bounds. @return The current generation counter for that slot.
+         * Total, with the same bounds tolerance as isAliveAtIndex below: an
+         * index past the allocator's reach yields the null handle instead of
+         * reading out of bounds. A slot that is in reach but dead yields its
+         * real generation, which is what makes the handle compare unequal to
+         * the live one and fail has().
+         *
+         * @param index The sparse slot index.
+         * @return The handle for that slot, null when the index is out of reach.
          */
-        uint32_t generationOf(uint32_t index) const {
-            VKM_ASSERT(index < m_generation.size(), "SlotAllocator::generationOf out of bounds");
-            return m_generation[index].generation();
+        StorageIndex handleAt(uint32_t index) const {
+            if (index >= m_generation.size()) return {};
+            return StorageIndex{index, m_generation[index].generation()};
         }
 
         /**
