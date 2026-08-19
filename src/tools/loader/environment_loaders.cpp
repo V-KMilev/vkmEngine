@@ -3,7 +3,6 @@
 #include "loader/environment_loaders.h"
 
 #include <cstddef>
-#include <filesystem>
 #include <string>
 
 #include "logger.h"
@@ -17,23 +16,9 @@
 
 namespace Engine {
 
-namespace {
-    // The default HDR path is relative to the project root (e.g.
-    // "assets/envs/environment.hdr"), but the process working directory is not
-    // the project root, so a bare fopen fails. Resolve relatives against the
-    // project root (matches scene IO / model import). Absolute paths pass through.
-    std::string resolveAssetPath(const std::string& p) {
-        std::filesystem::path fp(p);
-        if (fp.is_relative()) {
-            return (ProjectPaths::projectRoot() / fp).lexically_normal().string();
-        }
-        return p;
-    }
-} // namespace
-
 HDRImage loadHDRImage(const std::string& filePath) {
     HDRImage image;
-    const std::string resolved = resolveAssetPath(filePath);
+    const std::string resolved = ProjectPaths::resolveProjectPath(filePath).string();
 
     // GL texture origin is bottom-left; flip so the sky lands at v = 1, which
     // is what the equirect bake shader expects (matches texture_loaders.cpp).

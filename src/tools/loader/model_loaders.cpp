@@ -41,6 +41,7 @@
 #include "logger.h"
 #include "debug/profiler.h"
 #include "platform/threading/thread_pool.h"
+#include "io/project_paths.h"
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
@@ -315,10 +316,11 @@ TextureHandle textureFor(
         return h;
     }
 
-    // External file, relative to the model directory.
+    // External file, relative to the model directory - which is itself resolved
+    // from the model's reference, so a project-relative model finds its maps.
     std::filesystem::path p(ref.C_Str());
     if (p.is_relative())
-        p = std::filesystem::path(modelPath).parent_path() / p;
+        p = ProjectPaths::resolveProjectPath(modelPath).parent_path() / p;
     const std::string abs = p.lexically_normal().string();
     int w = 0, hh = 0, n = 0;
     unsigned char* px = stbi_load(abs.c_str(), &w, &hh, &n, 4);
@@ -328,7 +330,7 @@ TextureHandle textureFor(
         return {};
     }
     nlohmann::json source = {
-        {"kind", "file"}, {"path", abs}, {"sRGB", srgb},
+        {"kind", "file"}, {"path", ProjectPaths::toProjectRelative(abs)}, {"sRGB", srgb},
         {"generateMipmaps", true},
     };
     TextureHandle h = addTexture(res, stem + ":file:" + key, w, hh, px, srgb,
@@ -481,14 +483,27 @@ Transform transformOf(const aiMatrix4x4& m) {
     return tf;
 }
 
-} // namespace
-
-MeshAsset loadModelMesh(const std::string& path, int meshIndex) {
-    auto importer = importerCache().get(path);
+/**
+ * @brief Import @p absolute and build one of its meshes, named by @p ref.
+ *
+ * The two are separate arguments because they answer different questions: only
+ * Assimp needs the path on this machine, while the name and the recipe record
+ * the reference, which has to mean the same thing on another one. Callable from
+ * a worker, unlike the resolution itself, which reads main-thread state.
+ */
+MeshAsset buildMeshFrom(const std::string& absolute, const std::string& ref, int meshIndex) {
+    auto importer = importerCache().get(absolute);
     if (!importer) return {};  // get() already logged the Assimp error
     const aiScene* scene = importer->GetScene();
     if (!scene) return {};
-    return buildMesh(scene, path, meshIndex);
+    return buildMesh(scene, ref, meshIndex);
+}
+
+} // namespace
+
+MeshAsset loadModelMesh(const std::string& path, int meshIndex) {
+    return buildMeshFrom(ProjectPaths::resolveProjectPath(path).string(),
+                         ProjectPaths::toProjectRelative(path), meshIndex);
 }
 
 MeshHandle requestModelMeshAsync(
@@ -496,7 +511,11 @@ MeshHandle requestModelMeshAsync(
     int meshIndex,
     ResourceManager& resources
 ) {
-    const std::string name = meshName(path, meshIndex);
+    // Resolved here rather than in the worker: a reference resolves against the
+    // project root, which the editor can re-point between projects.
+    const std::string ref      = ProjectPaths::toProjectRelative(path);
+    const std::string absolute = ProjectPaths::resolveProjectPath(ref).string();
+    const std::string name     = meshName(ref, meshIndex);
 
     // (path, meshIndex) is the stable identity. Idempotent: a second
     // request with the same identity returns the already-registered
@@ -508,14 +527,14 @@ MeshHandle requestModelMeshAsync(
     MeshAsset stub;
     stub.name    = name;
     stub.loading = true;
-    stub.sourceJson() = { {"kind", "model"}, {"path", path}, {"mesh", meshIndex} };
+    stub.sourceJson() = { {"kind", "model"}, {"path", ref}, {"mesh", meshIndex} };
     const MeshHandle handle = resources.add(std::move(stub));
     const uint64_t   uid    = resources.get(handle).uid;
 
-    ThreadPool::get().addTask([handle, uid, path, meshIndex]() {
+    ThreadPool::get().addTask([handle, uid, absolute, ref, meshIndex]() {
         // ImporterCache is mutex-guarded, so concurrent callers from
         // different workers are safe.
-        MeshAsset decoded = loadModelMesh(path, meshIndex);
+        MeshAsset decoded = buildMeshFrom(absolute, ref, meshIndex);
 
         MeshLoadCompletion completion;
         completion.handle    = handle;
@@ -536,11 +555,11 @@ MaterialHandle loadModelMaterial(
     int materialIndex,
     ResourceManager& resources
 ) {
-    auto importer = importerCache().get(path);
+    auto importer = importerCache().get(ProjectPaths::resolveProjectPath(path).string());
     if (!importer) return {};
     const aiScene* scene = importer->GetScene();
     if (!scene) return {};
-    return buildMaterial(scene, path, materialIndex, resources);
+    return buildMaterial(scene, ProjectPaths::toProjectRelative(path), materialIndex, resources);
 }
 
 TextureHandle loadModelEmbeddedTexture(
@@ -549,20 +568,21 @@ TextureHandle loadModelEmbeddedTexture(
     bool srgb,
     ResourceManager& resources
 ) {
-    auto importer = importerCache().get(path);
+    const std::string modelRef = ProjectPaths::toProjectRelative(path);
+    auto importer = importerCache().get(ProjectPaths::resolveProjectPath(path).string());
     if (!importer) return {};
     const aiScene* scene = importer->GetScene();
     if (!scene) return {};
     const aiTexture* emb = scene->GetEmbeddedTexture(ref.c_str());
     if (!emb) {
         LOG_WARNING("Model-image: embedded texture '%s' not found in '%s'",
-            ref.c_str(), path.c_str());
+            ref.c_str(), modelRef.c_str());
         return {};
     }
     const std::string key = ref + (srgb ? "#s" : "#l");
-    const std::string name = stemOf(path) + ":emb:" + key;
+    const std::string name = stemOf(modelRef) + ":emb:" + key;
     stbi_set_flip_vertically_on_load(true);
-    return decodeEmbedded(emb, resources, name, path, ref, srgb);
+    return decodeEmbedded(emb, resources, name, modelRef, ref, srgb);
 }
 
 EntityId importModelIntoScene(
@@ -571,10 +591,13 @@ EntityId importModelIntoScene(
     Scene& scene
 ) {
     PROFILE_SCOPE("ModelImport");
+    const std::string ref = ProjectPaths::toProjectRelative(path);
+
     Assimp::Importer importer;
-    const aiScene* aScene = importer.ReadFile(path, POST_PROCESS_FLAGS);
+    const aiScene* aScene = importer.ReadFile(
+        ProjectPaths::resolveProjectPath(ref).string(), POST_PROCESS_FLAGS);
     if (!aScene || aScene->mNumMeshes == 0) {
-        LOG_ERROR("Model import failed '%s': %s", path.c_str(),
+        LOG_ERROR("Model import failed '%s': %s", ref.c_str(),
             importer.GetErrorString());
         return {};
     }
@@ -585,10 +608,10 @@ EntityId importModelIntoScene(
     auto meshFor = [&](int idx) -> MeshHandle {
         auto it = meshes.find(idx);
         if (it != meshes.end()) return it->second;
-        const std::string nm = meshName(path, idx);
+        const std::string nm = meshName(ref, idx);
         MeshHandle h = resources.findByName<MeshAsset>(nm);
         if (!h) {
-            MeshAsset ma = buildMesh(aScene, path, idx);
+            MeshAsset ma = buildMesh(aScene, ref, idx);
             if (!ma.vertices.empty()) h = resources.add(std::move(ma));
         }
         meshes[idx] = h;
@@ -597,14 +620,14 @@ EntityId importModelIntoScene(
     auto materialFor = [&](int idx) -> MaterialHandle {
         auto it = materials.find(idx);
         if (it != materials.end()) return it->second;
-        MaterialHandle h = buildMaterial(aScene, path, idx, resources);
+        MaterialHandle h = buildMaterial(aScene, ref, idx, resources);
         materials[idx] = h;
         return h;
     };
 
     EntityId root = scene.createEntity();
     scene.add(root, Transform{});
-    scene.add(root, makeName(stemOf(path).c_str()));
+    scene.add(root, makeName(stemOf(ref).c_str()));
 
     std::function<void(const aiNode*, EntityId)> spawn =
         [&](const aiNode* node, EntityId parent) {
@@ -637,7 +660,7 @@ EntityId importModelIntoScene(
         spawn(aScene->mRootNode, root);
 
     LOG_INFO("Imported model '%s' (%u meshes, %u materials)",
-        path.c_str(), aScene->mNumMeshes, aScene->mNumMaterials);
+        ref.c_str(), aScene->mNumMeshes, aScene->mNumMaterials);
     return root;
 }
 

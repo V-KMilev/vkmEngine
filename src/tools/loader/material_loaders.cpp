@@ -12,6 +12,7 @@
 
 #include "logger.h"
 
+#include "io/project_paths.h"
 #include "resource/resource_manager.h"
 #include "loader/texture_loaders.h"
 #include "generator/texture_generators.h"
@@ -96,11 +97,12 @@ std::optional<std::string> findTexture(
     const std::vector<std::string>& patterns,
     const std::vector<std::string>& extensions = {".jpg", ".jpeg", ".png", ".tga", ".bmp"}
 ) {
-    if (!std::filesystem::exists(folderPath) || !std::filesystem::is_directory(folderPath)) {
+    const std::filesystem::path folder = ProjectPaths::resolveProjectPath(folderPath);
+    if (!std::filesystem::exists(folder) || !std::filesystem::is_directory(folder)) {
         return std::nullopt;
     }
 
-    for (const auto& entry : std::filesystem::directory_iterator(folderPath)) {
+    for (const auto& entry : std::filesystem::directory_iterator(folder)) {
         if (!entry.is_regular_file()) continue;
 
         std::string filename = entry.path().filename().string();
@@ -121,7 +123,9 @@ std::optional<std::string> findTexture(
             std::string patternLower = toLower(pattern);
 
             if (nameMatchesPattern(filenameLower, patternLower)) {
-                return entry.path().string();
+                // The reference, not the walked absolute: it becomes the
+                // texture's name and its recipe path.
+                return ProjectPaths::toProjectRelative(entry.path().string());
             }
         }
     }
@@ -140,7 +144,7 @@ TextureHandle loadOrFallback(
         return fallback;
     }
 
-    if (!std::filesystem::exists(texturePath)) {
+    if (!std::filesystem::exists(ProjectPaths::resolveProjectPath(texturePath))) {
         LOG_WARNING("Texture file not found: '%s', using fallback", texturePath.c_str());
         return fallback;
     }
@@ -168,17 +172,19 @@ MaterialHandle loadMaterialFromFolder(
     const std::string& folderPath,
     ResourceManager& resourceManager
 ) {
-    // Idempotent by name like every other loader, and the folder path is this
-    // material's name: a second load of the same folder is that same material,
-    // not a second copy of it living under a suffixed name.
-    if (MaterialHandle loaded = resourceManager.findByName<MaterialAsset>(folderPath)) return loaded;
+    // Idempotent by name like every other loader, and the folder reference is
+    // this material's name: a second load of the same folder is that same
+    // material, not a second copy of it living under a suffixed name. Relativised
+    // before the lookup, or one folder named two ways becomes two materials.
+    const std::string ref = ProjectPaths::toProjectRelative(folderPath);
+    if (MaterialHandle loaded = resourceManager.findByName<MaterialAsset>(ref)) return loaded;
 
-    if (!std::filesystem::exists(folderPath)) {
-        LOG_ERROR("Material folder not found: '%s'", folderPath.c_str());
+    if (!std::filesystem::exists(ProjectPaths::resolveProjectPath(ref))) {
+        LOG_ERROR("Material folder not found: '%s'", ref.c_str());
         return MaterialHandle{};
     }
 
-    LOG_INFO("Loading material from folder: '%s'", folderPath.c_str());
+    LOG_INFO("Loading material from folder: '%s'", ref.c_str());
 
     MaterialLoadDesc desc;
 
@@ -186,30 +192,30 @@ MaterialHandle loadMaterialFromFolder(
     // filename and each pattern before matching, so patterns are listed once in
     // lowercase. Distinct spellings that are NOT mere case variants (e.g.
     // "basecolor" vs "base_color") are kept - they match different filenames.
-    auto findAlbedo = findTexture(folderPath, {
+    auto findAlbedo = findTexture(ref, {
         "color", "albedo", "basecolor", "diffuse", "base_color"
     });
-    auto findNormal = findTexture(folderPath, {
+    auto findNormal = findTexture(ref, {
         "normal", "normalgl", "normal_gl", "norm"
     });
-    auto findMetallic = findTexture(folderPath, {
+    auto findMetallic = findTexture(ref, {
         "metallic", "metalness", "metal"
     });
-    auto findRoughness = findTexture(folderPath, {
+    auto findRoughness = findTexture(ref, {
         "roughness", "rough"
     });
-    auto findMetallicRoughness = findTexture(folderPath, {
+    auto findMetallicRoughness = findTexture(ref, {
         "metallicroughness", "metallic_roughness",
         "orm",  // Occlusion-Roughness-Metallic
         "rma"   // Roughness-Metallic-AO
     });
-    auto findAO = findTexture(folderPath, {
+    auto findAO = findTexture(ref, {
         "ao", "ambientocclusion", "ambient_occlusion", "occlusion"
     });
-    auto findEmission = findTexture(folderPath, {
+    auto findEmission = findTexture(ref, {
         "emission", "emissive", "emit", "glow"
     });
-    auto findHeight = findTexture(folderPath, {
+    auto findHeight = findTexture(ref, {
         "height", "displacement", "disp", "parallax"
     });
 
@@ -226,13 +232,13 @@ MaterialHandle loadMaterialFromFolder(
     if (handle) {
         // Record how this material was created so SceneSerializer can recreate
         // it on a cold-start load (texture discovery happens again at reload).
-        // The folder path is the material's stable identity - it is also the
+        // The folder reference is the material's stable identity - it is also the
         // name scene refs resolve by, so rename to it (keeps the name index in
         // sync; edit().name would not).
-        resourceManager.rename(handle, folderPath);
+        resourceManager.rename(handle, ref);
         resourceManager.edit(handle).sourceJson() = {
             {"kind", "folder"},
-            {"path", folderPath}
+            {"path", ref}
         };
     }
     return handle;

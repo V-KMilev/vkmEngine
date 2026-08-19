@@ -143,6 +143,16 @@ a hash of the recipe. Every asset is its own file:
   (type, name), so the cooker that writes a file and the loader that reads it
   cannot disagree about where it is.
 
+An imported asset is **named by its project-relative path**, and so is the
+`path` in its recipe - `ProjectPaths::toProjectRelative` at the loader boundary,
+`resolveProjectPath` to open it again. That matters more than it looks: the uid
+above is a hash of `"<Type>:<name>"`, so an absolute name would make the entire
+library's on-disk layout a function of one machine's home directory, and a
+second checkout would produce a manifest whose every entry hashes to a filename
+nothing on disk answers to. A source outside the project keeps its absolute path
+- it has no relative form - and the conversion happens before the by-name dedup,
+or one file reached by two spellings becomes two assets.
+
 **Save** - `AssetSerializer::saveAssetsForScene` walks the components that name
 assets (`Mesh`, `LOD`, `Decal`) and emits **name-only** references to the
 meshes/materials/textures used. In the editor,
