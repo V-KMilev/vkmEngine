@@ -46,10 +46,13 @@ struct TextureLoadCompletion {
 struct MeshLoadCompletion {
     MeshHandle handle;
     uint64_t   assetUid = 0;     ///< Resource::uid of the asset this decode was requested for; see AsyncLoaderSystem.
-    std::vector<Vertex>   vertices;
-    std::vector<uint32_t> indices;
+    std::vector<Vertex>     vertices;
+    std::vector<uint32_t>   indices;
+    std::vector<SkinVertex> skin;
+    std::string skeleton;        ///< Rig `skin` addresses; empty when the mesh is not skinned.
     glm::vec3 boundsMin{0};
     glm::vec3 boundsMax{0};
+    float     skinRadius = 0.0f;
     bool      success = false;   ///< False if Assimp failed; finaliser warns and leaves the asset empty.
 };
 

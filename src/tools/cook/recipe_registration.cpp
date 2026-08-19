@@ -133,6 +133,21 @@ TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager&
     return createCookedTexture(source, resources);
 }
 
+SkeletonHandle createRecipeSkeleton(const nlohmann::json& source, ResourceManager& resources) {
+    if (source.value("kind", std::string{}) == "model") {
+        return loadModelSkeleton(source.value("path", std::string{}), resources);
+    }
+    return createCookedSkeleton(source, resources);
+}
+
+AnimationClipHandle createRecipeAnimationClip(const nlohmann::json& source, ResourceManager& resources) {
+    if (source.value("kind", std::string{}) == "model") {
+        return loadModelAnimationClip(source.value("path", std::string{}),
+                                      source.value("clip", -1), resources);
+    }
+    return createCookedAnimationClip(source, resources);
+}
+
 MaterialHandle createRecipeMaterial(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
 
@@ -159,17 +174,14 @@ MaterialHandle createRecipeMaterial(const nlohmann::json& source, ResourceManage
 
 void registerRecipeAssetFactories() {
     LOG_INFO("Registering recipe asset factories (meshes: generator/model/decimate, "
-             "textures: file/builtin/solid/model-image, materials: folder/default/model)");
+             "textures: file/builtin/solid/model-image, materials: folder/default/model, "
+             "skeletons + clips: model)");
     assetFactory().createMesh     = &createRecipeMesh;
     assetFactory().createTexture  = &createRecipeTexture;
     assetFactory().createMaterial = &createRecipeMaterial;
 
-    // No recipe kind produces a rig yet, so the cooked dispatch is the whole
-    // dispatch for these two. They are still wired: a host that registers the
-    // recipe set instead of the cooked one must end up with every pointer set,
-    // or a scene that names a skeleton loads without one and says nothing.
-    assetFactory().createSkeleton      = &createCookedSkeleton;
-    assetFactory().createAnimationClip = &createCookedAnimationClip;
+    assetFactory().createSkeleton      = &createRecipeSkeleton;
+    assetFactory().createAnimationClip = &createRecipeAnimationClip;
 }
 
 } // namespace Vkm::Engine

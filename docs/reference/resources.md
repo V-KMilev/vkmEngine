@@ -91,19 +91,46 @@ one, so save files contain only user-relevant content. Names are guaranteed uniq
 ### MeshAsset
 
 ```cpp
-struct Vertex {
+struct Vertex {          // 48 bytes, and it stays 48
     glm::vec3 position;
     glm::vec3 normal;
     glm::vec2 uv;
     glm::vec4 tangent;
 };
 
+struct SkinVertex {      // 12 bytes, in a stream parallel to `vertices`
+    uint16_t bones[4];   // indices into the rig named by MeshAsset::skeleton
+    uint8_t  weights[4]; // unorm8, summing to exactly 255
+};
+
 struct MeshAsset : Resource {
-    std::vector<Vertex>   vertices;
-    std::vector<uint32_t> indices;
-    glm::vec3             boundsMin, boundsMax;
+    std::vector<Vertex>     vertices;
+    std::vector<uint32_t>   indices;
+    std::vector<SkinVertex> skin;        // empty, or exactly vertices.size()
+    std::string             skeleton;    // rig `skin` addresses; empty when unskinned
+    float                   skinRadius;  // furthest a vertex sits from a bone that moves it
+    glm::vec3               boundsMin, boundsMax;
 };
 ```
+
+**A mesh is skinned iff `skin` is non-empty** - the asset already knows, so no
+component has to say so.
+
+The skin rides in its own stream rather than inside `Vertex` because folding
+four indices and four weights in would cost every vertex of every mesh in the
+engine 25% more bandwidth, paid hardest by the shadow pass, which reads only
+`aPos` and replays the geometry per cascade tile and per cube face. A rock does
+not pay for skinning. Indices are 16-bit because the cooked format has no
+migration path and an 8-bit index would weld a 255-bone ceiling into it
+permanently; weights are quantised so the four bytes sum to exactly 255, which
+makes `w / 255.0` sum to exactly 1.0 and spares every vertex stage a
+renormalise.
+
+`skeleton` is a **name, not a handle**: a compatibility tag rather than a
+dependency. The mesh uploads its skin stream either way and the pose it is drawn
+with comes from whatever rig is driving it, so the name is what lets the runtime
+report the failure that actually happens - a rig assigned to the wrong character
+- instead of exploding the geometry and leaving the cause to be guessed at.
 
 ### TextureAsset
 
@@ -264,13 +291,53 @@ The generators are plain free functions; the string dispatch (`"name"` ->
 generator) lives in the `generator`/`decimate` factory lambdas registered in
 `asset_registration.cpp`, not a `byName` API.
 
+### Importing a rigged model
+
+`model_loaders.cpp` builds four kinds of asset from one file, all named
+deterministically so a re-import relinks: `<stem>:mesh<i>`, `<stem>:mat<i>`,
+`<stem>:skeleton` (one rig per file) and `<stem>:clip<i>`.
+
+The rig is the union of every bone any of the file's meshes names, plus the
+nodes joining them down from their lowest common ancestor, emitted depth-first
+so `parent < index` holds by construction. `aiProcess_PopulateArmatureData` is
+what makes a file holding two rigs answerable: it is refused rather than merged
+into one with an invented shared root and a single bone numbering that no clip
+in the file is bound to.
+
+Clips resolve their channels to bone indices **at import**, against that same
+rig. A channel naming a node outside it - a camera, a prop, the mesh node an
+exporter animated - is dropped and counted. Assimp's tick rate is zero far more
+often than not, so the `mTime / (mTicksPerSecond ? mTicksPerSecond : 25.0)`
+fallback is load-bearing rather than defensive.
+
+Two importer hazards are handled explicitly:
+
+- `aiProcess_LimitBoneWeights` caps a vertex at four influences and
+  renormalises what survives, which is exactly what `SkinVertex` holds.
+  Without it a fifth influence would be dropped *after* the weights were
+  normalised against it.
+- `aiProcess_JoinIdenticalVertices` merges vertices on a key that omits skin
+  weights and filters the merged-away ones out. Past that, Assimp only rewrites
+  a bone's weight list when the rewrite is non-empty - so a bone whose weights
+  **all** landed on joined vertices keeps its pre-join vertex ids against the
+  shrunken array. The importer bounds-checks every `mVertexId` and counts what
+  it drops, because following one is an out-of-bounds read of Assimp's own
+  data. The flag stays: dropping it needs a two-phase parse this codebase has
+  never exercised, and `POST_PROCESS_FLAGS` is deliberately one shared constant
+  so mesh and material indices stay stable across every entry point.
+
+A vertex that arrives with no influence at all is bound rigidly to the rig root
+and counted, rather than left at zero weight - `sum(w * M)` with every `w` zero
+collapses it onto the origin, which reads as a broken importer instead of as
+one bad vertex.
+
 ### Loaders (`src/tools/loader/`)
 
 | File                    | Provides                                                       |
 |-------------------------|----------------------------------------------------------------|
 | `texture_loaders.cpp`   | Load via stb_image, auto-detect channels, sRGB flag handling   |
 | `material_loaders.cpp`  | Folder loader: scans a folder for `*Color*`, `*Normal*`, etc.  |
-| `model_loaders.cpp`      | Assimp-backed mesh import; per-load aiScene parse cache        |
+| `model_loaders.cpp`      | Assimp-backed mesh, rig and clip import; per-load aiScene parse cache |
 | `environment_loaders.cpp`| HDR equirectangular image loader (`loadHDRImage`) for IBL / skybox |
 
 ## Save/load round-trip
