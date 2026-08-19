@@ -19,7 +19,7 @@ struct ColliderProxy {
     uint32_t body = 0;
 
     /**
-     * @brief This body's boxes, as a span into the tick's shared parts buffer.
+     * @brief This body's parts, as a span into the tick's shared parts buffer.
      *
      * A span rather than a copy of the Collider. Holding the component by value
      * meant every tick destroyed and reallocated one std::vector per body -

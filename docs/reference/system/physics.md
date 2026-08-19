@@ -1,8 +1,8 @@
 # Physics
 
-Fixed-step rigid-body dynamics over box colliders: integrate velocities, detect
-and resolve pairwise collisions with a sequential-impulse (PGS) solver, and write
-the resulting poses back to `Transform`.
+Fixed-step rigid-body dynamics over box and capsule colliders: integrate
+velocities, detect and resolve pairwise collisions with a sequential-impulse
+(PGS) solver, and write the resulting poses back to `Transform`.
 
 `PhysicsSystem` runs in `SystemStage::Simulation`, **after** `AnimationSystem`
 and **before** `HierarchySystem`, so physics-updated transforms propagate into
@@ -13,9 +13,9 @@ and **before** `HierarchySystem`, so physics-updated transforms propagate into
 
 - `src/engine/system/physics/physics_system.h/.cpp` - the system (gather, broadphase, narrowphase, solve, integrate)
 - `src/engine/system/physics/collision/contact.h` - `Contact`, `ContactManifold`, `MAX_CONTACTS_PER_MANIFOLD`
-- `src/engine/system/physics/collision/narrowphase.h/.cpp` - `contactBoxes` (oriented box-vs-box)
+- `src/engine/system/physics/collision/narrowphase.h/.cpp` - `BoxShape`, `CapsuleShape`, and the three contact routines
 - `src/engine/system/physics/collision/solver.h/.cpp` - `PhysicsBody`, `SolverParams`, `solveContacts`
-- `src/engine/system/physics/inertia.h` - box inverse-inertia + world-space rotation helpers
+- `src/engine/system/physics/inertia.h` - box / capsule inertia + world-space rotation helpers
 - `src/engine/system/physics/collider_fit.h/.cpp` - `fitBoxesToMesh` ("Fit to Mesh")
 - `src/engine/system/physics/physics_events.h` - `CollisionEvent`, `TriggerEvent`
 - `src/engine/ecs/component/rigidbody.h`, `collider.h` - the components
@@ -35,14 +35,22 @@ All three are plain data structs; see [ecs.md](../ecs.md) for the field tables.
   stored on the component: `PhysicsSystem` re-derives them from `mass` +
   `Collider` into its per-tick `BodyFrame`, so editing either takes effect
   without an "apply" step.
-- **`Collider`** - one or more `ColliderBox` parts (`center`, `halfExtents`),
-  evaluated in the entity's `Transform` frame. The narrowphase is **box-vs-box
-  only**, run per child-box pair. `isTrigger` makes it generate events without an
-  impulse response. `enabled = false` makes the collider inert - it gets no
-  broadphase entry, produces no contacts or events, and the editor's collider
-  overlay skips it (for pooled/phased objects that toggle collision without
-  component churn). The solver ignores `Transform` scale - "Fit to Mesh" bakes
-  scale into the box centres and half-extents.
+- **`Collider`** - one or more `ColliderPart`s, evaluated in the entity's
+  `Transform` frame. Each part carries a `shape` tag (`ColliderShape::Box` or
+  `Capsule`) and the fields for both: `center` + `halfExtents` for a box,
+  `center` + `radius` + `halfHeight` for a capsule. `isTrigger` makes it generate
+  events without an impulse response. `enabled = false` makes the collider inert -
+  it gets no broadphase entry, produces no contacts or events, and the editor's
+  collider overlay skips it (for pooled/phased objects that toggle collision
+  without component churn). The solver ignores `Transform` scale - "Fit to Mesh"
+  bakes scale into the box centres and half-extents.
+
+  A capsule's segment runs along the entity's local **+Y** for `halfHeight`
+  either side of `center`, swept by `radius`, so its total height is
+  `2 * (halfHeight + radius)`. `halfHeight == 0` is a sphere, and every routine
+  handles it without a special case. Capsules are what characters wear: a box
+  catches on every seam between two floor boxes, and a capsule's round side
+  slides over them.
 - **Scene physics settings** - `gravity` and `solverIterations` live on the
   scene-global `Environment` (`ecs/environment.h`), serialized with the scene.
   `PhysicsSystem` reads them each tick, so gravity persists with the scene and
@@ -54,13 +62,13 @@ All three are plain data structs; see [ecs.md](../ecs.md) for the field tables.
 PhysicsSystem::fixedUpdate(ctx)
   1. Read the physics settings off the scene's Environment.
   2. Gather: snapshot every live Rigidbody + Transform into PhysicsBody solver
-     state; build a ColliderProxy (world AABB + sub-boxes) per body with a Collider.
+     state; build a ColliderProxy (world AABB + parts span) per body with a Collider.
      Re-derive the tick's inverse mass + local inverse inertia onto the BodyFrame.
      Sleeping / immovable bodies enter the solver with invMass 0.
   3. Integrate forces -> velocities: gravity * gravityScale, then damping
      (skips sleeping / static / kinematic).
   4. Broadphase: sort-and-sweep on X; AABB-overlap surviving pairs (static-vs-static culled).
-  5. Narrowphase: contactBoxes per child-box pair -> ContactManifolds (up to
+  5. Narrowphase: one contact routine per part pair -> ContactManifolds (up to
      MAX_CONTACTS_PER_MANIFOLD = 4 points each). Enqueue CollisionEvent / TriggerEvent.
   6. Wake sleepers struck by a faster body.
   7. solveContacts: PGS iterations of normal + friction impulses with restitution,
@@ -92,8 +100,49 @@ overlap before correction), `restitutionThreshold` (below this approach speed,
 ignore bounce). `Contact` accumulates `normalImpulse` / `tangentImpulse` across a
 tick's iterations so successive passes converge instead of fighting.
 
+## The narrowphase
+
+Each proxy's parts are placed in world space once per pair and sorted into **two
+monomorphic arrays**, one of `BoxShape` and one of `CapsuleShape`. The pair loops
+are quadratic, so the shape test happens once per part rather than inside them.
+Four loops run: box-box, A's capsules against B's boxes, B's capsules against A's
+boxes, and capsule-capsule.
+
+Every routine honours the same contract - **normal A -> B, positive penetration,
+at most `MAX_CONTACTS_PER_MANIFOLD` points** - so the solver, broadphase,
+`wakeOnImpact`, sleeping, events and writeback are shape-blind. `ContactManifold`
+addresses bodies by tick-snapshot index and knows nothing about shapes at all.
+
+- `contactBoxes` - SAT over 15 axes, then a face clip or an edge-edge point.
+- `contactCapsuleBox` - runs in the box's local frame, where "closest point on
+  the box" is a clamp. An alternating projection closes the segment onto the box;
+  a positive gap gives the normal directly, and a segment that reaches inside
+  falls back to the nearest face (the same minimum translation the box SAT
+  settles on). A capsule lying **flat** on a face gets **two** points, clipped to
+  the face - resolved from one point it would roll off it forever.
+  The projection runs until its step stops moving, and `MAX_PROJECTION_PASSES`
+  is only a runaway guard. It has to be, and generously: a run cut short answers
+  a distance *larger* than the real one, which the radius test reads as no
+  contact at all. The average is about seven passes; a segment lying nearly
+  tangent to a face wants hundreds.
+- `contactCapsuleCapsule` - closest approach of the two segments, one point
+  midway between the two surfaces. Coincident axes fall back to a direction
+  perpendicular to the first capsule's own axis, never along it.
+
+Capsule-vs-box is **not symmetric**: when the capsule is body B the routine runs
+capsule-first and the caller negates the normals back to A -> B.
+
+## Inertia
+
 Inertia is approximated as a solid box of the collider's overall local extent -
-exact per-part inertia isn't worth it for gameplay (`inertia.h`).
+exact per-part inertia isn't worth it for gameplay (`inertia.h`). The one
+exception is a collider that is a **single capsule**, which gets
+`capsuleInertiaLocal` (a cylinder plus two hemispherical caps, volume-weighted).
+That is the shape the box approximation is worst about: an upright capsule spins
+about its own axis several times more freely than the box around it, and that
+difference is exactly what a graze against a character tests. Either way the
+tensor is parallel-axis-shifted from the collider centre to the entity origin,
+where the solver measures its contact arms.
 
 ## Sleeping
 
@@ -122,10 +171,15 @@ subscribing to the events directly or through the behavior `onCollision` /
 
 - The World inspector's **Physics** card edits the Environment's gravity and
   solver iterations (undoable like the other World cards).
+- The viewport's collider overlay draws each part as the shape it is: a wire box
+  or a wire capsule (`wireCapsule` in `src/editor/overlays/wire_draw.h`), placed
+  the way the solver places it - world position + rotation, no scale.
 - The inspector's Collider section offers **Fit to Mesh**, which calls
   `fitBoxesToMesh` to approximate the entity's mesh with a grid of boxes
   (`detail` clamped to `[1, COLLIDER_FIT_MAX_DETAIL]`; `detail == 1` is the
   scaled bounds box). It never returns empty - a degenerate or non-watertight
-  mesh falls back to a single bounds-sized box.
+  mesh falls back to a single bounds-sized box. Every part it produces is a box:
+  fitting capsules to a mesh is a medial-axis problem, not a scanline, and is not
+  attempted.
 - `Rigidbody`, `Collider`, and `PhysicsWorld` round-trip with the scene; see
   [io.md](io.md).
