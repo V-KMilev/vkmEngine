@@ -18,15 +18,19 @@ overlays.
 
 ```
 VisibilitySystem::update(ctx)
-  1. Find the active camera (cached EntityId; full scan only on miss).
+  1. Find the active camera via `findActiveCamera` (`ecs/component/camera.h`):
+     a cached EntityId as the O(1) hint, full scan only on a miss. The same
+     function answers for the editor's fly controls and for a scene load, so
+     what you fly and what renders cannot drift apart.
   2. Build VisibilityContext: frustum planes, camera position and view
      matrix, and the thresholds (pre-squared for the sqrt-free tests).
   3. Resize the persistent flat per-index arrays to the full Mesh count
      (visible flags, caster flags, one `VisibleEntity` of scratch per index).
   4. parallelFor over all Mesh entities (each worker writes disjoint indices):
      - Skip if !visible, no mesh, no Transform, or degenerate bounds.
-     - Resolve the world matrix inline: read WorldTransform if present, else
-       compute from the local Transform (HierarchySystem already ran this stage).
+     - Resolve the world matrix inline, through raw storage pointers rather
+       than resolvedWorldMatrix: read WorldTransform if present, else compute
+       from the local Transform (HierarchySystem already ran this stage).
      - Compute world AABB (Arvo's method, 18 mults).
      - Fill the scratch entry (id, matrix, AABB, chosen mesh) and the
        castShadows flag for EVERY valid mesh (not just camera-visible ones) so

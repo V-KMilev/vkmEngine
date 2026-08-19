@@ -75,33 +75,51 @@ void GLView::reportIfMissing(const TextureHandle& handle, const ResourceManager&
         asset.name.c_str(), asset.filePath.c_str());
 }
 
+void GLView::ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources) {
+    ensure(m_materials, handle, resources);
+
+    const GLMaterial* material = getMaterial(handle);
+    if (!material) return;
+    for (const auto& binding : material->getTextureBindings()) {
+        ensure(m_textures, binding.handle, resources);
+        reportIfMissing(binding.handle, resources);
+    }
+}
+
 void GLView::sync(const RenderView& view, const ResourceManager& resources) {
-    // One walk: ensure each drawable's mesh + material, then discover the
-    // material's textures off the entry we just synced. The material is
-    // guaranteed present before its textures are needed, so no second pass.
-    //
-    // Drawables arrive clustered by material (the draw sort), so consecutive
-    // repeats dominate at scale - skip the material + texture work when the
-    // handle matches the previous drawable's.
+    // Drawables arrive clustered by (material, mesh) - that is the draw sort -
+    // so consecutive repeats dominate at scale and the previous handle is worth
+    // remembering.
     MaterialHandle lastMaterial;
     MeshHandle     lastMesh;
     for (const DrawableData& d : view.drawables) {
-        // Same repeat-skip, same reason: the sort clusters by (material, mesh),
-        // so consecutive drawables share both.
         if (d.mesh != lastMesh) {
             lastMesh = d.mesh;
             ensure(m_meshes, d.mesh, resources);
         }
         if (d.material == lastMaterial) continue;
         lastMaterial = d.material;
-        ensure(m_materials, d.material, resources);
+        ensureMaterial(d.material, resources);
+    }
 
-        const GLMaterial* material = getMaterial(d.material);
-        if (!material) continue;
-        for (const auto& binding : material->getTextureBindings()) {
-            ensure(m_textures, binding.handle, resources);
-            reportIfMissing(binding.handle, resources);
-        }
+    // Casters are gathered scene-wide, not from the visible set, so an
+    // off-screen occluder's mesh - or the far-LOD variant visibility picked for
+    // it - may appear in no drawable at all, and the shadow pass answers a mesh
+    // it cannot resolve by drawing nothing. They arrive in storage order rather
+    // than sorted, so the repeat-skip is incidental here, but the list is
+    // scene-sized and the compare is free.
+    MeshHandle lastCasterMesh;
+    for (const ShadowCasterData& caster : view.shadowCasters) {
+        if (caster.mesh == lastCasterMesh) continue;
+        lastCasterMesh = caster.mesh;
+        ensure(m_meshes, caster.mesh, resources);
+    }
+
+    // Decals are gathered scene-wide too, and a decal material is usually its
+    // own (a scorch, a bullet hole) rather than one some visible drawable
+    // happens to share - so without this walk the decal pass skips every one.
+    for (const DecalData& decal : view.decals) {
+        ensureMaterial(decal.material, resources);
     }
 
     // Font atlases live inside FontAssets (not the texture slot), so ensure

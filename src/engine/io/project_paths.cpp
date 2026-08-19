@@ -78,4 +78,27 @@ std::filesystem::path projectRoot() {
     return engineRoot();
 }
 
+std::filesystem::path resolveProjectPath(const std::string& path) {
+    const std::filesystem::path given(path);
+    if (given.is_absolute()) return given;
+    return (projectRoot() / given).lexically_normal();
+}
+
+std::string toProjectRelative(const std::string& path) {
+    const std::filesystem::path given = std::filesystem::path(path).lexically_normal();
+    if (given.is_relative()) return given.generic_string();
+
+    const std::filesystem::path relative = given.lexically_relative(projectRoot());
+    // Empty means the two share no root at all (different Windows drives); a
+    // leading ".." component means the file sits outside the project. Neither has
+    // a project-relative form, so the absolute path stays the identity. The match
+    // is on whole components - a directory named "..cache" is inside the project -
+    // and generic_string() has already folded any Windows separator to '/'.
+    const std::string generic = relative.generic_string();
+    if (generic.empty() || generic == ".." || generic.rfind("../", 0) == 0) {
+        return given.generic_string();
+    }
+    return generic;
+}
+
 } // namespace Engine::ProjectPaths

@@ -8,10 +8,10 @@ namespace Engine {
  * @brief The editor's icon set, drawn through ImDrawList.
  *
  * Shared across the viewport toolbar, playback bar and panels so iconography
- * stays consistent. Each icon renders as a glyph from the Lucide font when
- * loadEditorIconFont() succeeded, and as a stroked/filled vector primitive
- * otherwise - so a stripped install still has icons. Strictly ASCII source
- * per the style guide.
+ * stays consistent. Each icon renders as a glyph from the Lucide font, which
+ * ships with the engine beside the shaders. Without it every icon degrades to
+ * the same neutral square - buttons stay clickable and keep their tooltips,
+ * but the set is gone. Strictly ASCII source per the style guide.
  */
 enum class EditorIcon {
     Select, Move, Rotate, Scale,
@@ -21,8 +21,6 @@ enum class EditorIcon {
     // Entity-type glyphs (Hierarchy / Inspector identity).
     Entity, Mesh, Camera, LightDir, LightPoint, LightSpot, Anim,
     Probe, Volume, Decal, Particle, UIWidget,
-    // Fine-grained entity glyphs (icon-font set; vector path falls back to
-    // the coarse glyph above).
     UICanvas, UIText, UIImage, UIButton,
     LightRect, LightDisk,
     Cube, Sphere, Plane, Pyramid, Cone, Triangle,
@@ -33,9 +31,9 @@ enum class EditorIcon {
 /**
  * @brief Load the editor icon font (Lucide) into the ImGui atlas.
  *
- * Call once at editor init, after the text font is added. When the file is
- * missing the editor falls back to the built-in vector glyphs, so a stripped
- * install still has icons - just not the designed set.
+ * Call once at editor init, after the text font is added. The font ships with
+ * the engine, so a failure here means the installed file was removed by hand;
+ * the editor stays usable but every icon draws as the same neutral square.
  *
  * @param path Filesystem path to the icon TTF.
  * @return Whether the font loaded.
@@ -43,7 +41,7 @@ enum class EditorIcon {
 bool loadEditorIconFont(const char* path);
 
 /**
- * @brief Draw a vector icon centered at a point with a given half-extent.
+ * @brief Draw an icon centered at a point with a given half-extent.
  *
  * @param dl Draw list to append the icon primitives to.
  * @param icon Which glyph to render.

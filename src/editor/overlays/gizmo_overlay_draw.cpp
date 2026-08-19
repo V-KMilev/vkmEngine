@@ -65,18 +65,6 @@ struct ViewportOverlayScope {
 
 } // namespace
 
-glm::vec3 worldPosOf(const Scene& scene, EntityId id, const Transform& tf) {
-    if (scene.has<WorldTransform>(id))
-        return glm::vec3(scene.get<WorldTransform>(id).model[3]);
-    return tf.position;
-}
-
-glm::quat worldRotationOf(const Scene& scene, EntityId id, const Transform& tf) {
-    if (scene.has<WorldTransform>(id))
-        return Math::worldRotationOf(scene.get<WorldTransform>(id).model);
-    return tf.rotation;
-}
-
 void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
     ViewportOverlayScope scope(ec);
     if (!scope.valid()) return;
@@ -95,8 +83,8 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                        static_cast<int>(light.color.g * 220),
                        static_cast<int>(light.color.b * 220), 200);
 
-        const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
-        const glm::quat rot = worldRotationOf(ec.frame.scene, id, tf);
+        const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
+        const glm::quat rot = resolvedWorldRotation(ec.frame.scene, id, tf);
         const glm::vec3 dir = glm::normalize(Math::computeForward(rot));
 
         // Billboard icon at the entity origin so a light is always findable
@@ -254,7 +242,7 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
         const bool  selected = (ec.state.isSelected(id));
         const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : IM_COL32(77, 158, 235, 200);
 
-        const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
+        const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
         const glm::vec3 e   = probe.halfExtents;
 
         // The world-axis-aligned influence box (wireBox with no rotation).
@@ -272,7 +260,7 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
         const bool  selected = (ec.state.isSelected(id));
         const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : IRRADIANCE_VOLUME_COL;
 
-        const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
+        const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
 
         wireBox(dl, vp, pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), volume.halfExtents,
                 ec.viewportPos, ec.viewportSize, col, selected ? 2.0f : 1.5f);
@@ -315,12 +303,12 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
 
         // The Transform's scale IS the projection box (a unit cube), so the
         // box gizmo is the decal's whole authoring model.
-        const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
+        const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
         wireBox(dl, vp, pos, tf.rotation, tf.scale * 0.5f,
                 ec.viewportPos, ec.viewportSize, col, selected ? 2.0f : 1.5f);
 
-        // Projection direction: decals project along the entity's -Z forward.
-        const glm::vec3 fwd = tf.rotation * glm::vec3(0.0f, 0.0f, -1.0f);
+        // Projection direction: decals project along the entity's forward.
+        const glm::vec3 fwd = Math::computeForward(tf.rotation);
         ImVec2 a, b;
         if (projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, a) &&
             projectToViewport(vp, pos + fwd * (tf.scale.z * 0.75f), ec.viewportPos, ec.viewportSize, b))
@@ -332,7 +320,7 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
         const bool  selected = (ec.state.isSelected(id));
         const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : EMITTER_COL;
 
-        const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
+        const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
         ImVec2 sp;
         if (!projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, sp)) return;
         dl->AddCircle(sp, selected ? 6.0f : 5.0f, col, 0, selected ? 2.0f : 1.5f);
@@ -370,7 +358,7 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
             ? IM_COL32(255, 200, 80, 130)
             : IM_COL32(120, 200, 220, 140);
 
-        const glm::vec3 pos   = worldPosOf(ec.frame.scene, id, tf);
+        const glm::vec3 pos   = resolvedWorldPosition(ec.frame.scene, id, tf);
         const glm::vec3 fwd   = glm::normalize(Math::computeForward(tf.rotation));
         glm::vec3 right, up;
         orthoBasis(fwd, right, up);
@@ -493,8 +481,8 @@ void GizmoOverlay::drawColliderGizmos(EditorContext& ec) {
         if (!col.enabled) return;   // inert colliders don't collide, so don't draw them
         const bool   selected = (ec.state.isSelected(id));
         const ImU32  color    = selected ? EditorStyle::HIGHLIGHT_U32 : COLLIDER_COL;
-        const glm::vec3 pos = worldPosOf(ec.frame.scene, id, tf);
-        const glm::quat rot = worldRotationOf(ec.frame.scene, id, tf);
+        const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
+        const glm::quat rot = resolvedWorldRotation(ec.frame.scene, id, tf);
         const glm::mat3 r   = glm::mat3_cast(rot);
         for (const ColliderBox& part : col.parts)
             wireBox(dl, vp, pos + r * part.center, rot,

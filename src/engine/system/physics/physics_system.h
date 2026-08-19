@@ -35,8 +35,8 @@ class Scene;
  * solver and the solved pose is mapped back into the local Transform relative to
  * the parent. This is correct for static / slowly-moving parents (the parent
  * pose is sampled once per tick, one frame stale); a fast-moving or scaled parent
- * is not fully handled. Children parented *to* a body still follow it (markDirty
- * cascades into the subtree).
+ * is not fully handled. Children parented *to* a body still follow it, because
+ * HierarchySystem rebuilds the whole subtree later in the same frame.
  */
 class PhysicsSystem : public System {
     public:

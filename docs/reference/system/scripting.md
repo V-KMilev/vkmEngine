@@ -98,11 +98,11 @@ class CubeSpinner : public ReflectedBehavior<CubeSpinner> {
         float degreesPerSecond = 90.0f;   // authored, reflected
 };
 
-VKM_REFLECT_BEGIN(CubeSpinner)
+} // namespace Engine
+
+VKM_REFLECT_BEGIN(::Engine::CubeSpinner)
     VKM_F(degreesPerSecond)
 VKM_REFLECT_END()
-
-} // namespace Engine
 ```
 
 `BehaviorFieldVisitor` is the type-erased bridge that lets code holding only a

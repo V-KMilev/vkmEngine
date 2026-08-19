@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 
 namespace Engine {
 
@@ -55,6 +56,33 @@ void setProjectRoot(const std::filesystem::path& path);
  * @return Absolute path to the project root.
  */
 std::filesystem::path projectRoot();
+
+/**
+ * @brief Turn a stored reference into a path that can be opened.
+ *
+ * A relative reference resolves against the project root, never against the
+ * working directory: that is the engine root in the editor and the runtime, and
+ * the cooker does not pin one at all. An absolute reference passes through, for
+ * a source that lives outside the project.
+ *
+ * @param path Reference as stored in a scene, a recipe or an asset name.
+ * @return An absolute path.
+ */
+std::filesystem::path resolveProjectPath(const std::string& path);
+
+/**
+ * @brief The form of a path an asset should be named and recorded by.
+ *
+ * Project-relative whenever the file is under the project root, so the identity
+ * a scene, a material reference and the asset library's on-disk layout are keyed
+ * on does not carry the authoring machine's directory tree. A file outside the
+ * project keeps its absolute path - it has no relative form - and the result is
+ * always generic-separated, so a reference authored on Windows resolves here.
+ *
+ * @param path Absolute or relative path to a source file or folder.
+ * @return The reference to store.
+ */
+std::string toProjectRelative(const std::string& path);
 
 // Engine-owned, read-only to a game.
 inline std::filesystem::path engineShaders() { return engineRoot() / "shaders"; }

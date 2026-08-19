@@ -9,17 +9,16 @@
 #include "gl_render_buffer.h"
 #include "gl_texture_cube.h"
 
-#include "data/gl_scene_capture.h"
-
 namespace Core {
     class Context;
 }
 
 namespace Engine {
 
-class GLIrradianceVolume;
-class GLView;
 class GLIBL;
+class GLIrradianceVolume;
+class GLSceneCapture;
+class GLView;
 struct RenderView;
 struct IrradianceVolumeData;
 
@@ -38,15 +37,22 @@ struct IrradianceVolumeData;
  * spherical average, so face resolution buys almost nothing while multiplying the
  * bake by the probe count.
  *
- * Owns bake-only programs + targets, so construct it where a GL context is
- * current. bake() re-binds the camera / light UBOs with its own data; run it at
- * the end of a frame, like the reflection-probe bake.
+ * Owns the SH projection program + the capture targets, so construct it where a
+ * GL context is current; the scene capture itself is the backend's, borrowed so
+ * the forward PBR ubershader is compiled once for every offline consumer. bake()
+ * re-binds the camera / light UBOs with its own data; run it at the end of a
+ * frame, like the reflection-probe bake.
  */
 class GLIrradianceBaker {
     public:
         static constexpr int CAPTURE_SIZE = 32;  ///< Per-face capture resolution.
 
-        GLIrradianceBaker();
+        /**
+         * @brief Compile the SH projection program, drawing through @p capture.
+         *
+         * @param capture Shared scene capture, owned by the backend and outliving this baker.
+         */
+        explicit GLIrradianceBaker(GLSceneCapture& capture);
         ~GLIrradianceBaker();
 
         GLIrradianceBaker(const GLIrradianceBaker& other) = delete;
@@ -81,7 +87,7 @@ class GLIrradianceBaker {
         Core::FrameBuffer                   m_fbo;
         std::unique_ptr<Core::RenderBuffer> m_depth;
 
-        GLSceneCapture m_capture;  ///< scene -> the six faces of m_cube
+        GLSceneCapture& m_capture;  ///< scene -> the six faces of m_cube
 };
 
 } // namespace Engine

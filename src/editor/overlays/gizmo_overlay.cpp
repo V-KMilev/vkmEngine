@@ -7,9 +7,10 @@
 
 #include <glm/gtc/quaternion.hpp>
 
+#include "framework/component_edit.h"
+#include "framework/editor_actions.h"
 #include "framework/editor_common.h"
 #include "framework/editor_commands.h"
-#include "framework/prefab_overrides.h"
 #include "system/visibility/visibility.h"
 #include "core/math/bounds.h"
 #include "system/camera/camera_controller_system.h"
@@ -30,17 +31,11 @@ void GizmoOverlay::finishDrag(EditorContext& ec) {
             || bef.scale    != after->scale;
     };
 
-    // Inside a prefab instance the pose is an override on the instance rather
-    // than a value the scene keeps for the entity, so a plain transform step
-    // would be undoable but not saved: the next load rebuilds the subtree from
-    // the prefab and the drag is gone. The instance root is the exception - the
-    // scene stores that pose itself - and record says so by returning null.
+    // The step, not the push: the drag marks the scene dirty as it goes and a
+    // multi-entity drag collects its steps into one CompositeCommand.
     auto stepFor = [&](EntityId id, const Transform& bef,
                        const Transform& after) -> std::unique_ptr<Command> {
-        auto step = PrefabOverrides::record<Transform>(ctx.scene, ctx.resources, id, bef, after,
-                                                       "Transform");
-        if (step) return step;
-        return std::make_unique<TransformChangeCommand>(id, bef, after, "Transform");
+        return editStep<Transform>(ctx.scene, ctx.resources, id, bef, after, "Transform");
     };
 
     if (m_dragSelection.size() > 1) {
@@ -130,31 +125,21 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
         // Snapshot every selected transform so the drag moves the whole set
         // and drag-end can build one batch undo.
         //
-        // Roots of the selection only, the same rule deleteSelection follows.
-        // An entity whose ancestor is also selected already inherits that
-        // ancestor's motion through the hierarchy; moving it again on its own
-        // applied the delta twice, so dragging a parent and its child together
-        // sent the child twice as far.
+        // Roots of the selection only. An entity whose ancestor is also selected
+        // already inherits that ancestor's motion through the hierarchy; moving
+        // it again on its own applied the delta twice, so dragging a parent and
+        // its child together sent the child twice as far.
         m_dragSelection.clear();
         const EntityId flown = ec.cameraController.getCameraEntity();
-        auto hasSelectedAncestor = [&](EntityId id) {
-            EntityId cur = id;
-            for (int depth = 0; depth < 32; ++depth) {
-                if (!ctx.scene.isAlive(cur) || !ctx.scene.has<Hierarchy>(cur)) return false;
-                cur = ctx.scene.get<Hierarchy>(cur).parent;
-                if (!cur) return false;
-                if (state.isSelected(cur)) return true;
-            }
-            return false;
-        };
         for (EntityId id : state.selection) {
             if (!ctx.scene.isAlive(id) || !ctx.scene.has<Transform>(id)) continue;
             if (id == flown) continue;
-            if (hasSelectedAncestor(id)) continue;
+            if (EditorActions::hasSelectedAncestor(ctx.scene, state.selection, id)) continue;
             m_dragSelection.emplace_back(id, ctx.scene.get<Transform>(id));
         }
-        m_dragActiveIsDescendant = m_dragSelection.size() > 1
-                                && hasSelectedAncestor(state.selectedEntity);
+        m_dragActiveIsDescendant =
+            m_dragSelection.size() > 1
+            && EditorActions::hasSelectedAncestor(ctx.scene, state.selection, state.selectedEntity);
     }
     if (m_gizmo.manipulate(drawList, ctx.visibility->view, subProj,
                             state.gizmoOperation, state.gizmoMode, model,
@@ -246,7 +231,6 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
                 } else if (state.gizmoOperation == GizmoOperation::Scale) {
                     t.scale = start.scale * ratio;
                 }
-                HierarchyOperations::markDirty(ctx.scene, id);
             }
 
             // The gizmo wrote the active entity directly, but an ancestor of it
@@ -256,9 +240,6 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
             if (m_dragActiveIsDescendant) transform = m_dragStartTransform;
         }
 
-        // Local transform changed - mark this entity's hierarchy subtree dirty
-        // so HierarchySystem recomputes WorldTransforms next frame.
-        HierarchyOperations::markDirty(ctx.scene, state.selectedEntity);
         state.markSceneDirty();
     }
 }
@@ -330,7 +311,7 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
         if (ctx.scene.has<Mesh>(id)) return; // already tested above
         if (!light.enabled)          return; // unselectable when off, matches gizmo draw
 
-        glm::vec3 pos = worldPosOf(ctx.scene, id, transform);
+        glm::vec3 pos = resolvedWorldPosition(ctx.scene, id, transform);
 
         // Pick AABB scales with the light's reach: big area lights stay easy
         // to hit, tiny point lights still need a near click. Directionals have

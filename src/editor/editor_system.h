@@ -32,7 +32,6 @@ struct GLFWwindow;
 namespace Engine {
 
 struct EditorContext;
-class Engine;
 class CameraControllerSystem;
 class Scene;
 class UISystem;
@@ -53,7 +52,6 @@ class ScriptModule;
 class EditorSystem : public System {
     public:
         EditorSystem(
-            Engine& engine,
             GLFWwindow* window,
             CameraControllerSystem& cameraController,
             UISystem& uiSystem,
@@ -102,7 +100,6 @@ class EditorSystem : public System {
         void drawWorkspace(EditorContext& ec);
 
     private:
-        Engine&           m_engine;
         CameraControllerSystem& m_cameraController;
         UISystem&         m_uiSystem;
         RenderSystem&     m_renderSystem;

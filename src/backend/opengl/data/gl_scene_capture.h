@@ -41,8 +41,11 @@ struct RenderView;
  * FBO and the state around the loop.
  *
  * Owns the bake-only programs + a unit cube, so construct it where a GL context
- * is current. It re-binds the camera / lights UBOs with its own per-face data;
- * the next rendered frame re-uploads its own, so capture at the end of a frame.
+ * is current. The forward PBR ubershader is the most expensive program in the
+ * engine, so the backend owns ONE of these and lends it to every baker rather
+ * than each keeping a private copy. It re-binds the camera / lights UBOs with
+ * its own per-face data; the next rendered frame re-uploads its own, so capture
+ * at the end of a frame.
  */
 class GLSceneCapture {
     public:

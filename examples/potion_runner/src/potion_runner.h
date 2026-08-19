@@ -308,9 +308,6 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         Math::Rng m_rng;
 };
 
-// Invoked inside namespace Engine with the unqualified name (like every other
-// behavior) - the macro opens namespace Reflect, which nested here resolves to
-// Engine::Reflect, so no ::Engine:: qualification is needed.
 } // namespace Engine
 
 VKM_REFLECT_BEGIN(::Engine::PotionRunner)

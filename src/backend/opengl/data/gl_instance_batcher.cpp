@@ -84,7 +84,10 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildGrouped(
         while (j < m_order.size()) {
             const DrawableData* d = list[m_order[j]];
             if (d->material.id() != matId || d->mesh.id() != meshId) break;
-            append(*d, static_cast<uint32_t>(m_runs.size()));
+            // A group with no GL mesh pushes no run below, so its instances must
+            // not enter the flattened arrays either: append stamps them with the
+            // index the NEXT run takes, and the GPU cull compacts by that index.
+            if (mesh) append(*d, static_cast<uint32_t>(m_runs.size()));
             ++j;
         }
 

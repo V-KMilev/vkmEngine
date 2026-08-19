@@ -10,7 +10,6 @@
 
 #include "logger.h"
 
-#include "core/engine.h"
 #include "ecs/scene.h"
 #include "framework/editor_context.h"
 #include "framework/editor_settings.h"
@@ -136,12 +135,8 @@ void ProjectController::drawDialog(EditorContext& ec, ScriptModule& scriptModule
         ImGui::TextColored(EditorStyle::WARNING, "No project.json here");
     }
 
-    DialogResult r = dialogButtons(ec.state.showOpenProject, "Open", typedIsProject);
-    if (entered && typedIsProject && r == DialogResult::None) {
-        r = DialogResult::Confirm;
-        ec.state.showOpenProject = false;
-        ImGui::CloseCurrentPopup();
-    }
+    const DialogResult r = dialogButtons(ec.state.showOpenProject, "Open",
+                                         typedIsProject, entered);
     if (r == DialogResult::Confirm) chosen = typed;
 
     if (!chosen.empty()) {

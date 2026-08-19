@@ -7,6 +7,7 @@
 #include <string>
 #include <type_traits>
 #include <unordered_set>
+#include <vector>
 
 #include "logger.h"
 
@@ -19,7 +20,6 @@
 #include "io/asset/asset_library.h"
 #include "io/json_file.h"
 #include "io/json_vec.h"
-#include "io/project_paths.h"
 #include "core/reflect.h"
 
 namespace Engine {
@@ -78,12 +78,21 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
         const TextureHandle& h = m.*f.member;
         if (!h) continue;
-        const std::string& texName = resources.get(h).name;
-        if (texName.empty()) {
+        const auto& tex = resources.get(h);
+        // Same rule as emitDescriptor, and warned about here rather than left
+        // to fire on every load: a hidden texture is not in the cooked
+        // manifest, so shipping its name in a public material's recipe writes
+        // a reference that can never resolve.
+        if (tex.hidden) {
+            LOG_WARNING("Material texture slot '%s' refers to hidden asset '%s' - dropping ref",
+                f.key, tex.name.c_str());
+            continue;
+        }
+        if (tex.name.empty()) {
             LOG_WARNING("Material texture slot '%s' has no name - dropping ref", f.key);
             continue;
         }
-        textures[f.key] = texName;
+        textures[f.key] = tex.name;
     }
     if (!textures.empty()) src["textures"] = std::move(textures);
     return src;
@@ -136,9 +145,14 @@ namespace {
  * @brief Emit one name-only asset reference into @p target.
  *
  * The asset's data lives in the cooked library (keyed by name); the scene only
- * records the reference. An unnamed asset can't be referenced, so it is skipped.
+ * records the reference. Two kinds of asset cannot be referenced at all and are
+ * skipped here, so that every emitter is held to the rule rather than each
+ * remembering it: an unnamed one has no key, and a hidden one (editor preview
+ * primitives, thumbnail materials) is deliberately absent from the cooked
+ * manifest, so its name would name nothing on load.
  */
 void emitDescriptor(nlohmann::json& target, const Resource& asset) {
+    if (asset.hidden) return;
     if (asset.name.empty()) {
         LOG_WARNING("Asset has no name; skipping in save");
         return;
@@ -148,7 +162,8 @@ void emitDescriptor(nlohmann::json& target, const Resource& asset) {
 
 } // namespace
 
-nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources) {
+nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<EntityId>& entities,
+                                     const ResourceManager& resources) {
     nlohmann::json meshes    = nlohmann::json::array();
     nlohmann::json textures  = nlohmann::json::array();
     nlohmann::json materials = nlohmann::json::array();
@@ -165,15 +180,15 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
 
     auto emitMesh = [&](const MeshHandle& h) {
         if (!h || !seenMeshes.insert(h.id()).second) return;
-        const auto& asset = resources.get(h);
-        // Hidden assets (editor preview primitives etc.) never serialize:
-        // they belong to the running editor, not to the user's scene.
-        if (!asset.hidden) emitDescriptor(meshes, asset);
+        emitDescriptor(meshes, resources.get(h));
     };
 
     auto emitMaterial = [&](const MaterialHandle& h) {
         if (!h || !seenMaterials.insert(h.id()).second) return;
         const auto& asset = resources.get(h);
+        // Checked here and not left to emitDescriptor because hidden gates the
+        // texture walk below too: a thumbnail material must not drag its
+        // textures into the user's scene.
         if (asset.hidden) return;
         // Name-only reference; the cooker has already written the material's
         // canonical inline form to the library under this name.
@@ -183,25 +198,37 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
         for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
     };
 
-    // Every component that writes an asset name into the scene file has to be
+    // Every component that writes an asset name into the document has to be
     // walked here: a name the assets block never lists is a name loadAssets
     // never recreates, and the component's reference resolves to nothing.
-    scene.forEach<Mesh>([&](EntityId, const Mesh& m) {
-        emitMesh(m.mesh);
-        emitMaterial(m.material);
-    });
-    scene.forEach<LOD>([&](EntityId, const LOD& l) {
-        for (const LODLevel& level : l.levels) emitMesh(level.mesh);
-    });
-    scene.forEach<Decal>([&](EntityId, const Decal& d) {
-        emitMaterial(d.material);
-    });
+    for (EntityId id : entities) {
+        if (scene.has<Mesh>(id)) {
+            const Mesh& m = scene.get<Mesh>(id);
+            emitMesh(m.mesh);
+            emitMaterial(m.material);
+        }
+        if (scene.has<LOD>(id)) {
+            for (const LODLevel& level : scene.get<LOD>(id).levels) emitMesh(level.mesh);
+        }
+        if (scene.has<Decal>(id)) emitMaterial(scene.get<Decal>(id).material);
+    }
 
     nlohmann::json out;
     out["textures"]  = std::move(textures);
     out["meshes"]    = std::move(meshes);
     out["materials"] = std::move(materials);
     return out;
+}
+
+nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources) {
+    // Including the entities inside prefab instances, which the scene file does
+    // not describe and the prefab file now carries its own block for. They stay
+    // because an instance may override a Mesh or a Decal at an asset the prefab
+    // never names, and this walk is the only one that sees that.
+    std::vector<EntityId> entities;
+    entities.reserve(scene.entityCount());
+    scene.forEachEntity([&](EntityId id) { entities.push_back(id); });
+    return saveAssetsForEntities(scene, entities, resources);
 }
 
 namespace {
@@ -300,8 +327,13 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
     const auto [matC, matS] = loadAssetSection<MaterialAsset>(assetsJson, "materials", AssetType::Material, assetFactory().createMaterial, "Material", resources);
     const auto [mshC, mshS] = loadAssetSection<MeshAsset    >(assetsJson, "meshes",    AssetType::Mesh,     assetFactory().createMesh,     "Mesh",     resources);
 
-    LOG_INFO("%zu texture(s), %zu material(s), %zu mesh(es) created; %zu+%zu+%zu skipped (already loaded)",
-        texC, matC, mshC, texS, matS, mshS);
+    // Silent when the block asked for nothing new: a prefab carries its own
+    // assets and is instantiated once per instance, per scene load, per
+    // duplicate and per undo of one.
+    if (texC + matC + mshC > 0) {
+        LOG_INFO("%zu texture(s), %zu material(s), %zu mesh(es) created; %zu+%zu+%zu skipped (already loaded)",
+            texC, matC, mshC, texS, matS, mshS);
+    }
     return true;
 }
 

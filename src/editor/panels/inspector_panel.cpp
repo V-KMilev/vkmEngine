@@ -29,6 +29,7 @@
 #include "ecs/component/prefab_entity.h"
 #include "ecs/component/prefab_instance.h"
 #include "ecs/environment.h"
+#include "framework/component_edit.h"
 #include "framework/editor_actions.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
@@ -186,14 +187,7 @@ void editComponentCard(Scene& scene, ResourceManager& resources, EditorState& st
         const T before = component;  // pre-edit value for the undo command
         const bool changed = drawFields(component);
         if (changed) {
-            // On an instance the edit is an override, and undoing it means
-            // undoing the entry rather than restoring a stored value.
-            auto step = PrefabOverrides::record<T>(scene, resources, id, before, component, editLabel);
-            if (!step) {
-                step = std::make_unique<ComponentEditCommand<T>>(id, before, component, editLabel);
-            }
-            state.commands.push(std::move(step));
-            state.markSceneDirty();
+            pushEdit<T>(scene, resources, state, id, before, component, editLabel);
         }
     }
     endComponentCard();
@@ -334,12 +328,7 @@ void InspectorPanel::drawIdentityHeader(Scene& scene, ResourceManager& resources
             // tryMerge coalesces the keystroke stream into one undo step, and
             // markSceneDirty stops the rename from being silently lost on close
             // (it used to do neither).
-            auto step = PrefabOverrides::record<Name>(scene, resources, id, before, name, "Rename");
-            if (!step) {
-                step = std::make_unique<ComponentEditCommand<Name>>(id, before, name, "Rename");
-            }
-            state.commands.push(std::move(step));
-            state.markSceneDirty();
+            pushEdit<Name>(scene, resources, state, id, before, name, "Rename");
         }
         drawOverrideRows(scene, resources, state, id, PrefabOverrides::COMPONENT_KEY<Name>, "Name");
     } else {
@@ -592,17 +581,9 @@ void InspectorPanel::drawTransformSection(Scene& scene, ResourceManager& resourc
         changed |= drawVec3Control("Scale", glm::value_ptr(t.scale), 1.0f, 0.01f);
 
         if (changed) {
-            // Coalescing command - tryMerge collapses the per-frame drag stream
-            // into one undo step, mirroring the gizmo's drag-end push. An
-            // instance child's pose is an override instead; the instance root's
-            // is not, because the scene stores that one itself.
-            auto step = PrefabOverrides::record<Transform>(scene, resources, id, before, t, "Transform");
-            if (!step) {
-                step = std::make_unique<TransformChangeCommand>(id, before, t, "Transform");
-            }
-            state.commands.push(std::move(step));
-            HierarchyOperations::markDirty(scene, id);
-            state.markSceneDirty();
+            // tryMerge collapses the per-frame drag stream into one undo step,
+            // mirroring the gizmo's drag-end push.
+            pushEdit<Transform>(scene, resources, state, id, before, t, "Transform");
         }
 
         if (scene.has<Hierarchy>(id) && scene.get<Hierarchy>(id).parent) {
@@ -1065,12 +1046,12 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
             const auto& asset = resources.get(scene.get<Mesh>(id).mesh);
             if (Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) {
                 ImGui::Spacing();
-                propSliderInt("Detail", &state.colliderFitDetail, 1, COLLIDER_FIT_MAX_DETAIL,
+                propSliderInt("Detail", &m_colliderFitDetail, 1, COLLIDER_FIT_MAX_DETAIL,
                     "1 = one box; higher = a tighter box compound (more boxes = heavier)");
                 if (ImGui::Button("Fit to Mesh", ImVec2(-1.0f, 0.0f))) {
                     const glm::vec3 scale = scene.has<Transform>(id)
                         ? scene.get<Transform>(id).scale : glm::vec3(1.0f);
-                    col.parts = fitBoxesToMesh(asset, state.colliderFitDetail, scale);
+                    col.parts = fitBoxesToMesh(asset, m_colliderFitDetail, scale);
                     changed = true;
                 }
             }
@@ -1147,11 +1128,11 @@ void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
         // better where the source is procedural, but an imported mesh only has
         // its triangles to work with.
         if (scene.has<Mesh>(id) && scene.get<Mesh>(id).mesh) {
-            propSliderInt("Levels", &state.lodGenLevels, 1, 4,
+            propSliderInt("Levels", &m_lodGenLevels, 1, 4,
                 "How many coarser levels to build below the source mesh");
             if (ImGui::Button("Generate Levels", ImVec2(-1.0f, 0.0f))) {
                 lod = generateLOD(resources, scene.get<Mesh>(id).mesh,
-                                  static_cast<uint32_t>(state.lodGenLevels));
+                                  static_cast<uint32_t>(m_lodGenLevels));
                 changed = true;
             }
         } else {
@@ -1198,19 +1179,18 @@ void InspectorPanel::drawAnimationSection(Scene& scene, ResourceManager& resourc
         changed |= ImGui::DragFloat("##ASpeed", &anim.speed, 0.005f, 0.0f, 10.0f, "Speed %.2fx");
 
         // Explicit minimum length holds the clip open past the last keyframe
-        // (0 = auto, derived from the keyframes). Folds into `duration` via
-        // updateDuration() so the scrubber and playback see it immediately.
+        // (0 = auto, derived from the keyframes).
         if (propDrag("Length", &anim.length, 0.02f, 0.0f, 100000.0f, "%.2f s  (0 = auto)")) {
             anim.length = std::max(0.0f, anim.length);  // same clamp as the Bottom panel
-            anim.updateDuration();
             changed = true;
         }
 
-        if (anim.duration > 0.0f) {
+        const float duration = Animation::computeDuration(anim);
+        if (duration > 0.0f) {
             ImGui::SetNextItemWidth(-1);
             char timeFmt[32];
-            snprintf(timeFmt, sizeof(timeFmt), "%%.2f / %.2f s", anim.duration);
-            ImGui::SliderFloat("##ATime", &anim.time, 0.0f, anim.duration, timeFmt);
+            snprintf(timeFmt, sizeof(timeFmt), "%%.2f / %.2f s", duration);
+            ImGui::SliderFloat("##ATime", &anim.time, 0.0f, duration, timeFmt);
         }
 
         // Read-only digest. The editable keyframe editor lives in the Bottom

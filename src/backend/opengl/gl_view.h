@@ -66,7 +66,18 @@ class GLView {
 
     public:
         /**
-         * @brief Upload / refresh every mesh, material and texture `view` references.
+         * @brief Upload / refresh every asset `view` references.
+         *
+         * Every array on RenderView that carries a handle is walked here, and
+         * that is the whole of the rule: drawables (mesh, material and the
+         * material's textures), shadow casters (mesh), decals (material and its
+         * textures) and the UI's draw commands (font atlas). Nothing else on
+         * RenderView holds one.
+         *
+         * The list matters because three of those four are gathered scene-wide
+         * rather than from the visible set, so their assets need not appear
+         * among the drawables at all - and every pass answers a missing GPU
+         * object by silently skipping the draw.
          *
          * @param view The render view to sync.
          * @param resources The resource manager to use.
@@ -133,6 +144,18 @@ class GLView {
          * @param resources The resource manager holding it.
          */
         void reportIfMissing(const TextureHandle& handle, const ResourceManager& resources);
+
+        /**
+         * @brief Upload @p handle's material and every texture it binds.
+         *
+         * The textures are discovered off the GLMaterial this call just synced,
+         * so the material is always present before its maps are needed and no
+         * second pass is required.
+         *
+         * @param handle    The material to upload.
+         * @param resources The resource manager holding it.
+         */
+        void ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources);
 
     private:
         GLResourceTable<GLMesh>     m_meshes;

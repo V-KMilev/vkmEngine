@@ -20,7 +20,6 @@
 #include "ecs/component/world_transform.h"
 
 #include "core/math/bounds.h"
-#include "core/math/rotation.h"
 #include "system/visibility/visibility_context.h"
 
 #include "system/visibility/culling/frustum_culler.h"
@@ -69,48 +68,29 @@ MeshHandle selectLOD(const Mesh& mesh, const LODStorage* lodStorage, uint32_t en
 } // namespace
 
 bool VisibilitySystem::resolveActiveCamera(Scene& scene, float viewportAspect) {
-    auto setCamera = [&](EntityId id, const Camera& camera, const Transform& transform) {
-        // A camera parented to a rig (player root, boom arm) has to render from
-        // its resolved world pose - the local Transform is only its offset
-        // inside that rig.
-        Transform pose = transform;
-        if (scene.has<WorldTransform>(id)) {
-            const glm::mat4& world = scene.get<WorldTransform>(id).model;
-            pose.position = glm::vec3(world[3]);
-            pose.rotation = Math::worldRotationOf(world);
-        }
+    // No fallback when the scene has no active camera: the renderer publishes
+    // hasCamera = false and draws nothing, rather than inheriting whatever the
+    // editor's fly controls happen to still be pointed at.
+    m_cachedCameraEntity = findActiveCamera(scene, m_cachedCameraEntity);
+    if (!m_cachedCameraEntity) return false;
 
-        m_result.projection     = Camera::computeProjection(camera, viewportAspect);
-        m_result.view           = Transform::computeView(pose);
-        m_result.cameraPosition = pose.position;
-        m_result.focusDistance  = camera.focusDistance;
-        m_result.dofAmount      = camera.dofAmount;
-        m_result.hasCamera      = true;
-    };
+    const Camera&    camera    = scene.get<Camera>(m_cachedCameraEntity);
+    const Transform& transform = scene.get<Transform>(m_cachedCameraEntity);
 
-    // Fast path: the cached camera entity (O(1) lookup).
-    if (m_cachedCameraEntity
-        && scene.isAlive(m_cachedCameraEntity)
-        && scene.has<Camera>(m_cachedCameraEntity)
-        && scene.has<Transform>(m_cachedCameraEntity))
-    {
-        const Camera& camera = scene.get<Camera>(m_cachedCameraEntity);
-        if (camera.active) {
-            setCamera(m_cachedCameraEntity, camera, scene.get<Transform>(m_cachedCameraEntity));
-            return true;
-        }
-    }
+    // A camera parented to a rig (player root, boom arm) has to render from
+    // its resolved world pose - the local Transform is only its offset
+    // inside that rig.
+    Transform pose = transform;
+    pose.position  = resolvedWorldPosition(scene, m_cachedCameraEntity, transform);
+    pose.rotation  = resolvedWorldRotation(scene, m_cachedCameraEntity, transform);
 
-    // Slow path: scan for the first active camera and re-cache it.
-    m_cachedCameraEntity = {};
-    bool found = false;
-    scene.forEach<Camera, Transform>([&](EntityId id, const Camera& camera, const Transform& transform) {
-        if (found || !camera.active) return;
-        setCamera(id, camera, transform);
-        m_cachedCameraEntity = id;
-        found = true;
-    });
-    return found;
+    m_result.projection     = Camera::computeProjection(camera, viewportAspect);
+    m_result.view           = Transform::computeView(pose);
+    m_result.cameraPosition = pose.position;
+    m_result.focusDistance  = camera.focusDistance;
+    m_result.dofAmount      = camera.dofAmount;
+    m_result.hasCamera      = true;
+    return true;
 }
 
 void VisibilitySystem::update(FrameContext& ctx) {

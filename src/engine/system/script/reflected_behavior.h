@@ -61,7 +61,7 @@ void visitField(BehaviorFieldVisitor& visitor, const char* name, V& value) {
  * @brief CRTP base that derives a behavior's boilerplate from its reflected
  *        fields - the UPROPERTY-equivalent reuse.
  *
- * Declare the tunable fields once with VKM_REFLECT_BEGIN(Derived) / VKM_F /
+ * Declare the tunable fields once with VKM_REFLECT_BEGIN(::Game::Derived) / VKM_F /
  * VKM_REFLECT_END and `typeName()`, `visitFields()` (editor + serialization),
  * and `clone()` are all generated. Override the lifecycle hooks
  * (onStart/onUpdate/onDestroy) on the subclass as usual.

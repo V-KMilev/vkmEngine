@@ -7,6 +7,11 @@ namespace Engine {
 /**
  * @brief Backend-agnostic texture descriptors. The GL backend maps these to its
  * concrete GLenum equivalents at upload time; other backends do likewise.
+ *
+ * Every enum below is persisted by value in cooked textures, so its enumerator
+ * order is part of that file format: append only. Reordering one silently
+ * re-reads every already-cooked texture as a different format, which is why
+ * writeTexture in io/asset/asset_cook.cpp pins every enumerator of each.
  */
 
 /**
