@@ -24,12 +24,13 @@ namespace Engine::Math {
 class Rng {
     public:
         Rng() = default;
+        ~Rng() = default;
 
-        Rng(const Rng& other) = delete;
-        Rng& operator=(const Rng& other) = delete;
+        Rng(const Rng& other) = default;
+        Rng& operator=(const Rng& other) = default;
 
-        Rng(Rng && other) noexcept = delete;
-        Rng& operator=(Rng && other) noexcept = delete;
+        Rng(Rng && other) noexcept = default;
+        Rng& operator=(Rng && other) noexcept = default;
 
         /**
          * @brief Seed with an explicit state and (optionally) stream selector.
