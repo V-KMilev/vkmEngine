@@ -2,18 +2,17 @@
 
 #include <glm/glm.hpp>
 
-#include "data/gl_cube_convolver.h"
-#include "data/gl_scene_capture.h"
-
 namespace Core {
     class Context;
 }
 
 namespace Engine {
 
-class GLProbeArray;
-class GLView;
+class GLCubeConvolver;
 class GLIBL;
+class GLProbeArray;
+class GLSceneCapture;
+class GLView;
 struct RenderView;
 
 /**
@@ -26,14 +25,21 @@ struct RenderView;
  * Then convolve the env cube into the diffuse irradiance cube and GGX-prefilter
  * it into the specular mips, reusing the ibl/irradiance + ibl/prefilter shaders.
  *
- * Owns the bake-only programs + a unit cube, so construct it where a GL context
- * is current (GLBackend::init). bake() re-binds the camera / lights UBOs with
- * its own per-face / no-shadow data; the next rendered frame re-uploads its own,
- * so run the bake at the end of a frame.
+ * The capture and the convolution machinery are the backend's, borrowed rather
+ * than owned - both hold expensive programs (the forward PBR ubershader among
+ * them) that no baker has a reason to compile a second copy of. bake() re-binds
+ * the camera / lights UBOs with its own per-face / no-shadow data; the next
+ * rendered frame re-uploads its own, so run the bake at the end of a frame.
  */
 class GLProbeBaker {
     public:
-        GLProbeBaker();
+        /**
+         * @brief Bind the shared capture + convolution rig this baker draws with.
+         *
+         * @param capture   Shared scene capture, owned by the backend and outliving this baker.
+         * @param convolver Shared cube convolver, owned by the backend and outliving this baker.
+         */
+        GLProbeBaker(GLSceneCapture& capture, GLCubeConvolver& convolver);
         ~GLProbeBaker();
 
         GLProbeBaker(const GLProbeBaker& other) = delete;
@@ -62,8 +68,8 @@ class GLProbeBaker {
         void convolve(Core::Context& gl, GLProbeArray& arr, int layer);
 
     private:
-        GLSceneCapture  m_capture;    ///< scene -> the six env-cube faces
-        GLCubeConvolver m_convolver;  ///< env cube -> irradiance + prefilter
+        GLSceneCapture&  m_capture;    ///< scene -> the six env-cube faces
+        GLCubeConvolver& m_convolver;  ///< env cube -> irradiance + prefilter
 };
 
 } // namespace Engine

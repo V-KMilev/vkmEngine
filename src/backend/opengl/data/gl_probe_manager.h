@@ -16,10 +16,12 @@ namespace Core {
 namespace Engine {
 
 struct RenderView;
+class GLCubeConvolver;
 class GLView;
 class GLIBL;
 class GLProbeBaker;
 class GLProbeArray;
+class GLSceneCapture;
 
 /**
  * @brief Owns the reflection-probe GPU pipeline: arrays, baker, UBO, bake state.
@@ -46,8 +48,11 @@ class GLProbeManager {
          * @brief Create the baker + shared cube-map arrays.
          *
          * Must be called with a live GL context bound.
+         *
+         * @param capture   Shared scene capture the baker draws probes through.
+         * @param convolver Shared cube convolver the baker filters them with.
          */
-        void init();
+        void init(GLSceneCapture& capture, GLCubeConvolver& convolver);
 
         /**
          * @brief Collect the baked probes, pack the ProbeBlock UBO, and bind it +

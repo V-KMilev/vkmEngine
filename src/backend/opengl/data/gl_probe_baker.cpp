@@ -8,7 +8,9 @@
 
 #include "gl_context.h"
 
+#include "data/gl_cube_convolver.h"
 #include "data/gl_probe.h"
+#include "data/gl_scene_capture.h"
 
 namespace Engine {
 
@@ -16,7 +18,9 @@ namespace {
 constexpr float CAPTURE_FAR = 1000.0f;
 } // namespace
 
-GLProbeBaker::GLProbeBaker() = default;
+GLProbeBaker::GLProbeBaker(GLSceneCapture& capture, GLCubeConvolver& convolver)
+    : m_capture(capture)
+    , m_convolver(convolver) {}
 
 GLProbeBaker::~GLProbeBaker() = default;
 
