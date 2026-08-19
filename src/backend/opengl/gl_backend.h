@@ -19,6 +19,8 @@
 #include "data/gl_lights.h"
 #include "data/gl_shadow_atlas.h"
 #include "data/gl_shadow_data.h"
+#include "data/gl_cube_convolver.h"
+#include "data/gl_scene_capture.h"
 #include "data/gl_ibl.h"
 #include "data/gl_ibl_baker.h"
 #include "data/gl_bloom.h"
@@ -150,6 +152,15 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
 
         GLShadowAtlas m_shadowAtlas;
         GLShadowData  m_shadowData;
+
+        // The rig every offline bake draws with, owned once here and lent to the
+        // three bakers below. Sharing it is what keeps the forward PBR
+        // ubershader and the convolution programs to a single compile each
+        // instead of one per baker. Declared before the bakers on purpose: they
+        // bind references to these in GLBackend's constructor, and member order
+        // is construction order.
+        GLSceneCapture  m_sceneCapture;
+        GLCubeConvolver m_cubeConvolver;
 
         GLIBL         m_ibl;
         GLIBLBaker    m_iblBaker;   ///< Persistent: the procedural sky re-bakes whenever the sun moves.
