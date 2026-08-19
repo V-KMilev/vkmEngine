@@ -3,6 +3,9 @@
 #include "system/animation/skeletal_animation_system.h"
 
 #include <algorithm>
+#include <cmath>
+
+#include <glm/gtc/epsilon.hpp>
 
 #include "logger.h"
 
@@ -10,8 +13,11 @@
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/component/animator.h"
+#include "ecs/component/mesh.h"
+#include "ecs/component/transform.h"
 #include "platform/threading/thread_pool.h"
 #include "resource/asset/animation_clip_asset.h"
+#include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
 #include "resource/resource_manager.h"
 #include "system/animation/pose_evaluator.h"
@@ -27,15 +33,39 @@ namespace {
 // animator count alone says nothing about how long the loop takes.
 constexpr size_t MIN_PARALLEL_BONES = 2048;
 
+// How far a skinned mesh's own transform may sit from identity before it is
+// reported. Loose enough that authoring noise is not a warning, tight enough
+// that a real offset - which doubles the transform - always is.
+constexpr float IDENTITY_EPSILON = 1e-4f;
+
+bool isIdentity(const Transform& transform) {
+    return glm::all(glm::epsilonEqual(transform.position, glm::vec3(0.0f), IDENTITY_EPSILON))
+        && glm::all(glm::epsilonEqual(transform.scale,    glm::vec3(1.0f), IDENTITY_EPSILON))
+        && std::abs(std::abs(transform.rotation.w) - 1.0f) <= IDENTITY_EPSILON;
+}
+
 } // namespace
 
 void SkeletalAnimationSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("SkeletalAnimationSystem");
 
-    Scene& scene = ctx.scene;
     m_poses.clear();
     m_work.clear();
     ctx.poses = &m_poses;
+
+    FaultsSeen seen;
+    poseRigs(ctx, seen);
+
+    // Each latch holds only while its fault is still there, so fixing one is
+    // reported again if it comes back - which is why poseRigs reports into seen
+    // and every exit it takes lands on these three lines.
+    m_clipMismatchLogged = seen.clipMismatch;
+    m_rigMismatchLogged  = seen.rigMismatch;
+    m_meshOffsetLogged   = seen.meshOffset;
+}
+
+void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
+    Scene& scene = ctx.scene;
 
     auto* animators = scene.storage<Animator>();
     if (!animators || animators->size() == 0) return;
@@ -47,7 +77,6 @@ void SkeletalAnimationSystem::update(FrameContext& ctx) {
     // because every handle has to be resolved before the parallel phase, which
     // never touches the ResourceManager.
     size_t totalBones = 0;
-    bool mismatchSeen = false;
     for (uint32_t i = 0; i < animatorCount; ++i) {
         const Animator& animator = animators->dataAt(i);
         if (!animator.skeleton || !resources.isAlive(animator.skeleton)) continue;
@@ -70,7 +99,7 @@ void SkeletalAnimationSystem::update(FrameContext& ctx) {
             if (clip.skeleton == skeleton.name) {
                 work.clip = &clip;
             } else {
-                mismatchSeen = true;
+                seen.clipMismatch = true;
                 if (!m_clipMismatchLogged) {
                     LOG_WARNING("Clip '%s' is bound to rig '%s' but plays on '%s' - holding the bind pose",
                         clip.name.c_str(), clip.skeleton.c_str(), skeleton.name.c_str());
@@ -83,15 +112,18 @@ void SkeletalAnimationSystem::update(FrameContext& ctx) {
         totalBones += skeleton.bones.size();
         m_work.push_back(work);
     }
-    if (!mismatchSeen) m_clipMismatchLogged = false;
     if (m_work.empty()) return;
 
     // Map. A rig poses itself and everything under it, because import spawns a
     // mesh entity per aiMesh and a character is body plus clothes plus hair -
     // all of them driven by the one Animator above them.
     for (const RigWork& work : m_work) {
+        const EntityId rig = scene.entityAt(work.entityIndex);
         m_poses.mapEntity(work.entityIndex, work.slice);
-        stampDescendants(scene, scene.entityAt(work.entityIndex), work.slice);
+        // The rig itself can carry a skinned mesh (a one-mesh file whose rig is
+        // rooted at the scene node), so it is checked like any other.
+        checkSkinnedMesh(scene, resources, rig, *work.skeleton, seen);
+        stampDescendants(scene, resources, rig, work, seen);
     }
 
     const float simDelta = ctx.clock.getSimDelta();
@@ -114,14 +146,53 @@ void SkeletalAnimationSystem::update(FrameContext& ctx) {
     }
 }
 
-void SkeletalAnimationSystem::stampDescendants(Scene& scene, EntityId entity, uint32_t slice) {
+void SkeletalAnimationSystem::stampDescendants(Scene& scene, const ResourceManager& resources,
+                                               EntityId entity, const RigWork& work,
+                                               FaultsSeen& seen) {
     HierarchyOperations::forEachChild(scene, entity, [&](EntityId child) {
         // A nested rig owns its own subtree: it allocated a slice of its own,
         // and stamping through it would hand its meshes the wrong pose.
         if (scene.has<Animator>(child)) return;
-        m_poses.mapEntity(child.index, slice);
-        stampDescendants(scene, child, slice);
+        m_poses.mapEntity(child.index, work.slice);
+        checkSkinnedMesh(scene, resources, child, *work.skeleton, seen);
+        stampDescendants(scene, resources, child, work, seen);
     });
+}
+
+void SkeletalAnimationSystem::checkSkinnedMesh(const Scene& scene, const ResourceManager& resources,
+                                               EntityId entity, const SkeletonAsset& skeleton,
+                                               FaultsSeen& seen) {
+    if (!scene.has<Mesh>(entity)) return;
+
+    const Mesh& mesh = scene.get<Mesh>(entity);
+    if (!mesh.mesh || !resources.isAlive(mesh.mesh)) return;
+
+    const MeshAsset& asset = resources.get(mesh.mesh);
+    if (asset.skin.empty()) return;
+
+    if (asset.skeleton != skeleton.name) {
+        seen.rigMismatch = true;
+        if (!m_rigMismatchLogged) {
+            LOG_WARNING("Mesh '%s' is skinned to rig '%s' but sits under '%s' - "
+                        "its bone indices address the wrong joints",
+                        asset.name.c_str(), asset.skeleton.c_str(), skeleton.name.c_str());
+            m_rigMismatchLogged = true;
+        }
+    }
+
+    // The palette already resolves a vertex into rig space, so the matrix that
+    // multiplies it has to be the rig's world matrix. Import parents skinned
+    // meshes to the rig at identity to make that true; hand-authoring can undo
+    // it, and the result is a character transformed twice.
+    if (scene.has<Transform>(entity) && !isIdentity(scene.get<Transform>(entity))) {
+        seen.meshOffset = true;
+        if (!m_meshOffsetLogged) {
+            LOG_WARNING("Skinned mesh '%s' does not sit at its rig's origin - "
+                        "skinned vertices are already in rig space, so its own "
+                        "transform is applied twice", asset.name.c_str());
+            m_meshOffsetLogged = true;
+        }
+    }
 }
 
 } // namespace Vkm::Engine

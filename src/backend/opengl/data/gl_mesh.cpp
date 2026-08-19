@@ -21,6 +21,8 @@ namespace Vkm::Engine {
 namespace {
 // Matches layout(location = 4) in shaders/_common/instancing.glsl.
 constexpr uint32_t INSTANCE_INDEX_ATTRIB = 4;
+// Matches layout(location = 8/9) in shaders/_common/skinning.glsl.
+constexpr uint32_t SKIN_ATTRIB = 8;
 } // namespace
 
 GLMesh::GLMesh(const MeshAsset& mesh) {
@@ -45,6 +47,26 @@ void GLMesh::update(const MeshAsset& mesh) {
 
     m_vao = std::make_unique<Vkm::GL::VertexArray>();
     m_vao->addBuffer(*m_vbo, layout);
+
+    // A mesh is skinned exactly when the asset carries a skin stream - no
+    // component says so. The stream is parallel to the vertices and sits at
+    // divisor 0, which is also why leaving 8/9 enabled costs nothing when the
+    // static program draws this VAO: every fetch is indexed by a vertex index
+    // this buffer has an entry for. GLSceneCapture and GLPreview rely on that -
+    // they draw shaders/forward/pbr, so a character bakes and thumbnails in bind
+    // pose, which is the right answer for both.
+    if (mesh.skin.empty()) {
+        m_skinVbo.reset();
+        return;
+    }
+
+    const uint32_t skinBytes = static_cast<uint32_t>(mesh.skin.size() * sizeof(SkinVertex));
+    m_skinVbo = std::make_unique<Vkm::GL::VertexBuffer>(mesh.skin.data(), skinBytes);
+
+    Vkm::GL::VertexBufferLayout skinLayout;
+    skinLayout.push<uint16_t>(4);  // bone indices (location 8), unnormalized: they stay integers
+    skinLayout.push<uint8_t>(4);   // weights      (location 9), unorm8: they arrive summing to 1.0
+    m_vao->addBuffer(*m_skinVbo, skinLayout, SKIN_ATTRIB);
 }
 
 void GLMesh::draw() const {

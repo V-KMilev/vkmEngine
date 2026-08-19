@@ -26,7 +26,7 @@ void RenderSystem::update(FrameContext& ctx) {
     m_view.surfaceHeight  = static_cast<uint32_t>(ctx.window.getHeight());
     m_view.settings       = m_settings;
 
-    m_view.build(ctx.scene, *ctx.visibility, ctx.ui);
+    m_view.build(ctx.scene, *ctx.visibility, ctx.ui, ctx.poses);
     m_backend->render(m_view, ctx.resources);
 }
 

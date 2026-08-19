@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <glm/glm.hpp>
 
 #include "resource/asset/mesh_asset.h"
@@ -33,6 +35,17 @@ struct DrawableData {
      */
     glm::vec3 worldMin;
     glm::vec3 worldMax;
+
+    /**
+     * @brief This item's bone palette inside RenderView::skinMatrices.
+     *
+     * A count of 0 means nothing poses this entity, and the backend draws it
+     * with the static program. That is also the honest answer for a skinned
+     * mesh dragged out of its rig's subtree: the vertices it stored are the
+     * bind pose, so drawing them untouched is exactly what "no rig" looks like.
+     */
+    uint32_t skinFirst = 0;
+    uint32_t skinCount = 0;
 
     bool castShadows;
 };
