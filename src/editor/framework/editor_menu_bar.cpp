@@ -230,8 +230,8 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         // API + device come from the active render backend so this dialog
         // stays correct if the engine ever ships with a non-OpenGL backend.
         const BackendInfo backend = ec.renderSystem.backendInfo();
-        row("API:",             "%s", backend.api.empty()    ? "(unknown)" : backend.api.c_str());
-        row("Renderer:",        "%s", backend.device.empty() ? "(unknown)" : backend.device.c_str());
+        row("API:",      "%s", backend.api.empty()    ? "(unknown)" : backend.api.c_str());
+        row("Renderer:", "%s", backend.device.empty() ? "(unknown)" : backend.device.c_str());
 
         ImGui::Separator();
 
@@ -241,11 +241,11 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         // module rather than one for the tree.
         ImGui::Spacing();
         if (ImGui::TreeNode("Debug")) {
-            row("vkmEngine:",    "%s @ %.8s", APP_VERSION,     APP_COMMIT_HASH);
-            row("vkm_gl:",       "%s @ %.8s", VKM_GL_VERSION,  VKM_GL_COMMIT_HASH);
-            row("vkm_log:",      "%s @ %.8s", VKM_LOG_VERSION, VKM_LOG_COMMIT_HASH);
+            row("vkmEngine:", "%s @ %.8s", APP_VERSION,     APP_COMMIT_HASH);
+            row("vkmGL:",     "%s @ %.8s", VKM_GL_VERSION,  VKM_GL_COMMIT_HASH);
+            row("vkmLog:",    "%s @ %.8s", VKM_LOG_VERSION, VKM_LOG_COMMIT_HASH);
             ImGui::Spacing();
-            row("ImGui:",        "%s", IMGUI_VERSION);
+            row("ImGui:",     "%s", IMGUI_VERSION);
             ImGui::TreePop();
         }
         ImGui::EndPopup();
