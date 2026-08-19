@@ -241,6 +241,8 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<Light>(id))      drawLightSection(scene, ctx.resources, state, id);
     if (scene.has<Rigidbody>(id))  drawRigidbodySection(scene, ctx.resources, state, id);
     if (scene.has<Collider>(id))   drawColliderSection(scene, ctx.resources, state, id);
+    if (scene.has<CharacterController>(id))
+        drawCharacterControllerSection(scene, ctx.resources, state, id);
     if (scene.has<Camera>(id))     drawCameraSection(scene, ctx.resources, state, id);
     if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, ctx.resources, state, id);
     if (scene.has<Decal>(id))          drawDecalSection(scene, ctx.resources, state, id);
@@ -248,6 +250,7 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<IrradianceVolume>(id)) drawIrradianceVolumeSection(scene, ctx.resources, state, id);
     if (scene.has<LOD>(id))            drawLODSection(scene, ctx.resources, state, id);
     if (scene.has<Animation>(id))  drawAnimationSection(scene, ctx.resources, state, id);
+    if (scene.has<Animator>(id))   drawAnimatorSection(scene, ctx.resources, state, id);
     if (scene.has<ScriptComponent>(id)) drawScriptSection(scene, state, id);
     if (scene.has<UICanvas>(id))   drawUICanvasSection(scene, ctx.resources, state, id);
     if (scene.has<UIElement>(id))  drawUIElementSection(scene, ctx.resources, state, id);
@@ -489,6 +492,8 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         addItem("Irradiance Volume", IrradianceVolume{}, "Add Irradiance Volume");
         addItem("LOD", LOD{}, "Add LOD");
         addItem("Animation", Animation{}, "Add Animation");
+        addItem("Animator", Animator{}, "Add Animator");
+        addItem("Character Controller", CharacterController{}, "Add Character Controller");
 
         if (s_componentFilter[0] == '\0') {
             ImGui::Separator();
@@ -1037,18 +1042,30 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
                                 [&](Collider& col) {
         bool changed = false;
 
-        // A collider is a set of boxes. A single box is editable here; a
-        // mesh-fitted compound shows its box count (rebuild it via Fit to Mesh).
+        // A collider is a set of parts. A single part is editable here; a
+        // mesh-fitted compound shows its part count (rebuild it via Fit to Mesh).
         changed |= propCheckbox("Enabled", &col.enabled,
                                 "Disabled colliders are inert: no broadphase entry, no contacts");
 
         if (col.parts.size() == 1) {
-            changed |= drawVec3Control("Center",
-                glm::value_ptr(col.parts[0].center), 0.0f, 0.05f);
-            changed |= drawVec3Control("Half Extents",
-                glm::value_ptr(col.parts[0].halfExtents), 0.5f, 0.05f);
+            ColliderPart& part = col.parts[0];
+            changed |= propEnumCombo("Shape", part.shape);
+            changed |= drawVec3Control("Center", glm::value_ptr(part.center), 0.0f, 0.05f);
+            if (part.shape == ColliderShape::Capsule) {
+                // The segment runs along the entity's local +Y, so the capsule
+                // stands 2*(halfHeight + radius) tall; the total is spelled out
+                // because that is the number an author is matching to a model.
+                changed |= propDrag("Radius", &part.radius, 0.01f, 0.001f, 1000.0f, "%.3f");
+                changed |= propDrag("Half Height", &part.halfHeight, 0.01f, 0.0f, 1000.0f, "%.3f",
+                                    "Half the segment, caps excluded. 0 is a sphere.");
+                ImGui::TextDisabled("Height %.3f along local +Y",
+                                    (part.halfHeight + part.radius) * 2.0f);
+            } else {
+                changed |= drawVec3Control("Half Extents",
+                    glm::value_ptr(part.halfExtents), 0.5f, 0.05f);
+            }
         } else {
-            ImGui::TextDisabled("%zu boxes (mesh-fitted)", col.parts.size());
+            ImGui::TextDisabled("%zu parts (mesh-fitted)", col.parts.size());
         }
 
         // Fit to Mesh: rebuild the collider from this entity's mesh. Detail 1 is
@@ -1217,6 +1234,117 @@ void InspectorPanel::drawAnimationSection(Scene& scene, ResourceManager& resourc
         trackSummary("Rotation", anim.rotationTrack.keyframeCount(), anim.rotationTrack.getDuration());
         trackSummary("Scale",    anim.scaleTrack.keyframeCount(),    anim.scaleTrack.getDuration());
         ImGui::TextDisabled("Edit keyframes in Bottom > Animation.");
+
+        return changed;
+    });
+}
+
+void InspectorPanel::drawAnimatorSection(Scene& scene, ResourceManager& resources,
+                                         EditorState& state, EntityId id) {
+    editComponentCard<Animator>(scene, resources, state, id, "Animator", EditorStyle::Accent::Anim,
+                                "Edit Animator", "Remove Animator",
+                                [&](Animator& animator) {
+        bool changed = false;
+
+        changed |= pickAsset<SkeletonAsset>("##RigPick",  "Rig",  resources, animator.skeleton);
+        changed |= pickAsset<AnimationClipAsset>("##ClipPick", "Clip", resources, animator.clip);
+
+        const SkeletonAsset* rig = (animator.skeleton && resources.isAlive(animator.skeleton))
+            ? &resources.get(animator.skeleton) : nullptr;
+        const AnimationClipAsset* clip = (animator.clip && resources.isAlive(animator.clip))
+            ? &resources.get(animator.clip) : nullptr;
+
+        if (rig) ImGui::TextDisabled("%zu bones", rig->bones.size());
+        // A clip is cooked against one rig's bone order, so one cooked against
+        // another poses the wrong joints out of matching indices. The system
+        // refuses it and holds the bind pose; say so here, where the pairing is
+        // being made, rather than only in the log.
+        if (rig && clip && clip->skeleton != rig->name) {
+            ImGui::TextColored(EditorStyle::DANGER, "Clip belongs to rig '%s'",
+                               clip->skeleton.c_str());
+            ImGui::TextDisabled("The bind pose is held until they match.");
+        }
+
+        // Transport, mirroring the Animation card: Loop and Speed round-trip
+        // with the scene so they push an edit, while play / stop / the scrubber
+        // do not - dirtying the scene every time someone previews a clip would
+        // make the unsaved-changes prompt meaningless. Scrubbing works while
+        // paused, because the pose system composes every frame.
+        const float GAP = 8.0f;
+        const float ih = ImGui::GetFrameHeight();
+        if (iconButton("inspRigPlay", animator.playing ? EditorIcon::Pause : EditorIcon::Play,
+                       animator.playing, true, animator.playing ? "Pause" : "Play", ih))
+            animator.playing = !animator.playing;
+        ImGui::SameLine(0, GAP);
+        if (iconButton("inspRigStop", EditorIcon::Stop, false, true, "Stop (rewind)", ih)) {
+            animator.playing = false;
+            animator.time = 0.0f;
+        }
+        ImGui::SameLine(0, GAP);
+        if (iconButton("inspRigLoop", EditorIcon::Loop, animator.looping, true,
+                       animator.looping ? "Looping" : "Play once", ih)) {
+            animator.looping = !animator.looping;
+            changed = true;
+        }
+        ImGui::SameLine(0, GAP);
+        ImGui::SetNextItemWidth(-1);
+        changed |= ImGui::DragFloat("##RigSpeed", &animator.speed, 0.005f, -10.0f, 10.0f,
+                                    "Speed %.2fx");
+
+        if (clip && clip->duration > 0.0f) {
+            ImGui::SetNextItemWidth(-1);
+            char timeFmt[32];
+            snprintf(timeFmt, sizeof(timeFmt), "%%.2f / %.2f s", clip->duration);
+            ImGui::SliderFloat("##RigTime", &animator.time, 0.0f, clip->duration, timeFmt);
+        } else if (animator.skeleton) {
+            ImGui::TextDisabled("No clip: holding the bind pose.");
+        }
+
+        // Blend state is deliberately absent, here and in the scene file: a
+        // crossfade is started from code through Animator::crossFadeTo.
+        return changed;
+    });
+}
+
+void InspectorPanel::drawCharacterControllerSection(Scene& scene, ResourceManager& resources,
+                                                    EditorState& state, EntityId id) {
+    editComponentCard<CharacterController>(scene, resources, state, id, "Character Controller",
+                                           EditorStyle::Accent::Physics,
+                                           "Edit Character Controller", "Remove Character Controller",
+                                           [&](CharacterController& cc) {
+        bool changed = false;
+
+        changed |= propDrag("Jump Speed", &cc.jumpSpeed, 0.1f, 0.0f, 100.0f, "%.2f m/s");
+        changed |= propDrag("Acceleration", &cc.acceleration, 0.5f, 0.0f, 1000.0f, "%.1f m/s2",
+                            "How fast velocity closes on the requested direction");
+        changed |= propSlider("Air Control", &cc.airControl, 0.0f, 1.0f, "%.2f",
+                              "Fraction of that acceleration available while airborne");
+        changed |= propDrag("Max Slope", &cc.maxSlopeAngle, 0.5f, 0.0f, 90.0f, "%.0f deg",
+                            "Steeper than this holds nothing up: the character slides");
+
+        // Live state, not authoring: moveInput is written by gameplay and the
+        // rest by the system. Shown because "why is it not jumping" is answered
+        // by exactly these three numbers.
+        ImGui::Spacing();
+        ImGui::TextDisabled(cc.grounded ? "Grounded" : "Airborne");
+        if (cc.grounded) {
+            ImGui::TextDisabled("Ground %.0f deg from flat",
+                glm::degrees(std::acos(glm::clamp(cc.groundNormal.y, -1.0f, 1.0f))));
+        }
+        ImGui::TextDisabled("Move input %.2f, %.2f, %.2f",
+                            cc.moveInput.x, cc.moveInput.y, cc.moveInput.z);
+
+        // The two ways a controller silently does nothing. Both are also named
+        // once in the log by the system, but the fix is made here.
+        if (!scene.has<Rigidbody>(id)) {
+            ImGui::TextColored(EditorStyle::DANGER, "No Rigidbody: nothing to drive.");
+        } else if (!scene.get<Rigidbody>(id).freezeRotation) {
+            ImGui::TextColored(EditorStyle::DANGER, "Rigidbody rotation is not frozen:");
+            ImGui::TextDisabled("contacts will topple the character.");
+        }
+        if (!scene.has<Collider>(id)) {
+            ImGui::TextColored(EditorStyle::DANGER, "No Collider: it will never be grounded.");
+        }
 
         return changed;
     });

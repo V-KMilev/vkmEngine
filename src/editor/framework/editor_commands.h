@@ -14,6 +14,7 @@
 #include "ecs/component/lod.h"
 #include "ecs/component/light.h"
 #include "ecs/component/camera.h"
+#include "ecs/component/character_controller.h"
 #include "ecs/component/animation.h"
 #include "ecs/component/animator.h"
 #include "ecs/component/collider.h"
@@ -252,6 +253,7 @@ class ComponentEditCommand : public Command {
     X(Name,            name)             \
     X(Rigidbody,        rigidbody)        \
     X(Collider,         collider)         \
+    X(CharacterController, characterController) \
     X(ReflectionProbe,  reflectionProbe)  \
     X(IrradianceVolume, irradianceVolume) \
     X(Decal,            decal)            \
@@ -282,8 +284,10 @@ class ComponentEditCommand : public Command {
     X(Light)                             \
     X(Camera)                            \
     X(Animation)                         \
+    X(Animator)                          \
     X(Rigidbody)                         \
     X(Collider)                          \
+    X(CharacterController)               \
     X(ReflectionProbe)                   \
     X(Decal)                             \
     X(ParticleEmitter)                   \
