@@ -188,8 +188,6 @@ void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility
     drawables.clear();
     drawables.reserve(visibility.entries.size());
 
-    // Just handles + matrix: the backend resolves the handles and decides how
-    // to sort / batch them.
     for (const auto& entry : visibility.entries) {
         // deleted between cull and render
         if (!scene.isAlive(entry.id)) continue;

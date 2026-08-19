@@ -10,13 +10,13 @@ namespace Vkm::Engine {
  * Filled once from the active camera so the backend never searches the scene.
  */
 struct CameraData {
-    glm::mat4 view;            ///< The view matrix for the camera.
-    glm::mat4 projection;      ///< The projection matrix for the camera.
+    glm::mat4 view;
+    glm::mat4 projection;
     glm::mat4 viewProjection;  ///< projection * view, precomputed once.
     glm::mat4 invProjection;   ///< inverse(projection), precomputed once.
     glm::mat4 invView;         ///< inverse(view), precomputed once.
     glm::mat4 invViewProj;     ///< inverse(projection * view), precomputed once.
-    glm::vec3 position;        ///< The position of the camera in world space.
+    glm::vec3 position;
 
     float zNear = 0.1f;    ///< Near plane, extracted from the projection.
     float zFar  = 1000.0f; ///< Far plane, extracted from the projection.

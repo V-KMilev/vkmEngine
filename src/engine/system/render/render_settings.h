@@ -57,10 +57,10 @@ struct RenderSettings {
     float bloomRadius    = 0.005f;  ///< Upsample tent-filter radius (UV space).
 
     // Anti-aliasing
-    uint32_t msaaSamples = 4;  ///< Scene-pass MSAA sample count (1 = off, 2/4/8). Multisamples geometry edges; the whole post chain runs on the resolved single-sample buffer.
+    uint32_t msaaSamples = 4;  ///< Scene-pass MSAA samples (1 = off, 2/4/8); post runs on the resolved buffer.
 
     // Shadows
-    uint32_t shadowResolution = 4096;  ///< Per-tile shadow-atlas resolution (1024/2048/4096). Higher = crisper but a much heavier shadow pass.
+    uint32_t shadowResolution = 4096;  ///< Per-tile shadow-atlas resolution (1024/2048/4096); costly to raise.
 
     // Overlays
     bool grid = false;  ///< World-space ground grid - an editor aid; the editor defaults it on, games leave it off.

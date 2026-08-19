@@ -19,16 +19,11 @@ class ResourceManager;
  * A prefab is a scene fragment: the same per-entity component shape a scene
  * uses, for one entity and its descendants, in its own file. Instancing one
  * builds those entities fresh, so editing the prefab changes every instance the
- * next time a scene is loaded - which is the whole point, and the thing
- * duplicating entity blocks into a scene cannot do.
+ * next time a scene is loaded.
  *
  * A scene stores an instance as a reference plus the root's Transform, not as
- * the expanded entities. That keeps the scene file small, and keeps the prefab
- * the single definition of what the thing is.
- *
- * **What varies per instance** is the root's Transform and the fields an
- * override names. Everything else belongs to the prefab, so changing it in the
- * file changes every instance at once.
+ * the expanded entities. What varies per instance is exactly that Transform and
+ * the fields an override names; everything else belongs to the prefab.
  *
  * Prefabs are referenced by path rather than through the AssetLibrary because
  * nothing cooks them - they are authored JSON, read as-is, like scenes.
@@ -39,10 +34,9 @@ class ResourceManager;
  * nothing unless something already loaded it, so without it a prefab was only
  * instantiable where something else happened to have loaded its meshes.
  *
- * Which makes reading one reading a file a person can write. Every entry point
- * here reports a document it cannot use and returns, rather than letting the
- * failure out as an exception: the callers are an editor showing a toast beside
- * its file picker and a scene load that has other entities to build.
+ * Prefabs are hand-editable, so every entry point here reports a document it
+ * cannot use and returns rather than throwing: the callers are an editor showing
+ * a toast beside its file picker and a scene load with other entities to build.
  *
  * **Per-instance overrides.** A scene may store field deltas against an
  * instance, addressed by @ref PrefabEntity uid, component key and field key.
@@ -52,12 +46,11 @@ class ResourceManager;
  * a missing prefab file would erase every override in the scene.
  *
  * **When the prefab changes underneath an override** the override is kept,
- * reported once, and not applied - the prefab's own component block is the
- * schema, so "is this still a field of Light" is a key lookup in the file. The
- * cases are: the uid is gone, the component is gone, the field is gone, the
- * value's type no longer matches, and the root's Transform (which is the
- * instance's own pose and could never have taken effect). Keeping the entry
- * means renaming a field and renaming it back does not lose the user's edit.
+ * reported once, and not applied. The cases are: the uid is gone, the component
+ * is gone, the field is gone, the value's type no longer matches, and the
+ * root's Transform (which is the instance's own pose and could never have taken
+ * effect). Keeping the entry means renaming a field and renaming it back does
+ * not lose the user's edit.
  */
 namespace Prefab {
 

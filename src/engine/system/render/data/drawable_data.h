@@ -15,10 +15,13 @@ namespace Vkm::Engine {
  * API-specific concern, so it lives below the interface, not here.
  */
 struct DrawableData {
-    MeshHandle     mesh;         ///< The mesh to render.
-    MaterialHandle material;     ///< The material to render.
-    glm::mat4      model;        ///< The model matrix to render the mesh with.
-    glm::mat3      normalMatrix; ///< transpose(inverse(mat3(model))): correct normals under non-uniform scale. Precomputed so the vertex shader skips a per-vertex matrix inverse.
+    MeshHandle     mesh;
+    MaterialHandle material;
+    glm::mat4      model;
+
+    /// transpose(inverse(mat3(model))): correct normals under non-uniform scale.
+    /// Precomputed so the vertex shader skips a per-vertex matrix inverse.
+    glm::mat3      normalMatrix;
 
     /**
      * @brief World-space AABB, as the visibility cull already computed it.
@@ -31,7 +34,7 @@ struct DrawableData {
     glm::vec3 worldMin;
     glm::vec3 worldMax;
 
-    bool castShadows;            ///< Whether the drawable casts shadows.
+    bool castShadows;
 };
 
 } // namespace Vkm::Engine
