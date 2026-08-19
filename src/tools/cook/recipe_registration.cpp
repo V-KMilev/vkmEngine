@@ -163,6 +163,13 @@ void registerRecipeAssetFactories() {
     assetFactory().createMesh     = &createRecipeMesh;
     assetFactory().createTexture  = &createRecipeTexture;
     assetFactory().createMaterial = &createRecipeMaterial;
+
+    // No recipe kind produces a rig yet, so the cooked dispatch is the whole
+    // dispatch for these two. They are still wired: a host that registers the
+    // recipe set instead of the cooked one must end up with every pointer set,
+    // or a scene that names a skeleton loads without one and says nothing.
+    assetFactory().createSkeleton      = &createCookedSkeleton;
+    assetFactory().createAnimationClip = &createCookedAnimationClip;
 }
 
 } // namespace Vkm::Engine

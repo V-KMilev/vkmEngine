@@ -133,7 +133,8 @@ a hash of the recipe. Every asset is its own file:
 - `library/<type>/<uid>.json` - the recipe (and, for materials, the canonical
   `inline` form). The version-controlled source of truth.
 - `cooked/<type>/<uid>.vkmc` - the derived binary blob (mesh vertices/indices;
-  decoded texture pixels). Regenerable; git-ignored.
+  decoded texture pixels; a rig's bones and bind data; a clip's keys).
+  Regenerable; git-ignored.
 - `library/_manifest.json` - maps each asset `name` to its type and recipe hash,
   under a `manifestVersion` the loader checks. `AssetLibrary`
   is the in-memory view, loaded at startup; a manifest in a version this build
@@ -163,20 +164,21 @@ rewrites the manifest (skipping assets whose hash is unchanged).
 **Load** - `AssetSerializer::loadAssets` resolves each name through the manifest:
 meshes/textures get a synthesized `{"kind":"cooked","name":...}` source, materials
 load their `inline` descriptor from the library file. Both go through the
-`AssetFactory` dispatch seam (`io/asset/asset_factory.h`) - three function pointers
-(mesh / texture / material) that each binary wires at startup, with plain
-switch dispatch on the `kind` field:
+`AssetFactory` dispatch seam (`io/asset/asset_factory.h`) - five function pointers
+(mesh / texture / material / skeleton / animation clip) that each binary wires at
+startup, with plain switch dispatch on the `kind` field:
 
 | `kind`                 | Handled by       | Resolves to                                         |
 |------------------------|------------------|-----------------------------------------------------|
-| `cooked`               | runtime + editor | A mesh/texture read from its cooked binary (async)  |
+| `cooked`               | runtime + editor | A mesh/texture read from its cooked binary (async), or a skeleton/clip read from its own (synchronously) |
 | `inline`               | runtime + editor | A `MaterialAsset` from PBR scalars + texture refs   |
 | `generator` / `decimate` | editor only    | Procedural / LOD meshes (run by the cooker)         |
 | `file` / `model` / `model-image` | editor only | stb / Assimp texture + mesh import          |
 | `folder` / `model` / `default` / `builtin` / `solid` | editor only | material + texture recipes |
 
 The runtime wires only the cooked dispatch (`registerCookedAssetFactories` sets
-the pointers to `createCookedMesh/Texture/Material`), so it links neither Assimp
+the pointers to `createCookedMesh/Texture/Material/Skeleton/AnimationClip`),
+so it links neither Assimp
 nor the image decoders. The editor instead wires the recipe dispatch
 (`registerRecipeAssetFactories`, built into the editor-only `vkm_cook`),
 whose switches fall through to the cooked functions for cooked/inline kinds.
@@ -186,6 +188,44 @@ Engine code never reaches into `src/tools/`; the dispatch is wired at startup in
 
 Adding a new asset kind means adding a `case` to the dispatch switch; the
 serializer itself does not change.
+
+### The cooked bodies
+
+Every `.vkmc` is the same header - magic, endian sentinel, asset kind, format
+version, recipe hash, payload length - followed by a body whose layout the
+format version names. `AssetType`, `TYPE_DIRS` and the kind tag move together,
+guarded by the `static_assert` in `asset_library.cpp`.
+
+| Body | Holds |
+|------|-------|
+| Mesh | Bounds, then bulk vertices and indices |
+| Texture | The `TextureParams` fields, then the decoded pixels |
+| Skeleton | Bone count, a `{parent, nameLen}` record per bone, bulk inverse-bind matrices, bulk bind-pose TRS, then the concatenated names |
+| Animation clip | Bone count, duration, the six key-array counts, the skeleton name length, then the bulk `ClipBone` table, the six key arrays and the name |
+
+Fixed-size records come first and variable-length names last in both new
+bodies, so the size reconciliation works the same way `readMesh` does: bound
+every count by **division** against what is left of the payload before
+multiplying it by anything, then require the remainder to land on exactly zero.
+
+Past the size math, each reader checks what a correctly-sized file can still
+get wrong, because nothing downstream re-checks:
+
+- A skeleton's bones must be **parent-before-child** (`-1 <= parent < index`).
+  Rejecting a later or self-referencing parent here is what lets every consumer
+  compose a pose in one forward loop.
+- A clip's key times and values must pair up, its duration must be finite, and
+  every channel range must land inside the array it addresses - the sampler
+  indexes those arrays directly, once per bone per frame.
+- A bone count past `MAX_SKELETON_BONES` is refused. It is a corruption
+  threshold rather than a capability limit: raising it later accepts strictly
+  more files, so it starts tight.
+
+Skeletons and clips are read **synchronously** (`loadCookedSkeleton` /
+`loadCookedAnimationClip`). A rig is a few tens of kilobytes, well under what
+earns a completion type, an `AsyncLoadQueue` lane and a drain in
+`AsyncLoaderSystem`. Nothing in a scene references one yet - the component that
+does is what adds their sections to the assets block.
 
 ## ComponentSerializer
 

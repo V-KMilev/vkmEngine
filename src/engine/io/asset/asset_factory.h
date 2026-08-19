@@ -2,8 +2,10 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
+#include "resource/asset/skeleton_asset.h"
 #include "resource/asset/texture_asset.h"
 
 namespace Vkm::Engine {
@@ -19,9 +21,11 @@ class ResourceManager;
  * source `kind`.
  */
 struct AssetFactory {
-    MeshHandle     (*createMesh)    (const nlohmann::json&, ResourceManager&) = nullptr;
-    TextureHandle  (*createTexture) (const nlohmann::json&, ResourceManager&) = nullptr;
-    MaterialHandle (*createMaterial)(const nlohmann::json&, ResourceManager&) = nullptr;
+    MeshHandle          (*createMesh)         (const nlohmann::json&, ResourceManager&) = nullptr;
+    TextureHandle       (*createTexture)      (const nlohmann::json&, ResourceManager&) = nullptr;
+    MaterialHandle      (*createMaterial)     (const nlohmann::json&, ResourceManager&) = nullptr;
+    SkeletonHandle      (*createSkeleton)     (const nlohmann::json&, ResourceManager&) = nullptr;
+    AnimationClipHandle (*createAnimationClip)(const nlohmann::json&, ResourceManager&) = nullptr;
 };
 
 AssetFactory& assetFactory();

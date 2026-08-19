@@ -1,25 +1,27 @@
 # Resource Management
 
-`ResourceManager` is the single owner of every GPU-uploadable asset:
-meshes, textures, materials, and fonts. Assets are referenced from
-components and the render view through type-safe generational handles,
-and they sync to the GPU through a per-resource version counter.
+`ResourceManager` is the single owner of every asset the engine loads: meshes,
+textures, materials, fonts, skeletons and animation clips. Assets are referenced
+from components and the render view through type-safe generational handles, and
+the GPU-uploadable ones sync through a per-resource version counter.
 
 ## Key files
 
 - `src/engine/resource/resource_manager.h` for the manager
 - `src/engine/resource/resource.h` for the `Resource` base (version, name, hidden flag, source JSON)
 - `src/engine/resource/resource_handle.h` for type-safe `Handle<T>`
-- `src/engine/resource/asset/mesh_asset.h`, `asset/texture_asset.h`, `asset/material_asset.h`, `asset/font_asset.h` for the asset kinds
+- `src/engine/resource/asset/mesh_asset.h`, `asset/texture_asset.h`, `asset/material_asset.h`, `asset/font_asset.h`, `asset/skeleton_asset.h`, `asset/animation_clip_asset.h` for the asset kinds
 - `src/engine/core/memory/sparse_set.h` for the `SparseSet<T>` that backs each asset table
 
 ## Handles
 
 ```cpp
-using MeshHandle     = Handle<MeshAsset>;
-using TextureHandle  = Handle<TextureAsset>;
-using MaterialHandle = Handle<MaterialAsset>;
-using FontHandle     = Handle<FontAsset>;
+using MeshHandle          = Handle<MeshAsset>;
+using TextureHandle       = Handle<TextureAsset>;
+using MaterialHandle      = Handle<MaterialAsset>;
+using FontHandle          = Handle<FontAsset>;
+using SkeletonHandle      = Handle<SkeletonAsset>;
+using AnimationClipHandle = Handle<AnimationClipAsset>;
 ```
 
 Each handle wraps a `StorageIndex` (index + generation), so stale handles
@@ -142,6 +144,73 @@ font is engine-owned (baked once at startup, never written to a scene file), so
 `SceneSerializer::load` swaps its slot back out of the displaced manager with
 `swapSlot<FontAsset>` instead of letting the scene-level swap drop it. See
 [In-game UI](system/ui.md).
+
+### SkeletonAsset
+
+A rig, as a flat array rather than a tree:
+
+```cpp
+struct Bone {
+    std::string name;
+    int32_t     parent = -1;   // -1 for a root; always < this bone's own index
+};
+
+struct SkeletonAsset : Resource {
+    std::vector<Bone>      bones;
+    std::vector<glm::mat4> inverseBind;   // rig model space -> bone space, at bind
+    std::vector<Transform> bindPose;      // local TRS a bone falls back to
+    int32_t indexOf(std::string_view name) const;
+};
+```
+
+Two decisions carry the rest of the skeletal path:
+
+**Bones are indices, not entities.** A hundred entities per character would be
+walked by the hierarchy, listed in the hierarchy panel and written to the scene
+file, for data that is rebuilt every frame and has no authoring meaning. An
+index also maps straight onto a rigid body when physics comes to address one.
+
+**`parent < index` is a validated format invariant**, not a convention. The
+importer emits bones depth-first and `AssetCook::readSkeleton` re-checks the
+ordering on the way back in. That is what makes composing a pose one forward
+loop with no recursion and no visited set, and what makes a cycle
+*unrepresentable* rather than something every walk has to defend against.
+
+`bindPose` is stored rather than derived from `inverseBind`, because recovering
+it means inverting and re-localising, which is lossy the moment a bone carries
+scale. The three vectors are parallel and always the same length; the writer
+refuses a skeleton where they are not.
+
+### AnimationClipAsset
+
+A baked clip: every bone's keys in six flat arrays, with a per-bone table of
+ranges into them.
+
+```cpp
+struct ClipChannel { uint32_t first, count; };  // count 0 = channel absent
+struct ClipBone    { ClipChannel position, rotation, scale; };
+
+struct AnimationClipAsset : Resource {
+    std::string skeleton;          // rig whose bone order `bones` addresses
+    float       duration = 0.0f;   // seconds, stored rather than derived
+    std::vector<ClipBone>  bones;  // parallel to that rig's bones
+    std::vector<float> positionTimes;  std::vector<glm::vec3> positions;
+    std::vector<float> rotationTimes;  std::vector<glm::quat> rotations;
+    std::vector<float> scaleTimes;     std::vector<glm::vec3> scales;
+};
+```
+
+`AnimationTrack<T>` is deliberately **not** reused here. Three tracks over a
+hundred bones is three hundred heap vector pairs and three hundred easing
+function pointers for one clip; six flat arrays are six allocations,
+bulk-writable to the cooked file and cache-linear over a bone sweep. Easing goes
+with it - keys arrive from a DCC tool already baked at its own sample rate, and
+there is no author to pick a curve per bone. The keyframe `Animation` component
+keeps `AnimationTrack<T>` and is untouched (see
+[Animation](system/animation.md)).
+
+A clip is bound to its rig **at cook time**: `bones` is parallel to the named
+skeleton's bone array, so nothing resolves a bone name at runtime.
 
 ## Versioning
 
