@@ -51,7 +51,7 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
         state.deselect();
     }
     if (isPressed(kb.duplicate) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
-        EditorActions::duplicateSelection(ctx.scene, state);
+        EditorActions::duplicateSelection(ctx.scene, ctx.resources, state);
     }
     if (isPressed(kb.focusSelected) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
         EditorActions::focusOnSelected(ctx, state, camera);

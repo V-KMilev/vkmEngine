@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "ecs/entity.h"
 #include "resource/asset/material_asset.h"
 
@@ -73,11 +75,17 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
  * undoable step and selects the copy. Script behaviors carry over through the
  * snapshot serializer.
  *
+ * A prefab instance is instanced from its file again rather than copied, so the
+ * copy is an instance of the same prefab with the same overrides instead of a
+ * root with nothing under it.
+ *
  * @param scene Scene holding the source and receiving the copy.
+ * @param resources Resolves the prefab's asset names when the source is an instance.
  * @param state Editor state whose command stack, dirty flag and selection are updated.
  * @param source Entity to copy from.
  */
-void duplicateEntity(Scene& scene, EditorState& state, EntityId source);
+void duplicateEntity(Scene& scene, ResourceManager& resources, EditorState& state,
+                     EntityId source);
 /**
  * @brief Delete an entity (and its subtree) as a single undoable step.
  *
@@ -92,6 +100,45 @@ void duplicateEntity(Scene& scene, EditorState& state, EntityId source);
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity);
 
 /**
+ * @brief Write @p entity and its subtree to the project's prefabs/ as a prefab.
+ *
+ * The file is named after the entity, so saving the same entity again updates
+ * the prefab it came from rather than making a second one - which is what makes
+ * this the way to edit a prefab: instance it, change it, save it back.
+ *
+ * On success @p entity becomes an instance of what it just wrote, so the scene
+ * stores it as a reference from then on and every other instance picks the
+ * change up on its next load.
+ *
+ * @param scene     Scene holding the subtree.
+ * @param resources Resolves asset handles to names.
+ * @param state     Editor state, for the toast and the dirty flag.
+ * @param entity    Root of the subtree to save.
+ * @return True when the prefab was written.
+ */
+bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& state,
+                  EntityId entity);
+
+/**
+ * @brief Build an instance of the prefab at @p path into the scene.
+ *
+ * The instance lands at the origin, where every other Create-menu entity
+ * starts, rather than at the prefab's authored pose: a second copy dropped
+ * exactly on top of the first one looks like nothing happened. It becomes the
+ * selection, so the usual focus shortcut frames it.
+ *
+ * @param scene     Scene the instance is built in.
+ * @param resources Resolves the prefab's asset names to handles.
+ * @param state     Editor state whose command stack, selection and dirty flag
+ *                  are updated.
+ * @param path      Prefab file, project-relative or absolute.
+ * @return The instance root, or a default (invalid) EntityId when the prefab
+ *         could not be read.
+ */
+EntityId placePrefab(Scene& scene, ResourceManager& resources, EditorState& state,
+                     const std::string& path);
+
+/**
  * @brief Delete every selected entity as ONE undo step.
  *
  * Entities whose ancestor is also selected are skipped (they die with the
@@ -103,7 +150,7 @@ void deleteSelection(Scene& scene, EditorState& state);
  * @brief Duplicate every selected entity as ONE undo step; the clones become
  * the new selection. Falls back to duplicateEntity for a single selection.
  */
-void duplicateSelection(Scene& scene, EditorState& state);
+void duplicateSelection(Scene& scene, ResourceManager& resources, EditorState& state);
 
 /**
  * @brief Apply the command stack's undo / redo, then flag the scene dirty.
@@ -154,6 +201,10 @@ void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity);
  * must re-base the local Transform itself - otherwise the entity visibly jumps
  * by the old/new parent's world contribution. Decomposes the preserved world
  * matrix into the new parent's space (same math the transform gizmo uses).
+ *
+ * A move that crosses into or out of a prefab instance is refused with a toast
+ * instead: the instance's interior is the prefab's, and the scene stores none
+ * of it, so either move would be lost on the next load without a word.
  */
 void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
                           EntityId newParent, const char* label);
@@ -235,6 +286,36 @@ class ModelImportDialog {
          * @param scene Scene the imported model is added to.
          * @param resources Resource manager the imported meshes/materials register with.
          * @param state Editor state holding the import request and updated on import.
+         */
+        void draw(Scene& scene, ResourceManager& resources, EditorState& state);
+
+    private:
+        AssetPicker m_picker;
+};
+
+/**
+ * @brief Render the "Prefab" picker and place what the user chooses.
+ *
+ * Drawn from the menu-bar scope for the same reason as ModelImportDialog: the
+ * Create menu closes the frame its item is clicked, taking any modal opened
+ * from inside it with it.
+ *
+ * Owns a cached AssetPicker so the modal does not re-scan prefabs/ every frame
+ * it is open.
+ */
+class PlacePrefabDialog {
+    public:
+        /**
+         * @brief Drive the prefab picker and instance the chosen file.
+         *
+         * Opens the cached picker when EditorState::requestPlacePrefab is set,
+         * then on a pick builds the instance through placePrefab. A project with
+         * no prefabs yet gets a toast saying where they come from instead of an
+         * empty list.
+         *
+         * @param scene Scene the instance is built in.
+         * @param resources Resource manager the prefab's assets resolve against.
+         * @param state Editor state holding the request and updated on a placement.
          */
         void draw(Scene& scene, ResourceManager& resources, EditorState& state);
 

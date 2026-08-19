@@ -398,7 +398,9 @@ void EditorSystem::update(FrameContext& ctx) {
         {
             const ImGuiViewport* vp = ImGui::GetMainViewport();
             const float pad = EditorStyle::px(10.0f);
-            char hint[64];
+            // Wide enough for the longest KeyLabel plus the sentence around it,
+            // so a rebound chord is never cut off mid-word.
+            char hint[80];
             snprintf(hint, sizeof(hint), "Press %s to show editor",
                      keyLabel(m_state.keybinds.toggleEditor).buf);
             ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - pad,
@@ -482,6 +484,9 @@ void EditorSystem::update(FrameContext& ctx) {
         // serves all three import-intent sources: the menu, the Inspector
         // empty-state button, and the Hierarchy "+" menu.
         m_modelImport.draw(ctx.scene, ctx.resources, m_state);
+        // Same reason for the prefab picker: the Create menu it hangs off is
+        // drawn from the menu bar, the Hierarchy and the Inspector alike.
+        m_placePrefab.draw(ctx.scene, ctx.resources, m_state);
         drawWorkspace(ec);
         openPendingProject(ec);
 

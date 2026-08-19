@@ -57,6 +57,7 @@ struct EditorState {
     bool hierarchyDirty  = true;     ///< Set by entity ops, consumed by HierarchyPanel
     bool editorVisible   = true;     ///< Toggle entire editor UI (F5)
     bool requestModelImport = false;  ///< Set by the Import Model menu item, consumed by the menu-bar dialog
+    bool requestPlacePrefab = false;  ///< Set by the Create > Prefab item, consumed by the menu-bar dialog
     int  lodGenLevels = 2;            ///< Levels the LOD card's Generate button builds below the source.
     bool requestScriptReload = false; ///< Set by the Reload Scripts menu item, consumed by EditorSystem (hot-reload)
 

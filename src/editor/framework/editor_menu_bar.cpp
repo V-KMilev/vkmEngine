@@ -49,7 +49,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     const auto selectionItems = [&] {
         const bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
         if (ImGui::MenuItem("Duplicate", keyLabel(state.keybinds.duplicate), false, haveSel)) {
-            EditorActions::duplicateSelection(ctx.scene, state);
+            EditorActions::duplicateSelection(ctx.scene, ctx.resources, state);
         }
         if (ImGui::MenuItem("Delete", keyLabel(state.keybinds.deleteEntity), false, haveSel)) {
             EditorActions::deleteSelection(ctx.scene, state);

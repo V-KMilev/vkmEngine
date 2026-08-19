@@ -18,6 +18,8 @@
 #include "ecs/component/collider.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/name.h"
+#include "ecs/component/prefab_entity.h"
+#include "ecs/component/prefab_instance.h"
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/irradiance_volume.h"
 #include "ecs/component/decal.h"
@@ -233,6 +235,12 @@ class ComponentEditCommand : public Command {
  * vocabulary is one new row here. ScriptComponent is deliberately absent: it is
  * move-only and stored as serialized JSON (see EntitySnapshot::scriptJson),
  * handled as an explicit special case in capture/apply.
+ *
+ * PrefabInstance and PrefabEntity are on the list because they are what makes a
+ * resurrected instance an instance rather than the entities it expanded to:
+ * without the marker the scene writes the subtree out inline and stops naming
+ * the prefab, and without the uids every override addresses an entity that no
+ * longer answers to its number.
  */
 #define VKM_EDITOR_SNAPSHOT_COMPONENTS(X) \
     X(Transform,       transform)         \
@@ -252,7 +260,9 @@ class ComponentEditCommand : public Command {
     X(UIElement,        uiElement)        \
     X(UIImage,          uiImage)          \
     X(UIText,           uiText)           \
-    X(UIButton,         uiButton)
+    X(UIButton,         uiButton)         \
+    X(PrefabEntity,     prefabEntity)     \
+    X(PrefabInstance,   prefabInstance)
 
 /**
  * @brief Snapshot of every editor-visible component on a single entity.
@@ -365,6 +375,123 @@ class DestroySubtreeCommand : public Command {
         SubtreeSnapshot m_snap;
         EntityId        m_priorSelection;
         const char*     m_label;
+};
+
+/**
+ * @brief Place an instance of a prefab into the scene, undoable.
+ *
+ * Redo rebuilds the instance from the prefab file rather than from a snapshot of
+ * the entities the placement expanded to, because that is what a placement is:
+ * the scene keeps a reference, a pose and the overrides against it, and building
+ * the subtree from the file is what a scene load does with them.
+ *
+ * Reaches the ResourceManager through a pointer captured at construction, like
+ * RenameAssetCommand: the prefab resolves its assets by name on every rebuild,
+ * and the command stack is cleared on scene load, so the pointer never outlives
+ * the manager it was taken from.
+ */
+class PlacePrefabCommand : public Command {
+    public:
+        /**
+         * @brief Record a placement that has already happened.
+         *
+         * @param resources Manager the rebuild resolves the prefab's assets against.
+         * @param instance The instance as the scene stores it: which prefab, and
+         *                 the overrides the rebuild reapplies to its subtree.
+         * @param root Instance root; only its slot is kept, so redo can rebuild
+         *             at the same index a later command may refer to.
+         * @param at Pose the instance was placed at.
+         * @param label History entry text.
+         */
+        PlacePrefabCommand(ResourceManager& resources, PrefabInstance instance, EntityId root,
+                           const Transform& at, const char* label)
+            : m_resources(&resources), m_instance(std::move(instance)), m_rootSlot(root.index),
+              m_at(at), m_label(label) {}
+
+        void redo(Scene&, EditorState&) override;
+        void undo(Scene&, EditorState&) override;
+        const char* label() const override { return m_label; }
+
+    private:
+        ResourceManager* m_resources;
+        PrefabInstance   m_instance;
+        uint32_t         m_rootSlot;
+        Transform        m_at;
+        const char*      m_label;
+};
+
+/**
+ * @brief Change what one instance overrides on one component, undoable.
+ *
+ * Takes the place of ComponentEditCommand for an entity inside a prefab
+ * instance: the component's value there is the prefab's, patched by the
+ * instance's overrides, so the edit that has to be reversed is the override
+ * entry rather than the value. Restoring the entries and re-reading the
+ * component from the file lands on exactly what a reload of the scene would
+ * show, which a stored component value could disagree with.
+ *
+ * Entries are carried whole per (entity, component) rather than as a delta, so
+ * the two directions are the same operation with different data - and so
+ * coalescing a drag is just taking the newer set.
+ *
+ * Reaches the ResourceManager through a pointer captured at construction, like
+ * PlacePrefabCommand: the prefab resolves its assets by name on every re-read,
+ * and the command stack is cleared on scene load, so the pointer never outlives
+ * the manager it was taken from.
+ */
+class PrefabOverrideCommand : public Command {
+    public:
+        /**
+         * @brief Record an override change that has already been applied.
+         *
+         * The entity is named by its prefab uid rather than by its own slot,
+         * because the instance's entities are rebuilt - by a scene load, by the
+         * redo of the placement - into whatever slots are free at the time, and
+         * only the root's is pinned. The uid is the identity the override uses
+         * everywhere else, and the one that survives the rebuild.
+         *
+         * @param resources Manager the re-read resolves the prefab's assets against.
+         * @param root      Instance root carrying the override list.
+         * @param targetUid Prefab uid of the entity the entries address.
+         * @param component Component key, as SceneSerializer writes it.
+         * @param before    The entries for that pair before the edit.
+         * @param after     The entries for it now.
+         * @param label     History entry text.
+         */
+        PrefabOverrideCommand(ResourceManager& resources, EntityId root, uint32_t targetUid,
+                              std::string component, std::vector<PrefabOverride> before,
+                              std::vector<PrefabOverride> after, const char* label)
+            : m_resources(&resources), m_root(root), m_targetUid(targetUid),
+              m_component(std::move(component)), m_before(std::move(before)),
+              m_after(std::move(after)), m_label(label) {}
+
+        void redo(Scene&, EditorState&) override;
+        void undo(Scene&, EditorState&) override;
+        const char* label() const override { return m_label; }
+        bool tryMerge(Command& incoming) override;
+
+    private:
+        /**
+         * @brief Make @p entries the instance's entries for this pair, and warn
+         * when the prefab can no longer answer for the component.
+         *
+         * The two directions differ only in which entry set they install, so
+         * they are the same call with different data.
+         *
+         * @param scene Scene holding the instance.
+         * @param state Receives the warning when the value could not be re-read.
+         * @param entries The entry set this direction installs.
+         */
+        void step(Scene& scene, EditorState& state, const std::vector<PrefabOverride>& entries);
+
+    private:
+        ResourceManager*            m_resources;
+        EntityId                    m_root;
+        uint32_t                    m_targetUid;
+        std::string                 m_component;
+        std::vector<PrefabOverride> m_before;
+        std::vector<PrefabOverride> m_after;
+        const char*                 m_label;
 };
 
 /**
