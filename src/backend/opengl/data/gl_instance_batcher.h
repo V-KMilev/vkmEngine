@@ -167,17 +167,17 @@ class GLInstanceBatcher {
         std::vector<uint32_t>  m_runOf;     ///< Which run each instance belongs to.
         std::vector<DrawCommand> m_commands;///< One per run, in runs() order.
 
-        Core::InstanceBuffer m_modelBuffer;   ///< Every instance's model matrix, batch order.
-        Core::InstanceBuffer m_normalBuffer;  ///< Every instance's normal matrix, batch order.
+        Vkm::GL::InstanceBuffer m_modelBuffer;   ///< Every instance's model matrix, batch order.
+        Vkm::GL::InstanceBuffer m_normalBuffer;  ///< Every instance's normal matrix, batch order.
 
         /// Which of them each drawn instance is. Vertex storage, because the
         /// index arrives as an attribute so that GL's baseInstance offsets it
         /// per run; also bound as storage, because the cull writes into it.
-        std::unique_ptr<Core::VertexBuffer> m_visibleBuffer;
+        std::unique_ptr<Vkm::GL::VertexBuffer> m_visibleBuffer;
 
-        std::unique_ptr<Core::ShaderStorageBuffer> m_boundsBuffer;
-        std::unique_ptr<Core::ShaderStorageBuffer> m_runOfBuffer;
-        std::unique_ptr<Core::ShaderStorageBuffer> m_commandBuffer;
+        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_boundsBuffer;
+        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_runOfBuffer;
+        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_commandBuffer;
         bool     m_culled          = false;  ///< A cull filled the commands this frame, so draws go indirect.
         uint32_t m_visibleCapacity = 0;
         uint32_t m_boundsCapacity  = 0;

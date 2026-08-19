@@ -6,7 +6,7 @@
 
 #include "data/gl_instance_batcher.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Context;
     class ScreenTriangle;
 }
@@ -34,21 +34,21 @@ class GLHiZ;
  * GLPass::execute signature never has to change again.
  */
 struct GLFrameContext {
-    const RenderView& view;           ///< This frame's scene snapshot.
-    const GLView&     resources;      ///< GPU mirror of the assets the frame uses.
-    Core::Context&    gl;             ///< GL state manager (viewport / depth / clear).
-    Core::ScreenTriangle& screenTri;  ///< Shared attribute-less fullscreen triangle (every post pass draws it).
-    GLTarget&         sceneHDR;       ///< Single-sample resolved scene: sampled by the screen-space + post passes.
-    GLTarget&         sceneRender;    ///< Where the geometry passes draw (the multisample target, or sceneHDR itself when MSAA is off). Resolved into sceneHDR by GLResolvePass.
-    GLShadowAtlas&    shadowAtlas;    ///< Depth atlas: written by shadow pass, sampled by forward.
-    const GLShadowData& shadowData;   ///< This frame's shadow plan (matrices + slots).
-    const GLIBL&      ibl;            ///< Baked IBL product set: sampled by forward (ambient) + skybox.
-    GLBloom&          bloom;          ///< Bloom mip chain: written by the bloom pass, blended in composite.
-    GLTarget&         ao;             ///< GTAO factor: written by the GTAO pass, sampled by forward (ambient).
-    GLClusterGrid&    clusters;       ///< Forward+ per-cluster light lists: written by the cluster pass, read by forward.
-    GLFogVolume&      fog;            ///< Froxel fog volumes: written by the fog compute, applied by the fog-apply pass.
-    GLIrradianceVolume& irradiance;   ///< Baked SH irradiance volume, sampled by the forward ambient term.
-    GLHiZ&            hiz;            ///< Hierarchical depth pyramid: built after the prepass, tested by the occlusion cull.
+    const RenderView&  view;             ///< This frame's scene snapshot.
+    const GLView&      resources;        ///< GPU mirror of the assets the frame uses.
+    Vkm::GL::Context&  gl;               ///< GL state manager (viewport / depth / clear).
+    Vkm::GL::ScreenTriangle& screenTri;  ///< Shared attribute-less fullscreen triangle (every post pass draws it).
+    GLTarget&          sceneHDR;         ///< Single-sample resolved scene: sampled by the screen-space + post passes.
+    GLTarget&          sceneRender;      ///< Where the geometry passes draw (the multisample target, or sceneHDR itself when MSAA is off). Resolved into sceneHDR by GLResolvePass.
+    GLShadowAtlas&     shadowAtlas;      ///< Depth atlas: written by shadow pass, sampled by forward.
+    const GLShadowData& shadowData;      ///< This frame's shadow plan (matrices + slots).
+    const GLIBL&       ibl;              ///< Baked IBL product set: sampled by forward (ambient) + skybox.
+    GLBloom&           bloom;            ///< Bloom mip chain: written by the bloom pass, blended in composite.
+    GLTarget&          ao;               ///< GTAO factor: written by the GTAO pass, sampled by forward (ambient).
+    GLClusterGrid&     clusters;         ///< Forward+ per-cluster light lists: written by the cluster pass, read by forward.
+    GLFogVolume&       fog;              ///< Froxel fog volumes: written by the fog compute, applied by the fog-apply pass.
+    GLIrradianceVolume& irradiance;      ///< Baked SH irradiance volume, sampled by the forward ambient term.
+    GLHiZ&             hiz;              ///< Hierarchical depth pyramid: built after the prepass, tested by the occlusion cull.
 
     /**
      * @brief The frame's drawables split by draw bucket, once per frame by the

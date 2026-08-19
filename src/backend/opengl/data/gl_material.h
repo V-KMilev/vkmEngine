@@ -8,7 +8,7 @@
 
 #include "resource/asset/material_asset.h"
 
-namespace Core {
+namespace Vkm::GL {
     class UniformBuffer;
 }
 
@@ -91,9 +91,9 @@ class GLMaterial {
         const std::vector<TextureBinding>& getTextureBindings() const { return m_textureBindings; }
 
     private:
-        std::unique_ptr<Core::UniformBuffer> m_ubo;
-        std::vector<TextureBinding>          m_textureBindings;
-        MaterialType                         m_type = MaterialType::Opaque;
+        std::unique_ptr<Vkm::GL::UniformBuffer> m_ubo;
+        std::vector<TextureBinding>           m_textureBindings;
+        MaterialType                          m_type = MaterialType::Opaque;
 };
 
 } // namespace Engine

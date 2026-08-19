@@ -28,7 +28,7 @@ constexpr float GRID_EXTENT = 200.0f;
 } // namespace
 
 GLGridPass::GLGridPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/grid"))
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/grid"))
     , m_quad(std::make_unique<GLMesh>(generatePlane(2.0f, 2.0f))) {}
 
 GLGridPass::~GLGridPass() = default;

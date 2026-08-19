@@ -33,7 +33,7 @@ glm::vec3 sunRadiance(const RenderView& view) {
 } // namespace
 
 GLDecalPass::GLDecalPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/decal"))
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/decal"))
     , m_cube(std::make_unique<GLMesh>(generateCube())) {}
 
 GLDecalPass::~GLDecalPass() = default;

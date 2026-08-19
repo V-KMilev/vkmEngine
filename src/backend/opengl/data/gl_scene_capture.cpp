@@ -53,7 +53,7 @@ void GLSceneCapture::begin(const RenderView& view, const GLView& glView, const G
     bindOfflinePbrUniforms(m_pbr, ibl, view.environment.sky.intensity, faceSize);
 }
 
-void GLSceneCapture::captureCube(Core::Context& gl, const glm::vec3& position, float farPlane,
+void GLSceneCapture::captureCube(Vkm::GL::Context& gl, const glm::vec3& position, float farPlane,
                                  const AttachFace& attach) {
     const glm::mat4 proj   = glm::perspective(glm::radians(90.0f), 1.0f, CAPTURE_NEAR, farPlane);
     const bool      hasIBL = m_ibl->isReady();
@@ -118,7 +118,7 @@ void GLSceneCapture::captureCube(Core::Context& gl, const glm::vec3& position, f
     }
 }
 
-void bindOfflinePbrUniforms(Core::Shader& pbr, const GLIBL& ibl, float iblIntensity, float faceSize) {
+void bindOfflinePbrUniforms(Vkm::GL::Shader& pbr, const GLIBL& ibl, float iblIntensity, float faceSize) {
     const bool hasIBL = ibl.isReady();
 
     pbr.bind();

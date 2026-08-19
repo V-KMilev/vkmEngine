@@ -5,7 +5,7 @@
 
 #include <GL/glew.h>
 
-namespace Core {
+namespace Vkm::GL {
     class Texture3D;
 }
 
@@ -77,8 +77,8 @@ class GLFogVolume {
         void bindIntegratedSlot(uint32_t slot) const;
 
     private:
-        std::unique_ptr<Core::Texture3D> m_scatter;
-        std::unique_ptr<Core::Texture3D> m_integrated;
+        std::unique_ptr<Vkm::GL::Texture3D> m_scatter;
+        std::unique_ptr<Vkm::GL::Texture3D> m_integrated;
         uint32_t m_x = 0;
         uint32_t m_y = 0;
         uint32_t m_z = 0;

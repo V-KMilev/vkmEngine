@@ -14,7 +14,7 @@
 #include "data/gl_shadow_data.h"
 #include "data/gl_instance_batcher.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Context;
     class Shader;
     class Texture2D;
@@ -63,7 +63,7 @@ class GLPreview {
          * @brief Render @p req into its per-key target. Returns the LDR texture id,
          * or 0 when the request can't be drawn (missing assets, no init).
          */
-        uint32_t render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
+        uint32_t render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ibl,
                         const PreviewRequest& req, const ResourceManager& resources);
 
         /**
@@ -93,19 +93,19 @@ class GLPreview {
          * @brief Per-key output: an LDR texture in its own FBO, sized per request.
          */
         struct Entry {
-            std::unique_ptr<Core::Texture2D> ldr;
-            Core::FrameBuffer                fbo;
-            uint32_t                         size = 0;
+            std::unique_ptr<Vkm::GL::Texture2D> ldr;
+            Vkm::GL::FrameBuffer                fbo;
+            uint32_t                            size = 0;
         };
 
         Entry& ensureEntry(uint64_t key, uint32_t size);
 
     private:
-        std::unique_ptr<Core::Shader>         m_pbr;       ///< forward PBR (scene draw)
-        std::unique_ptr<Core::Shader>         m_composite; ///< tonemap HDR -> LDR
-        std::unique_ptr<Core::Shader>         m_skybox;    ///< sky backdrop (Background::Sky)
-        std::unique_ptr<GLMesh>               m_skyCube;   ///< unit cube for the sky draw
-        std::unique_ptr<Core::ScreenTriangle> m_tri;       ///< fullscreen tonemap draw
+        std::unique_ptr<Vkm::GL::Shader>         m_pbr;       ///< forward PBR (scene draw)
+        std::unique_ptr<Vkm::GL::Shader>         m_composite; ///< tonemap HDR -> LDR
+        std::unique_ptr<Vkm::GL::Shader>         m_skybox;    ///< sky backdrop (Background::Sky)
+        std::unique_ptr<GLMesh>                  m_skyCube;   ///< unit cube for the sky draw
+        std::unique_ptr<Vkm::GL::ScreenTriangle> m_tri;       ///< fullscreen tonemap draw
 
         GLTarget          m_scratch;   ///< shared HDR scene target (fixed size)
         GLCamera          m_camera;    ///< orbit camera UBO (binding 2)

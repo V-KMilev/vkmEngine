@@ -67,11 +67,11 @@ GLPreview::GLPreview()  = default;
 GLPreview::~GLPreview() = default;
 
 void GLPreview::init() {
-    m_pbr       = std::make_unique<Core::Shader>("shaders/forward/pbr");
-    m_composite = std::make_unique<Core::Shader>("shaders/composite");
-    m_skybox    = std::make_unique<Core::Shader>("shaders/skybox");
+    m_pbr       = std::make_unique<Vkm::GL::Shader>("shaders/forward/pbr");
+    m_composite = std::make_unique<Vkm::GL::Shader>("shaders/composite");
+    m_skybox    = std::make_unique<Vkm::GL::Shader>("shaders/skybox");
     m_skyCube   = std::make_unique<GLMesh>(generateCube());
-    m_tri       = std::make_unique<Core::ScreenTriangle>();
+    m_tri       = std::make_unique<Vkm::GL::ScreenTriangle>();
     m_scratch.resize(SCENE_SIZE, SCENE_SIZE);
 }
 
@@ -80,18 +80,18 @@ GLPreview::Entry& GLPreview::ensureEntry(uint64_t key, uint32_t size) {
     if (!slot) slot = std::make_unique<Entry>();
     Entry& e = *slot;
     if (e.size != size) {
-        Core::Texture2DParams p;
+        Vkm::GL::Texture2DParams p;
         p.width           = size;
         p.height          = size;
         p.internalFormat  = GL_RGBA8;
         p.format          = GL_RGBA;
         p.type            = GL_UNSIGNED_BYTE;
-        p.minFilter       = Core::TextureMinFilter::Linear;
-        p.magFilter       = Core::TextureMagFilter::Linear;
-        p.wrapS           = Core::TextureWrap::ClampToEdge;
-        p.wrapT           = Core::TextureWrap::ClampToEdge;
+        p.minFilter       = Vkm::GL::TextureMinFilter::Linear;
+        p.magFilter       = Vkm::GL::TextureMagFilter::Linear;
+        p.wrapS           = Vkm::GL::TextureWrap::ClampToEdge;
+        p.wrapT           = Vkm::GL::TextureWrap::ClampToEdge;
         p.generateMipmaps = false;
-        e.ldr = std::make_unique<Core::Texture2D>("preview_ldr", p);
+        e.ldr = std::make_unique<Vkm::GL::Texture2D>("preview_ldr", p);
 
         e.fbo.bind();
         e.fbo.attachTexture2D(GL_COLOR_ATTACHMENT0, e.ldr->getID());
@@ -104,7 +104,7 @@ GLPreview::Entry& GLPreview::ensureEntry(uint64_t key, uint32_t size) {
     return e;
 }
 
-uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
+uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ibl,
                            const PreviewRequest& req, const ResourceManager& resources) {
     if (!m_pbr) return 0;  // init() not run
     if (!req.mesh || !req.material || req.size == 0) return 0;
@@ -243,7 +243,7 @@ uint32_t GLPreview::render(Core::Context& gl, GLView& glView, const GLIBL& ibl,
 
     // Leave the engine-default state: default framebuffer bound, depth on,
     // culling off (matches GLBackend::init's baseline).
-    Core::FrameBuffer::bindDefault();
+    Vkm::GL::FrameBuffer::bindDefault();
     gl.setDepthTest(true);
     gl.setDepthFunc(GL_LEQUAL);
     gl.setFaceCulling(false);

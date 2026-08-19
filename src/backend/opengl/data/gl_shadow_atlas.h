@@ -8,7 +8,7 @@
 
 #include "gl_frame_buffer.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Context;
     class Texture2D;
     class TextureCube;
@@ -56,17 +56,17 @@ class GLShadowAtlas {
         /**
          * @brief Bind the 2D atlas FBO and clear its whole depth buffer once.
          */
-        void begin2D(const Core::Context& gl) const;
+        void begin2D(const Vkm::GL::Context& gl) const;
 
         /**
          * @brief Restrict subsequent draws to one 2D tile's viewport.
          */
-        void setTileViewport(const Core::Context& gl, uint32_t slot) const;
+        void setTileViewport(const Vkm::GL::Context& gl, uint32_t slot) const;
 
         /**
          * @brief Attach cube @p slot's @p face to the cube FBO and clear it.
          */
-        void beginCubeFace(const Core::Context& gl, uint32_t slot, uint32_t face) const;
+        void beginCubeFace(const Vkm::GL::Context& gl, uint32_t slot, uint32_t face) const;
 
         /**
          * @brief Bind the 2D atlas depth texture to a sampler unit.
@@ -87,11 +87,11 @@ class GLShadowAtlas {
     private:
         uint32_t m_tileRes = 0;
 
-        Core::FrameBuffer m_fbo2D;
-        Core::FrameBuffer m_fboCube;
+        Vkm::GL::FrameBuffer m_fbo2D;
+        Vkm::GL::FrameBuffer m_fboCube;
 
-        std::unique_ptr<Core::Texture2D>                m_atlas2D;
-        std::vector<std::unique_ptr<Core::TextureCube>> m_cubes;
+        std::unique_ptr<Vkm::GL::Texture2D>                m_atlas2D;
+        std::vector<std::unique_ptr<Vkm::GL::TextureCube>> m_cubes;
 };
 
 } // namespace Engine

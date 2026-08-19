@@ -7,7 +7,7 @@
 
 #include "core/engine_config.h"
 
-namespace Core {
+namespace Vkm::GL {
     class ShaderStorageBuffer;
 }
 
@@ -79,8 +79,8 @@ class GLLights {
         void update(const std::vector<LightData>& lights, const GLShadowData& shadow);
 
     private:
-        std::unique_ptr<Core::ShaderStorageBuffer> m_ssbo;
-        LightsBuffer                               m_last{};
+        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_ssbo;
+        LightsBuffer                                m_last{};
 };
 
 } // namespace Engine

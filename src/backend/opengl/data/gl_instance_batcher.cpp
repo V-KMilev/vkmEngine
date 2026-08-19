@@ -21,7 +21,7 @@ namespace SSBO = GLBindings::SSBOBindingPoints;
  * The batch buffers size to the frame's instance count, which moves;
  * reallocating only when it grows keeps a steady scene at one allocation.
  *
- * @tparam BufferT   Core buffer type to allocate (vertex or shader storage).
+ * @tparam BufferT   vkmGL buffer type to allocate (vertex or shader storage).
  * @param buffer     The buffer, allocated on first use and on every grow.
  * @param capacity   Bytes currently allocated; updated when it grows.
  * @param data       Source bytes to upload.

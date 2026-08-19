@@ -353,10 +353,10 @@ instance owns, and `Prefab::reloadComponent` gives one back to the prefab.
 
 Shaders are not assets and not part of the library - they are source files read
 CWD-relative from `shaders/`, so hot reload is a matter of noticing that one
-changed. `Core::reloadChangedShaders` (`modules/vkmGL/src/shader/gl_shader_reload.h`)
-takes the newest write time under a directory and, when it moves, recompiles
-every live shader; a program that no longer compiles keeps its previous one and
-logs the error.
+changed. `Vkm::GL::reloadChangedShaders`
+(`modules/vkmGL/src/shader/gl_shader_reload.h`) takes the newest write time
+under a directory and, when it moves, recompiles every live shader; a program
+that no longer compiles keeps its previous one and logs the error.
 
 The editor drives it, polling once a second (`EditorSystem::SHADER_POLL_INTERVAL`)
 and toasting what it reloaded. There is no file-watcher system: a per-platform

@@ -16,7 +16,7 @@
 namespace Engine {
 
 GLGTAOPass::GLGTAOPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/gtao")) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/gtao")) {}
 
 GLGTAOPass::~GLGTAOPass() = default;
 

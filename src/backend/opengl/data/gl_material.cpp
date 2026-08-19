@@ -82,7 +82,7 @@ void GLMaterial::update(const MaterialAsset& material) {
     data.pad0               = 0;
 
     if (m_ubo) m_ubo->update(&data, sizeof(data));
-    else       m_ubo = std::make_unique<Core::UniformBuffer>(&data, sizeof(data), GL_DYNAMIC_DRAW);
+    else       m_ubo = std::make_unique<Vkm::GL::UniformBuffer>(&data, sizeof(data), GL_DYNAMIC_DRAW);
 }
 
 void GLMaterial::bind(uint32_t bindingPoint) const {
@@ -96,7 +96,7 @@ void GLMaterial::bindTextures(const GLView& view) const {
         // still streaming (or one whose file failed to decode) would silently
         // render with another object's maps - a shading bug to look at, with
         // nothing pointing at the actual cause. The placeholder is unmistakable.
-        const Core::Texture2D* texture = view.getTexture(binding.handle);
+        const Vkm::GL::Texture2D* texture = view.getTexture(binding.handle);
         if (!texture) texture = &view.missingTexture();
         texture->bindSlot(binding.slot);
     }
