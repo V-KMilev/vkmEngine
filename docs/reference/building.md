@@ -147,7 +147,7 @@ All external dependencies are git submodules under `modules/` (see `.gitmodules`
 
 | Module | Path | Provides |
 |--------|------|----------|
-| **vkmGL** | `modules/vkmGL` | OpenGL object wrappers (`Core::`), shader loading/preprocessing. Vendors GLEW privately; everything else it needs is a target the engine supplies |
+| **vkmGL** | `modules/vkmGL` | OpenGL object wrappers (`Vkm::GL::`), shader loading/preprocessing. Vendors GLEW privately; everything else it needs is a target the engine supplies |
 | **vkmLog** | `modules/vkmLog` | Logging library (LOG_TRACE..LOG_FATAL), VKM_ASSERT |
 | **glm** | `modules/glm` | Vector/matrix math, used engine-wide and by vkmGL |
 | **glfw** | `modules/glfw` | Window + input platform layer |
@@ -181,12 +181,12 @@ target. The loader (vkmGL) hard-codes these names:
 | Vertex     | `vertex.shader`      | Required for graphics programs     |
 | Fragment   | `fragment.shader`    | Required for graphics programs     |
 | Geometry   | `geometry.shader`    | Optional; loaded if present        |
-| Compute    | `computeShader.shader` | A compute-only program (`Core::ComputeShader`) |
+| Compute    | `computeShader.shader` | A compute-only program (`Vkm::GL::ComputeShader`) |
 
 A program is loaded by path prefix:
 
 ```cpp
-Core::Shader pbr("shaders/forward/pbr");
+Vkm::GL::Shader pbr("shaders/forward/pbr");
 ```
 
 The engine's own shader preprocessor resolves `#include` directives between

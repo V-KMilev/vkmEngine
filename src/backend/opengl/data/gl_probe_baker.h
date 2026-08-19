@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-namespace Core {
+namespace Vkm::GL {
     class Context;
 }
 
@@ -59,13 +59,13 @@ class GLProbeBaker {
          * @param glView    GPU-side mirror of the scene used to issue the capture draws.
          * @param globalIBL Global IBL used as the ambient term while capturing.
          */
-        void bake(Core::Context& gl, GLProbeArray& arr, int layer, const glm::vec3& position,
+        void bake(Vkm::GL::Context& gl, GLProbeArray& arr, int layer, const glm::vec3& position,
                   const RenderView& view, const GLView& glView, const GLIBL& globalIBL);
 
     private:
-        void captureFaces(Core::Context& gl, GLProbeArray& arr, const glm::vec3& position,
+        void captureFaces(Vkm::GL::Context& gl, GLProbeArray& arr, const glm::vec3& position,
                           const RenderView& view, const GLView& glView, const GLIBL& globalIBL);
-        void convolve(Core::Context& gl, GLProbeArray& arr, int layer);
+        void convolve(Vkm::GL::Context& gl, GLProbeArray& arr, int layer);
 
     private:
         GLSceneCapture&  m_capture;    ///< scene -> the six env-cube faces

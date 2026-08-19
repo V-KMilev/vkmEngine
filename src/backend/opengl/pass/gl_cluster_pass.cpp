@@ -13,7 +13,7 @@
 namespace Engine {
 
 GLClusterPass::GLClusterPass()
-    : m_compute(std::make_unique<Core::ComputeShader>("shaders/clustering")) {}
+    : m_compute(std::make_unique<Vkm::GL::ComputeShader>("shaders/clustering")) {}
 
 GLClusterPass::~GLClusterPass() = default;
 

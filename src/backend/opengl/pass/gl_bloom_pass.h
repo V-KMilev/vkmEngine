@@ -4,7 +4,7 @@
 
 #include "gl_pass.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Shader;
 }
 
@@ -34,8 +34,8 @@ class GLBloomPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Core::Shader> m_down;
-        std::unique_ptr<Core::Shader> m_up;
+        std::unique_ptr<Vkm::GL::Shader> m_down;
+        std::unique_ptr<Vkm::GL::Shader> m_up;
 };
 
 } // namespace Engine

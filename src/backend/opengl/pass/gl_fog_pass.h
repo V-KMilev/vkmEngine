@@ -4,7 +4,7 @@
 
 #include "gl_pass.h"
 
-namespace Core {
+namespace Vkm::GL {
     class ComputeShader;
 }
 
@@ -32,8 +32,8 @@ class GLFogPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Core::ComputeShader> m_inject;
-        std::unique_ptr<Core::ComputeShader> m_integrate;
+        std::unique_ptr<Vkm::GL::ComputeShader> m_inject;
+        std::unique_ptr<Vkm::GL::ComputeShader> m_integrate;
 };
 
 } // namespace Engine

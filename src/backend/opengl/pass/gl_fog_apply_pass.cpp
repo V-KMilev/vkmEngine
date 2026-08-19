@@ -18,7 +18,7 @@
 namespace Engine {
 
 GLFogApplyPass::GLFogApplyPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/fog/apply")) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/fog/apply")) {}
 
 GLFogApplyPass::~GLFogApplyPass() = default;
 

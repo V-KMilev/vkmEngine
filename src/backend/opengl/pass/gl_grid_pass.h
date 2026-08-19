@@ -4,7 +4,7 @@
 
 #include "gl_pass.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Shader;
 }
 
@@ -36,8 +36,8 @@ class GLGridPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Core::Shader> m_shader;
-        std::unique_ptr<GLMesh>       m_quad;
+        std::unique_ptr<Vkm::GL::Shader> m_shader;
+        std::unique_ptr<GLMesh>        m_quad;
 };
 
 } // namespace Engine

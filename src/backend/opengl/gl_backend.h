@@ -129,8 +129,8 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         bool skyNeedsRebake(const Environment& env, const glm::vec3& sunDir) const;
 
     private:
-        Core::Context m_context;
-        GLView        m_view;
+        Vkm::GL::Context m_context;
+        GLView           m_view;
 
         // Asset-graph identity the scene-derived GPU caches were built against.
         // See onAssetGraphSwapped.
@@ -139,7 +139,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         // Batches the opaque bucket once per frame for both the depth prepass
         // and the forward pass (see GLFrameContext::opaqueBatch).
         GLInstanceBatcher m_opaqueBatcher;
-        Core::ScreenTriangle m_screenTri;  ///< Shared fullscreen triangle, referenced by the frame context.
+        Vkm::GL::ScreenTriangle m_screenTri;  ///< Shared fullscreen triangle, referenced by the frame context.
         GLTarget      m_sceneHDR;    ///< Single-sample resolved scene (sampled by post). At 1x MSAA the geometry passes render straight into it.
         GLTarget      m_sceneMS;     ///< Multisample scene the geometry passes render into when MSAA is on; resolved into m_sceneHDR.
         GLTarget      m_postA;   ///< Colour-only post scratch (ping).

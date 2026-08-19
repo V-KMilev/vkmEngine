@@ -11,14 +11,14 @@
 #include "gl_vertex_buffer.h"
 #include "gl_error_handle.h"
 
-namespace Core {
+namespace Vkm::GL {
 
 /**
  * @brief GPU buffer of per-instance mat4 model matrices.
  *
  * Lives in the backend rather than in vkmGL: per-instance model matrices are a
  * renderer concept, and glm has no business in a GL wrapper's API. Backed by a
- * Core::VertexBuffer with a stable GL name across orphan resizes, so VAO
+ * Vkm::GL::VertexBuffer with a stable GL name across orphan resizes, so VAO
  * attribute bindings stay valid after the storage grows. The matrix occupies
  * 4 consecutive vec4 attribute slots (locations startIndex..startIndex+3)
  * with divisor = 1.
@@ -49,7 +49,7 @@ class InstanceBuffer {
 
             if (!m_buffer) {
                 m_capacity = std::max(MIN_CAPACITY, count);
-                m_buffer = std::make_unique<Core::VertexBuffer>(
+                m_buffer = std::make_unique<Vkm::GL::VertexBuffer>(
                     nullptr, m_capacity * sizeof(glm::mat4), GL_STREAM_DRAW);
                 m_buffer->update(data, dataSize, 0);
             } else if (count > m_capacity) {
@@ -64,7 +64,7 @@ class InstanceBuffer {
 
         /// Install @p startIndex .. startIndex+3 as 4 per-instance vec4
         /// attributes on @p vao. Always performs the setup (no caching).
-        void attachToVAO(Core::VertexArray& vao, uint32_t startIndex = 4) {
+        void attachToVAO(Vkm::GL::VertexArray& vao, uint32_t startIndex = 4) {
             if (!m_buffer) return;
 
             vao.bind();
@@ -91,7 +91,7 @@ class InstanceBuffer {
         uint32_t getCapacity()      const { return m_capacity; }
 
     private:
-        std::unique_ptr<Core::VertexBuffer> m_buffer;
+        std::unique_ptr<Vkm::GL::VertexBuffer> m_buffer;
         uint32_t m_capacity      = 0;
         uint32_t m_instanceCount = 0;
 
@@ -99,4 +99,4 @@ class InstanceBuffer {
         static constexpr uint32_t MIN_CAPACITY  = 64;
 };
 
-} // namespace Core
+} // namespace Vkm::GL

@@ -29,8 +29,8 @@ uint32_t clampFroxel(uint32_t v) {
 } // namespace
 
 GLFogPass::GLFogPass()
-    : m_inject(std::make_unique<Core::ComputeShader>("shaders/fog/inject"))
-    , m_integrate(std::make_unique<Core::ComputeShader>("shaders/fog/integrate")) {}
+    : m_inject(std::make_unique<Vkm::GL::ComputeShader>("shaders/fog/inject"))
+    , m_integrate(std::make_unique<Vkm::GL::ComputeShader>("shaders/fog/integrate")) {}
 
 GLFogPass::~GLFogPass() = default;
 

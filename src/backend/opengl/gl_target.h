@@ -5,7 +5,7 @@
 
 #include "gl_frame_buffer.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Context;
     class Texture2D;
     class RenderBuffer;
@@ -69,7 +69,7 @@ class GLTarget {
          * @param samples Requested per-pixel sample count.
          * @param gl      Context supplying the cached driver cap.
          */
-        void setSamples(uint32_t samples, const Core::Context& gl);
+        void setSamples(uint32_t samples, const Vkm::GL::Context& gl);
 
         /**
          * @brief Sample count in effect (1 = single-sample).
@@ -94,20 +94,20 @@ class GLTarget {
          * @brief Bind for rendering into colour 0 (the common case: skybox, forward,
          * post blit-back). Non-const: it mutates GL draw-buffer state.
          */
-        void bind(const Core::Context& gl);
+        void bind(const Vkm::GL::Context& gl);
 
         /**
          * @brief Bind for the G-buffer prepass: draws into colour 1 only.
          *
          * @param gl Live GL context whose draw-buffer + viewport state is set.
          */
-        void bindGBufferPass(const Core::Context& gl);
+        void bindGBufferPass(const Vkm::GL::Context& gl);
 
         /**
          * @brief Clear the whole target for a new frame (all colour attachments +
          * depth). The first pass to touch the target calls this.
          */
-        void clearForFrame(const Core::Context& gl);
+        void clearForFrame(const Vkm::GL::Context& gl);
 
         void bindColor(uint32_t slot) const;
         void bindDepth(uint32_t slot) const;
@@ -143,17 +143,17 @@ class GLTarget {
         bool     m_hasGBuffer = false;
         bool     m_colorOnly  = false;
 
-        Core::FrameBuffer                m_fbo;
+        Vkm::GL::FrameBuffer                m_fbo;
 
         // Single-sample (m_samples == 1): sampleable textures.
-        std::unique_ptr<Core::Texture2D> m_color;
-        std::unique_ptr<Core::Texture2D> m_depth;
-        std::unique_ptr<Core::Texture2D> m_gbuffer;
+        std::unique_ptr<Vkm::GL::Texture2D> m_color;
+        std::unique_ptr<Vkm::GL::Texture2D> m_depth;
+        std::unique_ptr<Vkm::GL::Texture2D> m_gbuffer;
 
         // Multisample (m_samples > 1): render-only renderbuffers, resolved out.
-        std::unique_ptr<Core::RenderBuffer> m_colorRB;
-        std::unique_ptr<Core::RenderBuffer> m_depthRB;
-        std::unique_ptr<Core::RenderBuffer> m_gbufferRB;
+        std::unique_ptr<Vkm::GL::RenderBuffer> m_colorRB;
+        std::unique_ptr<Vkm::GL::RenderBuffer> m_depthRB;
+        std::unique_ptr<Vkm::GL::RenderBuffer> m_gbufferRB;
 };
 
 } // namespace Engine

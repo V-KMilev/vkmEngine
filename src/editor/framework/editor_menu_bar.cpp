@@ -33,7 +33,7 @@ void historyItemLabel(char* buf, size_t n, const char* verb, const char* op) {
 }
 } // namespace
 
-// Defined here (not =default in the header) so the unique_ptr<Core::Texture2D>
+// Defined here (not =default in the header) so the unique_ptr<Vkm::GL::Texture2D>
 // member sees the complete type for destruction.
 EditorMenuBar::EditorMenuBar()  = default;
 EditorMenuBar::~EditorMenuBar() = default;
@@ -62,7 +62,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     // Lazy-loaded the first time we draw (the GL context is live by now).
     // Loaded unflipped so ImGui's top-left UVs render it upright.
     if (!m_logo) {
-        m_logo = std::make_unique<Core::Texture2D>(
+        m_logo = std::make_unique<Vkm::GL::Texture2D>(
             (ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string(),
             /*flipVertically*/ false);
     }

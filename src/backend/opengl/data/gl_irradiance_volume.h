@@ -5,7 +5,7 @@
 
 #include <GL/glew.h>
 
-namespace Core {
+namespace Vkm::GL {
     class Texture3D;
 }
 
@@ -71,7 +71,7 @@ class GLIrradianceVolume {
         uint32_t sizeZ()   const { return m_z; }
 
     private:
-        std::unique_ptr<Core::Texture3D> m_sh[SH_COEFFS];
+        std::unique_ptr<Vkm::GL::Texture3D> m_sh[SH_COEFFS];
         uint32_t m_x = 0, m_y = 0, m_z = 0;
         bool     m_ready = false;
 };

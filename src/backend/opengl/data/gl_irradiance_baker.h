@@ -9,7 +9,7 @@
 #include "gl_render_buffer.h"
 #include "gl_texture_cube.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Context;
 }
 
@@ -70,7 +70,7 @@ class GLIrradianceBaker {
          * @param glView    GPU resource mirror for material/mesh lookups.
          * @param globalIBL Baked environment: lights the capture + fills the background.
          */
-        void bake(Core::Context& gl, GLIrradianceVolume& volume,
+        void bake(Vkm::GL::Context& gl, GLIrradianceVolume& volume,
                   const IrradianceVolumeData& data,
                   const RenderView& view, const GLView& glView, const GLIBL& globalIBL);
 
@@ -81,11 +81,11 @@ class GLIrradianceBaker {
         void ensureTargets();
 
     private:
-        Core::ComputeShader m_project;  ///< cube -> SH-L1 coefficients
+        Vkm::GL::ComputeShader m_project;  ///< cube -> SH-L1 coefficients
 
-        Core::TextureCube                   m_cube;   ///< small per-probe capture cube
-        Core::FrameBuffer                   m_fbo;
-        std::unique_ptr<Core::RenderBuffer> m_depth;
+        Vkm::GL::TextureCube                   m_cube;   ///< small per-probe capture cube
+        Vkm::GL::FrameBuffer                   m_fbo;
+        std::unique_ptr<Vkm::GL::RenderBuffer> m_depth;
 
         GLSceneCapture& m_capture;  ///< scene -> the six faces of m_cube
 };

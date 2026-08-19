@@ -203,7 +203,7 @@ seeing only `RenderBackend` through engine headers. Tools use their own root
 ## Namespaces
 
 - `Engine::` for all engine code (ECS, systems, components, resources, editor).
-- `Core::` for low-level OpenGL wrappers from `vkmGL` (`Shader`, `Context`, ...).
+- `Vkm::GL::` for low-level OpenGL wrappers from `vkmGL` (`Shader`, `Context`, ...).
 
 ## Key design patterns
 

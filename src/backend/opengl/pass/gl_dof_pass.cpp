@@ -22,7 +22,7 @@ constexpr float MAX_BLUR_RADIUS = 12.0f;
 } // namespace
 
 GLDoFPass::GLDoFPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/dof")) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/dof")) {}
 
 GLDoFPass::~GLDoFPass() = default;
 

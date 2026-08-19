@@ -356,7 +356,7 @@ int GLShadowData::slotForLight(uint32_t lightIndex) const {
 }
 
 void GLShadowData::uploadAndBind() {
-    Core::uploadIfChanged(m_ubo, m_last, m_data);
+    Vkm::GL::uploadIfChanged(m_ubo, m_last, m_data);
     if (m_ubo) m_ubo->bindBase(GLBindings::UBOBindingPoints::Shadow);
 }
 

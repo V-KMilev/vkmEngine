@@ -22,8 +22,8 @@
 namespace Engine {
 
 GLUIPass::GLUIPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/ui"))
-    , m_vao(std::make_unique<Core::VertexArray>()) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/ui"))
+    , m_vao(std::make_unique<Vkm::GL::VertexArray>()) {}
 
 GLUIPass::~GLUIPass() = default;
 
@@ -34,10 +34,10 @@ void GLUIPass::ensureCapacity(uint32_t vertexCount) {
     uint32_t capacity = m_capacity ? m_capacity : 256;
     while (capacity < vertexCount) capacity *= 2;
 
-    m_vbo = std::make_unique<Core::VertexBuffer>(
+    m_vbo = std::make_unique<Vkm::GL::VertexBuffer>(
         nullptr, capacity * static_cast<uint32_t>(sizeof(UIVertex)), GL_DYNAMIC_DRAW);
 
-    Core::VertexBufferLayout layout;
+    Vkm::GL::VertexBufferLayout layout;
     layout.push<float>(2);  // pos   -> location 0
     layout.push<float>(2);  // uv    -> location 1
     layout.push<float>(4);  // color -> location 2
@@ -78,7 +78,7 @@ void GLUIPass::execute(GLFrameContext& ctx) {
         // Solid fills ignore the sampler; a text command whose SDF atlas has not
         // reached the GPU yet is skipped, rather than sampling whatever is bound.
         if (cmd.kind == UIDrawKind::Text) {
-            const Core::Texture2D* atlas = ctx.resources.getFontAtlas(cmd.font);
+            const Vkm::GL::Texture2D* atlas = ctx.resources.getFontAtlas(cmd.font);
             if (!atlas) continue;
             atlas->bindSlot(0);
         }

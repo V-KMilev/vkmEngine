@@ -4,7 +4,7 @@
 
 #include <glm/glm.hpp>
 
-namespace Core {
+namespace Vkm::GL {
     class UniformBuffer;
 }
 
@@ -44,8 +44,8 @@ class GLCamera {
         void update(const CameraData& camera);
 
     private:
-        std::unique_ptr<Core::UniformBuffer> m_ubo;
-        CameraUBO                            m_last{};
+        std::unique_ptr<Vkm::GL::UniformBuffer> m_ubo;
+        CameraUBO                             m_last{};
 };
 
 } // namespace Engine

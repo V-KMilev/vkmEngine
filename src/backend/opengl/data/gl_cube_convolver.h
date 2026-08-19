@@ -73,8 +73,8 @@ class GLCubeConvolver {
         const glm::mat4& faceView(int face) const { return m_faceViews[face]; }
 
     private:
-        Core::Shader m_irradiance;
-        Core::Shader m_prefilter;
+        Vkm::GL::Shader m_irradiance;
+        Vkm::GL::Shader m_prefilter;
 
         std::unique_ptr<GLMesh> m_cube;
 

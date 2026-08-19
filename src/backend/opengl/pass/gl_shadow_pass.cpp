@@ -19,8 +19,8 @@
 namespace Engine {
 
 GLShadowPass::GLShadowPass()
-    : m_depth2D(std::make_unique<Core::Shader>("shaders/shadow/shadow_2d"))
-    , m_depthCube(std::make_unique<Core::Shader>("shaders/shadow/shadow_cube")) {}
+    : m_depth2D(std::make_unique<Vkm::GL::Shader>("shaders/shadow/shadow_2d"))
+    , m_depthCube(std::make_unique<Vkm::GL::Shader>("shaders/shadow/shadow_cube")) {}
 
 GLShadowPass::~GLShadowPass() = default;
 
