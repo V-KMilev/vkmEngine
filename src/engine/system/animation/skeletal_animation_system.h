@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "core/system.h"
+#include "ecs/component/animator.h"
 #include "ecs/entity.h"
 #include "system/animation/pose_buffer.h"
 
@@ -63,6 +64,7 @@ class SkeletalAnimationSystem : public System {
 
             const SkeletonAsset*      skeleton = nullptr;
             const AnimationClipAsset* clip     = nullptr;  ///< Null holds the bind pose.
+            const AnimationClipAsset* fadeClip = nullptr;  ///< Clip being faded out of; null when nothing is.
         };
 
         /**
@@ -88,6 +90,24 @@ class SkeletalAnimationSystem : public System {
          * @param seen Collects the faults this frame ran into.
          */
         void poseRigs(FrameContext& ctx, FaultsSeen& seen);
+
+        /**
+         * @brief Resolve @p handle to a clip this rig can actually play.
+         *
+         * Answers null for an empty or dead handle, and for one that does not
+         * fit this rig by name or by bone count - which is named once per gap
+         * rather than silently posing the wrong joints out of matching indices.
+         *
+         * @param resources Assets the handle resolves against.
+         * @param handle Clip handle off the Animator.
+         * @param skeleton Rig it has to belong to.
+         * @param seen Collects the mismatch if there is one.
+         * @return The clip, or nullptr to hold the bind pose.
+         */
+        const AnimationClipAsset* resolveClip(const ResourceManager& resources,
+                                              const AnimationClipHandle& handle,
+                                              const SkeletonAsset& skeleton,
+                                              FaultsSeen& seen);
 
         /**
          * @brief Record @p work's slice as the pose of every descendant of
