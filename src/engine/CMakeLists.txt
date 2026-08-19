@@ -73,7 +73,7 @@ target_link_libraries(vkm_core PRIVATE
     glfw
     glew
     vkm_warnings
-    BuildInfo          # io/project_paths.h resolves paths against APP_ROOT_DIR
+    vkm_build_info     # io/project_paths.h resolves paths against APP_ROOT_DIR
     stb                # platform/window/window_manager.cpp decodes the window icon
 )
 
@@ -90,7 +90,7 @@ target_compile_definitions(vkm_core PUBLIC
 
     # The engine version, visible to anything that links vkm_core - including a
     # gameplay module built against an installed SDK, which does not link
-    # BuildInfo. A module reports this back through vkmModuleEngineVersion() and
+    # vkm_build_info. A module reports this back through vkmModuleEngineVersion() and
     # the host compares it with its own, so a module built against a different
     # engine is refused at load with a sentence instead of crashing later.
     VKM_ENGINE_VERSION="${PROJECT_VERSION}"

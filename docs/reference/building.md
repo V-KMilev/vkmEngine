@@ -54,12 +54,12 @@ it belongs to the project rather than to this build tree.
 |--------|------|-------------|
 | `vkm_core` | **Shared lib** | Core engine: ECS, resources, IO, the non-render systems (animation/visibility/event/physics/script/hierarchy/...), platform, debug |
 | `vkm_render` | **Shared lib** | Render system, backend abstraction, render view |
-| `BackendOpenGL` | Static lib | OpenGL backend implementation (GLBackend, GLView, passes, GPU resources) |
+| `vkm_backend_gl` | Static lib | OpenGL backend implementation (GLBackend, GLView, passes, GPU resources) |
 | `vkm_tools` | Static lib | Procedural generators + the runtime-safe cooked-asset loaders/factories. No Assimp, no heavy image decode |
 | `vkm_cook` | Static lib | The heavy importers (Assimp model import, stb image decode) + the asset cooker that bakes recipes into the cooked cache. Linked by `vkm_editor_app` and `vkm_cook_app` only |
 | `vkm_editor` | Static lib | Editor UI, panels, overlays, gizmo, scene I/O |
 | `vkm_headers` | Interface lib | Include-only view of vkm_core's public API; the hot-reload module compiles against it without linking vkm_core's objects |
-| `BuildInfo` | Interface lib | Compile-time build metadata (version, branch, commit hash) |
+| `vkm_build_info` | Interface lib | Compile-time build metadata (version, branch, commit hash) |
 | `vkm_warnings` | Interface lib | Shared GCC/Clang warning flags; first-party targets opt in, submodules don't |
 | `<project>_module` | Shared lib | One per project (`potion_runner_module`, `stress_arena_module`): that project's gameplay sources built as `game.dll`/`libgame.so` into the project's own `bin/`. The engine ships no gameplay of its own |
 | `vkm_runtime_app` | Executable | Bare engine, no editor. Includes `app/engine_app.h` for the shared bootstrap; links no Assimp and no ImGui. Runs as `vkm_runtime` |
@@ -117,13 +117,13 @@ vkm_editor_app (executable)             vkm_runtime_app (executable)
   |-- vkm_core                            |-- vkm_core (glm, glfw, vkm_log, nlohmann_json; glew private)
   |-- vkm_render -- vkm_core              |-- vkm_render -- vkm_core
   |-- vkm_tools -- vkm_core               |-- vkm_tools -- vkm_core (generators + cooked loaders; no Assimp)
-  |-- BackendOpenGL -- vkm_gl, ...        |-- BackendOpenGL -- vkm_gl, vkm_render, vkm_tools
-  |-- vkm_cook -- vkm_core,               |-- BuildInfo
+  |-- vkm_backend_gl -- vkm_gl, ...       |-- vkm_backend_gl -- vkm_gl, vkm_render, vkm_tools
+  |-- vkm_cook -- vkm_core,               |-- vkm_build_info
   |     vkm_tools (+ assimp private)
   |-- vkm_editor -- vkm_core,           vkm_cook_app (executable)
   |     vkm_tools, vkm_cook,              |-- vkm_cook -- vkm_core, vkm_tools
-  |     imgui, vkm_gl                     |-- BuildInfo
-  |-- BuildInfo                           (no window, no GL, no Engine)
+  |     imgui, vkm_gl                     |-- vkm_build_info
+  |-- vkm_build_info                      (no window, no GL, no Engine)
 
 vkm_editor_app and vkm_runtime_app #include app/engine_app.h for setupEngineApp
 (no EngineApp lib). vkm_cook_app does not: it constructs a Scene and a
@@ -217,7 +217,7 @@ First-party code also builds as strict C++17 (`CMAKE_CXX_EXTENSIONS OFF`).
 | `GLM_FORCE_INTRINSICS` | vkm_core (public) | GLM SIMD intrinsics |
 | `APP_VERSION` | Executable | Engine version string |
 | `APP_ROOT_DIR` | Executable | Absolute path to the **engine** root - the fallback `ProjectPaths::engineRoot()` uses to find `shaders/` and `assets/` when the exe is run from a build tree. Not the project root; see [system/io.md](system/io.md#projects-and-the-two-roots) |
-| `APP_BRANCH`, `APP_COMMIT_HASH`, `APP_BUILD_DATE` | BuildInfo | Git metadata |
+| `APP_BRANCH`, `APP_COMMIT_HASH`, `APP_BUILD_DATE` | vkm_build_info | Git metadata |
 
 ### Profiling with Tracy
 

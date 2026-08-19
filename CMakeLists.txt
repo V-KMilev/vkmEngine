@@ -114,11 +114,11 @@ target_compile_options(vkm_warnings INTERFACE
     $<$<CXX_COMPILER_ID:GNU,Clang>:${_vkm_gcc_warnings}>
 )
 
-# Compile-time build metadata, baked into the binary through the BuildInfo
-# facade (debug/build_info.h). Defined before the subdirectories so each target
-# can link it where it is defined.
-add_library(BuildInfo INTERFACE)
-target_compile_definitions(BuildInfo INTERFACE
+# Compile-time build metadata, baked into the binary through the facade in
+# debug/build_info.h. Defined before the subdirectories so each target can link
+# it where it is defined.
+add_library(vkm_build_info INTERFACE)
+target_compile_definitions(vkm_build_info INTERFACE
     APP_NAME="${PROJECT_NAME}"
     APP_BRANCH="${PROJECT_BRANCH}"
     APP_BUILD_DATE="${PROJECT_BUILD_DATE}"

@@ -15,5 +15,5 @@ target_link_libraries(vkm_editor PUBLIC
 target_link_libraries(vkm_editor PRIVATE
     vkm_render         # editor_system uses backend()/renderPreview(); headers only forward-declare it
     vkm_warnings
-    BuildInfo
+    vkm_build_info
 )

@@ -10,8 +10,8 @@ target_link_libraries(vkm_runtime_app PRIVATE
     vkm_core
     vkm_render
     vkm_tools
-    BackendOpenGL
-    BuildInfo
+    vkm_backend_gl
+    vkm_build_info
     vkm_warnings
 )
 
