@@ -35,7 +35,6 @@
 #include "ui/editor_theme.h"
 #include "io/project_paths.h"
 
-
 namespace Engine {
 
 EditorSystem::EditorSystem(
@@ -88,12 +87,12 @@ EditorSystem::EditorSystem(
                         s_fontPath.c_str());
         }
 
-        // The icon font (Lucide). Missing file falls back to the built-in
-        // vector glyphs, so this is a soft dependency.
+        // The icon font (Lucide). It ships with the engine, so a failure means
+        // the file was removed; the editor still runs, with square placeholders.
         static std::string s_iconPath =
             (ProjectPaths::engineFonts() / "lucide.ttf").string();
         if (!loadEditorIconFont(s_iconPath.c_str())) {
-            LOG_WARNING("Icon font %s failed to load; using vector glyphs",
+            LOG_WARNING("Icon font %s failed to load; icons will draw as placeholders",
                         s_iconPath.c_str());
         }
     }
