@@ -46,8 +46,10 @@ class GLFogVolume {
         /**
          * @brief Whether the volumes are allocated.
          *
-         * The fog pass checks this before binding; nothing may bind the volumes
-         * while it is false.
+         * A query, not a precondition: the bind* methods are individually
+         * null-safe, so binding before the allocation is harmless. What gates the
+         * passes that consume the fog is ctx.fogReady, published by the fog pass
+         * once the volumes hold a frame's worth of scattering.
          */
         bool ready() const { return static_cast<bool>(m_scatter); }
 

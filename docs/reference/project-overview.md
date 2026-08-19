@@ -76,7 +76,7 @@ does not register; see [io.md](system/io.md).)
 ## Rendering at a glance
 
 The engine builds a backend-agnostic `RenderView` snapshot each frame and hands it
-to a `RenderBackend` through one seam (`init` / `resize` / `render`). The OpenGL
+to a `RenderBackend` through one seam (`init` / `render`). The OpenGL
 backend runs a **fixed 19-pass forward pipeline**: Shadow -> DepthPrepass ->
 ResolveDepth -> HiZ -> OcclusionCull -> GTAO -> Skybox -> ClusterCull ->
 FogCompute -> Forward (PBR ubershader) -> Particles -> ResolveColor -> Decals ->

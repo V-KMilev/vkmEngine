@@ -106,7 +106,7 @@ Respecting them is non-negotiable, because every one of them exists to keep a
 subsystem replaceable or a hot path fast.
 
 - **Engine never reaches into the backend.** All engine-to-GPU traffic goes
-  through the `RenderBackend` interface (`init` / `resize` / `render`). The
+  through the `RenderBackend` interface (`init` / `render`). The
   `RenderSystem` builds a backend-agnostic `RenderView` each frame and hands it
   over. This is what keeps a future Optix/CPU backend possible. Do not include a
   `gl_*` header from engine code.

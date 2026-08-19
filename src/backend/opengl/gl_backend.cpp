@@ -142,15 +142,6 @@ bool GLBackend::init(WindowManager& window) {
     return true;
 }
 
-void GLBackend::resize(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
-    m_context.setViewport(
-        static_cast<int32_t>(x),
-        static_cast<int32_t>(y),
-        static_cast<int32_t>(width),
-        static_cast<int32_t>(height)
-    );
-}
-
 void GLBackend::render(const RenderView& view, const ResourceManager& resources) {
     PROFILE_SCOPE("GLBackend::render");
     PROFILE_GPU_SCOPE("GPU.Frame");
