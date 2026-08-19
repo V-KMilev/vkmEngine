@@ -213,9 +213,12 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         // Labels share a column so the values line up rather than stepping in
         // and out with the label width.
         const float valueX = ImGui::CalcTextSize("vkmEngine:").x + EditorStyle::px(12.0f);
+        // valueX is an offset from wherever the row starts, not from the window,
+        // so the rows inside the Debug tree stay aligned against its indent.
         const auto row = [valueX](const char* label, const char* fmt, ...) {
+            const float startX = ImGui::GetCursorPosX();
             ImGui::TextDisabled("%s", label);
-            ImGui::SameLine(valueX);
+            ImGui::SameLine(startX + valueX);
             va_list args;
             va_start(args, fmt);
             ImGui::TextV(fmt, args);
