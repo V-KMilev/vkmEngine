@@ -10,7 +10,6 @@
 namespace Vkm::Engine {
 
 /**
- * @class ISparseSet
  * @brief Type-erased interface for SparseSet, enabling heterogeneous storage in registries.
  */
 class ISparseSet {
@@ -36,7 +35,6 @@ class ISparseSet {
 };
 
 /**
- * @class SparseSet
  * @brief Dense-packed storage indexed by external uint32_t keys.
  *
  * Iteration is dense and cache-friendly; add, remove, contains and get are O(1).
@@ -192,9 +190,6 @@ class SparseSet : public ISparseSet {
         uint32_t keyAt(uint32_t denseIndex) const { return m_dataId[denseIndex]; }
         /**
          * @brief Access the element stored at a dense index.
-         *
-         * Pairs with size() and keyAt() for index-based parallel iteration that
-         * avoids the forEach() callback.
          *
          * @param denseIndex Position in packed dense order (< size()).
          * @return Reference to the element in that dense slot.

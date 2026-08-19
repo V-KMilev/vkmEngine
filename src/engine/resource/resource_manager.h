@@ -41,7 +41,6 @@ class ResourceManager {
         /**
          * @brief Add a new resource to the manager.
          *
-         * @tparam ResourceType The resource type (must inherit from Resource).
          * @param resource The resource instance to add (will be moved).
          * @return The handle for the newly added resource.
          */
@@ -69,7 +68,6 @@ class ResourceManager {
         /**
          * @brief Convenience overload: stamp a name onto the asset before insertion.
          *
-         * @tparam ResourceType The resource type (must inherit from Resource).
          * @param resource The resource instance to add (will be moved).
          * @param name Stable name to assign before the asset is inserted.
          * @return Handle for the newly inserted asset.
@@ -89,7 +87,6 @@ class ResourceManager {
          * (preview primitives, neutral thumbnail materials); the flag is
          * named for the visibility intent, not the consumer.
          *
-         * @tparam ResourceType The resource type (must inherit from Resource).
          * @param resource The resource instance to add (will be moved).
          * @param name Stable name to stamp onto the asset.
          * @return Handle for the newly inserted private asset.
@@ -336,16 +333,11 @@ class ResourceManager {
         /**
          * @brief Identity of the current asset graph, bumped by every swap.
          *
-         * Per-asset `version` tracks edits *within* one graph; it cannot detect a
-         * wholesale graph replacement (scene load, editor play-stop restore),
-         * because the incoming graph is freshly built - its handles restart at
-         * the same indices and generations, and its assets at version 1. To a
-         * cache keyed on (index, generation, version) the new graph is therefore
-         * indistinguishable from the old one, and stale GPU data survives the
-         * swap.
-         *
-         * A backend cache must compare this epoch and drop everything when it
-         * moves, then repopulate from the new graph.
+         * A replacement graph (scene load, editor play-stop restore) is freshly
+         * built: its handles restart at the same indices and generations and its
+         * assets at version 1, so a cache keyed on those cannot tell it from the
+         * graph it replaced and keeps serving stale GPU data. A backend cache must
+         * drop everything when this moves, then repopulate.
          */
         uint64_t epoch() const { return m_epoch; }
 
@@ -356,12 +348,7 @@ class ResourceManager {
         struct TypedSlot {
             SlotAllocator                   allocator;
             std::unique_ptr<ISparseSet>     storage;
-            /**
-             * @brief name -> storage index.
-             *
-             * O(1) findByName backing. Populated from Resource::name on add(), erased
-             * on remove().
-             */
+            /// name -> storage index; backs O(1) findByName.
             std::unordered_map<std::string, uint32_t> nameIndex;
         };
 

@@ -91,14 +91,10 @@ class Scene {
         /**
          * @brief The full id of the entity in slot @p index, generation included.
          *
-         * The one way to turn a bare slot index - which is what a SparseSet key
-         * and a serialized parent link are - back into an EntityId systems can
-         * pass around.
-         *
-         * Total, so an untrusted index can be converted first and validated
-         * after: an index past the allocator's reach yields the null id, and one
-         * naming a slot that has since been recycled yields an id that fails
-         * isAlive().
+         * The one way to turn a bare slot index - a SparseSet key, a serialized
+         * parent link - back into an EntityId. Total, so an untrusted index can be
+         * converted first and validated after: an index past the allocator's reach
+         * yields the null id, and a recycled slot yields an id that fails isAlive().
          *
          * @param index Slot index; any value is accepted.
          * @return The entity id for that slot, null when the slot is out of reach.
@@ -111,8 +107,6 @@ class Scene {
         /**
          * @brief Add a component to an entity.
          * @tparam T Component type (any type; storage is created on first use).
-         * @param entity The entity to add the component to.
-         * @param component The component instance to add.
          * @return Reference to the added component in storage.
          */
         template<typename T>
@@ -124,8 +118,6 @@ class Scene {
 
         /**
          * @brief Remove a component of type T from an entity.
-         * @tparam T Component type.
-         * @param entity The entity whose component will be removed.
          */
         template<typename T>
         void remove(EntityId entity) {
@@ -138,9 +130,6 @@ class Scene {
 
         /**
          * @brief Check if an entity has a component of type T.
-         * @tparam T Component type.
-         * @param entity The entity to query.
-         * @return true if the component exists for the entity, false otherwise.
          */
         template<typename T>
         bool has(EntityId entity) const {
@@ -151,9 +140,6 @@ class Scene {
 
         /**
          * @brief Get a mutable reference to an entity's component of type T.
-         * @tparam T Component type.
-         * @param entity The entity from which to get the component.
-         * @return Reference to the component.
          */
         template<typename T>
         T& get(EntityId entity) {
@@ -165,9 +151,6 @@ class Scene {
 
         /**
          * @brief Get a const reference to an entity's component of type T.
-         * @tparam T Component type.
-         * @param entity The entity from which to get the component.
-         * @return Const reference to the component.
          */
         template<typename T>
         const T& get(EntityId entity) const {
@@ -179,7 +162,6 @@ class Scene {
 
         /**
          * @brief Number of live components of type T.
-         * @tparam T Component type.
          */
         template<typename T>
         size_t count() const {
@@ -269,9 +251,6 @@ class Scene {
          * Use for index-based / parallel iteration where Scene::get<T>(id)
          * per element would be wasteful. Returns nullptr if no entity has
          * ever added a T (the storage is lazy).
-         *
-         * @tparam T Component type.
-         * @return Pointer to the SparseSet, or nullptr if unregistered.
          */
         template<typename T>
         SparseSet<T>* storage() { return findStorage<T>(); }
@@ -289,11 +268,9 @@ class Scene {
          * scene reset nothing themselves, or the two drift.
          */
         void clear() {
-            // O(types + entities) rather than an O(entities x types)
-            // walk-and-destroy. detachFromHierarchy's dangling-pointer guard is
-            // there for partial deletion; on a total reset every entity goes away
-            // in one tear-down, so per-set clear() + allocator reset reaches the
-            // same final state without paying the cross-product cost.
+            // O(types + entities) rather than the O(entities x types) walk-and-
+            // destroy: on a total reset every entity goes away at once, so nothing
+            // needs detachFromHierarchy's partial-deletion guard.
             for (auto& set : m_components) {
                 if (set) set->clear();
             }
@@ -335,7 +312,8 @@ class Scene {
 
     public:
         /**
-         * @brief The scene's lighting environment (skybox + IBL): scene-global, always present, round-trips with the scene.
+         * @brief The scene's lighting environment (skybox + IBL): scene-global,
+         *        always present, round-trips with the scene.
          *
          * Read by RenderView each frame; edited via the editor's World inspector.
          */
@@ -346,9 +324,8 @@ class Scene {
          * @brief The scene's physics world parameters: scene-global, always
          *        present, round-trips with the scene.
          *
-         * Beside the Environment rather than inside it: what a world is lit by
-         * and what it falls at have nothing to do with each other. Read by
-         * PhysicsSystem once per fixed step.
+         * Read by PhysicsSystem once per fixed step; kept beside the Environment
+         * rather than inside it (see PhysicsSettings).
          */
         PhysicsSettings& physics() { return m_physics; }
         const PhysicsSettings& physics() const { return m_physics; }
