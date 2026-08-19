@@ -20,7 +20,6 @@
 #include "ecs/component/world_transform.h"
 
 #include "core/math/bounds.h"
-#include "core/math/rotation.h"
 #include "system/visibility/visibility_context.h"
 
 #include "system/visibility/culling/frustum_culler.h"
@@ -74,11 +73,8 @@ bool VisibilitySystem::resolveActiveCamera(Scene& scene, float viewportAspect) {
         // its resolved world pose - the local Transform is only its offset
         // inside that rig.
         Transform pose = transform;
-        if (scene.has<WorldTransform>(id)) {
-            const glm::mat4& world = scene.get<WorldTransform>(id).model;
-            pose.position = glm::vec3(world[3]);
-            pose.rotation = Math::worldRotationOf(world);
-        }
+        pose.position  = resolvedWorldPosition(scene, id, transform);
+        pose.rotation  = resolvedWorldRotation(scene, id, transform);
 
         m_result.projection     = Camera::computeProjection(camera, viewportAspect);
         m_result.view           = Transform::computeView(pose);

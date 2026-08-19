@@ -82,16 +82,8 @@ void RenderView::buildLights(const Scene& scene) {
     scene.forEach<Light, Transform>([&](EntityId id, const Light& light, const Transform& transform) {
         if (!light.enabled) return;
 
-        glm::vec3 position;
-        glm::quat rotation;
-        if (scene.has<WorldTransform>(id)) {
-            const glm::mat4& world = scene.get<WorldTransform>(id).model;
-            position = glm::vec3(world[3]);
-            rotation = Math::worldRotationOf(world);
-        } else {
-            position = transform.position;
-            rotation = transform.rotation;
-        }
+        const glm::vec3 position = resolvedWorldPosition(scene, id, transform);
+        const glm::quat rotation = resolvedWorldRotation(scene, id, transform);
 
         LightData data{};  // zero the snapshot; area-light fields stay unset for punctual lights
         data.type      = light.type;
@@ -133,10 +125,7 @@ void RenderView::buildProbes(const Scene& scene) {
 
     scene.forEach<ReflectionProbe, Transform>(
         [&](EntityId id, const ReflectionProbe& probe, const Transform& transform) {
-            glm::vec3 position = transform.position;
-            if (scene.has<WorldTransform>(id)) {
-                position = glm::vec3(scene.get<WorldTransform>(id).model[3]);
-            }
+            const glm::vec3 position = resolvedWorldPosition(scene, id, transform);
             probes.push_back({ position, probe.halfExtents, probe.falloff, probe.intensity,
                                probe.resolution, probe.bakeVersion });
         });
@@ -147,10 +136,7 @@ void RenderView::buildDecals(const Scene& scene) {
 
     scene.forEach<Decal, Transform>(
         [&](EntityId id, const Decal& decal, const Transform& transform) {
-            glm::mat4 model = Transform::computeModelMatrix(transform);
-            if (scene.has<WorldTransform>(id)) {
-                model = scene.get<WorldTransform>(id).model;
-            }
+            const glm::mat4 model = resolvedWorldMatrix(scene, id, transform);
             decals.push_back({ model, glm::inverse(model), decal.material, decal.angleFade, decal.opacity });
         });
 }
@@ -188,10 +174,7 @@ void RenderView::buildIrradianceVolumes(const Scene& scene) {
 
     scene.forEach<IrradianceVolume, Transform>(
         [&](EntityId id, const IrradianceVolume& v, const Transform& transform) {
-            glm::vec3 center = transform.position;
-            if (scene.has<WorldTransform>(id)) {
-                center = glm::vec3(scene.get<WorldTransform>(id).model[3]);
-            }
+            const glm::vec3 center = resolvedWorldPosition(scene, id, transform);
             irradianceVolumes.push_back({ center, v.halfExtents,
                                           v.resolutionX, v.resolutionY, v.resolutionZ,
                                           v.intensity, v.bakeVersion });

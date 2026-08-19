@@ -33,6 +33,24 @@ component writes are not.
 | `forEachChild(scene, entity, fn)`         | Walk the direct children of `entity` and call `fn(childId)`.                           |
 | `computeWorldMatrix(scene, entity)`       | Walk the parent chain and compose the world matrix without writing `WorldTransform`.   |
 
+## Reading a world pose
+
+The read side of the same rule lives beside the component, in
+`ecs/component/world_transform.h`, so no consumer has to open-code it:
+
+| Function                                          | Returns                                                        |
+|---------------------------------------------------|----------------------------------------------------------------|
+| `resolvedWorldMatrix(scene, entity, local)`       | `WorldTransform::model` if present, else the local model matrix |
+| `resolvedWorldPosition(scene, entity, local)`     | The same rule, translation only                                 |
+| `resolvedWorldRotation(scene, entity, local)`     | The same rule, rotation only (via `Math::worldRotationOf`)      |
+
+The `resolved` prefix is the distinction from
+`HierarchyOperations::computeWorldMatrix`: these read what the Transform
+stage resolved this frame, while `computeWorldMatrix` walks the ancestor
+chain and answers for the scene as it stands right now. A Transform
+written *after* the Transform stage (the editor's gizmo, for instance) is
+visible to the second and not to the first until the next frame.
+
 ### Why pre-seeding matters
 
 `setParent` adds both the `Hierarchy` component and a placeholder
