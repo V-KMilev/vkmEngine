@@ -37,20 +37,20 @@ struct Animation {
     AnimationTrack<glm::quat> rotationTrack;
     AnimationTrack<glm::vec3> scaleTrack;
 
-    float duration = 0.0f;   // cached effective duration; stale until updateDuration()
-    float length   = 0.0f;   // explicit minimum length (0 = auto from last keyframe)
-    float time     = 0.0f;   // current playback time
-    float speed    = 1.0f;   // playback multiplier
-    bool  playing  = false;
-    bool  looping  = true;
+    float length  = 0.0f;   // explicit minimum length (0 = auto from last keyframe)
+    float time    = 0.0f;   // current playback time
+    float speed   = 1.0f;   // playback multiplier
+    bool  playing = false;
+    bool  looping = true;
 
-    void updateDuration();   // = max(each track's last keyframe, length)
+    static float computeDuration(const Animation&);  // = max(each track's last keyframe, length)
 };
 ```
 
-`duration` is a **cache**: call `updateDuration()` after editing keyframes, tracks,
-or `length`, or it will be stale. `length` lets you hold an animation open past its
-last keyframe (e.g. a pause at the end of a loop); with `length == 0` the duration is
+The effective duration is derived on read, never stored: `computeDuration()` is
+three O(1) reads and a `max`, so editing keyframes, tracks, or `length` cannot
+leave anything stale. `length` lets you hold an animation open past its last
+keyframe (e.g. a pause at the end of a loop); with `length == 0` the duration is
 just the latest keyframe across the three tracks. Each track is independent - an
 entity can animate position only, or any combination.
 

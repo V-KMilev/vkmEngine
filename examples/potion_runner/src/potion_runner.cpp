@@ -137,7 +137,6 @@ Animation makeSwing(float amplitude, float phase) {
     anim.time    = phase;
     anim.playing = true;
     anim.looping = true;
-    anim.updateDuration();
     return anim;
 }
 
@@ -162,7 +161,6 @@ Animation makeCoinSpin(float phase) {
     anim.time    = phase;
     anim.playing = true;
     anim.looping = true;
-    anim.updateDuration();
     return anim;
 }
 

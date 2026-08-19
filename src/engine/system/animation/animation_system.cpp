@@ -38,11 +38,12 @@ void AnimationSystem::update(FrameContext& ctx) {
 
         animation.time += simDelta * animation.speed;
 
-        if (animation.duration > 0.0f && animation.time >= animation.duration) {
+        const float duration = Animation::computeDuration(animation);
+        if (duration > 0.0f && animation.time >= duration) {
             if (animation.looping) {
-                animation.time = std::fmod(animation.time, animation.duration);
+                animation.time = std::fmod(animation.time, duration);
             } else {
-                animation.time = animation.duration;
+                animation.time = duration;
                 animation.playing = false;
             }
         }

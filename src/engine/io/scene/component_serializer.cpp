@@ -127,8 +127,7 @@ void loadReflected(const nlohmann::json& j, T& obj) {
 //   - Hierarchy: parent stored as raw scene-table index, resolved by
 //                SceneSerializer after the entity table is loaded.
 //   - Animation: AnimationTrack<T> keeps its keyframes private and must go
-//                through explicit accessors, and updateDuration() has to be
-//                re-derived post load - no clean fit for field iteration.
+//                through explicit accessors - no clean fit for field iteration.
 
 nlohmann::json save(const Environment& env) {
     return saveReflected(env);
@@ -335,7 +334,6 @@ void load(const nlohmann::json& j, Animation& a) {
     a.speed   = j.value("speed",   a.speed);
     a.playing = j.value("playing", a.playing);
     a.looping = j.value("looping", a.looping);
-    a.updateDuration();
 }
 
 namespace {
