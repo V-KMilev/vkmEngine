@@ -33,6 +33,12 @@ class ResourceManager;
  * Prefabs are referenced by path rather than through the AssetLibrary because
  * nothing cooks them - they are authored JSON, read as-is, like scenes.
  *
+ * A prefab carries the same **assets block** a scene does, for the subtree it
+ * describes, and every entry point that reads components out of it loads that
+ * block first. Component references are asset names, and a name resolves to
+ * nothing unless something already loaded it, so without it a prefab was only
+ * instantiable where something else happened to have loaded its meshes.
+ *
  * Which makes reading one reading a file a person can write. Every entry point
  * here reports a document it cannot use and returns, rather than letting the
  * failure out as an exception: the callers are an editor showing a toast beside
