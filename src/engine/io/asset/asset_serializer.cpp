@@ -79,12 +79,21 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     for (const auto& f : MATERIAL_TEXTURE_FIELDS) {
         const TextureHandle& h = m.*f.member;
         if (!h) continue;
-        const std::string& texName = resources.get(h).name;
-        if (texName.empty()) {
+        const auto& tex = resources.get(h);
+        // Same rule as emitDescriptor, and warned about here rather than left
+        // to fire on every load: a hidden texture is not in the cooked
+        // manifest, so shipping its name in a public material's recipe writes
+        // a reference that can never resolve.
+        if (tex.hidden) {
+            LOG_WARNING("Material texture slot '%s' refers to hidden asset '%s' - dropping ref",
+                f.key, tex.name.c_str());
+            continue;
+        }
+        if (tex.name.empty()) {
             LOG_WARNING("Material texture slot '%s' has no name - dropping ref", f.key);
             continue;
         }
-        textures[f.key] = texName;
+        textures[f.key] = tex.name;
     }
     if (!textures.empty()) src["textures"] = std::move(textures);
     return src;
@@ -137,9 +146,14 @@ namespace {
  * @brief Emit one name-only asset reference into @p target.
  *
  * The asset's data lives in the cooked library (keyed by name); the scene only
- * records the reference. An unnamed asset can't be referenced, so it is skipped.
+ * records the reference. Two kinds of asset cannot be referenced at all and are
+ * skipped here, so that every emitter is held to the rule rather than each
+ * remembering it: an unnamed one has no key, and a hidden one (editor preview
+ * primitives, thumbnail materials) is deliberately absent from the cooked
+ * manifest, so its name would name nothing on load.
  */
 void emitDescriptor(nlohmann::json& target, const Resource& asset) {
+    if (asset.hidden) return;
     if (asset.name.empty()) {
         LOG_WARNING("Asset has no name; skipping in save");
         return;
@@ -167,15 +181,15 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
 
     auto emitMesh = [&](const MeshHandle& h) {
         if (!h || !seenMeshes.insert(h.id()).second) return;
-        const auto& asset = resources.get(h);
-        // Hidden assets (editor preview primitives etc.) never serialize:
-        // they belong to the running editor, not to the user's scene.
-        if (!asset.hidden) emitDescriptor(meshes, asset);
+        emitDescriptor(meshes, resources.get(h));
     };
 
     auto emitMaterial = [&](const MaterialHandle& h) {
         if (!h || !seenMaterials.insert(h.id()).second) return;
         const auto& asset = resources.get(h);
+        // Checked here and not left to emitDescriptor because hidden gates the
+        // texture walk below too: a thumbnail material must not drag its
+        // textures into the user's scene.
         if (asset.hidden) return;
         // Name-only reference; the cooker has already written the material's
         // canonical inline form to the library under this name.
