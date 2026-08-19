@@ -21,7 +21,6 @@
 #include "io/asset/asset_serializer.h"
 #include "io/scene/component_serializer.h"
 #include "io/json_file.h"
-#include "io/json_vec.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/font_asset.h"
 #include "system/hierarchy/hierarchy_operations.h"

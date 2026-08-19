@@ -237,7 +237,6 @@ void AssetBrowserPanel::drawAssetGrid(EditorContext& ec) {
             req.pitchDeg = 15.0f;
         }
         req.distance = 2.6f;
-        const uint64_t key = req.key;
         const uint32_t tex =
             ec.materialPreviews.texture(resources, req, a.version, /*live*/ false);
 

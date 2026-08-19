@@ -184,7 +184,6 @@ class TransformGizmo {
         static constexpr float GIZMO_SIZE_PIXELS  = 110.0f;
         static constexpr float AXIS_HIT_RADIUS    = 10.0f;
         static constexpr float PLANE_QUAD_FRAC    = 0.28f;
-        static constexpr float ARROW_HEAD_FRAC    = 0.15f;
         static constexpr float ARROW_HEAD_PIXELS  = 6.0f;
         static constexpr float SCALE_BOX_HALF     = 4.0f;
         static constexpr int   CIRCLE_SEGMENTS    = 64;

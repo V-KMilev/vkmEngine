@@ -1046,12 +1046,12 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
             const auto& asset = resources.get(scene.get<Mesh>(id).mesh);
             if (Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) {
                 ImGui::Spacing();
-                propSliderInt("Detail", &state.colliderFitDetail, 1, COLLIDER_FIT_MAX_DETAIL,
+                propSliderInt("Detail", &m_colliderFitDetail, 1, COLLIDER_FIT_MAX_DETAIL,
                     "1 = one box; higher = a tighter box compound (more boxes = heavier)");
                 if (ImGui::Button("Fit to Mesh", ImVec2(-1.0f, 0.0f))) {
                     const glm::vec3 scale = scene.has<Transform>(id)
                         ? scene.get<Transform>(id).scale : glm::vec3(1.0f);
-                    col.parts = fitBoxesToMesh(asset, state.colliderFitDetail, scale);
+                    col.parts = fitBoxesToMesh(asset, m_colliderFitDetail, scale);
                     changed = true;
                 }
             }
@@ -1128,11 +1128,11 @@ void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
         // better where the source is procedural, but an imported mesh only has
         // its triangles to work with.
         if (scene.has<Mesh>(id) && scene.get<Mesh>(id).mesh) {
-            propSliderInt("Levels", &state.lodGenLevels, 1, 4,
+            propSliderInt("Levels", &m_lodGenLevels, 1, 4,
                 "How many coarser levels to build below the source mesh");
             if (ImGui::Button("Generate Levels", ImVec2(-1.0f, 0.0f))) {
                 lod = generateLOD(resources, scene.get<Mesh>(id).mesh,
-                                  static_cast<uint32_t>(state.lodGenLevels));
+                                  static_cast<uint32_t>(m_lodGenLevels));
                 changed = true;
             }
         } else {

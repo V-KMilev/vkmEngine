@@ -35,12 +35,10 @@
 #include "ui/editor_theme.h"
 #include "io/project_paths.h"
 
-#include "core/engine.h"
 
 namespace Engine {
 
 EditorSystem::EditorSystem(
-    Engine& engine,
     GLFWwindow* window,
     CameraControllerSystem& cameraController,
     UISystem& uiSystem,
@@ -49,8 +47,7 @@ EditorSystem::EditorSystem(
     ScriptModule& scriptModule,
     const std::string& projectName
 )
-    : m_engine(engine)
-    , m_cameraController(cameraController)
+    : m_cameraController(cameraController)
     , m_uiSystem(uiSystem)
     , m_renderSystem(renderSystem)
     , m_visibilitySystem(visibilitySystem)
@@ -436,7 +433,6 @@ void EditorSystem::update(FrameContext& ctx) {
     EditorContext ec{
         ctx,
         m_state,
-        m_engine,
         m_cameraController,
         m_renderSystem,
         m_visibilitySystem,

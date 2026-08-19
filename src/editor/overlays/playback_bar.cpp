@@ -1,6 +1,6 @@
 #include "overlays/playback_bar.h"
 
-#include "core/engine.h"
+#include "core/clock.h"
 #include "framework/editor_common.h"
 #include "framework/scene_io_controller.h"
 
@@ -15,9 +15,8 @@ constexpr int   CONTROLS = 3;  // play/pause, step, stop
 } // namespace
 
 void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
-    FrameContext&    ctx    = ec.frame;
-    Engine&          engine = ec.engine;
-    Clock& clock = engine.getClock();
+    FrameContext& ctx   = ec.frame;
+    Clock&        clock = ctx.clock;
 
     const bool playing = sceneIO.hasSnapshot();  // a play session is active
     const bool paused  = clock.isPaused();

@@ -22,3 +22,6 @@ shaders/_generated/
 examples/*/bin/
 # Our own working plan for where the engine is going. Not part of the manual.
 docs/roadmap.md
+
+# Throwaway verification harnesses; never part of the engine.
+scratchpad/
