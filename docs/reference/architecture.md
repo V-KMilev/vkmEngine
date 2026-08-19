@@ -54,7 +54,7 @@ does:
 | Stage      | Systems                                                                         |
 |------------|---------------------------------------------------------------------------------|
 | Input      | `CameraControllerSystem`                                                              |
-| Simulation | (EventBus flush), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `SkeletalAnimationSystem`, `ParticleSystem`, `PhysicsSystem`, `SkySystem` |
+| Simulation | (EventBus flush), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `SkeletalAnimationSystem`, `ParticleSystem`, `PhysicsSystem`, `CharacterControllerSystem`, `SkySystem` |
 | Transform  | `HierarchySystem`, `UISystem` (the game UI; runs in **both** binaries)         |
 | Visibility | `VisibilitySystem`                                                            |
 | Render     | `RenderSystem`                                                                |
@@ -134,14 +134,14 @@ Engine code, single include root `src/engine/`:
 | `core/math/`               | math helpers (rotation, axes, random, easing)                            |
 | `core/memory/`             | `TypeId`, `SparseSet`, `SlotAllocator`, `StorageIndex`                   |
 | `ecs/`                     | `Scene`, `EntityId`, `Environment`                                        |
-| `ecs/component/`           | `Transform`, `WorldTransform`, `Camera`, `Mesh`, `Light`, `Animation`, `Animator`, `Hierarchy`, `Name`, `Collider`, `RigidBody`, `PhysicsWorld`, `ReflectionProbe` |
+| `ecs/component/`           | `Transform`, `WorldTransform`, `Camera`, `Mesh`, `Light`, `Animation`, `Animator`, `Hierarchy`, `Name`, `Collider`, `RigidBody`, `CharacterController`, `PhysicsWorld`, `ReflectionProbe` |
 | `system/animation/`        | `AnimationSystem`, `AnimationTrack`, `SkeletalAnimationSystem`, `PoseBuffer`, `composePose` |
 | `system/async/`            | `AsyncLoaderSystem`                                                      |
 | `system/camera/`           | `CameraControllerSystem`                                                       |
 | `core/event/`              | `EventBus` (typed pub/sub; engine-owned infrastructure)                  |
 | `system/hierarchy/`        | `HierarchySystem`, `HierarchyOperations` (free functions)               |
 | `system/io/`               | `FileWatcherSystem` (polling hot-reload)                                       |
-| `system/physics/`          | `PhysicsSystem`, `collision/`                                            |
+| `system/physics/`          | `PhysicsSystem`, `CharacterControllerSystem`, `collision/`               |
 | `system/render/`           | `RenderSystem`, `RenderBackend`, `RenderView`, `RenderSettings`, `data/` |
 | `system/script/`           | `BehaviorSystem`, `Behavior`, `ReflectedBehavior`, `BehaviorRegistry`, `ScriptComponent`, `ScriptModule` (see [system/scripting.md](system/scripting.md)) |
 | `system/visibility/`       | `VisibilitySystem`, `Visibility`, `VisibilityContext`, `BoundsUtils`    |

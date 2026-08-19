@@ -256,8 +256,10 @@ Today's coverage, the flat list in `scene_serializer.cpp`:
   takes the `ResourceManager` that turns a handle into a name and back.
 - `ParticleEmitter`, `IrradianceVolume`, `ReflectionProbe`
 - `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton` (see [UI](ui.md))
-- `Rigidbody`, `Collider` (physics; runtime sleep state and derived mass
-  properties are not persisted - see [Physics](physics.md)). A collider part
+- `Rigidbody`, `Collider`, `CharacterController` (physics; runtime sleep state,
+  the support outputs and derived mass properties are not persisted, and a
+  controller writes only its four tuning fields - see [Physics](physics.md)). A
+  collider part
   writes its `shape` by name alongside every shape's fields, so switching a part
   to a capsule and back does not lose the half-extents it was authored with; a
   part with no `shape` key - every part in a scene written before capsules

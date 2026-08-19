@@ -65,6 +65,7 @@ scene.remove<Mesh>(entity);
 | `Hierarchy`      | `component/hierarchy.h`           | `EntityId parent`, `firstChild`, `nextSibling`, `prevSibling`                                         |
 | `Name`           | `component/name.h`                | `char value[64]` for editor display and asset look-up by name                                         |
 | `Collider`       | `component/collider.h`            | One or more `ColliderPart`s (a `ColliderShape` tag + box / capsule fields) + `isTrigger`              |
+| `CharacterController` | `component/character_controller.h` | `moveInput` + `jumpRequested` in, tuning, `grounded` + `groundNormal` out                    |
 | `Rigidbody`      | `component/rigidbody.h`           | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags |
 | `ReflectionProbe`| `component/reflection_probe.h`    | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
 

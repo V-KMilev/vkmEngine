@@ -72,6 +72,7 @@ constexpr uint32_t MAX_ENTITY_SLOT = 1u << 22;
     P(Light,            "Light")                \
     P(Rigidbody,        "Rigidbody")            \
     P(Collider,         "Collider")             \
+    P(CharacterController, "CharacterController") \
     R(Mesh,             "Mesh")                 \
     R(LOD,              "LOD")                  \
     R(Decal,            "Decal")                \
