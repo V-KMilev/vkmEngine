@@ -224,15 +224,27 @@ loader uses directly because entities are recreated at the same slot.
 
 ### Adding a component to the round trip
 
-Three localised edits, no registry table, no virtual dispatch, no macros:
+Two localised edits, no registry table, no virtual dispatch:
 
 1. A `save` / `load` overload pair in `component_serializer.h` (+ `.cpp`). If the
    component has nothing but plain reflected fields, both bodies are one call to
    `saveReflected` / `loadReflected`.
-2. A line in `saveComponents` and a matching `loadInto<T>` line in
-   `loadComponents`, both in `scene_serializer.cpp`, in the same order.
-3. The JSON key added to `COMPONENT_KEYS` in the same file - the membership test
-   behind the "unknown component key" warning that catches schema drift.
+2. A row in `VKM_SCENE_COMPONENTS` in `scene_serializer.cpp` - `P(Type, "Key")`,
+   or `R(Type, "Key")` when the component references assets and its save/load
+   take the `ResourceManager`. Saving, loading and the known-key set behind the
+   "unknown component key" drift warning all expand from that one list.
+
+Those were three hand-kept lists, and the failure was silent: a key that was
+saved and registered but never loaded round-tripped to nothing, while the drift
+warning that exists to catch it stayed quiet, because the key was still known.
+The key is spelled out in the row rather than derived from the type name, since
+it is the format - `ScriptComponent` is stored as `"Script"`. `Hierarchy` is not
+a row: it is written explicitly and read by the loader's second pass.
+
+The editor solves the same problem the same way one directory over
+(`VKM_EDITOR_SNAPSHOT_COMPONENTS`), and a component's *field* list is already
+single-sourced by `VKM_REFLECT_BEGIN` / `VKM_F`. These keys were the odd layer
+out.
 
 `loadInto` overwrites a component the entity already carries instead of adding a
 second one. That is not a nicety: a prefab instance root is loaded twice, once
