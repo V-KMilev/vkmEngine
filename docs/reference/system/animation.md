@@ -205,7 +205,10 @@ finds its own character's pose with one lookup.
 
 The two bounds fields are what the *pose* knows; they are not a bounding box on
 their own, because skin hangs off a bone by a distance only the mesh knows. They
-are published raw and inflated by the consumer that has the mesh in hand.
+are published raw and inflated by `VisibilitySystem`, which has the mesh in hand
+- see [visibility.md](visibility.md#posed-bounds). That inflation is mandatory,
+not polish: the occlusion cull keeps conservatively, so a box that misses the
+posed skin deletes it.
 
 ## Update model
 
