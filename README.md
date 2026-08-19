@@ -74,7 +74,6 @@ modules/
                    Submodules: model import, font rasterization, JSON, profiling
 shaders/           GLSL source (one folder per program)
 assets/            Textures, materials, meshes referenced by scenes
-example/           Standalone scene generators used at boot
 ```
 
 See [Architecture](docs/reference/architecture.md) for the full per-directory breakdown.

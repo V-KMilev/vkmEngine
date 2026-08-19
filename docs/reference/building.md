@@ -58,7 +58,7 @@ it belongs to the project rather than to this build tree.
 | `vkm_tools` | Static lib | Procedural generators + the runtime-safe cooked-asset loaders/factories. No Assimp, no heavy image decode |
 | `vkm_cook` | Static lib | The heavy importers (Assimp model import, stb image decode) + the asset cooker that bakes recipes into the cooked cache. Linked by `vkm_editor_app` and `vkm_cook_app` only |
 | `vkm_editor` | Static lib | Editor UI, panels, overlays, gizmo, scene I/O |
-| `vkm_headers` | Interface lib | Include-only view of vkm_core's public API; the hot-reload module compiles against it without linking vkm_core's objects |
+| `vkm_headers` | Interface lib | Include-only view of vkm_core's public API, for a consumer that wants the headers without the link. A gameplay module is not one of them: it links vkm_core |
 | `vkm_build_info` | Interface lib | Compile-time build metadata (version, branch, commit hash) |
 | `vkm_warnings` | Interface lib | Shared GCC/Clang warning flags; first-party targets opt in, submodules don't |
 | `<project>_module` | Shared lib | One per project (`potion_runner_module`, `stress_arena_module`): that project's gameplay sources built as `game.dll`/`libgame.so` into the project's own `bin/`. The engine ships no gameplay of its own |
@@ -131,14 +131,13 @@ ResourceManager directly and never builds an Engine, which is what lets it run
 headless. vkm_runtime_app links neither vkm_cook nor vkm_editor, so it pulls in
 no Assimp and no ImGui - the link lists enforce that, not a build flag.
 
-<project>_module (shared, per project) -- vkm_headers (include-only); it must
-  not link vkm_core: a second copy would duplicate the typeId registry and the
-  singletons, and components registered on one copy are invisible to the other.
-  It resolves engine symbols from the host that loaded it. On Linux that is
-  whichever host did, since ENABLE_EXPORTS is set on vkm_editor_app and
-  vkm_runtime_app alike. On Windows a shared library must name an import library
-  at link time, so a module binds to vkm_editor_app specifically and the runtime
-  cannot load it there.
+<project>_module (shared, per project) -- vkm_core; the engine is one shared
+  library, so linking it references the copy the hosts already load rather than
+  carrying a second one. That is what keeps a single typeId registry and a
+  single set of singletons, and it is why one module file serves both hosts: the
+  module binds to the engine, not to whichever exe opened it. Against an
+  installed SDK the same link is spelled vkmEngine::vkm_core, which is what
+  vkm_add_gameplay_module() writes.
 ```
 
 ## External Modules
