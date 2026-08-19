@@ -4,6 +4,8 @@
 #include <utility>
 #include <vector>
 
+#include <glm/glm.hpp>
+
 #include "core/system.h"
 #include "ecs/entity.h"
 #include "system/physics/physics_internal.h"
@@ -92,9 +94,16 @@ class PhysicsSystem : public System {
          * Produces the contact manifolds for the solver and fires collision events.
          *
          * @param hasContact Per-body flags, set true for each body that gained a contact.
+         * @param supportNormal Per-body most-upward contact normal, as it acts on
+         *                      that body. The caller seeds it below any unit
+         *                      normal, so a body with no resolved contact is
+         *                      left holding that sentinel rather than a
+         *                      direction; writeback is what turns it into one.
          * @param events     Bus the collision / trigger events are enqueued on.
          */
-        void narrowphase(std::vector<bool>& hasContact, EventBus& events);
+        void narrowphase(std::vector<bool>& hasContact,
+                         std::vector<glm::vec3>& supportNormal,
+                         EventBus& events);
 
         /**
          * @brief Wake any sleeping bodies struck this step, before the solve.
@@ -117,8 +126,11 @@ class PhysicsSystem : public System {
          * @param scene      Scene whose Transforms are written back.
          * @param dt         Fixed timestep, in seconds.
          * @param hasContact Per-body contact flags from narrowphase, used to decide sleeping.
+         * @param supportNormal Per-body support normals from narrowphase, published
+         *                      onto the Rigidbody for whatever reads them.
          */
-        void writeback(Scene& scene, float dt, const std::vector<bool>& hasContact);
+        void writeback(Scene& scene, float dt, const std::vector<bool>& hasContact,
+                       const std::vector<glm::vec3>& supportNormal);
 
     private:
         std::vector<EntityId>        m_bodies;       ///< Live body entities this tick (indexes m_solverBodies)

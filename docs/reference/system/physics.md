@@ -9,20 +9,24 @@ and **before** `HierarchySystem`, so physics-updated transforms propagate into
 `WorldTransform` the same frame. All work happens in `fixedUpdate()` against
 `ctx.clock.getFixedStep()`; `update()` is a no-op. It opts into `fixedUpdate`.
 
+`CharacterControllerSystem` runs in the same stage, **immediately after**
+`PhysicsSystem`, so it reads that tick's freshly written support outputs.
+
 ## Key files
 
 - `src/engine/system/physics/physics_system.h/.cpp` - the system (gather, broadphase, narrowphase, solve, integrate)
+- `src/engine/system/physics/character_controller_system.h/.cpp` - `CharacterControllerSystem`
 - `src/engine/system/physics/collision/contact.h` - `Contact`, `ContactManifold`, `MAX_CONTACTS_PER_MANIFOLD`
 - `src/engine/system/physics/collision/narrowphase.h/.cpp` - `BoxShape`, `CapsuleShape`, and the three contact routines
 - `src/engine/system/physics/collision/solver.h/.cpp` - `PhysicsBody`, `SolverParams`, `solveContacts`
 - `src/engine/system/physics/inertia.h` - box / capsule inertia + world-space rotation helpers
 - `src/engine/system/physics/collider_fit.h/.cpp` - `fitBoxesToMesh` ("Fit to Mesh")
 - `src/engine/system/physics/physics_events.h` - `CollisionEvent`, `TriggerEvent`
-- `src/engine/ecs/component/rigidbody.h`, `collider.h` - the components
+- `src/engine/ecs/component/rigidbody.h`, `collider.h`, `character_controller.h` - the components
 
 ## Components
 
-All three are plain data structs; see [ecs.md](../ecs.md) for the field tables.
+All of them are plain data structs; see [ecs.md](../ecs.md) for the field tables.
 
 - **`Rigidbody`** - dynamics state: `linearVelocity`, `angularVelocity`, `mass`,
   `linearDamping` / `angularDamping`, `restitution`, `friction`, `gravityScale`,
@@ -35,6 +39,15 @@ All three are plain data structs; see [ecs.md](../ecs.md) for the field tables.
   stored on the component: `PhysicsSystem` re-derives them from `mass` +
   `Collider` into its per-tick `BodyFrame`, so editing either takes effect
   without an "apply" step.
+
+  It also carries two **outputs**, written by `writeback` and never read by the
+  system that writes them: `supported` (a resolved, non-trigger contact held this
+  body this tick) and `supportNormal` (the most upward of those normals, as it
+  acts on *this* body - the two bodies of one contact see opposite normals). They
+  are generic on purpose. "Am I standing on something, and how steep is it" is
+  what a controller, a footstep sound and a landing animation all ask, and
+  answering it here is what keeps `PhysicsSystem` from ever learning what a
+  character is. Runtime-only, like `sleeping`: not serialized.
 - **`Collider`** - one or more `ColliderPart`s, evaluated in the entity's
   `Transform` frame. Each part carries a `shape` tag (`ColliderShape::Box` or
   `Capsule`) and the fields for both: `center` + `halfExtents` for a box,
@@ -51,6 +64,12 @@ All three are plain data structs; see [ecs.md](../ecs.md) for the field tables.
   handles it without a special case. Capsules are what characters wear: a box
   catches on every seam between two floor boxes, and a capsule's round side
   slides over them.
+- **`CharacterController`** - `moveInput` (world-space desired horizontal
+  velocity, written by gameplay), `jumpRequested`, the tuning (`jumpSpeed`,
+  `acceleration`, `airControl`, `maxSlopeAngle`), and the read-only `grounded` /
+  `groundNormal`. Only the four tuning fields are serialized: the rest is
+  per-tick traffic, and a scene row holding a half-consumed jump request would
+  replay it on load.
 - **Scene physics settings** - `gravity` and `solverIterations` live on the
   scene-global `Environment` (`ecs/environment.h`), serialized with the scene.
   `PhysicsSystem` reads them each tick, so gravity persists with the scene and
@@ -143,6 +162,45 @@ about its own axis several times more freely than the box around it, and that
 difference is exactly what a graze against a character tests. Either way the
 tensor is parallel-axis-shifted from the collider centre to the entity origin,
 where the solver measures its contact arms.
+
+## The character controller
+
+`CharacterControllerSystem` turns `moveInput` into velocity on the `Rigidbody`,
+once per fixed tick, after `PhysicsSystem`. Only the velocity it writes is a tick
+late, and a tick of steering lag is imperceptible; fresh grounding is the half
+that has to be exact, because landing, stepping off a ledge and refusing a slope
+all turn on it.
+
+Per tick, per controller:
+
+1. `grounded = rb.supported && dot(rb.supportNormal, up) >= cos(maxSlopeAngle)`,
+   and `groundNormal` mirrors the surface (world up when airborne). A wall is a
+   resolved contact too, so touching is not the same question as standing.
+2. Wake the body if there is input and it fell asleep - a sleeping body has its
+   velocity zeroed by writeback, so anything asking it to move must wake it.
+3. Steer toward `moveInput`. Grounded, the target is first projected onto the
+   ground plane, so a ramp neither launches at the top nor drags back down;
+   airborne, only the horizontal is steered (at `airControl` of the rate) and the
+   vertical is gravity's alone. Either way the step is **capped** at
+   `acceleration * dt` rather than approached exponentially, so the number means
+   m/s^2 at every speed.
+4. `jumpRequested && grounded` sets `linearVelocity.y = jumpSpeed` and clears
+   `grounded` on the spot; the request is consumed either way.
+
+It writes velocity, **never position**: the solver owns the pose, so a controller
+cannot teleport a character through a wall, and friction, restitution,
+penetration recovery and sleeping all keep working underneath it. Two silent
+misconfigurations are named once each - no enabled capsule collider (it will
+never ground) and `freezeRotation` off (contacts will topple it).
+
+A **System driving a component**, not a `Behavior`, because the thing that writes
+`moveInput` changes and the thing that reads it should not: gameplay writes it
+today, a nav agent writes it in 1.8, and an engine system cannot address a
+hot-reloadable game behavior.
+
+**Deliberately partial for 1.6:** velocity-driven, with no step-up (that needs a
+shapecast query the engine does not have), no crouch, no moving platforms and no
+runtime capsule resize.
 
 ## Sleeping
 

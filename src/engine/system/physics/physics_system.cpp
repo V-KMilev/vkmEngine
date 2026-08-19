@@ -36,6 +36,11 @@ constexpr float SLEEP_ANGULAR_SQ = 0.04f;   // (0.2 rad/s)^2
 constexpr float SLEEP_DELAY      = 0.5f;    // seconds of rest before sleeping
 constexpr float WAKE_SPEED_SQ    = 0.25f;   // partner speed^2 that wakes a sleeper
 
+// Placeholder support normal, below any unit normal's y so the first contact
+// always replaces it. A body held only by a vertical wall would otherwise keep
+// the zero vector, and report support with no direction.
+const glm::vec3 NO_SUPPORT = {0.0f, -2.0f, 0.0f};
+
 float dynamicInverseMass(const Rigidbody& rb) {
     if (rb.isStatic || rb.isKinematic || rb.mass <= 0.0f) return 0.0f;
     return 1.0f / rb.mass;
@@ -173,16 +178,17 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 
     broadphase();
 
-    // hasContact spans narrowphase -> writeback (the sleep test reads it after the
-    // solve), so it is owned here and threaded through both phases.
+    // Both span narrowphase -> writeback (the sleep test and the support outputs
+    // are read after the solve), so they are owned here and threaded through.
     std::vector<bool> hasContact(m_bodies.size(), false);
-    narrowphase(hasContact, ctx.events);
+    std::vector<glm::vec3> supportNormal(m_bodies.size(), NO_SUPPORT);
+    narrowphase(hasContact, supportNormal, ctx.events);
 
     wakeOnImpact(scene);
 
     solve(physics, dt);
 
-    writeback(scene, dt, hasContact);
+    writeback(scene, dt, hasContact, supportNormal);
 }
 
 bool PhysicsSystem::gatherBodies(Scene& scene) {
@@ -307,7 +313,9 @@ void PhysicsSystem::broadphase() {
     }
 }
 
-void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events) {
+void PhysicsSystem::narrowphase(std::vector<bool>& hasContact,
+                                std::vector<glm::vec3>& supportNormal,
+                                EventBus& events) {
     PROFILE_SCOPE("Physics/Narrowphase");
 
     m_manifolds.clear();
@@ -347,6 +355,15 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events)
             manifold.count = std::min(n, MAX_CONTACTS_PER_MANIFOLD);
             for (int c = 0; c < manifold.count; ++c) manifold.contacts[c] = scratch[c];
             m_manifolds.push_back(manifold);
+
+            // The most upward normal each body is held by. A's surface normal is
+            // -normal and B's is +normal, because the normal runs A -> B and a
+            // surface pushes back along its own outward direction.
+            for (int c = 0; c < manifold.count; ++c) {
+                const glm::vec3& normal = manifold.contacts[c].normal;
+                if (-normal.y > supportNormal[A.body].y) supportNormal[A.body] = -normal;
+                if ( normal.y > supportNormal[B.body].y) supportNormal[B.body] =  normal;
+            }
         };
 
         for (const BoxShape& sa : m_boxA)
@@ -425,13 +442,19 @@ void PhysicsSystem::solve(const PhysicsSettings& physics, float dt) {
     solveContacts(m_solverBodies, m_manifolds, params);
 }
 
-void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& hasContact) {
+void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& hasContact,
+                              const std::vector<glm::vec3>& supportNormal) {
     PROFILE_SCOPE("Physics/Writeback");
 
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         const EntityId id = m_bodies[k];
         Rigidbody& rb = scene.get<Rigidbody>(id);
         PhysicsBody& pb = m_solverBodies[k];
+
+        // Published before the early-outs below: a sleeping body resting on the
+        // floor is supported, and that is exactly when a controller asks.
+        rb.supported = hasContact[k];
+        rb.supportNormal = rb.supported ? supportNormal[k] : glm::vec3(0.0f, 1.0f, 0.0f);
 
         if (rb.isStatic) continue;
         if (rb.sleeping) {
