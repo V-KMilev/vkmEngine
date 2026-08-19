@@ -35,12 +35,9 @@
 #include "ui/editor_theme.h"
 #include "io/project_paths.h"
 
-#include "core/engine.h"
-
 namespace Engine {
 
 EditorSystem::EditorSystem(
-    Engine& engine,
     GLFWwindow* window,
     CameraControllerSystem& cameraController,
     UISystem& uiSystem,
@@ -49,8 +46,7 @@ EditorSystem::EditorSystem(
     ScriptModule& scriptModule,
     const std::string& projectName
 )
-    : m_engine(engine)
-    , m_cameraController(cameraController)
+    : m_cameraController(cameraController)
     , m_uiSystem(uiSystem)
     , m_renderSystem(renderSystem)
     , m_visibilitySystem(visibilitySystem)
@@ -91,12 +87,12 @@ EditorSystem::EditorSystem(
                         s_fontPath.c_str());
         }
 
-        // The icon font (Lucide). Missing file falls back to the built-in
-        // vector glyphs, so this is a soft dependency.
+        // The icon font (Lucide). It ships with the engine, so a failure means
+        // the file was removed; the editor still runs, with square placeholders.
         static std::string s_iconPath =
             (ProjectPaths::engineFonts() / "lucide.ttf").string();
         if (!loadEditorIconFont(s_iconPath.c_str())) {
-            LOG_WARNING("Icon font %s failed to load; using vector glyphs",
+            LOG_WARNING("Icon font %s failed to load; icons will draw as placeholders",
                         s_iconPath.c_str());
         }
     }
@@ -357,7 +353,7 @@ void EditorSystem::update(FrameContext& ctx) {
             ImGui::TextDisabled("%s", m_sceneIO.path().empty()
                 ? "(untitled scene)" : m_sceneIO.path().c_str());
 
-            switch (dialogButtons(want, "Save", true, "Cancel", "Don't Save")) {
+            switch (dialogButtons(want, "Save", "Don't Save")) {
                 case DialogResult::Confirm:
                     // save() opens Save-As if there's no current path; the
                     // deferred action fires once sceneDirty drops to false.
@@ -436,7 +432,6 @@ void EditorSystem::update(FrameContext& ctx) {
     EditorContext ec{
         ctx,
         m_state,
-        m_engine,
         m_cameraController,
         m_renderSystem,
         m_visibilitySystem,

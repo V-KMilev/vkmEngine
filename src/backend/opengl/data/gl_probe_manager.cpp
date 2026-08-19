@@ -16,9 +16,9 @@ namespace Engine {
 GLProbeManager::GLProbeManager() = default;
 GLProbeManager::~GLProbeManager() = default;
 
-void GLProbeManager::init() {
-    // Both compile shaders, so this must run with a live GL context.
-    m_baker = std::make_unique<GLProbeBaker>();
+void GLProbeManager::init(GLSceneCapture& capture, GLCubeConvolver& convolver) {
+    // createTargets allocates cube-map arrays, so this must run with a live GL context.
+    m_baker = std::make_unique<GLProbeBaker>(capture, convolver);
     m_array = std::make_unique<GLProbeArray>();
     m_array->createTargets(static_cast<int>(GLBindings::ProbeTextureSlots::MAX_PROBES),
                            GLProbeArray::DEFAULT_RESOLUTION);

@@ -4,8 +4,11 @@
 
 #include "core/math/projection.h"
 #include "core/reflect.h"
+#include "ecs/entity.h"
 
 namespace Engine {
+
+class Scene;
 
 /**
  * @brief Enumeration of camera projection types.
@@ -49,6 +52,26 @@ struct Camera {
         }
     }
 };
+
+/**
+ * @brief The scene's active camera: the first entity whose Camera::active is set.
+ *
+ * The one definition of a rule three places have to agree on - the renderer
+ * decides what to draw through it, the editor's fly controls decide what to
+ * move, and a scene load decides what to re-bind to. A Transform is required
+ * as well as a Camera, because a camera with no pose can neither be rendered
+ * from nor flown. Ties go to storage order; an empty result means the scene has
+ * no active camera, and callers own their own fallback policy rather than
+ * inheriting one from here.
+ *
+ * @param scene  The scene to search.
+ * @param cached A previously returned entity, tested first as an O(1) fast
+ *               path. Purely a hint - any value is safe, including a stale or
+ *               destroyed entity, and {} goes straight to the scan.
+ * @return The active camera entity, or {} when there is none.
+ */
+EntityId findActiveCamera(const Scene& scene, EntityId cached = {});
+
 } // namespace Engine
 
 VKM_ENUM_NAMES(::Engine::ProjectionType, "Perspective", "Orthographic")

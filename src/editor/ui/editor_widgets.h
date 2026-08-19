@@ -346,11 +346,14 @@ void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t buf
 /**
  * @brief Which entity-type glyph represents @p id (camera / light variant / mesh /
  * animation / generic).
+ *
+ * Answers the same question as getEntityDisplayName's fallback and shares its
+ * ladder, so a row's glyph and its label always describe the same kind.
  */
 EditorIcon entityIconKind(const Scene& scene, EntityId id);
 
 /**
- * @brief Draw a non-interactive vector icon inline: reserves a @p size square at the
+ * @brief Draw a non-interactive icon inline: reserves a @p size square at the
  * cursor and renders @p icon centered in it (pair with SameLine + text).
  */
 void inlineIcon(EditorIcon icon, float size, ImU32 color);

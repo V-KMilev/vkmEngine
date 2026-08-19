@@ -129,16 +129,19 @@ class GLInstanceBatcher {
         /// Instances uploaded this frame - the cull's dispatch size.
         uint32_t instanceCount() const { return static_cast<uint32_t>(m_models.size()); }
 
+    private:
         /**
          * @brief Reset every run's instance count to zero and upload the commands.
          *
          * The cull accumulates into these counts, so they have to start empty;
          * doing it here rather than in a clearing dispatch keeps the upload the
-         * CPU already does as the only write.
+         * CPU already does as the only write. A step of upload(), not something a
+         * pass may call: without a fresh upload behind it the counts are zeroed
+         * while the batch still reads as culled, and every indirect draw issues
+         * with instanceCount = 0.
          */
         void resetCommands();
 
-    private:
         /**
          * @brief Push one drawable's matrices into the flattened arrays.
          *

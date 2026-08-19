@@ -10,6 +10,7 @@
 
 #include "gl_context.h"
 
+#include "data/gl_cube_convolver.h"
 #include "data/gl_ibl.h"
 #include "data/gl_mesh.h"
 
@@ -17,10 +18,11 @@
 
 namespace Engine {
 
-GLIBLBaker::GLIBLBaker()
+GLIBLBaker::GLIBLBaker(GLCubeConvolver& convolver)
     : m_equirect("shaders/ibl/equirect")
     , m_sky("shaders/ibl/sky")
     , m_brdf("shaders/ibl/brdf")
+    , m_convolver(convolver)
 {
 }
 

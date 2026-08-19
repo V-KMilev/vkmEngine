@@ -232,6 +232,54 @@ bool matchesFilter(const char* text, const char* filter) {
     return false;
 }
 
+namespace {
+
+// What kind of thing an entity is, answered once for both the label the
+// hierarchy shows and the glyph beside it. The two used to be separate ladders
+// over the same components and had already diverged - the icons grew a
+// UIElement row the names never got, so a bare UI widget drew the widget glyph
+// beside the text "Entity 12", and the inspector's "name this entity" button
+// baked that string into a real Name.
+//
+// Stays a hand-written ladder rather than a component->row table: a Light's
+// answer comes from its inner type, and a Mesh carrying an Animation reads
+// "Animated Mesh" while keeping the plain mesh glyph. Order is precedence.
+struct EntityLabel {
+    const char* name;
+    EditorIcon  icon;
+};
+
+EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
+    if (scene.has<Camera>(id)) return {"Camera", EditorIcon::Camera};
+    if (scene.has<Light>(id)) {
+        switch (scene.get<Light>(id).type) {
+            case LightType::Directional: return {"Dir Light",   EditorIcon::LightDir};
+            case LightType::Point:       return {"Point Light", EditorIcon::LightPoint};
+            case LightType::Spot:        return {"Spot Light",  EditorIcon::LightSpot};
+            case LightType::Rect:        return {"Rect Light",  EditorIcon::LightRect};
+            case LightType::Disk:        return {"Disk Light",  EditorIcon::LightDisk};
+            case LightType::Count:       break;  // enum-size sentinel, never stored
+        }
+        return {"Light", EditorIcon::LightPoint};
+    }
+    if (scene.has<Mesh>(id)) {
+        return {scene.has<Animation>(id) ? "Animated Mesh" : "Mesh", EditorIcon::Mesh};
+    }
+    if (scene.has<Animation>(id))        return {"Animation", EditorIcon::Anim};
+    if (scene.has<ReflectionProbe>(id))  return {"Probe",     EditorIcon::Probe};
+    if (scene.has<IrradianceVolume>(id)) return {"GI Volume", EditorIcon::Volume};
+    if (scene.has<Decal>(id))            return {"Decal",     EditorIcon::Decal};
+    if (scene.has<ParticleEmitter>(id))  return {"Emitter",   EditorIcon::Particle};
+    if (scene.has<UIButton>(id))         return {"Button",    EditorIcon::UIButton};
+    if (scene.has<UIText>(id))           return {"Text",      EditorIcon::UIText};
+    if (scene.has<UIImage>(id))          return {"Panel",     EditorIcon::UIImage};
+    if (scene.has<UICanvas>(id))         return {"Canvas",    EditorIcon::UICanvas};
+    if (scene.has<UIElement>(id))        return {"Widget",    EditorIcon::UIWidget};
+    return {"Entity", EditorIcon::Entity};
+}
+
+} // namespace
+
 void getEntityDisplayName(const Scene& scene, EntityId id,
                           char* buf, size_t bufSize) {
     if (scene.has<Name>(id)) {
@@ -241,29 +289,7 @@ void getEntityDisplayName(const Scene& scene, EntityId id,
             return;
         }
     }
-    const char* typeName = "Entity";
-    if (scene.has<Camera>(id))    typeName = "Camera";
-    else if (scene.has<Light>(id)) {
-        switch (scene.get<Light>(id).type) {
-            case LightType::Directional: typeName = "Dir Light";   break;
-            case LightType::Point:       typeName = "Point Light"; break;
-            case LightType::Spot:        typeName = "Spot Light";  break;
-            case LightType::Rect:        typeName = "Rect Light";  break;
-            case LightType::Disk:        typeName = "Disk Light";  break;
-            case LightType::Count:                                 break;
-        }
-    }
-    else if (scene.has<Mesh>(id)) typeName = scene.has<Animation>(id) ? "Animated Mesh" : "Mesh";
-    else if (scene.has<Animation>(id))        typeName = "Animation";
-    else if (scene.has<ReflectionProbe>(id))  typeName = "Probe";
-    else if (scene.has<IrradianceVolume>(id)) typeName = "GI Volume";
-    else if (scene.has<Decal>(id))            typeName = "Decal";
-    else if (scene.has<ParticleEmitter>(id))  typeName = "Emitter";
-    else if (scene.has<UIButton>(id))         typeName = "Button";
-    else if (scene.has<UIText>(id))           typeName = "Text";
-    else if (scene.has<UIImage>(id))          typeName = "Panel";
-    else if (scene.has<UICanvas>(id))         typeName = "Canvas";
-    snprintf(buf, bufSize, "%s %u", typeName, id.index);
+    snprintf(buf, bufSize, "%s %u", entityLabelOf(scene, id).name, id.index);
 }
 
 namespace {
@@ -296,30 +322,7 @@ void drawRowGlyph(EditorIcon ic, float startX, ImVec2 rmin, float rh) {
 }
 
 EditorIcon entityIconKind(const Scene& scene, EntityId id) {
-    if (scene.has<Camera>(id)) return EditorIcon::Camera;
-    if (scene.has<Light>(id)) {
-        switch (scene.get<Light>(id).type) {
-            case LightType::Directional: return EditorIcon::LightDir;
-            case LightType::Point:       return EditorIcon::LightPoint;
-            case LightType::Spot:        return EditorIcon::LightSpot;
-            case LightType::Rect:        return EditorIcon::LightRect;
-            case LightType::Disk:        return EditorIcon::LightDisk;
-            case LightType::Count:       break;
-        }
-        return EditorIcon::LightPoint;
-    }
-    if (scene.has<Mesh>(id))             return EditorIcon::Mesh;
-    if (scene.has<Animation>(id))        return EditorIcon::Anim;
-    if (scene.has<ReflectionProbe>(id))  return EditorIcon::Probe;
-    if (scene.has<IrradianceVolume>(id)) return EditorIcon::Volume;
-    if (scene.has<Decal>(id))            return EditorIcon::Decal;
-    if (scene.has<ParticleEmitter>(id))  return EditorIcon::Particle;
-    if (scene.has<UIButton>(id))  return EditorIcon::UIButton;
-    if (scene.has<UIText>(id))    return EditorIcon::UIText;
-    if (scene.has<UIImage>(id))   return EditorIcon::UIImage;
-    if (scene.has<UICanvas>(id))  return EditorIcon::UICanvas;
-    if (scene.has<UIElement>(id)) return EditorIcon::UIWidget;
-    return EditorIcon::Entity;
+    return entityLabelOf(scene, id).icon;
 }
 
 void inlineIcon(EditorIcon icon, float size, ImU32 color) {

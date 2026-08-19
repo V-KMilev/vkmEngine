@@ -46,7 +46,6 @@ struct EditorState {
     bool showRenderSettings = false;            ///< Render Settings window (pass toggles + per-effect tuning)
     bool showColliders      = false;            ///< Draw physics collider wireframes in the viewport (View menu)
     bool showBounds         = false;            ///< Draw per-entity world AABBs in the viewport (View menu)
-    int  colliderFitDetail  = 4;                ///< Voxel resolution for the Collider "Fit to Mesh" button
 
     // Layout dimensions (pixels)
     float leftPanelWidth    = 260.0f;
@@ -58,7 +57,6 @@ struct EditorState {
     bool editorVisible   = true;     ///< Toggle entire editor UI (F5)
     bool requestModelImport = false;  ///< Set by the Import Model menu item, consumed by the menu-bar dialog
     bool requestPlacePrefab = false;  ///< Set by the Create > Prefab item, consumed by the menu-bar dialog
-    int  lodGenLevels = 2;            ///< Levels the LOD card's Generate button builds below the source.
     bool requestScriptReload = false; ///< Set by the Reload Scripts menu item, consumed by EditorSystem (hot-reload)
 
     bool sceneDirty = false;    ///< Unsaved edits since last save/load. Title shows '*'.

@@ -143,6 +143,16 @@ a hash of the recipe. Every asset is its own file:
   (type, name), so the cooker that writes a file and the loader that reads it
   cannot disagree about where it is.
 
+An imported asset is **named by its project-relative path**, and so is the
+`path` in its recipe - `ProjectPaths::toProjectRelative` at the loader boundary,
+`resolveProjectPath` to open it again. That matters more than it looks: the uid
+above is a hash of `"<Type>:<name>"`, so an absolute name would make the entire
+library's on-disk layout a function of one machine's home directory, and a
+second checkout would produce a manifest whose every entry hashes to a filename
+nothing on disk answers to. A source outside the project keeps its absolute path
+- it has no relative form - and the conversion happens before the by-name dedup,
+or one file reached by two spellings becomes two assets.
+
 **Save** - `AssetSerializer::saveAssetsForScene` walks the components that name
 assets (`Mesh`, `LOD`, `Decal`) and emits **name-only** references to the
 meshes/materials/textures used. In the editor,
@@ -214,15 +224,27 @@ loader uses directly because entities are recreated at the same slot.
 
 ### Adding a component to the round trip
 
-Three localised edits, no registry table, no virtual dispatch, no macros:
+Two localised edits, no registry table, no virtual dispatch:
 
 1. A `save` / `load` overload pair in `component_serializer.h` (+ `.cpp`). If the
    component has nothing but plain reflected fields, both bodies are one call to
    `saveReflected` / `loadReflected`.
-2. A line in `saveComponents` and a matching `loadInto<T>` line in
-   `loadComponents`, both in `scene_serializer.cpp`, in the same order.
-3. The JSON key added to `COMPONENT_KEYS` in the same file - the membership test
-   behind the "unknown component key" warning that catches schema drift.
+2. A row in `VKM_SCENE_COMPONENTS` in `scene_serializer.cpp` - `P(Type, "Key")`,
+   or `R(Type, "Key")` when the component references assets and its save/load
+   take the `ResourceManager`. Saving, loading and the known-key set behind the
+   "unknown component key" drift warning all expand from that one list.
+
+Those were three hand-kept lists, and the failure was silent: a key that was
+saved and registered but never loaded round-tripped to nothing, while the drift
+warning that exists to catch it stayed quiet, because the key was still known.
+The key is spelled out in the row rather than derived from the type name, since
+it is the format - `ScriptComponent` is stored as `"Script"`. `Hierarchy` is not
+a row: it is written explicitly and read by the loader's second pass.
+
+The editor solves the same problem the same way one directory over
+(`VKM_EDITOR_SNAPSHOT_COMPONENTS`), and a component's *field* list is already
+single-sourced by `VKM_REFLECT_BEGIN` / `VKM_F`. These keys were the odd layer
+out.
 
 `loadInto` overwrites a component the entity already carries instead of adding a
 second one. That is not a nicety: a prefab instance root is loaded twice, once
@@ -234,21 +256,45 @@ A prefab is a scene fragment - one entity and its descendants, with the same
 per-entity component shape a scene uses, in its own file:
 
 ```json
-{"version": 2, "nextUid": 3,
- "entities": [{"uid": 0, "components": {...}}, {"uid": 1, "parent": 0, "components": {...}}]}
+{"version": 3, "nextUid": 3,
+ "entities": [{"uid": 0, "components": {...}}, {"uid": 1, "parent": 0, "components": {...}}],
+ "assets": {"textures": [...], "meshes": [...], "materials": [...]}}
 ```
+
+The `assets` block is the same one a scene carries, for the subtree this file
+describes, and it is what makes a prefab instantiable anywhere. Component
+references are asset *names*, and a name resolves to nothing unless something
+already loaded it, so without the block a prefab only built correctly where a
+scene happened to have loaded the same assets first - dragging one into a scene
+that never held its mesh produced entities that draw nothing. Every path that
+reads components out of a prefab loads the block first, `Prefab::reloadComponent`
+included, since reverting an override re-reads an asset name too. Loading is
+idempotent by name, so an instance after the first costs a lookup per entry.
 
 Parents precede children and a child names its parent by *index into this
 file's own array*, because entity ids mean nothing outside the scene that issued
 them. `Prefab::save` drops the `Hierarchy` block for that reason and rewrites
 the link as an index.
 
-That file is one a person can write, so `readPrefab` establishes its shape once
-and every entry point reports what it cannot use rather than raising: the
-callers are an editor showing a toast beside its own file picker and a scene
-load with other entities to build. Past that check an entry is an object and its
-component block is one too, and the numbers still read out of it - `version`,
-`uid`, `parent` - treat a key of the wrong type as an absent one.
+That file is one a person can write, so `readPrefab` establishes its shape and
+its identities once, and every entry point reports what it cannot use rather
+than raising: the callers are an editor showing a toast beside its own file
+picker and a scene load with other entities to build. Past that check an entry
+is an object, its component block is one too, and no two entries answer to the
+same uid; the numbers still read out of it - `version`, `uid`, `parent` - treat
+a key of the wrong type as an absent one.
+
+A duplicate uid is a hard refusal because it makes an override's address
+ambiguous, and the four places that resolve one disagree about what to do with
+it: `applyOverrides` patches every match, while `reloadComponent`,
+`definesComponent` and `entityWithUid` each stop at the first. `Prefab::save`
+keeps a uid only when it is that entity's alone, so the writer cannot produce a
+file its own reader refuses - a collision, or a child wearing the root's zero,
+costs one renumbered entity instead of an unloadable prefab.
+
+A scene's own `assets` block still walks the entities inside its instances, even
+though the prefab now lists them: an instance may override a `Mesh` or a `Decal`
+at an asset the prefab file never names, and only the scene's walk sees that.
 
 A scene stores an instance as a `PrefabInstance` (the source path) plus the
 root's `Transform` and `Hierarchy` - where it sits and what it hangs off belong

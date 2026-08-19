@@ -117,7 +117,7 @@ class Spinner : public Engine::ReflectedBehavior<Spinner> {
 
 // At global scope, and named in full. The macro opens Engine::Reflect itself, so
 // your types stay in your own namespace.
-VKM_REFLECT_BEGIN(Game::Spinner)
+VKM_REFLECT_BEGIN(::Game::Spinner)
     VKM_F(degreesPerSecond)
 VKM_REFLECT_END()
 ```

@@ -74,9 +74,8 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
         material->bind(GLBindings::UBOBindingPoints::Material);
         material->bindTextures(glView);
 
-        // Decals project along the entity's forward (-Z), matching the engine's
-        // orientation convention.
-        const glm::vec3 projDir = -glm::normalize(glm::vec3(decal.model[2]));
+        // Decals project along the entity's forward (+Z; see core/math/axes.h).
+        const glm::vec3 projDir = glm::normalize(glm::vec3(decal.model[2]));
 
         m_shader->setUniformMatrix4fv("u_model",    decal.model);
         m_shader->setUniformMatrix4fv("u_invModel", decal.invModel);

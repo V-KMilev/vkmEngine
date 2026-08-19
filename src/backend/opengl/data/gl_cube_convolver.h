@@ -20,7 +20,8 @@ class GLMesh;
  * baker, a cube-array layer+face for the probe baker). This owns the two
  * convolution programs and the unit cube the six face captures draw, plus the
  * shared projection + face-view basis (computed once). Each baker supplies the
- * env-bind + face-attach as callbacks, so the loop lives here once.
+ * env-bind + face-attach as callbacks, so the loop lives here once. The backend
+ * owns one and lends it to both bakers, so the programs are compiled once.
  *
  * The caller owns GL state: bind the capture FBO and set depth/cull off first;
  * these methods only set uniforms, run the caller's attach, and draw.

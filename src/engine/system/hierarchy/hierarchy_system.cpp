@@ -36,7 +36,6 @@ void HierarchySystem::resolve(Scene& scene) {
         if (!scene.has<Transform>(id)) continue;
 
         const auto& h = hierarchyStorage->dataAt(i);
-        if (!h.dirty) continue;
 
         VKM_ASSERT(scene.has<WorldTransform>(id),
             "HierarchySystem::resolve: Hierarchy without WorldTransform");
@@ -62,8 +61,8 @@ void HierarchySystem::resolve(Scene& scene) {
 
     // Depths in order, so each child reads its parent's already-final
     // WorldTransform instead of re-walking the ancestor chain: one matrix
-    // multiply per dirty entity vs. depth-many in computeWorldMatrix - a real
-    // win on shallow-but-wide scenes.
+    // multiply per entity vs. depth-many in computeWorldMatrix - a real win on
+    // shallow-but-wide scenes.
     for (uint32_t d = 0; d < HierarchyOperations::MAX_DEPTH; ++d) {
         const auto& bucket = m_buckets[d];
         if (bucket.empty()) continue;
@@ -73,7 +72,6 @@ void HierarchySystem::resolve(Scene& scene) {
                 const EntityId id = bucket[i];
                 scene.get<WorldTransform>(id).model =
                     Transform::computeModelMatrix(scene.get<Transform>(id));
-                scene.get<Hierarchy>(id).dirty = false;
             });
         } else {
             parallelFor(bucket.size(), [&](size_t i) {
@@ -82,15 +80,13 @@ void HierarchySystem::resolve(Scene& scene) {
                 // h.parent is read by raw index without an isAlive guard here (unlike
                 // computeWorldMatrix) deliberately: the bucketing pass above already
                 // walked and validated this entity's full ancestor chain via
-                // contains(), and setParent guarantees every parent has a
-                // WorldTransform. Destroy/reparent mark descendants dirty and fix the
-                // links, so a stale parent index never survives into this pass.
+                // contains(), this same frame, and setParent guarantees every parent
+                // has a WorldTransform.
                 const glm::mat4 parentWorld =
                     scene.get<WorldTransform>(h.parent).model;
                 const glm::mat4 local =
                     Transform::computeModelMatrix(scene.get<Transform>(id));
                 scene.get<WorldTransform>(id).model = parentWorld * local;
-                scene.get<Hierarchy>(id).dirty = false;
             });
         }
     }

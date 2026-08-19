@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "ecs/entity.h"
 #include "resource/asset/material_asset.h"
@@ -139,6 +140,32 @@ EntityId placePrefab(Scene& scene, ResourceManager& resources, EditorState& stat
                      const std::string& path);
 
 /**
+ * @brief Whether any ancestor of @p id is itself in @p selection.
+ *
+ * The rule that reduces a selection to its roots: an entity whose ancestor is
+ * also selected is already carried by that ancestor, so acting on it again is
+ * acting twice - a delete aims at an entity the ancestor's subtree already
+ * destroyed, a gizmo drag applies the same delta a second time and sends the
+ * child twice as far. Both are silent when they go wrong, which is why the two
+ * call sites share one definition instead of one comment pointing at the other.
+ *
+ * The selection is passed rather than read from EditorState because
+ * deleteSelection deselects before it destroys and must test against the copy
+ * it captured.
+ *
+ * The walk is bounded by HierarchyOperations::MAX_DEPTH. Hierarchy::parent
+ * arrives from a scene file, and setParent's own cycle check is capped at the
+ * same depth, so a cycle deeper than that is reachable and an unbounded walk
+ * would hang the editor with no error.
+ *
+ * @param scene Scene the entities live in.
+ * @param selection The entities currently selected.
+ * @param id The entity to test.
+ * @return Whether a selected ancestor was found within MAX_DEPTH.
+ */
+bool hasSelectedAncestor(const Scene& scene, const std::vector<EntityId>& selection, EntityId id);
+
+/**
  * @brief Delete every selected entity as ONE undo step.
  *
  * Entities whose ancestor is also selected are skipped (they die with the
@@ -183,14 +210,13 @@ void focusOnSelected(FrameContext& ctx, EditorState& state, CameraControllerSyst
 void setActiveCamera(Scene& scene, EditorState& state, EntityId target);
 
 /**
- * @brief Commit a hierarchy mutation: dirty bits, panel rebuild, scene save flag.
+ * @brief Commit a hierarchy mutation: panel rebuild plus scene save flag.
  *
- * Replaces the HierarchyOperations::markDirty + state.hierarchyDirty +
- * markSceneDirty triplet that used to live at every call site - one missed
- * line dropped the scene-dirty flag, which is the user-trust hazard the
- * editor audit flagged.
+ * Names the pair every structural edit owes the editor, because a call site
+ * that remembered the panel rebuild and forgot markSceneDirty lost the user's
+ * work at the next load with nothing said.
  */
-void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity);
+void commitHierarchyMutation(EditorState& state);
 
 /**
  * @brief Reparent @p child under @p newParent (null = unparent to root) while

@@ -332,7 +332,7 @@ bool MaterialEditorPanel::pbrFolderBrowse(std::string& outFolder) {
         m_pbrFolderPicker.options.recursive = false;
         m_pbrFolderPicker.options.kind      = AssetPicker::Kind::Directories;
         m_pbrFolderPicker.options.extensions.clear();
-        m_pbrFolderPicker.options.relativeTo.clear();  // return absolute path
+        m_pbrFolderPicker.options.relativeTo = ProjectPaths::projectRoot();
         m_pbrFolderPicker.options.hint.clear();
         m_pbrFolderPicker.open();
     }
@@ -596,8 +596,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         std::string pickedTex;
         if (m_texturePicker.draw(pickedTex) && m_pendingSlot) {
             if (resources.isAlive(m_pendingMaterial)) {
-                const std::string abs = (ProjectPaths::projectRoot() / pickedTex).string();
-                TextureHandle h = loadTexture(abs, resources, m_pendingTextureSrgb, true);
+                TextureHandle h = loadTexture(pickedTex, resources, m_pendingTextureSrgb, true);
                 if (h) {
                     resources.edit(m_pendingMaterial).*m_pendingSlot = h;
                     resources.commit(m_pendingMaterial);
@@ -616,12 +615,8 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         ImGui::SetNextItemWidth(EditorStyle::px(280.0f));
         const bool commit = ImGui::InputText("##rnbuf", m_renameBuf, sizeof(m_renameBuf),
                                              ImGuiInputTextFlags_EnterReturnsTrue);
-        DialogResult r = dialogButtons(m_renameOpen, "Rename", m_renameBuf[0] != '\0');
-        if (commit && m_renameBuf[0] != '\0' && r == DialogResult::None) {
-            r = DialogResult::Confirm;
-            m_renameOpen = false;
-            ImGui::CloseCurrentPopup();
-        }
+        const DialogResult r = dialogButtons(m_renameOpen, "Rename",
+                                             m_renameBuf[0] != '\0', commit);
         if (r == DialogResult::Confirm && resources.isAlive(target)) {
             resources.rename(target, m_renameBuf);
             state.commands.push(std::make_unique<RenameAssetCommand<MaterialHandle>>(

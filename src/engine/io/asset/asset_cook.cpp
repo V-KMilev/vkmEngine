@@ -249,6 +249,47 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHa
 }
 
 bool writeTexture(const std::filesystem::path& path, const TextureAsset& texture, uint64_t recipeHash) {
+    // Every TextureParams enum below is written as its raw value, so the file
+    // format IS the enumerator order. Reordering one is invisible to both the
+    // version check and the recipe hash - a cooked texture would simply decode
+    // as a different format, with no error. Every enumerator is spelled out
+    // rather than only the last, or a swap in the middle leaves the tail where
+    // it was and passes; appending stays legal. The message names the same
+    // remedy as the Vertex guard in writeMesh.
+    static_assert(static_cast<uint8_t>(TextureInternalFormat::R8)      == 0 &&
+                  static_cast<uint8_t>(TextureInternalFormat::RG8)     == 1 &&
+                  static_cast<uint8_t>(TextureInternalFormat::RGB8)    == 2 &&
+                  static_cast<uint8_t>(TextureInternalFormat::RGBA8)   == 3 &&
+                  static_cast<uint8_t>(TextureInternalFormat::SRGB8)   == 4 &&
+                  static_cast<uint8_t>(TextureInternalFormat::SRGBA8)  == 5 &&
+                  static_cast<uint8_t>(TextureInternalFormat::RGBA16F) == 6 &&
+                  static_cast<uint8_t>(TextureInternalFormat::RGBA32F) == 7,
+                  "TextureInternalFormat reordered - bump TEXTURE_FORMAT_VERSION");
+    static_assert(static_cast<uint8_t>(TexturePixelFormat::R)    == 0 &&
+                  static_cast<uint8_t>(TexturePixelFormat::RG)   == 1 &&
+                  static_cast<uint8_t>(TexturePixelFormat::RGB)  == 2 &&
+                  static_cast<uint8_t>(TexturePixelFormat::RGBA) == 3,
+                  "TexturePixelFormat reordered - bump TEXTURE_FORMAT_VERSION");
+    static_assert(static_cast<uint8_t>(TexturePixelType::UnsignedByte) == 0 &&
+                  static_cast<uint8_t>(TexturePixelType::Float)        == 1 &&
+                  static_cast<uint8_t>(TexturePixelType::HalfFloat)    == 2,
+                  "TexturePixelType reordered - bump TEXTURE_FORMAT_VERSION");
+    static_assert(static_cast<uint8_t>(TextureWrapMode::Repeat)         == 0 &&
+                  static_cast<uint8_t>(TextureWrapMode::MirroredRepeat) == 1 &&
+                  static_cast<uint8_t>(TextureWrapMode::ClampToEdge)    == 2 &&
+                  static_cast<uint8_t>(TextureWrapMode::ClampToBorder)  == 3,
+                  "TextureWrapMode reordered - bump TEXTURE_FORMAT_VERSION");
+    static_assert(static_cast<uint8_t>(TextureMinFilter::Nearest)              == 0 &&
+                  static_cast<uint8_t>(TextureMinFilter::Linear)               == 1 &&
+                  static_cast<uint8_t>(TextureMinFilter::NearestMipmapNearest) == 2 &&
+                  static_cast<uint8_t>(TextureMinFilter::LinearMipmapNearest)  == 3 &&
+                  static_cast<uint8_t>(TextureMinFilter::NearestMipmapLinear)  == 4 &&
+                  static_cast<uint8_t>(TextureMinFilter::LinearMipmapLinear)   == 5,
+                  "TextureMinFilter reordered - bump TEXTURE_FORMAT_VERSION");
+    static_assert(static_cast<uint8_t>(TextureMagFilter::Nearest) == 0 &&
+                  static_cast<uint8_t>(TextureMagFilter::Linear)  == 1,
+                  "TextureMagFilter reordered - bump TEXTURE_FORMAT_VERSION");
+
     std::ofstream os = openCookedWrite(path, "texture");
     if (!os) return false;
 

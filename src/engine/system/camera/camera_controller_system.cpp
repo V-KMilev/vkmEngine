@@ -29,25 +29,15 @@ namespace Engine {
 CameraControllerSystem::CameraControllerSystem() = default;
 
 EntityId CameraControllerSystem::resolveActiveCamera(Scene& scene) {
-    // Fast path: keep flying the current camera while it stays the active one.
-    EntityId cur = m_cameraEntity;
-    if (cur && scene.isAlive(cur)
-        && scene.has<Camera>(cur) && scene.has<Transform>(cur)
-        && scene.get<Camera>(cur).active) {
-        return cur;
-    }
-
-    // The camera the renderer uses is the one with Camera.active (same rule
-    // as VisibilitySystem) - fly that, so "you move what you see".
-    EntityId found{};
-    scene.forEach<Camera, Transform>([&](EntityId id, const Camera& c, const Transform&) {
-        if (found) return;
-        if (c.active) found = id;
-    });
-    if (found) return found;
+    // The camera the renderer draws through is the one to fly, so "you move
+    // what you see"; m_cameraEntity is the O(1) hint for the common case where
+    // that has not changed since last frame.
+    if (const EntityId active = findActiveCamera(scene, m_cameraEntity)) return active;
 
     // Nothing active (nothing renders anyway): keep the current entity so the
-    // controller stays usable instead of going dead.
+    // controller stays usable instead of going dead. That policy is the
+    // controller's alone - the renderer draws nothing in the same situation.
+    const EntityId cur = m_cameraEntity;
     if (cur && scene.isAlive(cur) && scene.has<Transform>(cur)) return cur;
     return {};
 }

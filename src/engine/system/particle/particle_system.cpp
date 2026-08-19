@@ -23,10 +23,7 @@ void ParticleSystem::update(FrameContext& ctx) {
 
     scene.forEach<ParticleEmitter, Transform>(
         [&](EntityId id, ParticleEmitter& emitter, const Transform& transform) {
-            glm::vec3 origin = transform.position;
-            if (scene.has<WorldTransform>(id)) {
-                origin = glm::vec3(scene.get<WorldTransform>(id).model[3]);
-            }
+            const glm::vec3 origin = resolvedWorldPosition(scene, id, transform);
 
             for (Particle& p : emitter.particles) {
                 p.age      += dt;

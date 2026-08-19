@@ -150,6 +150,26 @@ class SceneIOController {
 
     private:
         /**
+         * @brief Write the live scene to @p path and record that it was written.
+         *
+         * The whole write rule in one place: cook the referenced assets first
+         * (the scene stores name-only references to cooked ones, so a write
+         * that skips this names assets the library does not have), then
+         * serialize, and only on success clear the dirty flag and promote the
+         * path in the recents list. Save and Save-As differ in how they choose
+         * the path, not in how a scene is written.
+         *
+         * On failure sceneDirty is deliberately left set - the deferred-quit
+         * flow waits on it dropping, so a failed save must not look like a
+         * successful one.
+         *
+         * @param ctx Frame context supplying the scene and resources to write.
+         * @param state Editor state whose dirty flag, recents and toasts are updated.
+         * @param path Absolute path of the scene file to write.
+         * @return Whether the scene reached disk.
+         */
+        bool writeScene(FrameContext& ctx, EditorState& state, const std::string& path);
+        /**
          * @brief Load m_currentScenePath: stashes/restores selection, then runs
          * afterSceneReplace() housekeeping (camera rebind done inline).
          */

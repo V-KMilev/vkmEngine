@@ -7,11 +7,11 @@
 #include <cctype>
 #include <optional>
 
-#include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
 
+#include "io/project_paths.h"
 #include "resource/resource_manager.h"
 #include "loader/texture_loaders.h"
 #include "generator/texture_generators.h"
@@ -19,36 +19,6 @@
 namespace Engine {
 
 namespace {
-
-/**
- * @brief Descriptor for building a PBR material from individual texture files.
- *
- * The paths are what folder discovery found; the scalars are the values a slot
- * with no texture falls back to. Local to this file: the folder loader is the
- * only thing that fills one in.
- */
-struct MaterialLoadDesc {
-    // Texture file paths (leave empty to use fallback)
-    std::string albedoPath;
-    std::string normalPath;
-    std::string metallicRoughnessPath;  ///< Packed map: B = metallic, G = roughness
-    std::string metallicPath;
-    std::string roughnessPath;
-    std::string aoPath;
-    std::string emissionPath;
-    std::string heightPath;             ///< Height/displacement map for parallax
-
-    // Material base properties (used if no texture is provided or as tint)
-    glm::vec4 albedo = glm::vec4(1.0f);
-    glm::vec3 emission = glm::vec3(0.0f);
-    float metallic = 0.0f;
-    float roughness = 1.0f;
-    float ao = 1.0f;
-    float normalScale = 1.0f;
-    float heightScale = 0.0f;  ///< Parallax depth scale (disabled by default for safety)
-
-    bool generateMipmaps = true;
-};
 
 std::string toLower(const std::string& str) {
     std::string result = str;
@@ -96,11 +66,12 @@ std::optional<std::string> findTexture(
     const std::vector<std::string>& patterns,
     const std::vector<std::string>& extensions = {".jpg", ".jpeg", ".png", ".tga", ".bmp"}
 ) {
-    if (!std::filesystem::exists(folderPath) || !std::filesystem::is_directory(folderPath)) {
+    const std::filesystem::path folder = ProjectPaths::resolveProjectPath(folderPath);
+    if (!std::filesystem::exists(folder) || !std::filesystem::is_directory(folder)) {
         return std::nullopt;
     }
 
-    for (const auto& entry : std::filesystem::directory_iterator(folderPath)) {
+    for (const auto& entry : std::filesystem::directory_iterator(folder)) {
         if (!entry.is_regular_file()) continue;
 
         std::string filename = entry.path().filename().string();
@@ -121,7 +92,9 @@ std::optional<std::string> findTexture(
             std::string patternLower = toLower(pattern);
 
             if (nameMatchesPattern(filenameLower, patternLower)) {
-                return entry.path().string();
+                // The reference, not the walked absolute: it becomes the
+                // texture's name and its recipe path.
+                return ProjectPaths::toProjectRelative(entry.path().string());
             }
         }
     }
@@ -140,7 +113,7 @@ TextureHandle loadOrFallback(
         return fallback;
     }
 
-    if (!std::filesystem::exists(texturePath)) {
+    if (!std::filesystem::exists(ProjectPaths::resolveProjectPath(texturePath))) {
         LOG_WARNING("Texture file not found: '%s', using fallback", texturePath.c_str());
         return fallback;
     }
@@ -157,187 +130,171 @@ TextureHandle loadOrFallback(
     return handle;
 }
 
-// Single-user helper for loadMaterialFromFolder; defined below.
-MaterialHandle loadMaterialFromDesc(
-    const MaterialLoadDesc& desc,
-    ResourceManager& resourceManager
-);
+// Discover a folder's maps and assemble the material they describe.
+//
+// The pattern lists are the common naming conventions per map type. findTexture
+// lowercases both the filename and each pattern before matching, so patterns are
+// listed once in lowercase. Distinct spellings that are NOT mere case variants
+// (e.g. "basecolor" vs "base_color") are kept - they match different filenames.
+MaterialHandle buildFolderMaterial(const std::string& folderRef, ResourceManager& resourceManager) {
+    const std::string albedoPath = findTexture(folderRef, {
+        "color", "albedo", "basecolor", "diffuse", "base_color"
+    }).value_or("");
+    const std::string normalPath = findTexture(folderRef, {
+        "normal", "normalgl", "normal_gl", "norm"
+    }).value_or("");
+    const std::string metallicPath = findTexture(folderRef, {
+        "metallic", "metalness", "metal"
+    }).value_or("");
+    const std::string roughnessPath = findTexture(folderRef, {
+        "roughness", "rough"
+    }).value_or("");
+    const std::string metallicRoughnessPath = findTexture(folderRef, {
+        "metallicroughness", "metallic_roughness",
+        "orm",  // Occlusion-Roughness-Metallic
+        "rma"   // Roughness-Metallic-AO
+    }).value_or("");
+    const std::string aoPath = findTexture(folderRef, {
+        "ao", "ambientocclusion", "ambient_occlusion", "occlusion"
+    }).value_or("");
+    const std::string emissionPath = findTexture(folderRef, {
+        "emission", "emissive", "emit", "glow"
+    }).value_or("");
+    const std::string heightPath = findTexture(folderRef, {
+        "height", "displacement", "disp", "parallax"
+    }).value_or("");
+
+    // Every scalar keeps MaterialAsset's own default except these two. The shader
+    // multiplies each factor by its map, and a folder material always binds
+    // something in both slots - the discovered map, or a constant fallback that
+    // carries the default (white = fully rough, black = dielectric). So both
+    // factors have to be 1: anything lower scales the authored map down as well
+    // as the fallback, and metallic's old 0.0 erased a metallic or packed map
+    // outright, rendering every such folder material as a dielectric.
+    MaterialAsset material;
+    material.metallic  = 1.0f;
+    material.roughness = 1.0f;
+
+    const TextureHandle whiteTex  = generateWhiteTexture(resourceManager);
+    const TextureHandle blackTex  = generateBlackTexture(resourceManager);
+    const TextureHandle normalTex = generateNormalTexture(resourceManager);
+
+    material.albedoTexture = loadOrFallback(
+        albedoPath,
+        resourceManager,
+        true,  // sRGB
+        true,  // mipmaps
+        whiteTex
+    );
+
+    material.normalTexture = loadOrFallback(
+        normalPath,
+        resourceManager,
+        false,  // linear
+        true,   // mipmaps
+        normalTex
+    );
+
+    if (!metallicRoughnessPath.empty()) {
+        // Packed glTF map (G = roughness, B = metallic). Bind it to the dedicated
+        // packed slot so the shader samples the right channels; binding it to the
+        // separate metallic/roughness slots reads everything from .r and corrupts
+        // PBR. The MetallicRoughness texture-flag bit is derived from this handle.
+        material.metallicRoughnessTexture = loadOrFallback(
+            metallicRoughnessPath,
+            resourceManager,
+            false,  // linear
+            true,   // mipmaps
+            blackTex
+        );
+    } else {
+        material.metallicTexture = loadOrFallback(
+            metallicPath,
+            resourceManager,
+            false,  // linear
+            true,   // mipmaps
+            blackTex
+        );
+        material.roughnessTexture = loadOrFallback(
+            roughnessPath,
+            resourceManager,
+            false,  // linear
+            true,   // mipmaps
+            whiteTex
+        );
+    }
+
+    material.aoTexture = loadOrFallback(
+        aoPath,
+        resourceManager,
+        false,  // linear
+        true,   // mipmaps
+        whiteTex
+    );
+
+    material.emissionTexture = loadOrFallback(
+        emissionPath,
+        resourceManager,
+        true,  // sRGB (emission is a color)
+        true,  // mipmaps
+        blackTex
+    );
+
+    material.heightTexture = loadOrFallback(
+        heightPath,
+        resourceManager,
+        false,     // linear (data texture)
+        true,      // mipmaps
+        blackTex   // Flat surface (no displacement)
+    );
+
+    LOG_VERBOSE("Material created: albedo=%s, normal=%s, metallic=%s, roughness=%s, ao=%s, emission=%s, height=%s",
+        !albedoPath.empty() ? "custom" : "fallback",
+        !normalPath.empty() ? "custom" : "fallback",
+        !metallicPath.empty() ? "custom" : "fallback",
+        !roughnessPath.empty() ? "custom" : "fallback",
+        !aoPath.empty() ? "custom" : "fallback",
+        !emissionPath.empty() ? "custom" : "fallback",
+        !heightPath.empty() ? "custom" : "fallback"
+    );
+
+    return resourceManager.add(std::move(material));
+}
+
 } // namespace
 
 MaterialHandle loadMaterialFromFolder(
     const std::string& folderPath,
     ResourceManager& resourceManager
 ) {
-    // Idempotent by name like every other loader, and the folder path is this
-    // material's name: a second load of the same folder is that same material,
-    // not a second copy of it living under a suffixed name.
-    if (MaterialHandle loaded = resourceManager.findByName<MaterialAsset>(folderPath)) return loaded;
+    // Idempotent by name like every other loader, and the folder reference is
+    // this material's name: a second load of the same folder is that same
+    // material, not a second copy of it living under a suffixed name. Relativised
+    // before the lookup, or one folder named two ways becomes two materials.
+    const std::string ref = ProjectPaths::toProjectRelative(folderPath);
+    if (MaterialHandle loaded = resourceManager.findByName<MaterialAsset>(ref)) return loaded;
 
-    if (!std::filesystem::exists(folderPath)) {
-        LOG_ERROR("Material folder not found: '%s'", folderPath.c_str());
+    if (!std::filesystem::exists(ProjectPaths::resolveProjectPath(ref))) {
+        LOG_ERROR("Material folder not found: '%s'", ref.c_str());
         return MaterialHandle{};
     }
 
-    LOG_INFO("Loading material from folder: '%s'", folderPath.c_str());
+    LOG_INFO("Loading material from folder: '%s'", ref.c_str());
 
-    MaterialLoadDesc desc;
-
-    // Common naming patterns per texture type. findTexture lowercases both the
-    // filename and each pattern before matching, so patterns are listed once in
-    // lowercase. Distinct spellings that are NOT mere case variants (e.g.
-    // "basecolor" vs "base_color") are kept - they match different filenames.
-    auto findAlbedo = findTexture(folderPath, {
-        "color", "albedo", "basecolor", "diffuse", "base_color"
-    });
-    auto findNormal = findTexture(folderPath, {
-        "normal", "normalgl", "normal_gl", "norm"
-    });
-    auto findMetallic = findTexture(folderPath, {
-        "metallic", "metalness", "metal"
-    });
-    auto findRoughness = findTexture(folderPath, {
-        "roughness", "rough"
-    });
-    auto findMetallicRoughness = findTexture(folderPath, {
-        "metallicroughness", "metallic_roughness",
-        "orm",  // Occlusion-Roughness-Metallic
-        "rma"   // Roughness-Metallic-AO
-    });
-    auto findAO = findTexture(folderPath, {
-        "ao", "ambientocclusion", "ambient_occlusion", "occlusion"
-    });
-    auto findEmission = findTexture(folderPath, {
-        "emission", "emissive", "emit", "glow"
-    });
-    auto findHeight = findTexture(folderPath, {
-        "height", "displacement", "disp", "parallax"
-    });
-
-    if (findAlbedo) desc.albedoPath = *findAlbedo;
-    if (findNormal) desc.normalPath = *findNormal;
-    if (findMetallicRoughness) desc.metallicRoughnessPath = *findMetallicRoughness;
-    if (findMetallic) desc.metallicPath = *findMetallic;
-    if (findRoughness) desc.roughnessPath = *findRoughness;
-    if (findAO) desc.aoPath = *findAO;
-    if (findEmission) desc.emissionPath = *findEmission;
-    if (findHeight) desc.heightPath = *findHeight;
-
-    MaterialHandle handle = loadMaterialFromDesc(desc, resourceManager);
+    MaterialHandle handle = buildFolderMaterial(ref, resourceManager);
     if (handle) {
         // Record how this material was created so SceneSerializer can recreate
         // it on a cold-start load (texture discovery happens again at reload).
-        // The folder path is the material's stable identity - it is also the
+        // The folder reference is the material's stable identity - it is also the
         // name scene refs resolve by, so rename to it (keeps the name index in
         // sync; edit().name would not).
-        resourceManager.rename(handle, folderPath);
+        resourceManager.rename(handle, ref);
         resourceManager.edit(handle).sourceJson() = {
             {"kind", "folder"},
-            {"path", folderPath}
+            {"path", ref}
         };
     }
     return handle;
 }
-
-namespace {
-MaterialHandle loadMaterialFromDesc(
-    const MaterialLoadDesc& desc,
-    ResourceManager& resourceManager
-) {
-    MaterialAsset material;
-
-    material.albedo = desc.albedo;
-    material.emission = desc.emission;
-    material.metallic = desc.metallic;
-    material.roughness = desc.roughness;
-    material.ao = desc.ao;
-    material.normalScale = desc.normalScale;
-    material.heightScale = desc.heightScale;
-
-    auto whiteTex = generateWhiteTexture(resourceManager);
-    auto blackTex = generateBlackTexture(resourceManager);
-    auto normalTex = generateNormalTexture(resourceManager);
-
-    material.albedoTexture = loadOrFallback(
-        desc.albedoPath,
-        resourceManager,
-        true,  // sRGB
-        desc.generateMipmaps,
-        whiteTex
-    );
-
-    material.normalTexture = loadOrFallback(
-        desc.normalPath,
-        resourceManager,
-        false,  // linear
-        desc.generateMipmaps,
-        normalTex
-    );
-
-    if (!desc.metallicRoughnessPath.empty()) {
-        // Packed glTF map (G = roughness, B = metallic). Bind it to the dedicated
-        // packed slot so the shader samples the right channels; binding it to the
-        // separate metallic/roughness slots reads everything from .r and corrupts
-        // PBR. The MetallicRoughness texture-flag bit is derived from this handle.
-        material.metallicRoughnessTexture = loadOrFallback(
-            desc.metallicRoughnessPath,
-            resourceManager,
-            false,  // linear
-            desc.generateMipmaps,
-            blackTex
-        );
-    } else {
-        material.metallicTexture = loadOrFallback(
-            desc.metallicPath,
-            resourceManager,
-            false,  // linear
-            desc.generateMipmaps,
-            blackTex
-        );
-        material.roughnessTexture = loadOrFallback(
-            desc.roughnessPath,
-            resourceManager,
-            false,  // linear
-            desc.generateMipmaps,
-            whiteTex
-        );
-    }
-
-    material.aoTexture = loadOrFallback(
-        desc.aoPath,
-        resourceManager,
-        false,  // linear
-        desc.generateMipmaps,
-        whiteTex
-    );
-
-    material.emissionTexture = loadOrFallback(
-        desc.emissionPath,
-        resourceManager,
-        true,  // sRGB (emission is a color)
-        desc.generateMipmaps,
-        blackTex
-    );
-
-    material.heightTexture = loadOrFallback(
-        desc.heightPath,
-        resourceManager,
-        false,  // linear (data texture)
-        desc.generateMipmaps,
-        blackTex  // Flat surface (no displacement)
-    );
-
-    LOG_VERBOSE("Material created: albedo=%s, normal=%s, metallic=%s, roughness=%s, ao=%s, emission=%s, height=%s",
-        !desc.albedoPath.empty() ? "custom" : "fallback",
-        !desc.normalPath.empty() ? "custom" : "fallback",
-        !desc.metallicPath.empty() ? "custom" : "fallback",
-        !desc.roughnessPath.empty() ? "custom" : "fallback",
-        !desc.aoPath.empty() ? "custom" : "fallback",
-        !desc.emissionPath.empty() ? "custom" : "fallback",
-        !desc.heightPath.empty() ? "custom" : "fallback"
-    );
-
-    return resourceManager.add(std::move(material));
-}
-} // namespace
 
 } // namespace Engine

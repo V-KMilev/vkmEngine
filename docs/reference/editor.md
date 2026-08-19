@@ -20,7 +20,7 @@ aggregate, so panels do not reach into each other.
 |  [Hierarchy panel docked left]                 |              |
 |                                                |              |
 +---------------------------------------------------------------+
-|                  Bottom panel (master-detail)                 |
+|             Bottom panel (Animation / Errors tabs)            |
 +---------------------------------------------------------------+
 |                          Status bar                           |
 +---------------------------------------------------------------+
@@ -44,7 +44,7 @@ overlays drawn on top.
 | `src/editor/framework/editor_commands.h`              | Concrete commands: Transform, Add/RemoveComponent, Create/DestroySubtree, Reparent |
 | `src/editor/framework/scene_io_controller.h`          | Save/Save-As/Load modal + file pickers, post-load housekeeping        |
 | `src/engine/system/camera/camera_controller_system.h`        | FPS fly-cam System used by the editor                                 |
-| `src/editor/gizmo/transform_gizmo.h`                  | Transform gizmo (base `transform_gizmo.cpp` + draw/hit/drag translation units) |
+| `src/editor/gizmo/transform_gizmo.h`                  | Transform gizmo (one `transform_gizmo.cpp`: math, visuals, hit tests, drag state) |
 
 ## Panels
 
@@ -52,31 +52,41 @@ overlays drawn on top.
 |---------------------|---------------------------------------|-----------------------------------------------------------------------------|
 | Hierarchy           | `panels/hierarchy_panel.cpp`          | Entity tree; drag a node onto another to reparent (cycle-safe); context-menu Unparent |
 | Inspector           | `panels/inspector_panel.cpp`          | Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent; prefab-instance overrides |
-| Bottom              | `panels/bottom_panel.cpp`             | Per-scene working surface: grouped master-detail browser                    |
-| Render Settings     | `panels/render_settings_panel.cpp`    | World-level render tuning: `RenderSettings` (GTAO / bloom / MSAA / shadows / grid) plus the `Environment` (IBL / skybox); opened from Window > Render Settings |
-| Physics Settings    | drawn inline in `editor_system.cpp`   | Edits the scene's `PhysicsWorld` singleton (gravity, solver iterations); opened from the Window menu |
+| Bottom              | `panels/bottom_panel.cpp`             | Two tabs: Animation (keyframe editor) and Errors (recoverable engine failures) |
+| Render Settings     | `panels/render_settings_panel.cpp`    | Render quality tuning: `RenderSettings` (debug view / grid / MSAA, GTAO, bloom, shadows, probes) plus the `VisibilitySystem` culling thresholds; opened from Window > Render Settings |
 | Material Editor     | `panels/material_editor_panel.cpp`          | Per-material PBR inspector with live preview (renders the real pipeline)    |
 | Asset Browser       | `panels/asset_browser_panel.cpp`            | Thumbnail grid of materials / meshes / textures; pickable into the inspector|
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
-| Viewport Overlay    | `overlays/viewport_overlay.cpp`       | FPS counter, entity count, on-screen log overlay                            |
+| Viewport Overlay    | `overlays/viewport_overlay.cpp`       | The axis navigation gizmo, top-right of the viewport (click an axis to snap the camera) |
 | Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | Transform gizmo drawing + light/camera gizmos                               |
 | Viewport Toolbar    | `overlays/viewport_toolbar.cpp`       | In-viewport icon tool box: tool/space/snap + selection actions              |
 | Playback Bar        | `overlays/playback_bar.cpp`           | Top-centre Play/Pause/Stop transport for all Animation components           |
+
+### Where world settings live
+
+Scene-global settings are cards in the **World inspector** (select
+nothing, or pick the world row in the hierarchy): `Environment` (IBL /
+skybox), `Procedural Sky`, `Volumetric Fog`, and `Physics` (gravity,
+solver iterations - `Scene::physics()`, read by `PhysicsSystem` each
+fixed step). They are scene data, so they sit beside the components
+rather than in a settings window. Render Settings is the exception: it
+is quality tuning rather than world content, so it has its own window.
 
 ### Bottom panel vs Preferences
 
 The editor separates **per-scene working data** from **editor/app
 preferences**:
 
-- **Bottom panel** is a grouped master-detail browser over the scene
-  surface. Left-nav groups: `WORLD` (Environment, Rendering), `TOOLS`
-  (Animation), `INFO` (Statistics).
+- **Bottom panel** is a tab bar over per-scene working surfaces:
+  **Animation** (the keyframe editor below) and **Errors**. The Errors
+  tab is where recoverable engine failures surface - a script hook that
+  throws does not kill the frame, it lands here - listing
+  `EngineErrorLog` entries newest first with a Clear button.
 - **Preferences window** is a floating, closeable window opened from
-  `Edit > Preferences` (Ctrl+,). Groups: `VIEWPORT` (camera fly-cam,
-  gizmo snap defaults), `APPLICATION` (display), `INPUT` (keybinds).
-  These moved out of the bottom panel because they are user/app config,
-  not scene data. The Preferences gizmo section is snap-only; the
-  active tool and Local/World space live on the viewport toolbar.
+  `Edit > Preferences` (Ctrl+,). Tabs: `Camera` (fly-cam), `Gizmo`
+  (snap defaults), `Display`, `Keybinds`. These are user/app config, not
+  scene data. The Preferences gizmo section is snap-only; the active
+  tool and Local/World space live on the viewport toolbar.
 
 ### Animation editor (Bottom panel, Animation tab)
 
@@ -123,9 +133,13 @@ Available commands (in `framework/editor_commands.h`):
 - `ComponentEditCommand<T>`: a generic field edit on an existing component
   (snapshots before/after), the inspector's catch-all undo step.
 - `AddComponentCommand<T>` / `RemoveComponentCommand<T>`, instantiated for
-  `Mesh`, `Light`, `Camera`, `Animation`, `Rigidbody`, `Collider`,
-  `ReflectionProbe` (Add also covers `Name`). Remove snapshots the prior value so
-  undo restores it exactly, not a default-constructed copy.
+  every type in `VKM_EDITOR_COMMAND_COMPONENTS`: `Mesh`, `Light`, `Camera`,
+  `Animation`, `Rigidbody`, `Collider`, `ReflectionProbe`, `Decal`,
+  `ParticleEmitter`, `IrradianceVolume`, `LOD`, and the five UI components
+  (`UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton`). Add also covers
+  `Name`, which has no Remove - an entity without a name falls back to its type
+  label. Remove snapshots the prior value so undo restores it exactly, not a
+  default-constructed copy.
 - `CreateEntityCommand`: captures the post-create slot so redo
   recreates at the same slot.
 - `DestroySubtreeCommand`: captures the entire subtree (entity plus
@@ -151,7 +165,8 @@ Available commands (in `framework/editor_commands.h`):
 
 Templated commands are emitted out of line via `extern template` in the
 header and instantiated once in `editor_commands.cpp` so each
-translation unit doesn't recompile the bodies.
+translation unit doesn't recompile the bodies. Both blocks expand from
+the single `VKM_EDITOR_COMMAND_COMPONENTS` list, so they cannot drift.
 
 `CommandStack::push` calls `Command::tryMerge` against the top of the
 undo stack first; that is where transform drag coalescing happens.
@@ -241,7 +256,7 @@ class CameraControllerSystem : public System {
 ```
 
 Keybindings are configurable through the keybinds system; see the
-Preferences window's INPUT group.
+Preferences window's Keybinds tab.
 
 ## Transform gizmo
 
@@ -257,7 +272,7 @@ rather than each frame of it.
 
 Default tool keybinds (active only when the camera is **not** in fly mode):
 `Q` Select, `W` Move, `E` Rotate, `R` Scale, `X` toggles Local / World.
-All are rebindable from the Preferences > INPUT panel.
+All are rebindable from the Preferences > Keybinds tab.
 
 Light and camera entities show their own gizmos in `gizmo_overlay.cpp`
 (directional rays, cone projections, frustum lines, area-light edges).

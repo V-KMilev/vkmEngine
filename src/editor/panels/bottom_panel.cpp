@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "debug/engine_error_log.h"
+#include "framework/component_edit.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
 #include "framework/prefab_overrides.h"
@@ -108,7 +109,6 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             if (!anim.positionTrack.isEmpty()) tf.position = anim.positionTrack.getValue(anim.time);
             if (!anim.rotationTrack.isEmpty()) tf.rotation = anim.rotationTrack.getValue(anim.time);
             if (!anim.scaleTrack.isEmpty())    tf.scale    = anim.scaleTrack.getValue(anim.time);
-            HierarchyOperations::markDirty(scene, id);
         };
 
         float ih = ImGui::GetFrameHeight();
@@ -128,7 +128,6 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             anim.positionTrack.setKeyframe(anim.time, tf.position);
             anim.rotationTrack.setKeyframe(anim.time, tf.rotation);
             anim.scaleTrack.setKeyframe(anim.time, tf.scale);
-            anim.updateDuration();
             changed = true;
         }
         ImGui::SameLine(0, GAP);
@@ -146,14 +145,12 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
         float lengthEdit = anim.length;
         if (ImGui::InputFloat("Length", &lengthEdit, 0.1f, 1.0f, "%.2f s")) {
             anim.length = std::max(0.0f, lengthEdit);
-            anim.updateDuration();
             changed = true;
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Animation length in seconds (0 = auto from the last keyframe)");
 
-        anim.updateDuration();
-        float dur = anim.duration;
+        const float dur = Animation::computeDuration(anim);
 
         ImGui::Spacing();
         {
@@ -219,7 +216,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
                 if (m_animDotTrack == 0)      moveDot(anim.positionTrack, m_animDotIdx, mt);
                 else if (m_animDotTrack == 1) moveDot(anim.rotationTrack, m_animDotIdx, mt);
                 else if (m_animDotTrack == 2) moveDot(anim.scaleTrack,    m_animDotIdx, mt);
-                if (m_animDotTrack >= 0) { anim.updateDuration(); changed = true; }
+                if (m_animDotTrack >= 0) changed = true;
                 else { anim.time = mt; anim.playing = false; }
                 previewPose();
             }
@@ -286,7 +283,6 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             if (iconButton(addId, EditorIcon::Plus, false, true,
                            "Add/replace a keyframe at the current time from the live transform", ih2)) {
                 track.setKeyframe(anim.time, recordVal());
-                anim.updateDuration();
                 previewPose();
                 changed = true;
             }
@@ -296,7 +292,6 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             if (iconButton(clrId, EditorIcon::Trash, false, track.keyframeCount() > 0,
                            "Clear every keyframe on this track", ih2)) {
                 track.clear();
-                anim.updateDuration();
                 changed = true;
             }
             ImGui::SameLine(0, 12);
@@ -364,12 +359,10 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
 
                 if (deleteIdx >= 0) {
                     track.removeKeyframe(static_cast<size_t>(deleteIdx));
-                    anim.updateDuration();
                     previewPose();
                     changed = true;
                 } else if (retimeIdx >= 0) {
                     track.setKeyframeTime(static_cast<size_t>(retimeIdx), std::max(0.0f, retimeVal));
-                    anim.updateDuration();
                     previewPose();
                     changed = true;
                 } else if (valueIdx >= 0) {
@@ -386,19 +379,9 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
         trackEditor("Scale", "S", anim.scaleTrack, [&] { return tf.scale; }, vec3Editor);
 
         if (changed) {
-            // Coalescing command - tryMerge collapses per-frame drag edits
-            // (timeline dots, speed) into one undo step. Inside a prefab
-            // instance the edit is an override instead: the scene rebuilds the
-            // interior from the file, so a plain edit here would play until the
-            // next load and then be gone.
-            auto step = PrefabOverrides::record<Animation>(scene, ctx.resources, id, before, anim,
-                                                           "Edit Animation");
-            if (!step) {
-                step = std::make_unique<ComponentEditCommand<Animation>>(id, before, anim,
-                                                                         "Edit Animation");
-            }
-            state.commands.push(std::move(step));
-            state.markSceneDirty();
+            // tryMerge collapses per-frame drag edits (timeline dots, speed)
+            // into one undo step.
+            pushEdit<Animation>(scene, ctx.resources, state, id, before, anim, "Edit Animation");
         }
     };
 
@@ -426,7 +409,6 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             scene.add(id, Animation{});
             Animation& na = scene.get<Animation>(id);
             na.length = 5.0f;
-            na.updateDuration();
             // Same undo path as the Inspector's Add Component menu.
             state.commands.push(std::make_unique<AddComponentCommand<Animation>>(
                 id, na, "Add Animation"));
