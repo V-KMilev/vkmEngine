@@ -38,6 +38,16 @@ namespace CS = ComponentSerializer;
 // Assets are name-only references resolved through the cooked asset library.
 constexpr int FILE_FORMAT_VERSION = 2;
 
+// The largest slot a scene file may name. The file still sizes the entity slot
+// table - createEntityAt grows two vectors to reach whatever id it names, and
+// every SparseSet that entity touches grows its sparse array to the same key -
+// so this bounds that cost rather than taking the choice away: the worst a file
+// can ask for is four million slots instead of the four billion the id field can
+// spell. It also keeps every accepted id clear of SparseSet's EMPTY sentinel.
+// Raising it is safe while the ceiling stays an allocation a machine can meet.
+// Roughly 300x the benchmark scene.
+constexpr uint32_t MAX_ENTITY_SLOT = 1u << 22;
+
 /**
  * @brief Per-component serialization, as a flat explicit list.
  *
@@ -258,14 +268,24 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     std::vector<std::pair<uint32_t, uint32_t>> parentLinks;  // (child idx, parent idx)
     std::vector<EntityId> prefabRoots;  // instance roots to expand
     size_t entityCount = 0;
+    size_t unusableIds = 0;   // tallied, not logged per entry, like unknownKeys below
+    size_t duplicateIds = 0;
     std::set<std::string> unknownKeys;  // dedup warnings - one per drift, not per entity
     const json noComponents = json::object();   // stand-in for an entity that has none
 
     try {
         for (const auto& entry : doc["entities"]) {
             const uint32_t id = entry.value("id", 0u);
-            if (id == 0) {
-                LOG_WARNING("Entity with id=0 skipped (slot 0 reserved)");
+            if (id == 0 || id > MAX_ENTITY_SLOT) {
+                ++unusableIds;
+                continue;
+            }
+            // A repeated id would allocate an already-live slot and add every
+            // component to it twice: SparseSet appends a second dense entry
+            // rather than overwriting, so the entity yields each component twice
+            // and a later remove swap-and-pops against a stale index.
+            if (staging.isAliveAtIndex(id)) {
+                ++duplicateIds;
                 continue;
             }
             const EntityId entity = staging.createEntityAt(id);
@@ -332,6 +352,16 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
                     if (!isKnownComponentKey(kv.key())) unknownKeys.insert(kv.key());
                 }
             }
+        }
+
+        if (unusableIds > 0) {
+            LOG_WARNING("%zu entity record(s) in '%s' skipped: id 0 is the reserved slot and "
+                "an id above %u is not one this build will size the slot table to",
+                unusableIds, source, MAX_ENTITY_SLOT);
+        }
+        if (duplicateIds > 0) {
+            LOG_WARNING("%zu entity record(s) in '%s' skipped: the id was already taken by an "
+                "earlier record", duplicateIds, source);
         }
 
         // Pass 2b: expand prefab instances. After the entity pass so the roots

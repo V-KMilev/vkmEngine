@@ -264,12 +264,21 @@ file's own array*, because entity ids mean nothing outside the scene that issued
 them. `Prefab::save` drops the `Hierarchy` block for that reason and rewrites
 the link as an index.
 
-That file is one a person can write, so `readPrefab` establishes its shape once
-and every entry point reports what it cannot use rather than raising: the
-callers are an editor showing a toast beside its own file picker and a scene
-load with other entities to build. Past that check an entry is an object and its
-component block is one too, and the numbers still read out of it - `version`,
-`uid`, `parent` - treat a key of the wrong type as an absent one.
+That file is one a person can write, so `readPrefab` establishes its shape and
+its identities once, and every entry point reports what it cannot use rather
+than raising: the callers are an editor showing a toast beside its own file
+picker and a scene load with other entities to build. Past that check an entry
+is an object, its component block is one too, and no two entries answer to the
+same uid; the numbers still read out of it - `version`, `uid`, `parent` - treat
+a key of the wrong type as an absent one.
+
+A duplicate uid is a hard refusal because it makes an override's address
+ambiguous, and the four places that resolve one disagree about what to do with
+it: `applyOverrides` patches every match, while `reloadComponent`,
+`definesComponent` and `entityWithUid` each stop at the first. `Prefab::save`
+keeps a uid only when it is that entity's alone, so the writer cannot produce a
+file its own reader refuses - a collision, or a child wearing the root's zero,
+costs one renumbered entity instead of an unloadable prefab.
 
 A scene's own `assets` block still walks the entities inside its instances, even
 though the prefab now lists them: an instance may override a `Mesh` or a `Decal`
