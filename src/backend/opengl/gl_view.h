@@ -78,9 +78,6 @@ class GLView {
          * rather than from the visible set, so their assets need not appear
          * among the drawables at all - and every pass answers a missing GPU
          * object by silently skipping the draw.
-         *
-         * @param view The render view to sync.
-         * @param resources The resource manager to use.
          */
         void sync(const RenderView& view, const ResourceManager& resources);
 
@@ -123,12 +120,6 @@ class GLView {
     private:
         /**
          * @brief Upload or refresh a single asset into its table, version-gated.
-         *
-         * @tparam GLT The type of the GL resource.
-         * @tparam AssetT The type of the asset.
-         * @param table The table to ensure.
-         * @param handle The handle to ensure.
-         * @param resources The resource manager to use.
          */
         template <typename GLT, typename AssetT>
         void ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, const ResourceManager& resources);
@@ -139,9 +130,6 @@ class GLView {
          * The placeholder makes a missing texture visible; this names the file,
          * which is the part the screen cannot tell you. Assets still streaming
          * are skipped - those are not failures, and they resolve on their own.
-         *
-         * @param handle    The texture to check.
-         * @param resources The resource manager holding it.
          */
         void reportIfMissing(const TextureHandle& handle, const ResourceManager& resources);
 
@@ -151,9 +139,6 @@ class GLView {
          * The textures are discovered off the GLMaterial this call just synced,
          * so the material is always present before its maps are needed and no
          * second pass is required.
-         *
-         * @param handle    The material to upload.
-         * @param resources The resource manager holding it.
          */
         void ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources);
 

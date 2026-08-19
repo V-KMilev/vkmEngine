@@ -68,9 +68,6 @@ class GLPreview {
 
         /**
          * @brief Last-rendered texture for @p key, or 0 when none exists.
-         *
-         * @param key  Preview cache key (asset/request identity).
-         * @return GL texture id of the cached LDR result, or 0 if nothing is cached.
          */
         uint32_t texture(uint64_t key) const;
 
@@ -78,8 +75,6 @@ class GLPreview {
          * @brief Drop one key's target.
          *
          * Call when the source asset is destroyed so its cached preview is freed.
-         *
-         * @param key Preview cache key whose target is released.
          */
         void release(uint64_t key);
 
