@@ -81,6 +81,7 @@ class InspectorPanel {
         void drawUIButtonSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawAddComponentMenu(Scene& scene, EditorState& state, EntityId id);
 
+    private:
         // Euler-angle edit cache for the Transform Rotation field, keyed by
         // entity. See EulerCache for the gimbal-lock rationale.
         EulerCache<EntityId> m_eulerCache;
@@ -88,6 +89,9 @@ class InspectorPanel {
         // World inspector's "Skybox HDR" browse. Cached file discovery rooted at
         // assets/envs; opened on demand instead of scanning every frame.
         AssetPicker m_envPicker;
+
+        int m_colliderFitDetail = 4;  ///< Voxel resolution for the Collider "Fit to Mesh" button.
+        int m_lodGenLevels      = 2;  ///< Levels the LOD card's Generate button builds below the source.
 };
 
 } // namespace Engine

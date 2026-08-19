@@ -19,24 +19,22 @@ struct Animation {
     AnimationTrack<glm::quat> rotationTrack;
     AnimationTrack<glm::vec3> scaleTrack;
 
-    float duration = 0.0f;     ///< Cached effective duration in seconds. Stale until updateDuration() is called after a track/length edit.
-    float length   = 0.0f;     ///< Explicit minimum length in seconds (0 = auto from last keyframe)
-    float time     = 0.0f;     ///< Current animation time in seconds
-    float speed    = 1.0f;     ///< Playback speed multiplier
-    bool  playing  = false;
-    bool  looping  = true;
+    float length  = 0.0f;     ///< Explicit minimum length in seconds (0 = auto from last keyframe)
+    float time    = 0.0f;     ///< Current animation time in seconds
+    float speed   = 1.0f;     ///< Playback speed multiplier
+    bool  playing = false;
+    bool  looping = true;
 
     /**
-     * @brief Recomputes the cached duration as the maximum of every track's
-     * last keyframe and the explicit @ref length. Call after modifying
-     * keyframes, tracks, or length.
+     * @brief The animation's effective length: the latest keyframe across all
+     *        three tracks, or the explicit @ref length, whichever is greater.
      */
-    void updateDuration() {
-        duration = std::max({
-            positionTrack.getDuration(),
-            rotationTrack.getDuration(),
-            scaleTrack.getDuration(),
-            length
+    static float computeDuration(const Animation& animation) {
+        return std::max({
+            animation.positionTrack.getDuration(),
+            animation.rotationTrack.getDuration(),
+            animation.scaleTrack.getDuration(),
+            animation.length
         });
     }
 };

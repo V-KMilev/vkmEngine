@@ -44,8 +44,7 @@
 namespace Engine {
 namespace EditorActions {
 
-void commitHierarchyMutation(Scene& scene, EditorState& state, EntityId entity) {
-    HierarchyOperations::markDirty(scene, entity);
+void commitHierarchyMutation(EditorState& state) {
     state.hierarchyDirty = true;
     state.markSceneDirty();
 }
@@ -115,7 +114,7 @@ void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
 
     state.commands.push(std::make_unique<ReparentCommand>(
         child, oldParent, toParent ? newParent : EntityId{}, before, t, label));
-    commitHierarchyMutation(scene, state, child);
+    commitHierarchyMutation(state);
 }
 
 void commitStructureChange(EditorState& state) {
@@ -374,6 +373,9 @@ void duplicateSelection(Scene& scene, ResourceManager& resources, EditorState& s
         return;
     }
 
+    // Not filtered to selection roots the way deleteSelection is: EntitySnapshot
+    // has no Hierarchy, so every clone lands unparented and flat. Skipping a
+    // selected child would mean it is never duplicated at all.
     const std::vector<EntityId> sources = state.selection;
     auto batch = std::make_unique<CompositeCommand>("Duplicate Selection");
     std::vector<EntityId> clones;
@@ -394,6 +396,17 @@ void duplicateSelection(Scene& scene, ResourceManager& resources, EditorState& s
     state.selectEntity(clones.front());
     for (size_t i = 1; i < clones.size(); ++i) state.addToSelection(clones[i]);
     state.selectedEntity = clones.front();
+}
+
+bool hasSelectedAncestor(const Scene& scene, const std::vector<EntityId>& selection, EntityId id) {
+    EntityId cur = id;
+    for (uint32_t depth = 0; depth < HierarchyOperations::MAX_DEPTH; ++depth) {
+        if (!scene.isAlive(cur) || !scene.has<Hierarchy>(cur)) return false;
+        cur = scene.get<Hierarchy>(cur).parent;
+        if (!cur) return false;
+        if (std::find(selection.begin(), selection.end(), cur) != selection.end()) return true;
+    }
+    return false;
 }
 
 namespace {
@@ -421,22 +434,13 @@ void deleteSelection(Scene& scene, EditorState& state) {
     // has to happen before the destroys, so by the time the loop runs the live
     // selection is empty.
     const std::vector<EntityId> sel = state.selection;
-    auto hasSelectedAncestor = [&](EntityId id) {
-        EntityId cur = id;
-        while (scene.isAlive(cur) && scene.has<Hierarchy>(cur)) {
-            cur = scene.get<Hierarchy>(cur).parent;
-            if (!cur) break;
-            if (std::find(sel.begin(), sel.end(), cur) != sel.end()) return true;
-        }
-        return false;
-    };
 
     const EntityId priorSel = state.selectedEntity;
     state.deselect();
 
     auto batch = std::make_unique<CompositeCommand>("Delete Selection");
     for (EntityId id : sel) {
-        if (!scene.isAlive(id) || hasSelectedAncestor(id)) continue;
+        if (!scene.isAlive(id) || hasSelectedAncestor(scene, sel, id)) continue;
         warnDeleteInsideInstance(scene, state, id);
         SubtreeSnapshot snap = SubtreeSnapshot::capture(scene, id);
         HierarchyOperations::destroyHierarchy(scene, id);
@@ -728,9 +732,7 @@ void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
     }
     std::string picked;
     if (m_picker.draw(picked)) {
-        EntityId rootId = importModelIntoScene(
-            (ProjectPaths::projectRoot() / picked).string(),
-            resources, scene);
+        EntityId rootId = importModelIntoScene(picked, resources, scene);
         if (rootId) {
             state.selectEntity(rootId);
             commitStructureChange(state);

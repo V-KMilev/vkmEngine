@@ -44,7 +44,10 @@
 
 namespace Engine {
 
-GLBackend::GLBackend() : RenderBackend(RenderBackendType::OpenGL) {}
+GLBackend::GLBackend()
+    : RenderBackend(RenderBackendType::OpenGL)
+    , m_iblBaker(m_cubeConvolver)
+    , m_irradianceBaker(m_sceneCapture) {}
 
 GLBackend::~GLBackend() = default;
 
@@ -125,8 +128,8 @@ bool GLBackend::init(WindowManager& window) {
     // Froxel fog volumes allocate lazily - the fog pass inits them on the first
     // fog-enabled frame, so scenes that never enable fog never pay the ~15 MB.
 
-    // Compiles shaders, so it needs the live context.
-    m_probes.init();
+    // Allocates cube-map arrays, so it needs the live context.
+    m_probes.init(m_sceneCapture, m_cubeConvolver);
 
     // Editor previews: same.
     m_preview.init();
@@ -137,15 +140,6 @@ bool GLBackend::init(WindowManager& window) {
     LOG_INFO("%s on %s", m_info.api.c_str(), m_info.device.c_str());
 
     return true;
-}
-
-void GLBackend::resize(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
-    m_context.setViewport(
-        static_cast<int32_t>(x),
-        static_cast<int32_t>(y),
-        static_cast<int32_t>(width),
-        static_cast<int32_t>(height)
-    );
 }
 
 void GLBackend::render(const RenderView& view, const ResourceManager& resources) {

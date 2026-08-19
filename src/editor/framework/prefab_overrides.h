@@ -20,7 +20,7 @@ class ResourceManager;
 struct EditorState;
 
 /**
- * @brief Where a prefab instance's per-field overrides come from.
+ * @brief Reading and writing the overrides a prefab instance carries.
  *
  * The engine applies overrides when it builds an instance; this is the half
  * that makes them. Editing a component on an entity that belongs to an
@@ -29,6 +29,11 @@ struct EditorState;
  * instance as a reference and rebuilds its entities from the prefab, so an edit
  * that is not an override is not stored at all, and an explicit step would
  * silently discard everything done before someone pressed it.
+ *
+ * A call site does not choose between an override and a plain edit: editStep in
+ * framework/component_edit.h asks @ref record first and falls back to a plain
+ * component command when it declines. Only that fallback lives elsewhere - what
+ * counts as an override is decided here.
  *
  * An override is addressed (uid, component, field) with the value stored as the
  * field's own serialized JSON, so the keys here are the scene serializer's and

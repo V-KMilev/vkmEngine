@@ -9,9 +9,14 @@
  * buffers, which is what lets the GPU cull settle an instance's fate by writing
  * one 4-byte index instead of copying two 64-byte matrices.
  *
- * The indirection also carries ordering, so a pass that draws a subset in its
- * own order - the shadow pass, sorted by mesh - supplies an index list and
- * skips materialising a reordered copy of the matrices.
+ * The indirection also carries ordering: the index is where the GPU cull's
+ * compaction and the camera batch's run ordering are expressed, so a run draws
+ * its survivors in place without anything rewriting the matrix buffer.
+ *
+ * This is the camera batch's scheme and not the engine's only one. The shadow
+ * pass deliberately stays on per-instance mat4 attributes - see
+ * GLMesh::attachInstances for why that is the right trade for a depth-only pass
+ * replayed per tile and per cube face.
  */
 
 // The attribute is read from the index buffer itself, so its value IS the

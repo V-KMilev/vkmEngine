@@ -1,7 +1,10 @@
 #pragma once
 
+#include <vector>
+
 #include <nlohmann/json.hpp>
 
+#include "ecs/entity.h"
 #include "resource/asset/material_asset.h"
 
 namespace Engine {
@@ -24,6 +27,21 @@ class Scene;
  * emitted there, and recreated before materials resolve their refs.
  */
 namespace AssetSerializer {
+    /**
+     * @brief The assets block for a chosen set of entities.
+     *
+     * What a prefab needs: its file describes a subtree, so it lists the assets
+     * that subtree names rather than the whole scene's.
+     *
+     * @param scene Scene holding the entities.
+     * @param entities The entities to walk; ids that are not alive are the
+     *                 caller's error.
+     * @param resources Resolves each handle to the asset it names.
+     * @return An object with "textures", "meshes" and "materials" arrays.
+     */
+    nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<EntityId>& entities,
+                                         const ResourceManager& resources);
+
     nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources);
     bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources);
 

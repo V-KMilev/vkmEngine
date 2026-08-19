@@ -3,7 +3,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string>
-#include <system_error>
 
 #include "logger.h"
 
@@ -15,6 +14,7 @@
 #include "io/project.h"
 #include "io/project_paths.h"
 #include "io/scene/scene_serializer.h"
+#include "project_boot.h"
 
 // Cooks a project's assets without opening a window.
 //
@@ -27,29 +27,12 @@
 // executable, unless an argument names a different one.
 int main(int argc, char** argv) {
     try {
-        std::error_code ec;
-        bool argNotAProject = false;
-        if (argc > 1) {
-            const std::filesystem::path found =
-                Engine::findProjectRoot(std::filesystem::absolute(argv[1], ec));
-            if (found.empty()) argNotAProject = true;
-            else                Engine::ProjectPaths::setProjectRoot(found);
-        }
+        // Project root, working directory and log file, in the one order that
+        // works (see tools/project_boot.h). Its own log file and tag: a cook is
+        // a separate run from the editor session that may have launched it.
+        if (!Engine::bootHost(argc, argv, "cook.log", "VKM-COOK")) return EXIT_FAILURE;
 
         const std::filesystem::path root = Engine::ProjectPaths::projectRoot();
-        std::filesystem::create_directories(root / "logs", ec);
-
-        if (!Logger::init((root / "logs" / "cook.log").string(), "VKM-COOK", LogLevel::TRACE)) {
-            return EXIT_FAILURE;
-        }
-
-
-        // Deferred until the logger exists: a mistyped path would otherwise look
-        // like it worked, but this is the first point anything can say so.
-        if (argNotAProject) {
-            LOG_WARNING("'%s' is not a project (no project.json in it or above it); "
-                        "using the project beside this executable instead", argv[1]);
-        }
 
         Engine::Project project;
         Engine::loadProject(root, project);

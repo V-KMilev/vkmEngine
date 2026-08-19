@@ -47,21 +47,6 @@ void removeFromParent(Scene& scene, EntityId entity);
 glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity);
 
 /**
- * @brief Mark an entity's world transform as needing recomputation.
- *
- * Sets Hierarchy::dirty on the entity and propagates to every descendant.
- * No-op if the entity has no Hierarchy component. Call this after mutating
- * a Transform that participates in a hierarchy so the next HierarchySystem
- * tick picks up the change.
- *
- * Not thread-safe - call from the main thread or after any parallel writes.
- *
- * @param scene The scene containing the entity.
- * @param entity The entity whose subtree should be marked dirty.
- */
-void markDirty(Scene& scene, EntityId entity);
-
-/**
  * @brief Deepest ancestor chain the resolve pass will follow.
  *
  * Public because HierarchySystem sizes its per-depth scratch by it.

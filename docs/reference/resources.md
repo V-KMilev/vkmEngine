@@ -76,10 +76,11 @@ so headers don't drag the JSON header in (see
 [../guides/code-style.md](../guides/code-style.md) for why this exception is
 deliberate).
 
-`hidden = true` is set (via `ResourceManager::addPrivate`) on previews,
-fallback textures, and bundled primitive meshes; `SceneSerializer` and
-`AssetSerializer` skip those assets entirely so save files contain only
-user-relevant content. Names are guaranteed unique and non-empty per type:
+`hidden = true` is set (via `ResourceManager::addPrivate`) on the editor's own
+preview and thumbnail assets - the Asset Browser's preview sphere and neutral
+thumbnail material, the Material Editor's preview primitives. The cooker leaves
+them out of the manifest and `AssetSerializer` refuses to write a reference to
+one, so save files contain only user-relevant content. Names are guaranteed unique and non-empty per type:
 `add()` runs them through `ensureUniqueName`, and a name must be changed via
 `rename()` (not `edit().name = ...`) so the name index stays consistent.
 
@@ -209,7 +210,9 @@ See [IO and serialization](system/io.md) for the full flow.
 `AssetSerializer::saveAssetsForScene` emits only the assets actually
 referenced by the scene - `Mesh` (mesh + material), `LOD` (every level's
 mesh) and `Decal` (its material), plus the textures those materials
-reference - and skips any with `hidden = true`. A component that writes an
+reference. `emitDescriptor` is the single gate every one of those goes
+through, so a hidden or unnamed asset cannot be written as a reference by
+any emitter, present or future. A component that writes an
 asset name into the scene file has to be walked there, or the name has
 nothing to resolve against on load. On load,
 assets with the same `name` already in the manager are skipped (loads

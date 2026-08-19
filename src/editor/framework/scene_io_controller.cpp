@@ -40,24 +40,30 @@ SceneIOController::SceneIOController(
 
 SceneIOController::~SceneIOController() = default;
 
+bool SceneIOController::writeScene(FrameContext& ctx, EditorState& state, const std::string& path) {
+    // Bake every referenced asset into the cooked library + manifest, then write
+    // the scene as name-only references to those cooked assets.
+    AssetCooker::cookAllAssets(ctx.resources);
+
+    const std::string shown = std::filesystem::path(path).filename().string();
+    if (!SceneSerializer::save(ctx.scene, ctx.resources, path)) {
+        LOG_ERROR("SceneIOController: failed to write %s - scene remains dirty",
+            path.c_str());
+        state.pushToast(EditorState::ToastKind::Error, "Save failed: " + shown);
+        return false;
+    }
+    state.sceneDirty = false;
+    pushRecentPath(state.recentScenes, path);
+    state.pushToast(EditorState::ToastKind::Info, "Saved " + shown);
+    return true;
+}
+
 void SceneIOController::save(FrameContext& ctx, EditorState& state) {
     if (m_currentScenePath.empty()) {
         requestSaveAs();
         return;
     }
-    // Bake every referenced asset into the cooked library + manifest, then write
-    // the scene as name-only references to those cooked assets.
-    AssetCooker::cookAllAssets(ctx.resources);
-    if (!SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath)) {
-        LOG_ERROR("SceneIOController::save: failed to write %s - scene remains dirty",
-            m_currentScenePath.c_str());
-        state.pushToast(EditorState::ToastKind::Error,
-            "Save failed: " + m_currentScenePath);
-        return;
-    }
-    state.sceneDirty = false;
-    pushRecentPath(state.recentScenes, m_currentScenePath);
-    state.pushToast(EditorState::ToastKind::Info, "Saved");
+    writeScene(ctx, state, m_currentScenePath);
 }
 
 void SceneIOController::loadPath(FrameContext& ctx, EditorState& state, const std::string& path) {
@@ -194,22 +200,19 @@ void SceneIOController::afterSceneReplace(
         });
     }
 
-    // Re-bind the camera controller to the new scene's active Camera. If
-    // multiple cameras claim active (authoring oversight), pick the first
-    // by iteration order and warn - silently picking one of several would
-    // make the choice look intentional.
-    EntityId rebound{};
+    // Re-bind the camera controller to the new scene's active Camera, by the
+    // same rule the renderer uses. If multiple cameras claim active (authoring
+    // oversight), that rule picks the first by iteration order - warn, because
+    // silently picking one of several would make the choice look intentional.
     int activeCount = 0;
-    ctx.scene.forEach<Camera>([&](EntityId id, const Camera& c) {
-        if (!c.active) return;
-        ++activeCount;
-        if (!rebound) rebound = id;
+    ctx.scene.forEach<Camera, Transform>([&](EntityId, const Camera& c, const Transform&) {
+        if (c.active) ++activeCount;
     });
     if (activeCount > 1) {
         LOG_WARNING("SceneIOController: %d cameras marked active in %s - using the first",
             activeCount, eventPath.c_str());
     }
-    m_cameraController.setCameraEntity(rebound);
+    m_cameraController.setCameraEntity(findActiveCamera(ctx.scene));
 }
 
 void SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {
@@ -261,8 +264,8 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
         ImGui::TextDisabled("Saved into %s (.json appended automatically)",
                             ProjectPaths::scenes().string().c_str());
         ImGui::SetNextItemWidth(EditorStyle::px(360.0f));
-        // Enter in the field commits (EnterReturnsTrue), matching the
-        // scaffold's Enter-confirms contract.
+        // Fed to dialogButtons as fieldCommitted: ImGui swallows the plain
+        // Enter while the field is active.
         const bool enterCommit = ImGui::InputText("##SaveAsName", m_saveAsBuffer,
             sizeof(m_saveAsBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
 
@@ -291,29 +294,18 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
                 "Overwrites existing %s", finalName.c_str());
         }
 
-        DialogResult r = dialogButtons(m_openSaveAsPopup,
-                                       collides ? "Overwrite" : "Save", !empty);
-        if (enterCommit && !empty && r == DialogResult::None) {
-            r = DialogResult::Confirm;
-            m_openSaveAsPopup = false;
-            ImGui::CloseCurrentPopup();
-        }
+        const DialogResult r = dialogButtons(m_openSaveAsPopup,
+                                             collides ? "Overwrite" : "Save",
+                                             !empty, enterCommit);
         if (r == DialogResult::Confirm) {
             // First-time save: the scenes/ directory may not exist yet.
             std::error_code mkdirEc;
             std::filesystem::create_directories(
                 ProjectPaths::scenes(), mkdirEc);
+            // Set before the write: a failed Save-As leaves the new path
+            // current, so Ctrl+S retries where the user asked to go.
             m_currentScenePath = finalPath;
-            AssetCooker::cookAllAssets(ctx.resources);
-            if (SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath)) {
-                state.sceneDirty = false;
-                pushRecentPath(state.recentScenes, m_currentScenePath);
-                state.pushToast(EditorState::ToastKind::Info, "Saved " + finalName);
-            } else {
-                LOG_ERROR("SceneIOController: Save As failed for %s", m_currentScenePath.c_str());
-                state.pushToast(EditorState::ToastKind::Error,
-                    "Save failed: " + finalName);
-            }
+            writeScene(ctx, state, m_currentScenePath);
         }
         endDialog();
     }

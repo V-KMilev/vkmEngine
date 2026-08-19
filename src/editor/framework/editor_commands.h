@@ -265,6 +265,37 @@ class ComponentEditCommand : public Command {
     X(PrefabInstance,   prefabInstance)
 
 /**
+ * @brief The component types the inspector adds, removes and edits through
+ * undoable commands, as one row per type.
+ *
+ * Drives both the extern-template block at the bottom of this header and the
+ * explicit instantiations in editor_commands.cpp, so the two lists can never
+ * drift - a component enters the editor's undoable-mutation vocabulary by
+ * adding one row here.
+ *
+ * Deliberately not the snapshot list above: that one is what a destroyed
+ * entity is rebuilt from, and carries Transform, Name, PrefabEntity and
+ * PrefabInstance, none of which the inspector offers as add/remove/edit.
+ */
+#define VKM_EDITOR_COMMAND_COMPONENTS(X) \
+    X(Mesh)                              \
+    X(Light)                             \
+    X(Camera)                            \
+    X(Animation)                         \
+    X(Rigidbody)                         \
+    X(Collider)                          \
+    X(ReflectionProbe)                   \
+    X(Decal)                             \
+    X(ParticleEmitter)                   \
+    X(IrradianceVolume)                  \
+    X(LOD)                               \
+    X(UICanvas)                          \
+    X(UIElement)                         \
+    X(UIImage)                           \
+    X(UIText)                            \
+    X(UIButton)
+
+/**
  * @brief Snapshot of every editor-visible component on a single entity.
  *
  * Used by Create / Destroy commands so an undo can resurrect an entity
@@ -580,63 +611,20 @@ class RenameAssetCommand : public Command {
 
 // Template instantiations are emitted in editor_commands.cpp so each
 // translation unit doesn't need the full bodies.
-extern template class AddComponentCommand<Mesh>;
-extern template class AddComponentCommand<Light>;
-extern template class AddComponentCommand<Camera>;
-extern template class AddComponentCommand<Animation>;
+#define VKM_EDITOR_EXTERN_COMMAND(Type)                 \
+    extern template class AddComponentCommand<Type>;    \
+    extern template class RemoveComponentCommand<Type>; \
+    extern template class ComponentEditCommand<Type>;
+VKM_EDITOR_COMMAND_COMPONENTS(VKM_EDITOR_EXTERN_COMMAND)
+#undef VKM_EDITOR_EXTERN_COMMAND
+
+// Name is off the list because the editor never offers removing one: an entity
+// without a Name falls back to its type label, so the menu entry would read as
+// a rename to "Entity 12" rather than as a deletion.
 extern template class AddComponentCommand<Name>;
-
-extern template class RemoveComponentCommand<Mesh>;
-extern template class RemoveComponentCommand<Light>;
-extern template class RemoveComponentCommand<Camera>;
-extern template class RemoveComponentCommand<Animation>;
-
-extern template class AddComponentCommand<Rigidbody>;
-extern template class RemoveComponentCommand<Rigidbody>;
-extern template class ComponentEditCommand<Rigidbody>;
-
-extern template class AddComponentCommand<Collider>;
-extern template class RemoveComponentCommand<Collider>;
-extern template class ComponentEditCommand<Collider>;
-
-extern template class AddComponentCommand<ReflectionProbe>;
-extern template class RemoveComponentCommand<ReflectionProbe>;
-extern template class ComponentEditCommand<ReflectionProbe>;
-
-extern template class AddComponentCommand<Decal>;
-extern template class RemoveComponentCommand<Decal>;
-extern template class ComponentEditCommand<Decal>;
-
-extern template class AddComponentCommand<ParticleEmitter>;
-extern template class RemoveComponentCommand<ParticleEmitter>;
-extern template class ComponentEditCommand<ParticleEmitter>;
-
-extern template class AddComponentCommand<IrradianceVolume>;
-extern template class RemoveComponentCommand<IrradianceVolume>;
-extern template class ComponentEditCommand<IrradianceVolume>;
-
-extern template class ComponentEditCommand<Light>;
-extern template class ComponentEditCommand<Camera>;
-extern template class ComponentEditCommand<Mesh>;
 extern template class ComponentEditCommand<Name>;
-extern template class ComponentEditCommand<Animation>;
 
-extern template class AddComponentCommand<UICanvas>;
-extern template class AddComponentCommand<UIElement>;
-extern template class AddComponentCommand<UIImage>;
-extern template class AddComponentCommand<UIText>;
-extern template class AddComponentCommand<UIButton>;
-extern template class RemoveComponentCommand<UICanvas>;
-extern template class RemoveComponentCommand<UIElement>;
-extern template class RemoveComponentCommand<UIImage>;
-extern template class RemoveComponentCommand<UIText>;
-extern template class RemoveComponentCommand<UIButton>;
-extern template class ComponentEditCommand<UICanvas>;
-extern template class ComponentEditCommand<UIElement>;
-extern template class ComponentEditCommand<UIImage>;
-extern template class ComponentEditCommand<UIText>;
-extern template class ComponentEditCommand<UIButton>;
-
+// Keyed by handle type rather than by component type, so not on the list.
 extern template class RenameAssetCommand<MaterialHandle>;
 extern template class RenameAssetCommand<MeshHandle>;
 

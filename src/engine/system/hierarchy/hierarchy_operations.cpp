@@ -16,19 +16,6 @@ void ensure(Scene& scene, EntityId id) {
 }
 } // namespace
 
-void markDirty(Scene& scene, EntityId entity) {
-    if (!entity || !scene.isAlive(entity) || !scene.has<Hierarchy>(entity)) return;
-
-    auto& h = scene.get<Hierarchy>(entity);
-    if (h.dirty) return;  // Already dirty; descendants must already be too
-
-    h.dirty = true;
-    // Cascade to descendants. forEachChild snapshots the next sibling before
-    // each call; markDirty's guard above makes revisiting a dead or
-    // already-dirty node a harmless no-op, so corrupt links can't loop us.
-    forEachChild(scene, entity, [&](EntityId child) { markDirty(scene, child); });
-}
-
 void setParent(Scene& scene, EntityId child, EntityId parent) {
     VKM_ASSERT(scene.isAlive(child), "HierarchyOperations::setParent: child is dead");
     VKM_ASSERT(scene.isAlive(parent), "HierarchyOperations::setParent: parent is dead");
@@ -73,9 +60,6 @@ void setParent(Scene& scene, EntityId child, EntityId parent) {
         scene.get<Hierarchy>(parentH.firstChild).prevSibling = child;
     }
     parentH.firstChild = child;
-
-    // Reparenting changes the child's world matrix (and all descendants').
-    markDirty(scene, child);
 }
 
 void removeFromParent(Scene& scene, EntityId entity) {
@@ -120,9 +104,6 @@ void removeFromParent(Scene& scene, EntityId entity) {
     h.parent = {};
     h.prevSibling = {};
     h.nextSibling = {};
-
-    // Detaching changes this entity's world matrix (and all descendants').
-    markDirty(scene, entity);
 
     // No children left -> drop the now-pointless Hierarchy + WorldTransform.
     // After this call `h` is dangling (swap-and-pop); no further reads of it.
