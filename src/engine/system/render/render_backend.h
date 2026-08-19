@@ -65,15 +65,12 @@ class RenderBackend {
         virtual bool init(WindowManager& window) = 0;
 
         /**
-         * @brief Set the viewport rect that subsequent frames draw into.
-         *
-         * x/y are the origin inside the window (lets an editor render into a
-         * sub-rect); width/height are its size.
-         */
-        virtual void resize(uint32_t x, uint32_t y, uint32_t width, uint32_t height) = 0;
-
-        /**
          * @brief Draw and present one frame.
+         *
+         * The view carries the viewport rect and the surface height, so a size
+         * change needs no separate notification: a backend that has to react to
+         * one (recreating a swapchain, say) compares against its own cached
+         * values here, which is where that state belongs.
          *
          * @param view      Backend-agnostic snapshot of what to draw this frame.
          * @param resources Resolves the view's handles to asset data; the backend

@@ -72,8 +72,12 @@ class GLTarget {
         void setSamples(uint32_t samples, const Core::Context& gl);
 
         /**
-         * @brief Sample count in effect (1 = single-sample). The backend uses
-         * this to pick the render target and gate the resolve passes.
+         * @brief Sample count in effect (1 = single-sample).
+         *
+         * A report of this target's own state and nothing more. Which target the
+         * frame renders into, and whether the resolve passes do any work, are
+         * both decided in the backend - from view.settings.msaaSamples and from
+         * whether sceneRender and sceneHDR are the same object.
          */
         uint32_t samples() const { return m_samples; }
 
