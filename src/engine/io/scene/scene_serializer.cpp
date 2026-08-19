@@ -49,24 +49,51 @@ constexpr int FILE_FORMAT_VERSION = 2;
 constexpr uint32_t MAX_ENTITY_SLOT = 1u << 22;
 
 /**
- * @brief Per-component serialization, as a flat explicit list.
+ * @brief Every component the scene format round-trips, one row each.
  *
- * saveComponents / loadComponents handle one component type per line, in the
- * same order. Adding a component is a localised edit: add a line to each of
- * the two functions plus an entry to COMPONENT_KEYS below.
+ * P is a component whose save and load take only the component; R is one that
+ * references assets by name, so both take the ResourceManager as well
+ * (resolution happens against the staging RM on load).
  *
- * Mesh, LOD and Decal reference assets by handle, so their save/load take a
- * ResourceManager (resolution happens against the staging RM on load).
+ * The key is written out rather than derived from the type name, because it is
+ * the format: ScriptComponent is stored as "Script", and a stringified type
+ * name would change that silently.
+ *
+ * Saving, loading and the known-key set all expand from this one list, so the
+ * three cannot drift. They used to be three hand-kept lists, where forgetting
+ * the load line was silent round-trip data loss and the "unknown component key"
+ * warning that exists to catch exactly that stayed quiet, because the key was
+ * still registered as known.
+ *
+ * Hierarchy is not a row: it is written by saveComponents explicitly and read
+ * by the caller's pass 2, not by a loader.
  */
+#define VKM_SCENE_COMPONENTS(P, R)              \
+    P(Name,             "Name")                 \
+    P(Transform,        "Transform")            \
+    P(Camera,           "Camera")               \
+    P(Light,            "Light")                \
+    P(Rigidbody,        "Rigidbody")            \
+    P(Collider,         "Collider")             \
+    R(Mesh,             "Mesh")                 \
+    R(LOD,              "LOD")                  \
+    R(Decal,            "Decal")                \
+    P(ParticleEmitter,  "ParticleEmitter")      \
+    P(IrradianceVolume, "IrradianceVolume")     \
+    P(ReflectionProbe,  "ReflectionProbe")      \
+    P(Animation,        "Animation")            \
+    P(ScriptComponent,  "Script")               \
+    P(UICanvas,         "UICanvas")             \
+    P(UIElement,        "UIElement")            \
+    P(UIImage,          "UIImage")              \
+    P(UIText,           "UIText")               \
+    P(UIButton,         "UIButton")
 
 // Every JSON key written by saveComponents, for unknown-key detection on load.
 // Order is incidental here (membership test only).
-constexpr std::array<const char*, 20> COMPONENT_KEYS = {
-    "Name", "Transform", "Camera", "Light", "Rigidbody", "Collider",
-    "Mesh", "LOD", "Decal", "ParticleEmitter", "IrradianceVolume", "ReflectionProbe",
-    "Animation", "Script", "Hierarchy",
-    "UICanvas", "UIElement", "UIImage", "UIText", "UIButton",
-};
+#define VKM_SCENE_KEY(Type, Key) Key,
+constexpr std::array COMPONENT_KEYS = { VKM_SCENE_COMPONENTS(VKM_SCENE_KEY, VKM_SCENE_KEY) "Hierarchy" };
+#undef VKM_SCENE_KEY
 
 /**
  * @brief Read one component from @p src, when @p key is present, into @p e.
@@ -98,52 +125,31 @@ void loadInto(const json& src, const char* key, Scene& s, EntityId e, Args&&... 
 
 } // namespace
 
+#define VKM_SCENE_SAVE(Type, Key)   if (s.has<Type>(id)) c[Key] = CS::save(s.get<Type>(id));
+#define VKM_SCENE_SAVE_R(Type, Key) if (s.has<Type>(id)) c[Key] = CS::save(s.get<Type>(id), r);
+
 void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
-    if (s.has<Name>(id))            c["Name"]         = CS::save(s.get<Name>(id));
-    if (s.has<Transform>(id))       c["Transform"]    = CS::save(s.get<Transform>(id));
-    if (s.has<Camera>(id))          c["Camera"]       = CS::save(s.get<Camera>(id));
-    if (s.has<Light>(id))           c["Light"]        = CS::save(s.get<Light>(id));
-    if (s.has<Rigidbody>(id))       c["Rigidbody"]    = CS::save(s.get<Rigidbody>(id));
-    if (s.has<Collider>(id))        c["Collider"]     = CS::save(s.get<Collider>(id));
-    if (s.has<Mesh>(id))            c["Mesh"]         = CS::save(s.get<Mesh>(id), r);
-    if (s.has<LOD>(id))             c["LOD"]          = CS::save(s.get<LOD>(id), r);
-    if (s.has<Decal>(id))           c["Decal"]        = CS::save(s.get<Decal>(id), r);
-    if (s.has<ParticleEmitter>(id)) c["ParticleEmitter"] = CS::save(s.get<ParticleEmitter>(id));
-    if (s.has<IrradianceVolume>(id)) c["IrradianceVolume"] = CS::save(s.get<IrradianceVolume>(id));
-    if (s.has<ReflectionProbe>(id))  c["ReflectionProbe"]  = CS::save(s.get<ReflectionProbe>(id));
-    if (s.has<Animation>(id))       c["Animation"]    = CS::save(s.get<Animation>(id));
-    if (s.has<ScriptComponent>(id)) c["Script"]       = CS::save(s.get<ScriptComponent>(id));
-    if (s.has<Hierarchy>(id))       c["Hierarchy"]    = CS::save(s.get<Hierarchy>(id));
-    if (s.has<UICanvas>(id))        c["UICanvas"]     = CS::save(s.get<UICanvas>(id));
-    if (s.has<UIElement>(id))       c["UIElement"]    = CS::save(s.get<UIElement>(id));
-    if (s.has<UIImage>(id))         c["UIImage"]      = CS::save(s.get<UIImage>(id));
-    if (s.has<UIText>(id))          c["UIText"]       = CS::save(s.get<UIText>(id));
-    if (s.has<UIButton>(id))        c["UIButton"]     = CS::save(s.get<UIButton>(id));
+    VKM_SCENE_COMPONENTS(VKM_SCENE_SAVE, VKM_SCENE_SAVE_R)
+
+    // Written here, but read by the caller's second pass rather than by a
+    // loader: the parent it names may not exist yet when this entity is read.
+    if (s.has<Hierarchy>(id)) c["Hierarchy"] = CS::save(s.get<Hierarchy>(id));
 }
+
+#undef VKM_SCENE_SAVE
+#undef VKM_SCENE_SAVE_R
+
+#define VKM_SCENE_LOAD(Type, Key)   loadInto<Type>(src, Key, s, e);
+#define VKM_SCENE_LOAD_R(Type, Key) loadInto<Type>(src, Key, s, e, r);
 
 // Hierarchy is intentionally absent: its parent link is captured by the
 // caller for the pass-2 wire-up, not loaded here.
 void loadComponents(const json& src, Scene& s, EntityId e, const ResourceManager& r) {
-    loadInto<Name>(src, "Name", s, e);
-    loadInto<Transform>(src, "Transform", s, e);
-    loadInto<Camera>(src, "Camera", s, e);
-    loadInto<Light>(src, "Light", s, e);
-    loadInto<Rigidbody>(src, "Rigidbody", s, e);
-    loadInto<Collider>(src, "Collider", s, e);
-    loadInto<Mesh>(src, "Mesh", s, e, r);
-    loadInto<LOD>(src, "LOD", s, e, r);
-    loadInto<Decal>(src, "Decal", s, e, r);
-    loadInto<ParticleEmitter>(src, "ParticleEmitter", s, e);
-    loadInto<IrradianceVolume>(src, "IrradianceVolume", s, e);
-    loadInto<ReflectionProbe>(src, "ReflectionProbe", s, e);
-    loadInto<Animation>(src, "Animation", s, e);
-    loadInto<ScriptComponent>(src, "Script", s, e);
-    loadInto<UICanvas>(src, "UICanvas", s, e);
-    loadInto<UIElement>(src, "UIElement", s, e);
-    loadInto<UIImage>(src, "UIImage", s, e);
-    loadInto<UIText>(src, "UIText", s, e);
-    loadInto<UIButton>(src, "UIButton", s, e);
+    VKM_SCENE_COMPONENTS(VKM_SCENE_LOAD, VKM_SCENE_LOAD_R)
 }
+
+#undef VKM_SCENE_LOAD
+#undef VKM_SCENE_LOAD_R
 
 namespace {
 
@@ -182,8 +188,8 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
         // and Hierarchy stay: where the instance sits, and what it hangs off,
         // belong to the scene rather than to the prefab.
         if (scene.has<PrefabInstance>(id)) {
-            const json transform  = std::move(components["Transform"]);
-            const json hierarchy  = std::move(components["Hierarchy"]);
+            json transform = std::move(components["Transform"]);
+            json hierarchy = std::move(components["Hierarchy"]);
             components = json::object();
             if (!transform.is_null()) components["Transform"] = std::move(transform);
             if (!hierarchy.is_null()) components["Hierarchy"] = std::move(hierarchy);

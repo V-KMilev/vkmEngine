@@ -145,40 +145,6 @@ void RemoveComponentCommand<T>::undo(Scene& scene, EditorState& state) {
     state.hierarchyDirty = true;
 }
 
-// Single TU emits the AddComponent / RemoveComponent machinery for each
-// component type the editor mutates through commands.
-template class AddComponentCommand<Mesh>;
-template class AddComponentCommand<Light>;
-template class AddComponentCommand<Camera>;
-template class AddComponentCommand<Animation>;
-template class AddComponentCommand<Name>;
-
-template class RemoveComponentCommand<Mesh>;
-template class RemoveComponentCommand<Light>;
-template class RemoveComponentCommand<Camera>;
-template class RemoveComponentCommand<Animation>;
-
-
-template class AddComponentCommand<Rigidbody>;
-template class RemoveComponentCommand<Rigidbody>;
-
-template class AddComponentCommand<Collider>;
-template class RemoveComponentCommand<Collider>;
-
-template class AddComponentCommand<ReflectionProbe>;
-template class RemoveComponentCommand<ReflectionProbe>;
-
-template class AddComponentCommand<Decal>;
-template class RemoveComponentCommand<Decal>;
-
-template class AddComponentCommand<ParticleEmitter>;
-template class RemoveComponentCommand<ParticleEmitter>;
-
-template class AddComponentCommand<IrradianceVolume>;
-template class RemoveComponentCommand<IrradianceVolume>;
-template class AddComponentCommand<LOD>;
-template class RemoveComponentCommand<LOD>;
-
 template <typename T>
 void ComponentEditCommand<T>::redo(Scene& scene, EditorState&) {
     const EntityId e = liveEntity(scene, m_entity);
@@ -203,34 +169,18 @@ bool ComponentEditCommand<T>::tryMerge(Command& incoming) {
     return true;
 }
 
-template class ComponentEditCommand<Light>;
-template class ComponentEditCommand<Camera>;
-template class ComponentEditCommand<Mesh>;
-template class ComponentEditCommand<Name>;
-template class ComponentEditCommand<Animation>;
-template class ComponentEditCommand<Rigidbody>;
-template class ComponentEditCommand<Collider>;
-template class ComponentEditCommand<ReflectionProbe>;
-template class ComponentEditCommand<Decal>;
-template class ComponentEditCommand<ParticleEmitter>;
-template class ComponentEditCommand<IrradianceVolume>;
-template class ComponentEditCommand<LOD>;
+// One TU emits the Add / Remove / Edit machinery for every component type on
+// the list, so no other translation unit needs the bodies.
+#define VKM_EDITOR_INSTANTIATE_COMMAND(Type)     \
+    template class AddComponentCommand<Type>;    \
+    template class RemoveComponentCommand<Type>; \
+    template class ComponentEditCommand<Type>;
+VKM_EDITOR_COMMAND_COMPONENTS(VKM_EDITOR_INSTANTIATE_COMMAND)
+#undef VKM_EDITOR_INSTANTIATE_COMMAND
 
-template class AddComponentCommand<UICanvas>;
-template class AddComponentCommand<UIElement>;
-template class AddComponentCommand<UIImage>;
-template class AddComponentCommand<UIText>;
-template class AddComponentCommand<UIButton>;
-template class RemoveComponentCommand<UICanvas>;
-template class RemoveComponentCommand<UIElement>;
-template class RemoveComponentCommand<UIImage>;
-template class RemoveComponentCommand<UIText>;
-template class RemoveComponentCommand<UIButton>;
-template class ComponentEditCommand<UICanvas>;
-template class ComponentEditCommand<UIElement>;
-template class ComponentEditCommand<UIImage>;
-template class ComponentEditCommand<UIText>;
-template class ComponentEditCommand<UIButton>;
+// The editor never offers removing a Name, so Name gets Add and Edit only.
+template class AddComponentCommand<Name>;
+template class ComponentEditCommand<Name>;
 
 template <typename HandleType>
 void RenameAssetCommand<HandleType>::redo(Scene&, EditorState& state) {
