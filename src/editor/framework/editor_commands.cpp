@@ -49,14 +49,12 @@ void TransformChangeCommand::redo(Scene& scene, EditorState&) {
     const EntityId e = liveEntity(scene, m_entity);
     if (!e || !scene.has<Transform>(e)) return;
     scene.get<Transform>(e) = m_after;
-    HierarchyOperations::markDirty(scene, e);
 }
 
 void TransformChangeCommand::undo(Scene& scene, EditorState&) {
     const EntityId e = liveEntity(scene, m_entity);
     if (!e || !scene.has<Transform>(e)) return;
     scene.get<Transform>(e) = m_before;
-    HierarchyOperations::markDirty(scene, e);
 }
 
 bool TransformChangeCommand::tryMerge(Command& incoming) {
@@ -475,7 +473,6 @@ void applyReparent(Scene& scene, EntityId child, EntityId capturedParent, const 
         HierarchyOperations::removeFromParent(scene, child);
     }
     if (scene.has<Transform>(child)) scene.get<Transform>(child) = local;
-    HierarchyOperations::markDirty(scene, child);
 }
 } // namespace
 

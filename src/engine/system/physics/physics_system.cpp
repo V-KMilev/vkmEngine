@@ -20,7 +20,6 @@
 #include "ecs/component/transform.h"
 #include "ecs/component/world_transform.h"
 #include "core/event/event_bus.h"
-#include "system/hierarchy/hierarchy_operations.h"
 #include "system/physics/inertia.h"
 #include "system/physics/physics_events.h"
 #include "system/physics/collision/narrowphase.h"
@@ -419,8 +418,6 @@ void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& h
                 rb.sleepTimer = 0.0f;
             }
         }
-
-        if (scene.has<Hierarchy>(id)) HierarchyOperations::markDirty(scene, id);
     }
 }
 

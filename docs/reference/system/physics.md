@@ -65,16 +65,16 @@ PhysicsSystem::fixedUpdate(ctx)
   6. Wake sleepers struck by a faster body.
   7. solveContacts: PGS iterations of normal + friction impulses with restitution,
      then a split-impulse pass for penetration correction.
-  8. Integrate velocities -> pose, write Transform back, update sleep state,
-     markDirty so HierarchySystem re-resolves WorldTransform.
+  8. Integrate velocities -> pose, write Transform back, update sleep state.
+     HierarchySystem re-resolves WorldTransform later in the same frame.
 ```
 
 A **hierarchy root**'s local `Transform` is already its world pose, so
 `gatherBodies` reads it straight. A **parented** body takes its world pose from
 its `WorldTransform` and records the parent's frame alongside it; writeback maps
 the solved world pose back through that frame into the local `Transform`. Either
-way, children parented *to* a body follow it (the `markDirty` cascade carries
-into the subtree).
+way, children parented *to* a body follow it, because HierarchySystem rebuilds
+the whole subtree in the Transform stage that follows.
 
 ## The solver
 

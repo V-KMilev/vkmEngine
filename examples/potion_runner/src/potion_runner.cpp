@@ -250,15 +250,6 @@ void PotionRunner::onUpdate(float dt) {
 
     readInput();
 
-    // The player is a hierarchy root (its visible parts are parented to it), so
-    // the renderer reads its WorldTransform - which HierarchySystem only refreshes
-    // for entities flagged dirty, then clears. We move the root every frame (via
-    // updatePlayer while alive, or the physics ragdoll on death), so re-flag the
-    // whole rig each frame; the flag set here (Simulation stage) survives until the
-    // later Transform stage resolves it. Without this the runner would sit frozen
-    // at its start pose in the centre lane.
-    HierarchyOperations::markDirty(*m_scene, m_player);
-
     // Hold on the start screen until the player gives any run input (a lane move,
     // a jump, or a click on the START button).
     if (!m_started) {

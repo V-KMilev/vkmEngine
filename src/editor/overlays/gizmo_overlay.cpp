@@ -246,7 +246,6 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
                 } else if (state.gizmoOperation == GizmoOperation::Scale) {
                     t.scale = start.scale * ratio;
                 }
-                HierarchyOperations::markDirty(ctx.scene, id);
             }
 
             // The gizmo wrote the active entity directly, but an ancestor of it
@@ -256,9 +255,6 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
             if (m_dragActiveIsDescendant) transform = m_dragStartTransform;
         }
 
-        // Local transform changed - mark this entity's hierarchy subtree dirty
-        // so HierarchySystem recomputes WorldTransforms next frame.
-        HierarchyOperations::markDirty(ctx.scene, state.selectedEntity);
         state.markSceneDirty();
     }
 }
