@@ -224,9 +224,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         partitionDrawables(view);
     }
 
-    // ...and batch the opaque bucket once too. Both passes draw this identical
-    // list, so batching it per-pass sorted every drawable and re-uploaded both
-    // instance buffers twice a frame to produce the same runs.
+    // ...and batch the opaque bucket once too (see GLFrameContext::opaqueBatch).
     {
         PROFILE_SCOPE("Render/OpaqueBatch");
         m_opaqueBatcher.buildGrouped(m_opaque, m_view);

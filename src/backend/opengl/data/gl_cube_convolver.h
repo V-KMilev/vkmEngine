@@ -44,17 +44,14 @@ class GLCubeConvolver {
         /**
          * @brief Convolve the env cube into six diffuse-irradiance faces.
          *
-         * @param bindEnv Callback that binds the source environment cube to unit 0.
-         * @param attach  Callback that attaches the given destination face as colour 0.
+         * @param attach Callback that attaches the destination face as colour 0.
          */
         void irradiance(const BindEnv& bindEnv, const AttachFace& attach);
 
         /**
          * @brief GGX prefilter into six faces per mip, roughness 0..1 across @p mips.
          *
-         * @param mips    Number of roughness mip levels to fill; roughness runs 0..1 across them.
-         * @param bindEnv Callback that binds the source environment cube to unit 0.
-         * @param attach  Callback that attaches the given destination face + mip as colour 0.
+         * @param attach Callback that attaches the destination face + mip as colour 0.
          */
         void prefilter(int mips, const BindEnv& bindEnv, const AttachMipFace& attach);
 
