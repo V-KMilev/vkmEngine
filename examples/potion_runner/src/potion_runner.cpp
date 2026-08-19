@@ -408,7 +408,7 @@ void PotionRunner::buildWorld() {
         rb.isStatic = true;
         m_scene->add(ground, std::move(rb));
         Collider col;
-        col.parts = {ColliderBox{{0.0f, 0.0f, 0.0f}, {trackWidth * 0.5f, 0.2f, GROUND_LEN * 0.5f}}};
+        col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {trackWidth * 0.5f, 0.2f, GROUND_LEN * 0.5f}}};
         m_scene->add(ground, std::move(col));
     }
     for (int side = -1; side <= 1; side += 2) {
@@ -503,7 +503,7 @@ void PotionRunner::buildWorld() {
         rb.canSleep       = false;   // a dozing character eats jump inputs and ignores ramps
         m_scene->add(m_player, std::move(rb));
         Collider col;
-        col.parts = {ColliderBox{{0.0f, 0.0f, 0.0f}, {PLAYER_HALF_X, PLAYER_HALF_Y, PLAYER_HALF_Z}}};
+        col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {PLAYER_HALF_X, PLAYER_HALF_Y, PLAYER_HALF_Z}}};
         m_scene->add(m_player, std::move(col));
     }
     m_playerParts.clear();
@@ -650,7 +650,7 @@ void PotionRunner::buildWorld() {
             rb.isKinematic = true;
             m_scene->add(o.entity, std::move(rb));
             Collider col;
-            col.parts = {ColliderBox{{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}}};
+            col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}}};
             m_scene->add(o.entity, std::move(col));
         }
         // The boarding ramp, hidden until a recycle makes this a steady train.
@@ -664,7 +664,7 @@ void PotionRunner::buildWorld() {
             rb.isKinematic = true;
             m_scene->add(o.ramp, std::move(rb));
             Collider col;
-            col.parts = {ColliderBox{{0.0f, -0.30f, 0.0f}, {1.0f, 0.35f, 1.0f}}};
+            col.parts = {ColliderPart{ColliderShape::Box, {0.0f, -0.30f, 0.0f}, {1.0f, 0.35f, 1.0f}}};
             m_scene->add(o.ramp, std::move(col));
         }
         // Train dressing, shown only while the recycle is a train: underframe
@@ -712,7 +712,7 @@ void PotionRunner::buildWorld() {
             m_scene->add(c.entity, std::move(rb));
             Collider col;
             col.isTrigger = true;
-            col.parts = {ColliderBox{{0.0f, 0.0f, 0.0f}, {1.0f, 1.2f, 0.5f}}};
+            col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {1.0f, 1.2f, 0.5f}}};
             m_scene->add(c.entity, std::move(col));
         }
     }
@@ -884,7 +884,7 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
         // end face, whose down-forward normal would shove them into the
         // ground instead of up the slope.
         const float slopeLen = std::sqrt(o.top * o.top + RAMP_RUN * RAMP_RUN);
-        ColliderBox& rampBox = m_scene->get<Collider>(o.ramp).parts[0];
+        ColliderPart& rampBox = m_scene->get<Collider>(o.ramp).parts[0];
         rampBox.halfExtents  = {halfX * 0.9f, 0.35f, slopeLen * 0.5f + 0.35f};
         rampBox.center       = {0.0f, -0.30f, -0.35f};
     }
@@ -953,7 +953,7 @@ void PotionRunner::resetGame() {
         rb.angularVelocity = {0.0f, 0.0f, 0.0f};
         rb.restitution     = 0.0f;
         rb.friction        = 0.2f;
-        ColliderBox& box = m_scene->get<Collider>(m_player).parts[0];
+        ColliderPart& box = m_scene->get<Collider>(m_player).parts[0];
         box.halfExtents.y = PLAYER_HALF_Y;
         box.center.y      = 0.0f;
     }
@@ -1083,7 +1083,7 @@ void PotionRunner::updatePlayer(float dt) {
     m_crouch += (crouchTarget - m_crouch) * (1.0f - std::exp(-dt * 16.0f));
     const float halfY   = PLAYER_HALF_Y - m_crouch * (PLAYER_HALF_Y - CROUCH_HALF_Y);
     const float squashY = halfY / PLAYER_HALF_Y;
-    ColliderBox& box = m_scene->get<Collider>(m_player).parts[0];
+    ColliderPart& box = m_scene->get<Collider>(m_player).parts[0];
     box.halfExtents.y = halfY;
     box.center.y      = halfY - PLAYER_HALF_Y;   // keep the box bottom at the feet
 
@@ -1262,7 +1262,7 @@ void PotionRunner::die() {
     rb.angularVelocity = {(frand() * 2.0f - 1.0f) * 8.0f,
                           (frand() * 2.0f - 1.0f) * 8.0f,
                           (frand() * 2.0f - 1.0f) * 8.0f};
-    ColliderBox& box = m_scene->get<Collider>(m_player).parts[0];
+    ColliderPart& box = m_scene->get<Collider>(m_player).parts[0];
     box.halfExtents.y = PLAYER_HALF_Y;
     box.center.y      = 0.0f;
 

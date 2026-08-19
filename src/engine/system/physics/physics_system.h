@@ -129,14 +129,18 @@ class PhysicsSystem : public System {
         // element types live in physics_internal.h so these can be members here
         // instead of file-local statics.
         std::vector<ColliderProxy> m_proxies;     ///< Broad/narrowphase view of each collidable body (built in gather)
-        std::vector<ColliderBox>   m_proxyParts;  ///< Every proxy's boxes end to end; proxies index into it
+        std::vector<ColliderPart>  m_proxyParts;  ///< Every proxy's parts end to end; proxies index into it
         std::vector<BodyFrame>     m_bodyFrames;  ///< World<->local frame per body, parallel to m_bodies (for writeback)
 
         std::vector<uint32_t>                      m_sorted;  ///< X-sorted proxy order (broadphase)
         std::vector<std::pair<uint32_t, uint32_t>> m_pairs;   ///< Candidate proxy-index pairs (broadphase)
 
-        std::vector<BoxShape> m_subA;  ///< A's child boxes expanded to world space (narrowphase)
-        std::vector<BoxShape> m_subB;  ///< B's child boxes expanded to world space (narrowphase)
+        // One array per shape rather than one tagged list, so the quadratic pair
+        // loops stay branch-free.
+        std::vector<BoxShape>     m_boxA;      ///< A's boxes expanded to world space (narrowphase)
+        std::vector<BoxShape>     m_boxB;      ///< B's boxes expanded to world space (narrowphase)
+        std::vector<CapsuleShape> m_capsuleA;  ///< A's capsules expanded to world space (narrowphase)
+        std::vector<CapsuleShape> m_capsuleB;  ///< B's capsules expanded to world space (narrowphase)
 };
 
 } // namespace Vkm::Engine

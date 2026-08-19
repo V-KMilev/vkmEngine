@@ -61,19 +61,19 @@ inline void wireSegment(
         dl->AddLine(sa, sb, col, thickness);
 }
 
-// World-space circle center + radius * (cos t * axisA + sin t * axisB),
-// drawn as connected segments that break where a point falls behind the
-// camera. Every ring/disc gizmo routes through here.
-inline void wireCircle(
+// World-space arc center + radius * (cos t * axisA + sin t * axisB) over
+// [from, to] radians, drawn as connected segments that break where a point
+// falls behind the camera. Every ring, disc and cap gizmo routes through here.
+inline void wireArc(
     ImDrawList* dl, const glm::mat4& vp,
     const glm::vec3& center, const glm::vec3& axisA, const glm::vec3& axisB,
-    float radius, int segments,
+    float radius, float from, float to, int segments,
     ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness
 ) {
     ImVec2 prev{};
     bool havePrev = false;
     for (int s = 0; s <= segments; ++s) {
-        const float t = (static_cast<float>(s) / segments) * glm::two_pi<float>();
+        const float t = from + (to - from) * (static_cast<float>(s) / segments);
         const glm::vec3 p = center + (axisA * std::cos(t) + axisB * std::sin(t)) * radius;
         ImVec2 sp;
         if (projectToViewport(vp, p, vpMin, vpSize, sp)) {
@@ -84,6 +84,17 @@ inline void wireCircle(
             havePrev = false;
         }
     }
+}
+
+// Full circle in the plane spanned by axisA and axisB.
+inline void wireCircle(
+    ImDrawList* dl, const glm::mat4& vp,
+    const glm::vec3& center, const glm::vec3& axisA, const glm::vec3& axisB,
+    float radius, int segments,
+    ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness
+) {
+    wireArc(dl, vp, center, axisA, axisB, radius, 0.0f, glm::two_pi<float>(),
+            segments, vpMin, vpSize, col, thickness);
 }
 
 // Three orthogonal great circles - the classic "radius sphere" gizmo.
@@ -151,6 +162,37 @@ inline void wireBox(
     };
     for (const auto& e : edges)
         wireSegment(dl, vp, c[e[0]], c[e[1]], vpMin, vpSize, col, thickness);
+}
+
+// Capsule: a segment of 2*halfHeight along the rotation's local +Y, swept by
+// radius. Drawn as the two ring joints, four side lines, and four cap arcs -
+// the same silhouette the narrowphase collides with, so a capsule that looks
+// wrong here is wrong in the solver too.
+inline void wireCapsule(
+    ImDrawList* dl, const glm::mat4& vp,
+    const glm::vec3& center, const glm::quat& rot, float radius, float halfHeight,
+    int segments, ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness = 1.5f
+) {
+    const glm::mat3 r = glm::mat3_cast(rot);
+    const glm::vec3 u = r[0];
+    const glm::vec3 axis = r[1];
+    const glm::vec3 v = r[2];
+    const glm::vec3 top = center + axis * halfHeight;
+    const glm::vec3 bottom = center - axis * halfHeight;
+
+    wireCircle(dl, vp, top,    u, v, radius, segments, vpMin, vpSize, col, thickness);
+    wireCircle(dl, vp, bottom, u, v, radius, segments, vpMin, vpSize, col, thickness);
+
+    const glm::vec3 sides[4] = { u * radius, u * -radius, v * radius, v * -radius };
+    for (const glm::vec3& offset : sides)
+        wireSegment(dl, vp, top + offset, bottom + offset, vpMin, vpSize, col, thickness);
+
+    const int capSegments = glm::max(segments / 2, 2);
+    const float half = glm::pi<float>();
+    wireArc(dl, vp, top,    u,  axis, radius, 0.0f, half, capSegments, vpMin, vpSize, col, thickness);
+    wireArc(dl, vp, top,    v,  axis, radius, 0.0f, half, capSegments, vpMin, vpSize, col, thickness);
+    wireArc(dl, vp, bottom, u, -axis, radius, 0.0f, half, capSegments, vpMin, vpSize, col, thickness);
+    wireArc(dl, vp, bottom, v, -axis, radius, 0.0f, half, capSegments, vpMin, vpSize, col, thickness);
 }
 
 } // namespace Vkm::Engine

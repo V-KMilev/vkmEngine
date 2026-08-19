@@ -160,10 +160,16 @@ void load(const nlohmann::json& j, Rigidbody& rb) { loadReflected(j, rb); }
 nlohmann::json save(const Collider& c) {
     nlohmann::json j = saveReflected(c);   // isTrigger + enabled
     nlohmann::json arr = nlohmann::json::array();
-    for (const ColliderBox& b : c.parts) {
+    for (const ColliderPart& p : c.parts) {
+        // Every shape's fields are written whatever the tag says, so switching a
+        // part to a capsule in the inspector and back does not quietly forget
+        // the half-extents it was authored with.
         arr.push_back({
-            {"center", vec3ToJson(b.center)},
-            {"half",   vec3ToJson(b.halfExtents)},
+            {"shape",      Reflect::enumName(p.shape)},
+            {"center",     vec3ToJson(p.center)},
+            {"half",       vec3ToJson(p.halfExtents)},
+            {"radius",     p.radius},
+            {"halfHeight", p.halfHeight},
         });
     }
     j["parts"] = std::move(arr);
@@ -180,10 +186,13 @@ void load(const nlohmann::json& j, Collider& c) {
     for (const auto& e : *it) {
         // at() preserves the throw-on-missing-key behavior (caught by the scene
         // loader's guard); jsonToVec3 adds bounds-checked, logged array reads.
-        ColliderBox b;
-        b.center      = jsonToVec3(e.at("center"));
-        b.halfExtents = jsonToVec3(e.at("half"));
-        c.parts.push_back(b);
+        ColliderPart p;
+        p.shape       = Reflect::enumFromName<ColliderShape>(e.at("shape").get<std::string>());
+        p.center      = jsonToVec3(e.at("center"));
+        p.halfExtents = jsonToVec3(e.at("half"));
+        p.radius      = e.at("radius").get<float>();
+        p.halfHeight  = e.at("halfHeight").get<float>();
+        c.parts.push_back(p);
     }
 }
 

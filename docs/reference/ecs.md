@@ -64,7 +64,7 @@ scene.remove<Mesh>(entity);
 | `Animator`       | `component/animator.h`            | `SkeletonHandle skeleton`, `AnimationClipHandle clip`, `time`, `speed`, `playing`, `looping` - one per rigged character, not per mesh |
 | `Hierarchy`      | `component/hierarchy.h`           | `EntityId parent`, `firstChild`, `nextSibling`, `prevSibling`                                         |
 | `Name`           | `component/name.h`                | `char value[64]` for editor display and asset look-up by name                                         |
-| `Collider`       | `component/collider.h`            | One or more `ColliderBox` parts (`center`, `halfExtents`) + `isTrigger`                               |
+| `Collider`       | `component/collider.h`            | One or more `ColliderPart`s (a `ColliderShape` tag + box / capsule fields) + `isTrigger`              |
 | `Rigidbody`      | `component/rigidbody.h`           | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags |
 | `ReflectionProbe`| `component/reflection_probe.h`    | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
 

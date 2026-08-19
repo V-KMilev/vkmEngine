@@ -491,7 +491,7 @@ void StressArena::buildGround() {
     m_scene->add(ground, std::move(rb));
 
     Collider col;
-    col.parts = {ColliderBox{{0.0f, 0.0f, 0.0f}, {ARENA_HALF, 0.5f, ARENA_HALF}}};
+    col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {ARENA_HALF, 0.5f, ARENA_HALF}}};
     m_scene->add(ground, std::move(col));
 
     // Pit floor and four walls, so the physics pile has something to pack
@@ -506,7 +506,7 @@ void StressArena::buildGround() {
     m_scene->add(floor, std::move(floorBody));
 
     Collider floorCol;
-    floorCol.parts = {ColliderBox{{0.0f, 0.0f, 0.0f}, {PIT_HALF, 0.25f, PIT_HALF}}};
+    floorCol.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {PIT_HALF, 0.25f, PIT_HALF}}};
     m_scene->add(floor, std::move(floorCol));
 
     for (int i = 0; i < 4; ++i) {
@@ -527,7 +527,7 @@ void StressArena::buildGround() {
         m_scene->add(wall, std::move(wallBody));
 
         Collider wallCol;
-        wallCol.parts = {ColliderBox{{0.0f, 0.0f, 0.0f}, half}};
+        wallCol.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, half}};
         m_scene->add(wall, std::move(wallCol));
     }
 }
@@ -847,7 +847,7 @@ void StressArena::buildPhysics() {
         m_scene->add(entity, std::move(rb));
 
         Collider col;
-        col.parts = {ColliderBox{{0.0f, 0.0f, 0.0f}, glm::vec3(size * 0.5f)}};
+        col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, glm::vec3(size * 0.5f)}};
         m_scene->add(entity, std::move(col));
 
         m_bodies.push_back(entity);
@@ -1158,7 +1158,7 @@ void StressArena::updateDebris(float dt) {
         m_scene->add(piece, std::move(rb));
 
         Collider col;
-        col.parts   = {ColliderBox{{0.0f, 0.0f, 0.0f}, glm::vec3(size * 0.5f)}};
+        col.parts   = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, glm::vec3(size * 0.5f)}};
         col.enabled = m_physicsOn;   // spawned mid-toggle, so honour the current state
         m_scene->add(piece, std::move(col));
 

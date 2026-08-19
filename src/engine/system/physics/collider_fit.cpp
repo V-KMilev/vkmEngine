@@ -42,8 +42,8 @@ bool rayHitsTriangle(
 }
 
 // absScale must be component-wise non-negative (all callers pass glm::abs(scale)).
-ColliderBox boundsBox(const glm::vec3& bmin, const glm::vec3& bmax, const glm::vec3& absScale) {
-    ColliderBox box;
+ColliderPart boundsBox(const glm::vec3& bmin, const glm::vec3& bmax, const glm::vec3& absScale) {
+    ColliderPart box;
     box.center      = (bmin + bmax) * 0.5f * absScale;
     box.halfExtents = glm::max((bmax - bmin) * 0.5f, glm::vec3(1e-3f)) * absScale;
     return box;
@@ -51,7 +51,7 @@ ColliderBox boundsBox(const glm::vec3& bmin, const glm::vec3& bmax, const glm::v
 
 } // namespace
 
-std::vector<ColliderBox> fitBoxesToMesh(const MeshAsset& mesh, int detail, const glm::vec3& scale) {
+std::vector<ColliderPart> fitBoxesToMesh(const MeshAsset& mesh, int detail, const glm::vec3& scale) {
     detail = std::clamp(detail, 1, COLLIDER_FIT_MAX_DETAIL);
 
     const glm::vec3 bmin     = mesh.boundsMin;
@@ -79,8 +79,8 @@ std::vector<ColliderBox> fitBoxesToMesh(const MeshAsset& mesh, int detail, const
     const float      xStart   = bmin.x - cell.x;   // ray origin: outside on -X
     const float      mergeEps = cell.x * 1e-3f;    // collapse coincident crossings
 
-    std::vector<ColliderBox> boxes;
-    std::vector<float>       xs;   // surface crossing x-coords, reused per column
+    std::vector<ColliderPart> boxes;
+    std::vector<float>        xs;   // surface crossing x-coords, reused per column
 
     // One +X ray per (y, z) cell, its crossings paired into inside spans. Each
     // span is one box - exact along X, one cell thick in Y/Z - which keeps the
@@ -117,7 +117,7 @@ std::vector<ColliderBox> fitBoxesToMesh(const MeshAsset& mesh, int detail, const
                                        bmin.z + static_cast<float>(iz)     * cell.z);
                 const glm::vec3 hi(x1, bmin.y + static_cast<float>(iy + 1) * cell.y,
                                        bmin.z + static_cast<float>(iz + 1) * cell.z);
-                ColliderBox box;
+                ColliderPart box;
                 box.center      = (lo + hi) * 0.5f * absScale;
                 box.halfExtents = (hi - lo) * 0.5f * absScale;
                 boxes.push_back(box);
