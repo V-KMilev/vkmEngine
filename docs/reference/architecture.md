@@ -204,6 +204,8 @@ seeing only `RenderBackend` through engine headers. Tools use their own root
 
 - `Engine::` for all engine code (ECS, systems, components, resources, editor).
 - `Vkm::GL::` for low-level OpenGL wrappers from `vkmGL` (`Shader`, `Context`, ...).
+- `Vkm::Log::` for `vkmLog` (`Logger`, `LogLevel`). The `LOG_*` and `VKM_ASSERT`
+  macros qualify it themselves, so call sites never name it.
 
 ## Key design patterns
 
