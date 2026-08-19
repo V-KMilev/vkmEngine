@@ -464,3 +464,9 @@ a segment from each bone to its parent, a dot at every joint, and an axis triad
 per bone on the selected rig. Segments say where the joints are; only the axes
 say which way they face, which is what a composition or bind-inverse mistake
 actually corrupts.
+
+The **Animator card** in the inspector authors the same thing: a rig picker, a
+clip picker, and a transport whose scrub works while paused, for the same reason
+the overlay does - composition runs every frame whether or not time advanced. A
+clip cooked against another rig is named on the card, beside the pickers that
+made the pairing. See [editor.md](../editor.md).

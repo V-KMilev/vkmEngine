@@ -13,6 +13,7 @@
 #include "ecs/component/light.h"
 #include "ecs/component/camera.h"
 #include "ecs/component/animation.h"
+#include "ecs/component/animator.h"
 #include "ecs/component/name.h"
 #include "ecs/component/reflection_probe.h"
 #include "ecs/component/irradiance_volume.h"
@@ -262,6 +263,9 @@ EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
         }
         return {"Light", EditorIcon::LightPoint};
     }
+    // Before Mesh: an entity carrying an Animator is the rig whatever else it
+    // carries, and its meshes are the entities under it.
+    if (scene.has<Animator>(id)) return {"Rig", EditorIcon::Anim};
     if (scene.has<Mesh>(id)) {
         return {scene.has<Animation>(id) ? "Animated Mesh" : "Mesh", EditorIcon::Mesh};
     }
