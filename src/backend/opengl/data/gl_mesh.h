@@ -11,7 +11,7 @@ namespace Vkm::GL {
     class InstanceBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct MeshAsset;
 
@@ -92,4 +92,4 @@ class GLMesh {
         size_t m_indexCount = 0;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

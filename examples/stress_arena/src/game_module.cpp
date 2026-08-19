@@ -31,7 +31,7 @@ extern "C"
 __declspec(dllexport)
 #endif
 void vkmRegisterBehaviors() {
-    Engine::BehaviorRegistry::get().registerBehavior<Engine::StressArena>();
+    Vkm::Engine::BehaviorRegistry::get().registerBehavior<Vkm::Engine::StressArena>();
 }
 
 // vkmBuildScene is the optional one. This project's world is generated rather
@@ -43,32 +43,32 @@ extern "C"
 #if defined(_WIN32)
 __declspec(dllexport)
 #endif
-void vkmBuildScene(Engine::Scene& scene) {
+void vkmBuildScene(Vkm::Engine::Scene& scene) {
 
-        auto& registry = Engine::BehaviorRegistry::get();
+        auto& registry = Vkm::Engine::BehaviorRegistry::get();
 
     // The behavior overwrites these on the first tick; they are set here so the
     // editor frames the arena before Play rather than staring at the origin.
     auto camera = scene.createEntity();
-    scene.add(camera, Engine::makeName("Camera"));
+    scene.add(camera, Vkm::Engine::makeName("Camera"));
 
-    Engine::Camera cameraComponent{Engine::ProjectionType::Perspective};
+    Vkm::Engine::Camera cameraComponent{Vkm::Engine::ProjectionType::Perspective};
     cameraComponent.zFar = 600.0f;
     scene.add(camera, std::move(cameraComponent));
 
     // Parked outside the tower ring looking in. Positive pitch tilts the view
     // down: the engine's forward is +Z (Math::computeForward), not GLM's -Z.
-    scene.add(camera, Engine::Transform{
+    scene.add(camera, Vkm::Engine::Transform{
         glm::vec3(0.0f, 26.0f, -95.0f),
         glm::quat(glm::vec3(glm::radians(9.0f), 0.0f, 0.0f)),
         glm::vec3(1.0f)
     });
 
     auto arena = scene.createEntity();
-    scene.add(arena, Engine::makeName("StressArena"));
-    scene.add(arena, Engine::Transform{});
+    scene.add(arena, Vkm::Engine::makeName("StressArena"));
+    scene.add(arena, Vkm::Engine::Transform{});
 
-    Engine::ScriptComponent script;
+    Vkm::Engine::ScriptComponent script;
     if (auto behavior = registry.create("StressArena")) {
         script.behaviors.push_back(std::move(behavior));
     }

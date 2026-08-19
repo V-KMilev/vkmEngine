@@ -11,7 +11,7 @@
 #include "gl_buffer_upload.h"
 #include "system/render/data/light_data.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLLights::GLLights()  = default;
 GLLights::~GLLights() = default;
@@ -43,4 +43,4 @@ void GLLights::update(const std::vector<LightData>& lights, const GLShadowData& 
     if (m_ssbo) m_ssbo->bindBase(GLBindings::SSBOBindingPoints::Lights);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

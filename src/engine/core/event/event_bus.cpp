@@ -4,7 +4,7 @@
 
 #include "debug/profiler.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void EventBus::flush() {
     PROFILE_SCOPE("EventBus::flush");
@@ -24,4 +24,4 @@ void EventBus::flush() {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -13,7 +13,7 @@
 #include "resource/texture_format.h"
 #include "system/async/async_load_queue.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -101,4 +101,4 @@ void AsyncLoaderSystem::update(FrameContext& ctx) {
     });
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

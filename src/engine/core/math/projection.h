@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-namespace Engine::Math {
+namespace Vkm::Engine::Math {
 
 /**
  * @brief Build a perspective projection matrix.
@@ -29,4 +29,4 @@ inline glm::mat4 makeOrthographic(float halfHeight, float aspect, float zNear, f
     return glm::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, zNear, zFar);
 }
 
-} // namespace Engine::Math
+} // namespace Vkm::Engine::Math

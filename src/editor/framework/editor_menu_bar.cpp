@@ -23,7 +23,7 @@
 #include "ui/editor_style.h"
 #include "ui/editor_widgets.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // "Undo Transform" / "Redo" - the verb plus the top-of-stack op label, or just
@@ -274,4 +274,4 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     ImGui::EndMenuBar();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

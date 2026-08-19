@@ -10,7 +10,7 @@
 #include "platform/window/window_manager.h"
 #include "system/camera/camera_controller_system.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void PreferencesPanel::draw(EditorContext& ec) {
     FrameContext& ctx   = ec.frame;
@@ -182,4 +182,4 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace Engine {
+namespace Vkm::Engine {
     class WindowManager;
     class Clock;
 
@@ -12,9 +12,9 @@ namespace Engine {
     class InputMap;
     struct Visibility;
     struct UIDrawData;
-} // namespace Engine
+} // namespace Vkm::Engine
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Named per-frame execution stages.
@@ -143,4 +143,4 @@ class System {
         System() = default;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

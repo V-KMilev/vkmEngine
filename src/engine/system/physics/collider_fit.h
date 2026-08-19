@@ -6,7 +6,7 @@
 
 #include "ecs/component/collider.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct MeshAsset;
 
@@ -30,4 +30,4 @@ inline constexpr int COLLIDER_FIT_MAX_DETAIL = 64;
  */
 std::vector<ColliderBox> fitBoxesToMesh(const MeshAsset& mesh, int detail, const glm::vec3& scale);
 
-} // namespace Engine
+} // namespace Vkm::Engine

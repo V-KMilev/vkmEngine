@@ -4,7 +4,7 @@
 
 #include "texture/gl_texture_3d.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLIrradianceVolume::GLIrradianceVolume()  = default;
 GLIrradianceVolume::~GLIrradianceVolume() = default;
@@ -45,4 +45,4 @@ void GLIrradianceVolume::bindSlot(int i, uint32_t slot) const {
     if (i >= 0 && i < SH_COEFFS && m_sh[i]) m_sh[i]->bindSlot(slot);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

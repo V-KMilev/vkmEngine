@@ -28,7 +28,7 @@
 #include "ui/editor_style.h"
 #include "ui/editor_dialogs.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 SceneIOController::SceneIOController(
     CameraControllerSystem& cameraController,
@@ -318,4 +318,4 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

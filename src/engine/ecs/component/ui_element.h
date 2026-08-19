@@ -4,7 +4,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief An axis-aligned screen-space rectangle (top-left origin, pixels).
@@ -48,9 +48,9 @@ struct UIElement {
 
 // screenRect is resolved every frame, so only the authored fields are
 // reflected (and thus serialized).
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::UIElement)
+VKM_REFLECT_BEGIN(::Vkm::Engine::UIElement)
     VKM_F(anchor),
     VKM_F(pivot),
     VKM_F(position),

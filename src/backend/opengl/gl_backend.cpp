@@ -42,7 +42,7 @@
 
 #include "gl_profiler.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLBackend::GLBackend()
     : RenderBackend(RenderBackendType::OpenGL)
@@ -409,4 +409,4 @@ void GLBackend::releaseAllPreviews() {
     m_preview.releaseAll();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -8,7 +8,7 @@ namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Depth of field: a circle-of-confusion disk blur over the resolved scene.
@@ -33,4 +33,4 @@ class GLDoFPass : public GLPass {
         std::unique_ptr<Vkm::GL::Shader> m_shader;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

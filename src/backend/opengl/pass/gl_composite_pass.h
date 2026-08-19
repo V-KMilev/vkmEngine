@@ -8,7 +8,7 @@ namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Resolves the HDR scene target to the backbuffer.
@@ -35,4 +35,4 @@ class GLCompositePass : public GLPass {
         std::unique_ptr<Vkm::GL::Shader> m_shader;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

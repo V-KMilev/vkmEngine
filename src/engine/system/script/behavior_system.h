@@ -8,7 +8,7 @@
 #include "system/physics/physics_events.h"
 #include "system/script/behavior.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 class ResourceManager;
@@ -180,4 +180,4 @@ class BehaviorSystem : public System, public ISceneObserver {
         BehaviorContext m_context;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

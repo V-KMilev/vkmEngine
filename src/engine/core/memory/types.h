@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <typeinfo>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Opaque handle pairing a sparse-array index with a generation counter.
@@ -113,4 +113,4 @@ TypeId typeId() {
     return id;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

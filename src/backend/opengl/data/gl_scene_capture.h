@@ -17,7 +17,7 @@ namespace Vkm::GL {
     class Context;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class GLIBL;
 class GLMesh;
@@ -117,4 +117,4 @@ class GLSceneCapture {
  */
 void bindOfflinePbrUniforms(Vkm::GL::Shader& pbr, const GLIBL& ibl, float iblIntensity, float faceSize);
 
-} // namespace Engine
+} // namespace Vkm::Engine

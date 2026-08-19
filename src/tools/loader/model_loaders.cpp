@@ -50,7 +50,7 @@
 #include "system/async/async_load_queue.h"
 #include "system/hierarchy/hierarchy_operations.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -664,4 +664,4 @@ EntityId importModelIntoScene(
     return root;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -8,7 +8,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
-namespace Engine::Math {
+namespace Vkm::Engine::Math {
 
 /**
  * @brief PCG32 pseudo-random generator - small, fast, and statistically strong.
@@ -242,4 +242,4 @@ inline glm::vec3 cosineHemisphere(const glm::vec3& normal) { return cosineHemisp
 
 } // namespace Random
 
-} // namespace Engine::Math
+} // namespace Vkm::Engine::Math

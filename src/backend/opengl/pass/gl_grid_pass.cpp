@@ -15,7 +15,7 @@
 #include "generator/mesh_generators.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -66,4 +66,4 @@ void GLGridPass::execute(GLFrameContext& ctx) {
     ctx.gl.setDepthFunc(GL_LEQUAL);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -8,7 +8,7 @@ namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Builds the frame's hierarchical depth pyramid from the resolved depth.
@@ -40,4 +40,4 @@ class GLHiZPass : public GLPass {
         std::unique_ptr<Vkm::GL::Shader> m_reduce;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

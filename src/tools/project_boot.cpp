@@ -16,7 +16,7 @@
 
 #include "generator/default_scene.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 bool bootHost(int argc, char** argv, const char* logFileName, const char* loggerTag) {
     std::error_code ec;
@@ -83,4 +83,4 @@ void bootProjectScene(
              project.name.c_str());
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

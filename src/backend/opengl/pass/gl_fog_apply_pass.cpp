@@ -15,7 +15,7 @@
 #include "convention/gl_bindings.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLFogApplyPass::GLFogApplyPass()
     : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/fog/apply")) {}
@@ -46,4 +46,4 @@ void GLFogApplyPass::execute(GLFrameContext& ctx) {
     endFullscreen(ctx.gl);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

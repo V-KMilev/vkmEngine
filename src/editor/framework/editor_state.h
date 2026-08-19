@@ -10,7 +10,7 @@
 #include "gizmo/transform_gizmo.h"
 #include "resource/asset/material_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Shared editor state passed to all panels by reference.
@@ -170,4 +170,4 @@ inline void pushRecentPath(std::vector<std::string>& mru, const std::string& val
     if (mru.size() > EditorState::MAX_RECENT_ENTRIES) mru.resize(EditorState::MAX_RECENT_ENTRIES);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

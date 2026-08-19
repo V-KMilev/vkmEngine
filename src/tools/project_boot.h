@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 class ResourceManager;
@@ -57,4 +57,4 @@ void bootProjectScene(
     ResourceManager& resources
 );
 
-} // namespace Engine
+} // namespace Vkm::Engine

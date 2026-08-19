@@ -9,7 +9,7 @@
 #include "gl_view.h"
 #include "texture/gl_texture.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -102,4 +102,4 @@ void GLMaterial::bindTextures(const GLView& view) const {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

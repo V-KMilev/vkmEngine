@@ -11,11 +11,11 @@ namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
     struct DrawableData;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief The lit forward draw - the one geometry pass the backend runs.
@@ -60,4 +60,4 @@ class GLForwardPass : public GLPass {
         std::vector<const DrawableData*>                    m_transparentSorted;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

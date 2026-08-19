@@ -16,7 +16,7 @@
 #include "generator/mesh_generators.h"
 #include "ui/editor_dialogs.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Distinct cache-key spaces. 0 is reserved for the live Material Editor.
@@ -302,4 +302,4 @@ void AssetBrowserPanel::drawAssetGrid(EditorContext& ec) {
 void AssetBrowserPanel::drawMaterials(EditorContext& ec) { drawAssetGrid<MaterialAsset>(ec); }
 void AssetBrowserPanel::drawMeshes(EditorContext& ec)    { drawAssetGrid<MeshAsset>(ec); }
 
-} // namespace Engine
+} // namespace Vkm::Engine

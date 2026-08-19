@@ -18,12 +18,12 @@ namespace Vkm::GL {
     class Texture2D;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
     struct RenderView;
     class ResourceManager;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Versioned, handle-indexed table of one GL resource kind.
@@ -171,4 +171,4 @@ class GLView {
 
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

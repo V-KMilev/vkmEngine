@@ -5,7 +5,7 @@
 #include "resource/texture_format.h"
 #include "texture/gl_texture.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // Map the engine's backend-agnostic texture enums to the GL / Vkm::GL::Texture2D
 // equivalents for upload. Each falls back to a sane default on an unhandled
@@ -93,4 +93,4 @@ inline Vkm::GL::Texture2DParams toGLParams(const TextureParams& params, const vo
     return gl;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

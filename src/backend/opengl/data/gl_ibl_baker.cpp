@@ -16,7 +16,7 @@
 
 #include "loader/environment_loaders.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLIBLBaker::GLIBLBaker(GLCubeConvolver& convolver)
     : m_equirect("shaders/ibl/equirect")
@@ -120,4 +120,4 @@ void GLIBLBaker::bakeProcedural(Vkm::GL::Context& gl, GLIBL& ibl, const SkyParam
     LOG_INFO("IBL baked from procedural sky");
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

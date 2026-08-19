@@ -4,7 +4,7 @@
 
 #include "platform/window/window_manager.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // The header sizes m_keyState[] / m_buttonState[] without including GLFW, so a
 // GLFW that grows a key would leave every array short. This is the one place
@@ -84,4 +84,4 @@ void InputHandle::update(GLFWwindow* window) {
     m_mouseHandle.update(window);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

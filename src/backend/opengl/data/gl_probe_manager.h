@@ -13,7 +13,7 @@ namespace Vkm::GL {
     class UniformBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct RenderView;
 class GLCubeConvolver;
@@ -109,4 +109,4 @@ class GLProbeManager {
         ProbeBlock                              m_lastBlock{};  ///< Last uploaded block, for change-gated upload.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

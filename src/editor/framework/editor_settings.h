@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorState;
 struct RenderSettings;
@@ -55,4 +55,4 @@ std::string path();
 
 }  // namespace EditorSettings
 
-}  // namespace Engine
+}  // namespace Vkm::Engine

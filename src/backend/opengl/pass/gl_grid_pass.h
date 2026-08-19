@@ -8,7 +8,7 @@ namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class GLMesh;
 
@@ -40,4 +40,4 @@ class GLGridPass : public GLPass {
         std::unique_ptr<GLMesh>        m_quad;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

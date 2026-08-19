@@ -14,7 +14,7 @@
 
 #include "io/project_paths.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 HDRImage loadHDRImage(const std::string& filePath) {
     HDRImage image;
@@ -48,4 +48,4 @@ HDRImage loadHDRImage(const std::string& filePath) {
     return image;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

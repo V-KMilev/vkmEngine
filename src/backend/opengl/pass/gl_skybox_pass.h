@@ -8,7 +8,7 @@ namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class GLMesh;
 
@@ -41,4 +41,4 @@ class GLSkyboxPass : public GLPass {
         std::unique_ptr<GLMesh>        m_cube;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

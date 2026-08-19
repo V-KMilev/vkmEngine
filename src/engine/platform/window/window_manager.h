@@ -9,7 +9,7 @@
 struct GLFWwindow;
 struct GLFWmonitor;
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // Window-creation defaults. Platform/window-layer constants (WindowManager owns
 // GL-context creation), kept here rather than in engine_config.h - that file
@@ -288,4 +288,4 @@ class WindowManager {
         uint32_t m_sceneVpH = 0;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -4,7 +4,7 @@
 
 #include "ui/editor_style.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // A cool-tinted neutral ramp gives panels a sense of elevation (window <
 // child < popup, frames recessed), and a single accent (EditorStyle::ACCENT)
@@ -116,4 +116,4 @@ void applyEditorTheme() {
     c[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.04f, 0.04f, 0.06f, 0.60f);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

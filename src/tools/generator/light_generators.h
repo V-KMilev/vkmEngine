@@ -2,7 +2,7 @@
 
 #include "ecs/component/light.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Generate a light component of the given type.
@@ -16,4 +16,4 @@ namespace Engine {
  */
 Light generateLight(LightType type);
 
-} // namespace Engine
+} // namespace Vkm::Engine

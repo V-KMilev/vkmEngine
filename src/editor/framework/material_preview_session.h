@@ -5,7 +5,7 @@
 
 #include "system/render/editor_render_hooks.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class RenderSystem;
 class ResourceManager;
@@ -90,4 +90,4 @@ class MaterialPreviewSession {
         int m_budget = 0;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

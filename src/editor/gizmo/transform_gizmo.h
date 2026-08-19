@@ -6,7 +6,7 @@
 
 #include "ui/editor_style.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Gizmo operation type. Select is a no-handle mode: picking only, no
@@ -199,4 +199,4 @@ class TransformGizmo {
         static constexpr ImU32 COLOR_PLANE_Z   = EditorStyle::AXIS_Z_FILL_U32;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

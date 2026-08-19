@@ -15,7 +15,7 @@ namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Renders all shadow depth maps for the frame, ahead of the forward pass.
@@ -78,4 +78,4 @@ class GLShadowPass : public GLPass {
         std::vector<glm::mat4>   m_models;     ///< Flattened models of every surviving caster this tile/face.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

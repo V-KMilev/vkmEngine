@@ -2,7 +2,7 @@
 
 #include "core/system.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Drains the AsyncLoadQueue once per frame and finalises completed
@@ -32,4 +32,4 @@ class AsyncLoaderSystem : public System {
         void update(FrameContext& ctx) override;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

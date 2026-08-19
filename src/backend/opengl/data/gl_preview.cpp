@@ -27,7 +27,7 @@
 #include "system/render/render_view.h"
 #include "system/render/data/camera_data.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -264,4 +264,4 @@ void GLPreview::releaseAll() {
     m_entries.clear();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

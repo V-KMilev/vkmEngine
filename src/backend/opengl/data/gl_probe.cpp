@@ -6,7 +6,7 @@
 
 #include "logger.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 int GLProbeArray::clampResolution(int resolution) {
     resolution = std::clamp(resolution, MIN_RESOLUTION, MAX_RESOLUTION);
@@ -62,4 +62,4 @@ void GLProbeArray::createTargets(int capacity, int resolution) {
         capacity, m_resolution, m_envSize, m_prefilterSize, PREFILTER_MIPS, m_irradianceSize);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

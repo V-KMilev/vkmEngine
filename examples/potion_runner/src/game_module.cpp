@@ -32,7 +32,7 @@ extern "C"
 __declspec(dllexport)
 #endif
 void vkmRegisterBehaviors() {
-    Engine::BehaviorRegistry::get().registerBehavior<Engine::PotionRunner>();
+    Vkm::Engine::BehaviorRegistry::get().registerBehavior<Vkm::Engine::PotionRunner>();
 }
 
 // vkmBuildScene is the optional one. This game's world is generated, not
@@ -44,9 +44,9 @@ extern "C"
 #if defined(_WIN32)
 __declspec(dllexport)
 #endif
-void vkmBuildScene(Engine::Scene& scene) {
+void vkmBuildScene(Vkm::Engine::Scene& scene) {
 
-        auto& registry = Engine::BehaviorRegistry::get();
+        auto& registry = Vkm::Engine::BehaviorRegistry::get();
 
     // A real night: the ambient is almost gone so the game's arch washes, trim
     // rims, headlights and glows carve visible pools out of the dark instead of
@@ -58,11 +58,11 @@ void vkmBuildScene(Engine::Scene& scene) {
     // Chase camera, parked where PotionRunner drives it so the editor preview
     // already frames the track before play begins.
     auto camera = scene.createEntity();
-    scene.add(camera, Engine::makeName("Camera"));
-    scene.add(camera, Engine::Camera{Engine::ProjectionType::Perspective});
-    scene.add(camera, Engine::Transform{
+    scene.add(camera, Vkm::Engine::makeName("Camera"));
+    scene.add(camera, Vkm::Engine::Camera{Vkm::Engine::ProjectionType::Perspective});
+    scene.add(camera, Vkm::Engine::Transform{
         glm::vec3(0.0f, 4.6f, -8.5f),
-        glm::angleAxis(0.34f, Engine::Math::WORLD_AXIS_X),
+        glm::angleAxis(0.34f, Vkm::Engine::Math::WORLD_AXIS_X),
         glm::vec3(1.0f)
     });
 
@@ -74,9 +74,9 @@ void vkmBuildScene(Engine::Scene& scene) {
 
     // The whole game: one entity, one behavior, which builds the rest on Play.
     auto game = scene.createEntity();
-    scene.add(game, Engine::makeName("PotionRunner"));
-    scene.add(game, Engine::Transform{});
-    Engine::ScriptComponent script;
+    scene.add(game, Vkm::Engine::makeName("PotionRunner"));
+    scene.add(game, Vkm::Engine::Transform{});
+    Vkm::Engine::ScriptComponent script;
     if (auto behavior = registry.create("PotionRunner")) {
         script.behaviors.push_back(std::move(behavior));
     }

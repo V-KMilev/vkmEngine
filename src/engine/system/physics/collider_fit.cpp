@@ -9,7 +9,7 @@
 
 #include "resource/asset/mesh_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -133,4 +133,4 @@ std::vector<ColliderBox> fitBoxesToMesh(const MeshAsset& mesh, int detail, const
     return boxes;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

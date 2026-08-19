@@ -7,7 +7,7 @@
 
 #include "l_assert.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Opaque id for a registered listener, returned by subscribe().
@@ -156,4 +156,4 @@ class Bus : public IBus {
         int        m_flushDepth = 0;       ///< >0 while inside emit/flush.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -6,7 +6,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 ImVec2 TransformGizmo::worldToScreen(const glm::vec3& worldPos) const {
     glm::vec4 clip = m_viewProj * glm::vec4(worldPos, 1.0f);
@@ -584,4 +584,4 @@ void TransformGizmo::drawScaleGizmo(ImDrawList* dl, const ImVec2 screenAxes[3]) 
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

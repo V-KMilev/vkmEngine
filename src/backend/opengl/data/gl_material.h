@@ -12,11 +12,11 @@ namespace Vkm::GL {
     class UniformBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
     class GLView;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief A texture handle bound to a sampler slot.
@@ -96,4 +96,4 @@ class GLMaterial {
         MaterialType                          m_type = MaterialType::Opaque;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

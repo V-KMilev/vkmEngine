@@ -6,7 +6,7 @@
 
 #include "logger.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Set inside process() so parallelFor can detect re-entry from a worker
@@ -123,4 +123,4 @@ void ThreadPool::process() {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -7,7 +7,7 @@
 #include "system/render/render_settings.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief The engine's entry point into rendering.
@@ -86,4 +86,4 @@ class RenderSystem : public System {
         RenderSettings m_settings;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -8,7 +8,7 @@ namespace Vkm::GL {
     class ComputeShader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Forward+ light cull: dispatches the cluster-cull compute shader that
@@ -34,4 +34,4 @@ class GLClusterPass : public GLPass {
         std::unique_ptr<Vkm::GL::ComputeShader> m_compute;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

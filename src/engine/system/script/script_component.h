@@ -5,7 +5,7 @@
 
 #include "system/script/behavior.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief ECS component attaching owned, polymorphic Behaviors to an entity.
@@ -21,4 +21,4 @@ struct ScriptComponent {
     std::vector<std::unique_ptr<Behavior>> behaviors;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -7,7 +7,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief A line of text drawn within its element's rect.
@@ -33,13 +33,13 @@ struct UIText {
     VAlign      valign    = VAlign::Top;               ///< Vertical alignment within the element rect.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Engine::UIText::Align, "Left", "Center", "Right")
+VKM_ENUM_NAMES(::Vkm::Engine::UIText::Align, "Left", "Center", "Right")
 
-VKM_ENUM_NAMES(::Engine::UIText::VAlign, "Top", "Middle", "Bottom")
+VKM_ENUM_NAMES(::Vkm::Engine::UIText::VAlign, "Top", "Middle", "Bottom")
 
-VKM_REFLECT_BEGIN(::Engine::UIText)
+VKM_REFLECT_BEGIN(::Vkm::Engine::UIText)
     VKM_F(text),
     VKM_F(font),
     VKM_F(pixelSize),

@@ -14,7 +14,7 @@
 #include "framework/prefab_overrides.h"
 #include "ui/editor_style.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void BottomPanel::draw(EditorContext& ec) {
     if (ImGui::BeginTabBar("##BottomTabs")) {
@@ -422,4 +422,4 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
     editor(scene.get<Animation>(id));
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -3,7 +3,7 @@
 #include "resource/asset/material_asset.h"
 #include "resource/resource_handle.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 
@@ -18,4 +18,4 @@ class ResourceManager;
  */
 MaterialHandle generateDefaultMaterial(ResourceManager& resourceManager);
 
-} // namespace Engine
+} // namespace Vkm::Engine

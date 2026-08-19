@@ -10,7 +10,7 @@
 #include "ecs/component/light.h"
 #include "ecs/component/transform.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -63,4 +63,4 @@ void SkySystem::update(FrameContext& ctx) {
     });
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

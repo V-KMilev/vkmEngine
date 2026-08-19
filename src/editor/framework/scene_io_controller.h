@@ -5,7 +5,7 @@
 
 #include "framework/asset_picker.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct FrameContext;
 struct EditorState;
@@ -217,4 +217,4 @@ class SceneIOController {
         AssetPicker m_loadPicker;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

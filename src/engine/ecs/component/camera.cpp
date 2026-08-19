@@ -3,7 +3,7 @@
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 EntityId findActiveCamera(const Scene& scene, EntityId cached) {
     if (cached && scene.isAlive(cached)
@@ -20,4 +20,4 @@ EntityId findActiveCamera(const Scene& scene, EntityId cached) {
     return active;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

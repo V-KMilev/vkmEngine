@@ -24,7 +24,7 @@
 #include "ecs/component/ui_text.h"
 #include "ecs/component/ui_button.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 bool drawVec3Control(const char* label, float* values,
                      float resetValue, float speed) {
@@ -362,4 +362,4 @@ bool entitySelectable(const char* idStr, bool selected,
     return clicked;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

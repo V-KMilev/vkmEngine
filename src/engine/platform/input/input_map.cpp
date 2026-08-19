@@ -6,7 +6,7 @@
 
 #include "platform/window/input_handle.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -100,4 +100,4 @@ const InputMap::Action* InputMap::find(const std::string& action) const {
     return it == m_actions.end() ? nullptr : &it->second;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

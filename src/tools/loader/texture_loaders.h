@@ -5,7 +5,7 @@
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_handle.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 
@@ -54,4 +54,4 @@ TextureHandle requestTextureAsync(
     bool generateMipmaps = true
 );
 
-} // namespace Engine
+} // namespace Vkm::Engine

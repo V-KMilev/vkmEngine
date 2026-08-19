@@ -8,11 +8,11 @@ namespace Vkm::GL {
     class UniformBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
     struct CameraData;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief std140 layout - must match the CameraBlock in shaders/forward.
@@ -48,4 +48,4 @@ class GLCamera {
         CameraUBO                             m_last{};
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

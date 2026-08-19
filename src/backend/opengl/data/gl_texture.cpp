@@ -10,7 +10,7 @@
 #include "resource/asset/texture_asset.h"
 #include "resource/asset/font_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLTexture::GLTexture(const TextureAsset& texture) {
     update(texture);
@@ -58,4 +58,4 @@ void GLTexture::update(const FontAsset& font) {
     if (params.data) m_hasPixels = true;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

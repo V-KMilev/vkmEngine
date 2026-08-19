@@ -11,7 +11,7 @@
 #include "system/physics/collision/narrowphase.h"
 #include "system/physics/collision/solver.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct PhysicsSettings;
 
@@ -139,4 +139,4 @@ class PhysicsSystem : public System {
         std::vector<BoxShape> m_subB;  ///< B's child boxes expanded to world space (narrowphase)
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

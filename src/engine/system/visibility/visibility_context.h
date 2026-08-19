@@ -4,7 +4,7 @@
 
 #include "core/math/frustum.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 
 /**
@@ -22,4 +22,4 @@ struct VisibilityContext {
 
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

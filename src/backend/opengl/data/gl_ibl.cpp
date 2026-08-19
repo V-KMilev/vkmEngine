@@ -4,7 +4,7 @@
 
 #include "logger.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void GLIBL::createTargets() {
     if (m_captureFbo) return;  // already allocated
@@ -48,4 +48,4 @@ void GLIBL::uploadEquirect(uint32_t width, uint32_t height, const float* rgb) {
     m_equirect = std::make_unique<Vkm::GL::Texture2D>("ibl_equirect", p);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

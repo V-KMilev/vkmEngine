@@ -11,7 +11,7 @@ namespace Vkm::GL {
     class Context;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class GLCubeConvolver;
 class GLIBL;
@@ -105,4 +105,4 @@ class GLIBLBaker {
         Vkm::GL::ScreenTriangle m_brdfTri;    ///< Attribute-less fullscreen triangle for the BRDF LUT
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

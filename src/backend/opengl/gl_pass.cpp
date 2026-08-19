@@ -7,7 +7,7 @@
 #include "gl_target.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void GLPass::beginFullscreen(Vkm::GL::Context& gl) const {
     gl.setDepthTest(false);
@@ -39,4 +39,4 @@ void GLPass::bindBackbufferViewport(GLFrameContext& ctx) const {
     );
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

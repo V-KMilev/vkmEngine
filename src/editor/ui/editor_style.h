@@ -2,7 +2,7 @@
 
 #include <imgui.h>
 
-namespace Engine::EditorStyle {
+namespace Vkm::Engine::EditorStyle {
 
 /**
  * @brief Shared editor visual constants.
@@ -124,4 +124,4 @@ inline float px(float units) {
 // scales with the loaded font size / DPI (~100 px at the default 15 px font).
 inline float labelWidth() { return static_cast<float>(static_cast<int>(ImGui::GetFontSize() * 6.7f + 0.5f)); }
 
-} // namespace Engine::EditorStyle
+} // namespace Vkm::Engine::EditorStyle

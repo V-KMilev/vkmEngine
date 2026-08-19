@@ -7,7 +7,7 @@
 
 #include "gl_mip_chain_texture.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Hierarchical depth pyramid: the farthest depth over each screen region.
@@ -111,4 +111,4 @@ class GLHiZ {
         bool m_ready = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

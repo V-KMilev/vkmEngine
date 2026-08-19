@@ -7,7 +7,7 @@
 #include "l_assert.h"
 #include "core/memory/types.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @class SlotAllocator
@@ -208,4 +208,4 @@ class SlotAllocator {
         size_t m_liveCount = 0;                    ///< Live slots, tracked rather than derived from the free list
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

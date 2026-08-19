@@ -2,7 +2,7 @@
 
 #include "core/system.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Steps every ParticleEmitter's CPU particle simulation.
@@ -26,4 +26,4 @@ class ParticleSystem : public System {
         void update(FrameContext& ctx) override;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

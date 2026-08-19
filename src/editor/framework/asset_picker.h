@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Cached, modal asset-path picker shared by every editor file dialog.
@@ -83,4 +83,4 @@ class AssetPicker {
         std::vector<std::filesystem::path> m_paths;  ///< Absolute (or relative-to) paths.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine
