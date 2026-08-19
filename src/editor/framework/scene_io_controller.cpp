@@ -40,24 +40,30 @@ SceneIOController::SceneIOController(
 
 SceneIOController::~SceneIOController() = default;
 
+bool SceneIOController::writeScene(FrameContext& ctx, EditorState& state, const std::string& path) {
+    // Bake every referenced asset into the cooked library + manifest, then write
+    // the scene as name-only references to those cooked assets.
+    AssetCooker::cookAllAssets(ctx.resources);
+
+    const std::string shown = std::filesystem::path(path).filename().string();
+    if (!SceneSerializer::save(ctx.scene, ctx.resources, path)) {
+        LOG_ERROR("SceneIOController: failed to write %s - scene remains dirty",
+            path.c_str());
+        state.pushToast(EditorState::ToastKind::Error, "Save failed: " + shown);
+        return false;
+    }
+    state.sceneDirty = false;
+    pushRecentPath(state.recentScenes, path);
+    state.pushToast(EditorState::ToastKind::Info, "Saved " + shown);
+    return true;
+}
+
 void SceneIOController::save(FrameContext& ctx, EditorState& state) {
     if (m_currentScenePath.empty()) {
         requestSaveAs();
         return;
     }
-    // Bake every referenced asset into the cooked library + manifest, then write
-    // the scene as name-only references to those cooked assets.
-    AssetCooker::cookAllAssets(ctx.resources);
-    if (!SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath)) {
-        LOG_ERROR("SceneIOController::save: failed to write %s - scene remains dirty",
-            m_currentScenePath.c_str());
-        state.pushToast(EditorState::ToastKind::Error,
-            "Save failed: " + m_currentScenePath);
-        return;
-    }
-    state.sceneDirty = false;
-    pushRecentPath(state.recentScenes, m_currentScenePath);
-    state.pushToast(EditorState::ToastKind::Info, "Saved");
+    writeScene(ctx, state, m_currentScenePath);
 }
 
 void SceneIOController::loadPath(FrameContext& ctx, EditorState& state, const std::string& path) {
@@ -300,17 +306,10 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
             std::error_code mkdirEc;
             std::filesystem::create_directories(
                 ProjectPaths::scenes(), mkdirEc);
+            // Set before the write: a failed Save-As leaves the new path
+            // current, so Ctrl+S retries where the user asked to go.
             m_currentScenePath = finalPath;
-            AssetCooker::cookAllAssets(ctx.resources);
-            if (SceneSerializer::save(ctx.scene, ctx.resources, m_currentScenePath)) {
-                state.sceneDirty = false;
-                pushRecentPath(state.recentScenes, m_currentScenePath);
-                state.pushToast(EditorState::ToastKind::Info, "Saved " + finalName);
-            } else {
-                LOG_ERROR("SceneIOController: Save As failed for %s", m_currentScenePath.c_str());
-                state.pushToast(EditorState::ToastKind::Error,
-                    "Save failed: " + finalName);
-            }
+            writeScene(ctx, state, m_currentScenePath);
         }
         endDialog();
     }
