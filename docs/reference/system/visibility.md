@@ -25,8 +25,9 @@ VisibilitySystem::update(ctx)
      (visible flags, caster flags, one `VisibleEntity` of scratch per index).
   4. parallelFor over all Mesh entities (each worker writes disjoint indices):
      - Skip if !visible, no mesh, no Transform, or degenerate bounds.
-     - Resolve the world matrix inline: read WorldTransform if present, else
-       compute from the local Transform (HierarchySystem already ran this stage).
+     - Resolve the world matrix inline, through raw storage pointers rather
+       than resolvedWorldMatrix: read WorldTransform if present, else compute
+       from the local Transform (HierarchySystem already ran this stage).
      - Compute world AABB (Arvo's method, 18 mults).
      - Fill the scratch entry (id, matrix, AABB, chosen mesh) and the
        castShadows flag for EVERY valid mesh (not just camera-visible ones) so

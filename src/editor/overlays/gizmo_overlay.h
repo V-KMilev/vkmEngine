@@ -11,19 +11,7 @@
 
 namespace Engine {
 
-class Scene;
 struct EditorContext;
-
-// World position of a (possibly parented) entity: the cached WorldTransform
-// when present, the local Transform position otherwise. Shared by the gizmo
-// draw and picking paths so both agree on the rule.
-glm::vec3 worldPosOf(const Scene& scene, EntityId id, const Transform& tf);
-
-// World rotation of a (possibly parented) entity, by the same rule. The
-// renderer and the physics solver both resolve aim and collider orientation
-// this way, so a gizmo that used the local rotation would point somewhere the
-// entity does not.
-glm::quat worldRotationOf(const Scene& scene, EntityId id, const Transform& tf);
 
 /**
  * @brief Viewport overlay for the transform gizmo and entity picking.
