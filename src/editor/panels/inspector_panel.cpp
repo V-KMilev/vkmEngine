@@ -1197,19 +1197,18 @@ void InspectorPanel::drawAnimationSection(Scene& scene, ResourceManager& resourc
         changed |= ImGui::DragFloat("##ASpeed", &anim.speed, 0.005f, 0.0f, 10.0f, "Speed %.2fx");
 
         // Explicit minimum length holds the clip open past the last keyframe
-        // (0 = auto, derived from the keyframes). Folds into `duration` via
-        // updateDuration() so the scrubber and playback see it immediately.
+        // (0 = auto, derived from the keyframes).
         if (propDrag("Length", &anim.length, 0.02f, 0.0f, 100000.0f, "%.2f s  (0 = auto)")) {
             anim.length = std::max(0.0f, anim.length);  // same clamp as the Bottom panel
-            anim.updateDuration();
             changed = true;
         }
 
-        if (anim.duration > 0.0f) {
+        const float duration = Animation::computeDuration(anim);
+        if (duration > 0.0f) {
             ImGui::SetNextItemWidth(-1);
             char timeFmt[32];
-            snprintf(timeFmt, sizeof(timeFmt), "%%.2f / %.2f s", anim.duration);
-            ImGui::SliderFloat("##ATime", &anim.time, 0.0f, anim.duration, timeFmt);
+            snprintf(timeFmt, sizeof(timeFmt), "%%.2f / %.2f s", duration);
+            ImGui::SliderFloat("##ATime", &anim.time, 0.0f, duration, timeFmt);
         }
 
         // Read-only digest. The editable keyframe editor lives in the Bottom
