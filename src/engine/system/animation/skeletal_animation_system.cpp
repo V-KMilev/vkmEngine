@@ -89,25 +89,9 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
         work.entityIndex   = animators->keyAt(i);
         work.skeleton      = &skeleton;
 
-        if (animator.clip && resources.isAlive(animator.clip)) {
-            const AnimationClipAsset& clip = resources.get(animator.clip);
-            // A clip's per-bone table is bound to one rig's bone order at cook
-            // time. Playing it on another rig would pose the wrong joints from
-            // matching indices, so the bind pose stands and the mismatch is
-            // named - which is the failure that actually happens, rather than a
-            // character that stands still for no stated reason.
-            if (clip.skeleton == skeleton.name) {
-                work.clip = &clip;
-            } else {
-                seen.clipMismatch = true;
-                if (!m_clipMismatchLogged) {
-                    LOG_WARNING("Clip '%s' is bound to rig '%s' but plays on '%s' - holding the bind pose",
-                        clip.name.c_str(), clip.skeleton.c_str(), skeleton.name.c_str());
-                    m_clipMismatchLogged = true;
-                }
-            }
-        }
-        work.slice = m_poses.addSlice(static_cast<uint32_t>(skeleton.bones.size()));
+        work.clip     = resolveClip(resources, animator.clip,     skeleton, seen);
+        work.fadeClip = resolveClip(resources, animator.fadeFrom, skeleton, seen);
+        work.slice    = m_poses.addSlice(static_cast<uint32_t>(skeleton.bones.size()));
 
         totalBones += skeleton.bones.size();
         m_work.push_back(work);
@@ -140,10 +124,50 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
             const RigWork& work = m_work[i];
             Animator& animator  = animators->dataAt(work.animatorIndex);
 
-            advancePlayback(animator, work.clip ? work.clip->duration : 0.0f, simDelta);
-            composePose(*work.skeleton, work.clip, animator.time, m_poses.writeTo(work.slice));
+            advancePlayback(animator,
+                            work.clip     ? work.clip->duration     : 0.0f,
+                            work.fadeClip ? work.fadeClip->duration : 0.0f,
+                            simDelta);
+
+            PoseSample sample;
+            sample.clip     = work.clip;
+            sample.time     = animator.time;
+            sample.from     = work.fadeClip;
+            sample.fromTime = animator.fadeTime;
+            // advancePlayback clears the fade the moment it runs out, so a
+            // duration of zero here means there is nothing left to blend.
+            sample.weight   = (animator.fadeDuration > 0.0f)
+                ? 1.0f - animator.fadeRemaining / animator.fadeDuration
+                : 1.0f;
+
+            composePose(*work.skeleton, sample, m_poses.writeTo(work.slice));
         });
     }
+}
+
+const AnimationClipAsset* SkeletalAnimationSystem::resolveClip(
+    const ResourceManager& resources, const AnimationClipHandle& handle,
+    const SkeletonAsset& skeleton, FaultsSeen& seen) {
+    if (!handle || !resources.isAlive(handle)) return nullptr;
+
+    // A clip's per-bone table is bound to one rig's bone order at cook time, so
+    // it fits only a rig of that name and that length - a rig recooked longer
+    // while the clip stayed current fails the second half alone. Playing either
+    // one would pose the wrong joints from matching indices, so the bind pose
+    // stands and the mismatch is named, which is the failure that actually
+    // happens rather than a character that stands still for no stated reason.
+    const AnimationClipAsset& clip = resources.get(handle);
+    if (clip.skeleton == skeleton.name && clip.bones.size() == skeleton.bones.size()) return &clip;
+
+    seen.clipMismatch = true;
+    if (!m_clipMismatchLogged) {
+        LOG_WARNING("Clip '%s' (rig '%s', %zu bones) does not fit rig '%s' (%zu bones) - "
+                    "holding the bind pose",
+                    clip.name.c_str(), clip.skeleton.c_str(), clip.bones.size(),
+                    skeleton.name.c_str(), skeleton.bones.size());
+        m_clipMismatchLogged = true;
+    }
+    return nullptr;
 }
 
 void SkeletalAnimationSystem::stampDescendants(Scene& scene, const ResourceManager& resources,

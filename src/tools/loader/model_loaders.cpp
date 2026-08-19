@@ -1084,7 +1084,10 @@ EntityId importModelIntoScene(
         // No parent means the rig is rooted at the scene node itself, whose own
         // transform bone 0 already carries: the import root is that frame.
         const EntityId rigEntity = (it != nodeEntity.end()) ? it->second : root;
-        scene.add(rigEntity, Animator{rigHandle, firstClip});
+        Animator animator;
+        animator.skeleton = rigHandle;
+        animator.clip     = firstClip;
+        scene.add(rigEntity, animator);
 
         // Skinned vertices resolve into the rig's own space - the inverse-bind
         // matrices already carry whatever placed the mesh there - so the matrix

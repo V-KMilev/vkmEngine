@@ -144,6 +144,14 @@ struct Animator {
     float speed   = 1.0f;
     bool  playing = true;
     bool  looping = true;
+
+    // Transient - runtime only, never serialized.
+    AnimationClipHandle fadeFrom;
+    float               fadeTime      = 0.0f;
+    float               fadeRemaining = 0.0f;
+    float               fadeDuration  = 0.0f;
+
+    static void crossFadeTo(Animator&, AnimationClipHandle, float seconds);
 };
 ```
 
@@ -168,9 +176,56 @@ is the nearest `Animator` at or above it in the `Hierarchy`, which is the
 structure import produces anyway. That relationship needs no `EntityId` in any
 serialized row, so prefabs, undo and scene load never have to remap it.
 
-Every field above is persisted, and blend state deliberately is not. A crossfade
-is a second clip and a countdown; freezing that shape into a scene row would
-outlive the blend system that wrote it, in a project with no migration path.
+The first six fields are persisted, and the blend state deliberately is not. A
+crossfade is a second clip and a countdown; freezing that shape into a scene row
+would outlive the blend system that wrote it, in a project with no migration
+path. A scene saved mid-blend reloads as the clip it was blending *to*, already
+there - which is where it was going, one fade early.
+
+## Crossfading
+
+```cpp
+Animator::crossFadeTo(scene.get<Animator>(character), runClip, 0.2f);
+```
+
+One fade, two slots. The clip being left moves into `fadeFrom` and **keeps
+playing** at its own head, so a run fading into a walk does not freeze one foot
+while the other keeps moving. The countdown runs in unscaled simulation seconds,
+because "blend over 0.2 seconds" is a duration the caller can predict, while
+`speed` is about how fast the clips themselves run.
+
+| Call | Result |
+|------|--------|
+| The clip already playing | Left alone. The caller means "keep going", not "restart from zero" |
+| Nothing playing, or `seconds <= 0` | A cut. There is nothing to blend out of, or no time to do it in |
+| Again, mid-fade | The clip already on its way out is dropped; the blend runs from the one that was being faded *to*, which is the one still on screen |
+
+The countdown is gated on simulation time, **not** on `playing`. A one-shot clip
+shorter than the blend into it sets `playing` false partway through, and a fade
+that stopped with it would hold the character at a weight no field names and
+nothing clears - visibly mostly the clip it already left, with no way out but
+another `crossFadeTo`. The blend is about reaching the clip, not about that clip
+still advancing; it finishes, the outgoing slot clears, and the pose settles on
+the target clip's last frame.
+
+The blend happens on the **local TRS**, inside the same loop that composes, before
+the parent multiply:
+
+```cpp
+local.position = glm::mix (leaving.position, local.position, weight);
+local.rotation = glm::slerp(leaving.rotation, local.rotation, weight);
+local.scale    = glm::mix (leaving.scale,    local.scale,    weight);
+```
+
+Blending the composed matrices instead is the mistake that looks nearly right: it
+pulls a joint toward the midpoint of two *world* positions, which shortens the
+limb hanging off it. A bone blended from 0 to 90 degrees sits one unit from its
+root at every weight when the blend is local, and 0.707 units out halfway through
+when it is not.
+
+`weight` is `1 - fadeRemaining / fadeDuration`, and the second sample and the
+three interpolations above are skipped entirely at weight 1 - which is every
+frame that is not mid-fade.
 
 ## The pose, and the palette derived from it
 
@@ -219,7 +274,8 @@ Four phases, only the third parallel:
    each slice's range is a running total - and because the parallel phase must
    never touch the `ResourceManager`.
 2. **Map** (serial). Stamp each rig's entity and its subtree with its slice.
-3. **Evaluate** (`parallelFor`). Advance the playback head, then compose.
+3. **Evaluate** (`parallelFor`). Advance the playback head - and the outgoing
+   one, and the fade countdown - then compose.
 4. **Publish**. `ctx.poses` points at the system's own buffer.
 
 Composition is **one forward loop with no recursion, no visited set and no
@@ -227,7 +283,14 @@ intermediate array of local transforms**:
 
 ```cpp
 Transform local = skeleton.bindPose[i];       // a channel the clip lacks holds bind
-if (clip) sampleBone(*clip, i, time, local);
+if (clip) sampleBone(*clip, i, sample.time, local);
+if (blending) {                               // the crossfade, before composition
+    Transform leaving = skeleton.bindPose[i];
+    sampleBone(*from, i, sample.fromTime, leaving);
+    local.position = glm::mix (leaving.position, local.position, weight);
+    local.rotation = glm::slerp(leaving.rotation, local.rotation, weight);
+    local.scale    = glm::mix (leaving.scale,    local.scale,    weight);
+}
 
 const glm::mat4 bone = Transform::computeModelMatrix(local);
 global[i]  = (parent < 0) ? bone : global[parent] * bone;
@@ -237,8 +300,12 @@ palette[i] = global[i] * skeleton.inverseBind[i];
 That is possible only because `parent < index` is a *validated format invariant*
 (enforced at import, re-checked by `AssetCook::readSkeleton`): a bone's parent is
 always already composed, so its local TRS never has to outlive one iteration. It
-is also where blending will attach, on `local`, before composition - blending
-composed matrices skews limbs.
+is also where blending attaches - on `local`, before composition - and where a
+later layer system will attach for the same reason.
+
+What to sample is a per-frame `PoseSample`, not the `Animator`: one clip, or two
+and a weight. That is the shape a layer list replaces later, and it is per-frame,
+so replacing it costs nothing that was written to a file.
 
 Time advances only when simulation time elapsed, but **composition runs every
 frame regardless**, so scrubbing an `Animator` while paused shows the pose it
@@ -247,7 +314,8 @@ names. Composition is idempotent, so that costs nothing.
 A clip whose per-bone table is not parallel to the rig, or whose `skeleton` names
 a different rig, is refused: the bind pose stands and the mismatch is logged
 once. Playing it would pose the wrong joints out of matching indices, which is a
-character that moves *nearly* right.
+character that moves *nearly* right. Both clips of a fade are checked separately,
+so a bad outgoing clip cannot take the incoming one down with it.
 
 ## The frame a pose lives in
 
