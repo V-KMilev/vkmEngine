@@ -47,23 +47,17 @@ enum class SystemStage : uint8_t {
 /**
  * @brief Per-frame state bundle passed to every system.
  *
- * Two kinds of state share this struct, and the field types encode which is
- * which:
+ * The field types encode two kinds of state. References are engine-owned
+ * SERVICES, valid for the whole session: time through the Clock (getDeltaTime()
+ * for real-time work, getSimDelta() in update(), getFixedStep() in
+ * fixedUpdate()), `events` the gameplay bus flushed at the top of the Simulation
+ * stage, `input` sampled once before any system runs so every reader agrees on
+ * what is held and where the edges are.
  *
- * References are engine-owned SERVICES - always valid, stable across the whole
- * session. Time is read through the Clock: getDeltaTime() for real-time work,
- * getSimDelta() for simulation update(), getFixedStep() in fixedUpdate().
- * `events` is the gameplay pub/sub bus (owned by the Engine, flushed at the
- * top of the Simulation stage). `input` resolves named actions from the frame's
- * physical input; it is sampled once before any system runs, so every reader
- * agrees on what is held and where the edges are.
- *
- * Pointers are per-frame PRODUCTS - computed by one stage and consumed by a
- * later one, null until their producer has run this frame. `visibility` points
- * at the VisibilitySystem's culling result; `ui` at the UISystem's draw list.
- * Producers own the storage (reused across frames), so consumers read the
- * results without a per-frame allocation. A consumer of a product must be
- * registered after its producer - that ordering lives in setupEngineApp.
+ * Pointers are per-frame PRODUCTS, null until their producer has run this frame:
+ * `visibility` from VisibilitySystem, `ui` from UISystem. Producers own the
+ * storage and reuse it across frames, so a consumer must be registered after its
+ * producer - that ordering lives in setupEngineApp.
  */
 struct FrameContext {
     Scene&           scene;
@@ -99,19 +93,15 @@ class System {
         /**
          * @brief Whether this system implements fixedUpdate().
          *
-         * Override and return true in any system that provides a real
-         * fixedUpdate body; the fixed-step accumulator loop calls fixedUpdate()
-         * only on the systems that answer true. It is a declaration, not an
-         * optimisation - the predicate costs the same virtual call the empty
-         * fixedUpdate would have - so what it buys is a fixed loop whose
-         * participants are stated rather than inferred. Default false matches
-         * the default empty fixedUpdate.
+         * Override and return true in any system with a real fixedUpdate body;
+         * the fixed-step loop calls fixedUpdate() only on the systems that answer
+         * true, so the loop's participants are stated rather than inferred.
+         * Default false matches the default empty fixedUpdate.
          */
         virtual bool hasFixedUpdate() const { return false; }
 
         /**
          * @brief Called once after all systems are registered, before the first update.
-         * @param ctx The shared FrameContext for initialization.
          */
         virtual void init(FrameContext& ctx) {}
 
@@ -122,7 +112,6 @@ class System {
 
         /**
          * @brief Execute this system for the current frame.
-         * @param ctx The shared FrameContext for this frame.
          */
         virtual void update(FrameContext& ctx) = 0;
 

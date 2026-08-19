@@ -171,9 +171,8 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
  *
  *   VKM_ENUM_NAMES(::Vkm::Engine::LightType, "Directional", "Point", ...)
  *
- * It specialises EnumNames inside Vkm::Engine::Reflect, exactly as
- * VKM_REFLECT_BEGIN does above, and for the same reason: written inside a
- * namespace it specialises that namespace's Reflect instead.
+ * It specialises EnumNames inside Vkm::Engine::Reflect, and fails the same way
+ * VKM_REFLECT_BEGIN does when written inside a namespace.
  *
  * This one table is what enumName / enumFromName / drawEnumCombo read, so an
  * enum's serialized names and its editor combo cannot drift. The enum must end

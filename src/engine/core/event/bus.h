@@ -14,9 +14,6 @@ namespace Vkm::Engine {
  */
 using ListenerId = uint32_t;
 
-/**
- * @brief Interface for event bus.
- */
 struct IBus {
     virtual ~IBus() = default;
 
@@ -127,9 +124,6 @@ class Bus : public IBus {
         }
 
     private:
-        /**
-         * @brief One registered listener: its id and callback.
-         */
         struct Entry {
             ListenerId id;
             std::function<void(const EventT&)> cb;

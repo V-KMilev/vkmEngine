@@ -14,11 +14,10 @@ namespace Vkm::Engine {
  * scaled while running, zero while paused, exactly N fixed steps' worth when
  * single-stepping - and tops up the fixed-step accumulator from that sim delta.
  * Systems read getDeltaTime() for real-time work (input / camera / UI),
- * getSimDelta() for simulation update(), getFixedStep() in fixedUpdate(), and
- * drain fixed ticks with consumeFixedStep(); getFrameRate() / getFrameTime() back
- * the FPS display. Pause, time-scale, and single-step all fall out of the one sim
- * delta with no special-casing in the loop. The editor drives the play state
- * (setPaused / requestStep); the runtime leaves the clock at 1x.
+ * getSimDelta() for simulation update() and getFixedStep() in fixedUpdate().
+ * Pause, time-scale, and single-step all fall out of the one sim delta with no
+ * special-casing in the loop. The editor drives the play state (setPaused /
+ * requestStep); the runtime leaves the clock at 1x.
  */
 class Clock {
     public:
