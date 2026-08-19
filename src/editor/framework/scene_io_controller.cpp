@@ -264,8 +264,8 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
         ImGui::TextDisabled("Saved into %s (.json appended automatically)",
                             ProjectPaths::scenes().string().c_str());
         ImGui::SetNextItemWidth(EditorStyle::px(360.0f));
-        // Enter in the field commits (EnterReturnsTrue), matching the
-        // scaffold's Enter-confirms contract.
+        // Fed to dialogButtons as fieldCommitted: ImGui swallows the plain
+        // Enter while the field is active.
         const bool enterCommit = ImGui::InputText("##SaveAsName", m_saveAsBuffer,
             sizeof(m_saveAsBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
 
@@ -294,13 +294,9 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
                 "Overwrites existing %s", finalName.c_str());
         }
 
-        DialogResult r = dialogButtons(m_openSaveAsPopup,
-                                       collides ? "Overwrite" : "Save", !empty);
-        if (enterCommit && !empty && r == DialogResult::None) {
-            r = DialogResult::Confirm;
-            m_openSaveAsPopup = false;
-            ImGui::CloseCurrentPopup();
-        }
+        const DialogResult r = dialogButtons(m_openSaveAsPopup,
+                                             collides ? "Overwrite" : "Save",
+                                             !empty, enterCommit);
         if (r == DialogResult::Confirm) {
             // First-time save: the scenes/ directory may not exist yet.
             std::error_code mkdirEc;

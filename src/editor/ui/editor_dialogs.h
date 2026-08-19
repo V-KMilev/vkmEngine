@@ -12,9 +12,12 @@ namespace Engine {
  * @brief Shared modal-dialog scaffold: one look and one keyboard contract for
  * every editor dialog.
  *
- * Escape cancels and Enter confirms, the latter only when no text field is
- * capturing input; a field that should commit on Enter uses
- * ImGuiInputTextFlags_EnterReturnsTrue and the caller treats that as confirm.
+ * Escape cancels and Enter confirms. ImGui holds WantTextInput while a field
+ * is active, which would otherwise swallow Enter in exactly the dialogs that
+ * most need it, so a field wanting Enter to confirm passes its
+ * ImGuiInputTextFlags_EnterReturnsTrue result as dialogButtons' fieldCommitted
+ * argument - the caller decides whether a commit means confirm, the scaffold
+ * still owns closing the popup.
  *
  * Usage:
  *   if (beginDialog("Rename Asset", m_renameOpen)) {
@@ -54,18 +57,21 @@ inline bool beginDialog(const char* title, bool& wantOpen) {
  * @brief The standard dialog button row: [alt] [cancel] [Confirm], right-aligned.
  *
  * Closes the popup and clears @p wantOpen when any result fires. Escape always
- * cancels; Enter confirms while @p confirmEnabled and no text field has the
- * keyboard.
+ * cancels; Enter confirms while @p confirmEnabled and either no text field has
+ * the keyboard or @p fieldCommitted says one just committed.
  *
  * @param wantOpen       The same intent flag beginDialog received.
  * @param confirmLabel   Rightmost (accent, default) action.
- * @param confirmEnabled Gates both the button and the Enter shortcut.
+ * @param confirmEnabled Gates the button and both Enter paths.
+ * @param fieldCommitted A text field in this dialog returned true from
+ *                       EnterReturnsTrue this frame.
  * @param cancelLabel    The dismiss action (default "Cancel").
  * @param altLabel       Optional third action drawn left of cancel.
  * @return What fired this frame (None while the dialog stays open).
  */
 inline DialogResult dialogButtons(bool& wantOpen, const char* confirmLabel,
                                   bool confirmEnabled = true,
+                                  bool fieldCommitted = false,
                                   const char* cancelLabel = "Cancel",
                                   const char* altLabel = nullptr) {
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -102,9 +108,11 @@ inline DialogResult dialogButtons(bool& wantOpen, const char* confirmLabel,
     if (r == DialogResult::None) {
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             r = DialogResult::Cancel;
-        } else if (confirmEnabled && !ImGui::GetIO().WantTextInput
-                   && (ImGui::IsKeyPressed(ImGuiKey_Enter)
-                       || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter))) {
+        } else if (confirmEnabled
+                   && (fieldCommitted
+                       || (!ImGui::GetIO().WantTextInput
+                           && (ImGui::IsKeyPressed(ImGuiKey_Enter)
+                               || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter))))) {
             r = DialogResult::Confirm;
         }
     }

@@ -615,12 +615,8 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         ImGui::SetNextItemWidth(EditorStyle::px(280.0f));
         const bool commit = ImGui::InputText("##rnbuf", m_renameBuf, sizeof(m_renameBuf),
                                              ImGuiInputTextFlags_EnterReturnsTrue);
-        DialogResult r = dialogButtons(m_renameOpen, "Rename", m_renameBuf[0] != '\0');
-        if (commit && m_renameBuf[0] != '\0' && r == DialogResult::None) {
-            r = DialogResult::Confirm;
-            m_renameOpen = false;
-            ImGui::CloseCurrentPopup();
-        }
+        const DialogResult r = dialogButtons(m_renameOpen, "Rename",
+                                             m_renameBuf[0] != '\0', commit);
         if (r == DialogResult::Confirm && resources.isAlive(target)) {
             resources.rename(target, m_renameBuf);
             state.commands.push(std::make_unique<RenameAssetCommand<MaterialHandle>>(
