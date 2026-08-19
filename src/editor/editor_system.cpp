@@ -357,7 +357,7 @@ void EditorSystem::update(FrameContext& ctx) {
             ImGui::TextDisabled("%s", m_sceneIO.path().empty()
                 ? "(untitled scene)" : m_sceneIO.path().c_str());
 
-            switch (dialogButtons(want, "Save", true, "Cancel", "Don't Save")) {
+            switch (dialogButtons(want, "Save", true, false, "Cancel", "Don't Save")) {
                 case DialogResult::Confirm:
                     // save() opens Save-As if there's no current path; the
                     // deferred action fires once sceneDirty drops to false.

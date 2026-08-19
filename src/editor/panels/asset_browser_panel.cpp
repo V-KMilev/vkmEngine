@@ -141,12 +141,8 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
         const bool commit = ImGui::InputText("##rnbuf", m_renameBuf, sizeof(m_renameBuf),
                                               ImGuiInputTextFlags_EnterReturnsTrue);
 
-        DialogResult r = dialogButtons(m_renameOpen, "Rename", m_renameBuf[0] != '\0');
-        if (commit && m_renameBuf[0] != '\0' && r == DialogResult::None) {
-            r = DialogResult::Confirm;
-            m_renameOpen = false;
-            ImGui::CloseCurrentPopup();
-        }
+        const DialogResult r = dialogButtons(m_renameOpen, "Rename",
+                                             m_renameBuf[0] != '\0', commit);
         if (r == DialogResult::Confirm) {
             // Apply now, then push the reverse (the command captures before/
             // after names and re-applies on redo). Routed through the stack
