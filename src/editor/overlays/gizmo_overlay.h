@@ -70,6 +70,15 @@ class GizmoOverlay {
         void drawColliderGizmos(EditorContext& ec);
 
         /**
+         * @brief Draw every posed rig as bone segments from parent to child,
+         * with an axis triad per bone on the selected one.
+         *
+         * The pose SkeletalAnimationSystem published this frame, drawn straight
+         * out of it. Toggled by EditorState::showSkeletons.
+         */
+        void drawSkeletonGizmos(EditorContext& ec);
+
+        /**
          * @brief Draw the world-space AABB of every visible entity.
          *
          * The set the visibility pass produced. Toggled by

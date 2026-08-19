@@ -12,6 +12,7 @@
 #include "system/script/behavior_system.h"
 #include "system/sky/sky_system.h"
 #include "system/animation/animation_system.h"
+#include "system/animation/skeletal_animation_system.h"
 #include "system/particle/particle_system.h"
 #include "system/physics/physics_system.h"
 #include "system/hierarchy/hierarchy_system.h"
@@ -81,6 +82,7 @@ inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& c
     engine.addSystem<Vkm::Engine::AsyncLoaderSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::BehaviorSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::AnimationSystem>(Vkm::Engine::SystemStage::Simulation);
+    engine.addSystem<Vkm::Engine::SkeletalAnimationSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::ParticleSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::PhysicsSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::SkySystem>(Vkm::Engine::SystemStage::Simulation);

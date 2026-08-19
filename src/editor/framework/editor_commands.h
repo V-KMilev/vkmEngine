@@ -15,6 +15,7 @@
 #include "ecs/component/light.h"
 #include "ecs/component/camera.h"
 #include "ecs/component/animation.h"
+#include "ecs/component/animator.h"
 #include "ecs/component/collider.h"
 #include "ecs/component/hierarchy.h"
 #include "ecs/component/name.h"
@@ -247,6 +248,7 @@ class ComponentEditCommand : public Command {
     X(Light,           light)            \
     X(Camera,          camera)           \
     X(Animation,       animation)        \
+    X(Animator,        animator)         \
     X(Name,            name)             \
     X(Rigidbody,        rigidbody)        \
     X(Collider,         collider)         \

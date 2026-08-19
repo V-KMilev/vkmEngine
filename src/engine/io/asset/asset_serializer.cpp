@@ -11,6 +11,7 @@
 
 #include "logger.h"
 
+#include "ecs/component/animator.h"
 #include "ecs/component/decal.h"
 #include "ecs/component/lod.h"
 #include "ecs/component/mesh.h"
@@ -167,10 +168,14 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
     nlohmann::json meshes    = nlohmann::json::array();
     nlohmann::json textures  = nlohmann::json::array();
     nlohmann::json materials = nlohmann::json::array();
+    nlohmann::json skeletons = nlohmann::json::array();
+    nlohmann::json clips     = nlohmann::json::array();
 
     std::unordered_set<uint32_t> seenMeshes;
     std::unordered_set<uint32_t> seenMaterials;
     std::unordered_set<uint32_t> seenTextures;
+    std::unordered_set<uint32_t> seenSkeletons;
+    std::unordered_set<uint32_t> seenClips;
 
     auto emitTexture = [&](const TextureHandle& h) {
         if (!h) return;
@@ -198,6 +203,16 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
         for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
     };
 
+    auto emitSkeleton = [&](const SkeletonHandle& h) {
+        if (!h || !seenSkeletons.insert(h.id()).second) return;
+        emitDescriptor(skeletons, resources.get(h));
+    };
+
+    auto emitClip = [&](const AnimationClipHandle& h) {
+        if (!h || !seenClips.insert(h.id()).second) return;
+        emitDescriptor(clips, resources.get(h));
+    };
+
     // Every component that writes an asset name into the document has to be
     // walked here: a name the assets block never lists is a name loadAssets
     // never recreates, and the component's reference resolves to nothing.
@@ -211,12 +226,19 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
             for (const LODLevel& level : scene.get<LOD>(id).levels) emitMesh(level.mesh);
         }
         if (scene.has<Decal>(id)) emitMaterial(scene.get<Decal>(id).material);
+        if (scene.has<Animator>(id)) {
+            const Animator& a = scene.get<Animator>(id);
+            emitSkeleton(a.skeleton);
+            emitClip(a.clip);
+        }
     }
 
     nlohmann::json out;
     out["textures"]  = std::move(textures);
     out["meshes"]    = std::move(meshes);
     out["materials"] = std::move(materials);
+    out["skeletons"] = std::move(skeletons);
+    out["clips"]     = std::move(clips);
     return out;
 }
 
@@ -321,18 +343,22 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
     }
 
     // Order matters: textures -> materials (resolve their texture refs by name)
-    // -> meshes. Each created asset is renamed to its recorded name so component
+    // -> skeletons -> clips (each names the rig its bone indices address) ->
+    // meshes. Each created asset is renamed to its recorded name so component
     // references (which resolve by name) land on it.
-    const auto [texC, texS] = loadAssetSection<TextureAsset >(assetsJson, "textures",  AssetType::Texture,  assetFactory().createTexture,  "Texture",  resources);
-    const auto [matC, matS] = loadAssetSection<MaterialAsset>(assetsJson, "materials", AssetType::Material, assetFactory().createMaterial, "Material", resources);
-    const auto [mshC, mshS] = loadAssetSection<MeshAsset    >(assetsJson, "meshes",    AssetType::Mesh,     assetFactory().createMesh,     "Mesh",     resources);
+    const auto [texC, texS] = loadAssetSection<TextureAsset      >(assetsJson, "textures",  AssetType::Texture,       assetFactory().createTexture,       "Texture",  resources);
+    const auto [matC, matS] = loadAssetSection<MaterialAsset     >(assetsJson, "materials", AssetType::Material,      assetFactory().createMaterial,      "Material", resources);
+    const auto [sklC, sklS] = loadAssetSection<SkeletonAsset     >(assetsJson, "skeletons", AssetType::Skeleton,      assetFactory().createSkeleton,      "Skeleton", resources);
+    const auto [clpC, clpS] = loadAssetSection<AnimationClipAsset>(assetsJson, "clips",     AssetType::AnimationClip, assetFactory().createAnimationClip, "Clip",     resources);
+    const auto [mshC, mshS] = loadAssetSection<MeshAsset         >(assetsJson, "meshes",    AssetType::Mesh,          assetFactory().createMesh,          "Mesh",     resources);
 
     // Silent when the block asked for nothing new: a prefab carries its own
     // assets and is instantiated once per instance, per scene load, per
     // duplicate and per undo of one.
-    if (texC + matC + mshC > 0) {
-        LOG_INFO("%zu texture(s), %zu material(s), %zu mesh(es) created; %zu+%zu+%zu skipped (already loaded)",
-            texC, matC, mshC, texS, matS, mshS);
+    if (texC + matC + sklC + clpC + mshC > 0) {
+        LOG_INFO("%zu texture(s), %zu material(s), %zu rig(s), %zu clip(s), %zu mesh(es) created; "
+            "%zu+%zu+%zu+%zu+%zu skipped (already loaded)",
+            texC, matC, sklC, clpC, mshC, texS, matS, sklS, clpS, mshS);
     }
     return true;
 }
