@@ -9,6 +9,7 @@
 
 namespace Vkm::Engine {
 
+class ResourceManager;
 class Scene;
 struct AnimationClipAsset;
 struct SkeletonAsset;
@@ -65,20 +66,70 @@ class SkeletalAnimationSystem : public System {
         };
 
         /**
-         * @brief Record @p slice as the pose of every descendant of @p entity,
-         *        stopping wherever a nested Animator takes over.
+         * @brief What this frame's walk ran into, so a latch clears once the
+         *        fault it named is gone instead of staying stuck after a fix.
+         */
+        struct FaultsSeen {
+            bool clipMismatch = false;
+            bool rigMismatch  = false;
+            bool meshOffset   = false;
+        };
+
+        /**
+         * @brief Pose every rig in the scene into the already-cleared buffer.
+         *
+         * The whole walk lives here so update() has a single place to write the
+         * latches from: an early exit - no Animators, or none whose rig is still
+         * alive - clears them like any other frame, which is what stops a fault
+         * that has gone away from suppressing its own next report.
+         *
+         * @param ctx Frame context: the scene to walk, the assets to resolve
+         *        against, and the clock that advances playback.
+         * @param seen Collects the faults this frame ran into.
+         */
+        void poseRigs(FrameContext& ctx, FaultsSeen& seen);
+
+        /**
+         * @brief Record @p work's slice as the pose of every descendant of
+         *        @p entity, stopping wherever a nested Animator takes over.
          *
          * @param scene Scene holding the hierarchy.
+         * @param resources Assets the mesh handles resolve against.
          * @param entity Entity whose children are stamped.
-         * @param slice Slice index to record.
+         * @param work The rig doing the posing.
+         * @param seen Collects the faults the walk finds.
          */
-        void stampDescendants(Scene& scene, EntityId entity, uint32_t slice);
+        void stampDescendants(Scene& scene, const ResourceManager& resources,
+                              EntityId entity, const RigWork& work, FaultsSeen& seen);
+
+        /**
+         * @brief Name the two ways a skinned mesh can be wrong about its rig.
+         *
+         * Both are silent by nature and neither is recoverable at runtime, so
+         * they are reported rather than repaired: a mesh skinned to another rig
+         * poses the wrong joints out of matching indices, and a mesh sitting off
+         * its rig's origin is transformed twice - once by the palette, which
+         * already resolves into rig space, and once by its own transform. Either
+         * looks plausible for exactly one pose.
+         *
+         * @param scene Scene holding the components.
+         * @param resources Assets the mesh handle resolves against.
+         * @param entity Entity being stamped.
+         * @param skeleton Rig posing it.
+         * @param seen Collects what was found.
+         */
+        void checkSkinnedMesh(const Scene& scene, const ResourceManager& resources,
+                              EntityId entity, const SkeletonAsset& skeleton,
+                              FaultsSeen& seen);
 
     private:
         PoseBuffer m_poses;
         std::vector<RigWork> m_work;  ///< Rebuilt each frame; keeps its capacity.
 
-        bool m_clipMismatchLogged = false;  ///< Edge latch so a wrong-rig clip is named once per gap.
+        // Edge latches, so each fault is named once per gap rather than once a frame.
+        bool m_clipMismatchLogged = false;  ///< A clip cooked against another rig.
+        bool m_rigMismatchLogged  = false;  ///< A mesh skinned to another rig.
+        bool m_meshOffsetLogged   = false;  ///< A skinned mesh sitting off its rig's origin.
 };
 
 } // namespace Vkm::Engine

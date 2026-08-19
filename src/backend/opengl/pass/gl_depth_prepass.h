@@ -23,6 +23,11 @@ namespace Vkm::Engine {
  * forward pass, where alpha-to-coverage can anti-alias the cutout, so no albedo
  * is sampled here. The pass is unconditional: the forward pass assumes primed
  * depth (LEQUAL, writes off) and never clears.
+ *
+ * Two programs, differing only in their vertex stage: skinned runs lead the
+ * batch, so the pass switches once. Both compute gl_Position from the same
+ * expression the forward pass does, which is what keeps the primed depth usable
+ * under LEQUAL early-Z for characters as well as for rocks.
  */
 class GLDepthPrepass : public GLPass {
     public:
@@ -39,7 +44,8 @@ class GLDepthPrepass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Vkm::GL::Shader> m_shader;
+        std::unique_ptr<Vkm::GL::Shader> m_shader;         ///< Static geometry.
+        std::unique_ptr<Vkm::GL::Shader> m_skinnedShader;  ///< Same, with the vertices posed by the frame's palette.
 };
 
 } // namespace Vkm::Engine
