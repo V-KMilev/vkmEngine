@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 namespace Vkm::Engine {
@@ -26,6 +27,49 @@ inline glm::mat3 boxInertiaLocal(float mass, const glm::vec3& halfExtents) {
         ix, 0.0f, 0.0f,
         0.0f, iy, 0.0f,
         0.0f, 0.0f, iz
+    );
+}
+
+/**
+ * @brief Inertia tensor of a solid capsule about its centre, in body-local space,
+ *        with the segment along local +Y.
+ *
+ * A cylinder of height 2*halfHeight plus two hemispherical caps, each part
+ * weighted by its share of the volume. Returns mat3(0) for a non-positive mass
+ * or a non-positive radius. The capsule cannot be approximated by the box of its
+ * extent the way the compound path does: an upright character capsule is the one
+ * shape whose axis inertia (a thin cylinder) is several times smaller than the
+ * enclosing box's, which is the difference between a graze spinning it and not.
+ *
+ * @param mass Total mass of the capsule, in kg.
+ * @param radius Sweep radius; also the cap radius.
+ * @param halfHeight Half the segment length, caps excluded.
+ * @return Body-local inertia tensor about the capsule centre.
+ */
+inline glm::mat3 capsuleInertiaLocal(float mass, float radius, float halfHeight) {
+    if (mass <= 0.0f || radius <= 0.0f) return glm::mat3(0.0f);
+
+    const float h = glm::max(halfHeight, 0.0f) * 2.0f;
+    const float r2 = radius * radius;
+    const float cylinderVolume = glm::pi<float>() * r2 * h;
+    const float capsVolume     = (4.0f / 3.0f) * glm::pi<float>() * r2 * radius;
+    const float total          = cylinderVolume + capsVolume;
+    if (total <= 0.0f) return glm::mat3(0.0f);
+
+    const float cylinderMass = mass * (cylinderVolume / total);
+    const float capsMass     = mass * (capsVolume / total);
+
+    // The caps' perpendicular term is the parallel-axis shift of two hemispheres
+    // seated on the cylinder ends: 3*h*r/8 is the hemisphere centroid offset.
+    const float axial = cylinderMass * r2 * 0.5f + capsMass * (2.0f / 5.0f) * r2;
+    const float perp  = cylinderMass * (h * h / 12.0f + r2 * 0.25f)
+                      + capsMass * ((2.0f / 5.0f) * r2 + h * h * 0.25f + 3.0f * h * radius / 8.0f);
+    if (axial <= 0.0f || perp <= 0.0f) return glm::mat3(0.0f);
+
+    return glm::mat3(
+        perp, 0.0f, 0.0f,
+        0.0f, axial, 0.0f,
+        0.0f, 0.0f, perp
     );
 }
 

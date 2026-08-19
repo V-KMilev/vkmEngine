@@ -27,6 +27,10 @@ namespace Vkm::Engine {
 namespace {
 
 constexpr ImU32 COLLIDER_COL = IM_COL32(80, 220, 120, 200);  // physics green
+
+// Ring resolution for a capsule collider. Coarse enough to stay one wireframe
+// among many at a glance, fine enough that the radius reads as a radius.
+constexpr int COLLIDER_CAPSULE_SEGMENTS = 24;
 constexpr ImU32 BOUNDS_COL   = IM_COL32(230, 200, 60, 160);  // mesh-bounds amber
 
 constexpr ImU32 IRRADIANCE_VOLUME_COL = IM_COL32(235, 150, 77, 200);  // GI orange, against the probe's blue
@@ -499,9 +503,14 @@ void GizmoOverlay::drawColliderGizmos(EditorContext& ec) {
         const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
         const glm::quat rot = resolvedWorldRotation(ec.frame.scene, id, tf);
         const glm::mat3 r   = glm::mat3_cast(rot);
-        for (const ColliderBox& part : col.parts)
-            wireBox(dl, vp, pos + r * part.center, rot,
-                    part.halfExtents, vpMin, vpSize, color);
+        for (const ColliderPart& part : col.parts) {
+            const glm::vec3 center = pos + r * part.center;
+            if (part.shape == ColliderShape::Capsule)
+                wireCapsule(dl, vp, center, rot, part.radius, part.halfHeight,
+                            COLLIDER_CAPSULE_SEGMENTS, vpMin, vpSize, color);
+            else
+                wireBox(dl, vp, center, rot, part.halfExtents, vpMin, vpSize, color);
+        }
     });
 }
 

@@ -49,6 +49,14 @@ bool isFrozen(const Rigidbody& rb, float invMass) {
     return rb.sleeping || invMass == 0.0f;
 }
 
+// Half-extent of one part's own local-space AABB. A capsule's is its radius on
+// the two axes across the segment and radius + halfHeight along it.
+glm::vec3 partLocalExtent(const ColliderPart& part) {
+    return part.shape == ColliderShape::Capsule
+        ? glm::vec3(part.radius, part.halfHeight + part.radius, part.radius)
+        : part.halfExtents;
+}
+
 glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
     // freezeRotation: infinite rotational inertia. Contact impulses then apply
     // zero torque in the solver, so the body translates but never tumbles -
@@ -56,20 +64,35 @@ glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
     if (rb.freezeRotation) return glm::mat3(0.0f);
     if (dynamicInverseMass(rb) == 0.0f || !collider || collider->parts.empty())
         return glm::mat3(0.0f);
-    // Approximate the collider's inertia with a solid box of its overall local
-    // extent - exact per-part inertia isn't worth it for gameplay.
-    glm::vec3 mn(std::numeric_limits<float>::max());
-    glm::vec3 mx(std::numeric_limits<float>::lowest());
-    for (const ColliderBox& part : collider->parts) {
-        mn = glm::min(mn, part.center - part.halfExtents);
-        mx = glm::max(mx, part.center + part.halfExtents);
+
+    glm::vec3 center(0.0f);
+    glm::mat3 inertia(0.0f);
+    if (collider->parts.size() == 1 && collider->parts[0].shape == ColliderShape::Capsule) {
+        // A lone capsule gets its own tensor. It is the one shape the box
+        // approximation below is badly wrong about: an upright capsule spins
+        // about its axis several times more freely than the box around it, and
+        // that difference is exactly what a graze against a character tests.
+        const ColliderPart& part = collider->parts[0];
+        center  = part.center;
+        inertia = capsuleInertiaLocal(rb.mass, part.radius, part.halfHeight);
+    } else {
+        // Approximate the collider's inertia with a solid box of its overall
+        // local extent - exact per-part inertia isn't worth it for gameplay.
+        glm::vec3 mn(std::numeric_limits<float>::max());
+        glm::vec3 mx(std::numeric_limits<float>::lowest());
+        for (const ColliderPart& part : collider->parts) {
+            const glm::vec3 extent = partLocalExtent(part);
+            mn = glm::min(mn, part.center - extent);
+            mx = glm::max(mx, part.center + extent);
+        }
+        center  = (mx + mn) * 0.5f;
+        inertia = boxInertiaLocal(rb.mass, (mx - mn) * 0.5f);
     }
+
     // Inertia about the collider centre, parallel-axis-shifted to the entity
     // origin (where the solver measures contact arms) so an off-centre collider
     // gets its rotational response about the correct axis.
-    const glm::mat3 inertia = boxInertiaLocal(rb.mass, (mx - mn) * 0.5f);
     if (inertia == glm::mat3(0.0f)) return glm::mat3(0.0f);
-    const glm::vec3 center = (mx + mn) * 0.5f;
     const glm::mat3 shifted = glm::dot(center, center) > 0.0f
                                 ? parallelAxisShift(inertia, rb.mass, center)
                                 : inertia;
@@ -88,10 +111,19 @@ void computeAABB(
     outMax = glm::vec3(std::numeric_limits<float>::lowest());
     const glm::mat3 r = glm::mat3_cast(rot);
     glm::mat4 model = glm::mat4_cast(rot);  // rotation block is constant per body
-    for (const ColliderBox& part : collider.parts) {
-        model[3] = glm::vec4(pos + r * part.center, 1.0f);
+    for (const ColliderPart& part : collider.parts) {
+        const glm::vec3 center = pos + r * part.center;
         glm::vec3 mn, mx;
-        Math::localToWorldAABB(model, -part.halfExtents, part.halfExtents, mn, mx);
+        if (part.shape == ColliderShape::Capsule) {
+            // Exact, and cheaper than the box path: the bound of a swept segment
+            // is the bound of its endpoints grown by the radius.
+            const glm::vec3 axis = r[1] * part.halfHeight;
+            mn = glm::min(center - axis, center + axis) - glm::vec3(part.radius);
+            mx = glm::max(center - axis, center + axis) + glm::vec3(part.radius);
+        } else {
+            model[3] = glm::vec4(center, 1.0f);
+            Math::localToWorldAABB(model, -part.halfExtents, part.halfExtents, mn, mx);
+        }
         outMin = glm::min(outMin, mn);
         outMax = glm::max(outMax, mx);
     }
@@ -103,14 +135,24 @@ bool aabbOverlap(const ColliderProxy& a, const ColliderProxy& b) {
         && a.aabbMin.z <= b.aabbMax.z && a.aabbMax.z >= b.aabbMin.z;
 }
 
-void expandSubShapes(const ColliderProxy& p, const std::vector<ColliderBox>& parts,
-                     std::vector<BoxShape>& out) {
-    out.clear();
-    out.reserve(p.partsCount);
+// Place one proxy's parts in world space, sorted into one array per shape. Two
+// monomorphic arrays rather than one tagged list: the pair loops below are
+// quadratic, so the shape test belongs here, once per part, not inside them.
+void expandSubShapes(const ColliderProxy& p, const std::vector<ColliderPart>& parts,
+                     std::vector<BoxShape>& boxes, std::vector<CapsuleShape>& capsules) {
+    boxes.clear();
+    capsules.clear();
     const glm::mat3 r = glm::mat3_cast(p.rotation);
     for (uint32_t i = 0; i < p.partsCount; ++i) {
-        const ColliderBox& part = parts[p.partsFirst + i];
-        out.push_back({p.position + r * part.center, {r[0], r[1], r[2]}, part.halfExtents});
+        const ColliderPart& part = parts[p.partsFirst + i];
+        const glm::vec3 center = p.position + r * part.center;
+        if (part.shape == ColliderShape::Capsule) {
+            // The capsule's segment runs along the body's local +Y.
+            const glm::vec3 axis = r[1] * part.halfHeight;
+            capsules.push_back({center - axis, center + axis, part.radius});
+        } else {
+            boxes.push_back({center, {r[0], r[1], r[2]}, part.halfExtents});
+        }
     }
 }
 
@@ -271,8 +313,8 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events)
     m_manifolds.clear();
     Contact scratch[MAX_CONTACTS_PER_MANIFOLD];
 
-    // Colliders expand into their child boxes here, so a single body pair can
-    // yield several manifolds (one per child box-pair that touches). The solver
+    // Colliders expand into their world-space parts here, so a single body pair
+    // can yield several manifolds (one per part-pair that touches). The solver
     // already handles many manifolds per body pair, so this just works - each
     // manifold carries the same bodyA/bodyB indices.
 
@@ -281,31 +323,53 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events)
         const ColliderProxy& B = m_proxies[pair.second];
         const bool trigger = A.isTrigger || B.isTrigger;
 
-        expandSubShapes(A, m_proxyParts, m_subA);
-        expandSubShapes(B, m_proxyParts, m_subB);
+        expandSubShapes(A, m_proxyParts, m_boxA, m_capsuleA);
+        expandSubShapes(B, m_proxyParts, m_boxB, m_capsuleB);
 
         bool anyContact = false;
         glm::vec3 contactPoint(0.0f);
         glm::vec3 contactNormal(0.0f, 1.0f, 0.0f);
-        for (const BoxShape& sa : m_subA) {
-            for (const BoxShape& sb : m_subB) {
-                const int n = contactBoxes(sa, sb, scratch);
-                if (n == 0) continue;
-                if (!anyContact) {  // keep the first contact as the event's representative
-                    contactPoint  = scratch[0].point;
-                    contactNormal = scratch[0].normal;
-                }
-                anyContact = true;
-                if (trigger) continue;  // queried, not resolved
 
-                ContactManifold manifold;
-                manifold.bodyA = A.body;
-                manifold.bodyB = B.body;
-                manifold.count = std::min(n, MAX_CONTACTS_PER_MANIFOLD);
-                for (int c = 0; c < manifold.count; ++c) manifold.contacts[c] = scratch[c];
-                m_manifolds.push_back(manifold);
+        // Every shape pairing lands here, so the manifold bookkeeping is written
+        // once. Whatever produced the contacts has already oriented them A -> B.
+        auto record = [&](int n) {
+            if (n == 0) return;
+            if (!anyContact) {  // keep the first contact as the event's representative
+                contactPoint  = scratch[0].point;
+                contactNormal = scratch[0].normal;
+            }
+            anyContact = true;
+            if (trigger) return;  // queried, not resolved
+
+            ContactManifold manifold;
+            manifold.bodyA = A.body;
+            manifold.bodyB = B.body;
+            manifold.count = std::min(n, MAX_CONTACTS_PER_MANIFOLD);
+            for (int c = 0; c < manifold.count; ++c) manifold.contacts[c] = scratch[c];
+            m_manifolds.push_back(manifold);
+        };
+
+        for (const BoxShape& sa : m_boxA)
+            for (const BoxShape& sb : m_boxB)
+                record(contactBoxes(sa, sb, scratch));
+
+        for (const CapsuleShape& ca : m_capsuleA)
+            for (const BoxShape& sb : m_boxB)
+                record(contactCapsuleBox(ca, sb, scratch));
+
+        // B's capsules against A's boxes. Capsule-vs-box is not symmetric, so it
+        // runs capsule-first and the normals are flipped back to A -> B here.
+        for (const CapsuleShape& cb : m_capsuleB) {
+            for (const BoxShape& sa : m_boxA) {
+                const int n = contactCapsuleBox(cb, sa, scratch);
+                for (int c = 0; c < n; ++c) scratch[c].normal = -scratch[c].normal;
+                record(n);
             }
         }
+
+        for (const CapsuleShape& ca : m_capsuleA)
+            for (const CapsuleShape& cb : m_capsuleB)
+                record(contactCapsuleCapsule(ca, cb, scratch));
         if (anyContact) {
             // Enqueued, not emitted: listeners fire on the next EventBus flush,
             // never mid-solve.

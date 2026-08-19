@@ -257,7 +257,11 @@ Today's coverage, the flat list in `scene_serializer.cpp`:
 - `ParticleEmitter`, `IrradianceVolume`, `ReflectionProbe`
 - `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton` (see [UI](ui.md))
 - `Rigidbody`, `Collider` (physics; runtime sleep state and derived mass
-  properties are not persisted - see [Physics](physics.md)).
+  properties are not persisted - see [Physics](physics.md)). A collider part
+  writes its `shape` by name alongside every shape's fields, so switching a part
+  to a capsule and back does not lose the half-extents it was authored with; a
+  part with no `shape` key - every part in a scene written before capsules
+  existed - reads as a box.
 - `ScriptComponent` (JSON key `"Script"`): each behavior stored by its registered
   type name and recreated through `BehaviorRegistry` on load (unknown types are
   dropped), with its authored fields in a `properties` object beside it -
