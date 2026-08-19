@@ -2,7 +2,7 @@
 
 #include "core/system.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Points the scene's key light at wherever the Environment says the sun is.
@@ -48,4 +48,4 @@ class SkySystem : public System {
         void update(FrameContext& ctx) override;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -13,10 +13,10 @@
 #include "convention/gl_bindings.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLGTAOPass::GLGTAOPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/gtao")) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/gtao")) {}
 
 GLGTAOPass::~GLGTAOPass() = default;
 
@@ -47,4 +47,4 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
     ctx.aoReady = true;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

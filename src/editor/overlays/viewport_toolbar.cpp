@@ -7,7 +7,7 @@
 #include "framework/editor_actions.h"
 #include "ui/editor_widgets.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Sizes in design px - font/DPI-relative via EditorStyle::px.
@@ -123,4 +123,4 @@ void ViewportToolbar::draw(EditorContext& ec) {
     ImGui::PopStyleColor();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

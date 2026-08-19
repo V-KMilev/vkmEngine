@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief The identity an entity carries inside an instanced prefab.
@@ -27,4 +27,4 @@ struct PrefabEntity {
     uint32_t uid = ROOT;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

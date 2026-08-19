@@ -5,7 +5,7 @@
 #include "ecs/component/lod.h"
 #include "resource/asset/mesh_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 
@@ -32,4 +32,4 @@ class ResourceManager;
  */
 LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLevels);
 
-} // namespace Engine
+} // namespace Vkm::Engine

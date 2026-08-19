@@ -6,7 +6,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief One box of a collider, in the entity's local frame.
@@ -34,9 +34,9 @@ struct Collider {
     bool isTrigger = false;                             ///< Generates contacts for queries but no impulse response.
     bool enabled   = true;                              ///< When false the collider is inert: no broadphase entry, no contacts, no debug draw.
 };
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::Collider)
+VKM_REFLECT_BEGIN(::Vkm::Engine::Collider)
     VKM_F(isTrigger),
     VKM_F(enabled)
 VKM_REFLECT_END()

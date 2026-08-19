@@ -4,7 +4,7 @@
 
 #include "ecs/component/light.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief One light affecting the frame, resolved to world space.
@@ -39,4 +39,4 @@ struct LightData {
     float shadowDistance;   ///< Directional only: max world distance the cascades cover.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

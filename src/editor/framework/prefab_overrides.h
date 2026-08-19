@@ -13,7 +13,7 @@
 
 #include "framework/command.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 class ResourceManager;
@@ -239,4 +239,4 @@ namespace PrefabOverrides {
 
 } // namespace PrefabOverrides
 
-} // namespace Engine
+} // namespace Vkm::Engine

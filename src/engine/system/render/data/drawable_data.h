@@ -5,7 +5,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief One visible object to draw.
@@ -34,4 +34,4 @@ struct DrawableData {
     bool castShadows;            ///< Whether the drawable casts shadows.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -2,7 +2,7 @@
 
 #include "core/system.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct Animation;
 struct Transform;
@@ -43,4 +43,4 @@ class AnimationSystem : public System {
         static void applyAnimation(const Animation& animation, Transform& transform);
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -12,7 +12,7 @@
 #include "texture/gl_texture.h"
 #include "target/gl_render_buffer.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLTarget::GLTarget() = default;
 GLTarget::~GLTarget() = default;
@@ -20,20 +20,20 @@ GLTarget::~GLTarget() = default;
 namespace {
 // One off-screen target texture, from vkmGL's render-target preset. Filter
 // defaults to nearest (depth / G-buffer); the HDR colour target passes linear.
-std::unique_ptr<Core::Texture2D> makeTarget2D(
+std::unique_ptr<Vkm::GL::Texture2D> makeTarget2D(
     const char* name,
     uint32_t w,
     uint32_t h,
     GLenum internalFormat,
     GLenum format,
-    Core::TextureMinFilter minFilter = Core::TextureMinFilter::Nearest,
-    Core::TextureMagFilter magFilter = Core::TextureMagFilter::Nearest) {
-    return std::make_unique<Core::Texture2D>(
-        name, Core::renderTargetParams(w, h, internalFormat, format, minFilter, magFilter));
+    Vkm::GL::TextureMinFilter minFilter = Vkm::GL::TextureMinFilter::Nearest,
+    Vkm::GL::TextureMagFilter magFilter = Vkm::GL::TextureMagFilter::Nearest) {
+    return std::make_unique<Vkm::GL::Texture2D>(
+        name, Vkm::GL::renderTargetParams(w, h, internalFormat, format, minFilter, magFilter));
 }
 } // namespace
 
-void GLTarget::setSamples(uint32_t samples, const Core::Context& gl) {
+void GLTarget::setSamples(uint32_t samples, const Vkm::GL::Context& gl) {
     // Clamp to the driver cap (cached inside the Context); 1 keeps the
     // single-sample path.
     samples = std::clamp(samples, 1u, static_cast<uint32_t>(gl.maxSamples()));
@@ -71,23 +71,23 @@ void GLTarget::resize(uint32_t width, uint32_t height) {
         const int32_t w = static_cast<int32_t>(width);
         const int32_t h = static_cast<int32_t>(height);
 
-        m_colorRB = std::make_unique<Core::RenderBuffer>();
+        m_colorRB = std::make_unique<Vkm::GL::RenderBuffer>();
         m_colorRB->storageMultisample(s, GL_RGBA16F, w, h);
         m_fbo.attachRenderBuffer(GL_COLOR_ATTACHMENT0, m_colorRB->getID());
 
-        m_depthRB = std::make_unique<Core::RenderBuffer>();
+        m_depthRB = std::make_unique<Vkm::GL::RenderBuffer>();
         m_depthRB->storageMultisample(s, GL_DEPTH_COMPONENT24, w, h);
         m_fbo.attachRenderBuffer(GL_DEPTH_ATTACHMENT, m_depthRB->getID());
 
         if (m_hasGBuffer) {
-            m_gbufferRB = std::make_unique<Core::RenderBuffer>();
+            m_gbufferRB = std::make_unique<Vkm::GL::RenderBuffer>();
             m_gbufferRB->storageMultisample(s, GL_RGBA16F, w, h);
             m_fbo.attachRenderBuffer(GL_COLOR_ATTACHMENT1, m_gbufferRB->getID());
         }
     } else {
         // HDR colour: linear filter for sampling (composite/bloom), clamp, no mips.
         m_color = makeTarget2D("scene_hdr", width, height, GL_RGBA16F, GL_RGBA,
-                               Core::TextureMinFilter::Linear, Core::TextureMagFilter::Linear);
+                               Vkm::GL::TextureMinFilter::Linear, Vkm::GL::TextureMagFilter::Linear);
 
         m_fbo.attachTexture2D(GL_COLOR_ATTACHMENT0, m_color->getID());
 
@@ -110,19 +110,19 @@ void GLTarget::resize(uint32_t width, uint32_t height) {
     m_fbo.unbind();
 }
 
-void GLTarget::bind(const Core::Context& gl) {
+void GLTarget::bind(const Vkm::GL::Context& gl) {
     m_fbo.bind();
     m_fbo.setDrawBuffer(GL_COLOR_ATTACHMENT0);
     gl.setViewport(0, 0, static_cast<int32_t>(m_width), static_cast<int32_t>(m_height));
 }
 
-void GLTarget::bindGBufferPass(const Core::Context& gl) {
+void GLTarget::bindGBufferPass(const Vkm::GL::Context& gl) {
     m_fbo.bind();
     m_fbo.setDrawBuffer(GL_COLOR_ATTACHMENT1);
     gl.setViewport(0, 0, static_cast<int32_t>(m_width), static_cast<int32_t>(m_height));
 }
 
-void GLTarget::clearForFrame(const Core::Context& gl) {
+void GLTarget::clearForFrame(const Vkm::GL::Context& gl) {
     m_fbo.bind();
     if (m_hasGBuffer) {
         const GLenum buffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
@@ -151,10 +151,10 @@ void GLTarget::blitColorFrom(const GLTarget& src) {
     // the G-buffer); then point the READ framebuffer at src (its read buffer
     // defaults to colour 0) and blit. Order matters: setDrawBuffer binds
     // GL_FRAMEBUFFER (read + draw), so the read bind must come after it. All via
-    // Core::FrameBuffer wrappers - no raw GL.
+    // Vkm::GL::FrameBuffer wrappers - no raw GL.
     m_fbo.setDrawBuffer(GL_COLOR_ATTACHMENT0);
     src.m_fbo.bind(GL_READ_FRAMEBUFFER);
-    Core::FrameBuffer::blit(
+    Vkm::GL::FrameBuffer::blit(
         0, 0, static_cast<int32_t>(m_width), static_cast<int32_t>(m_height),
         0, 0, static_cast<int32_t>(m_width), static_cast<int32_t>(m_height),
         GL_COLOR_BUFFER_BIT, GL_NEAREST);
@@ -178,7 +178,7 @@ void GLTarget::resolveGeometryTo(GLTarget& dst, bool gbuffer) {
     // bind dst as draw and this as read.
     dst.m_fbo.setDrawBuffer(GL_COLOR_ATTACHMENT0);
     m_fbo.bind(GL_READ_FRAMEBUFFER);
-    Core::FrameBuffer::blit(0, 0, w, h, 0, 0, w, h, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    Vkm::GL::FrameBuffer::blit(0, 0, w, h, 0, 0, w, h, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 
     // G-buffer (colour attachment 1): the read-buffer / draw-buffer selection is
     // per-framebuffer state that persists across binds, so set each on its own
@@ -187,9 +187,9 @@ void GLTarget::resolveGeometryTo(GLTarget& dst, bool gbuffer) {
         m_fbo.setReadBuffer(GL_COLOR_ATTACHMENT1);       // this: read from colour 1
         dst.m_fbo.setDrawBuffer(GL_COLOR_ATTACHMENT1);   // dst: draw into colour 1 (draw FBO = dst)
         m_fbo.bind(GL_READ_FRAMEBUFFER);                 // read FBO = this (read buffer persists)
-        Core::FrameBuffer::blit(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        Vkm::GL::FrameBuffer::blit(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
         m_fbo.setReadBuffer(GL_COLOR_ATTACHMENT0);       // restore the default read buffer
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

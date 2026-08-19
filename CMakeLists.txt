@@ -114,11 +114,11 @@ target_compile_options(vkm_warnings INTERFACE
     $<$<CXX_COMPILER_ID:GNU,Clang>:${_vkm_gcc_warnings}>
 )
 
-# Compile-time build metadata, baked into the binary through the BuildInfo
-# facade (debug/build_info.h). Defined before the subdirectories so each target
-# can link it where it is defined.
-add_library(BuildInfo INTERFACE)
-target_compile_definitions(BuildInfo INTERFACE
+# Compile-time build metadata, baked into the binary through the facade in
+# debug/build_info.h. Defined before the subdirectories so each target can link
+# it where it is defined.
+add_library(vkm_build_info INTERFACE)
+target_compile_definitions(vkm_build_info INTERFACE
     APP_NAME="${PROJECT_NAME}"
     APP_BRANCH="${PROJECT_BRANCH}"
     APP_BUILD_DATE="${PROJECT_BUILD_DATE}"
@@ -127,11 +127,11 @@ target_compile_definitions(BuildInfo INTERFACE
     APP_VERSION="${PROJECT_VERSION}"
     APP_COMMIT_HASH="${PROJECT_COMMIT_HASH}"
 
-    VKMGL_VERSION="${VKMGL_VERSION}"
-    VKMGL_COMMIT_HASH="${VKMGL_COMMIT_HASH}"
+    VKM_GL_VERSION="${VKM_GL_VERSION}"
+    VKM_GL_COMMIT_HASH="${VKM_GL_COMMIT_HASH}"
 
-    VKMLOG_VERSION="${VKMLOG_VERSION}"
-    VKMLOG_COMMIT_HASH="${VKMLOG_COMMIT_HASH}"
+    VKM_LOG_VERSION="${VKM_LOG_VERSION}"
+    VKM_LOG_COMMIT_HASH="${VKM_LOG_COMMIT_HASH}"
 )
 
 add_subdirectory(modules)
@@ -146,8 +146,8 @@ add_subdirectory(src/backend/opengl)
 add_subdirectory(examples/potion_runner)
 add_subdirectory(examples/stress_arena)
 
-# Three thin executables under app/. engine_runtime plays a project, engine_editor
-# adds the in-process editor to edit one, and engine_cook bakes a project's assets
+# Three thin executables under app/. vkm_runtime plays a project, vkm_editor
+# adds the in-process editor to edit one, and vkm_cook bakes a project's assets
 # with no window at all. The first two link the engine libs directly and share the
 # header-only bootstrap in app/engine_app.h (setupEngineApp) - the editor's only
 # addition is its EditorSystem; the cooker builds no Engine. Each puts the repo

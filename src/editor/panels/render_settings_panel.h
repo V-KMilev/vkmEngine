@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorContext;
 
@@ -35,4 +35,4 @@ class RenderSettingsPanel {
         bool m_confirmReset = false;  ///< Reset-to-defaults dialog intent.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

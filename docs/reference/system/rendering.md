@@ -108,7 +108,7 @@ backend-agnostic.
 
 `GLBackend` owns:
 
-- `Core::Context` - GLEW state + draw helpers (from vkmGL)
+- `Vkm::GL::Context` - GLEW state + draw helpers (from vkmGL)
 - `GLView` - the GPU resource synchronizer
 - Render targets: `m_sceneHDR` (the geometry target: colour + depth + G-buffer),
   `m_sceneMS` (multisample twin when MSAA is on), `m_postA`/`m_postB`

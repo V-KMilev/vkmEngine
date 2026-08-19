@@ -4,11 +4,11 @@
 
 #include "gl_pass.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Energy-conserving bloom over the HDR scene (COD/Jimenez).
@@ -34,8 +34,8 @@ class GLBloomPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Core::Shader> m_down;
-        std::unique_ptr<Core::Shader> m_up;
+        std::unique_ptr<Vkm::GL::Shader> m_down;
+        std::unique_ptr<Vkm::GL::Shader> m_up;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

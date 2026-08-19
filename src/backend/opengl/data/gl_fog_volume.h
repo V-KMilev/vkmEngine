@@ -5,11 +5,11 @@
 
 #include <GL/glew.h>
 
-namespace Core {
+namespace Vkm::GL {
     class Texture3D;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief The froxel volumetric-fog volume: two view-frustum-aligned 3D textures.
@@ -77,11 +77,11 @@ class GLFogVolume {
         void bindIntegratedSlot(uint32_t slot) const;
 
     private:
-        std::unique_ptr<Core::Texture3D> m_scatter;
-        std::unique_ptr<Core::Texture3D> m_integrated;
+        std::unique_ptr<Vkm::GL::Texture3D> m_scatter;
+        std::unique_ptr<Vkm::GL::Texture3D> m_integrated;
         uint32_t m_x = 0;
         uint32_t m_y = 0;
         uint32_t m_z = 0;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

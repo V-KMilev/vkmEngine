@@ -6,7 +6,7 @@
 #include "core/memory/types.h"
 #include "system/visibility/visibility.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Builds the per-frame Visibility result (visible entities + shadow casters).
@@ -73,4 +73,4 @@ class VisibilitySystem : public System {
         std::vector<VisibleEntity> m_scratch;  ///< Cull result per Mesh index; the flags say which ones the gather may read.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

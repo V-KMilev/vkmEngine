@@ -4,7 +4,7 @@
 
 #include "logger.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 CommandStack::CommandStack()  = default;
 CommandStack::~CommandStack() = default;
@@ -71,4 +71,4 @@ const char* CommandStack::redoLabel() const {
     return m_redo.empty() ? nullptr : m_redo.back()->label();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

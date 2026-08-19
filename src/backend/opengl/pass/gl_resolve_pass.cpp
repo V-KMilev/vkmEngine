@@ -6,7 +6,7 @@
 #include "gl_target.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void GLResolvePass::execute(GLFrameContext& ctx) {
     // MSAA off: the render target and the resolved target are the same object,
@@ -35,4 +35,4 @@ void GLResolvePass::execute(GLFrameContext& ctx) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

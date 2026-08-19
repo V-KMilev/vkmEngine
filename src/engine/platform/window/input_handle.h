@@ -2,7 +2,7 @@
 
 struct GLFWwindow;
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Highest key and mouse-button codes this header sizes its arrays for.
@@ -212,4 +212,4 @@ class InputHandle {
         MouseInputHandle m_mouseHandle;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

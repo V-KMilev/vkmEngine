@@ -24,7 +24,7 @@
 #include "ecs/component/transform.h"
 #include "ecs/component/camera.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 CameraControllerSystem::CameraControllerSystem() = default;
 
@@ -169,5 +169,5 @@ void CameraControllerSystem::updateRotationFromAngles(glm::quat& rotation, float
     rotation = yawQuat * pitchQuat;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine
 

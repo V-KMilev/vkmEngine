@@ -4,7 +4,7 @@
 
 #include "resource/asset/material_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Flattened projected decal for the frame.
@@ -21,4 +21,4 @@ struct DecalData {
     float          opacity;    ///< Overall blend strength.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

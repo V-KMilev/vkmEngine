@@ -4,11 +4,11 @@
 
 #include "gl_pass.h"
 
-namespace Core {
+namespace Vkm::GL {
     class ComputeShader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Culls hidden instances against the Hi-Z pyramid, on the GPU.
@@ -38,7 +38,7 @@ class GLOcclusionCullPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Core::ComputeShader> m_compute;
+        std::unique_ptr<Vkm::GL::ComputeShader> m_compute;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

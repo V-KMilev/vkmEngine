@@ -4,7 +4,7 @@
 #include "ecs/scene.h"
 #include "ecs/component/transform.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 glm::mat4 resolvedWorldMatrix(const Scene& scene, EntityId entity, const Transform& local) {
     if (scene.has<WorldTransform>(entity)) return scene.get<WorldTransform>(entity).model;
@@ -21,4 +21,4 @@ glm::quat resolvedWorldRotation(const Scene& scene, EntityId entity, const Trans
     return local.rotation;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

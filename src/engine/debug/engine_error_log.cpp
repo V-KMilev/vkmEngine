@@ -6,7 +6,7 @@
 
 #include "logger.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // The single optional sink; the runtime leaves it null.
@@ -60,4 +60,4 @@ std::size_t EngineErrorLog::size() const {
     return m_entries.size();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct FrameContext;
 struct EditorState;
@@ -46,4 +46,4 @@ class PreferencesPanel {
         const char* m_rebindTarget = nullptr;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

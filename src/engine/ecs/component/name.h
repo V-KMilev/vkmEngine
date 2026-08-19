@@ -4,7 +4,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Component for giving entities a human-readable name.
@@ -34,8 +34,8 @@ inline Name makeName(const char* str) {
     return name;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::Name)
+VKM_REFLECT_BEGIN(::Vkm::Engine::Name)
     VKM_F(value)
 VKM_REFLECT_END()

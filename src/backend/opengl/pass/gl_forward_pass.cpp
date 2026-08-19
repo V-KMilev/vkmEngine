@@ -21,10 +21,10 @@
 #include "data/gl_ibl.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLForwardPass::GLForwardPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/forward/pbr")) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/forward/pbr")) {}
 
 GLForwardPass::~GLForwardPass() = default;
 
@@ -193,4 +193,4 @@ void GLForwardPass::drawRuns(GLFrameContext& ctx, const GLInstanceBatchView& bat
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

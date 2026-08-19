@@ -15,7 +15,7 @@
 #include "io/json_file.h"
 #include "io/project_paths.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -141,4 +141,4 @@ bool AssetLibrary::save() const {
     return detail::writeJsonFile(ProjectPaths::libraryManifest(), doc, "Asset library manifest");
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

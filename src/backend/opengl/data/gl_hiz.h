@@ -7,7 +7,7 @@
 
 #include "gl_mip_chain_texture.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Hierarchical depth pyramid: the farthest depth over each screen region.
@@ -105,10 +105,10 @@ class GLHiZ {
         static constexpr int MAX_MIPS = 16;   // 2^16 texels is past any viewport
 
     private:
-        Core::MipChainTexture m_chain;
+        Vkm::GL::MipChainTexture m_chain;
         int  m_baseW = 0;
         int  m_baseH = 0;
         bool m_ready = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

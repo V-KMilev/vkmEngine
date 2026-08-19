@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorContext;
 class SceneIOController;
@@ -34,4 +34,4 @@ class PlaybackBar {
         bool m_hovered = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

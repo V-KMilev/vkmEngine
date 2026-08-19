@@ -45,7 +45,7 @@
 #include "system/script/script_component.h"
 #include "core/math/bounds.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Generic reflected-field -> ImGui inspector. The editor only sees a Behavior*,
@@ -1350,4 +1350,4 @@ void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, Enti
     endComponentCard();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

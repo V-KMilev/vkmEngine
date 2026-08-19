@@ -9,7 +9,7 @@
 #include "ecs/component/ui_element.h"
 #include "system/ui/ui_draw_data.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Lays out the UI hierarchy, builds the frame's 2D draw list, and routes
@@ -161,4 +161,4 @@ class UISystem : public System {
         bool      m_editorPointerCapture = false;  ///< Editor owns the pointer; skip hit-testing.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

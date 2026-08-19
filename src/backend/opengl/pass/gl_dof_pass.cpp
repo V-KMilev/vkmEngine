@@ -14,7 +14,7 @@
 #include "convention/gl_bindings.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Blur radius (pixels) at full circle of confusion.
@@ -22,7 +22,7 @@ constexpr float MAX_BLUR_RADIUS = 12.0f;
 } // namespace
 
 GLDoFPass::GLDoFPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/dof")) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/dof")) {}
 
 GLDoFPass::~GLDoFPass() = default;
 
@@ -53,4 +53,4 @@ void GLDoFPass::execute(GLFrameContext& ctx) {
     endFullscreen(ctx.gl);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

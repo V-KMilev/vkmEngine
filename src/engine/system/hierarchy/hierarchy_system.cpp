@@ -9,7 +9,7 @@
 
 #include "ecs/component/world_transform.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void HierarchySystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("HierarchySystem");
@@ -92,4 +92,4 @@ void HierarchySystem::resolve(Scene& scene) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

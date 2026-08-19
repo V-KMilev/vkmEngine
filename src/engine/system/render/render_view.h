@@ -15,7 +15,7 @@
 #include "system/ui/ui_draw_data.h"
 #include "ecs/environment.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 struct Visibility;
@@ -139,4 +139,4 @@ struct RenderView {
         void buildShadowCasters(const Scene& scene, const Visibility& visibility);
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -7,7 +7,7 @@
 
 #include "ecs/component/collider.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Broadphase / narrowphase view of one collidable body, cached per tick.
@@ -58,4 +58,4 @@ struct BodyFrame {
     glm::quat parentRot       = {1.0f, 0.0f, 0.0f, 0.0f};         ///< parent world-space rotation
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

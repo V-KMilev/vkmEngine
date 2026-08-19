@@ -1,7 +1,7 @@
-# EngineCore - ECS, resources, IO, platform, and the non-render systems.
+# vkm_core - ECS, resources, IO, platform, and the non-render systems.
 # CONFIGURE_DEPENDS re-globs on demand, so adding/removing a source file does
 # not need a manual reconfigure.
-file(GLOB_RECURSE ENGINECORE_SOURCES CONFIGURE_DEPENDS
+file(GLOB_RECURSE VKM_CORE_SOURCES CONFIGURE_DEPENDS
     core/*.cpp
     ecs/*.cpp
     io/*.cpp
@@ -33,64 +33,64 @@ file(GLOB_RECURSE ENGINECORE_SOURCES CONFIGURE_DEPENDS
 # which works on Linux but binds a module to one specific exe on Windows - so a
 # module built for the editor cannot be loaded by the runtime. One shared library
 # both link against removes the choice of host from the question.
-add_library(EngineCore SHARED ${ENGINECORE_SOURCES})
+add_library(vkm_core SHARED ${VKM_CORE_SOURCES})
 
 # The public surface is not yet annotated, so on Windows let CMake generate the
 # export table from the object files. Narrowing this to an explicit VKM_API is a
 # later step of the same version; it changes what is exported, not whether the
 # shared build works.
-set_target_properties(EngineCore PROPERTIES
+set_target_properties(vkm_core PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
 # The engine include root. Split so the same "ecs/scene.h" resolves against the
 # source tree during development and against <prefix>/include from an SDK.
-target_include_directories(EngineCore PUBLIC
+target_include_directories(vkm_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<INSTALL_INTERFACE:include>
 )
 
 # GLEW headers for window_manager.cpp's glewInit (glew uses old-style include dirs).
-target_include_directories(EngineCore PRIVATE
+target_include_directories(vkm_core PRIVATE
     ${PROJECT_SOURCE_DIR}/modules/vkmGL/modules/glew/include
 )
 
-# glm, vkmLog and nlohmann are header-only or shared, so a consumer linking them
+# glm, vkm_log and nlohmann are header-only or shared, so a consumer linking them
 # too costs nothing and resolves to one copy.
-target_link_libraries(EngineCore PUBLIC
+target_link_libraries(vkm_core PUBLIC
     glm
-    vkmLog
+    vkm_log
     nlohmann_json
 )
 
 # Static libraries absorbed INTO this shared library are linked privately, and
 # only their include directories travel outward (below). A consumer must not link
-# them again: their code is already inside libEngineCore, and on Windows - where
+# them again: their code is already inside libvkm_core, and on Windows - where
 # the export table re-publishes everything the DLL absorbed - linking both the
 # import library and the static archive is a duplicate-definition error at link
 # time. Linux hides this because the dynamic linker picks one; Windows does not.
-target_link_libraries(EngineCore PRIVATE
+target_link_libraries(vkm_core PRIVATE
     glfw
     glew
     vkm_warnings
-    BuildInfo          # io/project_paths.h resolves paths against APP_ROOT_DIR
+    vkm_build_info     # io/project_paths.h resolves paths against APP_ROOT_DIR
     stb                # platform/window/window_manager.cpp decodes the window icon
 )
 
 # The headers those private dependencies own are still part of this library's
 # public surface - platform/window/glfw_include.h names GLFW types - so consumers
 # need the include paths without the archives.
-target_include_directories(EngineCore PUBLIC
+target_include_directories(vkm_core PUBLIC
     $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
-target_compile_definitions(EngineCore PUBLIC
+target_compile_definitions(vkm_core PUBLIC
     GLM_ENABLE_EXPERIMENTAL
     GLM_FORCE_INTRINSICS
 
-    # The engine version, visible to anything that links EngineCore - including a
+    # The engine version, visible to anything that links vkm_core - including a
     # gameplay module built against an installed SDK, which does not link
-    # BuildInfo. A module reports this back through vkmModuleEngineVersion() and
+    # vkm_build_info. A module reports this back through vkmModuleEngineVersion() and
     # the host compares it with its own, so a module built against a different
     # engine is refused at load with a sentence instead of crashing later.
     VKM_ENGINE_VERSION="${PROJECT_VERSION}"
@@ -101,56 +101,56 @@ target_compile_definitions(EngineCore PUBLIC
 # stays a PUBLIC link so backend/editor TUs that pull profile macros via the
 # facade get the symbols at link time.
 # Tracy is linked privately for the same reason as glfw: its objects live inside
-# libEngineCore, and a consumer expanding a PROFILE_ macro resolves the symbols
+# libvkm_core, and a consumer expanding a PROFILE_ macro resolves the symbols
 # from there. Its include path still propagates, because the facade's macros
 # expand into Tracy's header in the consumer's own translation unit.
 if(VKM_PROFILER)
-    target_compile_definitions(EngineCore PUBLIC VKM_PROFILER=1)
-    target_link_libraries     (EngineCore PRIVATE TracyClient)
-    target_include_directories(EngineCore PUBLIC
+    target_compile_definitions(vkm_core PUBLIC VKM_PROFILER=1)
+    target_link_libraries     (vkm_core PRIVATE TracyClient)
+    target_include_directories(vkm_core PUBLIC
         $<TARGET_PROPERTY:TracyClient,INTERFACE_INCLUDE_DIRECTORIES>
     )
 endif()
 
-# EngineHeaders - an include-only (INTERFACE) view of EngineCore's public API.
+# vkm_headers - an include-only (INTERFACE) view of vkm_core's public API.
 # Kept for consumers that genuinely need headers without a link, but a gameplay
-# module is no longer one of them: it links EngineCore directly now that
-# EngineCore is shared, which gives it the one typeId registry and the one set of
+# module is no longer one of them: it links vkm_core directly now that
+# vkm_core is shared, which gives it the one typeId registry and the one set of
 # singletons rather than resolving them from whichever exe loaded it.
 # The GLM_* defs are mandatory either way: glm types cross the module boundary
 # (e.g. CollisionEvent), so both sides must agree on glm's layout.
-add_library(EngineHeaders INTERFACE)
-target_include_directories(EngineHeaders INTERFACE
+add_library(vkm_headers INTERFACE)
+target_include_directories(vkm_headers INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<INSTALL_INTERFACE:include>
     $<TARGET_PROPERTY:glm,INTERFACE_INCLUDE_DIRECTORIES>
     $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:vkmLog,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:vkm_log,INTERFACE_INCLUDE_DIRECTORIES>
     $<TARGET_PROPERTY:nlohmann_json,INTERFACE_INCLUDE_DIRECTORIES>
 )
-target_compile_definitions(EngineHeaders INTERFACE
+target_compile_definitions(vkm_headers INTERFACE
     GLM_ENABLE_EXPERIMENTAL
     GLM_FORCE_INTRINSICS
 )
 if(VKM_PROFILER)
-    target_compile_definitions(EngineHeaders INTERFACE VKM_PROFILER=1)
+    target_compile_definitions(vkm_headers INTERFACE VKM_PROFILER=1)
 endif()
 
-# EngineRendering - render system, backend-neutral interface, and render view.
-file(GLOB_RECURSE ENGINERENDERING_SOURCES CONFIGURE_DEPENDS system/render/*.cpp)
+# vkm_render - render system, backend-neutral interface, and render view.
+file(GLOB_RECURSE VKM_RENDER_SOURCES CONFIGURE_DEPENDS system/render/*.cpp)
 
-add_library(EngineRendering SHARED ${ENGINERENDERING_SOURCES})
+add_library(vkm_render SHARED ${VKM_RENDER_SOURCES})
 
-set_target_properties(EngineRendering PROPERTIES
+set_target_properties(vkm_render PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
-target_include_directories(EngineRendering PUBLIC
+target_include_directories(vkm_render PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(EngineRendering
-    PUBLIC  EngineCore
+target_link_libraries(vkm_render
+    PUBLIC  vkm_core
     PRIVATE vkm_warnings
 )

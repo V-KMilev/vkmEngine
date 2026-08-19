@@ -6,7 +6,7 @@
 
 #include "logger.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 int GLProbeArray::clampResolution(int resolution) {
     resolution = std::clamp(resolution, MIN_RESOLUTION, MAX_RESOLUTION);
@@ -38,20 +38,20 @@ void GLProbeArray::createTargets(int capacity, int resolution) {
 
     // Shared capture depth for the six geometry captures (convolution runs
     // depth-off and ignores it).
-    Core::Texture2DParams depth;
+    Vkm::GL::Texture2DParams depth;
     depth.width          = m_envSize;
     depth.height         = m_envSize;
     depth.internalFormat = GL_DEPTH_COMPONENT24;
     depth.format         = GL_DEPTH_COMPONENT;
     depth.type           = GL_FLOAT;
-    depth.minFilter      = Core::TextureMinFilter::Nearest;
-    depth.magFilter      = Core::TextureMagFilter::Nearest;
-    depth.wrapS          = Core::TextureWrap::ClampToEdge;
-    depth.wrapT          = Core::TextureWrap::ClampToEdge;
+    depth.minFilter      = Vkm::GL::TextureMinFilter::Nearest;
+    depth.magFilter      = Vkm::GL::TextureMagFilter::Nearest;
+    depth.wrapS          = Vkm::GL::TextureWrap::ClampToEdge;
+    depth.wrapT          = Vkm::GL::TextureWrap::ClampToEdge;
     depth.generateMipmaps = false;
-    m_depth = std::make_unique<Core::Texture2D>("probe_depth", depth);
+    m_depth = std::make_unique<Vkm::GL::Texture2D>("probe_depth", depth);
 
-    m_fbo = std::make_unique<Core::FrameBuffer>();
+    m_fbo = std::make_unique<Vkm::GL::FrameBuffer>();
     m_fbo->bind();
     m_fbo->attachTexture2D(GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_depth->getID(), 0);
     m_fbo->setDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -62,4 +62,4 @@ void GLProbeArray::createTargets(int capacity, int resolution) {
         capacity, m_resolution, m_envSize, m_prefilterSize, PREFILTER_MIPS, m_irradianceSize);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

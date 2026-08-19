@@ -7,7 +7,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief One live particle. Runtime state owned by its emitter - never serialized.
@@ -53,9 +53,9 @@ struct ParticleEmitter {
     std::vector<Particle> particles;
     float                 spawnAccumulator = 0.0f;
 };
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::ParticleEmitter)
+VKM_REFLECT_BEGIN(::Vkm::Engine::ParticleEmitter)
     VKM_F(emitting),
     VKM_F(rate),
     VKM_F(lifetime),

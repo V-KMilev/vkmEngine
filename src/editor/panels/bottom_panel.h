@@ -4,7 +4,7 @@
 
 #include "ui/editor_widgets.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorContext;
 class EngineErrorLog;
@@ -52,4 +52,4 @@ class BottomPanel {
         EulerCache<int> m_rotEulerCache;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

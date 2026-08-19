@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Engine-level configuration constants.
@@ -80,4 +80,4 @@ namespace Config {
 
 } // namespace Config
 
-} // namespace Engine
+} // namespace Vkm::Engine

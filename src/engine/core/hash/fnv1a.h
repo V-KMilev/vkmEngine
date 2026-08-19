@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // 64-bit FNV-1a. Non-cryptographic content hash used to key cooked assets to
 // their recipe (and the cooker version). Speed + zero dependency is the point;
@@ -29,4 +29,4 @@ inline uint64_t fnv1a64(std::string_view s, uint64_t seed = FNV1A_OFFSET_BASIS) 
     return fnv1a64(s.data(), s.size(), seed);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

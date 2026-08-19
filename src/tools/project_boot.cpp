@@ -16,7 +16,7 @@
 
 #include "generator/default_scene.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 bool bootHost(int argc, char** argv, const char* logFileName, const char* loggerTag) {
     std::error_code ec;
@@ -41,7 +41,7 @@ bool bootHost(int argc, char** argv, const char* logFileName, const char* logger
     // the file.
     const std::filesystem::path root = ProjectPaths::projectRoot();
     std::filesystem::create_directories(root / "logs", ec);
-    if (!Logger::init((root / "logs" / logFileName).string(), loggerTag, LogLevel::TRACE))
+    if (!Vkm::Log::Logger::init((root / "logs" / logFileName).string(), loggerTag, Vkm::Log::LogLevel::TRACE))
         return false;
 
     // Deferred until the logger exists: a mistyped path would otherwise look
@@ -83,4 +83,4 @@ void bootProjectScene(
              project.name.c_str());
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

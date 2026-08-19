@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Backend-agnostic texture descriptors. The GL backend maps these to its
@@ -131,4 +131,4 @@ inline TexturePixelFormat inferFormat(int channels) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

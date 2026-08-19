@@ -7,7 +7,7 @@
 
 #include "generator/mesh_generators.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLCubeConvolver::GLCubeConvolver()
     : m_irradiance("shaders/ibl/irradiance")
@@ -48,4 +48,4 @@ void GLCubeConvolver::prefilter(int mips, const BindEnv& bindEnv, const AttachMi
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

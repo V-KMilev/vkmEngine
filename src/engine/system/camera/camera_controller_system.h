@@ -8,7 +8,7 @@
 #include "ecs/entity.h"
 #include "core/system.h"
 
-namespace Engine {
+namespace Vkm::Engine {
     class InputMap;
 
 struct Transform;
@@ -175,4 +175,4 @@ class CameraControllerSystem : public System {
         bool m_enabled             = true;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

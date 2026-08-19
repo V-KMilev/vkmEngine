@@ -5,7 +5,7 @@
 
 #include <glm/glm.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -172,4 +172,4 @@ void solveContacts(
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

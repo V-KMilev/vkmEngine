@@ -16,7 +16,7 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // Project a world point through the viewport's view+projection into screen
 // coordinates inside the viewport child rect. Returns false when the point is
@@ -153,4 +153,4 @@ inline void wireBox(
         wireSegment(dl, vp, c[e[0]], c[e[1]], vpMin, vpSize, col, thickness);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

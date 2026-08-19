@@ -2,9 +2,9 @@
 
 #include <memory>
 
-namespace Core { class Texture2D; }
+namespace Vkm::GL { class Texture2D; }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorContext;
 class SceneIOController;
@@ -36,9 +36,9 @@ class EditorMenuBar {
     private:
         // Brand mark drawn at the left of the menu bar. Lazy-loaded on first
         // draw (needs a live GL context); unique_ptr so this header only needs a
-        // forward declaration of Core::Texture2D.
-        std::unique_ptr<Core::Texture2D> m_logo;
+        // forward declaration of Vkm::GL::Texture2D.
+        std::unique_ptr<Vkm::GL::Texture2D> m_logo;
         bool m_openAbout = false;  ///< About requested this frame; popup opens at menu-bar scope.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

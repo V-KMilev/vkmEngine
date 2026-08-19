@@ -6,7 +6,7 @@
 #include "resource/asset/material_asset.h"
 #include "system/render/render_backend.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 
@@ -110,4 +110,4 @@ inline EditorRenderHooks* editorRenderHooks(RenderBackend* backend) {
     return dynamic_cast<EditorRenderHooks*>(backend);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

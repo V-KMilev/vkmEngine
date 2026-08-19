@@ -4,7 +4,7 @@
 
 #include <glm/gtc/constants.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 glm::vec3 Environment::directionFromAngles(float elevationDeg, float azimuthDeg) {
     const float el = glm::radians(elevationDeg);
@@ -17,4 +17,4 @@ glm::vec3 Environment::directionFromAngles(float elevationDeg, float azimuthDeg)
     return glm::vec3(c * std::sin(az), std::sin(el), c * std::cos(az));
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

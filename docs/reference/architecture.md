@@ -47,8 +47,8 @@ enum class SystemStage : uint8_t {
 ```
 
 Default wiring lives in `setupEngineApp` (`app/engine_app.h`, a header-only
-inline bootstrap both executables include and call). `engine_editor` adds
-`EditorSystem` from its own `main()` after that returns; `engine_runtime` never
+inline bootstrap both executables include and call). `vkm_editor` adds
+`EditorSystem` from its own `main()` after that returns; `vkm_runtime` never
 does:
 
 | Stage      | Systems                                                                         |
@@ -168,9 +168,9 @@ OpenGL backend, `src/backend/opengl/` (flat `gl_`-prefixed includes):
 Editor (`src/editor/`): `EditorSystem` at the root; `framework/`, `panels/`,
 `overlays/`, `gizmo/`, `input/`, `ui/`. Tools (`src/tools/`): `generator/` plus
 the runtime-safe cooked loaders and `asset_registration.cpp` (the `cooked`/
-`inline` runtime factories) build into `EngineTools`; the heavy importers
+`inline` runtime factories) build into `vkm_tools`; the heavy importers
 (`loader/model_loaders`, `texture_loaders`, `material_loaders`) and the asset
-cooker (`cook/`) build into the editor-only `EngineCooker`, so the runtime links
+cooker (`cook/`) build into the editor-only `vkm_cook`, so the runtime links
 neither Assimp nor the heavy image decode.
 
 Application and gameplay layers sit **outside** the `src/engine/` include root:
@@ -178,9 +178,9 @@ Application and gameplay layers sit **outside** the `src/engine/` include root:
 | Path                | Contents                                                                  |
 |---------------------|---------------------------------------------------------------------------|
 | `app/engine_app.h`  | `setupEngineApp`: the shared, header-only bootstrap that registers the default systems and installs the GL backend. It seeds no scene - that is the project's answer, given by `bootProjectScene` after it returns. Both mains include it directly (there is no `EngineApp` library) |
-| `app/editor/`       | `engine_editor` entry point; opens a project and loads its module for hot-reload |
-| `app/runtime/`      | `engine_runtime` entry point; opens a project and plays it                 |
-| `app/cooker/`       | `engine_cook` entry point; headless asset cook (no window, no GL, no `Engine`) |
+| `app/editor/`       | `vkm_editor` entry point; opens a project and loads its module for hot-reload |
+| `app/runtime/`      | `vkm_runtime` entry point; opens a project and plays it                 |
+| `app/cooker/`       | `vkm_cook` entry point; headless asset cook (no window, no GL, no `Engine`) |
 | `examples/`         | complete worked projects (Potion Runner, Stress Arena). Gameplay lives in a project, never in the engine |
 
 ## Include conventions
@@ -202,8 +202,10 @@ seeing only `RenderBackend` through engine headers. Tools use their own root
 
 ## Namespaces
 
-- `Engine::` for all engine code (ECS, systems, components, resources, editor).
-- `Core::` for low-level OpenGL wrappers from `vkmGL` (`Shader`, `Context`, ...).
+- `Vkm::Engine::` for all engine code (ECS, systems, components, resources, editor).
+- `Vkm::GL::` for low-level OpenGL wrappers from `vkmGL` (`Shader`, `Context`, ...).
+- `Vkm::Log::` for `vkmLog` (`Logger`, `LogLevel`). The `LOG_*` and `VKM_ASSERT`
+  macros qualify it themselves, so call sites never name it.
 
 ## Key design patterns
 

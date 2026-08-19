@@ -14,7 +14,7 @@
 #include "framework/editor_commands.h"
 #include "framework/editor_state.h"
 
-namespace Engine::PrefabOverrides {
+namespace Vkm::Engine::PrefabOverrides {
 
 namespace {
 
@@ -210,4 +210,4 @@ void revert(Scene& scene, ResourceManager& resources, EditorState& state, Entity
     state.markSceneDirty();
 }
 
-} // namespace Engine::PrefabOverrides
+} // namespace Vkm::Engine::PrefabOverrides

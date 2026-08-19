@@ -19,7 +19,7 @@
     #include <dlfcn.h>
 #endif
 
-namespace Engine {
+namespace Vkm::Engine {
 
 DynamicLibrary::~DynamicLibrary() {
     unload();
@@ -89,4 +89,4 @@ std::string DynamicLibrary::platformName(const std::string& baseName) {
 #endif
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

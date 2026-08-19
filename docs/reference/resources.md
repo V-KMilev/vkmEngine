@@ -173,9 +173,9 @@ part of the engine core; they wire the `AssetFactory` dispatch seam at startup s
 the engine-side `AssetSerializer` can resolve any asset by its `kind`.
 The tools split by dependency weight:
 
-- **`EngineTools`** (runtime-safe): the GLM-only generators, the cooked-asset
+- **`vkm_tools`** (runtime-safe): the GLM-only generators, the cooked-asset
   loaders, and `registerCookedAssetFactories` (`cooked` / `inline`).
-- **`EngineCooker`** (editor-only): the heavy importers (`loader/`, Assimp + stb)
+- **`vkm_cook`** (editor-only): the heavy importers (`loader/`, Assimp + stb)
   and the asset cooker (`cook/`), plus `registerRecipeAssetFactories`.
 
 The runtime registers only the cooked set, so it links neither Assimp nor the

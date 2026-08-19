@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-namespace Engine::Math {
+namespace Vkm::Engine::Math {
 
 /**
  * @brief World basis vectors.
@@ -30,4 +30,4 @@ inline const glm::vec3 WORLD_AXIS_Z = {0.0f, 0.0f, 1.0f};
 inline const glm::vec3 WORLD_UP      = WORLD_AXIS_Y;
 inline const glm::vec3 WORLD_FORWARD = WORLD_AXIS_Z;
 
-} // namespace Engine::Math
+} // namespace Vkm::Engine::Math

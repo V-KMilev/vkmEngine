@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Inertia tensor of a solid box about its centre, in body-local space.
@@ -52,4 +52,4 @@ inline glm::mat3 inverseInertiaWorld(const glm::mat3& invInertiaLocal, const glm
     return r * invInertiaLocal * glm::transpose(r);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -1,6 +1,6 @@
 #include "generator/light_generators.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 Light generateLight(LightType type) {
     Light light;
@@ -25,4 +25,4 @@ Light generateLight(LightType type) {
     return light;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

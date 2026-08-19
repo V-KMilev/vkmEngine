@@ -12,7 +12,7 @@
 #include "generator/mesh_generators.h"
 #include "resource/resource_manager.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -99,4 +99,4 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLev
     return lod;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

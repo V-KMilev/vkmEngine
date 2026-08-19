@@ -7,16 +7,16 @@
 
 #include "core/engine_config.h"
 
-namespace Core {
+namespace Vkm::GL {
     class ShaderStorageBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
     struct LightData;
     class GLShadowData;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // Mirrors Config::MAX_LIGHTS (the single source of truth, also emitted into
 // shaders/_generated/engine_config.glsl) so the UBO array, the shader's light
@@ -79,8 +79,8 @@ class GLLights {
         void update(const std::vector<LightData>& lights, const GLShadowData& shadow);
 
     private:
-        std::unique_ptr<Core::ShaderStorageBuffer> m_ssbo;
-        LightsBuffer                               m_last{};
+        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_ssbo;
+        LightsBuffer                                m_last{};
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

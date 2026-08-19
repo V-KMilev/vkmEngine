@@ -8,7 +8,7 @@
 #include "ecs/component/prefab_instance.h"
 #include "ecs/component/transform.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 class ResourceManager;
@@ -196,4 +196,4 @@ namespace Prefab {
 
 } // namespace Prefab
 
-} // namespace Engine
+} // namespace Vkm::Engine

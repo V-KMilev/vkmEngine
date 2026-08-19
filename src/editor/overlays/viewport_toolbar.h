@@ -2,7 +2,7 @@
 
 #include <imgui.h>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorContext;
 
@@ -36,4 +36,4 @@ class ViewportToolbar {
         bool m_viewModeHovered = false;  ///< View-mode overlay hovered this frame.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -12,7 +12,7 @@
 #include "data/gl_probe.h"
 #include "data/gl_scene_capture.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 constexpr float CAPTURE_FAR = 1000.0f;
@@ -24,7 +24,7 @@ GLProbeBaker::GLProbeBaker(GLSceneCapture& capture, GLCubeConvolver& convolver)
 
 GLProbeBaker::~GLProbeBaker() = default;
 
-void GLProbeBaker::bake(Core::Context& gl, GLProbeArray& arr, int layer, const glm::vec3& position,
+void GLProbeBaker::bake(Vkm::GL::Context& gl, GLProbeArray& arr, int layer, const glm::vec3& position,
                         const RenderView& view, const GLView& glView, const GLIBL& globalIBL) {
     captureFaces(gl, arr, position, view, glView, globalIBL);
     convolve(gl, arr, layer);
@@ -32,7 +32,7 @@ void GLProbeBaker::bake(Core::Context& gl, GLProbeArray& arr, int layer, const g
         layer, position.x, position.y, position.z);
 }
 
-void GLProbeBaker::captureFaces(Core::Context& gl, GLProbeArray& arr, const glm::vec3& position,
+void GLProbeBaker::captureFaces(Vkm::GL::Context& gl, GLProbeArray& arr, const glm::vec3& position,
                                 const RenderView& view, const GLView& glView, const GLIBL& globalIBL) {
     m_capture.begin(view, glView, globalIBL, static_cast<float>(arr.envSize()));
 
@@ -45,7 +45,7 @@ void GLProbeBaker::captureFaces(Core::Context& gl, GLProbeArray& arr, const glm:
     gl.setFaceCulling(false);
 }
 
-void GLProbeBaker::convolve(Core::Context& gl, GLProbeArray& arr, int layer) {
+void GLProbeBaker::convolve(Vkm::GL::Context& gl, GLProbeArray& arr, int layer) {
     gl.setDepthTest(false);
     gl.setFaceCulling(false);
     gl.setBlending(false);
@@ -65,4 +65,4 @@ void GLProbeBaker::convolve(Core::Context& gl, GLProbeArray& arr, int layer) {
     gl.setDepthTest(true);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

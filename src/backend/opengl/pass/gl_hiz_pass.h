@@ -4,11 +4,11 @@
 
 #include "gl_pass.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Builds the frame's hierarchical depth pyramid from the resolved depth.
@@ -37,7 +37,7 @@ class GLHiZPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Core::Shader> m_reduce;
+        std::unique_ptr<Vkm::GL::Shader> m_reduce;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

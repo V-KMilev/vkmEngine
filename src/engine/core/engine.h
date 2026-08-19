@@ -12,7 +12,7 @@
 #include "core/event/event_bus.h"
 #include "platform/input/input_map.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Engine context: owns core state and runs the main loop.
@@ -27,7 +27,7 @@ namespace Engine {
  * headless tooling can spin up their own Engine.
  *
  * Usage:
- *   Engine::Engine engine;
+ *   Vkm::Engine::Engine engine;
  *   engine.addSystem<CameraControllerSystem>(SystemStage::Input);
  *   engine.addSystem<RenderSystem>(SystemStage::Render);
  *   engine.run();  // blocks until window closes
@@ -121,4 +121,4 @@ class Engine {
         bool m_fpsLog      = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

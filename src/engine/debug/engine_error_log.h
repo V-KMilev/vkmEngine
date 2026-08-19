@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Ring buffer of recoverable engine errors worth surfacing in the editor.
@@ -83,4 +83,4 @@ void reportError(const char* category, std::string source, std::string message);
  */
 void setErrorSink(EngineErrorLog* sink);
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -7,7 +7,7 @@
 
 #include "system/animation/animation_track.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Component representing an animation that can be applied to an entity.
@@ -39,4 +39,4 @@ struct Animation {
     }
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

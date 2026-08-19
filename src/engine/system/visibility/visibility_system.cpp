@@ -26,7 +26,7 @@
 #include "system/visibility/culling/screen_size_culler.h"
 #include "system/visibility/culling/distance_culler.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -234,4 +234,4 @@ void VisibilitySystem::update(FrameContext& ctx) {
     ctx.visibility = &m_result;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

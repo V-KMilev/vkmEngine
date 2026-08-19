@@ -5,7 +5,7 @@
 
 #include "core/math/axes.h"
 
-namespace Engine::Math {
+namespace Vkm::Engine::Math {
 
 /**
  * @brief Rotate the +Z basis by the quaternion and normalize.
@@ -47,4 +47,4 @@ inline glm::quat worldRotationOf(const glm::mat4& worldMatrix) {
     return glm::normalize(glm::quat_cast(basis));
 }
 
-} // namespace Engine::Math
+} // namespace Vkm::Engine::Math

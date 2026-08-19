@@ -15,7 +15,7 @@
 #include "ecs/environment.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Froxel grid is authored per scene (Environment); clamp each axis to a sane
@@ -29,8 +29,8 @@ uint32_t clampFroxel(uint32_t v) {
 } // namespace
 
 GLFogPass::GLFogPass()
-    : m_inject(std::make_unique<Core::ComputeShader>("shaders/fog/inject"))
-    , m_integrate(std::make_unique<Core::ComputeShader>("shaders/fog/integrate")) {}
+    : m_inject(std::make_unique<Vkm::GL::ComputeShader>("shaders/fog/inject"))
+    , m_integrate(std::make_unique<Vkm::GL::ComputeShader>("shaders/fog/integrate")) {}
 
 GLFogPass::~GLFogPass() = default;
 
@@ -92,4 +92,4 @@ void GLFogPass::execute(GLFrameContext& ctx) {
     ctx.fogReady = true;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine
