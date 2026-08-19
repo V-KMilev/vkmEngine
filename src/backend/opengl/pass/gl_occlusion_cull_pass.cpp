@@ -12,14 +12,14 @@
 #include "gl_frame_context.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 constexpr uint32_t GROUP_SIZE = 64;   // matches local_size_x in the shader
 } // namespace
 
 GLOcclusionCullPass::GLOcclusionCullPass()
-    : m_compute(std::make_unique<Core::ComputeShader>("shaders/occlusion_cull")) {}
+    : m_compute(std::make_unique<Vkm::GL::ComputeShader>("shaders/occlusion_cull")) {}
 
 GLOcclusionCullPass::~GLOcclusionCullPass() = default;
 
@@ -54,4 +54,4 @@ void GLOcclusionCullPass::execute(GLFrameContext& ctx) {
     glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

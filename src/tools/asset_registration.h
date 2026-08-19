@@ -6,7 +6,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/texture_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 
@@ -67,4 +67,4 @@ void registerCookedAssetFactories();
  */
 void registerRecipeAssetFactories();
 
-} // namespace Engine
+} // namespace Vkm::Engine

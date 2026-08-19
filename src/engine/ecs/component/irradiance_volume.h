@@ -6,7 +6,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Baked global illumination: a grid of irradiance probes filling a box.
@@ -40,9 +40,9 @@ struct IrradianceVolume {
      */
     uint32_t bakeVersion = 0;
 };
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::IrradianceVolume)
+VKM_REFLECT_BEGIN(::Vkm::Engine::IrradianceVolume)
     VKM_F(halfExtents),
     VKM_F(resolutionX),
     VKM_F(resolutionY),

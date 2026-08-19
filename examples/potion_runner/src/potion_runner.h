@@ -12,7 +12,7 @@
 #include "resource/asset/material_asset.h"
 #include "system/script/reflected_behavior.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief A Subway-Surfers-style endless runner, built as a single self-contained
@@ -308,9 +308,9 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         Math::Rng m_rng;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::PotionRunner)
+VKM_REFLECT_BEGIN(::Vkm::Engine::PotionRunner)
     VKM_F(laneWidth),
     VKM_F(startSpeed),
     VKM_F(maxSpeed),

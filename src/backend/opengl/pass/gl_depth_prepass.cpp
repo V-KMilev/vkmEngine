@@ -14,10 +14,10 @@
 #include "data/gl_material.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLDepthPrepass::GLDepthPrepass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/forward/prepass")) {}
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/forward/prepass")) {}
 
 GLDepthPrepass::~GLDepthPrepass() = default;
 
@@ -62,4 +62,4 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

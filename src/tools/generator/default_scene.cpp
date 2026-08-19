@@ -14,7 +14,7 @@
 #include "generator/material_generators.h"
 #include "generator/mesh_generators.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 EntityId buildDefaultScene(Scene& scene, ResourceManager& resources) {
     const EntityId camera = scene.createEntity();
@@ -47,4 +47,4 @@ EntityId buildDefaultScene(Scene& scene, ResourceManager& resources) {
     return camera;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

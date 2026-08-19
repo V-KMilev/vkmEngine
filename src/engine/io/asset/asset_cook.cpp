@@ -11,7 +11,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/texture_asset.h"
 
-namespace Engine::AssetCook {
+namespace Vkm::Engine::AssetCook {
 
 namespace {
 
@@ -370,4 +370,4 @@ bool readTexture(const std::filesystem::path& path, TextureAsset& out, uint64_t*
     return true;
 }
 
-} // namespace Engine::AssetCook
+} // namespace Vkm::Engine::AssetCook

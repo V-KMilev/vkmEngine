@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class InputHandle;
 
@@ -152,4 +152,4 @@ class InputMap {
         std::unordered_map<std::string, Action> m_actions;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

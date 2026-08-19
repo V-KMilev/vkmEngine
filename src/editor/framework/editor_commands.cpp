@@ -17,7 +17,7 @@
 #include "system/hierarchy/hierarchy_operations.h"
 #include "system/script/script_component.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -453,4 +453,4 @@ void SetActiveCameraCommand::undo(Scene& scene, EditorState&) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

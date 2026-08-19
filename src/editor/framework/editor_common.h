@@ -34,7 +34,7 @@
 #include "ui/editor_style.h"
 #include "ui/editor_widgets.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Wrap a GL texture id as an ImGui ImTextureID for Image/ImageButton.
@@ -46,4 +46,4 @@ inline ImTextureID imTexture(GpuTextureId id) {
     return static_cast<ImTextureID>(static_cast<intptr_t>(id));
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

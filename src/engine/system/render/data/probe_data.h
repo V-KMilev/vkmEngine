@@ -4,7 +4,7 @@
 
 #include <glm/glm.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Flattened reflection probe for the frame.
@@ -22,4 +22,4 @@ struct ProbeData {
     uint32_t  bakeVersion;  ///< Re-bake trigger (snapshot of the component's bakeVersion).
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

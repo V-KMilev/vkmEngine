@@ -8,16 +8,16 @@
 
 #include "core/engine_config.h"
 
-namespace Core {
+namespace Vkm::GL {
     class UniformBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
     struct RenderView;
     struct LightData;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // Shadow slots are only ever queried for lights that made the GPU light list.
 constexpr uint32_t SHADOW_MAX_TRACKED_LIGHTS = Config::MAX_LIGHTS;
@@ -214,7 +214,7 @@ class GLShadowData {
         void fitPoint(const LightData& light, uint32_t lightIndex, uint32_t& nextCube);
 
     private:
-        std::unique_ptr<Core::UniformBuffer> m_ubo;
+        std::unique_ptr<Vkm::GL::UniformBuffer> m_ubo;
         ShadowUBOData m_data{};
         ShadowUBOData m_last{};
 
@@ -239,4 +239,4 @@ class GLShadowData {
         std::vector<CullScratch>           m_scratch;         ///< One workspace per cull task.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

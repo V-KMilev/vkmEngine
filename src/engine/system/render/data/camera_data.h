@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Flattened camera for the frame.
@@ -52,4 +52,4 @@ struct CameraData {
     }
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

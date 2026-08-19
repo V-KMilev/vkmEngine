@@ -4,7 +4,7 @@
 
 #include "resource/asset/font_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 
@@ -28,4 +28,4 @@ Handle<FontAsset> bakeFontSDF(
     float pixelHeight = 64.0f
 );
 
-} // namespace Engine
+} // namespace Vkm::Engine

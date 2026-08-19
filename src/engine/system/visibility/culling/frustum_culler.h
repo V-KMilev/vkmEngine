@@ -4,7 +4,7 @@
 
 #include "system/visibility/visibility_context.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Frustum culling: reject AABBs fully outside the view frustum.
@@ -34,4 +34,4 @@ inline bool isVisible(
 
 } // namespace FrustumCuller
 
-} // namespace Engine
+} // namespace Vkm::Engine

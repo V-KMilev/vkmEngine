@@ -2,7 +2,7 @@
 #
 # `cmake --install` produces an SDK, not a game. That distinction is the whole
 # point of the project split: the engine is a thing you build games with, and a
-# game is a project directory plus a renamed copy of engine_runtime. Packaging a
+# game is a project directory plus a renamed copy of vkm_runtime. Packaging a
 # game is a separate operation (see tools/vkm), not a mode of this one.
 #
 # The layout a project sees:
@@ -22,19 +22,19 @@ set(VKM_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/vkmEngine)
 # ---------------------------------------------------------------------------
 # Targets
 # ---------------------------------------------------------------------------
-# A project links exactly one engine target: EngineCore, through the
+# A project links exactly one engine target: vkm_core, through the
 # vkm_add_gameplay_module() helper the config file defines. Everything else the
 # engine is made of - the render system, the GL backend, the cooker, the editor -
 # is reached by running a host, not by linking, so none of it belongs in the
-# export set. What has to be here besides EngineCore is its own link interface:
+# export set. What has to be here besides vkm_core is its own link interface:
 # CMake refuses to export a target whose dependencies are not exported with it,
 # and for a shared library that includes the private ones.
-set(VKM_EXPORTED_DEPS glm glm-header-only glfw vkmLog nlohmann_json glew stb BuildInfo vkm_warnings)
+set(VKM_EXPORTED_DEPS glm glm-header-only glfw vkm_log nlohmann_json glew stb vkm_build_info vkm_warnings)
 if(VKM_PROFILER)
     list(APPEND VKM_EXPORTED_DEPS TracyClient)
 endif()
 
-install(TARGETS EngineCore ${VKM_EXPORTED_DEPS}
+install(TARGETS vkm_core ${VKM_EXPORTED_DEPS}
         EXPORT  vkmEngineTargets
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
         LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
@@ -43,14 +43,14 @@ install(TARGETS EngineCore ${VKM_EXPORTED_DEPS}
 
 # Shared libraries the hosts load but a project never links: they ship as files,
 # not as imported targets.
-install(TARGETS EngineRendering vkmGL
+install(TARGETS vkm_render vkm_gl
         LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
 
-# The hosts. A packaged game is a renamed copy of engine_runtime, so the binary
+# The hosts. A packaged game is a renamed copy of vkm_runtime, so the binary
 # ships in the SDK rather than being rebuilt per game - that is the point of the
 # project split.
-install(TARGETS engine_runtime engine_editor engine_cook
+install(TARGETS vkm_runtime_app vkm_editor_app vkm_cook_app
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
 
 # ---------------------------------------------------------------------------
@@ -60,10 +60,16 @@ install(TARGETS engine_runtime engine_editor engine_cook
 # scenes, and reaches neither the GL backend nor the editor. The directory
 # structure is the include path, so it is preserved exactly - "ecs/scene.h"
 # resolves the same against the SDK as it does in the engine tree.
+#
+# build_info.h is the one exception. It prints the APP_* macros the build
+# injects into the hosts, and those deliberately do not travel in a project's
+# compile interface - so the header would ship as something no consumer can
+# compile. It belongs to the hosts, and only they include it.
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/src/engine/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         COMPONENT Development
         FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
+        PATTERN "build_info.h" EXCLUDE
 )
 
 # Third-party headers the engine's own public headers include. An audit of all
@@ -86,9 +92,19 @@ install(FILES ${CMAKE_SOURCE_DIR}/modules/vkmLog/src/logger.h
 
 # Only when the engine was built with it: debug/profiler.h includes Tracy's
 # header behind VKM_PROFILER, and that define travels in the export.
+#
+# Three directories into include/tracy/, not tracy/ alone into include/, because
+# tracy/Tracy.hpp reaches sideways - "../common/TracyColor.hpp",
+# "../client/TracyProfiler.hpp" - and those resolve against the directory it was
+# found in. Landing it flat in include/ puts that parent one level too high, and
+# the first consumer to include debug/profiler.h stops at a missing TracyColor.
+# This layout is the one TracyClient's own INSTALL_INTERFACE names, so the
+# imported target's include directory and the files agree.
 if(VKM_PROFILER)
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/tracy/public/tracy
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT Development
+                      ${CMAKE_SOURCE_DIR}/modules/tracy/public/client
+                      ${CMAKE_SOURCE_DIR}/modules/tracy/public/common
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tracy COMPONENT Development
             FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
 endif()
 
@@ -146,7 +162,7 @@ configure_package_config_file(
     INSTALL_DESTINATION ${VKM_CMAKE_INSTALL_DIR}
 )
 
-# SameMajorVersion: the engine is not ABI-stable across minor releases, but a
+# SameMinorVersion: the engine is not ABI-stable across minor releases, but a
 # project asking for 1.4 should accept 1.4.2. The toolchain pin in the config
 # file is what catches the case this cannot.
 write_basic_package_version_file(

@@ -5,7 +5,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/texture_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 
@@ -23,4 +23,4 @@ class ResourceManager;
 MeshHandle    requestCookedMeshAsync   (const std::string& name, ResourceManager& resources);
 TextureHandle requestCookedTextureAsync(const std::string& name, ResourceManager& resources);
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -12,7 +12,7 @@ namespace Game {
  * ReflectedBehavior generates typeName(), visitFields() and clone() from the
  * VKM_REFLECT block, so only the hook below is hand-written.
  */
-class Spinner : public Engine::ReflectedBehavior<Spinner> {
+class Spinner : public Vkm::Engine::ReflectedBehavior<Spinner> {
     public:
         static constexpr const char* TYPE_NAME = "Spinner";
 
@@ -24,7 +24,7 @@ class Spinner : public Engine::ReflectedBehavior<Spinner> {
 
 } // namespace Game
 
-// At global scope, with the type named in full: the macro opens Engine::Reflect
+// At global scope, with the type named in full: the macro opens Vkm::Engine::Reflect
 // itself, so your gameplay types stay in your own namespace.
 VKM_REFLECT_BEGIN(Game::Spinner)
     VKM_F(degreesPerSecond)

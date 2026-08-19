@@ -22,7 +22,7 @@
 #include "io/json_vec.h"
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace AssetSerializer {
 
@@ -51,10 +51,10 @@ constexpr std::array<TexField, 11> MATERIAL_TEXTURE_FIELDS = {{
     {"transmission",        &MaterialAsset::transmissionTexture},
 }};
 
-using ::Engine::detail::vec3ToJson;
-using ::Engine::detail::vec4ToJson;
-using ::Engine::detail::jsonToVec3;
-using ::Engine::detail::jsonToVec4;
+using ::Vkm::Engine::detail::vec3ToJson;
+using ::Vkm::Engine::detail::vec4ToJson;
+using ::Vkm::Engine::detail::jsonToVec3;
+using ::Vkm::Engine::detail::jsonToVec4;
 
 } // namespace
 
@@ -339,4 +339,4 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
 
 } // namespace AssetSerializer
 
-} // namespace Engine
+} // namespace Vkm::Engine

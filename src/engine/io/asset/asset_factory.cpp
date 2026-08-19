@@ -1,10 +1,10 @@
 #include "io/asset/asset_factory.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 AssetFactory& assetFactory() {
     static AssetFactory f;
     return f;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

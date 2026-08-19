@@ -8,7 +8,7 @@
 
 #include "system/script/behavior.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Name -> factory registry for Behavior subclasses.
@@ -88,4 +88,4 @@ class BehaviorRegistry {
         std::unordered_map<std::string, Factory> m_factories;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

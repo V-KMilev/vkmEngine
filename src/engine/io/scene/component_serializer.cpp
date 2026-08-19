@@ -22,18 +22,18 @@
 #include "system/script/behavior_field_visitor.h"
 #include "system/script/behavior_registry.h"
 
-namespace Engine::ComponentSerializer {
+namespace Vkm::Engine::ComponentSerializer {
 
 namespace {
 
-using ::Engine::detail::vec2ToJson;
-using ::Engine::detail::vec3ToJson;
-using ::Engine::detail::vec4ToJson;
-using ::Engine::detail::quatToJson;
-using ::Engine::detail::jsonToVec2;
-using ::Engine::detail::jsonToVec3;
-using ::Engine::detail::jsonToVec4;
-using ::Engine::detail::jsonToQuat;
+using ::Vkm::Engine::detail::vec2ToJson;
+using ::Vkm::Engine::detail::vec3ToJson;
+using ::Vkm::Engine::detail::vec4ToJson;
+using ::Vkm::Engine::detail::quatToJson;
+using ::Vkm::Engine::detail::jsonToVec2;
+using ::Vkm::Engine::detail::jsonToVec3;
+using ::Vkm::Engine::detail::jsonToVec4;
+using ::Vkm::Engine::detail::jsonToQuat;
 
 // toJson / fromJson overload set. The reflection-driven save/load templates
 // (saveReflected / loadReflected) iterate a type's fields and forward each
@@ -105,7 +105,7 @@ inline std::enable_if_t<Reflect::IS_REFLECTED<T>> fromJson(const nlohmann::json&
 template<typename T>
 nlohmann::json saveReflected(const T& obj) {
     nlohmann::json out = nlohmann::json::object();
-    ::Engine::Reflect::forEachField(obj, [&](std::string_view name, const auto& val) {
+    ::Vkm::Engine::Reflect::forEachField(obj, [&](std::string_view name, const auto& val) {
         out[std::string(name)] = toJson(val);
     });
     return out;
@@ -113,7 +113,7 @@ nlohmann::json saveReflected(const T& obj) {
 
 template<typename T>
 void loadReflected(const nlohmann::json& j, T& obj) {
-    ::Engine::Reflect::forEachField(obj, [&](std::string_view name, auto& val) {
+    ::Vkm::Engine::Reflect::forEachField(obj, [&](std::string_view name, auto& val) {
         auto it = j.find(std::string(name));
         if (it != j.end()) fromJson(*it, val);
     });
@@ -446,4 +446,4 @@ void load(const nlohmann::json& j, ScriptComponent& sc) {
     }
 }
 
-} // namespace Engine::ComponentSerializer
+} // namespace Vkm::Engine::ComponentSerializer

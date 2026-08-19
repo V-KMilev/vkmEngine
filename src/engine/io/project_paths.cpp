@@ -17,7 +17,7 @@
     #include <unistd.h>
 #endif
 
-namespace Engine::ProjectPaths {
+namespace Vkm::Engine::ProjectPaths {
 
 namespace {
 
@@ -101,4 +101,4 @@ std::string toProjectRelative(const std::string& path) {
     return generic;
 }
 
-} // namespace Engine::ProjectPaths
+} // namespace Vkm::Engine::ProjectPaths

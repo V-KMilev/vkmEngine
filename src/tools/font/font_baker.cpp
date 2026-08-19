@@ -14,7 +14,7 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -147,4 +147,4 @@ Handle<FontAsset> bakeFontSDF(
     return handle;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <cstring>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 const char* getKeyBindLabel(const KeyBind& bind, char* buf, size_t bufSize) {
     if (bind.key == ImGuiKey_None) {
@@ -21,4 +21,4 @@ const char* getKeyBindLabel(const KeyBind& bind, char* buf, size_t bufSize) {
     return buf;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

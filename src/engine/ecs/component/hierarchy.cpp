@@ -2,7 +2,7 @@
 
 #include "ecs/scene.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void detachFromHierarchy(Scene& scene, EntityId entity) {
     if (!scene.has<Hierarchy>(entity)) return;
@@ -56,4 +56,4 @@ void detachFromHierarchy(Scene& scene, EntityId entity) {
     h.nextSibling = {};
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

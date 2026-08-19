@@ -17,7 +17,7 @@
 
 #include "stb_image.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 WindowManager::WindowManager() = default;
 
@@ -372,4 +372,4 @@ void WindowManager::setSceneViewport(uint32_t x, uint32_t y, uint32_t w, uint32_
     m_sceneVpH = h;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

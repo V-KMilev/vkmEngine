@@ -7,7 +7,7 @@
 #include "core/math/rotation.h"
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Component representing spatial transformation (position, rotation, scale) in 3D space.
@@ -48,9 +48,9 @@ struct Transform {
         );
     }
 };
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_REFLECT_BEGIN(::Engine::Transform)
+VKM_REFLECT_BEGIN(::Vkm::Engine::Transform)
     VKM_F(position),
     VKM_F(rotation),
     VKM_F(scale)

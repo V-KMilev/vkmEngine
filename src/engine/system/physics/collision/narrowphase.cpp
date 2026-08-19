@@ -6,7 +6,7 @@
 
 #include <glm/glm.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -267,4 +267,4 @@ int contactBoxes(const BoxShape& a, const BoxShape& b, Contact* out) {
         : faceContact(a, b, bestCase, bestAxis, out);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

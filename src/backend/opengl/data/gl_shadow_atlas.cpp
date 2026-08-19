@@ -11,7 +11,7 @@
 #include "texture/gl_texture_cube.h"
 #include "core/engine_config.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // The 2D atlas must have a tile for every directional/spot caster the shadow
 // planner can hand out. Enforce the capacity invariant at compile time so a bump
@@ -36,18 +36,18 @@ void GLShadowAtlas::init(uint32_t tileRes) {
     // One depth texture for the whole 2D atlas. Nearest filtering - PCF is done
     // in the shader; clamp so off-tile samples read the edge. Reassigning the
     // unique_ptr frees any previous atlas, so a resolution change is a rebuild.
-    Core::Texture2DParams params;
+    Vkm::GL::Texture2DParams params;
     params.width          = atlasW;
     params.height         = atlasH;
     params.internalFormat = GL_DEPTH_COMPONENT24;
     params.format         = GL_DEPTH_COMPONENT;
     params.type           = GL_FLOAT;
-    params.minFilter      = Core::TextureMinFilter::Nearest;
-    params.magFilter      = Core::TextureMagFilter::Nearest;
-    params.wrapS          = Core::TextureWrap::ClampToEdge;
-    params.wrapT          = Core::TextureWrap::ClampToEdge;
+    params.minFilter      = Vkm::GL::TextureMinFilter::Nearest;
+    params.magFilter      = Vkm::GL::TextureMagFilter::Nearest;
+    params.wrapS          = Vkm::GL::TextureWrap::ClampToEdge;
+    params.wrapT          = Vkm::GL::TextureWrap::ClampToEdge;
     params.generateMipmaps = false;
-    m_atlas2D = std::make_unique<Core::Texture2D>("shadow_atlas_2d", params);
+    m_atlas2D = std::make_unique<Vkm::GL::Texture2D>("shadow_atlas_2d", params);
 
     m_fbo2D.bind();
     m_fbo2D.attachTexture2D(GL_DEPTH_ATTACHMENT, m_atlas2D->getID());
@@ -62,7 +62,7 @@ void GLShadowAtlas::init(uint32_t tileRes) {
     // set and its depth-only FBO once - a 2D resolution change leaves them be.
     if (m_cubes.empty()) {
         for (uint32_t i = 0; i < Config::MAX_SHADOW_CASTERS_CUBE; ++i) {
-            auto cube = std::make_unique<Core::TextureCube>();
+            auto cube = std::make_unique<Vkm::GL::TextureCube>();
             cube->create(static_cast<int>(SHADOW_CUBE_RES), 1,
                          GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_FLOAT, false);
             m_cubes.push_back(std::move(cube));
@@ -77,7 +77,7 @@ void GLShadowAtlas::init(uint32_t tileRes) {
     }
 }
 
-void GLShadowAtlas::begin2D(const Core::Context& gl) const {
+void GLShadowAtlas::begin2D(const Vkm::GL::Context& gl) const {
     m_fbo2D.bind();
     const int32_t atlasW = static_cast<int32_t>(SHADOW_ATLAS_COLS * m_tileRes);
     const int32_t atlasH = static_cast<int32_t>(SHADOW_ATLAS_ROWS * m_tileRes);
@@ -85,14 +85,14 @@ void GLShadowAtlas::begin2D(const Core::Context& gl) const {
     gl.clear(false, true, false);
 }
 
-void GLShadowAtlas::setTileViewport(const Core::Context& gl, uint32_t slot) const {
+void GLShadowAtlas::setTileViewport(const Vkm::GL::Context& gl, uint32_t slot) const {
     const int32_t tile = static_cast<int32_t>(m_tileRes);
     const int32_t x    = static_cast<int32_t>(slot % SHADOW_ATLAS_COLS) * tile;
     const int32_t y    = static_cast<int32_t>(slot / SHADOW_ATLAS_COLS) * tile;
     gl.setViewport(x, y, tile, tile);
 }
 
-void GLShadowAtlas::beginCubeFace(const Core::Context& gl, uint32_t slot, uint32_t face) const {
+void GLShadowAtlas::beginCubeFace(const Vkm::GL::Context& gl, uint32_t slot, uint32_t face) const {
     if (slot >= m_cubes.size()) return;
     m_fboCube.bind();
     m_cubes[slot]->attachFace(GL_DEPTH_ATTACHMENT, static_cast<int>(face), 0);
@@ -119,4 +119,4 @@ glm::vec2 GLShadowAtlas::tileUVScale() {
     return glm::vec2(1.0f / static_cast<float>(SHADOW_ATLAS_COLS), 1.0f / static_cast<float>(SHADOW_ATLAS_ROWS));
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

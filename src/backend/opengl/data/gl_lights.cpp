@@ -11,7 +11,7 @@
 #include "gl_buffer_upload.h"
 #include "system/render/data/light_data.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLLights::GLLights()  = default;
 GLLights::~GLLights() = default;
@@ -39,8 +39,8 @@ void GLLights::update(const std::vector<LightData>& lights, const GLShadowData& 
     // Only the header + the lights actually in use travel to the GPU; the tail
     // of the fixed-capacity array is never read (shader loops stop at count).
     const size_t activeSize = offsetof(LightsBuffer, lights) + sizeof(GpuLight) * count;
-    Core::uploadPrefixIfChanged(m_ssbo, m_last, data, activeSize);
+    Vkm::GL::uploadPrefixIfChanged(m_ssbo, m_last, data, activeSize);
     if (m_ssbo) m_ssbo->bindBase(GLBindings::SSBOBindingPoints::Lights);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

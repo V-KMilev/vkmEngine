@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Cross-platform handle to a loaded shared library (.dll / .so).
@@ -55,4 +55,4 @@ class DynamicLibrary {
         void* m_handle = nullptr;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

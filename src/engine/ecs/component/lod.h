@@ -4,7 +4,7 @@
 
 #include "resource/asset/mesh_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief One detail level: the mesh to draw while the entity is near enough.
@@ -43,4 +43,4 @@ struct LOD {
     float bias = 1.0f;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

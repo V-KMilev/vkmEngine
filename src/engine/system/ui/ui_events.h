@@ -4,7 +4,7 @@
 
 #include "ecs/entity.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Fired when a UIButton is clicked (a press released over the same button).
@@ -21,4 +21,4 @@ struct UIClickEvent {
     std::string eventId;  ///< The clicked UIButton's `eventId`.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

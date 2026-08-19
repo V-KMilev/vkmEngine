@@ -33,7 +33,7 @@ vkm run
 
 A spinning cube under a directional light. `vkm new` copied the SDK's template,
 `vkm build` compiled `src/` into `bin/game`, and `vkm run` handed the project to
-`engine_runtime`, which loaded that module and ran it.
+`vkm_runtime`, which loaded that module and ran it.
 
 ## What a project is
 
@@ -48,7 +48,7 @@ mygame/
 ```
 
 The engine is never rebuilt for your game. A packaged game is a renamed copy of
-`engine_runtime` plus your project's data, which is why `vkm package` takes
+`vkm_runtime` plus your project's data, which is why `vkm package` takes
 seconds rather than recompiling an engine.
 
 ## The commands
@@ -78,7 +78,7 @@ dist/mygame/
     shaders/        the engine's
 ```
 
-The executable is a renamed copy of `engine_runtime` - the engine is never
+The executable is a renamed copy of `vkm_runtime` - the engine is never
 rebuilt for a game, which is why this takes seconds. The player runs
 `bin/mygame` and passes nothing: both roots resolve to the package directory, so
 the game finds itself.
@@ -104,7 +104,7 @@ so tunable values appear in the editor and survive a save with no extra code.
 ```cpp
 namespace Game {
 
-class Spinner : public Engine::ReflectedBehavior<Spinner> {
+class Spinner : public Vkm::Engine::ReflectedBehavior<Spinner> {
     public:
         static constexpr const char* TYPE_NAME = "Spinner";
         void onUpdate(float dt) override;
@@ -115,8 +115,8 @@ class Spinner : public Engine::ReflectedBehavior<Spinner> {
 
 } // namespace Game
 
-// At global scope, and named in full. The macro opens Engine::Reflect itself, so
-// your types stay in your own namespace.
+// At global scope, and named in full. The macro opens Vkm::Engine::Reflect
+// itself, so your types stay in your own namespace.
 VKM_REFLECT_BEGIN(::Game::Spinner)
     VKM_F(degreesPerSecond)
 VKM_REFLECT_END()
@@ -126,7 +126,7 @@ Register it in `src/module.cpp` so scenes can name it:
 
 ```cpp
 extern "C" void vkmRegisterBehaviors() {
-    Engine::BehaviorRegistry::get().registerBehavior<Game::Spinner>();
+    Vkm::Engine::BehaviorRegistry::get().registerBehavior<Game::Spinner>();
 }
 ```
 

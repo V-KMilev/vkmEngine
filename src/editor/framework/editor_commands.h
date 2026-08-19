@@ -33,7 +33,7 @@
 
 #include "framework/command.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 struct EditorState;
@@ -628,4 +628,4 @@ extern template class ComponentEditCommand<Name>;
 extern template class RenameAssetCommand<MaterialHandle>;
 extern template class RenameAssetCommand<MeshHandle>;
 
-} // namespace Engine
+} // namespace Vkm::Engine

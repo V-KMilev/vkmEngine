@@ -6,7 +6,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Base class for all resource types in the engine.
@@ -58,4 +58,4 @@ struct Resource {
         std::unique_ptr<nlohmann::json> source; ///< Origin descriptor JSON, lazy-allocated.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

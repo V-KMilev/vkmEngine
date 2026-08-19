@@ -23,7 +23,7 @@
 #include "ui/editor_style.h"
 #include "ui/editor_widgets.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // "Undo Transform" / "Redo" - the verb plus the top-of-stack op label, or just
@@ -33,7 +33,7 @@ void historyItemLabel(char* buf, size_t n, const char* verb, const char* op) {
 }
 } // namespace
 
-// Defined here (not =default in the header) so the unique_ptr<Core::Texture2D>
+// Defined here (not =default in the header) so the unique_ptr<Vkm::GL::Texture2D>
 // member sees the complete type for destruction.
 EditorMenuBar::EditorMenuBar()  = default;
 EditorMenuBar::~EditorMenuBar() = default;
@@ -62,7 +62,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     // Lazy-loaded the first time we draw (the GL context is live by now).
     // Loaded unflipped so ImGui's top-left UVs render it upright.
     if (!m_logo) {
-        m_logo = std::make_unique<Core::Texture2D>(
+        m_logo = std::make_unique<Vkm::GL::Texture2D>(
             (ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string(),
             /*flipVertically*/ false);
     }
@@ -213,9 +213,12 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         // Labels share a column so the values line up rather than stepping in
         // and out with the label width.
         const float valueX = ImGui::CalcTextSize("vkmEngine:").x + EditorStyle::px(12.0f);
+        // valueX is an offset from wherever the row starts, not from the window,
+        // so the rows inside the Debug tree stay aligned against its indent.
         const auto row = [valueX](const char* label, const char* fmt, ...) {
+            const float startX = ImGui::GetCursorPosX();
             ImGui::TextDisabled("%s", label);
-            ImGui::SameLine(valueX);
+            ImGui::SameLine(startX + valueX);
             va_list args;
             va_start(args, fmt);
             ImGui::TextV(fmt, args);
@@ -230,8 +233,8 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         // API + device come from the active render backend so this dialog
         // stays correct if the engine ever ships with a non-OpenGL backend.
         const BackendInfo backend = ec.renderSystem.backendInfo();
-        row("API:",             "%s", backend.api.empty()    ? "(unknown)" : backend.api.c_str());
-        row("Renderer:",        "%s", backend.device.empty() ? "(unknown)" : backend.device.c_str());
+        row("API:",      "%s", backend.api.empty()    ? "(unknown)" : backend.api.c_str());
+        row("Renderer:", "%s", backend.device.empty() ? "(unknown)" : backend.device.c_str());
 
         ImGui::Separator();
 
@@ -241,11 +244,11 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         // module rather than one for the tree.
         ImGui::Spacing();
         if (ImGui::TreeNode("Debug")) {
-            row("vkmEngine:",    "%s @ %.8s", APP_VERSION,    APP_COMMIT_HASH);
-            row("vkmGL:",        "%s @ %.8s", VKMGL_VERSION,  VKMGL_COMMIT_HASH);
-            row("vkmLog:",       "%s @ %.8s", VKMLOG_VERSION, VKMLOG_COMMIT_HASH);
+            row("vkmEngine:", "%s @ %.8s", APP_VERSION,     APP_COMMIT_HASH);
+            row("vkmGL:",     "%s @ %.8s", VKM_GL_VERSION,  VKM_GL_COMMIT_HASH);
+            row("vkmLog:",    "%s @ %.8s", VKM_LOG_VERSION, VKM_LOG_COMMIT_HASH);
             ImGui::Spacing();
-            row("ImGui:",        "%s", IMGUI_VERSION);
+            row("ImGui:",     "%s", IMGUI_VERSION);
             ImGui::TreePop();
         }
         ImGui::EndPopup();
@@ -274,4 +277,4 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     ImGui::EndMenuBar();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

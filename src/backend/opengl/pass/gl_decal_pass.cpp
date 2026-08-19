@@ -17,7 +17,7 @@
 #include "generator/mesh_generators.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Flat ambient the decal is lit with on top of the sun, so a decal in shadow
@@ -33,7 +33,7 @@ glm::vec3 sunRadiance(const RenderView& view) {
 } // namespace
 
 GLDecalPass::GLDecalPass()
-    : m_shader(std::make_unique<Core::Shader>("shaders/decal"))
+    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/decal"))
     , m_cube(std::make_unique<GLMesh>(generateCube())) {}
 
 GLDecalPass::~GLDecalPass() = default;
@@ -91,4 +91,4 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
     ctx.gl.setDepthTest(true);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

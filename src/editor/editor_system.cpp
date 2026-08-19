@@ -35,7 +35,7 @@
 #include "ui/editor_theme.h"
 #include "io/project_paths.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 EditorSystem::EditorSystem(
     GLFWwindow* window,
@@ -221,7 +221,7 @@ void drawToast(EditorState& state, float deltaTime) {
     ImGui::PopStyleColor(2);
 }
 
-// The single writer of the window title: "<project> - <file> [*] - VKM Engine".
+// The single writer of the window title: "<project> - <file> [*] - vkmEngine".
 // One place owns the format - anything else setting the title is overwritten
 // here on the next frame. Compared against its own last output so the GLFW
 // call happens only when the content actually changed.
@@ -231,7 +231,7 @@ void syncWindowTitle(WindowManager& window, const std::string& project,
     const std::string fname = path.empty()
         ? "untitled" : std::filesystem::path(path).filename().string();
     std::string title = (project.empty() ? std::string() : project + " - ")
-                      + fname + (dirty ? " *" : "") + " - VKM Engine";
+                      + fname + (dirty ? " *" : "") + " - vkmEngine";
     if (title != s_last) {
         window.setTitle(title);
         s_last = std::move(title);
@@ -631,4 +631,4 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

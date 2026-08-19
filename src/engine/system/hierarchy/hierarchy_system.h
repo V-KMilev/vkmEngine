@@ -6,7 +6,7 @@
 #include "core/system.h"
 #include "system/hierarchy/hierarchy_operations.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Resolves hierarchical transforms into the WorldTransform component.
@@ -57,4 +57,4 @@ class HierarchySystem : public System {
         DepthBuckets m_buckets;  ///< Per-depth scratch for the resolve pass; kept for its capacity.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

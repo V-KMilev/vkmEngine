@@ -9,7 +9,7 @@
 #include "resource/resource_manager.h"
 #include "generator/texture_generators.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 MaterialHandle generateDefaultMaterial(ResourceManager& resourceManager) {
     MaterialAsset material;
@@ -37,4 +37,4 @@ MaterialHandle generateDefaultMaterial(ResourceManager& resourceManager) {
     return handle;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -30,12 +30,12 @@ int main(int argc, char** argv) {
         // Project root, working directory and log file, in the one order that
         // works (see tools/project_boot.h). Its own log file and tag: a cook is
         // a separate run from the editor session that may have launched it.
-        if (!Engine::bootHost(argc, argv, "cook.log", "VKM-COOK")) return EXIT_FAILURE;
+        if (!Vkm::Engine::bootHost(argc, argv, "cook.log", "VKM-COOK")) return EXIT_FAILURE;
 
-        const std::filesystem::path root = Engine::ProjectPaths::projectRoot();
+        const std::filesystem::path root = Vkm::Engine::ProjectPaths::projectRoot();
 
-        Engine::Project project;
-        Engine::loadProject(root, project);
+        Vkm::Engine::Project project;
+        Vkm::Engine::loadProject(root, project);
 
         if (project.entryScene.empty()) {
             // Nothing to cook from: a project whose world is generated builds its
@@ -46,21 +46,21 @@ int main(int argc, char** argv) {
 
         // The recipe factories import source art for what is not baked yet, and
         // fall through to the cooked path for what is.
-        Engine::registerRecipeAssetFactories();
-        Engine::AssetLibrary::get().load();
+        Vkm::Engine::registerRecipeAssetFactories();
+        Vkm::Engine::AssetLibrary::get().load();
 
         // Loading the scene is what pulls its assets in; cooking then bakes
         // exactly what it references, which is what a shipped build needs.
-        Engine::Scene scene;
-        Engine::ResourceManager resources;
+        Vkm::Engine::Scene scene;
+        Vkm::Engine::ResourceManager resources;
 
         const std::filesystem::path scenePath = root / project.entryScene;
-        if (!Engine::SceneSerializer::load(scene, resources, scenePath.string())) {
+        if (!Vkm::Engine::SceneSerializer::load(scene, resources, scenePath.string())) {
             LOG_ERROR("Failed to load '%s'", scenePath.string().c_str());
             return EXIT_FAILURE;
         }
 
-        Engine::AssetCooker::cookAllAssets(resources);
+        Vkm::Engine::AssetCooker::cookAllAssets(resources);
         LOG_INFO("Cooked '%s'", project.name.c_str());
 
     } catch (const std::exception& e) {

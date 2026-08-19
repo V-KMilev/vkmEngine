@@ -4,7 +4,7 @@
 
 #include "gl_vertex_array.h"
 
-namespace Core {
+namespace Vkm::GL {
 
 /**
  * @brief Attribute-less full-screen triangle.
@@ -56,4 +56,4 @@ class ScreenTriangle {
         VertexArray m_vao;
 };
 
-} // namespace Core
+} // namespace Vkm::GL

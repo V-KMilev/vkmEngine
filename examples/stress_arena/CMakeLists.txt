@@ -12,11 +12,11 @@ file(GLOB_RECURSE STRESS_ARENA_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_
 add_library(stress_arena_module SHARED ${STRESS_ARENA_SOURCES})
 
 target_include_directories(stress_arena_module PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-# Links the engine itself, not a host executable. EngineCore is shared, so this
+# Links the engine itself, not a host executable. vkm_core is shared, so this
 # is a reference to the one copy rather than a second one, and the module is not
 # bound to whichever exe loads it - the editor and the runtime both load this
 # same file.
-target_link_libraries(stress_arena_module PRIVATE EngineCore vkm_warnings)
+target_link_libraries(stress_arena_module PRIVATE vkm_core vkm_warnings)
 
 # Named `game` and placed in the project's own bin/, which is where the runtime
 # looks first: the module belongs to the project, not to whoever loads it.

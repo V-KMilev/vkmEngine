@@ -88,9 +88,9 @@ set_and_check(VKMENGINE_INCLUDE_DIR   "${PACKAGE_PREFIX_DIR}/include")
 set_and_check(VKMENGINE_SHADER_DIR    "${PACKAGE_PREFIX_DIR}/shaders")
 set_and_check(VKMENGINE_TEMPLATE_DIR  "${PACKAGE_PREFIX_DIR}/templates")
 
-set(VKMENGINE_RUNTIME "${PACKAGE_PREFIX_DIR}/bin/engine_runtime@CMAKE_EXECUTABLE_SUFFIX@")
-set(VKMENGINE_EDITOR  "${PACKAGE_PREFIX_DIR}/bin/engine_editor@CMAKE_EXECUTABLE_SUFFIX@")
-set(VKMENGINE_COOKER  "${PACKAGE_PREFIX_DIR}/bin/engine_cook@CMAKE_EXECUTABLE_SUFFIX@")
+set(VKMENGINE_RUNTIME "${PACKAGE_PREFIX_DIR}/bin/vkm_runtime@CMAKE_EXECUTABLE_SUFFIX@")
+set(VKMENGINE_EDITOR  "${PACKAGE_PREFIX_DIR}/bin/vkm_editor@CMAKE_EXECUTABLE_SUFFIX@")
+set(VKMENGINE_COOKER  "${PACKAGE_PREFIX_DIR}/bin/vkm_cook@CMAKE_EXECUTABLE_SUFFIX@")
 
 # ---------------------------------------------------------------------------
 # vkm_add_gameplay_module(<name>)
@@ -115,7 +115,7 @@ function(vkm_add_gameplay_module TARGET)
 
     # Links the engine, never a host executable: the editor and the runtime load
     # the same file.
-    target_link_libraries(${TARGET} PRIVATE vkmEngine::EngineCore)
+    target_link_libraries(${TARGET} PRIVATE vkmEngine::vkm_core)
 
     # Into the project's own bin/, which is the one place a host looks.
     # All three destinations, because Windows splits a shared library into

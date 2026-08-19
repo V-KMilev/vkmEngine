@@ -8,12 +8,12 @@
 
 #include "convention/gl_bindings.h"
 
-namespace Core {
+namespace Vkm::GL {
     class Context;
     class UniformBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct RenderView;
 class GLCubeConvolver;
@@ -66,7 +66,7 @@ class GLProbeManager {
          * capped per frame so several changing at once don't hitch. Run after the
          * passes (the baker rebinds the camera / light UBOs).
          */
-        void update(Core::Context& gl, const RenderView& view, const GLView& glView, const GLIBL& ibl);
+        void update(Vkm::GL::Context& gl, const RenderView& view, const GLView& glView, const GLIBL& ibl);
 
         /**
          * @brief Forget every layer's bake state, forcing a re-bake.
@@ -101,12 +101,12 @@ class GLProbeManager {
         };
 
     private:
-        std::unique_ptr<GLProbeBaker>        m_baker;  ///< Bakes probes at frame end.
-        std::unique_ptr<GLProbeArray>        m_array;  ///< Shared irradiance + prefilter cube arrays.
-        std::vector<BakeState>               m_state;  ///< Per layer: baked + last-baked position/version.
-        std::vector<uint32_t>                m_active; ///< Scratch baked-probe indices, cleared each bind().
-        std::unique_ptr<Core::UniformBuffer> m_ubo;    ///< ProbeBlock: boxes + layers (binding 4).
-        ProbeBlock                           m_lastBlock{};  ///< Last uploaded block, for change-gated upload.
+        std::unique_ptr<GLProbeBaker>           m_baker;  ///< Bakes probes at frame end.
+        std::unique_ptr<GLProbeArray>           m_array;  ///< Shared irradiance + prefilter cube arrays.
+        std::vector<BakeState>                  m_state;  ///< Per layer: baked + last-baked position/version.
+        std::vector<uint32_t>                   m_active; ///< Scratch baked-probe indices, cleared each bind().
+        std::unique_ptr<Vkm::GL::UniformBuffer> m_ubo;    ///< ProbeBlock: boxes + layers (binding 4).
+        ProbeBlock                              m_lastBlock{};  ///< Last uploaded block, for change-gated upload.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

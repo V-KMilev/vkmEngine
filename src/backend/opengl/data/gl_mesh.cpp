@@ -16,7 +16,7 @@
 
 #include "resource/asset/mesh_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Matches layout(location = 4) in shaders/_common/instancing.glsl.
@@ -33,17 +33,17 @@ void GLMesh::update(const MeshAsset& mesh) {
     m_indexCount = static_cast<uint32_t>(mesh.indices.size());
 
     const uint32_t vertexBytes = static_cast<uint32_t>(mesh.vertices.size() * sizeof(Vertex));
-    m_vbo = std::make_unique<Core::VertexBuffer>(mesh.vertices.data(), vertexBytes);
-    m_ibo = std::make_unique<Core::IndexBuffer>(mesh.indices.data(), m_indexCount);
+    m_vbo = std::make_unique<Vkm::GL::VertexBuffer>(mesh.vertices.data(), vertexBytes);
+    m_ibo = std::make_unique<Vkm::GL::IndexBuffer>(mesh.indices.data(), m_indexCount);
 
     // Interleaved vertex layout - must match the `in` attributes in the shader.
-    Core::VertexBufferLayout layout;
+    Vkm::GL::VertexBufferLayout layout;
     layout.push<float>(3);  // position (location 0)
     layout.push<float>(3);  // normal   (location 1)
     layout.push<float>(2);  // uv       (location 2)
     layout.push<float>(4);  // tangent  (location 3)
 
-    m_vao = std::make_unique<Core::VertexArray>();
+    m_vao = std::make_unique<Vkm::GL::VertexArray>();
     m_vao->addBuffer(*m_vbo, layout);
 }
 
@@ -55,12 +55,12 @@ void GLMesh::draw() const {
     m_ibo->draw();
 }
 
-void GLMesh::attachInstances(Core::InstanceBuffer& buffer, uint32_t startIndex) const {
+void GLMesh::attachInstances(Vkm::GL::InstanceBuffer& buffer, uint32_t startIndex) const {
     if (!m_vao) return;
     buffer.attachToVAO(*m_vao, startIndex);
 }
 
-void GLMesh::attachInstanceIndex(const Core::VertexBuffer& buffer) const {
+void GLMesh::attachInstanceIndex(const Vkm::GL::VertexBuffer& buffer) const {
     if (!m_vao) return;
 
     m_vao->bind();
@@ -99,4 +99,4 @@ void GLMesh::drawIndirect(uint32_t commandOffset) const {
         reinterpret_cast<const void*>(static_cast<uintptr_t>(commandOffset))));
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

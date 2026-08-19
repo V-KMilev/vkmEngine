@@ -5,7 +5,7 @@
 
 #include "ecs/entity.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 struct Transform;
@@ -68,4 +68,4 @@ glm::vec3 resolvedWorldPosition(const Scene& scene, EntityId entity, const Trans
  */
 glm::quat resolvedWorldRotation(const Scene& scene, EntityId entity, const Transform& local);
 
-} // namespace Engine
+} // namespace Vkm::Engine

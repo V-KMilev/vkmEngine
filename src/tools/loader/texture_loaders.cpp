@@ -16,10 +16,10 @@
 #include "system/async/async_load_queue.h"
 
 // stb_image's implementation is provided once by the stb module (libstb,
-// linked via EngineCore); here we need only the declarations.
+// linked via vkm_core); here we need only the declarations.
 #include "stb_image.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 TextureHandle loadTexture(
     const std::string& filePath,
@@ -149,4 +149,4 @@ TextureHandle requestTextureAsync(
     return handle;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

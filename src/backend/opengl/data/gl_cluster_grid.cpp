@@ -8,7 +8,7 @@
 
 #include "convention/gl_bindings.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLClusterGrid::GLClusterGrid()  = default;
 GLClusterGrid::~GLClusterGrid() = default;
@@ -17,7 +17,7 @@ void GLClusterGrid::init() {
     if (m_ssbo) return;
     // GPU-only: allocate uninitialised storage (the compute pass writes every
     // cluster's count before the forward pass reads it each frame).
-    m_ssbo = std::make_unique<Core::ShaderStorageBuffer>(
+    m_ssbo = std::make_unique<Vkm::GL::ShaderStorageBuffer>(
         nullptr, NUM_CLUSTERS * CLUSTER_STRIDE, GL_DYNAMIC_DRAW);
 }
 
@@ -25,4 +25,4 @@ void GLClusterGrid::bind() const {
     if (m_ssbo) m_ssbo->bindBase(GLBindings::SSBOBindingPoints::ClusterGrid);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

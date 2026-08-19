@@ -4,7 +4,7 @@
 
 #include "core/engine_config.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief The engine's frame clock: real + simulation time and the fixed-step accumulator.
@@ -108,4 +108,4 @@ class Clock {
         float m_timeScale    = 1.0f;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

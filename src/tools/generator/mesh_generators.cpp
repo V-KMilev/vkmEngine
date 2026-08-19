@@ -13,7 +13,7 @@
 #include <nlohmann/json.hpp>
 
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 /**
@@ -490,5 +490,5 @@ MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution) {
     return out;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine
 

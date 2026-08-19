@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief One billboard particle for the frame, flattened from the emitters.
@@ -17,4 +17,4 @@ struct ParticleData {
     glm::vec4 params;        ///< x = edge softness (0 hard .. 1 soft); yzw reserved.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

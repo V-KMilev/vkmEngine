@@ -9,7 +9,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/texture_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief One completed asynchronous texture decode.
@@ -93,4 +93,4 @@ class AsyncLoadQueue {
         std::vector<MeshLoadCompletion>     m_meshes;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine
