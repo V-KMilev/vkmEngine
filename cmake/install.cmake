@@ -2,7 +2,7 @@
 #
 # `cmake --install` produces an SDK, not a game. That distinction is the whole
 # point of the project split: the engine is a thing you build games with, and a
-# game is a project directory plus a renamed copy of engine_runtime. Packaging a
+# game is a project directory plus a renamed copy of vkm_runtime. Packaging a
 # game is a separate operation (see tools/vkm), not a mode of this one.
 #
 # The layout a project sees:
@@ -47,10 +47,10 @@ install(TARGETS vkm_render vkm_gl
         LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
 
-# The hosts. A packaged game is a renamed copy of engine_runtime, so the binary
+# The hosts. A packaged game is a renamed copy of vkm_runtime, so the binary
 # ships in the SDK rather than being rebuilt per game - that is the point of the
 # project split.
-install(TARGETS engine_runtime engine_editor engine_cook
+install(TARGETS vkm_runtime_app vkm_editor_app vkm_cook_app
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
 
 # ---------------------------------------------------------------------------

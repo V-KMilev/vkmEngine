@@ -37,7 +37,7 @@ target_link_libraries(vkm_tools PRIVATE
 
 # vkm_cook - the heavy importers (Assimp + stb LDR decode) and the asset
 # cooker that bakes recipes into the cooked cache. Linked by the editor and by
-# engine_cook; never by the runtime, which is what keeps a shipped game free of
+# vkm_cook_app; never by the runtime, which is what keeps a shipped game free of
 # an importer it cannot use - the link list guarantees that, not a build flag.
 add_library(vkm_cook STATIC ${VKM_COOK_SOURCES})
 

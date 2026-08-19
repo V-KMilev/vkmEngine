@@ -48,7 +48,7 @@ def sdk_root() -> Path:
         return Path(env).resolve()
 
     here = Path(__file__).resolve().parent
-    if (here.parent / "shaders").is_dir() and (here / "engine_runtime").exists():
+    if (here.parent / "shaders").is_dir() and (here / "vkm_runtime").exists():
         return here.parent                      # <prefix>/bin/vkm
     if (here.parent / "shaders").is_dir():
         return here.parent                      # <repo>/tools/vkm
@@ -224,15 +224,15 @@ def _host_cmd(args, name) -> int:
     return run([host(sdk_root(), name), d])
 
 
-def cmd_run(args)  -> int: return _host_cmd(args, "engine_runtime")
-def cmd_edit(args) -> int: return _host_cmd(args, "engine_editor")
-def cmd_cook(args) -> int: return _host_cmd(args, "engine_cook")
+def cmd_run(args)  -> int: return _host_cmd(args, "vkm_runtime")
+def cmd_edit(args) -> int: return _host_cmd(args, "vkm_editor")
+def cmd_cook(args) -> int: return _host_cmd(args, "vkm_cook")
 
 
 def cmd_package(args) -> int:
     """Assemble a standalone game.
 
-    A packaged game is a renamed copy of engine_runtime plus the project's data -
+    A packaged game is a renamed copy of vkm_runtime plus the project's data -
     the engine executable is never rebuilt for a game. Cooking runs first because
     the runtime can neither import nor cook: it reads what the cooker produced.
     """
@@ -243,7 +243,7 @@ def cmd_package(args) -> int:
     out = Path(args.out or (d / "dist" / name)).resolve()
 
     if not args.no_cook:
-        if rc := run([host(root, "engine_cook"), d]):
+        if rc := run([host(root, "vkm_cook"), d]):
             return rc
 
     if out.exists():
@@ -251,7 +251,7 @@ def cmd_package(args) -> int:
     (out / "bin").mkdir(parents=True)
 
     exe_suffix = ".exe" if os.name == "nt" else ""
-    shutil.copy2(host(root, "engine_runtime"), out / "bin" / (name + exe_suffix))
+    shutil.copy2(host(root, "vkm_runtime"), out / "bin" / (name + exe_suffix))
 
     # Everything the executable loads, beside it. The binaries carry an $ORIGIN
     # rpath, so the package runs wherever it is unzipped.
