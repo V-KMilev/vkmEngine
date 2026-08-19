@@ -115,9 +115,7 @@ void BehaviorSystem::dispatchEntityHook(Scene& scene, EntityId target, EntityId 
 }
 
 void BehaviorSystem::fireDestroy(Behavior& behavior) {
-    // onDestroy mirrors onStart: never started, never destroyed. Unlike guard(),
-    // a throw here is logged but doesn't disable - the behavior is being torn
-    // down anyway.
+    // onDestroy mirrors onStart: never started, never destroyed.
     if (behavior.m_started) {
         runGuarded(behavior, "onDestroy", [&] { behavior.onDestroy(); });
     }

@@ -17,8 +17,6 @@ namespace Vkm::Engine {
  *   library and the cooked cache derived from it. This is the part a user owns,
  *   edits, and version-controls.
  *
- * Before this split there was one root and the distinction did not exist, which
- * is why the engine could only ever run the game sitting inside its own repo.
  * Callers compose specific files from these directories (e.g.
  * ProjectPaths::library() / "_manifest.json") rather than re-deriving a root.
  */

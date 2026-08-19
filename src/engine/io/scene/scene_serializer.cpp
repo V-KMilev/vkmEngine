@@ -59,10 +59,8 @@ constexpr uint32_t MAX_ENTITY_SLOT = 1u << 22;
  * name would change that silently.
  *
  * Saving, loading and the known-key set all expand from this one list, so the
- * three cannot drift. They used to be three hand-kept lists, where forgetting
- * the load line was silent round-trip data loss and the "unknown component key"
- * warning that exists to catch exactly that stayed quiet, because the key was
- * still registered as known.
+ * three cannot drift: a component saved but never loaded is silent round-trip
+ * data loss, and the unknown-key warning cannot catch it - the key is known.
  *
  * Hierarchy is not a row: it is written by saveComponents explicitly and read
  * by the caller's pass 2, not by a loader.
@@ -141,8 +139,6 @@ void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager&
 #define VKM_SCENE_LOAD(Type, Key)   loadInto<Type>(src, Key, s, e);
 #define VKM_SCENE_LOAD_R(Type, Key) loadInto<Type>(src, Key, s, e, r);
 
-// Hierarchy is intentionally absent: its parent link is captured by the
-// caller for the pass-2 wire-up, not loaded here.
 void loadComponents(const json& src, Scene& s, EntityId e, const ResourceManager& r) {
     VKM_SCENE_COMPONENTS(VKM_SCENE_LOAD, VKM_SCENE_LOAD_R)
 }
@@ -422,9 +418,8 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             k.c_str(), source);
     }
 
-    // Commit phase: both stagings swap into place in one step, so up to here a
-    // throw leaves `scene` and `resources` untouched. compact() reclaims the
-    // sparse capacity the staging build grew.
+    // Both stagings swap in one step; compact() reclaims the sparse capacity the
+    // staging build grew.
     //
     // Outstanding handles into `resources` from before this call are
     // stale - editor panels that cached handles to hidden previews

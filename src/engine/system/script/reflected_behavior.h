@@ -87,8 +87,7 @@ class ReflectedBehavior : public Behavior {
         std::unique_ptr<Behavior> clone() const override {
             auto copy = std::make_unique<Derived>();
             const Derived& self = static_cast<const Derived&>(*this);
-            // Copy only the reflected (authored) fields; the engine context and
-            // started flag are rebound on the new instance by BehaviorSystem.
+            // Authored fields only; BehaviorSystem rebinds the rest.
             std::apply([&](auto&&... f) {
                 (((*copy).*(f.ptr) = self.*(f.ptr)), ...);
             }, Reflect::Traits<Derived>::fields());

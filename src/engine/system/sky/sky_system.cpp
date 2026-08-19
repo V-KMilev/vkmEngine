@@ -14,11 +14,9 @@ namespace Vkm::Engine {
 
 namespace {
 
-// Degrees either side of the horizon over which the key light fades. A sun on the
-// horizon lights almost nothing - the atmosphere has taken it - and a directional
-// light does not model that on its own. Moonlight fades in over the mirror of that
-// band, which is what makes the handover invisible: the light swings round to the
-// moon while it is contributing nothing either way.
+// Degrees either side of the horizon over which the key light fades. A sun on
+// the horizon lights almost nothing - the atmosphere has taken it - and a
+// directional light does not model that on its own.
 constexpr float SUN_FADE_DEGREES = 8.0f;
 
 } // namespace
