@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Apply the editor's dark theme (colors, rounding, spacing) to the
@@ -8,4 +8,4 @@ namespace Engine {
  */
 void applyEditorTheme();
 
-} // namespace Engine
+} // namespace Vkm::Engine

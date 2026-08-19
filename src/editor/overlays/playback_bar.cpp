@@ -4,7 +4,7 @@
 #include "framework/editor_common.h"
 #include "framework/scene_io_controller.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Sizes in design px - font/DPI-relative via EditorStyle::px.
@@ -78,4 +78,4 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     ImGui::PopStyleColor();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

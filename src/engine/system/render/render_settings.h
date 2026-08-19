@@ -3,7 +3,7 @@
 #include <cstdint>
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief What the composite pass writes to the screen.
@@ -66,8 +66,8 @@ struct RenderSettings {
     bool grid = false;  ///< World-space ground grid - an editor aid; the editor defaults it on, games leave it off.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Engine::RenderMode, "Default", "Depth", "Normals", "Roughness",
+VKM_ENUM_NAMES(::Vkm::Engine::RenderMode, "Default", "Depth", "Normals", "Roughness",
                "Metalness", "Ambient Occlusion", "Bloom", "Shadow Atlas",
                "Fog", "GI Only", "Direct Only", "Light Clusters")

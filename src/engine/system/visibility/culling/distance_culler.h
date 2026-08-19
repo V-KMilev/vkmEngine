@@ -4,7 +4,7 @@
 
 #include "system/visibility/visibility_context.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Distance culling: reject AABBs whose center is farther than maxDistance from the camera.
@@ -37,4 +37,4 @@ inline bool isVisible(
 
 } // namespace DistanceCuller
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -10,7 +10,7 @@
 #include "framework/editor_state.h"
 #include "framework/prefab_overrides.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 class ResourceManager;
@@ -73,4 +73,4 @@ void pushEdit(Scene& scene, ResourceManager& resources, EditorState& state, Enti
     state.markSceneDirty();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

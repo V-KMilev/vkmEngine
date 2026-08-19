@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class InputMap;
 
@@ -33,4 +33,4 @@ namespace InputActions {
  */
 void installDefaultBindings(InputMap& map);
 
-} // namespace Engine
+} // namespace Vkm::Engine

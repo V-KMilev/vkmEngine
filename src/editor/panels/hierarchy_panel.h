@@ -5,7 +5,7 @@
 
 #include "ecs/entity.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 class ResourceManager;
@@ -53,4 +53,4 @@ class HierarchyPanel {
         bool     m_renameFocusNeeded = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

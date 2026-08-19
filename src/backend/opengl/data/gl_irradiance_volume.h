@@ -9,7 +9,7 @@ namespace Vkm::GL {
     class Texture3D;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief GPU storage for one baked irradiance volume: SH-L1 on a probe grid.
@@ -76,4 +76,4 @@ class GLIrradianceVolume {
         bool     m_ready = false;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

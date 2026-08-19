@@ -9,7 +9,7 @@
 #include "data/gl_mesh.h"
 #include "system/render/data/drawable_data.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -198,4 +198,4 @@ void GLInstanceBatcher::drawRun(const InstanceRun& run, uint32_t runIndex) {
     run.mesh->drawInstanced(run.count, run.first);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

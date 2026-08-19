@@ -9,7 +9,7 @@
 #include "system/visibility/visibility.h"
 #include "system/camera/camera_controller_system.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
     const FrameContext& ctx = ec.frame;
@@ -122,4 +122,4 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

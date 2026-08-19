@@ -17,7 +17,7 @@
 #include "convention/gl_bindings.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLCompositePass::GLCompositePass()
     : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/composite")) {}
@@ -58,4 +58,4 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
     ctx.screenTri.draw();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

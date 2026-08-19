@@ -12,7 +12,7 @@
 #include "data/gl_scene_capture.h"
 #include "system/render/data/irradiance_volume_data.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 constexpr float CAPTURE_FAR = 500.0f;
@@ -93,4 +93,4 @@ void GLIrradianceBaker::bake(Vkm::GL::Context& gl, GLIrradianceVolume& volume,
              rx, ry, rz, data.center.x, data.center.y, data.center.z);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

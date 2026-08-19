@@ -9,7 +9,7 @@ namespace Vkm::GL {
     class Texture3D;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief The froxel volumetric-fog volume: two view-frustum-aligned 3D textures.
@@ -84,4 +84,4 @@ class GLFogVolume {
         uint32_t m_z = 0;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

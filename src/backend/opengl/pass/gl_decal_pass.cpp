@@ -17,7 +17,7 @@
 #include "generator/mesh_generators.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Flat ambient the decal is lit with on top of the sun, so a decal in shadow
@@ -91,4 +91,4 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
     ctx.gl.setDepthTest(true);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

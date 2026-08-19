@@ -4,11 +4,11 @@ namespace Vkm::GL {
     class Context;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
     struct GLFrameContext;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief One step of the OpenGL backend's frame.
@@ -78,4 +78,4 @@ class GLPass {
         void bindBackbufferViewport(GLFrameContext& ctx) const;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

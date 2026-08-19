@@ -18,7 +18,7 @@
 #include "platform/window/glfw_include.h"
 #include "debug/profiler.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void UISystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("UISystem");
@@ -247,4 +247,4 @@ void UISystem::appendQuad(
     push(p0.x, p1.y, uv0.x, uv1.y);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

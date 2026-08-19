@@ -104,7 +104,7 @@ so tunable values appear in the editor and survive a save with no extra code.
 ```cpp
 namespace Game {
 
-class Spinner : public Engine::ReflectedBehavior<Spinner> {
+class Spinner : public Vkm::Engine::ReflectedBehavior<Spinner> {
     public:
         static constexpr const char* TYPE_NAME = "Spinner";
         void onUpdate(float dt) override;
@@ -115,8 +115,8 @@ class Spinner : public Engine::ReflectedBehavior<Spinner> {
 
 } // namespace Game
 
-// At global scope, and named in full. The macro opens Engine::Reflect itself, so
-// your types stay in your own namespace.
+// At global scope, and named in full. The macro opens Vkm::Engine::Reflect
+// itself, so your types stay in your own namespace.
 VKM_REFLECT_BEGIN(::Game::Spinner)
     VKM_F(degreesPerSecond)
 VKM_REFLECT_END()
@@ -126,7 +126,7 @@ Register it in `src/module.cpp` so scenes can name it:
 
 ```cpp
 extern "C" void vkmRegisterBehaviors() {
-    Engine::BehaviorRegistry::get().registerBehavior<Game::Spinner>();
+    Vkm::Engine::BehaviorRegistry::get().registerBehavior<Game::Spinner>();
 }
 ```
 

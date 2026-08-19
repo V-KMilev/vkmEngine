@@ -2,7 +2,7 @@
 
 #include "gl_pass.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Resolves the multisample scene target into the single-sample sceneHDR
@@ -36,4 +36,4 @@ class GLResolvePass : public GLPass {
         Scope m_scope;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

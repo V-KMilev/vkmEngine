@@ -4,7 +4,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Root of a screen-space UI layer.
@@ -33,11 +33,11 @@ struct UICanvas {
     bool      visible         = true;                        ///< Skip the canvas and its whole subtree when false.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Engine::UICanvas::ScaleMode, "Fixed", "ScaleWithHeight")
+VKM_ENUM_NAMES(::Vkm::Engine::UICanvas::ScaleMode, "Fixed", "ScaleWithHeight")
 
-VKM_REFLECT_BEGIN(::Engine::UICanvas)
+VKM_REFLECT_BEGIN(::Vkm::Engine::UICanvas)
     VKM_F(referenceHeight),
     VKM_F(scaleMode),
     VKM_F(sortOrder),

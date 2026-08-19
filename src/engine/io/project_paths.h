@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <string>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Canonical on-disk locations, split by who owns them.
@@ -115,4 +115,4 @@ inline std::filesystem::path libraryManifest() { return library() / "_manifest.j
 
 } // namespace ProjectPaths
 
-} // namespace Engine
+} // namespace Vkm::Engine

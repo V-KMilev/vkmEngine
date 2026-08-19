@@ -16,7 +16,7 @@
 
 #include "resource/asset/mesh_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // Matches layout(location = 4) in shaders/_common/instancing.glsl.
@@ -99,4 +99,4 @@ void GLMesh::drawIndirect(uint32_t commandOffset) const {
         reinterpret_cast<const void*>(static_cast<uintptr_t>(commandOffset))));
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

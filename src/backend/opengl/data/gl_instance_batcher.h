@@ -13,7 +13,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class GLMesh;
 class GLView;
@@ -235,4 +235,4 @@ class GLInstanceBatchView {
         GLInstanceBatcher* m_batcher;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -15,7 +15,7 @@
 #include "system/render/render_settings.h"
 #include "io/project_paths.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 namespace EditorSettings {
 
 namespace {
@@ -276,4 +276,4 @@ bool save(const EditorState& state, const RenderSettings& render) {
 }
 
 }  // namespace EditorSettings
-}  // namespace Engine
+}  // namespace Vkm::Engine

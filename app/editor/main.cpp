@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
     try {
         // Project root, working directory and log file, in the one order that
         // works (see tools/project_boot.h).
-        if (!Engine::bootHost(argc, argv, "log.log", "VKM-ENGINE")) return EXIT_FAILURE;
+        if (!Vkm::Engine::bootHost(argc, argv, "log.log", "VKM-ENGINE")) return EXIT_FAILURE;
 
         // Async GL debug logging: catches and logs GL errors without forcing
         // GL_DEBUG_OUTPUT_SYNCHRONOUS, which validates every GL call on the
@@ -35,24 +35,24 @@ int main(int argc, char** argv) {
         // The editor wires the recipe factories: they (re)cook assets from their
         // source and fall through to the cooked path for what is already baked.
         // Must precede scene I/O.
-        Engine::registerRecipeAssetFactories();
+        Vkm::Engine::registerRecipeAssetFactories();
 
         // Empty on a fresh project; the cooker rebuilds it on save.
-        Engine::AssetLibrary::get().load();
+        Vkm::Engine::AssetLibrary::get().load();
 
         // Titles the window, so two editors on two projects are tellable apart.
-        Engine::Project project;
-        Engine::loadProject(Engine::ProjectPaths::projectRoot(), project);
+        Vkm::Engine::Project project;
+        Vkm::Engine::loadProject(Vkm::Engine::ProjectPaths::projectRoot(), project);
 
         // Load the hot-reloadable gameplay module: it registers behaviors into
         // the engine's registry, so it must precede the scene boot. Declared
         // before the Engine so it outlives it - behaviors are destroyed during
         // Engine teardown and their code must still be loaded then.
-        Engine::ScriptModule scriptModule;
+        Vkm::Engine::ScriptModule scriptModule;
         // The editor runs the edited project's code, from the one place a
         // project builds it - the same lookup File > Open Project does.
         const std::filesystem::path modulePath =
-            Engine::ProjectPaths::projectBin() / Engine::DynamicLibrary::platformName("game");
+            Vkm::Engine::ProjectPaths::projectBin() / Vkm::Engine::DynamicLibrary::platformName("game");
 
         std::error_code moduleEc;
         if (!std::filesystem::exists(modulePath, moduleEc) ||
@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
             LOG_WARNING("No gameplay module for this project - scripts unavailable");
         }
 
-        Engine::Engine engine;
+        Vkm::Engine::Engine engine;
 
 
         // Same convention EditorSystem's per-frame title uses; it takes over on
@@ -70,13 +70,13 @@ int main(int argc, char** argv) {
             title.c_str(),
             true, false});
 
-        engine.addSystem<Engine::EditorSystem>(Engine::SystemStage::UI,
+        engine.addSystem<Vkm::Engine::EditorSystem>(Vkm::Engine::SystemStage::UI,
             engine.getWindow().getWindowContext(),
             sys.camera, sys.ui, sys.visibility, sys.render, scriptModule, project.name);
 
         // The editor opens on the same scene the runtime would boot, by the
         // same rule (see tools/project_boot.h).
-        Engine::bootProjectScene(project, scriptModule,
+        Vkm::Engine::bootProjectScene(project, scriptModule,
                                  engine.getScene(), engine.getResources());
 
         engine.run();

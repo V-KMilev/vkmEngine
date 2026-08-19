@@ -10,7 +10,7 @@
 #include "ecs/component/transform.h"
 #include "platform/threading/thread_pool.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void AnimationSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("AnimationSystem");
@@ -68,4 +68,4 @@ void AnimationSystem::applyAnimation(const Animation& animation, Transform& tran
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

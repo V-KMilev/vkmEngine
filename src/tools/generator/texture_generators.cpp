@@ -8,7 +8,7 @@
 
 #include "resource/resource_manager.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 /**
@@ -130,4 +130,4 @@ TextureHandle createSolidColorTexture(glm::vec4 color, ResourceManager& rm, bool
     return rm.add(std::move(tex));
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

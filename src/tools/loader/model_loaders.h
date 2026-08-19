@@ -7,7 +7,7 @@
 #include "resource/resource_handle.h"
 #include "ecs/entity.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 class Scene;
@@ -120,4 +120,4 @@ EntityId importModelIntoScene(
     Scene& scene
 );
 
-} // namespace Engine
+} // namespace Vkm::Engine

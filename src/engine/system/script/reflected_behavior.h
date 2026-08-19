@@ -9,7 +9,7 @@
 #include "system/script/behavior.h"
 #include "system/script/behavior_field_visitor.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace detail {
 
@@ -96,4 +96,4 @@ class ReflectedBehavior : public Behavior {
         }
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

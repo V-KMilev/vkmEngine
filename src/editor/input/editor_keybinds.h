@@ -3,7 +3,7 @@
 #include <imgui.h>
 #include <cstdint>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Modifier flags (bitmask) for keybind combos.
@@ -167,4 +167,4 @@ inline KeyLabel keyLabel(const KeyBind& bind) {
     return out;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

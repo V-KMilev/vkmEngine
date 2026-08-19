@@ -29,10 +29,10 @@
 // UIText resolves its font by name. Startup-only: SceneSerializer swaps the
 // FontAsset slot across a scene load's asset-graph swap (like shaders), so the
 // bake is never repeated. The baker no-ops if the .ttf is gone.
-inline void ensureDefaultUIFont(Engine::ResourceManager& resources) {
-    if (resources.findByName<Engine::FontAsset>("ui:roboto")) return;
-    Engine::bakeFontSDF(resources,
-        (Engine::ProjectPaths::engineFonts() / "Roboto-Medium.ttf").string(),
+inline void ensureDefaultUIFont(Vkm::Engine::ResourceManager& resources) {
+    if (resources.findByName<Vkm::Engine::FontAsset>("ui:roboto")) return;
+    Vkm::Engine::bakeFontSDF(resources,
+        (Vkm::Engine::ProjectPaths::engineFonts() / "Roboto-Medium.ttf").string(),
         "ui:roboto");
 }
 
@@ -48,10 +48,10 @@ struct AppConfig {
 // System handles the caller may still need after bootstrap. The editor feeds
 // these into its EditorSystem; the runtime ignores the return value.
 struct AppSystems {
-    Engine::CameraControllerSystem& camera;
-    Engine::UISystem&               ui;
-    Engine::VisibilitySystem&       visibility;
-    Engine::RenderSystem&           render;
+    Vkm::Engine::CameraControllerSystem& camera;
+    Vkm::Engine::UISystem&               ui;
+    Vkm::Engine::VisibilitySystem&       visibility;
+    Vkm::Engine::RenderSystem&           render;
 };
 
 // Stands a ready-to-run engine app up in `engine`: the window, the standard
@@ -59,10 +59,10 @@ struct AppSystems {
 // gameplay registration (must happen before this, so the scene that follows can
 // create behaviors through the registry), the scene itself (bootProjectScene),
 // any extra systems (the editor adds EditorSystem), and the run loop.
-inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config) {
+inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& config) {
     // Bindings first: the systems below read input through named actions, and an
     // action with no binding is silently dead rather than an error.
-    Engine::installDefaultBindings(engine.getInput());
+    Vkm::Engine::installDefaultBindings(engine.getInput());
     auto& window = engine.getWindow();
     window.createWindow(config.windowTitle);
     window.setFramerate(0);
@@ -70,27 +70,29 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
     // should not wear the engine's logo, but one that authored no icon still
     // gets an icon rather than a blank.
     const std::filesystem::path projectIcon =
-        Engine::ProjectPaths::assets() / "logo" / "icon.png";
+        Vkm::Engine::ProjectPaths::assets() / "logo" / "icon.png";
     std::error_code iconEc;
     window.setIcon(std::filesystem::exists(projectIcon, iconEc)
         ? projectIcon.string()
-        : (Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_icon.png").string());
+        : (Vkm::Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_icon.png").string());
 
-    auto& cameraController = engine.addSystem<Engine::CameraControllerSystem>(Engine::SystemStage::Input);
-    engine.addSystem<Engine::AsyncLoaderSystem>(Engine::SystemStage::Simulation);
-    engine.addSystem<Engine::BehaviorSystem>(Engine::SystemStage::Simulation);
-    engine.addSystem<Engine::AnimationSystem>(Engine::SystemStage::Simulation);
-    engine.addSystem<Engine::ParticleSystem>(Engine::SystemStage::Simulation);
-    engine.addSystem<Engine::PhysicsSystem>(Engine::SystemStage::Simulation);
-    engine.addSystem<Engine::SkySystem>(Engine::SystemStage::Simulation);
-    engine.addSystem<Engine::HierarchySystem>(Engine::SystemStage::Transform);
-    auto& uiSystem = engine.addSystem<Engine::UISystem>(Engine::SystemStage::Transform);
-    auto& visibilitySystem = engine.addSystem<Engine::VisibilitySystem>(Engine::SystemStage::Visibility);
-    auto& renderSystem     = engine.addSystem<Engine::RenderSystem>(Engine::SystemStage::Render);
+    auto& cameraController =
+        engine.addSystem<Vkm::Engine::CameraControllerSystem>(Vkm::Engine::SystemStage::Input);
+    engine.addSystem<Vkm::Engine::AsyncLoaderSystem>(Vkm::Engine::SystemStage::Simulation);
+    engine.addSystem<Vkm::Engine::BehaviorSystem>(Vkm::Engine::SystemStage::Simulation);
+    engine.addSystem<Vkm::Engine::AnimationSystem>(Vkm::Engine::SystemStage::Simulation);
+    engine.addSystem<Vkm::Engine::ParticleSystem>(Vkm::Engine::SystemStage::Simulation);
+    engine.addSystem<Vkm::Engine::PhysicsSystem>(Vkm::Engine::SystemStage::Simulation);
+    engine.addSystem<Vkm::Engine::SkySystem>(Vkm::Engine::SystemStage::Simulation);
+    engine.addSystem<Vkm::Engine::HierarchySystem>(Vkm::Engine::SystemStage::Transform);
+    auto& uiSystem = engine.addSystem<Vkm::Engine::UISystem>(Vkm::Engine::SystemStage::Transform);
+    auto& visibilitySystem =
+        engine.addSystem<Vkm::Engine::VisibilitySystem>(Vkm::Engine::SystemStage::Visibility);
+    auto& renderSystem = engine.addSystem<Vkm::Engine::RenderSystem>(Vkm::Engine::SystemStage::Render);
 
     // The backend compiles its own shaders and owns its pass pipeline, so no
     // shader-asset registration or pass wiring is needed at the app level.
-    renderSystem.setBackend(std::make_unique<Engine::GLBackend>());
+    renderSystem.setBackend(std::make_unique<Vkm::Engine::GLBackend>());
 
     ensureDefaultUIFont(engine.getResources());
 

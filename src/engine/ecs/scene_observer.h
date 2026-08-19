@@ -2,7 +2,7 @@
 
 #include "ecs/entity.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Observer notified by a Scene when an entity is destroyed.
@@ -26,4 +26,4 @@ struct ISceneObserver {
     virtual void onEntityDestroyed(EntityId id) = 0;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

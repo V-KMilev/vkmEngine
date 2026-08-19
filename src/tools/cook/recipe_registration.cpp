@@ -16,7 +16,7 @@
 #include "loader/texture_loaders.h"
 #include "loader/model_loaders.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -165,4 +165,4 @@ void registerRecipeAssetFactories() {
     assetFactory().createMaterial = &createRecipeMaterial;
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

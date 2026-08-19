@@ -2,7 +2,7 @@
 
 #include "resource/asset/material_asset.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief A projected decal - bullet holes, blood, scorch marks.
@@ -21,4 +21,4 @@ struct Decal {
     float          opacity   = 1.0f;  ///< Overall blend strength.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

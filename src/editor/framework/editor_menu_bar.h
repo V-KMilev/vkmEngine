@@ -4,7 +4,7 @@
 
 namespace Vkm::GL { class Texture2D; }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorContext;
 class SceneIOController;
@@ -41,4 +41,4 @@ class EditorMenuBar {
         bool m_openAbout = false;  ///< About requested this frame; popup opens at menu-bar scope.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -11,12 +11,12 @@ namespace Vkm::GL {
     class ShaderStorageBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
     struct LightData;
     class GLShadowData;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // Mirrors Config::MAX_LIGHTS (the single source of truth, also emitted into
 // shaders/_generated/engine_config.glsl) so the UBO array, the shader's light
@@ -83,4 +83,4 @@ class GLLights {
         LightsBuffer                                m_last{};
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

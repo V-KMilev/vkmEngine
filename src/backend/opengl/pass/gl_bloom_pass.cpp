@@ -14,7 +14,7 @@
 #include "data/gl_bloom.h"
 #include "system/render/render_view.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLBloomPass::GLBloomPass()
     : m_down(std::make_unique<Vkm::GL::Shader>("shaders/bloom/down"))
@@ -73,4 +73,4 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
     endFullscreen(ctx.gl);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

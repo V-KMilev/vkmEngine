@@ -8,7 +8,7 @@
 #include "system/render/render_backend.h"
 #include "debug/profiler.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void RenderSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("RenderSystem");
@@ -55,4 +55,4 @@ void RenderSystem::installPending(FrameContext& ctx) {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

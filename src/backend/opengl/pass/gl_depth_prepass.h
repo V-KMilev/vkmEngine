@@ -9,7 +9,7 @@ namespace Vkm::GL {
     class Shader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Lays down opaque depth before the forward pass for early-Z.
@@ -42,4 +42,4 @@ class GLDepthPrepass : public GLPass {
         std::unique_ptr<Vkm::GL::Shader> m_shader;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

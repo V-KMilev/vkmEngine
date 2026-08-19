@@ -12,12 +12,12 @@ namespace Vkm::GL {
     class UniformBuffer;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
     struct RenderView;
     struct LightData;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // Shadow slots are only ever queried for lights that made the GPU light list.
 constexpr uint32_t SHADOW_MAX_TRACKED_LIGHTS = Config::MAX_LIGHTS;
@@ -239,4 +239,4 @@ class GLShadowData {
         std::vector<CullScratch>           m_scratch;         ///< One workspace per cull task.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

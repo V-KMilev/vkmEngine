@@ -4,7 +4,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Enumeration of light types.
@@ -52,11 +52,11 @@ struct Light {
 
     bool enabled = true;
 };
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Engine::LightType, "Directional", "Point", "Spot", "Rect", "Disk")
+VKM_ENUM_NAMES(::Vkm::Engine::LightType, "Directional", "Point", "Spot", "Rect", "Disk")
 
-VKM_REFLECT_BEGIN(::Engine::Light)
+VKM_REFLECT_BEGIN(::Vkm::Engine::Light)
     VKM_F(type),
     VKM_F(color),
     VKM_F(intensity),

@@ -4,7 +4,7 @@
 
 #include "ecs/entity.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief A resolved (non-trigger) contact between two physics bodies this tick.
@@ -34,4 +34,4 @@ struct TriggerEvent {
     EntityId other;    ///< The collider it overlapped.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

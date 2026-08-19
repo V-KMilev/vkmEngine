@@ -4,7 +4,7 @@
 
 #include "platform/library/dynamic_library.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 
@@ -99,4 +99,4 @@ class ScriptModule {
         int            m_reloadCounter = 0;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

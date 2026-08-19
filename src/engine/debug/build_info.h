@@ -2,7 +2,7 @@
 
 #include "logger.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Log the build banner: what this binary is, and what it is made of.
@@ -27,4 +27,4 @@ inline void printBuildInfo() {
     LOG_INFO_C("BUILD", "---------------------------------");
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

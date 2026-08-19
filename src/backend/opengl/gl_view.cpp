@@ -17,7 +17,7 @@
 #include "data/gl_material.h"
 #include "data/gl_texture.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 template <typename GLT, typename AssetT>
 void GLView::ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, const ResourceManager& resources) {
@@ -198,4 +198,4 @@ const Vkm::GL::Texture2D* GLView::getFontAtlas(const FontHandle& handle) const {
     return &m_fontAtlases.slots[id].gl->getTexture();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

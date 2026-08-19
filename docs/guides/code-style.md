@@ -68,10 +68,10 @@ Every header follows this skeleton, in this exact order:
 6.  (blank line)
 7.  Local project includes
 8.  (blank line)
-9.  namespace Engine {
+9.  namespace Vkm::Engine {
 10. Forward declarations         (if needed, one indent in)
 11. Class / struct / free-function definitions
-12. } // namespace Engine
+12. } // namespace Vkm::Engine
 ```
 
 Forward-declare a type when you only refer to it by **pointer or reference** in
@@ -80,7 +80,7 @@ member, as a base class, or where a template needs the full definition. Forward
 declarations go immediately inside the namespace:
 
 ```cpp
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 class ResourceManager;
@@ -88,7 +88,7 @@ struct Visibility;
 
 struct RenderView { /* ... */ };
 
-} // namespace Engine
+} // namespace Vkm::Engine
 ```
 
 ---
@@ -106,10 +106,10 @@ Every `.cpp` follows this skeleton:
 6.  (blank line)
 7.  Local project includes
 8.  (blank line)
-9.  namespace Engine {
+9.  namespace Vkm::Engine {
 10. (optional) anonymous namespace { ... }   for file-local helpers
 11. Definitions
-12. } // namespace Engine
+12. } // namespace Vkm::Engine
 ```
 
 The **own header is always the first include**, alone on its line. This forces
@@ -135,17 +135,17 @@ from `core/engine.cpp`:
 #include "core/engine_config.h"
 #include "debug/profiler.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 ```
 
 ### 3.1 File-local helpers go in an anonymous namespace
 
 Never use `static` free functions in a `.cpp`. Use an anonymous namespace,
-placed between `namespace Engine {` and the first externally visible
+placed between `namespace Vkm::Engine {` and the first externally visible
 definition:
 
 ```cpp
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -157,7 +157,7 @@ constexpr const char* STAGE_NAMES[] = {
 
 void Engine::run() { /* ... */ }
 
-} // namespace Engine
+} // namespace Vkm::Engine
 ```
 
 Helpers inside an anonymous namespace get no extra prefix (`detail_`,
@@ -178,8 +178,15 @@ Helpers inside an anonymous namespace get no extra prefix (`detail_`,
 | Enum class value | PascalCase                   | `SystemStage::Render`                |
 | Type alias       | PascalCase                   | `EntityId`, `MeshHandle`             |
 | Template param   | single letter or PascalCase  | `T`, `ResourceType`                  |
-| Namespace        | PascalCase                   | `Engine`, `Vkm::GL`, `FrustumCuller` |
+| Namespace        | PascalCase, under `Vkm::`    | `Vkm::Engine`, `Vkm::GL`, `Vkm::Log` |
 | File name        | snake_case                   | `render_view.h`, `gl_forward_pass.cpp` |
+
+Namespaces nest under one umbrella - `Vkm::Engine` for engine code, `Vkm::GL`
+for the vkmGL wrappers, `Vkm::Log` for vkmLog - with helper namespaces nested
+further in (`Vkm::Engine::Math`, `Vkm::Engine::HierarchyOperations`). When a
+file's whole content lives in one, open it in the C++17 one-line form -
+`namespace Vkm::Engine::Math {`, closed by a single `}` - rather than opening
+each level separately.
 
 ### 4.1 The struct/class member rule
 
@@ -492,7 +499,7 @@ variants for runtime-known names.
 
 ## 11. Quick checklist before pushing
 
-- [ ] Header has `#pragma once` and a `} // namespace Engine` close comment.
+- [ ] Header has `#pragma once` and a `} // namespace Vkm::Engine` close comment.
 - [ ] Includes ordered own-header / stdlib / third-party / local, blank line
       between groups.
 - [ ] No tabs, no Unicode, no decorative separator comments.

@@ -10,7 +10,7 @@
 #include "framework/editor_context.h"
 #include "ui/editor_widgets.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void EditorStatusBar::draw(EditorContext& ec) {
     const FrameContext& ctx   = ec.frame;
@@ -95,4 +95,4 @@ void EditorStatusBar::draw(EditorContext& ec) {
     ImGui::PopStyleVar();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -8,7 +8,7 @@
 
 #include "convention/gl_bindings.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 GLClusterGrid::GLClusterGrid()  = default;
 GLClusterGrid::~GLClusterGrid() = default;
@@ -25,4 +25,4 @@ void GLClusterGrid::bind() const {
     if (m_ssbo) m_ssbo->bindBase(GLBindings::SSBOBindingPoints::ClusterGrid);
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

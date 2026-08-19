@@ -7,7 +7,7 @@
 
 #include "gl_shader.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class GLMesh;
 
@@ -82,4 +82,4 @@ class GLCubeConvolver {
         glm::mat4 m_faceViews[6];   ///< origin-eye face views, once.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -4,7 +4,7 @@
 
 #include <glm/gtx/easing.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Type alias for easing function pointers.
@@ -127,4 +127,4 @@ namespace Easing {
 
 } // namespace Easing
 
-} // namespace Engine
+} // namespace Vkm::Engine

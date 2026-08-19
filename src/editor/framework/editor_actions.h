@@ -8,7 +8,7 @@
 
 #include "framework/asset_picker.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class Scene;
 class ResourceManager;
@@ -351,4 +351,4 @@ class PlacePrefabDialog {
 
 } // namespace EditorActions
 
-} // namespace Engine
+} // namespace Vkm::Engine

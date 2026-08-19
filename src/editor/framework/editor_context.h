@@ -2,7 +2,7 @@
 
 #include <imgui.h>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct FrameContext;
 struct EditorState;
@@ -44,4 +44,4 @@ struct EditorContext {
     ImVec2 viewportSize{};
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

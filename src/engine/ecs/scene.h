@@ -15,7 +15,7 @@
 #include "core/memory/sparse_set.h"
 #include "core/memory/types.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Central registry managing entities and an open set of component types.
@@ -426,4 +426,4 @@ class Scene {
         std::vector<ISceneObserver*> m_observers;  ///< Non-owning; each notified on entity destroy.
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

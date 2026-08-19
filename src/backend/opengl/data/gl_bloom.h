@@ -7,7 +7,7 @@
 
 #include "gl_mip_chain_texture.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Mip-chain render target for energy-conserving bloom (COD/Jimenez).
@@ -79,4 +79,4 @@ class GLBloom {
         int m_baseH = 0;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

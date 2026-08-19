@@ -13,7 +13,7 @@
 #include "framework/prefab_overrides.h"
 #include "system/script/script_component.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 // One click policy for every hierarchy row.
@@ -386,4 +386,4 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resour
     ImGui::EndPopup();
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

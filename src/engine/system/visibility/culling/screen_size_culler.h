@@ -5,7 +5,7 @@
 
 #include "system/visibility/visibility_context.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Screen-size culling: reject AABBs that project to fewer than minPixels.
@@ -52,4 +52,4 @@ inline bool isVisible(
 
 } // namespace ScreenSizeCuller
 
-} // namespace Engine
+} // namespace Vkm::Engine

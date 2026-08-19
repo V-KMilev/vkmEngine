@@ -23,7 +23,7 @@
 
 #include "debug/profiler.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 void RenderView::build(
     const Scene& scene,
@@ -229,4 +229,4 @@ void RenderView::buildShadowCasters(const Scene& scene, const Visibility& visibi
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

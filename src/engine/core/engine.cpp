@@ -11,7 +11,7 @@
 #include "debug/profiler.h"
 #include "platform/threading/thread_pool.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 namespace {
 
@@ -138,4 +138,4 @@ void Engine::shutdownSystems() {
     }
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine

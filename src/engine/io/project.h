@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <string>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief What a project.json says about the game it describes.
@@ -45,4 +45,4 @@ bool loadProject(const std::filesystem::path& projectRoot, Project& out);
  */
 std::filesystem::path findProjectRoot(const std::filesystem::path& start);
 
-} // namespace Engine
+} // namespace Vkm::Engine

@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Shared cubemap capture basis for the IBL + reflection-probe bakers.
@@ -49,4 +49,4 @@ inline glm::mat4 convolveProjection() {
 
 } // namespace GLCubemap
 
-} // namespace Engine
+} // namespace Vkm::Engine

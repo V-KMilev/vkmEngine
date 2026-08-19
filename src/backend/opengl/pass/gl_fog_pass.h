@@ -8,7 +8,7 @@ namespace Vkm::GL {
     class ComputeShader;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Froxel volumetric fog compute: injection + integration.
@@ -36,4 +36,4 @@ class GLFogPass : public GLPass {
         std::unique_ptr<Vkm::GL::ComputeShader> m_integrate;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

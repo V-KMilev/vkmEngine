@@ -20,7 +20,7 @@ namespace Vkm::GL {
     class Texture2D;
 }
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class GLView;
 class GLIBL;
@@ -118,4 +118,4 @@ class GLPreview {
         std::unordered_map<uint64_t, std::unique_ptr<Entry>> m_entries;
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

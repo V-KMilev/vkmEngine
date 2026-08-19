@@ -1,6 +1,6 @@
 #pragma once
 
-namespace Engine {
+namespace Vkm::Engine {
 
 struct EditorContext;
 
@@ -17,4 +17,4 @@ class EditorStatusBar {
         void draw(EditorContext& ec);
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine

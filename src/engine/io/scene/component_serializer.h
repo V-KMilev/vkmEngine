@@ -24,7 +24,7 @@
 #include "ecs/component/ui_button.h"
 #include "system/script/script_component.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 class ResourceManager;
 
@@ -144,4 +144,4 @@ namespace ComponentSerializer {
 
 } // namespace ComponentSerializer
 
-} // namespace Engine
+} // namespace Vkm::Engine

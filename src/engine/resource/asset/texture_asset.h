@@ -7,7 +7,7 @@
 #include "resource/resource_handle.h"
 #include "resource/texture_format.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief Texture asset combining Resource tracking with engine-level texture parameters.
@@ -25,4 +25,4 @@ struct TextureAsset : public Resource {
 
 using TextureHandle = Handle<TextureAsset>;
 
-} // namespace Engine
+} // namespace Vkm::Engine

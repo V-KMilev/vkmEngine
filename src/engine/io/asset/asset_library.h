@@ -8,7 +8,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief The asset kinds that live in the library (shaders stay source-referenced and
@@ -129,6 +129,6 @@ class AssetLibrary {
         std::unordered_map<std::string, AssetRecord> m_records;  ///< keyed by key(type,name)
 };
 
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Engine::AssetType, "mesh", "texture", "material")
+VKM_ENUM_NAMES(::Vkm::Engine::AssetType, "mesh", "texture", "material")

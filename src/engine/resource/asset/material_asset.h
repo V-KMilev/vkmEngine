@@ -11,7 +11,7 @@
 
 #include "core/reflect.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 /**
  * @brief How the renderer draws a material - render path, not shading.
@@ -99,11 +99,11 @@ using MaterialHandle = Handle<MaterialAsset>;
 // Plain (non-texture) fields, driven by reflection in AssetSerializer's
 // materialToInline / applyInline. Texture handles are intentionally
 // absent - they serialize separately as name refs.
-} // namespace Engine
+} // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Engine::MaterialType, "Opaque", "Transparent", "Unlit", "AlphaMask")
+VKM_ENUM_NAMES(::Vkm::Engine::MaterialType, "Opaque", "Transparent", "Unlit", "AlphaMask")
 
-VKM_REFLECT_BEGIN(::Engine::MaterialAsset)
+VKM_REFLECT_BEGIN(::Vkm::Engine::MaterialAsset)
     VKM_F(type),
     VKM_F(alphaCutoff),
     VKM_F(albedo),

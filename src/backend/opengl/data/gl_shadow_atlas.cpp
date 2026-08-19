@@ -11,7 +11,7 @@
 #include "texture/gl_texture_cube.h"
 #include "core/engine_config.h"
 
-namespace Engine {
+namespace Vkm::Engine {
 
 // The 2D atlas must have a tile for every directional/spot caster the shadow
 // planner can hand out. Enforce the capacity invariant at compile time so a bump
@@ -119,4 +119,4 @@ glm::vec2 GLShadowAtlas::tileUVScale() {
     return glm::vec2(1.0f / static_cast<float>(SHADOW_ATLAS_COLS), 1.0f / static_cast<float>(SHADOW_ATLAS_ROWS));
 }
 
-} // namespace Engine
+} // namespace Vkm::Engine
