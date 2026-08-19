@@ -157,6 +157,9 @@ void load(const nlohmann::json& j, Light& l) { loadReflected(j, l); }
 nlohmann::json save(const Rigidbody& rb)          { return saveReflected(rb); }
 void load(const nlohmann::json& j, Rigidbody& rb) { loadReflected(j, rb); }
 
+nlohmann::json save(const CharacterController& cc)          { return saveReflected(cc); }
+void load(const nlohmann::json& j, CharacterController& cc) { loadReflected(j, cc); }
+
 nlohmann::json save(const Collider& c) {
     nlohmann::json j = saveReflected(c);   // isTrigger + enabled
     nlohmann::json arr = nlohmann::json::array();

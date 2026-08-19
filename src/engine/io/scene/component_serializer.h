@@ -6,6 +6,7 @@
 #include "ecs/component/animation.h"
 #include "ecs/component/animator.h"
 #include "ecs/component/camera.h"
+#include "ecs/component/character_controller.h"
 #include "ecs/component/collider.h"
 #include "ecs/component/decal.h"
 #include "ecs/component/lod.h"
@@ -73,8 +74,21 @@ namespace ComponentSerializer {
     nlohmann::json save(const Rigidbody&);
     void load(const nlohmann::json&, Rigidbody&);
 
+    /**
+     * @brief Collider: each part's shape tag plus the fields of every shape.
+     */
     nlohmann::json save(const Collider&);
     void load(const nlohmann::json&, Collider&);
+
+    /**
+     * @brief CharacterController: the tuning only.
+     *
+     * moveInput, jumpRequested, grounded and groundNormal are per-tick traffic
+     * between gameplay, the system and the solver - a scene row holding a half
+     * consumed jump request would replay it on load.
+     */
+    nlohmann::json save(const CharacterController&);
+    void load(const nlohmann::json&, CharacterController&);
 
     nlohmann::json save(const Mesh&, const ResourceManager&);
     void load(const nlohmann::json&, Mesh&, const ResourceManager&);
