@@ -305,7 +305,7 @@ float specularAA(vec3 N, float roughness) {
 
 #include "../../_common/brdf.glsl"  // distributionGGX (takes the GGX alpha)
 #include "../../_common/sh_l1.glsl"  // SH_Y*/SH_A*: the irradiance-volume projection <-> evaluation contract
-#include "../../_generated/render_modes.glsl"  // SH_Y*/SH_A*: the irradiance-volume projection <-> evaluation contract
+#include "../../_generated/render_modes.glsl"  // MODE_*, generated from the RenderMode enum
 
 // Height-correlated Smith visibility (already folds in the 1/(4 NoL NoV)).
 float visSmithCorrelated(float NdotV, float NdotL, float a) {
@@ -404,6 +404,31 @@ mat3 ltcTangentFrame(vec3 N, vec3 V) {
     return transpose(mat3(T1, T2, N));
 }
 
+// Unit normal of an area emitter's plane, from its two half-extent axes. The
+// clamp keeps a degenerate emitter (zero extent on an axis) from dividing by
+// zero; the sign follows the cross order the caller chose.
+vec3 areaPlaneNormal(vec3 axisU, vec3 axisV) {
+    vec3 n = cross(axisU, axisV);
+    float nLen2 = max(dot(n, n), 1e-12);
+    return n / sqrt(nLen2);
+}
+
+// Where a ray meets that plane. Forward intersection, falling back - when the
+// ray runs parallel to the plane or points away from it - to the point on the
+// forward ray nearest the emitter's centre. Either way the caller clamps the
+// result onto the emitter, so the fallback degrades to a sensible point source
+// instead of a hit behind the camera.
+vec3 areaPlaneHit(vec3 rayOrigin, vec3 rayDir, vec3 center, vec3 n) {
+    float denom = dot(rayDir, n);
+    float t = (abs(denom) > 1e-4)
+        ? dot(center - rayOrigin, n) / denom
+        : -1.0;
+    if (t <= 0.0) {
+        t = max(0.0, dot(center - rayOrigin, rayDir));
+    }
+    return rayOrigin + rayDir * t;
+}
+
 // Representative-point specular for area lights (Karis 2013).
 //
 // Find the point on the area emitter closest to the mirror reflection ray;
@@ -418,20 +443,7 @@ vec3 areaRectClosestPoint(vec3 rayOrigin, vec3 rayDir,
 {
     // Plane of the rect: normal is U x V (sign matches the light's forward,
     // since axisU/axisV are derived from the same rotation).
-    vec3 n = cross(axisU, axisV);
-    float nLen2 = max(dot(n, n), 1e-12);
-    n /= sqrt(nLen2);
-
-    // Forward ray-plane intersection; fall back to the closest-point-on-ray
-    // when the ray runs parallel or away from the plane.
-    float denom = dot(rayDir, n);
-    float t = (abs(denom) > 1e-4)
-        ? dot(center - rayOrigin, n) / denom
-        : -1.0;
-    if (t <= 0.0) {
-        t = max(0.0, dot(center - rayOrigin, rayDir));
-    }
-    vec3 hit = rayOrigin + rayDir * t;
+    vec3 hit = areaPlaneHit(rayOrigin, rayDir, center, areaPlaneNormal(axisU, axisV));
 
     // Clamp the hit into the rect's (U, V) extents. axisU / axisV are
     // half-extents already, so their magnitudes are the rect's bounds in
@@ -452,18 +464,8 @@ vec3 areaDiskClosestPoint(vec3 rayOrigin, vec3 rayDir,
     // Disk plane (axisU / axisV have equal magnitude = disk radius, so the
     // cross product is a clean normal regardless of which one happens to
     // align with the user-authored rotation).
-    vec3 n = cross(axisU, axisV);
-    float nLen2 = max(dot(n, n), 1e-12);
-    n /= sqrt(nLen2);
-
-    float denom = dot(rayDir, n);
-    float t = (abs(denom) > 1e-4)
-        ? dot(center - rayOrigin, n) / denom
-        : -1.0;
-    if (t <= 0.0) {
-        t = max(0.0, dot(center - rayOrigin, rayDir));
-    }
-    vec3 hit = rayOrigin + rayDir * t;
+    vec3 n   = areaPlaneNormal(axisU, axisV);
+    vec3 hit = areaPlaneHit(rayOrigin, rayDir, center, n);
 
     // Project the offset into the disk plane and clamp to the radius.
     vec3 d = hit - center;
