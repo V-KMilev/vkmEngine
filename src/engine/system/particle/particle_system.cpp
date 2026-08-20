@@ -6,9 +6,9 @@
 #include "core/clock.h"
 #include "core/math/random.h"
 #include "ecs/scene.h"
-#include "ecs/component/particle_emitter.h"
-#include "ecs/component/transform.h"
-#include "ecs/component/world_transform.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/core/world_transform.h"
+#include "ecs/component/render/particle_emitter.h"
 
 #include "debug/profiler.h"
 

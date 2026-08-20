@@ -15,9 +15,9 @@
 #include "logger.h"
 
 #include "ecs/scene.h"
-#include "ecs/component/hierarchy.h"
-#include "ecs/component/prefab_entity.h"
-#include "ecs/component/prefab_instance.h"
+#include "ecs/component/core/hierarchy.h"
+#include "ecs/component/prefab/prefab_entity.h"
+#include "ecs/component/prefab/prefab_instance.h"
 #include "io/asset/asset_serializer.h"
 #include "io/project_paths.h"
 #include "io/json_file.h"

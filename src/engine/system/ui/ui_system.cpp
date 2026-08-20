@@ -3,11 +3,11 @@
 #include <algorithm>
 
 #include "ecs/scene.h"
-#include "ecs/component/ui_canvas.h"
-#include "ecs/component/ui_element.h"
-#include "ecs/component/ui_image.h"
-#include "ecs/component/ui_text.h"
-#include "ecs/component/ui_button.h"
+#include "ecs/component/ui/ui_button.h"
+#include "ecs/component/ui/ui_canvas.h"
+#include "ecs/component/ui/ui_element.h"
+#include "ecs/component/ui/ui_image.h"
+#include "ecs/component/ui/ui_text.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/font_asset.h"
 #include "core/event/event_bus.h"

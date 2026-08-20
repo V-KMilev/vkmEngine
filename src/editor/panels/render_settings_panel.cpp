@@ -7,7 +7,7 @@
 #include "framework/editor_context.h"
 
 #include "ecs/scene.h"
-#include "ecs/component/reflection_probe.h"
+#include "ecs/component/render/reflection_probe.h"
 #include "system/render/render_system.h"
 #include "system/visibility/visibility_system.h"
 

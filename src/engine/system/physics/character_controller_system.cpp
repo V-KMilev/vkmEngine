@@ -12,9 +12,9 @@
 
 #include "core/clock.h"
 #include "debug/profiler.h"
-#include "ecs/component/character_controller.h"
-#include "ecs/component/collider.h"
-#include "ecs/component/rigidbody.h"
+#include "ecs/component/physics/character_controller.h"
+#include "ecs/component/physics/collider.h"
+#include "ecs/component/physics/rigidbody.h"
 #include "ecs/scene.h"
 
 namespace Vkm::Engine {

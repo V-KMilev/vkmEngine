@@ -18,7 +18,7 @@ overlays.
 
 ```
 VisibilitySystem::update(ctx)
-  1. Find the active camera via `findActiveCamera` (`ecs/component/camera.h`):
+  1. Find the active camera via `findActiveCamera` (`ecs/component/render/camera.h`):
      a cached EntityId as the O(1) hint, full scan only on a miss. The same
      function answers for the editor's fly controls and for a scene load, so
      what you fly and what renders cannot drift apart.
@@ -88,7 +88,7 @@ full Mesh set, and `RenderView::build` copies it into the view. See
 
 ## Level of detail
 
-An entity with an `LOD` component (`ecs/component/lod.h`) draws coarser
+An entity with an `LOD` component (`ecs/component/render/lod.h`) draws coarser
 geometry as it recedes. Selection happens inside the cull rather than in a
 pass of its own: the cull already has the camera distance and already runs in
 parallel, so LOD costs one comparison per surviving entity.

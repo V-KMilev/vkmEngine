@@ -8,7 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "ecs/entity.h"
-#include "ecs/component/prefab_instance.h"
+#include "ecs/component/prefab/prefab_instance.h"
 #include "io/scene/component_serializer.h"
 
 #include "framework/command.h"

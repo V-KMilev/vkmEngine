@@ -1,4 +1,4 @@
-#include "ecs/component/animator.h"
+#include "ecs/component/animation/animator.h"
 
 namespace Vkm::Engine {
 

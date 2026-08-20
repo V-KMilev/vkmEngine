@@ -11,10 +11,10 @@
 
 #include "logger.h"
 
-#include "ecs/component/animator.h"
-#include "ecs/component/decal.h"
-#include "ecs/component/lod.h"
-#include "ecs/component/mesh.h"
+#include "ecs/component/animation/animator.h"
+#include "ecs/component/render/decal.h"
+#include "ecs/component/render/lod.h"
+#include "ecs/component/render/mesh.h"
 #include "ecs/scene.h"
 #include "resource/resource_manager.h"
 #include "io/asset/asset_cook.h"

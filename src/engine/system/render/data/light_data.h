@@ -2,7 +2,7 @@
 
 #include <glm/glm.hpp>
 
-#include "ecs/component/light.h"
+#include "ecs/component/render/light.h"
 
 namespace Vkm::Engine {
 

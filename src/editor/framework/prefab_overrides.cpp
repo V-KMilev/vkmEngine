@@ -6,8 +6,8 @@
 #include <utility>
 
 #include "ecs/scene.h"
-#include "ecs/component/hierarchy.h"
-#include "ecs/component/prefab_entity.h"
+#include "ecs/component/core/hierarchy.h"
+#include "ecs/component/prefab/prefab_entity.h"
 #include "io/scene/prefab.h"
 #include "system/hierarchy/hierarchy_operations.h"
 

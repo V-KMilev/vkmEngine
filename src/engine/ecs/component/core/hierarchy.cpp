@@ -1,4 +1,4 @@
-#include "ecs/component/hierarchy.h"
+#include "ecs/component/core/hierarchy.h"
 
 #include "ecs/scene.h"
 

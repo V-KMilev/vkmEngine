@@ -7,8 +7,8 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "ecs/scene.h"
-#include "ecs/component/light.h"
-#include "ecs/component/transform.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/render/light.h"
 
 namespace Vkm::Engine {
 

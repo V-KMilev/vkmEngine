@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ecs/component/animator.h"
+#include "ecs/component/animation/animator.h"
 #include "system/animation/pose_buffer.h"
 
 namespace Vkm::Engine {

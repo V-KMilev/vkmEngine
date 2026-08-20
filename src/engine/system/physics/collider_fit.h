@@ -4,7 +4,7 @@
 
 #include <glm/glm.hpp>
 
-#include "ecs/component/collider.h"
+#include "ecs/component/physics/collider.h"
 
 namespace Vkm::Engine {
 

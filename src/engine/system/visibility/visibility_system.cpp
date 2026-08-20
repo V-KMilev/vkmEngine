@@ -13,11 +13,11 @@
 
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
-#include "ecs/component/mesh.h"
-#include "ecs/component/lod.h"
-#include "ecs/component/camera.h"
-#include "ecs/component/transform.h"
-#include "ecs/component/world_transform.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/core/world_transform.h"
+#include "ecs/component/render/camera.h"
+#include "ecs/component/render/lod.h"
+#include "ecs/component/render/mesh.h"
 
 #include "core/math/bounds.h"
 #include "system/animation/pose_buffer.h"
