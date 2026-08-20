@@ -7,7 +7,7 @@
 
 #include "l_assert.h"
 
-#include "ecs/component/hierarchy.h"
+#include "ecs/component/core/hierarchy.h"
 #include "ecs/environment.h"
 #include "ecs/entity.h"
 #include "ecs/scene_observer.h"

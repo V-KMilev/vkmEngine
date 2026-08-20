@@ -12,9 +12,9 @@
 
 #include "core/clock.h"
 #include "core/system.h"
-#include "ecs/component/camera.h"
-#include "ecs/component/transform.h"
-#include "ecs/component/name.h"
+#include "ecs/component/core/name.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/render/camera.h"
 #include "ecs/scene.h"
 #include "framework/editor_state.h"
 #include "framework/material_preview_session.h"

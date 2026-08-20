@@ -7,7 +7,7 @@
 
 #include <glm/glm.hpp>
 
-#include "ecs/component/transform.h"
+#include "ecs/component/core/transform.h"
 #include "resource/resource.h"
 #include "resource/resource_handle.h"
 

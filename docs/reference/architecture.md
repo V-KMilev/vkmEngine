@@ -134,7 +134,12 @@ Engine code, single include root `src/engine/`:
 | `core/math/`               | math helpers (rotation, axes, random, easing)                            |
 | `core/memory/`             | `TypeId`, `SparseSet`, `SlotAllocator`, `StorageIndex`                   |
 | `ecs/`                     | `Scene`, `EntityId`, `Environment`                                        |
-| `ecs/component/`           | `Transform`, `WorldTransform`, `Camera`, `Mesh`, `Light`, `Animation`, `Animator`, `Hierarchy`, `Name`, `Collider`, `RigidBody`, `CharacterController`, `PhysicsWorld`, `ReflectionProbe` |
+| `ecs/component/core/`      | `Transform`, `WorldTransform`, `Hierarchy`, `Name`                       |
+| `ecs/component/render/`    | `Mesh`, `Light`, `Camera`, `Decal`, `LOD`, `ParticleEmitter`, `ReflectionProbe`, `IrradianceVolume` |
+| `ecs/component/animation/` | `Animation`, `Animator`                                                  |
+| `ecs/component/physics/`   | `Rigidbody`, `Collider`, `CharacterController`                           |
+| `ecs/component/ui/`        | `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton`                 |
+| `ecs/component/prefab/`    | `PrefabEntity`, `PrefabInstance`                                         |
 | `system/animation/`        | `AnimationSystem`, `AnimationTrack`, `SkeletalAnimationSystem`, `PoseBuffer`, `composePose` |
 | `system/async/`            | `AsyncLoaderSystem`                                                      |
 | `system/camera/`           | `CameraControllerSystem`                                                       |
@@ -191,7 +196,7 @@ Engine includes use module-qualified paths from `src/engine/`:
 ```cpp
 #include "core/engine.h"
 #include "ecs/scene.h"
-#include "ecs/component/transform.h"
+#include "ecs/component/core/transform.h"
 #include "system/render/render_view.h"
 #include "resource/asset/mesh_asset.h"
 ```

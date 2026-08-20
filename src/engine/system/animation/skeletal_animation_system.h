@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "core/system.h"
-#include "ecs/component/animator.h"
+#include "ecs/component/animation/animator.h"
 #include "ecs/entity.h"
 #include "system/animation/pose_buffer.h"
 

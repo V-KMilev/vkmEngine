@@ -25,7 +25,7 @@
 #include "resource/asset/font_asset.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "io/scene/prefab.h"
-#include "ecs/component/prefab_instance.h"
+#include "ecs/component/prefab/prefab_instance.h"
 
 namespace Vkm::Engine::SceneSerializer {
 

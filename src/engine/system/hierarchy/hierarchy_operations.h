@@ -3,8 +3,8 @@
 #include <glm/glm.hpp>
 
 #include "ecs/scene.h"
-#include "ecs/component/hierarchy.h"
-#include "ecs/component/transform.h"
+#include "ecs/component/core/hierarchy.h"
+#include "ecs/component/core/transform.h"
 
 namespace Vkm::Engine::HierarchyOperations {
 

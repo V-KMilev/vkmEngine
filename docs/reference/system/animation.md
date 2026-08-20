@@ -15,11 +15,11 @@ time-scale / single-step apply uniformly. They do not overlap:
 - `src/engine/system/animation/animation_system.h` - AnimationSystem
 - `src/engine/system/animation/animation_track.h` - AnimationTrack<T> (keyframe storage lives here)
 - `src/engine/core/math/easing.h` - easing functions (interpolation curves)
-- `src/engine/ecs/component/animation.h` - Animation component
+- `src/engine/ecs/component/animation/animation.h` - Animation component
 - `src/engine/system/animation/skeletal_animation_system.h` - SkeletalAnimationSystem
 - `src/engine/system/animation/pose_evaluator.h` - `advancePlayback` + `composePose`
 - `src/engine/system/animation/pose_buffer.h` - PoseSlice, PoseWrite, PoseBuffer
-- `src/engine/ecs/component/animator.h` - Animator component
+- `src/engine/ecs/component/animation/animator.h` - Animator component
 - `src/backend/opengl/data/gl_skin_palette.h` - GLSkinPalette (the frame's palettes, SSBO 5)
 - `shaders/_common/skinning.glsl` - the vertex-stage skinning contract
 

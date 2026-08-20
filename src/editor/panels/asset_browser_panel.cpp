@@ -7,7 +7,7 @@
 #include <type_traits>
 #include <unordered_set>
 
-#include "ecs/component/decal.h"
+#include "ecs/component/render/decal.h"
 #include "framework/editor_common.h"
 #include "framework/editor_actions.h"
 #include "framework/editor_commands.h"
