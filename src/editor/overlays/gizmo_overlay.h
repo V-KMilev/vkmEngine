@@ -6,7 +6,7 @@
 #include <imgui.h>
 
 #include "ecs/entity.h"
-#include "ecs/component/transform.h"
+#include "ecs/component/core/transform.h"
 #include "gizmo/transform_gizmo.h"
 
 namespace Vkm::Engine {

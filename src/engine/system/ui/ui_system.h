@@ -6,7 +6,7 @@
 
 #include "core/system.h"
 #include "ecs/entity.h"
-#include "ecs/component/ui_element.h"
+#include "ecs/component/ui/ui_element.h"
 #include "system/ui/ui_draw_data.h"
 
 namespace Vkm::Engine {

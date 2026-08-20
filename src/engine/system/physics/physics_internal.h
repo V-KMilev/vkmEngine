@@ -5,7 +5,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include "ecs/component/collider.h"
+#include "ecs/component/physics/collider.h"
 
 namespace Vkm::Engine {
 

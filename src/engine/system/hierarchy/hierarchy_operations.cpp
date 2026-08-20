@@ -4,7 +4,7 @@
 
 #include "logger.h"
 
-#include "ecs/component/world_transform.h"
+#include "ecs/component/core/world_transform.h"
 
 namespace Vkm::Engine::HierarchyOperations {
 

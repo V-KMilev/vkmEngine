@@ -6,8 +6,8 @@
 
 #include <nlohmann/json.hpp>
 
-#include "ecs/component/lod.h"
-#include "ecs/component/prefab_instance.h"
+#include "ecs/component/prefab/prefab_instance.h"
+#include "ecs/component/render/lod.h"
 #include "ecs/scene.h"
 #include "io/scene/component_serializer.h"
 #include "io/scene/prefab.h"

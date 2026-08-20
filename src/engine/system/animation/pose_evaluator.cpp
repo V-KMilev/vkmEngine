@@ -7,7 +7,7 @@
 
 #include <glm/gtc/quaternion.hpp>
 
-#include "ecs/component/transform.h"
+#include "ecs/component/core/transform.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/skeleton_asset.h"
 

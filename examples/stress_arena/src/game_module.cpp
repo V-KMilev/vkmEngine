@@ -4,9 +4,9 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "ecs/scene.h"
-#include "ecs/component/camera.h"
-#include "ecs/component/name.h"
-#include "ecs/component/transform.h"
+#include "ecs/component/core/name.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/render/camera.h"
 #include "system/script/behavior_registry.h"
 #include "system/script/script_component.h"
 

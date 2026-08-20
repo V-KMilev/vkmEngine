@@ -12,9 +12,9 @@
 
 #include "logger.h"
 
-#include "ecs/component/camera.h"
+#include "ecs/component/render/camera.h"
 #include "ecs/environment.h"
-#include "ecs/component/transform.h"
+#include "ecs/component/core/transform.h"
 #include "io/json_vec.h"
 #include "core/reflect.h"
 #include "resource/resource_manager.h"

@@ -7,7 +7,7 @@
 #include "debug/profiler.h"
 #include "platform/threading/thread_pool.h"
 
-#include "ecs/component/world_transform.h"
+#include "ecs/component/core/world_transform.h"
 
 namespace Vkm::Engine {
 

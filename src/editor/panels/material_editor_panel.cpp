@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-#include "ecs/component/decal.h"
+#include "ecs/component/render/decal.h"
 #include "framework/editor_common.h"
 #include "framework/editor_commands.h"
 #include "ui/editor_dialogs.h"
