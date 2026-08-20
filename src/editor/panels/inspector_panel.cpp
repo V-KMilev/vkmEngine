@@ -465,40 +465,65 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
                                                     "is not stored in the scene");
         };
 
+        // Headings rather than submenus, because the filter searches the whole
+        // list at once and a match buried in a collapsed submenu could not be
+        // reached. A heading is held back until an item under it actually
+        // draws, so a section the entity already carries in full - or one the
+        // filter emptied - never labels a gap.
+        const char* pendingSection = nullptr;
+        bool        sectionDrawn   = false;
+        const auto section = [&](const char* label) { pendingSection = label; };
+        const auto drawPendingSection = [&] {
+            if (pendingSection == nullptr) return;
+            if (sectionDrawn) ImGui::Spacing();
+            sectionLabel(pendingSection);
+            pendingSection = nullptr;
+            sectionDrawn   = true;
+        };
+
         // Each add routes through AddComponentCommand so undo can drop the
         // component the user just added; the type is deduced from the
         // prototype value.
         auto addItem = [&](const char* label, auto value, const char* addLabel) {
             using T = decltype(value);
+            if (scene.has<T>(id)) return;
             if (!matchesFilter(label, s_componentFilter)) return;
-            if (!scene.has<T>(id) && ImGui::MenuItem(label)) {
-                scene.add(id, value);
-                state.commands.push(std::make_unique<AddComponentCommand<T>>(id, std::move(value), addLabel));
-                state.markSceneDirty();
-                warnPrefabOnly(label);
-            }
+
+            drawPendingSection();
+            if (!ImGui::MenuItem(label)) return;
+
+            scene.add(id, value);
+            state.commands.push(std::make_unique<AddComponentCommand<T>>(id, std::move(value), addLabel));
+            state.markSceneDirty();
+            warnPrefabOnly(label);
         };
 
+        // Sections, and the order within them, are the subject folders of
+        // ecs/component/ - the menu and the tree teach one structure. The core
+        // and prefab folders are absent on purpose: an entity is born with the
+        // first, and only the prefab path writes the second.
+        section("Render");
         addItem("Mesh", Mesh{}, "Add Mesh");
         addItem("Light", generateLight(LightType::Point), "Add Light");
-        addItem("Rigidbody", Rigidbody{}, "Add Rigidbody");
-        addItem("Collider", Collider{}, "Add Collider");
         Camera cam;
         cam.active = false;
         addItem("Camera", cam, "Add Camera");
-        addItem("Reflection Probe", ReflectionProbe{}, "Add Reflection Probe");
         addItem("Decal", Decal{}, "Add Decal");
-        addItem("Particle Emitter", ParticleEmitter{}, "Add Particle Emitter");
-        addItem("Irradiance Volume", IrradianceVolume{}, "Add Irradiance Volume");
         addItem("LOD", LOD{}, "Add LOD");
+        addItem("Particle Emitter", ParticleEmitter{}, "Add Particle Emitter");
+        addItem("Reflection Probe", ReflectionProbe{}, "Add Reflection Probe");
+        addItem("Irradiance Volume", IrradianceVolume{}, "Add Irradiance Volume");
+
+        section("Animation");
         addItem("Animation", Animation{}, "Add Animation");
         addItem("Animator", Animator{}, "Add Animator");
+
+        section("Physics");
+        addItem("Rigidbody", Rigidbody{}, "Add Rigidbody");
+        addItem("Collider", Collider{}, "Add Collider");
         addItem("Character Controller", CharacterController{}, "Add Character Controller");
 
-        if (s_componentFilter[0] == '\0') {
-            ImGui::Separator();
-            sectionLabel("UI");
-        }
+        section("UI");
         addItem("UI Canvas", UICanvas{}, "Add UI Canvas");
         addItem("UI Element", UIElement{}, "Add UI Element");
         addItem("UI Image", UIImage{}, "Add UI Image");
@@ -507,11 +532,14 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
 
         // ScriptComponent is move-only, so it can't ride the (value-copying)
         // AddComponentCommand - add it live, like the World/Physics edits.
-        if (matchesFilter("Script", s_componentFilter)
-            && !scene.has<ScriptComponent>(id) && ImGui::MenuItem("Script")) {
-            scene.add(id, ScriptComponent{});
-            state.markSceneDirty();
-            warnPrefabOnly("Script");
+        section("Script");
+        if (!scene.has<ScriptComponent>(id) && matchesFilter("Script", s_componentFilter)) {
+            drawPendingSection();
+            if (ImGui::MenuItem("Script")) {
+                scene.add(id, ScriptComponent{});
+                state.markSceneDirty();
+                warnPrefabOnly("Script");
+            }
         }
         ImGui::EndPopup();
     }
