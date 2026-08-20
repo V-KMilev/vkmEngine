@@ -8,7 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "ecs/entity.h"
-#include "ecs/component/prefab_instance.h"
+#include "ecs/component/prefab/prefab_instance.h"
 #include "io/scene/component_serializer.h"
 
 #include "framework/command.h"
@@ -173,6 +173,8 @@ namespace PrefabOverrides {
     template <> inline constexpr const char* COMPONENT_KEY<IrradianceVolume> = "IrradianceVolume";
     template <> inline constexpr const char* COMPONENT_KEY<ReflectionProbe>  = "ReflectionProbe";
     template <> inline constexpr const char* COMPONENT_KEY<Animation>        = "Animation";
+    template <> inline constexpr const char* COMPONENT_KEY<Animator>         = "Animator";
+    template <> inline constexpr const char* COMPONENT_KEY<CharacterController> = "CharacterController";
     template <> inline constexpr const char* COMPONENT_KEY<UICanvas>         = "UICanvas";
     template <> inline constexpr const char* COMPONENT_KEY<UIElement>        = "UIElement";
     template <> inline constexpr const char* COMPONENT_KEY<UIImage>          = "UIImage";
@@ -182,8 +184,8 @@ namespace PrefabOverrides {
     /**
      * @brief Serialize a component the way the scene serializer would.
      *
-     * Mesh, LOD and Decal reference assets by handle and resolve a name through
-     * the manager; every other component writes itself.
+     * Mesh, LOD, Decal and Animator reference assets by handle and resolve a
+     * name through the manager; every other component writes itself.
      *
      * @tparam T Component type.
      * @param component Value to serialize.
@@ -193,7 +195,7 @@ namespace PrefabOverrides {
     template <typename T>
     nlohmann::json serialize(const T& component, const ResourceManager& resources) {
         if constexpr (std::is_same_v<T, Mesh> || std::is_same_v<T, LOD> ||
-                      std::is_same_v<T, Decal>) {
+                      std::is_same_v<T, Decal> || std::is_same_v<T, Animator>) {
             return ComponentSerializer::save(component, resources);
         } else {
             return ComponentSerializer::save(component);

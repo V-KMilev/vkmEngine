@@ -173,6 +173,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         ImGui::Separator();
         ImGui::MenuItem("Show Colliders", nullptr, &state.showColliders);
         ImGui::MenuItem("Show Bounds",    nullptr, &state.showBounds);
+        ImGui::MenuItem("Show Skeletons", nullptr, &state.showSkeletons);
         ImGui::EndMenu();
     }
 

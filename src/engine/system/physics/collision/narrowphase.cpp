@@ -1,8 +1,10 @@
 #include "system/physics/collision/narrowphase.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
+#include <utility>
 
 #include <glm/glm.hpp>
 
@@ -227,6 +229,143 @@ int faceContact(const BoxShape& a, const BoxShape& b, int caseIndex, const glm::
     return count;
 }
 
+/**
+ * @brief Closest point on segment [a, b] to @p p.
+ *
+ * Collapses to @p a for a degenerate segment, which is what makes a
+ * zero-length capsule (a sphere) need no special case anywhere above.
+ *
+ * @param a Segment start.
+ * @param b Segment end.
+ * @param p Point to close on.
+ * @return The closest point, on the segment.
+ */
+glm::vec3 closestPointOnSegment(const glm::vec3& a, const glm::vec3& b, const glm::vec3& p) {
+    const glm::vec3 d = b - a;
+    const float len2 = glm::dot(d, d);
+    if (len2 <= EPS) return a;
+    return a + d * glm::clamp(glm::dot(p - a, d) / len2, 0.0f, 1.0f);
+}
+
+// Runaway guard on the capsule-box alternating projection, not its convergence
+// policy - the step test inside the loop is what normally ends it, after about
+// seven passes. A segment running nearly tangent to a face converges slowly and
+// wants hundreds, so this is set well above the average rather than near it: a
+// run that stops early answers a distance LARGER than the real one, and the
+// radius test reads that as no contact for an overlap that is really there.
+constexpr int MAX_PROJECTION_PASSES = 64;
+
+/**
+ * @brief Closest point on segment [pa, pb] to an axis-aligned box of half-extents
+ * @p h centred on the origin.
+ *
+ * Alternating projection: clamp the current segment point into the box, then
+ * re-close onto the segment. Both sets are convex so this converges, and the
+ * step test is what says when - the pass cap only stops a runaway.
+ *
+ * @param pa Segment start, in the box's local frame.
+ * @param pb Segment end, in the box's local frame.
+ * @param h Box half-extents.
+ * @return The closest point, on the segment, in the same local frame.
+ */
+glm::vec3 closestOnSegmentToBox(const glm::vec3& pa, const glm::vec3& pb, const glm::vec3& h) {
+    glm::vec3 p = closestPointOnSegment(pa, pb, glm::vec3(0.0f));
+    for (int i = 0; i < MAX_PROJECTION_PASSES; ++i) {
+        const glm::vec3 next = closestPointOnSegment(pa, pb, glm::clamp(p, -h, h));
+        const glm::vec3 step = next - p;
+        p = next;
+        if (glm::dot(step, step) <= EPS) break;
+    }
+    return p;
+}
+
+/**
+ * @brief Any unit vector perpendicular to @p v.
+ *
+ * Crosses against whichever world axis @p v leans on least, so the cross
+ * product never degenerates.
+ */
+glm::vec3 perpendicularTo(const glm::vec3& v) {
+    const glm::vec3 ref = std::fabs(v.x) < std::fabs(v.y) && std::fabs(v.x) < std::fabs(v.z)
+        ? glm::vec3(1.0f, 0.0f, 0.0f)
+        : (std::fabs(v.y) < std::fabs(v.z) ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(0.0f, 0.0f, 1.0f));
+    return glm::normalize(glm::cross(v, ref));
+}
+
+// A capsule axis within this much of a box face (|dot| of the unit axis against
+// the face normal) is treated as lying flat on it, and gets the two-point
+// manifold. ~3 degrees: past that the tilt is large enough that the deeper end
+// carries the contact on its own.
+constexpr float CAPSULE_FLAT_DOT = 0.05f;
+
+/**
+ * @brief Two-point manifold for a capsule segment lying flat on one box face.
+ *
+ * A capsule flat on a face touches it along a segment, not a point: resolved
+ * from a single point it rolls off forever. The segment is clipped to the face
+ * and contacted at both ends. Answers 0 when the normal names no face, when the
+ * segment is too tilted to lie flat, or when the clip leaves nothing - the
+ * single-point contact the caller already holds stands in those cases.
+ *
+ * @param box The box being contacted; supplies the frame the local inputs are in.
+ * @param pa Capsule segment start, in the box's local frame.
+ * @param dir Capsule segment start-to-end vector, in the box's local frame.
+ * @param normal Contact normal (capsule -> box), in the box's local frame.
+ * @param radius Capsule sweep radius.
+ * @param out Contacts, written in world space.
+ * @return Number of contacts written, 0..2.
+ */
+int capsuleFaceContact(const BoxShape& box, const glm::vec3& pa, const glm::vec3& dir,
+                       const glm::vec3& normal, float radius, Contact* out) {
+    int face = -1;
+    for (int i = 0; i < 3; ++i)
+        if (std::fabs(std::fabs(normal[i]) - 1.0f) < 1e-4f) face = i;
+
+    const float dirLen2 = glm::dot(dir, dir);
+    if (face < 0 || dirLen2 <= EPS) return 0;
+    if (std::fabs(glm::dot(dir / std::sqrt(dirLen2), normal)) >= CAPSULE_FLAT_DOT) return 0;
+
+    // Clip the segment to the face: two interval intersections, one per in-face axis.
+    const glm::vec3& h = box.halfExtents;
+    float t0 = 0.0f;
+    float t1 = 1.0f;
+    bool inside = true;
+    for (int k = 1; k <= 2 && inside; ++k) {
+        const int u = (face + k) % 3;
+        if (std::fabs(dir[u]) <= EPS) {
+            inside = std::fabs(pa[u]) <= h[u];
+            continue;
+        }
+        float lo = (-h[u] - pa[u]) / dir[u];
+        float hi = ( h[u] - pa[u]) / dir[u];
+        if (lo > hi) std::swap(lo, hi);
+        t0 = std::max(t0, lo);
+        t1 = std::min(t1, hi);
+        inside = t0 <= t1;
+    }
+    if (!inside || t1 - t0 <= 1e-4f) return 0;
+
+    // The face plane, and how far each clipped end sits above it.
+    const glm::mat3 rot(box.axes[0], box.axes[1], box.axes[2]);
+    const float outward   = -normal[face];
+    const float facePlane = outward * h[face];
+    int count = 0;
+    const float ends[2] = {t0, t1};
+    for (float t : ends) {
+        const glm::vec3 s = pa + dir * t;
+        const float above = outward * s[face] - h[face];
+        const float depth = radius - above;
+        if (depth <= 0.0f) continue;
+        glm::vec3 cp = s;
+        cp[face] = facePlane;
+        out[count].point = box.center + rot * cp;
+        out[count].normal = rot * normal;
+        out[count].penetration = depth;
+        ++count;
+    }
+    return count;
+}
+
 } // namespace
 
 int contactBoxes(const BoxShape& a, const BoxShape& b, Contact* out) {
@@ -265,6 +404,90 @@ int contactBoxes(const BoxShape& a, const BoxShape& b, Contact* out) {
     return bestCase >= 6
         ? edgeEdgeContact(a, b, bestCase, bestAxis, bestOverlap, out)
         : faceContact(a, b, bestCase, bestAxis, out);
+}
+
+int contactCapsuleBox(const CapsuleShape& a, const BoxShape& b, Contact* out) {
+    // Everything here runs in the box's local frame, where the box is an
+    // axis-aligned box at the origin: "closest point on the box" becomes a
+    // clamp, and clipping the segment to a face becomes two interval
+    // intersections. The axes are orthonormal, so the inverse is the transpose.
+    const glm::mat3 rot(b.axes[0], b.axes[1], b.axes[2]);
+    const glm::mat3 inv = glm::transpose(rot);
+    const glm::vec3& h = b.halfExtents;
+    const glm::vec3 pa = inv * (a.a - b.center);
+    const glm::vec3 pb = inv * (a.b - b.center);
+
+    const glm::vec3 p = closestOnSegmentToBox(pa, pb, h);
+    const glm::vec3 surface = glm::clamp(p, -h, h);
+    const glm::vec3 delta = p - surface;
+    const float dist2 = glm::dot(delta, delta);
+
+    glm::vec3 normal(0.0f);   // capsule -> box
+    glm::vec3 point(0.0f);
+    float penetration = 0.0f;
+    if (dist2 > EPS) {
+        const float dist = std::sqrt(dist2);
+        if (dist > a.radius) return 0;
+        normal = -delta / dist;
+        point = surface;
+        penetration = a.radius - dist;
+    } else {
+        // The segment reaches inside the box, so no direction separates the
+        // two. Push out through the nearest face instead - the same minimum
+        // translation the box-box SAT settles on when boxes interpenetrate.
+        int axis = 0;
+        float depth = h[0] - std::fabs(p[0]);
+        for (int i = 1; i < 3; ++i) {
+            const float d = h[i] - std::fabs(p[i]);
+            if (d < depth) { depth = d; axis = i; }
+        }
+        const float sign = p[axis] >= 0.0f ? 1.0f : -1.0f;
+        normal[axis] = -sign;
+        point = p;
+        point[axis] = sign * h[axis];
+        penetration = a.radius + depth;
+    }
+
+    // A capsule lying flat on the face contacts it along a segment, so prefer the
+    // two-point manifold: resolved from the single point above it rolls off.
+    const int n = capsuleFaceContact(b, pa, pb - pa, normal, a.radius, out);
+    if (n > 0) return n;
+
+    out[0].point = b.center + rot * point;
+    out[0].normal = rot * normal;
+    out[0].penetration = penetration;
+    return 1;
+}
+
+int contactCapsuleCapsule(const CapsuleShape& a, const CapsuleShape& b, Contact* out) {
+    glm::vec3 ca;
+    glm::vec3 cb;
+    closestSegmentSegment(a.a, a.b, b.a, b.b, ca, cb);
+
+    const glm::vec3 delta = cb - ca;
+    const float dist2 = glm::dot(delta, delta);
+    const float reach = a.radius + b.radius;
+    if (dist2 > reach * reach) return 0;
+
+    glm::vec3 normal;
+    float dist = 0.0f;
+    if (dist2 > EPS) {
+        dist = std::sqrt(dist2);
+        normal = delta / dist;
+    } else {
+        // The axes touch exactly. Any direction perpendicular to A's axis
+        // separates them; along it would shove one capsule through the other
+        // lengthwise instead.
+        const glm::vec3 axis = a.b - a.a;
+        normal = glm::dot(axis, axis) > EPS ? perpendicularTo(axis) : glm::vec3(0.0f, 1.0f, 0.0f);
+    }
+
+    // Midway between the two surface points, so neither radius biases where the
+    // impulse is applied.
+    out[0].point = (ca + normal * a.radius + cb - normal * b.radius) * 0.5f;
+    out[0].normal = normal;
+    out[0].penetration = reach - dist;
+    return 1;
 }
 
 } // namespace Vkm::Engine

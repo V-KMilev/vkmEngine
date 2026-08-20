@@ -1,7 +1,7 @@
-#include "ecs/component/camera.h"
+#include "ecs/component/render/camera.h"
 
 #include "ecs/scene.h"
-#include "ecs/component/transform.h"
+#include "ecs/component/core/transform.h"
 
 namespace Vkm::Engine {
 

@@ -5,8 +5,8 @@
 #include <vector>
 
 #include "ecs/entity.h"
-#include "ecs/component/prefab_instance.h"
-#include "ecs/component/transform.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/prefab/prefab_instance.h"
 
 namespace Vkm::Engine {
 

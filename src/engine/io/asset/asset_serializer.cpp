@@ -11,11 +11,13 @@
 
 #include "logger.h"
 
-#include "ecs/component/decal.h"
-#include "ecs/component/lod.h"
-#include "ecs/component/mesh.h"
+#include "ecs/component/animation/animator.h"
+#include "ecs/component/render/decal.h"
+#include "ecs/component/render/lod.h"
+#include "ecs/component/render/mesh.h"
 #include "ecs/scene.h"
 #include "resource/resource_manager.h"
+#include "io/asset/asset_cook.h"
 #include "io/asset/asset_factory.h"
 #include "io/asset/asset_library.h"
 #include "io/json_file.h"
@@ -167,10 +169,14 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
     nlohmann::json meshes    = nlohmann::json::array();
     nlohmann::json textures  = nlohmann::json::array();
     nlohmann::json materials = nlohmann::json::array();
+    nlohmann::json skeletons = nlohmann::json::array();
+    nlohmann::json clips     = nlohmann::json::array();
 
     std::unordered_set<uint32_t> seenMeshes;
     std::unordered_set<uint32_t> seenMaterials;
     std::unordered_set<uint32_t> seenTextures;
+    std::unordered_set<uint32_t> seenSkeletons;
+    std::unordered_set<uint32_t> seenClips;
 
     auto emitTexture = [&](const TextureHandle& h) {
         if (!h) return;
@@ -198,6 +204,16 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
         for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
     };
 
+    auto emitSkeleton = [&](const SkeletonHandle& h) {
+        if (!h || !seenSkeletons.insert(h.id()).second) return;
+        emitDescriptor(skeletons, resources.get(h));
+    };
+
+    auto emitClip = [&](const AnimationClipHandle& h) {
+        if (!h || !seenClips.insert(h.id()).second) return;
+        emitDescriptor(clips, resources.get(h));
+    };
+
     // Every component that writes an asset name into the document has to be
     // walked here: a name the assets block never lists is a name loadAssets
     // never recreates, and the component's reference resolves to nothing.
@@ -211,12 +227,19 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
             for (const LODLevel& level : scene.get<LOD>(id).levels) emitMesh(level.mesh);
         }
         if (scene.has<Decal>(id)) emitMaterial(scene.get<Decal>(id).material);
+        if (scene.has<Animator>(id)) {
+            const Animator& a = scene.get<Animator>(id);
+            emitSkeleton(a.skeleton);
+            emitClip(a.clip);
+        }
     }
 
     nlohmann::json out;
     out["textures"]  = std::move(textures);
     out["meshes"]    = std::move(meshes);
     out["materials"] = std::move(materials);
+    out["skeletons"] = std::move(skeletons);
+    out["clips"]     = std::move(clips);
     return out;
 }
 
@@ -250,10 +273,17 @@ bool loadLibrarySource(AssetType type, const std::string& name, nlohmann::json& 
 }
 
 /**
- * @brief Resolve a name-only asset reference to the source its factory needs: meshes
- * and textures load from the cooked cache by name; materials load their inline
- * descriptor from the library file. Returns false if the name is not in the
- * manifest.
+ * @brief Resolve a name-only asset reference to the source its factory needs: the
+ * cooked binary when the cache can still serve it, otherwise the recipe it was
+ * baked from. Returns false if the name is not in the manifest.
+ *
+ * The cooked file is a cache and the recipe is the source of truth, so the cache
+ * is asked first and the recipe answers whenever it cannot. That order is what
+ * makes `cooked/` regenerable in practice rather than only on paper: a build
+ * that bumped a format version reads the recipe instead, the cooker bakes a
+ * current binary from it, and the project repairs itself. Resolving straight to
+ * the cooked file would leave the recipe written and never read, and the only
+ * way back would be re-importing the source art by hand.
  */
 bool resolveCookedSource(AssetType type, const std::string& name, nlohmann::json& outSource) {
     const AssetRecord* record = AssetLibrary::get().find(type, name);
@@ -262,11 +292,22 @@ bool resolveCookedSource(AssetType type, const std::string& name, nlohmann::json
             name.c_str(), Reflect::enumName(type));
         return false;
     }
+    // A material has no cooked binary to prefer - its recipe is its runtime form.
     if (type == AssetType::Material) {
         return loadLibrarySource(type, name, outSource);
     }
-    outSource = nlohmann::json{{"kind", "cooked"}, {"name", name}};
-    return true;
+    if (AssetCook::isCookedCurrent(type, AssetLibrary::cookedPath(type, name), record->recipeHash)) {
+        outSource = nlohmann::json{{"kind", "cooked"}, {"name", name}};
+        return true;
+    }
+    // Not an error on its own: whether it can be recovered from is the factory's
+    // answer to give. An editor or a cook re-imports and re-bakes; the runtime,
+    // which links no importers, refuses the recipe kind on the next line and
+    // that pair of lines is the diagnosis - a shipped build cannot rebuild a
+    // stale cache, it needs one cooked for it.
+    LOG_INFO("%s '%s': no cooked file this build can use; falling back to its recipe",
+        Reflect::enumName(type), name.c_str());
+    return loadLibrarySource(type, name, outSource);
 }
 
 /**
@@ -321,18 +362,22 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
     }
 
     // Order matters: textures -> materials (resolve their texture refs by name)
-    // -> meshes. Each created asset is renamed to its recorded name so component
+    // -> skeletons -> clips (each names the rig its bone indices address) ->
+    // meshes. Each created asset is renamed to its recorded name so component
     // references (which resolve by name) land on it.
-    const auto [texC, texS] = loadAssetSection<TextureAsset >(assetsJson, "textures",  AssetType::Texture,  assetFactory().createTexture,  "Texture",  resources);
-    const auto [matC, matS] = loadAssetSection<MaterialAsset>(assetsJson, "materials", AssetType::Material, assetFactory().createMaterial, "Material", resources);
-    const auto [mshC, mshS] = loadAssetSection<MeshAsset    >(assetsJson, "meshes",    AssetType::Mesh,     assetFactory().createMesh,     "Mesh",     resources);
+    const auto [texC, texS] = loadAssetSection<TextureAsset      >(assetsJson, "textures",  AssetType::Texture,       assetFactory().createTexture,       "Texture",  resources);
+    const auto [matC, matS] = loadAssetSection<MaterialAsset     >(assetsJson, "materials", AssetType::Material,      assetFactory().createMaterial,      "Material", resources);
+    const auto [sklC, sklS] = loadAssetSection<SkeletonAsset     >(assetsJson, "skeletons", AssetType::Skeleton,      assetFactory().createSkeleton,      "Skeleton", resources);
+    const auto [clpC, clpS] = loadAssetSection<AnimationClipAsset>(assetsJson, "clips",     AssetType::AnimationClip, assetFactory().createAnimationClip, "Clip",     resources);
+    const auto [mshC, mshS] = loadAssetSection<MeshAsset         >(assetsJson, "meshes",    AssetType::Mesh,          assetFactory().createMesh,          "Mesh",     resources);
 
     // Silent when the block asked for nothing new: a prefab carries its own
     // assets and is instantiated once per instance, per scene load, per
     // duplicate and per undo of one.
-    if (texC + matC + mshC > 0) {
-        LOG_INFO("%zu texture(s), %zu material(s), %zu mesh(es) created; %zu+%zu+%zu skipped (already loaded)",
-            texC, matC, mshC, texS, matS, mshS);
+    if (texC + matC + sklC + clpC + mshC > 0) {
+        LOG_INFO("%zu texture(s), %zu material(s), %zu rig(s), %zu clip(s), %zu mesh(es) created; "
+            "%zu+%zu+%zu+%zu+%zu skipped (already loaded)",
+            texC, matC, sklC, clpC, mshC, texS, matS, sklS, clpS, mshS);
     }
     return true;
 }

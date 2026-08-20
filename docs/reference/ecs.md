@@ -7,7 +7,8 @@ any type can be a component without modifying Scene.
 
 - `src/engine/ecs/scene.h` for the Scene registry
 - `src/engine/ecs/entity.h` for the `EntityId` alias
-- `src/engine/ecs/component/` for all component types
+- `src/engine/ecs/component/` for all component types, grouped by subject:
+  `core/`, `render/`, `animation/`, `physics/`, `ui/`, `prefab/`
 - `src/engine/core/memory/slot_allocator.h` for the entity handle allocator
 - `src/engine/core/memory/sparse_set.h` for component storage
 - `src/engine/core/memory/types.h` for `StorageIndex` and `TypeId`
@@ -53,24 +54,35 @@ scene.remove<Mesh>(entity);
 
 ### Built-in components
 
-| Component        | File                              | Fields                                                                                                |
-|------------------|-----------------------------------|-------------------------------------------------------------------------------------------------------|
-| `Transform`      | `component/transform.h`           | `vec3 position`, `quat rotation`, `vec3 scale`                                                        |
-| `WorldTransform` | `component/world_transform.h`     | `mat4 model` (resolved each frame by `HierarchySystem`); read it via `resolvedWorld{Matrix,Position,Rotation}` |
-| `Camera`         | `component/camera.h`              | `projection` (`ProjectionType`), `fovY`, `aspect`, `orthoHeight`, `zNear`, `zFar`, `focusDistance`, `dofAmount`, `active`; `findActiveCamera` picks the scene's |
-| `Mesh`           | `component/mesh.h`                | `MeshHandle mesh`, `MaterialHandle material`, `bool visible`, `bool castShadows`                      |
-| `Light`          | `component/light.h`               | `LightType` (Directional, Point, Spot, Rect, Disk), color, intensity, attenuation, cone, area, shadow |
-| `Animation`      | `component/animation.h`           | Three tracks (position vec3, rotation quat, scale vec3) plus playback state and explicit `length`     |
-| `Hierarchy`      | `component/hierarchy.h`           | `EntityId parent`, `firstChild`, `nextSibling`, `prevSibling`                                         |
-| `Name`           | `component/name.h`                | `char value[64]` for editor display and asset look-up by name                                         |
-| `Collider`       | `component/collider.h`            | One or more `ColliderBox` parts (`center`, `halfExtents`) + `isTrigger`                               |
-| `Rigidbody`      | `component/rigidbody.h`           | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags |
-| `ReflectionProbe`| `component/reflection_probe.h`    | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
+| Component             | File                                       | Fields                                                                                                |
+|-----------------------|--------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| `Transform`           | `component/core/transform.h`               | `vec3 position`, `quat rotation`, `vec3 scale`                                                        |
+| `WorldTransform`      | `component/core/world_transform.h`         | `mat4 model` (resolved each frame by `HierarchySystem`); read it via `resolvedWorld{Matrix,Position,Rotation}` |
+| `Camera`              | `component/render/camera.h`                | `projection` (`ProjectionType`), `fovY`, `aspect`, `orthoHeight`, `zNear`, `zFar`, `focusDistance`, `dofAmount`, `active`; `findActiveCamera` picks the scene's |
+| `Mesh`                | `component/render/mesh.h`                  | `MeshHandle mesh`, `MaterialHandle material`, `bool visible`, `bool castShadows`                      |
+| `Light`               | `component/render/light.h`                 | `LightType` (Directional, Point, Spot, Rect, Disk), color, intensity, attenuation, cone, area, shadow |
+| `Animation`           | `component/animation/animation.h`          | Three tracks (position vec3, rotation quat, scale vec3) plus playback state and explicit `length`     |
+| `Animator`            | `component/animation/animator.h`           | `SkeletonHandle skeleton`, `AnimationClipHandle clip`, `time`, `speed`, `playing`, `looping` - one per rigged character, not per mesh |
+| `Hierarchy`           | `component/core/hierarchy.h`               | `EntityId parent`, `firstChild`, `nextSibling`, `prevSibling`                                         |
+| `Name`                | `component/core/name.h`                    | `char value[64]` for editor display and asset look-up by name                                         |
+| `Collider`            | `component/physics/collider.h`             | One or more `ColliderPart`s (a `ColliderShape` tag + box / capsule fields) + `isTrigger`              |
+| `CharacterController` | `component/physics/character_controller.h` | `moveInput` + `jumpRequested` in, tuning, `grounded` + `groundNormal` out                    |
+| `Rigidbody`           | `component/physics/rigidbody.h`            | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags, plus the `supported` / `supportNormal` outputs |
+| `ReflectionProbe`     | `component/render/reflection_probe.h`      | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
+
+`Animation` and `Animator` are both covered in [Animation](system/animation.md):
+the first drives one entity's own `Transform`, the second poses a whole rig and
+publishes the result on `FrameContext::poses`. There is deliberately no skinned-
+mesh component - a mesh is skinned when its asset carries skin weights, and the
+rig driving it is the nearest `Animator` above it in the hierarchy.
 
 Light gets a full breakdown in [Lighting](system/lighting.md), including
 the area-light fields (`areaWidth`, `areaHeight`, `areaRadius`, `twoSided`)
-introduced for Rect and Disk emitters. `Rigidbody` and `Collider` are covered in
-[Physics](system/physics.md); the scene-level physics settings (gravity,
+introduced for Rect and Disk emitters. `Rigidbody`, `Collider` and
+`CharacterController` are covered in [Physics](system/physics.md) - including why
+"am I standing on something" is answered on the `Rigidbody` rather than on the
+controller, which is what keeps `PhysicsSystem` from knowing characters exist;
+the scene-level physics settings (gravity,
 solver iterations) are not a component either - they live in `PhysicsSettings`,
 reached through `Scene::physics()`. It sits *beside* the `Environment` rather
 than inside it: what a world is lit by and what it falls at are unrelated, so

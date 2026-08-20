@@ -3,7 +3,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "ecs/scene.h"
-#include "ecs/component/transform.h"
+#include "ecs/component/core/transform.h"
 
 namespace Game {
 

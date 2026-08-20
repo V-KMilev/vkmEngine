@@ -2,8 +2,10 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
+#include "resource/asset/skeleton_asset.h"
 #include "resource/asset/texture_asset.h"
 
 namespace Vkm::Engine {
@@ -47,6 +49,31 @@ TextureHandle  createCookedTexture(const nlohmann::json& source, ResourceManager
  * @return Handle to the created material, or an invalid handle on failure.
  */
 MaterialHandle createCookedMaterial(const nlohmann::json& source, ResourceManager& resources);
+
+/**
+ * @brief Create a skeleton from its cooked source descriptor (runtime + editor).
+ *
+ * Reads the cooked binary synchronously - a rig is small enough that the async
+ * path would cost more than it saves. The recipe dispatch falls through to it
+ * for unhandled kinds.
+ *
+ * @param source JSON source descriptor carrying the asset `kind` and name.
+ * @param resources Resource manager the new skeleton is added to.
+ * @return Handle to the created skeleton, or an invalid handle on failure.
+ */
+SkeletonHandle createCookedSkeleton(const nlohmann::json& source, ResourceManager& resources);
+
+/**
+ * @brief Create an animation clip from its cooked source descriptor (runtime + editor).
+ *
+ * Takes the same synchronous cooked path as createCookedSkeleton; the recipe
+ * dispatch falls through to it for unhandled kinds.
+ *
+ * @param source JSON source descriptor carrying the asset `kind` and name.
+ * @param resources Resource manager the new clip is added to.
+ * @return Handle to the created clip, or an invalid handle on failure.
+ */
+AnimationClipHandle createCookedAnimationClip(const nlohmann::json& source, ResourceManager& resources);
 
 /**
  * @brief Wire the cooked dispatch into the AssetFactory seam (runtime only).

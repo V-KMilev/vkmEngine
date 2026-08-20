@@ -54,7 +54,7 @@ does:
 | Stage      | Systems                                                                         |
 |------------|---------------------------------------------------------------------------------|
 | Input      | `CameraControllerSystem`                                                              |
-| Simulation | (EventBus flush), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `ParticleSystem`, `PhysicsSystem`, `SkySystem` |
+| Simulation | (EventBus flush), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `SkeletalAnimationSystem`, `ParticleSystem`, `PhysicsSystem`, `CharacterControllerSystem`, `SkySystem` |
 | Transform  | `HierarchySystem`, `UISystem` (the game UI; runs in **both** binaries)         |
 | Visibility | `VisibilitySystem`                                                            |
 | Render     | `RenderSystem`                                                                |
@@ -94,6 +94,7 @@ struct FrameContext {
     InputMap&        input;
 
     const Visibility* visibility = nullptr;  // VisibilitySystem's culling result
+    const PoseBuffer* poses      = nullptr;  // SkeletalAnimationSystem's rig poses
     const UIDrawData* ui         = nullptr;  // UISystem's draw list
 };
 ```
@@ -106,7 +107,7 @@ read the sim delta so pause, time-scale, and single-step apply uniformly; anythi
 that must advance regardless of play state reads the real delta.
 
 The context is rebuilt from scratch each frame and the fixed-step loop runs before
-any producer stage, so `visibility` and `ui` are always null inside
+any producer stage, so `visibility`, `poses` and `ui` are always null inside
 `fixedUpdate()` - read products from `update()` only.
 
 ## Engine config constants
@@ -133,14 +134,19 @@ Engine code, single include root `src/engine/`:
 | `core/math/`               | math helpers (rotation, axes, random, easing)                            |
 | `core/memory/`             | `TypeId`, `SparseSet`, `SlotAllocator`, `StorageIndex`                   |
 | `ecs/`                     | `Scene`, `EntityId`, `Environment`                                        |
-| `ecs/component/`           | `Transform`, `WorldTransform`, `Camera`, `Mesh`, `Light`, `Animation`, `Hierarchy`, `Name`, `Collider`, `RigidBody`, `PhysicsWorld`, `ReflectionProbe` |
-| `system/animation/`        | `AnimationSystem`, `AnimationTrack`, `Keyframe`                          |
+| `ecs/component/core/`      | `Transform`, `WorldTransform`, `Hierarchy`, `Name`                       |
+| `ecs/component/render/`    | `Mesh`, `Light`, `Camera`, `Decal`, `LOD`, `ParticleEmitter`, `ReflectionProbe`, `IrradianceVolume` |
+| `ecs/component/animation/` | `Animation`, `Animator`                                                  |
+| `ecs/component/physics/`   | `Rigidbody`, `Collider`, `CharacterController`                           |
+| `ecs/component/ui/`        | `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton`                 |
+| `ecs/component/prefab/`    | `PrefabEntity`, `PrefabInstance`                                         |
+| `system/animation/`        | `AnimationSystem`, `AnimationTrack`, `SkeletalAnimationSystem`, `PoseBuffer`, `composePose` |
 | `system/async/`            | `AsyncLoaderSystem`                                                      |
 | `system/camera/`           | `CameraControllerSystem`                                                       |
 | `core/event/`              | `EventBus` (typed pub/sub; engine-owned infrastructure)                  |
 | `system/hierarchy/`        | `HierarchySystem`, `HierarchyOperations` (free functions)               |
 | `system/io/`               | `FileWatcherSystem` (polling hot-reload)                                       |
-| `system/physics/`          | `PhysicsSystem`, `collision/`                                            |
+| `system/physics/`          | `PhysicsSystem`, `CharacterControllerSystem`, `collision/`               |
 | `system/render/`           | `RenderSystem`, `RenderBackend`, `RenderView`, `RenderSettings`, `data/` |
 | `system/script/`           | `BehaviorSystem`, `Behavior`, `ReflectedBehavior`, `BehaviorRegistry`, `ScriptComponent`, `ScriptModule` (see [system/scripting.md](system/scripting.md)) |
 | `system/visibility/`       | `VisibilitySystem`, `Visibility`, `VisibilityContext`, `BoundsUtils`    |
@@ -190,7 +196,7 @@ Engine includes use module-qualified paths from `src/engine/`:
 ```cpp
 #include "core/engine.h"
 #include "ecs/scene.h"
-#include "ecs/component/transform.h"
+#include "ecs/component/core/transform.h"
 #include "system/render/render_view.h"
 #include "resource/asset/mesh_asset.h"
 ```

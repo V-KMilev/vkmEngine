@@ -13,11 +13,11 @@ ImGui** - ImGui stays the editor's own tooling, never the shipped game UI.
 
 ## Key files
 
-- `src/engine/ecs/component/ui_canvas.h` - `UICanvas` (layer root + reference-resolution scaling + sort order)
-- `src/engine/ecs/component/ui_element.h` - `UIRect` and `UIElement` (the 2D rect: anchor / pivot / position / size / visible)
-- `src/engine/ecs/component/ui_image.h` - `UIImage` (tinted quad)
-- `src/engine/ecs/component/ui_text.h` - `UIText` (string + font name + size + colour + h/v alignment)
-- `src/engine/ecs/component/ui_button.h` - `UIButton` (per-state tints + event id)
+- `src/engine/ecs/component/ui/ui_canvas.h` - `UICanvas` (layer root + reference-resolution scaling + sort order)
+- `src/engine/ecs/component/ui/ui_element.h` - `UIRect` and `UIElement` (the 2D rect: anchor / pivot / position / size / visible)
+- `src/engine/ecs/component/ui/ui_image.h` - `UIImage` (tinted quad)
+- `src/engine/ecs/component/ui/ui_text.h` - `UIText` (string + font name + size + colour + h/v alignment)
+- `src/engine/ecs/component/ui/ui_button.h` - `UIButton` (per-state tints + event id)
 - `src/engine/system/ui/ui_system.{h,cpp}` - `UISystem` (layout resolve + draw build + interaction resolve)
 - `src/engine/system/ui/ui_draw_data.h` - `UIVertex` / `UIDrawCmd` / `UIDrawData` (the engine -> backend contract)
 - `src/engine/system/ui/ui_events.h` - `UIClickEvent`

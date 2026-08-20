@@ -18,6 +18,8 @@ enum class AssetType : uint8_t {
     Mesh,
     Texture,
     Material,
+    Skeleton,
+    AnimationClip,
 
     Count
 };
@@ -100,8 +102,8 @@ class AssetLibrary {
         /**
          * @brief Absolute path to the cooked binary an asset of (@p type, @p name) lives in.
          *
-         * Meshes and textures have one; a material's canonical form is its recipe,
-         * so nothing is ever written where this points for one.
+         * Every type but Material has one; a material's canonical form is its
+         * recipe, so nothing is ever written where this points for one.
          *
          * @param type Asset type half of the identity.
          * @param name Asset name half of the identity.
@@ -131,4 +133,4 @@ class AssetLibrary {
 
 } // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Vkm::Engine::AssetType, "mesh", "texture", "material")
+VKM_ENUM_NAMES(::Vkm::Engine::AssetType, "mesh", "texture", "material", "skeleton", "animationClip")

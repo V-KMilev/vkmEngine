@@ -3,25 +3,27 @@
 #include <nlohmann/json.hpp>
 
 #include "ecs/environment.h"
-#include "ecs/component/animation.h"
-#include "ecs/component/camera.h"
-#include "ecs/component/collider.h"
-#include "ecs/component/decal.h"
-#include "ecs/component/lod.h"
-#include "ecs/component/particle_emitter.h"
-#include "ecs/component/irradiance_volume.h"
-#include "ecs/component/reflection_probe.h"
-#include "ecs/component/hierarchy.h"
-#include "ecs/component/light.h"
-#include "ecs/component/mesh.h"
-#include "ecs/component/rigidbody.h"
-#include "ecs/component/name.h"
-#include "ecs/component/transform.h"
-#include "ecs/component/ui_canvas.h"
-#include "ecs/component/ui_element.h"
-#include "ecs/component/ui_image.h"
-#include "ecs/component/ui_text.h"
-#include "ecs/component/ui_button.h"
+#include "ecs/component/animation/animation.h"
+#include "ecs/component/animation/animator.h"
+#include "ecs/component/core/hierarchy.h"
+#include "ecs/component/core/name.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/physics/character_controller.h"
+#include "ecs/component/physics/collider.h"
+#include "ecs/component/physics/rigidbody.h"
+#include "ecs/component/render/camera.h"
+#include "ecs/component/render/decal.h"
+#include "ecs/component/render/irradiance_volume.h"
+#include "ecs/component/render/light.h"
+#include "ecs/component/render/lod.h"
+#include "ecs/component/render/mesh.h"
+#include "ecs/component/render/particle_emitter.h"
+#include "ecs/component/render/reflection_probe.h"
+#include "ecs/component/ui/ui_button.h"
+#include "ecs/component/ui/ui_canvas.h"
+#include "ecs/component/ui/ui_element.h"
+#include "ecs/component/ui/ui_image.h"
+#include "ecs/component/ui/ui_text.h"
 #include "system/script/script_component.h"
 
 namespace Vkm::Engine {
@@ -72,11 +74,35 @@ namespace ComponentSerializer {
     nlohmann::json save(const Rigidbody&);
     void load(const nlohmann::json&, Rigidbody&);
 
+    /**
+     * @brief Collider: each part's shape tag plus the fields of every shape.
+     */
     nlohmann::json save(const Collider&);
     void load(const nlohmann::json&, Collider&);
 
+    /**
+     * @brief CharacterController: the tuning only.
+     *
+     * moveInput, jumpRequested, grounded and groundNormal are per-tick traffic
+     * between gameplay, the system and the solver - a scene row holding a half
+     * consumed jump request would replay it on load.
+     */
+    nlohmann::json save(const CharacterController&);
+    void load(const nlohmann::json&, CharacterController&);
+
     nlohmann::json save(const Mesh&, const ResourceManager&);
     void load(const nlohmann::json&, Mesh&, const ResourceManager&);
+
+    /**
+     * @brief Animator: the rig, the clip and where playback stands.
+     *
+     * Blend state is deliberately absent and stays absent. A crossfade is a
+     * second clip and a countdown, and a scene row holding that shape would
+     * outlive the blend system that wrote it in a project with no migration
+     * path; the six fields here are what any future blend system still needs.
+     */
+    nlohmann::json save(const Animator&, const ResourceManager&);
+    void load(const nlohmann::json&, Animator&, const ResourceManager&);
 
     nlohmann::json save(const LOD&, const ResourceManager&);
     void load(const nlohmann::json&, LOD&, const ResourceManager&);
