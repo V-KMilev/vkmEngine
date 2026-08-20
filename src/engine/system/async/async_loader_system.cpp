@@ -56,11 +56,8 @@ void finalize(ResourceManager& rm, std::vector<Completion> completions, Apply ap
 
 } // namespace
 
-void AsyncLoaderSystem::update(FrameContext& ctx) {
-    PROFILE_SCOPE("AsyncLoaderSystem");
-
-    ResourceManager& rm    = ctx.resources;
-    AsyncLoadQueue&  queue = AsyncLoadQueue::get();
+void finalizeAsyncLoads(ResourceManager& rm) {
+    AsyncLoadQueue& queue = AsyncLoadQueue::get();
 
     finalize(rm, queue.drainTextures(), [](TextureAsset& asset, TextureLoadCompletion& c) {
         if (!c.success || c.pixelData.empty()) {
@@ -102,6 +99,11 @@ void AsyncLoaderSystem::update(FrameContext& ctx) {
         asset.skinRadius = c.skinRadius;
         return true;
     });
+}
+
+void AsyncLoaderSystem::update(FrameContext& ctx) {
+    PROFILE_SCOPE("AsyncLoaderSystem");
+    finalizeAsyncLoads(ctx.resources);
 }
 
 } // namespace Vkm::Engine
