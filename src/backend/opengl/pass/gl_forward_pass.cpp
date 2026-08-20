@@ -77,12 +77,16 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.irradiance.bindSlot(3, GLBindings::IrradianceVolumeSlots::SH3);
     }
 
-    // The grid the cull compute wrote, and the frame's bone palettes.
+    // The grid the cull compute wrote, and - on a frame that posed something -
+    // the bone palettes its skinned runs read. With no palette no run is
+    // skinned, so the skinned program is never bound and never told anything.
     ctx.clusters.bind();
-    ctx.skinPalette.bind();
+
+    const bool posed = ctx.skinPalette.count() > 0;
+    if (posed) ctx.skinPalette.bind();
 
     bindFrameUniforms(*m_shader, ctx, false);
-    bindFrameUniforms(*m_skinnedShader, ctx, false);
+    if (posed) bindFrameUniforms(*m_skinnedShader, ctx, false);
 
     // Sorted upstream by material+mesh and batched once by the backend; the
     // prepass drew these same runs.
@@ -99,7 +103,7 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.gl.setDepthFunc(GL_LEQUAL);
         const bool a2c = ctx.view.settings.msaaSamples > 1;
         if (a2c) glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
-        m_batcher.buildGrouped(ctx.alphaMask, glView);
+        m_batcher.buildGrouped(ctx.alphaMask, glView, ctx.skinPalette.count());
         drawRuns(ctx, GLInstanceBatchView(m_batcher));
         if (a2c) glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
         ctx.gl.setDepthWrite(false);  // back to the early-Z state for the transparent grab
@@ -126,12 +130,12 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.colorDst->blitColorFrom(ctx.sceneRender);
         ctx.sceneRender.bind(ctx.gl);
         ctx.colorDst->bindColor(GLBindings::PostTextureSlots::SceneColor);
-        // Both programs sample the grab, and both are given the whole frame set
-        // again rather than the one uniform that changed: re-setting a dozen
-        // uniforms once a frame costs nothing, and it leaves exactly one place
-        // where a program learns what the frame looks like.
+        // Every program that will draw samples the grab, and each is given the
+        // whole frame set again rather than the one uniform that changed:
+        // re-setting a dozen uniforms once a frame costs nothing, and it leaves
+        // exactly one place where a program learns what the frame looks like.
         bindFrameUniforms(*m_shader, ctx, true);
-        bindFrameUniforms(*m_skinnedShader, ctx, true);
+        if (posed) bindFrameUniforms(*m_skinnedShader, ctx, true);
 
         // Blended, depth-tested against the opaque scene but not written, so
         // transparent surfaces never occlude each other in the depth buffer.
@@ -139,7 +143,7 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         ctx.gl.setDepthWrite(false);
 
-        m_batcher.buildSequential(m_transparentSorted, glView);
+        m_batcher.buildSequential(m_transparentSorted, glView, ctx.skinPalette.count());
         drawRuns(ctx, GLInstanceBatchView(m_batcher));
 
         ctx.gl.setBlending(false);

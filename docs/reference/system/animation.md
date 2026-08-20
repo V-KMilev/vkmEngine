@@ -371,15 +371,24 @@ enabled costs nothing when a program that never declares them draws the same VAO
 and thumbnails in bind pose - the right answer for both.
 
 **The palettes travel as one flat array.** `RenderView::skinMatrices` holds every
-skinned item's palette end to end, and both `DrawableData` and `ShadowCasterData`
-carry a `skinFirst` / `skinCount` range into it. Both, and not just the first:
-the two lists are gathered from different sets, and a character standing just
-off-screen and casting into view appears only in the caster list.
+skinned item's palette end to end, and each item carries a `first` / `count`
+range into it. Both lists get one, not just the first: the two are gathered from
+different sets, and a character standing just off-screen and casting into view
+appears only in the caster list.
+
+A drawable carries its range inline (`DrawableData::skinFirst` / `skinCount`)
+because the backend partitions drawables into buckets of *pointers* and each one
+has to be self-describing. A caster's range rides alongside instead, in
+`RenderView::casterSkins`, index for index with `shadowCasters` - the shadow cull
+addresses casters by index anyway, and `ShadowCasterData` stays 96 bytes so the
+cull, which reads every caster's bounds once per atlas tile and once per cube
+face, is not widened by two fields it never looks at. Same reason `Vertex` stays
+48 bytes.
 
 ```
 RenderView::build(scene, visibility, ui, poses)
   |-- buildDrawables      appends each visible entity's palette, stamps its range
-  |-- buildShadowCasters  the same, for the scene-wide caster set
+  |-- buildShadowCasters  the same, into the parallel casterSkins array
 GLBackend::render
   |-- GLSkinPalette::update(view.skinMatrices)   one upload, SSBO binding 5
   |-- GLInstanceBatcher                           per-instance skinFirst, SSBO binding 6
@@ -397,6 +406,21 @@ instance. A skinned mesh with no rig above it fails the second, draws through th
 static program, and renders the vertices it stored, which *is* its bind pose. No
 per-instance branch in any vertex stage decides that.
 
+**An empty palette switches the whole apparatus off.** A frame that posed nothing
+leaves `skinMatrices` empty, and every stage keys off that one fact rather than
+discovering it per item:
+
+| Stage | With no palette |
+|-------|-----------------|
+| `RenderView::build` | resolves the pose pointer to null once; neither gather looks an entity up |
+| `GLInstanceBatcher` | no mesh resolve per drawable, no per-instance palette base, no upload, no binding, and the narrow sort key |
+| `GLDepthPrepass` / `GLForwardPass` | the skinned program is not bound and not given the frame's uniforms |
+| `GLShadowPass` | the skinned programs are never bound, and every run is one instanced draw |
+
+That is the same rule the vertex format follows, applied to the frame rather than
+to the mesh: a scene with no characters pays nothing for the machinery that draws
+them. It is worth 0.42 ms a frame on `examples/stress_arena`, which has none.
+
 The skinned programs are plain path-constructed shaders, so hot reload tracks
 them with no new code:
 
@@ -409,6 +433,11 @@ them with no new code:
 
 The fragment stages are includes rather than copies: a lobe added to the
 ubershader can never reach only half the scene.
+
+`GLShadowPass` also tracks which program is current across the whole pass. A
+program has to be bound to be given a uniform, and the pass hands matrices to one
+per atlas tile and per cube face; binding per tile makes `glUseProgram` the
+largest thing it does when only one program is ever used.
 
 **The shadow pass finds its palettes differently, and is forced to.** It takes
 its transforms as vertex attributes rather than out of storage, and

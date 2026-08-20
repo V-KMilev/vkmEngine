@@ -68,10 +68,13 @@ struct DrawCommand {
  * binds material/shader state per run first.
  *
  * Two grouping modes:
- *  - buildGrouped: sort by (material, mesh) and merge identical draws into one
- *    instanced call each. For order-independent buckets (opaque).
+ *  - buildGrouped: sort by (skinned, material, mesh) and merge identical draws
+ *    into one instanced call each. For order-independent buckets (opaque).
  *  - buildSequential: one instance per run, input order preserved. For
  *    order-dependent buckets (back-to-front transparents).
+ *
+ * Both take the frame's bone count, and both do exactly nothing about skinning
+ * when it is zero.
  *
  * The returned run list is valid only until the next build*() on this batcher.
  */
@@ -87,11 +90,32 @@ class GLInstanceBatcher {
         GLInstanceBatcher& operator=(GLInstanceBatcher && other) = delete;
 
     public:
+        /**
+         * @brief Sort by (skinned, material, mesh) and merge identical draws.
+         *
+         * @param list  Drawables to batch.
+         * @param view  GPU mirror the mesh handles resolve against.
+         * @param bones Matrices in the frame's palette. Zero means nothing was
+         *              posed, and the entire skinned half of the batch - the
+         *              program bit in the sort key, the per-instance palette
+         *              base, its upload and its binding - is skipped, so a
+         *              scene with no characters pays nothing for the machinery
+         *              that draws them.
+         * @return The runs to draw, in batch order.
+         */
         const std::vector<InstanceRun>& buildGrouped(
-            const std::vector<const DrawableData*>& list, const GLView& view);
+            const std::vector<const DrawableData*>& list, const GLView& view, uint32_t bones);
 
+        /**
+         * @brief One instance per run, input order preserved.
+         *
+         * @param list  Drawables to batch, already in the order they must draw in.
+         * @param view  GPU mirror the mesh handles resolve against.
+         * @param bones Matrices in the frame's palette; see buildGrouped().
+         * @return The runs to draw, in input order.
+         */
         const std::vector<InstanceRun>& buildSequential(
-            const std::vector<const DrawableData*>& list, const GLView& view);
+            const std::vector<const DrawableData*>& list, const GLView& view, uint32_t bones);
 
         /**
          * @brief The runs from the most recent build*(), for a consumer that did
@@ -157,8 +181,8 @@ class GLInstanceBatcher {
         /**
          * @brief Push one drawable's matrices into the flattened arrays.
          *
-         * @param d Drawable whose model + normal matrices and palette base are
-         *          appended in run order.
+         * @param d Drawable whose model + normal matrices are appended in run
+         *          order, and its palette base too when the frame posed anything.
          * @param runIndex The run being filled, recorded per instance so the
          *                 cull knows which command to count into.
          */
@@ -170,7 +194,9 @@ class GLInstanceBatcher {
          *
          * Once rather than inside the sort comparator, which would resolve the
          * same mesh handle O(n log n) times to answer a question that does not
-         * change.
+         * change. Called only when the frame has a palette: with none, the
+         * answer is no for every input and resolving it would be a mesh lookup
+         * per drawable to learn that.
          *
          * @param list Drawables being batched.
          * @param view GPU mirror the mesh handles resolve against.
@@ -217,6 +243,7 @@ class GLInstanceBatcher {
          */
         std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_skinBaseBuffer;
 
+        bool     m_skinning         = false;  ///< The frame has a bone palette, so a run can be skinned.
         bool     m_culled           = false;  ///< A cull filled the commands this frame, so draws go indirect.
         uint32_t m_visibleCapacity  = 0;
         uint32_t m_boundsCapacity   = 0;

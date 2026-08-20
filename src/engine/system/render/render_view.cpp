@@ -36,22 +36,25 @@ namespace {
  * poses nothing - which is every rock in the scene, and a skinned mesh with no
  * rig above it - answers a count of 0 and copies nothing.
  *
- * @param poses This frame's poses, or null when nothing posed anything.
+ * Takes the buffer by reference: a frame that posed nothing has no buffer worth
+ * asking, and build() settles that once for the whole frame rather than leaving
+ * every entity to discover it.
+ *
+ * @param poses This frame's poses.
  * @param id    Entity the item was gathered for.
  * @param out   The frame's flat palette array, appended to.
  * @param first Set to the item's first matrix in @p out.
  * @param count Set to how many bones it has, 0 when it is not posed.
  */
-void appendPose(const PoseBuffer* poses, EntityId id, std::vector<glm::mat4>& out,
+void appendPose(const PoseBuffer& poses, EntityId id, std::vector<glm::mat4>& out,
                 uint32_t& first, uint32_t& count) {
     first = 0;
     count = 0;
-    if (!poses) return;
 
-    const PoseSlice* slice = poses->sliceOf(id.index);
+    const PoseSlice* slice = poses.sliceOf(id.index);
     if (!slice || slice->count == 0) return;
 
-    const std::vector<glm::mat4>& palette = poses->palette();
+    const std::vector<glm::mat4>& palette = poses.palette();
     first = static_cast<uint32_t>(out.size());
     count = slice->count;
     out.insert(out.end(), palette.begin() + slice->first,
@@ -89,6 +92,7 @@ void RenderView::build(
         particlesAlpha.clear();
         irradianceVolumes.clear();
         skinMatrices.clear();
+        casterSkins.clear();
         return;
     }
 
@@ -103,8 +107,14 @@ void RenderView::build(
     // neither owns it, so clearing inside one would make their call order
     // load-bearing for no stated reason.
     skinMatrices.clear();
-    buildDrawables(scene, visibility, poses);
-    buildShadowCasters(scene, visibility, poses);
+
+    // Settled once for the whole frame. A frame that posed nothing has no
+    // palette for an item to index into, and every item's zero-bone default is
+    // already the right answer - so the gathers skip the lookup rather than
+    // repeat the same negative answer once per entity.
+    const PoseBuffer* posed = (poses && !poses->slices().empty()) ? poses : nullptr;
+    buildDrawables(scene, visibility, posed);
+    buildShadowCasters(scene, visibility, posed);
 }
 
 void RenderView::buildCamera(const Visibility& visibility) {
@@ -248,7 +258,9 @@ void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility
         drawable.worldMin     = entry.worldMin;
         drawable.worldMax     = entry.worldMax;
         drawable.castShadows  = mesh.castShadows;
-        appendPose(poses, entry.id, skinMatrices, drawable.skinFirst, drawable.skinCount);
+        if (poses) {
+            appendPose(*poses, entry.id, skinMatrices, drawable.skinFirst, drawable.skinCount);
+        }
         drawables.push_back(drawable);
     }
 }
@@ -258,7 +270,9 @@ void RenderView::buildShadowCasters(const Scene& scene, const Visibility& visibi
     PROFILE_SCOPE("RenderView::buildShadowCasters");
 
     shadowCasters.clear();
+    casterSkins.clear();
     shadowCasters.reserve(visibility.shadowCasters.size());
+    if (poses) casterSkins.reserve(visibility.shadowCasters.size());
 
     // The world AABB is carried so the backend can frustum-cull per light. The
     // model + bounds were already computed by the VisibilitySystem.
@@ -273,8 +287,15 @@ void RenderView::buildShadowCasters(const Scene& scene, const Visibility& visibi
         caster.model   = entry.model;
         caster.aabbMin = entry.worldMin;
         caster.aabbMax = entry.worldMax;
-        appendPose(poses, entry.id, skinMatrices, caster.skinFirst, caster.skinCount);
         shadowCasters.push_back(caster);
+
+        // Pushed in the same step as the caster it belongs to, because the two
+        // arrays are addressed by one index.
+        if (poses) {
+            ShadowCasterSkin skin;
+            appendPose(*poses, entry.id, skinMatrices, skin.first, skin.count);
+            casterSkins.push_back(skin);
+        }
     }
 }
 
