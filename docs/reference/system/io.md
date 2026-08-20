@@ -162,10 +162,16 @@ meshes/materials/textures used. In the editor,
 non-hidden asset in the `ResourceManager` into the library + cooked cache and
 rewrites the manifest (skipping assets whose hash is unchanged and whose cooked
 file this build can still read). It waits for anything still importing first,
-through `finalizeAsyncLoads`, the frame-independent half of
-`AsyncLoaderSystem`: an asset that has not landed yet has no vertices to bake,
-and `vkm_cook` has no frame loop to land it. It returns false when any asset failed
-to cook, which is what `vkm_cook`'s exit code carries.
+through `awaitAsyncLoads`: an asset that has not landed yet has no vertices to
+bake, and `vkm_cook` has no frame loop to land it. It returns false when any
+asset failed to cook, which is what `vkm_cook`'s exit code carries.
+
+`finalizeAsyncLoads` / `awaitAsyncLoads` (`system/async/async_loader_system.h`)
+are that finalisation without a frame - drain once, and drain until quiet.
+`AsyncLoaderSystem` is the per-frame caller of the first. The two callers of the
+second are the cooker and the `decimate` mesh recipe, which would otherwise
+cluster a base mesh that has not arrived and silently produce no LOD level at
+all. Both run where there is no next frame to wait for.
 
 **Load** - `AssetSerializer::loadAssets` resolves each name through the manifest,
 **cache first and recipe on a miss**. `resolveCookedSource` probes the cooked

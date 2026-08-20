@@ -2,12 +2,10 @@
 
 #include "cook/asset_cooker.h"
 
-#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <system_error>
-#include <thread>
 
 #include <nlohmann/json.hpp>
 
@@ -102,47 +100,6 @@ bool isUpToDate(AssetType type, const std::string& name, uint64_t hash, CookedOu
     if (!std::filesystem::exists(AssetLibrary::recipePath(type, name), ec)) return false;
     if (cooked == CookedOutput::None) return true;
     return AssetCook::isCookedCurrent(type, AssetLibrary::cookedPath(type, name), hash);
-}
-
-// Meshes and textures are the two kinds that import off the ThreadPool; every
-// other kind is decoded before its factory returns.
-size_t inFlightCount(const ResourceManager& resources) {
-    size_t pending = 0;
-    resources.forEachOfType<MeshAsset>([&](MeshHandle, const MeshAsset& mesh) {
-        if (mesh.loading) ++pending;
-    });
-    resources.forEachOfType<TextureAsset>([&](TextureHandle, const TextureAsset& tex) {
-        if (tex.loading) ++pending;
-    });
-    return pending;
-}
-
-// How long to wait on the imports a scene load started before calling them lost.
-// Generous because it is bounded by Assimp on the largest model a project holds,
-// and only ever reached when a worker died without pushing its completion - the
-// alternative to giving up there is a build that hangs with nothing in the log.
-constexpr auto IMPORT_TIMEOUT = std::chrono::seconds(30);
-
-// Land every asset still decoding, so the walks below see the contents they are
-// meant to bake rather than empty stubs.
-//
-// A host with a frame loop does this through AsyncLoaderSystem and never has to
-// think about it. The cooker has no frames: without this it walks the assets a
-// scene load just requested, finds every one of them still loading, skips them
-// all, and reports a successful cook over a project it produced nothing for.
-bool finishPendingImports(ResourceManager& resources) {
-    const auto deadline = std::chrono::steady_clock::now() + IMPORT_TIMEOUT;
-    for (;;) {
-        finalizeAsyncLoads(resources);
-        const size_t pending = inFlightCount(resources);
-        if (pending == 0) return true;
-        if (std::chrono::steady_clock::now() >= deadline) {
-            LOG_ERROR("Cooker: %zu asset(s) still importing after %llds; giving up on them",
-                pending, static_cast<long long>(IMPORT_TIMEOUT.count()));
-            return false;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
 }
 
 bool writeRecipeFile(const std::filesystem::path& path, const std::string& name,
@@ -291,7 +248,12 @@ bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
 bool cookAllAssets(ResourceManager& resources) {
     LOG_INFO("Cooking assets into the library...");
 
-    size_t failed = finishPendingImports(resources) ? 0 : 1;
+    // Land every asset still decoding, so the walks below see the contents they
+    // are meant to bake rather than empty stubs. A host with a frame loop does
+    // this through AsyncLoaderSystem and never has to think about it; the cooker
+    // has no frames, and without it every imported asset is skipped and the run
+    // reports a successful cook over a project it produced nothing for.
+    size_t failed = awaitAsyncLoads(resources) ? 0 : 1;
 
     // Textures first, then materials (which reference textures by name), then
     // skeletons, then the clips and meshes that name one - matching the load
