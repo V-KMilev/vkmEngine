@@ -13,7 +13,7 @@
 #include "data/gl_shadow_atlas.h"
 #include "data/gl_cubemap.h"
 #include "gl_buffer_upload.h"
-#include "ecs/component/light.h"
+#include "ecs/component/render/light.h"
 #include "system/render/render_view.h"
 #include "debug/profiler.h"
 #include "platform/threading/thread_pool.h"

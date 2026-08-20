@@ -59,7 +59,13 @@ int main(int argc, char** argv) {
             return EXIT_FAILURE;
         }
 
-        Vkm::Engine::AssetCooker::cookAllAssets(resources);
+        // The exit code is what an unattended build reads. A cook that could not
+        // produce part of the library has to say so here, or the failure surfaces
+        // as a game that cannot load its own assets.
+        if (!Vkm::Engine::AssetCooker::cookAllAssets(resources)) {
+            LOG_ERROR("Cooking '%s' did not complete", project.name.c_str());
+            return EXIT_FAILURE;
+        }
         LOG_INFO("Cooked '%s'", project.name.c_str());
 
     } catch (const std::exception& e) {

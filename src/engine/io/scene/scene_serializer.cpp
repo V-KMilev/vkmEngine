@@ -25,7 +25,7 @@
 #include "resource/asset/font_asset.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "io/scene/prefab.h"
-#include "ecs/component/prefab_instance.h"
+#include "ecs/component/prefab/prefab_instance.h"
 
 namespace Vkm::Engine::SceneSerializer {
 
@@ -72,6 +72,7 @@ constexpr uint32_t MAX_ENTITY_SLOT = 1u << 22;
     P(Light,            "Light")                \
     P(Rigidbody,        "Rigidbody")            \
     P(Collider,         "Collider")             \
+    P(CharacterController, "CharacterController") \
     R(Mesh,             "Mesh")                 \
     R(LOD,              "LOD")                  \
     R(Decal,            "Decal")                \
@@ -79,6 +80,7 @@ constexpr uint32_t MAX_ENTITY_SLOT = 1u << 22;
     P(IrradianceVolume, "IrradianceVolume")     \
     P(ReflectionProbe,  "ReflectionProbe")      \
     P(Animation,        "Animation")            \
+    R(Animator,         "Animator")             \
     P(ScriptComponent,  "Script")               \
     P(UICanvas,         "UICanvas")             \
     P(UIElement,        "UIElement")            \

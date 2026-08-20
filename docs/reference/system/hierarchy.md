@@ -14,9 +14,9 @@ It runs in `SystemStage::Transform`, between `Simulation` and
 - `src/engine/system/hierarchy/hierarchy_system.h` for the System.
 - `src/engine/system/hierarchy/hierarchy_operations.h` for the
   free-function mutation API.
-- `src/engine/ecs/component/hierarchy.h` for the `Hierarchy` component
+- `src/engine/ecs/component/core/hierarchy.h` for the `Hierarchy` component
   (`parent`, `firstChild`, `nextSibling`, `prevSibling`).
-- `src/engine/ecs/component/world_transform.h` for the resolved
+- `src/engine/ecs/component/core/world_transform.h` for the resolved
   `WorldTransform` (a single `glm::mat4 model`).
 
 ## Mutation API
@@ -36,7 +36,7 @@ component writes are not.
 ## Reading a world pose
 
 The read side of the same rule lives beside the component, in
-`ecs/component/world_transform.h`, so no consumer has to open-code it:
+`ecs/component/core/world_transform.h`, so no consumer has to open-code it:
 
 | Function                                          | Returns                                                        |
 |---------------------------------------------------|----------------------------------------------------------------|

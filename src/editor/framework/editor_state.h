@@ -46,6 +46,7 @@ struct EditorState {
     bool showRenderSettings = false;            ///< Render Settings window (pass toggles + per-effect tuning)
     bool showColliders      = false;            ///< Draw physics collider wireframes in the viewport (View menu)
     bool showBounds         = false;            ///< Draw per-entity world AABBs in the viewport (View menu)
+    bool showSkeletons      = false;            ///< Draw posed rigs as bone segments in the viewport (View menu)
 
     // Layout dimensions (pixels)
     float leftPanelWidth    = 260.0f;

@@ -6,8 +6,8 @@
 #include "core/clock.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
-#include "ecs/component/animation.h"
-#include "ecs/component/transform.h"
+#include "ecs/component/animation/animation.h"
+#include "ecs/component/core/transform.h"
 #include "platform/threading/thread_pool.h"
 
 namespace Vkm::Engine {

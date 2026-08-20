@@ -22,7 +22,7 @@ namespace {
 constexpr uint32_t MANIFEST_VERSION = 1;
 
 // Directory an asset type keeps its files in, under both library() and cooked().
-constexpr const char* TYPE_DIRS[] = {"meshes", "textures", "materials"};
+constexpr const char* TYPE_DIRS[] = {"meshes", "textures", "materials", "skeletons", "clips"};
 static_assert(sizeof(TYPE_DIRS) / sizeof(TYPE_DIRS[0]) == static_cast<size_t>(AssetType::Count),
               "TYPE_DIRS must stay in sync with AssetType");
 

@@ -14,11 +14,11 @@
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/environment.h"
-#include "ecs/component/collider.h"
-#include "ecs/component/hierarchy.h"
-#include "ecs/component/rigidbody.h"
-#include "ecs/component/transform.h"
-#include "ecs/component/world_transform.h"
+#include "ecs/component/core/hierarchy.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/core/world_transform.h"
+#include "ecs/component/physics/collider.h"
+#include "ecs/component/physics/rigidbody.h"
 #include "core/event/event_bus.h"
 #include "system/physics/inertia.h"
 #include "system/physics/physics_events.h"
@@ -36,6 +36,11 @@ constexpr float SLEEP_ANGULAR_SQ = 0.04f;   // (0.2 rad/s)^2
 constexpr float SLEEP_DELAY      = 0.5f;    // seconds of rest before sleeping
 constexpr float WAKE_SPEED_SQ    = 0.25f;   // partner speed^2 that wakes a sleeper
 
+// Placeholder support normal, below any unit normal's y so the first contact
+// always replaces it. A body held only by a vertical wall would otherwise keep
+// the zero vector, and report support with no direction.
+const glm::vec3 NO_SUPPORT = {0.0f, -2.0f, 0.0f};
+
 float dynamicInverseMass(const Rigidbody& rb) {
     if (rb.isStatic || rb.isKinematic || rb.mass <= 0.0f) return 0.0f;
     return 1.0f / rb.mass;
@@ -49,6 +54,14 @@ bool isFrozen(const Rigidbody& rb, float invMass) {
     return rb.sleeping || invMass == 0.0f;
 }
 
+// Half-extent of one part's own local-space AABB. A capsule's is its radius on
+// the two axes across the segment and radius + halfHeight along it.
+glm::vec3 partLocalExtent(const ColliderPart& part) {
+    return part.shape == ColliderShape::Capsule
+        ? glm::vec3(part.radius, part.halfHeight + part.radius, part.radius)
+        : part.halfExtents;
+}
+
 glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
     // freezeRotation: infinite rotational inertia. Contact impulses then apply
     // zero torque in the solver, so the body translates but never tumbles -
@@ -56,20 +69,35 @@ glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
     if (rb.freezeRotation) return glm::mat3(0.0f);
     if (dynamicInverseMass(rb) == 0.0f || !collider || collider->parts.empty())
         return glm::mat3(0.0f);
-    // Approximate the collider's inertia with a solid box of its overall local
-    // extent - exact per-part inertia isn't worth it for gameplay.
-    glm::vec3 mn(std::numeric_limits<float>::max());
-    glm::vec3 mx(std::numeric_limits<float>::lowest());
-    for (const ColliderBox& part : collider->parts) {
-        mn = glm::min(mn, part.center - part.halfExtents);
-        mx = glm::max(mx, part.center + part.halfExtents);
+
+    glm::vec3 center(0.0f);
+    glm::mat3 inertia(0.0f);
+    if (collider->parts.size() == 1 && collider->parts[0].shape == ColliderShape::Capsule) {
+        // A lone capsule gets its own tensor. It is the one shape the box
+        // approximation below is badly wrong about: an upright capsule spins
+        // about its axis several times more freely than the box around it, and
+        // that difference is exactly what a graze against a character tests.
+        const ColliderPart& part = collider->parts[0];
+        center  = part.center;
+        inertia = capsuleInertiaLocal(rb.mass, part.radius, part.halfHeight);
+    } else {
+        // Approximate the collider's inertia with a solid box of its overall
+        // local extent - exact per-part inertia isn't worth it for gameplay.
+        glm::vec3 mn(std::numeric_limits<float>::max());
+        glm::vec3 mx(std::numeric_limits<float>::lowest());
+        for (const ColliderPart& part : collider->parts) {
+            const glm::vec3 extent = partLocalExtent(part);
+            mn = glm::min(mn, part.center - extent);
+            mx = glm::max(mx, part.center + extent);
+        }
+        center  = (mx + mn) * 0.5f;
+        inertia = boxInertiaLocal(rb.mass, (mx - mn) * 0.5f);
     }
+
     // Inertia about the collider centre, parallel-axis-shifted to the entity
     // origin (where the solver measures contact arms) so an off-centre collider
     // gets its rotational response about the correct axis.
-    const glm::mat3 inertia = boxInertiaLocal(rb.mass, (mx - mn) * 0.5f);
     if (inertia == glm::mat3(0.0f)) return glm::mat3(0.0f);
-    const glm::vec3 center = (mx + mn) * 0.5f;
     const glm::mat3 shifted = glm::dot(center, center) > 0.0f
                                 ? parallelAxisShift(inertia, rb.mass, center)
                                 : inertia;
@@ -88,10 +116,19 @@ void computeAABB(
     outMax = glm::vec3(std::numeric_limits<float>::lowest());
     const glm::mat3 r = glm::mat3_cast(rot);
     glm::mat4 model = glm::mat4_cast(rot);  // rotation block is constant per body
-    for (const ColliderBox& part : collider.parts) {
-        model[3] = glm::vec4(pos + r * part.center, 1.0f);
+    for (const ColliderPart& part : collider.parts) {
+        const glm::vec3 center = pos + r * part.center;
         glm::vec3 mn, mx;
-        Math::localToWorldAABB(model, -part.halfExtents, part.halfExtents, mn, mx);
+        if (part.shape == ColliderShape::Capsule) {
+            // Exact, and cheaper than the box path: the bound of a swept segment
+            // is the bound of its endpoints grown by the radius.
+            const glm::vec3 axis = r[1] * part.halfHeight;
+            mn = glm::min(center - axis, center + axis) - glm::vec3(part.radius);
+            mx = glm::max(center - axis, center + axis) + glm::vec3(part.radius);
+        } else {
+            model[3] = glm::vec4(center, 1.0f);
+            Math::localToWorldAABB(model, -part.halfExtents, part.halfExtents, mn, mx);
+        }
         outMin = glm::min(outMin, mn);
         outMax = glm::max(outMax, mx);
     }
@@ -103,14 +140,24 @@ bool aabbOverlap(const ColliderProxy& a, const ColliderProxy& b) {
         && a.aabbMin.z <= b.aabbMax.z && a.aabbMax.z >= b.aabbMin.z;
 }
 
-void expandSubShapes(const ColliderProxy& p, const std::vector<ColliderBox>& parts,
-                     std::vector<BoxShape>& out) {
-    out.clear();
-    out.reserve(p.partsCount);
+// Place one proxy's parts in world space, sorted into one array per shape. Two
+// monomorphic arrays rather than one tagged list: the pair loops below are
+// quadratic, so the shape test belongs here, once per part, not inside them.
+void expandSubShapes(const ColliderProxy& p, const std::vector<ColliderPart>& parts,
+                     std::vector<BoxShape>& boxes, std::vector<CapsuleShape>& capsules) {
+    boxes.clear();
+    capsules.clear();
     const glm::mat3 r = glm::mat3_cast(p.rotation);
     for (uint32_t i = 0; i < p.partsCount; ++i) {
-        const ColliderBox& part = parts[p.partsFirst + i];
-        out.push_back({p.position + r * part.center, {r[0], r[1], r[2]}, part.halfExtents});
+        const ColliderPart& part = parts[p.partsFirst + i];
+        const glm::vec3 center = p.position + r * part.center;
+        if (part.shape == ColliderShape::Capsule) {
+            // The capsule's segment runs along the body's local +Y.
+            const glm::vec3 axis = r[1] * part.halfHeight;
+            capsules.push_back({center - axis, center + axis, part.radius});
+        } else {
+            boxes.push_back({center, {r[0], r[1], r[2]}, part.halfExtents});
+        }
     }
 }
 
@@ -131,16 +178,17 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 
     broadphase();
 
-    // hasContact spans narrowphase -> writeback (the sleep test reads it after the
-    // solve), so it is owned here and threaded through both phases.
+    // Both span narrowphase -> writeback (the sleep test and the support outputs
+    // are read after the solve), so they are owned here and threaded through.
     std::vector<bool> hasContact(m_bodies.size(), false);
-    narrowphase(hasContact, ctx.events);
+    std::vector<glm::vec3> supportNormal(m_bodies.size(), NO_SUPPORT);
+    narrowphase(hasContact, supportNormal, ctx.events);
 
     wakeOnImpact(scene);
 
     solve(physics, dt);
 
-    writeback(scene, dt, hasContact);
+    writeback(scene, dt, hasContact, supportNormal);
 }
 
 bool PhysicsSystem::gatherBodies(Scene& scene) {
@@ -265,14 +313,16 @@ void PhysicsSystem::broadphase() {
     }
 }
 
-void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events) {
+void PhysicsSystem::narrowphase(std::vector<bool>& hasContact,
+                                std::vector<glm::vec3>& supportNormal,
+                                EventBus& events) {
     PROFILE_SCOPE("Physics/Narrowphase");
 
     m_manifolds.clear();
     Contact scratch[MAX_CONTACTS_PER_MANIFOLD];
 
-    // Colliders expand into their child boxes here, so a single body pair can
-    // yield several manifolds (one per child box-pair that touches). The solver
+    // Colliders expand into their world-space parts here, so a single body pair
+    // can yield several manifolds (one per part-pair that touches). The solver
     // already handles many manifolds per body pair, so this just works - each
     // manifold carries the same bodyA/bodyB indices.
 
@@ -281,31 +331,62 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact, EventBus& events)
         const ColliderProxy& B = m_proxies[pair.second];
         const bool trigger = A.isTrigger || B.isTrigger;
 
-        expandSubShapes(A, m_proxyParts, m_subA);
-        expandSubShapes(B, m_proxyParts, m_subB);
+        expandSubShapes(A, m_proxyParts, m_boxA, m_capsuleA);
+        expandSubShapes(B, m_proxyParts, m_boxB, m_capsuleB);
 
         bool anyContact = false;
         glm::vec3 contactPoint(0.0f);
         glm::vec3 contactNormal(0.0f, 1.0f, 0.0f);
-        for (const BoxShape& sa : m_subA) {
-            for (const BoxShape& sb : m_subB) {
-                const int n = contactBoxes(sa, sb, scratch);
-                if (n == 0) continue;
-                if (!anyContact) {  // keep the first contact as the event's representative
-                    contactPoint  = scratch[0].point;
-                    contactNormal = scratch[0].normal;
-                }
-                anyContact = true;
-                if (trigger) continue;  // queried, not resolved
 
-                ContactManifold manifold;
-                manifold.bodyA = A.body;
-                manifold.bodyB = B.body;
-                manifold.count = std::min(n, MAX_CONTACTS_PER_MANIFOLD);
-                for (int c = 0; c < manifold.count; ++c) manifold.contacts[c] = scratch[c];
-                m_manifolds.push_back(manifold);
+        // Every shape pairing lands here, so the manifold bookkeeping is written
+        // once. Whatever produced the contacts has already oriented them A -> B.
+        auto record = [&](int n) {
+            if (n == 0) return;
+            if (!anyContact) {  // keep the first contact as the event's representative
+                contactPoint  = scratch[0].point;
+                contactNormal = scratch[0].normal;
+            }
+            anyContact = true;
+            if (trigger) return;  // queried, not resolved
+
+            ContactManifold manifold;
+            manifold.bodyA = A.body;
+            manifold.bodyB = B.body;
+            manifold.count = std::min(n, MAX_CONTACTS_PER_MANIFOLD);
+            for (int c = 0; c < manifold.count; ++c) manifold.contacts[c] = scratch[c];
+            m_manifolds.push_back(manifold);
+
+            // The most upward normal each body is held by. A's surface normal is
+            // -normal and B's is +normal, because the normal runs A -> B and a
+            // surface pushes back along its own outward direction.
+            for (int c = 0; c < manifold.count; ++c) {
+                const glm::vec3& normal = manifold.contacts[c].normal;
+                if (-normal.y > supportNormal[A.body].y) supportNormal[A.body] = -normal;
+                if ( normal.y > supportNormal[B.body].y) supportNormal[B.body] =  normal;
+            }
+        };
+
+        for (const BoxShape& sa : m_boxA)
+            for (const BoxShape& sb : m_boxB)
+                record(contactBoxes(sa, sb, scratch));
+
+        for (const CapsuleShape& ca : m_capsuleA)
+            for (const BoxShape& sb : m_boxB)
+                record(contactCapsuleBox(ca, sb, scratch));
+
+        // B's capsules against A's boxes. Capsule-vs-box is not symmetric, so it
+        // runs capsule-first and the normals are flipped back to A -> B here.
+        for (const CapsuleShape& cb : m_capsuleB) {
+            for (const BoxShape& sa : m_boxA) {
+                const int n = contactCapsuleBox(cb, sa, scratch);
+                for (int c = 0; c < n; ++c) scratch[c].normal = -scratch[c].normal;
+                record(n);
             }
         }
+
+        for (const CapsuleShape& ca : m_capsuleA)
+            for (const CapsuleShape& cb : m_capsuleB)
+                record(contactCapsuleCapsule(ca, cb, scratch));
         if (anyContact) {
             // Enqueued, not emitted: listeners fire on the next EventBus flush,
             // never mid-solve.
@@ -361,13 +442,19 @@ void PhysicsSystem::solve(const PhysicsSettings& physics, float dt) {
     solveContacts(m_solverBodies, m_manifolds, params);
 }
 
-void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& hasContact) {
+void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& hasContact,
+                              const std::vector<glm::vec3>& supportNormal) {
     PROFILE_SCOPE("Physics/Writeback");
 
     for (size_t k = 0; k < m_bodies.size(); ++k) {
         const EntityId id = m_bodies[k];
         Rigidbody& rb = scene.get<Rigidbody>(id);
         PhysicsBody& pb = m_solverBodies[k];
+
+        // Published before the early-outs below: a sleeping body resting on the
+        // floor is supported, and that is exactly when a controller asks.
+        rb.supported = hasContact[k];
+        rb.supportNormal = rb.supported ? supportNormal[k] : glm::vec3(0.0f, 1.0f, 0.0f);
 
         if (rb.isStatic) continue;
         if (rb.sleeping) {

@@ -80,7 +80,7 @@ The directory tree encodes responsibility. Let it place your code:
 | If the code is...                          | It belongs in...                    |
 |--------------------------------------------|-------------------------------------|
 | Per-frame behavior over the scene          | `src/engine/system/<name>/` (a `System`) |
-| Pure data attached to an entity            | `src/engine/ecs/component/`         |
+| Pure data attached to an entity            | `src/engine/ecs/component/<subject>/` |
 | Low-level container / handle / type machinery | `src/engine/core/memory/`        |
 | GPU-specific work                          | `src/backend/opengl/` (behind `RenderBackend`) |
 | Editor-only UI / interaction               | `src/editor/`                       |

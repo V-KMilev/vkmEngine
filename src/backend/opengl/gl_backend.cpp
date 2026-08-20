@@ -224,6 +224,14 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         partitionDrawables(view);
     }
 
+    // The frame's bone palettes: one upload, shared by every pass that draws a
+    // skinned run. It must precede the batch, which stamps each instance with
+    // where in it that instance's own bones start.
+    {
+        PROFILE_SCOPE("Render/SkinPalette");
+        m_skinPalette.update(view.skinMatrices);
+    }
+
     // ...and batch the opaque bucket once too (see GLFrameContext::opaqueBatch).
     {
         PROFILE_SCOPE("Render/OpaqueBatch");
@@ -247,6 +255,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_fog,
         m_irradiance,
         m_hiz,
+        m_skinPalette,
         m_opaque,
         m_alphaMask,
         m_transparent,
@@ -276,6 +285,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     PROFILE_PLOT("Render/Transparent", static_cast<int64_t>(m_transparent.size()));
     PROFILE_PLOT("Render/Lights",      static_cast<int64_t>(view.lights.size()));
     PROFILE_PLOT("Render/Probes",      static_cast<int64_t>(ctx.probeCount));
+    PROFILE_PLOT("Render/SkinBones",   static_cast<int64_t>(view.skinMatrices.size()));
 
     // Frame end: re-bake the irradiance volume when its box, grid, or version
     // changed. Like the probe bake this rebinds the camera / light UBOs, which

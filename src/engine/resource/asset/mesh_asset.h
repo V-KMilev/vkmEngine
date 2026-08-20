@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <type_traits>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -21,6 +23,26 @@ struct Vertex {
 };
 
 /**
+ * @brief One vertex's binding to the rig, in a stream parallel to `vertices`.
+ *
+ * Kept out of Vertex on purpose: folding four indices and four weights into it
+ * would cost every vertex of every mesh in the engine 25% more bandwidth, paid
+ * hardest by the shadow pass, which reads only `aPos` and replays the geometry
+ * per cascade tile and per cube face. A rock does not pay for skinning.
+ *
+ * Indices are 16-bit because the cooked format has no migration path and an
+ * 8-bit index would weld a 255-bone ceiling into it permanently. Weights are
+ * quantised so the four bytes sum to exactly 255, which makes `w / 255.0` sum
+ * to exactly 1.0 and spares every vertex stage a renormalise.
+ */
+struct SkinVertex {
+    uint16_t bones[4];    ///< Indices into the skeleton named by MeshAsset::skeleton.
+    uint8_t  weights[4];  ///< unorm8 influences, summing to exactly 255.
+};
+static_assert(sizeof(SkinVertex) == 12, "SkinVertex layout changed - bump MESH_FORMAT_VERSION");
+static_assert(std::is_trivially_copyable_v<SkinVertex>, "SkinVertex must be trivially copyable to bulk-write");
+
+/**
  * @brief CPU-side geometry: indexed triangle mesh plus a cached local-space AABB.
  *
  * The backend uploads `vertices`/`indices` to GPU buffers on sync; the bounds
@@ -29,6 +51,35 @@ struct Vertex {
 struct MeshAsset : public Resource {
     std::vector<Vertex>   vertices = {};  ///< Vertex buffer (geometry)
     std::vector<uint32_t> indices  = {};  ///< Index buffer (triangle indices)
+
+    /**
+     * @brief Per-vertex rig binding: empty, or exactly `vertices.size()` long.
+     *
+     * A mesh is skinned iff this is non-empty - the asset already knows, so no
+     * component has to say so.
+     */
+    std::vector<SkinVertex> skin = {};
+
+    /**
+     * @brief Name of the rig `skin`'s indices address; empty when unskinned.
+     *
+     * A compatibility tag rather than a dependency, which is why it is a name
+     * and not a handle: the mesh uploads its skin stream either way, and the
+     * pose it is drawn with comes from whatever rig is driving it. The runtime
+     * warns when the two names disagree, which reports the failure that
+     * actually happens - a rig assigned to the wrong character - instead of
+     * exploding the geometry and leaving the cause to be guessed at.
+     */
+    std::string skeleton = "";
+
+    /**
+     * @brief Largest distance from a vertex to any bone that influences it.
+     *
+     * How far a posed vertex can travel from its bone's origin, which is what a
+     * bone-origin bounding box has to be inflated by before it contains the
+     * skin. Zero when unskinned.
+     */
+    float skinRadius = 0.0f;
 
     glm::vec3 boundsMin{0};           ///< Minimum AABB point in local space
     glm::vec3 boundsMax{0};           ///< Maximum AABB point in local space

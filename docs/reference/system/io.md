@@ -75,8 +75,9 @@ clean write, so a full disk cannot leave a truncated file where a good one was.
 
 `SceneSerializer::save` emits a JSON object with four top-level blocks:
 
-- `assets`: name-only references to every mesh / material a component names -
-  `Mesh`, `LOD` levels, `Decal` - plus the textures those materials use. A
+- `assets`: name-only references to every asset a component names - `Mesh`,
+  `LOD` levels, `Decal`, and the rig plus clip an `Animator` names - plus the
+  textures those materials use. A
   component reference the assets block never lists is one the loader never
   recreates, so every component that names an asset has to be walked there. The
   asset *data* lives in the cooked library (keyed by name), not in the scene
@@ -133,7 +134,8 @@ a hash of the recipe. Every asset is its own file:
 - `library/<type>/<uid>.json` - the recipe (and, for materials, the canonical
   `inline` form). The version-controlled source of truth.
 - `cooked/<type>/<uid>.vkmc` - the derived binary blob (mesh vertices/indices;
-  decoded texture pixels). Regenerable; git-ignored.
+  decoded texture pixels; a rig's bones and bind data; a clip's keys).
+  Regenerable; git-ignored.
 - `library/_manifest.json` - maps each asset `name` to its type and recipe hash,
   under a `manifestVersion` the loader checks. `AssetLibrary`
   is the in-memory view, loaded at startup; a manifest in a version this build
@@ -158,25 +160,41 @@ assets (`Mesh`, `LOD`, `Decal`) and emits **name-only** references to the
 meshes/materials/textures used. In the editor,
 `SceneIOController` first calls `AssetCooker::cookAllAssets`, which bakes every
 non-hidden asset in the `ResourceManager` into the library + cooked cache and
-rewrites the manifest (skipping assets whose hash is unchanged).
+rewrites the manifest (skipping assets whose hash is unchanged and whose cooked
+file this build can still read). It waits for anything still importing first,
+through `awaitAsyncLoads`: an asset that has not landed yet has no vertices to
+bake, and `vkm_cook` has no frame loop to land it. It returns false when any
+asset failed to cook, which is what `vkm_cook`'s exit code carries.
 
-**Load** - `AssetSerializer::loadAssets` resolves each name through the manifest:
-meshes/textures get a synthesized `{"kind":"cooked","name":...}` source, materials
-load their `inline` descriptor from the library file. Both go through the
-`AssetFactory` dispatch seam (`io/asset/asset_factory.h`) - three function pointers
-(mesh / texture / material) that each binary wires at startup, with plain
-switch dispatch on the `kind` field:
+`finalizeAsyncLoads` / `awaitAsyncLoads` (`system/async/async_loader_system.h`)
+are that finalisation without a frame - drain once, and drain until quiet.
+`AsyncLoaderSystem` is the per-frame caller of the first. The two callers of the
+second are the cooker and the `decimate` mesh recipe, which would otherwise
+cluster a base mesh that has not arrived and silently produce no LOD level at
+all. Both run where there is no next frame to wait for.
+
+**Load** - `AssetSerializer::loadAssets` resolves each name through the manifest,
+**cache first and recipe on a miss**. `resolveCookedSource` probes the cooked
+file with `AssetCook::isCookedCurrent`; when it answers yes the asset gets a
+synthesized `{"kind":"cooked","name":...}` source, and when it answers no the
+asset gets the `source` object out of its library recipe instead - the same
+`model` / `generator` / `file` descriptor the import wrote. A material skips the
+probe: it has no cooked binary, so its recipe is always what loads. All of them
+go through the `AssetFactory` dispatch seam (`io/asset/asset_factory.h`) - five function pointers
+(mesh / texture / material / skeleton / animation clip) that each binary wires at
+startup, with plain switch dispatch on the `kind` field:
 
 | `kind`                 | Handled by       | Resolves to                                         |
 |------------------------|------------------|-----------------------------------------------------|
-| `cooked`               | runtime + editor | A mesh/texture read from its cooked binary (async)  |
+| `cooked`               | runtime + editor | A mesh/texture read from its cooked binary (async), or a skeleton/clip read from its own (synchronously) |
 | `inline`               | runtime + editor | A `MaterialAsset` from PBR scalars + texture refs   |
 | `generator` / `decimate` | editor only    | Procedural / LOD meshes (run by the cooker)         |
-| `file` / `model` / `model-image` | editor only | stb / Assimp texture + mesh import          |
+| `file` / `model` / `model-image` | editor only | stb / Assimp texture, mesh, rig and clip import |
 | `folder` / `model` / `default` / `builtin` / `solid` | editor only | material + texture recipes |
 
 The runtime wires only the cooked dispatch (`registerCookedAssetFactories` sets
-the pointers to `createCookedMesh/Texture/Material`), so it links neither Assimp
+the pointers to `createCookedMesh/Texture/Material/Skeleton/AnimationClip`),
+so it links neither Assimp
 nor the image decoders. The editor instead wires the recipe dispatch
 (`registerRecipeAssetFactories`, built into the editor-only `vkm_cook`),
 whose switches fall through to the cooked functions for cooked/inline kinds.
@@ -186,6 +204,98 @@ Engine code never reaches into `src/tools/`; the dispatch is wired at startup in
 
 Adding a new asset kind means adding a `case` to the dispatch switch; the
 serializer itself does not change.
+
+### The cooked bodies
+
+Every `.vkmc` is the same header - magic, endian sentinel, asset kind, format
+version, recipe hash, payload length - followed by a body whose layout the
+format version names. `AssetType`, `TYPE_DIRS` and the kind tag move together,
+guarded by the `static_assert` in `asset_library.cpp`.
+
+| Body | Holds |
+|------|-------|
+| Mesh | Bounds, the four counts, the skin radius, then bulk vertices, indices and skin, then the rig name |
+| Texture | The `TextureParams` fields, then the decoded pixels |
+| Skeleton | Bone count, a `{parent, nameLen}` record per bone, bulk inverse-bind matrices, bulk bind-pose TRS, then the concatenated names |
+| Animation clip | Bone count, duration, the six key-array counts, the skeleton name length, then the bulk `ClipBone` table, the six key arrays and the name |
+
+Fixed-size records come first and variable-length names last in both new
+bodies, so the size reconciliation works the same way `readMesh` does: bound
+every count by **division** against what is left of the payload before
+multiplying it by anything, then require the remainder to land on exactly zero.
+
+Past the size math, each reader checks what a correctly-sized file can still
+get wrong, because nothing downstream re-checks:
+
+- A skeleton's bones must be **parent-before-child** (`-1 <= parent < index`).
+  Rejecting a later or self-referencing parent here is what lets every consumer
+  compose a pose in one forward loop.
+- A clip's key times and values must pair up, its duration must be finite, and
+  every channel range must land inside the array it addresses - the sampler
+  indexes those arrays directly, once per bone per frame.
+- A bone count past `MAX_SKELETON_BONES` is refused. It is a corruption
+  threshold rather than a capability limit: raising it later accepts strictly
+  more files, so it starts tight.
+- A mesh's skin stream must be parallel to its vertices or absent, and every
+  bone index in it must be under `MAX_SKELETON_BONES`. That second check earns
+  its keep for a sharper reason than the index check beside it: a bone index is
+  never read by the CPU at all, it addresses the pose palette in the vertex
+  stage, so a corrupt one is an out-of-range buffer read on every vertex of
+  every frame and nothing else would notice.
+
+Skeletons and clips are read **synchronously** (`loadCookedSkeleton` /
+`loadCookedAnimationClip`). A rig is a few tens of kilobytes, well under what
+earns a completion type, an `AsyncLoadQueue` lane and a drain in
+`AsyncLoaderSystem`. The component that names them is `Animator`, so a scene's
+assets block carries a `skeletons` and a `clips` section beside the other three;
+they load after materials and before meshes, because a clip names the rig its
+bone indices address.
+
+`MESH_FORMAT_VERSION` is **2**: the mesh body carries the skin stream, the skin
+radius and the rig name. Every mesh cooked before it is refused on read - a
+cooked file is a derived cache and there are no migration read paths in this
+project, by policy. `COOKER_VERSION` moves with it, because `POST_PROCESS_FLAGS`
+changed and every stored recipe hash has to go stale at once.
+
+### What a format bump costs, and why the recipe is reachable
+
+**A format bump costs a re-cook, not a re-import.** That is the whole point of
+keeping the recipe: refusing an old file is only affordable because something
+can still produce a new one. Run `vkm_cook` (or open the project and save) and
+the library rebuilds the binaries the manifest promises.
+
+The mechanism is one probe, used from both ends so the two cannot disagree:
+
+```
+isCookedCurrent(type, path, recipeHash)   // header only: 28 bytes, no body
+```
+
+- **The loader** asks it before resolving a name (`resolveCookedSource`). A file
+  that is absent, foreign, of another kind, of a format version this build does
+  not read, or baked from another recipe is not current, and the recipe loads
+  instead. That fallback is what makes `cooked/` genuinely regenerable rather
+  than regenerable on paper.
+- **The cooker** asks it before skipping an asset (`isUpToDate`). Presence is not
+  enough: a file this build cannot read is not an output that can be skipped.
+
+Both ends have to move together. If only the loader fell back, a bump that left
+recipe hashes untouched would have the cooker call the stale binary current and
+never rewrite it, so every load would re-import from source art forever. If only
+the cooker rewrote, a stale project would still fail to load until someone
+thought to run the cooker.
+
+The probe is deliberately silent - a stale cache is normal and recoverable, so it
+logs nothing and the caller reports what the miss meant. In a host that links no
+importers (the runtime) the fallback still happens, the dispatch refuses the
+recipe kind it gets, and the pair of log lines names the asset and the reason: a
+shipped build cannot rebuild a cache, it needs one cooked for it.
+
+The one thing this does not recover is a recipe whose **source art is gone**. The
+cook then has a recipe and nothing to bake from, which is an error rather than a
+skip: it fails the cook and `vkm_cook` exits non-zero, because the manifest is
+about to promise a file nothing produced. An asset that never had a recipe at all
+is a different case and still only a warning - a project is free to build meshes
+in code and name them, and both examples do.
 
 ## ComponentSerializer
 
@@ -200,8 +310,14 @@ Today's coverage, the flat list in `scene_serializer.cpp`:
   takes the `ResourceManager` that turns a handle into a name and back.
 - `ParticleEmitter`, `IrradianceVolume`, `ReflectionProbe`
 - `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton` (see [UI](ui.md))
-- `Rigidbody`, `Collider` (physics; runtime sleep state and derived mass
-  properties are not persisted - see [Physics](physics.md)).
+- `Rigidbody`, `Collider`, `CharacterController` (physics; runtime sleep state,
+  the support outputs and derived mass properties are not persisted, and a
+  controller writes only its four tuning fields - see [Physics](physics.md)). A
+  collider part
+  writes its `shape` by name alongside every shape's fields, so switching a part
+  to a capsule and back does not lose the half-extents it was authored with; a
+  part with no `shape` key - every part in a scene written before capsules
+  existed - reads as a box.
 - `ScriptComponent` (JSON key `"Script"`): each behavior stored by its registered
   type name and recreated through `BehaviorRegistry` on load (unknown types are
   dropped), with its authored fields in a `properties` object beside it -
@@ -258,7 +374,8 @@ per-entity component shape a scene uses, in its own file:
 ```json
 {"version": 3, "nextUid": 3,
  "entities": [{"uid": 0, "components": {...}}, {"uid": 1, "parent": 0, "components": {...}}],
- "assets": {"textures": [...], "meshes": [...], "materials": [...]}}
+ "assets": {"textures": [...], "meshes": [...], "materials": [...],
+            "skeletons": [...], "clips": [...]}}
 ```
 
 The `assets` block is the same one a scene carries, for the subtree this file

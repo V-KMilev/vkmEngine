@@ -9,20 +9,21 @@
 
 #include "ui/editor_style.h"
 #include "ecs/scene.h"
-#include "ecs/component/mesh.h"
-#include "ecs/component/light.h"
-#include "ecs/component/camera.h"
-#include "ecs/component/animation.h"
-#include "ecs/component/name.h"
-#include "ecs/component/reflection_probe.h"
-#include "ecs/component/irradiance_volume.h"
-#include "ecs/component/decal.h"
-#include "ecs/component/particle_emitter.h"
-#include "ecs/component/ui_canvas.h"
-#include "ecs/component/ui_element.h"
-#include "ecs/component/ui_image.h"
-#include "ecs/component/ui_text.h"
-#include "ecs/component/ui_button.h"
+#include "ecs/component/animation/animation.h"
+#include "ecs/component/animation/animator.h"
+#include "ecs/component/core/name.h"
+#include "ecs/component/render/camera.h"
+#include "ecs/component/render/decal.h"
+#include "ecs/component/render/irradiance_volume.h"
+#include "ecs/component/render/light.h"
+#include "ecs/component/render/mesh.h"
+#include "ecs/component/render/particle_emitter.h"
+#include "ecs/component/render/reflection_probe.h"
+#include "ecs/component/ui/ui_button.h"
+#include "ecs/component/ui/ui_canvas.h"
+#include "ecs/component/ui/ui_element.h"
+#include "ecs/component/ui/ui_image.h"
+#include "ecs/component/ui/ui_text.h"
 
 namespace Vkm::Engine {
 
@@ -262,6 +263,9 @@ EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
         }
         return {"Light", EditorIcon::LightPoint};
     }
+    // Before Mesh: an entity carrying an Animator is the rig whatever else it
+    // carries, and its meshes are the entities under it.
+    if (scene.has<Animator>(id)) return {"Rig", EditorIcon::Anim};
     if (scene.has<Mesh>(id)) {
         return {scene.has<Animation>(id) ? "Animated Mesh" : "Mesh", EditorIcon::Mesh};
     }
