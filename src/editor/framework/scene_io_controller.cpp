@@ -12,9 +12,9 @@
 
 #include "core/clock.h"
 #include "core/system.h"
-#include "ecs/component/camera.h"
-#include "ecs/component/transform.h"
-#include "ecs/component/name.h"
+#include "ecs/component/core/name.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/render/camera.h"
 #include "ecs/scene.h"
 #include "framework/editor_state.h"
 #include "framework/material_preview_session.h"
@@ -42,8 +42,10 @@ SceneIOController::~SceneIOController() = default;
 
 bool SceneIOController::writeScene(FrameContext& ctx, EditorState& state, const std::string& path) {
     // Bake every referenced asset into the cooked library + manifest, then write
-    // the scene as name-only references to those cooked assets.
-    AssetCooker::cookAllAssets(ctx.resources);
+    // the scene as name-only references to those cooked assets. A partial cook
+    // does not stop the save - the scene itself is still worth writing, and the
+    // toast says which half went wrong.
+    const bool cooked = AssetCooker::cookAllAssets(ctx.resources);
 
     const std::string shown = std::filesystem::path(path).filename().string();
     if (!SceneSerializer::save(ctx.scene, ctx.resources, path)) {
@@ -54,6 +56,11 @@ bool SceneIOController::writeScene(FrameContext& ctx, EditorState& state, const 
     }
     state.sceneDirty = false;
     pushRecentPath(state.recentScenes, path);
+    if (!cooked) {
+        state.pushToast(EditorState::ToastKind::Error,
+            "Saved " + shown + ", but some assets did not cook");
+        return true;
+    }
     state.pushToast(EditorState::ToastKind::Info, "Saved " + shown);
     return true;
 }

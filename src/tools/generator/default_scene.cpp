@@ -5,10 +5,10 @@
 #include "resource/resource_manager.h"
 
 #include "ecs/scene.h"
-#include "ecs/component/camera.h"
-#include "ecs/component/mesh.h"
-#include "ecs/component/name.h"
-#include "ecs/component/transform.h"
+#include "ecs/component/core/name.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/render/camera.h"
+#include "ecs/component/render/mesh.h"
 
 #include "generator/light_generators.h"
 #include "generator/material_generators.h"

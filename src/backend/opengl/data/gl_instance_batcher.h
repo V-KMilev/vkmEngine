@@ -20,7 +20,7 @@ class GLView;
 struct DrawableData;
 
 /**
- * @brief One instanced draw: a (material, mesh) run of consecutive instances.
+ * @brief One instanced draw: a (skinned, material, mesh) run of consecutive instances.
  *
  * `first` is the baseInstance into the batcher's uploaded model/normal buffers;
  * `count` instances are drawn from there.
@@ -30,6 +30,18 @@ struct InstanceRun {
     MaterialHandle material;
     uint32_t       first    = 0;
     uint32_t       count    = 0;
+
+    /**
+     * @brief Whether this run draws through the skinned program.
+     *
+     * Leads the sort key, so a batch switches program once rather than per run.
+     * It is not simply "the mesh has a skin stream": an instance also needs a
+     * pose this frame, and a skinned mesh outside any rig has none. Drawing
+     * that one statically renders the vertices it stored, which is its bind
+     * pose - the honest picture of "no rig", arrived at without a per-instance
+     * branch in the vertex stage.
+     */
+    bool           skinned  = false;
 };
 
 /**
@@ -145,11 +157,25 @@ class GLInstanceBatcher {
         /**
          * @brief Push one drawable's matrices into the flattened arrays.
          *
-         * @param d Drawable whose model + normal matrices are appended in run order.
+         * @param d Drawable whose model + normal matrices and palette base are
+         *          appended in run order.
          * @param runIndex The run being filled, recorded per instance so the
          *                 cull knows which command to count into.
          */
         void append(const DrawableData& d, uint32_t runIndex);
+
+        /**
+         * @brief Resolve, once per input, whether it draws through the skinned
+         *        program, into m_skinned.
+         *
+         * Once rather than inside the sort comparator, which would resolve the
+         * same mesh handle O(n log n) times to answer a question that does not
+         * change.
+         *
+         * @param list Drawables being batched.
+         * @param view GPU mirror the mesh handles resolve against.
+         */
+        void resolveSkinned(const std::vector<const DrawableData*>& list, const GLView& view);
 
         /**
          * @brief Upload the flattened model + normal arrays to the GPU instance buffers.
@@ -159,8 +185,10 @@ class GLInstanceBatcher {
     private:
         std::vector<InstanceRun> m_runs;
         std::vector<uint32_t>    m_order;    ///< sort indices into the input list
+        std::vector<uint8_t>     m_skinned;  ///< Per input: draws skinned? Resolved once, then sorted on and grouped by.
         std::vector<glm::mat4>   m_models;   ///< flattened model matrices, run order
         std::vector<glm::mat4>   m_normals;  ///< flattened normal matrices (mat3 -> mat4)
+        std::vector<uint32_t>    m_skinBase; ///< First bone of each instance's palette, batch order.
 
         std::vector<glm::vec4> m_bounds;    ///< World AABB per instance, min then max.
         std::vector<uint32_t>  m_visible;   ///< Identity, until a cull replaces it with the survivors.
@@ -178,11 +206,23 @@ class GLInstanceBatcher {
         std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_boundsBuffer;
         std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_runOfBuffer;
         std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_commandBuffer;
-        bool     m_culled          = false;  ///< A cull filled the commands this frame, so draws go indirect.
-        uint32_t m_visibleCapacity = 0;
-        uint32_t m_boundsCapacity  = 0;
-        uint32_t m_runOfCapacity   = 0;
-        uint32_t m_commandCapacity = 0;
+
+        /**
+         * @brief Where each instance's bones start in the frame's palette.
+         *
+         * Storage, and indexed by the instance slot for the same reason the
+         * transforms are: the cull settles an instance by rewriting that slot,
+         * and anything fetched by draw position instead would follow the wrong
+         * survivor.
+         */
+        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_skinBaseBuffer;
+
+        bool     m_culled           = false;  ///< A cull filled the commands this frame, so draws go indirect.
+        uint32_t m_visibleCapacity  = 0;
+        uint32_t m_boundsCapacity   = 0;
+        uint32_t m_runOfCapacity    = 0;
+        uint32_t m_commandCapacity  = 0;
+        uint32_t m_skinBaseCapacity = 0;
 };
 
 /**

@@ -11,7 +11,7 @@ through irradiance, prefilter, and BRDF LUT maps.
 
 ## Light component
 
-`src/engine/ecs/component/light.h`:
+`src/engine/ecs/component/render/light.h`:
 
 ```cpp
 enum class LightType {

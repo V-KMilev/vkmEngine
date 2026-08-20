@@ -4,7 +4,7 @@
 
 #include <glm/glm.hpp>
 
-#include "ecs/component/collider.h"
+#include "ecs/component/physics/collider.h"
 
 namespace Vkm::Engine {
 
@@ -27,7 +27,10 @@ inline constexpr int COLLIDER_FIT_MAX_DETAIL = 64;
  * Transform scale). @p detail is clamped to [1, COLLIDER_FIT_MAX_DETAIL];
  * detail == 1 returns a single box (the scaled bounds). Never returns empty -
  * a non-watertight or degenerate mesh falls back to one bounds-sized box.
+ *
+ * Every part returned is a ColliderShape::Box. Fitting capsules to a mesh is a
+ * different problem (a medial axis, not a scanline) and is not attempted.
  */
-std::vector<ColliderBox> fitBoxesToMesh(const MeshAsset& mesh, int detail, const glm::vec3& scale);
+std::vector<ColliderPart> fitBoxesToMesh(const MeshAsset& mesh, int detail, const glm::vec3& scale);
 
 } // namespace Vkm::Engine

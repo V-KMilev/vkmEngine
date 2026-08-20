@@ -15,7 +15,7 @@
 #include "core/math/bounds.h"
 #include "system/camera/camera_controller_system.h"
 #include "resource/resource_manager.h"
-#include "ecs/component/world_transform.h"
+#include "ecs/component/core/world_transform.h"
 
 namespace Vkm::Engine {
 

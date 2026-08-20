@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "ecs/component/lod.h"
+#include "ecs/component/render/lod.h"
 #include "resource/asset/mesh_asset.h"
 
 namespace Vkm::Engine {

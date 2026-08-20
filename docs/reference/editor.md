@@ -118,6 +118,36 @@ instead of stacking a zero-length segment. The Inspector's Animation
 section is a compact summary (play/stop, loop, speed, time slider,
 track/key counts) that points here for full keyframe editing.
 
+### Character cards (Inspector)
+
+Three cards cover the 1.6 character components; all three are ordinary
+`editComponentCard` sections, so they undo, record prefab overrides and appear
+in Add Component like every other component.
+
+- **Animator** - rig and clip pickers over `SkeletonAsset` /
+  `AnimationClipAsset`, the bone count of the rig actually resolved, and a
+  transport (play / stop / loop / speed / time scrub) that mirrors the Animation
+  card: loop and speed round-trip with the scene so they push an edit, while
+  play, stop and the scrubber do not. Scrubbing works while paused because the
+  pose system composes every frame. A clip cooked against a different rig is
+  called out in red on the card, where the pairing is being made, rather than
+  only in the log. Blend state is deliberately absent: a crossfade is started
+  from code through `Animator::crossFadeTo` and is never serialized.
+- **Character Controller** - the four tuning fields, plus the live grounded /
+  ground angle / move-input readout, which is what answers "why is it not
+  jumping". It also names the two ways a controller silently does nothing: no
+  `Rigidbody` (or one whose rotation is not frozen) and no `Collider`.
+- **Collider** - a shape picker on a single-part collider, showing half-extents
+  for a box and radius / half height for a capsule, with the capsule's total
+  height spelled out because that is the number an author matches to a model.
+  A mesh-fitted compound shows its part count instead; rebuild it with Fit to
+  Mesh, which always produces boxes.
+
+The hierarchy names an entity carrying an `Animator` a **Rig**, ahead of Mesh -
+an entity with an `Animator` is the rig whatever else it carries, and its meshes
+are the entities under it. The hover tooltip's component digest lists `Animator`
+and `Character` beside the rest.
+
 ## Undo / redo
 
 Every editor mutation goes through a `Command` that captures the
@@ -276,6 +306,14 @@ All are rebindable from the Preferences > Keybinds tab.
 
 Light and camera entities show their own gizmos in `gizmo_overlay.cpp`
 (directional rays, cone projections, frustum lines, area-light edges).
+
+The `View` menu adds three overlays that are off by default because they draw
+for every matching entity rather than the selection: **Show Colliders** (the
+boxes the solver collides against), **Show Bounds** (the world AABB of every
+visible entity) and **Show Skeletons** (each posed rig's bones, straight out of
+`FrameContext::poses` - segments joint to joint, plus an axis triad per bone on
+the selected rig, which is what makes a bone's *orientation* visible and not
+just its position).
 
 ## Entity selection and shortcuts
 

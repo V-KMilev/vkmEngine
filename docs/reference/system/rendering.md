@@ -27,22 +27,26 @@ an OpenGL implementation detail.
 
 ```
 RenderSystem::update(FrameContext)
-  |-- RenderView::build(scene, visibility)        // engine side, backend-agnostic
+  |-- RenderView::build(scene, visibility, ui, poses)  // engine side, backend-agnostic
   |     |-- buildCamera     from the Visibility snapshot
   |     |-- buildLights / buildProbes
   |     |-- buildDrawables  from the visible set (UNSORTED - visibility order;
-  |     |                   the backend does all sorting/partitioning)
-  |     |-- buildShadowCasters  from the whole scene (NOT camera-culled)
+  |     |                   the backend does all sorting/partitioning), appending
+  |     |                   each posed entity's bone palette into skinMatrices
+  |     |-- buildShadowCasters  from the whole scene (NOT camera-culled), which
+  |     |                   appends palettes too - a character just off-screen
+  |     |                   casting into view is only in this list
   |     |-- copy RenderSettings and Environment into the view
   |-- backend.render(view, resources)             // GLBackend
         |-- GLView::sync      upload/refresh changed GPU resources
         |-- bake IBL          when the HDR path changed, or the procedural
         |                     sky's sun/params moved (persistent GLIBLBaker)
         |-- shadow plan       assign atlas slots, cull casters per tile, upload shadow UBO
+        |-- skin palette      upload skinMatrices once (GLSkinPalette, SSBO 5)
         |-- opaque batch      group the opaque bucket into instanced runs (once, shared)
         |-- per-frame UBOs    camera, lights
         |-- partitionDrawables  split into opaque / alpha-mask / transparent
-        |-- run the 18 passes in order
+        |-- run the 19 passes in order
         |-- probe update      re-bake new/moved/changed reflection probes
         |-- irradiance update re-bake the SH volume when its box/grid changed
 ```
@@ -63,6 +67,7 @@ the `VisibilitySystem` output, reusing the vectors' capacity across frames.
 | `camera` | `CameraData` | view / projection / viewProjection + position |
 | `drawables` | `vector<DrawableData>` | Visible set, in visibility order (UNSORTED); the backend sorts/partitions |
 | `shadowCasters` | `vector<ShadowCasterData>` | Whole scene, not camera-culled |
+| `skinMatrices` | `vector<mat4>` | Every skinned item's bone palette, end to end; both PODs above carry a `skinFirst`/`skinCount` range into it (`skinCount == 0` = not posed) |
 | `lights` | `vector<LightData>` | Enabled lights with world transforms + shadow slot |
 | `probes` | `vector<ProbeData>` | Reflection probes in the scene |
 | `settings` | `RenderSettings` | Pass toggles + per-effect params, copied each frame |
@@ -70,8 +75,8 @@ the `VisibilitySystem` output, reusing the vectors' capacity across frames.
 
 The frontend does **not** sort drawables - it emits them in visibility order.
 All sorting and partitioning happens in the backend: `partitionDrawables` splits
-opaque from transparent, `GLInstanceBatcher` groups by (material, mesh) for
-instancing, and `GLForwardPass` drives the depth-writing classes (Opaque,
+opaque from transparent, `GLInstanceBatcher` groups by (skinned, material, mesh)
+for instancing, and `GLForwardPass` drives the depth-writing classes (Opaque,
 AlphaMask, Unlit) before the back-to-front transparent run. The transparent
 forward phase snapshots the opaque scene for refraction, so opaques must already
 be drawn.
@@ -132,8 +137,8 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 
 | # | Pass | Does |
 |---|------|------|
-| 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas each frame. Culling and mesh-grouping are **not** done here - `GLShadowData::build` does both on the thread pool, so the pass only gathers, uploads and draws |
-| 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (oct view-normal / roughness / metalness). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses |
+| 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas each frame. Culling and mesh-grouping are **not** done here - `GLShadowData::build` does both on the thread pool, so the pass only gathers, uploads and draws. Skinned casters take a second pair of programs and draw one at a time, because the palette base is a uniform on this path (see [animation.md](animation.md#the-gpu-path)) |
+| 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (oct view-normal / roughness / metalness). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses. Two programs (`prepass` / `prepass_skinned`), switched once at the skinned boundary |
 | 3 | ResolveDepth | MSAA only: resolves depth (and the G-buffer when GTAO / decals / a debug view will read it) into `m_sceneHDR` |
 | 4 | HiZ | Reduces the resolved depth into a hierarchical depth pyramid: each texel the **farthest** depth of the region below it (`GLHiZ`). Runs only while occlusion culling is on - the cull is the pyramid's only reader |
 | 5 | OcclusionCull | Compute: tests every opaque instance's world AABB against the pyramid and writes the survivors' indices plus each run's indirect draw command. The answer stays on the GPU - a readback would stall the frame it is meant to speed up |
@@ -141,7 +146,7 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 | 7 | Skybox | Fills the background before geometry so transparents blend over it |
 | 8 | ClusterCull | Compute: culls lights into the Forward+ cluster grid SSBO |
 | 9 | FogCompute | Compute: froxel light inject + front-to-back integration (allocates the volumes on the first fog frame) |
-| 10 | Forward | The PBR ubershader: opaque (depth-primed), alpha-mask (writes depth, alpha-to-coverage under MSAA), then back-to-front transparents sampling an opaque snapshot for refraction |
+| 10 | Forward | The PBR ubershader: opaque (depth-primed), alpha-mask (writes depth, alpha-to-coverage under MSAA), then back-to-front transparents sampling an opaque snapshot for refraction. Two programs (`pbr` / `pbr_skinned`) sharing one fragment file and one per-frame uniform set |
 | 11 | Particles | CPU billboard particles into the scene target, depth-tested, never depth-writing |
 | 12 | ResolveColor | MSAA only: resolves colour (and re-resolves depth when alpha-mask drew) into `m_sceneHDR` |
 | 13 | Decals | Projected decal boxes blended into the post colour chain, sampling depth + G-buffer |
@@ -169,7 +174,9 @@ decals (material and its textures) and the UI draw commands (font atlas) - and
 `ensure()`s each asset, uploading only when the version moved on or the
 generation says the slot was recycled (see [resources.md](../resources.md) for
 the version mechanism). Drawables and casters skip a consecutive repeat of the
-same handle, which the draw sort makes the common case.
+same handle, which the draw sort makes the common case. Skin data needs nothing
+here: it rides on `MeshAsset` through the same version gate, and the palette is a
+per-frame array carrying no handles at all.
 
 That list is the whole rule, and it has to be, because three of the four are
 gathered scene-wide rather than from the visible set: an off-screen occluder's
@@ -186,7 +193,12 @@ compiled `#ifdef` variants.
 The forward shader's bindings are defined in
 `src/backend/opengl/convention/gl_bindings.h` - the single source of truth, mirrored
 by the GLSL. Vertex attributes are per-vertex position/normal/uv/tangent (slots 0-3)
-plus a per-instance model matrix (slots 4-7, divisor 1). UBO binding points cover
+plus a per-instance model matrix (slots 4-7, divisor 1), and - on a skinned mesh
+only - bone indices and weights at slots 8/9 in a **second buffer at divisor 0**,
+parallel to the vertices. `Vertex` stays 48 bytes: see
+[animation.md](animation.md) for why the skin rides beside it rather than in it.
+Storage bindings 5 and 6 carry the frame's bone palettes and each instance's
+first bone in them. UBO binding points cover
 Material, Lights, Camera, and Shadow blocks; texture slots cover the PBR material
 maps plus the shadow atlas (2D array + cube array), IBL set (irradiance / prefilter /
 BRDF LUT / env cube), the GTAO factor, the scene

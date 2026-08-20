@@ -17,9 +17,12 @@
 #include "io/asset/asset_library.h"
 #include "io/asset/asset_serializer.h"
 #include "resource/resource_manager.h"
+#include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
+#include "resource/asset/skeleton_asset.h"
 #include "resource/asset/texture_asset.h"
+#include "system/async/async_loader_system.h"
 
 namespace Vkm::Engine::AssetCooker {
 
@@ -29,7 +32,7 @@ namespace {
 // to force assets to re-cook from their recipes on next save without touching
 // those recipes - it is folded into the recipe hash, so all stored hashes go
 // stale at once.
-constexpr uint32_t COOKER_VERSION = 1;
+constexpr uint32_t COOKER_VERSION = 2;
 
 uint64_t hashRecipe(const nlohmann::json& recipe) {
     const std::string dump = recipe.dump();
@@ -55,6 +58,22 @@ void warnUnlisted(AssetType type, const std::string& name) {
                 "referencing it will not load", Reflect::enumName(type), name.c_str());
 }
 
+// A recipe that produced nothing is a different thing from an asset that never
+// had one, and only the first is the cooker's failure. A project is free to
+// build meshes in code and name them - both examples do - and the cook has
+// nothing to say about those beyond the warning above. But an asset the loader
+// went to the recipe for and came back empty from means the source art did not
+// load, and this cook cannot produce the file the manifest promises.
+//
+// Reachable for meshes and textures alone: they are the kinds that import off
+// the ThreadPool, and every other kind is simply never registered when its
+// import fails.
+bool reportUnbaked(AssetType type, const std::string& name) {
+    LOG_ERROR("Cooker: %s '%s' has a recipe but nothing to bake; its source did not load",
+              Reflect::enumName(type), name.c_str());
+    return false;
+}
+
 // Whether a type's cook writes a binary beside its recipe. A material's recipe
 // IS its runtime form - AssetSerializer reads that file straight back - so it has
 // none, and nothing is ever written where its cookedPath() points.
@@ -66,6 +85,13 @@ enum class CookedOutput { None, Binary };
 // whose files have since gone missing would otherwise report success over a
 // project that no longer loads. The hash stays the first test because it is what
 // makes an unchanged asset free; what it adds is one stat per asset per save.
+//
+// The cooked half asks whether the file is USABLE, not whether it is there, and
+// asks it through the same probe the loader resolves sources with. A file this
+// build cannot read is not an output that can be skipped, and the two sides
+// disagreeing about that is the one way a project ends up repairable by neither:
+// the loader falling back to the recipe every load while the cooker declares the
+// stale binary current and never rewrites it.
 bool isUpToDate(AssetType type, const std::string& name, uint64_t hash, CookedOutput cooked) {
     const AssetRecord* existing = AssetLibrary::get().find(type, name);
     if (!existing || existing->recipeHash != hash) return false;
@@ -73,7 +99,7 @@ bool isUpToDate(AssetType type, const std::string& name, uint64_t hash, CookedOu
     std::error_code ec;
     if (!std::filesystem::exists(AssetLibrary::recipePath(type, name), ec)) return false;
     if (cooked == CookedOutput::None) return true;
-    return std::filesystem::exists(AssetLibrary::cookedPath(type, name), ec);
+    return AssetCook::isCookedCurrent(type, AssetLibrary::cookedPath(type, name), hash);
 }
 
 bool writeRecipeFile(const std::filesystem::path& path, const std::string& name,
@@ -99,14 +125,13 @@ bool writeRecipeFile(const std::filesystem::path& path, const std::string& name,
 bool cookMesh(const MeshAsset& mesh) {
     if (mesh.name.empty()) return true;
 
-    // Nothing to bake: still streaming in, never had a recipe, its decode failed,
-    // or it was read back from the cooked cache and the library already holds the
-    // recipe it was baked from.
-    if (mesh.loading || !mesh.hasSource() || mesh.vertices.empty()
-        || isCookedPlaceholder(mesh.sourceJson())) {
+    // Nothing to bake: never had a recipe, or it was read back from the cooked
+    // cache and the library already holds the recipe it was baked from.
+    if (!mesh.hasSource() || isCookedPlaceholder(mesh.sourceJson())) {
         warnUnlisted(AssetType::Mesh, mesh.name);
         return true;
     }
+    if (mesh.loading || mesh.vertices.empty()) return reportUnbaked(AssetType::Mesh, mesh.name);
 
     AssetLibrary& lib = AssetLibrary::get();
     const nlohmann::json& recipe = mesh.sourceJson();
@@ -128,11 +153,11 @@ bool cookMesh(const MeshAsset& mesh) {
 bool cookTexture(const TextureAsset& tex) {
     if (tex.name.empty()) return true;
 
-    if (tex.loading || !tex.hasSource() || tex.pixelData.empty()
-        || isCookedPlaceholder(tex.sourceJson())) {
+    if (!tex.hasSource() || isCookedPlaceholder(tex.sourceJson())) {
         warnUnlisted(AssetType::Texture, tex.name);
         return true;
     }
+    if (tex.loading || tex.pixelData.empty()) return reportUnbaked(AssetType::Texture, tex.name);
 
     AssetLibrary& lib = AssetLibrary::get();
     const nlohmann::json& recipe = tex.sourceJson();
@@ -147,6 +172,55 @@ bool cookTexture(const TextureAsset& tex) {
 
     lib.upsert({AssetType::Texture, tex.name, hash});
     LOG_INFO("Cooked texture '%s' (%ux%u)", tex.name.c_str(), tex.params.width, tex.params.height);
+    return true;
+}
+
+bool cookSkeleton(const SkeletonAsset& skeleton) {
+    if (skeleton.name.empty()) return true;
+
+    if (!skeleton.hasSource() || skeleton.bones.empty() || isCookedPlaceholder(skeleton.sourceJson())) {
+        warnUnlisted(AssetType::Skeleton, skeleton.name);
+        return true;
+    }
+
+    AssetLibrary& lib = AssetLibrary::get();
+    const nlohmann::json& recipe = skeleton.sourceJson();
+    const uint64_t hash = hashRecipe(recipe);
+
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Skeleton, skeleton.name);
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Skeleton, skeleton.name);
+    if (isUpToDate(AssetType::Skeleton, skeleton.name, hash, CookedOutput::Binary)) return true;
+
+    if (!writeRecipeFile(recipePath, skeleton.name, "skeleton", recipe)) return false;
+    if (!AssetCook::writeSkeleton(cookedPath, skeleton, hash)) return false;
+
+    lib.upsert({AssetType::Skeleton, skeleton.name, hash});
+    LOG_INFO("Cooked skeleton '%s' (%zu bones)", skeleton.name.c_str(), skeleton.bones.size());
+    return true;
+}
+
+bool cookAnimationClip(const AnimationClipAsset& clip) {
+    if (clip.name.empty()) return true;
+
+    if (!clip.hasSource() || clip.bones.empty() || isCookedPlaceholder(clip.sourceJson())) {
+        warnUnlisted(AssetType::AnimationClip, clip.name);
+        return true;
+    }
+
+    AssetLibrary& lib = AssetLibrary::get();
+    const nlohmann::json& recipe = clip.sourceJson();
+    const uint64_t hash = hashRecipe(recipe);
+
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::AnimationClip, clip.name);
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::AnimationClip, clip.name);
+    if (isUpToDate(AssetType::AnimationClip, clip.name, hash, CookedOutput::Binary)) return true;
+
+    if (!writeRecipeFile(recipePath, clip.name, "animationClip", recipe)) return false;
+    if (!AssetCook::writeAnimationClip(cookedPath, clip, hash)) return false;
+
+    lib.upsert({AssetType::AnimationClip, clip.name, hash});
+    LOG_INFO("Cooked clip '%s' (%.2fs, %zu bones)", clip.name.c_str(),
+             static_cast<double>(clip.duration), clip.bones.size());
     return true;
 }
 
@@ -171,17 +245,30 @@ bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
 
 } // namespace
 
-void cookAllAssets(ResourceManager& resources) {
+bool cookAllAssets(ResourceManager& resources) {
     LOG_INFO("Cooking assets into the library...");
 
+    // Land every asset still decoding, so the walks below see the contents they
+    // are meant to bake rather than empty stubs. A host with a frame loop does
+    // this through AsyncLoaderSystem and never has to think about it; the cooker
+    // has no frames, and without it every imported asset is skipped and the run
+    // reports a successful cook over a project it produced nothing for.
+    size_t failed = awaitAsyncLoads(resources) ? 0 : 1;
+
     // Textures first, then materials (which reference textures by name), then
-    // meshes - matching the load order so a downstream consumer is consistent.
-    size_t failed = 0;
+    // skeletons, then the clips and meshes that name one - matching the load
+    // order so a downstream consumer is consistent.
     resources.forEachOfType<TextureAsset>([&](TextureHandle, const TextureAsset& tex) {
         if (!tex.hidden && !cookTexture(tex)) ++failed;
     });
     resources.forEachOfType<MaterialAsset>([&](MaterialHandle, const MaterialAsset& mat) {
         if (!mat.hidden && !cookMaterial(mat, resources)) ++failed;
+    });
+    resources.forEachOfType<SkeletonAsset>([&](SkeletonHandle, const SkeletonAsset& skeleton) {
+        if (!skeleton.hidden && !cookSkeleton(skeleton)) ++failed;
+    });
+    resources.forEachOfType<AnimationClipAsset>([&](AnimationClipHandle, const AnimationClipAsset& clip) {
+        if (!clip.hidden && !cookAnimationClip(clip)) ++failed;
     });
     resources.forEachOfType<MeshAsset>([&](MeshHandle, const MeshAsset& mesh) {
         if (!mesh.hidden && !cookMesh(mesh)) ++failed;
@@ -193,9 +280,11 @@ void cookAllAssets(ResourceManager& resources) {
         LOG_ERROR("Cooker: %zu asset(s) failed to cook; manifest may reference missing cooked files", failed);
     }
 
-    if (!AssetLibrary::get().save()) {
+    bool saved = AssetLibrary::get().save();
+    if (!saved) {
         LOG_ERROR("Cooker: failed to save the asset library manifest");
     }
+    return failed == 0 && saved;
 }
 
 } // namespace Vkm::Engine::AssetCooker

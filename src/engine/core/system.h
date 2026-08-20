@@ -10,6 +10,7 @@ namespace Vkm::Engine {
     class ResourceManager;
     class EventBus;
     class InputMap;
+    class PoseBuffer;
     struct Visibility;
     struct UIDrawData;
 } // namespace Vkm::Engine
@@ -55,9 +56,10 @@ enum class SystemStage : uint8_t {
  * what is held and where the edges are.
  *
  * Pointers are per-frame PRODUCTS, null until their producer has run this frame:
- * `visibility` from VisibilitySystem, `ui` from UISystem. Producers own the
- * storage and reuse it across frames, so a consumer must be registered after its
- * producer - that ordering lives in setupEngineApp.
+ * `visibility` from VisibilitySystem, `poses` from SkeletalAnimationSystem, `ui`
+ * from UISystem. Producers own the storage and reuse it across frames, so a
+ * consumer must be registered after its producer - that ordering lives in
+ * setupEngineApp.
  */
 struct FrameContext {
     Scene&           scene;
@@ -69,6 +71,7 @@ struct FrameContext {
     InputMap&        input;
 
     const Visibility* visibility = nullptr;
+    const PoseBuffer* poses      = nullptr;
     const UIDrawData* ui         = nullptr;
 };
 
@@ -123,8 +126,8 @@ class System {
          * simulation (physics, networking tick). Empty default; opt in by override.
          *
          * Note: the frame context is rebuilt each frame and the fixed-step loop
-         * runs before any producer stage, so ctx.visibility and ctx.ui are always
-         * null here. Read per-frame products from update() only.
+         * runs before any producer stage, so ctx.visibility, ctx.poses and ctx.ui
+         * are always null here. Read per-frame products from update() only.
          */
         virtual void fixedUpdate(FrameContext& ctx) {}
 

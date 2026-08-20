@@ -21,8 +21,8 @@
 #include "core/math/axes.h"
 #include "core/math/rotation.h"
 #include "ecs/scene.h"
-#include "ecs/component/transform.h"
-#include "ecs/component/camera.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/render/camera.h"
 
 namespace Vkm::Engine {
 

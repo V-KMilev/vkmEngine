@@ -25,6 +25,7 @@
 #include "data/gl_ibl_baker.h"
 #include "data/gl_bloom.h"
 #include "data/gl_hiz.h"
+#include "data/gl_skin_palette.h"
 #include "data/gl_cluster_grid.h"
 #include "data/gl_fog_volume.h"
 #include "data/gl_irradiance_volume.h"
@@ -165,6 +166,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GLIBLBaker    m_iblBaker;   ///< Persistent: the procedural sky re-bakes whenever the sun moves.
         GLBloom       m_bloom;
         GLHiZ         m_hiz;
+        GLSkinPalette m_skinPalette;  ///< This frame's bone palettes, in one storage buffer.
         GLClusterGrid m_clusterGrid;  ///< Forward+ per-cluster light lists (compute-filled).
         GLFogVolume   m_fog;          ///< Froxel volumetric-fog volumes (compute-filled).
         GLIrradianceVolume m_irradiance;      ///< Baked SH irradiance volume (GI).

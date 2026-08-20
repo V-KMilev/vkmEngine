@@ -12,9 +12,9 @@
 
 #include "logger.h"
 
-#include "ecs/component/camera.h"
+#include "ecs/component/render/camera.h"
 #include "ecs/environment.h"
-#include "ecs/component/transform.h"
+#include "ecs/component/core/transform.h"
 #include "io/json_vec.h"
 #include "core/reflect.h"
 #include "resource/resource_manager.h"
@@ -124,6 +124,8 @@ void loadReflected(const nlohmann::json& j, T& obj) {
 // Component save / load. Reflectable components are one-line passthroughs
 // into the reflection driver. The exceptions are intentional:
 //   - Mesh:      ResourceManager handle lookup (cross-asset reference).
+//   - Animator:  the same, plus a persisted surface narrower than the struct -
+//                blend state is transient by design.
 //   - Hierarchy: parent stored as raw scene-table index, resolved by
 //                SceneSerializer after the entity table is loaded.
 //   - Animation: AnimationTrack<T> keeps its keyframes private and must go
@@ -155,13 +157,22 @@ void load(const nlohmann::json& j, Light& l) { loadReflected(j, l); }
 nlohmann::json save(const Rigidbody& rb)          { return saveReflected(rb); }
 void load(const nlohmann::json& j, Rigidbody& rb) { loadReflected(j, rb); }
 
+nlohmann::json save(const CharacterController& cc)          { return saveReflected(cc); }
+void load(const nlohmann::json& j, CharacterController& cc) { loadReflected(j, cc); }
+
 nlohmann::json save(const Collider& c) {
     nlohmann::json j = saveReflected(c);   // isTrigger + enabled
     nlohmann::json arr = nlohmann::json::array();
-    for (const ColliderBox& b : c.parts) {
+    for (const ColliderPart& p : c.parts) {
+        // Every shape's fields are written whatever the tag says, so switching a
+        // part to a capsule in the inspector and back does not quietly forget
+        // the half-extents it was authored with.
         arr.push_back({
-            {"center", vec3ToJson(b.center)},
-            {"half",   vec3ToJson(b.halfExtents)},
+            {"shape",      Reflect::enumName(p.shape)},
+            {"center",     vec3ToJson(p.center)},
+            {"half",       vec3ToJson(p.halfExtents)},
+            {"radius",     p.radius},
+            {"halfHeight", p.halfHeight},
         });
     }
     j["parts"] = std::move(arr);
@@ -178,10 +189,13 @@ void load(const nlohmann::json& j, Collider& c) {
     for (const auto& e : *it) {
         // at() preserves the throw-on-missing-key behavior (caught by the scene
         // loader's guard); jsonToVec3 adds bounds-checked, logged array reads.
-        ColliderBox b;
-        b.center      = jsonToVec3(e.at("center"));
-        b.halfExtents = jsonToVec3(e.at("half"));
-        c.parts.push_back(b);
+        ColliderPart p;
+        p.shape       = Reflect::enumFromName<ColliderShape>(e.at("shape").get<std::string>());
+        p.center      = jsonToVec3(e.at("center"));
+        p.halfExtents = jsonToVec3(e.at("half"));
+        p.radius      = e.at("radius").get<float>();
+        p.halfHeight  = e.at("halfHeight").get<float>();
+        c.parts.push_back(p);
     }
 }
 
@@ -210,6 +224,25 @@ void load(const nlohmann::json& j, Mesh& m, const ResourceManager& resources) {
     m.material    = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material");
     m.visible     = j.value("visible",     m.visible);
     m.castShadows = j.value("castShadows", m.castShadows);
+}
+
+nlohmann::json save(const Animator& a, const ResourceManager& resources) {
+    return {
+        {"skeleton", a.skeleton ? resources.get(a.skeleton).name : std::string{}},
+        {"clip",     a.clip     ? resources.get(a.clip).name     : std::string{}},
+        {"time",     a.time},
+        {"speed",    a.speed},
+        {"playing",  a.playing},
+        {"looping",  a.looping},
+    };
+}
+void load(const nlohmann::json& j, Animator& a, const ResourceManager& resources) {
+    a.skeleton = resolveAssetRef<SkeletonAsset>     (resources, j.value("skeleton", std::string{}), "skeleton");
+    a.clip     = resolveAssetRef<AnimationClipAsset>(resources, j.value("clip",     std::string{}), "clip");
+    a.time     = j.value("time",    a.time);
+    a.speed    = j.value("speed",   a.speed);
+    a.playing  = j.value("playing", a.playing);
+    a.looping  = j.value("looping", a.looping);
 }
 
 nlohmann::json save(const LOD& l, const ResourceManager& resources) {

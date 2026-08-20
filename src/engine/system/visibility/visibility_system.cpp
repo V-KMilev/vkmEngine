@@ -13,13 +13,14 @@
 
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
-#include "ecs/component/mesh.h"
-#include "ecs/component/lod.h"
-#include "ecs/component/camera.h"
-#include "ecs/component/transform.h"
-#include "ecs/component/world_transform.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/core/world_transform.h"
+#include "ecs/component/render/camera.h"
+#include "ecs/component/render/lod.h"
+#include "ecs/component/render/mesh.h"
 
 #include "core/math/bounds.h"
+#include "system/animation/pose_buffer.h"
 #include "system/visibility/visibility_context.h"
 
 #include "system/visibility/culling/frustum_culler.h"
@@ -29,6 +30,45 @@
 namespace Vkm::Engine {
 
 namespace {
+
+/**
+ * @brief The box this frame's pose actually occupies, in the mesh's own space.
+ *
+ * A posed character's bind-pose box is under-sized by construction, and the GPU
+ * occlusion cull keeps conservatively: an under-sized box does not over-draw, it
+ * deletes geometry that was visible. A character that raises an arm out of its
+ * bind box would vanish.
+ *
+ * The pose publishes what it knows - the box of the posed bone origins, in rig
+ * space, and the largest scale any bone carries - and the mesh knows the rest:
+ * `skinRadius` is how far a vertex sits from the bone that moves it, so the
+ * origins box inflated by it contains the skin. The scale multiplies the radius
+ * because a bone scaled 2x stretches its skin twice as far from the joint.
+ *
+ * The radius is measured in mesh space and applied in rig space, which is exact
+ * while the bind transform between them is rigid - it is a recentring in every
+ * real rig - and conservative in the direction that matters otherwise, because
+ * `maxBoneScale` is floored at 1.
+ *
+ * @param mesh Mesh being bounded.
+ * @param poses This frame's poses, or null when nothing posed anything.
+ * @param entityIdx Entity slot the mesh sits on.
+ * @param outMin Filled with the low corner of the local-space box.
+ * @param outMax Filled with the high corner.
+ */
+void poseLocalBounds(const MeshAsset& mesh, const PoseBuffer* poses, uint32_t entityIdx,
+                     glm::vec3& outMin, glm::vec3& outMax) {
+    outMin = mesh.boundsMin;
+    outMax = mesh.boundsMax;
+    if (!poses || mesh.skin.empty()) return;
+
+    const PoseSlice* slice = poses->sliceOf(entityIdx);
+    if (!slice || slice->count == 0) return;
+
+    const glm::vec3 pad(mesh.skinRadius * slice->maxBoneScale);
+    outMin = slice->originMin - pad;
+    outMax = slice->originMax + pad;
+}
 
 /**
  * @brief Pick the geometry for this entity at this distance.
@@ -156,6 +196,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
 
     const auto& resources = ctx.resources;
     const auto* lodStorage = ctx.scene.storage<LOD>();
+    const PoseBuffer* poses = ctx.poses;
 
     // Persistent flat arrays - resize reuses capacity (no alloc after first frame).
     // Each thread writes to disjoint indices, so zero contention / zero atomics.
@@ -186,14 +227,13 @@ void VisibilitySystem::update(FrameContext& ctx) {
                 ? worldTransformStorage->get(entityIdx).model
                 : Transform::computeModelMatrix(transform);
 
+            // The pose moves the geometry, so it is the pose that says how big
+            // the box has to be; an unskinned mesh answers its own bind bounds.
+            glm::vec3 localMin, localMax;
+            poseLocalBounds(meshAsset, poses, entityIdx, localMin, localMax);
+
             glm::vec3 worldMin, worldMax;
-            Math::localToWorldAABB(
-                modelMatrix,
-                meshAsset.boundsMin,
-                meshAsset.boundsMax,
-                worldMin,
-                worldMax
-            );
+            Math::localToWorldAABB(modelMatrix, localMin, localMax, worldMin, worldMax);
 
             // Filled for every valid mesh (not just camera-visible) so the caster
             // gather below can reach off-screen occluders. castShadows flags it.

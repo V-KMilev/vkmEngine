@@ -21,6 +21,11 @@ struct MeshAsset;
  * The vertex layout is fixed (position / normal / uv / tangent at locations
  * 0-3). update() rebuilds the buffers wholesale - simple and fine for the
  * current asset sizes.
+ *
+ * A skinned mesh carries a second, parallel buffer at locations 8/9 holding its
+ * rig binding. It is a separate buffer rather than four more fields on Vertex so
+ * that a rock pays nothing for it - the shadow pass reads only aPos and replays
+ * every caster per cascade tile and per cube face.
  */
 class GLMesh {
     public:
@@ -85,9 +90,19 @@ class GLMesh {
         /// Indices in this mesh, for filling an indirect draw command.
         uint32_t indexCount() const { return static_cast<uint32_t>(m_indexCount); }
 
+        /**
+         * @brief Whether this mesh's VAO carries a rig binding at locations 8/9.
+         *
+         * A property of the GPU layout, which is why the batcher takes the
+         * choice of program from here: a run whose vertices have no skin stream
+         * can never be drawn by a program that reads one.
+         */
+        bool isSkinned() const { return m_skinVbo != nullptr; }
+
     private:
         std::unique_ptr<Vkm::GL::VertexArray>  m_vao;
         std::unique_ptr<Vkm::GL::VertexBuffer> m_vbo;
+        std::unique_ptr<Vkm::GL::VertexBuffer> m_skinVbo;  ///< Per-vertex rig binding; null when unskinned.
         std::unique_ptr<Vkm::GL::IndexBuffer>  m_ibo;
         size_t m_indexCount = 0;
 };

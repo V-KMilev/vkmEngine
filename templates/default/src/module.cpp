@@ -6,10 +6,10 @@
 // this function is then never called.
 #include "system/script/behavior_registry.h"
 #include "ecs/scene.h"
-#include "ecs/component/transform.h"
-#include "ecs/component/name.h"
-#include "ecs/component/light.h"
-#include "ecs/component/camera.h"
+#include "ecs/component/core/name.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/render/camera.h"
+#include "ecs/component/render/light.h"
 #include "system/script/script_component.h"
 #include "resource/resource_manager.h"
 

@@ -44,9 +44,28 @@ struct Rigidbody {
     bool sleeping    = false;                         ///< Below energy threshold; skipped until disturbed
 
     float sleepTimer = 0.0f;                          ///< Runtime-only: seconds spent resting; not persisted
+
+    /**
+     * @brief Whether a resolved contact held this body up on the last tick, and
+     *        the most upward normal among those contacts.
+     *
+     * Written by PhysicsSystem::writeback, never read by it. Generic outputs,
+     * not a character feature: "am I standing on something, and how steep is
+     * it" is what a controller, a footstep sound and a landing animation all
+     * ask, and putting the answer here is what keeps PhysicsSystem from knowing
+     * that any of them exist. A trigger holds nothing up, so it never counts.
+     *
+     * Most upward means the largest +Y component, matching the engine's world
+     * up - the same axis a capsule collider stands along. supportNormal is the
+     * surface's normal as it acts on THIS body, so the two bodies of one
+     * contact see opposite normals.
+     */
+    glm::vec3 supportNormal = {0.0f, 1.0f, 0.0f};
+    bool      supported     = false;
 };
 
-// sleeping / sleepTimer are runtime-only, and intentionally absent.
+// sleeping / sleepTimer / supported / supportNormal are runtime-only, and
+// intentionally absent.
 } // namespace Vkm::Engine
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Rigidbody)

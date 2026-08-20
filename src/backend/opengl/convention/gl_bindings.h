@@ -29,6 +29,13 @@ namespace GLBindings {
         constexpr uint32_t ClusterGrid = 1;  ///< Per-cluster light lists (written by the cull compute, read by forward).
         constexpr uint32_t Particles   = 2;  ///< Billboard particle instances, indexed by the particle vertex stage.
 
+        // The frame's bone palettes, and where each instance starts in them.
+        // The base is indexed by the instance slot, not by draw position: the
+        // GPU cull compacts by rewriting that slot, so a divisor-1 attribute
+        // would hand a culled batch another character's bones.
+        constexpr uint32_t SkinPalette      = 5;  ///< Every skinned item's palette, end to end.
+        constexpr uint32_t InstanceSkinBase = 6;  ///< Per-instance first bone in SkinPalette, batch order.
+
         // The GPU occlusion cull's working set (3-9) and the per-instance
         // transforms the camera batch's vertex stages read (10-12). Instance
         // data lives in storage rather than vertex attributes so the cull can
@@ -37,7 +44,7 @@ namespace GLBindings {
         // exception and takes its matrices as attributes.
         constexpr uint32_t CullBounds     = 3;
         constexpr uint32_t CullRunIndex   = 4;
-        constexpr uint32_t CullVisible    = 7;   // 5, 6 and 8 are free: the cull reads bounds and writes indices, never matrices
+        constexpr uint32_t CullVisible    = 7;   // 8 is free: the cull reads bounds and writes indices, never matrices
         constexpr uint32_t CullCommands   = 9;
 
         constexpr uint32_t InstanceModels  = 10;  ///< Per-instance model matrices, batch order.

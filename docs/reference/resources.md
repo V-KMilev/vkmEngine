@@ -1,25 +1,27 @@
 # Resource Management
 
-`ResourceManager` is the single owner of every GPU-uploadable asset:
-meshes, textures, materials, and fonts. Assets are referenced from
-components and the render view through type-safe generational handles,
-and they sync to the GPU through a per-resource version counter.
+`ResourceManager` is the single owner of every asset the engine loads: meshes,
+textures, materials, fonts, skeletons and animation clips. Assets are referenced
+from components and the render view through type-safe generational handles, and
+the GPU-uploadable ones sync through a per-resource version counter.
 
 ## Key files
 
 - `src/engine/resource/resource_manager.h` for the manager
 - `src/engine/resource/resource.h` for the `Resource` base (version, name, hidden flag, source JSON)
 - `src/engine/resource/resource_handle.h` for type-safe `Handle<T>`
-- `src/engine/resource/asset/mesh_asset.h`, `asset/texture_asset.h`, `asset/material_asset.h`, `asset/font_asset.h` for the asset kinds
+- `src/engine/resource/asset/mesh_asset.h`, `asset/texture_asset.h`, `asset/material_asset.h`, `asset/font_asset.h`, `asset/skeleton_asset.h`, `asset/animation_clip_asset.h` for the asset kinds
 - `src/engine/core/memory/sparse_set.h` for the `SparseSet<T>` that backs each asset table
 
 ## Handles
 
 ```cpp
-using MeshHandle     = Handle<MeshAsset>;
-using TextureHandle  = Handle<TextureAsset>;
-using MaterialHandle = Handle<MaterialAsset>;
-using FontHandle     = Handle<FontAsset>;
+using MeshHandle          = Handle<MeshAsset>;
+using TextureHandle       = Handle<TextureAsset>;
+using MaterialHandle      = Handle<MaterialAsset>;
+using FontHandle          = Handle<FontAsset>;
+using SkeletonHandle      = Handle<SkeletonAsset>;
+using AnimationClipHandle = Handle<AnimationClipAsset>;
 ```
 
 Each handle wraps a `StorageIndex` (index + generation), so stale handles
@@ -89,19 +91,46 @@ one, so save files contain only user-relevant content. Names are guaranteed uniq
 ### MeshAsset
 
 ```cpp
-struct Vertex {
+struct Vertex {          // 48 bytes, and it stays 48
     glm::vec3 position;
     glm::vec3 normal;
     glm::vec2 uv;
     glm::vec4 tangent;
 };
 
+struct SkinVertex {      // 12 bytes, in a stream parallel to `vertices`
+    uint16_t bones[4];   // indices into the rig named by MeshAsset::skeleton
+    uint8_t  weights[4]; // unorm8, summing to exactly 255
+};
+
 struct MeshAsset : Resource {
-    std::vector<Vertex>   vertices;
-    std::vector<uint32_t> indices;
-    glm::vec3             boundsMin, boundsMax;
+    std::vector<Vertex>     vertices;
+    std::vector<uint32_t>   indices;
+    std::vector<SkinVertex> skin;        // empty, or exactly vertices.size()
+    std::string             skeleton;    // rig `skin` addresses; empty when unskinned
+    float                   skinRadius;  // furthest a vertex sits from a bone that moves it
+    glm::vec3               boundsMin, boundsMax;
 };
 ```
+
+**A mesh is skinned iff `skin` is non-empty** - the asset already knows, so no
+component has to say so.
+
+The skin rides in its own stream rather than inside `Vertex` because folding
+four indices and four weights in would cost every vertex of every mesh in the
+engine 25% more bandwidth, paid hardest by the shadow pass, which reads only
+`aPos` and replays the geometry per cascade tile and per cube face. A rock does
+not pay for skinning. Indices are 16-bit because the cooked format has no
+migration path and an 8-bit index would weld a 255-bone ceiling into it
+permanently; weights are quantised so the four bytes sum to exactly 255, which
+makes `w / 255.0` sum to exactly 1.0 and spares every vertex stage a
+renormalise.
+
+`skeleton` is a **name, not a handle**: a compatibility tag rather than a
+dependency. The mesh uploads its skin stream either way and the pose it is drawn
+with comes from whatever rig is driving it, so the name is what lets the runtime
+report the failure that actually happens - a rig assigned to the wrong character
+- instead of exploding the geometry and leaving the cause to be guessed at.
 
 ### TextureAsset
 
@@ -142,6 +171,73 @@ font is engine-owned (baked once at startup, never written to a scene file), so
 `SceneSerializer::load` swaps its slot back out of the displaced manager with
 `swapSlot<FontAsset>` instead of letting the scene-level swap drop it. See
 [In-game UI](system/ui.md).
+
+### SkeletonAsset
+
+A rig, as a flat array rather than a tree:
+
+```cpp
+struct Bone {
+    std::string name;
+    int32_t     parent = -1;   // -1 for a root; always < this bone's own index
+};
+
+struct SkeletonAsset : Resource {
+    std::vector<Bone>      bones;
+    std::vector<glm::mat4> inverseBind;   // rig model space -> bone space, at bind
+    std::vector<Transform> bindPose;      // local TRS a bone falls back to
+    int32_t indexOf(std::string_view name) const;
+};
+```
+
+Two decisions carry the rest of the skeletal path:
+
+**Bones are indices, not entities.** A hundred entities per character would be
+walked by the hierarchy, listed in the hierarchy panel and written to the scene
+file, for data that is rebuilt every frame and has no authoring meaning. An
+index also maps straight onto a rigid body when physics comes to address one.
+
+**`parent < index` is a validated format invariant**, not a convention. The
+importer emits bones depth-first and `AssetCook::readSkeleton` re-checks the
+ordering on the way back in. That is what makes composing a pose one forward
+loop with no recursion and no visited set, and what makes a cycle
+*unrepresentable* rather than something every walk has to defend against.
+
+`bindPose` is stored rather than derived from `inverseBind`, because recovering
+it means inverting and re-localising, which is lossy the moment a bone carries
+scale. The three vectors are parallel and always the same length; the writer
+refuses a skeleton where they are not.
+
+### AnimationClipAsset
+
+A baked clip: every bone's keys in six flat arrays, with a per-bone table of
+ranges into them.
+
+```cpp
+struct ClipChannel { uint32_t first, count; };  // count 0 = channel absent
+struct ClipBone    { ClipChannel position, rotation, scale; };
+
+struct AnimationClipAsset : Resource {
+    std::string skeleton;          // rig whose bone order `bones` addresses
+    float       duration = 0.0f;   // seconds, stored rather than derived
+    std::vector<ClipBone>  bones;  // parallel to that rig's bones
+    std::vector<float> positionTimes;  std::vector<glm::vec3> positions;
+    std::vector<float> rotationTimes;  std::vector<glm::quat> rotations;
+    std::vector<float> scaleTimes;     std::vector<glm::vec3> scales;
+};
+```
+
+`AnimationTrack<T>` is deliberately **not** reused here. Three tracks over a
+hundred bones is three hundred heap vector pairs and three hundred easing
+function pointers for one clip; six flat arrays are six allocations,
+bulk-writable to the cooked file and cache-linear over a bone sweep. Easing goes
+with it - keys arrive from a DCC tool already baked at its own sample rate, and
+there is no author to pick a curve per bone. The keyframe `Animation` component
+keeps `AnimationTrack<T>` and is untouched (see
+[Animation](system/animation.md)).
+
+A clip is bound to its rig **at cook time**: `bones` is parallel to the named
+skeleton's bone array, so nothing resolves a bone name at runtime.
 
 ## Versioning
 
@@ -195,13 +291,53 @@ The generators are plain free functions; the string dispatch (`"name"` ->
 generator) lives in the `generator`/`decimate` factory lambdas registered in
 `asset_registration.cpp`, not a `byName` API.
 
+### Importing a rigged model
+
+`model_loaders.cpp` builds four kinds of asset from one file, all named
+deterministically so a re-import relinks: `<stem>:mesh<i>`, `<stem>:mat<i>`,
+`<stem>:skeleton` (one rig per file) and `<stem>:clip<i>`.
+
+The rig is the union of every bone any of the file's meshes names, plus the
+nodes joining them down from their lowest common ancestor, emitted depth-first
+so `parent < index` holds by construction. `aiProcess_PopulateArmatureData` is
+what makes a file holding two rigs answerable: it is refused rather than merged
+into one with an invented shared root and a single bone numbering that no clip
+in the file is bound to.
+
+Clips resolve their channels to bone indices **at import**, against that same
+rig. A channel naming a node outside it - a camera, a prop, the mesh node an
+exporter animated - is dropped and counted. Assimp's tick rate is zero far more
+often than not, so the `mTime / (mTicksPerSecond ? mTicksPerSecond : 25.0)`
+fallback is load-bearing rather than defensive.
+
+Two importer hazards are handled explicitly:
+
+- `aiProcess_LimitBoneWeights` caps a vertex at four influences and
+  renormalises what survives, which is exactly what `SkinVertex` holds.
+  Without it a fifth influence would be dropped *after* the weights were
+  normalised against it.
+- `aiProcess_JoinIdenticalVertices` merges vertices on a key that omits skin
+  weights and filters the merged-away ones out. Past that, Assimp only rewrites
+  a bone's weight list when the rewrite is non-empty - so a bone whose weights
+  **all** landed on joined vertices keeps its pre-join vertex ids against the
+  shrunken array. The importer bounds-checks every `mVertexId` and counts what
+  it drops, because following one is an out-of-bounds read of Assimp's own
+  data. The flag stays: dropping it needs a two-phase parse this codebase has
+  never exercised, and `POST_PROCESS_FLAGS` is deliberately one shared constant
+  so mesh and material indices stay stable across every entry point.
+
+A vertex that arrives with no influence at all is bound rigidly to the rig root
+and counted, rather than left at zero weight - `sum(w * M)` with every `w` zero
+collapses it onto the origin, which reads as a broken importer instead of as
+one bad vertex.
+
 ### Loaders (`src/tools/loader/`)
 
 | File                    | Provides                                                       |
 |-------------------------|----------------------------------------------------------------|
 | `texture_loaders.cpp`   | Load via stb_image, auto-detect channels, sRGB flag handling   |
 | `material_loaders.cpp`  | Folder loader: scans a folder for `*Color*`, `*Normal*`, etc.  |
-| `model_loaders.cpp`      | Assimp-backed mesh import; per-load aiScene parse cache        |
+| `model_loaders.cpp`      | Assimp-backed mesh, rig and clip import; per-load aiScene parse cache |
 | `environment_loaders.cpp`| HDR equirectangular image loader (`loadHDRImage`) for IBL / skybox |
 
 ## Save/load round-trip
