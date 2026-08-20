@@ -4,6 +4,23 @@
 
 namespace Vkm::Engine {
 
+class ResourceManager;
+
+/**
+ * @brief Finalise every completion waiting in the AsyncLoadQueue against @p resources.
+ *
+ * What AsyncLoaderSystem does, without a frame. A host that has no update loop
+ * still puts assets in flight the moment it loads a scene, and still has to land
+ * them before anything reads their contents - the cooker being the one that
+ * does, since an asset still decoding has no vertices to bake.
+ *
+ * Idempotent and cheap on an empty queue, so a caller with no frames of its own
+ * can poll it.
+ *
+ * @param resources Resource manager holding the assets the completions name.
+ */
+void finalizeAsyncLoads(ResourceManager& resources);
+
 /**
  * @brief Drains the AsyncLoadQueue once per frame and finalises completed
  *        asset loads against the live ResourceManager.

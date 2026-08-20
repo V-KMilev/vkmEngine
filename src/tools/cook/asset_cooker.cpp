@@ -2,10 +2,12 @@
 
 #include "cook/asset_cooker.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <system_error>
+#include <thread>
 
 #include <nlohmann/json.hpp>
 
@@ -22,6 +24,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
 #include "resource/asset/texture_asset.h"
+#include "system/async/async_loader_system.h"
 
 namespace Vkm::Engine::AssetCooker {
 
@@ -57,6 +60,22 @@ void warnUnlisted(AssetType type, const std::string& name) {
                 "referencing it will not load", Reflect::enumName(type), name.c_str());
 }
 
+// A recipe that produced nothing is a different thing from an asset that never
+// had one, and only the first is the cooker's failure. A project is free to
+// build meshes in code and name them - both examples do - and the cook has
+// nothing to say about those beyond the warning above. But an asset the loader
+// went to the recipe for and came back empty from means the source art did not
+// load, and this cook cannot produce the file the manifest promises.
+//
+// Reachable for meshes and textures alone: they are the kinds that import off
+// the ThreadPool, and every other kind is simply never registered when its
+// import fails.
+bool reportUnbaked(AssetType type, const std::string& name) {
+    LOG_ERROR("Cooker: %s '%s' has a recipe but nothing to bake; its source did not load",
+              Reflect::enumName(type), name.c_str());
+    return false;
+}
+
 // Whether a type's cook writes a binary beside its recipe. A material's recipe
 // IS its runtime form - AssetSerializer reads that file straight back - so it has
 // none, and nothing is ever written where its cookedPath() points.
@@ -68,6 +87,13 @@ enum class CookedOutput { None, Binary };
 // whose files have since gone missing would otherwise report success over a
 // project that no longer loads. The hash stays the first test because it is what
 // makes an unchanged asset free; what it adds is one stat per asset per save.
+//
+// The cooked half asks whether the file is USABLE, not whether it is there, and
+// asks it through the same probe the loader resolves sources with. A file this
+// build cannot read is not an output that can be skipped, and the two sides
+// disagreeing about that is the one way a project ends up repairable by neither:
+// the loader falling back to the recipe every load while the cooker declares the
+// stale binary current and never rewrites it.
 bool isUpToDate(AssetType type, const std::string& name, uint64_t hash, CookedOutput cooked) {
     const AssetRecord* existing = AssetLibrary::get().find(type, name);
     if (!existing || existing->recipeHash != hash) return false;
@@ -75,7 +101,48 @@ bool isUpToDate(AssetType type, const std::string& name, uint64_t hash, CookedOu
     std::error_code ec;
     if (!std::filesystem::exists(AssetLibrary::recipePath(type, name), ec)) return false;
     if (cooked == CookedOutput::None) return true;
-    return std::filesystem::exists(AssetLibrary::cookedPath(type, name), ec);
+    return AssetCook::isCookedCurrent(type, AssetLibrary::cookedPath(type, name), hash);
+}
+
+// Meshes and textures are the two kinds that import off the ThreadPool; every
+// other kind is decoded before its factory returns.
+size_t inFlightCount(const ResourceManager& resources) {
+    size_t pending = 0;
+    resources.forEachOfType<MeshAsset>([&](MeshHandle, const MeshAsset& mesh) {
+        if (mesh.loading) ++pending;
+    });
+    resources.forEachOfType<TextureAsset>([&](TextureHandle, const TextureAsset& tex) {
+        if (tex.loading) ++pending;
+    });
+    return pending;
+}
+
+// How long to wait on the imports a scene load started before calling them lost.
+// Generous because it is bounded by Assimp on the largest model a project holds,
+// and only ever reached when a worker died without pushing its completion - the
+// alternative to giving up there is a build that hangs with nothing in the log.
+constexpr auto IMPORT_TIMEOUT = std::chrono::seconds(30);
+
+// Land every asset still decoding, so the walks below see the contents they are
+// meant to bake rather than empty stubs.
+//
+// A host with a frame loop does this through AsyncLoaderSystem and never has to
+// think about it. The cooker has no frames: without this it walks the assets a
+// scene load just requested, finds every one of them still loading, skips them
+// all, and reports a successful cook over a project it produced nothing for.
+bool finishPendingImports(ResourceManager& resources) {
+    const auto deadline = std::chrono::steady_clock::now() + IMPORT_TIMEOUT;
+    for (;;) {
+        finalizeAsyncLoads(resources);
+        const size_t pending = inFlightCount(resources);
+        if (pending == 0) return true;
+        if (std::chrono::steady_clock::now() >= deadline) {
+            LOG_ERROR("Cooker: %zu asset(s) still importing after %llds; giving up on them",
+                pending, static_cast<long long>(IMPORT_TIMEOUT.count()));
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 }
 
 bool writeRecipeFile(const std::filesystem::path& path, const std::string& name,
@@ -101,14 +168,13 @@ bool writeRecipeFile(const std::filesystem::path& path, const std::string& name,
 bool cookMesh(const MeshAsset& mesh) {
     if (mesh.name.empty()) return true;
 
-    // Nothing to bake: still streaming in, never had a recipe, its decode failed,
-    // or it was read back from the cooked cache and the library already holds the
-    // recipe it was baked from.
-    if (mesh.loading || !mesh.hasSource() || mesh.vertices.empty()
-        || isCookedPlaceholder(mesh.sourceJson())) {
+    // Nothing to bake: never had a recipe, or it was read back from the cooked
+    // cache and the library already holds the recipe it was baked from.
+    if (!mesh.hasSource() || isCookedPlaceholder(mesh.sourceJson())) {
         warnUnlisted(AssetType::Mesh, mesh.name);
         return true;
     }
+    if (mesh.loading || mesh.vertices.empty()) return reportUnbaked(AssetType::Mesh, mesh.name);
 
     AssetLibrary& lib = AssetLibrary::get();
     const nlohmann::json& recipe = mesh.sourceJson();
@@ -130,11 +196,11 @@ bool cookMesh(const MeshAsset& mesh) {
 bool cookTexture(const TextureAsset& tex) {
     if (tex.name.empty()) return true;
 
-    if (tex.loading || !tex.hasSource() || tex.pixelData.empty()
-        || isCookedPlaceholder(tex.sourceJson())) {
+    if (!tex.hasSource() || isCookedPlaceholder(tex.sourceJson())) {
         warnUnlisted(AssetType::Texture, tex.name);
         return true;
     }
+    if (tex.loading || tex.pixelData.empty()) return reportUnbaked(AssetType::Texture, tex.name);
 
     AssetLibrary& lib = AssetLibrary::get();
     const nlohmann::json& recipe = tex.sourceJson();
@@ -222,13 +288,14 @@ bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
 
 } // namespace
 
-void cookAllAssets(ResourceManager& resources) {
+bool cookAllAssets(ResourceManager& resources) {
     LOG_INFO("Cooking assets into the library...");
+
+    size_t failed = finishPendingImports(resources) ? 0 : 1;
 
     // Textures first, then materials (which reference textures by name), then
     // skeletons, then the clips and meshes that name one - matching the load
     // order so a downstream consumer is consistent.
-    size_t failed = 0;
     resources.forEachOfType<TextureAsset>([&](TextureHandle, const TextureAsset& tex) {
         if (!tex.hidden && !cookTexture(tex)) ++failed;
     });
@@ -251,9 +318,11 @@ void cookAllAssets(ResourceManager& resources) {
         LOG_ERROR("Cooker: %zu asset(s) failed to cook; manifest may reference missing cooked files", failed);
     }
 
-    if (!AssetLibrary::get().save()) {
+    bool saved = AssetLibrary::get().save();
+    if (!saved) {
         LOG_ERROR("Cooker: failed to save the asset library manifest");
     }
+    return failed == 0 && saved;
 }
 
 } // namespace Vkm::Engine::AssetCooker
