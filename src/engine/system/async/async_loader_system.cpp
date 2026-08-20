@@ -2,6 +2,8 @@
 
 #include "system/async/async_loader_system.h"
 
+#include <chrono>
+#include <thread>
 #include <vector>
 
 #include "logger.h"
@@ -16,6 +18,24 @@
 namespace Vkm::Engine {
 
 namespace {
+
+// How long awaitAsyncLoads waits before calling an in-flight load lost. Bounded
+// by the largest model a project imports, so it is generous; it is only ever
+// reached when a completion is never pushed at all.
+constexpr auto LOAD_TIMEOUT = std::chrono::seconds(30);
+
+// Meshes and textures are the two kinds that decode off the ThreadPool; every
+// other kind is finished before its loader returns.
+size_t inFlightCount(const ResourceManager& resources) {
+    size_t pending = 0;
+    resources.forEachOfType<MeshAsset>([&](MeshHandle, const MeshAsset& mesh) {
+        if (mesh.loading) ++pending;
+    });
+    resources.forEachOfType<TextureAsset>([&](TextureHandle, const TextureAsset& tex) {
+        if (tex.loading) ++pending;
+    });
+    return pending;
+}
 
 /**
  * @brief Finalise one batch of drained completions against the ResourceManager.
@@ -99,6 +119,21 @@ void finalizeAsyncLoads(ResourceManager& rm) {
         asset.skinRadius = c.skinRadius;
         return true;
     });
+}
+
+bool awaitAsyncLoads(ResourceManager& resources) {
+    const auto deadline = std::chrono::steady_clock::now() + LOAD_TIMEOUT;
+    for (;;) {
+        finalizeAsyncLoads(resources);
+        const size_t pending = inFlightCount(resources);
+        if (pending == 0) return true;
+        if (std::chrono::steady_clock::now() >= deadline) {
+            LOG_ERROR("%zu asset(s) still loading after %llds; giving up on them",
+                pending, static_cast<long long>(LOAD_TIMEOUT.count()));
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 }
 
 void AsyncLoaderSystem::update(FrameContext& ctx) {

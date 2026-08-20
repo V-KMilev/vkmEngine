@@ -22,6 +22,23 @@ class ResourceManager;
 void finalizeAsyncLoads(ResourceManager& resources);
 
 /**
+ * @brief Finalise completions until nothing in @p resources is still loading.
+ *
+ * For a caller that cannot proceed on a stub: the cooker, which has no vertices
+ * to bake until the import lands, and the `decimate` mesh recipe, which would
+ * quietly produce no level at all from a base that has not arrived. Both run
+ * where there is no next frame to wait for.
+ *
+ * Gives up after a bounded wait rather than blocking forever, because a worker
+ * that died without pushing its completion would otherwise hang a build with
+ * nothing in the log.
+ *
+ * @param resources Resource manager holding the assets being waited on.
+ * @return False when assets were still loading at the deadline (logged).
+ */
+bool awaitAsyncLoads(ResourceManager& resources);
+
+/**
  * @brief Drains the AsyncLoadQueue once per frame and finalises completed
  *        asset loads against the live ResourceManager.
  *

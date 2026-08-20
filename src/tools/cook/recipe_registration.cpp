@@ -9,6 +9,7 @@
 #include "io/asset/asset_factory.h"
 #include "io/asset/asset_serializer.h"
 #include "resource/resource_manager.h"
+#include "system/async/async_loader_system.h"
 #include "generator/material_generators.h"
 #include "generator/mesh_generators.h"
 #include "generator/texture_generators.h"
@@ -57,10 +58,10 @@ MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resou
                                      resources);
     }
 
-    // The base (referenced by name) is emitted earlier in the meshes block (it
-    // is the entity's Mesh::mesh), so it is already resident when this runs.
-    // Re-decimating on load keeps decimated levels out of the scene file (only
-    // the recipe is stored), matching how procedural generator meshes work.
+    // The base (referenced by name) is emitted earlier in the meshes block - it
+    // is the entity's Mesh::mesh - so a handle for it exists by the time this
+    // runs. Re-decimating on load keeps decimated levels out of the scene file
+    // (only the recipe is stored), matching how procedural generator meshes work.
     if (kind == "decimate") {
         const std::string baseName = source.value("base", std::string{});
         const uint32_t grid        = source.value("grid", 8u);
@@ -68,6 +69,17 @@ MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resou
                                                   : resources.findByName<MeshAsset>(baseName);
         if (!baseH) {
             LOG_ERROR("decimate: base mesh '%s' not loaded (LOD level dropped)", baseName.c_str());
+            return {};
+        }
+        // Resident is not the same as landed. A base that came from a model or
+        // from the cooked cache decodes on the ThreadPool, and this runs inside
+        // the scene load, before any frame that would finalise it - so the mesh
+        // under that handle is an empty stub, decimating it yields nothing, and
+        // the level disappears with only a "could not be recreated" to show for
+        // it. Wait for it here, where there is still something to do about it.
+        if (!awaitAsyncLoads(resources)) {
+            LOG_ERROR("decimate: base mesh '%s' never finished loading (LOD level dropped)",
+                baseName.c_str());
             return {};
         }
         MeshAsset dec = decimateMesh(resources.get(baseH), grid);
