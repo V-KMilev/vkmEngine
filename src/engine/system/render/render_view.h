@@ -57,8 +57,21 @@ struct RenderView {
      * shadow casters index into this one array; an entity in both lists has its
      * palette copied twice, which is a megabyte a frame at a hundred hundred-bone
      * characters and a change confined to this file if it ever measures.
+     *
+     * Empty on a frame that posed nothing, which is the frame-level fact the
+     * backend keys its whole skinned half off: no palette means no skinned run,
+     * no per-instance palette base, and no skinned program bound anywhere.
      */
     std::vector<glm::mat4> skinMatrices;
+
+    /**
+     * @brief Where each shadow caster's bones sit in skinMatrices.
+     *
+     * Parallel to `shadowCasters`, index for index, and empty when the frame
+     * posed nothing - see ShadowCasterSkin for why it rides alongside the
+     * casters rather than inside them.
+     */
+    std::vector<ShadowCasterSkin> casterSkins;
 
     RenderSettings                settings;        ///< Editable render tuning (copied from the RenderSystem each frame).
     Environment                   environment;     ///< Lighting environment (HDR/skybox), copied from the Scene each frame in build().
@@ -75,7 +88,9 @@ struct RenderView {
          * @param ui The UISystem's draw list for this frame, or null if none.
          * @param poses SkeletalAnimationSystem's pose for this frame, or null
          *              if nothing posed anything; every item resolves its
-         *              palette out of it, so a null one draws bind poses.
+         *              palette out of it, so a null one draws bind poses. A
+         *              buffer holding no slices counts as null: the whole
+         *              backend keys its skinned half off an empty palette.
          */
         void build(
             const Scene& scene,
@@ -143,7 +158,8 @@ struct RenderView {
          *
          * @param scene      Scene supplying mesh, material, and transform components.
          * @param visibility Culled set listing the entities to emit drawables for.
-         * @param poses      This frame's poses, appended into skinMatrices.
+         * @param poses      This frame's poses, appended into skinMatrices, or
+         *                   null when the frame posed nothing.
          */
         void buildDrawables(const Scene& scene, const Visibility& visibility,
                             const PoseBuffer* poses);
@@ -156,7 +172,8 @@ struct RenderView {
          *
          * @param scene      Scene supplying mesh and transform components.
          * @param visibility Culled set carrying the gathered shadow-caster entities.
-         * @param poses      This frame's poses, appended into skinMatrices.
+         * @param poses      This frame's poses, appended into skinMatrices and
+         *                   casterSkins, or null when the frame posed nothing.
          */
         void buildShadowCasters(const Scene& scene, const Visibility& visibility,
                                 const PoseBuffer* poses);
