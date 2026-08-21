@@ -270,6 +270,16 @@ void editComponentCard(Scene& scene, ResourceManager& resources, EditorState& st
                                                 "comes back from the prefab on the next load");
     }
 }
+
+// The radius of the capsule an entity stands on, or 0 when it has none. The
+// first capsule, because a character wears exactly one and a compound collider
+// is a mesh fit, which is all boxes.
+float capsuleRadiusOf(const Scene& scene, EntityId id) {
+    if (!scene.has<Collider>(id)) return 0.0f;
+    for (const ColliderPart& part : scene.get<Collider>(id).parts)
+        if (part.shape == ColliderShape::Capsule) return part.radius;
+    return 0.0f;
+}
 }
 
 void InspectorPanel::draw(EditorContext& ec) {
@@ -1485,7 +1495,20 @@ void InspectorPanel::drawCharacterControllerSection(Scene& scene, ResourceManage
         changed |= propSlider("Air Control", &cc.airControl, 0.0f, 1.0f, "%.2f",
                               "Fraction of that acceleration available while airborne");
         changed |= propDrag("Max Slope", &cc.maxSlopeAngle, 0.5f, 0.0f, 90.0f, "%.0f deg",
-                            "Steeper than this holds nothing up: the character slides");
+                            "Steeper than this holds nothing up: the character slides.\n"
+                            "The same angle decides what counts as a wall to run\n"
+                            "along rather than walk into, and how tall a step the\n"
+                            "capsule rolls over.");
+
+        // The step height that falls out of the capsule and the slope limit: an
+        // edge lower than this still produces a walkable contact normal, so the
+        // character climbs it. Spelled out because it is the number behind "why
+        // does it stop at that kerb", and both halves of it are set right here.
+        if (const float radius = capsuleRadiusOf(scene, id); radius > 0.0f) {
+            const float limit = glm::radians(glm::clamp(cc.maxSlopeAngle, 0.0f, 90.0f));
+            ImGui::Spacing();
+            ImGui::TextDisabled("Rolls over steps up to %.2f m", radius * (1.0f - std::cos(limit)));
+        }
 
         // Live state, not authoring: moveInput is written by gameplay and the
         // rest by the system. Shown because "why is it not jumping" is answered
