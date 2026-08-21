@@ -106,7 +106,7 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
         m_poses.mapEntity(work.entityIndex, work.slice);
         // The rig itself can carry a skinned mesh (a one-mesh file whose rig is
         // rooted at the scene node), so it is checked like any other.
-        checkSkinnedMesh(scene, resources, rig, *work.skeleton, seen);
+        checkSkinnedMesh(scene, resources, rig, *work.skeleton, true, seen);
         stampDescendants(scene, resources, rig, work, seen);
     }
 
@@ -178,14 +178,14 @@ void SkeletalAnimationSystem::stampDescendants(Scene& scene, const ResourceManag
         // and stamping through it would hand its meshes the wrong pose.
         if (scene.has<Animator>(child)) return;
         m_poses.mapEntity(child.index, work.slice);
-        checkSkinnedMesh(scene, resources, child, *work.skeleton, seen);
+        checkSkinnedMesh(scene, resources, child, *work.skeleton, false, seen);
         stampDescendants(scene, resources, child, work, seen);
     });
 }
 
 void SkeletalAnimationSystem::checkSkinnedMesh(const Scene& scene, const ResourceManager& resources,
                                                EntityId entity, const SkeletonAsset& skeleton,
-                                               FaultsSeen& seen) {
+                                               bool onRig, FaultsSeen& seen) {
     if (!scene.has<Mesh>(entity)) return;
 
     const Mesh& mesh = scene.get<Mesh>(entity);
@@ -208,7 +208,11 @@ void SkeletalAnimationSystem::checkSkinnedMesh(const Scene& scene, const Resourc
     // multiplies it has to be the rig's world matrix. Import parents skinned
     // meshes to the rig at identity to make that true; hand-authoring can undo
     // it, and the result is a character transformed twice.
-    if (scene.has<Transform>(entity) && !isIdentity(scene.get<Transform>(entity))) {
+    //
+    // On the rig entity there is no second matrix: its transform IS the rig's
+    // world matrix, and it is what puts the character somewhere other than the
+    // origin. Testing it there would report every placed character.
+    if (!onRig && scene.has<Transform>(entity) && !isIdentity(scene.get<Transform>(entity))) {
         seen.meshOffset = true;
         if (!m_meshOffsetLogged) {
             LOG_WARNING("Skinned mesh '%s' does not sit at its rig's origin - "
