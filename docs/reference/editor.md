@@ -53,7 +53,7 @@ overlays drawn on top.
 | Hierarchy           | `panels/hierarchy_panel.cpp`          | Entity tree; drag a node onto another to reparent (cycle-safe); context-menu Unparent |
 | Inspector           | `panels/inspector_panel.cpp`          | Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent; prefab-instance overrides |
 | Bottom              | `panels/bottom_panel.cpp`             | Two tabs: Animation (keyframe editor) and Errors (recoverable engine failures) |
-| Render Settings     | `panels/render_settings_panel.cpp`    | Render quality tuning: `RenderSettings` (debug view / grid / MSAA, GTAO, bloom, shadows, probes) plus the `VisibilitySystem` culling thresholds; opened from Window > Render Settings |
+| Render Settings     | `panels/render_settings_panel.cpp`    | Render quality tuning: `RenderSettings` (debug view / grid / MSAA, texture filtering, GTAO, bloom, shadows, probes) plus the `VisibilitySystem` culling thresholds; opened from Window > Render Settings |
 | Material Editor     | `panels/material_editor_panel.cpp`          | Per-material PBR inspector with live preview (renders the real pipeline)    |
 | Asset Browser       | `panels/asset_browser_panel.cpp`            | Thumbnail grid of materials / meshes / textures; pickable into the inspector|
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
