@@ -368,6 +368,15 @@ importers (the runtime) the fallback still happens, the dispatch refuses the
 recipe kind it gets, and the pair of log lines names the asset and the reason: a
 shipped build cannot rebuild a cache, it needs one cooked for it.
 
+Which is why **a packaged game carries no recipes but its materials.** `vkm
+package` ships `_manifest.json` and `library/materials/` and leaves the other
+four kinds behind: their recipes describe an import the runtime has no code to
+perform, so a stale cache is equally unrecoverable with or without them - the
+error just reads "recipe missing" instead of "no dispatch for kind". Both mean
+re-cook and re-package. A material is the exception because its recipe is not an
+import record at all: it *is* the runtime form, read straight back by
+`loadLibrarySource`.
+
 The one thing this does not recover is a recipe whose **source art is gone**. The
 cook then has a recipe and nothing to bake from, which is an error rather than a
 skip: it fails the cook and `vkm_cook` exits non-zero, because the manifest is

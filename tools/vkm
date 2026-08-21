@@ -229,12 +229,84 @@ def cmd_edit(args) -> int: return _host_cmd(args, "vkm_editor")
 def cmd_cook(args) -> int: return _host_cmd(args, "vkm_cook")
 
 
+# Engine data a package carries, and the only engine data an installed SDK has:
+# cmake/install.cmake ships shaders/ plus the editor's font and logo, and nothing
+# else. Naming them rather than copying the engine's assets/ wholesale is what
+# makes a package built from the engine's own tree the same thing as one built
+# from an install - the repo's assets/ also holds the sample art the engine
+# develops against, which is gigabytes and belongs to no game.
+#
+# shaders/ is load-bearing twice over: it is what the runtime recognises a
+# packaged layout by, rooting itself at whichever directory has one.
+ENGINE_DATA = ("shaders", "assets/fonts", "assets/logo")
+
+# Project directories a game reads while it plays. cooked/ is the art in the only
+# form the runtime can open; scenes/ and prefabs/ are the documents naming it -
+# a scene stores a prefab instance as a reference to its file, so a package
+# without prefabs/ instantiates nothing.
+PROJECT_DATA = ("scenes", "prefabs", "cooked")
+
+# The asset database, of which a game needs exactly two parts. _manifest.json is
+# how an asset name in a scene resolves to anything at all, and a material's
+# recipe IS its runtime form - the loader reads that file straight back. The
+# other four kinds cook to a binary; their recipes only record how the source art
+# was imported, name paths on the machine that imported it, and could not be
+# acted on by a runtime that links no importers.
+RUNTIME_LIBRARY = ("_manifest.json", "materials")
+
+
+def import_sources(project: Path) -> set[Path]:
+    """Every file or folder the cook imported from, as its own recipes record it.
+
+    A recipe's `source.path` is where an asset came from - a .glb, a texture, a
+    PBR folder. That is the authoring half: the runtime reads the cooked binary
+    instead and links no importer that could open the original, so shipping both
+    hands the player the raw art and pays for it twice.
+
+    What no recipe names is not import material and does ship, because the
+    runtime does open some files by path: an environment map, the game's window
+    icon. An unreadable recipe excludes nothing, which errs toward a package that
+    is too big rather than one missing a file it needed.
+    """
+    sources: set[Path] = set()
+    for recipe in (project / "library").rglob("*.json"):
+        try:
+            doc = json.loads(recipe.read_text())
+        except (OSError, ValueError):
+            continue
+        source = doc.get("source") if isinstance(doc, dict) else None
+        path = source.get("path") if isinstance(source, dict) else None
+        if isinstance(path, str) and path:
+            sources.add((project / path).resolve())
+    return sources
+
+
+def copy_except(src: Path, dst: Path, skip: set[Path]):
+    """Copy a tree, leaving out `skip` - files and whole folders alike.
+
+    A folder whose entire contents were skipped leaves an empty shell behind, so
+    those are pruned afterwards rather than shipped as a directory of nothing.
+    """
+    shutil.copytree(src, dst, dirs_exist_ok=True,
+                    ignore=lambda directory, names:
+                        {n for n in names if (Path(directory) / n).resolve() in skip})
+
+    for dirpath, _, _ in os.walk(dst, topdown=False):
+        empty = Path(dirpath)
+        if not any(empty.iterdir()):
+            empty.rmdir()
+
+
 def cmd_package(args) -> int:
     """Assemble a standalone game.
 
-    A packaged game is a renamed copy of vkm_runtime plus the project's data -
-    the engine executable is never rebuilt for a game. Cooking runs first because
-    the runtime can neither import nor cook: it reads what the cooker produced.
+    A packaged game is a renamed copy of vkm_runtime plus what the project needs
+    to RUN - the engine executable is never rebuilt for a game. Cooking runs
+    first because the runtime can neither import nor cook: it reads what the
+    cooker produced, which is also why the authoring half stays behind. Source
+    art and the recipes recording how it was imported are how the project is
+    made, not what the game plays, and the runtime links no code that can open
+    either.
     """
     d = project_dir(args.project)
     root = sdk_root()
@@ -261,31 +333,40 @@ def cmd_package(args) -> int:
 
     # The gameplay module joins them: the host looks for it under the project's
     # bin/, and in a package the project root and the package root are the same
-    # directory.
+    # directory. Not the ".loaded." copies beside it - those are what a running
+    # host dlopens, and a crashed one leaves behind.
     if (d / "bin").is_dir():
         for f in (d / "bin").iterdir():
-            if f.is_file():
+            if f.is_file() and ".loaded." not in f.name:
                 shutil.copy2(f, out / "bin" / f.name)
 
-    # Engine data. shaders/ is also how the runtime recognises a packaged layout
-    # at all - it roots itself at whichever directory has one.
-    shutil.copytree(root / "shaders", out / "shaders")
-    if (root / "assets").is_dir():
-        shutil.copytree(root / "assets", out / "assets", dirs_exist_ok=True)
+    for part in ENGINE_DATA:
+        src = root / part
+        if src.is_dir():
+            shutil.copytree(src, out / part, dirs_exist_ok=True)
 
     # The project, at the root rather than in a subdirectory. Both roots resolve
     # to the package directory, so this is what lets a player start the game
     # without naming a path - which is the whole point of shipping one.
     shutil.copy2(d / "project.json", out / "project.json")
-    for part in ("assets", "scenes", "cooked", "library"):
-        src = d / part
+    for part in PROJECT_DATA:
+        if (d / part).is_dir():
+            shutil.copytree(d / part, out / part, dirs_exist_ok=True)
+
+    for part in RUNTIME_LIBRARY:
+        src = d / "library" / part
         if src.is_dir():
-            shutil.copytree(src, out / part, dirs_exist_ok=True)
+            shutil.copytree(src, out / "library" / part, dirs_exist_ok=True)
+        elif src.is_file():
+            (out / "library").mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, out / "library" / part)
+
+    if (d / "assets").is_dir():
+        copy_except(d / "assets", out / "assets", import_sources(d))
 
     print(f"\npackaged {name} -> {out}")
     print(f"  run it with: {out / 'bin' / (name + exe_suffix)}")
     return 0
-
 
 # --------------------------------------------------------------------------
 

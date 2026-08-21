@@ -140,8 +140,14 @@ cmake --install build --prefix /path/to/sdk
                     they reach into
 <prefix>/lib/cmake/vkmEngine/   what find_package(vkmEngine) loads
 <prefix>/shaders/   engine shaders
+<prefix>/assets/    the editor's font and logo - engine chrome, not anyone's art
 <prefix>/templates/ what `vkm new` copies
 ```
+
+That list is also what `vkm package` copies out of an SDK into a game, so a
+package assembled from the engine's own build tree is the same thing as one
+assembled from an install. The repo's `assets/` additionally holds the sample art
+the engine is developed against, which is gigabytes and belongs to no game.
 
 A downloadable archive comes from CPack, and carries the compiler in its name
 because the engine is not ABI-stable across compilers:
