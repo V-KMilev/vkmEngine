@@ -204,8 +204,8 @@ parallel to the vertices. `Vertex` stays 48 bytes: see
 Storage bindings 5 and 6 carry the frame's bone palettes and each instance's
 first bone in them. UBO binding points cover
 Material, Lights, Camera, and Shadow blocks; texture slots cover the PBR material
-maps plus the shadow atlas (2D array + cube array), IBL set (irradiance / prefilter /
-BRDF LUT / env cube), the GTAO factor, the scene
-colour/depth/G-buffer samplers, the froxel fog volume, and the SH irradiance
-volume. Treat `gl_bindings.h` as authoritative rather than hardcoding slot
-numbers from memory.
+maps plus the shadow depth (one tiled 2D atlas, then one cube per point-light
+slot), IBL set (irradiance / prefilter / BRDF LUT / env cube), the GTAO factor,
+the scene colour/depth/G-buffer samplers, the froxel fog volume, and the SH
+irradiance volume. Treat `gl_bindings.h` as authoritative rather than hardcoding
+slot numbers from memory.

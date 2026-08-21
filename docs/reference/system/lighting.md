@@ -100,33 +100,68 @@ shadow source.
 
 ## Shadow atlas
 
-The shadow system has two atlases sized by `engine_config.h`:
+The shadow system has two depth stores sized by `engine_config.h`:
 
-- **2D atlas** (`Config::MAX_SHADOW_CASTERS_2D = 6` layers) holds
-  directional and spot shadow maps. The first directional caster
-  reserves `Config::NUM_CASCADES = 4` consecutive layers for a CSM
-  (cascaded shadow maps) split; the remaining 2 layers serve spot
-  lights.
-- **Cube atlas** (`Config::MAX_SHADOW_CASTERS_CUBE = 2`) holds the six
-  faces per point-light shadow.
+- **2D atlas** (`Config::MAX_SHADOW_CASTERS_2D = 6` tiles) holds
+  directional and spot shadow maps. It is one depth `Texture2D` cut into
+  a `SHADOW_ATLAS_COLS` x `SHADOW_ATLAS_ROWS` grid of square tiles, not a
+  texture array: a caster's slot indexes one tile and is sampled through
+  a per-tile UV offset/scale. The first directional caster reserves
+  `Config::NUM_CASCADES = 4` consecutive tiles for a CSM (cascaded shadow
+  maps) split; the remaining 2 tiles serve spot lights.
+- **Cube maps** (`Config::MAX_SHADOW_CASTERS_CUBE = 2`) hold the six
+  faces per point-light shadow, as individual depth `TextureCube`s rather
+  than one cube array.
 
 Shadow rendering goes through `GLShadowPass`, which:
 
-- Skips entirely when the shadow signature matches the previous frame
-  (lights and shadow casters unchanged).
-- Renders the **full scene** of `castShadows = true` meshes per light
-  layer (shadow casters are not camera-culled; see [Visibility](visibility.md)).
+- Runs whenever there is a caster to draw. The 2D half returns early only
+  on an empty job list and the cube half loops over whatever cube jobs
+  exist; nothing is cached between frames on an unchanged set of lights
+  and casters.
+- Gathers `castShadows = true` meshes from the **whole scene** rather than
+  from the camera's visible set (see [Visibility](visibility.md)), then
+  culls that list per atlas tile against the tile's own light frustum in
+  `GLShadowData::cullCasters`, so a tile draws only what can reach it.
 - Writes per-caster `lightSpace` matrices, biases, and atlas tile rects
-  into a UBO. The forward pass samples a single tiled `sampler2D`
-  shadow atlas (`u_shadowAtlas`) - mapping each caster's UV into its tile
-  rect and doing manual 3x3 PCF on the raw depth - plus a small array of
-  plain `samplerCube` maps (`u_shadowCube[SHADOW_MAX_CUBE]`), one per
-  point-light slot, also filtered with manual PCF. There are no hardware
-  comparison samplers (`sampler2DArrayShadow` / `samplerCubeArrayShadow`).
+  into a UBO. The forward pass samples a single tiled `sampler2DShadow`
+  atlas (`u_shadowAtlas`) - mapping each caster's UV into its tile rect
+  and taking a 3x3 kernel of hardware depth compares, each of them
+  bilinear over a 2x2 texel neighbourhood, so one tap returns a fraction
+  rather than 0 or 1 - plus a small array of plain `samplerCube` maps
+  (`u_shadowCube[SHADOW_MAX_CUBE]`), one per point-light slot, each read
+  with a single unfiltered tap.
+
+  The atlas texture carries `GL_TEXTURE_COMPARE_FUNC = GL_LEQUAL` and
+  linear filtering; `GLShadowAtlas::bind2D` turns the comparison mode on
+  and `bind2DRaw` turns it off for the `ShadowAtlas` debug view, which
+  reads stored depth through a plain `sampler2D`. Sampling a texture in
+  comparison mode with a non-shadow sampler is undefined, so the two
+  entry points each set the mode rather than assuming a prior state.
 
 `shadowDistance` controls how far the directional cascades cover in world
-units (smaller values pack the cascades tighter into the near range). It is
-ignored for spot, point, and area lights, which use `radius` as their cutoff.
+units. It is ignored for spot, point, and area lights, which use `radius`
+as their cutoff.
+
+The four cascades are split **logarithmically**, anchored at a fixed world
+distance (`CASCADE_NEAR`, 1 unit) rather than at the camera's near plane.
+The anchor is what stops `shadowDistance` from trading away foreground
+sharpness: every boundary then grows as the fourth root of the distance, so
+the near cascade stays small as the dial rises - its far edge moves 2.5 ->
+4.9 units across a `shadowDistance` of 40 -> 600. Anchoring at the camera
+near plane instead makes the log term vanish (at 0.2 it contributes a few
+per cent), leaving the split effectively uniform and every boundary linear
+in `shadowDistance` - which coarsens the shadow directly in front of the
+camera in exact proportion.
+
+The trade is real, and worth sizing before reaching for a larger
+`shadowDistance`: pulling the near cascade in leaves the outer three
+covering more range each, so the far field loses density. At
+`shadowDistance` 280 the 17-47 m band comes out around 1.5x coarser than
+the old split left it, and 68-95 m around 3x. Total coverage against texel
+density is a fixed budget, and no split escapes it - the logarithmic one
+spends it evenly instead of concentrating the whole shortfall in the
+foreground.
 
 ## Image-based lighting (IBL)
 
@@ -179,7 +214,7 @@ Do not re-define these values in a shader; include the generated file.
 | `Config::MAX_LIGHTS`             | 256   | light upload cap; `forward/pbr`, `clustering`, `fog/inject` |
 | `Config::MAX_LIGHTS_PER_CLUSTER` | 64    | Forward+ per-cluster light list cap |
 | `Config::CLUSTER_X/Y/Z`          | 16 x 9 x 24 | Forward+ cluster grid dimensions |
-| `Config::MAX_SHADOW_CASTERS_2D`  | 6     | 2D shadow atlas layers (`SHADOW_MAX_2D`) |
+| `Config::MAX_SHADOW_CASTERS_2D`  | 6     | 2D shadow atlas tiles (`SHADOW_MAX_2D`) |
 | `Config::MAX_SHADOW_CASTERS_CUBE`| 2     | point-light cube maps (`SHADOW_MAX_CUBE`) |
 | `Config::NUM_CASCADES`           | 4     | not mirrored to GLSL; the CSM count reaches the shader via the shadow UBO (`csmCount` / `cascadeSplits`) |
 | `Config::SHADOW_CUBE_NEAR`       | 0.1   | shadow pass only (CPU-side cube projection), not mirrored to GLSL |
@@ -193,5 +228,6 @@ Do not re-define these values in a shader; include the generated file.
   light fields appear only when type is Rect or Disk.
 - Light entities can be created from `Add Component -> Light` and
   parametrised live; shadow atlas slots are reassigned automatically
-  when the lit set changes between frames (`assign 2D atlas layers /
-  cube slots` in `RenderView::build`).
+  when the lit set changes between frames - `GLShadowData::build` walks
+  the light list each frame and hands out 2D tiles and cube slots in
+  order.
