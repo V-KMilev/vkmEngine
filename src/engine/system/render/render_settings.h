@@ -6,6 +6,27 @@
 namespace Vkm::Engine {
 
 /**
+ * @brief How a texel is fetched before anisotropy is considered, for every
+ * texture that has not pinned its own filter.
+ *
+ * Bilinear smooths within a mip level but leaves the seam between levels
+ * visible; Trilinear crosses that seam and is the only mode anisotropic
+ * filtering can build on. Nearest is here for a scene whose art is all point
+ * sampled - a pixel-art game, or a look chosen deliberately.
+ *
+ * A single texture that must not be blended does not ask through this. That is
+ * a claim about its own content rather than a quality trade, and it belongs to
+ * the asset: see TextureParams::filterOverride, which outranks whatever is set
+ * here.
+ */
+enum class TextureFiltering : uint8_t {
+    Nearest = 0,
+    Bilinear,
+    Trilinear,
+};
+
+
+/**
  * @brief What the composite pass writes to the screen.
  *
  * Default is the final tonemapped image; the rest blit an intermediate render
@@ -58,6 +79,20 @@ struct RenderSettings {
 
     // Anti-aliasing
     uint32_t msaaSamples = 4;  ///< Scene-pass MSAA samples (1 = off, 2/4/8); post runs on the resolved buffer.
+
+    // Texture filtering. Not MaterialAsset::anisotropy, which is the brushed-
+    // metal BRDF lobe - the same word for an unrelated thing.
+    //
+    // Two fields rather than one ladder because they are orthogonal: the base
+    // filter decides how a texel is sampled, the degree decides how many samples
+    // a stretched footprint gets. Anisotropy only means anything on top of
+    // mipmapped sampling, so it is ignored unless the mode is Trilinear. The
+    // editor presents them as one list; the model keeps them apart.
+    //
+    // Both are the frame's default rather than its decree - a texture carrying
+    // TextureParams::filterOverride keeps its own.
+    TextureFiltering textureFiltering = TextureFiltering::Trilinear;
+    uint32_t textureAnisotropy = 16;  ///< Degree when the mode is Trilinear (1 = off); clamped to the driver's ceiling.
 
     // Shadows
     uint32_t shadowResolution = 4096;  ///< Per-tile shadow-atlas resolution (1024/2048/4096); costly to raise.

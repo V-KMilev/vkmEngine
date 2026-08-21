@@ -26,6 +26,11 @@ void GLTexture::update(const TextureAsset& texture) {
     const void* data = texture.pixelData.empty() ? nullptr : texture.pixelData.data();
     const Vkm::GL::Texture2DParams params = toGLParams(texture.params, data);
 
+    // Kept because applyFiltering runs every frame, long after the asset itself
+    // is out of reach here, and needs both halves to resolve.
+    m_filterOverride = texture.params.filterOverride;
+    m_mipmapped      = texture.params.generateMipmaps;
+
     if (!m_texture) {
         const std::string name = texture.filePath.empty()
             ? ("texture_" + std::to_string(texture.version))
@@ -56,6 +61,14 @@ void GLTexture::update(const FontAsset& font) {
         m_texture->setData(params.data, params.width, params.height, GL_RED, GL_UNSIGNED_BYTE);
     }
     if (params.data) m_hasPixels = true;
+}
+
+void GLTexture::applyFiltering(TextureFiltering sceneMode, float maxAnisotropy) {
+    const GLTextureFilter filter =
+        resolveTextureFilter(m_filterOverride, m_mipmapped, sceneMode, maxAnisotropy);
+
+    m_texture->setFilter(filter.min, filter.mag);
+    m_texture->setMaxAnisotropy(filter.anisotropy);
 }
 
 } // namespace Vkm::Engine

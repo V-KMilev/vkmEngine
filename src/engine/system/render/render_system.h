@@ -56,6 +56,14 @@ class RenderSystem : public System {
         BackendInfo backendInfo() const { return m_backend ? m_backend->info() : BackendInfo{}; }
 
         /**
+         * @brief The active backend's anisotropic-filtering ceiling.
+         *
+         * 1 until a backend is installed, and 1 on hardware offering none, so a
+         * caller can treat it as "the highest level worth asking for" either way.
+         */
+        uint32_t maxAnisotropy() const { return m_backend ? m_backend->maxAnisotropy() : 1; }
+
+        /**
          * @brief The active backend, or nullptr before the first install.
          *
          * Non-owning; for editor/tooling that needs backend-specific access.

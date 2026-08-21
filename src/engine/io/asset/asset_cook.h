@@ -37,7 +37,7 @@ namespace AssetCook {
  * silently misreading an old file.
  */
 constexpr uint16_t MESH_FORMAT_VERSION           = 2;
-constexpr uint16_t TEXTURE_FORMAT_VERSION        = 1;
+constexpr uint16_t TEXTURE_FORMAT_VERSION        = 2;
 constexpr uint16_t SKELETON_FORMAT_VERSION       = 1;
 constexpr uint16_t ANIMATION_CLIP_FORMAT_VERSION = 1;
 

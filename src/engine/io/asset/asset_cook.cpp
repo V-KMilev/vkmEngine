@@ -36,8 +36,8 @@ constexpr std::streamoff HEADER_BYTES = 4 + sizeof(uint32_t) + sizeof(uint16_t) 
 // skinRadius + skeletonNameLen, then bulk vertices, indices, skin and the name.
 constexpr uint64_t MESH_FIXED_BYTES = sizeof(glm::vec3) * 2 + sizeof(uint64_t) * 3
                                     + sizeof(float) + sizeof(uint32_t);
-// Texture body: 2*u32 params + 7 enum bytes + 2 flag bytes + pixelBytes field.
-constexpr uint64_t TEXTURE_FIXED_BYTES = sizeof(uint32_t) * 2 + 7 + 2 + sizeof(uint64_t);
+// Texture body: 2*u32 params + 6 enum bytes + 2 flag bytes + pixelBytes field.
+constexpr uint64_t TEXTURE_FIXED_BYTES = sizeof(uint32_t) * 2 + 6 + 2 + sizeof(uint64_t);
 // Skeleton body: boneCount, then per bone a {parent, nameLen} record, an
 // inverse-bind matrix and a bind-pose TRS, then the concatenated name bytes.
 constexpr uint64_t SKELETON_FIXED_BYTES    = sizeof(uint64_t);
@@ -467,16 +467,9 @@ bool writeTexture(const std::filesystem::path& path, const TextureAsset& texture
                   static_cast<uint8_t>(TextureWrapMode::ClampToEdge)    == 2 &&
                   static_cast<uint8_t>(TextureWrapMode::ClampToBorder)  == 3,
                   "TextureWrapMode reordered - bump TEXTURE_FORMAT_VERSION");
-    static_assert(static_cast<uint8_t>(TextureMinFilter::Nearest)              == 0 &&
-                  static_cast<uint8_t>(TextureMinFilter::Linear)               == 1 &&
-                  static_cast<uint8_t>(TextureMinFilter::NearestMipmapNearest) == 2 &&
-                  static_cast<uint8_t>(TextureMinFilter::LinearMipmapNearest)  == 3 &&
-                  static_cast<uint8_t>(TextureMinFilter::NearestMipmapLinear)  == 4 &&
-                  static_cast<uint8_t>(TextureMinFilter::LinearMipmapLinear)   == 5,
-                  "TextureMinFilter reordered - bump TEXTURE_FORMAT_VERSION");
-    static_assert(static_cast<uint8_t>(TextureMagFilter::Nearest) == 0 &&
-                  static_cast<uint8_t>(TextureMagFilter::Linear)  == 1,
-                  "TextureMagFilter reordered - bump TEXTURE_FORMAT_VERSION");
+    static_assert(static_cast<uint8_t>(TextureFilterOverride::None)    == 0 &&
+                  static_cast<uint8_t>(TextureFilterOverride::Nearest) == 1,
+                  "TextureFilterOverride reordered - bump TEXTURE_FORMAT_VERSION");
 
     std::ofstream os = openCookedWrite(path, "texture");
     if (!os) return false;
@@ -493,8 +486,7 @@ bool writeTexture(const std::filesystem::path& path, const TextureAsset& texture
     writeRaw(os, tp.type);
     writeRaw(os, tp.wrapS);
     writeRaw(os, tp.wrapT);
-    writeRaw(os, tp.minFilter);
-    writeRaw(os, tp.magFilter);
+    writeRaw(os, tp.filterOverride);
     writeRaw(os, static_cast<uint8_t>(tp.generateMipmaps));
     writeRaw(os, static_cast<uint8_t>(texture.srgb));
     writeRaw(os, pixelBytes);
@@ -521,7 +513,7 @@ bool readTexture(const std::filesystem::path& path, TextureAsset& out, uint64_t*
     uint64_t pixelBytes = 0;
     if (!readRaw(is, tp.width) || !readRaw(is, tp.height) ||
         !readRaw(is, tp.internalFormat) || !readRaw(is, tp.format) || !readRaw(is, tp.type) ||
-        !readRaw(is, tp.wrapS) || !readRaw(is, tp.wrapT) || !readRaw(is, tp.minFilter) || !readRaw(is, tp.magFilter) ||
+        !readRaw(is, tp.wrapS) || !readRaw(is, tp.wrapT) || !readRaw(is, tp.filterOverride) ||
         !readRaw(is, generateMipmaps) || !readRaw(is, srgb) || !readRaw(is, pixelBytes)) {
         LOG_ERROR("Cooked texture '%s': truncated body", p.c_str());
         return false;

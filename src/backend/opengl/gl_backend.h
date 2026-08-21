@@ -81,6 +81,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         void releaseAllPreviews() override;
         GpuTextureId textureId(const TextureHandle& handle) const override;
         uint32_t reloadChangedShaders() override;
+        uint32_t maxAnisotropy() const override;
 
     private:
         /**
