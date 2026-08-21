@@ -174,6 +174,7 @@ namespace PrefabOverrides {
     template <> inline constexpr const char* COMPONENT_KEY<ReflectionProbe>  = "ReflectionProbe";
     template <> inline constexpr const char* COMPONENT_KEY<Animation>        = "Animation";
     template <> inline constexpr const char* COMPONENT_KEY<Animator>         = "Animator";
+    template <> inline constexpr const char* COMPONENT_KEY<BoneSocket>       = "BoneSocket";
     template <> inline constexpr const char* COMPONENT_KEY<CharacterController> = "CharacterController";
     template <> inline constexpr const char* COMPONENT_KEY<UICanvas>         = "UICanvas";
     template <> inline constexpr const char* COMPONENT_KEY<UIElement>        = "UIElement";

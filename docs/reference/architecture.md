@@ -55,7 +55,7 @@ does:
 |------------|---------------------------------------------------------------------------------|
 | Input      | `CameraControllerSystem`                                                              |
 | Simulation | (EventBus flush), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `SkeletalAnimationSystem`, `ParticleSystem`, `PhysicsSystem`, `CharacterControllerSystem`, `SkySystem` |
-| Transform  | `HierarchySystem`, `UISystem` (the game UI; runs in **both** binaries)         |
+| Transform  | `BoneSocketSystem`, `HierarchySystem`, `UISystem` (the game UI; runs in **both** binaries) |
 | Visibility | `VisibilitySystem`                                                            |
 | Render     | `RenderSystem`                                                                |
 | UI         | `EditorSystem` (editor binary only)                                           |
@@ -136,11 +136,11 @@ Engine code, single include root `src/engine/`:
 | `ecs/`                     | `Scene`, `EntityId`, `Environment`                                        |
 | `ecs/component/core/`      | `Transform`, `WorldTransform`, `Hierarchy`, `Name`                       |
 | `ecs/component/render/`    | `Mesh`, `Light`, `Camera`, `Decal`, `LOD`, `ParticleEmitter`, `ReflectionProbe`, `IrradianceVolume` |
-| `ecs/component/animation/` | `Animation`, `Animator`                                                  |
+| `ecs/component/animation/` | `Animation`, `Animator`, `BoneSocket`                                    |
 | `ecs/component/physics/`   | `Rigidbody`, `Collider`, `CharacterController`                           |
 | `ecs/component/ui/`        | `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton`                 |
 | `ecs/component/prefab/`    | `PrefabEntity`, `PrefabInstance`                                         |
-| `system/animation/`        | `AnimationSystem`, `AnimationTrack`, `SkeletalAnimationSystem`, `PoseBuffer`, `composePose` |
+| `system/animation/`        | `AnimationSystem`, `AnimationTrack`, `SkeletalAnimationSystem`, `PoseBuffer`, `composePose`, `BoneSocketSystem` |
 | `system/async/`            | `AsyncLoaderSystem`                                                      |
 | `system/camera/`           | `CameraControllerSystem`                                                       |
 | `core/event/`              | `EventBus` (typed pub/sub; engine-owned infrastructure)                  |

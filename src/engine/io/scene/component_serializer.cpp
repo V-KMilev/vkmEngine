@@ -245,6 +245,9 @@ void load(const nlohmann::json& j, Animator& a, const ResourceManager& resources
     a.looping  = j.value("looping", a.looping);
 }
 
+nlohmann::json save(const BoneSocket& s)          { return saveReflected(s); }
+void load(const nlohmann::json& j, BoneSocket& s) { loadReflected(j, s); }
+
 nlohmann::json save(const LOD& l, const ResourceManager& resources) {
     nlohmann::json levels = nlohmann::json::array();
     for (const LODLevel& level : l.levels) {
