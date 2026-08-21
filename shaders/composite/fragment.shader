@@ -10,6 +10,11 @@ uniform float u_bloomStrength;                  // 0 when bloom is unavailable
 layout(binding = 19) uniform sampler2D u_sceneDepth;     // scene depth
 layout(binding = 20) uniform sampler2D u_sceneGBuffer;   // oct view-normal.xy, roughness.z, metalness.w
 layout(binding = 21) uniform sampler2D u_ao;             // GTAO factor
+// Deliberately a plain sampler2D, not the sampler2DShadow the lighting shaders
+// declare: this view shows stored depth rather than a compare result. The pass
+// binds the atlas through GLShadowAtlas::bind2DRaw, which clears the texture's
+// comparison mode - sampling it with a non-shadow sampler while that mode is
+// set is undefined.
 layout(binding = 11) uniform sampler2D u_shadowAtlas;    // tiled 2D shadow depth
 layout(binding = 24) uniform sampler3D u_fog;            // integrated froxel fog
 uniform int  u_hasAO;        // 0 when GTAO is off and nothing wrote the AO target
