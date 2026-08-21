@@ -9,12 +9,11 @@ namespace Vkm::Engine {
 /**
  * @brief Procedural primitives for gameplay code, built without the tools module.
  *
- * The engine's real generators (tools/generator/mesh_generators.h) live in the
- * editor/runtime-side tools target, which `game` deliberately does not link -
- * gameplay depends on vkm_core only, so the same sources compile into both the
- * static runtime library and the editor's hot-reload module. These mirror the
- * generators' winding, normals and tangents exactly, so a procedural prop shades
- * and face-culls identically to a cooked one.
+ * The engine's real generators (src/tools/generator/mesh_generators.h) belong to
+ * vkm_tools, which the hosts link and a project does not: an SDK installs
+ * src/engine and nothing else, so a game cannot reach them however it is built.
+ * These mirror the generators' winding, normals and tangents exactly, so a
+ * procedural prop shades and face-culls identically to a cooked one.
  *
  * Each primitive is a unit shape centred on the origin: scale it with the
  * entity Transform rather than baking size into the mesh, so every instance of
