@@ -112,10 +112,14 @@ The shadow system has two atlases sized by `engine_config.h`:
 
 Shadow rendering goes through `GLShadowPass`, which:
 
-- Skips entirely when the shadow signature matches the previous frame
-  (lights and shadow casters unchanged).
-- Renders the **full scene** of `castShadows = true` meshes per light
-  layer (shadow casters are not camera-culled; see [Visibility](visibility.md)).
+- Runs whenever there is a caster to draw. The 2D half returns early only
+  on an empty job list and the cube half loops over whatever cube jobs
+  exist; nothing is cached between frames on an unchanged set of lights
+  and casters.
+- Gathers `castShadows = true` meshes from the **whole scene** rather than
+  from the camera's visible set (see [Visibility](visibility.md)), then
+  culls that list per atlas tile against the tile's own light frustum in
+  `GLShadowData::cullCasters`, so a tile draws only what can reach it.
 - Writes per-caster `lightSpace` matrices, biases, and atlas tile rects
   into a UBO. The forward pass samples a single tiled `sampler2DShadow`
   atlas (`u_shadowAtlas`) - mapping each caster's UV into its tile rect
