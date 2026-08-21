@@ -126,6 +126,15 @@ permanently; weights are quantised so the four bytes sum to exactly 255, which
 makes `w / 255.0` sum to exactly 1.0 and spares every vertex stage a
 renormalise.
 
+`skinRadius` is computed, not authored: `computeAndSetSkinRadius(skeleton)` sits
+beside `computeAndSetBounds()` and is owed by whoever fills `skin`, exactly as
+the bounds are owed by whoever fills `vertices`. There is one implementation
+because leaving the field at zero is not a smaller box but a wrong one - a posed
+character is bounded by the box of its posed bone origins *inflated by this
+radius* (see [Visibility](system/visibility.md)), and the occlusion cull keeps
+conservatively, so an under-sized box does not over-draw, it deletes the
+character.
+
 `skeleton` is a **name, not a handle**: a compatibility tag rather than a
 dependency. The mesh uploads its skin stream either way and the pose it is drawn
 with comes from whatever rig is driving it, so the name is what lets the runtime
