@@ -75,20 +75,22 @@ def sdk_compiler(root: Path) -> str | None:
 
 
 def sdk_version(root: Path) -> str | None:
-    """This SDK's MAJOR.MINOR, as its package version file records it.
+    """This SDK's full version, as its package version file records it.
 
-    A generated project asks find_package for the engine that generated it. The
-    package is SameMinorVersion-compatible, so the patch digit is noise here -
-    1.6.0 and 1.6.3 answer the same request, and pinning one would reject the
-    other for nothing.
+    A generated project records the engine that generated it, in the two places
+    that ask for it in different shapes: project.json wants the whole version,
+    because the host compares it string for string and reports any difference,
+    while find_package wants MAJOR.MINOR - the package is SameMinorVersion
+    -compatible, so pinning the patch digit there would reject 1.6.0 for a
+    project made on 1.6.3.
     """
     for cfg in (root / "lib" / "cmake" / "vkmEngine" / "vkmEngineConfigVersion.cmake",
                 root / "build" / "vkmEngineConfigVersion.cmake"):
         if not cfg.is_file():
             continue
-        m = re.search(r'set\(PACKAGE_VERSION\s+"(\d+)\.(\d+)', cfg.read_text())
+        m = re.search(r'set\(PACKAGE_VERSION\s+"(\d+\.\d+\.\d+)"', cfg.read_text())
         if m:
-            return f"{m.group(1)}.{m.group(2)}"
+            return m.group(1)
     return None
 
 
@@ -177,23 +179,32 @@ def cmd_new(args) -> int:
     if dest.exists() and any(dest.iterdir()):
         die(f"'{dest}' already exists and is not empty")
 
-    shutil.copytree(template, dest, dirs_exist_ok=True)
-
-    # The template is generic; the project is not. Name it after the directory
-    # the user chose rather than making them edit JSON as a first act.
-    pj = dest / "project.json"
-    data = json.loads(pj.read_text())
-    data["name"] = dest.name
-    pj.write_text(json.dumps(data, indent=4) + "\n")
-
-    # The template asks for "@VKM_ENGINE_VERSION@"; only this side knows which
-    # engine is answering. Refusing to write a project we know cannot configure
-    # is better than handing over one that fails on the next command.
+    # Read before a single file is copied. The template writes
+    # "@VKM_ENGINE_VERSION@" wherever a version belongs and only this side knows
+    # which engine is answering, so an SDK that cannot say leaves a project whose
+    # very next command fails - better to refuse than to hand one over.
     version = sdk_version(root)
     if not version:
         die(f"cannot read the engine version from {root}; the SDK looks incomplete")
+
+    shutil.copytree(template, dest, dirs_exist_ok=True)
+
+    # The template is generic; the project is not. Name it after the directory
+    # the user chose rather than making them edit JSON as a first act, and record
+    # the engine it was made with - the host compares that string against its own
+    # version, so a literal left in the template would greet every new project
+    # with a warning about an engine it was never authored against.
+    pj = dest / "project.json"
+    data = json.loads(pj.read_text())
+    data["name"] = dest.name
+    data["engineVersion"] = version
+    pj.write_text(json.dumps(data, indent=4) + "\n")
+
+    # find_package asks by MAJOR.MINOR; see sdk_version for why the patch digit
+    # is dropped here and kept above.
     cml = dest / "CMakeLists.txt"
-    cml.write_text(cml.read_text().replace("@VKM_ENGINE_VERSION@", version))
+    cml.write_text(cml.read_text().replace(
+        "@VKM_ENGINE_VERSION@", ".".join(version.split(".")[:2])))
 
     print(f"created {dest}")
     print(f"  vkm build {dest.name} && vkm run {dest.name}")
