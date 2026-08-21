@@ -56,8 +56,10 @@ The platform decides the actual directory, and configuration and state are
 different places on both: `$XDG_CONFIG_HOME` (or `~/.config`) and
 `$XDG_STATE_HOME` (or `~/.local/state`) on Linux, `%APPDATA%` and
 `%LOCALAPPDATA%` on Windows, each under a `vkmEngine` folder. With no home
-directory at all - a service account, a stripped container - both fall back to
-the engine root, which is where these files lived before this root existed.
+directory at all - a service account, a stripped container - or with one the
+engine cannot create its folder inside, both fall back to the engine root, which
+is where these files lived before this root existed. That fallback is why the
+repository still ignores `imgui.ini` and `editor_recents.json` at its root.
 `userRoot()` creates its directory when first asked for; `userLogs()` does not,
 because `bootHost` creates the per-project subdirectory it writes into.
 
