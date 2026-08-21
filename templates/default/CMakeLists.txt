@@ -8,11 +8,10 @@
 cmake_minimum_required(VERSION 3.25)
 project(NewProject LANGUAGES CXX)
 
-# @VKM_ENGINE_VERSION@ is filled in by `vkm new` with the version of the SDK the
-# project was created from, so the request matches the engine that answered it.
-# A placeholder rather than a literal on purpose: a number written here would be
-# right on the day it was typed and wrong for every release after, and the
-# package is SameMinorVersion-compatible, so wrong means configure refuses.
+# The version below is the SDK this project was created from, and the package is
+# SameMinorVersion-compatible: move to a later minor release and configure stops
+# here rather than building your module against an engine it was not written
+# against. Raise it when you mean to move.
 find_package(vkmEngine @VKM_ENGINE_VERSION@ REQUIRED)
 
 file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
