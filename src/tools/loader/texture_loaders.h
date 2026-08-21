@@ -2,12 +2,28 @@
 
 #include <string>
 
+#include <nlohmann/json_fwd.hpp>
+
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_handle.h"
+#include "resource/texture_format.h"
 
 namespace Vkm::Engine {
 
 class ResourceManager;
+
+/**
+ * @brief Read the filter override a texture recipe's optional `filter` key names.
+ *
+ * The key is written only by a texture that has an opinion about its own
+ * sampling, which is the rare one - pixel art, a lookup table, a UI sprite - so
+ * an absent or unrecognised value reads as None and the texture follows the
+ * scene's filtering setting like everything else.
+ *
+ * @param source JSON source descriptor for a texture.
+ * @return TextureFilterOverride::Nearest for "nearest", None otherwise.
+ */
+TextureFilterOverride textureFilterFromRecipe(const nlohmann::json& source);
 
 /**
  * @brief Load a texture from a file.
@@ -18,13 +34,16 @@ class ResourceManager;
  * @param resourceManager Resource manager to add the texture to.
  * @param srgb Whether to use sRGB color space (true for albedo, false for data textures).
  * @param generateMipmaps Whether to generate mipmaps.
+ * @param filterOverride The texture's own say over its sampling; None leaves it
+ *        to the scene's filtering setting, which is what ordinary art wants.
  * @return Handle to the loaded texture, or invalid handle on failure.
  */
 TextureHandle loadTexture(
     const std::string& filePath,
     ResourceManager& resourceManager,
     bool srgb = false,
-    bool generateMipmaps = true
+    bool generateMipmaps = true,
+    TextureFilterOverride filterOverride = TextureFilterOverride::None
 );
 
 /**
@@ -45,13 +64,16 @@ TextureHandle loadTexture(
  * @param resourceManager Resource manager the stub texture is added to.
  * @param srgb Whether to use sRGB color space (true for albedo, false for data textures).
  * @param generateMipmaps Whether to generate mipmaps once the pixels are decoded.
+ * @param filterOverride The texture's own say over its sampling; None leaves it
+ *        to the scene's filtering setting, which is what ordinary art wants.
  * @return Handle to the loading texture; valid immediately, filled on a later frame.
  */
 TextureHandle requestTextureAsync(
     const std::string& filePath,
     ResourceManager& resourceManager,
     bool srgb = false,
-    bool generateMipmaps = true
+    bool generateMipmaps = true,
+    TextureFilterOverride filterOverride = TextureFilterOverride::None
 );
 
 } // namespace Vkm::Engine

@@ -82,9 +82,10 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         for (int i = 0; i < count; ++i) labels[i] = FILTERS[i].label;
 
         if (propIndexCombo("Filtering", labels, count, &current,
-                           "How a texel is fetched. Nearest keeps pixel art intact; "
-                           "anisotropy samples along a stretched footprint, so ground "
-                           "and road surfaces keep their detail into the distance")) {
+                           "How a texel is fetched, for every texture that has not "
+                           "pinned its own filter. Anisotropy samples along a stretched "
+                           "footprint, so ground and road surfaces keep their detail "
+                           "into the distance")) {
             s.textureFiltering  = FILTERS[current].mode;
             s.textureAnisotropy = FILTERS[current].degree;
         }

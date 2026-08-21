@@ -6,13 +6,18 @@
 namespace Vkm::Engine {
 
 /**
- * @brief How a texel is fetched before anisotropy is considered.
+ * @brief How a texel is fetched before anisotropy is considered, for every
+ * texture that has not pinned its own filter.
  *
- * Nearest exists because filtering some textures is wrong rather than merely
- * expensive - pixel art, lookup tables and UI sprites all want their texels
- * intact. Bilinear smooths within a mip level but leaves the seam between
- * levels visible; Trilinear crosses that seam and is the only mode anisotropic
- * filtering can build on.
+ * Bilinear smooths within a mip level but leaves the seam between levels
+ * visible; Trilinear crosses that seam and is the only mode anisotropic
+ * filtering can build on. Nearest is here for a scene whose art is all point
+ * sampled - a pixel-art game, or a look chosen deliberately.
+ *
+ * A single texture that must not be blended does not ask through this. That is
+ * a claim about its own content rather than a quality trade, and it belongs to
+ * the asset: see TextureParams::filterOverride, which outranks whatever is set
+ * here.
  */
 enum class TextureFiltering : uint8_t {
     Nearest = 0,
@@ -83,6 +88,9 @@ struct RenderSettings {
     // a stretched footprint gets. Anisotropy only means anything on top of
     // mipmapped sampling, so it is ignored unless the mode is Trilinear. The
     // editor presents them as one list; the model keeps them apart.
+    //
+    // Both are the frame's default rather than its decree - a texture carrying
+    // TextureParams::filterOverride keeps its own.
     TextureFiltering textureFiltering = TextureFiltering::Trilinear;
     uint32_t textureAnisotropy = 16;  ///< Degree when the mode is Trilinear (1 = off); clamped to the driver's ceiling.
 
