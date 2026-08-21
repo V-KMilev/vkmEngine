@@ -12,6 +12,7 @@
 #include "ecs/environment.h"
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/animator.h"
+#include "ecs/component/animation/bone_socket.h"
 #include "ecs/component/core/hierarchy.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/physics/character_controller.h"
@@ -250,6 +251,7 @@ class ComponentEditCommand : public Command {
     X(Camera,          camera)           \
     X(Animation,       animation)        \
     X(Animator,        animator)         \
+    X(BoneSocket,      boneSocket)       \
     X(Name,            name)             \
     X(Rigidbody,        rigidbody)        \
     X(Collider,         collider)         \
@@ -285,6 +287,7 @@ class ComponentEditCommand : public Command {
     X(Camera)                            \
     X(Animation)                         \
     X(Animator)                          \
+    X(BoneSocket)                        \
     X(Rigidbody)                         \
     X(Collider)                          \
     X(CharacterController)               \

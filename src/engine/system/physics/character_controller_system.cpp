@@ -28,6 +28,36 @@ const glm::vec3 UP = {0.0f, 1.0f, 0.0f};
 // in the acceleration step and keeps a dead stick from waking a sleeping body.
 constexpr float MOVE_EPS = 1e-4f;
 
+/**
+ * @brief Turn @p target so it runs along the surface the body is pressed
+ *        against instead of into it.
+ *
+ * A surface within the slope limit is ground rather than an obstacle, and the
+ * caller's ground projection is what follows it; only something steeper
+ * deflects. That one is taken flat - a wall that turned the target upward would
+ * be a ramp the character climbs, and the whole point of the slope limit is that
+ * it cannot. World up is the "nothing in the way" answer PhysicsSystem publishes
+ * when a body touched nothing, and it is walkable at every slope limit, so no
+ * separate test for "is there a contact at all" is needed here.
+ *
+ * @param target Desired velocity, world space.
+ * @param blockNormal Rigidbody::blockNormal - the most horizontal contact normal.
+ * @param slopeLimit cos(maxSlopeAngle): at or above it the surface is walkable.
+ * @return The target with any component pushing into that surface removed.
+ */
+glm::vec3 deflectAlongBlock(const glm::vec3& target, const glm::vec3& blockNormal,
+                            float slopeLimit) {
+    if (glm::dot(blockNormal, UP) >= slopeLimit) return target;
+
+    const glm::vec3 flat = {blockNormal.x, 0.0f, blockNormal.z};
+    const float lengthSq = glm::dot(flat, flat);
+    // A ceiling is unwalkable and has no sideways direction to slide along.
+    if (lengthSq <= MOVE_EPS) return target;
+
+    const glm::vec3 axis = flat / std::sqrt(lengthSq);
+    return target - axis * glm::min(0.0f, glm::dot(target, axis));
+}
+
 bool hasCapsule(const Collider& collider) {
     for (const ColliderPart& part : collider.parts)
         if (part.shape == ColliderShape::Capsule) return true;
@@ -65,12 +95,24 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
             rb.sleepTimer = 0.0f;
         }
 
+        // Sliding along a wall is the controller's job, not the solver's.
+        // Steering straight into one makes a normal force, Coulomb friction
+        // scales with it, and whether the character glides or stops dead then
+        // depends on two material numbers - at 25 degrees off the wall normal
+        // with default friction it stops dead. A target that already runs along
+        // the wall never pushes into it, so there is no normal force for
+        // friction to bite on.
+        //
+        // Before the ground projection, not after: this only ever turns the
+        // horizontal, so the slope-following vertical below is then computed for
+        // the direction the character actually ends up going.
+        glm::vec3 velocity = rb.linearVelocity;
+        glm::vec3 target = deflectAlongBlock(cc.moveInput, rb.blockNormal, slopeLimit);
+
         // Grounded, the target follows the ground plane, so walking up a ramp
         // neither launches off the top nor is dragged back by gravity fighting
         // the contact. Airborne, only the horizontal is steered and the vertical
         // is gravity's alone.
-        glm::vec3 velocity = rb.linearVelocity;
-        glm::vec3 target = cc.moveInput;
         if (cc.grounded) {
             target -= cc.groundNormal * glm::dot(target, cc.groundNormal);
             // Already rising faster than the ground would carry it: it has just

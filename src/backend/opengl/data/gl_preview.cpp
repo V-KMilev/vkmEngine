@@ -219,7 +219,9 @@ uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ib
 
     m_drawables.clear();
     m_drawables.push_back(&view.drawables[0]);
-    const std::vector<InstanceRun>& runs = m_batcher.buildGrouped(m_drawables, glView);
+    // No palette: the preview draws shaders/forward/pbr only, so a character
+    // thumbnails in bind pose.
+    const std::vector<InstanceRun>& runs = m_batcher.buildGrouped(m_drawables, glView, 0);
     material->bind(GLBindings::UBOBindingPoints::Material);
     material->bindTextures(glView);
     m_batcher.bindInstanceData();

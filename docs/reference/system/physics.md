@@ -40,14 +40,27 @@ All of them are plain data structs; see [ecs.md](../ecs.md) for the field tables
   `Collider` into its per-tick `BodyFrame`, so editing either takes effect
   without an "apply" step.
 
-  It also carries two **outputs**, written by `writeback` and never read by the
-  system that writes them: `supported` (a resolved, non-trigger contact held this
-  body this tick) and `supportNormal` (the most upward of those normals, as it
-  acts on *this* body - the two bodies of one contact see opposite normals). They
-  are generic on purpose. "Am I standing on something, and how steep is it" is
-  what a controller, a footstep sound and a landing animation all ask, and
-  answering it here is what keeps `PhysicsSystem` from ever learning what a
-  character is. Runtime-only, like `sleeping`: not serialized.
+  It also carries three **outputs**, written by `writeback` and never read by the
+  system that writes them: `supported` (a resolved, non-trigger contact reached
+  this body this tick), `supportNormal` (the most **upward** of those normals)
+  and `blockNormal` (the most **horizontal** of them). Both normals are the
+  surface's as it acts on *this* body, so the two bodies of one contact see
+  opposite directions.
+
+  Two reductions rather than one because they answer different questions in the
+  same tick: a character on flat ground pressed against a wall is *held* by the
+  floor and *blocked* by the wall, and one normal cannot say both. They are
+  generic on purpose. "Am I standing on something, and how steep is it" is what a
+  controller, a footstep sound and a landing animation ask; "what am I pressed
+  against, and which way does it push" is what a wall slide, a scrape effect and
+  a ledge grab ask. Answering both here is what keeps `PhysicsSystem` from ever
+  learning what a character is.
+
+  A body that touched nothing reports world up for both. For `blockNormal` that
+  doubles as "nothing is in the way" without a second flag: world up has no
+  horizontal component, and a normal with no horizontal direction cannot deflect
+  anything, so the reader that projects against it is already the reader that
+  ignores it. Runtime-only, like `sleeping`: not serialized.
 - **`Collider`** - one or more `ColliderPart`s, evaluated in the entity's
   `Transform` frame. Each part carries a `shape` tag (`ColliderShape::Box` or
   `Capsule`) and the fields for both: `center` + `halfExtents` for a box,
@@ -88,11 +101,14 @@ PhysicsSystem::fixedUpdate(ctx)
      (skips sleeping / static / kinematic).
   4. Broadphase: sort-and-sweep on X; AABB-overlap surviving pairs (static-vs-static culled).
   5. Narrowphase: one contact routine per part pair -> ContactManifolds (up to
-     MAX_CONTACTS_PER_MANIFOLD = 4 points each). Enqueue CollisionEvent / TriggerEvent.
+     MAX_CONTACTS_PER_MANIFOLD = 4 points each). Reduce each body's normals into
+     its BodyContacts (most upward, most horizontal). Enqueue CollisionEvent /
+     TriggerEvent.
   6. Wake sleepers struck by a faster body.
   7. solveContacts: PGS iterations of normal + friction impulses with restitution,
      then a split-impulse pass for penetration correction.
-  8. Integrate velocities -> pose, write Transform back, update sleep state.
+  8. Integrate velocities -> pose, write Transform back, publish the BodyContacts
+     onto the Rigidbody, update sleep state.
      HierarchySystem re-resolves WorldTransform later in the same frame.
 ```
 
@@ -167,9 +183,9 @@ where the solver measures its contact arms.
 
 `CharacterControllerSystem` turns `moveInput` into velocity on the `Rigidbody`,
 once per fixed tick, after `PhysicsSystem`. Only the velocity it writes is a tick
-late, and a tick of steering lag is imperceptible; fresh grounding is the half
-that has to be exact, because landing, stepping off a ledge and refusing a slope
-all turn on it.
+late, and a tick of steering lag is imperceptible; fresh contacts are the half
+that has to be exact, because landing, stepping off a ledge, refusing a slope and
+sliding along a wall all turn on them.
 
 Per tick, per controller:
 
@@ -178,13 +194,15 @@ Per tick, per controller:
    resolved contact too, so touching is not the same question as standing.
 2. Wake the body if there is input and it fell asleep - a sleeping body has its
    velocity zeroed by writeback, so anything asking it to move must wake it.
-3. Steer toward `moveInput`. Grounded, the target is first projected onto the
-   ground plane, so a ramp neither launches at the top nor drags back down;
-   airborne, only the horizontal is steered (at `airControl` of the rate) and the
-   vertical is gravity's alone. Either way the step is **capped** at
-   `acceleration * dt` rather than approached exponentially, so the number means
-   m/s^2 at every speed.
-4. `jumpRequested && grounded` sets `linearVelocity.y = jumpSpeed` and clears
+3. Deflect the target along `blockNormal` if that surface is steeper than
+   `maxSlopeAngle`, so it runs along the obstacle instead of into it (below).
+4. Steer toward the deflected target. Grounded, it is projected onto the ground
+   plane, so a ramp neither launches at the top nor drags back down; airborne,
+   only the horizontal is steered (at `airControl` of the rate) and the vertical
+   is gravity's alone. Either way the step is **capped** at `acceleration * dt`
+   rather than approached exponentially, so the number means m/s^2 at every
+   speed.
+5. `jumpRequested && grounded` sets `linearVelocity.y = jumpSpeed` and clears
    `grounded` on the spot; the request is consumed either way.
 
 It writes velocity, **never position**: the solver owns the pose, so a controller
@@ -193,14 +211,90 @@ penetration recovery and sleeping all keep working underneath it. Two silent
 misconfigurations are named once each - no enabled capsule collider (it will
 never ground) and `freezeRotation` off (contacts will topple it).
 
+### Sliding along walls
+
+Step 3 is the one thing the controller deliberately does **not** leave to the
+solver. Aim a walk into a wall and the solver resolves it perfectly well: the
+normal impulse removes the motion into the face, and Coulomb friction decides
+what happens to the rest. That is the problem. Friction is capped at
+`combinedFriction * normalImpulse`, so a character glides only while the combined
+friction is below `tan(incidence)`. Whether a character slides or snags was
+decided by two material numbers nobody picked for that purpose. With the engine's
+defaults on both bodies (`sqrt(0.5*0.5) = 0.5`, against `tan 25 = 0.466`), a walk
+25 degrees off the wall normal produced **0.000 m/s** along the face. Not a slow
+slide: a dead stop.
+
+So the target is turned before it is steered toward. `deflectAlongBlock` removes
+whatever part of it pushes into `blockNormal`, and a character that no longer
+presses on the wall generates no normal force for friction to scale against.
+Measured at a 1.9 m/s walk, before -> after, against the speed the input actually
+commands along the face:
+
+| Incidence off the wall normal | 10 deg | 25 deg | 45 deg | 60 deg | 80 deg |
+|---|---|---|---|---|---|
+| Commanded along the face | 0.330 | 0.803 | 1.344 | 1.645 | 1.871 |
+| Slide, before | 0.000 | 0.000 | 0.563 | 1.069 | 1.790 |
+| Slide, after  | 0.248 | 0.721 | 1.262 | 1.563 | 1.788 |
+
+The remaining shortfall is the *floor's* drag, which acts on any walk; at 80
+degrees, where friction was never the gate, nothing changes. What does change is
+that the **wall's** own `friction` across 0 -> 1 now moves the slide by **0.00%**.
+Sliding is geometry, not materials.
+
+Two details carry the design:
+
+- **Only a surface steeper than `maxSlopeAngle` deflects.** A walkable one is
+  ground, and step 4 already follows it; deflecting against it as well would
+  strip the downhill component and leave the character unable to walk *down* a
+  ramp.
+- **The deflection is taken flat** - only the horizontal part of `blockNormal`
+  turns the target. A wall that deflected the target *upward* would be a ramp,
+  and the character would climb whatever it walked into, which is precisely what
+  `maxSlopeAngle` exists to forbid. Measured: a 70-degree slope is not climbed.
+
+The deflection is free where there is nothing to deflect against. A body on level
+floor gets `blockNormal` == world up, which is walkable at every slope limit, so
+the first line of the helper returns the target untouched - no contact test, no
+branch on `supported`.
+
+### Steps
+
+A step is met by the capsule's bottom cap, and what happens is decided entirely
+by the contact normal that edge produces. The normal's upward component at a step
+of height `h` is `1 - h/radius`, so the capsule **rolls over** any step up to:
+
+```
+h <= radius * (1 - cos(maxSlopeAngle))      // 0.107 m at radius 0.30, 50 degrees
+```
+
+Below that limit the edge is a walkable surface: the character grounds on it and
+climbs it like the ramp it geometrically is. Above it the edge is a wall, and the
+character is stopped - there is still **no step-up** (see below).
+
+What a step must never do is strand the character. Above the roll-over limit it
+used to: riding the edge lifted the capsule off the floor, `supportNormal` became
+the edge's, and `grounded` stayed **false for as long as forward was held** -
+measured at 369 consecutive ticks (6.1 s, the whole run) into a 0.15 m block, with
+no jumping and grounded-driven animation playing "falling" while the character
+stood still. The wall deflection ends it as a side effect: the character stops
+pushing into the edge, settles back onto the floor, and grounding now lapses for
+at most **2 ticks** (0.033 s) at both 0.15 m and 0.20 m. It is stopped by the
+step, which is honest, rather than hovering on it, which was not.
+
 A **System driving a component**, not a `Behavior`, because the thing that writes
 `moveInput` changes and the thing that reads it should not: gameplay writes it
 today, a nav agent writes it in 1.8, and an engine system cannot address a
 hot-reloadable game behavior.
 
-**Deliberately partial for 1.6:** velocity-driven, with no step-up (that needs a
+**Deliberately partial:** velocity-driven, with no step-up (that needs a
 shapecast query the engine does not have), no crouch, no moving platforms and no
-runtime capsule resize.
+runtime capsule resize. Wall projection was never on this list and should not be:
+a controller that cannot slide along a wall is one that is not doing its job.
+Step-up stays on it - a character stopped by a 0.15 m kerb is a limitation, and
+one that is honest about it now that grounding survives the contact. It is also
+the only entry held back by a capability rather than by taste, which is why the
+query it waits on is scheduled with the rest of physics breadth in 1.9; the other
+three are choices, and are scheduled nowhere.
 
 ## Sleeping
 
@@ -239,5 +333,8 @@ subscribing to the events directly or through the behavior `onCollision` /
   mesh falls back to a single bounds-sized box. Every part it produces is a box:
   fitting capsules to a mesh is a medial-axis problem, not a scanline, and is not
   attempted.
-- `Rigidbody`, `Collider`, and `PhysicsWorld` round-trip with the scene; see
-  [io.md](io.md).
+- `Rigidbody`, `Collider` and `CharacterController` round-trip with the scene as
+  components - their authored fields only, since every runtime output on them
+  (`sleeping`, the two contact normals, `grounded`) is rebuilt each tick. The
+  scene-global `PhysicsSettings` round-trips beside them as the file's own
+  `physics` block rather than as a component on anything. See [io.md](io.md).

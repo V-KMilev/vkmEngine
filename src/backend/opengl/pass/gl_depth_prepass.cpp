@@ -45,13 +45,17 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
     ctx.sceneRender.bindGBufferPass(ctx.gl);
 
     // Uniform state is per program in GL, so the view matrix has to be set on
-    // each of them, not once on whichever happens to be bound.
+    // each of them, not once on whichever happens to be bound. With no palette
+    // no run is skinned, the skinned program is never bound, and so it is never
+    // given anything either.
     m_shader->bind();
     m_shader->setUniformMatrix4fv("u_view", view.camera.view);
-    m_skinnedShader->bind();
-    m_skinnedShader->setUniformMatrix4fv("u_view", view.camera.view);
 
-    ctx.skinPalette.bind();
+    if (ctx.skinPalette.count() > 0) {
+        m_skinnedShader->bind();
+        m_skinnedShader->setUniformMatrix4fv("u_view", view.camera.view);
+        ctx.skinPalette.bind();
+    }
 
     // No albedo texture is sampled - the prepass writes normal/roughness/
     // metalness from the UBO - so binding the material UBO is enough. The

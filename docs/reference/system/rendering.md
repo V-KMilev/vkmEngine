@@ -17,7 +17,7 @@ an OpenGL implementation detail.
 
 - `src/engine/system/render/render_system.h` - RenderSystem (System subclass; owns the backend)
 - `src/engine/system/render/render_view.h` - RenderView (the engine -> backend contract)
-- `src/engine/system/render/data/` - the POD frame structs: CameraData, DrawableData, LightData, ShadowCasterData, ProbeData
+- `src/engine/system/render/data/` - the POD frame structs: CameraData, DrawableData, LightData, ShadowCasterData, ShadowCasterSkin, ProbeData
 - `src/engine/system/render/render_settings.h` - RenderSettings + RenderMode (editable tuning)
 - `src/engine/system/render/render_backend.h` - RenderBackend (the abstract seam)
 - `src/engine/ecs/environment.h` - Environment (HDR/skybox), a scene-level struct
@@ -34,15 +34,17 @@ RenderSystem::update(FrameContext)
   |     |                   the backend does all sorting/partitioning), appending
   |     |                   each posed entity's bone palette into skinMatrices
   |     |-- buildShadowCasters  from the whole scene (NOT camera-culled), which
-  |     |                   appends palettes too - a character just off-screen
-  |     |                   casting into view is only in this list
+  |     |                   appends palettes too (into casterSkins) - a character
+  |     |                   just off-screen casting into view is only in this list
   |     |-- copy RenderSettings and Environment into the view
   |-- backend.render(view, resources)             // GLBackend
         |-- GLView::sync      upload/refresh changed GPU resources
         |-- bake IBL          when the HDR path changed, or the procedural
         |                     sky's sun/params moved (persistent GLIBLBaker)
         |-- shadow plan       assign atlas slots, cull casters per tile, upload shadow UBO
-        |-- skin palette      upload skinMatrices once (GLSkinPalette, SSBO 5)
+        |-- skin palette      upload skinMatrices once (GLSkinPalette, SSBO 5);
+        |                     its count is the frame's "is anything posed?", and
+        |                     every skinned code path below is gated on it
         |-- opaque batch      group the opaque bucket into instanced runs (once, shared)
         |-- per-frame UBOs    camera, lights
         |-- partitionDrawables  split into opaque / alpha-mask / transparent
@@ -67,7 +69,8 @@ the `VisibilitySystem` output, reusing the vectors' capacity across frames.
 | `camera` | `CameraData` | view / projection / viewProjection + position |
 | `drawables` | `vector<DrawableData>` | Visible set, in visibility order (UNSORTED); the backend sorts/partitions |
 | `shadowCasters` | `vector<ShadowCasterData>` | Whole scene, not camera-culled |
-| `skinMatrices` | `vector<mat4>` | Every skinned item's bone palette, end to end; both PODs above carry a `skinFirst`/`skinCount` range into it (`skinCount == 0` = not posed) |
+| `skinMatrices` | `vector<mat4>` | Every skinned item's bone palette, end to end; a drawable carries its `skinFirst`/`skinCount` range inline (`skinCount == 0` = not posed). Empty when the frame posed nothing, which is what turns the backend's whole skinned half off |
+| `casterSkins` | `vector<ShadowCasterSkin>` | The casters' ranges into it, parallel to `shadowCasters` and empty when nothing is posed - kept out of `ShadowCasterData` so the shadow cull's per-tile walk stays as narrow as it was |
 | `lights` | `vector<LightData>` | Enabled lights with world transforms + shadow slot |
 | `probes` | `vector<ProbeData>` | Reflection probes in the scene |
 | `settings` | `RenderSettings` | Pass toggles + per-effect params, copied each frame |
@@ -76,10 +79,11 @@ the `VisibilitySystem` output, reusing the vectors' capacity across frames.
 The frontend does **not** sort drawables - it emits them in visibility order.
 All sorting and partitioning happens in the backend: `partitionDrawables` splits
 opaque from transparent, `GLInstanceBatcher` groups by (skinned, material, mesh)
-for instancing, and `GLForwardPass` drives the depth-writing classes (Opaque,
-AlphaMask, Unlit) before the back-to-front transparent run. The transparent
-forward phase snapshots the opaque scene for refraction, so opaques must already
-be drawn.
+for instancing - by (material, mesh) alone on a frame that posed nothing, where
+there is no second program to sort towards - and `GLForwardPass` drives the
+depth-writing classes (Opaque, AlphaMask, Unlit) before the back-to-front
+transparent run. The transparent forward phase snapshots the opaque scene for
+refraction, so opaques must already be drawn.
 
 ## RenderSettings and RenderMode
 
@@ -137,7 +141,7 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 
 | # | Pass | Does |
 |---|------|------|
-| 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas each frame. Culling and mesh-grouping are **not** done here - `GLShadowData::build` does both on the thread pool, so the pass only gathers, uploads and draws. Skinned casters take a second pair of programs and draw one at a time, because the palette base is a uniform on this path (see [animation.md](animation.md#the-gpu-path)) |
+| 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas each frame. Culling and mesh-grouping are **not** done here - `GLShadowData::build` does both on the thread pool, so the pass only gathers, uploads and draws. Skinned casters take a second pair of programs and draw one at a time, because the palette base is a uniform on this path; a frame that posed nothing binds neither of them, and the pass tracks which program is current so it binds one per frame rather than one per tile (see [animation.md](animation.md#the-gpu-path)) |
 | 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (oct view-normal / roughness / metalness). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses. Two programs (`prepass` / `prepass_skinned`), switched once at the skinned boundary |
 | 3 | ResolveDepth | MSAA only: resolves depth (and the G-buffer when GTAO / decals / a debug view will read it) into `m_sceneHDR` |
 | 4 | HiZ | Reduces the resolved depth into a hierarchical depth pyramid: each texel the **farthest** depth of the region below it (`GLHiZ`). Runs only while occlusion culling is on - the cull is the pyramid's only reader |
