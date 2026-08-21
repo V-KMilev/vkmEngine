@@ -311,8 +311,8 @@ void PotionRunner::buildWorld() {
     // Own the mood: this is a night run, and lights only read against dark.
     // Near-zero image-based ambient (the skybox dims with it); the ceiling
     // pools and train headlights below do the actual lighting.
-    // Matches potion_scene.h, but enforced here so the scene file and the game
-    // can't drift apart.
+    // Matches what game_module.cpp's vkmBuildScene sets, but enforced here so
+    // the persisted scene and the game cannot drift apart.
     m_scene->environment().sky.intensity  = 0.08f;
     m_scene->environment().sky.showSkybox = false;   // underground: no sky, just the tunnel
     // No sun underground - switch off any authored directional light (the saved
@@ -381,7 +381,7 @@ void PotionRunner::buildWorld() {
     m_matArch    = makeMaterial({0.85f,  0.92f,  1.00f},  0.0f,  0.40f, {0.45f, 0.70f, 1.00f}, 1.3f, true,  "potion:arch");
     m_matTrim    = makeMaterial({0.90f,  0.35f,  1.00f},  0.0f,  0.40f, {0.80f, 0.18f, 1.00f}, 1.3f, true,  "potion:trim");
 
-    // Drive whichever camera the scene already provides (see potion_scene.h).
+    // Drive whichever camera the scene already provides (see game_module.cpp).
     m_camera = EntityId{};
     m_scene->forEach<Camera>([&](EntityId id, Camera&) {
         if (!m_camera) m_camera = id;

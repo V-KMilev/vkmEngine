@@ -19,7 +19,7 @@ namespace Vkm::Engine {
  *        Behavior.
  *
  * Attach one instance to an otherwise empty "game" entity (see
- * example/potion_scene.h). On the first play tick it builds the whole visual
+ * src/game_module.cpp). On the first play tick it builds the whole visual
  * world procedurally from one in-code cube mesh - the ground, glowing side
  * pillars and high overhead arches, the player, pooled obstacles and coins -
  * then drives gameplay every frame.
