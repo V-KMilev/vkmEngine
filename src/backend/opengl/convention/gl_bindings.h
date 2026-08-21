@@ -55,7 +55,7 @@ namespace GLBindings {
     // Texture units above the material maps (0-10), for the shadow pass outputs.
     // The cube samplers occupy CubeBase .. CubeBase+MAX_CUBE-1.
     namespace ShadowTextureSlots {
-        constexpr uint32_t Atlas2D  = 11;  ///< Tiled 2D depth atlas (sampler2D).
+        constexpr uint32_t Atlas2D  = 11;  ///< Tiled 2D depth atlas (sampler2DShadow).
         constexpr uint32_t CubeBase = 12;  ///< First point-light depth cube (samplerCube[]).
     }
 

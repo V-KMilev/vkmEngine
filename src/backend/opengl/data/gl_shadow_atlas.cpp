@@ -33,21 +33,30 @@ void GLShadowAtlas::init(uint32_t tileRes) {
     const uint32_t atlasW = SHADOW_ATLAS_COLS * m_tileRes;
     const uint32_t atlasH = SHADOW_ATLAS_ROWS * m_tileRes;
 
-    // One depth texture for the whole 2D atlas. Nearest filtering - PCF is done
-    // in the shader; clamp so off-tile samples read the edge. Reassigning the
-    // unique_ptr frees any previous atlas, so a resolution change is a rebuild.
+    // One depth texture for the whole 2D atlas. Linear filtering, because the
+    // shaders sample it through a sampler2DShadow: the texture unit compares
+    // against four texels and returns the bilinear-weighted fraction that
+    // passed, so a tap yields a smooth ratio instead of a hard 0 or 1. Clamp so
+    // off-tile samples read the edge. Reassigning the unique_ptr frees any
+    // previous atlas, so a resolution change is a rebuild.
     Vkm::GL::Texture2DParams params;
     params.width          = atlasW;
     params.height         = atlasH;
     params.internalFormat = GL_DEPTH_COMPONENT24;
     params.format         = GL_DEPTH_COMPONENT;
     params.type           = GL_FLOAT;
-    params.minFilter      = Vkm::GL::TextureMinFilter::Nearest;
-    params.magFilter      = Vkm::GL::TextureMagFilter::Nearest;
+    params.minFilter      = Vkm::GL::TextureMinFilter::Linear;
+    params.magFilter      = Vkm::GL::TextureMagFilter::Linear;
     params.wrapS          = Vkm::GL::TextureWrap::ClampToEdge;
     params.wrapT          = Vkm::GL::TextureWrap::ClampToEdge;
     params.generateMipmaps = false;
     m_atlas2D = std::make_unique<Vkm::GL::Texture2D>("shadow_atlas_2d", params);
+
+    // LEQUAL matches the shader's own test, which counted a sample lit when the
+    // biased receiver depth was no greater than the stored caster depth.
+    m_atlas2D->bind();
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    m_atlas2D->unbind();
 
     m_fbo2D.bind();
     m_fbo2D.attachTexture2D(GL_DEPTH_ATTACHMENT, m_atlas2D->getID());
@@ -101,7 +110,15 @@ void GLShadowAtlas::beginCubeFace(const Vkm::GL::Context& gl, uint32_t slot, uin
 }
 
 void GLShadowAtlas::bind2D(uint32_t unit) const {
-    if (m_atlas2D) m_atlas2D->bindSlot(unit);
+    if (!m_atlas2D) return;
+    m_atlas2D->bindSlot(unit);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+}
+
+void GLShadowAtlas::bind2DRaw(uint32_t unit) const {
+    if (!m_atlas2D) return;
+    m_atlas2D->bindSlot(unit);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
 }
 
 void GLShadowAtlas::bindCube(uint32_t slot, uint32_t unit) const {
