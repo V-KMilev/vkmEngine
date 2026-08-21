@@ -61,27 +61,9 @@ void GLView::invalidate() {
 }
 
 void GLView::setTextureFiltering(TextureFiltering mode, float maxAnisotropy) {
-    // Anisotropy only means anything on top of mipmapped sampling, so the two
-    // coarser modes pin it to 1 rather than leaving a stale degree behind.
-    using Min = Vkm::GL::TextureMinFilter;
-    using Mag = Vkm::GL::TextureMagFilter;
-
-    Min  minFilter = Min::LinearMipmapLinear;
-    Mag  magFilter = Mag::Linear;
-    float degree   = maxAnisotropy;
-    if (mode == TextureFiltering::Nearest) {
-        minFilter = Min::NearestMipmapNearest;
-        magFilter = Mag::Nearest;
-        degree    = 1.0f;
-    } else if (mode == TextureFiltering::Bilinear) {
-        minFilter = Min::LinearMipmapNearest;
-        degree    = 1.0f;
-    }
-
     for (auto& slot : m_textures.slots) {
         if (!slot.gl) continue;
-        slot.gl->setFilter(minFilter, magFilter);
-        slot.gl->setMaxAnisotropy(degree);
+        slot.gl->applyFiltering(mode, maxAnisotropy);
     }
 }
 
