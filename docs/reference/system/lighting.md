@@ -117,12 +117,20 @@ Shadow rendering goes through `GLShadowPass`, which:
 - Renders the **full scene** of `castShadows = true` meshes per light
   layer (shadow casters are not camera-culled; see [Visibility](visibility.md)).
 - Writes per-caster `lightSpace` matrices, biases, and atlas tile rects
-  into a UBO. The forward pass samples a single tiled `sampler2D`
-  shadow atlas (`u_shadowAtlas`) - mapping each caster's UV into its tile
-  rect and doing manual 3x3 PCF on the raw depth - plus a small array of
-  plain `samplerCube` maps (`u_shadowCube[SHADOW_MAX_CUBE]`), one per
-  point-light slot, also filtered with manual PCF. There are no hardware
-  comparison samplers (`sampler2DArrayShadow` / `samplerCubeArrayShadow`).
+  into a UBO. The forward pass samples a single tiled `sampler2DShadow`
+  atlas (`u_shadowAtlas`) - mapping each caster's UV into its tile rect
+  and taking a 3x3 kernel of hardware depth compares, each of them
+  bilinear over a 2x2 texel neighbourhood, so one tap returns a fraction
+  rather than 0 or 1 - plus a small array of plain `samplerCube` maps
+  (`u_shadowCube[SHADOW_MAX_CUBE]`), one per point-light slot, each read
+  with a single unfiltered tap.
+
+  The atlas texture carries `GL_TEXTURE_COMPARE_FUNC = GL_LEQUAL` and
+  linear filtering; `GLShadowAtlas::bind2D` turns the comparison mode on
+  and `bind2DRaw` turns it off for the `ShadowAtlas` debug view, which
+  reads stored depth through a plain `sampler2D`. Sampling a texture in
+  comparison mode with a non-shadow sampler is undefined, so the two
+  entry points each set the mode rather than assuming a prior state.
 
 `shadowDistance` controls how far the directional cascades cover in world
 units. It is ignored for spot, point, and area lights, which use `radius`

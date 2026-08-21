@@ -36,11 +36,20 @@ layout(std140, binding = 3) uniform ShadowBlock {
     ShadowCube scube[SHADOW_MAX_CUBE];
 } u_shadow;
 
-layout(binding = 11) uniform sampler2D   u_shadowAtlas;
+layout(binding = 11) uniform sampler2DShadow u_shadowAtlas;
 layout(binding = 12) uniform samplerCube u_shadowCube[SHADOW_MAX_CUBE];
 
 // 3x3 PCF sample of one 2D atlas tile. Returns 1 (lit) .. 0 (shadowed); off-map
 // or beyond-far reads as lit so geometry outside the map is never darkened.
+//
+// The taps go through a sampler2DShadow, so the texture unit does the depth
+// compare against a 2x2 neighbourhood and returns the bilinear-weighted
+// fraction that passed. That matters wherever a shadow texel is wider than a
+// screen pixel - which is most of the near field at a large shadowDistance -
+// because a nearest fetch compared in the shader can only return 0 or 1, and
+// nine of them can only return ten distinct values. The edge then lands on
+// texel boundaries and reads as a staircase of blocks however dense the map
+// is. The same nine taps interpolated give a continuous ratio instead.
 //
 // Pass N = vec3(0) to skip the normal-offset bias - correct for a volumetric
 // sample, which has no surface to self-shadow.
@@ -77,11 +86,11 @@ float sample2DSlot(int slot, vec3 worldPos, vec3 N, float ndotl) {
     float bias    = sm.params.x * (1.0 + slope);
     vec2  atlasUV = sm.atlas.xy + proj.xy * sm.atlas.zw;
     vec2  texel   = 1.0 / vec2(textureSize(u_shadowAtlas, 0));
+    float ref     = proj.z - bias;
     float lit     = 0.0;
     for (int x = -1; x <= 1; ++x) {
         for (int y = -1; y <= 1; ++y) {
-            float d = texture(u_shadowAtlas, atlasUV + vec2(x, y) * texel).r;
-            lit += (proj.z - bias > d) ? 0.0 : 1.0;
+            lit += texture(u_shadowAtlas, vec3(atlasUV + vec2(x, y) * texel, ref));
         }
     }
     return lit / 9.0;

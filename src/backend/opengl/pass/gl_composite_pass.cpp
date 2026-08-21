@@ -49,7 +49,7 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
         // allocation happened to contain. Show the unoccluded value instead.
         if (ctx.aoReady) ctx.ao.bindColor(GLBindings::PostTextureSlots::SSAO);
         m_shader->setUniform1i("u_hasAO", ctx.aoReady ? 1 : 0);
-        ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
+        ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::Atlas2D);
         if (ctx.fogReady)
             ctx.fog.bindIntegratedSlot(GLBindings::PostTextureSlots::FogVolume);
         m_shader->setUniformMatrix4fv("u_projection", view.camera.projection);
