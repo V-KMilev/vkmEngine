@@ -9,6 +9,7 @@
 #include "resource/asset/material_asset.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/asset/font_asset.h"
+#include "system/render/render_settings.h"
 
 #include "data/gl_mesh.h"
 #include "data/gl_material.h"
@@ -89,6 +90,31 @@ class GLView {
          * tables can be matched against it. The next sync() repopulates.
          */
         void invalidate();
+
+        /**
+         * @brief Apply the frame's texture filtering mode and anisotropy degree
+         * to every synced texture.
+         *
+         * Filtering is sampler state, not asset content, so it rides none of the
+         * version gates above: a texture uploaded twenty frames ago keeps the
+         * filtering it was built with until something re-applies it. Pushing the
+         * current setting over the table each frame covers both cases that need
+         * it - the setting moved, or a texture arrived after it last did -
+         * without either having to be detected.
+         *
+         * Cheap enough to mean it: a compare per texture, and no GL call for any
+         * texture already filtered that way.
+         *
+         * Font atlases are left out. They carry no mip chain, are drawn by a
+         * screen-space pass at a fixed scale, and have no minification for
+         * anisotropy to correct.
+         *
+         * @param mode          Base filter to apply; the two coarser modes,
+         *                      Nearest and Bilinear, pin the degree to 1.
+         * @param maxAnisotropy Requested degree; clamped per texture to what the
+         *                      driver reports.
+         */
+        void setTextureFiltering(TextureFiltering mode, float maxAnisotropy);
 
         /**
          * @brief Resolve a handle to its synced GPU object; null if the handle is empty

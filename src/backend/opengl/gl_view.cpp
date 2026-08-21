@@ -60,6 +60,31 @@ void GLView::invalidate() {
     m_reportedMissing.clear();
 }
 
+void GLView::setTextureFiltering(TextureFiltering mode, float maxAnisotropy) {
+    // Anisotropy only means anything on top of mipmapped sampling, so the two
+    // coarser modes pin it to 1 rather than leaving a stale degree behind.
+    using Min = Vkm::GL::TextureMinFilter;
+    using Mag = Vkm::GL::TextureMagFilter;
+
+    Min  minFilter = Min::LinearMipmapLinear;
+    Mag  magFilter = Mag::Linear;
+    float degree   = maxAnisotropy;
+    if (mode == TextureFiltering::Nearest) {
+        minFilter = Min::NearestMipmapNearest;
+        magFilter = Mag::Nearest;
+        degree    = 1.0f;
+    } else if (mode == TextureFiltering::Bilinear) {
+        minFilter = Min::LinearMipmapNearest;
+        degree    = 1.0f;
+    }
+
+    for (auto& slot : m_textures.slots) {
+        if (!slot.gl) continue;
+        slot.gl->setFilter(minFilter, magFilter);
+        slot.gl->setMaxAnisotropy(degree);
+    }
+}
+
 void GLView::reportIfMissing(const TextureHandle& handle, const ResourceManager& resources) {
     const TextureAsset& asset = resources.get(handle);
     // Still in flight is not a failure - it resolves on a later frame, and the
