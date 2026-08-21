@@ -26,7 +26,7 @@ looking for `project.json`, so passing a scene finds the project owning it.
 ### Which root owns a path
 
 `ProjectPaths` (`src/engine/io/project_paths.h`) splits on-disk locations by who
-owns them, because two different things live on disk:
+owns them, because three different things live on disk:
 
 | Root | Owns | Helpers |
 |------|------|---------|
@@ -50,7 +50,7 @@ content therefore goes here:
 |------|-------|---------------------|
 | `editor_recents.json` | `userRoot()` | A list of the projects you have opened is how you get from one to the next; inside a project it could only ever list itself |
 | `imgui.ini` | `userRoot()` | Window positions and column widths are one person's layout, not something a project hands the next person |
-| `logs/<project>/<host>.log` | `userLogs()`, **only** when the project cannot hold a `logs/` | A developer looks beside the project, so that stays the first choice |
+| `logs/<project>/log.log` (`cook.log` for `vkm_cook`) | `userLogs()`, **only** when the project cannot hold a `logs/` | A developer looks beside the project, so that stays the first choice |
 
 The platform decides the actual directory, and configuration and state are
 different places on both: `$XDG_CONFIG_HOME` (or `~/.config`) and

@@ -85,7 +85,7 @@ as a submodule means never.
 The engine itself has no test target, and does not get an empty one. Testing is
 enabled at the root, so the first engine test is an `add_test` beside whatever
 it tests rather than a decision to make first. Tests ride along with the work
-that needs them; see [the roadmap](../roadmap.md#cross-cutting).
+that needs them.
 
 What the hosts do offer a script is the boot check above: their exit codes
 separate "opened the project" from "opened something else instead", which is the
