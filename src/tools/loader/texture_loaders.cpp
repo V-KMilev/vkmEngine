@@ -21,11 +21,47 @@
 
 namespace Vkm::Engine {
 
+namespace {
+
+/**
+ * @brief Build the recipe descriptor a file-loaded texture is re-created from.
+ *
+ * The `filter` key is omitted unless the texture states an override, so the
+ * recipe of an ordinary texture says nothing about filtering - which is the
+ * truth about it, and one fewer spelling of the default to keep in step.
+ *
+ * @param ref Project-relative reference the texture is named and reloaded by.
+ * @param srgb Whether the pixels are sRGB-encoded.
+ * @param generateMipmaps Whether a mip chain is built for it.
+ * @param filterOverride The texture's own say over its sampling.
+ * @return The `kind: file` source descriptor.
+ */
+nlohmann::json fileTextureRecipe(const std::string& ref, bool srgb, bool generateMipmaps,
+                                 TextureFilterOverride filterOverride) {
+    nlohmann::json source = {
+        {"kind",            "file"},
+        {"path",            ref},
+        {"sRGB",            srgb},
+        {"generateMipmaps", generateMipmaps},
+    };
+    if (filterOverride == TextureFilterOverride::Nearest) source["filter"] = "nearest";
+    return source;
+}
+
+} // namespace
+
+TextureFilterOverride textureFilterFromRecipe(const nlohmann::json& source) {
+    return source.value("filter", std::string{}) == "nearest"
+        ? TextureFilterOverride::Nearest
+        : TextureFilterOverride::None;
+}
+
 TextureHandle loadTexture(
     const std::string& filePath,
     ResourceManager& resourceManager,
     bool srgb,
-    bool generateMipmaps
+    bool generateMipmaps,
+    TextureFilterOverride filterOverride
 ) {
     // The reference is what the asset is named and recorded by; the resolved
     // path is only what stb opens. An absolute name would bake the authoring
@@ -52,6 +88,7 @@ TextureHandle loadTexture(
     texture.params.format = inferFormat(channels);
     texture.params.type = TexturePixelType::UnsignedByte;
     texture.params.generateMipmaps = generateMipmaps;
+    texture.params.filterOverride = filterOverride;
     texture.srgb = srgb;
     texture.filePath = ref;
 
@@ -67,12 +104,7 @@ TextureHandle loadTexture(
     // The reference is the texture's name: the stable identity scene + material
     // references resolve by, and the path used to reload it.
     texture.name         = ref;
-    texture.sourceJson() = {
-        {"kind",           "file"},
-        {"path",           ref},
-        {"sRGB",           srgb},
-        {"generateMipmaps", generateMipmaps},
-    };
+    texture.sourceJson() = fileTextureRecipe(ref, srgb, generateMipmaps, filterOverride);
     return resourceManager.add(std::move(texture));
 }
 
@@ -80,7 +112,8 @@ TextureHandle requestTextureAsync(
     const std::string& filePath,
     ResourceManager& resourceManager,
     bool srgb,
-    bool generateMipmaps
+    bool generateMipmaps,
+    TextureFilterOverride filterOverride
 ) {
     // The reference is the stable identity: a repeat request hands back the same
     // handle even while the first decode is in flight. The caller can bind it
@@ -91,20 +124,17 @@ TextureHandle requestTextureAsync(
     if (auto existing = resourceManager.findByName<TextureAsset>(ref)) return existing;
 
     // Stub asset: dimensions filled in by the finaliser once decode is done.
-    // The mipmap + sRGB flags do need to be set up-front since the asset
-    // serializer round-trips them.
+    // The mipmap + sRGB flags and the filter override do need to be set
+    // up-front - the finaliser only overwrites what the decode learned, and the
+    // asset serializer round-trips all three.
     TextureAsset stub;
     stub.params.generateMipmaps = generateMipmaps;
+    stub.params.filterOverride  = filterOverride;
     stub.srgb                   = srgb;
     stub.loading                = true;
     stub.filePath               = ref;
     stub.name                   = ref;
-    stub.sourceJson() = {
-        {"kind",            "file"},
-        {"path",            ref},
-        {"sRGB",            srgb},
-        {"generateMipmaps", generateMipmaps},
-    };
+    stub.sourceJson() = fileTextureRecipe(ref, srgb, generateMipmaps, filterOverride);
     const TextureHandle handle = resourceManager.add(std::move(stub));
     const uint64_t      uid    = resourceManager.get(handle).uid;
 

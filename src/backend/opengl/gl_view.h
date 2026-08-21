@@ -92,7 +92,7 @@ class GLView {
         void invalidate();
 
         /**
-         * @brief Apply the frame's texture filtering mode and anisotropy degree
+         * @brief Offer the frame's texture filtering mode and anisotropy degree
          * to every synced texture.
          *
          * Filtering is sampler state, not asset content, so it rides none of the
@@ -102,6 +102,10 @@ class GLView {
          * it - the setting moved, or a texture arrived after it last did -
          * without either having to be detected.
          *
+         * Offered rather than imposed: each texture resolves the setting against
+         * its own TextureParams::filterOverride, and one that states a filter
+         * keeps it. See resolveTextureFilter for which side wins and why.
+         *
          * Cheap enough to mean it: a compare per texture, and no GL call for any
          * texture already filtered that way.
          *
@@ -109,7 +113,7 @@ class GLView {
          * screen-space pass at a fixed scale, and have no minification for
          * anisotropy to correct.
          *
-         * @param mode          Base filter to apply; the two coarser modes,
+         * @param mode          Base filter to offer; the two coarser modes,
          *                      Nearest and Bilinear, pin the degree to 1.
          * @param maxAnisotropy Requested degree; clamped per texture to what the
          *                      driver reports.

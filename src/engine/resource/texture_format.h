@@ -58,28 +58,30 @@ enum class TextureWrapMode : uint8_t {
 };
 
 /**
- * @brief Minification filter (the Mipmap variants require generated mipmaps).
+ * @brief A texture's own say over how it is sampled, overriding the scene's
+ * texture-filtering setting.
+ *
+ * Filtering is normally a quality trade the machine gets to make - how many
+ * samples a stretched footprint is worth - and RenderSettings::textureFiltering
+ * owns that for the whole frame. For some content it is not a trade at all:
+ * pixel art, lookup tables and UI sprites are *wrong* when their texels are
+ * blended, at any quality level. Those textures say Nearest here and the
+ * setting gets no vote over them; every other texture leaves this at None and
+ * follows the setting, so a filtering menu still reaches the whole scene.
+ *
+ * Only the case a texture can be right or wrong about is expressible. Bilinear
+ * against trilinear is a cost question with no per-asset answer, and lives in
+ * the setting alone.
  */
-enum class TextureMinFilter : uint8_t {
-    Nearest,
-    Linear,
-    NearestMipmapNearest,
-    LinearMipmapNearest,
-    NearestMipmapLinear,
-    LinearMipmapLinear
-};
-
-/**
- * @brief Magnification filter.
- */
-enum class TextureMagFilter : uint8_t {
-    Nearest,
-    Linear
+enum class TextureFilterOverride : uint8_t {
+    None,
+    Nearest
 };
 
 /**
  * @brief Full sampling + storage description for a texture, consumed by the
- * backend on GPU upload. Defaults give a mipmapped, edge-clamped RGBA8 map.
+ * backend on GPU upload. Defaults give a mipmapped, edge-clamped RGBA8 map that
+ * takes its filtering from the scene's setting.
  */
 struct TextureParams {
     uint32_t width  = 0;
@@ -89,10 +91,10 @@ struct TextureParams {
     TexturePixelFormat    format         = TexturePixelFormat::RGBA;
     TexturePixelType      type           = TexturePixelType::UnsignedByte;
 
-    TextureWrapMode  wrapS     = TextureWrapMode::ClampToEdge;
-    TextureWrapMode  wrapT     = TextureWrapMode::ClampToEdge;
-    TextureMinFilter minFilter = TextureMinFilter::LinearMipmapLinear;
-    TextureMagFilter magFilter = TextureMagFilter::Linear;
+    TextureWrapMode wrapS = TextureWrapMode::ClampToEdge;
+    TextureWrapMode wrapT = TextureWrapMode::ClampToEdge;
+
+    TextureFilterOverride filterOverride = TextureFilterOverride::None;
 
     bool generateMipmaps = true;
 };

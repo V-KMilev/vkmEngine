@@ -145,9 +145,31 @@ report the failure that actually happens - a rig assigned to the wrong character
 
 `TextureAsset` extends `Resource` plus the engine-level `TextureParams`
 (`width`, `height`, `internalFormat` / `format` / `type`, `wrapS` / `wrapT`,
-`minFilter` / `magFilter`, `generateMipmaps`). It owns the raw `pixelData`, an
-`srgb` flag, and the original `filePath`; the backend converts the params to GL
-state at upload time.
+`filterOverride`, `generateMipmaps`). It owns the raw `pixelData`, an `srgb`
+flag, and the original `filePath`; the backend converts the params to GL state
+at upload time.
+
+`filterOverride` is the texture's own say over how it is sampled, and it is
+deliberately narrow: `None` (the default) or `Nearest`. Filtering is otherwise
+a machine-quality trade owned by `RenderSettings::textureFiltering`, but some
+content is *wrong* when its texels are blended at any quality level - pixel
+art, lookup tables, UI sprites - and only the texture knows that. A texture
+that states `Nearest` keeps it whatever the setting says; everything else
+follows the setting, so a filtering menu still reaches the whole scene. The
+cost question (bilinear against trilinear against a degree of anisotropy) has
+no per-asset answer and is not expressible here. `resolveTextureFilter` in the
+GL backend is the one place the two meet.
+
+A file texture states it in its recipe, beside `sRGB` and `generateMipmaps`:
+
+```json
+{ "kind": "file", "path": "assets/ui/hud.png", "sRGB": true, "filter": "nearest" }
+```
+
+The key is absent from a texture that has no opinion, which is nearly all of
+them. Code that builds a `TextureAsset` directly sets `params.filterOverride`
+instead. There is no per-texture import panel in the editor yet, so those two
+are the authoring surface.
 
 ### MaterialAsset
 

@@ -107,7 +107,8 @@ TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager&
         // Async: a stub handle comes back immediately, ThreadPool decodes the
         // pixels off the main thread, AsyncLoaderSystem finalises the asset 1-3
         // frames later. Material binding shows a 1x1 gray fallback in the gap.
-        return requestTextureAsync(path, resources, sRGB, genMipmaps);
+        return requestTextureAsync(path, resources, sRGB, genMipmaps,
+                                   textureFilterFromRecipe(source));
     }
 
     if (kind == "builtin") {

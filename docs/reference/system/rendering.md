@@ -99,8 +99,13 @@ mutated by the editor's Render Settings panel, and copied into the view each fra
   the coarser two modes and clamped to the ceiling that
   `RenderBackend::maxAnisotropy()` reports. The editor shows the pair as one
   list (Nearest ... Anisotropic 16x, truncated to that ceiling);
-  `GLView::setTextureFiltering` pushes it over every synced texture each frame,
-  since sampler state rides no version gate.
+  `GLView::setTextureFiltering` offers it to every synced texture each frame,
+  since sampler state rides no version gate. Offered, not imposed: each texture
+  resolves it against its own `TextureParams::filterOverride`, and one that
+  states `Nearest` keeps `Nearest` - see [Resources](../resources.md#textureasset)
+  for why the asset outranks the setting on that one question. The same resolve
+  respects `generateMipmaps`, so a texture with no mip chain is never given a
+  mipmap minification filter.
 - **`renderMode`:** composite output selector - `Default` (final image) or a debug
   view: `Depth`, `Normals`, `Roughness`, `Metalness`, `AmbientOcclusion`, `Bloom`,
   `ShadowAtlas`, `Fog`, `GiOnly`, `DirectOnly`, `Clusters`
