@@ -30,7 +30,7 @@ cmake -B build -G Ninja
 # Build
 cmake --build build
 
-# Run (three executables build by default)
+# Run (all three hosts build by default)
 ./build/bin/vkm_editor examples/potion_runner    # edit a project
 ./build/bin/vkm_runtime examples/potion_runner   # play it
 ./build/bin/vkm_cook examples/potion_runner      # bake its assets, no window
@@ -47,6 +47,29 @@ The executables land in `build/bin/` - one directory so an exe finds its DLLs
 (set by `CMAKE_RUNTIME_OUTPUT_DIRECTORY` in the top-level CMakeLists). Each
 project's gameplay module builds into that project's own `bin/` instead, because
 it belongs to the project rather than to this build tree.
+
+## Tests
+
+```bash
+ctest --test-dir build
+```
+
+`enable_testing()` sits in the **top-level** `CMakeLists.txt`, which is what
+makes `ctest` in `build/` see anything: an `add_test` in a subdirectory writes
+nothing unless the top level asked for tests first.
+
+One suite runs today - `vkm_gl`, the binary at `build/bin/vkm_gl_tests`. It
+covers the parts of vkmGL that need no GL context (vertex layout arithmetic,
+and the shader preprocessor's include resolution, cycle guard and version
+injection), so it passes on a build machine with no GPU. It builds by default:
+`modules/CMakeLists.txt` forces vkmGL's `VKM_GL_BUILD_TESTS` on, because that
+option otherwise defaults to "only when vkm_gl is the top-level project" - which
+as a submodule means never.
+
+The engine itself has no test target, and does not get an empty one. Testing is
+enabled at the root, so the first engine test is an `add_test` beside whatever
+it tests rather than a decision to make first. Tests ride along with the work
+that needs them; see [the roadmap](../roadmap.md#cross-cutting).
 
 ## CMake Targets
 
@@ -65,13 +88,14 @@ it belongs to the project rather than to this build tree.
 | `vkm_runtime_app` | Executable | Bare engine, no editor. Includes `app/engine_app.h` for the shared bootstrap; links no Assimp and no ImGui. Runs as `vkm_runtime` |
 | `vkm_editor_app` | Executable | Engine libs + `vkm_editor` + `vkm_cook`; loads the open project's module for hot-reload. Runs as `vkm_editor` |
 | `vkm_cook_app` | Executable | Headless asset cook: `vkm_cook` with no window, no GL context and no `Engine`, so it runs over SSH and on CI. Runs as `vkm_cook` |
+| `vkm_gl_tests` | Executable | vkmGL's context-free suite, registered with CTest as `vkm_gl`. Built by default; not installed. See [Tests](#tests) |
 
-Only the executable targets carry a suffix, and all three carry it so it reads
-as "this is the application" rather than "this one had a clash". A CMake target
-name must be unique across the project and two of the three are already library
-names; the files never collide - `vkm_editor` sits beside `libvkm_editor.a`, and
-`vkm_editor.exe` beside `vkm_editor.dll` - so `OUTPUT_NAME` drops the suffix and
-nobody types it outside these build files.
+Only the three host executables carry a suffix, and all three carry it so it
+reads as "this is the application" rather than "this one had a clash". A CMake
+target name must be unique across the project and two of the three are already
+library names; the files never collide - `vkm_editor` sits beside
+`libvkm_editor.a`, and `vkm_editor.exe` beside `vkm_editor.dll` - so
+`OUTPUT_NAME` drops the suffix and nobody types it outside these build files.
 
 `vkm_core` and `vkm_render` are shared on purpose. A gameplay module has
 to reach engine symbols without carrying a second copy - two copies mean two
