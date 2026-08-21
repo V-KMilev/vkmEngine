@@ -151,51 +151,61 @@ bool pickBone(const char* comboId, const SkeletonAsset* skeleton, std::string& b
 
     bool picked = false;
     if (ImGui::BeginCombo(comboId, bone.empty() ? "(none)" : bone.c_str())) {
-        static char s_boneFilter[48] = {};
-        if (ImGui::IsWindowAppearing()) {
-            s_boneFilter[0] = '\0';
-            ImGui::SetKeyboardFocusHere();
-        }
-        ImGui::SetNextItemWidth(-1.0f);
-        ImGui::InputTextWithHint("##boneFilter", "Search...", s_boneFilter, sizeof(s_boneFilter));
-        ImGui::Separator();
-
-        // Clearing the bone is a state a socket passes through on its way from
-        // one joint to another, so it is offered rather than reachable only by
-        // deleting the component.
-        if (ImGui::Selectable("(none)", bone.empty())) {
-            bone.clear();
-            picked = true;
-        }
-
-        // Indented by depth, because a rig is a tree and finding a hand in a
-        // hundred flat names is not the same job as finding it under an arm.
-        // parent < index makes that one forward pass. A filtered list is a set
-        // of scattered matches instead, and indenting those would draw a tree
-        // that is not there.
-        const bool filtered = s_boneFilter[0] != '\0';
-        std::vector<int> depth(skeleton->bones.size(), 0);
-        std::vector<std::pair<const std::string*, int>> rows;
-        for (size_t i = 0; i < skeleton->bones.size(); ++i) {
-            const Bone& joint = skeleton->bones[i];
-            depth[i] = joint.parent < 0 ? 0 : depth[joint.parent] + 1;
-            if (matchesFilter(joint.name.c_str(), s_boneFilter)) {
-                rows.emplace_back(&joint.name, filtered ? 0 : depth[i]);
+        // BeginDisabled greys the widget and refuses a fresh click, but a
+        // popup opened on an earlier frame carries its own open state. The
+        // rig can go away underneath an open list - the socket reparented,
+        // the Animator's skeleton cleared, an undo of either - and every
+        // line below reads through the pointer. Close it: it has nothing
+        // left to list.
+        if (!skeleton) {
+            ImGui::CloseCurrentPopup();
+        } else {
+            static char s_boneFilter[48] = {};
+            if (ImGui::IsWindowAppearing()) {
+                s_boneFilter[0] = '\0';
+                ImGui::SetKeyboardFocusHere();
             }
-        }
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::InputTextWithHint("##boneFilter", "Search...", s_boneFilter, sizeof(s_boneFilter));
+            ImGui::Separator();
 
-        ImGuiListClipper clipper;
-        clipper.Begin(static_cast<int>(rows.size()));
-        while (clipper.Step()) {
-            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
-                const auto& [name, indent] = rows[i];
-                ImGui::PushID(i);
-                const std::string label = std::string(static_cast<size_t>(indent) * 2, ' ') + *name;
-                if (ImGui::Selectable(label.c_str(), *name == bone)) {
-                    bone   = *name;
-                    picked = true;
+            // Clearing the bone is a state a socket passes through on its way from
+            // one joint to another, so it is offered rather than reachable only by
+            // deleting the component.
+            if (ImGui::Selectable("(none)", bone.empty())) {
+                bone.clear();
+                picked = true;
+            }
+
+            // Indented by depth, because a rig is a tree and finding a hand in a
+            // hundred flat names is not the same job as finding it under an arm.
+            // parent < index makes that one forward pass. A filtered list is a set
+            // of scattered matches instead, and indenting those would draw a tree
+            // that is not there.
+            const bool filtered = s_boneFilter[0] != '\0';
+            std::vector<int> depth(skeleton->bones.size(), 0);
+            std::vector<std::pair<const std::string*, int>> rows;
+            for (size_t i = 0; i < skeleton->bones.size(); ++i) {
+                const Bone& joint = skeleton->bones[i];
+                depth[i] = joint.parent < 0 ? 0 : depth[joint.parent] + 1;
+                if (matchesFilter(joint.name.c_str(), s_boneFilter)) {
+                    rows.emplace_back(&joint.name, filtered ? 0 : depth[i]);
                 }
-                ImGui::PopID();
+            }
+
+            ImGuiListClipper clipper;
+            clipper.Begin(static_cast<int>(rows.size()));
+            while (clipper.Step()) {
+                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                    const auto& [name, indent] = rows[i];
+                    ImGui::PushID(i);
+                    const std::string label = std::string(static_cast<size_t>(indent) * 2, ' ') + *name;
+                    if (ImGui::Selectable(label.c_str(), *name == bone)) {
+                        bone   = *name;
+                        picked = true;
+                    }
+                    ImGui::PopID();
+                }
             }
         }
         ImGui::EndCombo();
