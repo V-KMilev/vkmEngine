@@ -291,7 +291,10 @@ shapecast query the engine does not have), no crouch, no moving platforms and no
 runtime capsule resize. Wall projection was never on this list and should not be:
 a controller that cannot slide along a wall is one that is not doing its job.
 Step-up stays on it - a character stopped by a 0.15 m kerb is a limitation, and
-one that is honest about it now that grounding survives the contact.
+one that is honest about it now that grounding survives the contact. It is also
+the only entry held back by a capability rather than by taste, which is why the
+query it waits on is scheduled with the rest of physics breadth in 1.9; the other
+three are choices, and are scheduled nowhere.
 
 ## Sleeping
 
@@ -330,5 +333,8 @@ subscribing to the events directly or through the behavior `onCollision` /
   mesh falls back to a single bounds-sized box. Every part it produces is a box:
   fitting capsules to a mesh is a medial-axis problem, not a scanline, and is not
   attempted.
-- `Rigidbody`, `Collider`, and `PhysicsWorld` round-trip with the scene; see
-  [io.md](io.md).
+- `Rigidbody`, `Collider` and `CharacterController` round-trip with the scene as
+  components - their authored fields only, since every runtime output on them
+  (`sleeping`, the two contact normals, `grounded`) is rebuilt each tick. The
+  scene-global `PhysicsSettings` round-trips beside them as the file's own
+  `physics` block rather than as a component on anything. See [io.md](io.md).
