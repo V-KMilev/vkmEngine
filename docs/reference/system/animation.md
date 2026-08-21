@@ -353,7 +353,17 @@ once per gap:
 | Fault | What it does if unnamed |
 |-------|------------------------|
 | A skinned mesh whose `MeshAsset::skeleton` is not the rig above it | Its bone indices address the wrong joints - a character that moves *nearly* right |
-| A skinned mesh sitting off its rig's origin | Its own transform is applied on top of a palette that already resolved into rig space |
+| A skinned mesh **below** the rig sitting off its origin | Its own transform is applied on top of a palette that already resolved into rig space |
+
+The second fault is a question about descendants only, and the emphasis is the
+whole of it. The **rig entity's** own transform is not a second matrix stacked on
+the palette - it *is* the matrix the palette is multiplied by, and it is what
+puts the character somewhere other than the world origin. A rig can carry a
+skinned mesh itself (a one-mesh file whose rig is rooted at the scene node), so
+it is walked like any other entity; testing its transform for identity there
+would report every placed character in the scene. The rig-name half of the check
+still applies to it, because that one is about the mesh, not about where it
+stands.
 
 ## The GPU path
 
