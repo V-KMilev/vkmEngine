@@ -75,6 +75,7 @@ int main(int argc, char** argv) {
         // (see tools/project_boot.h).
         Vkm::Engine::bootProjectScene(project, scriptModule,
                                  engine.getScene(), engine.getResources());
+
         engine.run();
 
     } catch (const std::exception& e) {
