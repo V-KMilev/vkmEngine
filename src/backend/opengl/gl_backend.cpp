@@ -153,6 +153,8 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     {
         PROFILE_SCOPE("Render/SyncAssets");
         m_view.sync(view, resources);
+        m_view.setTextureFiltering(view.settings.textureFiltering,
+                                   static_cast<float>(view.settings.textureAnisotropy));
     }
     m_sceneHDR.resize(view.viewportWidth, view.viewportHeight);
     m_postA.resize(view.viewportWidth, view.viewportHeight);
@@ -411,6 +413,10 @@ uint32_t GLBackend::reloadChangedShaders() {
     // Every Vkm::GL::Shader registers itself, so this reaches the passes, the
     // bakers and the editor previews without any of them opting in.
     return Vkm::GL::reloadChangedShaders("shaders");
+}
+
+uint32_t GLBackend::maxAnisotropy() const {
+    return static_cast<uint32_t>(Vkm::GL::maxSupportedAnisotropy());
 }
 
 void GLBackend::releaseAllPreviews() {

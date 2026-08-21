@@ -60,6 +60,13 @@ void GLView::invalidate() {
     m_reportedMissing.clear();
 }
 
+void GLView::setTextureFiltering(TextureFiltering mode, float maxAnisotropy) {
+    for (auto& slot : m_textures.slots) {
+        if (!slot.gl) continue;
+        slot.gl->applyFiltering(mode, maxAnisotropy);
+    }
+}
+
 void GLView::reportIfMissing(const TextureHandle& handle, const ResourceManager& resources) {
     const TextureAsset& asset = resources.get(handle);
     // Still in flight is not a failure - it resolves on a later frame, and the

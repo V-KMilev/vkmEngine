@@ -93,6 +93,22 @@ class RenderBackend {
          */
         virtual uint32_t reloadChangedShaders() { return 0; }
 
+        /**
+         * @brief The highest anisotropic-filtering degree this backend can honour.
+         *
+         * A hardware ceiling, not a preference: it is what the driver reports,
+         * so it belongs on the same side of the seam as the driver. 1 means
+         * none - the API, the device, or this backend does not offer it, and
+         * sampling stays trilinear.
+         *
+         * The editor offers no level above this, which is the whole point of
+         * surfacing it: a setting that reads 16x on a machine that stops at 8x
+         * is a lie, even though the backend would clamp it and render correctly.
+         *
+         * @return Maximum degree; at least 1.
+         */
+        virtual uint32_t maxAnisotropy() const { return 1; }
+
     protected:
         RenderBackendType m_type;
         BackendInfo m_info;

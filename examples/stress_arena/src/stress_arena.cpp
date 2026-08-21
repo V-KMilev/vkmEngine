@@ -34,6 +34,7 @@
 #include "platform/input/input_map.h"
 #include "platform/window/input_handle.h"
 #include "proc_mesh.h"
+#include "resource/asset/texture_asset.h"
 #include "resource/resource_manager.h"
 #include "system/hierarchy/hierarchy_operations.h"
 
@@ -62,6 +63,11 @@ constexpr float GROUND_Y   = 0.0f;
 // stops exercising the solver, which is the opposite of what this scene is for.
 constexpr float PIT_HALF  = 14.0f;
 constexpr float PIT_DEPTH = 3.0f;
+
+// How deep the ground slabs reaching around that pit are. At file scope rather
+// than local to buildGround because the paving's UVs are scaled to the slab
+// carrying them, so the mesh for each shape is sized from this too.
+constexpr float GROUND_BAND = (ARENA_HALF - PIT_HALF) * 0.5f;
 
 // Placement zones, outward from the centre. Everything the camera looks *at*
 // goes inside PROP_ZONE_OUTER; the towers form a ring beyond CAM_RADIUS. The
@@ -127,6 +133,91 @@ void installStressBindings(InputMap& map) {
     map.define(ACTION_UI,        { key(GLFW_KEY_9) });
     map.define(ACTION_RESET,     { key(GLFW_KEY_0) });
     map.define(ACTION_CAMERA,    { key(GLFW_KEY_F) });
+}
+
+// The paving the ground is surfaced with, generated rather than imported. The
+// arena ships no source art, and a floor of flat colour leaves every texture
+// unit in the frame idle - so the profile describes a renderer that never
+// samples anything, and nothing in the scene can show what a filtering change
+// does to a surface either.
+constexpr uint32_t GROUND_TEXTURE_SIZE = 512;
+constexpr uint32_t GROUND_SLABS        = 4;      ///< Paving slabs per texture edge.
+constexpr float    GROUND_TILE_WORLD   = 7.5f;   ///< World units per repeat of the paving.
+
+/**
+ * @brief Generate the ground's albedo map: paving slabs, grout and grain.
+ *
+ * Three frequencies on purpose. The grout lines are the coarse structure, the
+ * per-slab tint stops neighbours reading as one surface, and the per-texel
+ * grain is the fine detail no single mip level can carry - which is the part
+ * that goes first when a surface is sampled at a glancing angle.
+ *
+ * Drawn from the arena's fixed seed, so the same pixels come out on every run
+ * and two captures stay comparable.
+ *
+ * @return An sRGB RGBA8 texture that tiles seamlessly, with mipmaps requested.
+ */
+TextureAsset makeGroundTexture() {
+    constexpr uint32_t SIZE  = GROUND_TEXTURE_SIZE;
+    constexpr uint32_t SLAB  = SIZE / GROUND_SLABS;
+    constexpr uint32_t GROUT = 4;
+
+    TextureAsset texture;
+    texture.params.width          = SIZE;
+    texture.params.height         = SIZE;
+    texture.params.internalFormat = TextureInternalFormat::SRGBA8;
+    texture.params.format         = TexturePixelFormat::RGBA;
+    texture.params.type           = TexturePixelType::UnsignedByte;
+    texture.params.wrapS          = TextureWrapMode::Repeat;
+    texture.params.wrapT          = TextureWrapMode::Repeat;
+    texture.srgb                  = true;
+    texture.pixelData.resize(static_cast<size_t>(SIZE) * SIZE * 4);
+
+    // Slab tints drawn up front so the pixel loop only looks one up, which
+    // keeps the pattern independent of the order the pixels are visited.
+    Math::Rng rng(ARENA_SEED);
+    float slabTint[GROUND_SLABS * GROUND_SLABS];
+    for (float& tint : slabTint) tint = rng.nextFloat(0.38f, 0.54f);
+
+    for (uint32_t y = 0; y < SIZE; ++y) {
+        for (uint32_t x = 0; x < SIZE; ++x) {
+            const bool grout = (x % SLAB) < GROUT || (y % SLAB) < GROUT;
+            const float base = grout ? 0.13f
+                                     : slabTint[(y / SLAB) * GROUND_SLABS + (x / SLAB)];
+            const float value = glm::clamp(base + rng.nextFloat(-0.045f, 0.045f), 0.0f, 1.0f);
+
+            // A hair warm, so the paving does not read as a pure grey card.
+            uint8_t* pixel = &texture.pixelData[(static_cast<size_t>(y) * SIZE + x) * 4];
+            pixel[0] = static_cast<uint8_t>(value * 255.0f);
+            pixel[1] = static_cast<uint8_t>(value * 251.0f);
+            pixel[2] = static_cast<uint8_t>(value * 244.0f);
+            pixel[3] = 255;
+        }
+    }
+    return texture;
+}
+
+/**
+ * @brief A ground slab's mesh: a cube whose UVs repeat the paving across it.
+ *
+ * The cube carries 0..1 UVs per face, so one copy of the paving would stretch
+ * over the whole slab - no repetition, and therefore near enough one mip level
+ * everywhere. Tiling the UVs puts the texture back at a human scale, which is
+ * what makes the far half of the floor a minification problem at all.
+ *
+ * The count has to come from the slab's size rather than be fixed, because the
+ * slabs are not one shape: a repeat count that reads correctly on the wide
+ * bands stretches the paving into rectangles on the strips beside the pit, at a
+ * different scale again, and every seam between them shows it.
+ *
+ * @param extents Full width, height and depth of the slab this mesh is for.
+ * @return The unit cube with its UVs scaled to GROUND_TILE_WORLD per repeat.
+ */
+MeshAsset makeGroundMesh(const glm::vec3& extents) {
+    MeshAsset mesh = makeCubeMesh();
+    const glm::vec2 tiles(extents.x / GROUND_TILE_WORLD, extents.z / GROUND_TILE_WORLD);
+    for (Vertex& vertex : mesh.vertices) vertex.uv *= tiles;
+    return mesh;
 }
 
 /**
@@ -376,9 +467,17 @@ MaterialHandle StressArena::makeMaterial(const MaterialAsset& source, const char
 }
 
 void StressArena::buildMaterials() {
-    m_cube     = m_resources->add(makeCubeMesh(), "stress:cube");
-    m_sphere   = m_resources->add(makeSphereMesh(24, 12), "stress:sphere");
-    m_cylinder = m_resources->add(makeCylinderMesh(20), "stress:cylinder");
+    m_cube       = m_resources->add(makeCubeMesh(), "stress:cube");
+    m_sphere     = m_resources->add(makeSphereMesh(24, 12), "stress:sphere");
+    m_cylinder   = m_resources->add(makeCylinderMesh(20), "stress:cylinder");
+
+    // One mesh per ground slab shape, so the paving keeps the same world scale
+    // across all four and meets cleanly at the seams. Two shapes, two meshes,
+    // one extra instanced draw.
+    m_groundBand = m_resources->add(makeGroundMesh({ARENA_HALF * 2.0f, 1.0f, GROUND_BAND * 2.0f}),
+                                    "stress:ground_band");
+    m_groundSide = m_resources->add(makeGroundMesh({GROUND_BAND * 2.0f, 1.0f, PIT_HALF * 2.0f}),
+                                    "stress:ground_side");
 
     // Coarser builds of the round shapes for the far LOD levels. A cube has no
     // detail to drop, so it has no levels and keeps its single mesh - which is
@@ -395,8 +494,13 @@ void StressArena::buildMaterials() {
     base.roughness = 0.85f;
     base.metallic  = 0.0f;
 
-    base.albedo = {0.42f, 0.43f, 0.45f, 1.0f};
-    m_matGround = makeMaterial(base, "stress:ground");
+    // The one textured surface here. White albedo because the scalar multiplies
+    // the map, so anything darker would tint the paving rather than leave it as
+    // authored.
+    MaterialAsset ground = base;
+    ground.albedo        = {1.0f, 1.0f, 1.0f, 1.0f};
+    ground.albedoTexture = m_resources->add(makeGroundTexture(), "stress:ground_albedo");
+    m_matGround = makeMaterial(ground, "stress:ground");
 
     base.albedo    = {0.55f, 0.54f, 0.51f, 1.0f};
     base.roughness = 0.7f;
@@ -479,20 +583,35 @@ EntityId StressArena::spawnMesh(MeshHandle mesh, MaterialHandle material, const 
 }
 
 void StressArena::buildGround() {
-    EntityId ground = spawnMesh(m_cube, m_matGround, "Ground",
-                                {0.0f, GROUND_Y - 0.5f, 0.0f},
-                                {ARENA_HALF * 2.0f, 1.0f, ARENA_HALF * 2.0f});
-    // The ground can never occlude anything from a light above it, so keeping it
-    // out of the shadow pass costs nothing and saves a full-extent draw per tile.
-    m_scene->get<Mesh>(ground).castShadows = false;
+    // Four slabs around a central opening rather than one full-extent slab: the
+    // pit below only means anything if something can fall into it. The bands run
+    // full width along Z and meet the pit's edge along X.
+    const glm::vec3 slabs[4] = {
+        { 0.0f, GROUND_Y - 0.5f,  PIT_HALF + GROUND_BAND},
+        { 0.0f, GROUND_Y - 0.5f, -PIT_HALF - GROUND_BAND},
+        { PIT_HALF + GROUND_BAND, GROUND_Y - 0.5f, 0.0f},
+        {-PIT_HALF - GROUND_BAND, GROUND_Y - 0.5f, 0.0f},
+    };
+    const glm::vec3 halves[4] = {
+        {ARENA_HALF,  0.5f, GROUND_BAND}, {ARENA_HALF,  0.5f, GROUND_BAND},
+        {GROUND_BAND, 0.5f, PIT_HALF},    {GROUND_BAND, 0.5f, PIT_HALF},
+    };
 
-    Rigidbody rb;
-    rb.isStatic = true;
-    m_scene->add(ground, std::move(rb));
+    for (int i = 0; i < 4; ++i) {
+        EntityId ground = spawnMesh(i < 2 ? m_groundBand : m_groundSide, m_matGround, "Ground",
+                                    slabs[i], halves[i] * 2.0f);
+        // The ground can never occlude anything from a light above it, so keeping
+        // it out of the shadow pass costs nothing and saves a draw per tile.
+        m_scene->get<Mesh>(ground).castShadows = false;
 
-    Collider col;
-    col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {ARENA_HALF, 0.5f, ARENA_HALF}}};
-    m_scene->add(ground, std::move(col));
+        Rigidbody rb;
+        rb.isStatic = true;
+        m_scene->add(ground, std::move(rb));
+
+        Collider col;
+        col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, halves[i]}};
+        m_scene->add(ground, std::move(col));
+    }
 
     // Pit floor and four walls, so the physics pile has something to pack
     // against instead of scattering across the whole block.
