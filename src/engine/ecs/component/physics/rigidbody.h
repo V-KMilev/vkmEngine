@@ -62,10 +62,33 @@ struct Rigidbody {
      */
     glm::vec3 supportNormal = {0.0f, 1.0f, 0.0f};
     bool      supported     = false;
+
+    /**
+     * @brief The most horizontal normal among the same contacts: what stands in
+     *        this body's way rather than what holds it up.
+     *
+     * The other half of the pair above, written by the same writeback on the
+     * same terms. supportNormal reduces the tick's contacts by "most upward";
+     * this reduces them by "largest horizontal component", and the two answer
+     * different questions - a character on flat ground pressed against a wall
+     * is held by the floor and blocked by the wall in the same tick, and one
+     * normal cannot say both.
+     *
+     * Generic for the same reason: "what am I pressed against, and which way
+     * does it push" is what a controller sliding along a wall, a scrape effect
+     * and a ledge grab all ask, and none of them are things PhysicsSystem has
+     * heard of. Valid only while supported, like supportNormal.
+     *
+     * A body touching nothing but level floor leaves it at world up, whose
+     * horizontal component is zero. That needs no separate flag: a normal with
+     * no horizontal direction cannot deflect anything, so the reader that
+     * projects against it is already the reader that ignores it.
+     */
+    glm::vec3 blockNormal = {0.0f, 1.0f, 0.0f};
 };
 
-// sleeping / sleepTimer / supported / supportNormal are runtime-only, and
-// intentionally absent.
+// sleeping / sleepTimer / supported / supportNormal / blockNormal are
+// runtime-only, and intentionally absent.
 } // namespace Vkm::Engine
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Rigidbody)
