@@ -99,6 +99,38 @@ inline bool propCheckbox(const char* label, bool* v, const char* tooltip = nullp
 }
 
 /**
+ * @brief A labelled combo that edits an index rather than a value.
+ *
+ * The sibling propValueCombo maps each label to one value, which cannot express
+ * a list whose entries set more than one field. This one hands back the chosen
+ * row and lets the caller decide what it means.
+ *
+ * @param label   Row label.
+ * @param labels  Entry labels.
+ * @param count   Entries in the array.
+ * @param index   The edited index.
+ * @param tooltip Optional hover tooltip.
+ * @return Whether the index changed this frame.
+ */
+inline bool propIndexCombo(const char* label, const char* const* labels, int count,
+                           int* index, const char* tooltip = nullptr) {
+    return propRow(label, tooltip, [&] {
+        bool changed = false;
+        const char* preview = (*index >= 0 && *index < count) ? labels[*index] : "?";
+        if (ImGui::BeginCombo("##v", preview)) {
+            for (int i = 0; i < count; ++i) {
+                if (ImGui::Selectable(labels[i], i == *index) && i != *index) {
+                    *index  = i;
+                    changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        return changed;
+    });
+}
+
+/**
  * @brief Property row backed by a Combo over a fixed table of raw values.
  *
  * For quality steps stored as plain numbers (MSAA samples, atlas resolution):
@@ -116,22 +148,13 @@ inline bool propCheckbox(const char* label, bool* v, const char* tooltip = nullp
 inline bool propValueCombo(const char* label, const char* const* labels,
                            const uint32_t* values, int count, uint32_t* v,
                            const char* tooltip = nullptr) {
-    return propRow(label, tooltip, [&] {
-        int idx = -1;
-        for (int i = 0; i < count; ++i)
-            if (values[i] == *v) idx = i;
-        bool changed = false;
-        if (ImGui::BeginCombo("##v", idx >= 0 ? labels[idx] : "?")) {
-            for (int i = 0; i < count; ++i) {
-                if (ImGui::Selectable(labels[i], i == idx) && i != idx) {
-                    *v = values[i];
-                    changed = true;
-                }
-            }
-            ImGui::EndCombo();
-        }
-        return changed;
-    });
+    int idx = -1;
+    for (int i = 0; i < count; ++i)
+        if (values[i] == *v) idx = i;
+
+    if (!propIndexCombo(label, labels, count, &idx, tooltip)) return false;
+    *v = values[idx];
+    return true;
 }
 
 /// Property row: an integer drag staged over a uint32_t member.

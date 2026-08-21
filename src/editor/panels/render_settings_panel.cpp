@@ -37,6 +37,57 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         static const uint32_t    MSAA_VALUES[] = { 1u, 2u, 4u, 8u };
         propValueCombo("Anti-Aliasing", MSAA_LABELS, MSAA_VALUES, 4, &s.msaaSamples,
                        "Scene-pass MSAA; the post chain runs on the resolved buffer");
+
+        // One list, two fields. Nearest and Bilinear are modes; the rest are
+        // Trilinear with a degree on top, which is why anisotropy is meaningless
+        // below them and the combo writes both rather than one.
+        struct FilterEntry {
+            const char*      label;
+            TextureFiltering mode;
+            uint32_t         degree;
+        };
+        static const FilterEntry FILTERS[] = {
+            {"Nearest",           TextureFiltering::Nearest,   1u},
+            {"Bilinear",          TextureFiltering::Bilinear,  1u},
+            {"Trilinear",         TextureFiltering::Trilinear, 1u},
+            {"Anisotropic 2x",    TextureFiltering::Trilinear, 2u},
+            {"Anisotropic 4x",    TextureFiltering::Trilinear, 4u},
+            {"Anisotropic 8x",    TextureFiltering::Trilinear, 8u},
+            {"Anisotropic 16x",   TextureFiltering::Trilinear, 16u},
+        };
+        constexpr int FILTER_COUNT = 7;
+        constexpr int FIRST_ANISO  = 3;
+
+        // Offer only what the driver reports. The backend clamps anyway, so a
+        // level beyond the ceiling would still render correctly - it would just
+        // render at a degree the menu was not showing, which is the one outcome
+        // a settings menu must not produce.
+        const uint32_t ceiling = ec.renderSystem.maxAnisotropy();
+        int count = FIRST_ANISO;
+        while (count < FILTER_COUNT && FILTERS[count].degree <= ceiling) ++count;
+
+        // Preview the highest offered degree the stored one reaches rather than
+        // an exact match, because the two part company: a settings file written
+        // where 16x exists still asks for 16x here, and is meant to keep asking.
+        // Taking the last row that fits names the degree the driver is giving
+        // it, without writing the file down to this machine.
+        int current = FIRST_ANISO - 1;
+        for (int i = 0; i < count; ++i) {
+            if (FILTERS[i].mode != s.textureFiltering) continue;
+            if (s.textureFiltering != TextureFiltering::Trilinear) { current = i; break; }
+            if (FILTERS[i].degree <= s.textureAnisotropy) current = i;
+        }
+
+        const char* labels[FILTER_COUNT];
+        for (int i = 0; i < count; ++i) labels[i] = FILTERS[i].label;
+
+        if (propIndexCombo("Filtering", labels, count, &current,
+                           "How a texel is fetched. Nearest keeps pixel art intact; "
+                           "anisotropy samples along a stretched footprint, so ground "
+                           "and road surfaces keep their detail into the distance")) {
+            s.textureFiltering  = FILTERS[current].mode;
+            s.textureAnisotropy = FILTERS[current].degree;
+        }
     }
     endComponentCard();
 
