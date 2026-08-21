@@ -265,6 +265,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, ResourceManager& resources,
         if (scene.has<Camera>(entity))    append("Camera");
         if (scene.has<Animation>(entity)) append("Animation");
         if (scene.has<Animator>(entity))  append("Animator");
+        if (scene.has<BoneSocket>(entity)) append("Socket");
         if (scene.has<Rigidbody>(entity))        append("Rigidbody");
         if (scene.has<Collider>(entity))         append("Collider");
         if (scene.has<CharacterController>(entity)) append("Character");
