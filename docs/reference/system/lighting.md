@@ -100,15 +100,18 @@ shadow source.
 
 ## Shadow atlas
 
-The shadow system has two atlases sized by `engine_config.h`:
+The shadow system has two depth stores sized by `engine_config.h`:
 
-- **2D atlas** (`Config::MAX_SHADOW_CASTERS_2D = 6` layers) holds
-  directional and spot shadow maps. The first directional caster
-  reserves `Config::NUM_CASCADES = 4` consecutive layers for a CSM
-  (cascaded shadow maps) split; the remaining 2 layers serve spot
-  lights.
-- **Cube atlas** (`Config::MAX_SHADOW_CASTERS_CUBE = 2`) holds the six
-  faces per point-light shadow.
+- **2D atlas** (`Config::MAX_SHADOW_CASTERS_2D = 6` tiles) holds
+  directional and spot shadow maps. It is one depth `Texture2D` cut into
+  a `SHADOW_ATLAS_COLS` x `SHADOW_ATLAS_ROWS` grid of square tiles, not a
+  texture array: a caster's slot indexes one tile and is sampled through
+  a per-tile UV offset/scale. The first directional caster reserves
+  `Config::NUM_CASCADES = 4` consecutive tiles for a CSM (cascaded shadow
+  maps) split; the remaining 2 tiles serve spot lights.
+- **Cube maps** (`Config::MAX_SHADOW_CASTERS_CUBE = 2`) hold the six
+  faces per point-light shadow, as individual depth `TextureCube`s rather
+  than one cube array.
 
 Shadow rendering goes through `GLShadowPass`, which:
 
