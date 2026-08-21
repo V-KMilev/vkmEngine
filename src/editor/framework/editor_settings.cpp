@@ -85,6 +85,8 @@ void visitRenderFields(Settings& r, Fn&& f) {
     f("bloomKnee",             r.bloomKnee);
     f("bloomRadius",           r.bloomRadius);
     f("msaaSamples",           r.msaaSamples);
+    f("textureFiltering",      r.textureFiltering);
+    f("textureAnisotropy",     r.textureAnisotropy);
     f("shadowResolution",      r.shadowResolution);
     f("grid",                  r.grid);
 }
