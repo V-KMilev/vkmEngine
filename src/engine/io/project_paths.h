@@ -8,14 +8,24 @@ namespace Vkm::Engine {
 /**
  * @brief Canonical on-disk locations, split by who owns them.
  *
- * Two roots, because two different things live on disk and they belong to
+ * Three roots, because three different things live on disk and they belong to
  * different people:
  *
  * - **engineRoot()** is what ships with the engine and is read-only to a game:
  *   shaders, the default UI font, editor icons. One copy serves every project.
+ *   An SDK installed to /usr/local or Program Files is not writable, so nothing
+ *   the engine produces may be addressed from here.
  * - **projectRoot()** is the game being made: its scenes, its art, its asset
  *   library and the cooked cache derived from it. This is the part a user owns,
  *   edits, and version-controls.
+ * - **userRoot()** is how one person likes their tools: the recent-projects
+ *   list, the editor's window layout. It follows the user across projects and
+ *   across engine installs, and it is the only root guaranteed writable.
+ *
+ * The split between the last two is the question "would you commit this?" A
+ * scene is project data. A window layout is not - it belongs to whoever is
+ * sitting in front of the editor, and writing it into a project would hand the
+ * next person a layout they never chose.
  *
  * Callers compose specific files from these directories (e.g.
  * ProjectPaths::library() / "_manifest.json") rather than re-deriving a root.
@@ -54,6 +64,34 @@ void setProjectRoot(const std::filesystem::path& path);
  * @return Absolute path to the project root.
  */
 std::filesystem::path projectRoot();
+
+/**
+ * @brief Directory this user's own settings live in.
+ *
+ * The platform's convention for per-user application data - $XDG_CONFIG_HOME
+ * (or ~/.config) on Linux, %APPDATA% on Windows - under a vkmEngine folder.
+ * Falls back to the engine root only when the platform names no home directory
+ * at all, which is the behaviour that predates this root.
+ *
+ * The directory exists when this returns: it holds nothing but files the engine
+ * writes, so creating it here rather than at each writer is what keeps a caller
+ * from having to remember. Resolved once, like engineRoot().
+ *
+ * @return Absolute path to the user's vkmEngine settings directory.
+ */
+std::filesystem::path userRoot();
+
+/**
+ * @brief Directory a host writes its log to when the project cannot hold one.
+ *
+ * $XDG_STATE_HOME (or ~/.local/state) on Linux, %LOCALAPPDATA% on Windows: a
+ * log is state rather than settings, and on Windows it should not roam. Not
+ * created here - bootHost creates the per-project subdirectory it actually
+ * writes into.
+ *
+ * @return Absolute path to the user's vkmEngine log directory.
+ */
+std::filesystem::path userLogs();
 
 /**
  * @brief Turn a stored reference into a path that can be opened.

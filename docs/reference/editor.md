@@ -245,7 +245,7 @@ A path that names a file rather than a directory still works - `findProjectRoot`
 walks up to the owning `project.json`, so dropping in a scene opens its project.
 
 Command-line `vkm_editor <project>` does the same thing at startup, before any
-path is composed. See [system/io.md](system/io.md#projects-and-the-two-roots).
+path is composed. See [system/io.md](system/io.md#projects-and-the-three-roots).
 
 ## Scene I/O
 

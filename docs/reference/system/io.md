@@ -5,7 +5,7 @@ name through a cooked asset database. The IO layer is three serializers that
 compose - scene, component, asset - plus the library that maps an asset name to
 the files holding it.
 
-## Projects and the two roots
+## Projects and the three roots
 
 The engine runs *projects*: a directory becomes one by containing a
 `project.json`. That file is what lets a game live nowhere near the engine's own
@@ -31,7 +31,8 @@ owns them, because two different things live on disk:
 | Root | Owns | Helpers |
 |------|------|---------|
 | `engineRoot()` | What ships with the engine, read-only to a game. One copy serves every project | `engineShaders()`, `engineAssets()`, `engineFonts()` |
-| `projectRoot()` | The game being made: its content, its code, its asset database | `assets()`, `scenes()`, `envs()`, `screenshots()`, `library()`, `cooked()`, `projectBin()` |
+| `projectRoot()` | The game being made: its content, its code, its asset database | `assets()`, `scenes()`, `prefabs()`, `envs()`, `screenshots()`, `library()`, `cooked()`, `projectBin()` |
+| `userRoot()` | How one person likes their tools, across every project and every engine install | `userLogs()` |
 
 `engineRoot()` resolves once at first use. `projectRoot()` returns the override
 when one is set and falls back to `engineRoot()` otherwise, so `setProjectRoot()`
@@ -39,6 +40,31 @@ takes effect immediately - but call it before anything composes a project path,
 because a path already built from the old root is a plain string by then and will
 not follow. The editor re-roots in that order when it opens a project (see
 [editor.md](../editor.md#opening-a-project)).
+
+`userRoot()` is the newest of the three and exists because the first two can
+both be read-only. An SDK installed to `/usr/local` or `Program Files` is; so is
+a game installed there. Anything the engine *writes* that is not a project's own
+content therefore goes here:
+
+| File | Where | Why not the project |
+|------|-------|---------------------|
+| `editor_recents.json` | `userRoot()` | A list of the projects you have opened is how you get from one to the next; inside a project it could only ever list itself |
+| `imgui.ini` | `userRoot()` | Window positions and column widths are one person's layout, not something a project hands the next person |
+| `logs/<project>/<host>.log` | `userLogs()`, **only** when the project cannot hold a `logs/` | A developer looks beside the project, so that stays the first choice |
+
+The platform decides the actual directory, and configuration and state are
+different places on both: `$XDG_CONFIG_HOME` (or `~/.config`) and
+`$XDG_STATE_HOME` (or `~/.local/state`) on Linux, `%APPDATA%` and
+`%LOCALAPPDATA%` on Windows, each under a `vkmEngine` folder. With no home
+directory at all - a service account, a stripped container - both fall back to
+the engine root, which is where these files lived before this root existed.
+`userRoot()` creates its directory when first asked for; `userLogs()` does not,
+because `bootHost` creates the per-project subdirectory it writes into.
+
+`editor_settings.json` is the deliberate exception: it stays in the project root,
+because most of what it holds (panel widths for this project's layout, recent
+scenes, the render tuning this project is authored against) is per-project. A
+project you are authoring is writable by definition.
 
 Two consequences worth knowing before you add a path:
 
