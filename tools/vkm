@@ -74,6 +74,24 @@ def sdk_compiler(root: Path) -> str | None:
     return None
 
 
+def sdk_version(root: Path) -> str | None:
+    """This SDK's MAJOR.MINOR, as its package version file records it.
+
+    A generated project asks find_package for the engine that generated it. The
+    package is SameMinorVersion-compatible, so the patch digit is noise here -
+    1.6.0 and 1.6.3 answer the same request, and pinning one would reject the
+    other for nothing.
+    """
+    for cfg in (root / "lib" / "cmake" / "vkmEngine" / "vkmEngineConfigVersion.cmake",
+                root / "build" / "vkmEngineConfigVersion.cmake"):
+        if not cfg.is_file():
+            continue
+        m = re.search(r'set\(PACKAGE_VERSION\s+"(\d+)\.(\d+)', cfg.read_text())
+        if m:
+            return f"{m.group(1)}.{m.group(2)}"
+    return None
+
+
 def host(root: Path, name: str) -> Path:
     """Path to one of the three host executables, wherever this SDK keeps them."""
     exe = name + (".exe" if os.name == "nt" else "")
@@ -167,6 +185,15 @@ def cmd_new(args) -> int:
     data = json.loads(pj.read_text())
     data["name"] = dest.name
     pj.write_text(json.dumps(data, indent=4) + "\n")
+
+    # The template asks for "@VKM_ENGINE_VERSION@"; only this side knows which
+    # engine is answering. Refusing to write a project we know cannot configure
+    # is better than handing over one that fails on the next command.
+    version = sdk_version(root)
+    if not version:
+        die(f"cannot read the engine version from {root}; the SDK looks incomplete")
+    cml = dest / "CMakeLists.txt"
+    cml.write_text(cml.read_text().replace("@VKM_ENGINE_VERSION@", version))
 
     print(f"created {dest}")
     print(f"  vkm build {dest.name} && vkm run {dest.name}")

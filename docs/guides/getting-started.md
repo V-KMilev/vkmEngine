@@ -31,9 +31,16 @@ vkm build
 vkm run
 ```
 
-A spinning cube under a directional light. `vkm new` copied the SDK's template,
-`vkm build` compiled `src/` into `bin/game`, and `vkm run` handed the project to
-`vkm_runtime`, which loaded that module and ran it.
+A spinning cube under a directional light. `vkm new` copied the SDK's template
+and stamped your name and this SDK's version into it, `vkm build` compiled
+`src/` into `bin/game`, and `vkm run` handed the project to `vkm_runtime`, which
+loaded that module and ran it.
+
+That version is why the generated `CMakeLists.txt` asks `find_package` for the
+engine that made the project rather than for whatever is installed. Move to a
+later *minor* release and configure stops with a version mismatch instead of
+building your module against an engine it was not written for - edit the line
+when you mean to move.
 
 ## What a project is
 
