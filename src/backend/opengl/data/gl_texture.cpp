@@ -58,4 +58,13 @@ void GLTexture::update(const FontAsset& font) {
     if (params.data) m_hasPixels = true;
 }
 
+void GLTexture::setMaxAnisotropy(float maxAnisotropy) {
+    m_texture->setMaxAnisotropy(maxAnisotropy);
+}
+
+void GLTexture::setFilter(Vkm::GL::TextureMinFilter minFilter,
+                          Vkm::GL::TextureMagFilter magFilter) {
+    m_texture->setFilter(minFilter, magFilter);
+}
+
 } // namespace Vkm::Engine

@@ -3,9 +3,7 @@
 #include <cstdint>
 #include <memory>
 
-namespace Vkm::GL {
-    class Texture2D;
-}
+#include "texture/gl_texture.h"
 
 namespace Vkm::Engine {
 
@@ -36,6 +34,26 @@ class GLTexture {
         void update(const FontAsset& font);
 
         const Vkm::GL::Texture2D& getTexture() const { return *m_texture; }
+
+        /**
+         * @brief Re-filter this texture at @p maxAnisotropy.
+         *
+         * Forwarded rather than reached through getTexture() so the GL object
+         * itself stays const to everything downstream: the passes bind it, and
+         * filtering is all the backend changes about it after upload.
+         *
+         * @param maxAnisotropy Requested degree; the GL layer clamps it.
+         */
+        void setMaxAnisotropy(float maxAnisotropy);
+
+        /**
+         * @brief Re-filter this texture with @p minFilter and @p magFilter.
+         *
+         * @param minFilter Minification filter to apply.
+         * @param magFilter Magnification filter to apply.
+         */
+        void setFilter(Vkm::GL::TextureMinFilter minFilter,
+                       Vkm::GL::TextureMagFilter magFilter);
 
         /**
          * @brief Whether real pixels have ever been uploaded into this texture.
