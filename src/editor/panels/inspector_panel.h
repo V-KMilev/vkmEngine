@@ -73,6 +73,8 @@ class InspectorPanel {
         void drawLODSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawAnimationSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawAnimatorSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawBoneSocketSection(Scene& scene, ResourceManager& resources,
+                                   EditorState& state, EntityId id);
         void drawCharacterControllerSection(Scene& scene, ResourceManager& resources,
                                             EditorState& state, EntityId id);
         void drawScriptSection(Scene& scene, EditorState& state, EntityId id);
@@ -88,6 +90,10 @@ class InspectorPanel {
         // Euler-angle edit cache for the Transform Rotation field, keyed by
         // entity. See EulerCache for the gimbal-lock rationale.
         EulerCache<EntityId> m_eulerCache;
+
+        // The Bone Socket card's Offset rotation needs its own, keyed by the same
+        // entity: one cache would have the two rotations reseeding each other.
+        EulerCache<EntityId> m_socketEulerCache;
 
         // World inspector's "Skybox HDR" browse. Cached file discovery rooted at
         // assets/envs; opened on demand instead of scanning every frame.

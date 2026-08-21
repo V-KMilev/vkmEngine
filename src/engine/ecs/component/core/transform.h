@@ -38,6 +38,44 @@ struct Transform {
     }
 
     /**
+     * @brief Recover the TRS that computeModelMatrix() would have built @p model
+     *        from.
+     *
+     * The inverse of the function above, and the way a system that derives a
+     * transform from a matrix - a bone socket reading a posed bone - hands the
+     * result back to a component the hierarchy can resolve.
+     *
+     * Exact for any matrix that is a chain of translations, rotations and
+     * uniform scales, which is what a rig composes. Shear cannot be represented
+     * by a TRS at all and is dropped: it only appears when a non-uniformly
+     * scaled joint carries a rotated child, the same case whose lighting the
+     * skinned vertex stage already approximates.
+     *
+     * @param model Model matrix to decompose.
+     * @return The position, rotation and scale it was composed from.
+     */
+    static Transform fromModelMatrix(const glm::mat4& model) {
+        glm::mat3 basis(model);
+
+        Transform out;
+        out.position = glm::vec3(model[3]);
+        out.scale    = {glm::length(basis[0]), glm::length(basis[1]), glm::length(basis[2])};
+
+        // A mirrored basis has no rotation that reproduces it, so the flip is
+        // carried on one scale axis - which is where computeModelMatrix would
+        // have taken it from. Without this, quat_cast reads a reflection as a
+        // rotation and answers with a garbage quaternion.
+        if (glm::determinant(basis) < 0.0f) out.scale.x = -out.scale.x;
+
+        basis[0] /= out.scale.x;
+        basis[1] /= out.scale.y;
+        basis[2] /= out.scale.z;
+        out.rotation = glm::normalize(glm::quat_cast(basis));
+
+        return out;
+    }
+
+    /**
      * @brief Compute the view matrix from a transform.
      */
     static glm::mat4 computeView(const Transform& transform) {

@@ -5,6 +5,7 @@
 #include "ecs/environment.h"
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/animator.h"
+#include "ecs/component/animation/bone_socket.h"
 #include "ecs/component/core/hierarchy.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
@@ -103,6 +104,18 @@ namespace ComponentSerializer {
      */
     nlohmann::json save(const Animator&, const ResourceManager&);
     void load(const nlohmann::json&, Animator&, const ResourceManager&);
+
+    /**
+     * @brief BoneSocket: the bone an attachment rides and its offset on it.
+     *
+     * The resolved bone index is deliberately absent. It is a property of the
+     * rig currently loaded rather than of the authored socket - re-export the
+     * character with a joint inserted and a stored index addresses its
+     * neighbour, silently - so the name is what round-trips and the index is
+     * recovered from it at runtime.
+     */
+    nlohmann::json save(const BoneSocket&);
+    void load(const nlohmann::json&, BoneSocket&);
 
     nlohmann::json save(const LOD&, const ResourceManager&);
     void load(const nlohmann::json&, LOD&, const ResourceManager&);

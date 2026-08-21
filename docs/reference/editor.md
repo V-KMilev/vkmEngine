@@ -120,7 +120,7 @@ track/key counts) that points here for full keyframe editing.
 
 ### Character cards (Inspector)
 
-Three cards cover the 1.6 character components; all three are ordinary
+Four cards cover the character components; all four are ordinary
 `editComponentCard` sections, so they undo, record prefab overrides and appear
 in Add Component like every other component.
 
@@ -133,6 +133,18 @@ in Add Component like every other component.
   called out in red on the card, where the pairing is being made, rather than
   only in the log. Blend state is deliberately absent: a crossfade is started
   from code through `Animator::crossFadeTo` and is never serialized.
+- **Bone Socket** - the bone picker, over the rig resolved from the entity's
+  *parent* - the only rig a socket can address, because it is placed relative to
+  that parent's world matrix. The list is the skeleton's own bone array indented
+  by depth, since a rig is a tree and finding a hand under an arm is not the same
+  job as finding it in a hundred flat names; typing in the search box flattens it
+  back to the matches. Below it, the Offset (position / rotation / scale) that is
+  the authored half - the entity's `Transform` is the socket's *output* and is
+  rewritten from the bone every frame, which the Transform card now says out
+  loud so an edit that vanishes - typed there or dragged with the gizmo - is
+  explained rather than mysterious. The card
+  names the two authoring mistakes where they are made: a parent that is not a
+  rig (with what to do about it) and a bone name the rig does not carry.
 - **Character Controller** - the four tuning fields, plus the live grounded /
   ground angle / move-input readout, which is what answers "why is it not
   jumping". It also names the two ways a controller silently does nothing: no
@@ -145,8 +157,8 @@ in Add Component like every other component.
 
 The hierarchy names an entity carrying an `Animator` a **Rig**, ahead of Mesh -
 an entity with an `Animator` is the rig whatever else it carries, and its meshes
-are the entities under it. The hover tooltip's component digest lists `Animator`
-and `Character` beside the rest.
+are the entities under it. The hover tooltip's component digest lists `Animator`,
+`Socket` and `Character` beside the rest.
 
 ## Undo / redo
 
