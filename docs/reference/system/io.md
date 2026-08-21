@@ -311,7 +311,7 @@ Today's coverage, the flat list in `scene_serializer.cpp`:
 - `ParticleEmitter`, `IrradianceVolume`, `ReflectionProbe`
 - `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton` (see [UI](ui.md))
 - `Rigidbody`, `Collider`, `CharacterController` (physics; runtime sleep state,
-  the support outputs and derived mass properties are not persisted, and a
+  the contact-normal outputs and derived mass properties are not persisted, and a
   controller writes only its four tuning fields - see [Physics](physics.md)). A
   collider part
   writes its `shape` by name alongside every shape's fields, so switching a part
