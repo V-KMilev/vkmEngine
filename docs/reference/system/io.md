@@ -110,7 +110,7 @@ plays a finished game, the editor is the tool you repair one with.
 | Window / GL context cannot be created | exit 1 (throws) | exit 1 (throws) | n/a - headless |
 | No gameplay module in the project's `bin/` | exit 1 | opens, logs INFO | n/a |
 | Module present but will not load (version, entry, unreadable) | exit 1 | opens, logs WARNING | n/a |
-| Entry scene named but will not load (`SceneBoot::Failed`) | exit 1 | opens on the default scene, error toast | exit 1 |
+| Entry scene named but will not load (`SceneBoot::Failed`) | exit 1 | opens on the default scene; error toast when opened via File > Open Project, log only at startup | exit 1 |
 | No entry scene and no `vkmBuildScene` (`SceneBoot::Default`) | exit 1 | opens on the default scene | exit 0 - nothing to cook |
 | No entry scene, module builds the world (`SceneBoot::Project`) | plays it | opens it | exit 0 - nothing to cook |
 | An asset fails to cook | n/a | reported, the session continues | exit 1 |
