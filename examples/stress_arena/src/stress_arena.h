@@ -314,6 +314,8 @@ class StressArena : public ReflectedBehavior<StressArena> {
         // Procedural geometry. Three shapes, so props of the same shape and
         // material collapse into one instanced draw.
         MeshHandle m_cube;
+        MeshHandle m_groundBand;  ///< The cube again, paved; one mesh per ground slab shape.
+        MeshHandle m_groundSide;
         MeshHandle m_sphere;
         MeshHandle m_cylinder;
         MeshHandle m_sphereMid;   ///< Far LOD levels for the round shapes; cubes have none.
