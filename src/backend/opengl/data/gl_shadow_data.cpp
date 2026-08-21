@@ -31,6 +31,13 @@ namespace {
 // Range to use for a light that carries no radius.
 constexpr float DEFAULT_LIGHT_RANGE = 50.0f;
 
+// World distance the cascade distribution is anchored at. A logarithmic split
+// needs a near anchor, and the camera's own near plane is the wrong one: at 0.2
+// it places the first split about a metre out and spends a whole cascade on the
+// ground at the viewer's feet. A fixed world distance instead is what decouples
+// the near cascade's extent from shadowDistance.
+constexpr float CASCADE_NEAR = 1.0f;
+
 // A stable up axis for a light/view direction (avoids a degenerate lookAt when
 // the direction is near-vertical).
 glm::vec3 stableUp(const glm::vec3& dir) {
@@ -241,16 +248,24 @@ void GLShadowData::fitDirectional(const LightData& light, uint32_t lightIndex,
     // unshadowed.
     const float sunFar = std::max(cam.nearDepth + 1.0f, std::min(cam.farDepth, light.shadowDistance));
 
-    // Practical split scheme (blend of logarithmic + uniform), expressed as
-    // fractions of the full near->far edge so they index the frustum corners
-    // directly. The last split caps at sunFar.
-    const float lambda = 0.7f;
+    // Logarithmic split, anchored at CASCADE_NEAR and expressed as fractions of
+    // the full near->far edge so they index the frustum corners directly. The
+    // last split caps at sunFar.
+    //
+    // The practical scheme this replaced blended a uniform term over the same
+    // range, and that term is linear in sunFar: it put the first split at about
+    // 0.075 * sunFar, so every cascade boundary - the near one included - moved
+    // in step with shadowDistance and the foreground coarsened in proportion.
+    // Raising the blend weight does not fix it either, because the log term was
+    // anchored at the camera near plane and contributed almost nothing there.
+    // Anchored properly and used alone, the first split grows as the fourth root
+    // instead: over shadowDistance 40 -> 600 it moves 2.5 -> 4.9 world units
+    // rather than 3.6 -> 46.
+    const float anchor = std::clamp(CASCADE_NEAR, cam.nearDepth, sunFar);
     float fr[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
     for (uint32_t c = 1; c < N; ++c) {
-        const float si   = static_cast<float>(c) / static_cast<float>(N);
-        const float logS = cam.nearDepth * std::pow(sunFar / cam.nearDepth, si);
-        const float uniS = cam.nearDepth + (sunFar - cam.nearDepth) * si;
-        const float d    = lambda * logS + (1.0f - lambda) * uniS;
+        const float si = static_cast<float>(c) / static_cast<float>(N);
+        const float d  = anchor * std::pow(sunFar / anchor, si);
         fr[c] = (d - cam.nearDepth) / (cam.farDepth - cam.nearDepth);
     }
     fr[N] = (sunFar - cam.nearDepth) / (cam.farDepth - cam.nearDepth);
