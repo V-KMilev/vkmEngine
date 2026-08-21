@@ -93,17 +93,13 @@ class PhysicsSystem : public System {
          *
          * Produces the contact manifolds for the solver and fires collision events.
          *
-         * @param hasContact Per-body flags, set true for each body that gained a contact.
-         * @param supportNormal Per-body most-upward contact normal, as it acts on
-         *                      that body. The caller seeds it below any unit
-         *                      normal, so a body with no resolved contact is
-         *                      left holding that sentinel rather than a
-         *                      direction; writeback is what turns it into one.
-         * @param events     Bus the collision / trigger events are enqueued on.
+         * @param contacts Per-body summary, one entry per gathered body, filled
+         *                 in as contacts are found. A body that gains none is
+         *                 left holding the seeded sentinels rather than
+         *                 directions; writeback is what turns them into one.
+         * @param events   Bus the collision / trigger events are enqueued on.
          */
-        void narrowphase(std::vector<bool>& hasContact,
-                         std::vector<glm::vec3>& supportNormal,
-                         EventBus& events);
+        void narrowphase(std::vector<BodyContacts>& contacts, EventBus& events);
 
         /**
          * @brief Wake any sleeping bodies struck this step, before the solve.
@@ -123,14 +119,13 @@ class PhysicsSystem : public System {
         /**
          * @brief Integrate solved velocities into poses and update sleep state.
          *
-         * @param scene      Scene whose Transforms are written back.
-         * @param dt         Fixed timestep, in seconds.
-         * @param hasContact Per-body contact flags from narrowphase, used to decide sleeping.
-         * @param supportNormal Per-body support normals from narrowphase, published
-         *                      onto the Rigidbody for whatever reads them.
+         * @param scene    Scene whose Transforms are written back.
+         * @param dt       Fixed timestep, in seconds.
+         * @param contacts Per-body summary from narrowphase: the touched flag
+         *                 decides sleeping, and both normals are published onto
+         *                 the Rigidbody for whatever reads them.
          */
-        void writeback(Scene& scene, float dt, const std::vector<bool>& hasContact,
-                       const std::vector<glm::vec3>& supportNormal);
+        void writeback(Scene& scene, float dt, const std::vector<BodyContacts>& contacts);
 
     private:
         std::vector<EntityId>        m_bodies;       ///< Live body entities this tick (indexes m_solverBodies)

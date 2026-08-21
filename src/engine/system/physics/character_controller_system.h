@@ -9,15 +9,19 @@ namespace Vkm::Engine {
  *        resolves what it is standing on.
  *
  * Registered at SystemStage::Simulation immediately after PhysicsSystem, so it
- * reads THIS tick's freshly written Rigidbody::supported / supportNormal. Only
- * the velocity it writes is a tick late, and a tick of steering lag is
- * imperceptible; fresh grounding is the half that has to be exact, because
- * landing, stepping off a ledge and refusing a slope all turn on it.
+ * reads THIS tick's freshly written Rigidbody::supported / supportNormal /
+ * blockNormal. Only the velocity it writes is a tick late, and a tick of
+ * steering lag is imperceptible; fresh contacts are the half that has to be
+ * exact, because landing, stepping off a ledge, refusing a slope and sliding
+ * along a wall all turn on them.
  *
  * It writes velocity, never position: the solver owns the pose, so a character
  * cannot be teleported through a wall by its own controller, and everything the
  * solver already does - friction, restitution, penetration recovery, sleeping -
- * keeps working underneath it.
+ * keeps working underneath it. What it does NOT leave to the solver is sliding:
+ * a target aimed into a wall is deflected along it here, because otherwise
+ * whether a character glides or snags is decided by Coulomb friction, and two
+ * material numbers nobody chose for that purpose is not a movement design.
  */
 class CharacterControllerSystem : public System {
     public:

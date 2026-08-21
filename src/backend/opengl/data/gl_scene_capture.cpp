@@ -48,7 +48,9 @@ void GLSceneCapture::begin(const RenderView& view, const GLView& glView, const G
         if (material && material->getType() == MaterialType::Transparent) continue;
         m_opaque.push_back(&d);
     }
-    m_batcher.buildGrouped(m_opaque, glView);
+    // No palette: the capture draws shaders/forward/pbr only, so a character
+    // bakes into GI in bind pose.
+    m_batcher.buildGrouped(m_opaque, glView, 0);
 
     bindOfflinePbrUniforms(m_pbr, ibl, view.environment.sky.intensity, faceSize);
 }

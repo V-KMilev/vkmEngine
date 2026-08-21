@@ -13,6 +13,7 @@
 #include "system/sky/sky_system.h"
 #include "system/animation/animation_system.h"
 #include "system/animation/skeletal_animation_system.h"
+#include "system/animation/bone_socket_system.h"
 #include "system/particle/particle_system.h"
 #include "system/physics/physics_system.h"
 #include "system/physics/character_controller_system.h"
@@ -88,6 +89,10 @@ inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& c
     engine.addSystem<Vkm::Engine::PhysicsSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::CharacterControllerSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::SkySystem>(Vkm::Engine::SystemStage::Simulation);
+    // Ahead of HierarchySystem, not after it: a socket writes a local Transform
+    // and the world resolve below turns it into a world matrix in the same frame,
+    // which is what keeps an attachment on its bone rather than one frame behind.
+    engine.addSystem<Vkm::Engine::BoneSocketSystem>(Vkm::Engine::SystemStage::Transform);
     engine.addSystem<Vkm::Engine::HierarchySystem>(Vkm::Engine::SystemStage::Transform);
     auto& uiSystem = engine.addSystem<Vkm::Engine::UISystem>(Vkm::Engine::SystemStage::Transform);
     auto& visibilitySystem =

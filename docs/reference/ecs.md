@@ -63,25 +63,29 @@ scene.remove<Mesh>(entity);
 | `Light`               | `component/render/light.h`                 | `LightType` (Directional, Point, Spot, Rect, Disk), color, intensity, attenuation, cone, area, shadow |
 | `Animation`           | `component/animation/animation.h`          | Three tracks (position vec3, rotation quat, scale vec3) plus playback state and explicit `length`     |
 | `Animator`            | `component/animation/animator.h`           | `SkeletonHandle skeleton`, `AnimationClipHandle clip`, `time`, `speed`, `playing`, `looping` - one per rigged character, not per mesh |
+| `BoneSocket`          | `component/animation/bone_socket.h`        | `string bone` + `Transform offset` - what rides a joint of the rig it is parented to                  |
 | `Hierarchy`           | `component/core/hierarchy.h`               | `EntityId parent`, `firstChild`, `nextSibling`, `prevSibling`                                         |
 | `Name`                | `component/core/name.h`                    | `char value[64]` for editor display and asset look-up by name                                         |
 | `Collider`            | `component/physics/collider.h`             | One or more `ColliderPart`s (a `ColliderShape` tag + box / capsule fields) + `isTrigger`              |
 | `CharacterController` | `component/physics/character_controller.h` | `moveInput` + `jumpRequested` in, tuning, `grounded` + `groundNormal` out                    |
-| `Rigidbody`           | `component/physics/rigidbody.h`            | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags, plus the `supported` / `supportNormal` outputs |
+| `Rigidbody`           | `component/physics/rigidbody.h`            | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags, plus the `supported` / `supportNormal` / `blockNormal` outputs |
 | `ReflectionProbe`     | `component/render/reflection_probe.h`      | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
 
 `Animation` and `Animator` are both covered in [Animation](system/animation.md):
 the first drives one entity's own `Transform`, the second poses a whole rig and
 publishes the result on `FrameContext::poses`. There is deliberately no skinned-
 mesh component - a mesh is skinned when its asset carries skin weights, and the
-rig driving it is the nearest `Animator` above it in the hierarchy.
+rig driving it is the nearest `Animator` above it in the hierarchy. `BoneSocket`
+is the third: it names a joint of the rig above it and reads that joint out of
+the published pose, which is how a weapon ends up in a hand.
 
 Light gets a full breakdown in [Lighting](system/lighting.md), including
 the area-light fields (`areaWidth`, `areaHeight`, `areaRadius`, `twoSided`)
 introduced for Rect and Disk emitters. `Rigidbody`, `Collider` and
 `CharacterController` are covered in [Physics](system/physics.md) - including why
-"am I standing on something" is answered on the `Rigidbody` rather than on the
-controller, which is what keeps `PhysicsSystem` from knowing characters exist;
+"am I standing on something" and "what is in my way" are both answered on the
+`Rigidbody` rather than on the controller, which is what keeps `PhysicsSystem`
+from knowing characters exist;
 the scene-level physics settings (gravity,
 solver iterations) are not a component either - they live in `PhysicsSettings`,
 reached through `Scene::physics()`. It sits *beside* the `Environment` rather

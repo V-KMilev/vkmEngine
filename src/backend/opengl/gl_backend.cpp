@@ -235,7 +235,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // ...and batch the opaque bucket once too (see GLFrameContext::opaqueBatch).
     {
         PROFILE_SCOPE("Render/OpaqueBatch");
-        m_opaqueBatcher.buildGrouped(m_opaque, m_view);
+        m_opaqueBatcher.buildGrouped(m_opaque, m_view, m_skinPalette.count());
     }
 
     // Each pass binds and clears its own target.
