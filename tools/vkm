@@ -406,6 +406,7 @@ def cmd_package(args) -> int:
     print(f"  run it with: {out / 'bin' / (name + exe_suffix)}")
     return 0
 
+
 # --------------------------------------------------------------------------
 
 def main() -> int:
