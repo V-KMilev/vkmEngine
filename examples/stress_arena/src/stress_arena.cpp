@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "STRESS"
+
 #include "stress_arena.h"
 
 #include <algorithm>
@@ -7,6 +9,8 @@
 
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
+
+#include "logger.h"
 
 #include "core/math/axes.h"
 #include "core/math/easing.h"
@@ -37,11 +41,6 @@
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_manager.h"
 #include "system/hierarchy/hierarchy_operations.h"
-
-// Goes to stderr rather than the engine logger: this file also compiles into the
-// editor's hot-reload module, which resolves symbols from the host exe, and
-// Logger lives in a DLL the exe cannot re-export (same reason as potion_runner).
-#define STRESS_LOG(...) (std::fprintf(stderr, "[Stress] " __VA_ARGS__), std::fputc('\n', stderr))
 
 namespace Vkm::Engine {
 
@@ -451,13 +450,13 @@ void StressArena::onStart() {
     buildDrones();
     buildUI();
 
-    STRESS_LOG("built: %zu props, %zu lights (%d shadowed, %zu moving), %zu emitters, "
-               "%zu decals, %zu bodies, %zu animated, %zu drones, %d materials",
-               m_props.size(), m_lights.size(), shadowLights, m_patrol.size(),
-               m_emitters.size(), m_decals.size(), m_bodies.size(), m_spinners.size(),
-               m_drones.size(), uniqueMaterials);
-    STRESS_LOG("keys: 1 lights  2 shadows  3 props  4 particles  5 physics  "
-               "6 anim  7 decals  8 fog  9 UI  0 all   F camera");
+    LOG_INFO("built: %zu props, %zu lights (%d shadowed, %zu moving), %zu emitters, "
+             "%zu decals, %zu bodies, %zu animated, %zu drones, %d materials",
+             m_props.size(), m_lights.size(), shadowLights, m_patrol.size(),
+             m_emitters.size(), m_decals.size(), m_bodies.size(), m_spinners.size(),
+             m_drones.size(), uniqueMaterials);
+    LOG_INFO("keys: 1 lights  2 shadows  3 props  4 particles  5 physics  "
+             "6 anim  7 decals  8 fog  9 UI  0 all   F camera");
 }
 
 MaterialHandle StressArena::makeMaterial(const MaterialAsset& source, const char* name) {
@@ -992,7 +991,7 @@ void StressArena::buildModels() {
     }
 
     if (usable.empty()) {
-        STRESS_LOG("no cooked meshes in the library - running procedural props only");
+        LOG_INFO("no cooked meshes in the library - running procedural props only");
         return;
     }
 
@@ -1032,7 +1031,7 @@ void StressArena::buildModels() {
     }
 
     if (m_models.empty()) {
-        STRESS_LOG("cooked meshes present but none resolved - procedural props only");
+        LOG_WARNING("cooked meshes present but none resolved - procedural props only");
         return;
     }
 
@@ -1056,8 +1055,8 @@ void StressArena::buildModels() {
         kind.sizes.push_back(size);
     }
 
-    STRESS_LOG("models: %zu kinds, %d instances, %zu textured materials",
-               m_models.size(), modelInstances, materials.size());
+    LOG_INFO("models: %zu kinds, %d instances, %zu textured materials",
+             m_models.size(), modelInstances, materials.size());
 }
 
 void StressArena::updateModelScales() {
@@ -1449,7 +1448,7 @@ void StressArena::readInput() {
     // F hands the camera to the engine's free-fly controller and back.
     if (input.pressed(ACTION_CAMERA)) {
         scriptedCamera = !scriptedCamera;
-        STRESS_LOG("camera: %s", scriptedCamera ? "scripted" : "free");
+        LOG_INFO("camera: %s", scriptedCamera ? "scripted" : "free");
     }
 }
 
