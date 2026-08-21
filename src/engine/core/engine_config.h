@@ -50,12 +50,12 @@ namespace Config {
     // Shadow caster budget for the 2D atlas (directional + spot).
     constexpr uint32_t MAX_SHADOW_CASTERS_2D = 6;
 
-    // Shadow caster budget for the cube atlas (point lights).
+    // Shadow caster budget for the point lights' individual depth cubes.
     constexpr uint32_t MAX_SHADOW_CASTERS_CUBE = 2;
 
     // Cascade count for the directional (sun) shadow. The first directional
-    // shadow caster reserves this many consecutive 2D atlas layers; remaining
-    // layers (MAX_SHADOW_CASTERS_2D - NUM_CASCADES) serve spot lights.
+    // shadow caster reserves this many consecutive 2D atlas tiles; remaining
+    // tiles (MAX_SHADOW_CASTERS_2D - NUM_CASCADES) serve spot lights.
     constexpr uint32_t NUM_CASCADES = 4;
 
     // Near plane used when rasterising and sampling point-light cube shadows.
