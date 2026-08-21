@@ -36,10 +36,15 @@ constexpr float SLEEP_ANGULAR_SQ = 0.04f;   // (0.2 rad/s)^2
 constexpr float SLEEP_DELAY      = 0.5f;    // seconds of rest before sleeping
 constexpr float WAKE_SPEED_SQ    = 0.25f;   // partner speed^2 that wakes a sleeper
 
-// Placeholder support normal, below any unit normal's y so the first contact
-// always replaces it. A body held only by a vertical wall would otherwise keep
-// the zero vector, and report support with no direction.
-const glm::vec3 NO_SUPPORT = {0.0f, -2.0f, 0.0f};
+// The engine's world up: the axis support is measured against, and the answer
+// both published normals fall back to when nothing was touched.
+const glm::vec3 UP = {0.0f, 1.0f, 0.0f};
+
+// How much of a normal points sideways. Squared, because it is only ever
+// compared against another of its own kind.
+float horizontalLengthSq(const glm::vec3& normal) {
+    return normal.x * normal.x + normal.z * normal.z;
+}
 
 float dynamicInverseMass(const Rigidbody& rb) {
     if (rb.isStatic || rb.isKinematic || rb.mass <= 0.0f) return 0.0f;
@@ -178,17 +183,16 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 
     broadphase();
 
-    // Both span narrowphase -> writeback (the sleep test and the support outputs
-    // are read after the solve), so they are owned here and threaded through.
-    std::vector<bool> hasContact(m_bodies.size(), false);
-    std::vector<glm::vec3> supportNormal(m_bodies.size(), NO_SUPPORT);
-    narrowphase(hasContact, supportNormal, ctx.events);
+    // Spans narrowphase -> writeback (the sleep test and the support outputs are
+    // read after the solve), so it is owned here and threaded through.
+    std::vector<BodyContacts> contacts(m_bodies.size());
+    narrowphase(contacts, ctx.events);
 
     wakeOnImpact(scene);
 
     solve(physics, dt);
 
-    writeback(scene, dt, hasContact, supportNormal);
+    writeback(scene, dt, contacts);
 }
 
 bool PhysicsSystem::gatherBodies(Scene& scene) {
@@ -313,9 +317,7 @@ void PhysicsSystem::broadphase() {
     }
 }
 
-void PhysicsSystem::narrowphase(std::vector<bool>& hasContact,
-                                std::vector<glm::vec3>& supportNormal,
-                                EventBus& events) {
+void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& events) {
     PROFILE_SCOPE("Physics/Narrowphase");
 
     m_manifolds.clear();
@@ -356,13 +358,22 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact,
             for (int c = 0; c < manifold.count; ++c) manifold.contacts[c] = scratch[c];
             m_manifolds.push_back(manifold);
 
-            // The most upward normal each body is held by. A's surface normal is
+            // The most upward normal each body is held by, and the most
+            // horizontal one it is pressed against. A's surface normal is
             // -normal and B's is +normal, because the normal runs A -> B and a
             // surface pushes back along its own outward direction.
             for (int c = 0; c < manifold.count; ++c) {
                 const glm::vec3& normal = manifold.contacts[c].normal;
-                if (-normal.y > supportNormal[A.body].y) supportNormal[A.body] = -normal;
-                if ( normal.y > supportNormal[B.body].y) supportNormal[B.body] =  normal;
+                if (-normal.y > contacts[A.body].support.y) contacts[A.body].support = -normal;
+                if ( normal.y > contacts[B.body].support.y) contacts[B.body].support =  normal;
+
+                // Both bodies see the same horizontal magnitude - the two
+                // normals differ only in sign - so one measure serves both.
+                const float horizontal = horizontalLengthSq(normal);
+                if (horizontal > horizontalLengthSq(contacts[A.body].block))
+                    contacts[A.body].block = -normal;
+                if (horizontal > horizontalLengthSq(contacts[B.body].block))
+                    contacts[B.body].block =  normal;
             }
         };
 
@@ -400,8 +411,8 @@ void PhysicsSystem::narrowphase(std::vector<bool>& hasContact,
                 // A trigger holds nothing up, and a body that dozed off inside
                 // one would be stuck: wakeOnImpact walks the manifolds, which
                 // never carry trigger pairs.
-                hasContact[A.body] = true;
-                hasContact[B.body] = true;
+                contacts[A.body].touched = true;
+                contacts[B.body].touched = true;
                 events.enqueue(CollisionEvent{entityA, entityB, contactPoint, contactNormal});
             }
         }
@@ -442,8 +453,7 @@ void PhysicsSystem::solve(const PhysicsSettings& physics, float dt) {
     solveContacts(m_solverBodies, m_manifolds, params);
 }
 
-void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& hasContact,
-                              const std::vector<glm::vec3>& supportNormal) {
+void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<BodyContacts>& contacts) {
     PROFILE_SCOPE("Physics/Writeback");
 
     for (size_t k = 0; k < m_bodies.size(); ++k) {
@@ -453,8 +463,9 @@ void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& h
 
         // Published before the early-outs below: a sleeping body resting on the
         // floor is supported, and that is exactly when a controller asks.
-        rb.supported = hasContact[k];
-        rb.supportNormal = rb.supported ? supportNormal[k] : glm::vec3(0.0f, 1.0f, 0.0f);
+        rb.supported = contacts[k].touched;
+        rb.supportNormal = rb.supported ? contacts[k].support : UP;
+        rb.blockNormal   = rb.supported ? contacts[k].block   : UP;
 
         if (rb.isStatic) continue;
         if (rb.sleeping) {
@@ -493,7 +504,8 @@ void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<bool>& h
         if (!rb.isKinematic && rb.canSleep) {
             const float linSq = glm::dot(rb.linearVelocity, rb.linearVelocity);
             const float angSq = glm::dot(rb.angularVelocity, rb.angularVelocity);
-            const bool resting = hasContact[k] && linSq < SLEEP_LINEAR_SQ && angSq < SLEEP_ANGULAR_SQ;
+            const bool resting = contacts[k].touched && linSq < SLEEP_LINEAR_SQ
+                                 && angSq < SLEEP_ANGULAR_SQ;
             if (resting) {
                 rb.sleepTimer += dt;
                 if (rb.sleepTimer >= SLEEP_DELAY) {

@@ -147,8 +147,11 @@ in Add Component like every other component.
   rig (with what to do about it) and a bone name the rig does not carry.
 - **Character Controller** - the four tuning fields, plus the live grounded /
   ground angle / move-input readout, which is what answers "why is it not
-  jumping". It also names the two ways a controller silently does nothing: no
-  `Rigidbody` (or one whose rotation is not frozen) and no `Collider`.
+  jumping". Under them, the step height the capsule rolls over
+  (`radius * (1 - cos(maxSlopeAngle))`), because that number answers "why does it
+  stop at that kerb" and both halves of it are set on this entity. It also names
+  the two ways a controller silently does nothing: no `Rigidbody` (or one whose
+  rotation is not frozen) and no `Collider`.
 - **Collider** - a shape picker on a single-part collider, showing half-extents
   for a box and radius / half height for a capsule, with the capsule's total
   height spelled out because that is the number an author matches to a model.

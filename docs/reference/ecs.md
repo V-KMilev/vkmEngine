@@ -68,7 +68,7 @@ scene.remove<Mesh>(entity);
 | `Name`                | `component/core/name.h`                    | `char value[64]` for editor display and asset look-up by name                                         |
 | `Collider`            | `component/physics/collider.h`             | One or more `ColliderPart`s (a `ColliderShape` tag + box / capsule fields) + `isTrigger`              |
 | `CharacterController` | `component/physics/character_controller.h` | `moveInput` + `jumpRequested` in, tuning, `grounded` + `groundNormal` out                    |
-| `Rigidbody`           | `component/physics/rigidbody.h`            | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags, plus the `supported` / `supportNormal` outputs |
+| `Rigidbody`           | `component/physics/rigidbody.h`            | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags, plus the `supported` / `supportNormal` / `blockNormal` outputs |
 | `ReflectionProbe`     | `component/render/reflection_probe.h`      | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
 
 `Animation` and `Animator` are both covered in [Animation](system/animation.md):
@@ -83,8 +83,9 @@ Light gets a full breakdown in [Lighting](system/lighting.md), including
 the area-light fields (`areaWidth`, `areaHeight`, `areaRadius`, `twoSided`)
 introduced for Rect and Disk emitters. `Rigidbody`, `Collider` and
 `CharacterController` are covered in [Physics](system/physics.md) - including why
-"am I standing on something" is answered on the `Rigidbody` rather than on the
-controller, which is what keeps `PhysicsSystem` from knowing characters exist;
+"am I standing on something" and "what is in my way" are both answered on the
+`Rigidbody` rather than on the controller, which is what keeps `PhysicsSystem`
+from knowing characters exist;
 the scene-level physics settings (gravity,
 solver iterations) are not a component either - they live in `PhysicsSettings`,
 reached through `Scene::physics()`. It sits *beside* the `Environment` rather
