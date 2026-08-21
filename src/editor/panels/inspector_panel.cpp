@@ -14,6 +14,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "ecs/component/animation/animation.h"
+#include "ecs/component/animation/bone_socket.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/rigidbody.h"
@@ -137,6 +138,83 @@ bool pickAsset(const char* comboId, const char* label, ResourceManager& resource
     return picked;
 }
 
+// Bone combo: pick which joint of @p skeleton a socket rides. The list comes
+// from the rig the Animator above the socket resolved - the same asset the
+// Animator card reports a bone count for - because that is the only rig a
+// socket parented there can address. A null skeleton draws the stored name
+// disabled rather than an empty list, so a socket authored against a rig that
+// is not loaded still shows what it is waiting for.
+bool pickBone(const char* comboId, const SkeletonAsset* skeleton, std::string& bone) {
+    drawPropertyLabel("Bone");
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::BeginDisabled(skeleton == nullptr);
+
+    bool picked = false;
+    if (ImGui::BeginCombo(comboId, bone.empty() ? "(none)" : bone.c_str())) {
+        // BeginDisabled greys the widget and refuses a fresh click, but a
+        // popup opened on an earlier frame carries its own open state. The
+        // rig can go away underneath an open list - the socket reparented,
+        // the Animator's skeleton cleared, an undo of either - and every
+        // line below reads through the pointer. Close it: it has nothing
+        // left to list.
+        if (!skeleton) {
+            ImGui::CloseCurrentPopup();
+        } else {
+            static char s_boneFilter[48] = {};
+            if (ImGui::IsWindowAppearing()) {
+                s_boneFilter[0] = '\0';
+                ImGui::SetKeyboardFocusHere();
+            }
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::InputTextWithHint("##boneFilter", "Search...", s_boneFilter, sizeof(s_boneFilter));
+            ImGui::Separator();
+
+            // Clearing the bone is a state a socket passes through on its way from
+            // one joint to another, so it is offered rather than reachable only by
+            // deleting the component.
+            if (ImGui::Selectable("(none)", bone.empty())) {
+                bone.clear();
+                picked = true;
+            }
+
+            // Indented by depth, because a rig is a tree and finding a hand in a
+            // hundred flat names is not the same job as finding it under an arm.
+            // parent < index makes that one forward pass. A filtered list is a set
+            // of scattered matches instead, and indenting those would draw a tree
+            // that is not there.
+            const bool filtered = s_boneFilter[0] != '\0';
+            std::vector<int> depth(skeleton->bones.size(), 0);
+            std::vector<std::pair<const std::string*, int>> rows;
+            for (size_t i = 0; i < skeleton->bones.size(); ++i) {
+                const Bone& joint = skeleton->bones[i];
+                depth[i] = joint.parent < 0 ? 0 : depth[joint.parent] + 1;
+                if (matchesFilter(joint.name.c_str(), s_boneFilter)) {
+                    rows.emplace_back(&joint.name, filtered ? 0 : depth[i]);
+                }
+            }
+
+            ImGuiListClipper clipper;
+            clipper.Begin(static_cast<int>(rows.size()));
+            while (clipper.Step()) {
+                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                    const auto& [name, indent] = rows[i];
+                    ImGui::PushID(i);
+                    const std::string label = std::string(static_cast<size_t>(indent) * 2, ' ') + *name;
+                    if (ImGui::Selectable(label.c_str(), *name == bone)) {
+                        bone   = *name;
+                        picked = true;
+                    }
+                    ImGui::PopID();
+                }
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    ImGui::EndDisabled();
+    return picked;
+}
+
 // The fields of one component this prefab instance has taken over, as a row
 // each: the mark that a value is the instance's own rather than the prefab's,
 // and the way to give it back. Nothing is drawn for an entity outside an
@@ -202,6 +280,16 @@ void editComponentCard(Scene& scene, ResourceManager& resources, EditorState& st
                                                 "comes back from the prefab on the next load");
     }
 }
+
+// The radius of the capsule an entity stands on, or 0 when it has none. The
+// first capsule, because a character wears exactly one and a compound collider
+// is a mesh fit, which is all boxes.
+float capsuleRadiusOf(const Scene& scene, EntityId id) {
+    if (!scene.has<Collider>(id)) return 0.0f;
+    for (const ColliderPart& part : scene.get<Collider>(id).parts)
+        if (part.shape == ColliderShape::Capsule) return part.radius;
+    return 0.0f;
+}
 }
 
 void InspectorPanel::draw(EditorContext& ec) {
@@ -251,6 +339,7 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<LOD>(id))            drawLODSection(scene, ctx.resources, state, id);
     if (scene.has<Animation>(id))  drawAnimationSection(scene, ctx.resources, state, id);
     if (scene.has<Animator>(id))   drawAnimatorSection(scene, ctx.resources, state, id);
+    if (scene.has<BoneSocket>(id)) drawBoneSocketSection(scene, ctx.resources, state, id);
     if (scene.has<ScriptComponent>(id)) drawScriptSection(scene, state, id);
     if (scene.has<UICanvas>(id))   drawUICanvasSection(scene, ctx.resources, state, id);
     if (scene.has<UIElement>(id))  drawUIElementSection(scene, ctx.resources, state, id);
@@ -517,6 +606,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         section("Animation");
         addItem("Animation", Animation{}, "Add Animation");
         addItem("Animator", Animator{}, "Add Animator");
+        addItem("Bone Socket", BoneSocket{}, "Add Bone Socket");
 
         section("Physics");
         addItem("Rigidbody", Rigidbody{}, "Add Rigidbody");
@@ -624,6 +714,12 @@ void InspectorPanel::drawTransformSection(Scene& scene, ResourceManager& resourc
             glm::vec3 worldPos(worldMat[3]);
             ImGui::TextDisabled("World: (%.1f, %.1f, %.1f)",
                 worldPos.x, worldPos.y, worldPos.z);
+        }
+
+        // A socket rewrites this every frame from the bone it rides, so an edit
+        // here is gone by the next one. Say where the number that survives is.
+        if (scene.has<BoneSocket>(id)) {
+            ImGui::TextDisabled("Driven by Bone Socket - author Offset on that card.");
         }
     }
     endComponentCard();
@@ -1334,6 +1430,67 @@ void InspectorPanel::drawAnimatorSection(Scene& scene, ResourceManager& resource
     });
 }
 
+void InspectorPanel::drawBoneSocketSection(Scene& scene, ResourceManager& resources,
+                                           EditorState& state, EntityId id) {
+    editComponentCard<BoneSocket>(scene, resources, state, id, "Bone Socket",
+                                  EditorStyle::Accent::Anim,
+                                  "Edit Bone Socket", "Remove Bone Socket",
+                                  [&](BoneSocket& socket) {
+        bool changed = false;
+
+        // The rig is the parent and only the parent. BoneSocketSystem writes
+        // this entity's local Transform and lets the hierarchy resolve it
+        // against the parent's world matrix, so a socket hung any deeper lands
+        // somewhere plausible and wrong - which is why the system refuses it and
+        // why the card says so here, where the parenting is looked at.
+        const EntityId rig = scene.has<Hierarchy>(id) ? scene.get<Hierarchy>(id).parent : EntityId{};
+        const Animator* animator = (rig && scene.has<Animator>(rig))
+            ? &scene.get<Animator>(rig) : nullptr;
+        const SkeletonAsset* skeleton =
+            (animator && animator->skeleton && resources.isAlive(animator->skeleton))
+                ? &resources.get(animator->skeleton) : nullptr;
+
+        if (!animator) {
+            ImGui::TextColored(EditorStyle::DANGER, "The parent is not a rig");
+            ImGui::TextDisabled("A socket hangs off the entity carrying the Animator. "
+                                "Drag this entity onto it in the Hierarchy.");
+        } else if (!skeleton) {
+            ImGui::TextColored(EditorStyle::DANGER, "The rig above names no skeleton");
+            ImGui::TextDisabled("Pick one on its Animator card.");
+        }
+
+        changed |= pickBone("##BonePick", skeleton, socket.bone);
+
+        // A name the rig does not carry is the one failure that looks like
+        // nothing at all: the socket simply stays where it was put.
+        if (skeleton && !socket.bone.empty() && skeleton->indexOf(socket.bone) < 0) {
+            ImGui::TextColored(EditorStyle::DANGER, "Rig '%s' has no bone '%s'",
+                               skeleton->name.c_str(), socket.bone.c_str());
+            ImGui::TextDisabled("The socket stays where it is until they match.");
+        } else if (skeleton) {
+            ImGui::TextDisabled("%zu bones in rig '%s'",
+                                skeleton->bones.size(), skeleton->name.c_str());
+        }
+
+        // The offset is authored here rather than on the Transform card because
+        // the Transform is the socket's output: it is rewritten from the bone
+        // every frame, including while the editor is paused.
+        ImGui::Spacing();
+        sectionLabel("Offset");
+        changed |= drawVec3Control("Position", glm::value_ptr(socket.offset.position), 0.0f, 0.01f);
+
+        m_socketEulerCache.sync(id, socket.offset.rotation);
+        if (drawVec3Control("Rotation", m_socketEulerCache.degrees(), 0.0f, 0.5f)) {
+            socket.offset.rotation = m_socketEulerCache.toQuat();
+            changed = true;
+        }
+
+        changed |= drawVec3Control("Scale", glm::value_ptr(socket.offset.scale), 1.0f, 0.01f);
+
+        return changed;
+    });
+}
+
 void InspectorPanel::drawCharacterControllerSection(Scene& scene, ResourceManager& resources,
                                                     EditorState& state, EntityId id) {
     editComponentCard<CharacterController>(scene, resources, state, id, "Character Controller",
@@ -1348,7 +1505,20 @@ void InspectorPanel::drawCharacterControllerSection(Scene& scene, ResourceManage
         changed |= propSlider("Air Control", &cc.airControl, 0.0f, 1.0f, "%.2f",
                               "Fraction of that acceleration available while airborne");
         changed |= propDrag("Max Slope", &cc.maxSlopeAngle, 0.5f, 0.0f, 90.0f, "%.0f deg",
-                            "Steeper than this holds nothing up: the character slides");
+                            "Steeper than this holds nothing up: the character slides.\n"
+                            "The same angle decides what counts as a wall to run\n"
+                            "along rather than walk into, and how tall a step the\n"
+                            "capsule rolls over.");
+
+        // The step height that falls out of the capsule and the slope limit: an
+        // edge lower than this still produces a walkable contact normal, so the
+        // character climbs it. Spelled out because it is the number behind "why
+        // does it stop at that kerb", and both halves of it are set right here.
+        if (const float radius = capsuleRadiusOf(scene, id); radius > 0.0f) {
+            const float limit = glm::radians(glm::clamp(cc.maxSlopeAngle, 0.0f, 90.0f));
+            ImGui::Spacing();
+            ImGui::TextDisabled("Rolls over steps up to %.2f m", radius * (1.0f - std::cos(limit)));
+        }
 
         // Live state, not authoring: moveInput is written by gameplay and the
         // rest by the system. Shown because "why is it not jumping" is answered

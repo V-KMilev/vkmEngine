@@ -20,6 +20,8 @@ time-scale / single-step apply uniformly. They do not overlap:
 - `src/engine/system/animation/pose_evaluator.h` - `advancePlayback` + `composePose`
 - `src/engine/system/animation/pose_buffer.h` - PoseSlice, PoseWrite, PoseBuffer
 - `src/engine/ecs/component/animation/animator.h` - Animator component
+- `src/engine/ecs/component/animation/bone_socket.h` - BoneSocket component
+- `src/engine/system/animation/bone_socket_system.h` - BoneSocketSystem
 - `src/backend/opengl/data/gl_skin_palette.h` - GLSkinPalette (the frame's palettes, SSBO 5)
 - `shaders/_common/skinning.glsl` - the vertex-stage skinning contract
 
@@ -351,7 +353,17 @@ once per gap:
 | Fault | What it does if unnamed |
 |-------|------------------------|
 | A skinned mesh whose `MeshAsset::skeleton` is not the rig above it | Its bone indices address the wrong joints - a character that moves *nearly* right |
-| A skinned mesh sitting off its rig's origin | Its own transform is applied on top of a palette that already resolved into rig space |
+| A skinned mesh **below** the rig sitting off its origin | Its own transform is applied on top of a palette that already resolved into rig space |
+
+The second fault is a question about descendants only, and the emphasis is the
+whole of it. The **rig entity's** own transform is not a second matrix stacked on
+the palette - it *is* the matrix the palette is multiplied by, and it is what
+puts the character somewhere other than the world origin. A rig can carry a
+skinned mesh itself (a one-mesh file whose rig is rooted at the scene node), so
+it is walked like any other entity; testing its transform for identity there
+would report every placed character in the scene. The rig-name half of the check
+still applies to it, because that one is about the mesh, not about where it
+stands.
 
 ## The GPU path
 
@@ -371,15 +383,24 @@ enabled costs nothing when a program that never declares them draws the same VAO
 and thumbnails in bind pose - the right answer for both.
 
 **The palettes travel as one flat array.** `RenderView::skinMatrices` holds every
-skinned item's palette end to end, and both `DrawableData` and `ShadowCasterData`
-carry a `skinFirst` / `skinCount` range into it. Both, and not just the first:
-the two lists are gathered from different sets, and a character standing just
-off-screen and casting into view appears only in the caster list.
+skinned item's palette end to end, and each item carries a `first` / `count`
+range into it. Both lists get one, not just the first: the two are gathered from
+different sets, and a character standing just off-screen and casting into view
+appears only in the caster list.
+
+A drawable carries its range inline (`DrawableData::skinFirst` / `skinCount`)
+because the backend partitions drawables into buckets of *pointers* and each one
+has to be self-describing. A caster's range rides alongside instead, in
+`RenderView::casterSkins`, index for index with `shadowCasters` - the shadow cull
+addresses casters by index anyway, and `ShadowCasterData` stays 96 bytes so the
+cull, which reads every caster's bounds once per atlas tile and once per cube
+face, is not widened by two fields it never looks at. Same reason `Vertex` stays
+48 bytes.
 
 ```
 RenderView::build(scene, visibility, ui, poses)
   |-- buildDrawables      appends each visible entity's palette, stamps its range
-  |-- buildShadowCasters  the same, for the scene-wide caster set
+  |-- buildShadowCasters  the same, into the parallel casterSkins array
 GLBackend::render
   |-- GLSkinPalette::update(view.skinMatrices)   one upload, SSBO binding 5
   |-- GLInstanceBatcher                           per-instance skinFirst, SSBO binding 6
@@ -397,6 +418,21 @@ instance. A skinned mesh with no rig above it fails the second, draws through th
 static program, and renders the vertices it stored, which *is* its bind pose. No
 per-instance branch in any vertex stage decides that.
 
+**An empty palette switches the whole apparatus off.** A frame that posed nothing
+leaves `skinMatrices` empty, and every stage keys off that one fact rather than
+discovering it per item:
+
+| Stage | With no palette |
+|-------|-----------------|
+| `RenderView::build` | resolves the pose pointer to null once; neither gather looks an entity up |
+| `GLInstanceBatcher` | no mesh resolve per drawable, no per-instance palette base, no upload, no binding, and the narrow sort key |
+| `GLDepthPrepass` / `GLForwardPass` | the skinned program is not bound and not given the frame's uniforms |
+| `GLShadowPass` | the skinned programs are never bound, and every run is one instanced draw |
+
+That is the same rule the vertex format follows, applied to the frame rather than
+to the mesh: a scene with no characters pays nothing for the machinery that draws
+them. It is worth 0.42 ms a frame on `examples/stress_arena`, which has none.
+
 The skinned programs are plain path-constructed shaders, so hot reload tracks
 them with no new code:
 
@@ -409,6 +445,11 @@ them with no new code:
 
 The fragment stages are includes rather than copies: a lobe added to the
 ubershader can never reach only half the scene.
+
+`GLShadowPass` also tracks which program is current across the whole pass. A
+program has to be bound to be given a uniform, and the pass hands matrices to one
+per atlas tile and per cube face; binding per tile makes `glUseProgram` the
+largest thing it does when only one program is ever used.
 
 **The shadow pass finds its palettes differently, and is forced to.** It takes
 its transforms as vertex attributes rather than out of storage, and
@@ -456,6 +497,129 @@ address that rig's slice, or run off the end of the palette entirely - the same
 misuse `SkeletalAnimationSystem` already names in the log ("its bone indices
 address the wrong joints"). It reads garbage bones, not memory outside the
 buffer's allocation; the fix is the warning, not a per-vertex clamp.
+
+## Bone sockets
+
+`PoseBuffer::global()` exists so that something other than the renderer can read
+a pose, and a socket is the first thing that does. A weapon in a hand, a hat on
+a head, a muzzle flash at a gun tip: one component, one system, and no new
+channel between them.
+
+```cpp
+struct BoneSocket {
+    std::string bone;    // "hand.R"
+    Transform   offset;  // placement on that joint, in bone space
+
+    // Transient - runtime only, never serialized.
+    SkeletonHandle resolvedRig;
+    std::string    resolvedName;
+    int32_t        boneIndex = -1;
+};
+```
+
+**The socket is the attached entity**, not a marker something else hangs off. A
+marker would be a second entity per attachment carrying a Transform nobody
+authors, listed in the panel and written to the scene file - the cost an entity
+per bone was refused for, charged per attachment instead - and the thing being
+held would sit one level below it for no information gained. So the gun carries
+the `BoneSocket`, and a muzzle flash parented under the gun is just a child.
+
+**The bone is named, never indexed.** An index is what the pose arrays are
+addressed by and it is a lookup cheaper, but it describes one export of one rig:
+re-export a character with a joint inserted and every stored index silently
+addresses its neighbour - a weapon on the elbow, and no error anywhere. The name
+is the joint's durable identity, which is already what a clip binds by at cook
+time. It is the same call `PrefabEntity` makes for the same reason: an authored
+reference has to survive the thing it points into being rebuilt.
+
+The lookup is linear, and `SkeletonAsset::indexOf` says it is not a per-frame
+call, so the answer is memoised on the component against both halves of the
+pairing - the rig handle and the name. Change either and it re-resolves on the
+next frame, which is what makes retargeting a socket in the inspector immediate
+rather than a reload away. Failure is memoised too: a name the rig does not
+carry resolves to -1 once instead of rescanning a hundred bones every frame to
+fail again.
+
+### The parent is the rig, and has to be
+
+A socket must be a **direct child of the entity carrying the `Animator`** - the
+same arrangement import already produces for skinned meshes. That is not a
+convenience, it is what the ordering below buys:
+
+```
+worldOfSocket == rigWorldMatrix * poses->global()[slice->first + bone] * offset
+```
+
+`BoneSocketSystem` writes the socket's **local** `Transform` as
+`global[bone] * offset` and lets `HierarchySystem` supply the `rigWorldMatrix`
+half by its usual `parentWorld * local`. That only lands on the bone when the
+parent's world matrix is the frame the pose was composed in, which is the rig's.
+
+What the hierarchy reads is a TRS, not a matrix, so the product goes back
+through `Transform::fromModelMatrix` - the inverse of the `computeModelMatrix`
+beside it, added for this. It is exact for a chain of translations, rotations and
+uniform scales, which is what a rig composes, and it carries a mirrored basis on
+one scale axis rather than handing `quat_cast` a reflection to read as a
+rotation. Shear is not representable as a TRS at all and is dropped; it appears
+only when a non-uniformly scaled joint carries a rotated child, the same case the
+skinned vertex stage already approximates the lighting of.
+
+An axis scaled to **nothing** is answered rather than refused. A clip that hides
+a joint by keying its scale to zero produces exactly that, and so does an offset
+scale dragged through zero in the inspector; dividing the basis by it would hand
+`quat_cast` a NaN, and the socket would then write a NaN `Transform` that spreads
+through every world matrix under it. The scale comes back as zero and the
+rotation is read from the axes that survived - the lost one is the axis those two
+imply, and with two of them gone there is no rotation left to recover and the
+identity's column stands in.
+
+### Which stage, and why the frame it runs in matters
+
+`SystemStage::Transform`, registered **ahead of `HierarchySystem`**. A socket is a
+derived transform and that is the stage derived transforms belong to; both
+neighbours in the ordering are load-bearing:
+
+| Boundary | What it buys |
+|----------|--------------|
+| After the Simulation stage | `ctx.poses` is a per-frame product. Reading it from Simulation would depend on registration order inside a stage; reading it from Transform cannot. |
+| Before the world resolve | The socket is on its bone the frame the character moves, including the **first** frame, when there is no previous frame to have cached anything. |
+
+Get the second one wrong and the failure is invisible in a screenshot. The
+obvious alternative - read the rig's `WorldTransform`, write the socket's - reads
+a matrix `HierarchySystem` last wrote *a frame ago*, so the attachment trails the
+character by exactly one frame while it runs and is exactly right whenever it
+stands still. It also strands anything parented **under** the socket, because
+that walk has already happened by the time such a system would run: the muzzle
+flash would resolve against last frame's gun.
+
+Placement is unconditional rather than gated on simulation time, for the reason
+composition is: scrubbing an `Animator` while paused has to move what the
+character is holding, or a paused preview shows a pose its props disagree with.
+
+Because the `Transform` is an output, it is rewritten every frame - authoring one
+on the socket entity does nothing. The offset is the authored half, and the
+inspector says so on both cards.
+
+### The four ways a socket has nothing to stand on
+
+Every one of them is silent on screen - an unplaced socket simply stays where it
+last was, which for a fresh one is the world origin and for a moved one is a
+plausible-looking lie. So each is named in the log, edge-latched like the pose
+system's own faults, so it is reported once per gap rather than once a frame.
+
+| Fault | What is said |
+|-------|--------------|
+| No pose published at all | Named once for the whole scene, not per socket: this is `BoneSocketSystem` running without `SkeletalAnimationSystem` ahead of it, which is a wiring mistake |
+| Not a direct child of a rig | The socket hangs off the entity carrying the `Animator`, not off a mesh under it |
+| The rig above it posed nothing | Its `Animator` names no live skeleton |
+| The rig has no bone of that name | Including the empty name a freshly added component starts with |
+
+### What it costs a scene with no sockets
+
+One null check on `storage<BoneSocket>()`. No pose lookup, no hierarchy walk, no
+allocation - the same rule the vertex format and the palette follow, applied to
+one more stage: a scene without characters pays nothing for the machinery that
+attaches things to them.
 
 ## Seeing it
 

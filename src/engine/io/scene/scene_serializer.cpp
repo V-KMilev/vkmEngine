@@ -81,6 +81,7 @@ constexpr uint32_t MAX_ENTITY_SLOT = 1u << 22;
     P(ReflectionProbe,  "ReflectionProbe")      \
     P(Animation,        "Animation")            \
     R(Animator,         "Animator")             \
+    P(BoneSocket,       "BoneSocket")           \
     P(ScriptComponent,  "Script")               \
     P(UICanvas,         "UICanvas")             \
     P(UIElement,        "UIElement")            \

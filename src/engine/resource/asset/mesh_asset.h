@@ -12,6 +12,8 @@
 
 namespace Vkm::Engine {
 
+struct SkeletonAsset;
+
 /**
  * @brief Represents a single vertex in a mesh.
  */
@@ -102,6 +104,25 @@ struct MeshAsset : public Resource {
      * zero-extent box at the origin.
      */
     void computeAndSetBounds();
+
+    /**
+     * @brief Compute how far a vertex sits from the bones that drive it and
+     *        store it in skinRadius.
+     *
+     * Call after filling `vertices` and `skin`, exactly as computeAndSetBounds()
+     * is called: whoever authors a skinned mesh owes it this number. Leaving it
+     * at zero is not a smaller box but a wrong one - the posed bounds are the
+     * box of the posed bone origins inflated by this radius, and the occlusion
+     * cull keeps conservatively, so it does not over-draw an under-sized box, it
+     * deletes the character.
+     *
+     * An unskinned mesh - or one whose skin stream is not parallel to its
+     * vertices, which the cooked reader rejects outright - yields zero.
+     *
+     * @param skeleton The rig `skin`'s bone indices address, supplying the
+     *        bind-pose origins the distances are measured from.
+     */
+    void computeAndSetSkinRadius(const SkeletonAsset& skeleton);
 };
 
 using MeshHandle = Handle<MeshAsset>;

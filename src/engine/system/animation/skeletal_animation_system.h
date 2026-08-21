@@ -136,11 +136,14 @@ class SkeletalAnimationSystem : public System {
          * @param resources Assets the mesh handle resolves against.
          * @param entity Entity being stamped.
          * @param skeleton Rig posing it.
+         * @param onRig True when @p entity is the Animator itself, whose own
+         *        transform is the rig's and places the character rather than
+         *        doubling it - the offset test asks about descendants only.
          * @param seen Collects what was found.
          */
         void checkSkinnedMesh(const Scene& scene, const ResourceManager& resources,
                               EntityId entity, const SkeletonAsset& skeleton,
-                              FaultsSeen& seen);
+                              bool onRig, FaultsSeen& seen);
 
     private:
         PoseBuffer m_poses;

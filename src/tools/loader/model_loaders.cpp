@@ -332,15 +332,8 @@ void appendSkin(const aiMesh* m, const SkeletonAsset& skeleton, MeshAsset& out) 
         }
     }
 
-    // Bind-pose model-space origin of each bone, for the skin radius below.
-    std::vector<glm::vec3> origins(skeleton.bones.size());
-    for (size_t b = 0; b < skeleton.bones.size(); ++b) {
-        origins[b] = glm::vec3(glm::inverse(skeleton.inverseBind[b])[3]);
-    }
-
     out.skin.assign(m->mNumVertices, SkinVertex{});
     unsigned unweighted = 0;
-    float    radius     = 0.0f;
     for (unsigned v = 0; v < m->mNumVertices; ++v) {
         std::vector<VertexInfluence>& influences = perVertex[v];
         std::sort(influences.begin(), influences.end(),
@@ -371,16 +364,6 @@ void appendSkin(const aiMesh* m, const SkeletonAsset& skeleton, MeshAsset& out) 
             quantised[0] = std::clamp(quantised[0] + (255 - sum), 0, 255);
             for (int k = 0; k < 4; ++k) skin.weights[k] = static_cast<uint8_t>(quantised[k]);
         }
-
-        // Both branches, because the fallback binding is a real influence too.
-        // An under-sized radius under-sizes the posed bounds, and the occlusion
-        // cull keeps conservatively - it does not over-draw, it deletes
-        // geometry that was visible.
-        const glm::vec3 position = out.vertices[v].position;
-        for (int k = 0; k < 4; ++k) {
-            if (skin.weights[k] == 0) continue;
-            radius = std::max(radius, glm::distance(position, origins[skin.bones[k]]));
-        }
     }
 
     if (outOfRange) {
@@ -395,8 +378,8 @@ void appendSkin(const aiMesh* m, const SkeletonAsset& skeleton, MeshAsset& out) 
                     m->mName.C_Str(), unweighted);
     }
 
-    out.skeleton   = skeleton.name;
-    out.skinRadius = radius;
+    out.skeleton = skeleton.name;
+    out.computeAndSetSkinRadius(skeleton);
 }
 
 /**

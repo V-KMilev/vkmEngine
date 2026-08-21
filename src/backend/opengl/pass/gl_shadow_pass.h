@@ -32,6 +32,10 @@ namespace Vkm::Engine {
  * before GL 4.6 - so the palette base arrives as a uniform, and a uniform can
  * only describe one draw. It costs N draws per tile and per cube face for
  * skinned casters alone.
+ *
+ * A frame that posed nothing never reaches any of that: with no palette the
+ * skinned programs are not bound, not given a tile matrix, and not consulted
+ * per run, so the pass is the one 1.5 had.
  */
 class GLShadowPass : public GLPass {
     public:
@@ -71,16 +75,31 @@ class GLShadowPass : public GLPass {
          * mesh sort both happened on the thread pool (GLShadowData::cullCasters),
          * so this flattens the batch's models into one upload and issues one
          * instanced depth draw per mesh run - one draw per caster on a skinned
-         * run. The caller has already given both programs this tile's matrices;
-         * which of them is bound is decided here, per run.
+         * run. The caller has already given each program that will draw this
+         * tile's matrices; which of them is bound is decided here, per run.
          *
          * @param ctx     The frame context, for the GL view and the caster list.
          * @param batch   The tile's / face's surviving caster indices, mesh-sorted.
          * @param program The static depth program for this tile / face.
-         * @param skinned The skinned one, for casters the frame posed.
+         * @param skinned The skinned one, for casters the frame posed, or null
+         *                when it posed none - then every run is instanced.
          */
         void renderCasters(GLFrameContext& ctx, const ShadowCasterBatch& batch,
-                           Vkm::GL::Shader& program, Vkm::GL::Shader& skinned);
+                           Vkm::GL::Shader& program, Vkm::GL::Shader* skinned);
+
+        /**
+         * @brief Make @p program current, unless it already is.
+         *
+         * A program has to be bound to be given a uniform, and this pass hands
+         * matrices to one for every atlas tile and every cube face - eighteen
+         * of them in a lit scene, each followed by draws. Binding per tile the
+         * way that reads most naturally makes glUseProgram the largest thing
+         * the pass does when only one program is ever used, so what is current
+         * is tracked across the whole pass instead of assumed per tile.
+         *
+         * @param program The program to make current.
+         */
+        void bindProgram(Vkm::GL::Shader& program);
 
     private:
         std::unique_ptr<Vkm::GL::Shader> m_depth2D;            ///< Projected depth (cascades + spots).
@@ -88,6 +107,7 @@ class GLShadowPass : public GLPass {
         std::unique_ptr<Vkm::GL::Shader> m_depth2DSkinned;     ///< The same, posed.
         std::unique_ptr<Vkm::GL::Shader> m_depthCubeSkinned;   ///< The same, posed.
 
+        const Vkm::GL::Shader*   m_bound = nullptr;  ///< The program that is current, reset each execute().
         Vkm::GL::InstanceBuffer  m_instances;  ///< Per-caster model matrices (loc 4-7).
         std::vector<glm::mat4>   m_models;     ///< Flattened models of every surviving caster this tile/face.
 };

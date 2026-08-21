@@ -16,6 +16,13 @@ namespace {
 
 namespace SSBO = GLBindings::SSBOBindingPoints;
 
+// The rest of the sort key, below whatever selects the program: identical draws
+// end up next to each other so a run merges them into one instanced call.
+bool byMaterialThenMesh(const DrawableData& a, const DrawableData& b) {
+    if (a.material.id() != b.material.id()) return a.material.id() < b.material.id();
+    return a.mesh.id() < b.mesh.id();
+}
+
 } // namespace
 
 void GLInstanceBatcher::append(const DrawableData& d, uint32_t runIndex) {
@@ -24,7 +31,7 @@ void GLInstanceBatcher::append(const DrawableData& d, uint32_t runIndex) {
     m_bounds.emplace_back(d.worldMin, 0.0f);
     m_bounds.emplace_back(d.worldMax, 0.0f);
     m_runOf.push_back(runIndex);
-    m_skinBase.push_back(d.skinFirst);
+    if (m_skinning) m_skinBase.push_back(d.skinFirst);
 }
 
 void GLInstanceBatcher::resolveSkinned(const std::vector<const DrawableData*>& list,
@@ -40,30 +47,40 @@ void GLInstanceBatcher::resolveSkinned(const std::vector<const DrawableData*>& l
 }
 
 const std::vector<InstanceRun>& GLInstanceBatcher::buildGrouped(
-    const std::vector<const DrawableData*>& list, const GLView& view) {
+    const std::vector<const DrawableData*>& list, const GLView& view, uint32_t bones) {
     m_runs.clear();
     m_models.clear();
     m_normals.clear();
     m_bounds.clear();
     m_runOf.clear();
     m_skinBase.clear();
+    m_skinning = bones > 0;
     if (list.empty()) return m_runs;
 
-    resolveSkinned(list, view);
+    if (m_skinning) resolveSkinned(list, view);
 
     // Sort indices by (skinned, material id, mesh id) so identical draws sit
     // contiguously and merge into one instanced call each. Skinnedness leads the
     // key because it selects the program, and a batch should switch program once
     // rather than per run. Sorting indices keeps the input list untouched.
+    //
+    // With no palette there is no second program to switch to, so the key is
+    // the narrow one and the comparator never loads m_skinned - two sorts
+    // rather than a flag tested inside one, because the flag would be re-read
+    // on every one of the N log N comparisons to answer a question settled
+    // before the sort began.
     m_order.resize(list.size());
     for (uint32_t i = 0; i < list.size(); ++i) m_order[i] = i;
-    std::sort(m_order.begin(), m_order.end(), [&](uint32_t a, uint32_t b) {
-        const DrawableData* da = list[a];
-        const DrawableData* db = list[b];
-        if (m_skinned[a] != m_skinned[b]) return m_skinned[a] < m_skinned[b];
-        if (da->material.id() != db->material.id()) return da->material.id() < db->material.id();
-        return da->mesh.id() < db->mesh.id();
-    });
+    if (m_skinning) {
+        std::sort(m_order.begin(), m_order.end(), [&](uint32_t a, uint32_t b) {
+            if (m_skinned[a] != m_skinned[b]) return m_skinned[a] < m_skinned[b];
+            return byMaterialThenMesh(*list[a], *list[b]);
+        });
+    } else {
+        std::sort(m_order.begin(), m_order.end(), [&](uint32_t a, uint32_t b) {
+            return byMaterialThenMesh(*list[a], *list[b]);
+        });
+    }
 
     m_models.reserve(list.size());
     m_normals.reserve(list.size());
@@ -72,7 +89,7 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildGrouped(
     while (i < m_order.size()) {
         const DrawableData* head   = list[m_order[i]];
         const GLMesh*       mesh   = view.getMesh(head->mesh);
-        const uint8_t       skin   = m_skinned[m_order[i]];
+        const uint8_t       skin   = m_skinning ? m_skinned[m_order[i]] : 0u;
         const uint32_t      matId  = head->material.id();
         const uint32_t      meshId = head->mesh.id();
         const uint32_t      first  = static_cast<uint32_t>(m_models.size());
@@ -80,7 +97,7 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildGrouped(
         uint32_t j = i;
         while (j < m_order.size()) {
             const DrawableData* d = list[m_order[j]];
-            if (m_skinned[m_order[j]] != skin) break;
+            if (m_skinning && m_skinned[m_order[j]] != skin) break;
             if (d->material.id() != matId || d->mesh.id() != meshId) break;
             // A group with no GL mesh pushes no run below, so its instances must
             // not enter the flattened arrays either: append stamps them with the
@@ -99,16 +116,17 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildGrouped(
 }
 
 const std::vector<InstanceRun>& GLInstanceBatcher::buildSequential(
-    const std::vector<const DrawableData*>& list, const GLView& view) {
+    const std::vector<const DrawableData*>& list, const GLView& view, uint32_t bones) {
     m_runs.clear();
     m_models.clear();
     m_normals.clear();
     m_bounds.clear();
     m_runOf.clear();
     m_skinBase.clear();
+    m_skinning = bones > 0;
     if (list.empty()) return m_runs;
 
-    resolveSkinned(list, view);
+    if (m_skinning) resolveSkinned(list, view);
 
     m_models.reserve(list.size());
     m_normals.reserve(list.size());
@@ -119,7 +137,7 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildSequential(
         if (!mesh) continue;
         const uint32_t first = static_cast<uint32_t>(m_models.size());
         append(*d, static_cast<uint32_t>(m_runs.size()));
-        m_runs.push_back({ mesh, d->material, first, 1, m_skinned[i] != 0 });
+        m_runs.push_back({ mesh, d->material, first, 1, m_skinning && m_skinned[i] != 0 });
     }
 
     upload();
@@ -144,6 +162,8 @@ void GLInstanceBatcher::upload() {
                   static_cast<uint32_t>(m_bounds.size() * sizeof(glm::vec4)));
     growAndUpload(m_runOfBuffer, m_runOfCapacity, m_runOf.data(),
                   static_cast<uint32_t>(m_runOf.size() * sizeof(uint32_t)));
+    // Left empty by a frame that posed nothing, and an empty upload is a no-op,
+    // so the palette base costs an unskinned scene neither bytes nor a call.
     growAndUpload(m_skinBaseBuffer, m_skinBaseCapacity, m_skinBase.data(),
                   static_cast<uint32_t>(m_skinBase.size() * sizeof(uint32_t)));
 
@@ -188,7 +208,7 @@ void GLInstanceBatcher::bindInstanceData() const {
     // indirection, so the shader never reads it.
     VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::InstanceModels,  m_modelBuffer.id()));
     VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::InstanceNormals, m_normalBuffer.id()));
-    if (m_skinBaseBuffer) m_skinBaseBuffer->bindBase(SSBO::InstanceSkinBase);
+    if (m_skinning && m_skinBaseBuffer) m_skinBaseBuffer->bindBase(SSBO::InstanceSkinBase);
 }
 
 void GLInstanceBatcher::drawRun(const InstanceRun& run, uint32_t runIndex) {

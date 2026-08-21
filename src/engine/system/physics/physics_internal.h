@@ -58,4 +58,27 @@ struct BodyFrame {
     glm::quat parentRot       = {1.0f, 0.0f, 0.0f, 0.0f};         ///< parent world-space rotation
 };
 
+/**
+ * @brief What one tick's contacts add up to for one body, in the two reductions
+ *        Rigidbody publishes.
+ *
+ * Filled by the narrowphase and read after the solve, so it belongs to neither
+ * phase alone: fixedUpdate owns one of these per body and threads it through.
+ * Both normals are the surface's as it acts on THIS body, so the two bodies of
+ * one contact see opposite directions.
+ */
+struct BodyContacts {
+    // Seeded below any unit normal, so the first contact always replaces it. A
+    // body held only by a vertical wall would otherwise keep the zero vector and
+    // report support with no direction.
+    glm::vec3 support = {0.0f, -2.0f, 0.0f};   ///< Most upward contact normal
+
+    // Seeded at world up, whose horizontal part is zero, so any contact with a
+    // horizontal direction replaces it and a body touching nothing but level
+    // floor is left holding "nothing is in the way".
+    glm::vec3 block = {0.0f, 1.0f, 0.0f};      ///< Most horizontal contact normal
+
+    bool touched = false;                      ///< A resolved, non-trigger contact reached this body
+};
+
 } // namespace Vkm::Engine
