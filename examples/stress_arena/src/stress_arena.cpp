@@ -479,20 +479,36 @@ EntityId StressArena::spawnMesh(MeshHandle mesh, MaterialHandle material, const 
 }
 
 void StressArena::buildGround() {
-    EntityId ground = spawnMesh(m_cube, m_matGround, "Ground",
-                                {0.0f, GROUND_Y - 0.5f, 0.0f},
-                                {ARENA_HALF * 2.0f, 1.0f, ARENA_HALF * 2.0f});
-    // The ground can never occlude anything from a light above it, so keeping it
-    // out of the shadow pass costs nothing and saves a full-extent draw per tile.
-    m_scene->get<Mesh>(ground).castShadows = false;
+    // Four slabs around a central opening rather than one full-extent slab: the
+    // pit below only means anything if something can fall into it. The bands run
+    // full width along Z and meet the pit's edge along X.
+    constexpr float BAND = (ARENA_HALF - PIT_HALF) * 0.5f;
+    const glm::vec3 slabs[4] = {
+        { 0.0f, GROUND_Y - 0.5f,  PIT_HALF + BAND},
+        { 0.0f, GROUND_Y - 0.5f, -PIT_HALF - BAND},
+        { PIT_HALF + BAND, GROUND_Y - 0.5f, 0.0f},
+        {-PIT_HALF - BAND, GROUND_Y - 0.5f, 0.0f},
+    };
+    const glm::vec3 halves[4] = {
+        {ARENA_HALF, 0.5f, BAND}, {ARENA_HALF, 0.5f, BAND},
+        {BAND, 0.5f, PIT_HALF},   {BAND, 0.5f, PIT_HALF},
+    };
 
-    Rigidbody rb;
-    rb.isStatic = true;
-    m_scene->add(ground, std::move(rb));
+    for (int i = 0; i < 4; ++i) {
+        EntityId ground = spawnMesh(m_cube, m_matGround, "Ground",
+                                    slabs[i], halves[i] * 2.0f);
+        // The ground can never occlude anything from a light above it, so keeping
+        // it out of the shadow pass costs nothing and saves a draw per tile.
+        m_scene->get<Mesh>(ground).castShadows = false;
 
-    Collider col;
-    col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {ARENA_HALF, 0.5f, ARENA_HALF}}};
-    m_scene->add(ground, std::move(col));
+        Rigidbody rb;
+        rb.isStatic = true;
+        m_scene->add(ground, std::move(rb));
+
+        Collider col;
+        col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, halves[i]}};
+        m_scene->add(ground, std::move(col));
+    }
 
     // Pit floor and four walls, so the physics pile has something to pack
     // against instead of scattering across the whole block.
