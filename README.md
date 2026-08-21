@@ -1,6 +1,42 @@
-# vkmEngine Documentation
+<div align="center">
 
-A C++17 3D rendering engine with an OpenGL backend. Open type-erased ECS, a fixed 19-pass PBR forward renderer (Forward+ clustered lighting, CSM + spot + cube shadows, LTC area lights, IBL from an HDR or procedural sky, reflection probes, GTAO, froxel volumetric fog, decals, particles, DoF, bloom, tonemap), animation, hierarchy, physics, scripting, an event system, screen-space in-game UI (SDF text), an ImGui editor with undo/redo, and a transactional scene serializer.
+<img src="assets/logo/vkm_engine_logo.png" alt="vkmEngine" width="440">
+
+### Build a world. Write the gameplay in C++. Ship the game.
+
+![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?style=flat-square&logo=cplusplus&logoColor=white)
+![OpenGL 4.3](https://img.shields.io/badge/OpenGL-4.3-5586A4?style=flat-square&logo=opengl&logoColor=white)
+![CMake](https://img.shields.io/badge/CMake-Ninja-064F8C?style=flat-square&logo=cmake&logoColor=white)
+![Windows | Linux](https://img.shields.io/badge/Windows%20%7C%20Linux-informational?style=flat-square)
+
+</div>
+
+<img src="docs/images/stress_arena.png" alt="The stress arena">
+
+## The engine
+
+Three binaries share one project directory. `vkm_editor` authors it, `vkm_runtime` plays it,
+`vkm_cook` bakes its assets without a window. Gameplay is C++ compiled into the project's own
+module and hot-reloaded while the editor stays open.
+
+**Rendering.** A 19-pass forward pipeline: Forward+ clustered lighting, cascaded, spot and cube
+shadows, LTC area lights, IBL from an HDR or a procedural sky, reflection probes, baked
+irradiance volumes, GTAO, volumetric fog, decals, particles, depth of field, bloom, MSAA and GPU
+Hi-Z occlusion culling.
+
+**Characters.** Skeletal import, GPU skinning through the depth, forward and shadow passes, clip
+blending, bone sockets, capsule colliders and a character controller.
+
+**Core.** An open type-erased ECS over sparse sets, generational handles, a staged system
+pipeline, compile-time field reflection, a job system and a typed event bus.
+
+**Authoring.** Scene editing with a transform gizmo and full undo/redo, prefabs with per-instance
+overrides, material and render-settings panels, an asset browser, and a cooking pipeline that
+turns source art into engine formats.
+
+<img src="docs/images/in_engine_editor.png" alt="The editor">
+
+<img src="docs/images/potion_runner.png" alt="Potion Runner">
 
 ## Quick Start
 
