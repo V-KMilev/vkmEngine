@@ -51,6 +51,9 @@ struct Transform {
      * scaled joint carries a rotated child, the same case whose lighting the
      * skinned vertex stage already approximates.
      *
+     * An axis scaled to nothing is answered rather than refused: the scale comes
+     * back as zero and the rotation from the axes that survived.
+     *
      * @param model Model matrix to decompose.
      * @return The position, rotation and scale it was composed from.
      */
@@ -67,9 +70,24 @@ struct Transform {
         // rotation and answers with a garbage quaternion.
         if (glm::determinant(basis) < 0.0f) out.scale.x = -out.scale.x;
 
-        basis[0] /= out.scale.x;
-        basis[1] /= out.scale.y;
-        basis[2] /= out.scale.z;
+        for (int axis = 0; axis < 3; ++axis)
+            basis[axis] = (out.scale[axis] != 0.0f) ? basis[axis] / out.scale[axis]
+                                                    : glm::vec3(0.0f);
+
+        // An axis scaled to nothing keeps no direction to recover a rotation
+        // from, and dividing by that zero is a NaN quaternion that spreads into
+        // every matrix built from the result - a clip hiding a joint by keying
+        // its scale to zero is enough to reach it. The two axes that survived
+        // still carry the rotation, so the lost one is the axis they imply; with
+        // two of them gone there is none left to recover and the identity's
+        // column stands in.
+        for (int axis = 0; axis < 3; ++axis) {
+            if (glm::dot(basis[axis], basis[axis]) > 0.0f) continue;
+
+            const glm::vec3 implied = glm::cross(basis[(axis + 1) % 3], basis[(axis + 2) % 3]);
+            basis[axis] = glm::dot(implied, implied) > 0.0f ? implied : glm::mat3(1.0f)[axis];
+        }
+
         out.rotation = glm::normalize(glm::quat_cast(basis));
 
         return out;
