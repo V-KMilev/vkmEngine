@@ -142,9 +142,9 @@ in Add Component like every other component.
   the authored half - the entity's `Transform` is the socket's *output* and is
   rewritten from the bone every frame, which the Transform card now says out
   loud so an edit that vanishes - typed there or dragged with the gizmo - is
-  explained rather than mysterious. The card
-  names the two authoring mistakes where they are made: a parent that is not a
-  rig (with what to do about it) and a bone name the rig does not carry.
+  explained rather than mysterious. The card names the two authoring mistakes
+  where they are made: a parent that is not a rig (with what to do about it) and
+  a bone name the rig does not carry.
 - **Character Controller** - the four tuning fields, plus the live grounded /
   ground angle / move-input readout, which is what answers "why is it not
   jumping". Under them, the step height the capsule rolls over
