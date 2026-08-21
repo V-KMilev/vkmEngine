@@ -125,8 +125,25 @@ Shadow rendering goes through `GLShadowPass`, which:
   comparison samplers (`sampler2DArrayShadow` / `samplerCubeArrayShadow`).
 
 `shadowDistance` controls how far the directional cascades cover in world
-units (smaller values pack the cascades tighter into the near range). It is
-ignored for spot, point, and area lights, which use `radius` as their cutoff.
+units. It is ignored for spot, point, and area lights, which use `radius`
+as their cutoff.
+
+The four cascades are split **logarithmically**, anchored at a fixed world
+distance (`CASCADE_NEAR`, 1 unit) rather than at the camera's near plane.
+The anchor is what stops `shadowDistance` from trading away foreground
+sharpness: every boundary then grows as the fourth root of the distance, so
+the near cascade stays small as the dial rises - its far edge moves 2.5 ->
+4.9 units across a `shadowDistance` of 40 -> 600. Anchoring at the camera
+near plane instead makes the log term vanish (at 0.2 it contributes a few
+per cent), leaving the split effectively uniform and every boundary linear
+in `shadowDistance` - which coarsens the shadow directly in front of the
+camera in exact proportion.
+
+The trade is real but small: pulling the near cascade in leaves the outer
+three covering more range each, so distant shadows lose some density. Total
+coverage against texel density is a fixed budget, and no split escapes it -
+the logarithmic one spends it evenly instead of concentrating the whole
+shortfall in the foreground.
 
 ## Image-based lighting (IBL)
 
