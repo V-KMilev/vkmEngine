@@ -184,8 +184,8 @@ Application and gameplay layers sit **outside** the `src/engine/` include root:
 | Path                | Contents                                                                  |
 |---------------------|---------------------------------------------------------------------------|
 | `app/engine_app.h`  | `setupEngineApp`: the shared, header-only bootstrap that registers the default systems and installs the GL backend. It seeds no scene - that is the project's answer, given by `bootProjectScene` after it returns. Both mains include it directly (there is no `EngineApp` library) |
-| `app/editor/`       | `vkm_editor` entry point; opens a project and loads its module for hot-reload |
-| `app/runtime/`      | `vkm_runtime` entry point; opens a project and plays it                 |
+| `app/editor/`       | `vkm_editor` entry point; opens a project and loads its module for hot-reload. Opens anyway when the module or the entry scene is broken - repairing those is what it is for |
+| `app/runtime/`      | `vkm_runtime` entry point; opens a project and plays it, or exits non-zero when it cannot ([which conditions](system/io.md#what-each-host-does-when-a-project-will-not-open)) |
 | `app/cooker/`       | `vkm_cook` entry point; headless asset cook (no window, no GL, no `Engine`) |
 | `examples/`         | complete worked projects (Potion Runner, Stress Arena). Gameplay lives in a project, never in the engine |
 

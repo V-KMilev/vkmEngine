@@ -54,10 +54,16 @@ int main(int argc, char** argv) {
         const std::filesystem::path modulePath =
             Vkm::Engine::ProjectPaths::projectBin() / Vkm::Engine::DynamicLibrary::platformName("game");
 
+        // Neither case stops the editor: a project with no code yet is how every
+        // project starts, and a module that will not load - built against another
+        // engine version, most often - is fixed by rebuilding it and reloading,
+        // which is a thing you need the editor open to do.
         std::error_code moduleEc;
-        if (!std::filesystem::exists(modulePath, moduleEc) ||
-            !scriptModule.load(modulePath.string())) {
-            LOG_WARNING("No gameplay module for this project - scripts unavailable");
+        if (!std::filesystem::exists(modulePath, moduleEc)) {
+            LOG_INFO("Project has no gameplay module yet - scripts unavailable");
+        } else if (!scriptModule.load(modulePath.string())) {
+            LOG_WARNING("Gameplay module '%s' did not load - scripts unavailable until "
+                        "it builds and you reload it", modulePath.string().c_str());
         }
 
         Vkm::Engine::Engine engine;
@@ -74,8 +80,13 @@ int main(int argc, char** argv) {
             engine.getWindow().getWindowContext(),
             sys.camera, sys.ui, sys.visibility, sys.render, scriptModule, project.name);
 
-        // The editor opens on the same scene the runtime would boot, by the
-        // same rule (see tools/project_boot.h).
+        // The editor opens on the same scene the runtime would boot, by the same
+        // rule (see tools/project_boot.h). Which one it got is deliberately not
+        // an exit code here: a project naming no scene is a new project, and one
+        // whose entry scene will not load is the case the editor exists to fix -
+        // refusing to open would take away the only tool for it. The stand-in
+        // default scene carries no save path, so it cannot overwrite the file
+        // that failed; the log carries the reason.
         Vkm::Engine::bootProjectScene(project, scriptModule,
                                  engine.getScene(), engine.getResources());
 

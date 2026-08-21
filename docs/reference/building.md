@@ -43,6 +43,21 @@ one. So a shipped game ships its exe next to its `project.json` and the player
 passes nothing. See [system/io.md](system/io.md#projects-and-the-two-roots) for
 what a project is and how the two roots divide engine data from project data.
 
+**Exit codes are meant to be read.** A host that could not open the project it
+was handed exits non-zero rather than falling back to something that merely looks
+like it worked, so `vkm_runtime <project>` doubles as a boot check from a shell:
+
+```bash
+timeout 10 ./build/bin/vkm_runtime examples/potion_runner
+# 124 - still running when the timeout killed it, i.e. it booted
+#   1 - it refused: no gameplay module, or no world of its own to open
+```
+
+The two windowed hosts also handle SIGINT/SIGTERM, so a boot check exits through
+the same shutdown a closed window does. Which conditions are fatal to which host,
+and why the editor opens projects the runtime refuses, is in
+[system/io.md](system/io.md#what-each-host-does-when-a-project-will-not-open).
+
 The executables land in `build/bin/` - one directory so an exe finds its DLLs
 (set by `CMAKE_RUNTIME_OUTPUT_DIRECTORY` in the top-level CMakeLists). Each
 project's gameplay module builds into that project's own `bin/` instead, because
@@ -70,6 +85,10 @@ The engine itself has no test target, and does not get an empty one. Testing is
 enabled at the root, so the first engine test is an `add_test` beside whatever
 it tests rather than a decision to make first. Tests ride along with the work
 that needs them; see [the roadmap](../roadmap.md#cross-cutting).
+
+What the hosts do offer a script is the boot check above: their exit codes
+separate "opened the project" from "opened something else instead", which is the
+half a smoke test turns on.
 
 ## CMake Targets
 

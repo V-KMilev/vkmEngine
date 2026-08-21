@@ -52,6 +52,58 @@ Two consequences worth knowing before you add a path:
   reported and the scene goes without. The default Environment is a procedural
   sky precisely so a project needs no file at all.
 
+### Opening a project's world
+
+All three hosts open a project by one rule, in `bootProjectScene`
+(`src/tools/project_boot.h`), because they have to agree on it: the authored
+`entryScene`, else the world the project's module builds through `vkmBuildScene`,
+else the engine's default scene. **Exactly one** of them runs - seeding a scene
+first would leave a stray camera, light and cube under whatever the project then
+builds.
+
+A scene is always standing afterwards, so the return value says *whose* it is
+rather than whether there is one:
+
+| `SceneBoot` | Meaning |
+|-------------|---------|
+| `Project` | The project's own world opened - its entry scene, or one its module built |
+| `Default` | The project names no world of its own; the default scene stands in |
+| `Failed` | The project names an entry scene that did not load; the default scene stands in |
+
+### What each host does when a project will not open
+
+The exit code is the only answer a shell gets, so each host has to spend it on
+what is actually fatal *for that host*. The split is not arbitrary: the runtime
+plays a finished game, the editor is the tool you repair one with.
+
+| Condition | `vkm_runtime` | `vkm_editor` | `vkm_cook` |
+|-----------|---------------|--------------|------------|
+| Log file cannot be opened | exit 1 | exit 1 | exit 1 |
+| Window / GL context cannot be created | exit 1 (throws) | exit 1 (throws) | n/a - headless |
+| No gameplay module in the project's `bin/` | exit 1 | opens, logs INFO | n/a |
+| Module present but will not load (version, entry, unreadable) | exit 1 | opens, logs WARNING | n/a |
+| Entry scene named but will not load (`SceneBoot::Failed`) | exit 1 | opens on the default scene, error toast | exit 1 |
+| No entry scene and no `vkmBuildScene` (`SceneBoot::Default`) | exit 1 | opens on the default scene | exit 0 - nothing to cook |
+| No entry scene, module builds the world (`SceneBoot::Project`) | plays it | opens it | exit 0 - nothing to cook |
+| An asset fails to cook | n/a | reported, the session continues | exit 1 |
+
+The cooker reaches the last three rows by its own path rather than through
+`bootProjectScene` - it has no `Scene` to boot into and no module to ask, so it
+reads `entryScene` and loads that file directly.
+
+Two judgments behind that table:
+
+- **A game is its module.** Behaviors are created through the registry the module
+  fills, and `ComponentSerializer` drops a behavior whose type nothing registered
+  without a word - so a runtime that boots without the module plays a world that
+  draws and does nothing, and reports success for it. The editor warns instead,
+  because a module that will not load is fixed by rebuilding it and reloading,
+  and you need the editor open to do that.
+- **A broken entry scene is not fatal to the editor**, which is the thing you
+  open a broken scene in. The default scene stands in carrying no save path, so
+  a save cannot overwrite the file that failed to load; the reason is in the log
+  and, when the failure came from File > Open Project, in an error toast.
+
 ## Components
 
 | Layer               | File                                         | Purpose                                                                                  |

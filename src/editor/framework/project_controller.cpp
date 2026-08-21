@@ -80,8 +80,15 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
 
     // 6. Whatever the project says it starts as, by the same rule and in the
     //    same order both binaries boot with: an authored scene, else one its
-    //    module generates, else the default scene.
-    bootProjectScene(project, scriptModule, ec.frame.scene, ec.frame.resources);
+    //    module generates, else the default scene. A project whose entry scene
+    //    will not load still opens - the default scene stands in with no save
+    //    path behind it - but it says so where the user is looking rather than
+    //    only in the log.
+    if (bootProjectScene(project, scriptModule, ec.frame.scene, ec.frame.resources)
+            == SceneBoot::Failed) {
+        ec.state.pushToast(EditorState::ToastKind::Error,
+                           "Entry scene failed to load: " + project.entryScene);
+    }
 
     // The window title is composed once per frame from the editor state (see
     // EditorSystem); setting it here as well would be overwritten next frame.
