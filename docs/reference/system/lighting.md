@@ -154,11 +154,14 @@ per cent), leaving the split effectively uniform and every boundary linear
 in `shadowDistance` - which coarsens the shadow directly in front of the
 camera in exact proportion.
 
-The trade is real but small: pulling the near cascade in leaves the outer
-three covering more range each, so distant shadows lose some density. Total
-coverage against texel density is a fixed budget, and no split escapes it -
-the logarithmic one spends it evenly instead of concentrating the whole
-shortfall in the foreground.
+The trade is real, and worth sizing before reaching for a larger
+`shadowDistance`: pulling the near cascade in leaves the outer three
+covering more range each, so the far field loses density. At
+`shadowDistance` 280 the 17-47 m band comes out around 1.5x coarser than
+the old split left it, and 68-95 m around 3x. Total coverage against texel
+density is a fixed budget, and no split escapes it - the logarithmic one
+spends it evenly instead of concentrating the whole shortfall in the
+foreground.
 
 ## Image-based lighting (IBL)
 
@@ -211,7 +214,7 @@ Do not re-define these values in a shader; include the generated file.
 | `Config::MAX_LIGHTS`             | 256   | light upload cap; `forward/pbr`, `clustering`, `fog/inject` |
 | `Config::MAX_LIGHTS_PER_CLUSTER` | 64    | Forward+ per-cluster light list cap |
 | `Config::CLUSTER_X/Y/Z`          | 16 x 9 x 24 | Forward+ cluster grid dimensions |
-| `Config::MAX_SHADOW_CASTERS_2D`  | 6     | 2D shadow atlas layers (`SHADOW_MAX_2D`) |
+| `Config::MAX_SHADOW_CASTERS_2D`  | 6     | 2D shadow atlas tiles (`SHADOW_MAX_2D`) |
 | `Config::MAX_SHADOW_CASTERS_CUBE`| 2     | point-light cube maps (`SHADOW_MAX_CUBE`) |
 | `Config::NUM_CASCADES`           | 4     | not mirrored to GLSL; the CSM count reaches the shader via the shadow UBO (`csmCount` / `cascadeSplits`) |
 | `Config::SHADOW_CUBE_NEAR`       | 0.1   | shadow pass only (CPU-side cube projection), not mirrored to GLSL |
@@ -225,5 +228,6 @@ Do not re-define these values in a shader; include the generated file.
   light fields appear only when type is Rect or Disk.
 - Light entities can be created from `Add Component -> Light` and
   parametrised live; shadow atlas slots are reassigned automatically
-  when the lit set changes between frames (`assign 2D atlas layers /
-  cube slots` in `RenderView::build`).
+  when the lit set changes between frames - `GLShadowData::build` walks
+  the light list each frame and hands out 2D tiles and cube slots in
+  order.
