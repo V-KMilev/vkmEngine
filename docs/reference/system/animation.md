@@ -564,6 +564,15 @@ rotation. Shear is not representable as a TRS at all and is dropped; it appears
 only when a non-uniformly scaled joint carries a rotated child, the same case the
 skinned vertex stage already approximates the lighting of.
 
+An axis scaled to **nothing** is answered rather than refused. A clip that hides
+a joint by keying its scale to zero produces exactly that, and so does an offset
+scale dragged through zero in the inspector; dividing the basis by it would hand
+`quat_cast` a NaN, and the socket would then write a NaN `Transform` that spreads
+through every world matrix under it. The scale comes back as zero and the
+rotation is read from the axes that survived - the lost one is the axis those two
+imply, and with two of them gone there is no rotation left to recover and the
+identity's column stands in.
+
 ### Which stage, and why the frame it runs in matters
 
 `SystemStage::Transform`, registered **ahead of `HierarchySystem`**. A socket is a
