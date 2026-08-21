@@ -178,7 +178,9 @@ The split is deliberate. The pose publishes only what *it* knows - the box of
 the posed bone origins in rig space, and the largest scale any bone carries -
 because skin hangs off a bone by a distance no pose can see. `VisibilitySystem`
 already has the mesh in hand, so it supplies the rest: `MeshAsset::skinRadius`
-is the furthest a vertex sits from a bone that moves it, measured at import. The
+is the furthest a vertex sits from a bone that moves it, computed by
+`MeshAsset::computeAndSetSkinRadius` - which the importer calls, and which is the
+one implementation anything authoring a skinned mesh has to call too. The
 scale multiplies the radius, because a bone scaled 2x stretches its skin twice
 as far from the joint; it is floored at 1, so the product only ever inflates.
 
