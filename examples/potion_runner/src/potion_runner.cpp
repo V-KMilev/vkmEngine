@@ -1,13 +1,16 @@
+#define VKM_LOG_CATEGORY "POTION"
+
 #include "potion_runner.h"
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <string>
 #include <utility>
 
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
+
+#include "logger.h"
 
 #include "core/math/axes.h"
 #include "core/math/easing.h"
@@ -33,12 +36,6 @@
 #include "system/hierarchy/hierarchy_operations.h"
 #include "system/physics/physics_events.h"
 #include "system/ui/ui_events.h"
-
-// Player-facing messages go to the console via the C runtime rather than the
-// engine's logger: this code is also compiled as the editor's hot-reload module,
-// which resolves symbols from the host exe - and Logger lives in a separate DLL
-// the exe can't re-export. stderr is unbuffered, so messages show immediately.
-#define POTION_LOG(...) (std::fprintf(stderr, "[Potion] " __VA_ARGS__), std::fputc('\n', stderr))
 
 namespace Vkm::Engine {
 
@@ -237,7 +234,7 @@ void PotionRunner::onStart() {
             ++m_coinCount;
             // Roof coins pay double - the payoff the ROOF RIDE pill advertises.
             if (c.y > 1.5f) m_bonusScore += coinValue;
-            if (m_coinCount % 10 == 0) POTION_LOG("Coins: %d", m_coinCount);
+            if (m_coinCount % 10 == 0) LOG_INFO("Coins: %d", m_coinCount);
             return;
         }
     });
@@ -268,7 +265,7 @@ void PotionRunner::onUpdate(float dt) {
 
         if (m_milestoneTimer > 0.0f) m_milestoneTimer -= dt;
         if (m_distance >= m_nextDistanceLog) {
-            POTION_LOG("Distance %d  (coins %d)", static_cast<int>(m_distance), m_coinCount);
+            LOG_INFO("Distance %d  (coins %d)", static_cast<int>(m_distance), m_coinCount);
             // Flash the milestone centre-screen for a couple of seconds.
             if (m_scene->isAlive(m_uiMilestone)) {
                 m_scene->get<UIText>(m_uiMilestone).text =
@@ -720,8 +717,8 @@ void PotionRunner::buildWorld() {
     m_built = true;
     resetGame();
 
-    POTION_LOG("Potion Runner ready - A/D switch lane, Space/W jump, S/Down slide, "
-               "run up the white ramps to ride the trains, R restart.");
+    LOG_INFO("Potion Runner ready - A/D switch lane, Space/W jump, S/Down slide, "
+             "run up the white ramps to ride the trains, R restart.");
 }
 
 void PotionRunner::randomizeObstacle(Obstacle& o) {
@@ -1002,7 +999,7 @@ void PotionRunner::resetGame() {
 
     scrollWorld(0.0f);   // write every prop's transform into place
 
-    POTION_LOG("Go! Ride the trains, slide under the gantries, grab the coins - dodge the red barriers.");
+    LOG_INFO("Go! Ride the trains, slide under the gantries, grab the coins - dodge the red barriers.");
 }
 
 void PotionRunner::readInput() {
@@ -1269,9 +1266,9 @@ void PotionRunner::die() {
     const int score = static_cast<int>(m_distance) + m_coinCount * coinValue + m_bonusScore;
     m_newBest = score > m_best;
     if (m_newBest) m_best = score;
-    POTION_LOG("Crash! Score %d  (distance %d, coins %d%s). Press R or Enter to run again.",
-               score, static_cast<int>(m_distance), m_coinCount,
-               m_newBest ? ", new best" : "");
+    LOG_INFO("Crash! Score %d  (distance %d, coins %d%s). Press R or Enter to run again.",
+             score, static_cast<int>(m_distance), m_coinCount,
+             m_newBest ? ", new best" : "");
 }
 
 void PotionRunner::buildUI() {
