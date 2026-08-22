@@ -58,10 +58,9 @@ struct BehaviorContext {
  * instance dies). Subscription callbacks may use context() freely: it is
  * session-stable, not per-frame.
  *
- * Header-only on purpose: behaviors compile into the hot-reloadable game
- * module, which resolves engine symbols from the host executable. Keeping
- * every Behavior method inline means the module carries its own copies and
- * never depends on which engine objects the host happened to link.
+ * Header-only, and nothing forces it: every method below is a one-line
+ * forwarder over the context and subscribe() is a template, so a .cpp would
+ * hold nothing.
  */
 class Behavior {
     public:

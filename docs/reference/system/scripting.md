@@ -176,11 +176,29 @@ The host `dlopen`s the module and calls the `extern "C"` entry points it finds:
 | `vkmRegisterBehaviors` | Yes | Registers the project's behavior types into the engine's `BehaviorRegistry` |
 | `vkmBuildScene` | Optional | Builds the project's world in code. Projects whose scene is generated rather than authored use this instead of `entryScene` |
 
-The module resolves engine symbols from the host that loaded it (Windows: an
-import lib; Linux: `ENABLE_EXPORTS`), so there is no second copy of the
-engine inside it. It must **not** link `vkm_core` - a second copy would
-duplicate the typeId registry and the singletons, and types registered against
-one copy are invisible to the other.
+The module **links `vkm_core`** - `vkm_add_gameplay_module()` does it for every
+project - and that is not a second copy of the engine. `vkm_core` is a shared
+library, so the module and the host reach the same one, with its single typeId
+registry and its single set of singletons. A *static* engine could only manage
+that by making the module resolve its symbols from whichever host loaded it,
+which is why the engine is shared instead (see [Building](../building.md)).
+What a module must not link is the static archives absorbed **into** `vkm_core`;
+the helper links none of them.
+
+So everything `vkm_core` carries is available to gameplay code, `logger.h`
+included: a behavior logs with the engine's `LOG_*` macros and its lines land in
+the project's log file beside the engine's own, rather than only on a console
+nobody keeps. Name the file's lines with a category, exactly as engine code does:
+
+```cpp
+#define VKM_LOG_CATEGORY "POTION"
+
+#include "potion_runner.h"
+...
+#include "logger.h"
+```
+
+Both example games do this.
 
 The module is looked for in the open project's `bin/` and nowhere else: a game
 brings its code with it, and that is the one place a project builds it.
