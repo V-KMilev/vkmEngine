@@ -145,6 +145,11 @@ A module exports what the host looks for:
 The template writes all three. If your project authors scenes in the editor, set
 `entryScene` in `project.json` and delete `vkmBuildScene`.
 
+`vkm run` needs the module. Without it every behavior in your scene is dropped on
+load and the game draws a world that does nothing, so `vkm_runtime` refuses and
+exits non-zero rather than playing that. `vkm_editor` opens the project anyway -
+build the module, then reload it from inside the editor.
+
 ## The toolchain pin
 
 The engine ships prebuilt libraries and C++ headers, and your module is compiled

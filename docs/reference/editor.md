@@ -236,6 +236,10 @@ restart. Order matters, because each step depends on the previous one:
 6. Swap the gameplay module to the new project's `bin/`, or unload it when the
    project brings none.
 7. Boot its scene through `bootProjectScene`, the same rule both binaries use.
+   A project whose entry scene will not load still opens - the default scene
+   stands in, carrying no save path - with an error toast, because the editor is
+   where you fix that. The runtime refuses the same project instead; see
+   [system/io.md](system/io.md#what-each-host-does-when-a-project-will-not-open).
 
 A path that names a file rather than a directory still works - `findProjectRoot`
 walks up to the owning `project.json`, so dropping in a scene opens its project.

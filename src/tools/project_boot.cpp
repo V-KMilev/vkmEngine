@@ -7,6 +7,7 @@
 #include "logger.h"
 
 #include "debug/build_info.h"
+#include "debug/engine_error_log.h"
 #include "ecs/scene.h"
 #include "io/project.h"
 #include "io/project_paths.h"
@@ -58,7 +59,7 @@ bool bootHost(int argc, char** argv, const char* logFileName, const char* logger
     return true;
 }
 
-void bootProjectScene(
+SceneBoot bootProjectScene(
     const Project& project,
     ScriptModule& module,
     Scene& scene,
@@ -70,18 +71,23 @@ void bootProjectScene(
 
         if (SceneSerializer::load(scene, resources, path.string())) {
             LOG_INFO("Opened scene '%s'", path.string().c_str());
-            return;
+            return SceneBoot::Project;
         }
-        LOG_ERROR("Entry scene '%s' failed to load; opening the default scene",
-                  path.string().c_str());
-    } else if (module.buildScene(scene)) {
+        reportError("Scene", path.string(),
+                    "entry scene failed to load; the default scene stands in");
+        buildDefaultScene(scene, resources);
+        return SceneBoot::Failed;
+    }
+
+    if (module.buildScene(scene)) {
         LOG_INFO("Scene built by the project's module");
-        return;
+        return SceneBoot::Project;
     }
 
     buildDefaultScene(scene, resources);
     LOG_INFO("Project '%s' supplies no scene of its own; opened the default scene",
              project.name.c_str());
+    return SceneBoot::Default;
 }
 
 } // namespace Vkm::Engine
