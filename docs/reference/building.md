@@ -40,8 +40,9 @@ build\bin\vkm_editor.exe        # Windows (MSYS2 + Clang)
 All three take **a project directory**, and all three apply the same rule: the
 project is the one beside the executable, unless an argument names a different
 one. So a shipped game ships its exe next to its `project.json` and the player
-passes nothing. See [system/io.md](system/io.md#projects-and-the-two-roots) for
-what a project is and how the two roots divide engine data from project data.
+passes nothing. See [system/io.md](system/io.md#projects-and-the-three-roots) for
+what a project is and how the three roots divide engine data, project data and
+one user's own settings.
 
 **Exit codes are meant to be read.** A host that could not open the project it
 was handed exits non-zero rather than falling back to something that merely looks
@@ -258,7 +259,7 @@ First-party code also builds as strict C++17 (`CMAKE_CXX_EXTENSIONS OFF`).
 | `GLM_ENABLE_EXPERIMENTAL` | vkm_core (public) | GLM experimental features |
 | `GLM_FORCE_INTRINSICS` | vkm_core (public) | GLM SIMD intrinsics |
 | `APP_VERSION` | Executable | Engine version string |
-| `APP_ROOT_DIR` | Executable | Absolute path to the **engine** root - the fallback `ProjectPaths::engineRoot()` uses to find `shaders/` and `assets/` when the exe is run from a build tree. Not the project root; see [system/io.md](system/io.md#projects-and-the-two-roots) |
+| `APP_ROOT_DIR` | Executable | Absolute path to the **engine** root - the fallback `ProjectPaths::engineRoot()` uses to find `shaders/` and `assets/` when the exe is run from a build tree. Not the project root; see [system/io.md](system/io.md#projects-and-the-three-roots) |
 | `APP_BRANCH`, `APP_COMMIT_HASH`, `APP_BUILD_DATE` | vkm_build_info | Git metadata |
 
 ### Profiling with Tracy

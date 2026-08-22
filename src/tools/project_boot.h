@@ -17,11 +17,17 @@ struct Project;
  * shaders load CWD-relative and ship with the engine, while everything a project
  * owns is addressed absolutely through ProjectPaths.
  *
+ * The log goes in the project's logs/, and in ProjectPaths::userLogs() when the
+ * project cannot hold one - an installed game's directory is read-only, and a
+ * game that cannot log is a game nobody can diagnose.
+ *
  * @param argc        Argument count, as main received it.
  * @param argv        Argument vector; argv[1], when given, names the project.
- * @param logFileName File name inside the project's logs/ directory.
+ * @param logFileName File name the log is written under, in whichever of the two
+ *                    directories can hold it.
  * @param loggerTag   Tag every line this host logs is stamped with.
- * @return False when the log file cannot be opened - fatal, so the host exits.
+ * @return False when neither place will take a log file - fatal, so the host
+ *         exits, and the reason goes to stderr because nothing can be logged.
  */
 bool bootHost(int argc, char** argv, const char* logFileName, const char* loggerTag);
 
