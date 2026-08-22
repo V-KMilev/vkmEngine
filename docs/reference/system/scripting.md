@@ -185,6 +185,13 @@ one copy are invisible to the other.
 The module is looked for in the open project's `bin/` and nowhere else: a game
 brings its code with it, and that is the one place a project builds it.
 
+`ScriptModule` loads a **copy** of it (`game.loaded.<n>.so`), so a rebuild is
+free to overwrite the original while the editor still holds it - which is what
+`vkm build` does mid-session, and what Windows would otherwise refuse outright.
+A directory that will take no copy loads the original in place: an installed
+game's `bin/` is read-only, and nothing rebuilds into one of those, so the copy
+has nothing left to buy there.
+
 `ScriptModule::reload(scene)` swaps in a freshly built module without
 restarting: it serializes each entity's behaviors (type + reflected fields),
 destroys them, unloads the old module, loads the new one, and recreates the

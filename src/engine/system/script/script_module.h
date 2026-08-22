@@ -12,9 +12,9 @@ class Scene;
  * @brief Loads the hot-reloadable gameplay module and swaps it at runtime.
  *
  * Each host owns one of these: the editor to edit a project, the runtime to
- * play it. On load() it copies the built module (so the original stays writable
- * for rebuilds) and calls its vkmRegisterBehaviors entry to populate the
- * BehaviorRegistry. reload() swaps in a freshly built module without
+ * play it. On load() it copies the built module aside (so the original stays
+ * writable for rebuilds) and calls its vkmRegisterBehaviors entry to populate
+ * the BehaviorRegistry. reload() swaps in a freshly built module without
  * restarting; entities and all other components are untouched - only the
  * behavior C++ objects are rebuilt.
  *
@@ -38,7 +38,9 @@ class ScriptModule {
          *
          * Copies the built module aside (keeping the original writable for
          * rebuilds), loads the copy, and calls its register entry to populate
-         * the BehaviorRegistry.
+         * the BehaviorRegistry. A directory that will take no copy - an
+         * installed game's - loads the original in place instead, since nothing
+         * rebuilds into one of those either.
          *
          * @param modulePath Path to the built module (.dll/.so) to load.
          * @return True if the module loaded and registered successfully.
@@ -88,7 +90,8 @@ class ScriptModule {
     private:
         /**
          * @brief Copy the built module to a fresh name, load it, and call its register
-         * entry. The copy keeps the build free to overwrite the original.
+         * entry. The copy keeps the build free to overwrite the original; when the
+         * directory refuses one, the original is loaded where it stands.
          */
         bool loadCopyAndRegister();
 
