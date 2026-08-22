@@ -1,7 +1,7 @@
 # Getting started
 
 Making a game with vkmEngine, from an installed SDK. If you are working *on* the
-engine rather than *with* it, read [building.md](building.md) instead.
+engine rather than *with* it, read [building.md](../reference/building.md) instead.
 
 ## What you need
 
