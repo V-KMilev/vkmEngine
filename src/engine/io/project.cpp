@@ -67,7 +67,15 @@ fs::path findProjectRoot(const fs::path& start) {
 
     // Accept a file as well as a directory, so passing a scene finds its project.
     fs::path dir = fs::is_directory(start, ec) ? start : start.parent_path();
-    dir = fs::absolute(dir, ec);
+
+    // Normalised before the walk, because the answer gets composed on: it names
+    // the log directory and is the string the editor's recent list dedupes by.
+    // A path typed "proj/" - what shell completion produces - ends in an empty
+    // element, "proj/." in a dot, and both compose away, so "logs/<project>/"
+    // silently loses its <project>. Only the path handed in can carry one; the
+    // loop below reaches every other directory through parent_path().
+    dir = fs::absolute(dir, ec).lexically_normal();
+    if (!dir.has_filename()) dir = dir.parent_path();
 
     while (!dir.empty()) {
         if (fs::exists(dir / PROJECT_FILE, ec)) return dir;
