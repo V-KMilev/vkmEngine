@@ -68,15 +68,30 @@ seconds rather than recompiling an engine.
 vkm package
 ```
 
-That cooks the assets, then assembles everything a player needs:
+That cooks the assets, then assembles everything a player needs - and only that:
 
 ```
 dist/mygame/
     bin/            the game executable, the engine libraries, the gameplay module
     project.json    what the game is
-    assets/  scenes/  cooked/  library/     its content
+    scenes/  prefabs/  cooked/    the world, and the art in the form it plays
+    library/        the asset manifest and your materials
+    assets/         whatever the game still opens by name: environment maps, its icon
     shaders/        the engine's
 ```
+
+**What stays behind is the authoring half.** Your `.blend`, `.fbx`, `.gltf` and
+source textures do not ship: `cooked/` already holds them in the only form the
+runtime can open, and a shipped game links no importer that could read the
+originals anyway. Nor do the recipes recording how each was imported - they name
+paths on *your* machine, and a runtime cannot act on one. The two library parts
+that do ship are the ones a game reads: `_manifest.json`, which is how an asset
+name in a scene resolves to anything, and your materials, whose recipe *is* their
+runtime form.
+
+`vkm package` works this out from the recipes themselves rather than from a list
+of file extensions, so a file nothing imported - an `.hdr` your scene names, the
+`assets/logo/icon.png` your window wears - ships as a matter of course.
 
 The executable is a renamed copy of `vkm_runtime` - the engine is never
 rebuilt for a game, which is why this takes seconds. The player runs
