@@ -60,9 +60,9 @@ EditorSystem::EditorSystem(
 
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    // Floating windows (Material Editor, Preferences) move only by their
-    // title bar - dragging inside the body must not drag the window, so
-    // viewport orbiting on the material preview stays put.
+    // Floating windows (Preferences, Render Settings) move only by their
+    // title bar - dragging inside the body must not drag the window, so a
+    // drag that means something to the content stays with the content.
     io.ConfigWindowsMoveFromTitleBarOnly = true;
 
     // ImGui ini lives with the user's own settings: window positions and table
@@ -501,10 +501,6 @@ void EditorSystem::update(FrameContext& ctx) {
         PROFILE_SCOPE("Panel/Preferences");
         m_preferences.draw(ec);
     }
-    if (m_state.showMaterialEditor) {
-        PROFILE_SCOPE("Panel/MaterialEditor");
-        m_materialEditor.draw(ec);
-    }
     if (m_state.showRenderSettings) {
         PROFILE_SCOPE("Panel/RenderSettings");
         m_renderSettings.draw(ec);
@@ -612,13 +608,17 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
     }
 
     if (m_state.showInspector) {
-        PROFILE_SCOPE("Panel/Inspector");
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
         if (ImGui::BeginChild("##Inspector", ImVec2(rightW, mainH), ImGuiChildFlags_Borders)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, themeSpacing);
-            m_inspector.draw(ec);
+            drawRightTabs(ec);
             ImGui::PopStyleVar();
         }
+        // Recorded where it is drawn rather than recomputed: a detached window
+        // asks whether it was released over this panel, and the answer has to be
+        // the rectangle the panel actually occupied, not one derived twice.
+        m_state.rightPanelMin = ImGui::GetItemRectMin();
+        m_state.rightPanelMax = ImGui::GetItemRectMax();
         ImGui::EndChild();
         ImGui::PopStyleVar();
     }
@@ -635,6 +635,9 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
         ImGui::PopStyleVar();
     }
 
+    drawFloatingMaterial(ec);
+
+
     m_panelResize.process(m_state, panelAreaStart, mainH,
                           viewport->WorkSize.x, m_gizmoOverlay.isGizmoUsing());
 
@@ -644,6 +647,96 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
         PROFILE_SCOPE("Panel/StatusBar");
         m_statusBar.draw(ec);
     }
+}
+
+void EditorSystem::drawRightTabs(EditorContext& ec) {
+    if (!ImGui::BeginTabBar("##RightTabs", ImGuiTabBarFlags_DrawSelectedOverline)) return;
+
+    if (ImGui::BeginTabItem("Inspector")) {
+        PROFILE_SCOPE("Panel/Inspector");
+        m_inspector.draw(ec);
+        ImGui::EndTabItem();
+    }
+
+    // The request is answered by this frame's bar or not at all: left set, it
+    // would take the tab back the next time the panel is shown.
+    ImGuiTabItemFlags materialFlags = ImGuiTabItemFlags_None;
+    if (m_state.revealMaterialTab) {
+        materialFlags = ImGuiTabItemFlags_SetSelected;
+        m_state.revealMaterialTab = false;
+    }
+    if (!m_state.materialFloating) {
+        const bool open = ImGui::BeginTabItem("Material", nullptr, materialFlags);
+
+        // Asked of the tab itself, before its body: a drag that leaves the bar
+        // is a request to detach, and the distance keeps a click from being one.
+        if (ImGui::IsItemHovered() && !ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+            ImGui::SetTooltip("Drag out to open in a window");
+        }
+        if (ImGui::IsItemActive() &&
+            ImGui::IsMouseDragging(ImGuiMouseButton_Left, EditorStyle::px(24.0f))) {
+            m_state.materialFloating = true;
+            m_state.materialDetachAt = ImGui::GetMousePos();
+        }
+
+        if (open) {
+            PROFILE_SCOPE("Panel/MaterialEditor");
+            m_materialEditor.draw(ec);
+            ImGui::EndTabItem();
+        }
+    }
+
+    ImGui::EndTabBar();
+}
+
+void EditorSystem::drawFloatingMaterial(EditorContext& ec) {
+    if (!m_state.materialFloating) return;
+
+    if (m_state.materialDetachAt.x != 0.0f || m_state.materialDetachAt.y != 0.0f) {
+        // Under the cursor that pulled it out, so the window arrives where the
+        // hand already is rather than wherever it was last left.
+        ImGui::SetNextWindowPos(m_state.materialDetachAt, ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+        m_state.materialDetachAt = {};
+    }
+    ImGui::SetNextWindowSize(ImVec2(EditorStyle::px(520.0f), EditorStyle::px(680.0f)),
+                             ImGuiCond_FirstUseEver);
+
+    // Closing re-docks rather than hiding: a window that can be lost behind the
+    // viewport is the complaint that moved this panel out of one, so the close
+    // box gives it back to the tab bar instead of making it vanish.
+    bool open = true;
+    const bool wasBegun = ImGui::Begin("Material Editor", &open);
+
+    // Dragged by its title bar, with nothing inside it holding the mouse. There
+    // is no public "is this window moving", and this is what moving one looks
+    // like from outside.
+    const bool dragging = ImGui::IsWindowFocused() && !ImGui::IsAnyItemActive() &&
+                          ImGui::IsMouseDragging(ImGuiMouseButton_Left);
+    const ImVec2 mouse = ImGui::GetMousePos();
+    const bool overPanel = m_state.showInspector &&
+        mouse.x >= m_state.rightPanelMin.x && mouse.x <= m_state.rightPanelMax.x &&
+        mouse.y >= m_state.rightPanelMin.y && mouse.y <= m_state.rightPanelMax.y;
+
+    if (wasBegun) {
+        PROFILE_SCOPE("Panel/MaterialEditor");
+        m_materialEditor.draw(ec);
+    }
+    ImGui::End();
+
+    if (dragging && overPanel) {
+        // Painted over everything, because the panel it lands in is behind the
+        // window being dragged onto it.
+        ImDrawList* fg = ImGui::GetForegroundDrawList();
+        ImVec4 wash = EditorStyle::Accent::MatBase;
+        wash.w = 0.18f;
+        fg->AddRectFilled(m_state.rightPanelMin, m_state.rightPanelMax,
+                          ImGui::GetColorU32(wash), EditorStyle::px(4.0f));
+        fg->AddRect(m_state.rightPanelMin, m_state.rightPanelMax,
+                    ImGui::GetColorU32(EditorStyle::Accent::MatBase),
+                    EditorStyle::px(4.0f), 0, EditorStyle::px(2.0f));
+    }
+    if (overPanel && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) m_state.materialFloating = false;
+    if (!open) m_state.materialFloating = false;
 }
 
 } // namespace Vkm::Engine

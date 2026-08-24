@@ -25,6 +25,7 @@ namespace Vkm::Engine {
 class GLView;
 class GLIBL;
 class GLMesh;
+class GLShadowAtlas;
 class ResourceManager;
 struct PreviewRequest;
 
@@ -63,7 +64,8 @@ class GLPreview {
          * or 0 when the request can't be drawn (missing assets).
          */
         uint32_t render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ibl,
-                        const PreviewRequest& req, const ResourceManager& resources);
+                        const GLShadowAtlas& shadows, const PreviewRequest& req,
+                        const ResourceManager& resources);
 
         /**
          * @brief Last-rendered texture for @p key, or 0 when none exists.

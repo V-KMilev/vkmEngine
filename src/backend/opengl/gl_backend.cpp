@@ -398,7 +398,7 @@ GpuTextureId GLBackend::renderPreview(const PreviewRequest& request,
                                   const ResourceManager& resources) {
     // Runs from the editor after the scene render; like the probe baker it
     // re-binds the camera / lights UBOs, which the next frame re-uploads.
-    return m_preview.render(m_context, m_view, m_ibl, request, resources);
+    return m_preview.render(m_context, m_view, m_ibl, m_shadowAtlas, request, resources);
 }
 
 GpuTextureId GLBackend::previewTexture(uint64_t key) const {

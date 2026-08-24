@@ -483,14 +483,14 @@ void soundsInUse(const Scene& scene, const ResourceManager&,
 // The table. Adding a kind is this entry plus its handful of small functions.
 // Rail order pairs the kinds that are about each other, and each wears a
 // registered hue no neighbour is close to; docs/reference/editor.md has the
-// reasoning for both, including why Accent::MatTexture cannot serve Textures.
+// reasoning for both.
 
 const AssetKind KINDS[] = {
     {
         AssetType::Material, "Materials",
         "No materials yet. New makes a blank one.",
         EditorIcon::Material, &EditorStyle::Accent::MatBase,
-        "New", "Create a blank material and open it in the Material Editor",
+        "New", "Create a blank material and open it in the Material tab",
         Verb::NewMaterial,
         "Assign to selected entity", "(select a mesh entity to assign)",
         nullptr,
@@ -501,7 +501,7 @@ const AssetKind KINDS[] = {
     {
         AssetType::Texture, "Textures",
         "No textures yet. Import brings an image in.",
-        EditorIcon::Texture, &EditorStyle::Accent::MatSurface,
+        EditorIcon::Texture, &EditorStyle::Accent::MatTexture,
         "Import...", "Import an image as colour - PNG, JPG, TGA or BMP",
         Verb::ImportTexture,
         // No assign item: a texture goes into one of a material's eleven slots,
@@ -569,65 +569,6 @@ const AssetKind& kindOf(AssetType type) {
         if (k.type == type) return k;
     }
     return KINDS[0];
-}
-
-// Byte offsets of the next / previous character. Never land inside a UTF-8
-// sequence: a lone continuation byte renders as the font's replacement box.
-size_t utf8Next(const char* s, size_t i, size_t len) {
-    for (++i; i < len && (s[i] & 0xC0) == 0x80; ++i) {}
-    return i;
-}
-
-size_t utf8Prev(const char* s, size_t i) {
-    for (--i; i > 0 && (s[i] & 0xC0) == 0x80; --i) {}
-    return i;
-}
-
-/// Width of a line keeping [0, head) and [tail, len) with the ellipsis between.
-float keptWidth(const char* s, size_t head, size_t tail, size_t len) {
-    return ImGui::CalcTextSize(s, s + head).x + ImGui::CalcTextSize(s + tail, s + len).x;
-}
-
-/**
- * @brief Draw one line of text clipped to a width, ellipsised in the middle.
- *
- * A wrapped name is what broke the old grid's alignment: a two-line name
- * pushed the next row of tiles off the baseline, so every tile after a long
- * name sat wrong. One line always, and the full text stays available on hover.
- *
- * The cut lands mid-line because these lines share their starts and differ at
- * their ends - a clip named by its path, the sixtieth material out of one file
- * - and a tail cut left a row of tiles all reading "assets/audio/to...".
- *
- * @param text Line to draw; empty draws the placeholder.
- * @param maxWidth Width the line must fit inside, in pixels.
- * @param dim Whether to draw in the disabled colour (the detail line does).
- */
-void clippedLine(const char* text, float maxWidth, bool dim) {
-    const char* str = (text && text[0]) ? text : "(unnamed)";
-    char buf[192];
-    if (ImGui::CalcTextSize(str).x > maxWidth) {
-        const size_t len    = std::strlen(str);
-        const float  budget = maxWidth - ImGui::CalcTextSize("...").x;
-
-        // Grown one character in from each end in turn, so the two halves stay
-        // the same length whichever end the wide characters are at.
-        size_t head = 0;
-        size_t tail = len;
-        for (;;) {
-            const size_t grownHead = utf8Next(str, head, len);
-            if (grownHead >= tail || keptWidth(str, grownHead, tail, len) > budget) break;
-            head = grownHead;
-
-            const size_t grownTail = utf8Prev(str, tail);
-            if (grownTail <= head || keptWidth(str, head, grownTail, len) > budget) break;
-            tail = grownTail;
-        }
-        snprintf(buf, sizeof(buf), "%.*s...%s", static_cast<int>(head), str, str + tail);
-        str = buf;
-    }
-    if (dim) ImGui::TextDisabled("%s", str);
-    else     ImGui::TextUnformatted(str);
 }
 
 }  // namespace
@@ -750,8 +691,7 @@ void AssetBrowserPanel::drawToolbar(EditorContext& ec) {
             case Verb::NewMaterial:
                 if (MaterialHandle h = EditorActions::createNewMaterial(ec.frame.resources,
                                                                         ec.state)) {
-                    ec.state.materialEditorTarget = h;
-                    ec.state.showMaterialEditor   = true;
+                    ec.state.openMaterial(h);
                 }
                 break;
             case Verb::ImportModel:   ec.state.requestModelImport = true; break;
@@ -881,9 +821,8 @@ void AssetBrowserPanel::drawGrid(EditorContext& ec) {
             // says which asset it is about before offering to destroy one.
             sectionLabel(row.name->empty() ? "(unnamed)" : row.name->c_str());
             ImGui::Separator();
-            if (kind.type == AssetType::Material && ImGui::MenuItem("Open in Material Editor")) {
-                state.materialEditorTarget = MaterialHandle{row.key};
-                state.showMaterialEditor   = true;
+            if (kind.type == AssetType::Material && ImGui::MenuItem("Edit Material")) {
+                state.openMaterial(MaterialHandle{row.key});
             }
             if (kind.assignLabel) {
                 ImGui::BeginDisabled(!canAssign);
@@ -934,8 +873,7 @@ void AssetBrowserPanel::drawGrid(EditorContext& ec) {
         }
 
         if (kind.type == AssetType::Material && clicked) {   // left-click = edit
-            state.materialEditorTarget = MaterialHandle{row.key};
-            state.showMaterialEditor   = true;
+            state.openMaterial(MaterialHandle{row.key});
         }
 
         clippedLine(row.name->c_str(), face, /*dim*/ false);
@@ -1052,28 +990,18 @@ void AssetBrowserPanel::serviceSoundImport(EditorContext& ec) {
 }
 
 void AssetBrowserPanel::drawRenameModal(EditorContext& ec) {
-    if (!beginDialog("Rename Asset", m_rename.open)) return;
-
-    // The field takes the keyboard the frame the dialog appears, with the old
-    // name selected: a rename is typing, and reaching for the mouse to start
-    // it is the whole gesture spent twice.
-    if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
-    ImGui::SetNextItemWidth(EditorStyle::px(280.0f));
-    const bool commit = ImGui::InputText("##rnbuf", m_renameBuf, sizeof(m_renameBuf),
-                                          ImGuiInputTextFlags_EnterReturnsTrue
-                                        | ImGuiInputTextFlags_AutoSelectAll);
-
-    const DialogResult r = dialogButtons(m_rename.open, "Rename",
-                                         m_renameBuf[0] != '\0', commit);
-    if (r == DialogResult::Confirm) {
+    const bool renamed = renameDialog("Rename Asset", m_rename.open,
+                                      m_renameBuf, sizeof(m_renameBuf));
+    if (renamed) {
         const AssetKind& kind = kindOf(m_rename.kind);
         if (m_rename.key && kind.rename) {
             kind.rename(ec, m_rename.key, m_rename.name, m_renameBuf);
             ec.state.markSceneDirty();
         }
     }
-    if (r != DialogResult::None) m_rename.key = {};
-    endDialog();
+    // Cleared by any path that closed it, confirm and cancel alike, so a
+    // dismissed dialog leaves no target armed behind it.
+    if (!m_rename.open) m_rename.key = {};
 }
 
 void AssetBrowserPanel::drawDeleteModal(EditorContext& ec) {

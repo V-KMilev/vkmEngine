@@ -198,7 +198,6 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         ImGui::MenuItem("Bottom Panel", keyLabel(state.keybinds.toggleBottom), &state.showBottom);
         ImGui::Separator();
         ImGui::MenuItem("Render Settings", keyLabel(state.keybinds.toggleRenderSettings), &state.showRenderSettings);
-        ImGui::MenuItem("Material Editor", keyLabel(state.keybinds.toggleMaterialEditor), &state.showMaterialEditor);
         ImGui::EndMenu();
     }
 

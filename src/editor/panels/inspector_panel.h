@@ -26,7 +26,7 @@ struct EditorContext;
  * with inline editing, plus an "Add Component" menu. When the World node is
  * selected instead of an entity, shows the scene-global Environment settings.
  * Edits route through the command stack so they are undoable. The compact Mesh
- * card links out to the standalone Material Editor for full PBR editing.
+ * card hands full PBR editing to the Material tab beside it.
  *
  * Entities belonging to a prefab instance are edited here like any other, and
  * an edit to one becomes a per-instance override (see PrefabOverrides): each

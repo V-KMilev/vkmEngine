@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 #include <imgui.h>
@@ -221,6 +222,53 @@ bool drawEasingCombo(const char* id, EasingFunction& easing) {
     }
     ImGui::EndCombo();
     return changed;
+}
+
+namespace {
+// Byte offsets of the next / previous character. Never land inside a UTF-8
+// sequence: a lone continuation byte renders as the font's replacement box.
+size_t utf8Next(const char* s, size_t i, size_t len) {
+    for (++i; i < len && (s[i] & 0xC0) == 0x80; ++i) {}
+    return i;
+}
+
+size_t utf8Prev(const char* s, size_t i) {
+    for (--i; i > 0 && (s[i] & 0xC0) == 0x80; --i) {}
+    return i;
+}
+
+/// Width of a line keeping [0, head) and [tail, len) with the ellipsis between.
+float keptWidth(const char* s, size_t head, size_t tail, size_t len) {
+    return ImGui::CalcTextSize(s, s + head).x + ImGui::CalcTextSize(s + tail, s + len).x;
+}
+
+}  // namespace
+
+void clippedLine(const char* text, float maxWidth, bool dim) {
+    const char* str = (text && text[0]) ? text : "(unnamed)";
+    char buf[192];
+    if (ImGui::CalcTextSize(str).x > maxWidth) {
+        const size_t len    = std::strlen(str);
+        const float  budget = maxWidth - ImGui::CalcTextSize("...").x;
+
+        // Grown one character in from each end in turn, so the two halves stay
+        // the same length whichever end the wide characters are at.
+        size_t head = 0;
+        size_t tail = len;
+        for (;;) {
+            const size_t grownHead = utf8Next(str, head, len);
+            if (grownHead >= tail || keptWidth(str, grownHead, tail, len) > budget) break;
+            head = grownHead;
+
+            const size_t grownTail = utf8Prev(str, tail);
+            if (grownTail <= head || keptWidth(str, head, grownTail, len) > budget) break;
+            tail = grownTail;
+        }
+        snprintf(buf, sizeof(buf), "%.*s...%s", static_cast<int>(head), str, str + tail);
+        str = buf;
+    }
+    if (dim) ImGui::TextDisabled("%s", str);
+    else     ImGui::TextUnformatted(str);
 }
 
 bool matchesFilter(const char* text, const char* filter) {

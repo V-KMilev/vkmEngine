@@ -53,6 +53,7 @@ void visitScalarFields(State& state, Fn&& f) {
     f("showBottom",        state.showBottom);
     f("leftPanelWidth",    state.leftPanelWidth);
     f("rightPanelWidth",   state.rightPanelWidth);
+    f("materialFloating",  state.materialFloating);
     f("bottomPanelHeight", state.bottomPanelHeight);
     f("gizmoOperation",    state.gizmoOperation);
     f("gizmoMode",         state.gizmoMode);

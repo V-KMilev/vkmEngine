@@ -493,7 +493,8 @@ void InspectorPanel::drawEmptySelectionState(EditorContext& ec) {
     const ImVec2 region = ImGui::GetContentRegionAvail();
     const float glyphSize = EditorStyle::px(56.0f);
     const float lineH     = ImGui::GetTextLineHeightWithSpacing();
-    const float blockH    = glyphSize + lineH * 2.0f + ImGui::GetFrameHeight() + 24.0f;
+    const float blockH    = glyphSize + lineH * 2.0f + ImGui::GetFrameHeight()
+                          + EditorStyle::px(24.0f);
     ImGui::Dummy(ImVec2(0.0f, std::max(0.0f, (region.y - blockH) * 0.35f)));
 
     const ImVec2 cur = ImGui::GetCursorScreenPos();
@@ -955,7 +956,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
         ImGui::Spacing();
 
         // Compact reference only - full PBR + texture editing and the live 3D
-        // preview live in the Material Editor (Window > Material Editor).
+        // preview live one tab over, in the Material tab.
         if (mesh.material) {
             const MaterialAsset& m = resources.get(mesh.material);
             ImGui::TextDisabled("Material: %s",
@@ -963,14 +964,12 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
             const float bw = (ImGui::GetContentRegionAvail().x
                               - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
             if (ImGui::Button("Edit Material", ImVec2(bw, 0))) {
-                state.materialEditorTarget = mesh.material;
-                state.showMaterialEditor   = true;
+                state.openMaterial(mesh.material);
             }
             ImGui::SameLine();
             if (ImGui::Button("Duplicate", ImVec2(bw, 0))) {
                 if (MaterialHandle nh = EditorActions::duplicateMaterial(resources, state, mesh.material, &mesh)) {
-                    state.materialEditorTarget = nh;
-                    state.showMaterialEditor   = true;
+                    state.openMaterial(nh);
                     changed = true;
                 }
             }

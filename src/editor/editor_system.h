@@ -120,6 +120,24 @@ class EditorSystem : public System {
 
         void drawWorkspace(EditorContext& ec);
 
+        /**
+         * @brief Draw the right panel's tab bar and whichever tab is open.
+         *
+         * @param ec Per-frame editor context handed to the open tab's panel.
+         */
+        void drawRightTabs(EditorContext& ec);
+
+        /**
+         * @brief Draw the material editor as a window while it is detached.
+         *
+         * Closing the window re-docks it instead of hiding it: a panel that can
+         * be lost behind the viewport is what moved this one out of a window in
+         * the first place.
+         *
+         * @param ec Per-frame editor context.
+         */
+        void drawFloatingMaterial(EditorContext& ec);
+
     private:
         CameraControllerSystem& m_cameraController;
         UISystem&         m_uiSystem;

@@ -12,9 +12,9 @@ aggregate, so panels do not reach into each other.
 +---------------------------------------------------------------+
 |                          Menu bar                             |
 +---------------------------------------------------------------+
+|                                                |  Inspector / |
+|                   Viewport (3D scene)          |  Material    |
 |                                                |              |
-|                   Viewport (3D scene)          |              |
-|                                                |  Inspector   |
 |  [Toolbar]                       [Nav gizmo]   |              |
 |  [Playback bar (top-centre)]                   |              |
 |  [Hierarchy panel docked left]                 |              |
@@ -51,10 +51,10 @@ overlays drawn on top.
 | Panel               | File                                  | Description                                                                 |
 |---------------------|---------------------------------------|-----------------------------------------------------------------------------|
 | Hierarchy           | `panels/hierarchy_panel.cpp`          | Entity tree; drag a node onto another to reparent (cycle-safe); context-menu Unparent |
-| Inspector           | `panels/inspector_panel.cpp`          | Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent; prefab-instance overrides |
+| Inspector           | `panels/inspector_panel.cpp`          | The right panel's first tab. Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent; prefab-instance overrides |
 | Bottom              | `panels/bottom_panel.cpp`             | Three tabs: Assets (the Asset Browser), Animation (keyframe editor) and Errors (recoverable engine failures) |
 | Render Settings     | `panels/render_settings_panel.cpp`    | Render quality tuning: `RenderSettings` (debug view / grid / MSAA, texture filtering, GTAO, bloom, shadows, probes) plus the `VisibilitySystem` culling thresholds; opened from Window > Render Settings |
-| Material Editor     | `panels/material_editor_panel.cpp`          | Per-material PBR inspector with live preview (renders the real pipeline)    |
+| Material Editor     | `panels/material_editor_panel.cpp`          | The right panel's Material tab. One material under a live preview: a Base card, a grid of map tiles, and a card per secondary lobe the material actually uses |
 | Asset Browser       | `panels/asset_browser_panel.cpp`            | The bottom panel's Assets tab. One library for all six asset kinds: a kind rail, a uniform tile grid, and one verb slot per kind (import / create). Materials and meshes render thumbnails, a texture *is* its thumbnail, sounds audition from the tile |
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
 | Viewport Overlay    | `overlays/viewport_overlay.cpp`       | The axis navigation gizmo, top-right of the viewport (click an axis to snap the camera) |
@@ -85,6 +85,89 @@ solver iterations - `Scene::physics()`, read by `PhysicsSystem` each
 fixed step). They are scene data, so they sit beside the components
 rather than in a settings window. Render Settings is the exception: it
 is quality tuning rather than world content, so it has its own window.
+
+### The right panel is two tabs, and why the Material Editor is one of them
+
+`Inspector | Material`, the shape the bottom panel already uses for its three.
+Both tabs edit the properties of what is selected - the entity's components,
+and the material it draws with - so they are the same job at two depths, and
+the second one had been a floating `ImGui::Begin` reachable from the Window
+menu, a keybind and three panels at once.
+
+The bottom strip was the other candidate and is the wrong shape: it holds what
+you *consult* while working in the viewport - assets, animation, errors - which
+is wide, short and browsed. A material editor is one material, many parameters
+and a preview you watch while dragging, which wants height and wants to sit
+beside the viewport rather than eat it.
+
+The move deleted the floating host outright rather than leaving both live:
+`EditorState::showMaterialEditor`, the Window menu item and the Ctrl+5 keybind
+are gone. What replaced them is `EditorState::openMaterial(handle)` - the one
+way in, used by the Inspector's Mesh card, the Asset Browser's tile and its New
+verb. It sets the target, un-hides the right panel and raises a one-frame
+`revealMaterialTab` request, because every caller is drawn before the tab bar
+that answers it.
+
+### The Material tab shows what the material is, not what the struct holds
+
+The old panel drew eight cards in the order `MaterialAsset` declares its fields,
+every one of them always there, and a material that was a painted wall still
+offered Anisotropy, Sheen, Subsurface, Clearcoat and Volume headers to scroll
+past. The tab is cut by what a material *is* instead:
+
+- **Base and Maps are always there.** Type, albedo, metallic, roughness, AO,
+  IOR and emission; then the texture slots.
+- **The five secondary lobes are cards only while the material uses one.**
+  `FEATURES` in the panel carries, per lobe, how to tell it is on (read off the
+  asset, not off a flag nothing serializes), how to switch it on at a value that
+  can be seen, and how to put every field it owns back - its texture included,
+  or the card just turned off would come straight back. `+ Add Feature` offers
+  exactly the ones that are off, and each card's `x` turns its own off.
+- **A row that cannot do anything is not drawn.** Alpha Cutoff appears for
+  AlphaMask only, Emissive Strength once the emission is not black, and Normal
+  Scale and Height Scale sit inside Maps beside the map each of them scales,
+  which is also the only time either does anything.
+
+Two of the old cards are gone rather than moved: Surface was a bag holding IOR
+(which belongs with the base layer it reflects off), the two map scales, and
+Transmission; Volume was Transmission's other half and only ever meant anything
+with it, so the two are one Transmission feature.
+
+Maps are a tile grid in the Asset Browser's grammar - one square face, a name, a
+one-line detail, the kind's hue as a left strip, solid when the slot is filled
+and faint when it is empty. Clicking a tile binds a texture, right-clicking
+offers Replace, Clear and the four generators laid out rather than nested. The
+six core slots always have a tile; the five packed and secondary ones earn theirs
+by being bound, and until then they are behind the one `+` tile at the end of the
+grid.
+
+### Which material the tab edits
+
+The Inspector beside it follows the selection, so this tab does too: pick an
+entity carrying a material and it is what the tab shows. A material chosen by
+hand - the chooser at the top, an Asset Browser tile, New or Duplicate - is
+pinned in `EditorState::materialEditorTarget` and outranks the selection, but
+only until another entity that carries one of its own is picked. That is the
+rule that lets a material nothing uses yet be worked on without the next click
+in the viewport throwing it away, and lets the tab still behave like the panel
+it lives in.
+
+Everything done *to* the material rather than to its parameters - Duplicate,
+Rename, New, Load PBR Folder - is behind one button on the identity row, beside
+a chip saying how many entities draw with this material (clicking it selects
+them). Materials are shared by handle, so that count is the blast radius of
+every slider under it. The row leads with the material glyph, in the hue the
+Asset Browser's Materials rail and every material tile wear, the way the
+Inspector's identity row leads with the entity's.
+
+With nothing to edit the tab puts up the block the Inspector puts up, in its
+metrics: a centred kind glyph, what is missing, the two routes out of it, and
+the chooser and `New Material` at the width `Create Entity` has one tab over.
+Two tabs of one panel get compared by eye, and an empty state that answered in
+another register - left-aligned, a full-width accent bar, a sentence - read as
+another program. The accent bar went with it: in this tree an accent verb ends
+a list of things (`Add Component`, `Add Feature`), and an empty state's verb is
+quiet.
 
 ### Bottom panel vs Preferences
 
@@ -775,21 +858,22 @@ and cannot carry the difference alone.
 
 | Rail row  | `EditorStyle::Accent::` | Why |
 |-----------|-------------------------|-----|
-| Materials | `MatBase`   | warm orange; the Material Editor's own base group |
-| Textures  | `MatSurface`| teal |
+| Materials | `MatBase`   | warm orange; the Material tab's own base group |
+| Textures  | `MatTexture`| teal; what a texture wears on the Material tab's map tiles too |
 | Meshes    | `Mesh`      | green; the Mesh card's hue |
 | Skeletons | `Transform` | deep blue (`AXIS_Z`) |
 | Clips     | `Anim`      | purple; the Animator card's hue, and a clip is half that card |
 | Sounds    | `Audio`     | magenta; the Audio Source card's hue |
 
 Every hue is already in the registry - nothing was added for the browser, and
-no panel-local colour exists. Two constraints picked the three new ones.
-`Accent::MatTexture` is the obvious name for Textures and is **not usable**: it
-is defined as `AXIS_Y`, which is exactly `Accent::Mesh`, so it would put the
-identical green on two adjacent rows. And none of the six may be `WARNING`,
-`SUCCESS` or `DANGER`, which stay status colours so that no asset kind can read
-as an error. Skeletons and Clips both belong to the Animator card and cannot
-share its one hue, so the rig takes the registry's deep blue.
+no panel-local colour exists. `Accent::MatTexture` used to be defined as
+`AXIS_Y`, which is exactly `Accent::Mesh`, so Textures had to borrow the teal
+that the dissolved Surface card was holding; the Material tab's redesign took
+the duplicate green out and gave `MatTexture` that teal, so the name now means
+the hue it always should have. None of the six may be `WARNING`, `SUCCESS` or
+`DANGER`, which stay status colours so that no asset kind can read as an error.
+Skeletons and Clips both belong to the Animator card and cannot share its one
+hue, so the rig takes the registry's deep blue.
 
 The rail order is neither `AssetType` order nor alphabetical: it pairs the kinds
 that are about each other. A material is made of textures; a rig poses a mesh; a
@@ -822,10 +906,11 @@ was pressed.
 
 `MaterialAsset`'s eleven texture members are now enumerated in a fourth place
 (`MATERIAL_TEXTURE_SLOTS` in the panel, beside the serializer's `TexField`
-table, `GLMaterial`'s binding table and the Material Editor's rows). Each of the
+table, `GLMaterial`'s binding table and the Material tab's `MAPS`). Each of the
 other three pairs the member with something of its own - a JSON key, a binding
-point and flag, a row label and colour space - so there is nothing to borrow;
-the day a fifth appears is the day the bare list belongs on `MaterialAsset`.
+point and flag, a tile label, colour space and hint - so there is nothing to
+borrow; the day a fifth appears is the day the bare list belongs on
+`MaterialAsset`.
 
 ### One tile, whatever the kind
 
@@ -925,9 +1010,9 @@ selected, so the gesture is F2, type, Enter with no reach back for the mouse.
 which used to happen in silence - an author typed `Rock`, got `Rock (2)`, and
 nothing said so. It is now a toast, and the undo command records the name that
 was **assigned** rather than the one that was asked for, so redo repeats what
-happened rather than what was requested. (The Material Editor has a second
-rename modal of its own, a near-copy of this one; it now shares the keyboard
-half, but the two are still two implementations of one operation.)
+happened rather than what was requested. The Material tab raises the same
+dialog: `renameDialog` in `ui/editor_dialogs.h` is the one implementation, and
+each caller passes only the title of what it is renaming.
 
 **Delete asks first**, and it asks rather than offering an undo because an asset
 cannot come back: re-adding one takes a new slot, so every handle that named the
@@ -975,9 +1060,11 @@ through the Material Editor slot, which knows which of the eleven it is filling
 and passes the colour space for it. The import refuses a file the project
 already holds and says so in a toast, because `loadTexture` decodes and adds
 without looking and `ResourceManager` keeps names unique - so a repeat import
-would otherwise leave two assets for one file. (The Material Editor's own `Set`
-button does *not* guard this, and setting one file into two slots does produce
-two assets; that is its bug to fix, in its panel.)
+would otherwise leave two assets for one file. The Material tab's map tiles
+guard it too, and differently on purpose: binding a file already imported reuses
+that asset rather than refusing, since what the author asked for there is a
+filled slot. The one case it does load a second copy is a file wanted in the
+other colour space, which is two textures on the GPU and not a duplicate.
 
 ### Auditioning, from the tile
 
