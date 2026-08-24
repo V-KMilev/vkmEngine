@@ -16,6 +16,9 @@
 #include "core/math/easing.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animation.h"
+#include "ecs/component/animation/animator.h"
+#include "ecs/component/animation/bone_socket.h"
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/collider.h"
@@ -31,8 +34,11 @@
 #include "platform/input/input_map.h"
 #include "platform/window/input_handle.h"
 #include "platform/window/glfw_include.h"
+#include "proc_audio.h"
 #include "proc_mesh.h"
 #include "resource/resource_manager.h"
+#include "runner_rig.h"
+#include "system/animation/animation_events.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "system/physics/physics_events.h"
 #include "system/ui/ui_events.h"
@@ -76,11 +82,6 @@ constexpr float PLAYER_HALF_Y = 0.7f;
 // an overhead gantry whose underside sits just above it.
 constexpr float CROUCH_HALF_Y = 0.45f;
 
-// One full stride (both limbs swing out and back) at cadence 1. updatePlayer
-// scales each pivot's Animation::speed with the run speed, so the cycle
-// quickens as the track does.
-constexpr float RUN_PERIOD = 0.55f;
-
 // Train roof height: properly Subway-Surfers tall, ~1.8x the runner, so cars
 // read as vehicles rather than crates - and deliberately above the jump apex,
 // so from the ground you board via the nose ramps, never by jumping.
@@ -119,23 +120,6 @@ constexpr uint64_t RUN_SEED = 0x9E3779B9u;
 // once per fixed tick via the event flush, so this bridges that latency - and
 // its tail doubles as coyote time at ledges.
 constexpr float GROUNDED_GRACE = 0.12f;
-
-/**
- * @brief A looping limb swing for the AnimationSystem: rotate about X between
- *        -amplitude and +amplitude with a sine ease, starting @p phase seconds
- *        into the cycle (opposing limbs start half a period apart).
- */
-Animation makeSwing(float amplitude, float phase) {
-    Animation anim;
-    anim.rotationTrack.setEasing(Easing::byName("easeInOutSine"));
-    anim.rotationTrack.addKeyframe(0.0f,             glm::angleAxis(-amplitude, Math::WORLD_AXIS_X));
-    anim.rotationTrack.addKeyframe(RUN_PERIOD * 0.5f, glm::angleAxis( amplitude, Math::WORLD_AXIS_X));
-    anim.rotationTrack.addKeyframe(RUN_PERIOD,        glm::angleAxis(-amplitude, Math::WORLD_AXIS_X));
-    anim.time    = phase;
-    anim.playing = true;
-    anim.looping = true;
-    return anim;
-}
 
 /**
  * @brief A coin's idle motion: a constant-rate full revolution about Y (four
@@ -221,6 +205,16 @@ void PotionRunner::onStart() {
             m_grounded      = true;
             m_groundedTimer = GROUNDED_GRACE;
         }
+    });
+    // The footstep comes from the animation, not from a timer beside it: the
+    // stride clip announces a marker at each instant a leg is vertical, and the
+    // sound is whatever gameplay decides that means. The clip says WHEN; this
+    // says whether - no sound in mid-air, and none for the ragdoll, which has
+    // stopped its own Animator anyway.
+    subscribe<AnimationEvent>([this](const AnimationEvent& e) {
+        if (e.entity != m_player || e.marker != RUNNER_MARKER_FOOTSTEP) return;
+        if (!m_alive || !m_grounded) return;
+        m_scene->get<AudioSource>(m_player).playing = true;
     });
     // Coin pickup rides the physics trigger pipeline: the coin's trigger
     // volume overlaps the dynamic player and the narrowphase reports it.
@@ -504,7 +498,6 @@ void PotionRunner::buildWorld() {
         m_scene->add(m_player, std::move(col));
     }
     m_playerParts.clear();
-    m_limbPivots.clear();
     auto addPart = [&](const char* name, MaterialHandle mat,
                        const glm::vec3& scale, const glm::vec3& offset, EntityId parent) {
         EntityId e = spawnBox(m_cubeMesh, mat, name);
@@ -518,25 +511,51 @@ void PotionRunner::buildWorld() {
     addPart("Head",    m_matPlayer,     {0.46f, 0.42f, 0.46f}, { 0.00f,  0.66f,  0.00f}, m_player);
     addPart("Visor",   m_matPlayerGlow, {0.50f, 0.12f, 0.50f}, { 0.00f,  0.74f,  0.00f}, m_player);
     addPart("Pack",    m_matPlayerGlow, {0.46f, 0.62f, 0.18f}, { 0.00f,  0.10f, -0.36f}, m_player);  // on the back, toward the camera
-    // Limbs hang from meshless pivot entities at the shoulder/hip joints, so
-    // the AnimationSystem's swing (see makeSwing) rotates them about the joint
-    // instead of paddling them about their own centres. Opposing limbs (and the
-    // opposite arm/leg of each side) start half a period out of phase, like a
-    // real stride. updatePlayer drives Animation::speed with the run cadence.
-    auto addLimb = [&](const char* name, const glm::vec3& scale, const glm::vec3& joint,
-                       float amplitude, float phase) {
-        EntityId pivot = m_scene->createEntity();
-        m_scene->add(pivot, makeName(name));
-        m_scene->add(pivot, Transform{joint, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(1.0f)});
-        HierarchyOperations::setParent(*m_scene, pivot, m_player);
-        m_scene->add(pivot, makeSwing(amplitude, phase));
-        m_limbPivots.push_back(pivot);
-        addPart(name, m_matPlayer, scale, {0.0f, -scale.y * 0.5f + 0.04f, 0.0f}, pivot);
+    // The runner is a rig, and that is the whole reason its footsteps are real:
+    // a clip can carry markers and four keyframed pivots cannot. One Animator
+    // on the player plays one looping stride; updatePlayer scales its speed
+    // with the run, so the swing and the footsteps quicken together because
+    // they are the same clock.
+    {
+        Animator stride;
+        stride.skeleton = m_resources->add(makeRunnerSkeleton(), RUNNER_RIG_NAME);
+        stride.clip     = m_resources->add(makeRunnerStride(),   RUNNER_CLIP_NAME);
+        m_scene->add(m_player, std::move(stride));
+    }
+    // Each limb hangs off its bone through a BoneSocket, which places the socket
+    // entity at the joint with the bone's swing on it - so the limb box under it
+    // rotates about the shoulder or hip instead of paddling about its own
+    // centre. A socket is a direct child of the entity carrying the Animator,
+    // which is the only place BoneSocketSystem will place one.
+    auto addLimb = [&](const char* bone, const glm::vec3& scale) {
+        EntityId socket = m_scene->createEntity();
+        m_scene->add(socket, makeName(bone));
+        m_scene->add(socket, Transform{});
+        HierarchyOperations::setParent(*m_scene, socket, m_player);
+        BoneSocket attach;
+        attach.bone = bone;
+        m_scene->add(socket, std::move(attach));
+        addPart(bone, m_matPlayer, scale, {0.0f, -scale.y * 0.5f + 0.04f, 0.0f}, socket);
     };
-    addLimb("Arm L", {0.15f, 0.56f, 0.28f}, {-0.46f,  0.30f, 0.00f}, 0.9f, 0.0f);
-    addLimb("Arm R", {0.15f, 0.56f, 0.28f}, { 0.46f,  0.30f, 0.00f}, 0.9f, RUN_PERIOD * 0.5f);
-    addLimb("Leg L", {0.20f, 0.46f, 0.30f}, {-0.18f, -0.28f, 0.00f}, 1.1f, RUN_PERIOD * 0.5f);
-    addLimb("Leg R", {0.20f, 0.46f, 0.30f}, { 0.18f, -0.28f, 0.00f}, 1.1f, 0.0f);
+    addLimb(RUNNER_BONE_ARM_L, {0.15f, 0.56f, 0.28f});
+    addLimb(RUNNER_BONE_ARM_R, {0.15f, 0.56f, 0.28f});
+    addLimb(RUNNER_BONE_LEG_L, {0.20f, 0.46f, 0.30f});
+    addLimb(RUNNER_BONE_LEG_R, {0.20f, 0.46f, 0.30f});
+
+    // The footstep the stride announces. One source, because a source is a
+    // speaker rather than a queue and the clip is shorter than the gap between
+    // two footfalls at any cadence the run reaches. Spatial, so it is heard from
+    // the camera's ear - minDistance covers the chase distance, so the runner is
+    // at full volume where the listener actually sits.
+    {
+        AudioSource footstep;
+        footstep.clip        = m_resources->add(makeFootstepSound(), "potion:footstep");
+        footstep.volume      = 0.55f;
+        footstep.playOnStart = false;
+        footstep.minDistance = 12.0f;
+        footstep.maxDistance = 60.0f;
+        m_scene->add(m_player, std::move(footstep));
+    }
 
     // Scrolling decoration pools (no gameplay, just a sense of speed). Pillars
     // stay shorter than the camera height so they never cross the view.
@@ -958,6 +977,11 @@ void PotionRunner::resetGame() {
         m_scene->get<Mesh>(part).material = mat;
         m_scene->get<Mesh>(part).visible  = true;
     }
+    // Back on its feet, and running again from the top of the cycle.
+    Animator& stride = m_scene->get<Animator>(m_player);
+    stride.playing = true;
+    stride.time    = 0.0f;
+
     Transform& pt = m_scene->get<Transform>(m_player);
     pt.position = {0.0f, PLAYER_HALF_Y, 0.0f};
     pt.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);   // undo the ragdoll tumble
@@ -1084,12 +1108,12 @@ void PotionRunner::updatePlayer(float dt) {
     box.halfExtents.y = halfY;
     box.center.y      = halfY - PLAYER_HALF_Y;   // keep the box bottom at the feet
 
-    // Stride cadence follows the run: the limb swings quicken as the track
-    // speeds up, and nearly freeze mid-pose while airborne.
+    // Stride cadence follows the run: the swing quickens as the track speeds up,
+    // and nearly freezes mid-pose while airborne. One field now, because one
+    // clip drives all four limbs - and the footstep markers ride the same
+    // timeline, so they follow without being told.
     const float cadence = m_grounded ? (0.85f + 1.15f * (m_speed / maxSpeed)) : 0.30f;
-    for (const EntityId& pivot : m_limbPivots) {
-        m_scene->get<Animation>(pivot).speed = cadence;
-    }
+    m_scene->get<Animator>(m_player).speed = cadence;
 
     // Bank into the lane change for a bit of life. Rotation is script-owned -
     // freezeRotation means the solver passes it through untouched.
@@ -1245,6 +1269,11 @@ void PotionRunner::die() {
     m_speed = 0.0f;
     for (auto& [part, mat] : m_playerParts)                 // flash the whole runner red
         m_scene->get<Mesh>(part).material = m_matBarrier;
+
+    // Stop the stride: the crash is the solver's to pose from here, and an
+    // Animator still running would keep swinging the limbs on a tumbling body -
+    // and keep announcing footsteps for a runner who has stopped running.
+    m_scene->get<Animator>(m_player).playing = false;
 
     // The crash is the same dynamic body with the leash off: unfreeze rotation
     // so it tumbles, restore the full collider box (in case death came mid

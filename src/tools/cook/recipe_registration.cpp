@@ -2,6 +2,9 @@
 
 #include "asset_registration.h"
 
+#include <string>
+#include <vector>
+
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
@@ -154,10 +157,28 @@ SkeletonHandle createRecipeSkeleton(const nlohmann::json& source, ResourceManage
     return createCookedSkeleton(source, resources);
 }
 
+// Authored clip markers, as the recipe carries them: an array of {name, time}.
+// Nothing in glTF or FBX names an animation event, so this is where one enters
+// the engine - alongside the import parameters it sits next to, and hashed into
+// the recipe like them, so adding a footstep re-cooks the clip that carries it.
+std::vector<ClipMarker> recipeMarkers(const nlohmann::json& source) {
+    std::vector<ClipMarker> markers;
+    const auto it = source.find("markers");
+    if (it == source.end() || !it->is_array()) return markers;
+
+    markers.reserve(it->size());
+    for (const nlohmann::json& entry : *it) {
+        if (!entry.is_object()) continue;
+        markers.push_back({entry.value("name", std::string{}), entry.value("time", 0.0f)});
+    }
+    return markers;
+}
+
 AnimationClipHandle createRecipeAnimationClip(const nlohmann::json& source, ResourceManager& resources) {
     if (source.value("kind", std::string{}) == "model") {
         return loadModelAnimationClip(source.value("path", std::string{}),
-                                      source.value("clip", -1), resources);
+                                      source.value("clip", -1),
+                                      recipeMarkers(source), resources);
     }
     return createCookedAnimationClip(source, resources);
 }

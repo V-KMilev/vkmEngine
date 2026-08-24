@@ -110,12 +110,18 @@ bool advanceHead(float& time, float duration, float delta, bool looping) {
 
 } // namespace
 
-void advancePlayback(Animator& animator, float duration, float fromDuration, float simDelta) {
-    if (simDelta <= 0.0f) return;
+PlaybackStep advancePlayback(Animator& animator, float duration, float fromDuration, float simDelta) {
+    PlaybackStep step{animator.time, animator.time, 0.0f};
+    if (simDelta <= 0.0f) return step;
 
     const float delta = simDelta * animator.speed;
-    if (animator.playing && !advanceHead(animator.time, duration, delta, animator.looping)) {
-        animator.playing = false;
+    if (animator.playing) {
+        if (!advanceHead(animator.time, duration, delta, animator.looping)) animator.playing = false;
+        step.to = animator.time;
+        // A wrapped head is not where subtracting would put it, so the distance
+        // covered is what was asked for whenever the clip loops, and what the
+        // clamp allowed when it does not.
+        step.travel = animator.looping ? delta : animator.time - step.from;
     }
 
     // Deliberately not gated on `playing`. A one-shot clip that runs out in the
@@ -123,7 +129,7 @@ void advancePlayback(Animator& animator, float duration, float fromDuration, flo
     // it would hold the character at a weight no field names and nothing clears
     // - visible as mostly the clip it already left. The blend is about reaching
     // the clip, not about that clip advancing.
-    if (animator.fadeRemaining <= 0.0f) return;
+    if (animator.fadeRemaining <= 0.0f) return step;
 
     // The outgoing clip keeps playing while it fades, so the blend is between
     // two moving poses. It never stops the animator: what is playing is the clip
@@ -134,12 +140,39 @@ void advancePlayback(Animator& animator, float duration, float fromDuration, flo
     // Unscaled by speed: a blend length is a duration the caller asked for, not
     // one the playback rate moves under them.
     animator.fadeRemaining -= simDelta;
-    if (animator.fadeRemaining > 0.0f) return;
+    if (animator.fadeRemaining > 0.0f) return step;
 
     animator.fadeFrom      = {};
     animator.fadeTime      = 0.0f;
     animator.fadeRemaining = 0.0f;
     animator.fadeDuration  = 0.0f;
+    return step;
+}
+
+bool crossesMarker(const PlaybackStep& step, float marker, float duration) {
+    if (step.travel == 0.0f || duration <= 0.0f) return false;
+
+    // A step that covered a whole loop passed everything the clip carries. Said
+    // before the interval tests, which describe less than one lap and would
+    // otherwise have to be repeated per lap for no event anyone would hear.
+    if (std::abs(step.travel) >= duration) return true;
+
+    // A head that moved by less than a float can resolve is standing still; the
+    // wrap branches below would otherwise read that as having gone all the way
+    // round to the same place.
+    if (step.from == step.to) return false;
+
+    // Closed at the arrival end, open at the departure end. `to` is the value
+    // the next frame arrives with as its `from`, so a marker landed on exactly
+    // is announced now and cannot be announced again without leaving first.
+    if (step.travel > 0.0f) {
+        return (step.from < step.to)
+            ? (marker > step.from && marker <= step.to)   // straight through
+            : (marker > step.from || marker <= step.to);  // wrapped past the end
+    }
+    return (step.to < step.from)
+        ? (marker >= step.to && marker < step.from)
+        : (marker >= step.to || marker < step.from);      // wrapped past the start
 }
 
 void composePose(

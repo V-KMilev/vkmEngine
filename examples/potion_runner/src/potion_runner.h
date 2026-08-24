@@ -35,8 +35,17 @@ namespace Vkm::Engine {
  * stretch.
  *
  * Beyond behaviors + UI, the game leans on the rest of the engine:
- *  - AnimationSystem: looping eased tracks drive the runner's limb swing (whose
- *    cadence follows the run speed) and every coin's spin/pulse.
+ *  - SkeletalAnimationSystem: one Animator on the player plays a looping stride
+ *    clip (built in code, see runner_rig.h) whose cadence follows the run speed;
+ *    the four limbs hang off its bones through BoneSockets. The clip carries a
+ *    footstep marker at each footfall, so crossing one publishes an
+ *    AnimationEvent and the runner's footsteps come from the animation rather
+ *    than from a timer running beside it.
+ *  - AnimationSystem: looping eased tracks drive every coin's spin/pulse.
+ *  - AudioSystem: an AudioListener on the chase camera and one spatial
+ *    AudioSource on the runner, playing a synthesized footstep (proc_audio.h)
+ *    on each marker the stride announces - but only while alive and grounded,
+ *    because what a marker means is gameplay's to decide.
  *  - Lighting: point pools under the ceiling luminaires and spot headlights on
  *    trains (toggled per recycle via Light::enabled). Every light has a visible
  *    fixture emitting it. Sunless, the headlight spots take the 2D shadow
@@ -223,7 +232,6 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         // World entities.
         EntityId              m_player{};  ///< Invisible rig root the gameplay drives; visible parts parent under it.
         std::vector<std::pair<EntityId, MaterialHandle>> m_playerParts;  ///< Part entity + its normal material (restored on reset).
-        std::vector<EntityId> m_limbPivots;  ///< Shoulder/hip joints whose Animation swings the limbs; speed follows cadence.
         EntityId              m_camera{};
         std::vector<Obstacle> m_obstacles;
         std::vector<Coin>     m_coins;

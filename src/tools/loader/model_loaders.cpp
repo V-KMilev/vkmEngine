@@ -382,6 +382,29 @@ void appendSkin(const aiMesh* m, const SkeletonAsset& skeleton, MeshAsset& out) 
     out.computeAndSetSkinRadius(skeleton);
 }
 
+// Markers the clip can actually announce, in the order they will be reached. A
+// nameless one is unmatchable by the gameplay that would answer it, and one
+// timed outside the timeline never arrives at the instant it names - a looping
+// head wraps it to some other moment and a clamped one never gets there - so
+// both are dropped here rather than carried into the cook, which refuses them.
+std::vector<ClipMarker> usableMarkers(std::vector<ClipMarker> markers, float duration,
+                                      const std::string& clip) {
+    const auto unusable = [&](const ClipMarker& marker) {
+        return marker.name.empty() || !std::isfinite(marker.time)
+            || marker.time < 0.0f || marker.time > duration;
+    };
+    const auto keep = std::remove_if(markers.begin(), markers.end(), unusable);
+    const auto dropped = static_cast<size_t>(markers.end() - keep);
+    if (dropped > 0) {
+        LOG_WARNING("Clip '%s': dropped %zu marker(s) with no name or a time outside its "
+                    "%.3f seconds", clip.c_str(), dropped, static_cast<double>(duration));
+        markers.erase(keep, markers.end());
+    }
+    std::stable_sort(markers.begin(), markers.end(),
+                     [](const ClipMarker& a, const ClipMarker& b) { return a.time < b.time; });
+    return markers;
+}
+
 /**
  * @brief Build one of @p scene's animations as a clip bound to @p skeleton.
  *
@@ -389,10 +412,11 @@ void appendSkin(const aiMesh* m, const SkeletonAsset& skeleton, MeshAsset& out) 
  * @param path Project-relative model reference, used for the name and recipe.
  * @param clipIdx Assimp global animation index.
  * @param skeleton Rig the channels are resolved against.
+ * @param markers Authored markers to carry on the clip; may be empty.
  * @return The clip, or an empty AnimationClipAsset when the index names nothing.
  */
 AnimationClipAsset buildClip(const aiScene* scene, const std::string& path, int clipIdx,
-                             const SkeletonAsset& skeleton) {
+                             const SkeletonAsset& skeleton, std::vector<ClipMarker> markers) {
     AnimationClipAsset out;
     if (!scene || clipIdx < 0 || clipIdx >= static_cast<int>(scene->mNumAnimations)) return out;
     const aiAnimation* anim = scene->mAnimations[clipIdx];
@@ -440,8 +464,20 @@ AnimationClipAsset buildClip(const aiScene* scene, const std::string& path, int 
                     clipName(path, clipIdx).c_str(), dropped);
     }
 
-    out.name         = clipName(path, clipIdx);
+    out.name    = clipName(path, clipIdx);
+    out.markers = usableMarkers(std::move(markers), out.duration, out.name);
+
+    // The recipe is regenerated from this on every cook, so a marker the author
+    // wrote there and this load accepted has to go back into it - otherwise the
+    // first save after an import quietly deletes the authoring it just read.
     out.sourceJson() = { {"kind", "model"}, {"path", path}, {"clip", clipIdx} };
+    if (!out.markers.empty()) {
+        nlohmann::json markerJson = nlohmann::json::array();
+        for (const ClipMarker& marker : out.markers) {
+            markerJson.push_back({ {"name", marker.name}, {"time", marker.time} });
+        }
+        out.sourceJson()["markers"] = std::move(markerJson);
+    }
     return out;
 }
 
@@ -867,6 +903,7 @@ SkeletonHandle loadModelSkeleton(const std::string& path, ResourceManager& resou
 AnimationClipHandle loadModelAnimationClip(
     const std::string& path,
     int clipIndex,
+    std::vector<ClipMarker> markers,
     ResourceManager& resources
 ) {
     const std::string ref = ProjectPaths::toProjectRelative(path);
@@ -887,7 +924,7 @@ AnimationClipHandle loadModelAnimationClip(
         return {};
     }
 
-    AnimationClipAsset clip = buildClip(scene, ref, clipIndex, skeleton);
+    AnimationClipAsset clip = buildClip(scene, ref, clipIndex, skeleton, std::move(markers));
     if (clip.bones.empty()) return {};
     return resources.add(std::move(clip));
 }
@@ -982,7 +1019,10 @@ EntityId importModelIntoScene(
             const int clipIdx = static_cast<int>(i);
             AnimationClipHandle handle = resources.findByName<AnimationClipAsset>(clipName(ref, clipIdx));
             if (!handle) {
-                AnimationClipAsset clip = buildClip(aScene, ref, clipIdx, rig);
+                // A fresh import carries no markers: no interchange format has
+                // them, so they are authored into the recipe afterwards and
+                // arrive on the next load through it.
+                AnimationClipAsset clip = buildClip(aScene, ref, clipIdx, rig, {});
                 if (!clip.bones.empty()) handle = resources.add(std::move(clip));
             }
             if (handle && !firstClip) firstClip = handle;
