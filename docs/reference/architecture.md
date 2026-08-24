@@ -37,7 +37,7 @@ Each system is registered at exactly one stage (`core/system.h`):
 ```cpp
 enum class SystemStage : uint8_t {
     Input        = 0,   // poll devices, capture input
-    Simulation   = 1,   // events, async loading, scripting, animation, physics, audio
+    Simulation   = 1,   // events, async loading, scripting, animation, physics
     Transform    = 2,   // local -> world transform resolution
     Visibility   = 3,   // culling
     Render        = 4,   // build RenderView, submit to the backend

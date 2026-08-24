@@ -92,27 +92,17 @@ void AudioSystem::shutdown() {
 void AudioSystem::updateListener(FrameContext& ctx) {
     Scene& scene = ctx.scene;
 
-    EntityId       entity;
-    AudioListener* listener = nullptr;
-    Transform*     pose     = nullptr;
-    scene.forEach<AudioListener, Transform>([&](EntityId id, AudioListener& l, Transform& t) {
-        // First enabled one wins; storage order breaks the tie, exactly as it
-        // does for the active camera. No early exit because forEach has none,
-        // and a scene holds one or two of these.
-        if (listener != nullptr || !l.active) return;
-        entity   = id;
-        listener = &l;
-        pose     = &t;
-    });
+    const EntityId entity = findActiveListener(scene);
 
-    m_hasListener = listener != nullptr;
+    m_hasListener = static_cast<bool>(entity);
     m_device.setListenerActive(m_hasListener);
     if (!m_hasListener) return;
 
-    const glm::quat rotation = resolvedWorldRotation(scene, entity, *pose);
-    m_device.setListener(resolvedWorldPosition(scene, entity, *pose),
+    const Transform& pose     = scene.get<Transform>(entity);
+    const glm::quat  rotation = resolvedWorldRotation(scene, entity, pose);
+    m_device.setListener(resolvedWorldPosition(scene, entity, pose),
                          Math::computeForward(rotation), Math::computeUp(rotation));
-    m_device.setMasterVolume(listener->volume);
+    m_device.setMasterVolume(scene.get<AudioListener>(entity).volume);
 }
 
 void AudioSystem::reconcileSource(FrameContext& ctx, EntityId entity, AudioSource& source,

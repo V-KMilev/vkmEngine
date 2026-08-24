@@ -16,7 +16,7 @@ class - `AudioDevice` - is the engine's whole surface onto the audio backend.
 
 - `src/engine/resource/asset/audio_clip_asset.h` - `AudioClipAsset` (decoded PCM + rate + channels)
 - `src/engine/ecs/component/audio/audio_source.h` - `AudioSource` (clip, gain, pitch, loop, spatial, distances)
-- `src/engine/ecs/component/audio/audio_listener.h` - `AudioListener` (the ear + master gain)
+- `src/engine/ecs/component/audio/audio_listener.{h,cpp}` - `AudioListener` (the ear + master gain) and `findActiveListener`
 - `src/engine/system/audio/audio_device.{h,cpp}` - `AudioDevice` (the backend seam; the only *engine* file that includes `miniaudio.h`)
 - `src/engine/system/audio/audio_system.{h,cpp}` - `AudioSystem` (component -> voice reconciliation)
 - `src/tools/loader/audio_loaders.{h,cpp}` - `loadAudioClip` (wav / mp3 / flac import)
@@ -70,8 +70,8 @@ a script, an animation or a contact asked for starts on that same frame.
 AudioSystem::update(FrameContext)
   |-- ResourceManager epoch moved? stop every voice - they belong to a world
   |     that no longer exists (scene load, editor Stop)
-  |-- find the active listener: first entity with an enabled AudioListener and
-  |     a Transform, storage order breaking ties
+  |-- findActiveListener: first entity with an enabled AudioListener and a
+  |     Transform, storage order breaking ties
   |     |-- found: push its world pose + master gain
   |     `-- none:  disable the ear - spatial voices go silent, 2D ones play on
   |-- for each AudioSource, posed by its Transform if it has one:
@@ -145,6 +145,13 @@ listen from" is not a question this system answers - `AudioListener` is placed
 on whichever entity should hear. Two listeners is a question, and the answer is
 the same one `findActiveCamera` gives for the eye: the first enabled one wins,
 storage order breaking the tie.
+
+That rule is stated once, in `findActiveListener` beside the component, because
+three places have to agree on it: the system placing the ear, and the two
+Inspector cards that say which listener is heard from and warn a positioned
+source that there is no ear at all. It takes no cached-entity hint -
+`findActiveCamera` has one because two systems each keep a cached camera entity,
+and nothing on the audio side caches one.
 
 With **no** active listener there is nothing for a distance to be measured
 from, so spatial sources go silent while non-spatial ones play on untouched.
@@ -220,8 +227,8 @@ caller the engine does not have.
 
 ### The two known races are miniaudio's
 
-ThreadSanitizer reports the same two data races on every run of
-`scratchpad/adv_audio/race_check.cpp`, and both are inside the backend:
+ThreadSanitizer reports the same two data races on every run that mixes while
+the main thread pushes voice parameters, and both are inside the backend:
 
 | Field | Written from | Read from |
 |---|---|---|
@@ -279,11 +286,10 @@ engine is running silently, and plays on with no error.
 the same voices, with the output going to a caller's buffer instead of to
 hardware. It exists because the audible half of audio is not machine-checkable
 and the measurable half only becomes so if something can read the signal. The
-audio harness (`scratchpad/audio/`) opens the mixer this way to measure that
-attenuation falls off, that panning lands on the correct side and that a source
-is heard where its entity is; the adversarial harness beside it
-(`scratchpad/adv_audio/`) uses it to measure what happens when the inputs are
-wrong.
+audio harness opens the mixer this way to measure that attenuation falls off,
+that panning lands on the correct side and that a source is heard where its
+entity is; the adversarial harness beside it uses the same mixer to measure
+what happens when the inputs are wrong.
 
 ### Auditioning a clip
 
@@ -299,7 +305,7 @@ there. An audition is a request to hear the file, so it is heard flat.
 
 ## What a harness can prove, and what it cannot
 
-`scratchpad/audio/audio_check.cpp` measures, off a real mix:
+The audio harness measures, off a real mix:
 
 - a clip decodes to exactly the frame count, rate and channel layout it was written with
 - the cook round trip is sample-for-sample lossless

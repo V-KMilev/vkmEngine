@@ -61,10 +61,8 @@ class AudioSystem : public System {
         /**
          * @brief Point the ear at the scene's active listener, or turn it off.
          *
-         * The active listener is the first entity carrying an enabled
-         * AudioListener and a Transform, ties broken by storage order - the
-         * same rule findActiveCamera states for the eye, deliberately decided
-         * separately from it.
+         * Which listener that is comes from findActiveListener, so the editor's
+         * cards and the mixer cannot disagree about which one is heard from.
          *
          * @param ctx Frame context supplying the scene to search.
          */

@@ -311,7 +311,7 @@ the sound still starts on the frame the event lands.
 ### What a harness proves about it, and what it cannot
 
 Every claim above is a statement about how many events landed on a bus over a
-run of frames, so `scratchpad/markers/marker_check.cpp` counts them off a real
+run of frames, so the marker harness counts them off a real
 `SkeletalAnimationSystem` posing a real `Scene`. It drives the `Clock` through
 `requestStep()` - the editor's own single-step path - so each frame is exactly
 one fixed step and the expected counts are arithmetic rather than a tolerance:
