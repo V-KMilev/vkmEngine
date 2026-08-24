@@ -2,10 +2,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <string>
 
 #include <imgui.h>
+#include <misc/cpp/imgui_stdlib.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -186,18 +186,10 @@ inline bool propAngleSlider(const char* label, float* radians,
 }
 
 /**
- * @brief Property row: a string edit staged through a fixed buffer.
- *
- * imgui_stdlib isn't compiled in, so the edit round-trips a 256-byte stack
- * buffer; longer strings are clamped on edit.
+ * @brief Property row: a string edit written straight into the string.
  */
 inline bool propString(const char* label, std::string& s, const char* tooltip = nullptr) {
-    char buf[256];
-    std::strncpy(buf, s.c_str(), sizeof(buf) - 1);
-    buf[sizeof(buf) - 1] = '\0';
-    const bool changed = propRow(label, tooltip, [&] { return ImGui::InputText("##v", buf, sizeof(buf)); });
-    if (changed) s = buf;
-    return changed;
+    return propRow(label, tooltip, [&] { return ImGui::InputText("##v", &s); });
 }
 
 /**

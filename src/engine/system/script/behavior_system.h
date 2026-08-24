@@ -18,11 +18,22 @@ class EventBus;
  * @brief Drives the lifecycle of every entity's ScriptComponent behaviors.
  *
  * Registered at SystemStage::Simulation, before PhysicsSystem, so scripts set
- * up state for physics to integrate the same frame. Ticks only while the
- * Clock is running (ctx.clock.getSimDelta() > 0), so pause / step / Stop
- * apply uniformly: on an instance's first tick it injects the engine context
- * and calls onStart(), then onUpdate(simDeltaTime) every frame and
- * onFixedUpdate(fixedDeltaTime) every fixed tick.
+ * up state for physics to integrate the same frame. On an instance's first
+ * simulation tick it injects the engine context and calls onStart(), then
+ * onUpdate(simDelta) on every frame simulation time advanced and
+ * onFixedUpdate(fixedStep) on every fixed tick - so pause, step and Stop reach
+ * all three with one gate.
+ *
+ * onRealtimeUpdate(realDelta) runs on top of that, every frame, paused or not,
+ * and only on behaviors that have already started. Starting is deliberately
+ * not something it does: a behavior belongs to a play session, only simulation
+ * time begins one, and in the editor paused is also Edit mode - so a scene
+ * merely open in the editor runs nothing over the authored world. The deferred
+ * destroy() and loadScene() requests drain after that pass rather than after
+ * the simulation one, which is what lets a paused game quit to its menu; they
+ * belong to the session that made them, and endSession() discards them. A
+ * scene loaded on a frozen frame still starts nothing until the clock runs, so
+ * gameplay that quits to a menu resumes it in the same breath.
  *
  * Subscribes to physics CollisionEvent / TriggerEvent and dispatches them to
  * the involved entities' onCollision / onTrigger hooks during update (after
@@ -65,12 +76,18 @@ class BehaviorSystem : public System, public ISceneObserver {
 
         /**
          * @brief Fire onDestroy on every started behavior in @p scene, drop their
-         *        subscriptions, and reset their started/disabled flags.
+         *        subscriptions, reset their started/disabled flags, and discard
+         *        the destroy() / loadScene() requests the session queued.
          *
          * Tears down a whole scene's running behaviors: on play stop (before the
          * snapshot swaps the played scene away) and at shutdown (while the
          * EventBus is still alive). Static because the editor's stop path has
-         * no BehaviorSystem handle - friendship with Behavior is class-wide.
+         * no BehaviorSystem handle - friendship with Behavior is class-wide,
+         * and the queues are reached through a behavior's own bound context.
+         *
+         * The requests go because they named the world being torn down: a
+         * deferred one drains on the next frame, paused frames included, and in
+         * the editor that frame is Edit mode over the authored scene.
          */
         static void endSession(Scene& scene);
 
@@ -96,12 +113,20 @@ class BehaviorSystem : public System, public ISceneObserver {
          */
         void ensureStarted(Behavior& behavior, EntityId entity);
         /**
-         * @brief Drive @p hook on every enabled behavior in the scene, starting
-         *        any that has not run onStart yet.
+         * @brief Drive @p hook on every enabled behavior in the scene.
          *
          * The caller drains deferred destroys afterwards, at its own point.
+         *
+         * @param ctx           Frame context supplying the scene to walk.
+         * @param dt            Elapsed time handed to the hook.
+         * @param hookName      Human-readable hook name, used in error reporting.
+         * @param hook          The void(float) member hook to invoke on each behavior.
+         * @param startIfNeeded Whether a behavior that has not started yet is started
+         *        here (the simulation passes) or skipped entirely (the realtime pass,
+         *        which must not begin a play session).
          */
-        void tickBehaviors(FrameContext& ctx, float dt, const char* hookName, void (Behavior::*hook)(float));
+        void tickBehaviors(FrameContext& ctx, float dt, const char* hookName,
+                           void (Behavior::*hook)(float), bool startIfNeeded);
         /**
          * @brief Deliver an entity-targeted hook (onCollision/onTrigger) to a
          *        target entity's started behaviors.

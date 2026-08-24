@@ -92,11 +92,13 @@ and touches the Clock only through `getSimDelta()`, and only to tell a running
 simulation from a paused one. That follows the engine-wide rule that **a system
 reads the timeline its responsibility lives on**: simulation state (animation,
 particles, physics, gameplay `onUpdate`) runs on simulation time; presentation
-and services (input, camera, editor, async loading, audio) run every frame
-regardless of it.
+and services (input, camera, editor, async loading, audio, gameplay's
+[`onRealtimeUpdate`](scripting.md#time-and-pause)) run every frame regardless of
+it.
 
 So pausing does **not** cut the music, silence a menu, or stop a UI click from
-being heard. The world stops moving, so 3D positions stop changing because
+being heard - and `onRealtimeUpdate` is where the behavior that answers that
+click still runs. The world stops moving, so 3D positions stop changing because
 nothing moved. The single thing pause holds back is `playOnStart`, which waits
 for simulation time to advance - which is what keeps an unplayed scene sitting
 open in the editor quiet, since in the editor "paused" and "not playing" are

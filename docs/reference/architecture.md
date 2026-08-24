@@ -109,6 +109,12 @@ the timeline its responsibility lives on, so `AudioSystem` runs every frame
 whether or not the simulation advanced - pausing a game must not cut its music
 (see [Audio](system/audio.md#time-pause-and-the-editor)).
 
+Gameplay gets the same split rather than a choice of system: a behavior's
+`onUpdate` is simulation time and does not run at all while paused, and its
+`onRealtimeUpdate` is real time and runs every frame regardless - so a pause menu
+can animate, and unpause, over a frozen world (see
+[Scripting](system/scripting.md#time-and-pause)).
+
 The context is rebuilt from scratch each frame and the fixed-step loop runs before
 any producer stage, so `visibility`, `poses` and `ui` are always null inside
 `fixedUpdate()` - read products from `update()` only.

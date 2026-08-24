@@ -158,14 +158,18 @@ clean write, so a full disk cannot leave a truncated file where a good one was.
 
 `SceneSerializer::save` emits a JSON object with four top-level blocks:
 
-- `assets`: name-only references to every asset a component names - `Mesh`,
-  `LOD` levels, `Decal`, the rig plus clip an `Animator` names, and the sound an
-  `AudioSource` names - plus the textures those materials use. A
-  component reference the assets block never lists is one the loader never
-  recreates, so every component that names an asset has to be walked there. The
-  asset *data* lives in the cooked library (keyed by name), not in the scene
-  file, so the scene stays tiny and diff-friendly. Assets marked `hidden = true`
-  are skipped (editor previews, fallback textures, bundled primitives).
+- `assets`: name-only references to every asset the scene names - `Mesh`,
+  `LOD` levels, `Decal`, the rig plus clip an `Animator` names, the sound an
+  `AudioSource` names, and every `AssetRef` field on a behavior - plus the
+  textures those materials use. A reference the assets block never lists is one
+  the loader never recreates, so every component that names an asset has to be
+  walked there, and a behavior's authored fields are walked with them. The asset
+  *data* lives in the cooked library (keyed by name), not in the scene file, so
+  the scene stays tiny and diff-friendly. Assets marked `hidden = true` are
+  skipped (editor previews, fallback textures, bundled primitives). A behavior's
+  name is the one kind that can dangle - a component's comes from an asset that
+  exists - so it is emitted as authored and reported by the load if the library
+  has no such entry.
 - `entities`: one record per entity. Entities are stored at their slot
   index, and each component is keyed by its short name (see Component
   serializer below).

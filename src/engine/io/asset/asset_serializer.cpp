@@ -23,6 +23,9 @@
 #include "io/asset/asset_library.h"
 #include "io/json_file.h"
 #include "io/json_vec.h"
+#include "system/script/behavior.h"
+#include "system/script/behavior_field_visitor.h"
+#include "system/script/script_component.h"
 #include "core/reflect.h"
 
 namespace Vkm::Engine {
@@ -163,6 +166,54 @@ void emitDescriptor(nlohmann::json& target, const Resource& asset) {
     target.push_back({{"name", asset.name}});
 }
 
+/**
+ * @brief Emit a name-only reference that was authored as a name, not held as a handle.
+ *
+ * The emitters above dedup by handle id; a behavior's reference has no handle to
+ * dedup by, and the name may well be one a component already listed. So the
+ * section itself is what gets checked. It runs once per authored reference
+ * rather than once per entity, over lists a scene keeps short.
+ */
+void emitNamedRef(nlohmann::json& target, const std::string& name) {
+    for (const auto& entry : target) {
+        if (entry.value("name", std::string{}) == name) return;
+    }
+    target.push_back({{"name", name}});
+}
+
+/**
+ * @brief Collects (kind, name) for every asset a behavior's authored fields name.
+ *
+ * Every method but assetField is a no-op: a behavior's numbers, text and enums
+ * say nothing about which assets a scene needs. beginStruct still returns true,
+ * because an AssetRef nested inside a reflected struct is as much a reference as
+ * one at the top level.
+ */
+class BehaviorAssetRefs : public BehaviorFieldVisitor {
+    public:
+        void field(const char* name, float& value)       override {}
+        void field(const char* name, int& value)         override {}
+        void field(const char* name, bool& value)        override {}
+        void field(const char* name, glm::vec3& value)   override {}
+        void field(const char* name, std::string& value) override {}
+
+        void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {}
+
+        void assetField(const char* name, std::string& assetName, AssetType type) override {
+            if (assetName.empty()) return;   // the field references nothing
+            m_refs.emplace_back(type, assetName);
+        }
+
+        bool beginStruct(const char* name) override { return true; }
+        void endStruct() override {}
+
+    public:
+        const std::vector<std::pair<AssetType, std::string>>& refs() const { return m_refs; }
+
+    private:
+        std::vector<std::pair<AssetType, std::string>> m_refs;
+};
+
 } // namespace
 
 nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<EntityId>& entities,
@@ -225,6 +276,7 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
     // Every component that writes an asset name into the document has to be
     // walked here: a name the assets block never lists is a name loadAssets
     // never recreates, and the component's reference resolves to nothing.
+    BehaviorAssetRefs behaviorRefs;
     for (EntityId id : entities) {
         if (scene.has<Mesh>(id)) {
             const Mesh& m = scene.get<Mesh>(id);
@@ -241,6 +293,41 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
             emitClip(a.clip);
         }
         if (scene.has<AudioSource>(id)) emitSound(scene.get<AudioSource>(id).clip);
+        if (scene.has<ScriptComponent>(id)) {
+            // A behavior names its assets in authored fields rather than through
+            // handles, so the reference lives behind visitFields and this is the
+            // only walk that can see it.
+            for (const auto& behavior : scene.get<ScriptComponent>(id).behaviors) {
+                if (!behavior) continue;
+                // visitFields is non-const because the editor and the loader
+                // write through it; this visitor only reads. No cast is needed
+                // to get there: a unique_ptr hands out a mutable referent even
+                // when the pointer itself is const.
+                behavior->visitFields(behaviorRefs);
+            }
+        }
+    }
+
+    // Emitted flat, by name: an authored reference has a name and no handle, so
+    // there is nothing to walk into beside it. A material named this way
+    // therefore arrives without the textures emitMaterial would have pulled in
+    // with it - no field names one today, and the material loader warns per
+    // unresolved map rather than failing quietly.
+    //
+    // A name absent from the library is emitted all the same and left to
+    // loadAssetSection to report: a component's name comes from an asset that
+    // exists, but a behavior's was typed against a library that may since have
+    // lost it, and dropping it here would turn a broken reference into silence.
+    for (const auto& [type, name] : behaviorRefs.refs()) {
+        switch (type) {
+            case AssetType::Mesh:          emitNamedRef(meshes,    name); break;
+            case AssetType::Texture:       emitNamedRef(textures,  name); break;
+            case AssetType::Material:      emitNamedRef(materials, name); break;
+            case AssetType::Skeleton:      emitNamedRef(skeletons, name); break;
+            case AssetType::AnimationClip: emitNamedRef(clips,     name); break;
+            case AssetType::AudioClip:     emitNamedRef(sounds,    name); break;
+            case AssetType::Count:         break;
+        }
     }
 
     nlohmann::json out;
